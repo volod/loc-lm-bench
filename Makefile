@@ -5,6 +5,12 @@ VENV := $(PROJECT_ROOT)/.venv
 PY := $(VENV)/bin/python
 PYTHON_VERSION := 3.11
 
+# Extras installed by `make venv` -- every declared optional-dependency group, so a fresh
+# checkout can run every command without a follow-up `uv pip install`. vLLM/torch/flash-attn
+# are deliberately NOT here: they are hardware-matched and built separately (AGENTS.md).
+# Override for a lean install, e.g. `make venv EXTRAS=dev`.
+EXTRAS ?= rag,eval,track,board,prep,telemetry,goldset,dev
+
 # Milestone 0 artifacts (regeneratable under .data/, gitignored).
 GOLDSET := $(PROJECT_ROOT)/.data/llb/goldset/sample_rag_items.jsonl
 CORPUS := $(PROJECT_ROOT)/.data/llb/corpus
@@ -12,24 +18,33 @@ SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 GOLDSET_N ?= 250
 
+# Milestone 1 eval skeleton knobs (override on the command line).
+MODEL ?= llama3.2:3b
+SPLIT ?= final
+LIMIT ?= 20
+RAG_K ?= 10
+MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
+PREP_BACKEND ?= all
+
 .DEFAULT_GOAL := help
-.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet
+.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n", $$1, $$2}'
 
-venv: ## Create .venv (uv, py3.11), install deps, seed .env from .env.example
+venv: ## Create .venv (uv, py3.11), install the package + all extras, seed .env (EXTRAS= to trim)
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	uv venv --python $(PYTHON_VERSION) "$(VENV)"
-	uv pip install --python "$(PY)" -e .
+	uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"
 	@if [ ! -f "$(PROJECT_ROOT)/.env" ]; then \
 		cp "$(PROJECT_ROOT)/.env.example" "$(PROJECT_ROOT)/.env"; \
 		echo "[venv] created .env from .env.example"; \
 	else \
 		echo "[venv] .env already exists, leaving it"; \
 	fi
-	@echo "[venv] ready: $(VENV)"
+	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS))"
+	@echo "[venv] note: vLLM/torch/flash-attn are hardware-matched and installed separately."
 
 test: ## Run the test suite (pytest)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -67,3 +82,24 @@ build-rag-store: ## Chunk a corpus with all strategies into .data/llb/rag (overr
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(PROJECT_ROOT)/.data/llb/rag" --strategy all --size 800 --overlap 120
+
+build-index: ## M1: chunk + embed the gold-set corpus into a FAISS store (needs ".[rag]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main build-index --corpus-root "$(PROJECT_ROOT)/.data/llb/corpus"
+
+validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main validate-retrieval --k $(RAG_K)
+
+run-eval: ## M1: run the skeleton on one model (needs Ollama + ".[rag,eval]"); MODEL= LIMIT= SPLIT=
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main run-eval --model "$(MODEL)" --split "$(SPLIT)" --limit $(LIMIT)
+
+prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main prep-models --manifest "$(MODELS_MANIFEST)" --backend "$(PREP_BACKEND)"
+
+list-models: ## List which candidate models can run here (GPU+RAM, KV-cache-aware); CONTEXT= to target a context
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main list-models --manifest "$(MODELS_MANIFEST)" $(if $(CONTEXT),--context $(CONTEXT),)

@@ -20,6 +20,7 @@ dependencies = [
 # Installed on demand, e.g. `uv pip install -e ".[rag,track]"`. Kept out of the base
 # install so `make venv` stays fast.
 rag = ["faiss-cpu>=1.8", "sentence-transformers>=3.0", "langchain-text-splitters>=0.2", "ragas>=0.2"]
+eval = ["langgraph>=0.2"]
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]
 prep = ["litellm>=1.40"]
@@ -28,6 +29,9 @@ goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
 # NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU) and installed via a
 # separate build path per AGENTS.md, never as plain deps here.
 dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+llb = "llb.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

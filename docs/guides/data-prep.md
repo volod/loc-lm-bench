@@ -9,8 +9,8 @@ All output lands under `.data/llb/` (gitignored). Module detail is in
     make ingest-uk-squad      # real 250-item UA gold set from HPLT/ua-squad *
     make validate-goldset     # spans resolve + splits disjoint (acceptance)
 
-`*` needs `HF_TOKEN` in `.env` and `uv pip install -e ".[goldset]"`. For a local SQuAD
-export instead: `make ingest-squad SQUAD_JSON=path.json`.
+`*` needs `HF_TOKEN` in `.env` (the `goldset` extra is installed by `make venv`). For a
+local SQuAD export instead: `make ingest-squad SQUAD_JSON=path.json`.
 
 Schema (one JSON object per line): `id, lang, question, reference_answer, source_doc_id,
 source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`. Labels are

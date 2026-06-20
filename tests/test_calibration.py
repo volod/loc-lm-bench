@@ -1,4 +1,9 @@
-from llb.judge.calibration import calibrate, emit_worksheet, spearman_rho
+from llb.judge.calibration import (
+    calibrate,
+    emit_worksheet,
+    spearman_rho,
+    write_filled_worksheet,
+)
 
 
 def test_perfect_positive():
@@ -27,3 +32,23 @@ def test_worksheet_only_calibration_rows(tmp_path):
     out = tmp_path / "ws.csv"
     assert emit_worksheet(items, out) == 1
     assert "human_rating" in out.read_text(encoding="utf-8")
+
+
+class _Item:
+    def __init__(self, id, split, question, reference_answer):
+        self.id = id
+        self.split = split
+        self.question = question
+        self.reference_answer = reference_answer
+
+
+def test_write_filled_worksheet_prefills_model_answer(tmp_path):
+    answers = [
+        (_Item("a", "calibration", "q1", "r1"), "Київ - столиця"),
+        (_Item("b", "calibration", "q2", "r2"), ""),
+    ]
+    out = tmp_path / "ws.csv"
+    assert write_filled_worksheet(answers, out) == 2
+    text = out.read_text(encoding="utf-8")
+    assert "Київ - столиця" in text          # model_answer pre-filled
+    assert text.strip().endswith(",,")        # human_rating + judge_rating still blank

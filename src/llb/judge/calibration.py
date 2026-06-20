@@ -94,19 +94,21 @@ def calibrate(
     }
 
 
-def emit_worksheet(items: list[dict], out_path: Path) -> int:
-    """Write a CSV worksheet (one row per calibration item) for the human to fill.
+WORKSHEET_COLS = ["item_id", "split", "question", "reference_answer",
+                  "model_answer", "human_rating", "judge_rating"]
 
-    Columns model_answer / human_rating / judge_rating are blank: they get filled once
-    Milestone 1 can produce model answers and the human rates them.
+
+def emit_worksheet(items: list[dict], out_path: Path) -> int:
+    """Write a blank CSV worksheet (one row per calibration item) for the human to fill.
+
+    Columns model_answer / human_rating / judge_rating are blank. Use
+    `write_filled_worksheet` instead to pre-fill model_answer from a `run-eval` run.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    cols = ["item_id", "split", "question", "reference_answer",
-            "model_answer", "human_rating", "judge_rating"]
     n = 0
     with out_path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer = csv.DictWriter(fh, fieldnames=WORKSHEET_COLS)
         writer.writeheader()
         for it in items:
             if it.get("split") != "calibration":
@@ -117,6 +119,33 @@ def emit_worksheet(items: list[dict], out_path: Path) -> int:
                 "question": it["question"],
                 "reference_answer": it["reference_answer"],
                 "model_answer": "",
+                "human_rating": "",
+                "judge_rating": "",
+            })
+            n += 1
+    return n
+
+
+def write_filled_worksheet(answers, out_path: Path) -> int:
+    """Write a worksheet with model_answer pre-filled from a run; ratings left blank.
+
+    `answers` is a list of `(gold_item, model_answer)` (gold_item duck-typed:
+    `id / split / question / reference_answer`). Produced by `run-eval --worksheet` on the
+    calibration split so the human only fills `human_rating`.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with out_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=WORKSHEET_COLS)
+        writer.writeheader()
+        for item, answer in answers:
+            writer.writerow({
+                "item_id": item.id,
+                "split": item.split,
+                "question": item.question,
+                "reference_answer": item.reference_answer,
+                "model_answer": answer or "",
                 "human_rating": "",
                 "judge_rating": "",
             })
