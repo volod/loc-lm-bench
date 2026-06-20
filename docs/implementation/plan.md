@@ -11,7 +11,7 @@ Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../d
 
 Milestones 0 and 1 are **complete** and documented in [`current.md`](current.md): the gold
 set + data-prep tooling (M0) and the eval skeleton (compile-free: prebuilt Ollama, no
-vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 162 tests.
+vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 164 tests.
 
 **Quick start:** `make demo-eval` runs the current pipeline end to end and idempotently
 (venv -> gold set -> index -> prep-models -> run-eval + telemetry; needs a running Ollama).
@@ -43,8 +43,10 @@ hook (M2.2, wired into `run-eval --telemetry`), and the MAX_JOBS-capped
 `scripts/build_vllm.sh` + canonical `max_jobs()` in `scripts/shared/common.sh` (OQ6 resolved).
 What remains needs a CUDA host:
 
-- **M2.1 build (run it).** On the GPU host: `make build-vllm` (MAX_JOBS-capped, wheels cached
-  under `$DATA_DIR/wheels/vllm_<key>/`). Confirm `vllm` imports.
+- **M2.1 build (run it).** On the GPU host: `make build-vllm` (binary-only install through
+  uv's shared cache). If a fork must compile locally, clone it and run
+  `VLLM_SOURCE_DIR=<checkout> make build-vllm`; only that source-built wheel is retained
+  under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Confirm `vllm` imports.
 - **M2.3 candidate list (OQ3).** Finalize the ~6-10 candidates in `samples/models_uk.yaml` and
   VERIFY the UA-specialized HF repo ids (MamayLM v2 12B/27B, Lapa, Gemma 3, Qwen, Llama 3.1).
   `make prep-models PREP_BACKEND=vllm` is the verification step (a wrong id 404s; a gated repo

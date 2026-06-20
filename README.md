@@ -8,7 +8,7 @@ desktop GPU, so the choice is reproducible and defensible.
 > **Status:** early but runnable. Milestone 0 (data prep: gold-item schema, validator,
 > public-dataset ingestion, chunking) and Milestone 1 (the eval skeleton: retrieve ->
 > generate -> score -> ranked row + manifest, on one prebuilt Ollama model — runs on the
-> GPU, nothing to compile) are **done and tested** (162 tests). Milestone 2 (a vLLM backend +
+> GPU, nothing to compile) are **done and tested** (164 tests). Milestone 2 (a vLLM backend +
 > telemetry hook + MAX_JOBS-capped build) is **code-complete** (the real GPU run is
 > documented); Milestone 3 (two-tier screen + leaderboard) is planned — see the docs.
 
@@ -46,7 +46,7 @@ That builds the `.venv` (all deps), creates the sample RAG store, pulls a small 
 and records one ranked row + telemetry under `.data/llb/`. Or run the pieces yourself:
 
     make venv          # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test          # run the test suite (162 tests)
+    make test          # run the test suite (164 tests)
 
 Milestone 0 commands (data prep, output under `.data/`, gitignored):
 

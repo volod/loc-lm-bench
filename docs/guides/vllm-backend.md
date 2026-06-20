@@ -2,16 +2,32 @@
 
 Milestone 1 runs the loop on prebuilt Ollama. Milestone 2 adds a **vLLM** launcher (serves
 HF weights behind the same OpenAI-compatible interface) plus a real telemetry hook. This is
-the heavy, GPU-host path: vLLM may compile from source (CUDA toolchain), and weights are
-multi-GB. Module detail is in [implementation/current.md](../implementation/current.md).
+the heavy, GPU-host path. Prebuilt packages install through uv; an explicit local-checkout
+mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
+[implementation/current.md](../implementation/current.md).
 
 ## 1. Install vLLM (once, GPU host)
 
-    make build-vllm                      # MAX_JOBS-capped build + wheel cache under $DATA_DIR/wheels/
+    make build-vllm                      # binary-only install through uv's shared cache
 
-`build_vllm.sh` sources `scripts/shared/common.sh`, caps build parallelism via the canonical
-`max_jobs()` helper (`min(cores//2, RAM_GiB//14)`, per AGENTS.md), and caches the built
-wheels so a rebuild is reused. Override the version with `VLLM_SPEC='vllm==0.6.3' make build-vllm`.
+The default path runs `uv pip install --only-binary :all:`. vLLM and all dependencies stay
+in uv's standard shared cache (see `uv cache dir`) and are reusable by other uv projects.
+Nothing is copied to `$DATA_DIR/wheels`. Override the registry version with:
+
+    VLLM_SPEC='vllm==0.6.3' make build-vllm
+
+To build an unpublished fork, clone it first and point the script at the clean checkout:
+
+    git clone <repo-url> ../vllm
+    VLLM_SOURCE_DIR=../vllm make build-vllm
+
+Source mode installs build/runtime dependencies through uv, applies the canonical
+`MAX_JOBS` cap, and exports only the locally built vLLM wheel under
+`$DATA_DIR/wheels/vllm_<python+torch+cuda+gpu-arch>_git<revision>/`. The checkout must be
+clean and point to its git root so the cache key identifies the exact source. `VLLM_SPEC=git+...`
+and implicit local paths are rejected; use `VLLM_SOURCE_DIR` so source builds cannot be
+confused with ordinary installs. The shell command is a thin bootstrap; `llb.build.vllm`
+owns the Python implementation.
 
 ## 2. Cache weights + verify the model id
 

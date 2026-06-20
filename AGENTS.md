@@ -40,7 +40,13 @@ parallelism using formila MAX_JOBS=min(cpu_core_num//2, RAM // 14)
 Do not inline the formula — the helpers are the single source of truth. The canonical helper is
 `max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
 
-Compiled wheels (flash-attn, vllm forks, xformers, etc.) MUST be cached under `$DATA_DIR/wheels/<package-name>_<key>/`
-where `<key>` encodes the ABI-relevant dimensions (e.g. `torch2.9.1_cu128`, `zaya-vllm_latest`).
-Never cache wheels under a package-specific subdirectory — the shared `$DATA_DIR/wheels/` root is the single 
-source of truth for all heavy build artifacts across every sub-package.
+Only wheels deliberately built from a local git checkout (flash-attn forks, vLLM forks,
+xformers forks, etc.) may be exported under
+`$DATA_DIR/wheels/<package-name>_<abi-key>_git<revision>/`. The key MUST encode the
+ABI-relevant dimensions (Python, torch, CUDA, GPU compute capability) and the exact git
+revision; source checkouts must be clean before building.
+
+Registry wheels, prebuilt wheels, and all ordinary build/runtime dependencies MUST be
+installed directly with `uv` and left in uv's standard shared cache. Never use
+`pip wheel` or a dependency-resolving wheelhouse under `$DATA_DIR/wheels`; that directory
+contains only intentional local-source build outputs.

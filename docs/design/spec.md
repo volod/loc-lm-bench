@@ -264,9 +264,11 @@ curation, not coding. The door stays open to the full Approach B without a teard
 Internal tool, single machine: no package distribution needed for v1. Delivery is
 the git repo + `make venv` (or `uv`) setup + a documented run flow. The one CI/build
 concern is the vLLM/flash-attn source build: cap MAX_JOBS via the canonical helper
-(confirm or create its real path for this repo first, see Open Question 6), cache
-wheels under `$DATA_DIR/wheels/<pkg>_<key>/`, and pin torch/flash-attn to the host
-CUDA/GPU. This build only happens if a v1 candidate actually requires vLLM. A Docker
+(confirm or create its real path for this repo first, see Open Question 6). Registry and
+prebuilt wheels use uv's shared cache. Only wheels deliberately built from clean local git
+checkouts are exported under `$DATA_DIR/wheels/<pkg>_<abi-key>_git<revision>/`; pin
+torch/flash-attn to the host CUDA/GPU. This build only happens if a v1 candidate actually
+requires vLLM. A Docker
 image that can target the host's GPU/CUDA is a later option, not required for v1.
 
 ## Dependencies

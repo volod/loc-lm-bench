@@ -142,7 +142,7 @@ run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm LIMIT= SPLIT=
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry,)
 
-build-vllm: ## M2: install vLLM for the host (MAX_JOBS-capped build + wheel cache); GPU host only
+build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
 
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)

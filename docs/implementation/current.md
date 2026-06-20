@@ -25,7 +25,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-162 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+164 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -37,7 +37,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (162 tests)
+    make test       # pytest (164 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -70,8 +70,9 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
     scripts/
       shared/common.sh             # shared bootstrap + canonical max_jobs() helper (AGENTS.md)
       gen_rag_items.sh             # thin entrypoint -> llb.prep.gen_rag_items
-      build_vllm.sh                # MAX_JOBS-capped vLLM install + wheel cache (GPU host)
+      build_vllm.sh                # uv-shared prebuilt install or one checkout-built wheel
     src/llb/
+      build/vllm.py               # uv-shared installer + checkout wheel builder
       config.py                    # RunConfig (Pydantic) -- the canonical run config
       contracts.py                 # shared TypedDict boundary contracts
       paths.py                     # project root, .env, and DATA_DIR path resolution
@@ -92,7 +93,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
       executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
-    tests/                         # 162 tests across the above
+    tests/                         # 164 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -341,12 +342,15 @@ MAX_JOBS-capped build entrypoint. The code is unit-tested with fakes; the from-s
 serving a real model run on a CUDA host -- see the [vLLM guide](../guides/vllm-backend.md).
 
 ### vLLM launcher — `llb.backends.vllm` (M2.1)
-`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above. The build
-itself is `scripts/build_vllm.sh`, which sources `scripts/shared/common.sh` and caps build
-parallelism via the canonical `max_jobs()` helper (`min(cores//2, RAM_GiB//14)`, AGENTS.md),
-caching built wheels under `$DATA_DIR/wheels/vllm_<key>/`. Weights are cached by `prep-models`.
+`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above. The thin
+`scripts/build_vllm.sh` entrypoint sources `scripts/shared/common.sh`, exports its canonical
+`max_jobs()` result (`min(cores//2, RAM_GiB//14)`, AGENTS.md), and delegates to
+`llb.build.vllm`. The default binary-only install and all ordinary dependencies use uv's
+shared cache. Only a wheel built from `VLLM_SOURCE_DIR=<clean-git-checkout>` is exported
+under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Weights are cached by `prep-models`.
 
-    make build-vllm                                   # install vLLM (GPU host; MAX_JOBS-capped)
+    make build-vllm                                   # prebuilt wheel via uv shared cache
+    VLLM_SOURCE_DIR=../vllm make build-vllm           # one ABI-keyed checkout wheel
     make run-eval BACKEND=vllm MODEL=google/gemma-4-12B-it-qat-w4a16-ct TELEMETRY=1
 
 ### Telemetry hook — `llb.backends.telemetry` (M2.2)
