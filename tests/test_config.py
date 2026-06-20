@@ -9,6 +9,12 @@ def test_defaults_are_cuda_free_ollama():
     assert "e5" in cfg.embedding_model
 
 
+def test_retrieval_mode_defaults_to_flat():
+    cfg = RunConfig()
+    assert cfg.retrieval_mode == "flat"
+    assert cfg.child_chunk_size == 400
+
+
 def test_index_and_run_dirs_under_data_dir(tmp_path):
     cfg = RunConfig(data_dir=tmp_path, run_name="r1")
     assert cfg.index_dir() == tmp_path / "llb" / "rag"

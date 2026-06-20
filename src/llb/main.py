@@ -30,25 +30,32 @@ def _load_config(config_path: Optional[Path], **overrides) -> RunConfig:
 def build_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     corpus_root: Optional[Path] = typer.Option(None, help="corpus directory to chunk"),
-    strategy: Optional[str] = typer.Option(None, help="fixed | sentence | recursive"),
+    strategy: Optional[str] = typer.Option(
+        None, help="fixed | sentence | recursive | markdown | semantic"
+    ),
     size: Optional[int] = typer.Option(None, help="chunk size (chars)"),
     overlap: Optional[int] = typer.Option(None, help="chunk overlap (chars)"),
     embedding_model: Optional[str] = typer.Option(None, help="pinned embedding model"),
+    mode: Optional[str] = typer.Option(None, help="flat | parent_child"),
+    child_size: Optional[int] = typer.Option(None, help="child chunk size (parent_child mode)"),
 ):
     """Chunk + embed the corpus into a FAISS RAG store under the index dir."""
     cfg = _load_config(
         config, corpus_root=corpus_root, strategy=strategy, chunk_size=size,
-        chunk_overlap=overlap, embedding_model=embedding_model,
+        chunk_overlap=overlap, embedding_model=embedding_model, retrieval_mode=mode,
+        child_chunk_size=child_size,
     )
     from llb.rag.store import RagStore
 
     store = RagStore.build(
         cfg.corpus_root, cfg.strategy, cfg.chunk_size, cfg.chunk_overlap, cfg.embedding_model,
+        mode=cfg.retrieval_mode, child_size=cfg.child_chunk_size,
     )
     store.save(cfg.index_dir())
+    parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
     typer.echo(
-        f"[build-index] {store.meta['n_chunks']} chunks "
-        f"({cfg.strategy}, dim {store.meta['dim']}) -> {cfg.index_dir()}"
+        f"[build-index] {store.meta['n_indexed']} indexed chunks{parents} "
+        f"({cfg.strategy}/{cfg.retrieval_mode}, dim {store.meta['dim']}) -> {cfg.index_dir()}"
     )
 
 

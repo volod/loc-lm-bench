@@ -15,10 +15,15 @@ n_shot: 0               # fixed across compared models (avoids the 0-shot/3-shot
 # Retrieval. The embedding is PINNED and validated separately (Premise 4); it is never an
 # Optuna knob. chunk_size / overlap / top_k are tunable in later milestones.
 embedding_model: intfloat/multilingual-e5-base
-strategy: recursive     # fixed | sentence | recursive
+strategy: recursive     # fixed | sentence | recursive | markdown | semantic
 chunk_size: 800
 chunk_overlap: 120
 top_k: 5
+
+# Retrieval mode: flat indexes chunk_size chunks; parent_child indexes small children for
+# precise matching but returns their larger parent for generation context.
+retrieval_mode: flat    # flat | parent_child
+child_chunk_size: 400   # used only in parent_child mode
 
 # Judge gating (Premise 2): the judge stays demoted to a diagnostic until a calibration
 # rho >= judge_threshold is supplied (via `run-eval --judge-rho`).

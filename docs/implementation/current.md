@@ -18,7 +18,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-105 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
+114 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
 extras); every heavy dependency is lazy-imported so the base install stays importable.
 
 ## Dev setup
@@ -29,7 +29,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (one-time setup)
-    make test       # pytest (105 tests)
+    make test       # pytest (114 tests)
 
 Extras (`rag, eval, track, board, prep, telemetry, goldset, dev`) are all installed by
 `make venv`; trim with `EXTRAS=` (e.g. `make venv EXTRAS=rag,eval`). GitHub CI installs
@@ -59,8 +59,8 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       prep/gen_rag_items.py        # spec -> seed gold set
       prep/ingest_squad.py         # SQuAD-format (local or HF) -> canonical gold items
       judge/calibration.py         # Spearman rho + CI + trust decision + worksheet
-      rag/chunking.py              # fixed/sentence/recursive chunking -> RAG store
-      rag/{embedding,index,store}.py  # pinned embedder + FAISS index + retrievable store
+      rag/chunking.py              # fixed/sentence/recursive/markdown/semantic chunking (offset-exact)
+      rag/{embedding,index,store}.py  # pinned embedder + FAISS index + store (flat / parent-child)
       rag/retrieval.py             # recall@k / MRR by source-span overlap (pure)
       backends/{base,openai_client,ollama}.py  # launcher iface + chat call + Ollama
       backends/{hardware,prepare,planner}.py  # GPU/RAM detect + pull/cache + feasibility plan
@@ -68,7 +68,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
       executor/{vram,runner}.py    # VRAM gate + minimal sequential run-eval
-    tests/                         # 105 tests across the above
+    tests/                         # 114 tests across the above
 
 Runtime output (gitignored) under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), `runs/<run_name>/`
@@ -110,18 +110,26 @@ The current real set is `.data/llb/goldset/goldset_uk.jsonl` (250 items, splits
 cal=86/tun=82/fin=82, 239 corpus docs). All `verified: false` pending human review.
 
 ### RAG chunking / store builder — `llb.rag.chunking`
-Chunks a corpus with three strategies (pure-Python, no deps): `fixed` (char window +
-overlap), `sentence` (packs whole sentences, never cuts mid-sentence), `recursive`
-(paragraph -> sentence -> char). Each chunk carries `doc_id` + char offsets, so retrieval
-can be scored against source-span gold labels. `--embed` (with the `[rag]` extra) also
-builds a per-strategy FAISS index.
+Five strategies, every chunk anchored to `doc_id` + char offsets so retrieval scores against
+source-span gold labels. We reuse the langchain family where it preserves offsets, and roll
+our own where it does not (the span metric is the hard constraint):
+- `fixed`, `sentence` -- pure-Python (zero deps), the always-available fallbacks.
+- `recursive` -- langchain `RecursiveCharacterTextSplitter` (`add_start_index` -> exact
+  offsets); falls back to the pure paragraph->sentence->char split when `[rag]` is absent.
+- `markdown` -- structure-aware: headers parsed from the SOURCE (offset-exact), header
+  breadcrumbs recorded in chunk `metadata`, long sections sub-split recursively.
+- `semantic` -- native: embed sentences with the PINNED embedder, break at distance spikes
+  (offset-exact -- langchain's `SemanticChunker` rejoins text and loses offsets, so we do
+  not use it). Needs the embedder (`[rag]`).
 
-    make build-rag-store                       # chunk samples/corpus with all strategies
-    make build-rag-store CORPUS_DIR=path/      # your own corpus
+All langchain use is lazy; `fixed` / `sentence` / `markdown` work without `[rag]`. `--embed`
+(with `[rag]`) also builds a per-strategy FAISS index.
+
+    make build-rag-store                       # chunk samples/corpus, all strategies
     python -m llb.rag.chunking --corpus-root <dir> --out-dir .data/llb/rag \
-        --strategy recursive --size 800 --overlap 120 [--embed]
+        --strategy markdown --size 800 --overlap 120 [--embed]
 
-On the bundled IP doc: fixed 9 / sentence 9 / recursive 25 chunks -> `.data/llb/rag/chunks/`.
+On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 breadcrumbs).
 
 ### Judge calibration (M0.5 stats) — `llb.judge.calibration`
 Spearman rho (no scipy), bootstrap CI, trust decision (`rho >= 0.6` else demote). Two
@@ -185,6 +193,7 @@ run is reproducible from a single record. `RunConfig.load(path)` reads YAML (see
     llb prep-models                         # detect GPU; pull Ollama tags + cache vLLM weights
     llb list-models                         # which candidates can run here (GPU+RAM, context)
     llb build-index                         # chunk + embed the corpus -> FAISS store ([rag])
+    llb build-index --strategy markdown --mode parent_child   # structure-aware + parent-child
     llb validate-retrieval --k 10           # recall@k / MRR of the pinned embedding ([rag])
     llb run-eval --model llama3.2:3b        # one ranked row + manifest (Ollama + [rag,eval])
     llb run-eval --config samples/run_config_uk.yaml --judge-rho 0.7
@@ -223,6 +232,12 @@ launch (Milestone 2).
 index; `.retrieve(question, k)` returns chunk dicts (doc id + char offsets). `retrieval`
 scores recall@k / MRR by SOURCE-SPAN overlap -- it validates the embedding (Premise 4,
 recall@10 >= 0.8) and is reported as context, never as a model-ranking axis.
+
+Two retrieval modes (`--mode`): `flat` indexes the `chunk_size` chunks directly;
+`parent_child` indexes small `child_chunk_size` children for precise matching but returns
+their larger PARENT chunk for generation context (retrieve a child -> surface its parent,
+deduped). Both return offset-bearing chunks, so the span metric is mode-agnostic and Optuna
+can compare flat vs parent-child.
 
 ### Backends — `llb.backends.{base,openai_client,ollama}`
 `BackendLauncher` is the seam (Premise 1): all backends speak OpenAI-compatible HTTP, so

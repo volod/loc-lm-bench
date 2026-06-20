@@ -17,7 +17,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field
 
-Strategy = Literal["fixed", "sentence", "recursive"]
+Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
+RetrievalMode = Literal["flat", "parent_child"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
@@ -47,6 +48,12 @@ class RunConfig(BaseModel):
     chunk_size: int = 800
     chunk_overlap: int = 120
     top_k: int = 5
+
+    # Retrieval mode. "flat" indexes `chunk_size` chunks directly. "parent_child" indexes
+    # small `child_chunk_size` children for precise matching but returns their larger parent
+    # (the `chunk_size` chunk) for generation context.
+    retrieval_mode: RetrievalMode = "flat"
+    child_chunk_size: int = 400
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
     judge_model: str | None = None

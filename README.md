@@ -8,7 +8,7 @@ desktop GPU, so the choice is reproducible and defensible.
 > **Status:** early but runnable. Milestone 0 (data prep: gold-item schema, validator,
 > public-dataset ingestion, chunking) and Milestone 1 (the CUDA-free eval skeleton:
 > retrieve -> generate -> score -> ranked row + manifest, on one Ollama model) are **done
-> and tested** (105 tests). Milestones 2-3 (real backends + telemetry, two-tier screen +
+> and tested** (114 tests). Milestones 2-3 (real backends + telemetry, two-tier screen +
 > leaderboard) are planned — see the docs.
 
 ## Main features
@@ -19,8 +19,9 @@ desktop GPU, so the choice is reproducible and defensible.
   into the canonical gold-item schema.
 - **Source-span gold labels** (document char offsets, not chunk ids) — they survive
   `chunk_size` changes during tuning.
-- **Chunking strategies:** build a RAG store with `fixed` / `sentence` / `recursive` chunking
-  and compare them; optional FAISS index.
+- **Chunking strategies:** `fixed` / `sentence` / `recursive` / `markdown` (structure-aware)
+  / `semantic`, plus flat vs parent-child retrieval — all offset-exact, reusing
+  langchain-text-splitters where it preserves source spans.
 - **Backend-agnostic:** one OpenAI-compatible interface; the Ollama backend ships today
   (CUDA-free), with vLLM / llama.cpp + a per-model resolver planned.
 - **Hardware-aware:** `list-models` reports which candidates can run on your GPU + RAM,

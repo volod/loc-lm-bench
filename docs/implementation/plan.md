@@ -11,7 +11,7 @@ Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../d
 
 Milestones 0 and 1 are **complete** and documented in [`current.md`](current.md): the gold
 set + data-prep tooling (M0) and the CUDA-free eval skeleton + model prep / feasibility
-tooling (M1), 105 tests. This file is the FORWARD plan only -- Milestone 2 (one real backend
+tooling (M1), 114 tests. This file is the FORWARD plan only -- Milestone 2 (one real backend
 + telemetry) and Milestone 3 (two-tier screen, scale, rigor, board) -- plus the few M0/M1
 residuals that are blocked on a running backend or an undecided judge, each folded into the
 milestone that unblocks it. Completed detail moves to `current.md` as it lands.
@@ -70,6 +70,9 @@ estimates into a measured fit by actually serving a model.
 - **M3.4 `optimize/` two-stage Optuna.** Stage 1 tunes backend + RAG params on the disjoint
   tuning split (embedding PINNED, over-VRAM configs pruned, persistent SQLite); stage 2 scores
   the winning config on the full final split. Only the stage-2 run is the leaderboard entry.
+  The RAG search space already exists (built in M1): chunking strategy
+  {fixed, sentence, recursive, markdown, semantic} x chunk_size/overlap x top_k x
+  retrieval_mode {flat, parent_child} x child_chunk_size.
 - **M3.5 `prep/` frontier utils.** `prepare-goldset` (draft-for-review triples) and
   `prepare-synthetic-corpus` (structured planted labels, planter != judge) via litellm. No
   GPU -- fully independent lane.
@@ -104,6 +107,12 @@ estimates into a measured fit by actually serving a model.
   follow the same node-closure shape. They land WITH the text-analysis benchmark, whose
   scoring SCHEMA (what counts as recovering a trend / topic / narrative) is an open question
   to settle first. Building them now would be speculative against an undefined consumer.
+- **Knowledge-graph / ontology RAG (GraphRAG).** A deliberate expansion beyond the v1 wedge
+  (the spec chose "small custom + FAISS"). Feasible with langchain `LLMGraphTransformer` or
+  LlamaIndex `PropertyGraphIndex` + a graph store (Neo4j / in-memory) + an extraction LLM;
+  the ontology is a constrained node/relationship schema. Heavy deps + an extraction LLM in
+  the pipeline, so it needs a scoped milestone + sign-off before building. (The langchain
+  chunking strategies and flat + parent-child retrieval are already built in M1.)
 
 ## Critical modules still to build (`src/llb/`)
 
