@@ -11,11 +11,13 @@ No third-party stats deps: Spearman is Pearson over average ranks; CI is a boots
 import argparse
 import csv
 import json
+import logging
 import random
 import sys
 from pathlib import Path
 
 DEFAULT_THRESHOLD = 0.6
+_LOG = logging.getLogger(__name__)
 
 
 def _average_ranks(values: list[float]) -> list[float]:
@@ -188,20 +190,22 @@ def main(argv: list[str] | None = None) -> int:
 
         items = [it.model_dump() for it in load_goldset(args.goldset)]
         n = emit_worksheet(items, args.out)
-        print(f"[calibration] wrote worksheet: {n} calibration rows -> {args.out}")
+        _LOG.info("[calibration] wrote worksheet: %d calibration rows -> %s", n, args.out)
         return 0
 
     human, judge = _load_ratings(args.ratings)
     if len(human) < 2:
-        print("[calibration] ERROR: need >= 2 filled rating pairs", file=sys.stderr)
+        _LOG.error("[calibration] ERROR: need >= 2 filled rating pairs")
         return 1
     result = calibrate(human, judge, args.threshold)
-    print(
+    _LOG.info(
         "[calibration] rho={rho:.3f} ci=[{ci_low:.3f},{ci_high:.3f}] "
-        "n={n} threshold={threshold} trusted={trusted}".format(**result)
+        "n={n} threshold={threshold} trusted={trusted}".format(**result),
     )
     if not result["trusted"]:
-        print("[calibration] judge NOT trusted -> demote to diagnostic; objective scores rank.")
+        _LOG.info(
+            "[calibration] judge NOT trusted -> demote to diagnostic; objective scores rank."
+        )
     return 0
 
 

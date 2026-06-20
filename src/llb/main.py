@@ -18,13 +18,20 @@ import typer
 
 from llb.config import RunConfig
 
-app = typer.Typer(add_completion=False, help="loc-lm-bench: local Ukrainian LLM benchmark.")
+app = typer.Typer(
+    add_completion=False,
+    rich_markup_mode=None,
+    help="loc-lm-bench: local Ukrainian LLM benchmark.",
+)
 
 
 def _load_config(config_path: Optional[Path], **overrides) -> RunConfig:
-    base = RunConfig.load(config_path) if config_path else RunConfig()
-    clean = {k: v for k, v in overrides.items() if v is not None}
-    return base.model_copy(update=clean) if clean else base
+    try:
+        base = RunConfig.load(config_path) if config_path else RunConfig()
+        return base.with_overrides(**overrides)
+    except ValueError as exc:
+        typer.echo(f"[error] invalid run config: {exc}", err=True)
+        raise typer.Exit(code=2) from None
 
 
 def _load_models(manifest: Path):
@@ -189,11 +196,15 @@ def run_eval_cmd(
     judge_rho: Optional[float] = typer.Option(
         None, help="calibration Spearman rho; judge stays demoted below the threshold"
     ),
-    score_semantic: bool = typer.Option(
-        False, help="also record an embedding-similarity correctness signal"
+    score_semantic: Optional[bool] = typer.Option(
+        None,
+        "--score-semantic/--no-score-semantic",
+        help="enable or disable the embedding-similarity correctness signal",
     ),
-    telemetry: bool = typer.Option(
-        False, help="also measure steady-state tokens/sec + peak VRAM and record it"
+    telemetry: Optional[bool] = typer.Option(
+        None,
+        "--telemetry/--no-telemetry",
+        help="enable or disable steady-state throughput and peak-VRAM telemetry",
     ),
     worksheet: Optional[Path] = typer.Option(
         None, help="emit a judge-calibration worksheet pre-filled with answers "
@@ -205,7 +216,7 @@ def run_eval_cmd(
 
     cfg = _load_config(
         config, model=model, backend=backend, goldset_path=goldset,
-        score_semantic=score_semantic or None, measure_telemetry=telemetry or None,
+        score_semantic=score_semantic, measure_telemetry=telemetry,
     )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
 

@@ -26,6 +26,7 @@ Add `--embed` (needs `[rag]`) to also build a FAISS index per strategy.
 
 import argparse
 import json
+import logging
 import re
 import sys
 from collections.abc import Iterator
@@ -36,6 +37,17 @@ STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic")
 
 _TERM = re.compile(r"[.!?…]+")
 _CLOSERS = "”»\")]’"
+_LOG = logging.getLogger(__name__)
+
+
+def validate_chunking(size: int, overlap: int) -> None:
+    """Validate invariants shared by every chunking implementation."""
+    if size <= 0:
+        raise ValueError("size must be > 0")
+    if overlap < 0:
+        raise ValueError("overlap must be >= 0")
+    if overlap >= size:
+        raise ValueError("overlap must be smaller than size")
 
 
 def sentence_spans(text: str) -> list[tuple[int, int]]:
@@ -68,9 +80,7 @@ def paragraph_spans(text: str) -> list[tuple[int, int]]:
 
 
 def fixed_spans(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
-    if size <= 0:
-        raise ValueError("size must be > 0")
-    overlap = max(0, min(overlap, size - 1))
+    validate_chunking(size, overlap)
     step = size - overlap
     spans: list[tuple[int, int]] = []
     i, n = 0, len(text)
@@ -238,6 +248,7 @@ def chunk_spans(
     text: str, strategy: str, size: int, overlap: int, embedder=None
 ) -> list[tuple[int, int, dict]]:
     """Unified (start, end, metadata) spans for a strategy."""
+    validate_chunking(size, overlap)
     if strategy == "fixed":
         return [(s, e, {}) for s, e in fixed_spans(text, size, overlap)]
     if strategy == "sentence":
@@ -308,10 +319,10 @@ def build_faiss(chunks: list[dict], model_name: str, index_dir: Path, strategy: 
         import numpy as np
         from sentence_transformers import SentenceTransformer
     except ImportError:
-        print(
-            f"[build-rag-store] --embed needs the [rag] extra "
-            f"(sentence-transformers, faiss). Skipping '{strategy}'.",
-            file=sys.stderr,
+        _LOG.warning(
+            "[build-rag-store] --embed needs the [rag] extra "
+            "(sentence-transformers, faiss). Skipping '%s'.",
+            strategy,
         )
         return
     index_dir.mkdir(parents=True, exist_ok=True)
@@ -323,7 +334,12 @@ def build_faiss(chunks: list[dict], model_name: str, index_dir: Path, strategy: 
     index = faiss.IndexFlatIP(vectors.shape[1])
     index.add(vectors)
     faiss.write_index(index, str(index_dir / f"{strategy}.faiss"))
-    print(f"[build-rag-store] embedded {len(chunks)} chunks -> {strategy}.faiss (dim {vectors.shape[1]})")
+    _LOG.info(
+        "[build-rag-store] embedded %d chunks -> %s.faiss (dim %d)",
+        len(chunks),
+        strategy,
+        vectors.shape[1],
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -347,17 +363,21 @@ def main(argv: list[str] | None = None) -> int:
 
             embedder = Embedder(args.model)
         except ImportError:
-            print(
+            _LOG.warning(
                 "[build-rag-store] 'semantic' needs the [rag] extra "
-                "(sentence-transformers); skipping it.",
-                file=sys.stderr,
+                "(sentence-transformers); skipping it."
             )
             strategies = [s for s in strategies if s != "semantic"]
     chunks_dir = args.out_dir / "chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[build-rag-store] corpus={args.corpus_root} size={args.size} overlap={args.overlap}")
-    print(f"  {'strategy':<10} {'chunks':>7} {'avg':>6} {'min':>6} {'max':>6}")
+    _LOG.info(
+        "[build-rag-store] corpus=%s size=%d overlap=%d",
+        args.corpus_root,
+        args.size,
+        args.overlap,
+    )
+    _LOG.info("  %-10s %7s %6s %6s %6s", "strategy", "chunks", "avg", "min", "max")
     for strategy in strategies:
         chunks = chunk_corpus(args.corpus_root, strategy, args.size, args.overlap, embedder)
         out_path = chunks_dir / f"{strategy}.jsonl"
@@ -365,11 +385,18 @@ def main(argv: list[str] | None = None) -> int:
             for chunk in chunks:
                 fh.write(json.dumps(chunk, ensure_ascii=False) + "\n")
         s = summarize(chunks)
-        print(f"  {strategy:<10} {s['n']:>7} {s['avg']:>6} {s['min']:>6} {s['max']:>6}")
+        _LOG.info(
+            "  %-10s %7d %6d %6d %6d",
+            strategy,
+            s["n"],
+            s["avg"],
+            s["min"],
+            s["max"],
+        )
         if args.embed:
             build_faiss(chunks, args.model, args.out_dir / "index", strategy)
 
-    print(f"[build-rag-store] chunks written -> {chunks_dir}")
+    _LOG.info("[build-rag-store] chunks written -> %s", chunks_dir)
     return 0
 
 

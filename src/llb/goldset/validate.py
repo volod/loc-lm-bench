@@ -6,17 +6,20 @@ ids are unique, and each id lands in exactly one split.
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from llb.goldset.schema import GoldItem, load_goldset
+
+_LOG = logging.getLogger(__name__)
 
 
 def validate_items(items: list[GoldItem], corpus_root: Path) -> dict:
     """Return a report dict: {n, splits, errors}. Empty errors == PASS."""
     corpus_root = Path(corpus_root)
     errors: list[str] = []
-    cache: dict[str, str] = {}
+    cache: dict[str, str | None] = {}
     seen_split: dict[str, str] = {}
     splits: dict[str, int] = {}
 
@@ -28,7 +31,7 @@ def validate_items(items: list[GoldItem], corpus_root: Path) -> dict:
                 path = corpus_root / span.doc_id
                 if not path.exists():
                     errors.append(f"{item.id}: missing corpus doc {span.doc_id}")
-                    cache[span.doc_id] = None  # type: ignore[assignment]
+                    cache[span.doc_id] = None
                     continue
                 cache[span.doc_id] = path.read_text(encoding="utf-8")
             text = cache[span.doc_id]
@@ -54,13 +57,13 @@ def main(argv: list[str] | None = None) -> int:
 
     items = load_goldset(args.goldset)
     report = validate_items(items, args.corpus_root)
-    print(f"[validate] items={report['n']} splits={report['splits']}")
+    _LOG.info("[validate] items=%s splits=%s", report["n"], report["splits"])
     if report["errors"]:
         for err in report["errors"][:50]:
-            print(f"[validate] ERROR: {err}", file=sys.stderr)
-        print(f"[validate] FAIL ({len(report['errors'])} errors)", file=sys.stderr)
+            _LOG.error("[validate] ERROR: %s", err)
+        _LOG.error("[validate] FAIL (%d errors)", len(report["errors"]))
         return 1
-    print("[validate] PASS")
+    _LOG.info("[validate] PASS")
     return 0
 
 

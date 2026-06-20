@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from llb.tracking.manifest import RunManifest, persist_run, write_scores
 
 
@@ -44,3 +46,9 @@ def test_mirror_failure_does_not_lose_run(tmp_path):
     assert paths["mirror"].startswith("failed")
     data = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert data["run_id"] == "abc123"
+
+
+def test_existing_canonical_run_is_not_overwritten(tmp_path):
+    persist_run(make_manifest(), [{"item_id": "x"}], tmp_path, mirror=lambda *args: None)
+    with pytest.raises(FileExistsError, match="already exist"):
+        persist_run(make_manifest(), [{"item_id": "y"}], tmp_path, mirror=lambda *args: None)

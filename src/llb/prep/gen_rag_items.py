@@ -11,12 +11,15 @@ Run via `scripts/gen_rag_items.sh` or `make gen-rag-items`, or directly:
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.validate import validate_items
+
+_LOG = logging.getLogger(__name__)
 
 
 def load_spec(spec_path: Path) -> dict[str, Any]:
@@ -97,13 +100,16 @@ def main(argv: list[str] | None = None) -> int:
     report = validate_items(items, corpus_root)
     if report["errors"]:
         for err in report["errors"]:
-            print(f"[gen_rag_items] ERROR: {err}", file=sys.stderr)
+            _LOG.error("[gen_rag_items] ERROR: %s", err)
         return 1
 
     splits = report["splits"]
-    print(f"[gen_rag_items] wrote {len(items)} items -> {out_path}")
-    print(f"[gen_rag_items] corpus docs -> {corpus_root}")
-    print("[gen_rag_items] splits: " + ", ".join(f"{k}={splits[k]}" for k in sorted(splits)))
+    _LOG.info("[gen_rag_items] wrote %d items -> %s", len(items), out_path)
+    _LOG.info("[gen_rag_items] corpus docs -> %s", corpus_root)
+    _LOG.info(
+        "[gen_rag_items] splits: %s",
+        ", ".join(f"{key}={splits[key]}" for key in sorted(splits)),
+    )
     return 0
 
 

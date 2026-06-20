@@ -27,6 +27,12 @@ def test_fixed_covers_and_respects_size():
     assert spans[0][0] == 0 and spans[-1][1] == 100
 
 
+@pytest.mark.parametrize("size,overlap", [(0, 0), (10, -1), (10, 10), (10, 11)])
+def test_chunking_rejects_invalid_window(size, overlap):
+    with pytest.raises(ValueError):
+        chunk_text(TEXT, "d.txt", "fixed", size=size, overlap=overlap)
+
+
 def test_sentence_never_cuts_midsentence():
     spans = sentence_chunk_spans(TEXT, size=20)
     sentence_ends = {end for _, end in sentence_spans(TEXT)}

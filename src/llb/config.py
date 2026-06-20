@@ -13,10 +13,13 @@ Load from YAML with `RunConfig.load(path)`; unset fields fall back to these defa
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from llb.paths import load_project_env, resolve_data_dir, resolve_project_path
 
 Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
 RetrievalMode = Literal["flat", "parent_child"]
@@ -25,30 +28,43 @@ Backend = Literal["ollama", "vllm", "llamacpp"]
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+DEFAULT_VLLM_HOST = "http://localhost:8000"
+RUN_EVAL_METHOD = "run-eval"
+
+
+def _environment_value(name: str, default: str) -> str:
+    load_project_env()
+    return os.environ.get(name, default)
 
 
 class RunConfig(BaseModel):
     """Everything needed to reproduce one (model, config) evaluation."""
 
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     # Identity
-    run_name: str = "m1-skeleton"
+    run_name: str = Field(default="m1-skeleton", min_length=1)
     seed: int = 13
 
     # Model + backend (v1: backend resolved per model; M1 ships Ollama, M2 adds vLLM)
-    model: str = "llama3.2:3b"
+    model: str = Field(default="llama3.2:3b", min_length=1)
     backend: Backend = "ollama"
-    ollama_host: str = Field(default_factory=lambda: os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST))
-    request_timeout_s: float = 120.0
-    max_tokens: int = 512
-    temperature: float = 0.0
-    n_shot: int = 0  # fixed + recorded across compared models (avoids 0-shot/3-shot mixing)
+    ollama_host: str = Field(
+        default_factory=lambda: _environment_value("OLLAMA_HOST", DEFAULT_OLLAMA_HOST)
+    )
+    request_timeout_s: float = Field(default=120.0, gt=0)
+    max_tokens: int = Field(default=512, ge=1)
+    temperature: float = Field(default=0.0, ge=0)
+    n_shot: int = Field(default=0, ge=0)
 
     # vLLM serving (used when backend == "vllm"). gpu_memory_utilization is recorded so peak
     # VRAM is comparable across runs (vLLM pre-reserves a KV-cache fraction).
-    vllm_host: str = "http://localhost:8000"
-    vllm_port: int = 8000
-    gpu_memory_utilization: float = 0.85  # 16 GB class default (see spec planning table)
-    max_model_len: int | None = None
+    vllm_host: str = Field(
+        default_factory=lambda: _environment_value("VLLM_HOST", DEFAULT_VLLM_HOST)
+    )
+    vllm_port: int = Field(default=8000, ge=1, le=65535)
+    gpu_memory_utilization: float = Field(default=0.85, gt=0, le=1)
+    max_model_len: int | None = Field(default=None, ge=1)
     dtype: str = "auto"
     quantization: str | None = None
 
@@ -59,19 +75,19 @@ class RunConfig(BaseModel):
     # Retrieval (embedding pinned; chunking + top_k are tunable later via Optuna)
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     strategy: Strategy = "recursive"
-    chunk_size: int = 800
-    chunk_overlap: int = 120
-    top_k: int = 5
+    chunk_size: int = Field(default=800, ge=1)
+    chunk_overlap: int = Field(default=120, ge=0)
+    top_k: int = Field(default=5, ge=1)
 
     # Retrieval mode. "flat" indexes `chunk_size` chunks directly. "parent_child" indexes
     # small `child_chunk_size` children for precise matching but returns their larger parent
     # (the `chunk_size` chunk) for generation context.
     retrieval_mode: RetrievalMode = "flat"
-    child_chunk_size: int = 400
+    child_chunk_size: int = Field(default=400, ge=1)
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
     judge_model: str | None = None
-    judge_threshold: float = 0.6
+    judge_threshold: float = Field(default=0.6, ge=-1, le=1)
 
     # Add a semantic-similarity correctness signal (uses the pinned embedder; recorded,
     # not blended into the headline score). Off by default -- it embeds every answer.
@@ -82,18 +98,63 @@ class RunConfig(BaseModel):
     corpus_root: Path = Path(".data/llb/corpus")
     goldset_path: Path = Path(".data/llb/goldset/goldset_uk.jsonl")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_paths(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        values = dict(raw)
+        data_dir = resolve_data_dir(values.get("data_dir"))
+        values["data_dir"] = data_dir
+        values["corpus_root"] = (
+            resolve_project_path(values["corpus_root"])
+            if values.get("corpus_root") is not None
+            else data_dir / "llb" / "corpus"
+        )
+        values["goldset_path"] = (
+            resolve_project_path(values["goldset_path"])
+            if values.get("goldset_path") is not None
+            else data_dir / "llb" / "goldset" / "goldset_uk.jsonl"
+        )
+        return values
+
+    @model_validator(mode="after")
+    def _validate_cross_field_constraints(self) -> "RunConfig":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
+        if self.retrieval_mode == "parent_child" and self.chunk_overlap >= self.child_chunk_size:
+            raise ValueError("chunk_overlap must be smaller than child_chunk_size")
+        if self.backend == "vllm":
+            try:
+                endpoint = urlsplit(self.vllm_host)
+                endpoint_port = endpoint.port or (443 if endpoint.scheme == "https" else 80)
+            except ValueError as exc:
+                raise ValueError(f"invalid vllm_host: {self.vllm_host}") from exc
+            if not endpoint.scheme or not endpoint.hostname:
+                raise ValueError(f"invalid vllm_host: {self.vllm_host}")
+            if endpoint_port != self.vllm_port:
+                raise ValueError(
+                    f"vllm_host port ({endpoint_port}) must match vllm_port ({self.vllm_port})"
+                )
+        return self
+
     def index_dir(self) -> Path:
         """Where the built RAG store (chunks + FAISS index) lives for this config."""
         return self.data_dir / "llb" / "rag"
 
-    def run_dir(self) -> Path:
-        """Per-run artifact root: $DATA_DIR/llb/runs/<run_name>/."""
-        return self.data_dir / "llb" / "runs" / self.run_name
+    def run_dir(self, run_timestamp: str) -> Path:
+        """Per-run artifact root: ``$DATA_DIR/run-eval/<run_timestamp>/``."""
+        if not run_timestamp or Path(run_timestamp).name != run_timestamp:
+            raise ValueError("run_timestamp must be a non-empty path segment")
+        return self.data_dir / RUN_EVAL_METHOD / run_timestamp
 
     @classmethod
     def load(cls, path: Path | str) -> "RunConfig":
         """Load a YAML config; missing keys fall back to defaults."""
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        try:
+            data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise ValueError(f"{path}: cannot load config: {exc}") from exc
         if not isinstance(data, dict):
             raise ValueError(f"{path}: expected a mapping at the top level")
         return cls.model_validate(data)
@@ -101,3 +162,16 @@ class RunConfig(BaseModel):
     def fingerprint(self) -> dict:
         """The reproducibility-relevant subset, for the run manifest."""
         return self.model_dump(mode="json")
+
+    def with_overrides(self, **overrides: Any) -> "RunConfig":
+        """Return a fully revalidated copy with non-None overrides applied."""
+        clean = {key: value for key, value in overrides.items() if value is not None}
+        if not clean:
+            return self
+        values = self.model_dump()
+        if "data_dir" in clean:
+            if self.corpus_root == self.data_dir / "llb" / "corpus":
+                values.pop("corpus_root")
+            if self.goldset_path == self.data_dir / "llb" / "goldset" / "goldset_uk.jsonl":
+                values.pop("goldset_path")
+        return type(self).model_validate({**values, **clean})

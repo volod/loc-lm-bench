@@ -14,6 +14,7 @@ import argparse
 import ast
 import hashlib
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ from pathlib import Path
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items
+
+_LOG = logging.getLogger(__name__)
 
 
 def _doc_id(context: str) -> str:
@@ -203,13 +206,15 @@ def main(argv: list[str] | None = None) -> int:
     dump_goldset(items, out_path)
 
     report = validate_items(items, corpus_root)
-    print(f"[ingest_squad] wrote {len(items)} items ({skipped} skipped) -> {out_path}")
-    print(f"[ingest_squad] splits={report['splits']}")
+    _LOG.info(
+        "[ingest_squad] wrote %d items (%d skipped) -> %s", len(items), skipped, out_path
+    )
+    _LOG.info("[ingest_squad] splits=%s", report["splits"])
     if report["errors"]:
         for err in report["errors"][:20]:
-            print(f"[ingest_squad] ERROR: {err}", file=sys.stderr)
+            _LOG.error("[ingest_squad] ERROR: %s", err)
         return 1
-    print("[ingest_squad] validation PASS")
+    _LOG.info("[ingest_squad] validation PASS")
     return 0
 
 

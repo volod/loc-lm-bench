@@ -34,7 +34,8 @@ The launcher starts `vllm serve <model>` (controlling `--gpu-memory-utilization`
 kills the server. `--telemetry` adds a steady-state pass and records into the manifest:
 **tokens/sec** (fixed prompt set + warmup), **cold-start load time** (separate from
 throughput), **peak VRAM** (NVML), **requested vs served context**, and **tokenizer
-efficiency** (tokens per UA char). vLLM logs land under `.data/llb/runs/<run>/vllm/`.
+efficiency** (tokens per UA char). vLLM logs land under
+`$DATA_DIR/run-eval/<UTC timestamp>-<run id>/vllm/`.
 
 ## Config
 

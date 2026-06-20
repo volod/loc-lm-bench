@@ -1,6 +1,7 @@
 import types
 
 import openai
+import pytest
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
 from llb.backends.openai_client import chat_once
@@ -38,8 +39,9 @@ def test_connection_error_maps_to_backend_error():
     assert chat_once(client_with(create), "m", []).error == ERR_BACKEND
 
 
-def test_unexpected_exception_maps_to_backend_error():
+def test_unexpected_exception_is_not_hidden_as_transport_failure():
     def create(**kwargs):
         raise ValueError("boom")
 
-    assert chat_once(client_with(create), "m", []).error == ERR_BACKEND
+    with pytest.raises(ValueError, match="boom"):
+        chat_once(client_with(create), "m", [])

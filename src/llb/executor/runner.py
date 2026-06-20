@@ -11,59 +11,52 @@ LangGraph app.
 """
 
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from llb.config import RunConfig
 from llb.eval import graph as eval_graph
+from llb.executor.cases import execute_cases, spans_as_dicts
+from llb.executor.reporting import emit_summary
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.rag import retrieval
-from llb.scoring import correctness
 from llb.scoring.aggregate import ModelResult, format_table, rank_results
 from llb.scoring.judge import judge_is_trusted
 from llb.tracking.manifest import RunManifest, persist_run
 
 RagState = eval_graph.RagState
+_RUN_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
 
 
 def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[GoldItem]:
-    items = [it for it in load_goldset(config.goldset_path) if it.split == split]
+    items = [
+        item
+        for item in load_goldset(config.goldset_path)
+        if item.split == split and item.verified
+    ]
     items.sort(key=lambda it: it.id)
-    return items[:limit] if limit else items
+    return items[:limit] if limit is not None else items
 
 
-def _spans_as_dicts(item: GoldItem) -> list[dict]:
-    return [s.model_dump() for s in item.source_spans]
+def _select_eval_items(
+    config: RunConfig,
+    items: list[GoldItem] | None,
+    split: str,
+    limit: int | None,
+) -> list[GoldItem]:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1")
+    if items is None:
+        return _load_eval_items(config, split, limit)
+    selected = sorted(
+        (item for item in items if item.split == split and item.verified),
+        key=lambda item: item.id,
+    )
+    return selected[:limit] if limit is not None else selected
 
 
-def score_case(item: GoldItem, state: RagState, embedder=None) -> dict:
-    """One per-case score row from a terminal graph state."""
-    answer = state.get("answer", "")
-    status = state.get("status", eval_graph.OK)
-    spans = _spans_as_dicts(item)
-    retrieved = state.get("retrieved", [])
-    corr = correctness.answer_correctness(answer, item.reference_answer, embedder=embedder)
-    usage = state.get("usage", {})
-    row = {
-        "item_id": item.id,
-        "split": item.split,
-        "status": status,
-        "objective_score": corr["score"],
-        "token_f1": corr["token_f1"],
-        "exact": corr["exact"],
-        "contains": corr["contains"],
-        "retrieval_hit": retrieval.recall_at_k(retrieved, spans, len(retrieved)),
-        "first_hit_rank": retrieval.first_hit_rank(retrieved, spans),
-        "tokens_per_s": usage.get("tokens_per_s", 0.0),
-        "latency_s": usage.get("latency_s", 0.0),
-        "completion_tokens": usage.get("completion_tokens", 0),
-        "answer_preview": (answer or "")[:280],
-    }
-    if "semantic" in corr:
-        row["semantic"] = corr["semantic"]
-    return row
-
-
-def _make_launcher(config: RunConfig):
+def _make_launcher(config: RunConfig, log_dir: Path | None = None):
     if config.backend == "ollama":
         from llb.backends.ollama import OllamaLauncher
 
@@ -75,7 +68,7 @@ def _make_launcher(config: RunConfig):
             config.model, host=config.vllm_host, port=config.vllm_port,
             gpu_memory_utilization=config.gpu_memory_utilization,
             max_model_len=config.max_model_len, dtype=config.dtype,
-            quantization=config.quantization, log_dir=config.run_dir() / "vllm",
+            quantization=config.quantization, log_dir=log_dir,
         )
     raise SystemExit(
         f"backend '{config.backend}' is not wired yet (Ollama + vLLM supported)."
@@ -99,7 +92,7 @@ def _default_runner_fn(config: RunConfig, store, launcher) -> Callable[[GoldItem
     )
 
     def run(item: GoldItem) -> RagState:
-        return eval_graph.run_case(app, item.question, _spans_as_dicts(item))
+        return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
     return run
 
@@ -111,7 +104,8 @@ def _aggregate(config: RunConfig, case_rows: list[dict], judge_rho: float | None
     ok = [r for r in case_rows if r["status"] == eval_graph.OK]
     reliability = len(ok) / n if n else 0.0
     tok_rates = [r["tokens_per_s"] for r in ok if r["tokens_per_s"] > 0]
-    tokens_per_s = sum(tok_rates) / len(tok_rates) if tok_rates else 0.0
+    observed_tokens_per_s = sum(tok_rates) / len(tok_rates) if tok_rates else 0.0
+    tokens_per_s = telemetry.get("steady_tokens_per_s") or observed_tokens_per_s
     result = ModelResult(
         model=config.model,
         backend=config.backend,
@@ -133,6 +127,24 @@ def _aggregate(config: RunConfig, case_rows: list[dict], judge_rho: float | None
     return rows, metrics
 
 
+def _run_timestamp(run_id: str) -> str:
+    now = datetime.now(timezone.utc).strftime(_RUN_TIMESTAMP_FORMAT)
+    return f"{now}-{run_id}"
+
+
+def _collect_optional_telemetry(config: RunConfig, launcher) -> dict:
+    if not config.measure_telemetry:
+        return {}
+    from llb.backends.telemetry import collect_telemetry
+
+    return collect_telemetry(
+        launcher,
+        requested_context=config.max_model_len,
+        timeout=config.request_timeout_s,
+        vram_reader=_vram_reader(),
+    )
+
+
 def run_eval(
     config: RunConfig,
     *,
@@ -152,13 +164,15 @@ def run_eval(
     `worksheet` (a path) emits a judge-calibration worksheet pre-filled with this run's
     model answers (the human only adds ratings); pair it with `split="calibration"`.
     """
-    if items is None:
-        items = _load_eval_items(config, split, limit)
+    items = _select_eval_items(config, items, split, limit)
     if not items:
-        raise SystemExit(f"no '{split}' items in {config.goldset_path}")
+        raise SystemExit(f"no verified '{split}' items in {config.goldset_path}")
 
+    run_id = uuid.uuid4().hex[:12]
+    run_timestamp = _run_timestamp(run_id)
+    run_dir = config.run_dir(run_timestamp)
     if launcher is None:
-        launcher = _make_launcher(config)
+        launcher = _make_launcher(config, log_dir=run_dir / "vllm")
     if runner_fn is None:
         if store is None:
             from llb.rag.store import RagStore
@@ -168,30 +182,17 @@ def run_eval(
 
     embedder = store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
 
-    case_rows: list[dict] = []
-    retrieval_pairs: list[tuple[list[dict], list[dict]]] = []
-    answers: list[tuple[GoldItem, str]] = []
-    telemetry_report: dict = {}
     with launcher:
-        for item in items:
-            state = runner_fn(item)
-            case_rows.append(score_case(item, state, embedder=embedder))
-            retrieval_pairs.append((state.get("retrieved", []), _spans_as_dicts(item)))
-            answers.append((item, state.get("answer", "")))
-        if config.measure_telemetry:
-            from llb.backends.telemetry import collect_telemetry
+        batch = execute_cases(items, runner_fn, embedder)
+        telemetry_report = _collect_optional_telemetry(config, launcher)
 
-            telemetry_report = collect_telemetry(
-                launcher, requested_context=config.max_model_len,
-                timeout=config.request_timeout_s, vram_reader=_vram_reader(),
-            )
-
-    telemetry = launcher.telemetry() if hasattr(launcher, "telemetry") else {}
-    rows, metrics = _aggregate(config, case_rows, judge_rho, telemetry)
-    retrieval_metrics = retrieval.evaluate_retrieval(retrieval_pairs, config.top_k)
+    backend_telemetry = launcher.telemetry() if hasattr(launcher, "telemetry") else {}
+    effective_telemetry = {**backend_telemetry, **telemetry_report}
+    rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry)
+    retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
     manifest = RunManifest(
-        run_id=uuid.uuid4().hex[:12],
+        run_id=run_id,
         run_name=config.run_name,
         config=config.fingerprint(),
         metrics=metrics,
@@ -202,32 +203,29 @@ def run_eval(
             "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
         },
         telemetry=telemetry_report,
-        n_cases=len(case_rows),
+        n_cases=len(batch.rows),
     )
-    paths = persist_run(manifest, case_rows, config.run_dir(), mirror=mirror)
+    paths = persist_run(manifest, batch.rows, run_dir, mirror=mirror)
 
+    worksheet_rows = 0
     if worksheet is not None:
         from llb.judge.calibration import write_filled_worksheet
 
-        n = write_filled_worksheet(answers, worksheet)
+        worksheet_rows = write_filled_worksheet(batch.answers, worksheet)
         paths["worksheet"] = str(worksheet)
 
     table = format_table(rows)
     if emit:
-        print(f"[run-eval] model={config.model} backend={config.backend} "
-              f"cases={len(case_rows)}")
-        print(f"[run-eval] retrieval: recall@{config.top_k}="
-              f"{retrieval_metrics['recall_at_k']:.3f} mrr={retrieval_metrics['mrr']:.3f}")
-        print(table)
-        if telemetry_report:
-            print(f"[run-eval] telemetry: {telemetry_report['steady_tokens_per_s']} tok/s "
-                  f"(load {telemetry_report['load_time_s']}s, peak VRAM "
-                  f"{telemetry_report['peak_vram_mb']} MB, served ctx "
-                  f"{telemetry_report['served_context']})")
-        print(f"[run-eval] manifest -> {paths['manifest']}")
-        print(f"[run-eval] scores   -> {paths['scores']} (mirror: {paths['mirror']})")
-        if worksheet is not None:
-            print(f"[run-eval] worksheet -> {worksheet} ({n} rows; add human_rating)")
+        emit_summary(
+            config,
+            len(batch.rows),
+            retrieval_metrics,
+            table,
+            telemetry_report,
+            paths,
+            worksheet,
+            worksheet_rows,
+        )
     return {"rows": rows, "metrics": metrics, "retrieval": retrieval_metrics,
             "paths": paths, "table": table, "telemetry": telemetry_report,
-            "manifest": manifest}
+            "manifest": manifest, "run_timestamp": run_timestamp}

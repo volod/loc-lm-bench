@@ -11,14 +11,18 @@ and "mirror failure does not lose data" are both unit-testable without MLflow.
 """
 
 import json
+import logging
 import os
 import platform
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from pydantic import BaseModel, Field
+
+_LOG = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -57,12 +61,20 @@ def write_scores(rows: list[dict], path_no_ext: Path) -> Path:
         import pyarrow.parquet as pq
     except ImportError:
         out = path_no_ext.with_suffix(".jsonl")
-        with out.open("w", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+        _atomic_write_text(out, content)
         return out
     out = path_no_ext.with_suffix(".parquet")
-    pq.write_table(pa.Table.from_pylist(rows), str(out))
+    with tempfile.NamedTemporaryFile(
+        dir=out.parent, prefix=f".{out.name}.", suffix=".tmp", delete=False
+    ) as temp:
+        temp_path = Path(temp.name)
+    try:
+        pq.write_table(pa.Table.from_pylist(rows), str(temp_path))
+        temp_path.replace(out)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
     return out
 
 
@@ -77,8 +89,12 @@ def persist_run(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = out_dir / "manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
+    score_paths = (out_dir / "scores.jsonl", out_dir / "scores.parquet")
+    if manifest_path.exists() or any(path.exists() for path in score_paths):
+        raise FileExistsError(f"run artifacts already exist in {out_dir}")
+    _atomic_write_text(
+        manifest_path,
+        json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
     )
     scores_path = write_scores(case_rows, out_dir / "scores")
 
@@ -103,7 +119,7 @@ def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:
     try:
         import mlflow
     except ImportError:
-        print("[tracking] mlflow not installed; skipping mirror (canonical record on disk).")
+        _LOG.info("[tracking] mlflow not installed; skipping mirror (canonical record on disk).")
         return
     # MLflow 3.x deprecated the local file store and raises unless opted in. The design
     # explicitly allows local file/SQLite mode (no server), so we opt in.
@@ -122,3 +138,25 @@ def _scalar(value) -> bool:
 
 def _numeric(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Atomically replace ``path`` with UTF-8 text using a sibling temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp:
+            temp.write(content)
+            temp_path = Path(temp.name)
+        temp_path.replace(path)
+    except BaseException:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise

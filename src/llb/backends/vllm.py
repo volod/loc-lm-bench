@@ -115,6 +115,7 @@ class VllmLauncher(BackendLauncher):
         self._client = None
         self._served_context = None
         self._last: ChatResult | None = None
+        self._log_handle = None
         self.log_path = None
 
     def command(self) -> list[str]:
@@ -130,30 +131,36 @@ class VllmLauncher(BackendLauncher):
             return subprocess.DEVNULL
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.log_dir / f"vllm-{self.port}.log"
-        return self.log_path.open("w", encoding="utf-8")
+        self._log_handle = self.log_path.open("w", encoding="utf-8")
+        return self._log_handle
 
     def start(self) -> None:
+        if self._proc is not None:
+            raise RuntimeError("vLLM launcher is already started")
         log = self._open_log()
         start = time.monotonic()
-        self._proc = self._popen(self.command(), stdout=log, stderr=subprocess.STDOUT)
-        where = f" (see {self.log_path})" if self.log_path else ""
-        polls = max(1, int(self.startup_timeout / self.poll_interval))
-        ready_body = None
-        for _ in range(polls):
-            if self._proc.poll() is not None:
+        try:
+            self._proc = self._popen(self.command(), stdout=log, stderr=subprocess.STDOUT)
+            where = f" (see {self.log_path})" if self.log_path else ""
+            polls = max(1, int(self.startup_timeout / self.poll_interval))
+            ready_body = None
+            for _ in range(polls):
+                if self._proc.poll() is not None:
+                    raise RuntimeError(
+                        f"vLLM exited (code {self._proc.returncode}) during startup{where}"
+                    )
+                got = self._http_get(f"{self.host}/v1/models")
+                if got and got[0] == 200:
+                    ready_body = got[1]
+                    break
+                self._sleep(self.poll_interval)
+            else:
                 raise RuntimeError(
-                    f"vLLM exited (code {self._proc.returncode}) during startup{where}"
+                    f"vLLM not ready within {self.startup_timeout:.0f}s{where}"
                 )
-            got = self._http_get(f"{self.host}/v1/models")
-            if got and got[0] == 200:
-                ready_body = got[1]
-                break
-            self._sleep(self.poll_interval)
-        else:
+        except BaseException:
             self.stop()
-            raise RuntimeError(
-                f"vLLM not ready within {self.startup_timeout:.0f}s{where}"
-            )
+            raise
         self.load_time_s = time.monotonic() - start
         self._served_context = parse_served_context(ready_body or "")
         self.meta["served_context"] = self._served_context
@@ -173,16 +180,20 @@ class VllmLauncher(BackendLauncher):
         return self._served_context
 
     def stop(self) -> None:
-        if self._proc is None:
-            return
         try:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
+            if self._proc is not None and self._proc.poll() is None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=20)
         finally:
             self._proc = None
+            self._client = None
+            if self._log_handle is not None:
+                self._log_handle.close()
+                self._log_handle = None
 
     def telemetry(self) -> dict:
         out = dict(self.meta)

@@ -5,6 +5,8 @@ persist -- without FAISS, langgraph, Ollama, or a GPU, by injecting a fake store
 launcher, and a runner_fn that composes the real eval-graph node closures sequentially.
 """
 
+from pathlib import Path
+
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.config import RunConfig
 from llb.eval import graph
@@ -102,7 +104,8 @@ def test_walking_skeleton_end_to_end(tmp_path):
     assert result["retrieval"]["recall_at_k"] == 0.5
 
     # canonical record on disk (scores.parquet with pyarrow, else scores.jsonl)
-    run_dir = cfg.run_dir()
+    run_dir = cfg.run_dir(result["run_timestamp"])
+    assert run_dir == Path(result["paths"]["manifest"]).parent
     assert (run_dir / "manifest.json").exists()
     assert any(run_dir.glob("scores.*"))
 
@@ -135,7 +138,7 @@ def test_run_eval_emits_prefilled_worksheet(tmp_path):
 
 
 def test_score_case_records_semantic_with_embedder():
-    from llb.executor.runner import score_case
+    from llb.executor.cases import score_case
 
     class Emb:
         def encode_queries(self, texts):
@@ -174,3 +177,24 @@ def test_run_eval_records_telemetry(tmp_path):
     assert telemetry["steady_tokens_per_s"] == 8.0   # 4 tokens / 0.5 s, fixed prompt set
     assert telemetry["backend"] == "fake"
     assert result["manifest"].telemetry == telemetry
+    assert result["rows"][0]["tokens_per_s"] == 8.0
+
+
+def test_run_eval_scores_only_verified_items(tmp_path):
+    verified = gold_item("verified", "q1", "Київ", "Київ")
+    unverified = gold_item("draft", "q2", "Київ", "Київ").model_copy(
+        update={"verified": False}
+    )
+    launcher = FakeLauncher(lambda messages: ChatResult(text="Київ"))
+    cfg = RunConfig(data_dir=tmp_path, run_name="verified-only", model="fake-uk")
+
+    result = run_eval(
+        cfg,
+        items=[unverified, verified],
+        launcher=launcher,
+        runner_fn=lambda item: {"answer": "Київ", "status": graph.OK},
+        mirror=lambda *args: None,
+        emit=False,
+    )
+
+    assert result["manifest"].n_cases == 1

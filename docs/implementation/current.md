@@ -25,7 +25,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-144 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
+159 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
 extras); every heavy dependency is lazy-imported so the base install stays importable.
 
 ## Dev setup
@@ -36,7 +36,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (144 tests)
+    make test       # pytest (159 tests)
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
 
 `make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused
@@ -70,6 +70,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       build_vllm.sh                # MAX_JOBS-capped vLLM install + wheel cache (GPU host)
     src/llb/
       config.py                    # RunConfig (Pydantic) -- the canonical run config
+      paths.py                     # project root, .env, and DATA_DIR path resolution
       main.py                      # Typer CLI: build-index, validate-retrieval, run-eval
       runtime.py                   # shared CLI runtime: graceful Ctrl-C (exit 130) + crash logging
       goldset/schema.py            # GoldItem + SourceSpan (Pydantic), load/dump
@@ -86,12 +87,14 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       eval/graph.py                # LangGraph retrieve->generate flow + failure taxonomy
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
-      executor/{vram,runner}.py    # VRAM gate + minimal sequential run-eval
-    tests/                         # 144 tests across the above
+      executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
+    tests/                         # 159 tests across the above
 
-Runtime output (gitignored) under `$DATA_DIR/llb/` (default `.data/llb/`):
-`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), `runs/<run_name>/`
-(`manifest.json` + `scores.{parquet,jsonl}`), `calibration_worksheet.csv`.
+Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
+`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
+`calibration_worksheet.csv`. Immutable eval artifacts are isolated per invocation under
+`$DATA_DIR/run-eval/<UTC timestamp>-<run id>/` (`manifest.json`,
+`scores.{parquet,jsonl}`, and optional `vllm/` logs).
 
 ## Milestone 0 -- modules + how to run
 
@@ -206,7 +209,10 @@ run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
 ### Canonical run config — `llb.config.RunConfig`
 One Pydantic object flows through retrieval, generation, scoring, and the manifest, so a
 run is reproducible from a single record. `RunConfig.load(path)` reads YAML (see
-`samples/run_config_uk.yaml`); CLI flags override individual fields.
+`samples/run_config_uk.yaml`); CLI flags override individual fields. Configuration forbids
+unknown keys, validates numeric and cross-field chunking constraints, and revalidates every
+CLI override. `llb.paths` loads the project `.env`, honors `DATA_DIR`, and resolves all
+relative paths from the project root rather than the caller's current directory.
 
 ### CLI — `llb` (`llb.main`, Typer)
 
@@ -286,13 +292,17 @@ else it is demoted and the objective score ranks alone. `aggregate` produces the
 ### Tracking — `llb.tracking.manifest`
 The immutable `manifest.json` + per-case `scores.{parquet,jsonl}` are written FIRST; the
 MLflow mirror runs after, best-effort, and a mirror failure never loses a completed run.
-Parquet when `pyarrow` ([track]) is present, JSONL otherwise.
+Parquet when `pyarrow` ([track]) is present, JSONL otherwise. Writes use sibling temporary
+files plus atomic replacement, existing canonical artifacts are never overwritten, and each
+eval invocation has a timestamped artifact directory.
 
-### Executor — `llb.executor.{vram,runner}`
+### Executor — `llb.executor.{cases,reporting,runner,vram}`
 `vram` is the basic NVML reclaim gate (injectable reader; raises `VramNotReclaimed` when
 freed VRAM stays above tolerance). `runner.run_eval` orchestrates the single-model run;
 every heavy collaborator is injectable, so the whole vertical runs end to end in a unit
-test with fakes (`tests/test_runner.py`).
+test with fakes (`tests/test_runner.py`). The runner filters out unverified gold items,
+separates case execution, telemetry, aggregation, persistence, and reporting, and uses the
+steady-state telemetry rate in the leaderboard when telemetry is enabled.
 
 ### Milestone 1 status
 

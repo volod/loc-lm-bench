@@ -27,8 +27,10 @@ You also need a gold set + its corpus on disk. The fastest seed is the public UA
     make validate-retrieval RAG_K=10    # recall@10 of the pinned embedding (Premise 4 gate)
     make run-eval MODEL=llama3.2:3b LIMIT=20
 
-`run-eval` prints the retrieval context line + one ranked row and writes the canonical
-record under `.data/llb/runs/<run_name>/` (`manifest.json` + `scores.{parquet,jsonl}`).
+`run-eval` logs the retrieval context line + one ranked row and writes the canonical
+record under `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/`
+(`manifest.json` + `scores.{parquet,jsonl}`). Each invocation gets a new directory, so a
+later run cannot overwrite an earlier result.
 
 ## Notes
 
@@ -40,6 +42,7 @@ record under `.data/llb/runs/<run_name>/` (`manifest.json` + `scores.{parquet,js
   the 0.6 threshold it stays demoted.
 - **Config in one place.** Every knob lives in `RunConfig`; copy `samples/run_config_uk.yaml`
   and pass `--config`. CLI flags override individual fields, and the full config is recorded
-  in the manifest for reproducibility.
+  in the manifest for reproducibility. Unknown keys and invalid ranges fail before work starts.
+- **Verified items only.** `run-eval` excludes draft gold items where `verified: false`.
 - **Determinism.** `temperature: 0.0` and a fixed `n_shot` keep scoring comparable across
   models.

@@ -38,7 +38,7 @@ def chat_once(
         )
     except openai.APITimeoutError:
         return ChatResult(text="", latency_s=time.monotonic() - start, error=ERR_TIMEOUT)
-    except Exception:  # APIConnectionError, APIError, and any other transport failure
+    except openai.APIError:
         return ChatResult(text="", latency_s=time.monotonic() - start, error=ERR_BACKEND)
 
     latency = time.monotonic() - start

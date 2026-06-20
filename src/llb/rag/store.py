@@ -87,6 +87,10 @@ class RagStore:
         mode: str = "flat",
         child_size: int = 400,
     ) -> "RagStore":
+        if mode not in ("flat", "parent_child"):
+            raise ValueError(f"unknown retrieval mode: {mode}")
+        if child_size <= 0:
+            raise ValueError("child_size must be > 0")
         embedder = Embedder(embedding_model)
         sem = embedder if strategy == "semantic" else None
         units = chunk_corpus(Path(corpus_root), strategy, size, overlap, sem)
@@ -120,9 +124,21 @@ class RagStore:
     def retrieve(self, question: str, k: int) -> list[dict]:
         """Top-k results. Flat: the matched chunks. parent_child: their unique parents."""
         query_vec = self.embedder.encode_queries([question])
-        # Over-fetch in parent_child mode so k unique parents survive child dedup.
         search_k = min(len(self.chunks), k * 4 if self.parents else k)
-        scores, ids = self.index.search(query_vec, max(1, search_k))
+        while True:
+            hits = self._search(query_vec, max(1, search_k))
+            if self.parents is None:
+                return hits[:k]
+            parent_hits = _children_to_parents(hits, self._parent_by_id)
+            if len(parent_hits) >= k or search_k >= len(self.chunks):
+                return parent_hits[:k]
+            # Child hits can cluster under one parent. Expand until k unique parents are
+            # found or the complete child index has been searched.
+            search_k = min(len(self.chunks), max(search_k + 1, search_k * 2))
+
+    def _search(self, query_vec, search_k: int) -> list[dict]:
+        """Return ranked indexed units for an already encoded query."""
+        scores, ids = self.index.search(query_vec, search_k)
         hits: list[dict] = []
         for rank, (cid, score) in enumerate(zip(ids[0], scores[0]), 1):
             if cid < 0:  # faiss pads with -1 when fewer than k results exist
@@ -131,9 +147,7 @@ class RagStore:
             chunk["retrieval_score"] = float(score)
             chunk["rank"] = rank
             hits.append(chunk)
-        if self.parents is None:
-            return hits[:k]
-        return _children_to_parents(hits, self._parent_by_id)[:k]
+        return hits
 
     def save(self, index_dir: Path | str) -> None:
         index_dir = Path(index_dir)
