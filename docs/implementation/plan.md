@@ -8,20 +8,25 @@ open-weight LLM for Ukrainian RAG + text analysis on a single small desktop GPU 
 to their corpus, hardware, or task; this tool re-ranks ~6-10 models on *their* data and
 *their* GPU so the pick is defensible.
 
-Full spec (source of truth, do not duplicate here): [`docs/design.md`](design.md).
+Full spec (source of truth, do not duplicate here): [`docs/design.md`](../design.md).
 It went through /office-hours, /plan-ceo-review (HOLD SCOPE), and two /plan-eng-review
 passes, plus four Codex outside-voice passes. This plan is the build sequence derived
 from it.
+
+What already exists (Milestone 0 + dev tooling) is documented in
+[`current.md`](current.md). This file tracks the FORWARD
+plan; completed detail moves to the current-state doc as it lands.
 
 ## Recommended approach: walking skeleton, then layer
 
 Do NOT build all ~12 modules before an eval runs. Build a thin end-to-end vertical
 first, then add layers, each independently shippable and tested.
 
-- **Milestone 0 — Assignment (no code).** Find existed and form ~30 Ukrainian RAG items
-  (question + SOURCE-SPAN labels + reference answer) and calibrate the judge (Ragas
-  config, UA-localized prompts) against your own ratings. If Spearman rho < 0.6, the
-  judge is untrusted — learn that before building.
+- **Milestone 0 — Gold set + judge calibration (data prep). [DONE; see
+  `current.md`]** Schema, validator, disjoint splits, SQuAD ingestion, a
+  real 250-item UA gold set (HPLT/ua-squad), judge-calibration stats, and a chunking
+  RAG-store builder are built + tested (27 tests). Only the judge-calibration ratings
+  remain, and they run once Milestone 1 can produce model answers.
 - **Milestone 1 — CUDA-free skeleton.** One Ollama model, fixed config, pinned
   embedding -> FAISS -> one LangGraph RAG graph -> reference-answer-correctness + gated
   judge -> canonical manifest + Parquet (+ MLflow mirror) -> `run-eval` prints one
@@ -38,6 +43,75 @@ first, then add layers, each independently shippable and tested.
   (vLLM>Ollama>llama.cpp), hard process isolation + VRAM-tolerance + capped thermal
   cooldown, two-stage Optuna (disjoint gold partitions, embedding pinned), prep utils,
   Pareto + average-rank board with confidence intervals.
+
+## Detailed implementation steps
+
+### Milestone 0 — gold set + judge calibration (data prep)  [DONE]
+
+Implemented, run, and tested (27 tests, ruff clean). Modules, commands, and the real
+gold set / corpus details live in [`current.md`](current.md):
+schema, splits, validator, SQuAD ingestion, a real 250-item UA gold set (HPLT/ua-squad),
+judge-calibration stats, and a chunking RAG-store builder.
+
+Future work (not blocking the next milestone):
+- **M0.5 calibration ratings:** runs once M1 can produce model answers. Fill the worksheet,
+  then `python -m llb.judge.calibration score --ratings <file>` (gate at rho >= 0.6, else
+  demote the judge to diagnostic).
+- **Human verification + more sources:** public-reused items are `verified: false`; a
+  reviewer flips `verified: true` (and may add own-corpus items) before they score models.
+  Wire Belebele-uk or other sources via the same ingestion engine as needed.
+
+### Milestone 1 — CUDA-free skeleton
+
+- **M1.1** `src/llb/` package + canonical `RunConfig` Pydantic model + Typer `cli.py`.
+- **M1.2** `prepare-corpus` + `build-index`: chunk the corpus, embed with one PINNED
+  UA-capable embedding (candidates: multilingual-e5-large, bge-m3), build a FAISS index.
+- **M1.3** `rag/` retrieval + recall@k / MRR by source-span overlap (validates the
+  embedding; not a model-ranking axis).
+- **M1.4** one LangGraph single-call RAG graph -> `openai` client -> a small Ollama UA
+  model (CUDA-free).
+- **M1.5** `scoring/`: reference answer-correctness (semantic match) + gated Ragas judge.
+- **M1.6** `tracking/`: write canonical manifest (JSON) + Parquet FIRST, then MLflow mirror.
+- **M1.7** `executor/`: minimal sequential run + basic NVML VRAM gate.
+- **M1.8** `run-eval` prints one ranked row; seed with SQuAD-uk so it runs before the
+  real gold set.
+- **Acceptance:** ranked row end-to-end, CUDA-free, manifest on disk. Tests: recall@k/MRR
+  on fixtures, typed graph failures (empty/malformed/refusal/timeout), manifest-before-MLflow.
+
+### Milestone 2 — one real backend + telemetry
+
+- **M2.1** vLLM launcher (HF weights) behind OpenAI-compatible HTTP; MAX_JOBS-capped
+  source build (confirm/create the helper path first, OQ6); cache wheels under
+  `.data/wheels/`.
+- **M2.2** per-backend telemetry hook: tokens/sec at STEADY STATE (fixed prompt set +
+  fixed max_new_tokens + warmup), requested-vs-served context, peak VRAM via NVML.
+- **M2.3** resolve the first candidate list (MamayLM v2 12B, Gemma 3, Qwen3, Lapa,
+  Llama 3.1) — drives launcher priority.
+- **M2.4** validate CUDA / HF-loading / tokenizer assumptions on one real model.
+- **Acceptance:** one HF model served via vLLM with real telemetry recorded under the
+  executor.
+
+### Milestone 3 — two-tier + scale + rigor
+
+- **M3.1** `screen/`: drive lm-eval-harness-uk via local-completions against the launched
+  endpoint; logprob-capable (vLLM) vs generation-only (Ollama) tracks, NEVER cross-ranked;
+  record per-task coverage.
+- **M3.2** `backends/AvailabilityResolver` (HF Hub + Ollama library + GGUF; priority +
+  VRAM fit).
+- **M3.3** `executor/` hard isolation: one process per (model, config), kill + VRAM-
+  tolerance gate + capped thermal cooldown; resumable (skip completed cells); abort loudly
+  on `VramNotReclaimed`.
+- **M3.4** `optimize/`: two-stage Optuna (tune on the proxy split, embedding pinned, prune
+  over-VRAM, persistent SQLite), then score finalists on the full set.
+- **M3.5** `prep/`: `prepare-goldset` (draft-for-review) + `prepare-synthetic-corpus`
+  (structured labels, planter != judge) via litellm.
+- **M3.6** `scoring/aggregate`: average-rank headline + weighted-blend view + Pareto + CIs;
+  never mix Tier-1 screen + Tier-2 private metrics in one rank; mark CI-overlapping flips
+  "unresolved".
+- **M3.7** `board/`: thin Streamlit (rank + best-config + CIs); MLflow UI for deep
+  inspection.
+- **Acceptance:** screen -> finalists -> tuned private eval -> Pareto/average-rank board;
+  reproducible manifests; resume-after-kill works.
 
 ## Critical modules (`src/llb/`)
 

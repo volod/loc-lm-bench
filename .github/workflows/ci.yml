@@ -1,0 +1,36 @@
+# CI: lint + unit tests only.
+#
+# Deliberately lightweight -- it only checks that the code has no syntactic or logical
+# errors. It installs the base package + the `dev` extra (ruff, pytest) and nothing else,
+# so it never pulls heavy/eval deps (faiss, datasets, mlflow, sentence-transformers,
+# torch/vLLM) and never runs an actual benchmark, model download, or GPU work.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create venv (matrix Python) + install base + dev only
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install --python .venv/bin/python -e ".[dev]"
+
+      - name: Lint + unit tests
+        run: make ci
