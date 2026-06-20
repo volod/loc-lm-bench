@@ -37,9 +37,7 @@ def test_vllm_endpoint_port_must_match_launcher_port():
 def test_index_and_run_dirs_under_data_dir(tmp_path):
     cfg = RunConfig(data_dir=tmp_path, run_name="r1")
     assert cfg.index_dir() == tmp_path / "llb" / "rag"
-    assert cfg.run_dir("20260620T120000Z") == (
-        tmp_path / RUN_EVAL_METHOD / "20260620T120000Z"
-    )
+    assert cfg.run_dir("20260620T120000Z") == (tmp_path / RUN_EVAL_METHOD / "20260620T120000Z")
     assert cfg.corpus_root == tmp_path / "llb" / "corpus"
     assert cfg.goldset_path == tmp_path / "llb" / "goldset" / "goldset_uk.jsonl"
 

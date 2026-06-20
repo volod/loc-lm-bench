@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from llb.contracts import JsonObject
 from llb.paths import load_project_env, resolve_data_dir, resolve_project_path
 
 Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
@@ -148,6 +149,11 @@ class RunConfig(BaseModel):
             raise ValueError("run_timestamp must be a non-empty path segment")
         return self.data_dir / RUN_EVAL_METHOD / run_timestamp
 
+    def run_staging_dir(self, run_timestamp: str) -> Path:
+        """Hidden sibling used until a complete run bundle is atomically published."""
+        final_dir = self.run_dir(run_timestamp)
+        return final_dir.with_name(f".{final_dir.name}.tmp")
+
     @classmethod
     def load(cls, path: Path | str) -> "RunConfig":
         """Load a YAML config; missing keys fall back to defaults."""
@@ -159,7 +165,7 @@ class RunConfig(BaseModel):
             raise ValueError(f"{path}: expected a mapping at the top level")
         return cls.model_validate(data)
 
-    def fingerprint(self) -> dict:
+    def fingerprint(self) -> JsonObject:
         """The reproducibility-relevant subset, for the run manifest."""
         return self.model_dump(mode="json")
 

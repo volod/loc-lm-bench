@@ -34,9 +34,7 @@ class SourceSpan(BaseModel):
     @model_validator(mode="after")
     def _check_offsets(self) -> "SourceSpan":
         if self.char_end <= self.char_start:
-            raise ValueError(
-                f"char_end ({self.char_end}) must be > char_start ({self.char_start})"
-            )
+            raise ValueError(f"char_end ({self.char_end}) must be > char_start ({self.char_start})")
         if len(self.text) != self.char_end - self.char_start:
             raise ValueError("span text length does not match char offsets")
         return self

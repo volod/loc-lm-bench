@@ -30,10 +30,10 @@ class FakeChat:
 def test_measure_throughput_discards_warmup_and_computes_rate():
     chat = FakeChat(completion_tokens=10, latency=0.5, text="y" * 20)
     res = measure_throughput(chat, ["p1", "p2"], max_new_tokens=64, warmup=1, passes=1)
-    assert chat.calls == 4                      # 1 warmup pass (2) + 1 measured pass (2)
+    assert chat.calls == 4  # 1 warmup pass (2) + 1 measured pass (2)
     assert res.n_measured == 2 and res.n_failed == 0
-    assert res.steady_tokens_per_s == 20.0      # 10 tokens / 0.5 s
-    assert res.tokens_per_char == 0.5           # 10 tokens / 20 chars
+    assert res.steady_tokens_per_s == 20.0  # 10 tokens / 0.5 s
+    assert res.tokens_per_char == 0.5  # 10 tokens / 20 chars
 
 
 def test_measure_throughput_counts_failures():
@@ -70,9 +70,10 @@ def test_collect_telemetry_assembles_record():
         def served_context(self):
             return 4096
 
-    report = collect_telemetry(FakeLauncher(), requested_context=8192,
-                               vram_reader=lambda: 7000, warmup=0)
-    assert report["steady_tokens_per_s"] == 20.0    # 5 tokens / 0.25 s
+    report = collect_telemetry(
+        FakeLauncher(), requested_context=8192, vram_reader=lambda: 7000, warmup=0
+    )
+    assert report["steady_tokens_per_s"] == 20.0  # 5 tokens / 0.25 s
     assert report["served_context"] == 4096 and report["requested_context"] == 8192
     assert report["load_time_s"] == 3.5
     assert report["backend"] == "vllm"

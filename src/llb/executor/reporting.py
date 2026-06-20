@@ -1,8 +1,10 @@
 """Logging-based presentation for completed evaluation runs."""
 
 import logging
+from pathlib import Path
 
 from llb.config import RunConfig
+from llb.contracts import RetrievalMetrics, RunPaths, TelemetryReport
 
 _LOG = logging.getLogger(__name__)
 
@@ -10,11 +12,11 @@ _LOG = logging.getLogger(__name__)
 def emit_summary(
     config: RunConfig,
     n_cases: int,
-    retrieval_metrics: dict,
+    retrieval_metrics: RetrievalMetrics,
     table: str,
-    telemetry: dict,
-    paths: dict,
-    worksheet,
+    telemetry: TelemetryReport | None,
+    paths: RunPaths,
+    worksheet: Path | str | None,
     worksheet_rows: int,
 ) -> None:
     """Log the concise user-facing summary for one completed run."""

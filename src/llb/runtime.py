@@ -10,7 +10,7 @@ the backend via the launcher context manager) as the interrupt propagates throug
 import logging
 import os
 import sys
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 INTERRUPT_EXIT = 130  # 128 + SIGINT -- the conventional exit code for Ctrl-C
 _LOG = logging.getLogger("llb")
@@ -19,8 +19,15 @@ _LOG = logging.getLogger("llb")
 # Chatty third-party loggers (per-request HTTP, model loading, faiss probing) are pinned to
 # WARNING so the pipeline log stays readable -- raise everything with LLB_LOG=debug.
 _NOISY_LOGGERS = (
-    "httpx", "httpcore", "urllib3", "filelock",
-    "faiss", "faiss.loader", "sentence_transformers", "transformers", "huggingface_hub",
+    "httpx",
+    "httpcore",
+    "urllib3",
+    "filelock",
+    "faiss",
+    "faiss.loader",
+    "sentence_transformers",
+    "transformers",
+    "huggingface_hub",
 )
 
 
@@ -30,8 +37,10 @@ def configure_logging() -> None:
         return
     debug = os.environ.get("LLB_LOG", "").lower() in ("debug", "1", "true")
     logging.basicConfig(
-        level=logging.DEBUG if debug else logging.INFO, stream=sys.stderr,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S",
+        level=logging.DEBUG if debug else logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
     )
     if not debug:
         for name in _NOISY_LOGGERS:
@@ -66,7 +75,7 @@ def run(entry: Callable[[], Optional[int]]) -> int:
         return 1
 
 
-def run_typer(app) -> None:
+def run_typer(app: Any) -> None:
     """Run a Typer app with shared Ctrl-C + crash handling. Click swallows SIGINT in its
     standalone mode, so we drive the app in non-standalone mode and translate the result."""
     import click
@@ -79,7 +88,7 @@ def run_typer(app) -> None:
         raise SystemExit(INTERRUPT_EXIT) from None
     except click.exceptions.Exit as exc:  # typer.Exit(code) and --help
         raise SystemExit(exc.exit_code) from None
-    except click.ClickException as exc:   # usage errors
+    except click.ClickException as exc:  # usage errors
         exc.show()
         raise SystemExit(exc.exit_code) from None
     except Exception:

@@ -35,7 +35,7 @@ LOG_DIR     := $(PROJECT_ROOT)/.data/llb/logs
 PREP_ALL_BACKEND ?= ollama
 
 .DEFAULT_GOAL := help
-.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval
+.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -90,9 +90,15 @@ test: ## Run the test suite (pytest)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pytest
 
-ci: ## Lint + unit tests only (no network, GPU, or heavy extras) -- used by GitHub CI
+format: ## Format Python sources and tests with Ruff
+	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
+	$(VENV)/bin/ruff format src tests
+
+ci: ## Format check + lint + type check + unit tests -- used by GitHub CI
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- create one + install '.[dev]' first"; exit 1; }
+	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
+	$(VENV)/bin/mypy
 	$(PY) -m pytest
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/

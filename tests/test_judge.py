@@ -24,7 +24,9 @@ def test_below_threshold_is_demoted():
 
 def test_trusted_routes_to_scorer():
     out = run_judge(
-        [{"q": 1}], judge_model="gpt-judge", calibration_rho=0.8,
+        [{"q": 1}],
+        judge_model="gpt-judge",
+        calibration_rho=0.8,
         scorer=lambda recs, model: [{"faithfulness": 1.0}],
     )
     assert out.trusted is True

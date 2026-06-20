@@ -14,21 +14,22 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import cast
 
+from llb.contracts import RagDataSpec
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.validate import validate_items
 
 _LOG = logging.getLogger(__name__)
 
 
-def load_spec(spec_path: Path) -> dict[str, Any]:
+def load_spec(spec_path: Path) -> RagDataSpec:
     with Path(spec_path).open(encoding="utf-8") as fh:
         spec = json.load(fh)
     for key in ("lang", "docs", "items"):
         if key not in spec:
             raise ValueError(f"spec missing required key: {key}")
-    return spec
+    return cast(RagDataSpec, spec)
 
 
 def write_corpus(docs: dict[str, str], corpus_root: Path) -> None:
@@ -38,7 +39,7 @@ def write_corpus(docs: dict[str, str], corpus_root: Path) -> None:
         path.write_text(text + "\n", encoding="utf-8")
 
 
-def build_items(spec: dict[str, Any]) -> list[GoldItem]:
+def build_items(spec: RagDataSpec) -> list[GoldItem]:
     """Turn raw spec items into schema-validated gold items with computed source spans."""
     docs = spec["docs"]
     lang = spec["lang"]

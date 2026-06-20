@@ -21,9 +21,10 @@ def test_load_manifest_non_mapping_entry_raises(tmp_path):
 
 def test_acceptance_url_explicit_derived_and_none():
     assert prepare.acceptance_url({"license_url": "https://hf.co/x"}) == "https://hf.co/x"
-    assert prepare.acceptance_url(
-        {"gated": True, "backend": "vllm", "source": "org/m"}
-    ) == "https://huggingface.co/org/m"
+    assert (
+        prepare.acceptance_url({"gated": True, "backend": "vllm", "source": "org/m"})
+        == "https://huggingface.co/org/m"
+    )
     assert prepare.acceptance_url({"backend": "vllm", "source": "org/m"}) is None  # ungated
 
 
@@ -34,8 +35,16 @@ def test_looks_gated_detects_access_errors_not_404():
 
 
 def test_prepare_models_surfaces_license_link_for_gated():
-    models = [{"name": "g", "backend": "vllm", "source": "org/Gated", "min_vram_gb": 4,
-               "gated": True, "license_url": "https://huggingface.co/org/Gated"}]
+    models = [
+        {
+            "name": "g",
+            "backend": "vllm",
+            "source": "org/Gated",
+            "min_vram_gb": 4,
+            "gated": True,
+            "license_url": "https://huggingface.co/org/Gated",
+        }
+    ]
     report = prepare.prepare_models(
         models, dry_run=True, gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")]
     )
@@ -58,7 +67,9 @@ def test_parse_smi_skips_garbage_lines():
 
 
 def test_decide_ollama_pulls_even_when_oversized():
-    action, reason = prepare.decide("ollama", need_mb=20000, max_mb=16000, has_gpu=True, force=False)
+    action, reason = prepare.decide(
+        "ollama", need_mb=20000, max_mb=16000, has_gpu=True, force=False
+    )
     assert action == prepare.ACTION_PULL and "CPU" in reason
 
 
@@ -93,12 +104,12 @@ def test_prepare_models_dispatches_and_skips():
     report = prepare.prepare_models(
         models,
         gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
-        ollama_pull=lambda src: (pulled.append(src) or (True, "pulled")),
-        hf_cache=lambda src, tok, cd: (cached.append(src) or (True, "/cache/" + src)),
+        ollama_pull=lambda src: pulled.append(src) or (True, "pulled"),
+        hf_cache=lambda src, tok, cd: cached.append(src) or (True, "/cache/" + src),
     )
     by_name = {r["name"]: r for r in report["results"]}
     assert pulled == ["small:1"]
-    assert cached == ["org/fits"]              # huge skipped (over VRAM), never cached
+    assert cached == ["org/fits"]  # huge skipped (over VRAM), never cached
     assert by_name["small"]["status"] == "done"
     assert by_name["fits"]["status"] == "done"
     assert by_name["huge"]["status"] == "skipped"
@@ -108,7 +119,9 @@ def test_prepare_models_dry_run_touches_nothing():
     models = [{"name": "small", "backend": "ollama", "source": "small:1", "min_vram_gb": 4}]
     calls = []
     report = prepare.prepare_models(
-        models, dry_run=True, gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
+        models,
+        dry_run=True,
+        gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
         ollama_pull=lambda src: calls.append(src),
     )
     assert calls == []

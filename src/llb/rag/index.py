@@ -7,16 +7,17 @@ the `[rag]` extra.
 """
 
 from pathlib import Path
+from typing import Any
 
 
 class FaissIndex:
     """Thin wrapper over a faiss.IndexFlatIP."""
 
-    def __init__(self, index=None):
+    def __init__(self, index: Any = None):
         self._index = index
 
     @classmethod
-    def build(cls, vectors) -> "FaissIndex":
+    def build(cls, vectors: Any) -> "FaissIndex":
         faiss = _import_faiss()
         if vectors.ndim != 2:
             raise ValueError("vectors must be a 2-D (n, dim) array")
@@ -24,7 +25,7 @@ class FaissIndex:
         index.add(vectors)
         return cls(index)
 
-    def search(self, query_vectors, k: int) -> tuple[list[list[float]], list[list[int]]]:
+    def search(self, query_vectors: Any, k: int) -> tuple[list[list[float]], list[list[int]]]:
         """Return (scores, ids): top-k per query row. Ids index into the build order."""
         if self._index is None:
             raise RuntimeError("index is empty; build or load it first")
@@ -43,7 +44,7 @@ class FaissIndex:
         return cls(faiss.read_index(str(path)))
 
 
-def _import_faiss():
+def _import_faiss() -> Any:
     try:
         import faiss
     except ImportError as exc:

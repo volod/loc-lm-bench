@@ -25,8 +25,9 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-159 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
-extras); every heavy dependency is lazy-imported so the base install stays importable.
+162 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
+is lazy-imported so the base install stays importable.
 
 ## Dev setup
 
@@ -36,7 +37,9 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (159 tests)
+    make test       # pytest (162 tests)
+    make format     # apply canonical Ruff formatting to src/ and tests/
+    make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
 
 `make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused
@@ -70,6 +73,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       build_vllm.sh                # MAX_JOBS-capped vLLM install + wheel cache (GPU host)
     src/llb/
       config.py                    # RunConfig (Pydantic) -- the canonical run config
+      contracts.py                 # shared TypedDict boundary contracts
       paths.py                     # project root, .env, and DATA_DIR path resolution
       main.py                      # Typer CLI: build-index, validate-retrieval, run-eval
       runtime.py                   # shared CLI runtime: graceful Ctrl-C (exit 130) + crash logging
@@ -88,7 +92,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
       executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
-    tests/                         # 159 tests across the above
+    tests/                         # 162 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -292,9 +296,10 @@ else it is demoted and the objective score ranks alone. `aggregate` produces the
 ### Tracking — `llb.tracking.manifest`
 The immutable `manifest.json` + per-case `scores.{parquet,jsonl}` are written FIRST; the
 MLflow mirror runs after, best-effort, and a mirror failure never loses a completed run.
-Parquet when `pyarrow` ([track]) is present, JSONL otherwise. Writes use sibling temporary
-files plus atomic replacement, existing canonical artifacts are never overwritten, and each
-eval invocation has a timestamped artifact directory.
+Parquet when `pyarrow` ([track]) is present, JSONL otherwise. The full run bundle, including
+backend logs, is assembled in a hidden sibling staging directory and atomically renamed to
+its final timestamped directory only after both canonical files succeed. Failed writes leave
+no partially published run, and existing canonical artifacts are never overwritten.
 
 ### Executor — `llb.executor.{cases,reporting,runner,vram}`
 `vram` is the basic NVML reclaim gate (injectable reader; raises `VramNotReclaimed` when
@@ -303,6 +308,13 @@ every heavy collaborator is injectable, so the whole vertical runs end to end in
 test with fakes (`tests/test_runner.py`). The runner filters out unverified gold items,
 separates case execution, telemetry, aggregation, persistence, and reporting, and uses the
 steady-state telemetry rate in the leaderboard when telemetry is enabled.
+
+### Typed contracts and enforced formatting
+`llb.contracts` defines the records crossing package boundaries: chunks and source spans,
+retrieval and telemetry metrics, model manifests and plans, case scores, leaderboard rows,
+and persisted run paths. External YAML model entries are validated by Pydantic before being
+converted to those contracts. Mypy checks all production modules with generic type arguments
+required, while Ruff formatting and linting are enforced by `make ci` and GitHub Actions.
 
 ### Milestone 1 status
 

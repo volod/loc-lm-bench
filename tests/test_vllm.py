@@ -7,8 +7,9 @@ from llb.backends.vllm import VllmLauncher, build_vllm_command, parse_served_con
 
 
 def test_build_command_includes_serving_flags():
-    cmd = build_vllm_command("org/Model", port=8001, gpu_memory_utilization=0.9,
-                             max_model_len=8192, quantization="awq")
+    cmd = build_vllm_command(
+        "org/Model", port=8001, gpu_memory_utilization=0.9, max_model_len=8192, quantization="awq"
+    )
     assert cmd[:3] == ["vllm", "serve", "org/Model"]
     assert "--gpu-memory-utilization" in cmd and "0.9" in cmd
     assert "8192" in cmd and "awq" in cmd
@@ -46,7 +47,9 @@ def make_launcher(proc, responses):
     """A launcher whose http probe yields `responses` in order (each: None or (status, body))."""
     seq = iter(responses)
     return VllmLauncher(
-        "org/Model", startup_timeout=5, poll_interval=0.1,
+        "org/Model",
+        startup_timeout=5,
+        poll_interval=0.1,
         popen=lambda cmd, **kw: proc,
         http_get=lambda url, timeout=3.0: next(seq, None),
         sleep=lambda _s: None,
@@ -85,10 +88,12 @@ def test_chat_uses_injected_client():
                 @staticmethod
                 def create(**kwargs):
                     import types
+
                     msg = types.SimpleNamespace(content="привіт")
                     usage = types.SimpleNamespace(prompt_tokens=3, completion_tokens=2)
-                    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)],
-                                                 usage=usage)
+                    return types.SimpleNamespace(
+                        choices=[types.SimpleNamespace(message=msg)], usage=usage
+                    )
 
     launcher._client = FakeClient()
     result = launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)

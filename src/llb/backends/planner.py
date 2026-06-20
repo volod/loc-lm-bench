@@ -22,17 +22,36 @@ Per model we report: max context fully on GPU (`ctx_gpu`), max context using GPU
 launch (Milestone 2).
 """
 
+from typing import Any
+
+from llb.contracts import ModelPlanRow, ModelSpec
+
 MIB = 1024 * 1024
 KV_ELEM_BYTES = 2  # fp16 KV cache element
 
 # Bits-per-weight for common quantizations (GGUF k-quants, plain dtypes, served formats).
 QUANT_BPW = {
-    "fp32": 32.0, "fp16": 16.0, "f16": 16.0, "bf16": 16.0,
-    "fp8": 8.0, "q8_0": 8.5, "q6_k": 6.6,
-    "q5_k_m": 5.5, "q5_0": 5.5, "q5_1": 5.6,
-    "q4_k_m": 4.5, "q4_k_s": 4.3, "q4_0": 4.5, "q4_1": 4.8,
-    "w4a16": 4.5, "int4": 4.5, "awq": 4.25, "gptq": 4.25,
-    "q3_k_m": 3.9, "q3_k_s": 3.5, "q2_k": 3.0,
+    "fp32": 32.0,
+    "fp16": 16.0,
+    "f16": 16.0,
+    "bf16": 16.0,
+    "fp8": 8.0,
+    "q8_0": 8.5,
+    "q6_k": 6.6,
+    "q5_k_m": 5.5,
+    "q5_0": 5.5,
+    "q5_1": 5.6,
+    "q4_k_m": 4.5,
+    "q4_k_s": 4.3,
+    "q4_0": 4.5,
+    "q4_1": 4.8,
+    "w4a16": 4.5,
+    "int4": 4.5,
+    "awq": 4.25,
+    "gptq": 4.25,
+    "q3_k_m": 3.9,
+    "q3_k_s": 3.5,
+    "q2_k": 3.0,
 }
 
 # Defaults (MiB) -- conservative headroom so the plan is honest, not optimistic.
@@ -41,13 +60,13 @@ DEFAULT_RAM_RESERVE = 2048
 DEFAULT_OVERHEAD = 512
 MIN_USABLE_CTX = 512
 
-VERDICT_GPU = "gpu"           # fits fully in VRAM at the planning context
-VERDICT_OFFLOAD = "offload"   # runs only by splitting layers to CPU RAM
-VERDICT_NO = "no"             # does not fit even in VRAM + RAM
-VERDICT_UNKNOWN = "unknown"   # missing the spec fields needed to plan
+VERDICT_GPU = "gpu"  # fits fully in VRAM at the planning context
+VERDICT_OFFLOAD = "offload"  # runs only by splitting layers to CPU RAM
+VERDICT_NO = "no"  # does not fit even in VRAM + RAM
+VERDICT_UNKNOWN = "unknown"  # missing the spec fields needed to plan
 
 
-def resolve_bpw(spec: dict) -> float | None:
+def resolve_bpw(spec: ModelSpec) -> float | None:
     if spec.get("bpw") is not None:
         return float(spec["bpw"])
     quant = str(spec.get("quant", "")).lower()
@@ -63,8 +82,9 @@ def kv_mib_per_token(n_layers: int, kv_dim: int) -> float:
     return 2 * n_layers * kv_dim * KV_ELEM_BYTES / MIB
 
 
-def max_context(budget_mib: float, w_mib: float, overhead_mib: float,
-                per_tok_mib: float, cap: int) -> int:
+def max_context(
+    budget_mib: float, w_mib: float, overhead_mib: float, per_tok_mib: float, cap: int
+) -> int:
     """Largest context (<= cap) whose footprint fits in `budget_mib`. 0 if weights don't fit."""
     avail = budget_mib - w_mib - overhead_mib
     if avail <= 0 or per_tok_mib <= 0:
@@ -72,8 +92,9 @@ def max_context(budget_mib: float, w_mib: float, overhead_mib: float,
     return max(0, min(cap, int(avail / per_tok_mib)))
 
 
-def gpu_layers(vram_usable_mib: float, overhead_mib: float, w_mib: float,
-               kv_at_ctx_mib: float, n_layers: int) -> int:
+def gpu_layers(
+    vram_usable_mib: float, overhead_mib: float, w_mib: float, kv_at_ctx_mib: float, n_layers: int
+) -> int:
     """How many of `n_layers` (weights + their KV) fit in VRAM; the rest go to CPU RAM."""
     per_layer = (w_mib + kv_at_ctx_mib) / n_layers
     if per_layer <= 0:
@@ -83,7 +104,7 @@ def gpu_layers(vram_usable_mib: float, overhead_mib: float, w_mib: float,
 
 
 def plan_model(
-    spec: dict,
+    spec: ModelSpec,
     vram_mib: int,
     ram_mib: int,
     *,
@@ -92,16 +113,20 @@ def plan_model(
     overhead_mib: int = DEFAULT_OVERHEAD,
     target_ctx: int | None = None,
     min_ctx: int = MIN_USABLE_CTX,
-) -> dict:
+) -> ModelPlanRow:
     """Plan one model on the host. Returns a row dict (see module docstring)."""
-    row = {
+    row: ModelPlanRow = {
         "name": spec.get("name", spec.get("source", "?")),
         "backend": spec.get("backend", "?"),
         "params_b": spec.get("params_b"),
         "quant": spec.get("quant") or (f"{spec['bpw']}bpw" if spec.get("bpw") else None),
-        "weights_mib": None, "n_layers": spec.get("n_layers"),
-        "ctx_gpu": 0, "ctx_max": 0, "gpu_layers": 0,
-        "verdict": VERDICT_UNKNOWN, "note": "",
+        "weights_mib": None,
+        "n_layers": spec.get("n_layers"),
+        "ctx_gpu": 0,
+        "ctx_max": 0,
+        "gpu_layers": 0,
+        "verdict": VERDICT_UNKNOWN,
+        "note": "",
     }
 
     bpw = resolve_bpw(spec)
@@ -152,34 +177,49 @@ def plan_model(
     return row
 
 
-def plan_models(models: list[dict], vram_mib: int, ram_mib: int, **kwargs) -> list[dict]:
+def plan_models(
+    models: list[ModelSpec], vram_mib: int, ram_mib: int, **kwargs: Any
+) -> list[ModelPlanRow]:
     return [plan_model(m, vram_mib, ram_mib, **kwargs) for m in models]
 
 
-def _gb(mib) -> str:
+def _gb(mib: float | None) -> str:
     return "-" if mib is None else f"{mib / 1024:.1f}"
 
 
-def format_plan(rows: list[dict], vram_mib: int, ram_mib: int) -> str:
+def format_plan(rows: list[ModelPlanRow], vram_mib: int, ram_mib: int) -> str:
     """ASCII table of the plan."""
-    headers = ["model", "backend", "params", "quant", "wt_GB",
-               "ctx_gpu", "ctx_max", "gpu/total", "verdict"]
+    headers = [
+        "model",
+        "backend",
+        "params",
+        "quant",
+        "wt_GB",
+        "ctx_gpu",
+        "ctx_max",
+        "gpu/total",
+        "verdict",
+    ]
 
-    def fmt(row: dict) -> list[str]:
+    def fmt(row: ModelPlanRow) -> list[str]:
         n_layers = row["n_layers"]
         split = "-" if not n_layers else f"{row['gpu_layers']}/{n_layers}"
         return [
-            row["name"], row["backend"],
+            row["name"],
+            row["backend"],
             "-" if row["params_b"] is None else f"{row['params_b']}B",
-            row["quant"] or "-", _gb(row["weights_mib"]),
+            row["quant"] or "-",
+            _gb(row["weights_mib"]),
             str(row["ctx_gpu"]) if row["ctx_gpu"] else "-",
             str(row["ctx_max"]) if row["ctx_max"] else "-",
-            split, row["verdict"],
+            split,
+            row["verdict"],
         ]
 
     table = [fmt(r) for r in rows]
-    widths = [max(len(h), *(len(r[i]) for r in table)) if table else len(h)
-              for i, h in enumerate(headers)]
+    widths = [
+        max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
+    ]
     out = [
         f"host budget: VRAM {vram_mib} MiB + RAM {ram_mib} MiB "
         f"(usable after reserves; weights + KV must fit the combined budget)",

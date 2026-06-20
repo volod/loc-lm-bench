@@ -50,5 +50,5 @@ def test_write_filled_worksheet_prefills_model_answer(tmp_path):
     out = tmp_path / "ws.csv"
     assert write_filled_worksheet(answers, out) == 2
     text = out.read_text(encoding="utf-8")
-    assert "Київ - столиця" in text          # model_answer pre-filled
-    assert text.strip().endswith(",,")        # human_rating + judge_rating still blank
+    assert "Київ - столиця" in text  # model_answer pre-filled
+    assert text.strip().endswith(",,")  # human_rating + judge_rating still blank

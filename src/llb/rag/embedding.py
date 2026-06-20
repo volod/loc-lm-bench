@@ -9,6 +9,8 @@ Heavy imports (`sentence_transformers`, `numpy`) are deferred to first use so th
 imports fine in the base install; the real embedding path needs the `[rag]` extra.
 """
 
+from typing import Any
+
 from llb.config import DEFAULT_EMBEDDING_MODEL
 
 
@@ -23,7 +25,7 @@ class Embedder:
         self.model_name = model_name
         self._model = None
 
-    def _load(self):
+    def _load(self) -> Any:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -39,22 +41,18 @@ class Embedder:
             return [f"{kind}: {t}" for t in texts]
         return list(texts)
 
-    def encode_passages(self, texts: list[str]):
+    def encode_passages(self, texts: list[str]) -> Any:
         """Embed corpus chunks. Returns a float32 (n, dim) numpy array, L2-normalized."""
         import numpy as np
 
         model = self._load()
-        vectors = model.encode(
-            self._prefix(texts, "passage"), normalize_embeddings=True
-        )
+        vectors = model.encode(self._prefix(texts, "passage"), normalize_embeddings=True)
         return np.asarray(vectors, dtype="float32")
 
-    def encode_queries(self, texts: list[str]):
+    def encode_queries(self, texts: list[str]) -> Any:
         """Embed questions. Returns a float32 (n, dim) numpy array, L2-normalized."""
         import numpy as np
 
         model = self._load()
-        vectors = model.encode(
-            self._prefix(texts, "query"), normalize_embeddings=True
-        )
+        vectors = model.encode(self._prefix(texts, "query"), normalize_embeddings=True)
         return np.asarray(vectors, dtype="float32")

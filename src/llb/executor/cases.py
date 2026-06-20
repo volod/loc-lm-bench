@@ -1,8 +1,9 @@
 """Per-case evaluation execution and score-row construction."""
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
+from llb.contracts import CaseScoreRow, RetrievalPair, SourceSpanRecord
 from llb.eval import graph as eval_graph
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
@@ -15,16 +16,24 @@ RagState = eval_graph.RagState
 class CaseBatch:
     """Outputs collected while evaluating a batch of gold items."""
 
-    rows: list[dict]
-    retrieval_pairs: list[tuple[list[dict], list[dict]]]
+    rows: list[CaseScoreRow]
+    retrieval_pairs: list[RetrievalPair]
     answers: list[tuple[GoldItem, str]]
 
 
-def spans_as_dicts(item: GoldItem) -> list[dict]:
-    return [span.model_dump() for span in item.source_spans]
+def spans_as_dicts(item: GoldItem) -> list[SourceSpanRecord]:
+    return [
+        {
+            "doc_id": span.doc_id,
+            "char_start": span.char_start,
+            "char_end": span.char_end,
+            "text": span.text,
+        }
+        for span in item.source_spans
+    ]
 
 
-def score_case(item: GoldItem, state: RagState, embedder=None) -> dict:
+def score_case(item: GoldItem, state: RagState, embedder: Any = None) -> CaseScoreRow:
     """Build one per-case score row from a terminal graph state."""
     answer = state.get("answer", "")
     status = state.get("status", eval_graph.OK)
@@ -32,7 +41,7 @@ def score_case(item: GoldItem, state: RagState, embedder=None) -> dict:
     retrieved = state.get("retrieved", [])
     corr = correctness.answer_correctness(answer, item.reference_answer, embedder=embedder)
     usage = state.get("usage", {})
-    row = {
+    row: CaseScoreRow = {
         "item_id": item.id,
         "split": item.split,
         "status": status,
@@ -55,11 +64,11 @@ def score_case(item: GoldItem, state: RagState, embedder=None) -> dict:
 def execute_cases(
     items: list[GoldItem],
     runner_fn: Callable[[GoldItem], RagState],
-    embedder,
+    embedder: Any,
 ) -> CaseBatch:
     """Evaluate all items sequentially and collect scoring, retrieval, and answer outputs."""
-    rows: list[dict] = []
-    retrieval_pairs: list[tuple[list[dict], list[dict]]] = []
+    rows: list[CaseScoreRow] = []
+    retrieval_pairs: list[RetrievalPair] = []
     answers: list[tuple[GoldItem, str]] = []
     for item in items:
         state = runner_fn(item)

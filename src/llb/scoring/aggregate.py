@@ -11,6 +11,8 @@ sweep in later milestones reuses it unchanged.
 
 from dataclasses import dataclass
 
+from llb.contracts import LeaderboardRow
+
 DEFAULT_WEIGHT_JUDGE = 0.5
 
 
@@ -20,17 +22,18 @@ class ModelResult:
 
     model: str
     backend: str
-    objective_score: float          # mean reference correctness over scored cases
+    objective_score: float  # mean reference correctness over scored cases
     n_cases: int
-    reliability: float = 1.0        # fraction of cases that ended status=ok
+    reliability: float = 1.0  # fraction of cases that ended status=ok
     tokens_per_s: float = 0.0
     peak_vram_mb: float | None = None
     judge_score: float | None = None
     feasible: bool = True
 
 
-def headline_quality(result: ModelResult, judge_trusted: bool,
-                     weight_judge: float = DEFAULT_WEIGHT_JUDGE) -> float:
+def headline_quality(
+    result: ModelResult, judge_trusted: bool, weight_judge: float = DEFAULT_WEIGHT_JUDGE
+) -> float:
     """Blend objective + judge when trusted; objective alone otherwise."""
     if judge_trusted and result.judge_score is not None:
         return (1.0 - weight_judge) * result.objective_score + weight_judge * result.judge_score
@@ -41,17 +44,23 @@ def _vram_key(result: ModelResult) -> float:
     return result.peak_vram_mb if result.peak_vram_mb is not None else float("inf")
 
 
-def rank_results(results: list[ModelResult], judge_trusted: bool = False,
-                 weight_judge: float = DEFAULT_WEIGHT_JUDGE) -> list[dict]:
+def rank_results(
+    results: list[ModelResult],
+    judge_trusted: bool = False,
+    weight_judge: float = DEFAULT_WEIGHT_JUDGE,
+) -> list[LeaderboardRow]:
     """Return ranked row dicts. Feasible models ranked by quality; infeasible appended."""
     feasible = [r for r in results if r.feasible]
     infeasible = [r for r in results if not r.feasible]
     ordered = sorted(
         feasible,
-        key=lambda r: (-headline_quality(r, judge_trusted, weight_judge),
-                       -r.tokens_per_s, _vram_key(r)),
+        key=lambda r: (
+            -headline_quality(r, judge_trusted, weight_judge),
+            -r.tokens_per_s,
+            _vram_key(r),
+        ),
     )
-    rows: list[dict] = []
+    rows: list[LeaderboardRow] = []
     for rank, r in enumerate(ordered, 1):
         rows.append(_row(r, rank, judge_trusted, weight_judge))
     for r in infeasible:
@@ -59,7 +68,9 @@ def rank_results(results: list[ModelResult], judge_trusted: bool = False,
     return rows
 
 
-def _row(r: ModelResult, rank: int | None, judge_trusted: bool, weight_judge: float) -> dict:
+def _row(
+    r: ModelResult, rank: int | None, judge_trusted: bool, weight_judge: float
+) -> LeaderboardRow:
     return {
         "rank": rank,
         "model": r.model,
@@ -75,7 +86,7 @@ def _row(r: ModelResult, rank: int | None, judge_trusted: bool, weight_judge: fl
     }
 
 
-def format_table(rows: list[dict]) -> str:
+def format_table(rows: list[LeaderboardRow]) -> str:
     """Render ranked rows as an ASCII table (judge column omitted when always demoted)."""
     show_judge = any(row.get("judge") is not None for row in rows)
     headers = ["rank", "model", "backend", "quality", "objective"]
@@ -83,7 +94,7 @@ def format_table(rows: list[dict]) -> str:
         headers.append("judge")
     headers += ["reliab", "tok/s", "vram_mb", "feasible"]
 
-    def cell(row: dict, key: str) -> str:
+    def cell(row: LeaderboardRow, key: str) -> str:
         mapping = {
             "rank": "-" if row["rank"] is None else str(row["rank"]),
             "model": row["model"],
@@ -99,8 +110,9 @@ def format_table(rows: list[dict]) -> str:
         return mapping[key]
 
     table = [[cell(row, h) for h in headers] for row in rows]
-    widths = [max(len(h), *(len(r[i]) for r in table)) if table else len(h)
-              for i, h in enumerate(headers)]
+    widths = [
+        max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
+    ]
     line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
     out = [line, "  ".join("-" * widths[i] for i in range(len(headers)))]
     for r in table:

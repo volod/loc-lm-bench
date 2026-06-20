@@ -31,12 +31,15 @@ import re
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
+
+from llb.contracts import ChunkRecord, ChunkSummary, JsonObject
 
 PURE_STRATEGIES = ("fixed", "sentence")
 STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic")
 
 _TERM = re.compile(r"[.!?…]+")
-_CLOSERS = "”»\")]’"
+_CLOSERS = '”»")]’'
 _LOG = logging.getLogger(__name__)
 
 
@@ -102,9 +105,11 @@ def _pack(spans: list[tuple[int, int]], size: int) -> list[tuple[int, int]]:
         elif end - cur_start <= size:
             cur_end = end
         else:
+            assert cur_end is not None
             out.append((cur_start, cur_end))
             cur_start, cur_end = start, end
     if cur_start is not None:
+        assert cur_end is not None
         out.append((cur_start, cur_end))
     return out
 
@@ -163,7 +168,7 @@ def _trim(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, dict]]:
+def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, JsonObject]]:
     """Structure-aware split on markdown headers; header breadcrumbs land in metadata.
 
     Headers are parsed from the SOURCE so every span is an exact source substring. (langchain's
@@ -171,10 +176,16 @@ def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, d
     source-span metric.) Sections longer than `size` are sub-split with `recursive_spans`
     (langchain RecursiveCharacterTextSplitter when present, pure fallback otherwise).
     """
-    headers = [(m.start(), m.end(), len(m.group(1)), m.group(2).strip())
-               for m in _MD_HEADER.finditer(text)]
+    headers = [
+        (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)
+    ]
 
-    def emit(out: list, body_start: int, body_end: int, meta: dict) -> None:
+    def emit(
+        out: list[tuple[int, int, JsonObject]],
+        body_start: int,
+        body_end: int,
+        meta: JsonObject,
+    ) -> None:
         bs, be = _trim(text, body_start, body_end)
         if be <= bs:
             return
@@ -184,7 +195,7 @@ def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, d
             for rs, re_end in recursive_spans(text[bs:be], size, overlap):
                 out.append((bs + rs, bs + re_end, meta))
 
-    out: list[tuple[int, int, dict]] = []
+    out: list[tuple[int, int, JsonObject]] = []
     if not headers:
         emit(out, 0, len(text), {"headers": {}})
         return out
@@ -210,7 +221,9 @@ def _percentile(values: list[float], pct: float) -> float:
     return ordered[idx]
 
 
-def semantic_spans(text: str, size: int, embedder, threshold_pct: float = 90.0) -> list[tuple[int, int]]:
+def semantic_spans(
+    text: str, size: int, embedder: Any, threshold_pct: float = 90.0
+) -> list[tuple[int, int]]:
     """Native semantic chunking: break where consecutive-sentence embedding distance spikes.
 
     Uses the PINNED embedder (injected) and our sentence offsets, so chunks are exact source
@@ -240,13 +253,13 @@ def semantic_spans(text: str, size: int, embedder, threshold_pct: float = 90.0) 
         if end - start <= size:
             spans.append((start, end))
         else:
-            spans.extend(_pack(sents[g0:g1 + 1], size))
+            spans.extend(_pack(sents[g0 : g1 + 1], size))
     return spans
 
 
 def chunk_spans(
-    text: str, strategy: str, size: int, overlap: int, embedder=None
-) -> list[tuple[int, int, dict]]:
+    text: str, strategy: str, size: int, overlap: int, embedder: Any = None
+) -> list[tuple[int, int, JsonObject]]:
     """Unified (start, end, metadata) spans for a strategy."""
     validate_chunking(size, overlap)
     if strategy == "fixed":
@@ -265,9 +278,14 @@ def chunk_spans(
 
 
 def chunk_text(
-    text: str, doc_id: str, strategy: str, size: int, overlap: int, embedder=None
-) -> list[dict]:
-    chunks: list[dict] = []
+    text: str,
+    doc_id: str,
+    strategy: str,
+    size: int,
+    overlap: int,
+    embedder: Any = None,
+) -> list[ChunkRecord]:
+    chunks: list[ChunkRecord] = []
     for k, (start, end, meta) in enumerate(chunk_spans(text, strategy, size, overlap, embedder)):
         chunks.append(
             {
@@ -293,15 +311,19 @@ def iter_docs(corpus_root: Path) -> Iterator[tuple[str, str]]:
 
 
 def chunk_corpus(
-    corpus_root: Path, strategy: str, size: int, overlap: int, embedder=None
-) -> list[dict]:
-    chunks: list[dict] = []
+    corpus_root: Path,
+    strategy: str,
+    size: int,
+    overlap: int,
+    embedder: Any = None,
+) -> list[ChunkRecord]:
+    chunks: list[ChunkRecord] = []
     for doc_id, text in iter_docs(corpus_root):
         chunks.extend(chunk_text(text, doc_id, strategy, size, overlap, embedder))
     return chunks
 
 
-def summarize(chunks: list[dict]) -> dict:
+def summarize(chunks: list[ChunkRecord]) -> ChunkSummary:
     sizes = [c["char_end"] - c["char_start"] for c in chunks]
     n = len(sizes)
     return {
@@ -312,7 +334,7 @@ def summarize(chunks: list[dict]) -> dict:
     }
 
 
-def build_faiss(chunks: list[dict], model_name: str, index_dir: Path, strategy: str) -> None:
+def build_faiss(chunks: list[ChunkRecord], model_name: str, index_dir: Path, strategy: str) -> None:
     """Embed chunk texts and write a FAISS index. Needs the `[rag]` extra."""
     try:
         import faiss
@@ -349,7 +371,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strategy", default="all", choices=("all", *STRATEGIES))
     parser.add_argument("--size", type=int, default=800)
     parser.add_argument("--overlap", type=int, default=120)
-    parser.add_argument("--embed", action="store_true", help="also build a FAISS index ([rag] extra)")
+    parser.add_argument(
+        "--embed", action="store_true", help="also build a FAISS index ([rag] extra)"
+    )
     parser.add_argument("--model", default="intfloat/multilingual-e5-base")
     args = parser.parse_args(argv)
 

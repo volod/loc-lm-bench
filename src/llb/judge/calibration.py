@@ -14,7 +14,11 @@ import json
 import logging
 import random
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+
+from llb.contracts import CalibrationResult, JsonObject, WorksheetItem
+from llb.goldset.schema import GoldItem
 
 DEFAULT_THRESHOLD = 0.6
 _LOG = logging.getLogger(__name__)
@@ -44,7 +48,7 @@ def _pearson(a: list[float], b: list[float]) -> float:
     den_b = sum((y - mean_b) ** 2 for y in b) ** 0.5
     if den_a == 0 or den_b == 0:
         return 0.0
-    return num / (den_a * den_b)
+    return float(num / (den_a * den_b))
 
 
 def spearman_rho(human: list[float], judge: list[float]) -> float:
@@ -83,7 +87,7 @@ def bootstrap_ci(
 
 def calibrate(
     human: list[float], judge: list[float], threshold: float = DEFAULT_THRESHOLD
-) -> dict:
+) -> CalibrationResult:
     rho = spearman_rho(human, judge)
     lo, hi = bootstrap_ci(human, judge)
     return {
@@ -96,11 +100,18 @@ def calibrate(
     }
 
 
-WORKSHEET_COLS = ["item_id", "split", "question", "reference_answer",
-                  "model_answer", "human_rating", "judge_rating"]
+WORKSHEET_COLS = [
+    "item_id",
+    "split",
+    "question",
+    "reference_answer",
+    "model_answer",
+    "human_rating",
+    "judge_rating",
+]
 
 
-def emit_worksheet(items: list[dict], out_path: Path) -> int:
+def emit_worksheet(items: list[WorksheetItem], out_path: Path) -> int:
     """Write a blank CSV worksheet (one row per calibration item) for the human to fill.
 
     Columns model_answer / human_rating / judge_rating are blank. Use
@@ -115,20 +126,22 @@ def emit_worksheet(items: list[dict], out_path: Path) -> int:
         for it in items:
             if it.get("split") != "calibration":
                 continue
-            writer.writerow({
-                "item_id": it["id"],
-                "split": it["split"],
-                "question": it["question"],
-                "reference_answer": it["reference_answer"],
-                "model_answer": "",
-                "human_rating": "",
-                "judge_rating": "",
-            })
+            writer.writerow(
+                {
+                    "item_id": it["id"],
+                    "split": it["split"],
+                    "question": it["question"],
+                    "reference_answer": it["reference_answer"],
+                    "model_answer": "",
+                    "human_rating": "",
+                    "judge_rating": "",
+                }
+            )
             n += 1
     return n
 
 
-def write_filled_worksheet(answers, out_path: Path) -> int:
+def write_filled_worksheet(answers: Sequence[tuple[GoldItem, str]], out_path: Path) -> int:
     """Write a worksheet with model_answer pre-filled from a run; ratings left blank.
 
     `answers` is a list of `(gold_item, model_answer)` (gold_item duck-typed:
@@ -142,21 +155,23 @@ def write_filled_worksheet(answers, out_path: Path) -> int:
         writer = csv.DictWriter(fh, fieldnames=WORKSHEET_COLS)
         writer.writeheader()
         for item, answer in answers:
-            writer.writerow({
-                "item_id": item.id,
-                "split": item.split,
-                "question": item.question,
-                "reference_answer": item.reference_answer,
-                "model_answer": answer or "",
-                "human_rating": "",
-                "judge_rating": "",
-            })
+            writer.writerow(
+                {
+                    "item_id": item.id,
+                    "split": item.split,
+                    "question": item.question,
+                    "reference_answer": item.reference_answer,
+                    "model_answer": answer or "",
+                    "human_rating": "",
+                    "judge_rating": "",
+                }
+            )
             n += 1
     return n
 
 
 def _load_ratings(path: Path) -> tuple[list[float], list[float]]:
-    rows: list[dict] = []
+    rows: list[JsonObject] = []
     text = Path(path).read_text(encoding="utf-8")
     if str(path).endswith(".jsonl"):
         rows = [json.loads(line) for line in text.splitlines() if line.strip()]
@@ -180,7 +195,9 @@ def main(argv: list[str] | None = None) -> int:
     ws.add_argument("--out", required=True, type=Path)
 
     sc = sub.add_parser("score", help="compute rho + CI + trust decision from filled ratings")
-    sc.add_argument("--ratings", required=True, type=Path, help="CSV/JSONL with human_rating, judge_rating")
+    sc.add_argument(
+        "--ratings", required=True, type=Path, help="CSV/JSONL with human_rating, judge_rating"
+    )
     sc.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
 
     args = parser.parse_args(argv)
@@ -188,7 +205,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "worksheet":
         from llb.goldset.schema import load_goldset
 
-        items = [it.model_dump() for it in load_goldset(args.goldset)]
+        items: list[WorksheetItem] = [
+            {
+                "id": item.id,
+                "split": item.split,
+                "question": item.question,
+                "reference_answer": item.reference_answer,
+            }
+            for item in load_goldset(args.goldset)
+        ]
         n = emit_worksheet(items, args.out)
         _LOG.info("[calibration] wrote worksheet: %d calibration rows -> %s", n, args.out)
         return 0
@@ -203,9 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         "n={n} threshold={threshold} trusted={trusted}".format(**result),
     )
     if not result["trusted"]:
-        _LOG.info(
-            "[calibration] judge NOT trusted -> demote to diagnostic; objective scores rank."
-        )
+        _LOG.info("[calibration] judge NOT trusted -> demote to diagnostic; objective scores rank.")
     return 0
 
 

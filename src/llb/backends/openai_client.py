@@ -7,21 +7,23 @@ the SDK exception types without any server.
 """
 
 import time
+from typing import Any
 
 import openai
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, ChatResult
+from llb.contracts import ChatMessage
 
 
-def make_client(base_url: str, api_key: str = "not-needed"):
+def make_client(base_url: str, api_key: str = "not-needed") -> openai.OpenAI:
     """An OpenAI SDK client pointed at a local OpenAI-compatible endpoint."""
     return openai.OpenAI(base_url=base_url, api_key=api_key)
 
 
 def chat_once(
-    client,
+    client: Any,
     model: str,
-    messages: list[dict],
+    messages: list[ChatMessage],
     max_tokens: int = 512,
     temperature: float = 0.0,
     timeout: float = 120.0,

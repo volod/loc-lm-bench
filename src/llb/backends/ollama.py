@@ -15,9 +15,13 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
+from typing import cast
+
+import openai
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
+from llb.contracts import BackendMetadata, ChatMessage
 
 
 class OllamaLauncher(BackendLauncher):
@@ -27,13 +31,13 @@ class OllamaLauncher(BackendLauncher):
         super().__init__(model=model, meta={"backend": "ollama", "host": host})
         self.host = host.rstrip("/")
         self.pull = pull
-        self._client = None
+        self._client: openai.OpenAI | None = None
         self._last: ChatResult | None = None
 
     def _reachable(self) -> bool:
         try:
             with urllib.request.urlopen(f"{self.host}/api/tags", timeout=5) as resp:
-                return resp.status == 200
+                return int(resp.status) == 200
         except (urllib.error.URLError, OSError):
             return False
 
@@ -46,22 +50,27 @@ class OllamaLauncher(BackendLauncher):
             subprocess.run(["ollama", "pull", self.model], check=True)
         self._client = make_client(f"{self.host}/v1", api_key="ollama")
 
-    def chat(self, messages: list[dict], max_tokens: int, temperature: float,
-             timeout: float) -> ChatResult:
+    def chat(
+        self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
+    ) -> ChatResult:
         if self._client is None:
             self._client = make_client(f"{self.host}/v1", api_key="ollama")
         self._last = chat_once(
-            self._client, self.model, messages,
-            max_tokens=max_tokens, temperature=temperature, timeout=timeout,
+            self._client,
+            self.model,
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
         )
         return self._last
 
-    def telemetry(self) -> dict:
+    def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)
         if self._last is not None and not self._last.error:
             out["tokens_per_s"] = round(self._last.tokens_per_s(), 2)
             out["last_completion_tokens"] = self._last.completion_tokens
-        return out
+        return cast(BackendMetadata, out)
 
 
 def list_models(host: str = "http://localhost:11434") -> list[str]:

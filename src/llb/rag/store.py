@@ -12,42 +12,55 @@ SOURCE-SPAN overlap score directly against the gold labels.
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from llb.config import DEFAULT_EMBEDDING_MODEL
+from llb.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
 from llb.rag.index import FaissIndex
 
-CHUNKS_FILE = "chunks.jsonl"      # the INDEXED units (children in parent_child mode)
-PARENTS_FILE = "parents.jsonl"    # the parent docstore (parent_child mode only)
+CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
+PARENTS_FILE = "parents.jsonl"  # the parent docstore (parent_child mode only)
 INDEX_FILE = "index.faiss"
 META_FILE = "store_meta.json"
 
 
-def _children_to_parents(child_hits: list[dict], parent_by_id: dict) -> list[dict]:
+def _children_to_parents(
+    child_hits: list[ChunkRecord], parent_by_id: dict[str, ChunkRecord]
+) -> list[ChunkRecord]:
     """Map ranked child hits to their unique parents (preserving rank). Pure + testable."""
-    out: list[dict] = []
+    out: list[ChunkRecord] = []
     seen: set[str] = set()
     for child in child_hits:
         pid = child.get("parent_id")
         if pid is None or pid in seen or pid not in parent_by_id:
             continue
         seen.add(pid)
-        parent = dict(parent_by_id[pid])
+        parent = cast(ChunkRecord, dict(parent_by_id[pid]))
         parent["retrieval_score"] = child.get("retrieval_score")
         parent["rank"] = len(out) + 1
-        parent["matched_child_id"] = child.get("chunk_id")
+        child_id = child.get("chunk_id")
+        if child_id is not None:
+            parent["matched_child_id"] = child_id
         out.append(parent)
     return out
 
 
-def _build_children(parents: list[dict], strategy: str, child_size: int, overlap: int,
-                    embedder) -> list[dict]:
+def _build_children(
+    parents: list[ChunkRecord],
+    strategy: str,
+    child_size: int,
+    overlap: int,
+    embedder: Any,
+) -> list[ChunkRecord]:
     sem = embedder if strategy == "semantic" else None
-    children: list[dict] = []
+    children: list[ChunkRecord] = []
     for parent in parents:
         text = parent["text"]
-        for j, (start, end, meta) in enumerate(chunk_spans(text, strategy, child_size, overlap, sem)):
+        for j, (start, end, meta) in enumerate(
+            chunk_spans(text, strategy, child_size, overlap, sem)
+        ):
             children.append(
                 {
                     "doc_id": parent["doc_id"],
@@ -67,9 +80,15 @@ def _build_children(parents: list[dict], strategy: str, child_size: int, overlap
 class RagStore:
     """In-process retrieval over one chunked + embedded corpus (flat or parent_child)."""
 
-    def __init__(self, chunks: list[dict], index: FaissIndex, embedder: Embedder, meta: dict,
-                 parents: list[dict] | None = None):
-        self.chunks = chunks            # indexed units (children when parent_child)
+    def __init__(
+        self,
+        chunks: list[ChunkRecord],
+        index: FaissIndex,
+        embedder: Embedder,
+        meta: RagStoreMeta,
+        parents: list[ChunkRecord] | None = None,
+    ):
+        self.chunks = chunks  # indexed units (children when parent_child)
         self.index = index
         self.embedder = embedder
         self.meta = meta
@@ -108,7 +127,7 @@ class RagStore:
 
         vectors = embedder.encode_passages([c["text"] for c in indexed])
         index = FaissIndex.build(vectors)
-        meta = {
+        meta: RagStoreMeta = {
             "mode": mode,
             "strategy": strategy,
             "size": size,
@@ -121,7 +140,7 @@ class RagStore:
         }
         return cls(indexed, index, embedder, meta, parents=parents)
 
-    def retrieve(self, question: str, k: int) -> list[dict]:
+    def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
         """Top-k results. Flat: the matched chunks. parent_child: their unique parents."""
         query_vec = self.embedder.encode_queries([question])
         search_k = min(len(self.chunks), k * 4 if self.parents else k)
@@ -136,14 +155,14 @@ class RagStore:
             # found or the complete child index has been searched.
             search_k = min(len(self.chunks), max(search_k + 1, search_k * 2))
 
-    def _search(self, query_vec, search_k: int) -> list[dict]:
+    def _search(self, query_vec: Any, search_k: int) -> list[ChunkRecord]:
         """Return ranked indexed units for an already encoded query."""
         scores, ids = self.index.search(query_vec, search_k)
-        hits: list[dict] = []
+        hits: list[ChunkRecord] = []
         for rank, (cid, score) in enumerate(zip(ids[0], scores[0]), 1):
             if cid < 0:  # faiss pads with -1 when fewer than k results exist
                 continue
-            chunk = dict(self.chunks[cid])
+            chunk = cast(ChunkRecord, dict(self.chunks[cid]))
             chunk["retrieval_score"] = float(score)
             chunk["rank"] = rank
             hits.append(chunk)
@@ -173,15 +192,14 @@ class RagStore:
         return cls(chunks, index, embedder, meta, parents=parents)
 
 
-def _write_jsonl(rows: list[dict], path: Path) -> None:
+def _write_jsonl(rows: list[ChunkRecord], path: Path) -> None:
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _read_jsonl(path: Path) -> list[dict]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+def _read_jsonl(path: Path) -> list[ChunkRecord]:
+    rows = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
+    return cast(list[ChunkRecord], rows)

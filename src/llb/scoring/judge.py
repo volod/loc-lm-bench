@@ -13,6 +13,8 @@ so CI never imports ragas.
 from dataclasses import dataclass
 from typing import Callable
 
+from llb.contracts import JudgeInputRecord, JudgeScore
+
 DEFAULT_THRESHOLD = 0.6
 
 
@@ -27,15 +29,15 @@ class JudgeOutcome:
 
     trusted: bool
     reason: str
-    scores: list[dict] | None = None
+    scores: list[JudgeScore] | None = None
 
 
 def run_judge(
-    records: list[dict],
+    records: list[JudgeInputRecord],
     judge_model: str | None,
     calibration_rho: float | None,
     threshold: float = DEFAULT_THRESHOLD,
-    scorer: Callable[[list[dict], str], list[dict]] | None = None,
+    scorer: Callable[[list[JudgeInputRecord], str], list[JudgeScore]] | None = None,
 ) -> JudgeOutcome:
     """Route to the judge only if gated-in; otherwise return a demoted outcome.
 
@@ -55,7 +57,7 @@ def run_judge(
     return JudgeOutcome(trusted=True, reason="calibrated", scores=scorer(records, judge_model))
 
 
-def ragas_scorer(records: list[dict], judge_model: str) -> list[dict]:
+def ragas_scorer(records: list[JudgeInputRecord], judge_model: str) -> list[JudgeScore]:
     """Default scorer: Ragas faithfulness + answer relevancy. Needs the `[rag]` extra."""
     try:
         import ragas  # noqa: F401

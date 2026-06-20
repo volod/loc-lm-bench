@@ -41,7 +41,9 @@ def detect_gpus() -> list[Gpu]:
     try:
         out = subprocess.run(
             ["nvidia-smi", f"--query-gpu={_SMI_QUERY}", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return []

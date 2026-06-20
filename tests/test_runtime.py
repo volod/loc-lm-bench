@@ -8,7 +8,7 @@ from llb.runtime import INTERRUPT_EXIT, run, run_typer
 
 def test_run_returns_normal_exit_codes():
     assert run(lambda: 0) == 0
-    assert run(lambda: None) == 0      # main() returning None -> 0
+    assert run(lambda: None) == 0  # main() returning None -> 0
     assert run(lambda: 3) == 3
 
 

@@ -12,6 +12,8 @@ so the gate logic is unit-testable without a GPU.
 
 from typing import Callable
 
+from llb.contracts import VramReclaimReport
+
 DEFAULT_TOLERANCE_MB = 512
 DEFAULT_MAX_POLLS = 30
 
@@ -26,7 +28,7 @@ def nvml_reader() -> Callable[[], int]:
         import pynvml
     except ImportError as exc:
         raise SystemExit(
-            'ERROR: VRAM telemetry needs the [telemetry] extra. '
+            "ERROR: VRAM telemetry needs the [telemetry] extra. "
             'Run: uv pip install -e ".[telemetry]"'
         ) from exc
 
@@ -55,7 +57,7 @@ def wait_for_reclaim(
     max_polls: int = DEFAULT_MAX_POLLS,
     poll_s: float = 1.0,
     sleep: Callable[[float], None] | None = None,
-) -> dict:
+) -> VramReclaimReport:
     """Poll until used VRAM <= baseline + tolerance, or polls run out.
 
     Returns {reclaimed, residual_mb, polls}. Does not raise; the caller decides whether a
@@ -74,9 +76,23 @@ def wait_for_reclaim(
     return {"reclaimed": residual <= tolerance_mb, "residual_mb": residual, "polls": polls}
 
 
-def assert_reclaimed(baseline_mb: int, **kwargs) -> dict:
+def assert_reclaimed(
+    baseline_mb: int,
+    reader: Callable[[], int] | None = None,
+    tolerance_mb: int = DEFAULT_TOLERANCE_MB,
+    max_polls: int = DEFAULT_MAX_POLLS,
+    poll_s: float = 1.0,
+    sleep: Callable[[float], None] | None = None,
+) -> VramReclaimReport:
     """Run the gate and raise `VramNotReclaimed` if VRAM did not return to baseline."""
-    result = wait_for_reclaim(baseline_mb, **kwargs)
+    result = wait_for_reclaim(
+        baseline_mb,
+        reader=reader,
+        tolerance_mb=tolerance_mb,
+        max_polls=max_polls,
+        poll_s=poll_s,
+        sleep=sleep,
+    )
     if not result["reclaimed"]:
         raise VramNotReclaimed(
             f"VRAM residual {result['residual_mb']} MB exceeds tolerance after "

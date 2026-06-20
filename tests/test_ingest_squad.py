@@ -18,7 +18,9 @@ def test_ingest_fixture(tmp_path):
 
 
 def test_skips_unanswerable():
-    records = [{"id": "x", "context": "abc", "question": "q", "answers": {"text": [], "answer_start": []}}]
+    records = [
+        {"id": "x", "context": "abc", "question": "q", "answers": {"text": [], "answer_start": []}}
+    ]
     docs, items, skipped = squad_to_gold(records)
     assert items == [] and skipped == 1
 
@@ -31,8 +33,11 @@ def test_nested_squad_normalized():
                     {
                         "context": "Київ — столиця.",
                         "qas": [
-                            {"id": "n1", "question": "Що це?",
-                             "answers": [{"text": "Київ", "answer_start": 0}]}
+                            {
+                                "id": "n1",
+                                "question": "Що це?",
+                                "answers": [{"text": "Київ", "answer_start": 0}],
+                            }
                         ],
                     }
                 ]

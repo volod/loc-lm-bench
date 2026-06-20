@@ -14,13 +14,24 @@ import json
 import logging
 import os
 import platform
+import shutil
 import sys
 import tempfile
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
-
+from typing import TypeGuard
 from pydantic import BaseModel, Field
+
+from llb.contracts import (
+    JsonObject,
+    JudgeStatus,
+    RetrievalMetrics,
+    RunEnvironment,
+    RunMetrics,
+    RunPaths,
+    TelemetryReport,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -29,7 +40,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def capture_env() -> dict:
+def capture_env() -> RunEnvironment:
     """Minimal reproducibility environment (GPU/driver added with telemetry in M2)."""
     return {
         "python": sys.version.split()[0],
@@ -43,16 +54,16 @@ class RunManifest(BaseModel):
     run_id: str
     run_name: str
     created_at: str = Field(default_factory=_utc_now)
-    config: dict
-    env: dict = Field(default_factory=capture_env)
-    metrics: dict = Field(default_factory=dict)
-    retrieval: dict = Field(default_factory=dict)
-    judge: dict = Field(default_factory=dict)
-    telemetry: dict = Field(default_factory=dict)
+    config: JsonObject
+    env: RunEnvironment = Field(default_factory=capture_env)
+    metrics: RunMetrics | None = None
+    retrieval: RetrievalMetrics | None = None
+    judge: JudgeStatus | None = None
+    telemetry: TelemetryReport | None = None
     n_cases: int = 0
 
 
-def write_scores(rows: list[dict], path_no_ext: Path) -> Path:
+def write_scores(rows: Sequence[Mapping[str, object]], path_no_ext: Path) -> Path:
     """Write per-case scores. Parquet if pyarrow is available, else JSONL. Returns path."""
     path_no_ext = Path(path_no_ext)
     path_no_ext.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +81,7 @@ def write_scores(rows: list[dict], path_no_ext: Path) -> Path:
     ) as temp:
         temp_path = Path(temp.name)
     try:
-        pq.write_table(pa.Table.from_pylist(rows), str(temp_path))
+        pq.write_table(pa.Table.from_pylist([dict(row) for row in rows]), str(temp_path))
         temp_path.replace(out)
     except BaseException:
         temp_path.unlink(missing_ok=True)
@@ -80,23 +91,42 @@ def write_scores(rows: list[dict], path_no_ext: Path) -> Path:
 
 def persist_run(
     manifest: RunManifest,
-    case_rows: list[dict],
+    case_rows: Sequence[Mapping[str, object]],
     out_dir: Path | str,
     mirror: Callable[[RunManifest, Path], None] | None = None,
-) -> dict:
-    """Write manifest + scores FIRST, then mirror (best-effort). Returns written paths."""
+    staging_dir: Path | str | None = None,
+) -> RunPaths:
+    """Atomically publish manifest + scores as one directory, then mirror best-effort."""
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest_path = out_dir / "manifest.json"
-    score_paths = (out_dir / "scores.jsonl", out_dir / "scores.parquet")
-    if manifest_path.exists() or any(path.exists() for path in score_paths):
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    if out_dir.exists():
         raise FileExistsError(f"run artifacts already exist in {out_dir}")
-    _atomic_write_text(
-        manifest_path,
-        json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
+
+    staging = (
+        Path(staging_dir)
+        if staging_dir is not None
+        else Path(tempfile.mkdtemp(dir=out_dir.parent, prefix=f".{out_dir.name}.tmp-"))
     )
-    scores_path = write_scores(case_rows, out_dir / "scores")
+    if staging.parent.resolve() != out_dir.parent.resolve():
+        raise ValueError("staging_dir must be a sibling of out_dir for atomic publication")
+    staging.mkdir(parents=True, exist_ok=True)
+
+    try:
+        staging_manifest = staging / "manifest.json"
+        if staging_manifest.exists() or any(staging.glob("scores.*")):
+            raise FileExistsError(f"staged canonical artifacts already exist in {staging}")
+        _atomic_write_text(
+            staging_manifest,
+            json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
+        )
+        staged_scores = write_scores(case_rows, staging / "scores")
+        staging.replace(out_dir)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    manifest_path = out_dir / staging_manifest.name
+    scores_path = out_dir / staged_scores.name
 
     # Mirror only after the canonical record exists on disk; never let it raise.
     mirror = mirror if mirror is not None else mlflow_mirror
@@ -128,15 +158,17 @@ def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:
     mlflow.set_experiment("loc-lm-bench")
     with mlflow.start_run(run_name=manifest.run_name):
         mlflow.log_params({k: v for k, v in manifest.config.items() if _scalar(v)})
-        mlflow.log_metrics({k: float(v) for k, v in manifest.metrics.items() if _numeric(v)})
+        mlflow.log_metrics(
+            {k: float(v) for k, v in (manifest.metrics or {}).items() if _numeric(v)}
+        )
         mlflow.log_artifact(str(out_dir / "manifest.json"))
 
 
-def _scalar(value) -> bool:
+def _scalar(value: object) -> TypeGuard[str | int | float | bool]:
     return isinstance(value, (str, int, float, bool))
 
 
-def _numeric(value) -> bool:
+def _numeric(value: object) -> TypeGuard[int | float]:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 

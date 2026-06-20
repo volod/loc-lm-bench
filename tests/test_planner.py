@@ -12,11 +12,25 @@ from llb.backends.planner import (
 )
 
 # A small model that fits comfortably on a 16 GB card.
-SMALL = {"name": "small", "backend": "ollama", "params_b": 3.2, "quant": "q4_k_m",
-         "n_layers": 28, "kv_dim": 1024, "max_context": 4096}
+SMALL = {
+    "name": "small",
+    "backend": "ollama",
+    "params_b": 3.2,
+    "quant": "q4_k_m",
+    "n_layers": 28,
+    "kv_dim": 1024,
+    "max_context": 4096,
+}
 # A 7B in fp16: weights ~14.5 GB, so it overflows VRAM and needs CPU offload.
-FP16_7B = {"name": "big", "backend": "vllm", "params_b": 7.6, "quant": "fp16",
-           "n_layers": 28, "kv_dim": 512, "max_context": 8192}
+FP16_7B = {
+    "name": "big",
+    "backend": "vllm",
+    "params_b": 7.6,
+    "quant": "fp16",
+    "n_layers": 28,
+    "kv_dim": 512,
+    "max_context": 8192,
+}
 
 
 def test_parse_meminfo():
@@ -27,14 +41,14 @@ def test_parse_meminfo():
 def test_resolve_bpw_table_and_explicit():
     assert resolve_bpw({"quant": "fp16"}) == 16.0
     assert resolve_bpw({"quant": "Q4_K_M"}) == 4.5
-    assert resolve_bpw({"quant": "fp8"}) == 8.0       # served formats
-    assert resolve_bpw({"quant": "w4a16"}) == 4.5     # int4 for vLLM
+    assert resolve_bpw({"quant": "fp8"}) == 8.0  # served formats
+    assert resolve_bpw({"quant": "w4a16"}) == 4.5  # int4 for vLLM
     assert resolve_bpw({"bpw": 5.0}) == 5.0
     assert resolve_bpw({"quant": "nonsense"}) is None
 
 
 def test_weights_and_kv_math():
-    assert round(weights_mib(3.2, 4.5)) == 1717          # 3.2e9 * 4.5 / 8 bytes -> MiB
+    assert round(weights_mib(3.2, 4.5)) == 1717  # 3.2e9 * 4.5 / 8 bytes -> MiB
     assert round(kv_mib_per_token(28, 1024), 4) == 0.1094  # 2*28*1024*2 bytes/token
 
 
@@ -54,9 +68,9 @@ def test_small_model_fits_fully_on_gpu():
 def test_fp16_7b_needs_cpu_offload():
     row = plan_model(FP16_7B, vram_mib=16000, ram_mib=32000)
     assert row["verdict"] == VERDICT_OFFLOAD
-    assert 0 < row["gpu_layers"] < 28        # most layers on GPU, the rest on CPU
-    assert row["ctx_gpu"] == 0               # weights leave no VRAM for KV
-    assert row["ctx_max"] == 8192            # but GPU+RAM holds the full context
+    assert 0 < row["gpu_layers"] < 28  # most layers on GPU, the rest on CPU
+    assert row["ctx_gpu"] == 0  # weights leave no VRAM for KV
+    assert row["ctx_max"] == 8192  # but GPU+RAM holds the full context
 
 
 def test_too_big_for_vram_plus_ram_is_no():
@@ -66,15 +80,19 @@ def test_too_big_for_vram_plus_ram_is_no():
 
 
 def test_target_context_beyond_budget_is_no():
-    row = plan_model({**SMALL, "max_context": 131072},
-                     vram_mib=4000, ram_mib=3000, target_ctx=20000)
+    row = plan_model(
+        {**SMALL, "max_context": 131072}, vram_mib=4000, ram_mib=3000, target_ctx=20000
+    )
     assert row["verdict"] == VERDICT_NO and "exceeds" in row["note"]
 
 
 def test_missing_arch_is_unknown_but_weight_feasible():
-    row = plan_model({"name": "m", "backend": "ollama", "params_b": 3.2, "quant": "q4_k_m"},
-                     vram_mib=16000, ram_mib=32000)
-    assert row["verdict"] == VERDICT_GPU       # weight-only feasibility still resolves
+    row = plan_model(
+        {"name": "m", "backend": "ollama", "params_b": 3.2, "quant": "q4_k_m"},
+        vram_mib=16000,
+        ram_mib=32000,
+    )
+    assert row["verdict"] == VERDICT_GPU  # weight-only feasibility still resolves
     assert "n_layers" in row["note"]
 
 

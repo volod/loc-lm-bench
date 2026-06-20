@@ -16,9 +16,27 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any, Callable, Protocol, TextIO, cast
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
+from llb.contracts import BackendMetadata, ChatMessage
+
+
+class _Process(Protocol):
+    returncode: int | None
+
+    def poll(self) -> int | None: ...
+
+    def terminate(self) -> None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def kill(self) -> None: ...
+
+
+class _HttpGetter(Protocol):
+    def __call__(self, url: str, timeout: float = 3.0) -> tuple[int, str] | None: ...
 
 
 def build_vllm_command(
@@ -35,9 +53,13 @@ def build_vllm_command(
     """The `vllm serve ...` argv. `gpu_memory_utilization` is recorded so peak VRAM is
     comparable across runs (vLLM pre-reserves a KV-cache fraction)."""
     cmd = [
-        "vllm", "serve", model,
-        "--port", str(port),
-        "--gpu-memory-utilization", f"{gpu_memory_utilization}",
+        "vllm",
+        "serve",
+        model,
+        "--port",
+        str(port),
+        "--gpu-memory-utilization",
+        f"{gpu_memory_utilization}",
     ]
     if max_model_len:
         cmd += ["--max-model-len", str(max_model_len)]
@@ -52,11 +74,11 @@ def build_vllm_command(
     return cmd
 
 
-def _http_get(url: str, timeout: float = 3.0):
+def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
     """GET -> (status, body) or None on connection error."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return resp.status, resp.read().decode("utf-8", "replace")
+            return int(resp.status), resp.read().decode("utf-8", "replace")
     except (urllib.error.URLError, OSError, ValueError):
         return None
 
@@ -90,14 +112,18 @@ class VllmLauncher(BackendLauncher):
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
         log_dir: Path | str | None = None,
-        popen=None,
-        http_get=None,
-        sleep=None,
+        popen: Callable[..., _Process] | None = None,
+        http_get: _HttpGetter | None = None,
+        sleep: Callable[[float], None] | None = None,
     ):
-        super().__init__(model=model, meta={
-            "backend": "vllm", "host": host,
-            "gpu_memory_utilization": gpu_memory_utilization,
-        })
+        super().__init__(
+            model=model,
+            meta={
+                "backend": "vllm",
+                "host": host,
+                "gpu_memory_utilization": gpu_memory_utilization,
+            },
+        )
         self.host = host.rstrip("/")
         self.port = port
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -108,25 +134,28 @@ class VllmLauncher(BackendLauncher):
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
         self.log_dir = Path(log_dir) if log_dir else None
-        self._popen = popen or subprocess.Popen
+        self._popen = popen or cast(Callable[..., _Process], subprocess.Popen)
         self._http_get = http_get or _http_get
         self._sleep = sleep or time.sleep
-        self._proc = None
-        self._client = None
-        self._served_context = None
+        self._proc: _Process | None = None
+        self._client: Any = None
+        self._served_context: int | None = None
         self._last: ChatResult | None = None
-        self._log_handle = None
-        self.log_path = None
+        self._log_handle: TextIO | None = None
+        self.log_path: Path | None = None
 
     def command(self) -> list[str]:
         return build_vllm_command(
-            self.model, port=self.port,
+            self.model,
+            port=self.port,
             gpu_memory_utilization=self.gpu_memory_utilization,
-            max_model_len=self.max_model_len, dtype=self.dtype,
-            quantization=self.quantization, extra_args=self.extra_args,
+            max_model_len=self.max_model_len,
+            dtype=self.dtype,
+            quantization=self.quantization,
+            extra_args=self.extra_args,
         )
 
-    def _open_log(self):
+    def _open_log(self) -> int | TextIO:
         if self.log_dir is None:
             return subprocess.DEVNULL
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -155,9 +184,7 @@ class VllmLauncher(BackendLauncher):
                     break
                 self._sleep(self.poll_interval)
             else:
-                raise RuntimeError(
-                    f"vLLM not ready within {self.startup_timeout:.0f}s{where}"
-                )
+                raise RuntimeError(f"vLLM not ready within {self.startup_timeout:.0f}s{where}")
         except BaseException:
             self.stop()
             raise
@@ -166,13 +193,18 @@ class VllmLauncher(BackendLauncher):
         self.meta["served_context"] = self._served_context
         self._client = make_client(f"{self.host}/v1", api_key="vllm")
 
-    def chat(self, messages: list[dict], max_tokens: int, temperature: float,
-             timeout: float) -> ChatResult:
+    def chat(
+        self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
+    ) -> ChatResult:
         if self._client is None:
             self._client = make_client(f"{self.host}/v1", api_key="vllm")
         self._last = chat_once(
-            self._client, self.model, messages,
-            max_tokens=max_tokens, temperature=temperature, timeout=timeout,
+            self._client,
+            self.model,
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
         )
         return self._last
 
@@ -195,9 +227,9 @@ class VllmLauncher(BackendLauncher):
                 self._log_handle.close()
                 self._log_handle = None
 
-    def telemetry(self) -> dict:
+    def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)
         out["load_time_s"] = round(self.load_time_s, 2)
         if self._last is not None and not self._last.error:
             out["tokens_per_s"] = round(self._last.tokens_per_s(), 2)
-        return out
+        return cast(BackendMetadata, out)

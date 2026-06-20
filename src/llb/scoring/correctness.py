@@ -15,6 +15,9 @@ dependency-free here.
 """
 
 import unicodedata
+from typing import Any
+
+from llb.contracts import CorrectnessScores
 
 
 def normalize(text: str) -> str:
@@ -70,7 +73,7 @@ def contains(prediction: str, reference: str) -> float:
     return 1.0 if all(tok in pred for tok in ref) else 0.0
 
 
-def semantic_similarity(prediction: str, reference: str, embedder) -> float:
+def semantic_similarity(prediction: str, reference: str, embedder: Any) -> float:
     """Cosine similarity of prediction vs reference via the PINNED embedder.
 
     The objective axis includes a semantic match (design: exact / semantic / structured
@@ -86,7 +89,7 @@ def semantic_similarity(prediction: str, reference: str, embedder) -> float:
     return max(0.0, min(1.0, cosine))
 
 
-def answer_correctness(prediction: str, reference: str, embedder=None) -> dict:
+def answer_correctness(prediction: str, reference: str, embedder: Any = None) -> CorrectnessScores:
     """All objective signals plus the headline `score` (token_f1).
 
     `score` stays token_f1 -- a stable, dependency-free ranking number. When an `embedder`
@@ -94,7 +97,7 @@ def answer_correctness(prediction: str, reference: str, embedder=None) -> dict:
     blending weights are a tuning decision).
     """
     f1 = token_f1(prediction, reference)
-    out = {
+    out: CorrectnessScores = {
         "exact": exact_match(prediction, reference),
         "token_f1": f1,
         "contains": contains(prediction, reference),

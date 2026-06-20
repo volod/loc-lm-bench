@@ -17,8 +17,11 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
+from llb.contracts import JsonObject, SquadAnswers, SquadRecord
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items
@@ -31,10 +34,10 @@ def _doc_id(context: str) -> str:
     return f"squad/{digest}.txt"
 
 
-def normalize(raw: object) -> list[dict]:
+def normalize(raw: object) -> list[SquadRecord]:
     """Accept flattened records or nested SQuAD; return a list of flattened records."""
     if isinstance(raw, dict) and "data" in raw:
-        records: list[dict] = []
+        records: list[SquadRecord] = []
         for article in raw["data"]:
             for para in article.get("paragraphs", []):
                 context = para["context"]
@@ -53,19 +56,19 @@ def normalize(raw: object) -> list[dict]:
                     )
         return records
     if isinstance(raw, list):
-        return raw
+        return cast(list[SquadRecord], raw)
     raise ValueError("unrecognized SQuAD JSON shape (expected a list or a {'data': ...} object)")
 
 
 def squad_to_gold(
-    records: list[dict],
+    records: list[SquadRecord],
     lang: str = "uk",
     provenance: str = "public-reused",
     max_items: int | None = None,
     seed: int = 13,
 ) -> tuple[dict[str, str], list[GoldItem], int]:
     docs: dict[str, str] = {}
-    raw_items: list[dict] = []
+    raw_items: list[JsonObject] = []
     skipped = 0
     for i, rec in enumerate(records):
         if max_items is not None and len(raw_items) >= max_items:
@@ -111,11 +114,11 @@ def squad_to_gold(
     return docs, items, skipped
 
 
-def load_squad_json(path: Path) -> list[dict]:
+def load_squad_json(path: Path) -> list[SquadRecord]:
     return normalize(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def coerce_answers(row: dict) -> dict:
+def coerce_answers(row: Mapping[str, Any]) -> SquadAnswers:
     """Normalize a row's answers into {text: [...], answer_start: [...]}.
 
     Handles three shapes seen in the wild: a real dict (HF squad), a dict serialized as
@@ -133,10 +136,13 @@ def coerce_answers(row: dict) -> dict:
             "answer_start": list(ans.get("answer_start") or []),
         }
     text = row.get("answer_text")
-    if text:
+    if isinstance(text, str) and text:
         start = row.get("answer_start")
+        starts: list[int | None]
         try:
-            starts = [int(float(start))] if start not in (None, "") else []
+            starts = (
+                [int(float(start))] if isinstance(start, str | int | float) and start != "" else []
+            )
         except (TypeError, ValueError):
             starts = []
         return {"text": [text], "answer_start": starts}
@@ -145,7 +151,7 @@ def coerce_answers(row: dict) -> dict:
 
 def load_hf(
     dataset_id: str, split: str, token: str | None = None, limit: int | None = None
-) -> list[dict]:
+) -> list[SquadRecord]:
     try:
         from datasets import load_dataset
     except ImportError as exc:
@@ -158,7 +164,7 @@ def load_hf(
     stream = limit is not None
     cap = None if limit is None else max(limit * 3, limit + 50)
     ds = load_dataset(dataset_id, split=split, token=token, streaming=stream)
-    records: list[dict] = []
+    records: list[SquadRecord] = []
     for i, row in enumerate(ds):
         if cap is not None and i >= cap:
             break
@@ -206,9 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     dump_goldset(items, out_path)
 
     report = validate_items(items, corpus_root)
-    _LOG.info(
-        "[ingest_squad] wrote %d items (%d skipped) -> %s", len(items), skipped, out_path
-    )
+    _LOG.info("[ingest_squad] wrote %d items (%d skipped) -> %s", len(items), skipped, out_path)
     _LOG.info("[ingest_squad] splits=%s", report["splits"])
     if report["errors"]:
         for err in report["errors"][:20]:

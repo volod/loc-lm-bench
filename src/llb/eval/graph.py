@@ -12,7 +12,11 @@ ok / empty / malformed / refusal / timeout / backend_error / retrieval_miss -- r
 separately, never collapsed into a single "reliability failure".
 """
 
-from typing import Callable, TypedDict
+from typing import Any, Callable, cast
+
+from typing_extensions import TypedDict
+
+from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
 
 # Terminal case statuses.
 OK = "ok"
@@ -43,16 +47,16 @@ SYSTEM_PROMPT = (
 
 class RagState(TypedDict, total=False):
     question: str
-    gold_spans: list[dict]
-    retrieved: list[dict]
+    gold_spans: list[SourceSpanRecord]
+    retrieved: list[ChunkRecord]
     context: str
     answer: str
     status: str
     error: str | None
-    usage: dict
+    usage: UsageRecord
 
 
-def format_context(chunks: list[dict]) -> str:
+def format_context(chunks: list[ChunkRecord]) -> str:
     """Render retrieved chunks as a delimited, numbered block (corpus is untrusted input)."""
     parts = []
     for i, chunk in enumerate(chunks, 1):
@@ -60,11 +64,8 @@ def format_context(chunks: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
-def build_messages(question: str, context: str) -> list[dict]:
-    user = (
-        f"Контекст:\n<<<\n{context}\n>>>\n\n"
-        f"Питання: {question}\n\nВідповідь:"
-    )
+def build_messages(question: str, context: str) -> list[ChatMessage]:
+    user = f"Контекст:\n<<<\n{context}\n>>>\n\nПитання: {question}\n\nВідповідь:"
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
@@ -91,12 +92,12 @@ def classify_response(text: str, error: str | None, expect_json: bool = False) -
     return OK
 
 
-def make_retrieve_node(store, k: int) -> Callable[[RagState], dict]:
+def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back."""
 
-    def retrieve(state: RagState) -> dict:
+    def retrieve(state: RagState) -> RagState:
         chunks = store.retrieve(state["question"], k)
-        update = {"retrieved": chunks, "context": format_context(chunks)}
+        update: RagState = {"retrieved": chunks, "context": format_context(chunks)}
         if not chunks:
             update["status"] = RETRIEVAL_MISS
         return update
@@ -104,11 +105,12 @@ def make_retrieve_node(store, k: int) -> Callable[[RagState], dict]:
     return retrieve
 
 
-def make_generate_node(launcher, max_tokens: int, temperature: float,
-                       timeout: float) -> Callable[[RagState], dict]:
+def make_generate_node(
+    launcher: Any, max_tokens: int, temperature: float, timeout: float
+) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response."""
 
-    def generate(state: RagState) -> dict:
+    def generate(state: RagState) -> RagState:
         if state.get("status") == RETRIEVAL_MISS:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
         messages = build_messages(state["question"], state.get("context", ""))
@@ -130,8 +132,14 @@ def make_generate_node(launcher, max_tokens: int, temperature: float,
     return generate
 
 
-def build_rag_graph(store, launcher, k: int, max_tokens: int, temperature: float,
-                    timeout: float):
+def build_rag_graph(
+    store: Any,
+    launcher: Any,
+    k: int,
+    max_tokens: int,
+    temperature: float,
+    timeout: float,
+) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
         from langgraph.graph import END, START, StateGraph
@@ -140,14 +148,17 @@ def build_rag_graph(store, launcher, k: int, max_tokens: int, temperature: float
             'ERROR: the eval graph needs the [eval] extra. Run: uv pip install -e ".[eval]"'
         ) from exc
     graph = StateGraph(RagState)
-    graph.add_node("retrieve", make_retrieve_node(store, k))
-    graph.add_node("generate", make_generate_node(launcher, max_tokens, temperature, timeout))
+    # LangGraph's callable overloads cannot express partial TypedDict state updates.
+    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k)))
+    graph.add_node(
+        "generate", cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout))
+    )
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "generate")
     graph.add_edge("generate", END)
     return graph.compile()
 
 
-def run_case(app, question: str, gold_spans: list[dict]) -> RagState:
+def run_case(app: Any, question: str, gold_spans: list[SourceSpanRecord]) -> RagState:
     """Invoke a compiled graph for one gold item; returns the terminal state."""
-    return app.invoke({"question": question, "gold_spans": gold_spans})
+    return cast(RagState, app.invoke({"question": question, "gold_spans": gold_spans}))

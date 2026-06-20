@@ -10,12 +10,23 @@ Ollama, or GPU. The default path wires the real components and uses the compiled
 LangGraph app.
 """
 
+import shutil
 import uuid
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any
 
+from llb.backends.base import BackendLauncher
 from llb.config import RunConfig
+from llb.contracts import (
+    BackendMetadata,
+    CaseScoreRow,
+    EvalResult,
+    LeaderboardRow,
+    RunMetrics,
+    TelemetryReport,
+)
 from llb.eval import graph as eval_graph
 from llb.executor.cases import execute_cases, spans_as_dicts
 from llb.executor.reporting import emit_summary
@@ -31,9 +42,7 @@ _RUN_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
 
 def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[GoldItem]:
     items = [
-        item
-        for item in load_goldset(config.goldset_path)
-        if item.split == split and item.verified
+        item for item in load_goldset(config.goldset_path) if item.split == split and item.verified
     ]
     items.sort(key=lambda it: it.id)
     return items[:limit] if limit is not None else items
@@ -56,7 +65,7 @@ def _select_eval_items(
     return selected[:limit] if limit is not None else selected
 
 
-def _make_launcher(config: RunConfig, log_dir: Path | None = None):
+def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLauncher:
     if config.backend == "ollama":
         from llb.backends.ollama import OllamaLauncher
 
@@ -65,17 +74,19 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None):
         from llb.backends.vllm import VllmLauncher
 
         return VllmLauncher(
-            config.model, host=config.vllm_host, port=config.vllm_port,
+            config.model,
+            host=config.vllm_host,
+            port=config.vllm_port,
             gpu_memory_utilization=config.gpu_memory_utilization,
-            max_model_len=config.max_model_len, dtype=config.dtype,
-            quantization=config.quantization, log_dir=log_dir,
+            max_model_len=config.max_model_len,
+            dtype=config.dtype,
+            quantization=config.quantization,
+            log_dir=log_dir,
         )
-    raise SystemExit(
-        f"backend '{config.backend}' is not wired yet (Ollama + vLLM supported)."
-    )
+    raise SystemExit(f"backend '{config.backend}' is not wired yet (Ollama + vLLM supported).")
 
 
-def _vram_reader():
+def _vram_reader() -> Callable[[], int] | None:
     """Best-effort NVML reader for telemetry (None when the [telemetry] extra/GPU is absent)."""
     try:
         from llb.executor.vram import nvml_reader
@@ -85,9 +96,15 @@ def _vram_reader():
         return None
 
 
-def _default_runner_fn(config: RunConfig, store, launcher) -> Callable[[GoldItem], RagState]:
+def _default_runner_fn(
+    config: RunConfig, store: Any, launcher: BackendLauncher
+) -> Callable[[GoldItem], RagState]:
     app = eval_graph.build_rag_graph(
-        store, launcher, config.top_k, config.max_tokens, config.temperature,
+        store,
+        launcher,
+        config.top_k,
+        config.max_tokens,
+        config.temperature,
         config.request_timeout_s,
     )
 
@@ -97,15 +114,25 @@ def _default_runner_fn(config: RunConfig, store, launcher) -> Callable[[GoldItem
     return run
 
 
-def _aggregate(config: RunConfig, case_rows: list[dict], judge_rho: float | None,
-               telemetry: dict) -> tuple[list[dict], dict]:
+def _aggregate(
+    config: RunConfig,
+    case_rows: list[CaseScoreRow],
+    judge_rho: float | None,
+    telemetry: Mapping[str, object],
+) -> tuple[list[LeaderboardRow], RunMetrics]:
     n = len(case_rows)
     objective = sum(r["objective_score"] for r in case_rows) / n if n else 0.0
     ok = [r for r in case_rows if r["status"] == eval_graph.OK]
     reliability = len(ok) / n if n else 0.0
     tok_rates = [r["tokens_per_s"] for r in ok if r["tokens_per_s"] > 0]
     observed_tokens_per_s = sum(tok_rates) / len(tok_rates) if tok_rates else 0.0
-    tokens_per_s = telemetry.get("steady_tokens_per_s") or observed_tokens_per_s
+    steady_rate = telemetry.get("steady_tokens_per_s")
+    tokens_per_s = (
+        float(steady_rate)
+        if isinstance(steady_rate, int | float) and steady_rate > 0
+        else observed_tokens_per_s
+    )
+    peak_vram = telemetry.get("peak_vram_mb")
     result = ModelResult(
         model=config.model,
         backend=config.backend,
@@ -113,13 +140,13 @@ def _aggregate(config: RunConfig, case_rows: list[dict], judge_rho: float | None
         n_cases=n,
         reliability=reliability,
         tokens_per_s=tokens_per_s,
-        peak_vram_mb=telemetry.get("peak_vram_mb"),
+        peak_vram_mb=float(peak_vram) if isinstance(peak_vram, int | float) else None,
         judge_score=None,
         feasible=True,
     )
     trusted = judge_is_trusted(judge_rho, config.judge_threshold)
     rows = rank_results([result], judge_trusted=trusted)
-    metrics = {
+    metrics: RunMetrics = {
         "objective_score": objective,
         "reliability": reliability,
         "tokens_per_s": tokens_per_s,
@@ -132,9 +159,11 @@ def _run_timestamp(run_id: str) -> str:
     return f"{now}-{run_id}"
 
 
-def _collect_optional_telemetry(config: RunConfig, launcher) -> dict:
+def _collect_optional_telemetry(
+    config: RunConfig, launcher: BackendLauncher
+) -> TelemetryReport | None:
     if not config.measure_telemetry:
-        return {}
+        return None
     from llb.backends.telemetry import collect_telemetry
 
     return collect_telemetry(
@@ -149,16 +178,16 @@ def run_eval(
     config: RunConfig,
     *,
     items: list[GoldItem] | None = None,
-    store=None,
-    launcher=None,
+    store: Any = None,
+    launcher: BackendLauncher | None = None,
     runner_fn: Callable[[GoldItem], RagState] | None = None,
-    mirror: Callable | None = None,
+    mirror: Callable[[RunManifest, Path], None] | None = None,
     judge_rho: float | None = None,
     limit: int | None = None,
     split: str = "final",
-    worksheet=None,
+    worksheet: Path | str | None = None,
     emit: bool = True,
-) -> dict:
+) -> EvalResult:
     """Run the skeleton and return {rows, metrics, paths, table}.
 
     `worksheet` (a path) emits a judge-calibration worksheet pre-filled with this run's
@@ -171,8 +200,9 @@ def run_eval(
     run_id = uuid.uuid4().hex[:12]
     run_timestamp = _run_timestamp(run_id)
     run_dir = config.run_dir(run_timestamp)
+    staging_dir = config.run_staging_dir(run_timestamp)
     if launcher is None:
-        launcher = _make_launcher(config, log_dir=run_dir / "vllm")
+        launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
     if runner_fn is None:
         if store is None:
             from llb.rag.store import RagStore
@@ -182,12 +212,18 @@ def run_eval(
 
     embedder = store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
 
-    with launcher:
-        batch = execute_cases(items, runner_fn, embedder)
-        telemetry_report = _collect_optional_telemetry(config, launcher)
+    try:
+        with launcher:
+            batch = execute_cases(items, runner_fn, embedder)
+            telemetry_report = _collect_optional_telemetry(config, launcher)
+    except BaseException:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
 
-    backend_telemetry = launcher.telemetry() if hasattr(launcher, "telemetry") else {}
-    effective_telemetry = {**backend_telemetry, **telemetry_report}
+    backend_telemetry: BackendMetadata = (
+        launcher.telemetry() if hasattr(launcher, "telemetry") else {}
+    )
+    effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
@@ -205,13 +241,20 @@ def run_eval(
         telemetry=telemetry_report,
         n_cases=len(batch.rows),
     )
-    paths = persist_run(manifest, batch.rows, run_dir, mirror=mirror)
+    paths = persist_run(
+        manifest,
+        batch.rows,
+        run_dir,
+        mirror=mirror,
+        staging_dir=staging_dir,
+    )
 
     worksheet_rows = 0
     if worksheet is not None:
         from llb.judge.calibration import write_filled_worksheet
 
-        worksheet_rows = write_filled_worksheet(batch.answers, worksheet)
+        worksheet_path = Path(worksheet)
+        worksheet_rows = write_filled_worksheet(batch.answers, worksheet_path)
         paths["worksheet"] = str(worksheet)
 
     table = format_table(rows)
@@ -226,6 +269,13 @@ def run_eval(
             worksheet,
             worksheet_rows,
         )
-    return {"rows": rows, "metrics": metrics, "retrieval": retrieval_metrics,
-            "paths": paths, "table": table, "telemetry": telemetry_report,
-            "manifest": manifest, "run_timestamp": run_timestamp}
+    return {
+        "rows": rows,
+        "metrics": metrics,
+        "retrieval": retrieval_metrics,
+        "paths": paths,
+        "table": table,
+        "telemetry": telemetry_report,
+        "manifest": manifest,
+        "run_timestamp": run_timestamp,
+    }

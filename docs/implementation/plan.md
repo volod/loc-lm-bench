@@ -11,7 +11,7 @@ Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../d
 
 Milestones 0 and 1 are **complete** and documented in [`current.md`](current.md): the gold
 set + data-prep tooling (M0) and the eval skeleton (compile-free: prebuilt Ollama, no
-vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 159 tests.
+vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 162 tests.
 
 **Quick start:** `make demo-eval` runs the current pipeline end to end and idempotently
 (venv -> gold set -> index -> prep-models -> run-eval + telemetry; needs a running Ollama).

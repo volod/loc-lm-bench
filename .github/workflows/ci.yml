@@ -1,7 +1,7 @@
-# CI: lint + unit tests only.
+# CI: format + lint + type checks + unit tests only.
 #
 # Deliberately lightweight -- it only checks that the code has no syntactic or logical
-# errors. It installs the base package + the `dev` extra (ruff, pytest) and nothing else,
+# errors. It installs the base package + the `dev` extra (mypy, ruff, pytest) and nothing else,
 # so it never pulls heavy/eval deps (faiss, datasets, mlflow, sentence-transformers,
 # torch/vLLM) and never runs an actual benchmark, model download, or GPU work.
 name: ci
@@ -32,5 +32,5 @@ jobs:
           uv venv --python ${{ matrix.python-version }}
           uv pip install --python .venv/bin/python -e ".[dev]"
 
-      - name: Lint + unit tests
+      - name: Format + lint + type checks + unit tests
         run: make ci

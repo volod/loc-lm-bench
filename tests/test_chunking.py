@@ -53,6 +53,7 @@ def test_chunk_text_carries_metadata_field():
 
 # --- native semantic chunking (offset-exact, fake embedder -> CI-safe) ---
 
+
 class FakeEmbedder:
     def __init__(self, mapping):
         self.mapping = mapping
@@ -69,8 +70,10 @@ def test_semantic_spans_breaks_on_distance_spike():
     vecs = dict(zip((text[s:e] for s, e in sents), ([1.0, 0.0], [1.0, 0.0], [0.0, 1.0])))
     spans = semantic_spans(text, 1000, FakeEmbedder(vecs), threshold_pct=50)
     assert len(spans) == 2
-    assert text[spans[0][0]:spans[0][1]] == text[sents[0][0]:sents[1][1]]  # exact source offsets
-    assert text[spans[1][0]:spans[1][1]] == text[sents[2][0]:sents[2][1]]
+    assert (
+        text[spans[0][0] : spans[0][1]] == text[sents[0][0] : sents[1][1]]
+    )  # exact source offsets
+    assert text[spans[1][0] : spans[1][1]] == text[sents[2][0] : sents[2][1]]
 
 
 def test_semantic_spans_single_sentence():
@@ -80,11 +83,14 @@ def test_semantic_spans_single_sentence():
 
 # --- langchain-backed strategies (skip when [rag] is absent, e.g. in CI) ---
 
+
 def test_recursive_langchain_offsets_in_range():
     pytest.importorskip("langchain_text_splitters")
     from llb.rag.chunking import _recursive_langchain
 
-    text = "Абзац один тут.\n\nАбзац два значно довший і має більше слів для поділу на частини зараз."
+    text = (
+        "Абзац один тут.\n\nАбзац два значно довший і має більше слів для поділу на частини зараз."
+    )
     spans = _recursive_langchain(text, 40, 8)
     assert spans and spans[0][0] == 0
     assert all(0 <= s < e <= len(text) and text[s:e] for s, e in spans)
@@ -92,8 +98,10 @@ def test_recursive_langchain_offsets_in_range():
 
 def test_markdown_spans_carry_headers_and_exact_offsets():
     # markdown parses headers from the source, so it is offset-exact without langchain.
-    text = ("# Заголовок\n\nТекст розділу тут. Ще одне речення.\n\n"
-            "## Підрозділ\n\nІнший текст підрозділу зараз.")
+    text = (
+        "# Заголовок\n\nТекст розділу тут. Ще одне речення.\n\n"
+        "## Підрозділ\n\nІнший текст підрозділу зараз."
+    )
     spans = markdown_spans(text, size=1000, overlap=0)
     assert spans
     for s, e, meta in spans:

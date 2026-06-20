@@ -10,8 +10,14 @@ from llb.scoring.aggregate import (
 
 def make(model, objective, judge=None, tok=10.0, vram=None, feasible=True):
     return ModelResult(
-        model=model, backend="ollama", objective_score=objective, n_cases=10,
-        reliability=1.0, tokens_per_s=tok, peak_vram_mb=vram, judge_score=judge,
+        model=model,
+        backend="ollama",
+        objective_score=objective,
+        n_cases=10,
+        reliability=1.0,
+        tokens_per_s=tok,
+        peak_vram_mb=vram,
+        judge_score=judge,
         feasible=feasible,
     )
 
@@ -33,8 +39,9 @@ def test_rank_orders_by_quality_then_speed():
 
 
 def test_vram_tiebreak_when_quality_and_speed_equal():
-    rows = rank_results([make("big", 0.5, tok=10.0, vram=9000),
-                         make("small", 0.5, tok=10.0, vram=3000)])
+    rows = rank_results(
+        [make("big", 0.5, tok=10.0, vram=9000), make("small", 0.5, tok=10.0, vram=3000)]
+    )
     assert [r["model"] for r in rows] == ["small", "big"]
 
 

@@ -11,6 +11,9 @@ exceptions.
 """
 
 from dataclasses import dataclass, field
+from typing import cast
+
+from llb.contracts import BackendMetadata, ChatMessage
 
 # Normalized transport-level failure tokens (None == success).
 ERR_TIMEOUT = "timeout"
@@ -38,7 +41,7 @@ class BackendLauncher:
     """Base launcher. Subclasses provide `chat` and may override start/stop/telemetry."""
 
     model: str
-    meta: dict = field(default_factory=dict)
+    meta: BackendMetadata = field(default_factory=lambda: cast(BackendMetadata, {}))
     load_time_s: float = 0.0  # cold-start time to readiness; set by start()
 
     def start(self) -> None:
@@ -47,21 +50,22 @@ class BackendLauncher:
     def stop(self) -> None:
         """Release the backend. Default: nothing to release."""
 
-    def chat(self, messages: list[dict], max_tokens: int, temperature: float,
-             timeout: float) -> ChatResult:
+    def chat(
+        self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
+    ) -> ChatResult:
         raise NotImplementedError
 
     def served_context(self) -> int | None:
         """Context length the backend actually serves (backend-specific). Default: unknown."""
         return None
 
-    def telemetry(self) -> dict:
+    def telemetry(self) -> BackendMetadata:
         """Backend-specific telemetry (tokens/sec, served context, VRAM). Default: meta."""
-        return dict(self.meta)
+        return cast(BackendMetadata, dict(self.meta))
 
     def __enter__(self) -> "BackendLauncher":
         self.start()
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.stop()

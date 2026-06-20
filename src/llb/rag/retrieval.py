@@ -14,24 +14,26 @@ Inputs are plain dicts so this module has zero heavy deps and is fully unit-test
   span  = {"doc_id": str, "char_start": int, "char_end": int, ...}
 """
 
+from llb.contracts import ChunkRecord, RetrievalMetrics, RetrievalPair, SourceSpanRecord
+
 
 def spans_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
     """True if [a_start, a_end) and [b_start, b_end) share at least one character."""
     return a_start < b_end and b_start < a_end
 
 
-def chunk_hits_span(chunk: dict, span: dict) -> bool:
+def chunk_hits_span(chunk: ChunkRecord, span: SourceSpanRecord) -> bool:
     """True if a retrieved chunk overlaps a labeled span in the same document."""
     return chunk["doc_id"] == span["doc_id"] and spans_overlap(
         chunk["char_start"], chunk["char_end"], span["char_start"], span["char_end"]
     )
 
 
-def chunk_hits_any(chunk: dict, spans: list[dict]) -> bool:
+def chunk_hits_any(chunk: ChunkRecord, spans: list[SourceSpanRecord]) -> bool:
     return any(chunk_hits_span(chunk, span) for span in spans)
 
 
-def first_hit_rank(retrieved: list[dict], spans: list[dict]) -> int | None:
+def first_hit_rank(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord]) -> int | None:
     """1-based rank of the first retrieved chunk that hits a labeled span, else None."""
     for rank, chunk in enumerate(retrieved, 1):
         if chunk_hits_any(chunk, spans):
@@ -39,21 +41,19 @@ def first_hit_rank(retrieved: list[dict], spans: list[dict]) -> int | None:
     return None
 
 
-def recall_at_k(retrieved: list[dict], spans: list[dict], k: int) -> float:
+def recall_at_k(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int) -> float:
     """1.0 if any of the top-k retrieved chunks hits a labeled span, else 0.0."""
     rank = first_hit_rank(retrieved[:k], spans)
     return 1.0 if rank is not None else 0.0
 
 
-def reciprocal_rank(retrieved: list[dict], spans: list[dict]) -> float:
+def reciprocal_rank(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord]) -> float:
     """1 / rank of the first hit (0.0 if none retrieved)."""
     rank = first_hit_rank(retrieved, spans)
     return 1.0 / rank if rank is not None else 0.0
 
 
-def evaluate_retrieval(
-    per_item: list[tuple[list[dict], list[dict]]], k: int
-) -> dict:
+def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
     """Aggregate recall@k and MRR over (retrieved, gold_spans) pairs.
 
     Returns {n, k, recall_at_k, mrr}. Empty input yields zeros.

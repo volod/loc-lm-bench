@@ -10,12 +10,13 @@ import logging
 import sys
 from pathlib import Path
 
+from llb.contracts import ValidationReport
 from llb.goldset.schema import GoldItem, load_goldset
 
 _LOG = logging.getLogger(__name__)
 
 
-def validate_items(items: list[GoldItem], corpus_root: Path) -> dict:
+def validate_items(items: list[GoldItem], corpus_root: Path) -> ValidationReport:
     """Return a report dict: {n, splits, errors}. Empty errors == PASS."""
     corpus_root = Path(corpus_root)
     errors: list[str] = []

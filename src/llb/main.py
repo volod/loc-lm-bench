@@ -12,11 +12,12 @@ Config comes from a YAML file (`--config`) with CLI flags overriding individual 
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
 from llb.config import RunConfig
+from llb.contracts import ModelSpec
 
 app = typer.Typer(
     add_completion=False,
@@ -25,7 +26,7 @@ app = typer.Typer(
 )
 
 
-def _load_config(config_path: Optional[Path], **overrides) -> RunConfig:
+def _load_config(config_path: Optional[Path], **overrides: Any) -> RunConfig:
     try:
         base = RunConfig.load(config_path) if config_path else RunConfig()
         return base.with_overrides(**overrides)
@@ -34,7 +35,7 @@ def _load_config(config_path: Optional[Path], **overrides) -> RunConfig:
         raise typer.Exit(code=2) from None
 
 
-def _load_models(manifest: Path):
+def _load_models(manifest: Path) -> list[ModelSpec]:
     """Load a models manifest, reporting a YAML/schema error as a clean one-liner."""
     from llb.backends.prepare import load_manifest
 
@@ -57,18 +58,28 @@ def build_index(
     embedding_model: Optional[str] = typer.Option(None, help="pinned embedding model"),
     mode: Optional[str] = typer.Option(None, help="flat | parent_child"),
     child_size: Optional[int] = typer.Option(None, help="child chunk size (parent_child mode)"),
-):
+) -> None:
     """Chunk + embed the corpus into a FAISS RAG store under the index dir."""
     cfg = _load_config(
-        config, corpus_root=corpus_root, strategy=strategy, chunk_size=size,
-        chunk_overlap=overlap, embedding_model=embedding_model, retrieval_mode=mode,
+        config,
+        corpus_root=corpus_root,
+        strategy=strategy,
+        chunk_size=size,
+        chunk_overlap=overlap,
+        embedding_model=embedding_model,
+        retrieval_mode=mode,
         child_chunk_size=child_size,
     )
     from llb.rag.store import RagStore
 
     store = RagStore.build(
-        cfg.corpus_root, cfg.strategy, cfg.chunk_size, cfg.chunk_overlap, cfg.embedding_model,
-        mode=cfg.retrieval_mode, child_size=cfg.child_chunk_size,
+        cfg.corpus_root,
+        cfg.strategy,
+        cfg.chunk_size,
+        cfg.chunk_overlap,
+        cfg.embedding_model,
+        mode=cfg.retrieval_mode,
+        child_size=cfg.child_chunk_size,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
@@ -84,9 +95,10 @@ def validate_retrieval(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
-):
+) -> None:
     """Score the pinned embedding's retrieval over the gold set (does not rank models)."""
     from llb.goldset.schema import load_goldset
+    from llb.executor.cases import spans_as_dicts
     from llb.rag import retrieval
     from llb.rag.store import RagStore
 
@@ -95,10 +107,7 @@ def validate_retrieval(
     items = load_goldset(cfg.goldset_path)
     if split:
         items = [it for it in items if it.split == split]
-    pairs = [
-        (store.retrieve(it.question, k), [s.model_dump() for s in it.source_spans])
-        for it in items
-    ]
+    pairs = [(store.retrieve(it.question, k), spans_as_dicts(it)) for it in items]
     report = retrieval.evaluate_retrieval(pairs, k)
     gate = "PASS" if report["recall_at_k"] >= 0.8 else "BELOW 0.8 (retrieval is the bottleneck)"
     typer.echo(
@@ -116,13 +125,17 @@ def prep_models_cmd(
     force: bool = typer.Option(False, help="prepare even if a model looks too big for VRAM"),
     dry_run: bool = typer.Option(False, help="show the plan; pull/cache nothing"),
     cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
-):
+) -> None:
     """Detect the GPU, pull Ollama tags, and cache vLLM (HF) weights once."""
     from llb.backends.prepare import prepare_models
 
     models = _load_models(manifest)
     report = prepare_models(
-        models, backend_filter=backend, force=force, dry_run=dry_run, cache_dir=cache_dir,
+        models,
+        backend_filter=backend,
+        force=force,
+        dry_run=dry_run,
+        cache_dir=cache_dir,
     )
 
     if report["gpus"]:
@@ -155,7 +168,7 @@ def list_models_cmd(
     vram_reserve: int = typer.Option(1024, help="VRAM MiB held back for CUDA/display"),
     ram_reserve: int = typer.Option(2048, help="RAM MiB held back for the OS"),
     runnable_only: bool = typer.Option(False, help="hide models that cannot run at all"),
-):
+) -> None:
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
@@ -173,16 +186,22 @@ def list_models_cmd(
     typer.echo(f"[list-models] system RAM: {ram_mib} MiB")
 
     rows = plan_models(
-        models, vram_mib, ram_mib, target_ctx=context,
-        vram_reserve=vram_reserve, ram_reserve=ram_reserve,
+        models,
+        vram_mib,
+        ram_mib,
+        target_ctx=context,
+        vram_reserve=vram_reserve,
+        ram_reserve=ram_reserve,
     )
     if runnable_only:
         rows = [r for r in rows if r["verdict"] != VERDICT_NO]
     typer.echo(format_plan(rows, max(0, vram_mib - vram_reserve), max(0, ram_mib - ram_reserve)))
     runnable = sum(1 for r in rows if r["verdict"] in ("gpu", "offload"))
     typer.echo(f"[list-models] runnable here: {runnable} of {len(rows)}")
-    typer.echo("[list-models] verdict is at ctx_max; ctx_gpu = max context that fits fully "
-               "on GPU. gpu = no offload needed; offload = split layers GPU/CPU RAM.")
+    typer.echo(
+        "[list-models] verdict is at ctx_max; ctx_gpu = max context that fits fully "
+        "on GPU. gpu = no offload needed; offload = split layers GPU/CPU RAM."
+    )
 
 
 @app.command("run-eval")
@@ -207,16 +226,21 @@ def run_eval_cmd(
         help="enable or disable steady-state throughput and peak-VRAM telemetry",
     ),
     worksheet: Optional[Path] = typer.Option(
-        None, help="emit a judge-calibration worksheet pre-filled with answers "
-                   "(pair with --split calibration)"
+        None,
+        help="emit a judge-calibration worksheet pre-filled with answers "
+        "(pair with --split calibration)",
     ),
-):
+) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
 
     cfg = _load_config(
-        config, model=model, backend=backend, goldset_path=goldset,
-        score_semantic=score_semantic, measure_telemetry=telemetry,
+        config,
+        model=model,
+        backend=backend,
+        goldset_path=goldset,
+        score_semantic=score_semantic,
+        measure_telemetry=telemetry,
     )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
 
