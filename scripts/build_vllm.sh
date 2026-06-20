@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Install vLLM for the host, with MAX_JOBS-capped compilation and wheel caching (AGENTS.md).
 #
-# This is the heavy, GPU-host step (a from-source vLLM/flash-attn build can take a long time
-# and needs a CUDA toolchain). Model WEIGHTS are cached separately by `llb prep-models`; this
-# caches the BUILT WHEELS under $DATA_DIR/wheels/vllm_<key>/ so a rebuild is reused.
+# FlashAttention ("self-attention") kernels are BUNDLED with vLLM (the vllm-flash-attn wheel,
+# or compiled into vLLM's own extension); you do NOT build flash-attn separately. When a
+# prebuilt vLLM wheel matches the host CUDA/torch, NOTHING is compiled (the good path) and
+# MAX_JOBS is moot; it only caps the fallback from-source build.
+#
+# Model WEIGHTS are cached separately by `llb prep-models`; this caches the BUILT WHEELS under
+# $DATA_DIR/wheels/vllm_<key>/ so a rebuild is reused.
 #
 # Usage:  bash scripts/build_vllm.sh            # install vllm (prebuilt wheel if available)
 #         VLLM_SPEC='vllm==0.6.3' bash scripts/build_vllm.sh
@@ -18,6 +22,7 @@ PY="$(llb_python)"
 # Cap build parallelism via the canonical helper (single source of truth, AGENTS.md).
 MAX_JOBS="$(max_jobs)"
 export MAX_JOBS
+export PIP_DISABLE_PIP_VERSION_CHECK=1   # quiet the "new release of pip" notice
 echo "[build-vllm] MAX_JOBS=$MAX_JOBS (capped per AGENTS.md)"
 
 # ABI key from the installed torch + CUDA so cached wheels are reused only when compatible.
@@ -42,5 +47,21 @@ VLLM_SPEC="${VLLM_SPEC:-vllm}"
 "$PY" -m pip wheel --wheel-dir "$WHEEL_CACHE" "$VLLM_SPEC"
 uv pip install --python "$PY" --find-links "$WHEEL_CACHE" "$VLLM_SPEC"
 
-echo "[build-vllm] done. Verify: $PY -c 'import vllm; print(vllm.__version__)'"
-echo "[build-vllm] then serve a model: llb run-eval --backend vllm --model <hf-repo-id>"
+# Report the install + confirm flash-attn is present (no separate build needed). Uses
+# distribution metadata only, so it does not import vllm / initialize CUDA here.
+"$PY" - <<'PYEOF' || true
+import importlib.metadata as md
+def ver(dist):
+    try:
+        return md.version(dist)
+    except md.PackageNotFoundError:
+        return None
+print(f"[build-vllm] vllm=={ver('vllm')}")
+fa = ver("vllm-flash-attn")
+if fa:
+    print(f"[build-vllm] flash-attn: bundled (vllm-flash-attn=={fa}) -- no separate build needed")
+else:
+    print("[build-vllm] flash-attn: vendored inside the vllm wheel -- no separate build needed")
+PYEOF
+echo "[build-vllm] the active attention backend is printed at serve time (look for 'FlashAttention')."
+echo "[build-vllm] serve a model: llb run-eval --backend vllm --model <hf-repo-id> --telemetry"

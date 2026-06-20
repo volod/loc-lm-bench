@@ -25,7 +25,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-131 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
+144 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
 extras); every heavy dependency is lazy-imported so the base install stays importable.
 
 ## Dev setup
@@ -35,8 +35,17 @@ installs the `llb` package editable with ALL extras, and seeds `.env` from `.env
 so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
-    make venv       # .venv (py3.11) + package + all extras + .env (one-time setup)
-    make test       # pytest (131 tests)
+    make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
+    make test       # pytest (144 tests)
+    make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
+
+`make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused
+(deps updated; `RECREATE_VENV=1` to rebuild), an existing gold set / index is reused, and
+cached model downloads are skipped. It tees per-step output to `.data/llb/logs/pipeline-
+<ts>.log` and, on failure, names the failing step + log path. It needs a running Ollama for
+the final telemetry run. Every command shares one runtime (`llb.runtime`): Ctrl-C shuts down
+cleanly (exit 130, backends killed via their context manager) and an unexpected crash is
+logged with a traceback (`LLB_LOG=debug` for more) instead of a raw stack dump.
 
 Extras (`rag, eval, track, board, prep, telemetry, goldset, dev`) are all installed by
 `make venv`; trim with `EXTRAS=` (e.g. `make venv EXTRAS=rag,eval`). GitHub CI installs
@@ -62,6 +71,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
     src/llb/
       config.py                    # RunConfig (Pydantic) -- the canonical run config
       main.py                      # Typer CLI: build-index, validate-retrieval, run-eval
+      runtime.py                   # shared CLI runtime: graceful Ctrl-C (exit 130) + crash logging
       goldset/schema.py            # GoldItem + SourceSpan (Pydantic), load/dump
       goldset/splits.py            # deterministic disjoint split assignment
       goldset/validate.py          # corpus-grounded validator + CLI
@@ -77,7 +87,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
       executor/{vram,runner}.py    # VRAM gate + minimal sequential run-eval
-    tests/                         # 131 tests across the above
+    tests/                         # 144 tests across the above
 
 Runtime output (gitignored) under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), `runs/<run_name>/`
@@ -315,7 +325,7 @@ parallelism via the canonical `max_jobs()` helper (`min(cores//2, RAM_GiB//14)`,
 caching built wheels under `$DATA_DIR/wheels/vllm_<key>/`. Weights are cached by `prep-models`.
 
     make build-vllm                                   # install vLLM (GPU host; MAX_JOBS-capped)
-    make run-eval BACKEND=vllm MODEL=Qwen/Qwen2.5-7B-Instruct TELEMETRY=1
+    make run-eval BACKEND=vllm MODEL=google/gemma-4-12B-it-qat-w4a16-ct TELEMETRY=1
 
 ### Telemetry hook — `llb.backends.telemetry` (M2.2)
 `measure_throughput` runs the steady-state protocol (fixed UA prompt set + fixed

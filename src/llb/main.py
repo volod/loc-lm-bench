@@ -27,6 +27,17 @@ def _load_config(config_path: Optional[Path], **overrides) -> RunConfig:
     return base.model_copy(update=clean) if clean else base
 
 
+def _load_models(manifest: Path):
+    """Load a models manifest, reporting a YAML/schema error as a clean one-liner."""
+    from llb.backends.prepare import load_manifest
+
+    try:
+        return load_manifest(manifest)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+
+
 @app.command("build-index")
 def build_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
@@ -63,6 +74,7 @@ def build_index(
 @app.command("validate-retrieval")
 def validate_retrieval(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
 ):
@@ -71,7 +83,7 @@ def validate_retrieval(
     from llb.rag import retrieval
     from llb.rag.store import RagStore
 
-    cfg = _load_config(config)
+    cfg = _load_config(config, goldset_path=goldset)
     store = RagStore.load(cfg.index_dir())
     items = load_goldset(cfg.goldset_path)
     if split:
@@ -99,9 +111,9 @@ def prep_models_cmd(
     cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
 ):
     """Detect the GPU, pull Ollama tags, and cache vLLM (HF) weights once."""
-    from llb.backends.prepare import load_manifest, prepare_models
+    from llb.backends.prepare import prepare_models
 
-    models = load_manifest(manifest)
+    models = _load_models(manifest)
     report = prepare_models(
         models, backend_filter=backend, force=force, dry_run=dry_run, cache_dir=cache_dir,
     )
@@ -140,9 +152,8 @@ def list_models_cmd(
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
-    from llb.backends.prepare import load_manifest
 
-    models = load_manifest(manifest)
+    models = _load_models(manifest)
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()
@@ -172,6 +183,7 @@ def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
     backend: Optional[str] = typer.Option(None, help="ollama | vllm"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     split: str = typer.Option("final", help="gold split to evaluate"),
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
@@ -192,14 +204,16 @@ def run_eval_cmd(
     from llb.executor.runner import run_eval
 
     cfg = _load_config(
-        config, model=model, backend=backend, score_semantic=score_semantic or None,
-        measure_telemetry=telemetry or None,
+        config, model=model, backend=backend, goldset_path=goldset,
+        score_semantic=score_semantic or None, measure_telemetry=telemetry or None,
     )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
 
 
 def main() -> None:
-    app()
+    from llb.runtime import run_typer
+
+    run_typer(app)
 
 
 if __name__ == "__main__":

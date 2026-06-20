@@ -1,5 +1,45 @@
+import pytest
+
 from llb.backends import prepare
 from llb.backends.hardware import Gpu, max_vram_mb, parse_smi
+
+
+def test_load_manifest_bad_yaml_raises_clean_error(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    # inconsistent indent under the list item (name at col 5, backend at col 6) -> YAML error
+    bad.write_text("models:\n  - name: a\n     backend: vllm\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid YAML"):
+        prepare.load_manifest(bad)
+
+
+def test_load_manifest_non_mapping_entry_raises(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("models:\n  - just-a-string\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a mapping"):
+        prepare.load_manifest(bad)
+
+
+def test_acceptance_url_explicit_derived_and_none():
+    assert prepare.acceptance_url({"license_url": "https://hf.co/x"}) == "https://hf.co/x"
+    assert prepare.acceptance_url(
+        {"gated": True, "backend": "vllm", "source": "org/m"}
+    ) == "https://huggingface.co/org/m"
+    assert prepare.acceptance_url({"backend": "vllm", "source": "org/m"}) is None  # ungated
+
+
+def test_looks_gated_detects_access_errors_not_404():
+    assert prepare._looks_gated(Exception("Access to model X is restricted (gated)"))
+    assert prepare._looks_gated(Exception("401 Client Error: Unauthorized"))
+    assert not prepare._looks_gated(Exception("404 Client Error: Not Found"))
+
+
+def test_prepare_models_surfaces_license_link_for_gated():
+    models = [{"name": "g", "backend": "vllm", "source": "org/Gated", "min_vram_gb": 4,
+               "gated": True, "license_url": "https://huggingface.co/org/Gated"}]
+    report = prepare.prepare_models(
+        models, dry_run=True, gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")]
+    )
+    assert "huggingface.co/org/Gated" in report["results"][0]["detail"]
 
 
 def test_parse_smi_reads_fields():

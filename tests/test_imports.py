@@ -9,6 +9,7 @@ import importlib
 
 MODULES = [
     "llb.config",
+    "llb.runtime",
     "llb.main",
     "llb.rag.chunking",
     "llb.rag.retrieval",

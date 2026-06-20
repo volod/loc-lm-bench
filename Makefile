@@ -27,16 +27,55 @@ RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
 
+# `make demo-eval` end-to-end pipeline knobs (idempotent; CUDA-free defaults).
+ALL_GOLDSET ?= $(PROJECT_ROOT)/.data/llb/goldset/sample_rag_items.jsonl
+ALL_CORPUS  := $(PROJECT_ROOT)/.data/llb/corpus
+ALL_INDEX   := $(PROJECT_ROOT)/.data/llb/rag/index.faiss
+LOG_DIR     := $(PROJECT_ROOT)/.data/llb/logs
+PREP_ALL_BACKEND ?= ollama
+
 .DEFAULT_GOAL := help
-.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm
+.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n", $$1, $$2}'
+		awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
 
-venv: ## Create .venv (uv, py3.11), install the package + all extras, seed .env (EXTRAS= to trim)
+demo-eval: ## End-to-end (idempotent): venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry; logs to .data/llb/logs/
+	@mkdir -p "$(LOG_DIR)"; LOG="$(LOG_DIR)/pipeline-$$(date +%Y%m%d-%H%M%S).log"; \
+	echo "[demo-eval] end-to-end pipeline (idempotent); logging to $$LOG"; \
+	( \
+	  set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	  echo "### [1/6] venv (idempotent; RECREATE_VENV=1 to rebuild)"; \
+	  $(MAKE) --no-print-directory venv || exit 1; \
+	  echo "### [2/6] seed gold set"; \
+	  if [ -f "$(ALL_GOLDSET)" ]; then echo "  cached, skipping -> $(ALL_GOLDSET)"; \
+	  else bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh" || exit 1; fi; \
+	  echo "### [3/6] build index"; \
+	  if [ -f "$(ALL_INDEX)" ]; then echo "  cached, skipping -> $(ALL_INDEX)"; \
+	  else $(PY) -m llb.main build-index --corpus-root "$(ALL_CORPUS)" || exit 1; fi; \
+	  echo "### [4/6] validate retrieval"; \
+	  $(PY) -m llb.main validate-retrieval --goldset "$(ALL_GOLDSET)" --k $(RAG_K) \
+	    || echo "  WARN: retrieval below the 0.8 gate (non-fatal; continuing)"; \
+	  echo "### [5/6] prep models (backend=$(PREP_ALL_BACKEND); cached downloads are skipped)"; \
+	  $(MAKE) --no-print-directory prep-models PREP_BACKEND=$(PREP_ALL_BACKEND) || exit 1; \
+	  echo "### [6/6] run-eval + telemetry (model=$(MODEL) backend=$(BACKEND))"; \
+	  $(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
+	    --goldset "$(ALL_GOLDSET)" --split final --limit $(LIMIT) --telemetry || exit 1; \
+	  echo "### pipeline complete"; \
+	) 2>&1 | tee "$$LOG"; \
+	rc=$${PIPESTATUS[0]}; \
+	if [ "$$rc" -eq 0 ]; then echo "[demo-eval] OK -- full log: $$LOG"; \
+	else echo "[demo-eval] FAILED (exit $$rc) -- investigate the log: $$LOG" >&2; exit "$$rc"; fi
+
+venv: ## Create/update .venv (py3.11) + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
-	uv venv --python $(PYTHON_VERSION) "$(VENV)"
+	@if [ -n "$(RECREATE_VENV)" ] && [ -d "$(VENV)" ]; then echo "[venv] RECREATE_VENV set -- removing $(VENV)"; rm -rf "$(VENV)"; fi
+	@if [ ! -x "$(PY)" ]; then \
+		echo "[venv] creating $(VENV) (py$(PYTHON_VERSION))"; uv venv --python $(PYTHON_VERSION) "$(VENV)"; \
+	else \
+		echo "[venv] reusing $(VENV) -- updating deps (RECREATE_VENV=1 to rebuild)"; \
+	fi
 	uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"
 	@if [ ! -f "$(PROJECT_ROOT)/.env" ]; then \
 		cp "$(PROJECT_ROOT)/.env.example" "$(PROJECT_ROOT)/.env"; \

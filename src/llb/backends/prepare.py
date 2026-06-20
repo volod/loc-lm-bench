@@ -33,11 +33,16 @@ ACTION_SKIP = "skip"
 
 
 def load_manifest(path: Path | str) -> list[dict]:
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    try:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: invalid YAML -- {exc}") from None
     models = data.get("models") if isinstance(data, dict) else None
     if not models:
         raise ValueError(f"{path}: expected a top-level 'models:' list")
     for m in models:
+        if not isinstance(m, dict):
+            raise ValueError(f"{path}: each model entry must be a mapping, got: {m!r}")
         for key in ("name", "backend", "source"):
             if key not in m:
                 raise ValueError(f"{path}: model entry missing '{key}': {m}")
@@ -74,6 +79,23 @@ def plan(models: list[dict], max_mb: int, has_gpu: bool, backend_filter: str,
     return rows
 
 
+def acceptance_url(spec: dict) -> str | None:
+    """Where to accept a gated model's license. Explicit `license_url`, else derived from the
+    HF repo id when `gated: true`. None for ungated / non-HF entries."""
+    if spec.get("license_url"):
+        return str(spec["license_url"])
+    if spec.get("gated") and spec.get("backend") == "vllm":
+        return f"https://huggingface.co/{spec['source']}"
+    return None
+
+
+def _looks_gated(exc: Exception) -> bool:
+    """True if a download error is an access gate (license not accepted / no token)."""
+    blob = f"{type(exc).__name__} {exc}".lower()
+    return any(s in blob for s in ("gated", "401", "403", "awaiting", "must be authenticated",
+                                   "access to model", "accept the conditions"))
+
+
 def _ollama_pull(source: str) -> tuple[bool, str]:
     if shutil.which("ollama") is None:
         return False, "ollama CLI not found (install Ollama and run `ollama serve`)"
@@ -96,7 +118,11 @@ def _hf_cache(source: str, token: str | None, cache_dir: Path | None) -> tuple[b
             cache_dir=str(cache_dir) if cache_dir else None,
         )
     except Exception as exc:  # 404 / auth / network -- report per-model, keep going
-        return False, f"{type(exc).__name__}: {exc}"
+        msg = f"{type(exc).__name__}: {exc}"
+        if _looks_gated(exc):
+            msg += (f" -- accept the license at https://huggingface.co/{source} "
+                    "and set HF_TOKEN in .env")
+        return False, msg
     return True, path
 
 
@@ -123,11 +149,15 @@ def prepare_models(
     for row in rows:
         if dry_run or row["action"] == ACTION_SKIP:
             status = "planned" if dry_run else ("skipped" if row["action"] == ACTION_SKIP else "planned")
-            results.append({**row, "status": status, "detail": row["reason"]})
-            continue
-        if row["action"] == ACTION_PULL:
+            detail = row["reason"]
+        elif row["action"] == ACTION_PULL:
             ok, detail = ollama_pull(row["source"])
+            status = "done" if ok else "failed"
         else:  # ACTION_CACHE
             ok, detail = hf_cache(row["source"], token, cache_dir)
-        results.append({**row, "status": "done" if ok else "failed", "detail": detail})
+            status = "done" if ok else "failed"
+        url = acceptance_url(row)
+        if url and "huggingface.co" not in detail:
+            detail = f"{detail}  [license: {url}]"
+        results.append({**row, "status": status, "detail": detail})
     return {"gpus": gpus, "max_vram_mb": max_mb, "results": results}

@@ -11,6 +11,7 @@ and "mirror failure does not lose data" are both unit-testable without MLflow.
 """
 
 import json
+import os
 import platform
 import sys
 from datetime import datetime, timezone
@@ -88,7 +89,7 @@ def persist_run(
         mirror(manifest, out_dir)
         mirror_status = "ok"
     except Exception as exc:  # a mirror failure must not lose a completed run
-        mirror_status = f"failed: {type(exc).__name__}"
+        mirror_status = f"failed: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
 
     return {
         "manifest": str(manifest_path),
@@ -104,6 +105,9 @@ def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:
     except ImportError:
         print("[tracking] mlflow not installed; skipping mirror (canonical record on disk).")
         return
+    # MLflow 3.x deprecated the local file store and raises unless opted in. The design
+    # explicitly allows local file/SQLite mode (no server), so we opt in.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri((out_dir / "mlruns").resolve().as_uri())
     mlflow.set_experiment("loc-lm-bench")
     with mlflow.start_run(run_name=manifest.run_name):

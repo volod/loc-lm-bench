@@ -25,11 +25,13 @@ launch (Milestone 2).
 MIB = 1024 * 1024
 KV_ELEM_BYTES = 2  # fp16 KV cache element
 
-# Bits-per-weight for common quantizations (GGUF k-quants + plain dtypes).
+# Bits-per-weight for common quantizations (GGUF k-quants, plain dtypes, served formats).
 QUANT_BPW = {
-    "fp16": 16.0, "f16": 16.0, "bf16": 16.0, "fp32": 32.0,
-    "q8_0": 8.5, "q6_k": 6.6, "q5_k_m": 5.5, "q5_0": 5.5, "q5_1": 5.6,
+    "fp32": 32.0, "fp16": 16.0, "f16": 16.0, "bf16": 16.0,
+    "fp8": 8.0, "q8_0": 8.5, "q6_k": 6.6,
+    "q5_k_m": 5.5, "q5_0": 5.5, "q5_1": 5.6,
     "q4_k_m": 4.5, "q4_k_s": 4.3, "q4_0": 4.5, "q4_1": 4.8,
+    "w4a16": 4.5, "int4": 4.5, "awq": 4.25, "gptq": 4.25,
     "q3_k_m": 3.9, "q3_k_s": 3.5, "q2_k": 3.0,
 }
 

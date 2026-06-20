@@ -1,22 +1,37 @@
 # Candidate models for the Ukrainian benchmark (seeds Open Question 3).
 # `make prep-models` reads this: it detects the host GPU, pulls the Ollama tags, and
-# snapshot-caches the vLLM (Hugging Face) weights once.
+# snapshot-caches the vLLM (Hugging Face) weights once. `make list-models` estimates fit.
 #
 #   backend:     ollama (Ollama manages its own store) | vllm (HF weights, cached once)
 #   source:      Ollama tag           | Hugging Face repo id
 #   min_vram_gb: rough floor to SERVE the model at a sane context on this hardware class
 #                (used only to skip/flag oversized models; the real fit test is a launch)
 #
-# This is a starting set you own and edit. The Ollama tags and the two HF ids below are
-# stable; verify any id you add (a wrong repo id is reported and skipped, not fatal).
+# Repo ids below were taken from the linked HF collections (verified live):
+#   Gemma 4            https://huggingface.co/collections/google/gemma-4
+#   Gemma 4 QAT Q4_0   https://huggingface.co/collections/google/gemma-4-qat-q4-0
+#   Qwen3.6            https://huggingface.co/collections/Qwen/qwen36
+#   MamayLM v2.0       https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
 #
-# Planning fields (used by `make list-models` to estimate runnable context + GPU/CPU split;
-# all approximate, edit to taste):
-#   params_b     parameters in billions
-#   quant        bits-per-weight class (q4_k_m, q8_0, fp16, ...) -- or set `bpw:` directly
-#   n_layers     transformer blocks
-#   kv_dim       n_kv_heads * head_dim (the per-layer KV width; smaller under GQA)
-#   max_context  the model's max context window
+# Notes that shape these picks for a 16 GB RTX 4060 Ti:
+#  - LICENSE / GATING: none of the models below are gated (Gemma 4 ships UNGATED, unlike the
+#    gated Gemma 2/3, and the rest are open), so they download without HF_TOKEN -- though
+#    you still must comply with their Gemma/Apache licenses. To add a GATED model (e.g. a
+#    Gemma 2/3 or Llama repo) set `gated: true` + `license_url: <hf-page>` on the entry;
+#    `prep-models` then prints the acceptance link (and does so automatically when a download
+#    hits a gate). See the commented example at the end of this file.
+#  - QAT formats: the gemma-4-qat-q4-0 collection ships `-w4a16-ct` (int4 for vLLM, used
+#    here), `-gguf` (Ollama/llama.cpp), and `-unquantized` (bf16). On 16 GB, only the int4
+#    Gemma-4 fits vLLM in VRAM; the larger bf16/FP8 models below are offload/bigger-GPU
+#    candidates (vLLM does not split layers to CPU the way llama.cpp does -- for those,
+#    prefer the GGUF variant on Ollama; see the comment block at the end).
+#  - These are multimodal (image-text); we serve + score TEXT only.
+#  - Gemma 3/4 use sliding-window attention, so `list-models` over-estimates KV cache at
+#    long context (its feasible-context numbers are conservative for these models).
+#
+# Planning fields (used by `make list-models`; arch values read from each config.json):
+#   params_b  billions   quant  bpw class (bf16, fp8, w4a16, q4_k_m, ...)  n_layers
+#   kv_dim    n_kv_heads * head_dim    max_context  model max window
 
 models:
   # --- Prebuilt path (Ollama: uses the GPU, no source build). The 3B is the M1 smoke target. ---
@@ -31,58 +46,98 @@ models:
     max_context: 131072
     notes: small multilingual baseline; the Milestone 1 smoke target (prebuilt Ollama)
 
-  - name: qwen2.5-7b
-    backend: ollama
-    source: qwen2.5:7b
+  # --- Gemma 4 int4 (w4a16) via vLLM -- the candidates that FIT a 16 GB card. Gated. ---
+  - name: gemma-4-e4b-it-w4a16
+    backend: vllm
+    source: google/gemma-4-E4B-it-qat-w4a16-ct
     min_vram_gb: 6
-    params_b: 7.6
-    quant: q4_k_m
-    n_layers: 28
-    kv_dim: 512         # 4 KV heads * 128 head_dim (GQA)
-    max_context: 32768
-
-  - name: gemma2-9b
-    backend: ollama
-    source: gemma2:9b
-    min_vram_gb: 8
-    params_b: 9.2
-    quant: q4_k_m
+    params_b: 8
+    quant: w4a16
     n_layers: 42
+    kv_dim: 512         # 2 KV heads * 256 head_dim
+    max_context: 131072
+    notes: Gemma 4 ~8B int4 (w4a16, for vLLM); fits 16 GB easily
+
+  - name: gemma-4-12b-it-w4a16
+    backend: vllm
+    source: google/gemma-4-12B-it-qat-w4a16-ct
+    min_vram_gb: 10
+    params_b: 12
+    quant: w4a16
+    n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
-    max_context: 8192
+    max_context: 262144
+    notes: Gemma 4 12B int4; the primary 16 GB vLLM fit (sliding-window, so KV is small)
 
-  # --- HF weights served via vLLM (cached once into the HF cache). ---
-  - name: qwen2.5-7b-instruct
+  # --- Larger current-gen candidates: offload or a bigger GPU on 16 GB (flagged by list-models). ---
+  - name: qwen3.6-35b-a3b-fp8
     backend: vllm
-    source: Qwen/Qwen2.5-7B-Instruct
-    min_vram_gb: 14
-    params_b: 7.6
-    quant: fp16
-    n_layers: 28
-    kv_dim: 512
-    max_context: 32768
-    notes: logprob-capable -> full Tier-1 public screen (MCQ + generative)
+    source: Qwen/Qwen3.6-35B-A3B-FP8
+    min_vram_gb: 40
+    params_b: 36          # total weights held in memory; MoE activates ~3B per token
+    quant: fp8
+    n_layers: 40
+    kv_dim: 512           # 2 KV heads * 256 head_dim
+    max_context: 262144
+    notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; needs a bigger GPU than 16 GB
 
-  # google/gemma-2-9b-it is gated: accept the license on HF and set HF_TOKEN in .env first.
-  # In fp16 a 9B will not fit a 16 GB card in VRAM alone -- list-models shows the CPU offload.
-  - name: gemma2-9b-it
+  - name: mamaylm-v2-12b
     backend: vllm
-    source: google/gemma-2-9b-it
-    min_vram_gb: 18
-    params_b: 9.2
-    quant: fp16
-    n_layers: 42
-    kv_dim: 2048
-    max_context: 8192
-    notes: gated repo (needs HF_TOKEN + accepted license)
+    source: INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0
+    min_vram_gb: 26
+    params_b: 12
+    quant: bf16
+    n_layers: 48
+    kv_dim: 2048        # 8 KV heads * 256 head_dim
+    max_context: 131072
+    notes: Ukrainian-specialized (Gemma-3-12B); on 16 GB prefer the GGUF via Ollama (below)
 
-  # --- Ukrainian-specialized candidates (verify the exact repo id before enabling). ---
-  # - name: mamaylm-v2-12b
+  - name: mamaylm-v2-27b-fp8
+    backend: vllm
+    source: INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic
+    min_vram_gb: 30
+    params_b: 27
+    quant: fp8
+    n_layers: 62
+    kv_dim: 2048        # 16 KV heads * 128 head_dim
+    max_context: 131072
+    notes: Ukrainian-specialized 27B FP8; also a local-judge candidate (Premise 2); bigger GPU
+
+  - name: lapa-v0.1.2-instruct
+    backend: vllm
+    source: lapa-llm/lapa-v0.1.2-instruct
+    min_vram_gb: 26
+    params_b: 12
+    quant: bf16
+    n_layers: 48
+    kv_dim: 2048        # 8 KV heads * 256 head_dim
+    max_context: 131072
+    notes: Ukrainian-specialized (Gemma-3-12B, lang-uk); on 16 GB prefer the GGUF via Ollama
+
+  # --- To run the large Ukrainian models ON a 16 GB card, use their GGUF via Ollama, which
+  #     offloads layers to the 128 GB system RAM (vLLM does not). Verify the quant tag first.
+  # - name: mamaylm-v2-12b-gguf
+  #   backend: ollama
+  #   source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
+  #   min_vram_gb: 8
+  #   params_b: 12
+  #   quant: q4_k_m
+  #   n_layers: 48
+  #   kv_dim: 2048
+  #   max_context: 131072
+  #   notes: UA 12B via Ollama GGUF (CPU offload); also MamayLM-Gemma-3-27B-IT-v2.0-GGUF
+
+  # --- Example of a GATED model (none above are gated). `prep-models` prints `license_url`
+  #     so you can accept the terms, then you must set HF_TOKEN in .env before it downloads:
+  # - name: gemma-3-12b-it
   #   backend: vllm
-  #   source: INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0   # VERIFY id on HF
-  #   min_vram_gb: 16
-  #   notes: Ukrainian-specialized (Gemma-3-based); also a local-judge candidate
-  # - name: lapa-llm
-  #   backend: vllm
-  #   source: lapa-llm/...                                    # VERIFY id on HF
-  #   min_vram_gb: 16
+  #   source: google/gemma-3-12b-it
+  #   gated: true
+  #   license_url: https://huggingface.co/google/gemma-3-12b-it
+  #   min_vram_gb: 26
+  #   params_b: 12
+  #   quant: bf16
+  #   n_layers: 48
+  #   kv_dim: 2048
+  #   max_context: 131072
+  #   notes: gated (Gemma 3); accept the license at license_url + set HF_TOKEN

@@ -374,4 +374,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from llb.runtime import run
+
+    sys.exit(run(main))

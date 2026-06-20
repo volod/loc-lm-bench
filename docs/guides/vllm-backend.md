@@ -23,11 +23,11 @@ needs `HF_TOKEN` in `.env` (it is reported per-model, not fatal).
 ## 3. Run on the real backend, with telemetry
 
     make build-index                                  # if not already built
-    make run-eval BACKEND=vllm MODEL=Qwen/Qwen2.5-7B-Instruct TELEMETRY=1
+    make run-eval BACKEND=vllm MODEL=google/gemma-4-12B-it-qat-w4a16-ct TELEMETRY=1
 
 or directly:
 
-    llb run-eval --backend vllm --model Qwen/Qwen2.5-7B-Instruct --telemetry
+    llb run-eval --backend vllm --model google/gemma-4-12B-it-qat-w4a16-ct --telemetry
 
 The launcher starts `vllm serve <model>` (controlling `--gpu-memory-utilization` and
 `--max-model-len`, recorded for VRAM comparability), waits for readiness, runs the eval, then
