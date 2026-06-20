@@ -5,8 +5,9 @@ the eval graph, the scoring, and is recorded verbatim in the run manifest. That 
 source keeps a run reproducible -- every knob that affects a score lives here and is
 serialized into the manifest.
 
-Defaults target the CUDA-free Milestone 1 skeleton: a small Ollama model behind its
-OpenAI-compatible endpoint, a pinned multilingual embedding, deterministic decoding.
+Defaults target the compile-free Milestone 1 skeleton: a small (prebuilt) Ollama model
+behind its OpenAI-compatible endpoint, a pinned multilingual embedding, deterministic
+decoding. "Compile-free" means no vLLM/flash-attn source build -- the GPU is still used.
 Load from YAML with `RunConfig.load(path)`; unset fields fall back to these defaults.
 """
 
@@ -33,14 +34,27 @@ class RunConfig(BaseModel):
     run_name: str = "m1-skeleton"
     seed: int = 13
 
-    # Model + backend (v1: backend resolved per model; M1 ships Ollama only)
+    # Model + backend (v1: backend resolved per model; M1 ships Ollama, M2 adds vLLM)
     model: str = "llama3.2:3b"
     backend: Backend = "ollama"
     ollama_host: str = Field(default_factory=lambda: os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST))
     request_timeout_s: float = 120.0
     max_tokens: int = 512
     temperature: float = 0.0
-    n_shot: int = 0
+    n_shot: int = 0  # fixed + recorded across compared models (avoids 0-shot/3-shot mixing)
+
+    # vLLM serving (used when backend == "vllm"). gpu_memory_utilization is recorded so peak
+    # VRAM is comparable across runs (vLLM pre-reserves a KV-cache fraction).
+    vllm_host: str = "http://localhost:8000"
+    vllm_port: int = 8000
+    gpu_memory_utilization: float = 0.85  # 16 GB class default (see spec planning table)
+    max_model_len: int | None = None
+    dtype: str = "auto"
+    quantization: str | None = None
+
+    # Telemetry: when set, run-eval also measures steady-state tokens/sec + peak VRAM on a
+    # fixed prompt set and records it in the manifest (needs a running backend; M2.2).
+    measure_telemetry: bool = False
 
     # Retrieval (embedding pinned; chunking + top_k are tunable later via Optuna)
     embedding_model: str = DEFAULT_EMBEDDING_MODEL

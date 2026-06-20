@@ -1,6 +1,7 @@
 """loc-lm-bench CLI (Typer).
 
-Milestone 1 commands wire the CUDA-free skeleton:
+Milestone 1 commands wire the compile-free skeleton (prebuilt Ollama on the GPU; no
+vLLM/flash-attn source build):
   build-index         chunk + embed the corpus into a FAISS RAG store
   validate-retrieval  recall@k / MRR of the pinned embedding over the gold set (Premise 4)
   run-eval            retrieve -> generate -> score -> ranked row + manifest
@@ -169,7 +170,8 @@ def list_models_cmd(
 @app.command("run-eval")
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
-    model: Optional[str] = typer.Option(None, help="model name (Ollama tag in M1)"),
+    model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm"),
     split: str = typer.Option("final", help="gold split to evaluate"),
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
@@ -177,6 +179,9 @@ def run_eval_cmd(
     ),
     score_semantic: bool = typer.Option(
         False, help="also record an embedding-similarity correctness signal"
+    ),
+    telemetry: bool = typer.Option(
+        False, help="also measure steady-state tokens/sec + peak VRAM and record it"
     ),
     worksheet: Optional[Path] = typer.Option(
         None, help="emit a judge-calibration worksheet pre-filled with answers "
@@ -186,7 +191,10 @@ def run_eval_cmd(
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
 
-    cfg = _load_config(config, model=model, score_semantic=score_semantic or None)
+    cfg = _load_config(
+        config, model=model, backend=backend, score_semantic=score_semantic or None,
+        measure_telemetry=telemetry or None,
+    )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
 
 

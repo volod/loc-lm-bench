@@ -6,10 +6,11 @@ VRAM; loc-lm-bench re-ranks a handful of candidate models on your own corpus, on
 desktop GPU, so the choice is reproducible and defensible.
 
 > **Status:** early but runnable. Milestone 0 (data prep: gold-item schema, validator,
-> public-dataset ingestion, chunking) and Milestone 1 (the CUDA-free eval skeleton:
-> retrieve -> generate -> score -> ranked row + manifest, on one Ollama model) are **done
-> and tested** (114 tests). Milestones 2-3 (real backends + telemetry, two-tier screen +
-> leaderboard) are planned — see the docs.
+> public-dataset ingestion, chunking) and Milestone 1 (the eval skeleton: retrieve ->
+> generate -> score -> ranked row + manifest, on one prebuilt Ollama model — runs on the
+> GPU, nothing to compile) are **done and tested** (131 tests). Milestone 2 (a vLLM backend +
+> telemetry hook + MAX_JOBS-capped build) is **code-complete** (the real GPU run is
+> documented); Milestone 3 (two-tier screen + leaderboard) is planned — see the docs.
 
 ## Main features
 
@@ -22,8 +23,9 @@ desktop GPU, so the choice is reproducible and defensible.
 - **Chunking strategies:** `fixed` / `sentence` / `recursive` / `markdown` (structure-aware)
   / `semantic`, plus flat vs parent-child retrieval — all offset-exact, reusing
   langchain-text-splitters where it preserves source spans.
-- **Backend-agnostic:** one OpenAI-compatible interface; the Ollama backend ships today
-  (CUDA-free), with vLLM / llama.cpp + a per-model resolver planned.
+- **Backend-agnostic:** one OpenAI-compatible interface; a prebuilt Ollama backend and a
+  vLLM launcher (HF weights, MAX_JOBS-capped build) + a telemetry hook (tokens/sec, peak
+  VRAM, served context) ship today; llama.cpp + a per-model resolver are planned.
 - **Hardware-aware:** `list-models` reports which candidates can run on your GPU + RAM,
   KV-cache-aware, with a GPU/CPU layer split (it optimizes ability to run, not speed).
 - **Defensible scoring:** objective reference-answer correctness ranks models today, with

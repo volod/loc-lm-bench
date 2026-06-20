@@ -43,6 +43,7 @@ class RunManifest(BaseModel):
     metrics: dict = Field(default_factory=dict)
     retrieval: dict = Field(default_factory=dict)
     judge: dict = Field(default_factory=dict)
+    telemetry: dict = Field(default_factory=dict)
     n_cases: int = 0
 
 

@@ -10,16 +10,18 @@ defensible.
 Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../design/spec.md).
 
 Milestones 0 and 1 are **complete** and documented in [`current.md`](current.md): the gold
-set + data-prep tooling (M0) and the CUDA-free eval skeleton + model prep / feasibility
-tooling (M1), 114 tests. This file is the FORWARD plan only -- Milestone 2 (one real backend
-+ telemetry) and Milestone 3 (two-tier screen, scale, rigor, board) -- plus the few M0/M1
+set + data-prep tooling (M0) and the eval skeleton (compile-free: prebuilt Ollama, no
+vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 131 tests. 
+This file is the FORWARD plan only -- Milestone 2 (one real backend + telemetry) and 
+Milestone 3 (two-tier screen, scale, rigor, board) -- plus the few M0/M1
 residuals that are blocked on a running backend or an undecided judge, each folded into the
 milestone that unblocks it. Completed detail moves to `current.md` as it lands.
 
 ## Approach: walking skeleton, then layer
 
 The thin end-to-end vertical exists (M1: retrieve -> generate -> score -> ranked row +
-manifest, CUDA-free). Now add layers, each independently shippable and tested:
+manifest, compile-free on prebuilt Ollama). Now add layers, each independently shippable
+and tested:
 
 - **Milestone 2 — one real backend + telemetry.** Add the vLLM (or llama.cpp) launcher and
   the real telemetry hook to validate CUDA / HF-loading / tokenizer assumptions on one real
@@ -30,27 +32,22 @@ manifest, CUDA-free). Now add layers, each independently shippable and tested:
 
 ## Milestone 2 — one real backend + telemetry
 
-Already in place (M1, see `current.md`): host GPU + RAM detection, the candidate-models
-manifest, Ollama-tag pulling, one-time vLLM weight caching, and the feasibility planner
-(VRAM+RAM budget, KV-cache-aware max context, GPU/CPU layer split). M2 turns the planner's
-estimates into a measured fit by actually serving a model.
+CODE complete (built + unit-tested with fakes; see [`current.md`](current.md) and the
+[vLLM guide](../guides/vllm-backend.md)): the `VllmLauncher` (M2.1), the steady-state telemetry
+hook (M2.2, wired into `run-eval --telemetry`), and the MAX_JOBS-capped
+`scripts/build_vllm.sh` + canonical `max_jobs()` in `scripts/shared/common.sh` (OQ6 resolved).
+What remains needs a CUDA host:
 
-- **M2.1 vLLM launcher.** A `BackendLauncher` subclass that serves HF weights behind the
-  OpenAI-compatible HTTP API (the base launcher interface, the chat client, and the Ollama
-  launcher already exist -- this slots in beside them). MAX_JOBS-capped source build:
-  confirm/create the canonical MAX_JOBS helper path FIRST (OQ6, see AGENTS.md), then cache
-  the built vLLM/flash-attn WHEELS under `.data/wheels/<pkg>_<key>/`. Model WEIGHTS are
-  already cached by `prep-models`.
-- **M2.2 telemetry hook.** Per-backend telemetry on the launcher: tokens/sec at STEADY STATE
-  (fixed prompt set + fixed max_new_tokens + N warmup iters), requested-vs-served context,
-  peak VRAM via NVML, cold-start load time (recorded separately), and tokenizer efficiency
-  (tokens per UA char/word). Record all into the run manifest; fix and record n_shot.
-- **M2.3 candidate list (OQ3).** Finalize the first ~6-10 candidate list and VERIFY the
-  UA-specialized HF repo ids (MamayLM v2 12B/27B, Lapa, Gemma 3, Qwen, Llama 3.1). Seeded in
-  `samples/models_uk.yaml`; this drives launcher priority and the install path.
-- **M2.4 validate on one real model.** Run the skeleton end to end on one vLLM-served HF
-  model; confirm CUDA / HF-loading / tokenizer assumptions and that the planner's predicted
-  fit matches the measured fit (feed corrections back into `planner.py` defaults).
+- **M2.1 build (run it).** On the GPU host: `make build-vllm` (MAX_JOBS-capped, wheels cached
+  under `$DATA_DIR/wheels/vllm_<key>/`). Confirm `vllm` imports.
+- **M2.3 candidate list (OQ3).** Finalize the ~6-10 candidates in `samples/models_uk.yaml` and
+  VERIFY the UA-specialized HF repo ids (MamayLM v2 12B/27B, Lapa, Gemma 3, Qwen, Llama 3.1).
+  `make prep-models PREP_BACKEND=vllm` is the verification step (a wrong id 404s; a gated repo
+  needs `HF_TOKEN`).
+- **M2.4 validate on one real model.** `make run-eval BACKEND=vllm MODEL=<hf-repo> TELEMETRY=1`;
+  confirm CUDA / HF-loading / tokenizer assumptions and that the planner's predicted fit
+  matches the measured fit (feed corrections back into `planner.py` defaults +
+  `samples/models_uk.yaml`).
 - **Acceptance:** one HF model served via vLLM with real telemetry recorded under the
   executor; `run-eval` produces a ranked row from the real backend.
 
@@ -116,8 +113,8 @@ estimates into a measured fit by actually serving a model.
 
 ## Critical modules still to build (`src/llb/`)
 
-- `backends/` — vLLM + llama.cpp launchers + per-backend telemetry hooks + `AvailabilityResolver`.
-  (The base `BackendLauncher`, the OpenAI-compatible client, the Ollama launcher, hardware/RAM
+- `backends/` — llama.cpp launcher + `AvailabilityResolver` (M3.2). (The base `BackendLauncher`,
+  the OpenAI-compatible client, the Ollama + vLLM launchers, the telemetry hook, hardware/RAM
   detection, model prepare, and the feasibility planner already exist.)
 - `executor/` — hard isolation (one process per cell, VRAM-tolerance + capped thermal cooldown,
   resume) on top of the existing minimal runner + basic VRAM gate.
@@ -131,7 +128,7 @@ estimates into a measured fit by actually serving a model.
 Built already (documented in `current.md`): `RunConfig`, the `llb` Typer CLI, `rag/` store +
 retrieval metrics, the single-call `eval/` graph, objective + semantic `scoring/`, `tracking/`
 manifest, the minimal `executor/` runner + VRAM gate, and `backends/`
-base+client+Ollama+hardware+prepare+planner.
+base+client+Ollama+vLLM+hardware+prepare+planner+telemetry.
 
 ## Reuse (do not rebuild)
 

@@ -19,7 +19,7 @@
 #   max_context  the model's max context window
 
 models:
-  # --- CUDA-free path (Ollama). The 3B is the Milestone 1 smoke target. ---
+  # --- Prebuilt path (Ollama: uses the GPU, no source build). The 3B is the M1 smoke target. ---
   - name: llama3.2-3b
     backend: ollama
     source: llama3.2:3b
@@ -29,7 +29,7 @@ models:
     n_layers: 28
     kv_dim: 1024        # 8 KV heads * 128 head_dim
     max_context: 131072
-    notes: small multilingual baseline; the CUDA-free smoke target
+    notes: small multilingual baseline; the Milestone 1 smoke target (prebuilt Ollama)
 
   - name: qwen2.5-7b
     backend: ollama

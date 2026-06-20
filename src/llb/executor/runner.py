@@ -68,9 +68,28 @@ def _make_launcher(config: RunConfig):
         from llb.backends.ollama import OllamaLauncher
 
         return OllamaLauncher(config.model, host=config.ollama_host)
+    if config.backend == "vllm":
+        from llb.backends.vllm import VllmLauncher
+
+        return VllmLauncher(
+            config.model, host=config.vllm_host, port=config.vllm_port,
+            gpu_memory_utilization=config.gpu_memory_utilization,
+            max_model_len=config.max_model_len, dtype=config.dtype,
+            quantization=config.quantization, log_dir=config.run_dir() / "vllm",
+        )
     raise SystemExit(
-        f"backend '{config.backend}' is not wired in Milestone 1 (Ollama only)."
+        f"backend '{config.backend}' is not wired yet (Ollama + vLLM supported)."
     )
+
+
+def _vram_reader():
+    """Best-effort NVML reader for telemetry (None when the [telemetry] extra/GPU is absent)."""
+    try:
+        from llb.executor.vram import nvml_reader
+
+        return nvml_reader()
+    except (Exception, SystemExit):  # nvml_reader raises SystemExit when [telemetry] is absent
+        return None
 
 
 def _default_runner_fn(config: RunConfig, store, launcher) -> Callable[[GoldItem], RagState]:
@@ -152,12 +171,20 @@ def run_eval(
     case_rows: list[dict] = []
     retrieval_pairs: list[tuple[list[dict], list[dict]]] = []
     answers: list[tuple[GoldItem, str]] = []
+    telemetry_report: dict = {}
     with launcher:
         for item in items:
             state = runner_fn(item)
             case_rows.append(score_case(item, state, embedder=embedder))
             retrieval_pairs.append((state.get("retrieved", []), _spans_as_dicts(item)))
             answers.append((item, state.get("answer", "")))
+        if config.measure_telemetry:
+            from llb.backends.telemetry import collect_telemetry
+
+            telemetry_report = collect_telemetry(
+                launcher, requested_context=config.max_model_len,
+                timeout=config.request_timeout_s, vram_reader=_vram_reader(),
+            )
 
     telemetry = launcher.telemetry() if hasattr(launcher, "telemetry") else {}
     rows, metrics = _aggregate(config, case_rows, judge_rho, telemetry)
@@ -174,6 +201,7 @@ def run_eval(
             "threshold": config.judge_threshold,
             "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
         },
+        telemetry=telemetry_report,
         n_cases=len(case_rows),
     )
     paths = persist_run(manifest, case_rows, config.run_dir(), mirror=mirror)
@@ -191,9 +219,15 @@ def run_eval(
         print(f"[run-eval] retrieval: recall@{config.top_k}="
               f"{retrieval_metrics['recall_at_k']:.3f} mrr={retrieval_metrics['mrr']:.3f}")
         print(table)
+        if telemetry_report:
+            print(f"[run-eval] telemetry: {telemetry_report['steady_tokens_per_s']} tok/s "
+                  f"(load {telemetry_report['load_time_s']}s, peak VRAM "
+                  f"{telemetry_report['peak_vram_mb']} MB, served ctx "
+                  f"{telemetry_report['served_context']})")
         print(f"[run-eval] manifest -> {paths['manifest']}")
         print(f"[run-eval] scores   -> {paths['scores']} (mirror: {paths['mirror']})")
         if worksheet is not None:
             print(f"[run-eval] worksheet -> {worksheet} ({n} rows; add human_rating)")
     return {"rows": rows, "metrics": metrics, "retrieval": retrieval_metrics,
-            "paths": paths, "table": table, "manifest": manifest}
+            "paths": paths, "table": table, "telemetry": telemetry_report,
+            "manifest": manifest}

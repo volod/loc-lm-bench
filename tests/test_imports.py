@@ -21,6 +21,8 @@ MODULES = [
     "llb.backends.hardware",
     "llb.backends.prepare",
     "llb.backends.planner",
+    "llb.backends.vllm",
+    "llb.backends.telemetry",
     "llb.eval.graph",
     "llb.scoring.correctness",
     "llb.scoring.judge",

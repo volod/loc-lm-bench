@@ -37,7 +37,8 @@ Use `Optuna` and `MLflow` for tuning and tracking when necessary.
 Any installation that compiles C++/CUDA from source (git+, --no-binary, --no-build-isolation) MUST cap
 parallelism using formila MAX_JOBS=min(cpu_core_num//2, RAM // 14)
 
-Do not inline the formula — the helpers are the single source of truth.
+Do not inline the formula — the helpers are the single source of truth. The canonical helper is
+`max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
 
 Compiled wheels (flash-attn, vllm forks, xformers, etc.) MUST be cached under `$DATA_DIR/wheels/<package-name>_<key>/`
 where `<key>` encodes the ABI-relevant dimensions (e.g. `torch2.9.1_cu128`, `zaya-vllm_latest`).

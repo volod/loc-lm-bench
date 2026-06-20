@@ -18,8 +18,9 @@ SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 GOLDSET_N ?= 250
 
-# Milestone 1 eval skeleton knobs (override on the command line).
+# Milestone 1/2 eval knobs (override on the command line).
 MODEL ?= llama3.2:3b
+BACKEND ?= ollama
 SPLIT ?= final
 LIMIT ?= 20
 RAG_K ?= 10
@@ -27,7 +28,7 @@ MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
 
 .DEFAULT_GOAL := help
-.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models
+.PHONY: help venv test ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -91,9 +92,13 @@ validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --k $(RAG_K)
 
-run-eval: ## M1: run the skeleton on one model (needs Ollama + ".[rag,eval]"); MODEL= LIMIT= SPLIT=
+run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm LIMIT= SPLIT= TELEMETRY=1
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main run-eval --model "$(MODEL)" --split "$(SPLIT)" --limit $(LIMIT)
+	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" --split "$(SPLIT)" \
+		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry,)
+
+build-vllm: ## M2: install vLLM for the host (MAX_JOBS-capped build + wheel cache); GPU host only
+	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
 
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

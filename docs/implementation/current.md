@@ -7,18 +7,25 @@ A snapshot of what exists and runs **today**. Forward work lives in
 - **Milestone 0 (data prep) complete:** schema, validator, disjoint splits, SQuAD
   ingestion, a real 250-item Ukrainian gold set (HPLT/ua-squad), judge-calibration
   stats, a chunking RAG-store builder.
-- **Milestone 1 (CUDA-free eval skeleton) complete:** a canonical `RunConfig` + Typer
+- **Milestone 1 (eval skeleton) complete:** a canonical `RunConfig` + Typer
   CLI, a pinned-embedding FAISS RAG store + source-span retrieval metrics, a LangGraph
   retrieve -> generate flow over an OpenAI-compatible backend (Ollama), objective
   answer-correctness + a gated judge, a canonical manifest + scores record (MLflow
   mirror), and a minimal sequential runner with a VRAM gate. `llb run-eval` prints one
-  ranked row, CUDA-free.
+  ranked row. The skeleton is **compile-free** -- prebuilt Ollama (which uses the GPU),
+  no vLLM/flash-attn source build -- so the loop is proven before that build (M2).
+- **Milestone 2 (real backend + telemetry) -- code complete:** a vLLM launcher (serves HF
+  weights behind the same OpenAI-compatible interface), a per-backend telemetry hook
+  (steady-state tokens/sec, peak VRAM, served vs requested context, load time, tokenizer
+  efficiency), and a MAX_JOBS-capped vLLM build script. The from-source build + validating on
+  a real model (M2.4) need a CUDA host (see the [vLLM guide](../guides/vllm-backend.md)); the
+  code is unit-tested with fakes.
 
 Two host-aware model utilities: `prep-models` prepares candidate models (pulls Ollama
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-114 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
+131 tests passing, `ruff` clean. CI runs lint + unit tests only (no GPU / network / heavy
 extras); every heavy dependency is lazy-imported so the base install stays importable.
 
 ## Dev setup
@@ -29,7 +36,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (one-time setup)
-    make test       # pytest (114 tests)
+    make test       # pytest (131 tests)
 
 Extras (`rag, eval, track, board, prep, telemetry, goldset, dev`) are all installed by
 `make venv`; trim with `EXTRAS=` (e.g. `make venv EXTRAS=rag,eval`). GitHub CI installs
@@ -49,7 +56,9 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       squad_uk_fixture.json        #   SQuAD-format UA fixture (tests/demo)
       corpus/ip_regulation_uk.md   #   substantial UA domain doc (IP regulation) for chunking
     scripts/
+      shared/common.sh             # shared bootstrap + canonical max_jobs() helper (AGENTS.md)
       gen_rag_items.sh             # thin entrypoint -> llb.prep.gen_rag_items
+      build_vllm.sh                # MAX_JOBS-capped vLLM install + wheel cache (GPU host)
     src/llb/
       config.py                    # RunConfig (Pydantic) -- the canonical run config
       main.py                      # Typer CLI: build-index, validate-retrieval, run-eval
@@ -62,13 +71,13 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       rag/chunking.py              # fixed/sentence/recursive/markdown/semantic chunking (offset-exact)
       rag/{embedding,index,store}.py  # pinned embedder + FAISS index + store (flat / parent-child)
       rag/retrieval.py             # recall@k / MRR by source-span overlap (pure)
-      backends/{base,openai_client,ollama}.py  # launcher iface + chat call + Ollama
-      backends/{hardware,prepare,planner}.py  # GPU/RAM detect + pull/cache + feasibility plan
+      backends/{base,openai_client,ollama,vllm}.py  # launcher iface + chat call + Ollama + vLLM
+      backends/{hardware,prepare,planner,telemetry}.py  # GPU/RAM detect + pull/cache + plan + telemetry
       eval/graph.py                # LangGraph retrieve->generate flow + failure taxonomy
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
       executor/{vram,runner}.py    # VRAM gate + minimal sequential run-eval
-    tests/                         # 114 tests across the above
+    tests/                         # 131 tests across the above
 
 Runtime output (gitignored) under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), `runs/<run_name>/`
@@ -163,10 +172,11 @@ Remaining (blocked on a judge choice or human input; scoped forward in [`plan.md
 
 ## Milestone 1 -- modules + how to run
 
-The CUDA-free walking skeleton: one model, fixed config, retrieve -> generate -> score ->
-ranked row + manifest. Every heavy collaborator (FAISS, sentence-transformers, langgraph,
-mlflow, pyarrow, pynvml) is lazy-imported, so the base install imports the whole package;
-the real run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
+The walking skeleton: one model, fixed config, retrieve -> generate -> score -> ranked row
++ manifest. It is compile-free (prebuilt Ollama, which still uses the GPU; no vLLM/flash-attn
+source build). Every heavy collaborator (FAISS, sentence-transformers, langgraph, mlflow,
+pyarrow, pynvml) is lazy-imported, so the base install imports the whole package; the real
+run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
 
 ### The flow
 
@@ -239,11 +249,15 @@ their larger PARENT chunk for generation context (retrieve a child -> surface it
 deduped). Both return offset-bearing chunks, so the span metric is mode-agnostic and Optuna
 can compare flat vs parent-child.
 
-### Backends — `llb.backends.{base,openai_client,ollama}`
+### Backends — `llb.backends.{base,openai_client,ollama,vllm}`
 `BackendLauncher` is the seam (Premise 1): all backends speak OpenAI-compatible HTTP, so
 only the launcher + telemetry hook are backend-specific. `openai_client.chat_once` maps
-transport failures to normalized tokens (`timeout` / `backend_error`). M1 ships the
-`OllamaLauncher` (CUDA-free); vLLM / llama.cpp slot in behind the same interface in M2.
+transport failures to normalized tokens (`timeout` / `backend_error`). M1 ships the prebuilt
+`OllamaLauncher`; M2 adds `VllmLauncher` (M2.1) -- it starts `vllm serve <model>` as a
+subprocess (controlling + recording `gpu-memory-utilization` / `max-model-len`), waits for
+readiness, serves chat through the same `chat_once`, and kills the server on stop. It is a
+subprocess CLI, so the module imports in the base install and is tested by injecting the
+process factory + HTTP probe (no vLLM/CUDA needed). llama.cpp slots in the same way later.
 
 ### Eval graph — `llb.eval.graph`
 A LangGraph retrieve -> generate flow (the first of the ~3 DRY templates). The node
@@ -287,3 +301,40 @@ Residual M1 work is scoped forward in [`plan.md`](plan.md): the Ragas judge scor
 metric-prompt localization (M3.8, needs the judge choice + calibration ratings) and the
 map-reduce / multi-hop eval templates (deferred until the text-analysis benchmark needs
 them). The optional semantic-similarity correctness signal is now built (`--score-semantic`).
+
+## Milestone 2 -- real backend + telemetry (code complete)
+
+A real vLLM backend behind the same interface, a steady-state telemetry hook, and the
+MAX_JOBS-capped build entrypoint. The code is unit-tested with fakes; the from-source build +
+serving a real model run on a CUDA host -- see the [vLLM guide](../guides/vllm-backend.md).
+
+### vLLM launcher — `llb.backends.vllm` (M2.1)
+`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above. The build
+itself is `scripts/build_vllm.sh`, which sources `scripts/shared/common.sh` and caps build
+parallelism via the canonical `max_jobs()` helper (`min(cores//2, RAM_GiB//14)`, AGENTS.md),
+caching built wheels under `$DATA_DIR/wheels/vllm_<key>/`. Weights are cached by `prep-models`.
+
+    make build-vllm                                   # install vLLM (GPU host; MAX_JOBS-capped)
+    make run-eval BACKEND=vllm MODEL=Qwen/Qwen2.5-7B-Instruct TELEMETRY=1
+
+### Telemetry hook — `llb.backends.telemetry` (M2.2)
+`measure_throughput` runs the steady-state protocol (fixed UA prompt set + fixed
+max_new_tokens + N warmup iters) over `launcher.chat`, so tokens/sec is comparable across
+models; cold-start `load_time_s` is recorded separately by the launcher. `VramSampler` polls
+NVML (injected reader) for peak VRAM. `collect_telemetry` assembles the manifest record:
+steady tokens/sec, tokenizer efficiency (tokens/UA-char), peak VRAM, requested-vs-served
+context, load time, gpu-memory-utilization, and detected GPU. Wired into `run-eval`
+behind `config.measure_telemetry` (`--telemetry`); recorded under `manifest.telemetry`.
+
+### Milestone 2 status
+
+| Step | What | State |
+|------|------|-------|
+| M2.1 | `VllmLauncher` + `build_vllm_command` + MAX_JOBS build helper / script | DONE (code) |
+| M2.2 | telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time, tok/char) | DONE (code) |
+| M2.3 | candidate list seeded in `samples/models_uk.yaml` | PARTIAL (finalize + verify ids) |
+| M2.4 | validate on one real vLLM-served model | TODO (needs a CUDA host) |
+
+Remaining (need a CUDA host; scoped in [`plan.md`](plan.md)): the actual `build-vllm`,
+finalizing + verifying the candidate HF repo ids (`make prep-models --backend vllm` 404s a
+wrong id), and the M2.4 real-model run (then feed fit corrections back into `planner.py`).

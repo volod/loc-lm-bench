@@ -39,6 +39,7 @@ class BackendLauncher:
 
     model: str
     meta: dict = field(default_factory=dict)
+    load_time_s: float = 0.0  # cold-start time to readiness; set by start()
 
     def start(self) -> None:
         """Ensure the backend is serving `self.model`. Default: assume it is up."""
@@ -49,6 +50,10 @@ class BackendLauncher:
     def chat(self, messages: list[dict], max_tokens: int, temperature: float,
              timeout: float) -> ChatResult:
         raise NotImplementedError
+
+    def served_context(self) -> int | None:
+        """Context length the backend actually serves (backend-specific). Default: unknown."""
+        return None
 
     def telemetry(self) -> dict:
         """Backend-specific telemetry (tokens/sec, served context, VRAM). Default: meta."""

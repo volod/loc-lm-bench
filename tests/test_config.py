@@ -15,6 +15,14 @@ def test_retrieval_mode_defaults_to_flat():
     assert cfg.child_chunk_size == 400
 
 
+def test_vllm_serving_defaults():
+    cfg = RunConfig()
+    assert cfg.gpu_memory_utilization == 0.85
+    assert cfg.vllm_port == 8000
+    assert cfg.measure_telemetry is False
+    assert RunConfig(backend="vllm", model="org/Model").backend == "vllm"
+
+
 def test_index_and_run_dirs_under_data_dir(tmp_path):
     cfg = RunConfig(data_dir=tmp_path, run_name="r1")
     assert cfg.index_dir() == tmp_path / "llb" / "rag"
