@@ -23,6 +23,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+!src/llb/build/
+!src/llb/build/*.py
 develop-eggs/
 dist/
 downloads/

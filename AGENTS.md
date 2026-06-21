@@ -13,14 +13,14 @@
 - **Shell Scripts:** Reuse `scripts/shared/common.sh` for shared shell root/env/bootstrap behavior instead of duplicating logic.
 
 ## Documentation
-- **Future-work hygiene:** `docs/implementation-plan.md` tracks open future work
-  only; delivered behavior lives in `docs/implementation-current.md`. After
+- **Future-work hygiene:** `docs/implementation/plan.md` tracks open future work
+  only; delivered behavior lives in `docs/implementation/current.md`. After
   implementing an item from the Ordered Implementation Sequence and relates item 
   description section, before finishing the task: (1) move the important implementation 
-  details into `docs/implementation-current.md`; (2) update the item with the residual
+  details into `docs/implementation/current.md`; (2) update the item with the residual
   "possible further improvements" the implementation surfaced (the still-open gaps and 
   natural next steps or research-grade improvements), keeping only that open work; and
-  (3) delete the now-implemented description from `docs/implementation-plan.md`. 
+  (3) delete the now-implemented description from `docs/implementation/plan.md`. 
   If an item is fully delivered with no residual work, remove it entirely. 
   Keep each item's sequence number stable as a workstream identifier.
 
@@ -37,9 +37,16 @@ Use `Optuna` and `MLflow` for tuning and tracking when necessary.
 Any installation that compiles C++/CUDA from source (git+, --no-binary, --no-build-isolation) MUST cap
 parallelism using formila MAX_JOBS=min(cpu_core_num//2, RAM // 14)
 
-Do not inline the formula — the helpers are the single source of truth.
+Do not inline the formula — the helpers are the single source of truth. The canonical helper is
+`max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
 
-Compiled wheels (flash-attn, vllm forks, xformers, etc.) MUST be cached under `$DATA_DIR/wheels/<package-name>_<key>/`
-where `<key>` encodes the ABI-relevant dimensions (e.g. `torch2.9.1_cu128`, `zaya-vllm_latest`).
-Never cache wheels under a package-specific subdirectory — the shared `$DATA_DIR/wheels/` root is the single 
-source of truth for all heavy build artifacts across every sub-package.
+Only wheels deliberately built from a local git checkout (flash-attn forks, vLLM forks,
+xformers forks, etc.) may be exported under
+`$DATA_DIR/wheels/<package-name>_<abi-key>_git<revision>/`. The key MUST encode the
+ABI-relevant dimensions (Python, torch, CUDA, GPU compute capability) and the exact git
+revision; source checkouts must be clean before building.
+
+Registry wheels, prebuilt wheels, and all ordinary build/runtime dependencies MUST be
+installed directly with `uv` and left in uv's standard shared cache. Never use
+`pip wheel` or a dependency-resolving wheelhouse under `$DATA_DIR/wheels`; that directory
+contains only intentional local-source build outputs.
