@@ -144,7 +144,8 @@ def _ollama_pull(source: str) -> tuple[bool, str]:
         out = subprocess.run(["ollama", "pull", source], capture_output=True, text=True)
     except subprocess.SubprocessError as exc:
         return False, f"ollama pull failed: {exc}"
-    return (out.returncode == 0), (out.stderr.strip() or "pulled").splitlines()[-1]
+    detail = (out.stderr.strip() or "pulled").splitlines()[-1].strip()
+    return (out.returncode == 0), detail
 
 
 def _hf_cache(source: str, token: str | None, cache_dir: Path | None) -> tuple[bool, str]:

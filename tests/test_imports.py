@@ -29,6 +29,8 @@ MODULES = [
     "llb.scoring.judge",
     "llb.scoring.aggregate",
     "llb.tracking.manifest",
+    "llb.tracking.mlflow",
+    "llb.tracking.server",
     "llb.executor.vram",
     "llb.executor.runner",
 ]

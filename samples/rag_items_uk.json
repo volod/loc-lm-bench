@@ -5,11 +5,11 @@
     "sample/notes.txt": "Протокол наради відділу підтримки за квітень. Учасники обговорили зростання кількості звернень на тридцять відсотків. Ірина запропонувала додати чат-бота для типових запитань. Рішення: запустити пілот чат-бота до кінця травня. Головний ризик — недостатня якість відповідей українською мовою."
   },
   "items": [
-    {"id": "ua-rag-0001", "doc": "sample/memo.txt", "split": "calibration", "question": "У якому місті компанія «Світанок» відкрила новий склад?", "reference_answer": "У Львові.", "answer_span": "Львові"},
-    {"id": "ua-rag-0002", "doc": "sample/memo.txt", "split": "tuning", "question": "Хто керівник логістики компанії «Світанок»?", "reference_answer": "Олена Ткаченко.", "answer_span": "Олена Ткаченко"},
-    {"id": "ua-rag-0003", "doc": "sample/memo.txt", "split": "final", "question": "Яка основна проблема залишається у компанії?", "reference_answer": "Нестача водіїв у нічну зміну.", "answer_span": "нестача водіїв у нічну зміну"},
-    {"id": "ua-rag-0004", "doc": "sample/notes.txt", "split": "calibration", "question": "На скільки відсотків зросла кількість звернень?", "reference_answer": "На тридцять відсотків.", "answer_span": "тридцять відсотків"},
-    {"id": "ua-rag-0005", "doc": "sample/notes.txt", "split": "tuning", "question": "Яке рішення ухвалила нарада?", "reference_answer": "Запустити пілот чат-бота до кінця травня.", "answer_span": "запустити пілот чат-бота до кінця травня"},
-    {"id": "ua-rag-0006", "doc": "sample/notes.txt", "split": "final", "question": "Який головний ризик названо на нараді?", "reference_answer": "Недостатня якість відповідей українською мовою.", "answer_span": "недостатня якість відповідей українською мовою"}
+    {"id": "ua-rag-0001", "doc": "sample/memo.txt", "split": "calibration", "question": "У якому місті компанія «Світанок» відкрила новий склад?", "reference_answer": "У Львові.", "answer_span": "Львові", "verified": true},
+    {"id": "ua-rag-0002", "doc": "sample/memo.txt", "split": "tuning", "question": "Хто керівник логістики компанії «Світанок»?", "reference_answer": "Олена Ткаченко.", "answer_span": "Олена Ткаченко", "verified": true},
+    {"id": "ua-rag-0003", "doc": "sample/memo.txt", "split": "final", "question": "Яка основна проблема залишається у компанії?", "reference_answer": "Нестача водіїв у нічну зміну.", "answer_span": "нестача водіїв у нічну зміну", "verified": true},
+    {"id": "ua-rag-0004", "doc": "sample/notes.txt", "split": "calibration", "question": "На скільки відсотків зросла кількість звернень?", "reference_answer": "На тридцять відсотків.", "answer_span": "тридцять відсотків", "verified": true},
+    {"id": "ua-rag-0005", "doc": "sample/notes.txt", "split": "tuning", "question": "Яке рішення ухвалила нарада?", "reference_answer": "Запустити пілот чат-бота до кінця травня.", "answer_span": "запустити пілот чат-бота до кінця травня", "verified": true},
+    {"id": "ua-rag-0006", "doc": "sample/notes.txt", "split": "final", "question": "Який головний ризик названо на нараді?", "reference_answer": "Недостатня якість відповідей українською мовою.", "answer_span": "недостатня якість відповідей українською мовою", "verified": true}
   ]
 }

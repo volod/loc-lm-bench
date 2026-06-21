@@ -33,9 +33,11 @@ ALL_CORPUS  := $(PROJECT_ROOT)/.data/llb/corpus
 ALL_INDEX   := $(PROJECT_ROOT)/.data/llb/rag/index.faiss
 LOG_DIR     := $(PROJECT_ROOT)/.data/llb/logs
 PREP_ALL_BACKEND ?= ollama
+MLFLOW_HOST ?= 127.0.0.1
+MLFLOW_PORT ?= 5000
 
 .DEFAULT_GOAL := help
-.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval
+.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -49,10 +51,11 @@ demo-eval: ## End-to-end (idempotent): venv -> gold set -> index -> validate -> 
 	  echo "### [1/6] venv (idempotent; RECREATE_VENV=1 to rebuild)"; \
 	  $(MAKE) --no-print-directory venv || exit 1; \
 	  echo "### [2/6] seed gold set"; \
-	  if [ -f "$(ALL_GOLDSET)" ]; then echo "  cached, skipping -> $(ALL_GOLDSET)"; \
-	  else bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh" || exit 1; fi; \
+	  bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh" || exit 1; \
 	  echo "### [3/6] build index"; \
-	  if [ -f "$(ALL_INDEX)" ]; then echo "  cached, skipping -> $(ALL_INDEX)"; \
+	  if [ -f "$(ALL_INDEX)" ] && \
+	     [ -z "$$(find "$(ALL_CORPUS)" -type f -newer "$(ALL_INDEX)" -print -quit)" ]; \
+	  then echo "  cached, skipping -> $(ALL_INDEX)"; \
 	  else $(PY) -m llb.main build-index --corpus-root "$(ALL_CORPUS)" || exit 1; fi; \
 	  echo "### [4/6] validate retrieval"; \
 	  $(PY) -m llb.main validate-retrieval --goldset "$(ALL_GOLDSET)" --k $(RAG_K) \
@@ -65,8 +68,17 @@ demo-eval: ## End-to-end (idempotent): venv -> gold set -> index -> validate -> 
 	  echo "### pipeline complete"; \
 	) 2>&1 | tee "$$LOG"; \
 	rc=$${PIPESTATUS[0]}; \
-	if [ "$$rc" -eq 0 ]; then echo "[demo-eval] OK -- full log: $$LOG"; \
-	else echo "[demo-eval] FAILED (exit $$rc) -- investigate the log: $$LOG" >&2; exit "$$rc"; fi
+	if [ "$$rc" -eq 0 ]; then \
+	  { echo "[demo-eval] OK -- full log: $$LOG"; \
+	    echo "[demo-eval] review experiment results: make mlflow"; \
+	    echo "[demo-eval] MLflow UI: http://$(MLFLOW_HOST):$(MLFLOW_PORT)"; \
+	    echo "[demo-eval] guide: docs/guides/mlflow-analysis.md"; } | tee -a "$$LOG"; \
+	else echo "[demo-eval] FAILED (exit $$rc) -- investigate the log: $$LOG" \
+	  | tee -a "$$LOG" >&2; exit "$$rc"; fi
+
+mlflow: ## Serve the shared MLflow experiment UI (MLFLOW_HOST=127.0.0.1 MLFLOW_PORT=5000)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main mlflow-ui --host "$(MLFLOW_HOST)" --port "$(MLFLOW_PORT)"
 
 venv: ## Create/update .venv (py3.11) + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }

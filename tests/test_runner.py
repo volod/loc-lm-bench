@@ -225,6 +225,7 @@ def test_run_eval_records_telemetry(tmp_path):
     telemetry = result["telemetry"]
     assert telemetry["steady_tokens_per_s"] == 8.0  # 4 tokens / 0.5 s, fixed prompt set
     assert telemetry["backend"] == "fake"
+    assert telemetry["load_time_s"] is None
     assert result["manifest"].telemetry == telemetry
     assert result["rows"][0]["tokens_per_s"] == 8.0
 

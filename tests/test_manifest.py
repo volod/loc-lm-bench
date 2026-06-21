@@ -3,7 +3,9 @@ import json
 import pytest
 
 from llb.tracking import manifest as manifest_module
+from llb.tracking import mlflow as mlflow_module
 from llb.tracking.manifest import RunManifest, persist_run, write_scores
+from llb.tracking.server import build_mlflow_command
 
 
 def make_manifest():
@@ -42,6 +44,54 @@ def test_manifest_written_before_mirror(tmp_path):
     assert seen["manifest_exists"] is True
     assert seen["scores_exists"] is True
     assert paths["mirror"] == "ok"
+
+    configured = make_manifest().model_copy(
+        update={"config": {"model": "m", "data_dir": str(tmp_path / "data")}}
+    )
+    assert mlflow_module._mlflow_root(configured, out_dir) == tmp_path / "data" / "mlflow"
+
+    command = build_mlflow_command(
+        tmp_path / ".venv" / "bin" / "mlflow",
+        tmp_path / "data" / "mlflow" / "mlflow.db",
+        tmp_path / "data" / "mlflow" / "artifacts",
+        "127.0.0.1",
+        5000,
+    )
+    assert command[-4:] == ["--host", "127.0.0.1", "--port", "5000"]
+    assert command[command.index("--backend-store-uri") + 1].startswith("sqlite:////")
+
+    rich_manifest = RunManifest(
+        run_id="run-42",
+        run_name="eval",
+        config={"model": "model-uk", "backend": "ollama"},
+        metrics={"objective_score": 0.75, "reliability": 1.0, "tokens_per_s": 20.0},
+        retrieval={"n": 4, "k": 5, "recall_at_k": 1.0, "mrr": 0.8},
+        judge={"calibration_rho": None, "threshold": 0.6, "trusted": False},
+        telemetry={
+            "steady_tokens_per_s": 20.0,
+            "mean_completion_tokens": 10.0,
+            "tokens_per_char": 0.25,
+            "max_new_tokens": 128,
+            "n_warmup": 1,
+            "n_measured": 3,
+            "n_failed": 0,
+            "load_time_s": None,
+            "peak_vram_mb": 4000,
+            "requested_context": None,
+            "served_context": None,
+            "backend": "ollama",
+            "gpu_memory_utilization": None,
+            "gpus": [{"name": "GPU", "total_mb": 16000, "driver": "1.0"}],
+        },
+        n_cases=4,
+    )
+    metrics = mlflow_module._mlflow_metrics(rich_manifest)
+    assert metrics["quality.objective_score"] == 0.75
+    assert metrics["retrieval.mrr"] == 0.8
+    assert metrics["telemetry.peak_vram_mb"] == 4000
+    assert metrics["hardware.gpu_total_mb"] == 16000
+    assert mlflow_module._mlflow_tags(rich_manifest)["llb.canonical_run_id"] == "run-42"
+    assert mlflow_module._mlflow_run_name(rich_manifest) == "model-uk | ollama | run-42"
 
 
 def test_mirror_failure_does_not_lose_run(tmp_path):

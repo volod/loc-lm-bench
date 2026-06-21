@@ -36,7 +36,10 @@ def write_corpus(docs: dict[str, str], corpus_root: Path) -> None:
     for doc_id, text in docs.items():
         path = corpus_root / doc_id
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text + "\n", encoding="utf-8")
+        content = text + "\n"
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            continue
+        path.write_text(content, encoding="utf-8")
 
 
 def build_items(spec: RagDataSpec) -> list[GoldItem]:

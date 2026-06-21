@@ -12,7 +12,6 @@ and "mirror failure does not lose data" are both unit-testable without MLflow.
 
 import json
 import logging
-import os
 import platform
 import shutil
 import sys
@@ -20,7 +19,7 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypeGuard
+
 from pydantic import BaseModel, Field
 
 from llb.contracts import (
@@ -145,31 +144,13 @@ def persist_run(
 
 
 def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:
-    """Mirror a manifest into a local MLflow file store. Needs the `[track]` extra."""
+    """Mirror a manifest into the shared local MLflow SQLite store."""
     try:
-        import mlflow
+        from llb.tracking.mlflow import mirror_run
+
+        mirror_run(manifest, out_dir)
     except ImportError:
         _LOG.info("[tracking] mlflow not installed; skipping mirror (canonical record on disk).")
-        return
-    # MLflow 3.x deprecated the local file store and raises unless opted in. The design
-    # explicitly allows local file/SQLite mode (no server), so we opt in.
-    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
-    mlflow.set_tracking_uri((out_dir / "mlruns").resolve().as_uri())
-    mlflow.set_experiment("loc-lm-bench")
-    with mlflow.start_run(run_name=manifest.run_name):
-        mlflow.log_params({k: v for k, v in manifest.config.items() if _scalar(v)})
-        mlflow.log_metrics(
-            {k: float(v) for k, v in (manifest.metrics or {}).items() if _numeric(v)}
-        )
-        mlflow.log_artifact(str(out_dir / "manifest.json"))
-
-
-def _scalar(value: object) -> TypeGuard[str | int | float | bool]:
-    return isinstance(value, (str, int, float, bool))
-
-
-def _numeric(value: object) -> TypeGuard[int | float]:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

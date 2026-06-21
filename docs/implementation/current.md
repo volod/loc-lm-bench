@@ -41,6 +41,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
+    make mlflow     # review all mirrored experiment runs at http://127.0.0.1:5000
 
 `make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused
 (deps updated; `RECREATE_VENV=1` to rebuild), an existing gold set / index is reused, and
@@ -91,7 +92,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       backends/{hardware,prepare,planner,telemetry}.py  # GPU/RAM detect + pull/cache + plan + telemetry
       eval/graph.py                # LangGraph retrieve->generate flow + failure taxonomy
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
-      tracking/manifest.py         # canonical manifest + scores (MLflow mirror)
+      tracking/{manifest,mlflow,server}.py  # canonical artifacts + MLflow mirror/UI
       executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
     tests/                         # 164 tests across the above
 
@@ -119,7 +120,9 @@ Checks every span resolves to its labeled text on disk, ids unique, splits disjo
     make validate-goldset          # PASS on the sample set
 
 ### Sample generator — `llb.prep.gen_rag_items`
-Reads `samples/rag_items_uk.json`, computes spans, writes + validates a seed gold set.
+Reads `samples/rag_items_uk.json`, computes spans, writes + validates a seed gold set. Its
+six synthetic, hand-authored demo fixtures are explicitly verified so `make demo-eval` can
+score them; imported public datasets remain unverified until human review.
 
     make gen-rag-items             # -> .data/llb/goldset/sample_rag_items.jsonl (6 items)
 
@@ -287,16 +290,25 @@ langgraph. Each case ends in exactly one typed status, recorded separately.
 
 ### Scoring — `llb.scoring.{correctness,judge,aggregate}`
 `correctness` ranks models by reference answer-correctness (exact / token-F1 / contains,
-Unicode-normalized for UA morphology); `score` is token-F1. An optional semantic-similarity
-signal (cosine via the pinned embedder) is recorded when `--score-semantic` is set -- a
-paraphrase signal token overlap misses, not yet blended into `score`. `judge` enforces the
-gate (Premise 2): the Ragas judge only enters the blend at calibration rho >= threshold,
-else it is demoted and the objective score ranks alone. `aggregate` produces the ranked row
-(quality, then tok/s, then VRAM; infeasible models listed without a rank).
+Unicode-normalized for casing and punctuation); `score` is token-F1. An optional
+semantic-similarity signal (cosine via the pinned embedder) captures paraphrases and UA
+morphology when `--score-semantic` is set -- it is recorded separately because blending
+weights require calibration. `judge` enforces the gate (Premise 2): the Ragas judge only
+enters the blend at calibration rho >= threshold, else it is demoted and the objective score
+ranks alone. `aggregate` produces the ranked row (quality, then tok/s, then VRAM; infeasible
+models listed without a rank).
 
 ### Tracking — `llb.tracking.manifest`
 The immutable `manifest.json` + per-case `scores.{parquet,jsonl}` are written FIRST; the
 MLflow mirror runs after, best-effort, and a mirror failure never loses a completed run.
+All runs share the local SQLite store and artifact root under `$DATA_DIR/mlflow/`, enabling
+cross-run comparison without putting mutable MLflow state inside immutable run bundles.
+`make mlflow` serves that store locally at `http://127.0.0.1:5000`; override its bind address
+or port with `MLFLOW_HOST` and `MLFLOW_PORT`. Before serving, it idempotently reconciles all
+canonical run directories: missing records are created and old mirror schemas are enriched
+with grouped quality/retrieval/telemetry/hardware/judge metrics, unique run names, canonical
+run-id tags, and the manifest plus per-case scores under the `canonical/` artifact path. See
+the [MLflow analysis guide](../guides/mlflow-analysis.md).
 Parquet when `pyarrow` ([track]) is present, JSONL otherwise. The full run bundle, including
 backend logs, is assembled in a hidden sibling staging directory and atomically renamed to
 its final timestamped directory only after both canonical files succeed. Failed writes leave
@@ -356,8 +368,9 @@ under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Weights are cached by `p
 ### Telemetry hook — `llb.backends.telemetry` (M2.2)
 `measure_throughput` runs the steady-state protocol (fixed UA prompt set + fixed
 max_new_tokens + N warmup iters) over `launcher.chat`, so tokens/sec is comparable across
-models; cold-start `load_time_s` is recorded separately by the launcher. `VramSampler` polls
-NVML (injected reader) for peak VRAM. `collect_telemetry` assembles the manifest record:
+models; cold-start `load_time_s` is recorded separately by launchers that own the backend
+lifecycle, and remains null for an already-running external daemon such as Ollama.
+`VramSampler` polls NVML (injected reader) for peak VRAM. `collect_telemetry` assembles the manifest record:
 steady tokens/sec, tokenizer efficiency (tokens/UA-char), peak VRAM, requested-vs-served
 context, load time, gpu-memory-utilization, and detected GPU. Wired into `run-eval`
 behind `config.measure_telemetry` (`--telemetry`); recorded under `manifest.telemetry`.

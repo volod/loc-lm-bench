@@ -78,3 +78,6 @@ def test_collect_telemetry_assembles_record():
     assert report["load_time_s"] == 3.5
     assert report["backend"] == "vllm"
     assert report["peak_vram_mb"] == 7000
+
+    FakeLauncher.load_time_s = None
+    assert collect_telemetry(FakeLauncher(), warmup=0)["load_time_s"] is None

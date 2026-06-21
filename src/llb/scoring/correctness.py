@@ -2,8 +2,8 @@
 
 This is the axis that RANKS generation models (design: reference-based answer
 correctness, NOT retrieval recall, which is constant under pinned retrieval). Three
-complementary signals over Unicode-normalized text so Ukrainian morphology and casing do
-not break matching:
+complementary signals over Unicode-normalized text so casing and punctuation do not break
+matching:
 
   - exact:    normalized strings are identical (strict, sparse)
   - token_f1: SQuAD-style token overlap F1 (graded, the headline objective signal)

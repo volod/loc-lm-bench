@@ -229,7 +229,8 @@ class VllmLauncher(BackendLauncher):
 
     def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)
-        out["load_time_s"] = round(self.load_time_s, 2)
+        if self.load_time_s is not None:
+            out["load_time_s"] = round(self.load_time_s, 2)
         if self._last is not None and not self._last.error:
             out["tokens_per_s"] = round(self._last.tokens_per_s(), 2)
         return cast(BackendMetadata, out)

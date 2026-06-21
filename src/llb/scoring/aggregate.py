@@ -113,8 +113,8 @@ def format_table(rows: list[LeaderboardRow]) -> str:
     widths = [
         max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
     ]
-    line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)).rstrip()
     out = [line, "  ".join("-" * widths[i] for i in range(len(headers)))]
     for r in table:
-        out.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))))
+        out.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))).rstrip())
     return "\n".join(out)

@@ -42,7 +42,8 @@ class BackendLauncher:
 
     model: str
     meta: BackendMetadata = field(default_factory=lambda: cast(BackendMetadata, {}))
-    load_time_s: float = 0.0  # cold-start time to readiness; set by start()
+    # None means this process did not observe the backend's cold-start lifecycle.
+    load_time_s: float | None = None
 
     def start(self) -> None:
         """Ensure the backend is serving `self.model`. Default: assume it is up."""

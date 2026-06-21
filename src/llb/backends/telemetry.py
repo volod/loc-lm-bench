@@ -155,6 +155,7 @@ def collect_telemetry(
         )
         if vram_reader is not None:  # guarantee >= 1 reading even for very short runs
             sampler.sample()
+    load_time = getattr(launcher, "load_time_s", None)
     report: TelemetryReport = {
         "steady_tokens_per_s": round(tput.steady_tokens_per_s, 2),
         "mean_completion_tokens": round(tput.mean_completion_tokens, 1),
@@ -163,7 +164,7 @@ def collect_telemetry(
         "n_warmup": tput.n_warmup,
         "n_measured": tput.n_measured,
         "n_failed": tput.n_failed,
-        "load_time_s": round(getattr(launcher, "load_time_s", 0.0), 2),
+        "load_time_s": round(load_time, 2) if isinstance(load_time, int | float) else None,
         "peak_vram_mb": sampler.peak_mb or None,
         "requested_context": requested_context,
         "served_context": launcher.served_context()

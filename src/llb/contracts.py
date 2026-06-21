@@ -115,7 +115,7 @@ class BackendMetadata(TypedDict, total=False):
     served_context: int | None
     tokens_per_s: float
     last_completion_tokens: int
-    load_time_s: float
+    load_time_s: float | None
 
 
 class GpuSummary(TypedDict):
@@ -132,7 +132,7 @@ class TelemetryReport(TypedDict):
     n_warmup: int
     n_measured: int
     n_failed: int
-    load_time_s: float
+    load_time_s: float | None
     peak_vram_mb: int | None
     requested_context: int | None
     served_context: int | None

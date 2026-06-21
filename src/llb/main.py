@@ -204,6 +204,19 @@ def list_models_cmd(
     )
 
 
+@app.command("mlflow-ui")
+def mlflow_ui_cmd(
+    host: str = typer.Option("127.0.0.1", help="network interface for the local MLflow UI"),
+    port: int = typer.Option(5000, min=1, max=65535, help="port for the local MLflow UI"),
+) -> None:
+    """Serve the shared local MLflow experiment store."""
+    from llb.tracking.server import run_mlflow_ui
+
+    exit_code = run_mlflow_ui(host, port)
+    if exit_code:
+        raise typer.Exit(exit_code)
+
+
 @app.command("run-eval")
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),

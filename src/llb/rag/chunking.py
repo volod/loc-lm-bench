@@ -339,7 +339,9 @@ def build_faiss(chunks: list[ChunkRecord], model_name: str, index_dir: Path, str
     try:
         import faiss
         import numpy as np
-        from sentence_transformers import SentenceTransformer
+        import sentence_transformers  # noqa: F401
+
+        from llb.rag.embedding import Embedder
     except ImportError:
         _LOG.warning(
             "[build-rag-store] --embed needs the [rag] extra "
@@ -348,11 +350,7 @@ def build_faiss(chunks: list[ChunkRecord], model_name: str, index_dir: Path, str
         )
         return
     index_dir.mkdir(parents=True, exist_ok=True)
-    model = SentenceTransformer(model_name)
-    vectors = np.asarray(
-        model.encode([c["text"] for c in chunks], normalize_embeddings=True),
-        dtype="float32",
-    )
+    vectors = np.asarray(Embedder(model_name).encode_passages([c["text"] for c in chunks]))
     index = faiss.IndexFlatIP(vectors.shape[1])
     index.add(vectors)
     faiss.write_index(index, str(index_dir / f"{strategy}.faiss"))

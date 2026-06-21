@@ -29,10 +29,13 @@ class Embedder:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+                from transformers.utils.logging import disable_progress_bar
             except ImportError as exc:
                 raise SystemExit(
                     'ERROR: embeddings need the [rag] extra. Run: uv pip install -e ".[rag]"'
                 ) from exc
+            # Persisted CLI logs must remain line-oriented ASCII, not contain tqdm control output.
+            disable_progress_bar()
             self._model = SentenceTransformer(self.model_name)
         return self._model
 
@@ -46,7 +49,11 @@ class Embedder:
         import numpy as np
 
         model = self._load()
-        vectors = model.encode(self._prefix(texts, "passage"), normalize_embeddings=True)
+        vectors = model.encode(
+            self._prefix(texts, "passage"),
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
         return np.asarray(vectors, dtype="float32")
 
     def encode_queries(self, texts: list[str]) -> Any:
@@ -54,5 +61,9 @@ class Embedder:
         import numpy as np
 
         model = self._load()
-        vectors = model.encode(self._prefix(texts, "query"), normalize_embeddings=True)
+        vectors = model.encode(
+            self._prefix(texts, "query"),
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
         return np.asarray(vectors, dtype="float32")

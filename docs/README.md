@@ -18,6 +18,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Dev setup](guides/dev-setup.md) — uv, venv, extras, make targets.
 - [Data prep](guides/data-prep.md) — gold set, ingestion, chunking, calibration commands.
 - [Run the eval skeleton](guides/run-skeleton.md) — Milestone 1: build-index -> run-eval.
+- [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
+  compare metrics, and inspect canonical case artifacts.
 - [vLLM backend + telemetry](guides/vllm-backend.md) — Milestone 2: build-vllm -> run-eval on a real model.
 
 ## Project rules

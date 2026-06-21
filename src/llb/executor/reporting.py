@@ -9,6 +9,10 @@ from llb.contracts import RetrievalMetrics, RunPaths, TelemetryReport
 _LOG = logging.getLogger(__name__)
 
 
+def _measurement(value: object, unit: str = "") -> str:
+    return "n/a" if value is None else f"{value}{unit}"
+
+
 def emit_summary(
     config: RunConfig,
     n_cases: int,
@@ -30,11 +34,11 @@ def emit_summary(
     _LOG.info("\n%s", table)
     if telemetry:
         _LOG.info(
-            "[run-eval] telemetry: %s tok/s (load %ss, peak VRAM %s MB, served ctx %s)",
+            "[run-eval] telemetry: %s tok/s (load %s, peak VRAM %s, served ctx %s)",
             telemetry["steady_tokens_per_s"],
-            telemetry["load_time_s"],
-            telemetry["peak_vram_mb"],
-            telemetry["served_context"],
+            _measurement(telemetry["load_time_s"], "s"),
+            _measurement(telemetry["peak_vram_mb"], " MB"),
+            _measurement(telemetry["served_context"]),
         )
     _LOG.info("[run-eval] manifest -> %s", paths["manifest"])
     _LOG.info("[run-eval] scores   -> %s (mirror: %s)", paths["scores"], paths["mirror"])

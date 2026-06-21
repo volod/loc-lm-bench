@@ -56,3 +56,4 @@ def test_format_table_is_ascii():
     rows = rank_results([make("m", 0.5)])
     table = format_table(rows)
     assert "rank" in table and table.isascii()
+    assert all(line == line.rstrip() for line in table.splitlines())

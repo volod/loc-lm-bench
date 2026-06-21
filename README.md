@@ -41,6 +41,7 @@ Ollama (`ollama serve`). One command runs the whole thing end to end -- and is *
 so it is safe to re-run:
 
     make demo-eval     # venv -> gold set -> index -> prep-models -> run-eval + telemetry
+    make mlflow        # review experiment runs at http://127.0.0.1:5000
 
 That builds the `.venv` (all deps), creates the sample RAG store, pulls a small smoke model,
 and records one ranked row + telemetry under `.data/llb/`. Or run the pieces yourself:
@@ -64,10 +65,11 @@ running Ollama):
     make build-index            # chunk + embed the gold-set corpus into a FAISS store
     make validate-retrieval     # recall@k / MRR of the pinned embedding
     make run-eval MODEL=llama3.2:3b   # one ranked row + a reproducible manifest
+    make mlflow                # compare mirrored runs in the local MLflow UI
 
 `*` needs a Hugging Face token in `.env` (`HF_TOKEN=...`). Run `make` with no target to
 list everything. See the [run-the-skeleton guide](docs/guides/run-skeleton.md) for the full
-flow.
+flow and the [MLflow analysis guide](docs/guides/mlflow-analysis.md) for run comparison.
 
 ## Documentation
 
