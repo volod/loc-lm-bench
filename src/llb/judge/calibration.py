@@ -141,12 +141,21 @@ def emit_worksheet(items: list[WorksheetItem], out_path: Path) -> int:
     return n
 
 
-def write_filled_worksheet(answers: Sequence[tuple[GoldItem, str]], out_path: Path) -> int:
+def write_filled_worksheet(
+    answers: Sequence[tuple[GoldItem, str]],
+    out_path: Path,
+    judge_ratings: Sequence[float] | None = None,
+) -> int:
     """Write a worksheet with model_answer pre-filled from a run; ratings left blank.
 
     `answers` is a list of `(gold_item, model_answer)` (gold_item duck-typed:
     `id / split / question / reference_answer`). Produced by `run-eval --worksheet` on the
     calibration split so the human only fills `human_rating`.
+
+    When `judge_ratings` is supplied (aligned with `answers`), the `judge_rating` column is
+    pre-filled with the JUDGE's score per item -- so the calibration worksheet carries both the
+    judge rating and a blank human rating, and `calibration score` can compute rho(human, judge)
+    once the human column is filled.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -154,7 +163,8 @@ def write_filled_worksheet(answers: Sequence[tuple[GoldItem, str]], out_path: Pa
     with out_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=WORKSHEET_COLS)
         writer.writeheader()
-        for item, answer in answers:
+        for i, (item, answer) in enumerate(answers):
+            judge = "" if judge_ratings is None else round(float(judge_ratings[i]), 4)
             writer.writerow(
                 {
                     "item_id": item.id,
@@ -163,7 +173,7 @@ def write_filled_worksheet(answers: Sequence[tuple[GoldItem, str]], out_path: Pa
                     "reference_answer": item.reference_answer,
                     "model_answer": answer or "",
                     "human_rating": "",
-                    "judge_rating": "",
+                    "judge_rating": judge,
                 }
             )
             n += 1

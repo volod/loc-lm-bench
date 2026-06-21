@@ -11,10 +11,12 @@ unit-testable by injecting the process factory + HTTP probe (no vLLM/CUDA needed
 """
 
 import json
+import os
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Protocol, TextIO, cast
 
@@ -81,6 +83,24 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
             return int(resp.status), resp.read().decode("utf-8", "replace")
     except (urllib.error.URLError, OSError, ValueError):
         return None
+
+
+# vLLM JIT-compiles flashinfer's sampling kernel at engine startup. flashinfer's
+# `sampling.cuh` calls `cub::BlockAdjacentDifference::FlagHeads`, which newer CCCL/CUB
+# (shipped with CUDA 12.x toolchains) removed -- so the build fails on consumer GPUs such as
+# the sm_89 RTX 4060 Ti and the engine never comes up. Greedy / temperature-0 decoding (the
+# eval default) does not need the flashinfer sampler, so we default it OFF here; export
+# VLLM_USE_FLASHINFER_SAMPLER=1 to opt back in on a host where that kernel builds.
+_DEFAULT_SUBPROCESS_ENV: dict[str, str] = {"VLLM_USE_FLASHINFER_SAMPLER": "0"}
+
+
+def launch_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Subprocess environment for `vllm serve`: inherit the caller's, then apply our defaults
+    only for keys the caller has not already set (so an explicit override always wins)."""
+    env = dict(os.environ if base is None else base)
+    for key, value in _DEFAULT_SUBPROCESS_ENV.items():
+        env.setdefault(key, value)
+    return env
 
 
 def parse_served_context(models_body: str) -> int | None:
@@ -169,7 +189,9 @@ class VllmLauncher(BackendLauncher):
         log = self._open_log()
         start = time.monotonic()
         try:
-            self._proc = self._popen(self.command(), stdout=log, stderr=subprocess.STDOUT)
+            self._proc = self._popen(
+                self.command(), stdout=log, stderr=subprocess.STDOUT, env=launch_env()
+            )
             where = f" (see {self.log_path})" if self.log_path else ""
             polls = max(1, int(self.startup_timeout / self.poll_interval))
             ready_body = None

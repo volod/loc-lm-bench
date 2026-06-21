@@ -79,8 +79,8 @@ Everything else deferred.
    backends comparison is deferred.
 2. The LLM-judge is a GATED dependency. It is calibrated against a fixed set of 30
    human-rated answers (a subset of the gold set, spanning at least 3 models and the
-   full score range) using the EXACT Ragas judge configuration that will produce the
-   scores, not a separate hand-rolled rubric, with Ragas's metric prompts localized
+   full score range) using the EXACT DeepEval G-Eval judge configuration that will produce the
+   scores, not a separate hand-rolled rubric, with metric prompts localized
    to Ukrainian. Pass bar (v1 default): Spearman rho >= 0.6 between judge and human
    rankings over the calibration set (0.6 is a moderate-correlation floor; below it the
    judge diverges too far from human judgment to trust, re-tune after the first real
@@ -102,7 +102,7 @@ Everything else deferred.
    candidate clears the bar, pick the best available, record the
    retrieval ceiling in the manifest, and flag that all RAG scores are capped by
    retrieval.
-5. Reuse over rebuild: Ragas (RAG metrics + judge orchestration), OpenAI-compatible
+5. Reuse over rebuild: maintained DeepEval G-Eval metrics, OpenAI-compatible
    client (single backend interface), one vector store (FAISS for v1), DuckDB +
    Parquet for results, Streamlit for the board. The user writes glue + gold set +
    judge calibration + backend launchers, not eval primitives.
@@ -122,7 +122,8 @@ Independent Codex cold read (read-only, did not see the conversation):
 - Riskiest premise: the LLM-judge dependency. If judge-vs-human rank correlation is
   poor, use the judge as auxiliary diagnostics and make objective task scores
   primary. (Adopted as the gating + fallback rule in Premise 2.)
-- Reuse: Ragas gets ~50% of RAG eval. The remaining ~50%: Ukrainian gold set, judge
+- Reuse: DeepEval provides maintained judge-metric execution. The remaining work is the
+  Ukrainian gold set, judge
   calibration, embedding validation, backend resolver, hardware metrics, result
   store + board.
 - Specific-language gotchas (adopted): Ukrainian morphology breaks string-overlap
@@ -145,7 +146,7 @@ mandated up front.
 ### Approach A: Thin decision loop (chosen base)
 A Typer CLI under `src/llb/` with a small set of commands, one pinned embedding
 model + FAISS, gold set as JSONL, launchers only for the backends the first
-candidates need, Ragas + objective retrieval scoring with a gated judge, DuckDB +
+candidates need, DeepEval G-Eval + objective retrieval scoring with a gated judge, DuckDB +
 Parquet storage, Streamlit board. Effort M (CC ~1-2 focused days), risk low. Ships
 a defensible pick fast, heavy reuse, small maintenance surface.
 
@@ -196,7 +197,9 @@ curation, not coding. The door stays open to the full Approach B without a teard
 - `src/llb/` package Typer CLI: `prepare-corpus`, `prepare-goldset`,
   `prepare-synthetic-corpus`, `build-index`, `validate-embeddings`, `calibrate-judge`,
   `screen-public`, `optimize-config`, `run-eval`, `show-board`.
-- Corpus + gold set under `$DATA_DIR/llb/` per AGENTS.md. Vector index = FAISS.
+- Private/runtime corpus + gold set under `$DATA_DIR/llb/` per AGENTS.md. A pinned,
+  post-edited public fixture may live under `samples/goldsets/` for deterministic development
+  and smoke evaluation only. Vector index = FAISS.
 - Pipeline dependency order: embeddings (validated, pinned) -> index -> generate
   answers -> score. The Assignment's judge calibration runs before any of this using
   throwaway manual retrieval, so it genuinely precedes the harness.
@@ -206,7 +209,8 @@ curation, not coding. The door stays open to the full Approach B without a teard
   pinned retrieval, so it is reported as context, NOT a generation-model ranking axis.
   (2) GENERATION quality ranks models: reference-based answer correctness (exact /
   semantic / structured-label match to gold reference answers) as the objective axis,
-  plus Ragas faithfulness/answer-relevance via the gated judge as the subjective axis.
+  plus Ukrainian DeepEval faithfulness/answer-relevance G-Eval metrics via the gated judge as
+  the subjective axis.
   Text-analysis scored against structured planted labels (objective) plus the gated judge.
 - Fit/fail detection (v1, single-GPU): attempt to load and serve the model on the
   host; OOM or launcher failure = fail, recorded with reason; success records peak
@@ -275,7 +279,7 @@ image that can target the host's GPU/CUDA is a later option, not required for v1
 
 - Inference backends installed on the host: Ollama (easy), vLLM (CUDA source build,
   the heavy one), llama.cpp server (later).
-- Python: Typer, Pydantic, an OpenAI-compatible client, Ragas, FAISS, sentence-
+- Python: Typer, Pydantic, an OpenAI-compatible client, DeepEval, FAISS, sentence-
   transformers (embeddings), DuckDB, pyarrow/Parquet, Streamlit, psutil, pynvml.
 - A validated Ukrainian embedding model and a calibrated LLM-judge (see Open
   Questions).
@@ -286,7 +290,7 @@ image that can target the host's GPU/CUDA is a later option, not required for v1
 Before writing any harness code: hand-curate 30 Ukrainian RAG items from your real
 corpus (question + correct chunk IDs + reference answer), then personally rate ~30
 candidate-model answers across at least 3 models and check whether your chosen
-LLM-judge, in the exact Ragas config you will use with prompts localized to
+LLM-judge, in the exact DeepEval G-Eval config you will use with prompts localized to
 Ukrainian, agrees with your ranking. Use throwaway manual retrieval here (paste the
 relevant chunks by hand) so this genuinely precedes the harness. If agreement is
 poor (Spearman rho < 0.6), you have proven the judge cannot be trusted before
@@ -319,7 +323,7 @@ include the optimal per-machine configuration.
 - Discovery: `huggingface_hub` + Ollama API.
 - RAG: FAISS in-process + `langchain-text-splitters` + `sentence-transformers`. No full
   LlamaIndex/Haystack, no vector-DB server in v1.
-- Scoring: Ragas (RAG metrics + judge); recall@k / MRR custom (~20 lines).
+- Scoring: DeepEval G-Eval (local judge metrics); recall@k / MRR custom (~20 lines).
 - Config search: Optuna (in-process, persistent SQLite study). No Ray Tune.
 - Tracking/telemetry: MLflow in LOCAL file/SQLite mode, NO tracking server, used as a UI
   MIRROR. Canonical record = immutable per-run manifest (JSON/YAML) + Parquet under
@@ -412,8 +416,10 @@ Folded-in refinements (no decision needed):
 - Failure taxonomy is DISTINCT typed cases (empty / malformed / refusal / timeout /
   context-truncation / retrieval-miss / backend-crash / OOM / judge-failure), each
   recorded separately, not collapsed into one "reliability failure."
-- Ragas is treated as a component to VALIDATE (Ukrainian metric-prompt localization,
-  judge behavior, reference scoring), not settled infrastructure (see Open Question 2).
+- DeepEval is treated as a component to VALIDATE (Ukrainian metric-prompt localization and
+  judge behavior), not settled infrastructure (see Open Question 2). Ragas was rejected after
+  its current release failed against the current LangChain stack; old pins and shims are not
+  acceptable benchmark infrastructure.
 - vLLM params enter Optuna ONLY for candidates whose resolved backend is vLLM; the loop
   still proves out CUDA-free on Ollama first.
 
@@ -429,8 +435,8 @@ so they run OUTSIDE the sequential GPU isolation path. This partially un-defers
   cost + provider + model recorded.
 
 1. `prepare-goldset` (RAG golden-set prep). Generates DRAFT (question + candidate source
-   chunk + reference answer) triples from the user's corpus (wrapping Ragas's testset
-   generator where it fits). Output is DRAFT for human review/edit; nothing enters the
+   chunk + reference answer) triples from the user's corpus (using maintained synthetic-data
+   utilities where they fit). Output is DRAFT for human review/edit; nothing enters the
    gold set untrusted. Semi-automates Premise 3 WITHOUT breaking the "defensible"
    premise: a human still verifies every item that scores models. [eng-review default,
    confirm in Architecture]
@@ -488,7 +494,9 @@ Folded-in refinements (Codex, no decision needed):
 - Walking-skeleton milestone 2 adds one REAL backend + telemetry path (not only CUDA-free
   plumbing) so CUDA / HF-loading / tokenizer assumptions are validated before the full sweep.
 - Prep-util provenance: every gold/corpus item records provenance (frontier-drafted /
-  human-authored / human-verified); only human-verified items score models.
+  human-authored / human-verified). Private model-selection items require human verification.
+  A pinned upstream post-edited public fixture may set `verified=true` for implementation
+  testing, but its results remain a public transfer baseline and never replace the private rank.
 
 ## Prior-Art Integration (lang-uk / INSAIT / MamayLM, 2026-06-19)
 
@@ -524,7 +532,8 @@ Decisions ruled on:
   the weighted-blend view is labeled policy-dependent, not an objective leaderboard.
 - DATASET REUSE. SQuAD-uk + Belebele-uk (public, span-labeled UA in-context QA, which
   lang-uk treats as a RAG proxy) seed and smoke-test the RAG loop in Milestone 1 before
-  the hand-built corpus gold set exists, and serve as a transfer baseline.
+  the hand-built corpus gold set exists, and serve as a transfer baseline. The development
+  fixture is committed and pinned; fresh downloads remain unverified runtime material.
 - CANDIDATE MATRIX adds Ukrainian-specialized models: MamayLM v2 12B + 27B, Lapa LLM,
   Gemma 3 (resolves part of Open Question 3).
 
@@ -561,7 +570,7 @@ to deferred phases (Approach B and the full benchmark suite), not v1.
 | Model discovery | HF Hub API + Ollama local API | chosen (resolver, Approach B) |
 | Backend adapters | OpenAI-compatible client | chosen |
 | Prompt/chat eval | Promptfoo | considered; rejected as spine (Approach C) |
-| RAG eval | Ragas first, DeepEval optional | chosen: Ragas |
+| RAG eval | Ragas or DeepEval | chosen: maintained DeepEval G-Eval; Ragas compatibility rejected |
 | Standard benchmarks | lm-evaluation-harness; LightEval optional | deferred |
 | RAG framework | LlamaIndex or small custom | v1: small custom + FAISS |
 | Vector stores | FAISS, Chroma, Qdrant, LanceDB | v1: FAISS; others deferred |

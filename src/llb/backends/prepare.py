@@ -56,6 +56,7 @@ class _ModelSpecSchema(BaseModel):
     n_layers: int | None = None
     kv_dim: int | None = None
     max_context: int | None = None
+    sources: dict[str, "str | dict[str, object]"] | None = None
 
 
 def load_manifest(path: Path | str) -> list[ModelSpec]:

@@ -6,8 +6,9 @@ optional `datasets` dep). Each record becomes a gold item with a source span com
 from the answer's char offset (validated; falls back to substring search if the offset
 is missing or wrong).
 
-Items get `provenance: public-reused` and `verified: false`: a human must review before
-they score models.
+Runtime imports start as `provenance: public-reused` and `verified: false`. By default, the
+ingester then adopts canonical items with matching ids from the committed human-verification
+ledger. Nonmatching imports remain unverified and cannot score models.
 """
 
 import argparse
@@ -17,14 +18,29 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from itertools import islice
 from pathlib import Path
 from typing import Any, cast
 
 from llb.contracts import JsonObject, SquadAnswers, SquadRecord
-from llb.goldset.schema import GoldItem, dump_goldset
+from llb.goldset.schema import GoldItem, Provenance, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items
+from llb.paths import resolve_data_dir, resolve_project_path
+from llb.prep.verified_ledger import (
+    DEFAULT_VERIFIED_GOLDSET,
+    apply_verified_ledger,
+    copy_verified_documents,
+    load_verified_ledger,
+)
+from llb.prep.ua_squad_source import (
+    DATASET_ID,
+    DATASET_REVISION,
+    DATASET_SPLIT,
+    DEFAULT_ITEMS,
+    iter_context_diverse,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -38,7 +54,14 @@ def normalize(raw: object) -> list[SquadRecord]:
     """Accept flattened records or nested SQuAD; return a list of flattened records."""
     if isinstance(raw, dict) and "data" in raw:
         records: list[SquadRecord] = []
-        for article in raw["data"]:
+        data = raw["data"]
+        if isinstance(data, dict):
+            articles = [data]
+        elif isinstance(data, list):
+            articles = data
+        else:
+            raise ValueError("unrecognized SQuAD data field (expected an article or list)")
+        for article in articles:
             for para in article.get("paragraphs", []):
                 context = para["context"]
                 for qa in para.get("qas", []):
@@ -63,7 +86,8 @@ def normalize(raw: object) -> list[SquadRecord]:
 def squad_to_gold(
     records: list[SquadRecord],
     lang: str = "uk",
-    provenance: str = "public-reused",
+    provenance: Provenance = "public-reused",
+    verified: bool = False,
     max_items: int | None = None,
     seed: int = 13,
 ) -> tuple[dict[str, str], list[GoldItem], int]:
@@ -106,7 +130,7 @@ def squad_to_gold(
                     }
                 ],
                 "provenance": provenance,
-                "verified": False,
+                "verified": verified,
             }
         )
     split_map = assign_splits([r["id"] for r in raw_items], seed=seed)
@@ -149,8 +173,29 @@ def coerce_answers(row: Mapping[str, Any]) -> SquadAnswers:
     return {"text": [], "answer_start": []}
 
 
+def hf_rows_to_records(rows: Iterable[Mapping[str, Any]], dataset_id: str) -> Iterator[SquadRecord]:
+    """Flatten either regular QA rows or article rows from a nested SQuAD dataset."""
+    for i, row in enumerate(rows):
+        if "data" in row:
+            yield from normalize({"data": row["data"]})
+            continue
+        if "context" not in row or "question" not in row:
+            continue
+        yield {
+            "id": row.get("id") or f"{dataset_id.replace('/', '_')}-{i:05d}",
+            "context": row["context"],
+            "question": row["question"],
+            "answers": coerce_answers(row),
+        }
+
+
 def load_hf(
-    dataset_id: str, split: str, token: str | None = None, limit: int | None = None
+    dataset_id: str,
+    split: str,
+    token: str | None = None,
+    limit: int | None = None,
+    revision: str | None = None,
+    context_diverse: bool = False,
 ) -> list[SquadRecord]:
     try:
         from datasets import load_dataset
@@ -163,22 +208,15 @@ def load_hf(
     # little because some rows get skipped (no answer / answer not in context).
     stream = limit is not None
     cap = None if limit is None else max(limit * 3, limit + 50)
-    ds = load_dataset(dataset_id, split=split, token=token, streaming=stream)
-    records: list[SquadRecord] = []
-    for i, row in enumerate(ds):
-        if cap is not None and i >= cap:
-            break
-        if "context" not in row or "question" not in row:
-            continue
-        records.append(
-            {
-                "id": row.get("id") or f"{dataset_id.replace('/', '_')}-{i:05d}",
-                "context": row["context"],
-                "question": row["question"],
-                "answers": coerce_answers(row),
-            }
-        )
-    return records
+    load_kwargs: dict[str, Any] = {"split": split, "token": token, "streaming": stream}
+    if revision is not None:
+        load_kwargs["revision"] = revision
+    ds = load_dataset(dataset_id, **load_kwargs)
+    records: Iterable[SquadRecord] = hf_rows_to_records(ds, dataset_id)
+    if context_diverse:
+        records = iter_context_diverse(records)
+        cap = limit
+    return list(records if cap is None else islice(records, cap))
 
 
 def write_corpus(docs: dict[str, str], corpus_root: Path) -> None:
@@ -193,26 +231,92 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--squad-json", type=Path, help="local SQuAD-format JSON")
     source.add_argument("--hf-dataset", type=str, help="HF dataset id (needs the [goldset] extra)")
+    source.add_argument(
+        "--pinned-development-source",
+        action="store_true",
+        help="use the exact dataset revision, split, and selection behind the reviewed fixture",
+    )
     parser.add_argument("--hf-split", default="validation")
-    parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--hf-revision", default=None, help="pinned Hugging Face revision")
+    parser.add_argument(
+        "--context-diverse",
+        action="store_true",
+        help="select the first grounded QA per distinct context before applying --max-items",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="output root (default: $DATA_DIR/llb)",
+    )
     parser.add_argument("--out-name", default="squad_uk.jsonl")
     parser.add_argument("--max-items", type=int, default=None)
     parser.add_argument("--lang", default="uk")
+    verification = parser.add_mutually_exclusive_group()
+    verification.add_argument(
+        "--verified-goldset",
+        action="append",
+        type=Path,
+        help=(
+            "reviewed gold set used as an id-keyed verification ledger; repeat to combine "
+            "ledgers (default: committed ua_squad_postedited_v1 fixture)"
+        ),
+    )
+    verification.add_argument(
+        "--no-verification-ledger",
+        action="store_true",
+        help="leave every imported item unverified even when its id has been reviewed",
+    )
     args = parser.parse_args(argv)
 
     if args.squad_json:
-        records = load_squad_json(args.squad_json)
+        records = load_squad_json(resolve_project_path(args.squad_json))
+    elif args.pinned_development_source:
+        pinned_limit = args.max_items if args.max_items is not None else DEFAULT_ITEMS
+        records = load_hf(
+            DATASET_ID,
+            DATASET_SPLIT,
+            limit=pinned_limit,
+            revision=DATASET_REVISION,
+            context_diverse=True,
+        )
     else:
-        records = load_hf(args.hf_dataset, args.hf_split, limit=args.max_items)
+        records = load_hf(
+            args.hf_dataset,
+            args.hf_split,
+            limit=args.max_items,
+            revision=args.hf_revision,
+            context_diverse=args.context_diverse,
+        )
 
     docs, items, skipped = squad_to_gold(records, lang=args.lang, max_items=args.max_items)
-    corpus_root = args.out_dir / "corpus"
-    out_path = args.out_dir / "goldset" / args.out_name
+    adopted_documents: dict[str, Path] = {}
+    adopted_count = 0
+    if not args.no_verification_ledger:
+        ledger_paths = args.verified_goldset or [DEFAULT_VERIFIED_GOLDSET]
+        ledger = load_verified_ledger([resolve_project_path(path) for path in ledger_paths])
+        items, adopted_documents, adopted_count = apply_verified_ledger(items, ledger)
+        if items and ledger.items and adopted_count == 0:
+            _LOG.warning(
+                "[ingest_squad] no imported ids matched the verification ledger; "
+                "all generated items remain unverified"
+            )
+
+    out_dir = resolve_project_path(args.out_dir) if args.out_dir else resolve_data_dir(None) / "llb"
+    corpus_root = out_dir / "corpus"
+    out_path = out_dir / "goldset" / args.out_name
     write_corpus(docs, corpus_root)
+    copy_verified_documents(adopted_documents, corpus_root)
     dump_goldset(items, out_path)
 
     report = validate_items(items, corpus_root)
-    _LOG.info("[ingest_squad] wrote %d items (%d skipped) -> %s", len(items), skipped, out_path)
+    _LOG.info(
+        "[ingest_squad] wrote %d items (%d adopted as human-verified, %d skipped) -> %s",
+        len(items),
+        adopted_count,
+        skipped,
+        out_path,
+    )
     _LOG.info("[ingest_squad] splits=%s", report["splits"])
     if report["errors"]:
         for err in report["errors"][:20]:

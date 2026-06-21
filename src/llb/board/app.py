@@ -1,0 +1,66 @@
+"""Streamlit board (M3.7) -- a thin page over the canonical run bundles.
+
+Deliberately minimal: the average-rank leaderboard (with Pareto + CI-overlap markers from
+M3.6) plus the best config per model. Deep per-run inspection lives in the MLflow UI
+(`make mlflow`). Run with `llb board` (which shells out to `streamlit run` on this file).
+"""
+
+from pathlib import Path
+
+from llb.board.data import (
+    best_per_model,
+    config_summary,
+    load_run_records,
+    load_screen_reports,
+)
+from llb.paths import resolve_data_dir
+from llb.scoring.aggregate import rank_board, ranking_policy_note
+
+
+def render(run_root: Path | str | None = None, screen_root: Path | str | None = None) -> None:
+    import streamlit as st
+
+    data_dir = resolve_data_dir(None)
+    root = Path(run_root) if run_root is not None else data_dir / "run-eval"
+    screens = Path(screen_root) if screen_root is not None else data_dir / "screen"
+    st.set_page_config(page_title="loc-lm-bench", layout="wide")
+    st.title("loc-lm-bench -- local Ukrainian LLM leaderboard")
+
+    records = best_per_model(load_run_records(root))
+    if records:
+        results = [r.result for r in records]
+        rows = rank_board(results)
+        st.subheader("Tier-2 private leaderboard (final split)")
+        st.caption(ranking_policy_note(results, judge_trusted=False))
+        st.caption(
+            "`*` = Pareto-optimal (quality / speed / VRAM); `~` = CI overlaps the model above."
+        )
+        st.dataframe(rows, use_container_width=True)
+
+        st.subheader("Best config per model")
+        by_model = {r.result.model: r for r in records}
+        for row in rows:
+            rec = by_model.get(row["model"])
+            if rec is not None:
+                st.write(f"**{row['model']}** ({row['backend']})", config_summary(rec.config))
+    else:
+        st.info(f"No Tier-2 runs under {root}. Run `llb run-eval` (or `llb sweep`) first.")
+
+    # Tier-1 public screens are shown SEPARATELY -- loglikelihood/generation tracks are not
+    # comparable to Tier-2 private metrics and are never ranked together.
+    reports = load_screen_reports(screens)
+    if reports:
+        st.subheader("Tier-1 public screen (NOT comparable to Tier-2)")
+        for track in sorted({r["track"] for r in reports}):
+            st.caption(f"track: {track}")
+            st.dataframe([r for r in reports if r["track"] == track], use_container_width=True)
+
+    st.caption("Deep per-run inspection: the MLflow UI (`make mlflow`).")
+
+
+def main() -> None:
+    render()
+
+
+if __name__ == "__main__":
+    main()

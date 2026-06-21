@@ -17,9 +17,57 @@ from llb.contracts import VramReclaimReport
 DEFAULT_TOLERANCE_MB = 512
 DEFAULT_MAX_POLLS = 30
 
+# Residual classification (M3.3): distinguish a real leak from an unrelated baseline shift.
+VERDICT_RECLAIMED = "reclaimed"
+VERDICT_LEAKED = "leaked"  # residual is held by the launched process tree -> abort
+VERDICT_BASELINE_SHIFT = "baseline_shift"  # an unrelated process grew -> tolerate
+
 
 class VramNotReclaimed(RuntimeError):
     """Raised when freed VRAM stays above the baseline tolerance after a run."""
+
+
+def classify_residual(
+    residual_mb: int, pid_held_mb: int, tolerance_mb: int = DEFAULT_TOLERANCE_MB
+) -> str:
+    """Attribute a post-run VRAM residual (M3.3).
+
+    A residual within tolerance is `reclaimed`. Above tolerance, it is a `leaked` cell only when
+    the LAUNCHED process tree still holds VRAM (`pid_held_mb` above tolerance) -- the killed
+    backend did not free its memory; otherwise it is a `baseline_shift` (an unrelated desktop
+    process grew) and must be tolerated, not aborted.
+    """
+    if residual_mb <= tolerance_mb:
+        return VERDICT_RECLAIMED
+    return VERDICT_LEAKED if pid_held_mb > tolerance_mb else VERDICT_BASELINE_SHIFT
+
+
+def pids_held_mb(usage: dict[int, int], pids: set[int]) -> int:
+    """Total VRAM (MB) held by `pids` (and their listed children) in a {pid: used_mb} map."""
+    return sum(mb for pid, mb in usage.items() if pid in pids)
+
+
+def nvml_process_reader() -> Callable[[], dict[int, int]]:
+    """A reader returning {pid: used VRAM MB} across GPUs, for PID attribution. Needs `[telemetry]`."""
+    try:
+        import pynvml
+    except ImportError as exc:
+        raise SystemExit(
+            'ERROR: VRAM attribution needs the [telemetry] extra. uv pip install -e ".[telemetry]"'
+        ) from exc
+
+    pynvml.nvmlInit()
+
+    def read() -> dict[int, int]:
+        usage: dict[int, int] = {}
+        for i in range(pynvml.nvmlDeviceGetCount()):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            for proc in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                mb = (proc.usedGpuMemory or 0) // (1024 * 1024)
+                usage[proc.pid] = usage.get(proc.pid, 0) + mb
+        return usage
+
+    return read
 
 
 def nvml_reader() -> Callable[[], int]:

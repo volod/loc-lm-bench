@@ -92,6 +92,7 @@ class CaseScoreRow(TypedDict):
     completion_tokens: int
     answer_preview: str
     semantic: NotRequired[float]
+    judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
 
 
 class LeaderboardRow(TypedDict):
@@ -104,6 +105,29 @@ class LeaderboardRow(TypedDict):
     reliability: float
     tokens_per_s: float
     peak_vram_mb: float | None
+    feasible: bool
+    n_cases: int
+
+
+class BoardRow(TypedDict):
+    rank: int | None
+    model: str
+    backend: str
+    tier: str  # "private" (Tier-2) | "screen" (Tier-1); a board never mixes the two
+    quality: float  # weighted-blend headline (objective + trusted judge)
+    quality_ci: NotRequired[tuple[float, float]]  # bootstrap CI on the per-case headline blend
+    objective_ci: NotRequired[tuple[float, float]]  # per-case objective CI (when available)
+    semantic_ci: NotRequired[tuple[float, float]]  # per-case semantic CI (when that signal is on)
+    judge_ci: NotRequired[tuple[float, float]]  # per-case judge CI (when the judge is trusted/on)
+    avg_rank: float  # mean of per-quality-signal ranks (lower is better)
+    objective: float
+    judge: float | None
+    semantic: float | None
+    reliability: float
+    tokens_per_s: float
+    peak_vram_mb: float | None
+    pareto: bool  # on (quality up, tok/s up, vram down)
+    unresolved: bool  # quality CI overlaps the model ranked just above -> tie not resolved
     feasible: bool
     n_cases: int
 
@@ -145,6 +169,7 @@ class RunMetrics(TypedDict):
     objective_score: float
     reliability: float
     tokens_per_s: float
+    judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
 
 
 class RunEnvironment(TypedDict):
@@ -156,6 +181,11 @@ class JudgeStatus(TypedDict):
     calibration_rho: float | None
     threshold: float
     trusted: bool
+    provider: NotRequired[str]
+    model: NotRequired[str]
+    base_url: NotRequired[str | None]
+    prompt_language: NotRequired[str]
+    metrics: NotRequired[list[str]]
 
 
 class RunPaths(TypedDict):
@@ -192,6 +222,46 @@ class ModelSpec(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
+    # Optional cross-backend serving options for the AvailabilityResolver (M3.2): a map of
+    # backend -> source string OR a per-source record carrying its own quant/arch overrides,
+    # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata).
+    sources: NotRequired[dict[str, "str | SourceRecord"]]
+
+
+class SourceRecord(TypedDict):
+    """A per-backend artifact for one logical model: its own source + metadata overrides.
+    Any field omitted falls back to the parent `ModelSpec` (same architecture, different
+    quant/packaging)."""
+
+    source: str
+    quant: NotRequired[str]
+    bpw: NotRequired[float]
+    params_b: NotRequired[float]
+    n_layers: NotRequired[int]
+    kv_dim: NotRequired[int]
+    max_context: NotRequired[int]
+    min_vram_gb: NotRequired[int | float]
+    gated: NotRequired[bool]
+    license_url: NotRequired[str]
+
+
+class BackendCandidate(TypedDict):
+    backend: str
+    source: str
+    quant: NotRequired[str | None]  # the quant the planner actually priced for this artifact
+    available: bool
+    verdict: str  # planner verdict at the host budget: gpu / offload / no / unknown
+    runnable: bool  # available AND the backend can actually serve at that verdict
+    reason: str
+
+
+class ResolvedModel(TypedDict):
+    name: str
+    chosen_backend: str | None
+    chosen_source: str | None
+    verdict: str
+    candidates: list[BackendCandidate]
+    note: str
 
 
 class PreparedModel(ModelSpec):
@@ -241,6 +311,23 @@ class JudgeScore(TypedDict):
     answer_relevancy: float
 
 
+class ScreenTaskResult(TypedDict):
+    task: str
+    metric: str
+    score: float
+
+
+class ScreenReport(TypedDict):
+    model: str
+    backend: str
+    track: str  # "logprob" (vLLM, MCQ via loglikelihood) | "generation" (generate-until)
+    requested_tasks: list[str]
+    results: list[ScreenTaskResult]
+    covered: list[str]
+    missing: list[str]  # requested but absent -> the screen ran only partially
+    complete: bool
+
+
 class SquadAnswers(TypedDict):
     text: list[str]
     answer_start: list[int | None]
@@ -281,6 +368,49 @@ class VramReclaimReport(TypedDict):
     reclaimed: bool
     residual_mb: int
     polls: int
+
+
+class GpuSample(TypedDict):
+    index: int
+    temp_c: int | None
+    power_w: float | None
+    sm_clock_mhz: int | None
+    mem_clock_mhz: int | None
+
+
+class CoolDownReport(TypedDict):
+    waited_s: float
+    final_temp_c: int | None
+    capped: bool
+
+
+class IsolationOutcome(TypedDict):
+    vram_residual_mb: int | None
+    vram_verdict: str | None  # reclaimed | leaked | baseline_shift | None (gate skipped)
+    cooldown: CoolDownReport
+    gpu: list[GpuSample]
+
+
+class CellResult(TypedDict):
+    cell_key: str
+    model: str
+    backend: str
+    status: str  # done | skipped | failed
+    run_dir: str | None
+    vram_residual_mb: int | None
+    cooldown_s: float
+    cooldown_capped: bool
+    gpu: list[GpuSample]
+    detail: str
+
+
+class SweepReport(TypedDict):
+    sweep_id: str
+    n_cells: int
+    completed: int
+    skipped: int
+    failed: int
+    results: list[CellResult]
 
 
 class EvalResult(TypedDict):

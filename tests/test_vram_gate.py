@@ -1,6 +1,28 @@
 import pytest
 
-from llb.executor.vram import VramNotReclaimed, assert_reclaimed, wait_for_reclaim
+from llb.executor.vram import (
+    VERDICT_BASELINE_SHIFT,
+    VERDICT_LEAKED,
+    VERDICT_RECLAIMED,
+    VramNotReclaimed,
+    assert_reclaimed,
+    classify_residual,
+    pids_held_mb,
+    wait_for_reclaim,
+)
+
+
+def test_classify_residual_attributes_leak_vs_baseline_shift():
+    assert classify_residual(residual_mb=300, pid_held_mb=0) == VERDICT_RECLAIMED
+    assert classify_residual(residual_mb=3000, pid_held_mb=2800) == VERDICT_LEAKED
+    # above tolerance but the launched PIDs hold ~nothing -> an unrelated process grew
+    assert classify_residual(residual_mb=3000, pid_held_mb=0) == VERDICT_BASELINE_SHIFT
+
+
+def test_pids_held_mb_sums_only_launched_pids():
+    usage = {111: 2000, 222: 500, 333: 100}
+    assert pids_held_mb(usage, {111, 333}) == 2100
+    assert pids_held_mb(usage, {999}) == 0
 
 
 def reader_from(seq):

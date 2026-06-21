@@ -52,6 +52,7 @@ class RunManifest(BaseModel):
 
     run_id: str
     run_name: str
+    split: str | None = None
     created_at: str = Field(default_factory=_utc_now)
     config: JsonObject
     env: RunEnvironment = Field(default_factory=capture_env)

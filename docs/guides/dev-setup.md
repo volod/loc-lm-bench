@@ -19,7 +19,7 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 |-------|-------|-----|
 | `dev` | pytest, ruff | tests + lint |
 | `goldset` | datasets | `ingest_squad --hf-dataset` |
-| `rag` | faiss-cpu, sentence-transformers, langchain-text-splitters, ragas | indexing + RAG eval |
+| `rag` | faiss-cpu, sentence-transformers, langchain-text-splitters, DeepEval | indexing + local judge eval |
 | `eval` | langgraph | the retrieve -> generate eval graph (`run-eval`) |
 | `track` | mlflow, duckdb, pyarrow, optuna | tracking + config search |
 | `board` | streamlit | leaderboard |
