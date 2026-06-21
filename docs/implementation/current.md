@@ -5,12 +5,12 @@ A snapshot of what exists and runs **today**. Forward work lives in
 
 **Status:**
 - **Milestone 0 (data prep) complete:** schema, validator, disjoint splits, SQuAD
-  ingestion, a real 250-item Ukrainian gold set (HPLT/ua-squad), judge-calibration
-  stats, a chunking RAG-store builder.
+  ingestion, a committed 250-item post-edited Ukrainian development fixture, a manual
+  gold-set skeleton, judge-calibration stats, and a chunking RAG-store builder.
 - **Milestone 1 (eval skeleton) complete:** a canonical `RunConfig` + Typer
   CLI, a pinned-embedding FAISS RAG store + source-span retrieval metrics, a LangGraph
   retrieve -> generate flow over an OpenAI-compatible backend (Ollama), objective
-  answer-correctness + a gated judge, a canonical manifest + scores record (MLflow
+  answer-correctness + judge gate/scorer seams, a canonical manifest + scores record (MLflow
   mirror), and a minimal sequential runner with a VRAM gate. `llb run-eval` prints one
   ranked row. The skeleton is **compile-free** -- prebuilt Ollama (which uses the GPU),
   no vLLM/flash-attn source build -- so the loop is proven before that build (M2).
@@ -21,12 +21,17 @@ A snapshot of what exists and runs **today**. Forward work lives in
   `google/gemma-4-E4B-it-qat-w4a16-ct` served via vLLM 0.23.0 on the RTX 4060 Ti 16 GB,
   scored under the executor with real telemetry (~64 tok/s, peak VRAM 15.7 GB, cold load
   ~112 s, served ctx 8192). See the [vLLM guide](../guides/vllm-backend.md).
+- **Milestone 3 core delivered:** backend resolution, process-isolated resumable sweeps,
+  two-stage RAG tuning, public-screen and frontier-prep adapters, N-model ranking, and a
+  final-only Streamlit board. The audit fixes prevent tuning/calibration leakage into the
+  board, make sweep markers interruption-safe, align drafted document ids with the RAG index,
+  and harden external JSON/metric parsing. Full design acceptance gaps remain in `plan.md`.
 
 Two host-aware model utilities: `prep-models` prepares candidate models (pulls Ollama
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-220 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+291 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -38,15 +43,15 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (220 tests)
+    make test       # pytest (291 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
     make mlflow     # review all mirrored experiment runs at http://127.0.0.1:5000
 
-`make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused
-(deps updated; `RECREATE_VENV=1` to rebuild), an existing gold set / index is reused, and
-cached model downloads are skipped. It tees per-step output to `.data/llb/logs/pipeline-
+`make demo-eval` runs the whole pipeline in order and is **idempotent** -- the venv is reused,
+the committed gold set is validated, the index is rebuilt from its matching committed corpus,
+and cached model downloads are skipped. It tees per-step output to `.data/llb/logs/pipeline-
 <ts>.log` and, on failure, names the failing step + log path. It needs a running Ollama for
 the final telemetry run. Every command shares one runtime (`llb.runtime`): Ctrl-C shuts down
 cleanly (exit 130, backends killed via their context manager) and an unexpected crash is
@@ -67,7 +72,11 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
     .env.example                   # DATA_DIR + frontier-API key placeholders
     samples/                       # COMMITTED DATA (kept separate from code)
       rag_items_uk.json            #   sample RAG spec: source docs + item defs
-      squad_uk_fixture.json        #   SQuAD-format UA fixture (tests/demo)
+      squad_uk_fixture.json        #   tiny SQuAD-format parser fixture
+      goldsets/ua_squad_postedited_v1/
+        goldset.jsonl              #   250 canonical verified public-development items
+        corpus/                    #   250 exact source documents
+        source.json                #   pinned revision, source digest, selection rule
       corpus/ip_regulation_uk.md   #   substantial UA domain doc (IP regulation) for chunking
     scripts/
       shared/common.sh             # shared bootstrap + canonical max_jobs() helper (AGENTS.md)
@@ -85,6 +94,9 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       goldset/validate.py          # corpus-grounded validator + CLI
       prep/gen_rag_items.py        # spec -> seed gold set
       prep/ingest_squad.py         # SQuAD-format (local or HF) -> canonical gold items
+      prep/ua_squad_source.py      # pinned reviewed-source identity + selection policy
+      prep/goldset_skeleton.py     # timestamped from-scratch authoring template
+      prep/published_goldset.py    # strict builder for the pinned committed fixture
       judge/calibration.py         # Spearman rho + CI + trust decision + worksheet
       rag/chunking.py              # fixed/sentence/recursive/markdown/semantic chunking (offset-exact)
       rag/{embedding,index,store}.py  # pinned embedder + FAISS index + store (flat / parent-child)
@@ -100,7 +112,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       screen/public.py             # M3.1 Tier-1 lm-eval-harness-uk adapter (logprob/generation tracks)
       prep/frontier.py             # M3.5 prepare-goldset + prepare-synthetic-corpus (litellm)
       board/{data,app}.py          # M3.7 thin Streamlit leaderboard over the run bundles
-    tests/                         # 220 tests across the above
+    tests/                         # 291 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -115,7 +127,9 @@ Pydantic `GoldItem` + `SourceSpan`. Fields: `id, lang, question, reference_answe
 source_doc_id, source_spans[{doc_id, char_start, char_end, text}], provenance, verified,
 split`. Labels are SOURCE-SPAN (char offsets, not chunk ids), so they survive `chunk_size`
 tuning. `provenance` and `split` are enforced literals. Only `verified: true` items score
-models. `load_goldset` / `dump_goldset` handle JSONL (UTF-8).
+models. Verification may be a local review or acceptance of a pinned upstream post-edited
+fixture; `provenance` and fixture metadata preserve the distinction. `load_goldset` /
+`dump_goldset` handle JSONL (UTF-8).
 
 ### Splits — `llb.goldset.splits`
 `assign_splits(ids, ratios, seed)` -> deterministic, disjoint `calibration / tuning / final`.
@@ -123,27 +137,58 @@ models. `load_goldset` / `dump_goldset` handle JSONL (UTF-8).
 ### Validator (M0 acceptance) — `llb.goldset.validate`
 Checks every span resolves to its labeled text on disk, ids unique, splits disjoint.
 
-    make validate-goldset          # PASS on the sample set
+    make validate-goldset          # PASS on the committed public fixture
 
 ### Sample generator — `llb.prep.gen_rag_items`
-Reads `samples/rag_items_uk.json`, computes spans, writes + validates a seed gold set. Its
-six synthetic, hand-authored demo fixtures are explicitly verified so `make demo-eval` can
-score them; imported public datasets remain unverified until human review.
+Reads `samples/rag_items_uk.json`, computes spans, writes + validates a six-item synthetic
+format fixture. It remains useful for parser and tiny smoke checks but is no longer the
+default demo gold set.
 
     make gen-rag-items             # -> .data/llb/goldset/sample_rag_items.jsonl (6 items)
 
 ### SQuAD ingestion (M0.3) — `llb.prep.ingest_squad`
 Maps SQuAD-format UA QA (flattened, nested, or HF rows where `answers` is a dict-string) ->
-canonical items (`provenance: public-reused`, `verified: false`), span from the answer
-offset with a `find()` fallback. Local file or HF dataset (streams when `--max-items` set).
+canonical items, with spans from the answer offset and a `find()` fallback. Drafts start with
+`provenance: public-reused`, `verified: false`. The default ID-keyed verification ledger then
+adopts matching canonical items from `ua_squad_postedited_v1`, including their reviewed corpus
+files; unmatched drafts remain false. Local file or HF dataset (streams when `--max-items` set).
+The HF loader accepts an explicit revision and normalizes both flattened rows and the pinned
+source's nested SQuAD article rows.
 
-    make ingest-uk-squad                       # HPLT/ua-squad -> 250-item real gold set
+    make ingest-uk-squad GOLDSET_MODE=development  # reproduce the pinned reviewed set
+    make ingest-uk-squad GOLDSET_MODE=skeleton     # editable SQuAD template + instructions
+    make ingest-uk-squad GOLDSET_MODE=draft        # reserved; reports planned M4.4
     make ingest-squad                          # the bundled fixture (4 items)
     make ingest-squad SQUAD_JSON=path.json     # a local SQuAD-uk export
     python -m llb.prep.ingest_squad --hf-dataset <id> --hf-split train   # needs HF_TOKEN (goldset extra via make venv)
 
-The current real set is `.data/llb/goldset/goldset_uk.jsonl` (250 items, splits
-cal=86/tun=82/fin=82, 239 corpus docs). All `verified: false` pending human review.
+The stable public development fixture is
+`samples/goldsets/ua_squad_postedited_v1/goldset.jsonl`: 250 verified items and 250 distinct
+documents, split cal=86/tun=82/final=82. It is a deterministic subset of the pinned
+`FIdo-AI/ua-squad` validation export. The upstream card states that Ukrainian translations
+were post-edited and answer spans aligned; `source.json` and the fixture README record the
+revision, source SHA-256, selection rule, verification basis, attribution, and data license.
+The pinned selection was reviewed by a human and all 250 items are `verified: true`.
+
+`--verified-goldset <path>` replaces the default ledger and may be repeated to combine reviewed
+sets. This is the review handoff for M3.5 `prepare-goldset` and planted-label outputs after a
+human flips accepted entries to true; each ledger JSONL has a sibling `corpus/`. Canonical item
+replacement, rather than a boolean-only flip, prevents a reused ID from certifying changed
+content. `--no-verification-ledger` explicitly disables adoption. A zero-match import warns and
+stays unverified.
+
+The default development target uses one code-owned profile, `--pinned-development-source`, so
+the Makefile cannot drift from the fixture metadata. It loads `FIdo-AI/ua-squad` revision
+`943ef27daea65e400350ef1875d07c7e97288177`, split `validation`, then applies the exact fixture
+selection: first grounded QA per distinct context, in source order. Live acceptance generated
+250/250 verified items with 86/82/82 calibration/tuning/final splits; all canonical items and
+all 250 corpus files exactly matched the committed fixture. This closes M3.9 and provides a
+stable regenerated bundle for initial model tests. Normal initial tests should still use the
+committed fixture through `make demo-eval`, which is offline and avoids unnecessary downloads.
+
+`llb.prep.goldset_skeleton` writes an editable SQuAD example and instructions under
+`$DATA_DIR/goldset-skeleton/<timestamp>/`. The complete manual is
+[`docs/guides/goldset-from-scratch.md`](../guides/goldset-from-scratch.md).
 
 ### RAG chunking / store builder — `llb.rag.chunking`
 Five strategies, every chunk anchored to `doc_id` + char offsets so retrieval scores against
@@ -167,14 +212,64 @@ All langchain use is lazy; `fixed` / `sentence` / `markdown` work without `[rag]
 
 On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 breadcrumbs).
 
-### Judge calibration (M0.5 stats) — `llb.judge.calibration`
+### Judge calibration (M0.5 stats + M3.8 close-out scaffolding) — `llb.judge.calibration`
 Spearman rho (no scipy), bootstrap CI, trust decision (`rho >= 0.6` else demote). Two
-worksheet emitters: a blank one, and a pre-filled one driven from a run, so the human only
-adds `human_rating`.
+worksheet emitters: a blank one, and a pre-filled one driven from a run. The pre-filled
+worksheet fills `model_answer` and (when a judge is configured) the `judge_rating` column,
+running the judge **ungated** -- calibration measures whether the judge agrees with humans, so
+the gate is irrelevant here; the human only adds `human_rating`. When the judge backend is
+unavailable the column is left blank and the run logs a warning rather than failing.
 
-    make calibration-worksheet                            # blank worksheet from the calibration split
-    llb run-eval --split calibration --worksheet ws.csv   # worksheet with model answers pre-filled
-    python -m llb.judge.calibration score --ratings ws.csv   # rho + CI + decision
+The three Make targets drive the loop over the verified committed gold set
+(`GOLDSET` defaults to `samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items
+are `verified: true`, so M3.9 is already satisfied for it; no re-review needed):
+
+    make calibration-worksheet                       # blank worksheet (86 calibration rows)
+    make calibration-run JUDGE_MODEL=<litellm-id>    # MODEL answers + judge_rating pre-filled -> CAL_WS
+    # human fills the human_rating column in CAL_WS, then:
+    make calibration-score RATINGS=<filled.csv>      # rho + bootstrap CI + trust decision
+
+Equivalent direct CLI:
+
+    llb run-eval --split calibration --worksheet ws.csv --judge-model <id>  # pre-fill answers + judge
+    python -m llb.judge.calibration score --ratings ws.csv                  # rho + CI + decision
+
+What still gates the close-out is purely external: validating the live Ragas path + UA prompts
+and collecting the human `human_rating` column. The scaffolding (targets, ungated judge run,
+scoring) is built and unit-tested.
+
+#### Judge model (OQ2 decided) + bias disclosure
+
+The v1 judge is a **local Gemma-4 model**, chosen over a frontier API for **no corpus
+data-egress and reproducibility**. The id is never hardcoded -- it is a litellm id set per GPU
+class via config / `--judge-model` / the Makefile `JUDGE_MODEL` knob, served on an
+OpenAI-compatible endpoint (`HOSTED_VLLM_API_BASE` for vLLM, `OLLAMA_API_BASE` for Ollama). The
+answer-relevancy embedding is wired to the pinned local e5 embedder (`_judge_embeddings`) so the
+judge runs fully on-box rather than silently defaulting to OpenAI embeddings.
+
+| GPU VRAM | Judge (litellm id) | Notes |
+|---|---|---|
+| 12 GB | `ollama_chat/gemma-4-e4b-it` | smallest Gemma 4 via GGUF/CPU offload; the 12B will not fit |
+| 16 GB (this box) | `hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct` | biggest Gemma 4 that fits; the configured default |
+| 32 GB | `hosted_vllm/google/gemma-4-12B-it` | bf16 12B (higher fidelity) + headroom to co-host judge + a candidate |
+
+On 16 GB a 12B judge cannot co-reside with a vLLM candidate, so judge a **separate pass** over
+the persisted worksheet answers (the worksheet decouples answer generation from judging), or
+serve the judge via Ollama GGUF offload.
+
+**Bias (disclosed, not eliminated).** This judge is **not independent of the candidate pool**:
+Gemma-4 (E4B/12B) are candidates, and MamayLM v2 + Lapa are Gemma-3 fine-tunes -- so the judge
+shares architecture, tokenizer, and pretraining lineage with most of the pool and may
+**self-prefer Gemma-family answers** over the non-Gemma ones (Qwen3.6, Llama 3.2). The bias can
+move the *ranking*, not just absolute scores. It is accepted because: (1) the judge is **gated**
+(Premise 2) -- it enters ranking only when calibration rho >= 0.6 against the human-verified set,
+else it is demoted to a diagnostic and objective correctness ranks alone; (2) the headline blend
+keeps objective reference-correctness weighted; (3) the disclosure (`JUDGE_BIAS_NOTE` in
+`scoring/judge.py`) travels with the run; and (4) a **non-Gemma cross-check judge** (e.g.
+Qwen3.6 or a frontier model) can re-score the same calibration split to quantify the family
+delta, with the board's judge-cohort guard preventing mixed cohorts in one board. The spec also
+cautions a small local judge may not clear the gate for Ukrainian -- a 12B is borderline; if rho
+< 0.6 the judge stays demoted, which is the gate working as designed.
 
 ## Milestone 0 status
 
@@ -182,20 +277,20 @@ adds `human_rating`.
 |------|------|-------|
 | M0.1 schema | Pydantic `GoldItem` / `SourceSpan` | DONE |
 | M0.2 sample generator | `gen_rag_items` + sample spec | DONE |
-| M0.3 real gold set | `ingest_squad` + 250 items from HPLT/ua-squad | DONE |
+| M0.3 stable public gold set | pinned post-edited UA-SQuAD fixture (250 items/docs) | DONE |
 | M0.4 splits | deterministic disjoint partition | DONE |
 | M0.5 calibration stats | rho + CI + blank/pre-filled worksheet | DONE (code) |
 | chunking | fixed/sentence/recursive RAG-store builder | DONE |
 | acceptance | validator PASS (sample + fixture + 250-item set), suite green | DONE |
 
 Remaining (blocked on a judge choice or human input; scoped forward in [`plan.md`](plan.md)):
-- **Judge-calibration close-out (plan M3.8):** the stats, the gate, and a pre-filled
-  worksheet (`run-eval --split calibration --worksheet`) all exist. Closing the loop is
-  blocked on choosing the judge (OQ2) + the Ragas scorer + human ratings; then
-  `calibration score` gates at rho >= 0.6 and `run-eval --judge-rho` lets the judge in.
-- **Human verification + screen datasets (plan M3.9):** the 250 public-reused items are
-  `verified: false` pending human review; Belebele-uk (MCQ) wires into the Tier-1 screen,
-  not the source-span gold set.
+- **Judge-calibration close-out (plan M3.8):** the stats, the gate, the executor judge
+  wiring, the chosen judge (OQ2 -- a local Gemma-4 model, bias disclosed above), and the full
+  pre-filled-worksheet scaffolding (model answers + ungated `judge_rating` via
+  `make calibration-run` / `run-eval --worksheet --judge-model`, scored by
+  `make calibration-score`) all exist and are unit-tested. The only residual is external: live
+  Ragas validation and collecting the human `human_rating` column over the verified calibration
+  split.
 
 ## Milestone 1 -- modules + how to run
 
@@ -214,7 +309,8 @@ run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
                      |  classify: ok / empty / malformed / refusal / timeout /
                      |            backend_error / retrieval_miss
                      v
-                  score: reference answer-correctness (objective) [+ gated judge]
+                  score: reference answer-correctness (objective)
+                         [judge scorer/gate exists but is not wired here yet]
                      v
                   aggregate -> ranked row (Pareto tie-break: tok/s, then VRAM)
                      v
@@ -236,15 +332,15 @@ relative paths from the project root rather than the caller's current directory.
     llb build-index --strategy markdown --mode parent_child   # structure-aware + parent-child
     llb validate-retrieval --k 10           # recall@k / MRR of the pinned embedding ([rag])
     llb run-eval --model llama3.2:3b        # one ranked row + manifest (Ollama + [rag,eval])
-    llb run-eval --config samples/run_config_uk.yaml --judge-rho 0.7
+    llb run-eval --config samples/run_config_uk.yaml --judge-rho 0.7  # records gate status
     llb run-eval --split calibration --worksheet ws.csv   # pre-fill a calibration worksheet
     llb run-eval --score-semantic                         # also record semantic correctness
 
 Or via make: `make prep-models`, `make build-index`, `make validate-retrieval`,
-`make run-eval MODEL=... LIMIT=...`. `make run-eval` defaults `GOLDSET=` to the verified
-sample set (seeded by `make gen-rag-items` / `make demo-eval`) so it runs out of the box;
-override `GOLDSET=` for another set. A missing gold set or a set with no `verified: true`
-items in the split fails with an actionable message rather than a raw traceback.
+`make run-eval MODEL=... LIMIT=...`. The make targets default `GOLDSET` and `CORPUS` to the
+committed post-edited public fixture, so they run without regeneration or network access;
+override both for another set. A missing gold set or a set with no `verified: true` items in
+the split fails with an actionable message rather than a raw traceback.
 
 ### Model preparation — `llb.backends.{hardware,prepare}` (`prep-models`)
 Reads a candidate-models manifest (`samples/models_uk.yaml`), detects the host GPU via
@@ -310,9 +406,10 @@ Unicode-normalized for casing and punctuation); `score` is token-F1. An optional
 semantic-similarity signal (cosine via the pinned embedder) captures paraphrases and UA
 morphology when `--score-semantic` is set -- it is recorded separately because blending
 weights require calibration. `judge` enforces the gate (Premise 2): the Ragas judge only
-enters the blend at calibration rho >= threshold, else it is demoted and the objective score
-ranks alone. `aggregate` produces the ranked row (quality, then tok/s, then VRAM; infeasible
-models listed without a rank).
+may enter aggregate ranking at calibration rho >= threshold; below it, objective score ranks
+alone. The current `run-eval` path does not invoke the scorer yet, so its row remains
+objective-only even when a trusted rho is recorded. `aggregate` produces the ranked row
+(quality, then tok/s, then VRAM; infeasible models listed without a rank).
 
 ### Tracking — `llb.tracking.manifest`
 The immutable `manifest.json` + per-case `scores.{parquet,jsonl}` are written FIRST; the
@@ -353,15 +450,15 @@ required, while Ruff formatting and linting are enforced by `make ci` and GitHub
 | M1.2 | pinned-embedding FAISS RAG store (`build-index`) | DONE |
 | M1.3 | recall@k / MRR by source-span overlap | DONE |
 | M1.4 | LangGraph retrieve->generate over Ollama + typed failure taxonomy | DONE |
-| M1.5 | objective answer-correctness (+ semantic) + gated judge | DONE (Ragas scorer -> M3.8) |
+| M1.5 | objective answer-correctness (+ semantic) + judge gate seam | CORE (executor judge wiring -> M3.8) |
 | M1.6 | canonical manifest + scores, MLflow mirror | DONE |
 | M1.7 | minimal sequential runner + NVML VRAM gate | DONE |
 | M1.8 | `run-eval` prints one ranked row (SQuAD-uk seed) | DONE |
 
-Residual M1 work is scoped forward in [`plan.md`](plan.md): the Ragas judge scorer + UA
-metric-prompt localization (M3.8, needs the judge choice + calibration ratings) and the
-map-reduce / multi-hop eval templates (deferred until the text-analysis benchmark needs
-them). The optional semantic-similarity correctness signal is now built (`--score-semantic`).
+Residual M1 work is scoped forward in [`plan.md`](plan.md): live Ragas validation, calibration,
+and executor/board judge wiring (M3.8), plus map-reduce / multi-hop eval templates (deferred
+until the text-analysis benchmark needs them). The optional semantic-similarity correctness
+signal is built (`--score-semantic`).
 
 ## Milestone 2 -- real backend + telemetry (complete)
 
@@ -421,12 +518,15 @@ Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): an embeddi
 estimate for w4a16/int4 (the 2.3x weight under-estimate above), a pre-launch VRAM-contention
 guard, and surfacing the vLLM serving knobs as `run-eval` CLI flags.
 
-## Milestone 3 -- two-tier + scale + rigor (code complete; close-outs human-gated)
+## Milestone 3 -- two-tier + scale + rigor (core + depth hardening delivered)
 
-All nine M3 modules are built and unit-tested; the only remaining work is non-code: the judge
-calibration close-out (needs the judge choice OQ2 + human ratings) and the gold-set human
-verification (flip `verified: true` on reviewed items). The CLI grew `resolve-models`, `sweep`,
-`tune`, `prepare-goldset`, `prepare-synthetic-corpus`, `screen-public`, and `board`.
+The M3 core components are built and unit-tested. The CLI grew `resolve-models`, `sweep`,
+`tune`, `prepare-goldset`, `prepare-synthetic-corpus`, `screen-public`, and `board`. A
+post-implementation audit confirmed the component boundaries and found that the full design
+acceptance is not yet closed: screen-to-finalist orchestration, process-isolated Optuna trials
+with backend-parameter search, judge integration/calibration, and human gold-set verification
+remain forward work. The delivered behavior and those boundaries are stated below; residual
+work stays in [`plan.md`](plan.md).
 
 ### AvailabilityResolver -- `llb.backends.resolver` (M3.2)
 `resolve(spec, vram, ram)` picks the backend that can actually serve a model on THIS host:
@@ -468,37 +568,52 @@ weight-gaming and noise-driven flips:
   `private` results in one board (`TIER_SCREEN` / `TIER_PRIVATE` on `ModelResult`).
 `format_board` renders it as ASCII (`*` = Pareto, `~` = CI-overlap/unresolved). The M1
 `rank_results` / `format_table` single-row path is unchanged and still used by `run-eval`.
+`rank_board` rejects duplicate model configs so callers must select exactly one config per
+model before rank calculation; this avoids silently overwriting average ranks by model key.
 
 ### Hard-isolation sweep -- `llb.executor.isolation` (M3.3)
 `run_sweep(configs)` runs one (model, config) cell per PROCESS so a leak or crash in one cell
 cannot bias the next: the default `CellRunner` shells out to `python -m llb.main run-eval
 --config <cell> --split <s>`, so the vLLM server AND the whole CUDA context die with the cell.
+The per-cell isolation contract is ONE reusable primitive, `isolate_cell(work, backend=...)`,
+shared by the sweep, the public screen (`screen.run_screen_isolated`), and every Optuna trial
+(`optimize.tuner.with_isolation`) -- so "process per cell + gate + cooldown" is defined once.
 Between cells it gates two things and records a third:
-- **VRAM reclaim gate** (`executor.vram.assert_reclaimed`): wait for used VRAM to return to the
-  pre-cell baseline within tolerance, else raise `VramNotReclaimed` and abort the whole sweep
-  (a leak would bias every later cell). It runs only for `GATE_BACKENDS` (vLLM / llama.cpp) that
-  own their VRAM; Ollama keeps weights warm by design, so gating it would falsely abort.
+- **PID-attributed VRAM reclaim gate** (M3.3): snapshot the VRAM baseline + the set of PIDs
+  already holding VRAM, run the cell, then `wait_for_reclaim`. If VRAM does not return to
+  baseline, `classify_residual` ATTRIBUTES the residual: a PID that APPEARED during the cell and
+  still holds VRAM is a `leaked` cell -> raise `VramNotReclaimed` and abort the whole sweep; a
+  pre-existing process that merely grew is a `baseline_shift` -> tolerated (logged), so an
+  unrelated desktop process can no longer falsely abort the sweep. The gate runs only for
+  `GATE_BACKENDS` (vLLM / llama.cpp) that own their VRAM; Ollama keeps weights warm by design.
+  Without a `pid_usage_reader` it stays conservative (any over-tolerance residual aborts).
 - **Thermal cooldown** (`cool_down`): wait until the hottest GPU is <= a threshold, capped at a
   max wait so a warm room cannot stall the sweep; throughput is only comparable at like clocks.
 - **GPU telemetry** (`sample_gpu` via nvidia-smi): temp / power / SM+mem clocks per cell.
 The sweep is RESUMABLE: each cell has a stable `cell_key` (a hash of its reproducibility-
-relevant config, ignoring `run_name`) and writes a marker under `$DATA_DIR/sweep/<id>/cells/`,
-so a re-run skips finished cells. Every side-effect (subprocess, NVML reader, GPU sampler,
-sleep) is injectable; 10 unit tests cover it without a GPU. New CLI `sweep` resolves each
+relevant config, ignoring `run_name`) and atomically publishes a marker under
+`$DATA_DIR/sweep/<id>/cells/`, so a re-run skips finished cells. A truncated/invalid marker is
+treated as unfinished and rerun instead of crashing or falsely skipping the cell. Every side
+effect (subprocess, NVML reader, GPU sampler, sleep) is injectable. New CLI `sweep` resolves each
 manifest model to a backend (M3.2) and runs the isolated cells:
 
-    llb sweep --goldset .data/llb/goldset/sample_rag_items.jsonl --sweep-id run1   # run
+    llb sweep --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+        --sweep-id run1                                                        # run
     llb sweep --sweep-id run1                                                       # resume (skips done)
 
-Validated on this host: an Ollama cell ran as a subprocess, recorded GPU temp, and a re-run
-skipped it (resume). Residual: the sweep generates one cell per model at the default RAG
+Validated on this host: an Ollama cell ran as a subprocess + resumed on re-run; and a real
+vLLM cell (gemma-4-E4B) ran through the live PID-attributed gate (`nvml_reader` +
+`nvml_process_reader`), reclaiming to baseline (residual 2 MB, no leaked PID) -- the marker +
+bundle recorded it. The CLIs (`sweep`, `screen-public --isolated`, `tune --isolate`) wire
+best-effort NVML readers. Residual: the sweep generates one cell per model at the default RAG
 config; the RAG-parameter search space is driven by Optuna (M3.4).
 
-### Two-stage Optuna tuning -- `llb.optimize.tuner` (M3.4)
+### Two-stage Optuna RAG tuning -- `llb.optimize.tuner` (M3.4)
 `two_stage(base_config)` keeps the leaderboard honest by SPLIT discipline: stage 1 searches the
-RAG/backend space on the disjoint `tuning` split, stage 2 scores ONLY the winning config on the
-full `final` split, and only that stage-2 run is the leaderboard entry. The embedding is pinned
-(never a search dimension). The search space is the M1 chunking machinery: strategy x
+RAG space for one fixed model/backend on the disjoint `tuning` split, stage 2 scores ONLY the
+winning config on the full `final` split, and only that stage-2 run is the leaderboard entry.
+The embedding is pinned (never a search dimension). The search space is the M1 chunking
+machinery: strategy x
 chunk_size x overlap-fraction (so overlap < size always holds) x top_k x retrieval_mode x
 child_chunk_size. Over-context configs are PRUNED before they run -- `fits_context` estimates
 the retrieved prompt tokens (`top_k x chunk_size / CHARS_PER_TOKEN` + headroom + completion) and
@@ -506,15 +621,15 @@ prunes when they exceed the model's effective window, so the prune depends on th
 not just the model. The study uses a persistent SQLite backend under `$DATA_DIR/optuna/` with
 `load_if_exists`, so a killed search resumes. `optuna` is lazy-imported (the `[track]` extra);
 the search-space + fit helpers are pure, and the per-trial evaluation + the stage-2 runner are
-injectable (15 unit tests, no GPU). New CLI `tune`:
+injectable and tested without a GPU. New CLI `tune`:
 
     llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
-        --goldset .data/llb/goldset/sample_rag_items.jsonl
+        --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl
 
 Validated on this host (3 trials, Ollama): stage 1 picked markdown/size=960/top_k=6, then
-stage 2 scored it on the final split as the leaderboard row. Residual: the search space does
-not yet sample backend serving knobs (e.g. `max_model_len`); a pruning callback that also kills
-mid-trial on `VramNotReclaimed` would tie M3.4 into the M3.3 sweep.
+stage 2 scored it on the final split as the leaderboard row. The backend is fixed for a study;
+backend serving knobs are not sampled, and trials currently execute in-process rather than
+through M3.3 isolation. These are spec-depth gaps, not delivered behavior.
 
 ### Frontier prep utilities -- `llb.prep.frontier` (M3.5)
 Two GPU-free, litellm-backed data-prep utilities that emit UNVERIFIED material for human review
@@ -523,21 +638,28 @@ Two GPU-free, litellm-backed data-prep utilities that emit UNVERIFIED material f
   corpus docs. Every drafted span is RE-GROUNDED against the doc (`build_drafted_items` keeps
   only spans that are a verbatim substring, with exact offsets), so a label can never point at
   text that is not there; items are written `verified=false`, provenance `frontier-drafted`,
-  with deterministic splits.
+  with deterministic splits. Document ids use corpus-relative paths, matching the RAG index
+  and avoiding collisions when nested directories contain the same filename.
 - `prepare_synthetic_corpus` generates synthetic docs with structured PLANTED labels and a hard
   guard that the planter model is NOT the eval judge (a model grading answers it authored is
   circular). It writes the docs, a `planted_labels.jsonl`, and a `provenance.json` recording
   planter vs judge.
 `litellm` is lazy (the `[prep]` extra) and the completion call is injectable, so prompt
 building, fenced/prose JSON parsing (`parse_json_block`), span grounding, and the planter!=judge
-guard are pure and unit-tested without a key. New CLIs: `prepare-goldset`,
-`prepare-synthetic-corpus`.
+guard are pure and unit-tested without a key. Malformed top-level JSON shapes and non-object
+entries are skipped with a warning instead of crashing a long prep run. New CLIs: `prepare-goldset`,
+`prepare-synthetic-corpus`. Accepted outputs can become custom verification ledgers by retaining
+their stable IDs, flipping only human-approved entries to `verified=true`, and passing the JSONL
+to the ingester with `--verified-goldset`.
 
 ### Streamlit board -- `llb.board` (M3.7)
 A thin leaderboard page over the canonical run bundles. The loading half (`board.data`) is pure
 and unit-tested: `load_run_records` reads each `$DATA_DIR/run-eval/<ts>/manifest.json` (skipping
 staging `.tmp` dirs) plus its per-case `scores` into `ModelResult`s (per-case objectives ->
-the bootstrap CI), `best_per_model` keeps the highest-objective run per model, and
+the bootstrap CI). Run manifests now record the evaluated split, and the board accepts only
+`final` runs; for legacy manifests it infers the split from case rows. This prevents tuning or
+calibration scores from leaking onto the leaderboard. `best_per_model` keeps the
+highest-objective final run per model, and
 `config_summary` extracts the best config. `board.app` is a thin Streamlit view: the M3.6
 `rank_board` (average-rank, Pareto `*`, CI-overlap `~`) plus best-config-per-model; deep
 inspection stays in the MLflow UI. New CLI `board` (shells out to `streamlit run`; needs the
@@ -545,7 +667,7 @@ inspection stays in the MLflow UI. New CLI `board` (shells out to `streamlit run
 the Pareto front with bootstrap CIs. Residual: the page shows only objective quality (no judge
 column until M3.8 close-out) and does not yet separate Tier-1 screen boards from Tier-2.
 
-### Tier-1 public screen -- `llb.screen.public` (M3.1 + M3.9 Belebele wiring)
+### Tier-1 public screen -- `llb.screen.public` (M3.1 + M3.9 dataset wiring)
 `run_screen(model, backend, base_url)` drives lm-eval-harness-uk through its `local-completions`
 model against the already-launched OpenAI-compatible endpoint (no model loaded twice). It splits
 into two TRACKS that are never cross-ranked: a **logprob** track (vLLM exposes token logprobs,
@@ -558,8 +680,27 @@ a screen is never silently partial. lm-eval is heavy/external, so the run is inj
 and task selection, command building, parsing, and coverage are unit-tested without it. New CLI
 `screen-public` (launches vLLM or uses the running Ollama / an explicit `--base-url`). The
 default task lists wire Belebele-uk into the logprob track and SQuAD-uk into the generation
-track (M3.9); task ids are overridable per harness build. Residual: the default UA task ids are
-best-effort (the harness fork's exact names vary) and the live lm-eval path is unrun here.
+track (M3.9); task ids are overridable per harness build. Task selection de-duplicates
+user-supplied/default ids, stderr fields can never be selected as headline metrics, and model
+names are sanitized before they become output filenames.
+
+`run_screen_isolated` (M3.1) runs a screen under the SAME isolation contract as a Tier-2 sweep
+cell by REUSING the executor primitives: it snapshots VRAM, runs the screen (whose backend lives
+in its own process), then -- for VRAM-owning backends (vLLM) -- asserts the freed VRAM returns
+to baseline (`VramNotReclaimed` aborts) and applies the capped thermal cooldown; Ollama is never
+gated (it keeps weights warm). `screen-public --isolated` (with `--max-model-len` to cap the
+vLLM KV cache) wires it and writes a `<model>.isolation.json` (VRAM residual + cooldown) beside
+the report. The `local-completions` command is TRACK-aware: the logprob track points lm-eval at
+the model's HF tokenizer (loglikelihood needs it), the generation track sets
+`tokenizer_backend=None` (an Ollama tag is not a HF repo); the runner reads lm-eval's
+`<out>/<model>/results_*.json`.
+
+Validated LIVE against lm-eval 0.4.12 on this host: the generation track on Ollama
+(`llama3.2:3b`, `global_piqa_prompted_ukr_cyrl`, coverage 1/1) and the logprob track on vLLM
+(`gemma-4-E4B`, `belebele_ukr_Cyrl` + `arc_uk` + `hellaswag_uk` + `m_mmlu_uk` + global_piqa,
+coverage 5/5) -- the latter exercising the VRAM-reclaim gate (residual reclaimed to baseline
+after the cell). The default task ids are confirmed UA tasks; `squad_uk` (which does not exist
+upstream) was replaced by `global_piqa_prompted_ukr_cyrl`.
 
 ### Ragas judge scorer -- `llb.scoring.judge` (M3.8, scorer half)
 The trust GATE already existed (`run_judge` / `judge_is_trusted`: the judge only enters the
@@ -570,20 +711,62 @@ metric instructions. The pure halves -- `to_ragas_samples` (our records -> Ragas
 `SingleTurnSample` fields), `extract_scores` (tolerating the 0.1 `answer_relevancy` vs 0.2
 `response_relevancy` key), and the UA prompt text -- are unit-tested via an injected
 `evaluate_fn`; the default `_default_ragas_evaluate` wires the real Ragas `evaluate` (lazy
-`[rag]` extra, litellm judge). The calibration CLOSE-OUT stays blocked on choosing the judge
-(OQ2) and producing human ratings, so live Ragas validation is still pending and the gate keeps
-the judge demoted until then.
+`[rag]` extra, litellm judge), and `_judge_embeddings` pins answer-relevancy to the local e5
+embedder so a local judge stays fully on-box. The judge model is decided (OQ2 -- a local Gemma-4
+model, tiered by GPU class, bias disclosed above). The scorer IS now called by
+`executor.run_eval` (gated + the ungated calibration path) and the board loads judge metrics
+(M3.7); the calibration CLOSE-OUT residual is only live Ragas validation + human ratings.
+
+### Milestone 3 depth/acceptance hardening
+On top of the core modules, the spec-depth requirements landed:
+- **Per-source model metadata (M3.2).** `sources:` accepts per-backend records (`source` +
+  its own `quant`/arch/`min_vram_gb`); the resolver prices each artifact independently, so the
+  bf16 UA models (MamayLM/Lapa) now resolve to their q4 GGUF on Ollama. `BackendCandidate`
+  carries the priced `quant`.
+- **Backend-aware Optuna (M3.4).** `suggest_overrides` samples `gpu_memory_utilization` /
+  `max_model_len` ONLY for vLLM; a MEASURED OOM during a trial prunes it (vs the pre-run
+  estimate); equal-quality trials tie-break by higher throughput; an `on_trial` hook mirrors
+  each trial as a nested MLflow child run.
+- **Prep provenance + grounding (M3.5).** `ProvenanceLog` records per-call model/tokens/cost
+  into a `*.provenance.json`; `ground_span` adds a casefold/whitespace-normalized fallback that
+  still maps to EXACT offsets; synthetic corpora are written under `out/corpus/` (ready for
+  `build-index`) with an explicit `synthetic: true` tag.
+- **Statistical completeness (M3.6).** Per-case objective/semantic/judge bootstrap CIs; the
+  rank-uncertainty `unresolved` flag is computed on the per-case HEADLINE blend (`per_case_quality`),
+  not objective alone; `ranking_policy_note` prints the signals + judge weight so the blend is
+  never silently applied.
+- **Board completion (M3.7).** Loads per-case judge/semantic series; renders Tier-1 screens
+  SEPARATELY from the Tier-2 board (`load_screen_reports`); picks each model's best config by the
+  ranking policy (`best_per_model(judge_trusted=...)`); `rank_board` rejects an incompatible
+  judge cohort.
+- **Judge integration + calibration scaffolding (M3.8).** `run_judge` is wired into
+  `executor.run_eval`: it builds per-case (question, answer, retrieved-contexts) records, scores
+  with the GATED judge, persists per-case `judge_score` + an aggregate in the manifest, and
+  enters the blend ONLY when trusted. The calibration close-out adds an **ungated** path
+  (`_judge_ratings`): `run-eval --split calibration --worksheet --judge-model` (and
+  `make calibration-run`) pre-fills the worksheet's `model_answer` and `judge_rating` columns by
+  running the judge regardless of trust, so the human only adds `human_rating`; the judge
+  backend being unavailable degrades to a blank column + warning rather than a hard failure.
+  `make calibration-score` then computes rho/CI/decision. The loop runs over the verified
+  committed gold set (86/86 calibration items `verified:true`), so it needs no re-review (M3.9).
+- **Isolation contract (M3.3).** One shared `isolate_cell` primitive (sweep + screen + Optuna
+  trial) runs the LIVE PID-attributed reclaim gate -- `classify_residual` over a `nvml_process_reader`
+  PID-set diff distinguishes a `leaked` cell (a PID that appeared during the cell still holds VRAM)
+  from a tolerated `baseline_shift` -- plus the capped cooldown; the sweep also writes a
+  `thermal.json` into the run BUNDLE. Live-validated on a real vLLM sweep.
+- **Tier handoff (M3.1).** `select_finalists` is a deterministic per-track top-N policy (tracks
+  never cross-ranked); the new `pipeline` command chains finalists -> two-stage tune -> final board.
 
 ### Milestone 3 status
 
 | Step | What | State |
 |------|------|-------|
-| M3.1 | `screen/` Tier-1 lm-eval-harness-uk adapter (logprob vs generation track, per-task coverage) | DONE |
-| M3.2 | `backends/AvailabilityResolver` (discovery + vLLM>Ollama>llamacpp priority + offload-aware fit) | DONE |
-| M3.3 | `executor/` hard isolation (process-per-cell, VRAM gate, thermal cooldown, resume, GPU telemetry) | DONE |
-| M3.4 | `optimize/` two-stage Optuna (tuning-split search, over-context prune, persistent SQLite, stage-2 entry) | DONE |
-| M3.5 | `prep/` frontier utils (`prepare-goldset` re-grounded drafts; `prepare-synthetic-corpus` planter!=judge) | DONE |
-| M3.6 | `scoring/aggregate` N-model rigor (average-rank, Pareto, bootstrap CIs, no tier mixing) | DONE |
-| M3.7 | `board/` thin Streamlit (rank + best-config-per-model + CIs over the run bundles) | DONE |
-| M3.8 | `scoring/judge.ragas_scorer` (faithfulness + answer-relevancy, UA prompts); calibration close-out blocked on OQ2 + human ratings | CODE |
-| M3.9 | Belebele-uk -> logprob screen, SQuAD-uk -> generation screen (M3.1); gold-set human verification still pending | CODE |
+| M3.1 | Tier-1 adapter + finalist policy + `pipeline` + `run_screen_isolated`; live-validated on Ollama (generation) and vLLM (logprob, VRAM gate exercised); UA task ids confirmed against lm-eval 0.4.12 | DONE |
+| M3.2 | AvailabilityResolver + per-source artifact metadata (own quant/arch priced) | DONE |
+| M3.3 | `isolate_cell` shared by sweep + screen + Optuna; live PID-attributed reclaim gate (leak vs baseline shift); thermal flag in run bundle | DONE (live-validated: real vLLM sweep, residual 2 MB reclaimed) |
+| M3.4 | two-stage RAG tuning + backend-aware serving params, measured-OOM prune, throughput tie-break, nested-MLflow hook | DONE |
+| M3.5 | frontier drafts + planter guard + per-call cost provenance + fuzzy-but-exact grounding + synthetic build-index bundle | DONE |
+| M3.6 | average-rank, Pareto, per-case objective/semantic/judge CIs, headline-CI rank-uncertainty, policy-visible blend | DONE |
+| M3.7 | final-only board + judge/semantic load, Tier-1/Tier-2 separation, best-by-policy, judge-cohort guard | DONE |
+| M3.8 | Ragas scorer seam + gate + local embedding + `run_judge` WIRED into `run_eval`; OQ2 judge decided (local Gemma-4, tiered by GPU, bias disclosed); calibration scaffolding: pre-filled worksheet (model answers + ungated `judge_rating`) via `run-eval --worksheet --judge-model` + `make calibration-run`/`-score` | DONE (code + scaffolding + judge choice); close-out gated on live Ragas + human `human_rating` |
+| M3.9 | committed human-reviewed fixture + pinned reproducible development importer + ID-keyed canonical adoption/custom ledgers + public task defaults | DONE (live importer acceptance: 250/250 verified, exact item/corpus match) |

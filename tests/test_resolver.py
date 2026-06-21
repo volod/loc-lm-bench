@@ -58,12 +58,34 @@ def test_candidate_sources_priority_ordered():
         "source": "m:tag",
         "sources": {"llamacpp": "org/m-gguf", "vllm": "org/m"},
     }
-    # declared backend folded in; ordered vllm > ollama > llamacpp.
+    # declared backend folded in; ordered vllm > ollama > llamacpp; each a source record.
     assert candidate_sources(spec) == [
-        ("vllm", "org/m"),
-        ("ollama", "m:tag"),
-        ("llamacpp", "org/m-gguf"),
+        ("vllm", {"source": "org/m"}),
+        ("ollama", {"source": "m:tag"}),
+        ("llamacpp", {"source": "org/m-gguf"}),
     ]
+
+
+def test_per_source_quant_is_priced_independently():
+    # bf16 vLLM weights do not fit 16 GB, but the per-source q4 GGUF runs on Ollama (offload).
+    spec: ModelSpec = {
+        "name": "ua12b",
+        "backend": "vllm",
+        "source": "org/ua-bf16",
+        "params_b": 12.0,
+        "quant": "bf16",
+        "n_layers": 48,
+        "kv_dim": 2048,
+        "max_context": 8192,
+        "sources": {
+            "ollama": {"source": "hf.co/ua-gguf:Q4_K_M", "quant": "q4_k_m", "min_vram_gb": 8},
+        },
+    }
+    out = resolve(spec, HOST_VRAM, HOST_RAM, probes=ALL_AVAILABLE)
+    by_backend = {c["backend"]: c for c in out["candidates"]}
+    assert by_backend["vllm"]["quant"] == "bf16"  # priced as the bf16 artifact
+    assert by_backend["ollama"]["quant"] == "q4_k_m"  # priced as the q4 GGUF, not vLLM metadata
+    assert out["chosen_backend"] == "ollama"
 
 
 def test_resolve_prefers_vllm_when_it_fits_vram():

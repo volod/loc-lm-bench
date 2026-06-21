@@ -1,0 +1,13 @@
+{
+  "dataset": "FIdo-AI/ua-squad",
+  "revision": "943ef27daea65e400350ef1875d07c7e97288177",
+  "split": "validation",
+  "source_file": "val.json",
+  "source_sha256": "5ff2384d103eb7d4ccb317c8071bd7b2a5a23b221188d8cd0514a85d305745b4",
+  "selection": "first grounded QA per distinct context in upstream validation order",
+  "items": 250,
+  "documents": 250,
+  "verification_basis": "project human review of the pinned selection plus exact source-span validation",
+  "upstream_url": "https://huggingface.co/datasets/FIdo-AI/ua-squad",
+  "data_license": "CC BY-SA 4.0 per the upstream dataset card's derivative-data note"
+}

@@ -63,6 +63,7 @@ def test_manifest_written_before_mirror(tmp_path):
     rich_manifest = RunManifest(
         run_id="run-42",
         run_name="eval",
+        split="final",
         config={"model": "model-uk", "backend": "ollama"},
         metrics={"objective_score": 0.75, "reliability": 1.0, "tokens_per_s": 20.0},
         retrieval={"n": 4, "k": 5, "recall_at_k": 1.0, "mrr": 0.8},
@@ -91,6 +92,7 @@ def test_manifest_written_before_mirror(tmp_path):
     assert metrics["telemetry.peak_vram_mb"] == 4000
     assert metrics["hardware.gpu_total_mb"] == 16000
     assert mlflow_module._mlflow_tags(rich_manifest)["llb.canonical_run_id"] == "run-42"
+    assert mlflow_module._mlflow_tags(rich_manifest)["llb.split"] == "final"
     assert mlflow_module._mlflow_run_name(rich_manifest) == "model-uk | ollama | run-42"
 
 

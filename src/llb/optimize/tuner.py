@@ -40,11 +40,56 @@ RETRIEVAL_MODES = ["flat", "parent_child"]
 CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in M2.4 -> ~3 chars/token
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
-Objective = Callable[[RunConfig], float]  # config -> quality on the tuning split
+# config -> quality on the tuning split, OR (quality, throughput) for the latency tie-break.
+Objective = Callable[[RunConfig], "float | tuple[float, float]"]
+TrialCallback = Callable[[dict[str, Any]], None]  # per-completed-trial hook (e.g. MLflow child)
 
 
-def suggest_overrides(trial: Any) -> dict[str, Any]:
-    """Sample one RAG config from an Optuna trial (embedding is pinned, never sampled)."""
+def with_isolation(
+    evaluate: Objective,
+    *,
+    vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: Callable[[], dict[int, int]] | None = None,
+    gpu_sampler: Callable[[], list[Any]] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> Objective:
+    """Wrap a trial `evaluate` so each Optuna trial runs through the SAME `isolate_cell` contract
+    as a sweep cell (M3.3): VRAM baseline -> trial -> PID-attributed reclaim gate (a leaked trial
+    aborts the study) -> capped thermal cooldown. This reuses the executor's cell isolation for
+    tuning, so a trial that leaks VRAM cannot bias later trials' fit/throughput."""
+    import functools
+
+    from llb.executor.isolation import isolate_cell
+
+    def run(config: RunConfig) -> "float | tuple[float, float]":
+        out, _outcome = isolate_cell(
+            functools.partial(evaluate, config),
+            backend=config.backend,
+            vram_reader=vram_reader,
+            pid_usage_reader=pid_usage_reader,
+            gpu_sampler=gpu_sampler,
+            sleep=sleep,
+        )
+        return out
+
+    return run
+
+
+# Substrings that mark a measured out-of-memory / capacity failure -> prune, do not crash.
+_OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memory", "kv cache")
+
+
+SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]
+
+
+def suggest_overrides(trial: Any, backend: str = "ollama") -> dict[str, Any]:
+    """Sample one config from an Optuna trial (embedding is pinned, never sampled).
+
+    RAG params are always sampled. BACKEND-AWARE serving knobs are sampled only when the
+    resolved backend actually exposes them: `gpu_memory_utilization` / `max_model_len` are vLLM
+    concepts, so sampling them for Ollama would tune dead parameters (llama.cpp knobs land with
+    that launcher).
+    """
     strategy = trial.suggest_categorical("strategy", STRATEGIES)
     chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
     overlap_frac = trial.suggest_float("overlap_frac", 0.0, 0.4)
@@ -62,6 +107,13 @@ def suggest_overrides(trial: Any) -> dict[str, Any]:
         ceiling = max(128, chunk_size - 64)
         child = trial.suggest_int("child_chunk_size", 128, 640, step=32)
         overrides["child_chunk_size"] = min(child, ceiling)
+    if backend == "vllm":
+        overrides["gpu_memory_utilization"] = trial.suggest_float(
+            "gpu_memory_utilization", 0.70, 0.90, step=0.05
+        )
+        overrides["max_model_len"] = trial.suggest_categorical(
+            "max_model_len", SERVING_MAX_MODEL_LEN
+        )
     return overrides
 
 
@@ -110,6 +162,11 @@ class TwoStageResult:
     final: EvalResult  # the stage-2 run on the full final split -- the leaderboard entry
 
 
+def _is_oom(exc: BaseException) -> bool:
+    blob = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in blob for marker in _OOM_MARKERS)
+
+
 def make_objective(
     base_config: RunConfig,
     evaluate: Objective,
@@ -117,12 +174,18 @@ def make_objective(
     model_spec: ModelSpec | None = None,
     vram_mib: int = 0,
     ram_mib: int = 0,
+    on_trial: TrialCallback | None = None,
 ) -> Callable[[Any], float]:
-    """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate."""
+    """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate.
+
+    The estimate-based context prune happens BEFORE a trial runs; a MEASURED OOM during the
+    run (the model actually ran out of memory) prunes the trial too, so a too-aggressive
+    serving config is dropped instead of crashing the whole study.
+    """
     import optuna
 
     def objective(trial: Any) -> float:
-        overrides = suggest_overrides(trial)
+        overrides = suggest_overrides(trial, backend=base_config.backend)
         try:
             config = base_config.with_overrides(**overrides)
         except ValueError as exc:  # e.g. overlap >= chunk_size after rounding
@@ -132,7 +195,21 @@ def make_objective(
                 f"retrieved context ~{estimate_prompt_tokens(config)} tok exceeds the model window"
             )
         trial.set_user_attr("overrides", overrides)
-        return evaluate(config)
+        try:
+            outcome = evaluate(config)
+        except optuna.TrialPruned:
+            raise
+        except Exception as exc:
+            if _is_oom(exc):
+                raise optuna.TrialPruned(f"measured OOM: {exc}") from None
+            raise
+        quality, throughput = outcome if isinstance(outcome, tuple) else (outcome, 0.0)
+        trial.set_user_attr("throughput", throughput)
+        if on_trial is not None:
+            on_trial(
+                {"number": trial.number, "quality": quality, "throughput": throughput, **overrides}
+            )
+        return quality
 
     return objective
 
@@ -148,15 +225,30 @@ def tune(
     model_spec: ModelSpec | None = None,
     vram_mib: int = 0,
     ram_mib: int = 0,
+    on_trial: TrialCallback | None = None,
+    isolate: bool = False,
+    vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: Callable[[], dict[int, int]] | None = None,
+    gpu_sampler: Callable[[], list[Any]] | None = None,
 ) -> TuneResult:
     """Stage 1: search the RAG/backend space on the tuning split; return the best config.
 
     `storage` defaults to a persistent SQLite study under ``$DATA_DIR/optuna/`` so a killed
-    run resumes (set `storage=None` only in tests for an in-memory study).
+    run resumes (set `storage=None` only in tests for an in-memory study). Ties on quality are
+    broken by higher measured throughput, so the faster of two equal-quality configs wins. With
+    `isolate=True`, each trial runs through `with_isolation` (the executor's per-cell VRAM/thermal
+    gate), so a trial that leaks VRAM aborts the study instead of biasing later trials.
     """
     import optuna
 
     evaluate = evaluate or _run_eval_quality
+    if isolate:
+        evaluate = with_isolation(
+            evaluate,
+            vram_reader=vram_reader,
+            pid_usage_reader=pid_usage_reader,
+            gpu_sampler=gpu_sampler,
+        )
     if storage is None and study_name:
         db_dir = base_config.data_dir / OPTUNA_METHOD
         db_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +264,12 @@ def tune(
     )
     study.optimize(
         make_objective(
-            base_config, evaluate, model_spec=model_spec, vram_mib=vram_mib, ram_mib=ram_mib
+            base_config,
+            evaluate,
+            model_spec=model_spec,
+            vram_mib=vram_mib,
+            ram_mib=ram_mib,
+            on_trial=on_trial,
         ),
         n_trials=n_trials,
     )
@@ -182,18 +279,22 @@ def tune(
     pruned = [t for t in study.trials if t.state == states.PRUNED]
     if not complete:
         raise RuntimeError(f"tuning '{study_name}': no trial completed (all pruned/failed)")
-    best_overrides = study.best_trial.user_attrs["overrides"]
+    # Best = highest quality, tie-broken by higher measured throughput (the latency tie-break).
+    best = max(complete, key=lambda t: (t.value or 0.0, t.user_attrs.get("throughput", 0.0)))
+    best_value = float(best.value) if best.value is not None else 0.0
+    best_overrides = best.user_attrs["overrides"]
     _LOG.info(
-        "[tune] %s best quality=%.4f over %d trials (%d pruned): %s",
+        "[tune] %s best quality=%.4f tput=%.1f over %d trials (%d pruned): %s",
         study_name,
-        study.best_value,
+        best_value,
+        best.user_attrs.get("throughput", 0.0),
         len(study.trials),
         len(pruned),
         best_overrides,
     )
     return TuneResult(
         best_config=base_config.with_overrides(**best_overrides),
-        best_value=float(study.best_value),
+        best_value=best_value,
         n_trials=len(study.trials),
         n_complete=len(complete),
         n_pruned=len(pruned),
@@ -214,6 +315,11 @@ def two_stage(
     model_spec: ModelSpec | None = None,
     vram_mib: int = 0,
     ram_mib: int = 0,
+    on_trial: TrialCallback | None = None,
+    isolate: bool = False,
+    vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: Callable[[], dict[int, int]] | None = None,
+    gpu_sampler: Callable[[], list[Any]] | None = None,
 ) -> TwoStageResult:
     """Stage 1 tunes on the tuning split; stage 2 scores the winner on the full final split."""
     result = tune(
@@ -226,6 +332,11 @@ def two_stage(
         model_spec=model_spec,
         vram_mib=vram_mib,
         ram_mib=ram_mib,
+        on_trial=on_trial,
+        isolate=isolate,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_usage_reader,
+        gpu_sampler=gpu_sampler,
     )
     runner = final_runner or _run_eval_final
     _LOG.info(
@@ -248,13 +359,16 @@ def _build_store(config: RunConfig) -> Any:
     )
 
 
-def _run_eval_quality(config: RunConfig) -> float:
-    """Default stage-1 objective: build the config's store, score the tuning split, take quality."""
+def _run_eval_quality(config: RunConfig) -> tuple[float, float]:
+    """Default stage-1 objective: build the config's store, score the tuning split, and return
+    (quality, throughput) so the tuner can tie-break equal-quality configs by speed."""
     from llb.executor.runner import run_eval
 
     result = run_eval(config, store=_build_store(config), split=TUNING_SPLIT, emit=False)
     rows = result["rows"]
-    return float(rows[0]["quality"]) if rows else 0.0
+    if not rows:
+        return 0.0, 0.0
+    return float(rows[0]["quality"]), float(rows[0].get("tokens_per_s", 0.0))
 
 
 def _run_eval_final(config: RunConfig) -> EvalResult:
@@ -262,3 +376,25 @@ def _run_eval_final(config: RunConfig) -> EvalResult:
     from llb.executor.runner import run_eval
 
     return run_eval(config, store=_build_store(config), split=FINAL_SPLIT, emit=True)
+
+
+def mlflow_trial_logger(study_name: str) -> TrialCallback:
+    """A best-effort `on_trial` hook that mirrors each Optuna trial as a NESTED MLflow run under
+    a `<study_name>` parent, so the stage-1 search is inspectable alongside the stage-2 entry.
+    Any MLflow error is swallowed (tuning never fails because tracking is unavailable)."""
+
+    def log(record: dict[str, Any]) -> None:
+        try:
+            import mlflow
+
+            if mlflow.active_run() is None:
+                mlflow.start_run(run_name=f"{study_name}-search")
+            with mlflow.start_run(run_name=f"trial-{record['number']}", nested=True):
+                mlflow.log_metric("quality", float(record.get("quality", 0.0)))
+                mlflow.log_metric("throughput", float(record.get("throughput", 0.0)))
+                params = {k: v for k, v in record.items() if k not in ("quality", "throughput")}
+                mlflow.log_params(params)
+        except Exception:  # pragma: no cover - tracking is best-effort
+            _LOG.debug("[tune] MLflow trial logging skipped for trial %s", record.get("number"))
+
+    return log

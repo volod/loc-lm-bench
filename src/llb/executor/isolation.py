@@ -18,20 +18,30 @@ side-effect (the per-cell subprocess, the NVML reader, the GPU sampler, sleep) i
 so the loop is unit-tested without a GPU or a real subprocess.
 """
 
+import functools
 import hashlib
 import json
 import logging
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypeVar, cast
 
 import yaml
 
 from llb.config import RunConfig
-from llb.contracts import CellResult, CoolDownReport, GpuSample, SweepReport
-from llb.executor.vram import DEFAULT_TOLERANCE_MB, assert_reclaimed
+from llb.contracts import CellResult, CoolDownReport, GpuSample, IsolationOutcome, SweepReport
+from llb.executor.vram import (
+    DEFAULT_TOLERANCE_MB,
+    VERDICT_LEAKED,
+    VERDICT_RECLAIMED,
+    VramNotReclaimed,
+    classify_residual,
+    pids_held_mb,
+    wait_for_reclaim,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -48,6 +58,122 @@ GATE_BACKENDS = ("vllm", "llamacpp")
 # Injectable seams.
 CellRunner = Callable[[RunConfig, str], str]  # (config, split) -> published run dir
 GpuSampler = Callable[[], list[GpuSample]]
+PidUsageReader = Callable[[], dict[int, int]]  # {pid: used VRAM MB} for leak attribution
+_T = TypeVar("_T")
+
+
+def isolate_cell(
+    work: Callable[[], _T],
+    *,
+    backend: str,
+    vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: PidUsageReader | None = None,
+    gpu_sampler: GpuSampler | None = None,
+    sleep: Callable[[float], None] | None = None,
+    vram_tolerance_mb: int = DEFAULT_TOLERANCE_MB,
+    cooldown_temp_c: int = DEFAULT_COOLDOWN_TEMP_C,
+    cooldown_max_s: float = DEFAULT_COOLDOWN_MAX_S,
+) -> tuple[_T, IsolationOutcome]:
+    """Run `work()` under the per-cell isolation contract, the single reusable primitive shared
+    by the sweep, the public screen, and every Optuna trial.
+
+    For VRAM-owning backends (`GATE_BACKENDS`): snapshot the VRAM baseline + the set of PIDs
+    already holding VRAM, run `work`, then wait for reclaim. If VRAM does NOT return to baseline,
+    ATTRIBUTE the residual via `classify_residual`: a PID that appeared during the cell and still
+    holds VRAM is a `leaked` cell (abort with `VramNotReclaimed`); a pre-existing process that
+    grew is a `baseline_shift` (tolerated). Without a `pid_usage_reader` the gate is conservative
+    (any over-tolerance residual aborts). Finally apply the capped thermal cooldown.
+    """
+    sampler = gpu_sampler or sample_gpu
+    gate = vram_reader is not None and backend in GATE_BACKENDS
+    pids_before: set[int] = set()
+    baseline: int | None = None
+    if gate and vram_reader is not None:
+        if pid_usage_reader is not None:
+            pids_before = set(pid_usage_reader())
+        baseline = vram_reader()
+
+    out = work()  # the cell itself (a subprocess run-eval, a screen, an in-process trial...)
+
+    residual: int | None = None
+    verdict: str | None = None
+    if gate and vram_reader is not None and baseline is not None:
+        report = wait_for_reclaim(
+            baseline, reader=vram_reader, tolerance_mb=vram_tolerance_mb, sleep=sleep
+        )
+        residual = report["residual_mb"]
+        if report["reclaimed"]:
+            verdict = VERDICT_RECLAIMED
+        elif pid_usage_reader is not None:
+            usage = pid_usage_reader()
+            leaked = sorted(set(usage) - pids_before)  # PIDs that appeared during the cell
+            held = pids_held_mb(usage, set(leaked))
+            verdict = classify_residual(residual, held, vram_tolerance_mb)
+            if verdict == VERDICT_LEAKED:
+                raise VramNotReclaimed(
+                    f"cell leaked ~{held} MB still held by launched PID(s) {leaked}; "
+                    "aborting to avoid biasing later cells."
+                )
+            _LOG.warning(
+                "[isolate] VRAM residual %d MB attributed to a baseline shift (unrelated "
+                "process), not the launched cell -- tolerated.",
+                residual,
+            )
+        else:  # no PID attribution available -> conservative: an over-tolerance residual aborts
+            verdict = VERDICT_LEAKED
+            raise VramNotReclaimed(
+                f"VRAM residual {residual} MB exceeds tolerance (no PID attribution); aborting."
+            )
+
+    cooldown = cool_down(cooldown_temp_c, cooldown_max_s, sampler=sampler, sleep=sleep)
+    outcome: IsolationOutcome = {
+        "vram_residual_mb": residual,
+        "vram_verdict": verdict,
+        "cooldown": cooldown,
+        "gpu": sampler(),
+    }
+    return out, outcome
+
+
+_MARKER_KEYS = frozenset(CellResult.__required_keys__)
+
+
+def _read_marker(path: Path) -> CellResult | None:
+    """Read a completed-cell marker; a truncated marker is treated as unfinished work."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("[sweep] ignore unreadable marker %s: %s", path, exc)
+        return None
+    if (
+        not isinstance(value, dict)
+        or value.get("status") != "done"
+        or not _MARKER_KEYS.issubset(value)
+    ):
+        _LOG.warning("[sweep] ignore invalid marker %s", path)
+        return None
+    return cast(CellResult, value)
+
+
+def _write_marker(path: Path, result: CellResult) -> None:
+    """Publish a completion marker atomically so interruption cannot create a false resume."""
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp:
+            json.dump(result, temp)
+            temp_path = Path(temp.name)
+        temp_path.replace(path)
+    except BaseException:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 def cell_key(config: RunConfig) -> str:
@@ -184,15 +310,20 @@ def run_sweep(
     cooldown_max_s: float = DEFAULT_COOLDOWN_MAX_S,
     cell_runner: CellRunner | None = None,
     vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: PidUsageReader | None = None,
     gpu_sampler: GpuSampler | None = None,
     sleep: Callable[[float], None] | None = None,
 ) -> SweepReport:
     """Run each (model, config) cell in isolation, gating VRAM + thermals between cells.
 
-    Aborts loudly on `VramNotReclaimed` (a leaked cell would bias every later one). Completed
-    cells write a marker under ``$DATA_DIR/sweep/<sweep_id>/cells/`` so `resume=True` skips them.
+    Each cell runs through `isolate_cell`, so an unreclaimed-VRAM leak (attributed to the
+    launched PID tree when `pid_usage_reader` is given) aborts the whole sweep loudly, while an
+    unrelated baseline shift is tolerated. Completed cells write a marker under
+    ``$DATA_DIR/sweep/<sweep_id>/cells/`` so `resume=True` skips them.
     """
-    base_dir = (data_dir or configs[0].data_dir) if configs else (data_dir or Path(".data"))
+    if not configs:
+        return _report(sweep_id, [])
+    base_dir = data_dir or configs[0].data_dir
     cells_dir = base_dir / SWEEP_METHOD / sweep_id / "cells"
     cells_dir.mkdir(parents=True, exist_ok=True)
     runner = cell_runner or _subprocess_cell_runner(base_dir, sweep_id, telemetry)
@@ -203,34 +334,60 @@ def run_sweep(
         key = cell_key(config)
         marker = cells_dir / f"{key}.json"
         if resume and marker.exists():
-            prior: CellResult = json.loads(marker.read_text(encoding="utf-8"))
-            prior["status"] = "skipped"
-            _LOG.info("[sweep] skip (done) %s %s/%s", key, config.backend, config.model)
-            results.append(prior)
-            continue
+            prior = _read_marker(marker)
+            if prior is not None:
+                prior["status"] = "skipped"
+                _LOG.info("[sweep] skip (done) %s %s/%s", key, config.backend, config.model)
+                results.append(prior)
+                continue
 
         _LOG.info("[sweep] cell %s %s/%s", key, config.backend, config.model)
-        gate = vram_reader is not None and config.backend in GATE_BACKENDS
-        baseline = vram_reader() if (gate and vram_reader is not None) else None
         try:
-            run_dir = runner(config, split)
-        except Exception as exc:
+            run_dir, iso = isolate_cell(
+                functools.partial(runner, config, split),
+                backend=config.backend,
+                vram_reader=vram_reader,
+                pid_usage_reader=pid_usage_reader,
+                gpu_sampler=sampler,
+                sleep=sleep,
+                vram_tolerance_mb=vram_tolerance_mb,
+                cooldown_temp_c=cooldown_temp_c,
+                cooldown_max_s=cooldown_max_s,
+            )
+        except VramNotReclaimed:
+            raise  # a leaked cell would bias every later one -> abort the whole sweep
+        except Exception as exc:  # the cell itself failed (e.g. run-eval subprocess) -> record it
             results.append(_cell(key, config, "failed", None, None, None, sampler(), str(exc)))
             continue
 
-        if gate and baseline is not None:
-            report = assert_reclaimed(  # raises VramNotReclaimed -> abort the whole sweep
-                baseline, reader=vram_reader, tolerance_mb=vram_tolerance_mb, sleep=sleep
-            )
-            residual = report["residual_mb"]
-        else:
-            residual = None
-        cd = cool_down(cooldown_temp_c, cooldown_max_s, sampler=sampler, sleep=sleep)
-        result = _cell(key, config, "done", run_dir, residual, cd, sampler(), "ok")
-        marker.write_text(json.dumps(result), encoding="utf-8")
+        # Persist the thermal flag into the canonical run BUNDLE (not only the sweep marker), so a
+        # capped/elevated cooldown is visible to anyone reading the run -- e.g. the board.
+        _persist_thermal(run_dir, iso["cooldown"], iso["gpu"], cooldown_temp_c)
+        result = _cell(
+            key, config, "done", run_dir, iso["vram_residual_mb"], iso["cooldown"], iso["gpu"], "ok"
+        )
+        _write_marker(marker, result)
         results.append(result)
 
     return _report(sweep_id, results)
+
+
+def _persist_thermal(
+    run_dir: str | None, cd: CoolDownReport, gpu: list[GpuSample], threshold_c: int
+) -> None:
+    if not run_dir:
+        return
+    path = Path(run_dir)
+    if not path.exists():
+        return
+    record = {
+        "cooldown_s": cd["waited_s"],
+        "cooldown_capped": cd["capped"],  # True -> the GPU stayed hot past the cap (elevated)
+        "final_temp_c": cd["final_temp_c"],
+        "threshold_c": threshold_c,
+        "gpu": gpu,
+    }
+    (path / "thermal.json").write_text(json.dumps(record), encoding="utf-8")
 
 
 def _cell(

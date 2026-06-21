@@ -3,6 +3,8 @@
 A gold item is a question with a reference answer and SOURCE-SPAN labels (doc id +
 character offsets into the source text). Spans are anchored to character offsets, not
 chunk ids, so they survive chunk_size tuning. Only `verified=True` items score models.
+Verification can be a local review decision or acceptance of a pinned, upstream post-edited
+development fixture; `provenance` and the fixture metadata preserve that distinction.
 
 Pydantic enforces the schema (types + allowed provenance/split values) at construction.
 """

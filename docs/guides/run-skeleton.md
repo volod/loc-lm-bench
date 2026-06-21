@@ -17,13 +17,12 @@ takes on that build. Module detail is in
 tags, and caches any vLLM (Hugging Face) weights once (`PREP_BACKEND=all` for both;
 oversized models are skipped or flagged). Or pull one tag by hand: `ollama pull llama3.2:3b`.
 
-You also need a gold set + its corpus on disk. The fastest seed is the public UA QA set:
-
-    make ingest-uk-squad                # -> .data/llb/goldset/goldset_uk.jsonl + corpus
+The repository already contains the default 250-item public development gold set and its
+matching corpus under `samples/goldsets/ua_squad_postedited_v1/`; no ingestion is required.
 
 ## Steps
 
-    make build-index                    # chunk + embed .data/llb/corpus -> FAISS store
+    make build-index                    # chunk + embed the committed fixture -> FAISS store
     make validate-retrieval RAG_K=10    # recall@10 of the pinned embedding (Premise 4 gate)
     make run-eval MODEL=llama3.2:3b LIMIT=20
 
@@ -44,5 +43,7 @@ later run cannot overwrite an earlier result.
   and pass `--config`. CLI flags override individual fields, and the full config is recorded
   in the manifest for reproducibility. Unknown keys and invalid ranges fail before work starts.
 - **Verified items only.** `run-eval` excludes draft gold items where `verified: false`.
+- **Public fixture is development-only.** It proves the implementation consistently but does
+  not replace evaluation on your private corpus. Use the from-scratch guide for that workflow.
 - **Determinism.** `temperature: 0.0` and a fixed `n_shot` keep scoring comparable across
   models.

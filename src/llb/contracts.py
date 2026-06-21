@@ -92,6 +92,7 @@ class CaseScoreRow(TypedDict):
     completion_tokens: int
     answer_preview: str
     semantic: NotRequired[float]
+    judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
 
 
 class LeaderboardRow(TypedDict):
@@ -114,7 +115,10 @@ class BoardRow(TypedDict):
     backend: str
     tier: str  # "private" (Tier-2) | "screen" (Tier-1); a board never mixes the two
     quality: float  # weighted-blend headline (objective + trusted judge)
-    quality_ci: NotRequired[tuple[float, float]]  # bootstrap CI on per-case objective
+    quality_ci: NotRequired[tuple[float, float]]  # bootstrap CI on the per-case headline blend
+    objective_ci: NotRequired[tuple[float, float]]  # per-case objective CI (when available)
+    semantic_ci: NotRequired[tuple[float, float]]  # per-case semantic CI (when that signal is on)
+    judge_ci: NotRequired[tuple[float, float]]  # per-case judge CI (when the judge is trusted/on)
     avg_rank: float  # mean of per-quality-signal ranks (lower is better)
     objective: float
     judge: float | None
@@ -165,6 +169,7 @@ class RunMetrics(TypedDict):
     objective_score: float
     reliability: float
     tokens_per_s: float
+    judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
 
 
 class RunEnvironment(TypedDict):
@@ -213,13 +218,32 @@ class ModelSpec(TypedDict):
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
     # Optional cross-backend serving options for the AvailabilityResolver (M3.2): a map of
-    # backend -> source (HF repo id / Ollama tag / GGUF repo id) for the same logical model.
-    sources: NotRequired[dict[str, str]]
+    # backend -> source string OR a per-source record carrying its own quant/arch overrides,
+    # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata).
+    sources: NotRequired[dict[str, "str | SourceRecord"]]
+
+
+class SourceRecord(TypedDict):
+    """A per-backend artifact for one logical model: its own source + metadata overrides.
+    Any field omitted falls back to the parent `ModelSpec` (same architecture, different
+    quant/packaging)."""
+
+    source: str
+    quant: NotRequired[str]
+    bpw: NotRequired[float]
+    params_b: NotRequired[float]
+    n_layers: NotRequired[int]
+    kv_dim: NotRequired[int]
+    max_context: NotRequired[int]
+    min_vram_gb: NotRequired[int | float]
+    gated: NotRequired[bool]
+    license_url: NotRequired[str]
 
 
 class BackendCandidate(TypedDict):
     backend: str
     source: str
+    quant: NotRequired[str | None]  # the quant the planner actually priced for this artifact
     available: bool
     verdict: str  # planner verdict at the host budget: gpu / offload / no / unknown
     runnable: bool  # available AND the backend can actually serve at that verdict
@@ -353,6 +377,13 @@ class CoolDownReport(TypedDict):
     waited_s: float
     final_temp_c: int | None
     capped: bool
+
+
+class IsolationOutcome(TypedDict):
+    vram_residual_mb: int | None
+    vram_verdict: str | None  # reclaimed | leaked | baseline_shift | None (gate skipped)
+    cooldown: CoolDownReport
+    gpu: list[GpuSample]
 
 
 class CellResult(TypedDict):

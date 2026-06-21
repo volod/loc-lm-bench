@@ -13,9 +13,26 @@ so CI never imports ragas.
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from llb.config import DEFAULT_EMBEDDING_MODEL
 from llb.contracts import JudgeInputRecord, JudgeScore
 
 DEFAULT_THRESHOLD = 0.6
+
+# Judge-model bias disclosure (OQ2). The v1 default judge is a LOCAL Gemma-4 model, chosen for
+# no data egress + reproducibility -- but it is NOT independent of the candidate pool: Gemma-4
+# (E4B/12B) are candidates, and MamayLM v2 + Lapa are Gemma-3 fine-tunes, so the judge shares
+# architecture / tokenizer / pretraining lineage with most of the pool and may self-prefer
+# Gemma-family answers over the non-Gemma ones (Qwen, Llama). It is accepted only because the
+# judge is GATED (enters ranking only at calibration rho >= threshold, else demoted), objective
+# correctness keeps weight in the blend, and the disclosure travels with the board. A non-Gemma
+# cross-check judge can quantify the family delta. The model id is NOT hardcoded -- it is set per
+# GPU class via config / --judge-model / the Makefile JUDGE_MODEL knob (see current.md).
+JUDGE_BIAS_NOTE = (
+    "judge is a local Gemma-4 model (not pool-independent): shares lineage with the "
+    "Gemma-4 / MamayLM / Lapa candidates -> possible self-preference for Gemma-family "
+    "answers; gated by calibration and objective score retains weight; cross-check with a "
+    "non-Gemma judge to quantify the family delta"
+)
 
 # (samples, judge_model) -> per-row {faithfulness, answer_relevancy}. The seam between our
 # pure mapping/extraction and the heavy Ragas `evaluate` call, so the scorer is unit-testable.
@@ -138,6 +155,7 @@ def _default_ragas_evaluate(
         dataset=dataset,
         metrics=[faithfulness, relevancy],
         llm=_judge_llm(judge_model),
+        embeddings=_judge_embeddings(),
     )
     return [dict(row) for row in result.to_pandas().to_dict(orient="records")]
 
@@ -153,8 +171,22 @@ def _localize_metric(metric: Any, instruction: str) -> None:
 
 
 def _judge_llm(judge_model: str) -> Any:
-    """Wrap a litellm-served judge model for Ragas."""
+    """Wrap a litellm-served judge model for Ragas (any litellm id -- frontier or a LOCAL
+    OpenAI-compatible endpoint, e.g. `hosted_vllm/...` + HOSTED_VLLM_API_BASE or `ollama_chat/...`)."""
     from langchain_community.chat_models import ChatLiteLLM
     from ragas.llms import LangchainLLMWrapper
 
     return LangchainLLMWrapper(ChatLiteLLM(model=judge_model, temperature=0.0))
+
+
+def _judge_embeddings(embedding_model: str = DEFAULT_EMBEDDING_MODEL) -> Any:
+    """Local embedding for Ragas answer-relevancy so a LOCAL judge stays fully on-box.
+
+    Ragas otherwise defaults answer-relevancy to OpenAI embeddings -- which both leaks the
+    corpus and needs an API key, defeating a local judge. Reuses the pinned RAG embedder
+    (Premise 4) so the judge embeds UA text with the same validated model as retrieval.
+    """
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+
+    return LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name=embedding_model))

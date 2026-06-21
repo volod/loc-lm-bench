@@ -10,6 +10,7 @@ sweep in later milestones reuses it unchanged.
 """
 
 import random
+from collections import Counter
 from dataclasses import dataclass, field
 
 from llb.contracts import BoardRow, LeaderboardRow
@@ -34,8 +35,27 @@ class ModelResult:
     semantic_score: float | None = None
     feasible: bool = True
     tier: str = TIER_PRIVATE
-    # Per-case objective scores -> bootstrap CI on the headline quality (optional).
+    # Per-case score series -> bootstrap CIs (optional; aligned by case order).
     case_objectives: list[float] = field(default_factory=list)
+    case_semantic: list[float] = field(default_factory=list)
+    case_judge: list[float] = field(default_factory=list)
+
+
+def per_case_quality(
+    result: ModelResult, judge_trusted: bool, weight_judge: float = DEFAULT_WEIGHT_JUDGE
+) -> list[float]:
+    """The per-case HEADLINE quality series used for the rank-uncertainty CI: the trusted-judge
+    blend per case when judge ratings are present, else the per-case objective scores."""
+    if (
+        judge_trusted
+        and result.case_judge
+        and len(result.case_judge) == len(result.case_objectives)
+    ):
+        return [
+            (1.0 - weight_judge) * obj + weight_judge * jud
+            for obj, jud in zip(result.case_objectives, result.case_judge)
+        ]
+    return list(result.case_objectives)
 
 
 def headline_quality(
@@ -219,15 +239,32 @@ def rank_board(
     objective CIs overlap are flagged `unresolved` (the flip is not statistically resolved).
     Refuses to mix Tier-1 screen and Tier-2 private metrics in one board.
     """
+    model_counts = Counter(result.model for result in results)
+    duplicates = sorted(model for model, count in model_counts.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"board requires one selected config per model; duplicates: {duplicates}")
     tiers = {r.tier for r in results}
     if len(tiers) > 1:
         raise ValueError(f"cannot rank across tiers in one board: {sorted(tiers)}")
 
     feasible = [r for r in results if r.feasible]
     infeasible = [r for r in results if not r.feasible]
+    # Reject an incompatible judge cohort: blending the judge for some models but not others
+    # would compare a blended score against a bare objective. All-or-none when the judge is on.
+    if judge_trusted:
+        have_judge = [r.judge_score is not None for r in feasible]
+        if any(have_judge) and not all(have_judge):
+            raise ValueError(
+                "incompatible judge cohort: judge trusted but some models lack a judge score"
+            )
     avg = average_ranks(feasible, judge_trusted) if feasible else {}
     front = pareto_front(feasible, judge_trusted, weight_judge) if feasible else set()
-    cis = {r.model: bootstrap_mean_ci(r.case_objectives) for r in feasible}
+    # The rank-uncertainty CI is over the per-case HEADLINE quality (blend when the judge is
+    # trusted, else objective), so the overlap test compares what the ranking actually uses.
+    cis = {
+        r.model: bootstrap_mean_ci(per_case_quality(r, judge_trusted, weight_judge))
+        for r in feasible
+    }
 
     ordered = sorted(
         feasible,
@@ -287,11 +324,39 @@ def _board_row(
     }
     if ci is not None:
         row["quality_ci"] = ci
+    # Per-signal CIs are recorded only when that signal's per-case series is present, so the
+    # board never invents a CI for a signal a model did not actually produce.
+    objective_ci = bootstrap_mean_ci(r.case_objectives)
+    if objective_ci is not None:
+        row["objective_ci"] = objective_ci
+    semantic_ci = bootstrap_mean_ci(r.case_semantic)
+    if semantic_ci is not None:
+        row["semantic_ci"] = semantic_ci
+    if judge_trusted:
+        judge_ci = bootstrap_mean_ci(r.case_judge)
+        if judge_ci is not None:
+            row["judge_ci"] = judge_ci
     return row
 
 
-def format_board(rows: list[BoardRow]) -> str:
-    """ASCII board: rank, avg-rank, quality (with CI + '~' for unresolved), Pareto star."""
+def ranking_policy_note(
+    results: list[ModelResult], judge_trusted: bool, weight_judge: float = DEFAULT_WEIGHT_JUDGE
+) -> str:
+    """A human-readable statement of the (policy-dependent) ranking method, so the weighted
+    blend is never silently applied: which signals feed the average rank, and the judge weight."""
+    signals = quality_signals([r for r in results if r.feasible], judge_trusted) if results else []
+    names = [s.replace("_score", "") for s in signals]
+    judge = (
+        f"judge trusted (blend weight {weight_judge:g})"
+        if judge_trusted
+        else "judge DEMOTED (objective ranks alone)"
+    )
+    return f"policy: average rank over [{', '.join(names)}]; {judge}"
+
+
+def format_board(rows: list[BoardRow], policy: str | None = None) -> str:
+    """ASCII board: rank, avg-rank, quality (with CI + '~' for unresolved), Pareto star.
+    Pass `policy` (see `ranking_policy_note`) to print the ranking method above the table."""
     headers = ["rank", "model", "backend", "avg_rank", "quality", "ci", "tok/s", "vram_mb", "P"]
 
     def cell(row: BoardRow, key: str) -> str:
@@ -314,7 +379,10 @@ def format_board(rows: list[BoardRow]) -> str:
     widths = [
         max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
     ]
-    out = [
+    out = []
+    if policy:
+        out.append(policy)
+    out += [
         "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)).rstrip(),
         "  ".join("-" * widths[i] for i in range(len(headers))),
     ]

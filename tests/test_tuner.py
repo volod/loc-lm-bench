@@ -14,6 +14,8 @@ from llb.optimize.tuner import (
     two_stage,
 )
 
+VLLM_BASE = {"backend": "vllm", "vllm_host": "http://localhost:8000", "vllm_port": 8000}
+
 SMALL_CTX_SPEC: ModelSpec = {
     "name": "m",
     "backend": "vllm",
@@ -37,7 +39,7 @@ class FakeTrial:
     def suggest_int(self, name, lo, hi, step=1):
         return self.vals[name]
 
-    def suggest_float(self, name, lo, hi):
+    def suggest_float(self, name, lo, hi, step=None):
         return self.vals[name]
 
     def set_user_attr(self, key, value):
@@ -154,3 +156,129 @@ def test_tune_persists_sqlite_study_for_resume(tmp_path):
     base = RunConfig(data_dir=tmp_path)
     tune(base, n_trials=3, study_name="resume_me", evaluate=lambda c: c.top_k / 12.0, seed=1)
     assert (tmp_path / "optuna" / "resume_me.db").exists()  # persistent -> resumable
+
+
+# --- M3.4 backend-aware Optuna: serving params, measured OOM prune, throughput tie-break ----
+
+BASE_OVERRIDES = {
+    "strategy": "markdown",
+    "chunk_size": 800,
+    "overlap_frac": 0.1,
+    "retrieval_mode": "flat",
+    "top_k": 6,
+    "gpu_memory_utilization": 0.8,
+    "max_model_len": 8192,
+}
+
+
+def test_suggest_overrides_samples_serving_params_only_for_vllm():
+    vllm = suggest_overrides(FakeTrial(BASE_OVERRIDES), backend="vllm")
+    assert vllm["gpu_memory_utilization"] == 0.8 and vllm["max_model_len"] == 8192
+    ollama = suggest_overrides(FakeTrial(BASE_OVERRIDES), backend="ollama")
+    assert "gpu_memory_utilization" not in ollama and "max_model_len" not in ollama
+
+
+def test_objective_prunes_measured_oom(tmp_path):
+    optuna = pytest.importorskip("optuna")
+    base = RunConfig(data_dir=tmp_path)
+
+    def evaluate(_config):
+        raise RuntimeError("CUDA error: out of memory")
+
+    objective = make_objective(base, evaluate)
+    trial = optuna.trial.FixedTrial(
+        {
+            "strategy": "recursive",
+            "chunk_size": 512,
+            "overlap_frac": 0.0,
+            "retrieval_mode": "flat",
+            "top_k": 4,
+        }
+    )
+    with pytest.raises(optuna.TrialPruned, match="measured OOM"):
+        objective(trial)
+
+
+def test_tune_breaks_quality_ties_by_throughput(tmp_path):
+    pytest.importorskip("optuna")
+    base = RunConfig(data_dir=tmp_path)
+    # constant quality -> every trial ties; throughput rises with top_k, so the fastest wins.
+    result = tune(
+        base,
+        n_trials=40,
+        study_name="tput",
+        evaluate=lambda c: (1.0, float(c.top_k)),
+        storage=None,
+        seed=1,
+    )
+    assert result.best_config.top_k >= 10  # tie broken toward higher throughput
+
+
+def test_tune_invokes_on_trial_callback(tmp_path):
+    pytest.importorskip("optuna")
+    base = RunConfig(data_dir=tmp_path)
+    seen = []
+    tune(
+        base,
+        n_trials=3,
+        study_name="cb",
+        evaluate=lambda c: (c.top_k / 12.0, 50.0),
+        storage=None,
+        on_trial=seen.append,
+    )
+    assert len(seen) == 3 and "quality" in seen[0] and "throughput" in seen[0]
+
+
+# --- M3.3 reuse: each trial runs through the executor's isolate_cell -----------------------
+
+_GPU = [{"index": 0, "temp_c": 40, "power_w": 100.0, "sm_clock_mhz": 2000, "mem_clock_mhz": 9000}]
+
+
+def test_with_isolation_runs_trial_under_gate(tmp_path):
+    from llb.optimize.tuner import with_isolation
+
+    base = RunConfig(data_dir=tmp_path, backend="vllm")
+    seen = []
+
+    def evaluate(config):
+        seen.append(config.backend)
+        return (1.0, 50.0)
+
+    wrapped = with_isolation(
+        evaluate, vram_reader=lambda: 1000, gpu_sampler=lambda: _GPU, sleep=lambda _s: None
+    )
+    assert wrapped(base) == (1.0, 50.0) and seen == ["vllm"]  # trial ran, gate reclaimed
+
+
+def test_with_isolation_aborts_trial_on_leak(tmp_path):
+    from llb.executor.vram import VramNotReclaimed
+    from llb.optimize.tuner import with_isolation
+
+    base = RunConfig(data_dir=tmp_path, backend="vllm")
+    reads = iter([1000] + [9000] * 100)  # residual 8000 stuck
+    usage = iter([{100: 100}, {100: 100, 200: 3000}])  # a leaked launched pid
+    wrapped = with_isolation(
+        lambda c: (1.0, 0.0),
+        vram_reader=lambda: next(reads),
+        pid_usage_reader=lambda: next(usage),
+        gpu_sampler=lambda: _GPU,
+        sleep=lambda _s: None,
+    )
+    with pytest.raises(VramNotReclaimed):
+        wrapped(base)
+
+
+def test_tune_isolate_runs_each_trial_isolated(tmp_path):
+    pytest.importorskip("optuna")
+    base = RunConfig(data_dir=tmp_path, backend="vllm")
+    result = tune(
+        base,
+        n_trials=3,
+        study_name="iso",
+        evaluate=lambda c: (c.top_k / 12.0, 50.0),
+        storage=None,
+        isolate=True,
+        vram_reader=lambda: 1000,  # constant -> each trial's gate reclaims
+        gpu_sampler=lambda: _GPU,
+    )
+    assert result.n_complete >= 1

@@ -98,7 +98,14 @@ models:
     n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
     max_context: 131072
-    notes: Ukrainian-specialized (Gemma-3-12B); on 16 GB prefer the GGUF via Ollama (below)
+    notes: Ukrainian-specialized (Gemma-3-12B); on 16 GB the resolver picks the q4 GGUF (offload)
+    # Per-source records (M3.2): the resolver prices each artifact with its OWN quant -- the bf16
+    # vLLM weights do not fit 16 GB, but the q4_k_m GGUF runs on Ollama via CPU offload.
+    sources:
+      ollama:
+        source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: mamaylm-v2-27b-fp8
     backend: vllm
@@ -120,7 +127,12 @@ models:
     n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
     max_context: 131072
-    notes: Ukrainian-specialized (Gemma-3-12B, lang-uk); on 16 GB prefer the GGUF via Ollama
+    notes: Ukrainian-specialized (Gemma-3-12B, lang-uk); resolver picks the q4 GGUF (offload)
+    sources:
+      ollama:
+        source: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   # --- To run the large Ukrainian models ON a 16 GB card, use their GGUF via Ollama, which
   #     offloads layers to the 128 GB system RAM (vLLM does not). Verify the quant tag first.

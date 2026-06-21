@@ -89,9 +89,10 @@ Example UI filters:
 5. Open selected runs in MLflow's Compare view to chart metrics side by side.
 6. Use canonical artifacts for case-level diagnosis.
 
-Do not make model-selection claims from `make demo-eval`: it scores only two synthetic final
-cases and exists as a smoke test. Benchmark decisions require the verified private final split,
-matching configurations, and enough cases for uncertainty estimates.
+Do not make private-corpus model-selection claims from `make demo-eval`: it scores up to 20
+cases from the committed post-edited public development fixture. Benchmark decisions require
+your verified private final split, matching configurations, and enough cases for uncertainty
+estimates.
 
 ## Inspect case-level artifacts
 
@@ -115,4 +116,3 @@ DuckDB, pandas, or notebook analysis when individual errors need inspection.
   authentication is not enabled; experiment and run APIs continue to return 200.
 - **No database exists:** run `make demo-eval` or another `run-eval` command first.
 - **UI is on another port:** use the exact URL printed by `make mlflow`.
-

@@ -51,6 +51,17 @@ def _load_models(manifest: Path) -> list[ModelSpec]:
         raise typer.Exit(code=2) from None
 
 
+def _best_effort_gpu_readers() -> tuple[Any, Any]:
+    """Best-effort (vram_reader, pid_usage_reader) for the VRAM-reclaim + leak-attribution gate.
+    Both are None when the [telemetry] extra / a GPU is absent (the gate then no-ops)."""
+    try:
+        from llb.executor.vram import nvml_process_reader, nvml_reader
+
+        return nvml_reader(), nvml_process_reader()
+    except (Exception, SystemExit):
+        return None, None
+
+
 @app.command("build-index")
 def build_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
@@ -306,13 +317,7 @@ def sweep_cmd(
         typer.echo("[sweep] no runnable models resolved; nothing to do")
         raise typer.Exit(code=1)
 
-    vram_reader = None
-    try:  # best-effort NVML reader; the gate runs only for VRAM-owning backends (vLLM)
-        from llb.executor.vram import nvml_reader
-
-        vram_reader = nvml_reader()
-    except (Exception, SystemExit):
-        vram_reader = None
+    vram_reader, pid_reader = _best_effort_gpu_readers()
 
     sid = sweep_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     typer.echo(f"[sweep] id={sid} cells={len(cells)} split={split} resume={resume}")
@@ -324,6 +329,7 @@ def sweep_cmd(
         telemetry=telemetry,
         resume=resume,
         vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
     )
     for cell in report["results"]:
         hot = next((g["temp_c"] for g in cell["gpu"] if g["temp_c"] is not None), None)
@@ -351,6 +357,9 @@ def tune_cmd(
         Path("samples/models_uk.yaml"), help="manifest to read the model's arch from (VRAM prune)"
     ),
     seed: int = typer.Option(13, help="Optuna sampler seed"),
+    isolate: bool = typer.Option(
+        False, help="run each trial under the executor VRAM-reclaim + thermal-cooldown gate"
+    ),
 ) -> None:
     """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
@@ -365,6 +374,7 @@ def tune_cmd(
             spec = m
             break
     gpus = detect_gpus()
+    vram_reader, pid_reader = _best_effort_gpu_readers() if isolate else (None, None)
     study_name = study or f"tune-{model.replace('/', '_').replace(':', '_')}"
     typer.echo(f"[tune] study={study_name} model={model} backend={backend} trials={trials}")
     out = two_stage(
@@ -375,6 +385,9 @@ def tune_cmd(
         vram_mib=max_vram_mb(gpus),
         ram_mib=detect_ram_mb(),
         seed=seed,
+        isolate=isolate,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
     )
     t = out.tune
     typer.echo(
@@ -440,41 +453,67 @@ def screen_public_cmd(
     tasks: Optional[str] = typer.Option(None, help="extra lm-eval task ids (comma-separated)"),
     limit: Optional[int] = typer.Option(None, help="cap examples per task (smoke runs)"),
     out_dir: Optional[Path] = typer.Option(None, help="output dir for lm-eval results JSON"),
+    max_model_len: int = typer.Option(
+        8192, help="vLLM context cap (the native window OOMs the KV cache on 16 GB)"
+    ),
+    isolated: bool = typer.Option(
+        False, help="run under the Tier-2 VRAM-reclaim + thermal-cooldown isolation contract"
+    ),
 ) -> None:
     """Tier-1 public screen via lm-eval-harness-uk (logprob vs generation track; never mixed)."""
-    from llb.screen.public import run_screen
+    import json
 
-    cfg = _load_config(None, model=model, backend=backend)
+    from llb.screen.public import ScreenReport, run_screen, run_screen_isolated
+
+    cfg = _load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     extra = [t.strip() for t in (tasks or "").split(",") if t.strip()]
     out = out_dir or (cfg.data_dir / "screen")
 
-    def go(url: str) -> None:
-        report = run_screen(model, backend, url, extra_tasks=extra, output_dir=out, limit=limit)
-        cov = f"{len(report['covered'])}/{len(report['requested_tasks'])}"
-        status = "complete" if report["complete"] else f"PARTIAL (missing {report['missing']})"
-        typer.echo(f"[screen-public] {model} track={report['track']} coverage={cov} -- {status}")
-        for r in report["results"]:
-            typer.echo(f"[screen-public]   {r['task']:<22} {r['metric']}={r['score']:.3f}")
+    def do_screen(url: str) -> ScreenReport:
+        return run_screen(model, backend, url, extra_tasks=extra, output_dir=out, limit=limit)
 
-    if base_url:
-        go(base_url)
-    elif backend == "ollama":
-        go(f"{cfg.ollama_host.rstrip('/')}/v1")
-    elif backend == "vllm":
-        from llb.backends.vllm import VllmLauncher
+    def screen_fn() -> ScreenReport:
+        """Launch the backend (or use the running endpoint), run the screen, kill the backend."""
+        if base_url:
+            return do_screen(base_url)
+        if backend == "ollama":
+            return do_screen(f"{cfg.ollama_host.rstrip('/')}/v1")
+        if backend == "vllm":
+            from llb.backends.vllm import VllmLauncher
 
-        launcher = VllmLauncher(
-            model,
-            host=cfg.vllm_host,
-            port=cfg.vllm_port,
-            gpu_memory_utilization=cfg.gpu_memory_utilization,
-            max_model_len=cfg.max_model_len,
-        )
-        with launcher:
-            go(f"{cfg.vllm_host.rstrip('/')}/v1")
-    else:
+            launcher = VllmLauncher(
+                model,
+                host=cfg.vllm_host,
+                port=cfg.vllm_port,
+                gpu_memory_utilization=cfg.gpu_memory_utilization,
+                max_model_len=cfg.max_model_len,
+            )
+            with launcher:
+                return do_screen(f"{cfg.vllm_host.rstrip('/')}/v1")
         typer.echo(f"[error] backend '{backend}' not supported for the screen", err=True)
         raise typer.Exit(code=2)
+
+    if isolated:
+        vram_reader, pid_reader = _best_effort_gpu_readers()
+        report, iso = run_screen_isolated(
+            backend, screen_fn, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        )
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{model.replace('/', '_').replace(':', '_')}.isolation.json").write_text(
+            json.dumps(iso), encoding="utf-8"
+        )
+        typer.echo(
+            f"[screen-public] isolation: vram_residual={iso['vram_residual_mb']} "
+            f"cooldown={iso['cooldown']['waited_s']}s capped={iso['cooldown']['capped']}"
+        )
+    else:
+        report = screen_fn()
+
+    cov = f"{len(report['covered'])}/{len(report['requested_tasks'])}"
+    status = "complete" if report["complete"] else f"PARTIAL (missing {report['missing']})"
+    typer.echo(f"[screen-public] {model} track={report['track']} coverage={cov} -- {status}")
+    for r in report["results"]:
+        typer.echo(f"[screen-public]   {r['task']:<22} {r['metric']}={r['score']:.3f}")
 
 
 @app.command("board")
@@ -510,6 +549,68 @@ def board_cmd(
     raise typer.Exit(subprocess.call(cmd))
 
 
+@app.command("pipeline")
+def pipeline_cmd(
+    manifest: Path = typer.Option(
+        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+    ),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL for the Tier-2 tuning"),
+    top_n: int = typer.Option(2, min=1, help="finalists to keep per screen track"),
+    trials: int = typer.Option(20, min=1, help="stage-1 Optuna trials per finalist"),
+    offline: bool = typer.Option(False, help="resolver: assume declared sources exist"),
+) -> None:
+    """Tier handoff: screen reports -> per-track finalists -> tuned private eval -> final board.
+
+    Run `screen-public` per candidate first to produce the Tier-1 reports; this command then
+    selects finalists, runs the two-stage tune for each, and prints the final-only board.
+    """
+    from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
+    from llb.backends.resolver import ResolverProbes, resolve_all
+    from llb.board.data import best_per_model, load_run_records
+    from llb.optimize.tuner import two_stage
+    from llb.scoring.aggregate import format_board, rank_board, ranking_policy_note
+    from llb.screen.public import select_finalists
+
+    from llb.board.data import load_screen_reports
+
+    cfg = _load_config(None, goldset_path=goldset)
+    reports = load_screen_reports(cfg.data_dir / "screen")
+    if not reports:
+        typer.echo(
+            "[pipeline] no screen reports found; run `screen-public` per candidate first", err=True
+        )
+        raise typer.Exit(code=2)
+    finalists = set(select_finalists(reports, top_n))
+    typer.echo(f"[pipeline] finalists (top {top_n}/track): {sorted(finalists)}")
+
+    gpus = detect_gpus()
+    probes = (
+        ResolverProbes(hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True)
+        if offline
+        else ResolverProbes()
+    )
+    resolved = {
+        r["name"]: r
+        for r in resolve_all(
+            _load_models(manifest), max_vram_mb(gpus), detect_ram_mb(), probes=probes
+        )
+    }
+    for name in sorted(finalists):
+        info = resolved.get(name)
+        if not info or not info["chosen_backend"]:
+            typer.echo(f"[pipeline] skip {name}: not resolvable on this host")
+            continue
+        base = cfg.with_overrides(model=info["chosen_source"], backend=info["chosen_backend"])
+        typer.echo(f"[pipeline] tuning finalist {name} ({info['chosen_backend']})")
+        two_stage(base, n_trials=trials, study_name=f"pipeline-{name.replace('/', '_')}")
+
+    records = best_per_model(load_run_records(cfg.data_dir / "run-eval"))
+    if records:
+        results = [r.result for r in records]
+        typer.echo("[pipeline] final-only board:")
+        typer.echo(format_board(rank_board(results), policy=ranking_policy_note(results, False)))
+
+
 @app.command("mlflow-ui")
 def mlflow_ui_cmd(
     host: str = typer.Option("127.0.0.1", help="network interface for the local MLflow UI"),
@@ -533,6 +634,9 @@ def run_eval_cmd(
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
         None, help="calibration Spearman rho; judge stays demoted below the threshold"
+    ),
+    judge_model: Optional[str] = typer.Option(
+        None, help="judge model id (litellm); enables the Ragas judge (gated by --judge-rho)"
     ),
     score_semantic: Optional[bool] = typer.Option(
         None,
@@ -558,6 +662,7 @@ def run_eval_cmd(
         model=model,
         backend=backend,
         goldset_path=goldset,
+        judge_model=judge_model,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )

@@ -103,6 +103,8 @@ def _mlflow_tags(manifest: RunManifest) -> dict[str, str]:
         "llb.run_name": manifest.run_name,
         "llb.created_at": manifest.created_at,
     }
+    if manifest.split is not None:
+        tags["llb.split"] = manifest.split
     for key in ("model", "backend"):
         value = manifest.config.get(key)
         if isinstance(value, str):

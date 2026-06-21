@@ -196,7 +196,9 @@ curation, not coding. The door stays open to the full Approach B without a teard
 - `src/llb/` package Typer CLI: `prepare-corpus`, `prepare-goldset`,
   `prepare-synthetic-corpus`, `build-index`, `validate-embeddings`, `calibrate-judge`,
   `screen-public`, `optimize-config`, `run-eval`, `show-board`.
-- Corpus + gold set under `$DATA_DIR/llb/` per AGENTS.md. Vector index = FAISS.
+- Private/runtime corpus + gold set under `$DATA_DIR/llb/` per AGENTS.md. A pinned,
+  post-edited public fixture may live under `samples/goldsets/` for deterministic development
+  and smoke evaluation only. Vector index = FAISS.
 - Pipeline dependency order: embeddings (validated, pinned) -> index -> generate
   answers -> score. The Assignment's judge calibration runs before any of this using
   throwaway manual retrieval, so it genuinely precedes the harness.
@@ -488,7 +490,9 @@ Folded-in refinements (Codex, no decision needed):
 - Walking-skeleton milestone 2 adds one REAL backend + telemetry path (not only CUDA-free
   plumbing) so CUDA / HF-loading / tokenizer assumptions are validated before the full sweep.
 - Prep-util provenance: every gold/corpus item records provenance (frontier-drafted /
-  human-authored / human-verified); only human-verified items score models.
+  human-authored / human-verified). Private model-selection items require human verification.
+  A pinned upstream post-edited public fixture may set `verified=true` for implementation
+  testing, but its results remain a public transfer baseline and never replace the private rank.
 
 ## Prior-Art Integration (lang-uk / INSAIT / MamayLM, 2026-06-19)
 
@@ -524,7 +528,8 @@ Decisions ruled on:
   the weighted-blend view is labeled policy-dependent, not an objective leaderboard.
 - DATASET REUSE. SQuAD-uk + Belebele-uk (public, span-labeled UA in-context QA, which
   lang-uk treats as a RAG proxy) seed and smoke-test the RAG loop in Milestone 1 before
-  the hand-built corpus gold set exists, and serve as a transfer baseline.
+  the hand-built corpus gold set exists, and serve as a transfer baseline. The development
+  fixture is committed and pinned; fresh downloads remain unverified runtime material.
 - CANDIDATE MATRIX adds Ukrainian-specialized models: MamayLM v2 12B + 27B, Lapa LLM,
   Gemma 3 (resolves part of Open Question 3).
 

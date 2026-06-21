@@ -166,10 +166,14 @@ def _emit_target(
         "retrieval_mode": str(eval_defaults.get("retrieval_mode", "flat")),
         "measure_telemetry": str(eval_defaults.get("measure_telemetry", True)).lower(),
         "goldset_path": str(
-            eval_defaults.get("goldset_path", ".data/llb/goldset/sample_rag_items.jsonl")
+            eval_defaults.get(
+                "goldset_path", "samples/goldsets/ua_squad_postedited_v1/goldset.jsonl"
+            )
         ),
     }
-    config_path.write_text(_render(_load_template("run_eval.yaml.tmpl"), yaml_ctx), encoding="utf-8")
+    config_path.write_text(
+        _render(_load_template("run_eval.yaml.tmpl"), yaml_ctx), encoding="utf-8"
+    )
 
     serve_name = f"serve_{target_id.replace('-', '_')}.sh"
     if backend == "vllm":

@@ -23,11 +23,11 @@ Every probe is injectable, so the decision logic is pure and unit-testable witho
 import json
 import urllib.error
 import urllib.request
-from typing import Callable
+from typing import Any, Callable
 
 from llb.backends import planner
 from llb.config import DEFAULT_OLLAMA_HOST
-from llb.contracts import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel
+from llb.contracts import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel, SourceRecord
 
 # Fixed backend preference order (highest first). Sources for absent backends are skipped.
 BACKEND_PRIORITY = ("vllm", "ollama", "llamacpp")
@@ -73,14 +73,30 @@ def backend_fits(backend: str, row: ModelPlanRow, min_ctx: int = MIN_SERVING_CTX
     return False
 
 
-def candidate_sources(spec: ModelSpec) -> list[tuple[str, str]]:
-    """The (backend, source) options for a spec, ordered by `BACKEND_PRIORITY`.
+def normalize_source(value: "str | SourceRecord") -> dict[str, Any]:
+    """A source entry is either a bare source string or a record with metadata overrides."""
+    if isinstance(value, str):
+        return {"source": value}
+    return {k: v for k, v in dict(value).items() if v is not None}
 
-    Uses the explicit `sources` map when present, else the single declared backend+source.
+
+def candidate_sources(spec: ModelSpec) -> list[tuple[str, dict[str, Any]]]:
+    """The (backend, source-record) options for a spec, ordered by `BACKEND_PRIORITY`.
+
+    Each record carries at least `source` plus any per-artifact overrides (quant, arch, gating)
+    so the planner prices the real artifact. The declared backend folds in the spec-level source
+    (its quant/arch already live on the spec).
     """
-    declared: dict[str, str] = dict(spec.get("sources") or {})
-    declared.setdefault(spec["backend"], spec["source"])
+    declared: dict[str, Any] = {
+        b: normalize_source(v) for b, v in (spec.get("sources") or {}).items()
+    }
+    declared.setdefault(spec["backend"], {"source": spec["source"]})
     return [(b, declared[b]) for b in BACKEND_PRIORITY if b in declared]
+
+
+def _priced_spec(spec: ModelSpec, backend: str, overrides: dict[str, Any]) -> ModelSpec:
+    """The spec the planner should price for one candidate: parent fields + per-source overrides."""
+    return {**spec, "backend": backend, **overrides}  # type: ignore[typeddict-item]
 
 
 def _probe_available(backend: str, source: str, probes: "ResolverProbes") -> bool:
@@ -123,10 +139,11 @@ def resolve(
     candidates: list[BackendCandidate] = []
     chosen: BackendCandidate | None = None
 
-    for backend, source in candidate_sources(spec):
+    for backend, overrides in candidate_sources(spec):
+        source = overrides["source"]
         available = _probe_available(backend, source, probes)
         row = planner.plan_model(
-            {**spec, "backend": backend, "source": source},
+            _priced_spec(spec, backend, overrides),
             vram_mib,
             ram_mib,
             target_ctx=target_ctx,
@@ -138,6 +155,7 @@ def resolve(
         candidate: BackendCandidate = {
             "backend": backend,
             "source": source,
+            "quant": row["quant"],
             "available": available,
             "verdict": verdict,
             "runnable": runnable,

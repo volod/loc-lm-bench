@@ -30,7 +30,7 @@ child_chunk_size: 400   # used only in parent_child mode
 judge_model: null
 judge_threshold: 0.6
 
-# Paths default to .data/llb/...; uncomment to point elsewhere.
+# Stable committed public development fixture. Replace both paths for private evaluation.
 # data_dir: .data
-# corpus_root: .data/llb/corpus
-# goldset_path: .data/llb/goldset/goldset_uk.jsonl
+corpus_root: samples/goldsets/ua_squad_postedited_v1/corpus
+goldset_path: samples/goldsets/ua_squad_postedited_v1/goldset.jsonl

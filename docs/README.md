@@ -11,12 +11,14 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Full design spec](design/spec.md) — the complete source-of-truth document.
 
 ## Implementation
-- [Current state](implementation/current.md) — what's built today (Milestones 0-1) and how to run it.
-- [Forward plan](implementation/plan.md) — Milestones 2-3 + residual M1 work.
+- [Current state](implementation/current.md) -- delivered Milestones 0-2, M3 core, and commands.
+- [Forward plan](implementation/plan.md) -- residual M3 acceptance and Milestone 4.
 
 ## Guides
 - [Dev setup](guides/dev-setup.md) — uv, venv, extras, make targets.
 - [Data prep](guides/data-prep.md) — gold set, ingestion, chunking, calibration commands.
+- [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
+  imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) — Milestone 1: build-index -> run-eval.
 - [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
   compare metrics, and inspect canonical case artifacts.

@@ -24,18 +24,22 @@ from llb.contracts import (
     BackendMetadata,
     CaseScoreRow,
     EvalResult,
+    JudgeInputRecord,
+    JudgeScore,
     LeaderboardRow,
     RunMetrics,
     TelemetryReport,
 )
 from llb.eval import graph as eval_graph
-from llb.executor.cases import execute_cases, spans_as_dicts
+from llb.executor.cases import CaseBatch, execute_cases, spans_as_dicts
 from llb.executor.reporting import emit_summary
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.rag import retrieval
 from llb.scoring.aggregate import ModelResult, format_table, rank_results
-from llb.scoring.judge import judge_is_trusted
+from llb.scoring.judge import judge_is_trusted, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
+
+JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
 
 RagState = eval_graph.RagState
 _RUN_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
@@ -65,9 +69,9 @@ def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[G
     if not config.goldset_path.exists():
         raise SystemExit(
             f"gold set not found: {config.goldset_path}\n"
-            "  seed the sample set with `make gen-rag-items` (then pass "
-            "--goldset .data/llb/goldset/sample_rag_items.jsonl),\n"
-            "  or build the real set with `make ingest-uk-squad` (needs HF_TOKEN)."
+            "  use the committed fixture with --goldset "
+            "samples/goldsets/ua_squad_postedited_v1/goldset.jsonl,\n"
+            "  or create unverified development material with `make ingest-uk-squad`."
         )
     items = [
         item for item in load_goldset(config.goldset_path) if item.split == split and item.verified
@@ -142,11 +146,73 @@ def _default_runner_fn(
     return run
 
 
+def _judge_records(batch: CaseBatch) -> list[JudgeInputRecord]:
+    """The (question, answer, retrieved-contexts) record per case the judge scores."""
+    return [
+        {
+            "question": item.question,
+            "answer": answer,
+            "contexts": [str(chunk.get("text", "")) for chunk in retrieved],
+        }
+        for (item, answer), (retrieved, _spans) in zip(batch.answers, batch.retrieval_pairs)
+    ]
+
+
+def _judge_value(score: JudgeScore) -> float:
+    """One scalar judge rating per case: the mean of faithfulness + answer-relevancy."""
+    return (score["faithfulness"] + score["answer_relevancy"]) / 2.0
+
+
+def _judge_cases(
+    config: RunConfig,
+    batch: CaseBatch,
+    judge_rho: float | None,
+    scorer: JudgeScorer | None,
+) -> float | None:
+    """Score answers with the GATED judge (Premise 2) and attach per-case judge scores.
+
+    Returns the mean per-case judge score ONLY when the judge is configured AND trusted
+    (calibration rho >= threshold); otherwise the judge stays a demoted diagnostic and objective
+    correctness ranks alone. The per-case judge value is the mean of faithfulness + relevancy.
+    """
+    if config.judge_model is None:
+        return None
+    outcome = run_judge(
+        _judge_records(batch), config.judge_model, judge_rho, config.judge_threshold, scorer=scorer
+    )
+    if not outcome.trusted or not outcome.scores:
+        _LOG.info("[run-eval] judge demoted (%s); objective ranks alone", outcome.reason)
+        return None
+    per_case = [_judge_value(s) for s in outcome.scores]
+    for row, value in zip(batch.rows, per_case):
+        row["judge_score"] = round(value, 4)
+    return sum(per_case) / len(per_case) if per_case else None
+
+
+def _judge_ratings(
+    config: RunConfig, batch: CaseBatch, scorer: JudgeScorer | None
+) -> list[float] | None:
+    """Run the judge UNGATED and return one rating per case (M3.8 calibration scaffolding).
+
+    Calibration measures whether the judge AGREES with humans, so the judge runs regardless of
+    its (not-yet-known) trust -- the gate is irrelevant here. Returns None when no judge is
+    configured; raises if the judge backend is unavailable (so the worksheet path can warn).
+    """
+    if config.judge_model is None:
+        return None
+    from llb.scoring.judge import ragas_scorer
+
+    score_fn = scorer or ragas_scorer
+    scores = score_fn(_judge_records(batch), config.judge_model)
+    return [_judge_value(s) for s in scores]
+
+
 def _aggregate(
     config: RunConfig,
     case_rows: list[CaseScoreRow],
     judge_rho: float | None,
     telemetry: Mapping[str, object],
+    judge_score: float | None = None,
 ) -> tuple[list[LeaderboardRow], RunMetrics]:
     n = len(case_rows)
     objective = sum(r["objective_score"] for r in case_rows) / n if n else 0.0
@@ -169,16 +235,19 @@ def _aggregate(
         reliability=reliability,
         tokens_per_s=tokens_per_s,
         peak_vram_mb=float(peak_vram) if isinstance(peak_vram, int | float) else None,
-        judge_score=None,
+        judge_score=judge_score,
         feasible=True,
     )
-    trusted = judge_is_trusted(judge_rho, config.judge_threshold)
+    # The judge is trusted only when calibrated AND it actually produced a score this run.
+    trusted = judge_is_trusted(judge_rho, config.judge_threshold) and judge_score is not None
     rows = rank_results([result], judge_trusted=trusted)
     metrics: RunMetrics = {
         "objective_score": objective,
         "reliability": reliability,
         "tokens_per_s": tokens_per_s,
     }
+    if judge_score is not None:
+        metrics["judge_score"] = round(judge_score, 4)
     return rows, metrics
 
 
@@ -211,6 +280,7 @@ def run_eval(
     runner_fn: Callable[[GoldItem], RagState] | None = None,
     mirror: Callable[[RunManifest, Path], None] | None = None,
     judge_rho: float | None = None,
+    judge_scorer: JudgeScorer | None = None,
     limit: int | None = None,
     split: str = "final",
     worksheet: Path | str | None = None,
@@ -257,12 +327,14 @@ def run_eval(
         launcher.telemetry() if hasattr(launcher, "telemetry") else {}
     )
     effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
-    rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry)
+    judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
+    rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
     manifest = RunManifest(
         run_id=run_id,
         run_name=config.run_name,
+        split=split,
         config=config.fingerprint(),
         metrics=metrics,
         retrieval=retrieval_metrics,
@@ -286,8 +358,22 @@ def run_eval(
     if worksheet is not None:
         from llb.judge.calibration import write_filled_worksheet
 
+        # For a calibration worksheet, also run the judge UNGATED so the judge_rating column is
+        # pre-filled and the human only adds human_rating; rho(human, judge) follows.
+        judge_ratings: list[float] | None = None
+        if config.judge_model is not None:
+            try:
+                judge_ratings = _judge_ratings(config, batch, judge_scorer)
+            except (Exception, SystemExit) as exc:
+                _LOG.warning(
+                    "[run-eval] judge unavailable for the worksheet (%s); judge_rating left blank "
+                    "-- pick the judge (OQ2) and install its backend to calibrate.",
+                    exc,
+                )
         worksheet_path = Path(worksheet)
-        worksheet_rows = write_filled_worksheet(batch.answers, worksheet_path)
+        worksheet_rows = write_filled_worksheet(
+            batch.answers, worksheet_path, judge_ratings=judge_ratings
+        )
         paths["worksheet"] = str(worksheet)
 
     table = format_table(rows)

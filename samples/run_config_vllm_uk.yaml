@@ -27,9 +27,22 @@ chunk_overlap: 120
 top_k: 5
 retrieval_mode: flat
 
+# Gated LLM judge (Premise 2 / OQ2). A LOCAL Gemma-4 judge: no corpus egress + reproducible,
+# but NOT independent of the candidate pool -- it shares lineage with the Gemma-4 / MamayLM /
+# Lapa candidates and may self-prefer Gemma-family answers (bias documented in current.md). It
+# only enters ranking once calibration rho >= judge_threshold; below it, objective score ranks
+# alone. The id is a litellm id; pick by GPU class (this box is 16 GB) and serve the judge on an
+# OpenAI-compatible endpoint (HOSTED_VLLM_API_BASE for vLLM / OLLAMA_API_BASE for Ollama):
+#   12 GB: ollama_chat/gemma-4-e4b-it          (GGUF/CPU offload; the 12B won't fit)
+#   32 GB: hosted_vllm/google/gemma-4-12B-it   (bf16, higher fidelity)
+# On 16 GB the 12B judge cannot co-reside with a vLLM candidate -- judge a separate pass over the
+# persisted worksheet answers, or serve the judge via Ollama GGUF offload.
+judge_model: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
+judge_threshold: 0.6
+
 # Steady-state throughput + peak-VRAM telemetry (also enable with `run-eval --telemetry`).
 measure_telemetry: true
 
-# Paths default to .data/llb/...; the default gold set (goldset_uk.jsonl) ships verified=false
-# pending review, so point at the verified sample set (seeded by `make gen-rag-items`) to score:
-goldset_path: .data/llb/goldset/sample_rag_items.jsonl
+# Stable committed public development fixture. Replace both paths for private evaluation.
+corpus_root: samples/goldsets/ua_squad_postedited_v1/corpus
+goldset_path: samples/goldsets/ua_squad_postedited_v1/goldset.jsonl

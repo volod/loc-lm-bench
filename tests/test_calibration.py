@@ -52,3 +52,17 @@ def test_write_filled_worksheet_prefills_model_answer(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "Київ - столиця" in text  # model_answer pre-filled
     assert text.strip().endswith(",,")  # human_rating + judge_rating still blank
+
+
+def test_write_filled_worksheet_prefills_judge_rating(tmp_path):
+    import csv
+
+    answers = [
+        (_Item("a", "calibration", "q1", "r1"), "ans1"),
+        (_Item("b", "calibration", "q2", "r2"), "ans2"),
+    ]
+    out = tmp_path / "ws.csv"
+    assert write_filled_worksheet(answers, out, judge_ratings=[0.81234, 0.4]) == 2
+    rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+    assert [r["judge_rating"] for r in rows] == ["0.8123", "0.4"]  # judge pre-filled (rounded)
+    assert [r["human_rating"] for r in rows] == ["", ""]  # human column still blank

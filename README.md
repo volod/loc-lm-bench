@@ -5,19 +5,20 @@ hardware. Public leaderboards measure general capability on someone else's data 
 VRAM; loc-lm-bench re-ranks a handful of candidate models on your own corpus, on a single
 desktop GPU, so the choice is reproducible and defensible.
 
-> **Status:** early but runnable. Milestone 0 (data prep: gold-item schema, validator,
-> public-dataset ingestion, chunking) and Milestone 1 (the eval skeleton: retrieve ->
-> generate -> score -> ranked row + manifest, on one prebuilt Ollama model — runs on the
-> GPU, nothing to compile) are **done and tested** (164 tests). Milestone 2 (a vLLM backend +
-> telemetry hook + MAX_JOBS-capped build) is **code-complete** (the real GPU run is
-> documented); Milestone 3 (two-tier screen + leaderboard) is planned — see the docs.
+> **Status:** early but runnable. Milestones 0-2 are complete: data prep, the Ollama walking
+> skeleton, and a real vLLM + telemetry path. Milestone 3's core components are implemented:
+> public-screen adapter, resolver, isolated sweep, two-stage RAG tuning, prep utilities, and
+> average-rank/Pareto/CI board. Full M3 acceptance still needs stage orchestration, isolated
+> backend-aware tuning, live external-path validation, and judge calibration. A committed
+> 250-item post-edited public fixture now provides stable development data. The suite has 291
+> tests; see the implementation docs for exact boundaries.
 
 ## Main features
 
 - **Corpus-grounded:** scores models on your documents and a span-labeled Ukrainian gold set,
   not transferred public scores.
-- **Reuse public UA data:** one command pulls a real Ukrainian QA set (e.g. `HPLT/ua-squad`)
-  into the canonical gold-item schema.
+- **Stable public development data:** a pinned 250-item post-edited UA-SQuAD fixture and its
+  corpus are committed under `samples/goldsets/`; demos and tests never regenerate it.
 - **Source-span gold labels** (document char offsets, not chunk ids) — they survive
   `chunk_size` changes during tuning.
 - **Chunking strategies:** `fixed` / `sentence` / `recursive` / `markdown` (structure-aware)
@@ -25,12 +26,14 @@ desktop GPU, so the choice is reproducible and defensible.
   langchain-text-splitters where it preserves source spans.
 - **Backend-agnostic:** one OpenAI-compatible interface; a prebuilt Ollama backend and a
   vLLM launcher (HF weights, MAX_JOBS-capped build) + a telemetry hook (tokens/sec, peak
-  VRAM, served context) ship today; llama.cpp + a per-model resolver are planned.
+  VRAM, served context) ship today; the per-model availability resolver ships, while the
+  llama.cpp launcher remains planned.
 - **Hardware-aware:** `list-models` reports which candidates can run on your GPU + RAM,
   KV-cache-aware, with a GPU/CPU layer split (it optimizes ability to run, not speed).
 - **Defensible scoring:** objective reference-answer correctness ranks models today, with
   an LLM judge gated by Ukrainian calibration (Spearman rho) that stays demoted until it
-  earns trust. Average-rank + Pareto leaderboard with confidence intervals is planned.
+  earns trust. The final-only board reports average rank, a Pareto front, and objective-score
+  bootstrap confidence intervals.
 - **Reproducible + lightweight:** canonical run manifests, deterministic disjoint splits, no
   heavy services.
 
@@ -40,21 +43,22 @@ Requires [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11 for you) and
 Ollama (`ollama serve`). One command runs the whole thing end to end -- and is **idempotent**,
 so it is safe to re-run:
 
-    make demo-eval     # venv -> gold set -> index -> prep-models -> run-eval + telemetry
+    make demo-eval     # venv -> committed gold set -> index -> prep-models -> eval + telemetry
     make mlflow        # review experiment runs at http://127.0.0.1:5000
 
-That builds the `.venv` (all deps), creates the sample RAG store, pulls a small smoke model,
+That builds the `.venv` (all deps), indexes the committed public fixture, pulls a smoke model,
 and records one ranked row + telemetry under `.data/llb/`. Or run the pieces yourself:
 
     make venv          # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test          # run the test suite (164 tests)
+    make test          # run the test suite (291 tests)
 
-Milestone 0 commands (data prep, output under `.data/`, gitignored):
+Milestone 0 commands:
 
-    make gen-rag-items          # tiny sample gold set + corpus
-    make validate-goldset       # validate spans resolve + splits disjoint
+    make validate-goldset       # validate the committed fixture and exact source spans
+    make gen-rag-items          # generate a tiny synthetic format fixture under DATA_DIR
     make build-rag-store        # chunk samples/corpus with fixed/sentence/recursive
-    make ingest-uk-squad        # real 250-item UA gold set from HPLT/ua-squad *
+    make ingest-uk-squad GOLDSET_MODE=development  # reproduce pinned reviewed fixture *
+    make ingest-uk-squad GOLDSET_MODE=skeleton     # from-scratch authoring template
     make calibration-worksheet  # blank judge-calibration worksheet
 
 Milestone 1 -- run the eval skeleton (`make venv` already installed the deps; needs a
@@ -67,9 +71,11 @@ running Ollama):
     make run-eval MODEL=llama3.2:3b   # one ranked row + a reproducible manifest
     make mlflow                # compare mirrored runs in the local MLflow UI
 
-`*` needs a Hugging Face token in `.env` (`HF_TOKEN=...`). Run `make` with no target to
-list everything. See the [run-the-skeleton guide](docs/guides/run-skeleton.md) for the full
-flow and the [MLflow analysis guide](docs/guides/mlflow-analysis.md) for run comparison.
+`*` may need a Hugging Face token in `.env` (`HF_TOKEN=...`). The committed default needs no
+token. Run `make` with no target to list everything. See the
+[gold-set guide](docs/guides/goldset-from-scratch.md),
+[run-the-skeleton guide](docs/guides/run-skeleton.md), and
+[MLflow analysis guide](docs/guides/mlflow-analysis.md).
 
 ## Documentation
 

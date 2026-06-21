@@ -16,7 +16,7 @@ eval_defaults:
   top_k: 5
   retrieval_mode: flat
   measure_telemetry: true
-  goldset_path: .data/llb/goldset/sample_rag_items.jsonl
+  goldset_path: samples/goldsets/ua_squad_postedited_v1/goldset.jsonl
 
 vllm_defaults:
   port: 8000
