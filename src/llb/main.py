@@ -3,6 +3,7 @@
 Commands by milestone:
   build-index / validate-retrieval / run-eval        M1 skeleton (retrieve -> generate -> score)
   prep-models / list-models / build-vllm             M1/M2 model prep + feasibility + vLLM build
+  detect-gpu-vram / gen-serving-config             per-GPU-tier serve + run-eval artifacts
   resolve-models                                     M3.2 pick the backend that can serve a model
   sweep                                              M3.3 isolated cell-per-model sweep (resume)
   tune                                               M3.4 two-stage Optuna (tuning -> final)
@@ -561,6 +562,43 @@ def run_eval_cmd(
         measure_telemetry=telemetry,
     )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
+
+
+@app.command("detect-gpu-vram")
+def detect_gpu_vram_cmd() -> None:
+    """Print the supported GPU VRAM tier (12/16/24/32 GiB) for this host."""
+    from llb.inference.generate import detect_gpu_tier, format_detect_line
+
+    typer.echo(format_detect_line(detect_gpu_tier()))
+
+
+@app.command("gen-serving-config")
+def gen_serving_config_cmd(
+    gpu_gb: Optional[int] = typer.Option(
+        None, help="GPU VRAM tier in GiB (12, 16, 24, 32); default: detect from nvidia-smi"
+    ),
+    manifest: Path = typer.Option(
+        Path("samples/config-example/manifest.yaml"),
+        help="tier manifest with model + vLLM knobs",
+    ),
+    output: Optional[Path] = typer.Option(
+        None, help="output directory (default: .data/llb/serving/gpu-<tier>gb/)"
+    ),
+) -> None:
+    """Generate serve scripts and run-eval YAML for the largest models on this GPU tier."""
+    from llb.inference.generate import generate_serving_configs, resolve_tier
+    from llb.paths import PROJECT_ROOT
+
+    manifest_path = manifest.resolve()
+    out = generate_serving_configs(
+        gpu_gb=gpu_gb,
+        output_root=output.resolve() if output else None,
+        manifest_path=manifest_path,
+    )
+    info = resolve_tier(gpu_gb)
+    rel = out.resolve().relative_to(PROJECT_ROOT.resolve())
+    typer.echo(f"[gen-serving-config] tier={info.tier_gb} GiB gpu_mb={info.total_mb} -> {rel}/")
+    typer.echo(f"[gen-serving-config] see {rel / 'tier.json'} for serve/run script names")
 
 
 def main() -> None:

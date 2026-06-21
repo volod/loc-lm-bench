@@ -22,5 +22,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
   compare metrics, and inspect canonical case artifacts.
 - [vLLM backend + telemetry](guides/vllm-backend.md) — Milestone 2: build-vllm -> run-eval on a real model.
 
+## Inference
+- [Config examples](inference/config-example.md) -- detect GPU tier, generate serve/run configs from [samples/config-example/](../samples/config-example/).
+
 ## Project rules
 - [AGENTS.md](../AGENTS.md) — guardrails for contributors and agents.

@@ -41,7 +41,7 @@ MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
 
 .DEFAULT_GOAL := help
-.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow
+.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -171,3 +171,11 @@ prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MAN
 list-models: ## List which candidate models can run here (GPU+RAM, KV-cache-aware); CONTEXT= to target a context
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main list-models --manifest "$(MODELS_MANIFEST)" $(if $(CONTEXT),--context $(CONTEXT),)
+
+detect-gpu-vram: ## Print supported GPU VRAM tier (12/16/24/32 GiB) from nvidia-smi
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main detect-gpu-vram
+
+gen-serving-config: ## Emit serve + run-eval artifacts under .data/llb/serving/; GPU_GB=12|16|24|32 overrides detect
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main gen-serving-config $(if $(GPU_GB),--gpu-gb $(GPU_GB),)
