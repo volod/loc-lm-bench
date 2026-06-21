@@ -17,6 +17,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 ## Guides
 - [Dev setup](guides/dev-setup.md) — uv, venv, extras, make targets.
 - [Data prep](guides/data-prep.md) — gold set, ingestion, chunking, calibration commands.
+- [Local judge experiments](guides/judge-experiments.md) -- DeepEval, Ukrainian prompts,
+  local endpoints, smoke artifacts, and calibration.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) — Milestone 1: build-index -> run-eval.

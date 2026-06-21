@@ -28,6 +28,7 @@ child_chunk_size: 400   # used only in parent_child mode
 # Judge gating (Premise 2): the judge stays demoted to a diagnostic until a calibration
 # rho >= judge_threshold is supplied (via `run-eval --judge-rho`).
 judge_model: null
+judge_base_url: null
 judge_threshold: 0.6
 
 # Stable committed public development fixture. Replace both paths for private evaluation.

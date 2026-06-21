@@ -26,6 +26,7 @@ from llb.contracts import (
     EvalResult,
     JudgeInputRecord,
     JudgeScore,
+    JudgeStatus,
     LeaderboardRow,
     RunMetrics,
     TelemetryReport,
@@ -163,6 +164,18 @@ def _judge_value(score: JudgeScore) -> float:
     return (score["faithfulness"] + score["answer_relevancy"]) / 2.0
 
 
+def _configured_judge_scorer(config: RunConfig, scorer: JudgeScorer | None) -> JudgeScorer:
+    """Bind the configured endpoint while preserving the injectable scorer seam."""
+    if scorer is not None:
+        return scorer
+    from llb.scoring.judge import deepeval_scorer
+
+    def score(records: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
+        return deepeval_scorer(records, model, base_url=config.judge_base_url)
+
+    return score
+
+
 def _judge_cases(
     config: RunConfig,
     batch: CaseBatch,
@@ -178,7 +191,11 @@ def _judge_cases(
     if config.judge_model is None:
         return None
     outcome = run_judge(
-        _judge_records(batch), config.judge_model, judge_rho, config.judge_threshold, scorer=scorer
+        _judge_records(batch),
+        config.judge_model,
+        judge_rho,
+        config.judge_threshold,
+        scorer=_configured_judge_scorer(config, scorer),
     )
     if not outcome.trusted or not outcome.scores:
         _LOG.info("[run-eval] judge demoted (%s); objective ranks alone", outcome.reason)
@@ -200,9 +217,7 @@ def _judge_ratings(
     """
     if config.judge_model is None:
         return None
-    from llb.scoring.judge import ragas_scorer
-
-    score_fn = scorer or ragas_scorer
+    score_fn = _configured_judge_scorer(config, scorer)
     scores = score_fn(_judge_records(batch), config.judge_model)
     return [_judge_value(s) for s in scores]
 
@@ -331,6 +346,20 @@ def run_eval(
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
+    judge_metadata: JudgeStatus = {
+        "calibration_rho": judge_rho,
+        "threshold": config.judge_threshold,
+        "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
+    }
+    if config.judge_model is not None:
+        from llb.scoring.judge import judge_experiment_metadata
+
+        experiment_metadata = judge_experiment_metadata(config.judge_model, config.judge_base_url)
+        judge_metadata["provider"] = experiment_metadata["provider"]
+        judge_metadata["model"] = experiment_metadata["model"]
+        judge_metadata["base_url"] = experiment_metadata["base_url"]
+        judge_metadata["prompt_language"] = experiment_metadata["prompt_language"]
+        judge_metadata["metrics"] = experiment_metadata["metrics"]
     manifest = RunManifest(
         run_id=run_id,
         run_name=config.run_name,
@@ -338,11 +367,7 @@ def run_eval(
         config=config.fingerprint(),
         metrics=metrics,
         retrieval=retrieval_metrics,
-        judge={
-            "calibration_rho": judge_rho,
-            "threshold": config.judge_threshold,
-            "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
-        },
+        judge=judge_metadata,
         telemetry=telemetry_report,
         n_cases=len(batch.rows),
     )

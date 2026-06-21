@@ -31,13 +31,13 @@ retrieval_mode: flat
 # but NOT independent of the candidate pool -- it shares lineage with the Gemma-4 / MamayLM /
 # Lapa candidates and may self-prefer Gemma-family answers (bias documented in current.md). It
 # only enters ranking once calibration rho >= judge_threshold; below it, objective score ranks
-# alone. The id is a litellm id; pick by GPU class (this box is 16 GB) and serve the judge on an
-# OpenAI-compatible endpoint (HOSTED_VLLM_API_BASE for vLLM / OLLAMA_API_BASE for Ollama):
+# alone. The id must match the model exposed by a local OpenAI-compatible endpoint:
 #   12 GB: ollama_chat/gemma-4-e4b-it          (GGUF/CPU offload; the 12B won't fit)
 #   32 GB: hosted_vllm/google/gemma-4-12B-it   (bf16, higher fidelity)
-# On 16 GB the 12B judge cannot co-reside with a vLLM candidate -- judge a separate pass over the
-# persisted worksheet answers, or serve the judge via Ollama GGUF offload.
+# On 16 GB the 12B judge normally cannot co-reside with a vLLM candidate; use Ollama GGUF/CPU
+# offload or serve the judge on another local host.
 judge_model: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
+judge_base_url: http://localhost:8000/v1
 judge_threshold: 0.6
 
 # Steady-state throughput + peak-VRAM telemetry (also enable with `run-eval --telemetry`).

@@ -31,7 +31,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-291 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+297 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -43,7 +43,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (291 tests)
+    make test       # pytest (297 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -112,7 +112,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       screen/public.py             # M3.1 Tier-1 lm-eval-harness-uk adapter (logprob/generation tracks)
       prep/frontier.py             # M3.5 prepare-goldset + prepare-synthetic-corpus (litellm)
       board/{data,app}.py          # M3.7 thin Streamlit leaderboard over the run bundles
-    tests/                         # 291 tests across the above
+    tests/                         # 297 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -225,37 +225,38 @@ The three Make targets drive the loop over the verified committed gold set
 are `verified: true`, so M3.9 is already satisfied for it; no re-review needed):
 
     make calibration-worksheet                       # blank worksheet (86 calibration rows)
-    make calibration-run JUDGE_MODEL=<litellm-id>    # MODEL answers + judge_rating pre-filled -> CAL_WS
+    make calibration-run JUDGE_MODEL=<served-model-id> \
+        JUDGE_BASE_URL=http://127.0.0.1:8000/v1       # answers + judge_rating -> CAL_WS
     # human fills the human_rating column in CAL_WS, then:
     make calibration-score RATINGS=<filled.csv>      # rho + bootstrap CI + trust decision
 
 Equivalent direct CLI:
 
-    llb run-eval --split calibration --worksheet ws.csv --judge-model <id>  # pre-fill answers + judge
+    llb run-eval --split calibration --worksheet ws.csv --judge-model <id> \
+        --judge-base-url http://127.0.0.1:8000/v1      # pre-fill answers + judge
     python -m llb.judge.calibration score --ratings ws.csv                  # rho + CI + decision
 
-What still gates the close-out is purely external: validating the live Ragas path + UA prompts
-and collecting the human `human_rating` column. The scaffolding (targets, ungated judge run,
-scoring) is built and unit-tested.
+What still gates close-out is collecting the independent human `human_rating` column. The
+maintained DeepEval metric engine, Ukrainian prompts, local endpoint adapter, targets, ungated
+judge run, and calibration scoring are implemented and tested.
 
 #### Judge model (OQ2 decided) + bias disclosure
 
 The v1 judge is a **local Gemma-4 model**, chosen over a frontier API for **no corpus
-data-egress and reproducibility**. The id is never hardcoded -- it is a litellm id set per GPU
-class via config / `--judge-model` / the Makefile `JUDGE_MODEL` knob, served on an
-OpenAI-compatible endpoint (`HOSTED_VLLM_API_BASE` for vLLM, `OLLAMA_API_BASE` for Ollama). The
-answer-relevancy embedding is wired to the pinned local e5 embedder (`_judge_embeddings`) so the
-judge runs fully on-box rather than silently defaulting to OpenAI embeddings.
+data-egress and reproducibility**. The id is configured through `judge_model` /
+`--judge-model` / `JUDGE_MODEL` and must match the id exposed by the local OpenAI-compatible
+endpoint. `judge_base_url` / `--judge-base-url` / `JUDGE_BASE_URL` keeps that endpoint separate
+from the candidate backend. Existing `hosted_vllm/` and `ollama_chat/` prefixes remain accepted
+and are stripped before requests.
 
-| GPU VRAM | Judge (litellm id) | Notes |
+| GPU VRAM | Judge (served model id) | Notes |
 |---|---|---|
 | 12 GB | `ollama_chat/gemma-4-e4b-it` | smallest Gemma 4 via GGUF/CPU offload; the 12B will not fit |
 | 16 GB (this box) | `hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct` | biggest Gemma 4 that fits; the configured default |
 | 32 GB | `hosted_vllm/google/gemma-4-12B-it` | bf16 12B (higher fidelity) + headroom to co-host judge + a candidate |
 
-On 16 GB a 12B judge cannot co-reside with a vLLM candidate, so judge a **separate pass** over
-the persisted worksheet answers (the worksheet decouples answer generation from judging), or
-serve the judge via Ollama GGUF offload.
+On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate. Use Ollama GGUF/CPU
+offload, a smaller test judge, or another local host while generating the calibration worksheet.
 
 **Bias (disclosed, not eliminated).** This judge is **not independent of the candidate pool**:
 Gemma-4 (E4B/12B) are candidates, and MamayLM v2 + Lapa are Gemma-3 fine-tunes -- so the judge
@@ -288,9 +289,8 @@ Remaining (blocked on a judge choice or human input; scoped forward in [`plan.md
   wiring, the chosen judge (OQ2 -- a local Gemma-4 model, bias disclosed above), and the full
   pre-filled-worksheet scaffolding (model answers + ungated `judge_rating` via
   `make calibration-run` / `run-eval --worksheet --judge-model`, scored by
-  `make calibration-score`) all exist and are unit-tested. The only residual is external: live
-  Ragas validation and collecting the human `human_rating` column over the verified calibration
-  split.
+  `make calibration-score`) all exist and are unit-tested. The only required residual is external:
+  collecting the human `human_rating` column over the verified calibration split.
 
 ## Milestone 1 -- modules + how to run
 
@@ -405,10 +405,10 @@ langgraph. Each case ends in exactly one typed status, recorded separately.
 Unicode-normalized for casing and punctuation); `score` is token-F1. An optional
 semantic-similarity signal (cosine via the pinned embedder) captures paraphrases and UA
 morphology when `--score-semantic` is set -- it is recorded separately because blending
-weights require calibration. `judge` enforces the gate (Premise 2): the Ragas judge only
-may enter aggregate ranking at calibration rho >= threshold; below it, objective score ranks
-alone. The current `run-eval` path does not invoke the scorer yet, so its row remains
-objective-only even when a trusted rho is recorded. `aggregate` produces the ranked row
+weights require calibration. `judge` enforces the gate (Premise 2): the DeepEval G-Eval judge
+only may enter aggregate ranking at calibration rho >= threshold; below it, objective score
+ranks alone. `run-eval` invokes it when configured and trusted, records per-case scores, and
+keeps the row objective-only otherwise. `aggregate` produces the ranked row
 (quality, then tok/s, then VRAM; infeasible models listed without a rank).
 
 ### Tracking — `llb.tracking.manifest`
@@ -455,8 +455,8 @@ required, while Ruff formatting and linting are enforced by `make ci` and GitHub
 | M1.7 | minimal sequential runner + NVML VRAM gate | DONE |
 | M1.8 | `run-eval` prints one ranked row (SQuAD-uk seed) | DONE |
 
-Residual M1 work is scoped forward in [`plan.md`](plan.md): live Ragas validation, calibration,
-and executor/board judge wiring (M3.8), plus map-reduce / multi-hop eval templates (deferred
+Residual M1 work is scoped forward in [`plan.md`](plan.md): human judge calibration (M3.8),
+plus map-reduce / multi-hop eval templates (deferred
 until the text-analysis benchmark needs them). The optional semantic-similarity correctness
 signal is built (`--score-semantic`).
 
@@ -702,20 +702,29 @@ coverage 5/5) -- the latter exercising the VRAM-reclaim gate (residual reclaimed
 after the cell). The default task ids are confirmed UA tasks; `squad_uk` (which does not exist
 upstream) was replaced by `global_piqa_prompted_ukr_cyrl`.
 
-### Ragas judge scorer -- `llb.scoring.judge` (M3.8, scorer half)
+### DeepEval Ukrainian judge -- `llb.scoring.judge` (M3.8)
 The trust GATE already existed (`run_judge` / `judge_is_trusted`: the judge only enters the
 blend at calibration rho >= threshold, else it is demoted and objective correctness ranks
-alone). M3.8 fills in the scorer it routes to: `ragas_scorer` computes Ragas **faithfulness**
-(answer vs retrieved context) + **answer-relevancy** (answer vs question) with UA-localized
-metric instructions. The pure halves -- `to_ragas_samples` (our records -> Ragas
-`SingleTurnSample` fields), `extract_scores` (tolerating the 0.1 `answer_relevancy` vs 0.2
-`response_relevancy` key), and the UA prompt text -- are unit-tested via an injected
-`evaluate_fn`; the default `_default_ragas_evaluate` wires the real Ragas `evaluate` (lazy
-`[rag]` extra, litellm judge), and `_judge_embeddings` pins answer-relevancy to the local e5
-embedder so a local judge stays fully on-box. The judge model is decided (OQ2 -- a local Gemma-4
-model, tiered by GPU class, bias disclosed above). The scorer IS now called by
-`executor.run_eval` (gated + the ungated calibration path) and the board loads judge metrics
-(M3.7); the calibration CLOSE-OUT residual is only live Ragas validation + human ratings.
+alone). `deepeval_scorer` uses maintained DeepEval 4 G-Eval metrics for **faithfulness**
+(answer vs retrieved context) and **answer relevancy** (answer vs question), with fixed Ukrainian
+evaluation steps and a Ukrainian JSON result template. `LocalModel` connects to any local
+OpenAI-compatible endpoint; no cloud provider or embedding call is required. The dependency is
+lazy under `[rag]`, while the endpoint and model are recorded in each manifest without secrets.
+
+Ragas 0.4.3 was evaluated first but failed to import against the project's current LangChain
+stack because it imports modules removed by current LangChain. The project does not pin old
+LangChain, install shims, or retain Ragas in the lock graph. DeepEval 4.0.6 imports in the current
+environment, and the test suite executes its real G-Eval engine with the local model transport
+replaced by an in-process OpenAI-compatible fake. `llb judge-experiment` / `make
+judge-experiment` adds endpoint-level smoke validation through three fixed Ukrainian cases and
+writes the served-model metadata, exact prompts, cases, and scores under
+`$DATA_DIR/judge-experiment/<timestamp>/result.json`. No judge server was running on this
+development host, so no live model scores are claimed. See the
+[local judge guide](../guides/judge-experiments.md).
+
+The scorer is called by `executor.run_eval` in both the gated ranking path and ungated
+calibration path, and the board loads judge metrics (M3.7). The required calibration close-out
+residual is only collecting human ratings and passing rho/CI.
 
 ### Milestone 3 depth/acceptance hardening
 On top of the core modules, the spec-depth requirements landed:
@@ -768,5 +777,5 @@ On top of the core modules, the spec-depth requirements landed:
 | M3.5 | frontier drafts + planter guard + per-call cost provenance + fuzzy-but-exact grounding + synthetic build-index bundle | DONE |
 | M3.6 | average-rank, Pareto, per-case objective/semantic/judge CIs, headline-CI rank-uncertainty, policy-visible blend | DONE |
 | M3.7 | final-only board + judge/semantic load, Tier-1/Tier-2 separation, best-by-policy, judge-cohort guard | DONE |
-| M3.8 | Ragas scorer seam + gate + local embedding + `run_judge` WIRED into `run_eval`; OQ2 judge decided (local Gemma-4, tiered by GPU, bias disclosed); calibration scaffolding: pre-filled worksheet (model answers + ungated `judge_rating`) via `run-eval --worksheet --judge-model` + `make calibration-run`/`-score` | DONE (code + scaffolding + judge choice); close-out gated on live Ragas + human `human_rating` |
+| M3.8 | maintained DeepEval G-Eval scorer + Ukrainian prompts + local endpoint smoke artifact; gate + `run_judge` wired into `run_eval`; local Gemma-4 judge choice and bias disclosure; pre-filled calibration worksheet + rho/CI commands | DONE (implementation); close-out gated only on human `human_rating` collection |
 | M3.9 | committed human-reviewed fixture + pinned reproducible development importer + ID-keyed canonical adoption/custom ledgers + public task defaults | DONE (live importer acceptance: 250/250 verified, exact item/corpus match) |

@@ -17,7 +17,8 @@ backend + steady-state telemetry, validated end to end on `gemma-4-E4B-it-w4a16`
 [`current.md`](current.md). The Tier-1 screen is validated live (both tracks, VRAM gate; task ids
 confirmed against lm-eval 0.4.12), and the sweep's live PID-attributed reclaim gate + shared
 `isolate_cell` (sweep + screen + Optuna) are done and live-validated on a real vLLM sweep. The
-only remaining M3 work is judge calibration (OQ2 + human ratings + live Ragas). 291 tests.
+only remaining M3 work is collecting human judge-calibration ratings. See `current.md` for
+the maintained DeepEval path and recorded Ukrainian local-model experiment command.
 
 **Quick start:** `make demo-eval` runs the current pipeline end to end and idempotently
 (venv -> gold set -> index -> prep-models -> run-eval + telemetry; needs a running Ollama).
@@ -45,15 +46,10 @@ forward layer is:
 M3 core + depth/acceptance hardening are delivered ([`current.md`](current.md)). Only the
 gated/external-dep items below remain; sequence numbers are stable workstream ids.
 
-- **M3.8 Judge calibration close-out (carried from M0.5 / M1.5).** The scaffolding is built and
-  unit-tested ([`current.md`](current.md)): `make calibration-run` / `run-eval --split calibration
-  --worksheet --judge-model` pre-fills a worksheet with model answers + an UNGATED `judge_rating`,
-  and `make calibration-score` computes rho + CI at the >= 0.6 gate. The judge is chosen (OQ2 -- a
-  local Gemma-4 model, tiered by GPU class, family bias disclosed). Two external steps remain:
-  live-validate the default Ragas path + UA prompts (ragas does not import in the current env) and
-  collect the human `human_rating` column over the verified calibration split. Until rho clears the
-  gate, the judge stays demoted and objective correctness ranks alone. A non-Gemma cross-check judge
-  (Qwen3.6 / frontier) to quantify the Gemma-family delta is optional follow-up.
+- **M3.8 Judge calibration close-out (carried from M0.5 / M1.5).** Collect independent human
+  `human_rating` values over the verified calibration split and run `make calibration-score`.
+  Until rho clears the >= 0.6 gate, the judge stays demoted and objective correctness ranks alone.
+  A non-Gemma cross-check judge to quantify Gemma-family preference is an optional follow-up.
 
 ### Deferred until a consumer exists
 
@@ -118,7 +114,7 @@ shippable and unit-testable.
 ## Critical modules still to build (`src/llb/`)
 
 The M3 modules now exist (`backends/resolver`, `executor/isolation`, `screen/public`,
-`optimize/tuner`, `prep/frontier`, `scoring/aggregate` board, `scoring/judge.ragas_scorer`,
+`optimize/tuner`, `prep/frontier`, `scoring/aggregate` board, `scoring/judge.deepeval_scorer`,
 `board/`) -- see `current.md`. What remains genuinely unbuilt:
 
 - `backends/` — the **llama.cpp launcher** (the third backend the resolver already routes to;
@@ -129,11 +125,12 @@ retrieval metrics, the single-call `eval/` graph, objective + semantic `scoring/
 manifest, the minimal `executor/` runner + VRAM gate, `backends/`
 base+client+Ollama+vLLM+hardware+prepare+planner+telemetry, and the M3 layer:
 `backends/resolver`, `executor/isolation`, `optimize/tuner`, `screen/public`, `prep/frontier`,
-the `scoring/aggregate` board + `scoring/judge.ragas_scorer`, and `board/`.
+the `scoring/aggregate` board + `scoring/judge.deepeval_scorer`, and `board/`.
 
 ## Reuse (do not rebuild)
 
-Ragas (RAG metrics + judge), FAISS, sentence-transformers, `openai` client (local backends),
+DeepEval G-Eval (maintained judge metrics), FAISS, sentence-transformers, `openai` client
+(local backends),
 litellm (frontier prep utils), Optuna, MLflow (local), LangGraph, DuckDB, Streamlit,
 pynvml + psutil, lm-evaluation-harness-uk (INSAIT, Tier-1 public screen). Reuse public UA
 datasets: SQuAD-uk + Belebele-uk (screen/baseline). Candidate seeds incl. MamayLM v2
@@ -141,9 +138,9 @@ datasets: SQuAD-uk + Belebele-uk (screen/baseline). Candidate seeds incl. MamayL
 
 ## Verification (forward)
 
-- **M3 (still forward):** the LIVE Ragas judge path + judge calibration rho/CI (M3.8). The
-  Tier-1 lm-eval screen and the live PID-attributed sweep gate are validated live; the other
-  delivered seams are unit-tested -- see `current.md`.
+- **M3 (still forward):** human judge ratings + calibration rho/CI (M3.8). The DeepEval engine,
+  Ukrainian prompts, Tier-1 screen, and PID-attributed sweep gate are validated; the local judge
+  endpoint command records smoke experiments -- see `current.md`.
 - **M4:** the embedding-aware estimate predicts measured weights within tolerance; the
   pre-launch guard handles resident VRAM users; and the ontology-assisted draft pipeline emits
   traceable, exact-grounded, unverified candidates from nested corpora.
@@ -169,7 +166,7 @@ M3 (core + depth) has landed. The small residual work proceeds in mostly indepen
   MAX_JOBS helper path (OQ6, canonical `max_jobs()` in `scripts/shared/common.sh`).
 - Open questions resolved in M3.8: judge locality (OQ2) -- a LOCAL Gemma-4 judge, tiered by GPU
   class (12/16/32 GB), chosen for no corpus egress + reproducibility, with the Gemma-family
-  self-preference bias disclosed (`current.md`); the residual is only the live Ragas UA
-  validation + human ratings, not the model choice.
+  self-preference bias disclosed (`current.md`); the residual is human ratings, not the scorer
+  implementation or model choice.
 - Open questions still to resolve in-milestone: text-analysis scoring schema (before the
   deferred eval templates).

@@ -8,6 +8,7 @@ Commands by milestone:
   sweep                                              M3.3 isolated cell-per-model sweep (resume)
   tune                                               M3.4 two-stage Optuna (tuning -> final)
   prepare-goldset / prepare-synthetic-corpus         M3.5 frontier data-prep (litellm)
+  judge-experiment                                   M3.8 local DeepEval UA smoke artifact
   screen-public                                      M3.1 Tier-1 lm-eval-harness-uk screen
   board / mlflow-ui                                  M3.7 Streamlit leaderboard / MLflow UI
 
@@ -636,7 +637,10 @@ def run_eval_cmd(
         None, help="calibration Spearman rho; judge stays demoted below the threshold"
     ),
     judge_model: Optional[str] = typer.Option(
-        None, help="judge model id (litellm); enables the Ragas judge (gated by --judge-rho)"
+        None, help="local judge model id; enables the DeepEval judge (gated by --judge-rho)"
+    ),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible judge endpoint, e.g. http://localhost:8000/v1"
     ),
     score_semantic: Optional[bool] = typer.Option(
         None,
@@ -663,10 +667,33 @@ def run_eval_cmd(
         backend=backend,
         goldset_path=goldset,
         judge_model=judge_model,
+        judge_base_url=judge_base_url,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )
     run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
+
+
+@app.command("judge-experiment")
+def judge_experiment_cmd(
+    judge_model: str = typer.Option(..., help="served local judge model id"),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible endpoint, e.g. http://localhost:8000/v1"
+    ),
+    data_dir: Optional[Path] = typer.Option(None, help="artifact root (default: DATA_DIR)"),
+) -> None:
+    """Run fixed Ukrainian judge sanity cases and record prompts plus scores."""
+    from llb.judge.experiment import run_judge_experiment
+
+    report, out_path = run_judge_experiment(
+        judge_model,
+        base_url=judge_base_url,
+        data_dir=data_dir,
+    )
+    typer.echo(
+        f"[judge-experiment] model={report['judge']['model']} "
+        f"cases={len(report['cases'])} -> {out_path}"
+    )
 
 
 @app.command("detect-gpu-vram")

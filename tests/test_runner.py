@@ -141,7 +141,12 @@ def test_run_eval_wires_trusted_judge_and_persists_scores(tmp_path):
     )
     launcher = FakeLauncher(lambda _m: ChatResult(text="Київ", completion_tokens=2, latency_s=0.4))
     cfg = RunConfig(
-        data_dir=tmp_path, run_name="judge-test", top_k=3, model="fake-uk", judge_model="judge-x"
+        data_dir=tmp_path,
+        run_name="judge-test",
+        top_k=3,
+        model="fake-uk",
+        judge_model="judge-x",
+        judge_base_url="http://localhost:9000/v1",
     )
     calls = {}
 
@@ -168,6 +173,8 @@ def test_run_eval_wires_trusted_judge_and_persists_scores(tmp_path):
     row = result["rows"][0]
     assert row["judge"] == 0.9
     assert row["quality"] == 0.95  # blend objective 1.0 with judge 0.9 at weight 0.5
+    assert result["manifest"].judge["provider"] == "deepeval-geval"
+    assert result["manifest"].judge["base_url"] == "http://localhost:9000/v1"
 
 
 def test_run_eval_demotes_uncalibrated_judge(tmp_path):

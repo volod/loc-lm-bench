@@ -19,7 +19,12 @@ dependencies = [
 [project.optional-dependencies]
 # Installed on demand, e.g. `uv pip install -e ".[rag,track]"`. Kept out of the base
 # install so `make venv` stays fast.
-rag = ["faiss-cpu>=1.8", "sentence-transformers>=3.0", "langchain-text-splitters>=0.2", "ragas>=0.2"]
+rag = [
+  "faiss-cpu>=1.8",
+  "sentence-transformers>=3.0",
+  "langchain-text-splitters>=0.2",
+  "deepeval>=4.0.6,<5",
+]
 eval = ["langgraph>=0.2"]
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]
@@ -55,7 +60,9 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# DeepEval ships optional pytest integration and rerun plugins as runtime dependencies. The
+# benchmark invokes metrics explicitly, so disable those global plugins in this test suite.
+addopts = "-q -p no:deepeval -p no:rerunfailures"
 filterwarnings = [
   # Emitted at interpreter shutdown by SciPy's bundled SWIG extension on Python 3.11.
   "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",

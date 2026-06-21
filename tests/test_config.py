@@ -34,6 +34,14 @@ def test_vllm_endpoint_port_must_match_launcher_port():
         RunConfig(backend="vllm", vllm_host="http://localhost:8000", vllm_port=8001)
 
 
+def test_judge_endpoint_must_be_explicit_http_url_without_credentials():
+    assert RunConfig(judge_base_url="http://localhost:9000/v1").judge_base_url.endswith("/v1")
+    with pytest.raises(ValidationError, match="judge_base_url must be an http"):
+        RunConfig(judge_base_url="localhost:9000")
+    with pytest.raises(ValidationError, match="must not contain credentials"):
+        RunConfig(judge_base_url="http://user:secret@localhost:9000/v1")
+
+
 def test_index_and_run_dirs_under_data_dir(tmp_path):
     cfg = RunConfig(data_dir=tmp_path, run_name="r1")
     assert cfg.index_dir() == tmp_path / "llb" / "rag"

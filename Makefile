@@ -36,21 +36,21 @@ LOG_DIR     := $(DATA_DIR)/llb/logs
 PREP_ALL_BACKEND ?= ollama
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
-# Judge-calibration knobs (M3.8). JUDGE_MODEL is a litellm id (OQ2: a LOCAL Gemma-4 judge --
-# no data egress + reproducible, bias documented in current.md). Pick by GPU class (override
-# JUDGE_MODEL to change it; the judge must be served on an OpenAI-compatible endpoint, set
-# HOSTED_VLLM_API_BASE for vLLM or OLLAMA_API_BASE for Ollama):
+# Judge-calibration knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL
+# OpenAI-compatible endpoint (no data egress + reproducible; bias documented in current.md).
+# JUDGE_BASE_URL is explicit so candidate and judge servers can use different endpoints:
 #   12 GB GPU: ollama_chat/gemma-4-e4b-it                       (GGUF/CPU offload; the 12B won't fit)
 #   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (this box; biggest Gemma-4 that fits)
 #   32 GB GPU: hosted_vllm/google/gemma-4-12B-it                (bf16, higher fidelity + co-host headroom)
-# On 16 GB a 12B judge cannot co-reside with a vLLM candidate -- judge a SEPARATE pass over the
-# persisted worksheet answers, or serve the judge via Ollama GGUF offload. Set empty to skip the judge.
+# On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate; use Ollama GGUF/CPU
+# offload or serve the judge on another local host. Set JUDGE_MODEL empty to skip the judge.
 CAL_WS ?= $(DATA_DIR)/llb/calibration_worksheet.csv
 RATINGS ?= $(CAL_WS)
 JUDGE_MODEL ?= hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
+JUDGE_BASE_URL ?= http://localhost:8000/v1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-score build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -145,11 +145,17 @@ calibration-run: ## Run MODEL on the calibration split -> filled worksheet (mode
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split calibration --worksheet "$(CAL_WS)" \
-		$(if $(JUDGE_MODEL),--judge-model "$(JUDGE_MODEL)",)
+		$(if $(JUDGE_MODEL),--judge-model "$(JUDGE_MODEL)",) \
+		$(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",)
 
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.judge.calibration score --ratings "$(RATINGS)"
+
+judge-experiment: ## Run fixed UA judge cases against a local OpenAI-compatible endpoint
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main judge-experiment --judge-model "$(JUDGE_MODEL)" \
+		$(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",)
 
 ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft (draft is M4)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

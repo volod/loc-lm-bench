@@ -1,6 +1,6 @@
 """Every module must import with only the base + dev deps installed.
 
-Heavy extras (faiss, langgraph, mlflow, sentence-transformers, pynvml, ragas) are absent
+Heavy extras (faiss, langgraph, mlflow, sentence-transformers, pynvml, deepeval) are absent
 in CI, so any accidental top-level import of them would break the lightweight job. This
 test imports the whole package surface; it fails loudly if a heavy dep stops being lazy.
 """

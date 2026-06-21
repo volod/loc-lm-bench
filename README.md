@@ -50,7 +50,7 @@ That builds the `.venv` (all deps), indexes the committed public fixture, pulls 
 and records one ranked row + telemetry under `.data/llb/`. Or run the pieces yourself:
 
     make venv          # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test          # run the test suite (291 tests)
+    make test          # run the test suite (297 tests)
 
 Milestone 0 commands:
 
@@ -75,7 +75,8 @@ running Ollama):
 token. Run `make` with no target to list everything. See the
 [gold-set guide](docs/guides/goldset-from-scratch.md),
 [run-the-skeleton guide](docs/guides/run-skeleton.md), and
-[MLflow analysis guide](docs/guides/mlflow-analysis.md).
+[MLflow analysis guide](docs/guides/mlflow-analysis.md). For the optional gated judge, see
+[local Ukrainian judge experiments](docs/guides/judge-experiments.md).
 
 ## Documentation
 

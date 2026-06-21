@@ -38,6 +38,11 @@ def _environment_value(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+def _optional_environment_value(name: str) -> str | None:
+    load_project_env()
+    return os.environ.get(name) or None
+
+
 class RunConfig(BaseModel):
     """Everything needed to reproduce one (model, config) evaluation."""
 
@@ -88,6 +93,9 @@ class RunConfig(BaseModel):
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
     judge_model: str | None = None
+    judge_base_url: str | None = Field(
+        default_factory=lambda: _optional_environment_value("DEEPEVAL_JUDGE_BASE_URL")
+    )
     judge_threshold: float = Field(default=0.6, ge=-1, le=1)
 
     # Add a semantic-similarity correctness signal (uses the pinned embedder; recorded,
@@ -125,6 +133,14 @@ class RunConfig(BaseModel):
             raise ValueError("chunk_overlap must be smaller than chunk_size")
         if self.retrieval_mode == "parent_child" and self.chunk_overlap >= self.child_chunk_size:
             raise ValueError("chunk_overlap must be smaller than child_chunk_size")
+        if self.judge_base_url is not None:
+            endpoint = urlsplit(self.judge_base_url)
+            if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+                raise ValueError("judge_base_url must be an http(s) URL with a host")
+            if endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
+                raise ValueError(
+                    "judge_base_url must not contain credentials, query parameters, or a fragment"
+                )
         if self.backend == "vllm":
             try:
                 endpoint = urlsplit(self.vllm_host)

@@ -181,6 +181,11 @@ class JudgeStatus(TypedDict):
     calibration_rho: float | None
     threshold: float
     trusted: bool
+    provider: NotRequired[str]
+    model: NotRequired[str]
+    base_url: NotRequired[str | None]
+    prompt_language: NotRequired[str]
+    metrics: NotRequired[list[str]]
 
 
 class RunPaths(TypedDict):
