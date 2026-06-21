@@ -1,13 +1,17 @@
 """loc-lm-bench CLI (Typer).
 
-Milestone 1 commands wire the compile-free skeleton (prebuilt Ollama on the GPU; no
-vLLM/flash-attn source build):
-  build-index         chunk + embed the corpus into a FAISS RAG store
-  validate-retrieval  recall@k / MRR of the pinned embedding over the gold set (Premise 4)
-  run-eval            retrieve -> generate -> score -> ranked row + manifest
+Commands by milestone:
+  build-index / validate-retrieval / run-eval        M1 skeleton (retrieve -> generate -> score)
+  prep-models / list-models / build-vllm             M1/M2 model prep + feasibility + vLLM build
+  resolve-models                                     M3.2 pick the backend that can serve a model
+  sweep                                              M3.3 isolated cell-per-model sweep (resume)
+  tune                                               M3.4 two-stage Optuna (tuning -> final)
+  prepare-goldset / prepare-synthetic-corpus         M3.5 frontier data-prep (litellm)
+  screen-public                                      M3.1 Tier-1 lm-eval-harness-uk screen
+  board / mlflow-ui                                  M3.7 Streamlit leaderboard / MLflow UI
 
-Heavy collaborators (FAISS, sentence-transformers, langgraph, a running Ollama) are only
-touched by these commands at call time, so the module imports in the base install.
+Heavy collaborators (FAISS, sentence-transformers, langgraph, optuna, litellm, streamlit, a
+running backend) are lazy-imported at call time, so the module imports in the base install.
 Config comes from a YAML file (`--config`) with CLI flags overriding individual fields.
 """
 
@@ -202,6 +206,307 @@ def list_models_cmd(
         "[list-models] verdict is at ctx_max; ctx_gpu = max context that fits fully "
         "on GPU. gpu = no offload needed; offload = split layers GPU/CPU RAM."
     )
+
+
+@app.command("resolve-models")
+def resolve_models_cmd(
+    manifest: Path = typer.Option(
+        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+    ),
+    context: Optional[int] = typer.Option(
+        None, help="resolve fit at this target context instead of the max the host can hold"
+    ),
+    vram_reserve: int = typer.Option(1024, help="VRAM MiB held back for CUDA/display"),
+    ram_reserve: int = typer.Option(2048, help="RAM MiB held back for the OS"),
+    offline: bool = typer.Option(
+        False, help="skip availability probes (assume every declared source exists)"
+    ),
+) -> None:
+    """Pick the backend that can actually serve each model (discovery + vLLM>Ollama priority)."""
+    from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
+    from llb.backends.resolver import ResolverProbes, format_resolution, resolve_all
+
+    models = _load_models(manifest)
+    gpus = detect_gpus()
+    vram_mib = max_vram_mb(gpus)
+    ram_mib = detect_ram_mb()
+    if gpus:
+        for g in gpus:
+            typer.echo(f"[resolve-models] GPU {g.index}: {g.name} ({g.total_mb} MiB)")
+    else:
+        typer.echo("[resolve-models] no GPU detected -- planning against system RAM only")
+
+    probes = (
+        ResolverProbes(hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True)
+        if offline
+        else ResolverProbes()
+    )
+    rows = resolve_all(
+        models,
+        vram_mib,
+        ram_mib,
+        probes=probes,
+        target_ctx=context,
+        vram_reserve=vram_reserve,
+        ram_reserve=ram_reserve,
+    )
+    typer.echo(format_resolution(rows))
+    resolved = sum(1 for r in rows if r["chosen_backend"] is not None)
+    typer.echo(f"[resolve-models] resolved {resolved} of {len(rows)} to a runnable backend")
+
+
+@app.command("sweep")
+def sweep_cmd(
+    manifest: Path = typer.Option(
+        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+    ),
+    split: str = typer.Option("final", help="gold split to evaluate each cell on"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL for every cell"),
+    sweep_id: Optional[str] = typer.Option(None, help="resume id (default: a UTC timestamp)"),
+    max_model_len: int = typer.Option(8192, help="vLLM context cap per cell (KV cache fit)"),
+    telemetry: bool = typer.Option(True, help="measure steady-state throughput + peak VRAM"),
+    resume: bool = typer.Option(True, help="skip cells already completed under this sweep id"),
+    offline: bool = typer.Option(False, help="skip availability probes (assume sources exist)"),
+) -> None:
+    """Run one isolated cell per runnable model (process-per-cell, VRAM gate, thermal cooldown)."""
+    from datetime import datetime, timezone
+
+    from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
+    from llb.backends.resolver import ResolverProbes, resolve_all
+    from llb.executor.isolation import run_sweep
+
+    models = _load_models(manifest)
+    gpus = detect_gpus()
+    probes = (
+        ResolverProbes(hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True)
+        if offline
+        else ResolverProbes()
+    )
+    resolved = resolve_all(
+        models, max_vram_mb(gpus), detect_ram_mb(), probes=probes, target_ctx=None
+    )
+    base = _load_config(None, goldset_path=goldset)
+    cells: list[RunConfig] = []
+    for r in resolved:
+        if not r["chosen_backend"]:
+            typer.echo(f"[sweep] skip {r['name']}: {r['note']}")
+            continue
+        overrides: dict[str, Any] = {
+            "model": r["chosen_source"],
+            "backend": r["chosen_backend"],
+            "measure_telemetry": telemetry,
+            "run_name": f"sweep-{r['name']}",
+        }
+        if r["chosen_backend"] == "vllm":
+            overrides["max_model_len"] = max_model_len
+        cells.append(base.with_overrides(**overrides))
+
+    if not cells:
+        typer.echo("[sweep] no runnable models resolved; nothing to do")
+        raise typer.Exit(code=1)
+
+    vram_reader = None
+    try:  # best-effort NVML reader; the gate runs only for VRAM-owning backends (vLLM)
+        from llb.executor.vram import nvml_reader
+
+        vram_reader = nvml_reader()
+    except (Exception, SystemExit):
+        vram_reader = None
+
+    sid = sweep_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    typer.echo(f"[sweep] id={sid} cells={len(cells)} split={split} resume={resume}")
+    report = run_sweep(
+        cells,
+        sweep_id=sid,
+        split=split,
+        data_dir=base.data_dir,
+        telemetry=telemetry,
+        resume=resume,
+        vram_reader=vram_reader,
+    )
+    for cell in report["results"]:
+        hot = next((g["temp_c"] for g in cell["gpu"] if g["temp_c"] is not None), None)
+        typer.echo(
+            f"[sweep] {cell['status']:<7} {cell['backend']:<6} {cell['model']:<34} "
+            f"residual={cell['vram_residual_mb']} cooldown={cell['cooldown_s']}s temp={hot}C"
+        )
+    typer.echo(
+        f"[sweep] done id={sid}: {report['completed']} run, {report['skipped']} skipped, "
+        f"{report['failed']} failed"
+    )
+    if report["failed"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("tune")
+def tune_cmd(
+    model: str = typer.Option(..., help="model name (Ollama tag or HF repo id)"),
+    backend: str = typer.Option("ollama", help="ollama | vllm"),
+    trials: int = typer.Option(30, min=1, help="stage-1 Optuna trials on the tuning split"),
+    study: Optional[str] = typer.Option(None, help="study name (persistent SQLite; resumes)"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL"),
+    max_model_len: Optional[int] = typer.Option(None, help="vLLM context cap"),
+    manifest: Path = typer.Option(
+        Path("samples/models_uk.yaml"), help="manifest to read the model's arch from (VRAM prune)"
+    ),
+    seed: int = typer.Option(13, help="Optuna sampler seed"),
+) -> None:
+    """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
+    from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
+    from llb.optimize.tuner import two_stage
+
+    cfg = _load_config(
+        None, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
+    )
+    spec = None
+    for m in _load_models(manifest):
+        if m["source"] == model or m.get("name") == model:
+            spec = m
+            break
+    gpus = detect_gpus()
+    study_name = study or f"tune-{model.replace('/', '_').replace(':', '_')}"
+    typer.echo(f"[tune] study={study_name} model={model} backend={backend} trials={trials}")
+    out = two_stage(
+        cfg,
+        n_trials=trials,
+        study_name=study_name,
+        model_spec=spec,
+        vram_mib=max_vram_mb(gpus),
+        ram_mib=detect_ram_mb(),
+        seed=seed,
+    )
+    t = out.tune
+    typer.echo(
+        f"[tune] stage-1 best quality={t.best_value:.4f} "
+        f"({t.n_complete} complete, {t.n_pruned} pruned of {t.n_trials})"
+    )
+    typer.echo(
+        f"[tune] winning config: strategy={t.best_config.strategy} "
+        f"size={t.best_config.chunk_size} overlap={t.best_config.chunk_overlap} "
+        f"top_k={t.best_config.top_k} mode={t.best_config.retrieval_mode}"
+    )
+    typer.echo("[tune] stage-2 (final split) is the leaderboard entry:")
+    typer.echo(out.final["table"])
+
+
+@app.command("prepare-goldset")
+def prepare_goldset_cmd(
+    corpus_root: Path = typer.Option(..., help="directory of .md/.txt source docs"),
+    model: str = typer.Option(..., help="litellm model id (needs a provider key in .env)"),
+    n_per_doc: int = typer.Option(3, min=1, help="draft this many QA pairs per document"),
+    out: Path = typer.Option(..., help="output gold set JSONL (items are verified=false)"),
+) -> None:
+    """Draft review-ready (question, answer, exact span) gold items from a corpus via a frontier LLM."""
+    from llb.prep.frontier import prepare_goldset
+
+    items = prepare_goldset(corpus_root, model=model, n_per_doc=n_per_doc, out_path=out)
+    typer.echo(
+        f"[prepare-goldset] {len(items)} drafted items (verified=false; review before scoring) -> {out}"
+    )
+
+
+@app.command("prepare-synthetic-corpus")
+def prepare_synthetic_corpus_cmd(
+    topics_file: Path = typer.Option(..., help="text file: one synthetic-doc topic per line"),
+    planter: str = typer.Option(..., help="litellm model that PLANTS the labels"),
+    judge: str = typer.Option(..., help="the eval judge model (must differ from the planter)"),
+    out_dir: Path = typer.Option(..., help="output dir for docs + planted_labels.jsonl"),
+    n_labels: int = typer.Option(3, min=1, help="planted QA pairs per document"),
+) -> None:
+    """Generate synthetic docs with structured planted labels (planter must differ from judge)."""
+    from llb.prep.frontier import prepare_synthetic_corpus
+
+    topics = [t.strip() for t in topics_file.read_text(encoding="utf-8").splitlines() if t.strip()]
+    if not topics:
+        typer.echo(f"[error] no topics found in {topics_file}", err=True)
+        raise typer.Exit(code=2)
+    docs, items = prepare_synthetic_corpus(
+        topics, planter_model=planter, judge_model=judge, n_labels=n_labels, out_dir=out_dir
+    )
+    typer.echo(
+        f"[prepare-synthetic-corpus] {len(docs)} docs, {len(items)} planted items "
+        f"(planter={planter} != judge={judge}) -> {out_dir}"
+    )
+
+
+@app.command("screen-public")
+def screen_public_cmd(
+    model: str = typer.Option(..., help="model name (Ollama tag or HF repo id)"),
+    backend: str = typer.Option("ollama", help="ollama (generation track) | vllm (logprob track)"),
+    base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
+    ),
+    tasks: Optional[str] = typer.Option(None, help="extra lm-eval task ids (comma-separated)"),
+    limit: Optional[int] = typer.Option(None, help="cap examples per task (smoke runs)"),
+    out_dir: Optional[Path] = typer.Option(None, help="output dir for lm-eval results JSON"),
+) -> None:
+    """Tier-1 public screen via lm-eval-harness-uk (logprob vs generation track; never mixed)."""
+    from llb.screen.public import run_screen
+
+    cfg = _load_config(None, model=model, backend=backend)
+    extra = [t.strip() for t in (tasks or "").split(",") if t.strip()]
+    out = out_dir or (cfg.data_dir / "screen")
+
+    def go(url: str) -> None:
+        report = run_screen(model, backend, url, extra_tasks=extra, output_dir=out, limit=limit)
+        cov = f"{len(report['covered'])}/{len(report['requested_tasks'])}"
+        status = "complete" if report["complete"] else f"PARTIAL (missing {report['missing']})"
+        typer.echo(f"[screen-public] {model} track={report['track']} coverage={cov} -- {status}")
+        for r in report["results"]:
+            typer.echo(f"[screen-public]   {r['task']:<22} {r['metric']}={r['score']:.3f}")
+
+    if base_url:
+        go(base_url)
+    elif backend == "ollama":
+        go(f"{cfg.ollama_host.rstrip('/')}/v1")
+    elif backend == "vllm":
+        from llb.backends.vllm import VllmLauncher
+
+        launcher = VllmLauncher(
+            model,
+            host=cfg.vllm_host,
+            port=cfg.vllm_port,
+            gpu_memory_utilization=cfg.gpu_memory_utilization,
+            max_model_len=cfg.max_model_len,
+        )
+        with launcher:
+            go(f"{cfg.vllm_host.rstrip('/')}/v1")
+    else:
+        typer.echo(f"[error] backend '{backend}' not supported for the screen", err=True)
+        raise typer.Exit(code=2)
+
+
+@app.command("board")
+def board_cmd(
+    host: str = typer.Option("127.0.0.1", help="network interface for the Streamlit board"),
+    port: int = typer.Option(8501, min=1, max=65535, help="port for the Streamlit board"),
+) -> None:
+    """Serve the thin Streamlit leaderboard (rank + best-config-per-model + CIs)."""
+    import subprocess
+    import sys
+
+    try:
+        import streamlit  # noqa: F401
+    except ImportError:
+        typer.echo(
+            '[error] the board needs the [board] extra. uv pip install -e ".[board]"', err=True
+        )
+        raise typer.Exit(code=2) from None
+    from llb.board import app as board_app
+
+    app_path = Path(board_app.__file__)
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app_path),
+        "--server.address",
+        host,
+        "--server.port",
+        str(port),
+    ]
+    raise typer.Exit(subprocess.call(cmd))
 
 
 @app.command("mlflow-ui")

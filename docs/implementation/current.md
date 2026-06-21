@@ -26,7 +26,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-165 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+220 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -38,7 +38,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (165 tests)
+    make test       # pytest (220 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -92,10 +92,15 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       backends/{base,openai_client,ollama,vllm}.py  # launcher iface + chat call + Ollama + vLLM
       backends/{hardware,prepare,planner,telemetry}.py  # GPU/RAM detect + pull/cache + plan + telemetry
       eval/graph.py                # LangGraph retrieve->generate flow + failure taxonomy
-      scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
+      scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + N-model board
       tracking/{manifest,mlflow,server}.py  # canonical artifacts + MLflow mirror/UI
-      executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
-    tests/                         # 165 tests across the above
+      executor/{cases,reporting,runner,vram,isolation}.py  # per-case work + reporting + sweep isolation
+      backends/resolver.py         # M3.2 AvailabilityResolver (discovery + backend priority + fit)
+      optimize/tuner.py            # M3.4 two-stage Optuna (tuning-split search -> stage-2 entry)
+      screen/public.py             # M3.1 Tier-1 lm-eval-harness-uk adapter (logprob/generation tracks)
+      prep/frontier.py             # M3.5 prepare-goldset + prepare-synthetic-corpus (litellm)
+      board/{data,app}.py          # M3.7 thin Streamlit leaderboard over the run bundles
+    tests/                         # 220 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -415,3 +420,170 @@ forward work ([`plan.md`](plan.md) Milestone 4).
 Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): an embedding-aware VRAM
 estimate for w4a16/int4 (the 2.3x weight under-estimate above), a pre-launch VRAM-contention
 guard, and surfacing the vLLM serving knobs as `run-eval` CLI flags.
+
+## Milestone 3 -- two-tier + scale + rigor (code complete; close-outs human-gated)
+
+All nine M3 modules are built and unit-tested; the only remaining work is non-code: the judge
+calibration close-out (needs the judge choice OQ2 + human ratings) and the gold-set human
+verification (flip `verified: true` on reviewed items). The CLI grew `resolve-models`, `sweep`,
+`tune`, `prepare-goldset`, `prepare-synthetic-corpus`, `screen-public`, and `board`.
+
+### AvailabilityResolver -- `llb.backends.resolver` (M3.2)
+`resolve(spec, vram, ram)` picks the backend that can actually serve a model on THIS host:
+it adds DISCOVERY (does each source exist?) and a PRIORITY+FIT decision on top of the
+feasibility planner. For each candidate `(backend, source)` -- the single declared backend or
+a `sources: {backend: source}` map for the same logical model across backends -- it probes
+availability (vLLM -> HF repo exists, Ollama -> tag pulled/in library, llama.cpp -> repo has a
+`*.gguf`), then plans the fit and chooses by the fixed order vLLM > Ollama > llama.cpp. Fit is
+offload-aware: vLLM must hold a serving window (`MIN_SERVING_CTX`, default 2048) fully on GPU
+(`ctx_gpu`), while Ollama / llama.cpp may split layers to CPU RAM (`ctx_max`) -- so an oversized
+bf16 model that vLLM cannot offload resolves to its GGUF on Ollama, exactly the rule the model
+notes describe. Judging fit at a serving context (not the host max) is what keeps gemma-4-E4B
+on vLLM even though it needs a sliver of offload at 131072. Every probe is injectable
+(`ResolverProbes`), so the decision logic is pure and unit-tested without network.
+
+    llb resolve-models                       # chosen backend per candidate (live probes)
+    llb resolve-models --offline             # skip probes; assume declared sources exist
+    llb resolve-models --context 8192        # resolve fit at a target context
+
+On this host it resolves gemma-4-E4B / gemma-4-12B (w4a16) to vLLM and llama3.2-3b to Ollama;
+the bf16/fp8 UA models resolve to nothing until a GGUF/Ollama `source` is declared for them.
+Residual: each spec carries one `quant`, so per-source quant (vLLM bf16 vs Ollama q4) is not
+yet modeled; the live HF/Ollama probes are not exercised in CI.
+
+### N-model board rigor -- `llb.scoring.aggregate` (M3.6)
+`rank_board` generalizes the single-model ranker to N models with four guards against
+weight-gaming and noise-driven flips:
+- **Average-rank headline.** Models are ranked on each shared quality signal (objective
+  always; the gated judge only when trusted AND present for all; semantic only when present
+  for all), and the per-signal ranks are averaged (`average_ranks`). This is robust to the
+  arbitrary judge weight -- two models can tie on average rank even when a weighted blend
+  would order them. The weighted blend (`headline_quality`) is kept as the tie-breaker view.
+- **Confidence intervals.** `bootstrap_mean_ci` puts a percentile bootstrap CI on each model's
+  per-case objective scores; adjacent models whose CIs overlap are flagged `unresolved` (the
+  rank flip is not statistically resolved).
+- **Pareto front.** `pareto_front` marks models not dominated on (quality up, tokens/sec up,
+  peak VRAM down).
+- **No tier mixing.** `rank_board` raises if asked to rank Tier-1 `screen` and Tier-2
+  `private` results in one board (`TIER_SCREEN` / `TIER_PRIVATE` on `ModelResult`).
+`format_board` renders it as ASCII (`*` = Pareto, `~` = CI-overlap/unresolved). The M1
+`rank_results` / `format_table` single-row path is unchanged and still used by `run-eval`.
+
+### Hard-isolation sweep -- `llb.executor.isolation` (M3.3)
+`run_sweep(configs)` runs one (model, config) cell per PROCESS so a leak or crash in one cell
+cannot bias the next: the default `CellRunner` shells out to `python -m llb.main run-eval
+--config <cell> --split <s>`, so the vLLM server AND the whole CUDA context die with the cell.
+Between cells it gates two things and records a third:
+- **VRAM reclaim gate** (`executor.vram.assert_reclaimed`): wait for used VRAM to return to the
+  pre-cell baseline within tolerance, else raise `VramNotReclaimed` and abort the whole sweep
+  (a leak would bias every later cell). It runs only for `GATE_BACKENDS` (vLLM / llama.cpp) that
+  own their VRAM; Ollama keeps weights warm by design, so gating it would falsely abort.
+- **Thermal cooldown** (`cool_down`): wait until the hottest GPU is <= a threshold, capped at a
+  max wait so a warm room cannot stall the sweep; throughput is only comparable at like clocks.
+- **GPU telemetry** (`sample_gpu` via nvidia-smi): temp / power / SM+mem clocks per cell.
+The sweep is RESUMABLE: each cell has a stable `cell_key` (a hash of its reproducibility-
+relevant config, ignoring `run_name`) and writes a marker under `$DATA_DIR/sweep/<id>/cells/`,
+so a re-run skips finished cells. Every side-effect (subprocess, NVML reader, GPU sampler,
+sleep) is injectable; 10 unit tests cover it without a GPU. New CLI `sweep` resolves each
+manifest model to a backend (M3.2) and runs the isolated cells:
+
+    llb sweep --goldset .data/llb/goldset/sample_rag_items.jsonl --sweep-id run1   # run
+    llb sweep --sweep-id run1                                                       # resume (skips done)
+
+Validated on this host: an Ollama cell ran as a subprocess, recorded GPU temp, and a re-run
+skipped it (resume). Residual: the sweep generates one cell per model at the default RAG
+config; the RAG-parameter search space is driven by Optuna (M3.4).
+
+### Two-stage Optuna tuning -- `llb.optimize.tuner` (M3.4)
+`two_stage(base_config)` keeps the leaderboard honest by SPLIT discipline: stage 1 searches the
+RAG/backend space on the disjoint `tuning` split, stage 2 scores ONLY the winning config on the
+full `final` split, and only that stage-2 run is the leaderboard entry. The embedding is pinned
+(never a search dimension). The search space is the M1 chunking machinery: strategy x
+chunk_size x overlap-fraction (so overlap < size always holds) x top_k x retrieval_mode x
+child_chunk_size. Over-context configs are PRUNED before they run -- `fits_context` estimates
+the retrieved prompt tokens (`top_k x chunk_size / CHARS_PER_TOKEN` + headroom + completion) and
+prunes when they exceed the model's effective window, so the prune depends on the RAG params,
+not just the model. The study uses a persistent SQLite backend under `$DATA_DIR/optuna/` with
+`load_if_exists`, so a killed search resumes. `optuna` is lazy-imported (the `[track]` extra);
+the search-space + fit helpers are pure, and the per-trial evaluation + the stage-2 runner are
+injectable (15 unit tests, no GPU). New CLI `tune`:
+
+    llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
+        --goldset .data/llb/goldset/sample_rag_items.jsonl
+
+Validated on this host (3 trials, Ollama): stage 1 picked markdown/size=960/top_k=6, then
+stage 2 scored it on the final split as the leaderboard row. Residual: the search space does
+not yet sample backend serving knobs (e.g. `max_model_len`); a pruning callback that also kills
+mid-trial on `VramNotReclaimed` would tie M3.4 into the M3.3 sweep.
+
+### Frontier prep utilities -- `llb.prep.frontier` (M3.5)
+Two GPU-free, litellm-backed data-prep utilities that emit UNVERIFIED material for human review
+(only `verified=True` items ever score a model):
+- `prepare_goldset` drafts (question, reference_answer, exact source span) triples from real
+  corpus docs. Every drafted span is RE-GROUNDED against the doc (`build_drafted_items` keeps
+  only spans that are a verbatim substring, with exact offsets), so a label can never point at
+  text that is not there; items are written `verified=false`, provenance `frontier-drafted`,
+  with deterministic splits.
+- `prepare_synthetic_corpus` generates synthetic docs with structured PLANTED labels and a hard
+  guard that the planter model is NOT the eval judge (a model grading answers it authored is
+  circular). It writes the docs, a `planted_labels.jsonl`, and a `provenance.json` recording
+  planter vs judge.
+`litellm` is lazy (the `[prep]` extra) and the completion call is injectable, so prompt
+building, fenced/prose JSON parsing (`parse_json_block`), span grounding, and the planter!=judge
+guard are pure and unit-tested without a key. New CLIs: `prepare-goldset`,
+`prepare-synthetic-corpus`.
+
+### Streamlit board -- `llb.board` (M3.7)
+A thin leaderboard page over the canonical run bundles. The loading half (`board.data`) is pure
+and unit-tested: `load_run_records` reads each `$DATA_DIR/run-eval/<ts>/manifest.json` (skipping
+staging `.tmp` dirs) plus its per-case `scores` into `ModelResult`s (per-case objectives ->
+the bootstrap CI), `best_per_model` keeps the highest-objective run per model, and
+`config_summary` extracts the best config. `board.app` is a thin Streamlit view: the M3.6
+`rank_board` (average-rank, Pareto `*`, CI-overlap `~`) plus best-config-per-model; deep
+inspection stays in the MLflow UI. New CLI `board` (shells out to `streamlit run`; needs the
+`[board]` extra). Verified on the real run bundles -- llama3.2:3b and gemma-4-E4B both land on
+the Pareto front with bootstrap CIs. Residual: the page shows only objective quality (no judge
+column until M3.8 close-out) and does not yet separate Tier-1 screen boards from Tier-2.
+
+### Tier-1 public screen -- `llb.screen.public` (M3.1 + M3.9 Belebele wiring)
+`run_screen(model, backend, base_url)` drives lm-eval-harness-uk through its `local-completions`
+model against the already-launched OpenAI-compatible endpoint (no model loaded twice). It splits
+into two TRACKS that are never cross-ranked: a **logprob** track (vLLM exposes token logprobs,
+so MCQ tasks score by loglikelihood -- Belebele-uk + others) and a **generation** track
+(Ollama / llama.cpp generate text only -- SQuAD-uk-style QA). `assert_single_track` refuses to
+combine them (a loglikelihood accuracy is not comparable to a generation exact-match), mirroring
+the Tier-1/Tier-2 guard in `aggregate`. COVERAGE is first-class: `parse_results` records which
+requested tasks produced a result and marks the report `complete=False` when any are missing, so
+a screen is never silently partial. lm-eval is heavy/external, so the run is injected (`runner=`)
+and task selection, command building, parsing, and coverage are unit-tested without it. New CLI
+`screen-public` (launches vLLM or uses the running Ollama / an explicit `--base-url`). The
+default task lists wire Belebele-uk into the logprob track and SQuAD-uk into the generation
+track (M3.9); task ids are overridable per harness build. Residual: the default UA task ids are
+best-effort (the harness fork's exact names vary) and the live lm-eval path is unrun here.
+
+### Ragas judge scorer -- `llb.scoring.judge` (M3.8, scorer half)
+The trust GATE already existed (`run_judge` / `judge_is_trusted`: the judge only enters the
+blend at calibration rho >= threshold, else it is demoted and objective correctness ranks
+alone). M3.8 fills in the scorer it routes to: `ragas_scorer` computes Ragas **faithfulness**
+(answer vs retrieved context) + **answer-relevancy** (answer vs question) with UA-localized
+metric instructions. The pure halves -- `to_ragas_samples` (our records -> Ragas
+`SingleTurnSample` fields), `extract_scores` (tolerating the 0.1 `answer_relevancy` vs 0.2
+`response_relevancy` key), and the UA prompt text -- are unit-tested via an injected
+`evaluate_fn`; the default `_default_ragas_evaluate` wires the real Ragas `evaluate` (lazy
+`[rag]` extra, litellm judge). The calibration CLOSE-OUT stays blocked on choosing the judge
+(OQ2) and producing human ratings, so live Ragas validation is still pending and the gate keeps
+the judge demoted until then.
+
+### Milestone 3 status
+
+| Step | What | State |
+|------|------|-------|
+| M3.1 | `screen/` Tier-1 lm-eval-harness-uk adapter (logprob vs generation track, per-task coverage) | DONE |
+| M3.2 | `backends/AvailabilityResolver` (discovery + vLLM>Ollama>llamacpp priority + offload-aware fit) | DONE |
+| M3.3 | `executor/` hard isolation (process-per-cell, VRAM gate, thermal cooldown, resume, GPU telemetry) | DONE |
+| M3.4 | `optimize/` two-stage Optuna (tuning-split search, over-context prune, persistent SQLite, stage-2 entry) | DONE |
+| M3.5 | `prep/` frontier utils (`prepare-goldset` re-grounded drafts; `prepare-synthetic-corpus` planter!=judge) | DONE |
+| M3.6 | `scoring/aggregate` N-model rigor (average-rank, Pareto, bootstrap CIs, no tier mixing) | DONE |
+| M3.7 | `board/` thin Streamlit (rank + best-config-per-model + CIs over the run bundles) | DONE |
+| M3.8 | `scoring/judge.ragas_scorer` (faithfulness + answer-relevancy, UA prompts); calibration close-out blocked on OQ2 + human ratings | CODE |
+| M3.9 | Belebele-uk -> logprob screen, SQuAD-uk -> generation screen (M3.1); gold-set human verification still pending | CODE |

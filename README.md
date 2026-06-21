@@ -88,3 +88,6 @@ Start at the [docs index](docs/README.md). Highlights:
 - [MamamyLLM HF](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3)
 - [LapaLLM HF](https://huggingface.co/spaces/lapa-llm/lapa)
 - [LapaLLM GitHub](https://github.com/lapa-llm/lapa-llm)
+
+- [Google Gemma 4](https://huggingface.co/collections/google/gemma-4)
+- [Alibaba Qwen 3.6](https://huggingface.co/collections/Qwen/qwen36)
