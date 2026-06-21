@@ -11,7 +11,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DATA_DIR_ENV = "DATA_DIR"
+from llb import env
+
 DEFAULT_DATA_DIR = ".data"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,5 +33,5 @@ def resolve_project_path(path: Path | str) -> Path:
 def resolve_data_dir(value: Path | str | None = None) -> Path:
     """Resolve an explicit data root or ``DATA_DIR`` from the project environment."""
     load_project_env()
-    configured = value if value is not None else os.environ.get(DATA_DIR_ENV, DEFAULT_DATA_DIR)
+    configured = value if value is not None else os.environ.get(env.DATA_DIR, DEFAULT_DATA_DIR)
     return resolve_project_path(configured)

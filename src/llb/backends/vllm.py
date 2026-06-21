@@ -23,6 +23,7 @@ from typing import Any, Callable, Protocol, TextIO, cast
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
 from llb.contracts import BackendMetadata, ChatMessage
+from llb import env
 
 
 class _Process(Protocol):
@@ -91,7 +92,7 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
 # the sm_89 RTX 4060 Ti and the engine never comes up. Greedy / temperature-0 decoding (the
 # eval default) does not need the flashinfer sampler, so we default it OFF here; export
 # VLLM_USE_FLASHINFER_SAMPLER=1 to opt back in on a host where that kernel builds.
-_DEFAULT_SUBPROCESS_ENV: dict[str, str] = {"VLLM_USE_FLASHINFER_SAMPLER": "0"}
+_DEFAULT_SUBPROCESS_ENV: dict[str, str] = {env.VLLM_USE_FLASHINFER_SAMPLER: "0"}
 
 
 def launch_env(base: Mapping[str, str] | None = None) -> dict[str, str]:

@@ -143,9 +143,10 @@ make gen-serving-config                # artifacts -> .data/llb/serving/
 ```
 
 Environment: copy [`.env.example`](../../.env.example) to `.env` (or run `make venv`).
-Set `HF_TOKEN` for gated MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000,
-and keep `VLLM_USE_FLASHINFER_SAMPLER=0` on consumer GPUs (generated vLLM scripts read
-this). See [vLLM backend guide](../guides/vllm-backend.md).
+Variable names are defined in [`src/llb/env.py`](../../src/llb/env.py). Set `HF_TOKEN` for gated
+MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000, and keep
+`VLLM_USE_FLASHINFER_SAMPLER=0` on consumer GPUs (generated vLLM scripts read this). See
+[vLLM backend guide](../guides/vllm-backend.md).
 
 ### Operational notes
 

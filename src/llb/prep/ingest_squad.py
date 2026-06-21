@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.contracts import JsonObject, SquadAnswers, SquadRecord
+from llb import env
 from llb.goldset.schema import GoldItem, Provenance, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items
@@ -203,7 +204,7 @@ def load_hf(
         raise SystemExit(
             'ERROR: "datasets" not installed. Run: uv pip install -e ".[goldset]"'
         ) from exc
-    token = token or os.environ.get("HF_TOKEN")
+    token = token or os.environ.get(env.HF_TOKEN)
     # When a limit is set, stream so we don't download the whole split. Over-fetch a
     # little because some rows get skipped (no answer / answer not in context).
     stream = limit is not None

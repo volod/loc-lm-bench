@@ -10,6 +10,8 @@ the backend via the launcher context manager) as the interrupt propagates throug
 import logging
 import os
 import sys
+
+from llb import env
 from typing import Any, Callable, Optional
 
 INTERRUPT_EXIT = 130  # 128 + SIGINT -- the conventional exit code for Ctrl-C
@@ -35,7 +37,7 @@ def configure_logging() -> None:
     """Set up root logging once (idempotent). `LLB_LOG=debug` raises the level + the noise."""
     if logging.getLogger().handlers:
         return
-    debug = os.environ.get("LLB_LOG", "").lower() in ("debug", "1", "true")
+    debug = os.environ.get(env.LLB_LOG, "").lower() in ("debug", "1", "true")
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         stream=sys.stderr,

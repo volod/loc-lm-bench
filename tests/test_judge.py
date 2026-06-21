@@ -111,11 +111,12 @@ def test_judge_experiment_metadata_has_no_secret():
 def test_deepeval_scorer_requires_explicit_local_endpoint(monkeypatch):
     monkeypatch.setattr("llb.scoring.judge.load_project_env", lambda: None)
     monkeypatch.delenv("DEEPEVAL_JUDGE_BASE_URL", raising=False)
-    with pytest.raises(SystemExit, match="local judge endpoint is required"):
+    with pytest.raises(SystemExit, match="a local judge endpoint is required"):
         deepeval_scorer([], "plain-model")
 
 
 def test_real_deepeval_metric_path_uses_ua_prompts(monkeypatch):
+    pytest.importorskip("deepeval")
     from deepeval.models import LocalModel
 
     prompts = []
