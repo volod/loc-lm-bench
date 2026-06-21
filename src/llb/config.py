@@ -20,6 +20,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from llb.contracts import JsonObject
+from llb import env
 from llb.paths import load_project_env, resolve_data_dir, resolve_project_path
 
 Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
@@ -56,7 +57,7 @@ class RunConfig(BaseModel):
     model: str = Field(default="llama3.2:3b", min_length=1)
     backend: Backend = "ollama"
     ollama_host: str = Field(
-        default_factory=lambda: _environment_value("OLLAMA_HOST", DEFAULT_OLLAMA_HOST)
+        default_factory=lambda: _environment_value(env.OLLAMA_HOST, DEFAULT_OLLAMA_HOST)
     )
     request_timeout_s: float = Field(default=120.0, gt=0)
     max_tokens: int = Field(default=512, ge=1)
@@ -66,7 +67,7 @@ class RunConfig(BaseModel):
     # vLLM serving (used when backend == "vllm"). gpu_memory_utilization is recorded so peak
     # VRAM is comparable across runs (vLLM pre-reserves a KV-cache fraction).
     vllm_host: str = Field(
-        default_factory=lambda: _environment_value("VLLM_HOST", DEFAULT_VLLM_HOST)
+        default_factory=lambda: _environment_value(env.VLLM_HOST, DEFAULT_VLLM_HOST)
     )
     vllm_port: int = Field(default=8000, ge=1, le=65535)
     gpu_memory_utilization: float = Field(default=0.85, gt=0, le=1)
@@ -94,7 +95,7 @@ class RunConfig(BaseModel):
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
     judge_model: str | None = None
     judge_base_url: str | None = Field(
-        default_factory=lambda: _optional_environment_value("DEEPEVAL_JUDGE_BASE_URL")
+        default_factory=lambda: _optional_environment_value(env.DEEPEVAL_JUDGE_BASE_URL)
     )
     judge_threshold: float = Field(default=0.6, ge=-1, le=1)
 

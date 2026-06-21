@@ -12,12 +12,10 @@ from typing import Any, Callable, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from llb.contracts import JudgeInputRecord, JudgeScore
+from llb import env
 from llb.paths import load_project_env
 
 DEFAULT_THRESHOLD = 0.6
-JUDGE_BASE_URL_ENV = "DEEPEVAL_JUDGE_BASE_URL"
-JUDGE_API_KEY_ENV = "DEEPEVAL_JUDGE_API_KEY"
-DEEPEVAL_TELEMETRY_ENV = "DEEPEVAL_TELEMETRY_OPT_OUT"
 
 # Judge-model bias disclosure (OQ2). The v1 default judge is a LOCAL Gemma-4 model, chosen for
 # no data egress + reproducibility -- but it is NOT independent of the candidate pool: Gemma-4
@@ -184,7 +182,14 @@ def deepeval_scorer(
 def _default_deepeval_evaluate(
     records: list[JudgeInputRecord], judge_model: str, *, base_url: str | None = None
 ) -> list[JudgeScore]:
-    os.environ.setdefault(DEEPEVAL_TELEMETRY_ENV, "YES")
+    served_model, resolved_base_url = resolve_judge_endpoint(judge_model, base_url)
+    if resolved_base_url is None:
+        raise SystemExit(
+            "ERROR: a local judge endpoint is required; set --judge-base-url or "
+            f"{env.DEEPEVAL_JUDGE_BASE_URL}."
+        )
+
+    os.environ.setdefault(env.DEEPEVAL_TELEMETRY_OPT_OUT, "YES")
     try:
         from deepeval.metrics import GEval
         from deepeval.models import LocalModel
@@ -194,13 +199,7 @@ def _default_deepeval_evaluate(
             'ERROR: the local judge needs the [rag] extra. Run: uv pip install -e ".[rag]"'
         ) from exc
 
-    served_model, resolved_base_url = resolve_judge_endpoint(judge_model, base_url)
-    if resolved_base_url is None:
-        raise SystemExit(
-            "ERROR: a local judge endpoint is required; set --judge-base-url or "
-            f"{JUDGE_BASE_URL_ENV}."
-        )
-    api_key = os.environ.get(JUDGE_API_KEY_ENV) or "local"
+    api_key = os.environ.get(env.DEEPEVAL_JUDGE_API_KEY) or "local"
     model = LocalModel(
         model=served_model,
         base_url=resolved_base_url,
@@ -259,11 +258,11 @@ def resolve_judge_endpoint(
     load_project_env()
     prefix, separator, model = judge_model.partition("/")
     served_model = model if separator and prefix in {"hosted_vllm", "ollama_chat"} else judge_model
-    base_url = explicit_base_url or os.environ.get(JUDGE_BASE_URL_ENV)
+    base_url = explicit_base_url or os.environ.get(env.DEEPEVAL_JUDGE_BASE_URL)
     if base_url is None and prefix == "hosted_vllm":
-        base_url = os.environ.get("HOSTED_VLLM_API_BASE") or os.environ.get("VLLM_HOST")
+        base_url = os.environ.get(env.HOSTED_VLLM_API_BASE) or os.environ.get(env.VLLM_HOST)
     if base_url is None and prefix == "ollama_chat":
-        base_url = os.environ.get("OLLAMA_API_BASE") or os.environ.get("OLLAMA_HOST")
+        base_url = os.environ.get(env.OLLAMA_API_BASE) or os.environ.get(env.OLLAMA_HOST)
     if base_url is not None:
         parts = urlsplit(base_url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -271,7 +270,7 @@ def resolve_judge_endpoint(
         if parts.username or parts.password or parts.query or parts.fragment:
             raise ValueError(
                 "judge base URL must not contain credentials, query parameters, or a fragment; "
-                f"use {JUDGE_API_KEY_ENV} for authentication"
+                f"use {env.DEEPEVAL_JUDGE_API_KEY} for authentication"
             )
         path = parts.path.rstrip("/")
         if not path.endswith("/v1"):

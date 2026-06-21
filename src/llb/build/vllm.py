@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from llb import env
 from llb.paths import PROJECT_ROOT, resolve_data_dir, resolve_project_path
 
 _LOG = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ def _require_clean_git_checkout(source_dir: Path) -> str:
 
 
 def _install_build_requirements(python: Path, source_dir: Path) -> None:
-    configured = os.environ.get("VLLM_BUILD_REQUIREMENTS")
+    configured = os.environ.get(env.VLLM_BUILD_REQUIREMENTS)
     requirements = Path(configured) if configured else source_dir / "requirements" / "build.txt"
     if not requirements.is_absolute():
         requirements = PROJECT_ROOT / requirements
@@ -149,7 +150,7 @@ def _install_from_checkout(python: Path, source_value: str) -> None:
     wheel_dir = resolve_data_dir() / "wheels" / f"{SOURCE_PACKAGE}_{abi_key}_git{revision}"
     wheel_dir.mkdir(parents=True, exist_ok=True)
 
-    max_jobs = os.environ.get("MAX_JOBS")
+    max_jobs = os.environ.get(env.MAX_JOBS)
     if not max_jobs:
         raise RuntimeError("MAX_JOBS is required for source builds; use scripts/build_vllm.sh")
     _LOG.info("[build-vllm] mode: source checkout")
@@ -159,7 +160,7 @@ def _install_from_checkout(python: Path, source_value: str) -> None:
     _LOG.info("[build-vllm] uv shared cache for dependencies: %s", _uv_cache_dir())
 
     wheels = _cached_source_wheels(wheel_dir)
-    if os.environ.get("REBUILD_VLLM_WHEEL") == "1" or not wheels:
+    if os.environ.get(env.REBUILD_VLLM_WHEEL) == "1" or not wheels:
         wheels = _build_source_wheel(python, source_dir, wheel_dir)
     else:
         _LOG.info("[build-vllm] reusing source-built wheel: %s", wheels[0])
@@ -199,11 +200,11 @@ def _report_install() -> None:
 
 def main() -> int:
     python = Path(sys.executable)
-    source_dir = os.environ.get("VLLM_SOURCE_DIR")
+    source_dir = os.environ.get(env.VLLM_SOURCE_DIR)
     if source_dir:
         _install_from_checkout(python, source_dir)
     else:
-        _install_prebuilt(python, os.environ.get("VLLM_SPEC", DEFAULT_VLLM_SPEC))
+        _install_prebuilt(python, os.environ.get(env.VLLM_SPEC, DEFAULT_VLLM_SPEC))
     _report_install()
     _LOG.info("[build-vllm] active attention backend is reported at serve time")
     _LOG.info("[build-vllm] serve: llb run-eval --backend vllm --model <hf-repo-id> --telemetry")

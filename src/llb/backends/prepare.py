@@ -28,6 +28,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from llb.backends.hardware import Gpu, detect_gpus, max_vram_mb
+from llb import env
 from llb.contracts import ModelSpec, PreparationReport, PreparedModel
 
 ACTION_PULL = "pull"  # ollama pull
@@ -157,7 +158,7 @@ def _hf_cache(source: str, token: str | None, cache_dir: Path | None) -> tuple[b
     try:
         path = snapshot_download(
             repo_id=source,
-            token=token or os.environ.get("HF_TOKEN"),
+            token=token or os.environ.get(env.HF_TOKEN),
             cache_dir=str(cache_dir) if cache_dir else None,
         )
     except Exception as exc:  # 404 / auth / network -- report per-model, keep going
@@ -165,7 +166,7 @@ def _hf_cache(source: str, token: str | None, cache_dir: Path | None) -> tuple[b
         if _looks_gated(exc):
             msg += (
                 f" -- accept the license at https://huggingface.co/{source} "
-                "and set HF_TOKEN in .env"
+                f"and set {env.HF_TOKEN} in .env"
             )
         return False, msg
     return True, path
