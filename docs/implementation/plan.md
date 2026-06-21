@@ -9,54 +9,35 @@ defensible.
 
 Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../design/spec.md).
 
-Milestones 0 and 1 are **complete** and documented in [`current.md`](current.md): the gold
-set + data-prep tooling (M0) and the eval skeleton (compile-free: prebuilt Ollama, no
-vLLM/flash-attn source build) + model prep / feasibility tooling (M1), 164 tests.
+Milestones 0, 1, and 2 are **complete** and documented in [`current.md`](current.md): the gold
+set + data-prep tooling (M0); the eval skeleton (compile-free: prebuilt Ollama, no
+vLLM/flash-attn source build) + model prep / feasibility tooling (M1); and one real vLLM
+backend + steady-state telemetry, validated end to end on `gemma-4-E4B-it-w4a16` on the RTX
+4060 Ti (M2). 165 tests.
 
 **Quick start:** `make demo-eval` runs the current pipeline end to end and idempotently
 (venv -> gold set -> index -> prep-models -> run-eval + telemetry; needs a running Ollama).
-See [`current.md`](current.md) for the per-command breakdown.
+The real vLLM path is `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` on a
+CUDA host. See [`current.md`](current.md) for the per-command breakdown.
 
-This file is the FORWARD plan only -- Milestone 2 (one real backend + telemetry) and
-Milestone 3 (two-tier screen, scale, rigor, board) -- plus the few M0/M1
-residuals that are blocked on a running backend or an undecided judge, each folded into the
-milestone that unblocks it. Completed detail moves to `current.md` as it lands.
+This file is the FORWARD plan only -- Milestone 3 (two-tier screen, scale, rigor, board) and
+Milestone 4 (post-M2 accuracy + robustness polish) -- plus the few M0/M1 residuals that are
+blocked on an undecided judge or human input, each folded into the milestone that unblocks it.
+Completed detail moves to `current.md` as it lands.
 
 ## Approach: walking skeleton, then layer
 
-The thin end-to-end vertical exists (M1: retrieve -> generate -> score -> ranked row +
-manifest, compile-free on prebuilt Ollama). Now add layers, each independently shippable
-and tested:
+The end-to-end vertical exists and is proven on a real backend (M1 skeleton on prebuilt
+Ollama; M2 the vLLM launcher + telemetry validated on `gemma-4-E4B-it-w4a16`: retrieve ->
+generate -> score -> ranked row + manifest with real tokens/sec + peak VRAM). Now add layers,
+each independently shippable and tested:
 
-- **Milestone 2 — one real backend + telemetry.** Add the vLLM (or llama.cpp) launcher and
-  the real telemetry hook to validate CUDA / HF-loading / tokenizer assumptions on one real
-  model before scaling.
 - **Milestone 3 — two-tier + scale + rigor.** A Tier-1 public screen narrows candidates;
   a Tier-2 multi-model sweep on survivors with hard process isolation, two-stage Optuna, the
   gated judge, prep utils, and a Pareto + average-rank board.
-
-## Milestone 2 — one real backend + telemetry
-
-CODE complete (built + unit-tested with fakes; see [`current.md`](current.md) and the
-[vLLM guide](../guides/vllm-backend.md)): the `VllmLauncher` (M2.1), the steady-state telemetry
-hook (M2.2, wired into `run-eval --telemetry`), and the MAX_JOBS-capped
-`scripts/build_vllm.sh` + canonical `max_jobs()` in `scripts/shared/common.sh` (OQ6 resolved).
-What remains needs a CUDA host:
-
-- **M2.1 build (run it).** On the GPU host: `make build-vllm` (binary-only install through
-  uv's shared cache). If a fork must compile locally, clone it and run
-  `VLLM_SOURCE_DIR=<checkout> make build-vllm`; only that source-built wheel is retained
-  under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Confirm `vllm` imports.
-- **M2.3 candidate list (OQ3).** Finalize the ~6-10 candidates in `samples/models_uk.yaml` and
-  VERIFY the UA-specialized HF repo ids (MamayLM v2 12B/27B, Lapa, Gemma 3, Qwen, Llama 3.1).
-  `make prep-models PREP_BACKEND=vllm` is the verification step (a wrong id 404s; a gated repo
-  needs `HF_TOKEN`).
-- **M2.4 validate on one real model.** `make run-eval BACKEND=vllm MODEL=<hf-repo> TELEMETRY=1`;
-  confirm CUDA / HF-loading / tokenizer assumptions and that the planner's predicted fit
-  matches the measured fit (feed corrections back into `planner.py` defaults +
-  `samples/models_uk.yaml`).
-- **Acceptance:** one HF model served via vLLM with real telemetry recorded under the
-  executor; `run-eval` produces a ranked row from the real backend.
+- **Milestone 4 — post-M2 accuracy + robustness polish.** Non-blocking improvements the
+  real-model run surfaced: an embedding-aware VRAM estimate, a pre-launch VRAM-contention
+  guard, and ergonomics for the vLLM serving knobs.
 
 ## Milestone 3 — two-tier + scale + rigor
 
@@ -118,6 +99,34 @@ What remains needs a CUDA host:
   the pipeline, so it needs a scoped milestone + sign-off before building. (The langchain
   chunking strategies and flat + parent-child retrieval are already built in M1.)
 
+## Milestone 4 — post-M2 accuracy + robustness polish
+
+Non-blocking improvements surfaced by the M2.4 real-model run (gemma-4-E4B-it-w4a16 on the
+RTX 4060 Ti). None blocks M3; each is independently shippable and unit-testable.
+
+- **M4.1 Embedding-aware VRAM estimate.** `list-models` / the planner under-estimate w4a16
+  (and other partial-quant) weights because `params_b x bpw` assumes the whole model is
+  quantized; the measured E4B weights were 9.8 GiB vs the predicted ~4.2 GiB (Gemma's
+  256k-token embedding stays high-precision). Read `vocab_size` / `hidden_size` / tied-embedding
+  from each `config.json` and price the unquantized embedding + norms separately, so the fit
+  verdict and Optuna's over-VRAM pruning (M3.4) stay honest for the 12B/27B candidates. Refines
+  the `AvailabilityResolver` VRAM fit (M3.2).
+- **M4.2 Pre-launch VRAM-contention guard.** The first M2.4 launch failed because Ollama held
+  ~2.8 GB resident, so vLLM's startup free-memory check (`gpu-memory-utilization` x total)
+  failed. Add a pre-flight that reports the resident users and either waits / evicts (e.g.
+  Ollama keep-alive=0) or auto-derates `gpu-memory-utilization` to the actually-free fraction
+  before serving. The single-run analogue of the M3.3 cross-cell VRAM-tolerance gate; share
+  the NVML reader.
+- **M4.3 vLLM serving knobs as CLI flags + a kernel preflight.** Surface `--max-model-len`
+  and `--gpu-memory-utilization` on `run-eval` (today only via `--config`), and add a
+  `build-vllm` self-check that builds the flashinfer sampling kernel once and pins a
+  host-compatible flashinfer (or confirms the native sampler), so `launch_env` can re-enable
+  the faster sampler where it compiles (it is defaulted off because flashinfer 0.6.x's
+  `sampling.cuh` fails to build against newer CCCL/CUB on consumer sm_89).
+- **Acceptance:** the planner's predicted weights land within tolerance of the measured load
+  on the gemma-4 w4a16 candidates; a run launches cleanly when another process holds VRAM; the
+  vLLM knobs are settable without a YAML file.
+
 ## Critical modules still to build (`src/llb/`)
 
 - `backends/` — llama.cpp launcher + `AvailabilityResolver` (M3.2). (The base `BackendLauncher`,
@@ -147,18 +156,18 @@ datasets: SQuAD-uk + Belebele-uk (screen/baseline). Candidate seeds incl. MamayL
 
 ## Verification (forward)
 
-- **M2:** real telemetry recorded; the planner-predicted fit matches the measured fit;
-  tokens/sec measured at steady state after warmup.
 - **M3 unit tests:** resolver priority, screen-adapter task-coverage, Optuna over-VRAM
   pruning, average-rank aggregator, judge calibration gate (rho>=0.6 with CI, else demote),
   prep-util provenance.
+- **M4:** the embedding-aware estimate predicts the measured weights within tolerance; the
+  pre-launch guard lets a run start while another process holds VRAM.
 - **Critical E2E:** resume-after-kill mid-sweep; screen -> finalists -> tuned eval -> board.
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm/create the MAX_JOBS
-  helper before any vLLM source build (OQ6).
+  helper before any vLLM source build (the canonical `max_jobs()` helper lands in M2).
 
 ## Worktree parallelization
 
-After the M2 launcher lands (it touches the run path), these lanes parallelize:
+The M2 launcher has landed (it touches the run path); these lanes parallelize:
 - Lane A: `backends/` launchers + resolver (touches the run path)
 - Lane B: `prep/` utils (litellm, no GPU) -- fully independent; also M3.8 judge scorer (no GPU)
 - Lane C: `optimize/` Optuna -- depends on A + `scoring/`
@@ -173,6 +182,7 @@ shares the run path with A -- keep sequential to avoid merge conflicts.
   multi-vector-store, full GPU-class matrix, quality-per-watt.
 - Rejected Codex pushbacks (ruled the other way): defer-Optuna-to-finalists,
   LangGraph-only-where-needed, drop-MLflow, drop-thermal-gate, defer-vLLM.
-- Open questions to resolve in-milestone: candidate-model list (OQ3, M2.3), judge locality +
-  Ragas UA validation (OQ2, M3.8), text-analysis scoring schema (before the deferred eval
-  templates), MAX_JOBS helper path (OQ6, M2.1).
+- Open questions resolved in M2: candidate-model list (OQ3) + vLLM repo ids verified, and the
+  MAX_JOBS helper path (OQ6, canonical `max_jobs()` in `scripts/shared/common.sh`).
+- Open questions still to resolve in-milestone: judge locality + Ragas UA validation
+  (OQ2, M3.8), text-analysis scoring schema (before the deferred eval templates).

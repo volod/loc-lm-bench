@@ -3,7 +3,12 @@
 import pytest
 
 from llb.backends.base import ChatResult
-from llb.backends.vllm import VllmLauncher, build_vllm_command, parse_served_context
+from llb.backends.vllm import (
+    VllmLauncher,
+    build_vllm_command,
+    launch_env,
+    parse_served_context,
+)
 
 
 def test_build_command_includes_serving_flags():
@@ -20,6 +25,14 @@ def test_parse_served_context():
     assert parse_served_context(body) == 4096
     assert parse_served_context("not json") is None
     assert parse_served_context('{"data": []}') is None
+
+
+def test_launch_env_defaults_flashinfer_sampler_off_but_respects_override():
+    # On a clean env the broken flashinfer JIT sampler is defaulted off.
+    assert launch_env({"PATH": "/usr/bin"})["VLLM_USE_FLASHINFER_SAMPLER"] == "0"
+    # An explicit caller value always wins (opt back in on a host where the kernel builds).
+    overridden = launch_env({"VLLM_USE_FLASHINFER_SAMPLER": "1"})
+    assert overridden["VLLM_USE_FLASHINFER_SAMPLER"] == "1"
 
 
 class FakeProc:

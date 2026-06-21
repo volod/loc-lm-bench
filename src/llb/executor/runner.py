@@ -10,6 +10,7 @@ Ollama, or GPU. The default path wires the real components and uses the compiled
 LangGraph app.
 """
 
+import logging
 import shutil
 import uuid
 from collections.abc import Callable, Mapping
@@ -38,9 +39,36 @@ from llb.tracking.manifest import RunManifest, persist_run
 
 RagState = eval_graph.RagState
 _RUN_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
+_LOG = logging.getLogger(__name__)
+
+
+def _preserve_backend_log(launcher: BackendLauncher, config: RunConfig) -> None:
+    """Copy a failed backend's startup log out of the staging dir (which is about to be
+    removed) into the persistent logs dir, so a launch failure stays diagnosable instead of
+    vanishing with the staging bundle (e.g. a vLLM engine that dies during startup)."""
+    log_path = getattr(launcher, "log_path", None)
+    src = Path(log_path) if log_path else None
+    if src is None or not src.exists():
+        return
+    dest_dir = config.data_dir / "llb" / "logs"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = dest_dir / f"failed-{src.stem}-{stamp}.log"
+    try:
+        shutil.copyfile(src, dest)
+    except OSError:
+        return
+    _LOG.error("[run-eval] backend failed to start; startup log preserved -> %s", dest)
 
 
 def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[GoldItem]:
+    if not config.goldset_path.exists():
+        raise SystemExit(
+            f"gold set not found: {config.goldset_path}\n"
+            "  seed the sample set with `make gen-rag-items` (then pass "
+            "--goldset .data/llb/goldset/sample_rag_items.jsonl),\n"
+            "  or build the real set with `make ingest-uk-squad` (needs HF_TOKEN)."
+        )
     items = [
         item for item in load_goldset(config.goldset_path) if item.split == split and item.verified
     ]
@@ -195,7 +223,11 @@ def run_eval(
     """
     items = _select_eval_items(config, items, split, limit)
     if not items:
-        raise SystemExit(f"no verified '{split}' items in {config.goldset_path}")
+        raise SystemExit(
+            f"no verified '{split}' items in {config.goldset_path} "
+            "(only items with verified=true are scored; public-reused sets ship "
+            "verified=false pending human review)"
+        )
 
     run_id = uuid.uuid4().hex[:12]
     run_timestamp = _run_timestamp(run_id)
@@ -217,6 +249,7 @@ def run_eval(
             batch = execute_cases(items, runner_fn, embedder)
             telemetry_report = _collect_optional_telemetry(config, launcher)
     except BaseException:
+        _preserve_backend_log(launcher, config)
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
 

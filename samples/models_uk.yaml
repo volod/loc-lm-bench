@@ -28,6 +28,11 @@
 #  - These are multimodal (image-text); we serve + score TEXT only.
 #  - Gemma 3/4 use sliding-window attention, so `list-models` over-estimates KV cache at
 #    long context (its feasible-context numbers are conservative for these models).
+#  - w4a16 WEIGHTS are UNDER-estimated by `list-models` (params_b x bpw): the int4 quant
+#    covers only the linear layers, while Gemma's 256k-token embedding stays high-precision.
+#    Measured: gemma-4-E4B-it-w4a16 loads 9.8 GiB, not the ~4.2 GiB the planner predicts
+#    (M2.4 on the RTX 4060 Ti). Treat the w4a16 wt_GB column as a lower bound; a vocab- and
+#    embedding-aware estimate is forward work (see plan.md Milestone 4).
 #
 # Planning fields (used by `make list-models`; arch values read from each config.json):
 #   params_b  billions   quant  bpw class (bf16, fp8, w4a16, q4_k_m, ...)  n_layers
@@ -50,13 +55,16 @@ models:
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
     source: google/gemma-4-E4B-it-qat-w4a16-ct
-    min_vram_gb: 6
+    min_vram_gb: 11    # MEASURED floor: weights load 9.8 GiB (not the planner's ~4.2 GiB)
     params_b: 8
     quant: w4a16
     n_layers: 42
     kv_dim: 512         # 2 KV heads * 256 head_dim
     max_context: 131072
-    notes: Gemma 4 ~8B int4 (w4a16, for vLLM); fits 16 GB easily
+    # M2.4 validated on the RTX 4060 Ti (vLLM 0.23.0, flashinfer sampler off): weights 9.8 GiB,
+    # ~64 tok/s steady, peak VRAM 15.7 GB at gpu-memory-utilization 0.80, served ctx 8192,
+    # cold load ~112 s, tokenizer ~0.33 tok/UA-char. The M2 reference real-backend run.
+    notes: Gemma 4 ~8B int4 (w4a16, for vLLM); the M2.4 reference run -- fits 16 GB
 
   - name: gemma-4-12b-it-w4a16
     backend: vllm

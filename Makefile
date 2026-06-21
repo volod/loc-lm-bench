@@ -26,6 +26,10 @@ LIMIT ?= 20
 RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
+# The verified sample set (seeded by `make gen-rag-items` / `make demo-eval`) is the default
+# so `make run-eval` works out of the box. Override GOLDSET= to point at another set, e.g.
+# the real HPLT/ua-squad set built by `make ingest-uk-squad` (verified=false until reviewed).
+GOLDSET ?= $(PROJECT_ROOT)/.data/llb/goldset/sample_rag_items.jsonl
 
 # `make demo-eval` end-to-end pipeline knobs (idempotent; CUDA-free defaults).
 ALL_GOLDSET ?= $(PROJECT_ROOT)/.data/llb/goldset/sample_rag_items.jsonl
@@ -149,9 +153,11 @@ validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --k $(RAG_K)
 
-run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm LIMIT= SPLIT= TELEMETRY=1
+run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" --split "$(SPLIT)" \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry,)
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel

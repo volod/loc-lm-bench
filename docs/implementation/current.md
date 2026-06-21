@@ -14,18 +14,19 @@ A snapshot of what exists and runs **today**. Forward work lives in
   mirror), and a minimal sequential runner with a VRAM gate. `llb run-eval` prints one
   ranked row. The skeleton is **compile-free** -- prebuilt Ollama (which uses the GPU),
   no vLLM/flash-attn source build -- so the loop is proven before that build (M2).
-- **Milestone 2 (real backend + telemetry) -- code complete:** a vLLM launcher (serves HF
-  weights behind the same OpenAI-compatible interface), a per-backend telemetry hook
-  (steady-state tokens/sec, peak VRAM, served vs requested context, load time, tokenizer
-  efficiency), and a MAX_JOBS-capped vLLM build script. The from-source build + validating on
-  a real model (M2.4) need a CUDA host (see the [vLLM guide](../guides/vllm-backend.md)); the
-  code is unit-tested with fakes.
+- **Milestone 2 (real backend + telemetry) complete:** a vLLM launcher (serves HF weights
+  behind the same OpenAI-compatible interface), a per-backend telemetry hook (steady-state
+  tokens/sec, peak VRAM, served vs requested context, load time, tokenizer efficiency), and a
+  MAX_JOBS-capped vLLM build script -- now **validated end to end on a real model**:
+  `google/gemma-4-E4B-it-qat-w4a16-ct` served via vLLM 0.23.0 on the RTX 4060 Ti 16 GB,
+  scored under the executor with real telemetry (~64 tok/s, peak VRAM 15.7 GB, cold load
+  ~112 s, served ctx 8192). See the [vLLM guide](../guides/vllm-backend.md).
 
 Two host-aware model utilities: `prep-models` prepares candidate models (pulls Ollama
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-164 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+165 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -37,7 +38,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (164 tests)
+    make test       # pytest (165 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -94,7 +95,7 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       scoring/{correctness,judge,aggregate}.py  # objective + semantic + gated judge + ranking
       tracking/{manifest,mlflow,server}.py  # canonical artifacts + MLflow mirror/UI
       executor/{cases,reporting,runner,vram}.py  # per-case work + reporting + orchestration
-    tests/                         # 164 tests across the above
+    tests/                         # 165 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
@@ -235,7 +236,10 @@ relative paths from the project root rather than the caller's current directory.
     llb run-eval --score-semantic                         # also record semantic correctness
 
 Or via make: `make prep-models`, `make build-index`, `make validate-retrieval`,
-`make run-eval MODEL=... LIMIT=...`.
+`make run-eval MODEL=... LIMIT=...`. `make run-eval` defaults `GOLDSET=` to the verified
+sample set (seeded by `make gen-rag-items` / `make demo-eval`) so it runs out of the box;
+override `GOLDSET=` for another set. A missing gold set or a set with no `verified: true`
+items in the split fails with an actionable message rather than a raw traceback.
 
 ### Model preparation — `llb.backends.{hardware,prepare}` (`prep-models`)
 Reads a candidate-models manifest (`samples/models_uk.yaml`), detects the host GPU via
@@ -282,6 +286,13 @@ subprocess (controlling + recording `gpu-memory-utilization` / `max-model-len`),
 readiness, serves chat through the same `chat_once`, and kills the server on stop. It is a
 subprocess CLI, so the module imports in the base install and is tested by injecting the
 process factory + HTTP probe (no vLLM/CUDA needed). llama.cpp slots in the same way later.
+The launcher seeds the subprocess env via `launch_env`, which defaults
+`VLLM_USE_FLASHINFER_SAMPLER=0` (only when unset, so an explicit value wins): flashinfer
+JIT-compiles a sampling kernel at startup that fails to build on consumer CUDA toolchains
+(its `sampling.cuh` calls `cub::BlockAdjacentDifference::FlagHeads`, removed from newer
+CCCL/CUB), and greedy decoding does not need it. When a launch fails, the runner preserves
+the backend's startup log to `$DATA_DIR/llb/logs/failed-*.log` before discarding the staging
+bundle, so a dead engine stays diagnosable.
 
 ### Eval graph — `llb.eval.graph`
 A LangGraph retrieve -> generate flow (the first of the ~3 DRY templates). The node
@@ -347,14 +358,15 @@ metric-prompt localization (M3.8, needs the judge choice + calibration ratings) 
 map-reduce / multi-hop eval templates (deferred until the text-analysis benchmark needs
 them). The optional semantic-similarity correctness signal is now built (`--score-semantic`).
 
-## Milestone 2 -- real backend + telemetry (code complete)
+## Milestone 2 -- real backend + telemetry (complete)
 
 A real vLLM backend behind the same interface, a steady-state telemetry hook, and the
-MAX_JOBS-capped build entrypoint. The code is unit-tested with fakes; the from-source build +
-serving a real model run on a CUDA host -- see the [vLLM guide](../guides/vllm-backend.md).
+MAX_JOBS-capped build entrypoint -- validated end to end on a real model (see the
+[vLLM guide](../guides/vllm-backend.md) and `samples/run_config_vllm_uk.yaml`).
 
 ### vLLM launcher — `llb.backends.vllm` (M2.1)
-`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above. The thin
+`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above (incl. the
+`launch_env` flashinfer-sampler default and the on-failure log preservation). The thin
 `scripts/build_vllm.sh` entrypoint sources `scripts/shared/common.sh`, exports its canonical
 `max_jobs()` result (`min(cores//2, RAM_GiB//14)`, AGENTS.md), and delegates to
 `llb.build.vllm`. The default binary-only install and all ordinary dependencies use uv's
@@ -363,7 +375,8 @@ under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Weights are cached by `p
 
     make build-vllm                                   # prebuilt wheel via uv shared cache
     VLLM_SOURCE_DIR=../vllm make build-vllm           # one ABI-keyed checkout wheel
-    make run-eval BACKEND=vllm MODEL=google/gemma-4-12B-it-qat-w4a16-ct TELEMETRY=1
+    make prep-models PREP_BACKEND=vllm                # cache HF weights (verifies repo ids)
+    llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry   # the M2.4 run
 
 ### Telemetry hook — `llb.backends.telemetry` (M2.2)
 `measure_throughput` runs the steady-state protocol (fixed UA prompt set + fixed
@@ -375,15 +388,30 @@ steady tokens/sec, tokenizer efficiency (tokens/UA-char), peak VRAM, requested-v
 context, load time, gpu-memory-utilization, and detected GPU. Wired into `run-eval`
 behind `config.measure_telemetry` (`--telemetry`); recorded under `manifest.telemetry`.
 
+### M2.4 real-model validation (RTX 4060 Ti 16 GB)
+`google/gemma-4-E4B-it-qat-w4a16-ct` served via vLLM 0.23.0 and scored under the executor
+produced a real ranked row + full telemetry: objective quality 0.801, **63.8 tok/s** steady,
+peak VRAM **15.7 GB** (at gpu-memory-utilization 0.80), cold load **112 s**, served context
+8192, tokenizer 0.33 tok/UA-char. vLLM resolves `Gemma4ForConditionalGeneration` +
+`compressed-tensors` natively; attention falls back to TRITON (Gemma-4 heterogeneous head
+dims), the flashinfer sampler is disabled (see `launch_env`), and `max_model_len` is capped
+so the KV cache fits (the native 131072 window would over-reserve and fail startup).
+
+Planner-vs-measured fit: the model's **weights load 9.8 GiB**, ~2.3x the planner's ~4.2 GiB
+estimate (`params_b x bpw`). w4a16 quantizes only the linear layers while Gemma's 256k-token
+embedding stays high-precision, so `list-models` under-estimates w4a16 weights. The measured
+floor + caveat are recorded in `samples/models_uk.yaml`; an embedding-aware estimator is
+forward work ([`plan.md`](plan.md) Milestone 4).
+
 ### Milestone 2 status
 
 | Step | What | State |
 |------|------|-------|
-| M2.1 | `VllmLauncher` + `build_vllm_command` + MAX_JOBS build helper / script | DONE (code) |
-| M2.2 | telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time, tok/char) | DONE (code) |
-| M2.3 | candidate list seeded in `samples/models_uk.yaml` | PARTIAL (finalize + verify ids) |
-| M2.4 | validate on one real vLLM-served model | TODO (needs a CUDA host) |
+| M2.1 | `VllmLauncher` + `build_vllm_command` + MAX_JOBS build helper / script | DONE |
+| M2.2 | telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time, tok/char) | DONE |
+| M2.3 | candidate list in `samples/models_uk.yaml`; vLLM repo ids verified via `prep-models` | DONE |
+| M2.4 | validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real telemetry | DONE |
 
-Remaining (need a CUDA host; scoped in [`plan.md`](plan.md)): the actual `build-vllm`,
-finalizing + verifying the candidate HF repo ids (`make prep-models --backend vllm` 404s a
-wrong id), and the M2.4 real-model run (then feed fit corrections back into `planner.py`).
+Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): an embedding-aware VRAM
+estimate for w4a16/int4 (the 2.3x weight under-estimate above), a pre-launch VRAM-contention
+guard, and surfacing the vLLM serving knobs as `run-eval` CLI flags.
