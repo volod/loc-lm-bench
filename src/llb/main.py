@@ -8,6 +8,7 @@ Commands by milestone:
   sweep                                              M3.3 isolated cell-per-model sweep (resume)
   tune                                               M3.4 two-stage Optuna (tuning -> final)
   prepare-goldset / prepare-synthetic-corpus         M3.5 frontier data-prep (litellm)
+  prepare-goldset-draft                              M4.4 ontology-assisted draft (local/frontier)
   judge-experiment                                   M3.8 local DeepEval UA smoke artifact
   screen-public                                      M3.1 Tier-1 lm-eval-harness-uk screen
   board / mlflow-ui                                  M3.7 Streamlit leaderboard / MLflow UI
@@ -451,6 +452,43 @@ def prepare_synthetic_corpus_cmd(
     typer.echo(
         f"[prepare-synthetic-corpus] {len(docs)} docs, {len(items)} planted items "
         f"(planter={planter} != judge={judge}) -> {out_dir}"
+    )
+
+
+@app.command("prepare-goldset-draft")
+def prepare_goldset_draft_cmd(
+    corpus_root: Path = typer.Option(..., help="directory of .md/.txt source docs"),
+    model: str = typer.Option(
+        ..., help="model id (local endpoint tag, or litellm route for frontier)"
+    ),
+    endpoint: str = typer.Option(
+        "local", help="local (OpenAI-compatible, no egress) | frontier (litellm, opt-in egress)"
+    ),
+    base_url: Optional[str] = typer.Option(
+        None, help="local endpoint base URL (default: Ollama OpenAI-compatible /v1)"
+    ),
+    max_items: int = typer.Option(60, min=1, help="upper bound on drafted QA items"),
+    seed: int = typer.Option(13, help="deterministic sampling/split seed"),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
+    ),
+) -> None:
+    """M4.4: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
+    from llb.prep.ontology import EndpointConfig, draft_goldset
+
+    try:
+        cfg = (
+            EndpointConfig(kind=endpoint, model=model, base_url=base_url)
+            if base_url
+            else EndpointConfig(kind=endpoint, model=model)
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    result = draft_goldset(corpus_root, cfg, max_items=max_items, seed=seed, out_dir=out_dir)
+    typer.echo(
+        f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
+        f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
     )
 
 

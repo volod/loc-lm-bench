@@ -5,8 +5,9 @@ hardware. Public leaderboards measure general capability on someone else's data 
 VRAM; loc-lm-bench re-ranks a handful of candidate models on your own corpus, on a single
 desktop GPU (validated on an RTX 4060 Ti 16 GB), so the choice is reproducible and defensible.
 
-Status: runnable end to end -- data prep, Ollama + vLLM serving, telemetry, and a ranked board.
-See [what's built today](docs/implementation/current.md) and the
+Status: runnable end to end -- data prep, Ollama + vLLM + llama.cpp serving, telemetry, and a
+ranked board, plus VRAM-contention guarding and an ontology-assisted gold-set drafter
+(Milestones 0-4 delivered). See [what's built today](docs/implementation/current.md) and the
 [forward plan](docs/implementation/plan.md).
 
 ## Features
@@ -15,7 +16,7 @@ See [what's built today](docs/implementation/current.md) and the
 |---|---|
 | Corpus-grounded | Scores models on your documents + a span-labeled Ukrainian gold set, not transferred public scores. |
 | Source-span labels | Gold labels are document char offsets (not chunk ids), so they survive `chunk_size` tuning. |
-| Backend-agnostic | One OpenAI-compatible interface; Ollama + vLLM ship today (llama.cpp planned), chosen per model by an availability resolver. |
+| Backend-agnostic | One OpenAI-compatible interface; Ollama + vLLM + llama.cpp, chosen per model by an availability resolver (with a pre-launch VRAM-contention guard). |
 | Hardware-aware | `list-models` reports what fits your GPU + RAM (KV-cache-aware, with a GPU/CPU layer split). |
 | Defensible scoring | Objective reference correctness ranks models; an LLM judge enters only after Ukrainian calibration (Spearman rho >= 0.6), else it stays demoted. |
 | Rigorous board | Average rank + Pareto front + bootstrap confidence intervals; process-isolated, VRAM/thermal-gated sweeps. |
@@ -54,7 +55,7 @@ default when they share a disk. Set a specific mode (`copy|hardlink|clone|symlin
 ## Commands by result
 
 The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scale -> review.**
-`make venv` installs everything once; `make test` runs the suite (297 tests).
+`make venv` installs everything once; `make test` runs the suite (362 tests).
 
 ### 1. Prepare data
 
@@ -63,6 +64,7 @@ The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scal
 | `make validate-goldset` | Validates the committed fixture and its exact source spans. |
 | `make ingest-uk-squad GOLDSET_MODE=development` | Reproduces the pinned reviewed UA-SQuAD fixture (may need `HF_TOKEN` in `.env`). |
 | `make ingest-uk-squad GOLDSET_MODE=skeleton` | A from-scratch authoring template. |
+| `make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>` | Ontology-assisted draft gold set from a corpus (local endpoint; `verified=false`, review before scoring). |
 | `make build-rag-store` | Chunks `samples/corpus` (fixed / sentence / recursive / markdown / semantic). |
 
 ### 2. Build + validate retrieval
@@ -109,7 +111,7 @@ Start at the [documentation index](docs/README.md). High-level entry points:
 | Doc | What it covers |
 |---|---|
 | [What's built today](docs/implementation/current.md) | Delivered milestones, modules, and exact command behavior. |
-| [Forward plan](docs/implementation/plan.md) | The ordered, dependency-aware roadmap (M4 -> M5 -> M6 + human lane). |
+| [Forward plan](docs/implementation/plan.md) | The ordered, dependency-aware roadmap (M5 -> M6 + human lane; M0-M4 delivered). |
 | [Design spec](docs/design/spec.md) | Problem, wedge, architecture, and the recorded decisions. |
 | [Learning path](docs/guides/learning-path.md) | Learn the whole stack from basics: a staged syllabus + curated links. |
 | [AGENTS.md](AGENTS.md) | Contributor + agent guardrails. |
@@ -139,6 +141,29 @@ Best candidate models (Ukrainian-specialized + strong multilingual bases the har
 | Lapa LLM | [HF](https://huggingface.co/spaces/lapa-llm/lapa) / [GitHub](https://github.com/lapa-llm/lapa-llm) | lang-uk Ukrainian model; UA-specialized candidate. |
 | Google Gemma 4 | [HF](https://huggingface.co/collections/google/gemma-4) | Strong multilingual base; `gemma-4-E4B` validated end to end here. |
 | Alibaba Qwen 3.6 | [HF](https://huggingface.co/collections/Qwen/qwen36) | Strong multilingual base; a non-Gemma cross-check judge candidate. |
+
+Datasets used to build gold/eval sets. loc-lm-bench derives its gold sets locally and never
+redistributes upstream data; before any redistribution or published use, re-verify each
+dataset's current license and preserve attribution (the UA adaptations inherit the source
+license plus the adaptation's terms). Licenses below are the upstream-stated ones at time of
+writing.
+
+In use today (RAG gold set + Tier-1 public screen):
+
+| Dataset | Links | Role here | License |
+|---|---|---|---|
+| UA-SQuAD (`FIdo-AI/ua-squad`) | [HF](https://huggingface.co/datasets/FIdo-AI/ua-squad) / [ua_datasets](https://github.com/fido-ai/ua-datasets) | Source of the committed post-edited, span-validated gold-set development fixture. | CC BY-SA 4.0 |
+| Stanford SQuAD | [site](https://rajpurkar.github.io/SQuAD-explorer/) | English upstream of UA-SQuAD. | CC BY-SA 4.0 |
+| Belebele (Ukrainian) | [HF](https://huggingface.co/datasets/facebook/belebele) / [GitHub](https://github.com/facebookresearch/belebele) | Tier-1 public-screen MCQ (loglikelihood track) via the harness. | CC BY-SA 4.0 |
+
+Planned for Milestone 5 (UA-adapted; license + attribution honored before use):
+
+| Dataset | Links | Role here | License |
+|---|---|---|---|
+| BFCL / Gorilla | [site](https://gorilla.cs.berkeley.edu/leaderboard.html) / [GitHub](https://github.com/ShishirPatil/gorilla) | M5.2 function-calling / MCP cases. | Apache-2.0 |
+| JailbreakBench (JBB-Behaviors) | [HF](https://huggingface.co/datasets/JailbreakBench/JBB-Behaviors) / [GitHub](https://github.com/JailbreakBench/jailbreakbench) | M5.1 jailbreak / prompt-injection prompts. | MIT |
+| HarmBench | [site](https://www.harmbench.org/) / [GitHub](https://github.com/centerforaisafety/HarmBench) | M5.1 red-team behavior suite. | MIT |
+| AdvBench (llm-attacks) | [GitHub](https://github.com/llm-attacks/llm-attacks) | M5.1 adversarial harmful-behavior / string set. | MIT |
 
 ## MamayLM v2 benchmarks (reference)
 

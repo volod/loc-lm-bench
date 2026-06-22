@@ -11,8 +11,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Full design spec](design/spec.md) -- the complete source-of-truth document.
 
 ## Implementation
-- [Current state](implementation/current.md) -- delivered Milestones 0-3 and their commands.
-- [Forward plan](implementation/plan.md) -- the ordered roadmap (M4 -> M5 -> M6 + a human-only lane).
+- [Current state](implementation/current.md) -- delivered Milestones 0-4 and their commands.
+- [Forward plan](implementation/plan.md) -- the ordered roadmap (M5 -> M6 + a human-only lane).
 
 ## Guides
 - [Learning path](guides/learning-path.md) -- learn the whole stack from basics: a staged

@@ -26,12 +26,21 @@ A snapshot of what exists and runs **today**. Forward work lives in
   final-only Streamlit board. The audit fixes prevent tuning/calibration leakage into the
   board, make sweep markers interruption-safe, align drafted document ids with the RAG index,
   and harden external JSON/metric parsing. Full design acceptance gaps remain in `plan.md`.
+- **Milestone 4 (robustness + ontology data prep + third backend) complete:** an
+  embedding-aware VRAM estimate (prices the high-precision embedding mass; E4B 9.81 vs 9.8 GiB
+  measured), a pre-launch VRAM-contention guard (auto-derate + `--evict`/`--wait`), vLLM serving
+  knobs as `run-eval` flags + a flashinfer sampler preflight, the ontology-assisted gold-set
+  draft pipeline (`prepare-goldset-draft`: 7 grained stages, local/frontier endpoint adapter,
+  exact-grounded `verified=false` bundles), and the llama.cpp launcher (the third backend behind
+  the same OpenAI-compatible seam). All unit-tested without a GPU; the on-hardware confirmations
+  are carried forward in `plan.md` (M5.6). The only M3 residual is human-gated (judge
+  calibration ratings).
 
 Two host-aware model utilities: `prep-models` prepares candidate models (pulls Ollama
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-297 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+362 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -43,7 +52,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
 
     make            # list targets
     make venv       # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test       # pytest (297 tests)
+    make test       # pytest (362 tests)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval  # idempotent end-to-end: venv -> gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -111,14 +120,17 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       optimize/tuner.py            # M3.4 two-stage Optuna (tuning-split search -> stage-2 entry)
       screen/public.py             # M3.1 Tier-1 lm-eval-harness-uk adapter (logprob/generation tracks)
       prep/frontier.py             # M3.5 prepare-goldset + prepare-synthetic-corpus (litellm)
+      prep/ontology/               # M4.4 ontology-assisted draft pipeline (7 grained stages + endpoint)
       board/{data,app}.py          # M3.7 thin Streamlit leaderboard over the run bundles
-    tests/                         # 297 tests across the above
+    tests/                         # 362 tests across the above
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 `corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
 `calibration_worksheet.csv`. Immutable eval artifacts are isolated per invocation under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/` (`manifest.json`,
-`scores.{parquet,jsonl}`, and optional `vllm/` logs).
+`scores.{parquet,jsonl}`, and optional `vllm/` logs); M4.4 draft bundles under
+`$DATA_DIR/prepare-goldset/<UTC timestamp>/` (`goldset.jsonl`, `corpus/`, `ontology.json`,
+`extraction.jsonl`, `provenance.json`).
 
 ## Milestone 0 -- modules + how to run
 
@@ -157,7 +169,7 @@ source's nested SQuAD article rows.
 
     make ingest-uk-squad GOLDSET_MODE=development  # reproduce the pinned reviewed set
     make ingest-uk-squad GOLDSET_MODE=skeleton     # editable SQuAD template + instructions
-    make ingest-uk-squad GOLDSET_MODE=draft        # reserved; reports planned M4.4
+    make ingest-uk-squad GOLDSET_MODE=draft        # M4.4 ontology-assisted draft over CORPUS (verified=false)
     make ingest-squad                          # the bundled fixture (4 items)
     make ingest-squad SQUAD_JSON=path.json     # a local SQuAD-uk export
     python -m llb.prep.ingest_squad --hf-dataset <id> --hf-split train   # needs HF_TOKEN (goldset extra via make venv)
@@ -514,9 +526,10 @@ regression anchor in `samples/models_uk.yaml`.
 | M2.3 | candidate list in `samples/models_uk.yaml`; vLLM repo ids verified via `prep-models` | DONE |
 | M2.4 | validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real telemetry | DONE |
 
-Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): the embedding-aware VRAM
-estimate is now DONE (M4.1 below); still open are a pre-launch VRAM-contention guard (M4.2) and
-surfacing the vLLM serving knobs as `run-eval` CLI flags (M4.3).
+The M2.4 run surfaced three non-blocking gaps, all now DELIVERED in Milestone 4 below: the
+embedding-aware VRAM estimate (M4.1), a pre-launch VRAM-contention guard (M4.2), and the vLLM
+serving knobs as `run-eval` CLI flags (M4.3). The only remaining on-hardware confirmation (a real
+contended launch) is tracked forward in [`plan.md`](plan.md) (M5.6).
 
 ## Milestone 3 -- two-tier + scale + rigor (core + depth hardening delivered)
 
@@ -780,7 +793,7 @@ On top of the core modules, the spec-depth requirements landed:
 | M3.8 | maintained DeepEval G-Eval scorer + Ukrainian prompts + local endpoint smoke artifact; gate + `run_judge` wired into `run_eval`; local Gemma-4 judge choice and bias disclosure; pre-filled calibration worksheet + rho/CI commands | DONE (implementation); close-out gated only on human `human_rating` collection |
 | M3.9 | committed human-reviewed fixture + pinned reproducible development importer + ID-keyed canonical adoption/custom ledgers + public task defaults | DONE (live importer acceptance: 250/250 verified, exact item/corpus match) |
 
-## Milestone 4 -- robustness + ontology data prep + third backend (in progress)
+## Milestone 4 -- robustness + ontology data prep + third backend (complete)
 
 ### Embedding-aware VRAM estimate -- `llb.backends.planner` (M4.1)
 The weights estimate is no longer a flat `params_b x bpw`. Partial quants (w4a16 / int4 / fp8)
@@ -884,9 +897,99 @@ Possible further improvements: auto-PIN a host-compatible flashinfer when the bu
 manifest for provenance; re-run the preflight on a flashinfer/driver change without a full vLLM
 rebuild.
 
+### Ontology-assisted gold-set drafting -- `llb.prep.ontology` (M4.4)
+The reserved `GOLDSET_MODE=draft` is now a 7-stage prep pipeline (CLI `prepare-goldset-draft`,
+Makefile `GOLDSET_MODE=draft` over `CORPUS`) that drafts UNVERIFIED RAG gold items from a corpus
+and links every artifact to exact evidence. It is deliberately NOT a synonym for the M3.5
+one-prompt `prepare-goldset`; it is a data-preparation ontology, not a GraphRAG runtime (that is
+Milestone 6). One small module per grained stage, each injected-unit-tested:
+
+- **endpoint adapter (`endpoint.py`).** All stages drive one injectable `LLMComplete`. `build_complete`
+  returns a LOCAL OpenAI-compatible call (`make_client` + `chat_once`, no corpus egress -- the
+  default) or, opt-in, the frontier `litellm_complete` (egress -- the Milestone H decision).
+  `EndpointConfig` validates kind/model and exposes `egress` + a provenance dict; cost/tokens
+  accrue in the shared `ProvenanceLog`.
+- **stage 1 inventory (`inventory.py`).** Reads `.md`/`.txt` recursively (corpus-relative ids),
+  treats on-disk text as canonical (offsets stay exact), records a sha256 + char count, and
+  segments sections (markdown headings, else paragraph blocks) for a coverage axis.
+- **stage 2 extract (`extract.py`).** The pluggable `ExtractionAdapter` seam; default
+  `LLMExtractionAdapter` does one call/doc for entities + aliases/coreference + events + claims +
+  SRO facts. Every quoted span is grounded via `ground_quote` (reusing `frontier.ground_span`)
+  against the FULL doc (so a truncated long-doc call still anchors exactly); ungrounded artifacts
+  and evidence-less entities are dropped. The Python-native NER/coreference adapter (Stanza / spaCy
+  `uk_core_news`) is an opt-in plug-in implementing the protocol, kept out of base deps.
+- **stage 3 induce (`induce.py`).** Pure deterministic aggregation of extracted entity types +
+  relations into a CONSTRAINED `OntologyCandidate` (capped groups, hapax-dropped) with support
+  count, frequency confidence, and example surface forms.
+- **stage 4 coverage (`coverage.py`).** Builds fact/entity seeds tagged with strata
+  (relation/entity-type x section x difficulty; difficulty from evidence length + relation
+  rarity), then a seeded greedy picks coverage-first, fills the budget deterministically.
+- **stage 5 draft (`draft.py`).** One UA question/reference/answer-span per seed from a bounded
+  context window around the evidence, difficulty- and focus-aware, instructed to avoid give-aways.
+- **stage 6 refine (`refine.py`).** Re-grounds via `frontier.build_drafted_items` (now taking a
+  `provenance`/`id_prefix`, so unsupported answers are dropped), rejects circular items (answer in
+  the question, or question == reference), and dedups per doc by question and by answer span.
+- **stage 7 emit (`pipeline.py`).** Assigns splits and writes a self-contained bundle under
+  `$DATA_DIR/prepare-goldset/<UTC ts>/`: `goldset.jsonl` (`verified=false`,
+  `provenance="ontology-drafted"` -- the new schema value), a verbatim `corpus/` copy (so the
+  bundle self-validates), `ontology.json`, `extraction.jsonl`, and a `provenance.json` linking
+  endpoint / prompt fingerprints / per-doc hashes / stage counts / cost.
+
+Nothing is verified: a frontier cross-check + a human stratified sample-verify (MH.5) still gate
+any scoring. The full flow is proven by a fake-endpoint test (one callable answering both the
+extraction and drafting prompts, like a real local model) that runs all stages and validates the
+emitted bundle with the M0 validator.
+
+Possible further improvements: ship a concrete Stanza / spaCy `ExtractionAdapter` plug-in (today
+only the LLM adapter + seam exist); add the second-frontier cross-check (grounding/non-circularity)
+as pipeline code before MH.5; chunk over-long docs for extraction rather than one truncated call
+(`EXTRACT_MAX_CHARS`); derive type confidence from a richer signal than raw frequency; and feed the
+induced ontology types into the drafting prompt as explicit constraints (today they inform coverage
+strata only).
+
 | Step | What | State |
 |------|------|-------|
 | M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
 | M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |
 | M4.5 | llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source, `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate, `_make_launcher` wiring | DONE (unit-tested; live GGUF serve pending a CUDA host) |
 | M4.3 | run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) + flashinfer sampler preflight (`build-vllm` records a verdict; `launch_env` gates the sampler on it) | DONE (unit-tested; live kernel build pending a CUDA host) |
+| M4.4 | ontology-assisted draft pipeline (`llb.prep.ontology`: 7 grained stages + endpoint adapter, `prepare-goldset-draft` / `GOLDSET_MODE=draft`), exact-evidence-grounded `verified=false` `ontology-drafted` bundle with full provenance | DONE (per-stage + fake-endpoint full-flow unit tests; frontier cross-check + spaCy/Stanza plug-in are residual) |
+
+**Milestone 4 is complete.** All five items are delivered and unit-tested without a GPU. The
+acceptance criteria are met in code; the remaining confirmations are on-hardware only -- the
+planner's measured-weights tolerance, a real contended vLLM launch, the host flashinfer verdict,
+and a real GGUF served through the llama.cpp launcher under the isolation gate -- and are carried
+forward in [`plan.md`](plan.md) (M5.6), to be confirmed by the first real CUDA-host Milestone 5
+sweep. The data-prep residuals (the second-frontier cross-check, the opt-in Stanza/spaCy
+extraction adapter, long-doc chunking, richer ontology confidence) also ride along in M5.6, where
+they land with the M5 verified-data gate and the M6 extraction reuse.
+
+## Resolved questions and scope boundaries
+
+The design spec ([`spec.md`](../design/spec.md)) is the source of truth for decisions; this
+records the settled ones that affect WHAT is and is not built, so the forward plan
+([`plan.md`](plan.md)) stays forward-only.
+
+Resolved open questions:
+- **OQ2 -- judge locality (M3.8):** a LOCAL Gemma-4 judge, tiered by GPU class (12/16/32 GB),
+  chosen for no corpus egress + reproducibility; the Gemma-family self-preference bias is
+  disclosed (see "Judge model (OQ2 decided) + bias disclosure" above). The only residual is the
+  human calibration ratings (M3.8 in `plan.md`), not the scorer or the model choice.
+- **OQ3 -- first candidate-model list (M2):** seeded in `samples/models_uk.yaml`; the vLLM repo
+  ids are verified via `prep-models`.
+- **OQ6 -- MAX_JOBS build helper (M2):** the canonical `max_jobs()` lives in
+  `scripts/shared/common.sh` (AGENTS.md) and caps every CUDA source build.
+
+Rejected pushbacks (ruled the other way; do NOT revisit -- see spec.md "Outside-voice
+resolutions"): defer-Optuna-to-finalists, LangGraph-only-where-needed, drop-MLflow,
+drop-thermal-gate, defer-vLLM.
+
+Genuinely out of scope (v-next): the six agent frameworks as a comparison axis (M5.3 ranks the
+model under ONE fixed LangGraph harness, not frameworks against each other -- spec Appendix D);
+and loc-lm-bench as a public leaderboard (it consumes lang-uk / INSAIT results as a prior, never
+duplicates them).
+
+No longer deferred (now forward work in `plan.md`, not "out of scope"): the security / agentic /
+MCP-tooling categories and the remaining taxonomy (Milestone 5), GraphRAG (Milestone 6, GO
+decided), and the multi-backend / multi-vector-store / GPU-matrix / quality-per-watt expansions
+(M5.5, built only with a committed consumer).

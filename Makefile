@@ -20,6 +20,10 @@ SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
+# M4.4 ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
+DRAFT_MODEL ?= llama3.2:3b
+DRAFT_ENDPOINT ?= local
+DRAFT_MAX_ITEMS ?= 60
 
 # Milestone 1/2 eval knobs (override on the command line).
 MODEL ?= llama3.2:3b
@@ -166,8 +170,9 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 	  skeleton) \
 	    $(PY) -m llb.prep.goldset_skeleton ;; \
 	  draft) \
-	    echo "ERROR: GOLDSET_MODE=draft is planned as M4.4; see docs/implementation/plan.md" >&2; \
-	    exit 2 ;; \
+	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	    $(PY) -m llb.main prepare-goldset-draft --corpus-root "$(CORPUS)" \
+	      --model "$(DRAFT_MODEL)" --endpoint "$(DRAFT_ENDPOINT)" --max-items $(DRAFT_MAX_ITEMS) ;; \
 	  *) \
 	    echo "ERROR: GOLDSET_MODE must be development, skeleton, or draft" >&2; exit 2 ;; \
 	esac

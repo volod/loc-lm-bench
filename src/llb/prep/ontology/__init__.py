@@ -1,0 +1,51 @@
+"""M4.4 ontology-assisted gold-set drafting.
+
+A multi-stage pipeline over a supplied text directory that drafts UNVERIFIED RAG gold items
+linked to exact evidence. Default extraction is LLM-only via the endpoint adapter (local by
+default, frontier opt-in); a Python-native NER/coreference adapter (Stanza / spaCy
+`uk_core_news`) is a pluggable opt-in implementing `ExtractionAdapter`, kept out of base deps.
+This is a data-preparation ontology, NOT a GraphRAG runtime (that is Milestone 6).
+"""
+
+from llb.prep.ontology.endpoint import (
+    ENDPOINT_FRONTIER,
+    ENDPOINT_LOCAL,
+    EndpointConfig,
+    build_complete,
+)
+from llb.prep.ontology.extract import ExtractionAdapter, LLMExtractionAdapter
+from llb.prep.ontology.models import (
+    Claim,
+    DocExtraction,
+    DocRecord,
+    DraftSeed,
+    Entity,
+    Event,
+    OntologyCandidate,
+    OntologyType,
+    Section,
+    SROFact,
+)
+from llb.prep.ontology.pipeline import PipelineResult, default_out_dir, draft_goldset
+
+__all__ = [
+    "ENDPOINT_FRONTIER",
+    "ENDPOINT_LOCAL",
+    "EndpointConfig",
+    "build_complete",
+    "ExtractionAdapter",
+    "LLMExtractionAdapter",
+    "Claim",
+    "DocExtraction",
+    "DocRecord",
+    "DraftSeed",
+    "Entity",
+    "Event",
+    "OntologyCandidate",
+    "OntologyType",
+    "Section",
+    "SROFact",
+    "PipelineResult",
+    "default_out_dir",
+    "draft_goldset",
+]
