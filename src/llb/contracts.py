@@ -77,6 +77,39 @@ class CorrectnessScores(TypedDict):
     semantic: NotRequired[float]
 
 
+class PlantedLabelRecord(TypedDict):
+    """One planted ground-truth label `prepare-synthetic-corpus` emits for the text-analysis
+    benchmark (M5.0 scoring schema). `kind` is a text-analysis sub-task (see
+    `llb.scoring.text_analysis`); `value` is the canonical surface string a candidate must
+    recover; `aliases` are other accepted surface forms; `doc_id`/`char_start`/`char_end`
+    ground the label in the synthetic doc; `attrs` carries kind-specific structure (e.g. a
+    trend's direction, a contradiction's paired span ids); `scoring` is "objective" | "judged".
+    """
+
+    label_id: str
+    kind: str
+    value: str
+    aliases: NotRequired[list[str]]
+    doc_id: NotRequired[str]
+    char_start: NotRequired[int]
+    char_end: NotRequired[int]
+    attrs: NotRequired[JsonObject]
+    scoring: NotRequired[str]
+
+
+class SubtaskScore(TypedDict):
+    """Objective recovery score for one text-analysis sub-task over one document (M5.0)."""
+
+    kind: str
+    objective: bool
+    n_labels: int
+    n_pred: int
+    matched: list[tuple[str, float]]  # (label_id, credit in {1.0, partial})
+    precision: float
+    recall: float
+    f1: float
+
+
 class CaseScoreRow(TypedDict):
     item_id: str
     split: str
@@ -269,6 +302,9 @@ class BackendCandidate(TypedDict):
     backend: str
     source: str
     quant: NotRequired[str | None]  # the quant the planner actually priced for this artifact
+    gpu_layers: NotRequired[
+        int
+    ]  # planner GPU/CPU layer split at the planning context (llama.cpp -ngl)
     available: bool
     verdict: str  # planner verdict at the host budget: gpu / offload / no / unknown
     runnable: bool  # available AND the backend can actually serve at that verdict

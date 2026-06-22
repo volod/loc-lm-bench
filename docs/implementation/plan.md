@@ -9,26 +9,18 @@ defensible.
 
 Full spec (source of truth, do not duplicate here): [`docs/design/spec.md`](../design/spec.md).
 
-Milestones 0, 1, 2, 3, and 4 are **delivered** and documented in [`current.md`](current.md): the
-gold set + data-prep tooling (M0); the eval skeleton (compile-free: prebuilt Ollama, no
-vLLM/flash-attn source build) + model prep / feasibility tooling (M1); one real vLLM backend +
-steady-state telemetry, validated end to end on `gemma-4-E4B-it-w4a16` on the RTX 4060 Ti (M2);
-the two-tier + scale + rigor layer (M3) -- backend resolution, process-isolated resumable
-sweeps, two-stage RAG tuning, public screen, frontier prep, N-model board, and the maintained
-DeepEval judge engine; and the robustness + ontology-data-prep + third-backend layer (M4) --
-the embedding-aware VRAM estimate, the pre-launch contention guard, the vLLM serving knobs +
-flashinfer preflight, the ontology-assisted draft pipeline, and the llama.cpp launcher. The M3
-residual is human-gated (judge calibration ratings); M4's residuals are run-path live-validation
-+ data-prep hardening, folded forward into M5 (M5.6). Both are tracked below.
+Milestones 0-4 are **delivered**, unit-tested, and documented in [`current.md`](current.md) (M4 is
+additionally live-validated on the CUDA host -- see `current.md` for what each milestone shipped).
+Only two threads stay open: the human-gated M3 judge calibration (Milestone H) and M4's small
+run-path + data-prep hardening (M5.6). Everything below is FORWARD work.
 
 **Quick start:** `make demo-eval` runs the current pipeline end to end and idempotently
 (venv -> gold set -> index -> prep-models -> run-eval + telemetry; needs a running Ollama).
 The real vLLM path is `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` on a
 CUDA host. See [`current.md`](current.md) for the per-command breakdown.
 
-This file is the FORWARD plan only. It is organized into two implementation milestones
-(M5 -> M6) plus a human-only lane (Milestone H), sequenced by dependency (Milestone 4 is
-delivered -- see [`current.md`](current.md) -- and its open residuals are carried into M5.6):
+This file is the FORWARD plan only -- two implementation milestones (M5 -> M6) plus a human-only
+lane (Milestone H), sequenced by dependency:
 
 - **Milestone 5 -- security, agentic, and tooling benchmark.** The next eval categories,
   un-deferred from the spec taxonomy and designed in detail below. New task families (security
@@ -48,9 +40,9 @@ delivered -- see [`current.md`](current.md) -- and its open residuals are carrie
 
 ## Approach: walking skeleton, then layer
 
-The end-to-end vertical is proven on real backends through M3, and the robustness + third-backend
-+ ontology-data-prep layer (M4) is delivered (`current.md`). The forward layers broaden what is
-measured (M5), then add the knowledge-graph retrieval backend (M6). The human-only lane
+The end-to-end vertical is proven on real backends through M4 (delivered, `current.md`). The
+forward layers broaden what is measured (M5), then add the knowledge-graph retrieval backend (M6).
+The human-only lane
 (Milestone H) -- calibration ratings, sample-verification, and sign-offs -- proceeds in parallel
 for BUILD, but M3.8 calibration is on the CRITICAL PATH for any judged metric (see the Ordered
 Implementation Sequence); the design / drafting work H used to hold is now AI-implementable inside
@@ -61,24 +53,20 @@ M5-M6.
 Canonical order for picking up work, with cross-item dependencies. Sequence numbers are stable
 workstream identifiers; keep them even as item bodies shrink to residual notes (AGENTS.md).
 
-0. **Milestone 4 -- DELIVERED (`current.md`).** M4.1 embedding-aware VRAM estimate, M4.2
-   pre-launch VRAM-contention guard, M4.3 vLLM serving knobs + flashinfer preflight, M4.4
-   ontology-assisted gold-set drafting, M4.5 llama.cpp launcher. Its still-open residuals
-   (run-path live validation on a CUDA host + data-prep hardening) are carried into M5.6.
-
-1. **Milestone 5 (M4 delivered; start here).** Each category is its own Tier and is never
-   cross-ranked with the RAG board. M5.0 prerequisites are AI-implementable (no human gating);
-   only the schema sign-off is human (Milestone H).
-   1. **M5.0** Prerequisites -- AI-drafted text-analysis scoring schema (human sign-off via MH.2)
-      + map-reduce / multi-hop eval templates (M1.4-rest). Unblocks M5.3 + M5.4 chat-period.
+1. **Milestone 5 (M4 done; start here).** Each category is its own Tier and is never
+   cross-ranked with the RAG board. M5.0 prerequisites are AI-implementable; the one human gate
+   (the schema sign-off, MH.2) landed 2026-06-23.
+   1. **M5.0** Prerequisites -- DELIVERED (`current.md`): the text-analysis scoring schema is
+      committed AND signed off (MH.2, 2026-06-23) and the map-reduce / multi-hop eval templates
+      (M1.4-rest) are built + unit-tested. Residual: the M5.4 emit/runner wiring only.
    2. **M5.1** Security / robustness benchmark -- objective ASR scoring; no human dep.
    3. **M5.2** Tooling / MCP / function-calling benchmark -- objective; no human dep.
    4. **M5.3** Agentic workflows benchmark -- needs M5.0.
    5. **M5.4** Remaining taxonomy (summarization, structured output, chat-period [needs M5.0],
       reliability).
    6. **M5.5** Platform & matrix expansion -- optional; no committed consumer; build last.
-   7. **M5.6** Carried-forward M4 residuals -- run-path live validation (CUDA host) + data-prep
-      hardening; attaches to whichever M5 lane first touches the host / the draft pipeline.
+   7. **M5.6** Carried-forward M4 residuals -- small run-path + data-prep code hardening; attaches
+      to whichever M5 lane first touches the host / the draft pipeline.
 
 2. **Milestone 6 (after M5; GraphRAG, GO decided).** Kuzu graph store + reuse of M4.4 extraction
    + a thin graph-retrieval layer behind the RAG-store seam. Needs the AI-drafted M6 ontology
@@ -87,11 +75,12 @@ workstream identifiers; keep them even as item bodies shrink to residual notes (
 3. **Milestone H (human-paced; parallel for BUILD; no AI substitute).**
    1. **M3.8** Judge calibration -- human ratings (decided human-only). CRITICAL PATH for any
       judged metric (see below).
-   2. **MH.2** Sign-offs + corpus facts -- approve the AI-drafted TA schema (M5.0) + the M6
-      ontology + the M6 scope; confirm the OQ4 corpus facts.
+   2. **MH.2** Sign-offs + corpus facts -- TA schema (M5.0) APPROVED 2026-06-23; remaining:
+      approve the M6 ontology + the M6 scope, and confirm the OQ4 corpus facts.
    3. **MH.5** Gold/eval data verification -- human sample-verify of AI-drafted, frontier-cross-
       checked items before they score models.
-   (Resolved 2026-06-22: MH.4 GraphRAG go/no-go -> GO -> Milestone 6; M1.4-rest -> M5.0.)
+   (Resolved 2026-06-22: MH.4 GraphRAG go/no-go -> GO -> Milestone 6; M1.4-rest -> M5.0.
+   Resolved 2026-06-23: MH.2 text-analysis schema signed off -- thresholds accepted as proposed.)
 
 **Critical path (judged metrics).** The judge quality axis is GATED on M3.8: until the 86-item
 human rating pass clears rho `>= 0.6`, the gated judge is demoted and OBJECTIVE correctness ranks
@@ -140,18 +129,23 @@ Dependencies: M5 builds on the delivered M4 (the llama.cpp launcher broadens the
 M4.1/M4.2 run-path hardening keeps multi-category sweeps honest; the M4.4 draft pipeline feeds
 the verified-data gate). M4's open residuals ride along in M5.6 below. M5.1 + M5.2 are fully
 objective and have NO human dependency. M5.3 (agentic) and the chat-period part of M5.4 depend on
-M5.0 -- the text-analysis scoring schema (AI-drafted; human sign-off via MH.2) and the multi-hop
+M5.0 -- the text-analysis scoring schema (signed off 2026-06-23 via MH.2) and the multi-hop
 template (M1.4-rest).
 
-- **M5.0 Prerequisites (AI-implementable; no human gating).** (1) **Text-analysis scoring
-  schema:** I draft the full schema -- the unit of credit per sub-task, the planted-label
-  taxonomy `prepare-synthetic-corpus` must emit, the objective-vs-judged split, and the
-  label-ID + embedder-cosine thresholds / partial-credit rules (the MH.2 matching basis) -- as a
-  concrete repo proposal; the human only signs off (MH.2). (2) **Eval templates (M1.4-rest):**
-  the map-reduce (long-doc) + multi-hop LangGraph templates, following the built single-call
-  template's node-closure shape; the multi-hop one is the M5.3 agentic substrate. Both unblock
-  M5.3 and the M5.4 chat-period category. Acceptance: the schema proposal is committed for
-  sign-off; both templates are unit-tested like the single-call one.
+- **M5.0 Prerequisites -- DELIVERED (`current.md`) + schema SIGNED OFF (MH.2, 2026-06-23);
+  residual = the M5.4 wiring only.** Both deliverables shipped and are unit-tested (no GPU):
+  (1) the **text-analysis scoring schema** -- the per-sub-task unit of credit, the planted-label
+  taxonomy `prepare-synthetic-corpus` must emit, the objective-vs-judged split, and the label-ID +
+  embedder-cosine thresholds / partial-credit rules -- as the signed-off
+  `docs/design/text-analysis-schema.md` (thresholds accepted as proposed) + `llb.scoring.text_analysis`;
+  and (2) the **map-reduce + multi-hop LangGraph templates** (`llb.eval.{common,map_reduce,multi_hop}`),
+  following the single-call template's node-closure shape (the multi-hop one is the M5.3 agentic
+  substrate). With the schema signed off, text-analysis `verified=true` items may score models once
+  the MH.5 sample-verify accepts the drafted set. Open residual -- the M5.4 emit/runner wiring:
+  - extend the `prepare-synthetic-corpus` prompt to emit the richer per-kind planted labels (today
+    it emits QA-style `key_fact` labels only);
+  - build the scored runner + a `TIER_TEXT_ANALYSIS` board guard (mirroring `TIER_SCREEN`/`TIER_PRIVATE`);
+  - use a trend label's `attrs.direction` for direction-aware credit (surface-only today).
 - **M5.1 Security / robustness benchmark.** A suite of adversarial cases scored by objective
   attack-success-rate (ASR). Subcategories (spec Appendix D security suite): prompt-injection,
   jailbreak, instruction-hierarchy violation, unsafe-content generation, tool-abuse,
@@ -232,31 +226,30 @@ template (M1.4-rest).
     planner is already KV-cache-aware; this generalizes the host detection);
   - quality-per-watt -- a derived efficiency metric over the NVML power already sampled per cell
     (M3.3), trivial once a consumer wants it.
-- **M5.6 Carried-forward M4 residuals (run-path validation + data-prep hardening).** M4 is
-  delivered and unit-tested; these are its still-open findings, folded here so M5 (which first
-  runs real multi-category sweeps on the 16 GB host and first leans on the M4.4 draft pipeline)
-  exercises and finishes them. No new platform; each is small and opportunistic.
-  - **Live CUDA-host validation (the first real M5 sweep confirms each):** M4.1 the planner's
-    predicted weights land within tolerance of the measured load on the gemma-4 w4a16 candidates;
-    M4.2 a real contended vLLM launch (a resident VRAM user) derates/aborts as designed; M4.3 the
-    flashinfer kernel-build verdict is recorded on the host; M4.5 a GGUF-only candidate resolves to
-    and serves through the llama.cpp launcher under the isolation gate.
-  - **Run-path hardening (small):** M4.1 model sliding-window KV (Gemma 3/4 are full-attention
-    today, conservative at long ctx) + let `config.json` override curated arch (not only fill gaps);
-    M4.2 multi-GPU (the guard reads GPU 0 only) + arch-derived KV abort headroom (a fixed floor
-    today); M4.3 auto-pin a host-compatible flashinfer when the bundled one fails + record the
-    chosen sampler in the run manifest + re-run the preflight on a driver change without a full
-    rebuild; M4.5 auto-derive `n_gpu_layers` from the planner's `gpu_layers` split (config-set today).
-  - **Data-prep hardening (feeds the M5 verified-data gate + the M6 extraction reuse):** wire the
-    M4.4 second-frontier cross-check (grounding / non-circularity) as pipeline code -- it IS the
-    verified-data gate above, so it lands with M5's first scored category; ship the opt-in Stanza /
-    spaCy `uk_core_news` `ExtractionAdapter` plug-in (the seam exists, only the LLM adapter ships);
-    chunk over-long docs for extraction instead of one truncated call (`EXTRACT_MAX_CHARS`); induce
-    ontology-type confidence from a richer signal than raw frequency; carry the induced ontology
-    types into the drafting prompt as explicit constraints (they inform coverage strata only today).
-  - Acceptance: the live validations are confirmed on the first real CUDA-host M5 run and recorded
-    in the manifest; the data-prep hardening lands with the verified-data gate (before any M5
-    `verified=true` item scores models) and before the M6 extraction reuse.
+- **M5.6 Carried-forward M4 residuals (small code hardening; prerequisites done).** M4 is delivered
+  and live-validated (`current.md`); only these small code findings remain. No new platform. Do them
+  opportunistically -- the run-path items with whichever lane first sweeps the 16 GB host, the
+  data-prep items before any `verified=true` item scores models (the verified-data gate) and before
+  the M6 extraction reuse.
+  - **Run-path code hardening:**
+    1. M4.1 -- model the Gemma 3/4 sliding-window KV (full-attention today, conservative at long
+       ctx); let a cached `config.json` OVERRIDE curated arch fields, not only fill gaps.
+    2. M4.2 -- read all GPUs (the guard reads GPU 0 only); derive the KV abort headroom from the
+       served-context arch instead of the fixed floor.
+    3. M4.3 -- auto-pin a host-compatible flashinfer when the bundled one fails; record the chosen
+       sampler in the run manifest; re-run the preflight on a driver change without a full rebuild.
+    4. M4.5 -- handle further `/props` response shapes; exercise a real partial-offload split on an
+       oversized GGUF (only the all-on-GPU path is confirmed so far).
+  - **Data-prep hardening (M4.4; feeds the verified-data gate + the M6 extraction reuse):**
+    1. Wire the second-frontier cross-check (grounding / non-circularity) as pipeline code -- it IS
+       the verified-data gate, so it lands with M5's first scored category.
+    2. Ship the opt-in Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in (the seam exists,
+       only the LLM adapter ships).
+    3. Chunk over-long docs for extraction instead of one truncated call (`EXTRACT_MAX_CHARS`).
+    4. Induce ontology-type confidence from a richer signal than raw frequency; carry the induced
+       types into the drafting prompt as explicit constraints (they inform coverage strata only today).
+  - Acceptance: the data-prep items land before any M5 `verified=true` item scores models and before
+    the M6 extraction reuse; the run-path items land with the first host sweep that touches them.
 - **M5 acceptance:** security and tooling categories produce objective, CI-bearing boards from
   fake endpoints with no human dependency; agentic + chat-period categories build cleanly once
   M5.0 lands (and its schema is signed off); every category renders under its own Tier and is
@@ -312,9 +305,9 @@ human sample-verification, and human sign-off / scope approval. Human-paced, par
   (The optional non-Gemma cross-check judge is an AI task, automatable -- not human work.)
 - **MH.2 Sign-offs + corpus facts (human approval).** All drafting is AI; only the approvals and
   the facts only you know remain:
-  1. Approve the AI-drafted text-analysis scoring schema (M5.0) before any dependent benchmark
-     scores models. (Engine already decided: planted-label-ID matching + embedder cosine, not
-     lemmatization or LLM-entailment.)
+  1. DONE (2026-06-23): the AI-drafted text-analysis scoring schema (M5.0) is approved -- thresholds
+     accepted as proposed (engine: planted-label-ID matching + embedder cosine, not lemmatization
+     or LLM-entailment). Recorded at the top of `docs/design/text-analysis-schema.md`.
   2. Approve the AI-drafted GraphRAG ontology schema and the Milestone 6 scope / acceptance.
   3. Confirm the OQ4 corpus facts only you have: whether text-analysis reference answers already
      EXIST or must be authored, and which corpus is real vs synthetic (reported separately).
@@ -343,12 +336,8 @@ UA-adapted. All lightweight; no servers (no Celery/K8s) and no heavy service dep
 
 ## Verification (forward)
 
-- **M4 (delivered; verified by unit tests, see `current.md`):** the embedding-aware estimate, the
-  pre-launch contention guard, the no-YAML vLLM knobs + flashinfer preflight, the exact-grounded
-  ontology-assisted draft pipeline, and the llama.cpp launcher are all unit-tested without a GPU.
-  The remaining on-hardware confirmations (measured-weights tolerance, a real contended launch, the
-  host flashinfer verdict, a real GGUF serve) are folded into M5.6 and confirmed on the first real
-  CUDA-host M5 run.
+- **M4:** done + verified (`current.md`); its remaining M5.6 hardening is verified as it lands
+  (see the M5.6 acceptance).
 - **M5:** the security + tooling categories produce objective, CI-bearing boards from fake
   endpoints (no human dependency); agentic + chat-period categories build cleanly once M5.0
   lands (schema signed off); every category renders under its own Tier and is never cross-ranked
@@ -370,8 +359,8 @@ ride along inside the M5 lanes below as M5.6):
 - **benchmark categories:** M5.1 (security) and M5.2 (tooling) are objective and parallelize
   immediately (M4 delivered); M5.3 (agentic) + M5.4 chat-period wait on M5.0 (AI-drafted schema +
   templates).
-- **run-path + data-prep residuals (M5.6):** the carried-forward M4 live validations + hardening
-  attach to whichever M5 lane first touches the CUDA host / the draft pipeline -- not a separate lane.
+- **run-path + data-prep residuals (M5.6):** the small run-path + data-prep code hardening attaches
+  to whichever M5 lane first touches the CUDA host / the draft pipeline -- not a separate lane.
 - **graph:** Milestone 6 (GraphRAG) is its own lane after M5, reusing M4.4 extraction.
 - **human-gated:** Milestone H (M3.8 human ratings, MH.2 sign-offs, MH.5 sample-verify) runs on
   its own decision-paced lane.

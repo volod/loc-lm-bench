@@ -296,7 +296,7 @@ def sweep_cmd(
     from datetime import datetime, timezone
 
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.backends.resolver import ResolverProbes, resolve_all
+    from llb.backends.resolver import ResolverProbes, llamacpp_offload_split, resolve_all
     from llb.executor.isolation import run_sweep
 
     models = _load_models(manifest)
@@ -323,6 +323,13 @@ def sweep_cmd(
         }
         if r["chosen_backend"] == "vllm":
             overrides["max_model_len"] = max_model_len
+        elif r["chosen_backend"] == "llamacpp":
+            # Offload split from the planner so an oversized GGUF spills extra layers to CPU RAM
+            # instead of the launcher default (-1 == every layer on GPU) OOMing the card.
+            ngl = llamacpp_offload_split(r)
+            if ngl is not None:
+                overrides["n_gpu_layers"] = ngl
+                typer.echo(f"[sweep] {r['name']}: llama.cpp offload split -ngl={ngl}")
         cells.append(base.with_overrides(**overrides))
 
     if not cells:

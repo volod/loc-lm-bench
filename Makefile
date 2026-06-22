@@ -200,6 +200,9 @@ run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm GOLDSET= LIMI
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
 
+build-llamacpp: ## Build CUDA llama-server for the M4.5 launcher; CUDA_ARCH=/LLAMACPP_REF= override
+	bash "$(PROJECT_ROOT)/scripts/build_llamacpp.sh"
+
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \

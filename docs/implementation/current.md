@@ -467,10 +467,9 @@ required, while Ruff formatting and linting are enforced by `make ci` and GitHub
 | M1.7 | minimal sequential runner + NVML VRAM gate | DONE |
 | M1.8 | `run-eval` prints one ranked row (SQuAD-uk seed) | DONE |
 
-Residual M1 work is scoped forward in [`plan.md`](plan.md): human judge calibration (M3.8),
-plus map-reduce / multi-hop eval templates (deferred
-until the text-analysis benchmark needs them). The optional semantic-similarity correctness
-signal is built (`--score-semantic`).
+Residual M1 work is scoped forward in [`plan.md`](plan.md): human judge calibration (M3.8). The
+map-reduce / multi-hop eval templates (M1.4-rest) are now DELIVERED under M5.0 (see Milestone 5
+below). The optional semantic-similarity correctness signal is built (`--score-semantic`).
 
 ## Milestone 2 -- real backend + telemetry (complete)
 
@@ -846,9 +845,13 @@ launcher's `gpu_memory_utilization` on a derate, and records the `ContentionRepo
 (`RunManifest.contention`). Readers, the evict, and sleep are injectable; the math + escalations
 are unit-tested without a GPU.
 
-Possible further improvements: live validation on the CUDA host (a real contended vLLM launch);
-the guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor
-rather than the arch-derived KV for the served context.
+Live-validated on the CUDA host (RTX 4060 Ti, vLLM 0.23.0): against a REAL resident VRAM user the
+guard derated gpu-memory-utilization 0.80 -> 0.78 (a ~1.9 GB resident, still fitting gemma-4-E4B)
+and ABORTED with the actionable note when a ~6 GB resident left only 9153 MB free (< the ~12609 MB
+the model needs) -- end-to-end through `run-eval` (exit 1, no vLLM process started), with the real
+nvidia-smi free-VRAM read + NVML attributing the resident PID. Possible further improvements: the
+guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor rather than
+the arch-derived KV for the served context.
 
 ### llama.cpp launcher -- `llb.backends.llamacpp` (M4.5)
 The third backend the M3.2 resolver routes to: a model too big for vLLM's no-offload VRAM
@@ -871,10 +874,31 @@ applies (it owns its VRAM). The runner's `_make_launcher` builds it from `RunCon
 readiness, chat, telemetry, resolver routing, and the reclaim gate are all unit-tested without
 llama.cpp/CUDA.
 
-Possible further improvements: live validation on a CUDA host serving a real GGUF; auto-derive
-`n_gpu_layers` from the planner's `gpu_layers` split for an offload model (today it is config-set,
-defaulting to -1 = all on GPU); the `/props` served-context parse depends on the llama.cpp build's
-response shape (both known shapes are handled, with a fallback).
+The `-ngl` offload split is now auto-derived from the planner instead of config-set: `resolve()`
+carries the planner's `gpu_layers` on each `BackendCandidate`, and `resolver.llamacpp_offload_split`
+returns that split for a resolved llama.cpp model with an OFFLOAD verdict (None when the chosen
+backend is not llama.cpp or all layers fit on the GPU). `sweep` reads it and sets
+`n_gpu_layers` per cell, so an oversized GGUF spills its non-fitting layers to CPU RAM instead of
+the launcher default (-1 == every layer on GPU) OOMing the card. `run-eval` still honors an
+explicit `--n_gpu_layers`/config value (single-model path, no resolver pass).
+
+Provisioning the binary: `scripts/build_llamacpp.sh` builds `llama-server` from source with CUDA
+(mirrors `build_vllm.sh`: sources `common.sh` for the canonical `max_jobs()` cap, keeps the
+checkout clean, writes only under `$DATA_DIR/llb/llamacpp/`; `CUDA_ARCH`/`CUDA_HOST_CXX`/
+`CUDA_ROOT` overridable, defaulting to sm_89 + `g++-12` + the newest local CUDA toolkit).
+
+Live validation (RTX 4060 Ti, CUDA 12.6 build, driver 595.71.05): the real launcher served a real
+GGUF (`Qwen2.5-0.5B-Instruct` q4_k_m, `-ngl -1`) through the freshly built CUDA `llama-server`
+under `isolate_cell` -- `/health` ready in ~2 s, `/props` served context 4096 == requested, a
+Ukrainian chat round-trip, steady ~364 tok/s, peak VRAM 1707 MB, and the reclaim gate saw VRAM
+return to baseline (residual 0 MB, verdict `reclaimed`). Resolver routing was confirmed with the
+live HF probe (a real GGUF-only repo -> `chosen_backend=llamacpp`), and the auto-derived split
+produced `-ngl 49 of 62` for an oversized offload candidate.
+
+Possible further improvements: the `/props` served-context parse depends on the llama.cpp build's
+response shape (both known shapes are handled, with a fallback); a true layer-split (partial
+offload) has not yet been exercised on a real oversized GGUF -- only the all-on-GPU path and the
+derived-split arithmetic are confirmed live.
 
 ### vLLM serving knobs + flashinfer preflight (M4.3)
 `run-eval` now takes `--max-model-len` and `--gpu-memory-utilization` directly (previously only via
@@ -891,6 +915,11 @@ value always wins -- so the sampler is no longer a hardcoded `.env` default (now
 preflight-driven + overridable. The probe is injectable, so the verdict logic, persistence, and the
 launch_env gating are unit-tested without CUDA; the real build-once probe (import flashinfer + a
 CUDA sampling call) runs only on the host `build-vllm` targets.
+
+Live-validated on the CUDA host: `run_preflight()` ran the real probe on the RTX 4060 Ti (sm_89)
+and recorded the definitive verdict `native` (flashinfer 0.6.12 sampling kernel unavailable here)
+to `$DATA_DIR/llb/preflight/vllm_sampler.json`, so `flashinfer_sampler_ok()` returns False and
+`launch_env` keeps `VLLM_USE_FLASHINFER_SAMPLER=0` -- the documented sm_89 behavior, now confirmed.
 
 Possible further improvements: auto-PIN a host-compatible flashinfer when the bundled one fails
 (today the verdict is build-or-native, no version pinning); record the chosen sampler in the run
@@ -949,20 +978,69 @@ strata only).
 
 | Step | What | State |
 |------|------|-------|
-| M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
-| M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |
-| M4.5 | llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source, `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate, `_make_launcher` wiring | DONE (unit-tested; live GGUF serve pending a CUDA host) |
-| M4.3 | run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) + flashinfer sampler preflight (`build-vllm` records a verdict; `launch_env` gates the sampler on it) | DONE (unit-tested; live kernel build pending a CUDA host) |
+| M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE + LIVE-VALIDATED (E4B predicted 9.81 vs measured 9.80 GiB on a live vLLM load, 0.1%) |
+| M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE + LIVE-VALIDATED (real resident user: derate 0.80->0.78 + abort end-to-end through `run-eval`, no vLLM started) |
+| M4.5 | llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source, `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate, `_make_launcher` wiring; planner-derived `-ngl` (`llamacpp_offload_split` -> `sweep`); `scripts/build_llamacpp.sh` (CUDA) | DONE + LIVE-VALIDATED (RTX 4060 Ti: real GGUF served on GPU under the isolation gate, VRAM reclaimed; routing + auto-derive confirmed) |
+| M4.3 | run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) + flashinfer sampler preflight (`build-vllm` records a verdict; `launch_env` gates the sampler on it) | DONE + LIVE-VALIDATED (host preflight verdict recorded: `native` on sm_89, flashinfer 0.6.12) |
 | M4.4 | ontology-assisted draft pipeline (`llb.prep.ontology`: 7 grained stages + endpoint adapter, `prepare-goldset-draft` / `GOLDSET_MODE=draft`), exact-evidence-grounded `verified=false` `ontology-drafted` bundle with full provenance | DONE (per-stage + fake-endpoint full-flow unit tests; frontier cross-check + spaCy/Stanza plug-in are residual) |
 
-**Milestone 4 is complete.** All five items are delivered and unit-tested without a GPU. The
-acceptance criteria are met in code; the remaining confirmations are on-hardware only -- the
-planner's measured-weights tolerance, a real contended vLLM launch, the host flashinfer verdict,
-and a real GGUF served through the llama.cpp launcher under the isolation gate -- and are carried
-forward in [`plan.md`](plan.md) (M5.6), to be confirmed by the first real CUDA-host Milestone 5
-sweep. The data-prep residuals (the second-frontier cross-check, the opt-in Stanza/spaCy
-extraction adapter, long-doc chunking, richer ontology confidence) also ride along in M5.6, where
-they land with the M5 verified-data gate and the M6 extraction reuse.
+**Milestone 4 is complete and ALL on-hardware live validation has now passed on the CUDA host**
+(RTX 4060 Ti, vLLM 0.23.0, driver 595.71.05): M4.1 the planner's embedding-aware estimate matched a
+live vLLM load (predicted 9.81 vs measured 9.80 GiB, gemma-4-E4B w4a16); M4.2 the contention guard
+derated (0.80 -> 0.78) and aborted as designed against a real resident VRAM user, end-to-end through
+`run-eval` (no vLLM started); M4.3 the host flashinfer preflight verdict was recorded (`native` on
+sm_89); M4.5 a real GGUF resolved to and served through the llama.cpp launcher on the GPU under the
+isolation gate with the planner-derived `-ngl`. The remaining residuals are NOT live validation:
+the small run-path CODE hardening (M4.1 sliding-window KV + config override, M4.2 multi-GPU +
+arch-derived KV abort floor, M4.3 flashinfer auto-pin / sampler-in-manifest, M4.5 `/props` shape +
+a real partial-offload split) and the M4.4 data-prep hardening (second-frontier cross-check, opt-in
+Stanza/spaCy adapter, long-doc chunking, richer ontology confidence) -- carried forward in
+[`plan.md`](plan.md) (M5.6), landing with the M5 verified-data gate + the M6 extraction reuse.
+
+## Milestone 5 -- security, agentic, tooling (M5.0 prerequisites delivered)
+
+M5.0 -- the two prerequisites that unblock M5.3 (agentic) and the M5.4 chat-period category --
+is built and unit-tested (no GPU). The scored M5 categories (security / tooling / agentic /
+remaining taxonomy) are still forward work in [`plan.md`](plan.md).
+
+### Eval templates (M1.4-rest) -- `llb.eval.{common,map_reduce,multi_hop}`
+The two remaining DRY LangGraph templates, following the single-call template's node-closure
+shape (`graph.py`). The shared status taxonomy, refusal markers, `classify_response`, and
+`format_context` were extracted into `llb.eval.common` (re-exported from `graph.py`, so the M1
+single-call path is unchanged) and are reused by all three templates.
+- **map-reduce (`map_reduce.py`)** -- split a long document into overlapping segments, MAP a
+  partial answer per segment, REDUCE the partials into one answer. The long-doc comprehension
+  substrate; segments that find nothing emit a `(немає інформації)` marker the reduce step drops.
+- **multi-hop (`multi_hop.py`)** -- retrieve -> CONTROLLER -> {retrieve again | answer} with a
+  conditional edge, bounded by `max_hops`; gathered chunks are deduped across hops. This is the
+  M5.3 agentic SUBSTRATE (M5.3 grows the controller into tool calls + an in-sandbox exec node).
+  Trajectory length (`n_hops`) + model-call/token counts are recorded as the efficiency signal.
+Like `graph.py`, every node closure / parser / message builder is pure and unit-tested WITHOUT
+langgraph; only `build_map_reduce_graph` / `build_multi_hop_graph` import it. Both compiled
+graphs were smoke-run end to end with fake store/launcher.
+
+### Text-analysis scoring schema (M5.0) -- `llb.scoring.text_analysis` + proposal doc
+The objective scoring schema for the text-analysis benchmark, drafted as a concrete repo
+proposal for human sign-off (MH.2). The proposal doc is
+[`docs/design/text-analysis-schema.md`](../design/text-analysis-schema.md); the executable form
+is `llb.scoring.text_analysis` + the `PlantedLabelRecord` / `SubtaskScore` contracts. It defines:
+the text-analysis SUB-TASKS (the per-sub-task unit of credit -- key_fact / entity / topic /
+trend / risk / decision / contradiction objective, narrative / insight / long_doc judged); the
+PLANTED-LABEL taxonomy `prepare-synthetic-corpus` must emit (stable `label_id`, surface `value`
++ `aliases`, grounding offsets, `attrs`, objective/judged flag); and the MATCHING engine -- the
+MH.2-decided basis of label-ID exact/normalized surface match, then PINNED-EMBEDDER COSINE as the
+secondary signal (`TAU_FULL=0.85` full, `[0.70, 0.85)` partial credit 0.5), NOT lemmatization and
+NOT LLM-entailment. Greedy one-to-one assignment yields per-sub-task precision / recall / F1
+(unmatched predictions are false positives, penalizing hallucinated extractions); the document
+objective headline is the mean F1 over objective sub-tasks, with judged sub-tasks kept out of it
+(the gated judge owns those). The cosine similarity is INJECTED, so the whole engine is pure and
+unit-tested without the embedder; `embedder_similarity()` is the production default.
+
+**Open residual (M5.0):** the schema is SIGNED OFF (MH.2, 2026-06-23 -- thresholds accepted as
+proposed; recorded at the top of the proposal doc). The remaining work is the M5.4 wiring: extend
+the `prepare-synthetic-corpus` prompt to emit the richer per-kind planted labels (today it emits
+QA-style `key_fact` labels only), build the scored runner + the `TIER_TEXT_ANALYSIS` board
+guard, and use a trend label's `attrs.direction` for direction-aware credit.
 
 ## Resolved questions and scope boundaries
 
