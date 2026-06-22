@@ -355,7 +355,7 @@ Lists which candidate models can be benchmarked on THIS host, optimizing for ABI
 RUN rather than speed. The memory budget is GPU VRAM + system RAM (detected via
 `nvidia-smi` + `/proc/meminfo`); a model that does not fit in VRAM alone can still run by
 splitting layers between GPU and CPU. For each model it estimates the weights footprint
-(params x bits-per-weight), the KV cache per token (`2 x n_layers x kv_dim x 2B`, batch=1,
+(embedding-aware -- see M4.1 below), the KV cache per token (`2 x n_layers x kv_dim x 2B`, batch=1,
 no parallelism), and reports the max context fully on GPU (`ctx_gpu`), the max context
 using GPU+RAM offload (`ctx_max`), the GPU/CPU layer split, and a verdict
 (gpu / offload / no). `--context N` plans for a fixed context instead of the maximum.
@@ -499,11 +499,11 @@ peak VRAM **15.7 GB** (at gpu-memory-utilization 0.80), cold load **112 s**, ser
 dims), the flashinfer sampler is disabled (see `launch_env`), and `max_model_len` is capped
 so the KV cache fits (the native 131072 window would over-reserve and fail startup).
 
-Planner-vs-measured fit: the model's **weights load 9.8 GiB**, ~2.3x the planner's ~4.2 GiB
+Planner-vs-measured fit: the model's **weights load 9.8 GiB**, ~2.3x the old flat ~4.2 GiB
 estimate (`params_b x bpw`). w4a16 quantizes only the linear layers while Gemma's 256k-token
-embedding stays high-precision, so `list-models` under-estimates w4a16 weights. The measured
-floor + caveat are recorded in `samples/models_uk.yaml`; an embedding-aware estimator is
-forward work ([`plan.md`](plan.md) Milestone 4).
+embedding stays high-precision, so the flat product under-estimated w4a16 weights. The
+embedding-aware estimator that fixes this is now delivered (M4.1 below); the measured floor is the
+regression anchor in `samples/models_uk.yaml`.
 
 ### Milestone 2 status
 
@@ -514,9 +514,9 @@ forward work ([`plan.md`](plan.md) Milestone 4).
 | M2.3 | candidate list in `samples/models_uk.yaml`; vLLM repo ids verified via `prep-models` | DONE |
 | M2.4 | validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real telemetry | DONE |
 
-Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): an embedding-aware VRAM
-estimate for w4a16/int4 (the 2.3x weight under-estimate above), a pre-launch VRAM-contention
-guard, and surfacing the vLLM serving knobs as `run-eval` CLI flags.
+Residual (non-blocking, forward in [`plan.md`](plan.md) Milestone 4): the embedding-aware VRAM
+estimate is now DONE (M4.1 below); still open are a pre-launch VRAM-contention guard (M4.2) and
+surfacing the vLLM serving knobs as `run-eval` CLI flags (M4.3).
 
 ## Milestone 3 -- two-tier + scale + rigor (core + depth hardening delivered)
 
@@ -779,3 +779,62 @@ On top of the core modules, the spec-depth requirements landed:
 | M3.7 | final-only board + judge/semantic load, Tier-1/Tier-2 separation, best-by-policy, judge-cohort guard | DONE |
 | M3.8 | maintained DeepEval G-Eval scorer + Ukrainian prompts + local endpoint smoke artifact; gate + `run_judge` wired into `run_eval`; local Gemma-4 judge choice and bias disclosure; pre-filled calibration worksheet + rho/CI commands | DONE (implementation); close-out gated only on human `human_rating` collection |
 | M3.9 | committed human-reviewed fixture + pinned reproducible development importer + ID-keyed canonical adoption/custom ledgers + public task defaults | DONE (live importer acceptance: 250/250 verified, exact item/corpus match) |
+
+## Milestone 4 -- robustness + ontology data prep + third backend (in progress)
+
+### Embedding-aware VRAM estimate -- `llb.backends.planner` (M4.1)
+The weights estimate is no longer a flat `params_b x bpw`. Partial quants (w4a16 / int4 / fp8)
+quantize only the linear layers while the token embedding + norms stay high-precision; with a
+256k-token vocab that premium is large. `weights_mib_detailed(params_b, quant_bpw, hi_params,
+embed_bpw)` prices the high-precision mass at `embed_bpw` (default 16) and only the remainder at
+the quant bpw. The high-precision mass is `hi_precision_params(spec)`: an explicit
+`hi_precision_params_b` wins (for quirks the vocab formula misses, e.g. Gemma 3n Per-Layer
+Embeddings), else -- ONLY for a partial quant (`PARTIAL_QUANT_FORMATS`) -- the token embedding
+(`vocab_size x hidden_size`, plus the untied head) derived from the spec. GGUF k-quants and
+bf16/fp32 get no premium (they quantize uniformly). The detailed estimate flows through
+`plan_model`, so the `AvailabilityResolver` fit (M3.2) and Optuna's over-VRAM prune (M3.4)
+inherit it for free.
+
+Arch fields come from the spec or, when omitted, a cached `config.json`: `enrich_arch(spec)`
+reads `vocab_size` / `hidden_size` / `num_hidden_layers` / `tie_word_embeddings` via
+`arch_from_config` (handles Gemma's nested `text_config`) using `cached_config_path` (HF cache,
+never downloads). It fills only missing fields (curated YAML wins) and skips non-HF sources
+(Ollama tags, `hf.co/...:Q4_K_M`). `list-models` / `resolve-models` enrich specs before planning.
+
+Validated against the M2.4 measurement: gemma-4-E4B-it-w4a16 now estimates **9.81 GiB** (the
+measured floor is 9.8 GiB) vs the old flat ~4.2 GiB; the Gemma 12B w4a16 gains a ~1.3 GiB
+embedding premium (6.3 -> 7.6 GiB) and the 27B fp8 ~1.3 GiB. The E4B floor + the new arch fields
+are recorded in `samples/models_uk.yaml` as the regression anchor.
+
+Possible further improvements: the E4B high-precision mass is measurement-anchored
+(`hi_precision_params_b`) rather than derived from the Gemma 3n PLE shapes in `config.json`;
+sliding-window KV (Gemma 3/4) is still estimated as full attention (conservative at long ctx);
+and `enrich_arch` fills gaps rather than letting `config.json` override curated values.
+
+### Pre-launch VRAM-contention guard -- `llb.executor.contention` (M4.2)
+Before a VRAM-owning backend (vLLM) starts, `run-eval` runs a guard so a resident process can no
+longer trip vLLM's startup free-memory check (the original M2.4 failure: Ollama held ~2.8 GB, so
+`gpu-memory-utilization x total` exceeded free VRAM). `plan_guard(total, free, requested_util,
+weight_floor)` (pure) caps `gpu-memory-utilization` at `(free - margin) / total` (rounded down,
+only ever lowered) -- the non-destructive default AUTO-DERATE -- and returns a `ContentionReport`
+{total, free, safe_util, target, residents, derated, fits, action, note}. It ABORTS with an
+actionable message when even the derated target cannot hold the M4.1 weight floor + a minimal KV
+working set. Free VRAM comes from nvidia-smi (so the derate works without `[telemetry]`); resident
+PIDs come from NVML when present (best-effort attribution in the note).
+
+`apply_contention_guard` adds the opt-in escalations: `--evict` unloads Ollama's resident models
+(`/api/ps` -> `keep_alive: 0` per model; never kills a process) then re-reads; `--wait` polls free
+VRAM until the requested target fits or a timeout. The runner (`_guard_vllm_contention`) calls it
+only for vLLM and only on the real launch path (injected launchers in tests skip it), lowers the
+launcher's `gpu_memory_utilization` on a derate, and records the `ContentionReport` in the manifest
+(`RunManifest.contention`). Readers, the evict, and sleep are injectable; the math + escalations
+are unit-tested without a GPU.
+
+Possible further improvements: live validation on the CUDA host (a real contended vLLM launch);
+the guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor
+rather than the arch-derived KV for the served context.
+
+| Step | What | State |
+|------|------|-------|
+| M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
+| M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |

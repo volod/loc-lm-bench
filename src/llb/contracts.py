@@ -222,6 +222,18 @@ class ModelSpec(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
+    # Embedding-aware weight estimate (M4.1): under partial quant (w4a16/int4/fp8) the token
+    # embedding + norms stay high-precision, so `params_b x bpw` under-counts. The planner reads
+    # these from the spec (or a cached config.json) and prices the embedding separately.
+    vocab_size: NotRequired[int]
+    hidden_size: NotRequired[int]
+    tie_word_embeddings: NotRequired[
+        bool
+    ]  # tied -> output head shares the embedding (counted once)
+    embed_bpw: NotRequired[float]  # bits/weight of the high-precision part (default 16)
+    # Escape hatch for architectures whose always-high-precision mass is not just the vocab
+    # embedding (e.g. Gemma 3n Per-Layer Embeddings): billions of params kept at `embed_bpw`.
+    hi_precision_params_b: NotRequired[float]
     # Optional cross-backend serving options for the AvailabilityResolver (M3.2): a map of
     # backend -> source string OR a per-source record carrying its own quant/arch overrides,
     # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata).
@@ -240,6 +252,11 @@ class SourceRecord(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
+    vocab_size: NotRequired[int]
+    hidden_size: NotRequired[int]
+    tie_word_embeddings: NotRequired[bool]
+    embed_bpw: NotRequired[float]
+    hi_precision_params_b: NotRequired[float]
     min_vram_gb: NotRequired[int | float]
     gated: NotRequired[bool]
     license_url: NotRequired[str]
@@ -368,6 +385,27 @@ class VramReclaimReport(TypedDict):
     reclaimed: bool
     residual_mb: int
     polls: int
+
+
+class ResidentProc(TypedDict):
+    pid: int
+    used_mb: int
+
+
+class ContentionReport(TypedDict):
+    """Pre-launch VRAM-contention guard outcome (M4.2)."""
+
+    total_mb: int
+    free_mb: int
+    requested_util: float
+    safe_util: float  # gpu-memory-utilization to actually use (derated to fit free VRAM)
+    target_mb: int  # safe_util x total -- what vLLM may reserve
+    weight_floor_mb: int  # embedding-aware weights estimate (M4.1) used for the abort check
+    residents: list[ResidentProc]  # other GPU processes holding VRAM
+    derated: bool  # True when safe_util < requested_util (contention lowered it)
+    fits: bool  # False -> even the derated target cannot hold weights + KV
+    action: str  # ok | derate | abort
+    note: str
 
 
 class GpuSample(TypedDict):

@@ -52,6 +52,16 @@ def _load_models(manifest: Path) -> list[ModelSpec]:
         raise typer.Exit(code=2) from None
 
 
+def _planning_models(manifest: Path) -> list[ModelSpec]:
+    """Manifest models with missing arch fields filled from a cached config.json (M4.1).
+
+    Offline + best-effort: it sharpens the embedding-aware VRAM estimate when weights are
+    already cached, and is a no-op otherwise."""
+    from llb.backends.planner import enrich_arch
+
+    return [enrich_arch(m) for m in _load_models(manifest)]
+
+
 def _best_effort_gpu_readers() -> tuple[Any, Any]:
     """Best-effort (vram_reader, pid_usage_reader) for the VRAM-reclaim + leak-attribution gate.
     Both are None when the [telemetry] extra / a GPU is absent (the gate then no-ops)."""
@@ -190,7 +200,7 @@ def list_models_cmd(
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
 
-    models = _load_models(manifest)
+    models = _planning_models(manifest)
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()
@@ -239,7 +249,7 @@ def resolve_models_cmd(
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import ResolverProbes, format_resolution, resolve_all
 
-    models = _load_models(manifest)
+    models = _planning_models(manifest)
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()
@@ -657,6 +667,12 @@ def run_eval_cmd(
         help="emit a judge-calibration worksheet pre-filled with answers "
         "(pair with --split calibration)",
     ),
+    evict: bool = typer.Option(
+        False, help="vLLM contention guard: unload Ollama's resident models before launching"
+    ),
+    wait: bool = typer.Option(
+        False, help="vLLM contention guard: wait for VRAM to free instead of derating immediately"
+    ),
 ) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
@@ -671,7 +687,15 @@ def run_eval_cmd(
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )
-    run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
+    run_eval(
+        cfg,
+        split=split,
+        limit=limit,
+        judge_rho=judge_rho,
+        worksheet=worksheet,
+        evict=evict,
+        wait=wait,
+    )
 
 
 @app.command("judge-experiment")

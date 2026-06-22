@@ -23,6 +23,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from llb.contracts import (
+    ContentionReport,
     JsonObject,
     JudgeStatus,
     RetrievalMetrics,
@@ -60,6 +61,7 @@ class RunManifest(BaseModel):
     retrieval: RetrievalMetrics | None = None
     judge: JudgeStatus | None = None
     telemetry: TelemetryReport | None = None
+    contention: ContentionReport | None = None
     n_cases: int = 0
 
 

@@ -1,100 +1,150 @@
-# loc-lm-bench — Local Language Model Benchmark
+# loc-lm-bench -- Local Language Model Benchmark
 
 Pick the best open-weight LLM for **your** Ukrainian RAG and text-analysis tasks, on **your**
 hardware. Public leaderboards measure general capability on someone else's data with unlimited
 VRAM; loc-lm-bench re-ranks a handful of candidate models on your own corpus, on a single
-desktop GPU, so the choice is reproducible and defensible.
+desktop GPU (validated on an RTX 4060 Ti 16 GB), so the choice is reproducible and defensible.
 
-> **Status:** early but runnable. Milestones 0-2 are complete: data prep, the Ollama walking
-> skeleton, and a real vLLM + telemetry path. Milestone 3's core components are implemented:
-> public-screen adapter, resolver, isolated sweep, two-stage RAG tuning, prep utilities, and
-> average-rank/Pareto/CI board. Full M3 acceptance still needs stage orchestration, isolated
-> backend-aware tuning, live external-path validation, and judge calibration. A committed
-> 250-item post-edited public fixture now provides stable development data. The suite has 291
-> tests; see the implementation docs for exact boundaries.
+Status: runnable end to end -- data prep, Ollama + vLLM serving, telemetry, and a ranked board.
+See [what's built today](docs/implementation/current.md) and the
+[forward plan](docs/implementation/plan.md).
 
-## Main features
+## Features
 
-- **Corpus-grounded:** scores models on your documents and a span-labeled Ukrainian gold set,
-  not transferred public scores.
-- **Stable public development data:** a pinned 250-item post-edited UA-SQuAD fixture and its
-  corpus are committed under `samples/goldsets/`; demos and tests never regenerate it.
-- **Source-span gold labels** (document char offsets, not chunk ids) — they survive
-  `chunk_size` changes during tuning.
-- **Chunking strategies:** `fixed` / `sentence` / `recursive` / `markdown` (structure-aware)
-  / `semantic`, plus flat vs parent-child retrieval — all offset-exact, reusing
-  langchain-text-splitters where it preserves source spans.
-- **Backend-agnostic:** one OpenAI-compatible interface; a prebuilt Ollama backend and a
-  vLLM launcher (HF weights, MAX_JOBS-capped build) + a telemetry hook (tokens/sec, peak
-  VRAM, served context) ship today; the per-model availability resolver ships, while the
-  llama.cpp launcher remains planned.
-- **Hardware-aware:** `list-models` reports which candidates can run on your GPU + RAM,
-  KV-cache-aware, with a GPU/CPU layer split (it optimizes ability to run, not speed).
-- **Defensible scoring:** objective reference-answer correctness ranks models today, with
-  an LLM judge gated by Ukrainian calibration (Spearman rho) that stays demoted until it
-  earns trust. The final-only board reports average rank, a Pareto front, and objective-score
-  bootstrap confidence intervals.
-- **Reproducible + lightweight:** canonical run manifests, deterministic disjoint splits, no
-  heavy services.
+| Aspect | What you get |
+|---|---|
+| Corpus-grounded | Scores models on your documents + a span-labeled Ukrainian gold set, not transferred public scores. |
+| Source-span labels | Gold labels are document char offsets (not chunk ids), so they survive `chunk_size` tuning. |
+| Backend-agnostic | One OpenAI-compatible interface; Ollama + vLLM ship today (llama.cpp planned), chosen per model by an availability resolver. |
+| Hardware-aware | `list-models` reports what fits your GPU + RAM (KV-cache-aware, with a GPU/CPU layer split). |
+| Defensible scoring | Objective reference correctness ranks models; an LLM judge enters only after Ukrainian calibration (Spearman rho >= 0.6), else it stays demoted. |
+| Rigorous board | Average rank + Pareto front + bootstrap confidence intervals; process-isolated, VRAM/thermal-gated sweeps. |
+| Reproducible | Canonical run manifests, deterministic disjoint splits, a local MLflow mirror, no heavy services. |
 
 ## Quick start
 
 Requires [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11 for you) and a running
-Ollama (`ollama serve`). One command runs the whole thing end to end -- and is **idempotent**,
-so it is safe to re-run:
+Ollama (`ollama serve`). One **idempotent** command runs the whole pipeline end to end:
 
-    make demo-eval     # venv -> committed gold set -> index -> prep-models -> eval + telemetry
-    make mlflow        # review experiment runs at http://127.0.0.1:5000
+    make demo-eval     # venv -> gold set -> index -> prep-models -> eval + telemetry
+    make mlflow        # review runs at http://127.0.0.1:5000
 
-That builds the `.venv` (all deps), indexes the committed public fixture, pulls a smoke model,
-and records one ranked row + telemetry under `.data/llb/`. Or run the pieces yourself:
+That builds `.venv` (all extras), indexes the committed 250-item public fixture, pulls a smoke
+model, and records one ranked row + telemetry under `.data/llb/`. Run `make` with no target to
+list every command.
 
-    make venv          # .venv (py3.11) + package + all extras + .env (idempotent; RECREATE_VENV=1 to rebuild)
-    make test          # run the test suite (297 tests)
+## Commands by result
 
-Milestone 0 commands:
+The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scale -> review.**
+`make venv` installs everything once; `make test` runs the suite (297 tests).
 
-    make validate-goldset       # validate the committed fixture and exact source spans
-    make gen-rag-items          # generate a tiny synthetic format fixture under DATA_DIR
-    make build-rag-store        # chunk samples/corpus with fixed/sentence/recursive
-    make ingest-uk-squad GOLDSET_MODE=development  # reproduce pinned reviewed fixture *
-    make ingest-uk-squad GOLDSET_MODE=skeleton     # from-scratch authoring template
-    make calibration-worksheet  # blank judge-calibration worksheet
+### 1. Prepare data
 
-Milestone 1 -- run the eval skeleton (`make venv` already installed the deps; needs a
-running Ollama):
+| Command | Result |
+|---|---|
+| `make validate-goldset` | Validates the committed fixture and its exact source spans. |
+| `make ingest-uk-squad GOLDSET_MODE=development` | Reproduces the pinned reviewed UA-SQuAD fixture (may need `HF_TOKEN` in `.env`). |
+| `make ingest-uk-squad GOLDSET_MODE=skeleton` | A from-scratch authoring template. |
+| `make build-rag-store` | Chunks `samples/corpus` (fixed / sentence / recursive / markdown / semantic). |
 
-    make list-models            # which candidate models fit this GPU + RAM (context, layer split)
-    make prep-models            # detect GPU; pull Ollama tags + cache vLLM HF weights
-    make build-index            # chunk + embed the gold-set corpus into a FAISS store
-    make validate-retrieval     # recall@k / MRR of the pinned embedding
-    make run-eval MODEL=llama3.2:3b   # one ranked row + a reproducible manifest
-    make mlflow                # compare mirrored runs in the local MLflow UI
+### 2. Build + validate retrieval
 
-`*` may need a Hugging Face token in `.env` (`HF_TOKEN=...`). The committed default needs no
-token. Run `make` with no target to list everything. See the
-[gold-set guide](docs/guides/goldset-from-scratch.md),
-[run-the-skeleton guide](docs/guides/run-skeleton.md), and
-[MLflow analysis guide](docs/guides/mlflow-analysis.md). For the optional gated judge, see
-[local Ukrainian judge experiments](docs/guides/judge-experiments.md).
+| Command | Result |
+|---|---|
+| `make list-models` | Which candidates fit this GPU + RAM (context, layer split). |
+| `make prep-models` | Detects the GPU; pulls Ollama tags + caches vLLM HF weights. |
+| `make build-index` | Chunks + embeds the corpus into a FAISS store. |
+| `make validate-retrieval` | recall@k / MRR of the pinned embedding (validates retrieval, not models). |
+
+### 3. Run, rank, review
+
+| Command | Result |
+|---|---|
+| `make run-eval MODEL=llama3.2:3b` | One ranked row + a reproducible manifest (Ollama). |
+| `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` | A real vLLM run with tokens/sec + peak VRAM. |
+| `make board` | The Streamlit leaderboard: average rank, Pareto front, CIs. |
+| `make mlflow` | Local MLflow UI for deep run inspection + compare. |
+
+### 4. Scale: screen, sweep, tune
+
+| Command | Result |
+|---|---|
+| `llb screen-public` | Tier-1 public screen via lm-evaluation-harness-uk (cheap candidate narrowing). |
+| `llb sweep --sweep-id run1` | Process-isolated, resumable N-model sweep (VRAM + thermal gated). |
+| `llb tune --model <m> --backend <b>` | Two-stage Optuna RAG tuning (tuning split -> final-split score). |
+| `llb pipeline` | finalists -> tune -> final board, chained. |
+
+### Optional: gated LLM judge
+
+| Command | Result |
+|---|---|
+| `make calibration-run JUDGE_MODEL=... JUDGE_BASE_URL=...` | Pre-fills the calibration worksheet (model answers + judge ratings). |
+| `make calibration-score RATINGS=<filled.csv>` | Spearman rho + CI + trust decision (after a human fills `human_rating`). |
+
+Calibration needs human ratings; until rho >= 0.6 the judge stays demoted and objective
+correctness ranks alone. See the [judge guide](docs/guides/judge-experiments.md).
 
 ## Documentation
 
-Start at the [docs index](docs/README.md). Highlights:
+Start at the [documentation index](docs/README.md). High-level entry points:
 
-- [Design](docs/design/README.md) — contents map into the full spec ([`docs/design/spec.md`](docs/design/spec.md)).
-- [What's built today](docs/implementation/current.md) and the [forward plan](docs/implementation/plan.md).
-- Guides: [dev setup](docs/guides/dev-setup.md), [data prep](docs/guides/data-prep.md).
-- [`AGENTS.md`](AGENTS.md) — project guardrails for contributors and agents.
+| Doc | What it covers |
+|---|---|
+| [What's built today](docs/implementation/current.md) | Delivered milestones, modules, and exact command behavior. |
+| [Forward plan](docs/implementation/plan.md) | The ordered, dependency-aware roadmap (M4 -> M5 -> M6 + human lane). |
+| [Design spec](docs/design/spec.md) | Problem, wedge, architecture, and the recorded decisions. |
+| [Learning path](docs/guides/learning-path.md) | Learn the whole stack from basics: a staged syllabus + curated links. |
+| [AGENTS.md](AGENTS.md) | Contributor + agent guardrails. |
+
+## Learn the stack
+
+New to RAG, local LLM serving, or LLM-as-judge evaluation? The
+[learning path](docs/guides/learning-path.md) is a staged syllabus -- from basic Python + ML to
+this project's full stack -- with curated links and a pointer to where each technology lives in
+the repo. It includes a time-boxed plan for a learner with basic knowledge.
 
 ## Related projects
-- [Ukrainian LLM Leaderboard HF](https://huggingface.co/spaces/lang-uk/ukrainian-llm-leaderboard)
-- [Ukrainian LLM Leaderboard GitHub](https://github.com/lang-uk/ukrainian-llm-leaderboard)
-- [Language Model Evaluation Harness](https://github.com/insait-institute/lm-evaluation-harness-uk)
-- [MamayLLM](https://models.mamay.ai/)
-- [MamamyLLM HF](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3)
-- [LapaLLM HF](https://huggingface.co/spaces/lapa-llm/lapa)
-- [LapaLLM GitHub](https://github.com/lapa-llm/lapa-llm)
 
-- [Google Gemma 4](https://huggingface.co/collections/google/gemma-4)
-- [Alibaba Qwen 3.6](https://huggingface.co/collections/Qwen/qwen36)
+Ukrainian eval prior art (consumed as a free prior; loc-lm-bench is **not** a public
+leaderboard -- it re-ranks on your private corpus):
+
+| Project | Links | Role here |
+|---|---|---|
+| Ukrainian LLM Leaderboard | [HF](https://huggingface.co/spaces/lang-uk/ukrainian-llm-leaderboard) / [GitHub](https://github.com/lang-uk/ukrainian-llm-leaderboard) | Public UA ranking + results dataset; a transfer baseline. |
+| lm-evaluation-harness-uk | [GitHub](https://github.com/insait-institute/lm-evaluation-harness-uk) | INSAIT EleutherAI fork; powers the Tier-1 public screen. |
+
+Best candidate models (Ukrainian-specialized + strong multilingual bases the harness ranks):
+
+| Model | Links | Role here |
+|---|---|---|
+| MamayLM v2 (12B / 27B) | [site](https://models.mamay.ai/) / [HF](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3) | Gemma-3-based, UA-specialized; top candidate and a possible local judge. |
+| Lapa LLM | [HF](https://huggingface.co/spaces/lapa-llm/lapa) / [GitHub](https://github.com/lapa-llm/lapa-llm) | lang-uk Ukrainian model; UA-specialized candidate. |
+| Google Gemma 4 | [HF](https://huggingface.co/collections/google/gemma-4) | Strong multilingual base; `gemma-4-E4B` validated end to end here. |
+| Alibaba Qwen 3.6 | [HF](https://huggingface.co/collections/Qwen/qwen36) | Strong multilingual base; a non-Gemma cross-check judge candidate. |
+
+## MamayLM v2 benchmarks (reference)
+
+MamayLM v2 is a top Ukrainian-specialized candidate (see Related projects). The charts below are
+from the INSAIT MamayLM v2 release post, included here for reference and context -- they are not
+loc-lm-bench results.
+
+[![MamayLM v2 -- overall benchmark comparison](docs/pic/mamaylm-v2-overall.webp)](https://models.mamay.ai/blog/mamaylm-v2-release-en/)
+
+*Overall benchmark comparison.*
+
+[![MamayLM v2 -- log-probability (MCQ) track](docs/pic/mamaylm-v2-logprob.webp)](https://models.mamay.ai/blog/mamaylm-v2-release-en/)
+
+*Log-probability (MCQ) benchmarks.*
+
+[![MamayLM v2 -- generative track](docs/pic/mamaylm-v2-generative.webp)](https://models.mamay.ai/blog/mamaylm-v2-release-en/)
+
+*Generative benchmarks.*
+
+[![MamayLM v2 -- multimodal benchmarks](docs/pic/mamaylm-v2-multimodal.webp)](https://models.mamay.ai/blog/mamaylm-v2-release-en/)
+
+*Multimodal benchmarks.*
+
+Attribution: images (c) INSAIT / MamayLM, from the
+[MamayLM v2 release post](https://models.mamay.ai/blog/mamaylm-v2-release-en/) (downscaled for
+size). Reproduced for reference and comparison with attribution; all rights remain with the
+original authors. See the [MamayLM site](https://models.mamay.ai/) for licensing and terms.
