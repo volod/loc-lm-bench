@@ -11,10 +11,12 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Full design spec](design/spec.md) — the complete source-of-truth document.
 
 ## Implementation
-- [Current state](implementation/current.md) -- delivered Milestones 0-2, M3 core, and commands.
-- [Forward plan](implementation/plan.md) -- residual M3 acceptance and Milestone 4.
+- [Current state](implementation/current.md) -- delivered Milestones 0-3 and their commands.
+- [Forward plan](implementation/plan.md) -- the ordered roadmap (M4 -> M5 -> M6 + a human-only lane).
 
 ## Guides
+- [Learning path](guides/learning-path.md) -- learn the whole stack from basics: a staged
+  syllabus, curated links, and a time-boxed plan for a learner with basic knowledge.
 - [Dev setup](guides/dev-setup.md) — uv, venv, extras, make targets.
 - [Data prep](guides/data-prep.md) — gold set, ingestion, chunking, calibration commands.
 - [Local judge experiments](guides/judge-experiments.md) -- DeepEval, Ukrainian prompts,
