@@ -136,6 +136,8 @@ class BackendMetadata(TypedDict, total=False):
     backend: str
     host: str
     gpu_memory_utilization: float
+    n_gpu_layers: int  # llama.cpp GPU/CPU layer split (-1 == all on GPU)
+    ctx_size: int | None  # llama.cpp requested context (`-c`)
     served_context: int | None
     tokens_per_s: float
     last_completion_tokens: int
@@ -162,6 +164,7 @@ class TelemetryReport(TypedDict):
     served_context: int | None
     backend: str | None
     gpu_memory_utilization: float | None
+    n_gpu_layers: int | None  # llama.cpp offload split (None for non-llama.cpp backends)
     gpus: list[GpuSummary]
 
 

@@ -178,9 +178,19 @@ def goldset_draft_prompt(doc_id: str, text: str, n: int) -> str:
 
 
 def build_drafted_items(
-    doc_id: str, doc_text: str, drafts: list[dict[str, Any]], split: Split
+    doc_id: str,
+    doc_text: str,
+    drafts: list[dict[str, Any]],
+    split: Split,
+    *,
+    provenance: Provenance = PROVENANCE_DRAFTED,
+    id_prefix: str = "draft",
 ) -> list[GoldItem]:
-    """Turn raw drafts into GoldItems, dropping any whose answer span is not in the doc."""
+    """Turn raw drafts into GoldItems, dropping any whose answer span is not in the doc.
+
+    `provenance` / `id_prefix` let other drafters (e.g. the M4.4 ontology pipeline) reuse the
+    exact-grounding + GoldItem construction while tagging their own provenance and id namespace.
+    """
     items: list[GoldItem] = []
     for i, draft in enumerate(drafts):
         span_text = str(draft.get("answer_span", "")).strip()
@@ -195,7 +205,7 @@ def build_drafted_items(
         start, exact_text = grounded
         items.append(
             GoldItem(
-                id=f"{doc_id}-draft-{i}",
+                id=f"{doc_id}-{id_prefix}-{i}",
                 question=question,
                 reference_answer=reference,
                 source_doc_id=doc_id,
@@ -207,7 +217,7 @@ def build_drafted_items(
                         text=exact_text,
                     )
                 ],
-                provenance=PROVENANCE_DRAFTED,
+                provenance=provenance,
                 verified=False,
                 split=split,
             )

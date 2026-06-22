@@ -8,6 +8,7 @@ Commands by milestone:
   sweep                                              M3.3 isolated cell-per-model sweep (resume)
   tune                                               M3.4 two-stage Optuna (tuning -> final)
   prepare-goldset / prepare-synthetic-corpus         M3.5 frontier data-prep (litellm)
+  prepare-goldset-draft                              M4.4 ontology-assisted draft (local/frontier)
   judge-experiment                                   M3.8 local DeepEval UA smoke artifact
   screen-public                                      M3.1 Tier-1 lm-eval-harness-uk screen
   board / mlflow-ui                                  M3.7 Streamlit leaderboard / MLflow UI
@@ -454,6 +455,43 @@ def prepare_synthetic_corpus_cmd(
     )
 
 
+@app.command("prepare-goldset-draft")
+def prepare_goldset_draft_cmd(
+    corpus_root: Path = typer.Option(..., help="directory of .md/.txt source docs"),
+    model: str = typer.Option(
+        ..., help="model id (local endpoint tag, or litellm route for frontier)"
+    ),
+    endpoint: str = typer.Option(
+        "local", help="local (OpenAI-compatible, no egress) | frontier (litellm, opt-in egress)"
+    ),
+    base_url: Optional[str] = typer.Option(
+        None, help="local endpoint base URL (default: Ollama OpenAI-compatible /v1)"
+    ),
+    max_items: int = typer.Option(60, min=1, help="upper bound on drafted QA items"),
+    seed: int = typer.Option(13, help="deterministic sampling/split seed"),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
+    ),
+) -> None:
+    """M4.4: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
+    from llb.prep.ontology import EndpointConfig, draft_goldset
+
+    try:
+        cfg = (
+            EndpointConfig(kind=endpoint, model=model, base_url=base_url)
+            if base_url
+            else EndpointConfig(kind=endpoint, model=model)
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    result = draft_goldset(corpus_root, cfg, max_items=max_items, seed=seed, out_dir=out_dir)
+    typer.echo(
+        f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
+        f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
+    )
+
+
 @app.command("screen-public")
 def screen_public_cmd(
     model: str = typer.Option(..., help="model name (Ollama tag or HF repo id)"),
@@ -639,8 +677,14 @@ def mlflow_ui_cmd(
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
-    backend: Optional[str] = typer.Option(None, help="ollama | vllm"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
+    ),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None, help="vLLM GPU memory fraction 0-1 (overrides the config; no YAML needed)"
+    ),
     split: str = typer.Option("final", help="gold split to evaluate"),
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
@@ -682,6 +726,8 @@ def run_eval_cmd(
         model=model,
         backend=backend,
         goldset_path=goldset,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=gpu_memory_utilization,
         judge_model=judge_model,
         judge_base_url=judge_base_url,
         score_semantic=score_semantic,

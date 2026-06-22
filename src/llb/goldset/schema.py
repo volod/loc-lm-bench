@@ -20,6 +20,7 @@ Provenance = Literal[
     "public-reused",
     "human-authored",
     "frontier-drafted",
+    "ontology-drafted",
     "human-verified",
 ]
 Split = Literal["calibration", "tuning", "final"]

@@ -20,6 +20,10 @@ SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
+# M4.4 ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
+DRAFT_MODEL ?= llama3.2:3b
+DRAFT_ENDPOINT ?= local
+DRAFT_MAX_ITEMS ?= 60
 
 # Milestone 1/2 eval knobs (override on the command line).
 MODEL ?= llama3.2:3b
@@ -57,10 +61,12 @@ help: ## List available targets
 		awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
-	@mkdir -p "$(LOG_DIR)"; LOG="$(LOG_DIR)/pipeline-$$(date +%Y%m%d-%H%M%S).log"; \
+	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
+	llb_ensure_env || exit 0; \
+	mkdir -p "$(LOG_DIR)"; LOG="$(LOG_DIR)/pipeline-$$(date +%Y%m%d-%H%M%S).log"; \
 	echo "[demo-eval] end-to-end pipeline (idempotent); logging to $$LOG"; \
 	( \
-	  set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	  llb_load_env; \
 	  echo "### [1/6] venv (idempotent; RECREATE_VENV=1 to rebuild)"; \
 	  $(MAKE) --no-print-directory venv || exit 1; \
 	  echo "### [2/6] validate committed published gold set"; \
@@ -99,15 +105,10 @@ venv: ## Create/update .venv (py3.11) + all extras + .env. Idempotent; RECREATE_
 	else \
 		echo "[venv] reusing $(VENV) -- updating deps (RECREATE_VENV=1 to rebuild)"; \
 	fi
-	uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"
-	@if [ ! -f "$(PROJECT_ROOT)/.env" ]; then \
-		cp "$(PROJECT_ROOT)/.env.example" "$(PROJECT_ROOT)/.env"; \
-		echo "[venv] created .env from .env.example"; \
-	else \
-		echo "[venv] .env already exists, leaving it"; \
-	fi
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_export_uv_link_mode; echo "[venv] uv link mode: $${UV_LINK_MODE:-default (cache + checkout share a device)}"; uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"'
 	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS))"
 	@echo "[venv] note: vLLM/torch/flash-attn are hardware-matched and installed separately."
+	@bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_ensure_env || true'
 
 test: ## Run the test suite (pytest)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -169,8 +170,9 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 	  skeleton) \
 	    $(PY) -m llb.prep.goldset_skeleton ;; \
 	  draft) \
-	    echo "ERROR: GOLDSET_MODE=draft is planned as M4.4; see docs/implementation/plan.md" >&2; \
-	    exit 2 ;; \
+	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	    $(PY) -m llb.main prepare-goldset-draft --corpus-root "$(CORPUS)" \
+	      --model "$(DRAFT_MODEL)" --endpoint "$(DRAFT_ENDPOINT)" --max-items $(DRAFT_MAX_ITEMS) ;; \
 	  *) \
 	    echo "ERROR: GOLDSET_MODE must be development, skeleton, or draft" >&2; exit 2 ;; \
 	esac

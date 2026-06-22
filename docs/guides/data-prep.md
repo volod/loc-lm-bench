@@ -10,6 +10,7 @@ development fixture is committed under `samples/goldsets/`. Module detail is in
     make gen-rag-items        # tiny generated format fixture under DATA_DIR
     make ingest-uk-squad GOLDSET_MODE=development  # reproduce reviewed fixture from pinned HF source *
     make ingest-uk-squad GOLDSET_MODE=skeleton     # editable from-scratch template
+    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>  # M4.4 ontology-assisted draft (verified=false)
 
 `*` may need `HF_TOKEN` in `.env` (the `goldset` extra is installed by `make venv`). The
 committed default requires no token. For a local SQuAD export:

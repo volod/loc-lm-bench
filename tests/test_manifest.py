@@ -82,6 +82,7 @@ def test_manifest_written_before_mirror(tmp_path):
             "served_context": None,
             "backend": "ollama",
             "gpu_memory_utilization": None,
+            "n_gpu_layers": None,
             "gpus": [{"name": "GPU", "total_mb": 16000, "driver": "1.0"}],
         },
         n_cases=4,

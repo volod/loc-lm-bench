@@ -27,12 +27,15 @@ def test_parse_served_context():
     assert parse_served_context('{"data": []}') is None
 
 
-def test_launch_env_defaults_flashinfer_sampler_off_but_respects_override():
-    # On a clean env the broken flashinfer JIT sampler is defaulted off.
-    assert launch_env({"PATH": "/usr/bin"})["VLLM_USE_FLASHINFER_SAMPLER"] == "0"
-    # An explicit caller value always wins (opt back in on a host where the kernel builds).
-    overridden = launch_env({"VLLM_USE_FLASHINFER_SAMPLER": "1"})
-    assert overridden["VLLM_USE_FLASHINFER_SAMPLER"] == "1"
+def test_launch_env_gates_flashinfer_sampler_on_preflight_and_respects_override():
+    key = "VLLM_USE_FLASHINFER_SAMPLER"
+    # Preflight verdict native -> sampler stays off (the safe default).
+    assert launch_env({"PATH": "/usr/bin"}, flashinfer_sampler=False)[key] == "0"
+    # Preflight confirms the kernel builds on this host -> sampler enabled.
+    assert launch_env({"PATH": "/usr/bin"}, flashinfer_sampler=True)[key] == "1"
+    # An explicit caller value always wins, regardless of the preflight verdict.
+    assert launch_env({key: "0"}, flashinfer_sampler=True)[key] == "0"
+    assert launch_env({key: "1"}, flashinfer_sampler=False)[key] == "1"
 
 
 class FakeProc:

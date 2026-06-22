@@ -163,6 +163,15 @@ models:
   #   max_context: 131072
   #   notes: UA 12B via Ollama GGUF (CPU offload); also MamayLM-Gemma-3-27B-IT-v2.0-GGUF
 
+  # --- The same GGUF also serves on llama.cpp (M4.5): add a `llamacpp:` source so the resolver
+  #     can pick `llama-server` when Ollama is unavailable (priority vllm > ollama > llamacpp).
+  #     `llama-server` loads it via `-hf <repo>:<quant>` (the hf.co/ prefix is stripped).
+  #   sources:
+  #     llamacpp:
+  #       source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
+  #       quant: q4_k_m
+  #       min_vram_gb: 8
+
   # --- Example of a GATED model (none above are gated). `prep-models` prints `license_url`
   #     so you can accept the terms, then you must set HF_TOKEN in .env before it downloads:
   # - name: gemma-3-12b-it

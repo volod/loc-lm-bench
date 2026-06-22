@@ -65,9 +65,29 @@ Validate the result against its corpus:
 Structural validation checks ids, files, offsets, exact span text, and split counts. Human
 review remains responsible for factual correctness, question quality, and sufficient evidence.
 
-## Assisted corpus drafting
+## Assisted corpus drafting (ontology-assisted, M4.4)
 
-`GOLDSET_MODE=draft` is reserved for Milestone M4.4. It will scan a supplied corpus, extract
-entities and evidence-backed relations, induce an ontology candidate, and use a configured
-internal or external inference endpoint to draft unverified QA items. It is intentionally not
-implemented as a thin synonym for the existing one-prompt frontier utility.
+`GOLDSET_MODE=draft` runs the ontology-assisted draft pipeline over a supplied corpus: it
+inventories the docs, extracts entities and evidence-backed relations, induces an ontology
+candidate, samples for coverage, and drafts unverified QA items -- all through one configured
+inference endpoint. It is intentionally not a thin synonym for the one-prompt frontier utility.
+
+    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir> DRAFT_MODEL=<tag>
+
+By default the endpoint is LOCAL (an OpenAI-compatible server such as Ollama; no corpus leaves
+the box). Opt into a frontier endpoint with `DRAFT_ENDPOINT=frontier` (egress; needs a provider
+key). The CLI form is `llb prepare-goldset-draft --corpus-root <dir> --model <id>
+[--endpoint local|frontier] [--base-url <url>] [--max-items N]`.
+
+The run writes a self-contained bundle under `$DATA_DIR/prepare-goldset/<timestamp>/`:
+`goldset.jsonl` (every item `verified: false`, `provenance: ontology-drafted`, answer spans
+exact), a verbatim `corpus/` copy, the induced `ontology.json`, per-document `extraction.jsonl`,
+and `provenance.json` (endpoint, prompt fingerprints, per-doc hashes, stage counts, cost).
+Validate and review before promoting any item:
+
+    make validate-goldset GOLDSET=$DATA_DIR/prepare-goldset/<timestamp>/goldset.jsonl \
+      CORPUS=$DATA_DIR/prepare-goldset/<timestamp>/corpus
+
+Drafts never score a model until a frontier cross-check and a human stratified sample-verify
+accept them (set accepted items to `verified: true`, and `provenance: human-verified` for
+locally reviewed items).

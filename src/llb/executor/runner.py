@@ -117,7 +117,17 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             quantization=config.quantization,
             log_dir=log_dir,
         )
-    raise SystemExit(f"backend '{config.backend}' is not wired yet (Ollama + vLLM supported).")
+    if config.backend == "llamacpp":
+        from llb.backends.llamacpp import LlamaCppLauncher
+
+        return LlamaCppLauncher(
+            config.model,
+            host=config.llamacpp_host,
+            n_gpu_layers=config.n_gpu_layers,
+            ctx_size=config.max_model_len,
+            log_dir=log_dir,
+        )
+    raise SystemExit(f"backend '{config.backend}' is not wired (ollama, vllm, llamacpp supported).")
 
 
 def _vram_reader() -> Callable[[], int] | None:

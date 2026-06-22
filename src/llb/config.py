@@ -31,6 +31,7 @@ Backend = Literal["ollama", "vllm", "llamacpp"]
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_VLLM_HOST = "http://localhost:8000"
+DEFAULT_LLAMACPP_HOST = "http://localhost:8080"
 RUN_EVAL_METHOD = "run-eval"
 
 
@@ -75,6 +76,15 @@ class RunConfig(BaseModel):
     dtype: str = "auto"
     quantization: str | None = None
 
+    # llama.cpp serving (used when backend == "llamacpp"). The GGUF runs via `llama-server`,
+    # splitting layers GPU<->CPU: n_gpu_layers is the offload split (-1 == all on GPU; set it to
+    # the planner's gpu_layers for an oversized offload model). The served context reuses
+    # max_model_len. The port is parsed from llamacpp_host.
+    llamacpp_host: str = Field(
+        default_factory=lambda: _environment_value(env.LLAMACPP_HOST, DEFAULT_LLAMACPP_HOST)
+    )
+    n_gpu_layers: int = Field(default=-1, ge=-1)
+
     # Telemetry: when set, run-eval also measures steady-state tokens/sec + peak VRAM on a
     # fixed prompt set and records it in the manifest (needs a running backend; M2.2).
     measure_telemetry: bool = False
@@ -92,8 +102,12 @@ class RunConfig(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
-    # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
-    judge_model: str | None = None
+    # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default
+    # from the environment (JUDGE_MODEL unset -> no judge runs); an explicit value or CLI flag
+    # always wins.
+    judge_model: str | None = Field(
+        default_factory=lambda: _optional_environment_value(env.JUDGE_MODEL)
+    )
     judge_base_url: str | None = Field(
         default_factory=lambda: _optional_environment_value(env.DEEPEVAL_JUDGE_BASE_URL)
     )
