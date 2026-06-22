@@ -174,6 +174,7 @@ def collect_telemetry(
         "gpu_memory_utilization": (
             launcher.meta.get("gpu_memory_utilization") if hasattr(launcher, "meta") else None
         ),
+        "n_gpu_layers": (launcher.meta.get("n_gpu_layers") if hasattr(launcher, "meta") else None),
         "gpus": _gpu_summary(),
     }
     return report

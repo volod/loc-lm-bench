@@ -818,9 +818,12 @@ longer trip vLLM's startup free-memory check (the original M2.4 failure: Ollama 
 weight_floor)` (pure) caps `gpu-memory-utilization` at `(free - margin) / total` (rounded down,
 only ever lowered) -- the non-destructive default AUTO-DERATE -- and returns a `ContentionReport`
 {total, free, safe_util, target, residents, derated, fits, action, note}. It ABORTS with an
-actionable message when even the derated target cannot hold the M4.1 weight floor + a minimal KV
-working set. Free VRAM comes from nvidia-smi (so the derate works without `[telemetry]`); resident
-PIDs come from NVML when present (best-effort attribution in the note).
+actionable message when even the derated target cannot hold the M4.1 weight floor + vLLM's ~2 GB
+non-weight serving overhead (`DEFAULT_VLLM_OVERHEAD_MB`: CUDA context, peak activations, CUDA-graph
+capture) + a minimal KV working set; without that overhead term the guard would derate into a
+doomed launch (the live finding: a budget that left 0 for KV blocks tripped vLLM's "No available
+memory for the cache blocks"). Free VRAM comes from nvidia-smi (so the derate works without
+`[telemetry]`); resident PIDs come from NVML when present (best-effort attribution in the note).
 
 `apply_contention_guard` adds the opt-in escalations: `--evict` unloads Ollama's resident models
 (`/api/ps` -> `keep_alive: 0` per model; never kills a process) then re-reads; `--wait` polls free
@@ -834,7 +837,34 @@ Possible further improvements: live validation on the CUDA host (a real contende
 the guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor
 rather than the arch-derived KV for the served context.
 
+### llama.cpp launcher -- `llb.backends.llamacpp` (M4.5)
+The third backend the M3.2 resolver routes to: a model too big for vLLM's no-offload VRAM
+resolves to its GGUF, which `llama-server` runs by splitting layers GPU<->CPU. `LlamaCppLauncher`
+sits behind the same `BackendLauncher` + OpenAI-compatible `chat_once` seam as Ollama/vLLM, so the
+eval/RAG/judge code is unchanged. `build_llamacpp_command` assembles the `llama-server` argv:
+`llamacpp_source_args` maps a source to `-m <path.gguf>` (local) or `-hf <repo>[:quant]` (an HF
+GGUF repo, incl. the Ollama-style `hf.co/<repo>:<quant>` the resolver's sources carry -- one
+string serves on both GGUF backends); `-ngl` is the GPU/CPU offload split and `-c` the served
+context. `start()` polls `/health` until 200 (preserving the startup log on failure, mirroring
+vLLM), then reads the served `n_ctx` from `/props` (falling back to the requested `ctx_size`).
+
+Telemetry reuses the backend-agnostic `collect_telemetry` (steady tokens/sec + peak VRAM); the
+launcher records `n_gpu_layers` + `ctx_size` in its meta, and `TelemetryReport` now carries
+`n_gpu_layers` so the served-vs-requested context (`requested_context`/`served_context`) and the
+offload split land in the manifest. `llamacpp` is in `GATE_BACKENDS`, so the M3.3 reclaim gate
+applies (it owns its VRAM). The runner's `_make_launcher` builds it from `RunConfig.llamacpp_host`
+(env `LLAMACPP_HOST`, port parsed from the URL) + `n_gpu_layers`, with the context from
+`max_model_len`. The process factory, HTTP probe, and sleep are injectable, so command building,
+readiness, chat, telemetry, resolver routing, and the reclaim gate are all unit-tested without
+llama.cpp/CUDA.
+
+Possible further improvements: live validation on a CUDA host serving a real GGUF; auto-derive
+`n_gpu_layers` from the planner's `gpu_layers` split for an offload model (today it is config-set,
+defaulting to -1 = all on GPU); the `/props` served-context parse depends on the llama.cpp build's
+response shape (both known shapes are handled, with a fallback).
+
 | Step | What | State |
 |------|------|-------|
 | M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
 | M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |
+| M4.5 | llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source, `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate, `_make_launcher` wiring | DONE (unit-tested; live GGUF serve pending a CUDA host) |

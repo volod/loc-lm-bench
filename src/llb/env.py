@@ -16,6 +16,7 @@ HF_TOKEN = "HF_TOKEN"
 # Candidate inference endpoints (RunConfig + backends)
 OLLAMA_HOST = "OLLAMA_HOST"
 VLLM_HOST = "VLLM_HOST"
+LLAMACPP_HOST = "LLAMACPP_HOST"
 VLLM_USE_FLASHINFER_SAMPLER = "VLLM_USE_FLASHINFER_SAMPLER"
 
 # Judge endpoint fallbacks when judge_model uses a legacy prefix
@@ -56,6 +57,7 @@ DOCUMENTED_ENV_VARS = (
     GEMINI_API_KEY,
     OLLAMA_HOST,
     VLLM_HOST,
+    LLAMACPP_HOST,
     VLLM_USE_FLASHINFER_SAMPLER,
     DEEPEVAL_JUDGE_BASE_URL,
     DEEPEVAL_JUDGE_API_KEY,

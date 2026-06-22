@@ -65,7 +65,7 @@ workstream identifiers; keep them even as item bodies shrink to residual notes (
    they share the launch/planner path; the CLI and prep items parallelize.
    1. **M4.1** Embedding-aware VRAM estimate -- DONE (refined the M3.2 resolver / planner).
    2. **M4.2** Pre-launch VRAM-contention guard -- DONE (auto-derate + evict/wait; vLLM launch path).
-   3. **M4.5** llama.cpp launcher -- the third backend; sequential after M4.1/M4.2 (run path).
+   3. **M4.5** llama.cpp launcher -- DONE (LlamaCppLauncher + telemetry + reclaim gate; run path).
    4. **M4.3** vLLM serving knobs as CLI flags + kernel preflight -- CLI-only; parallelizable.
    5. **M4.4** Ontology-assisted gold-set drafting -- independent prep subpackage; parallelizable.
 
@@ -152,16 +152,17 @@ path; each is independently shippable and unit-testable.
   every stage; a local fake endpoint proves the full flow; no draft scores until the frontier
   cross-check passes AND a human verifies a stratified sample (MH.5); generated ontology/facts
   link back to exact evidence.
-- **M4.5 llama.cpp launcher.** The third backend the M3.2 resolver already routes to (an
-  oversized bf16 model that vLLM cannot offload resolves to its GGUF). Tasks: (1) implement
-  `LlamaCppLauncher` behind the `BackendLauncher` + OpenAI-compatible `chat_once` seam as a
-  `llama-server` subprocess; (2) add its telemetry hook (steady tokens/sec, peak VRAM,
-  served-vs-requested ctx via `n_gpu_layers` / `ctx_size`); (3) add the startup-log
-  preserve-on-failure path, mirroring vLLM; (4) join `GATE_BACKENDS` (it owns its VRAM) for the
-  M3.3 reclaim gate; (5) inject the process factory + HTTP probe so it imports + unit-tests
-  without llama.cpp/CUDA. Keep sequential with any other run-path change (M4.1/M4.2). Acceptance:
-  resolver routes a GGUF-only model to it; an injected fake serves a chat + telemetry round-trip;
-  the reclaim gate runs for it.
+- **M4.5 llama.cpp launcher. DONE (2026-06-22; details in `current.md`).** `LlamaCppLauncher`
+  serves a GGUF via a `llama-server` subprocess behind the OpenAI-compatible `chat_once` seam
+  (`-hf`/`-m` source, `-ngl` GPU/CPU offload split, `-c` ctx; `/health` readiness + `/props`
+  served-context, startup log preserved on failure), records `n_gpu_layers` + served-vs-requested
+  ctx in the telemetry/manifest, joins `GATE_BACKENDS` for the M3.3 reclaim gate, and is wired
+  into `run-eval` via `_make_launcher` (`RunConfig.llamacpp_host` [env `LLAMACPP_HOST`] +
+  `n_gpu_layers`). Injected process/HTTP/sleep make command building, readiness, chat, telemetry,
+  resolver routing, and the reclaim gate unit-testable without llama.cpp/CUDA. Residual / possible
+  improvements: live validation on a CUDA host serving a real GGUF; auto-derive `n_gpu_layers`
+  from the planner's `gpu_layers` split (today config-set, default -1 = all on GPU); the `/props`
+  served-context parse depends on the llama.cpp build's response shape.
 - **M4 acceptance:** the planner's predicted weights land within tolerance of the measured load
   on the gemma-4 w4a16 candidates; a run launches cleanly when another process holds VRAM; the
   vLLM knobs are settable without YAML; M4.4 produces traceable unverified drafts from a nested
