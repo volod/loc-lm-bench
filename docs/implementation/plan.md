@@ -64,7 +64,7 @@ workstream identifiers; keep them even as item bodies shrink to residual notes (
 1. **Milestone 4 (no human gating; start here).** Run-path items are kept sequential because
    they share the launch/planner path; the CLI and prep items parallelize.
    1. **M4.1** Embedding-aware VRAM estimate -- DONE (refined the M3.2 resolver / planner).
-   2. **M4.2** Pre-launch VRAM-contention guard -- shares the NVML reader; after M4.1. (run path)
+   2. **M4.2** Pre-launch VRAM-contention guard -- DONE (auto-derate + evict/wait; vLLM launch path).
    3. **M4.5** llama.cpp launcher -- the third backend; sequential after M4.1/M4.2 (run path).
    4. **M4.3** vLLM serving knobs as CLI flags + kernel preflight -- CLI-only; parallelizable.
    5. **M4.4** Ontology-assisted gold-set drafting -- independent prep subpackage; parallelizable.
@@ -120,18 +120,13 @@ path; each is independently shippable and unit-testable.
   Gemma 3n Per-Layer-Embedding mass from `config.json` instead of the measurement-anchored
   `hi_precision_params_b`; model sliding-window KV (currently full-attention, conservative at long
   context); let `config.json` override curated arch values rather than only filling gaps.
-- **M4.2 Pre-launch VRAM-contention guard.** Problem: the first M2.4 launch failed because
-  Ollama held ~2.8 GB resident, so vLLM's startup free-memory check
-  (`gpu-memory-utilization` x total) failed. **Decided policy (non-destructive default,
-  2026-06-22):** on detected contention AUTO-DERATE `gpu-memory-utilization` to the actually-free
-  fraction; `--evict` (Ollama keep-alive=0) and `--wait` are explicit opt-in, never killing
-  another process implicitly. Tasks: (1) pre-flight NVML read (share the M3.3 reader) ->
-  resident PIDs + bytes held + free bytes; (2) compute the max safe `gpu-memory-utilization` from
-  actually-free VRAM using the M4.1 corrected weight floor + KV need; (3) default to that derate
-  and record it in the manifest; `--evict` sets Ollama keep-alive=0 then waits for release,
-  `--wait` polls until free; (4) abort with an actionable message if even the derated target
-  cannot fit. The single-run analogue of the M3.3 cross-cell VRAM gate. Acceptance: a run
-  launches cleanly when another process holds VRAM, recording the derate.
+- **M4.2 Pre-launch VRAM-contention guard. DONE (2026-06-22; details in `current.md`).**
+  `llb.executor.contention` auto-derates `gpu-memory-utilization` to the actually-free fraction
+  (non-destructive default), with `--evict` (unload Ollama) / `--wait` opt-in, aborting if even
+  the derate cannot hold the M4.1 weight floor + KV; wired into `run-eval` for vLLM and recorded
+  in `RunManifest.contention`. Residual / possible improvements: live validation on the CUDA host
+  (a real contended vLLM launch); the guard reads GPU 0 only (single-GPU assumption); the abort
+  KV headroom is a fixed floor rather than the arch-derived KV for the served context.
 - **M4.3 vLLM serving knobs as CLI flags + a kernel preflight.** Tasks: (1) surface
   `--max-model-len` and `--gpu-memory-utilization` on `run-eval` (today only via `--config`;
   overrides revalidated by `RunConfig`); (2) add a `build-vllm` self-check that JIT-builds the

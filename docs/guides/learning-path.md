@@ -28,11 +28,12 @@ with RAG, GPU serving, Optuna, or LLM-as-judge evaluation -- those are what this
 | 2 | Retrieval + RAG | embeddings, FAISS, chunking, recall@k / MRR | `rag/` |
 | 3 | Serving LLMs locally | Ollama, vLLM, llama.cpp, quantization, OpenAI-compatible API, KV cache / VRAM | `backends/` |
 | 4 | Eval flow orchestration | LangGraph graphs + failure taxonomy | `eval/graph.py` |
-| 5 | Scoring + LLM-as-judge | reference correctness, DeepEval G-Eval, judge calibration (Spearman, bootstrap CI), bias | `scoring/`, `judge/` |
+| 5 | Scoring + LLM-as-judge | reference correctness, DeepEval G-Eval, judge calibration (Spearman, bootstrap CI), judge bias | `scoring/`, `judge/` |
 | 6 | Tuning + tracking | Optuna, MLflow, DuckDB / Parquet, manifests, disjoint splits | `optimize/`, `tracking/` |
 | 7 | Hardware + isolation | NVML / pynvml, VRAM, thermal, process-isolated sweeps | `executor/`, `backends/telemetry.py` |
 | 8 | Public benchmarks + UA NLP | lm-evaluation-harness, lang-uk / INSAIT, UA morphology, datasets | `screen/` |
-| 9 (forward) | Security / agentic / tooling / GraphRAG | MCP, function calling, agentic eval, LLM security, knowledge-graph RAG | `plan.md` (M5 / M6) |
+| 9 | LLM security | Jailbreaks, prompt injection, instruction hierarchy, destructive actions, leakage, bias | `plan.md` (M5.1) |
+| 10 (forward) | Agentic / tooling / GraphRAG | MCP, function calling, agentic eval, knowledge-graph RAG | `plan.md` (M5.2 / M5.3 / M6) |
 
 ## Stage 0 -- Prerequisites
 
@@ -61,7 +62,8 @@ Retrieval-Augmented Generation: fetch relevant text, then let the model answer f
 - RAG, the idea: [Lewis et al. 2020](https://arxiv.org/abs/2005.11401) and the practical
   [LangChain RAG tutorial](https://python.langchain.com/docs/tutorials/rag/).
 - Embeddings + semantic search: [sentence-transformers](https://www.sbert.net/); the pinned
-  Ukrainian-capable model is [multilingual-e5](https://huggingface.co/intfloat/multilingual-e5-large).
+  Ukrainian-capable model is
+  [multilingual-e5-base](https://huggingface.co/intfloat/multilingual-e5-base).
 - Vector index: [FAISS](https://faiss.ai/) ([wiki](https://github.com/facebookresearch/faiss/wiki)).
 - Chunking: [LangChain text splitters](https://python.langchain.com/docs/concepts/text_splitters/)
   -- why `chunk_size` / overlap / structure-aware splitting matter.
@@ -74,7 +76,8 @@ survives `chunk_size` changes.
 
 ## Stage 3 -- Serving open-weight LLMs locally
 
-All three backends speak one OpenAI-compatible HTTP API, so the eval code is backend-agnostic.
+The serving design standardizes on one OpenAI-compatible HTTP API so eval code stays
+backend-agnostic. Ollama and vLLM are implemented; llama.cpp is the planned third backend.
 
 - [Ollama](https://github.com/ollama/ollama) -- easiest local serving (GGUF, CPU offload).
 - [vLLM](https://docs.vllm.ai/en/latest/) -- high-throughput HF-weight serving; read its
@@ -111,7 +114,9 @@ How models are ranked, and why the judge is gated.
   [Spearman rank correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
   with a [bootstrap confidence interval](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)).
 - Judge bias: a Gemma-family judge may self-prefer Gemma answers -- this project discloses and
-  gates it (see `current.md`).
+  gates it (see the [current-state disclosure](../implementation/current.md)). This is distinct
+  from social, cultural, and political bias, which Stage 9 treats as model behavior to measure
+  directly.
 
 In this repo: `src/llb/scoring/` (correctness, the gated judge, the N-model board) and
 `src/llb/judge/calibration.py` (rho + CI + trust decision).
@@ -140,9 +145,9 @@ Make measurements comparable and prevent one run from biasing the next.
   power.
 - Why isolation: a leaked CUDA context or a hot GPU skews tokens/sec and VRAM; each (model,
   config) cell runs in its own process, then a PID-attributed VRAM-reclaim gate + a capped
-  thermal cooldown run between cells.
+  thermal cooldown runs between cells.
 
-In this repo: `src/llb/executor/` (runner, VRAM gate, `isolate_cell`) and
+In this repo: `src/llb/executor/` (runner, VRAM gate, `isolation.py`) and
 `src/llb/backends/telemetry.py` (steady-state tokens/sec, peak VRAM, tokenizer efficiency).
 
 ## Stage 8 -- Public benchmarks and Ukrainian NLP
@@ -159,18 +164,61 @@ The Tier-1 screen and the Ukrainian-specific gotchas.
 
 In this repo: `src/llb/screen/public.py` (two never-cross-ranked tracks: logprob vs generation).
 
-## Stage 9 (forward) -- Security, agentic, tooling, and GraphRAG
+## Stage 9 -- LLM-specific security and responsible evaluation
 
-What the roadmap adds next (designed, not yet built; see
-[`plan.md`](../implementation/plan.md) M5 / M6).
+Learn to distinguish model safety from application security, define the attacker and protected
+assets, and measure failures without giving a model access to real secrets or destructive tools.
+The benchmark implementation is planned, not delivered; see
+[`plan.md`](../implementation/plan.md) M5.1.
+
+- Threat modeling: start with the
+  [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
+  [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence),
+  and [MITRE ATLAS](https://atlas.mitre.org/). Identify assets, trust boundaries, attacker
+  access, and impact before selecting attacks.
+- Jailbreaks and prompt injection: a jailbreak tries to bypass a model's safety behavior;
+  prompt injection makes untrusted text compete with application instructions. Test direct user
+  attacks, indirect instructions in retrieved documents or tool output, and multi-turn variants.
+- Instruction following: measure whether the model follows the instruction hierarchy, ignores
+  lower-trust conflicting text, completes valid tasks, and avoids both under-refusal and
+  over-refusal. See [The Instruction Hierarchy](https://arxiv.org/abs/2404.13208).
+- Destructive actions: assume model output is untrusted. Use typed, allowlisted tools; least
+  privilege; a sandbox; dry-run previews; approval for consequential writes; bounded retries;
+  and an audit log. Never test deletion, external messages, purchases, or account changes on a
+  real system.
+- Leakage and unsafe output handling: use synthetic secrets and canaries to test prompt or data
+  exfiltration. Validate generated SQL, shell, HTML, URLs, and tool arguments before any consumer
+  sees them.
+- Bias and censorship: evaluate the exact model, version, chat template, provider, and language.
+  Research has found social bias in Chinese-language models and elevated political-content
+  refusal or omission in some models developed in mainland China; these findings do not justify
+  treating every Chinese model as equivalent. Compare Chinese-origin and non-Chinese controls,
+  local weights and hosted endpoints, and matched prompts in Chinese, Ukrainian, and English.
+  Useful starting points are [CBBQ](https://aclanthology.org/2024.lrec-main.260/),
+  [McBE](https://aclanthology.org/2025.findings-acl.313/), and the comparative
+  [political-censorship study](https://academic.oup.com/pnasnexus/article/5/2/pgag013/8487339).
+- Evaluation: report clean task success, attack success rate (ASR), instruction-hierarchy
+  violation rate, canary leakage, unsafe tool-call rate, and over-refusal on benign controls.
+  Keep each attack family separate and attach confidence intervals.
+
+Follow the [extended LLM security learning path](learning-path-security.md) for the full topic
+map, safe lab rules, benchmark design, and an eight-session practical syllabus.
+
+In this repo: the planned M5.1 suite will reuse `src/llb/eval/`, process isolation, manifests,
+and confidence-interval reporting under a separate security tier. Do not interpret the current
+RAG score as a security score.
+
+## Stage 10 (forward) -- Agentic, tooling, and GraphRAG
+
+What the roadmap adds after the current stack (designed, not yet built; see
+[`plan.md`](../implementation/plan.md) M5.2 / M5.3 / M6).
 
 - Tool use: [OpenAI function calling](https://platform.openai.com/docs/guides/function-calling),
   the [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html),
   and the [Model Context Protocol](https://modelcontextprotocol.io/)
   ([Python SDK](https://github.com/modelcontextprotocol/python-sdk)).
-- LLM security: [OWASP Top 10 for LLMs](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
-  [garak](https://github.com/NVIDIA/garak), and adversarial sets like
-  [JailbreakBench](https://jailbreakbench.github.io/) and [HarmBench](https://www.harmbench.org/).
+- Agentic workflows: multi-step LangGraph tasks over a deterministic sandbox, with objective
+  state assertions and tool-call efficiency. Security tests for those tools belong to Stage 9.
 - Knowledge-graph RAG: [Kuzu](https://kuzudb.com/) (embedded graph DB,
   [docs](https://docs.kuzudb.com/)) and Microsoft's
   [GraphRAG](https://microsoft.github.io/graphrag/) ([paper](https://arxiv.org/abs/2404.16130)).
@@ -183,15 +231,16 @@ action in this repo.
 | Session | Read (stages) | Do in the repo |
 |---|---|---|
 | 1. Get it running | README + Stage 1 | `make venv`, `make test`, `make demo-eval`; open the manifest under `.data/llb/`. |
-| 2. RAG basics | Stage 2 | `make build-index`, `make validate-retrieval`; change `--strategy` / `--size` and watch recall@k move. |
+| 2. RAG basics | Stage 2 | Run `llb build-index --strategy ... --size ...`, then `make validate-retrieval`; watch recall@k move. |
 | 3. Serving | Stage 3 | `make list-models`, `make prep-models`, `make run-eval MODEL=...`; read the telemetry in the manifest. |
 | 4. The eval flow | Stage 4 | Read `eval/graph.py`; trace one case from retrieve to a typed status. |
 | 5. Scoring + judge | Stage 5 | `make calibration-worksheet`; read `scoring/` and `judge/calibration.py`; understand the rho >= 0.6 gate. |
 | 6. Tuning + tracking | Stage 6 | `llb tune --model ... --backend ...` on a small budget; compare trials in `make mlflow`. |
-| 7. Scale + isolation | Stage 7 + 8 | `llb sweep --sweep-id demo` then re-run it (resume); read `executor/isolation`; try `llb screen-public`. |
-| 8. The roadmap | Stage 9 | Read [`plan.md`](../implementation/plan.md); pick one M5 category and sketch its scoring schema. |
+| 7. Scale + isolation | Stage 7 + 8 | `llb sweep --sweep-id demo` then re-run it (resume); read `src/llb/executor/isolation.py`; try `llb screen-public --model ... --limit 10`. |
+| 8. LLM security | Stage 9 | Complete sessions 1-2 of the [security path](learning-path-security.md); sketch one M5.1 case with a benign control and objective detector. |
+| 9. The roadmap | Stage 10 | Read [`plan.md`](../implementation/plan.md); pick one M5.2, M5.3, or M6 category and sketch its scoring schema. |
 
-By session 8 you can run the full pipeline, explain every number on the board, and reason about
+By session 9 you can run the full pipeline, explain every number on the board, and reason about
 the forward plan. From here, the deepest single source is the
 [design spec](../design/spec.md); the [current state](../implementation/current.md) maps each
 module to its behavior.

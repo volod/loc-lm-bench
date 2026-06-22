@@ -23,6 +23,7 @@ from llb.config import RunConfig
 from llb.contracts import (
     BackendMetadata,
     CaseScoreRow,
+    ContentionReport,
     EvalResult,
     JudgeInputRecord,
     JudgeScore,
@@ -127,6 +128,51 @@ def _vram_reader() -> Callable[[], int] | None:
         return nvml_reader()
     except (Exception, SystemExit):  # nvml_reader raises SystemExit when [telemetry] is absent
         return None
+
+
+def _pid_usage_reader() -> Callable[[], dict[int, int]] | None:
+    """Best-effort NVML per-PID VRAM reader (for the M4.2 contention guard's resident attribution)."""
+    try:
+        from llb.executor.vram import nvml_process_reader
+
+        return nvml_process_reader()
+    except (Exception, SystemExit):
+        return None
+
+
+def _guard_vllm_contention(
+    config: RunConfig, launcher: BackendLauncher, *, evict: bool, wait: bool
+) -> "ContentionReport | None":
+    """Pre-launch VRAM-contention guard for vLLM (M4.2): derate gpu-memory-utilization to the
+    actually-free VRAM, or abort if even that cannot hold the model. No-op without a GPU."""
+    from llb.backends.vllm import VllmLauncher
+    from llb.executor.contention import (
+        ACTION_ABORT,
+        apply_contention_guard,
+        default_gpu_reader,
+        model_weight_floor_mb,
+    )
+
+    report = apply_contention_guard(
+        requested_util=config.gpu_memory_utilization,
+        weight_floor_mb=model_weight_floor_mb(config.model),
+        gpu_reader=default_gpu_reader,
+        process_reader=_pid_usage_reader(),
+        evict=evict,
+        wait=wait,
+        ollama_host=config.ollama_host,
+    )
+    if report is None:
+        return None
+    if report["action"] == ACTION_ABORT:
+        raise SystemExit(f"[run-eval] pre-launch VRAM guard: {report['note']}")
+    if report["derated"] and isinstance(launcher, VllmLauncher):
+        _LOG.warning("[run-eval] %s", report["note"])
+        launcher.gpu_memory_utilization = report["safe_util"]
+        launcher.meta["gpu_memory_utilization"] = report["safe_util"]
+    else:
+        _LOG.info("[run-eval] pre-launch VRAM guard: %s", report["note"])
+    return report
 
 
 def _default_runner_fn(
@@ -299,6 +345,8 @@ def run_eval(
     limit: int | None = None,
     split: str = "final",
     worksheet: Path | str | None = None,
+    evict: bool = False,
+    wait: bool = False,
     emit: bool = True,
 ) -> EvalResult:
     """Run the skeleton and return {rows, metrics, paths, table}.
@@ -318,8 +366,11 @@ def run_eval(
     run_timestamp = _run_timestamp(run_id)
     run_dir = config.run_dir(run_timestamp)
     staging_dir = config.run_staging_dir(run_timestamp)
+    contention: ContentionReport | None = None
     if launcher is None:
         launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
+        if config.backend == "vllm":
+            contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
     if runner_fn is None:
         if store is None:
             from llb.rag.store import RagStore
@@ -369,6 +420,7 @@ def run_eval(
         retrieval=retrieval_metrics,
         judge=judge_metadata,
         telemetry=telemetry_report,
+        contention=contention,
         n_cases=len(batch.rows),
     )
     paths = persist_run(

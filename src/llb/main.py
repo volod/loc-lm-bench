@@ -667,6 +667,12 @@ def run_eval_cmd(
         help="emit a judge-calibration worksheet pre-filled with answers "
         "(pair with --split calibration)",
     ),
+    evict: bool = typer.Option(
+        False, help="vLLM contention guard: unload Ollama's resident models before launching"
+    ),
+    wait: bool = typer.Option(
+        False, help="vLLM contention guard: wait for VRAM to free instead of derating immediately"
+    ),
 ) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
@@ -681,7 +687,15 @@ def run_eval_cmd(
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )
-    run_eval(cfg, split=split, limit=limit, judge_rho=judge_rho, worksheet=worksheet)
+    run_eval(
+        cfg,
+        split=split,
+        limit=limit,
+        judge_rho=judge_rho,
+        worksheet=worksheet,
+        evict=evict,
+        wait=wait,
+    )
 
 
 @app.command("judge-experiment")

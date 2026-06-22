@@ -387,6 +387,27 @@ class VramReclaimReport(TypedDict):
     polls: int
 
 
+class ResidentProc(TypedDict):
+    pid: int
+    used_mb: int
+
+
+class ContentionReport(TypedDict):
+    """Pre-launch VRAM-contention guard outcome (M4.2)."""
+
+    total_mb: int
+    free_mb: int
+    requested_util: float
+    safe_util: float  # gpu-memory-utilization to actually use (derated to fit free VRAM)
+    target_mb: int  # safe_util x total -- what vLLM may reserve
+    weight_floor_mb: int  # embedding-aware weights estimate (M4.1) used for the abort check
+    residents: list[ResidentProc]  # other GPU processes holding VRAM
+    derated: bool  # True when safe_util < requested_util (contention lowered it)
+    fits: bool  # False -> even the derated target cannot hold weights + KV
+    action: str  # ok | derate | abort
+    note: str
+
+
 class GpuSample(TypedDict):
     index: int
     temp_c: int | None

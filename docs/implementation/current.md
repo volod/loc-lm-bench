@@ -811,6 +811,30 @@ Possible further improvements: the E4B high-precision mass is measurement-anchor
 sliding-window KV (Gemma 3/4) is still estimated as full attention (conservative at long ctx);
 and `enrich_arch` fills gaps rather than letting `config.json` override curated values.
 
+### Pre-launch VRAM-contention guard -- `llb.executor.contention` (M4.2)
+Before a VRAM-owning backend (vLLM) starts, `run-eval` runs a guard so a resident process can no
+longer trip vLLM's startup free-memory check (the original M2.4 failure: Ollama held ~2.8 GB, so
+`gpu-memory-utilization x total` exceeded free VRAM). `plan_guard(total, free, requested_util,
+weight_floor)` (pure) caps `gpu-memory-utilization` at `(free - margin) / total` (rounded down,
+only ever lowered) -- the non-destructive default AUTO-DERATE -- and returns a `ContentionReport`
+{total, free, safe_util, target, residents, derated, fits, action, note}. It ABORTS with an
+actionable message when even the derated target cannot hold the M4.1 weight floor + a minimal KV
+working set. Free VRAM comes from nvidia-smi (so the derate works without `[telemetry]`); resident
+PIDs come from NVML when present (best-effort attribution in the note).
+
+`apply_contention_guard` adds the opt-in escalations: `--evict` unloads Ollama's resident models
+(`/api/ps` -> `keep_alive: 0` per model; never kills a process) then re-reads; `--wait` polls free
+VRAM until the requested target fits or a timeout. The runner (`_guard_vllm_contention`) calls it
+only for vLLM and only on the real launch path (injected launchers in tests skip it), lowers the
+launcher's `gpu_memory_utilization` on a derate, and records the `ContentionReport` in the manifest
+(`RunManifest.contention`). Readers, the evict, and sleep are injectable; the math + escalations
+are unit-tested without a GPU.
+
+Possible further improvements: live validation on the CUDA host (a real contended vLLM launch);
+the guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor
+rather than the arch-derived KV for the served context.
+
 | Step | What | State |
 |------|------|-------|
-| M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured; 309 tests) |
+| M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
+| M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |
