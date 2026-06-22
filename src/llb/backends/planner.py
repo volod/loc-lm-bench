@@ -7,9 +7,17 @@ available context size is whatever the combined budget allows after model weight
 KV cache grows linearly with context (batch=1).
 
 Memory model (estimates, MiB):
-  weights      = params_b * 1e9 * bits_per_weight / 8
+  weights      = hi_precision_params * embed_bpw/8 + quantized_params * quant_bpw/8
   kv per token = 2 (K+V) * n_layers * kv_dim * 2 bytes (fp16 KV)   # batch 1, no parallel
   footprint(ctx) = weights + kv_per_token * ctx + compute_overhead
+
+Weights are EMBEDDING-AWARE (M4.1): partial quants (w4a16 / int4 / fp8) quantize only the
+linear layers, while the token embedding + norms stay high-precision. With a 256k-token vocab
+that premium is large -- measured gemma-4-E4B w4a16 loads 9.8 GiB, not the 4.2 GiB a flat
+`params_b x bpw` predicts. We price the high-precision mass (vocab embedding, untied output
+head, or an explicit `hi_precision_params_b` for quirks like Gemma 3n Per-Layer Embeddings) at
+`embed_bpw` and only the remainder at the quant bpw. Arch fields come from the spec or a cached
+`config.json` (`enrich_arch`); when none are present the estimate falls back to the flat product.
 
 Budgets:
   VRAM usable = total_vram - vram_reserve   (CUDA runtime + display headroom)
@@ -22,12 +30,15 @@ Per model we report: max context fully on GPU (`ctx_gpu`), max context using GPU
 launch (Milestone 2).
 """
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, cast
 
 from llb.contracts import ModelPlanRow, ModelSpec
 
 MIB = 1024 * 1024
 KV_ELEM_BYTES = 2  # fp16 KV cache element
+EMBED_BPW = 16.0  # high-precision part (embeddings/norms) stays bf16/fp16 under partial quant
 
 # Bits-per-weight for common quantizations (GGUF k-quants, plain dtypes, served formats).
 QUANT_BPW = {
@@ -74,7 +85,119 @@ def resolve_bpw(spec: ModelSpec) -> float | None:
 
 
 def weights_mib(params_b: float, bpw: float) -> float:
+    """Flat estimate: every weight at one bpw. Embedding-blind (kept for the no-arch fallback)."""
     return params_b * 1e9 * bpw / 8 / MIB
+
+
+def embedding_params(vocab_size: int, hidden_size: int, tied: bool = True) -> float:
+    """Params in the token embedding table (+ the output head when it is NOT tied)."""
+    return vocab_size * hidden_size * (1 if tied else 2)
+
+
+# Quant formats that keep the embedding / lm_head in high precision and quantize only the
+# linear layers (so the embedding premium applies). GGUF k-quants quantize the embedding too,
+# so the premium does NOT apply there; bf16/fp16/fp32 are already uniform.
+PARTIAL_QUANT_FORMATS = {"w4a16", "int4", "awq", "gptq", "fp8"}
+
+
+def hi_precision_params(spec: ModelSpec) -> float:
+    """Count of weights that stay high-precision under a partial quant, in absolute params.
+
+    An explicit `hi_precision_params_b` always wins (it can capture architecture quirks the
+    vocab formula misses, e.g. Gemma 3n Per-Layer Embeddings). Otherwise, ONLY for a partial
+    quant that keeps the embedding in fp16, it is the token embedding (plus the untied output
+    head) from `vocab_size` x `hidden_size`. 0 when unknown or when the format quantizes
+    everything uniformly (GGUF k-quants, bf16, fp32).
+    """
+    override = spec.get("hi_precision_params_b")
+    if override is not None:
+        return max(0.0, float(override) * 1e9)
+    if str(spec.get("quant", "")).lower() not in PARTIAL_QUANT_FORMATS:
+        return 0.0
+    vocab = spec.get("vocab_size")
+    hidden = spec.get("hidden_size")
+    if vocab and hidden:
+        tied = bool(spec.get("tie_word_embeddings", True))
+        return embedding_params(int(vocab), int(hidden), tied)
+    return 0.0
+
+
+def weights_mib_detailed(
+    params_b: float, quant_bpw: float, hi_params: float, embed_bpw: float = EMBED_BPW
+) -> float:
+    """Embedding-aware weights (MiB): high-precision mass at `embed_bpw`, the rest at `quant_bpw`.
+
+    `embed_bpw` is floored at the quant bpw, so a full-precision checkpoint (bf16/fp32) reduces
+    to the flat estimate (the embedding is not magically cheaper than the body).
+    """
+    total = params_b * 1e9
+    hi = min(max(0.0, hi_params), total)
+    hi_bpw = max(embed_bpw, quant_bpw)
+    body_bytes = (total - hi) * quant_bpw / 8
+    hi_bytes = hi * hi_bpw / 8
+    return (body_bytes + hi_bytes) / MIB
+
+
+# --- arch enrichment from a cached config.json (best-effort; never downloads) --------------
+
+
+def arch_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Pull planning arch fields from a HF `config.json` dict (handles nested `text_config`)."""
+    text = config["text_config"] if isinstance(config.get("text_config"), dict) else {}
+    out: dict[str, Any] = {}
+    for key, dest in (
+        ("vocab_size", "vocab_size"),
+        ("hidden_size", "hidden_size"),
+        ("num_hidden_layers", "n_layers"),
+    ):
+        value = text.get(key, config.get(key))
+        if isinstance(value, int):
+            out[dest] = value
+    tie = config.get("tie_word_embeddings", text.get("tie_word_embeddings"))
+    if isinstance(tie, bool):
+        out["tie_word_embeddings"] = tie
+    return out
+
+
+def cached_config_path(repo_id: str) -> Path | None:
+    """Path to a model's `config.json` already in the local HF cache, or None. Never downloads."""
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except Exception:
+        return None
+    try:
+        hit = try_to_load_from_cache(repo_id, "config.json")
+    except Exception:
+        return None
+    return Path(hit) if isinstance(hit, str) and Path(hit).is_file() else None
+
+
+def enrich_arch(spec: ModelSpec) -> ModelSpec:
+    """Fill MISSING arch fields (vocab/hidden/n_layers/tie) from a cached `config.json`.
+
+    Best-effort and offline: curated spec values are kept (the config only fills gaps), and only
+    for HF repo ids ("org/name") whose weights are already cached. Ollama / hf.co tags are skipped.
+    """
+    wanted = ("vocab_size", "hidden_size", "n_layers", "tie_word_embeddings")
+    if all(spec.get(k) is not None for k in wanted):
+        return spec
+    source = spec.get("source", "")
+    if not source or source.count("/") != 1 or source.startswith("hf.co/"):
+        return spec
+    path = cached_config_path(source)
+    if path is None:
+        return spec
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return spec
+    if not isinstance(config, dict):
+        return spec
+    merged: dict[str, Any] = dict(spec)
+    for key, value in arch_from_config(config).items():
+        if merged.get(key) is None:
+            merged[key] = value
+    return cast(ModelSpec, merged)
 
 
 def kv_mib_per_token(n_layers: int, kv_dim: int) -> float:
@@ -134,7 +257,8 @@ def plan_model(
     if bpw is None or params_b is None:
         row["note"] = "add params_b + quant/bpw to plan"
         return row
-    w = weights_mib(float(params_b), bpw)
+    embed_bpw = float(spec.get("embed_bpw") or EMBED_BPW)
+    w = weights_mib_detailed(float(params_b), bpw, hi_precision_params(spec), embed_bpw)
     row["weights_mib"] = w
 
     vram_usable = max(0, vram_mib - vram_reserve)

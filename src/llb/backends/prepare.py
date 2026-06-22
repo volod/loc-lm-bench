@@ -57,6 +57,11 @@ class _ModelSpecSchema(BaseModel):
     n_layers: int | None = None
     kv_dim: int | None = None
     max_context: int | None = None
+    vocab_size: int | None = None
+    hidden_size: int | None = None
+    tie_word_embeddings: bool | None = None
+    embed_bpw: float | None = None
+    hi_precision_params_b: float | None = None
     sources: dict[str, "str | dict[str, object]"] | None = None
 
 

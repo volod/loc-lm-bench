@@ -28,15 +28,20 @@
 #  - These are multimodal (image-text); we serve + score TEXT only.
 #  - Gemma 3/4 use sliding-window attention, so `list-models` over-estimates KV cache at
 #    long context (its feasible-context numbers are conservative for these models).
-#  - w4a16 WEIGHTS are UNDER-estimated by `list-models` (params_b x bpw): the int4 quant
-#    covers only the linear layers, while Gemma's 256k-token embedding stays high-precision.
-#    Measured: gemma-4-E4B-it-w4a16 loads 9.8 GiB, not the ~4.2 GiB the planner predicts
-#    (M2.4 on the RTX 4060 Ti). Treat the w4a16 wt_GB column as a lower bound; a vocab- and
-#    embedding-aware estimate is forward work (see plan.md Milestone 4).
+#  - w4a16 / fp8 WEIGHTS keep the embedding (and Gemma 3n Per-Layer Embeddings) high-precision
+#    while quantizing only the linear layers, so a flat `params_b x bpw` under-counts. The
+#    planner is now EMBEDDING-AWARE (M4.1): it prices the high-precision mass at 16-bit from the
+#    `vocab_size` / `hidden_size` / `tie_word_embeddings` (or `hi_precision_params_b`) fields
+#    below. Anchor: gemma-4-E4B-it-w4a16 MEASURED 9.8 GiB weights (M2.4, RTX 4060 Ti); the
+#    estimate now lands there instead of the old ~4.2 GiB. GGUF k-quants quantize the embedding
+#    too, so the premium does NOT apply to Ollama/llama.cpp q4_k_m sources.
 #
-# Planning fields (used by `make list-models`; arch values read from each config.json):
+# Planning fields (used by `make list-models`; arch values also auto-read from each config.json):
 #   params_b  billions   quant  bpw class (bf16, fp8, w4a16, q4_k_m, ...)  n_layers
 #   kv_dim    n_kv_heads * head_dim    max_context  model max window
+#   vocab_size / hidden_size / tie_word_embeddings  embedding-aware weights (M4.1; partial
+#     quants only).  hi_precision_params_b  override (billions of params kept at 16-bit) for
+#     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
 
 models:
   # --- Prebuilt path (Ollama: uses the GPU, no source build). The 3B is the M1 smoke target. ---
@@ -55,12 +60,17 @@ models:
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
     source: google/gemma-4-E4B-it-qat-w4a16-ct
-    min_vram_gb: 11    # MEASURED floor: weights load 9.8 GiB (not the planner's ~4.2 GiB)
+    min_vram_gb: 11    # MEASURED floor: weights load 9.8 GiB; the planner now estimates ~9.8
     params_b: 8
     quant: w4a16
     n_layers: 42
     kv_dim: 512         # 2 KV heads * 256 head_dim
     max_context: 131072
+    vocab_size: 262144
+    tie_word_embeddings: true
+    # token embedding + Gemma 3n Per-Layer Embeddings stay bf16 under w4a16; this override is
+    # anchored to the MEASURED 9.8 GiB weights (M2.4), not vocab-derived (PLE is not in vocab).
+    hi_precision_params_b: 4.2
     # M2.4 validated on the RTX 4060 Ti (vLLM 0.23.0, flashinfer sampler off): weights 9.8 GiB,
     # ~64 tok/s steady, peak VRAM 15.7 GB at gpu-memory-utilization 0.80, served ctx 8192,
     # cold load ~112 s, tokenizer ~0.33 tok/UA-char. The M2 reference real-backend run.
@@ -75,6 +85,9 @@ models:
     n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
     max_context: 262144
+    vocab_size: 262144  # embedding-aware (M4.1): the 256k embedding stays bf16 under w4a16
+    hidden_size: 3840
+    tie_word_embeddings: true
     notes: Gemma 4 12B int4; the primary 16 GB vLLM fit (sliding-window, so KV is small)
 
   # --- Larger current-gen candidates: offload or a bigger GPU on 16 GB (flagged by list-models). ---
@@ -116,6 +129,9 @@ models:
     n_layers: 62
     kv_dim: 2048        # 16 KV heads * 128 head_dim
     max_context: 131072
+    vocab_size: 262144  # embedding-aware (M4.1): embedding stays bf16 even in the fp8 checkpoint
+    hidden_size: 5376
+    tie_word_embeddings: true
     notes: Ukrainian-specialized 27B FP8; also a local-judge candidate (Premise 2); bigger GPU
 
   - name: lapa-v0.1.2-instruct

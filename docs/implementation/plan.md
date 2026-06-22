@@ -63,7 +63,7 @@ workstream identifiers; keep them even as item bodies shrink to residual notes (
 
 1. **Milestone 4 (no human gating; start here).** Run-path items are kept sequential because
    they share the launch/planner path; the CLI and prep items parallelize.
-   1. **M4.1** Embedding-aware VRAM estimate -- refines the M3.2 resolver / planner. (run path)
+   1. **M4.1** Embedding-aware VRAM estimate -- DONE (refined the M3.2 resolver / planner).
    2. **M4.2** Pre-launch VRAM-contention guard -- shares the NVML reader; after M4.1. (run path)
    3. **M4.5** llama.cpp launcher -- the third backend; sequential after M4.1/M4.2 (run path).
    4. **M4.3** vLLM serving knobs as CLI flags + kernel preflight -- CLI-only; parallelizable.
@@ -112,16 +112,14 @@ misrepresenting generated material as verified. M4.5 adds the third backend the 
 already routes to. None blocks the others except where the sequence above notes a shared run
 path; each is independently shippable and unit-testable.
 
-- **M4.1 Embedding-aware VRAM estimate.** Problem: `list-models` / the planner under-estimate
-  w4a16 (and other partial-quant) weights because `params_b x bpw` assumes the WHOLE model is
-  quantized; measured E4B weights were 9.8 GiB vs the predicted ~4.2 GiB (Gemma's 256k-token
-  embedding stays high-precision). Tasks: (1) read `vocab_size` / `hidden_size` /
-  `tie_word_embeddings` from each candidate's `config.json` (HF cache or repo); (2) price the
-  unquantized embedding (+ the output head when untied) and the norm params at real bpw, and only
-  the linear layers at the quant bpw; (3) feed the corrected floor into the `AvailabilityResolver`
-  fit (M3.2) and Optuna's over-VRAM prune (M3.4); (4) record measured-vs-predicted in
-  `samples/models_uk.yaml` as the regression anchor. Acceptance: predicted weights within
-  tolerance of the 9.8 GiB measured E4B floor and the 12B/27B candidates.
+- **M4.1 Embedding-aware VRAM estimate. DONE (2026-06-22; details in `current.md`).** The planner
+  prices the high-precision embedding mass separately (`weights_mib_detailed` + `hi_precision_params`,
+  gated to partial quants), reads arch from a cached `config.json` (`enrich_arch` / `arch_from_config`),
+  and feeds the corrected floor through `plan_model` to the M3.2 resolver + the M3.4 Optuna prune;
+  E4B estimates 9.81 GiB vs the 9.8 GiB measured. Residual / possible improvements: derive the
+  Gemma 3n Per-Layer-Embedding mass from `config.json` instead of the measurement-anchored
+  `hi_precision_params_b`; model sliding-window KV (currently full-attention, conservative at long
+  context); let `config.json` override curated arch values rather than only filling gaps.
 - **M4.2 Pre-launch VRAM-contention guard.** Problem: the first M2.4 launch failed because
   Ollama held ~2.8 GB resident, so vLLM's startup free-memory check
   (`gpu-memory-utilization` x total) failed. **Decided policy (non-destructive default,
