@@ -206,9 +206,21 @@ def main() -> int:
     else:
         _install_prebuilt(python, os.environ.get(env.VLLM_SPEC, DEFAULT_VLLM_SPEC))
     _report_install()
+    _run_sampler_preflight()
     _LOG.info("[build-vllm] active attention backend is reported at serve time")
     _LOG.info("[build-vllm] serve: llb run-eval --backend vllm --model <hf-repo-id> --telemetry")
     return 0
+
+
+def _run_sampler_preflight() -> None:
+    """Build the flashinfer sampling kernel ONCE and record a definitive verdict (M4.3) so the
+    launcher knows whether to enable the flashinfer sampler on this host (else stay on native)."""
+    from llb.backends.preflight import run_preflight
+
+    verdict = run_preflight()
+    _LOG.info(
+        "[build-vllm] flashinfer sampler preflight: %s (%s)", verdict["sampler"], verdict["detail"]
+    )
 
 
 if __name__ == "__main__":

@@ -639,8 +639,14 @@ def mlflow_ui_cmd(
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
-    backend: Optional[str] = typer.Option(None, help="ollama | vllm"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
+    ),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None, help="vLLM GPU memory fraction 0-1 (overrides the config; no YAML needed)"
+    ),
     split: str = typer.Option("final", help="gold split to evaluate"),
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
@@ -682,6 +688,8 @@ def run_eval_cmd(
         model=model,
         backend=backend,
         goldset_path=goldset,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=gpu_memory_utilization,
         judge_model=judge_model,
         judge_base_url=judge_base_url,
         score_semantic=score_semantic,

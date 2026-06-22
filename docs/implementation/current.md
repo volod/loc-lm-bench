@@ -863,8 +863,30 @@ Possible further improvements: live validation on a CUDA host serving a real GGU
 defaulting to -1 = all on GPU); the `/props` served-context parse depends on the llama.cpp build's
 response shape (both known shapes are handled, with a fallback).
 
+### vLLM serving knobs + flashinfer preflight (M4.3)
+`run-eval` now takes `--max-model-len` and `--gpu-memory-utilization` directly (previously only via
+`--config`); both flow through `_load_config` -> `RunConfig.with_overrides`, so they are revalidated
+by `RunConfig` (range-checked) and no YAML file is needed to tune a single run.
+
+The flashinfer sampling kernel is gated on a preflight instead of a blanket default-off.
+`llb.backends.preflight` runs the kernel build ONCE during `build-vllm` (`run_preflight` ->
+`probe_sampler`) and records a definitive `SamplerVerdict` ({sampler, flashinfer_version, detail,
+checked_at}) under `$DATA_DIR/llb/preflight/vllm_sampler.json`: `flashinfer` when the kernel builds
++ runs on this host, else `native` (the safe sampler). `launch_env` reads `flashinfer_sampler_ok()`
+and sets `VLLM_USE_FLASHINFER_SAMPLER=1` only on a `flashinfer` verdict, else `0`; an explicit env
+value always wins -- so the sampler is no longer a hardcoded `.env` default (now commented), it is
+preflight-driven + overridable. The probe is injectable, so the verdict logic, persistence, and the
+launch_env gating are unit-tested without CUDA; the real build-once probe (import flashinfer + a
+CUDA sampling call) runs only on the host `build-vllm` targets.
+
+Possible further improvements: auto-PIN a host-compatible flashinfer when the bundled one fails
+(today the verdict is build-or-native, no version pinning); record the chosen sampler in the run
+manifest for provenance; re-run the preflight on a flashinfer/driver change without a full vLLM
+rebuild.
+
 | Step | What | State |
 |------|------|-------|
 | M4.1 | embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`, partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through `plan_model` to resolver + Optuna; YAML arch fields + measured anchor | DONE (E4B estimate 9.81 vs 9.8 GiB measured) |
 | M4.2 | pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`), wired into `run-eval` for vLLM, recorded in the manifest | DONE (unit-tested; live contended-launch validation pending a CUDA host) |
 | M4.5 | llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source, `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate, `_make_launcher` wiring | DONE (unit-tested; live GGUF serve pending a CUDA host) |
+| M4.3 | run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) + flashinfer sampler preflight (`build-vllm` records a verdict; `launch_env` gates the sampler on it) | DONE (unit-tested; live kernel build pending a CUDA host) |

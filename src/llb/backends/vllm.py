@@ -89,19 +89,27 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
 # vLLM JIT-compiles flashinfer's sampling kernel at engine startup. flashinfer's
 # `sampling.cuh` calls `cub::BlockAdjacentDifference::FlagHeads`, which newer CCCL/CUB
 # (shipped with CUDA 12.x toolchains) removed -- so the build fails on consumer GPUs such as
-# the sm_89 RTX 4060 Ti and the engine never comes up. Greedy / temperature-0 decoding (the
-# eval default) does not need the flashinfer sampler, so we default it OFF here; export
-# VLLM_USE_FLASHINFER_SAMPLER=1 to opt back in on a host where that kernel builds.
-_DEFAULT_SUBPROCESS_ENV: dict[str, str] = {env.VLLM_USE_FLASHINFER_SAMPLER: "0"}
+# the sm_89 RTX 4060 Ti and the engine never comes up. So the sampler is gated on the
+# `build-vllm` preflight (M4.3): it is enabled ONLY when the recorded verdict confirms the
+# kernel builds on this host, else kept OFF (greedy / temperature-0 decoding, the eval default,
+# does not need it). An explicit VLLM_USE_FLASHINFER_SAMPLER in the environment always wins.
 
 
-def launch_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Subprocess environment for `vllm serve`: inherit the caller's, then apply our defaults
-    only for keys the caller has not already set (so an explicit override always wins)."""
-    env = dict(os.environ if base is None else base)
-    for key, value in _DEFAULT_SUBPROCESS_ENV.items():
-        env.setdefault(key, value)
-    return env
+def launch_env(
+    base: Mapping[str, str] | None = None, *, flashinfer_sampler: bool | None = None
+) -> dict[str, str]:
+    """Subprocess environment for `vllm serve`: inherit the caller's environment, then set the
+    flashinfer-sampler flag from the build-vllm preflight verdict only when the caller has not
+    set it explicitly (an explicit value always wins). `flashinfer_sampler` overrides the
+    verdict lookup (used in tests)."""
+    out = dict(os.environ if base is None else base)
+    if env.VLLM_USE_FLASHINFER_SAMPLER not in out:
+        if flashinfer_sampler is None:
+            from llb.backends.preflight import flashinfer_sampler_ok
+
+            flashinfer_sampler = flashinfer_sampler_ok()
+        out[env.VLLM_USE_FLASHINFER_SAMPLER] = "1" if flashinfer_sampler else "0"
+    return out
 
 
 def parse_served_context(models_body: str) -> int | None:

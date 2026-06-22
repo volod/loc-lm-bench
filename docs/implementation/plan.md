@@ -66,7 +66,7 @@ workstream identifiers; keep them even as item bodies shrink to residual notes (
    1. **M4.1** Embedding-aware VRAM estimate -- DONE (refined the M3.2 resolver / planner).
    2. **M4.2** Pre-launch VRAM-contention guard -- DONE (auto-derate + evict/wait; vLLM launch path).
    3. **M4.5** llama.cpp launcher -- DONE (LlamaCppLauncher + telemetry + reclaim gate; run path).
-   4. **M4.3** vLLM serving knobs as CLI flags + kernel preflight -- CLI-only; parallelizable.
+   4. **M4.3** vLLM serving knobs as CLI flags + kernel preflight -- DONE (run-eval knobs + flashinfer preflight).
    5. **M4.4** Ontology-assisted gold-set drafting -- independent prep subpackage; parallelizable.
 
 2. **Milestone 5 (after M4).** Each category is its own Tier and is never cross-ranked with the
@@ -127,14 +127,17 @@ path; each is independently shippable and unit-testable.
   in `RunManifest.contention`. Residual / possible improvements: live validation on the CUDA host
   (a real contended vLLM launch); the guard reads GPU 0 only (single-GPU assumption); the abort
   KV headroom is a fixed floor rather than the arch-derived KV for the served context.
-- **M4.3 vLLM serving knobs as CLI flags + a kernel preflight.** Tasks: (1) surface
-  `--max-model-len` and `--gpu-memory-utilization` on `run-eval` (today only via `--config`;
-  overrides revalidated by `RunConfig`); (2) add a `build-vllm` self-check that JIT-builds the
-  flashinfer sampling kernel once and pins a host-compatible flashinfer, OR confirms the native
-  sampler; (3) have `launch_env` re-enable the flashinfer sampler ONLY when the preflight
-  confirms it compiles on sm_89, else keep the safe default off (flashinfer 0.6.x's
-  `sampling.cuh` fails to build against newer CCCL/CUB on consumer sm_89). Acceptance: knobs
-  settable without YAML; the preflight returns a definitive sampler verdict.
+- **M4.3 vLLM serving knobs as CLI flags + a kernel preflight. DONE (2026-06-22; details in
+  `current.md`).** `run-eval` takes `--max-model-len` / `--gpu-memory-utilization` directly
+  (revalidated through `RunConfig.with_overrides`, no YAML). `llb.backends.preflight` builds the
+  flashinfer sampling kernel ONCE during `build-vllm` and records a definitive `SamplerVerdict`
+  (`flashinfer` | `native`) under `$DATA_DIR/llb/preflight/`; `launch_env` enables
+  `VLLM_USE_FLASHINFER_SAMPLER` only on a `flashinfer` verdict (explicit env always wins, so the
+  flag is now a preflight-driven, commented `.env` override). The probe is injectable -> verdict,
+  persistence, and gating are unit-tested without CUDA. Residual / possible improvements:
+  auto-pin a host-compatible flashinfer when the bundled one fails (today build-or-native, no
+  version pinning); record the chosen sampler in the run manifest; re-run the preflight on a
+  flashinfer/driver change without a full vLLM rebuild.
 - **M4.4 Ontology-assisted corpus gold-set drafting.** Implement the reserved
   `GOLDSET_MODE=draft` as a multi-stage pipeline over a supplied text directory. **Decided
   extraction (default LLM-only, 2026-06-22):** all stages use the endpoint adapter (local
