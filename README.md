@@ -33,6 +33,24 @@ That builds `.venv` (all extras), indexes the committed 250-item public fixture,
 model, and records one ranked row + telemetry under `.data/llb/`. Run `make` with no target to
 list every command.
 
+### First run: configure `.env`
+
+The first `make demo-eval` (or `make venv`) copies `.env` from `.env.example`, then stops with a
+setup notice so you can configure this host before anything runs. This is expected -- it exits
+cleanly (status `0`) and is **not** an error. Edit the new `.env`, then re-run `make demo-eval`:
+
+- `HF_TOKEN` -- a Hugging Face read token for gated downloads (MamayLM, Gemma 4, ingest/prep).
+  Get one at <https://huggingface.co/settings/tokens>.
+- Host defaults -- `DATA_DIR` (where indexes / runs / MLflow are written), `OLLAMA_HOST` /
+  `VLLM_HOST` (candidate inference endpoints), and `JUDGE_MODEL` / `DEEPEVAL_JUDGE_BASE_URL`
+  (optional local judge; off unless `JUDGE_MODEL` is set). `.env.example` documents every
+  variable with its default.
+
+Once `.env` exists, re-runs skip the notice and the pipeline proceeds. With `UV_LINK_MODE` unset
+(or `auto`), `make` resolves uv's link mode per host: it selects `copy` when this checkout sits on
+a different disk than uv's cache (avoiding a cross-filesystem hardlink warning) and keeps uv's fast
+default when they share a disk. Set a specific mode (`copy|hardlink|clone|symlink`) to force it.
+
 ## Commands by result
 
 The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scale -> review.**

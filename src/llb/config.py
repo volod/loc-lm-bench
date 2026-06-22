@@ -92,8 +92,12 @@ class RunConfig(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
-    # Judge gating (Premise 2): demoted to diagnostic below the rho threshold
-    judge_model: str | None = None
+    # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default
+    # from the environment (JUDGE_MODEL unset -> no judge runs); an explicit value or CLI flag
+    # always wins.
+    judge_model: str | None = Field(
+        default_factory=lambda: _optional_environment_value(env.JUDGE_MODEL)
+    )
     judge_base_url: str | None = Field(
         default_factory=lambda: _optional_environment_value(env.DEEPEVAL_JUDGE_BASE_URL)
     )

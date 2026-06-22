@@ -22,7 +22,11 @@ VLLM_USE_FLASHINFER_SAMPLER = "VLLM_USE_FLASHINFER_SAMPLER"
 OLLAMA_API_BASE = "OLLAMA_API_BASE"
 HOSTED_VLLM_API_BASE = "HOSTED_VLLM_API_BASE"
 
-# Local DeepEval judge (OpenAI-compatible endpoint; no cloud egress)
+# Local LLM judge. JUDGE_MODEL is the litellm route for the judge model; unset -> no judge
+# runs (objective correctness ranks alone). Mirrors the Makefile JUDGE_MODEL knob and the
+# --judge-model CLI flag. DEEPEVAL_* configure the OpenAI-compatible judge endpoint (no cloud
+# egress).
+JUDGE_MODEL = "JUDGE_MODEL"
 DEEPEVAL_JUDGE_BASE_URL = "DEEPEVAL_JUDGE_BASE_URL"
 DEEPEVAL_JUDGE_API_KEY = "DEEPEVAL_JUDGE_API_KEY"
 DEEPEVAL_TELEMETRY_OPT_OUT = "DEEPEVAL_TELEMETRY_OPT_OUT"
