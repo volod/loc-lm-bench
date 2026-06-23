@@ -11,7 +11,8 @@ takes on that build. Module detail is in
 `make venv` already installed the eval deps (FAISS, sentence-transformers, langgraph). Then:
 
     ollama serve                           # in another shell
-    make prep-models PREP_BACKEND=ollama   # detect GPU + pull the candidate Ollama tags
+    make prep-models PREP_BACKEND=ollama # detect GPU + pull the candidate
+    Ollama tags
 
 `make prep-models` reads `samples/models_uk.yaml`, detects the host GPU, pulls the Ollama
 tags, and caches any vLLM (Hugging Face) weights once (`PREP_BACKEND=all` for both;
@@ -22,8 +23,9 @@ matching corpus under `samples/goldsets/ua_squad_postedited_v1/`; no ingestion i
 
 ## Steps
 
-    make build-index                    # chunk + embed the committed fixture -> FAISS store
-    make validate-retrieval RAG_K=10    # recall@10 of the pinned embedding (Premise 4 gate)
+    make build-index # chunk + embed the committed fixture -> FAISS store
+    make validate-retrieval RAG_K=10 # recall@10 of the pinned embedding
+    (Premise 4 gate)
     make run-eval MODEL=llama3.2:3b LIMIT=20
 
 `run-eval` logs the retrieval context line + one ranked row and writes the canonical

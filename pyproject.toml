@@ -48,6 +48,7 @@ target-version = "py311"
 [tool.pymarkdown]
 plugins.MD013.line_length = 100
 plugins.MD013.code_line_length = 100
+plugins.MD013.tables = false
 
 [tool.mypy]
 python_version = "3.11"

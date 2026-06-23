@@ -513,16 +513,26 @@ Decisions ruled on:
   corpus-grounded RAG + text-analysis eval + Optuna, run ONLY on the screen's survivors.
   The screen operationalizes "tune finalists only." New CLI: `screen-public`.
   - Screen EXECUTION (eng-review decision): lm-eval-harness runs in `local-completions`
-    mode against loc-lm-bench's OWN launched OpenAI-compatible endpoint, so model launch +
-    isolation stays under the executor (one launch path, not two). Caveat: log-prob MCQ
-    tasks (ZNO etc.) need the server to expose logprobs, so they run only on logprob-capable
-    backends (vLLM); Ollama-served candidates get the generative-task subset, or are
-    screened on vLLM when HF weights exist. The screen adapter records, per candidate,
-    which tasks ran vs were skipped for lack of logprobs, so the screen is never silently
-    partial. Candidates are split into TWO SCREEN TRACKS, logprob-capable (vLLM: full MCQ
-    + generative) and generation-only (Ollama), and are NEVER ranked across tracks (Codex
-    flagged HTTP-loglikelihood brittleness and verbosity bias; the track split contains
-    it). MCQ-over-HTTP fidelity is accepted as a coarse-filter risk, recorded per run.
+    mode against loc-lm-bench's OWN launched OpenAI-compatible endpoint, so
+    model launch +
+    isolation stays under the executor (one launch path, not two). Caveat:
+    log-prob MCQ
+    tasks (ZNO etc.) need the server to expose logprobs, so they run only on
+    logprob-capable
+    backends (vLLM); Ollama-served candidates get the generative-task subset,
+    or are
+    screened on vLLM when HF weights exist. The screen adapter records, per
+    candidate,
+    which tasks ran vs were skipped for lack of logprobs, so the screen is
+    never silently
+    partial. Candidates are split into TWO SCREEN TRACKS, logprob-capable
+    (vLLM: full MCQ
+    + generative) and generation-only (Ollama), and are NEVER ranked across
+    tracks (Codex
+    flagged HTTP-loglikelihood brittleness and verbosity bias; the track split
+    contains
+    it). MCQ-over-HTTP fidelity is accepted as a coarse-filter risk, recorded
+    per run.
 - COMPOSITE = AVERAGE-RANK headline (scale-invariant, matches lang-uk, comparable to
   their public board) + the configurable weighted-blend as a secondary view + Pareto +
   CIs. Disagreements between the two views are surfaced, not hidden. Refinements (Codex):

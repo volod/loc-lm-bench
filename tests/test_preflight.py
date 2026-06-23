@@ -63,7 +63,7 @@ def test_load_verdict_tolerates_corrupt_file(tmp_path):
 
 
 def test_run_eval_knobs_apply_without_yaml():
-    from llb.main import _load_config
+    from llb.cli.helpers import load_config as _load_config
 
     cfg = _load_config(
         None, model="org/m", backend="vllm", max_model_len=4096, gpu_memory_utilization=0.7
@@ -72,14 +72,14 @@ def test_run_eval_knobs_apply_without_yaml():
 
 
 def test_run_eval_omitted_knobs_keep_config_defaults():
-    from llb.main import _load_config
+    from llb.cli.helpers import load_config as _load_config
 
     cfg = _load_config(None, max_model_len=None, gpu_memory_utilization=None)
     assert cfg.max_model_len is None and cfg.gpu_memory_utilization == 0.85
 
 
 def test_run_eval_knob_is_revalidated_by_runconfig():
-    from llb.main import _load_config
+    from llb.cli.helpers import load_config as _load_config
 
     with pytest.raises(typer.Exit):  # > 1.0 is out of range -> RunConfig rejects -> Exit(2)
         _load_config(None, gpu_memory_utilization=1.5)

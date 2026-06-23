@@ -226,6 +226,72 @@ def pareto_front(results: list[ModelResult], judge_trusted: bool, weight_judge: 
     return front
 
 
+def _validate_board_cohort(results: list[ModelResult], judge_trusted: bool) -> None:
+    """Refuse mixed tiers, duplicate models, or a partial judge cohort."""
+    model_counts = Counter(result.model for result in results)
+    duplicates = sorted(model for model, count in model_counts.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"board requires one selected config per model; duplicates: {duplicates}")
+    tiers = {r.tier for r in results}
+    if len(tiers) > 1:
+        raise ValueError(f"cannot rank across tiers in one board: {sorted(tiers)}")
+    if not judge_trusted:
+        return
+    feasible = [r for r in results if r.feasible]
+    have_judge = [r.judge_score is not None for r in feasible]
+    if any(have_judge) and not all(have_judge):
+        raise ValueError(
+            "incompatible judge cohort: judge trusted but some models lack a judge score"
+        )
+
+
+def _partition_feasible(results: list[ModelResult]) -> tuple[list[ModelResult], list[ModelResult]]:
+    feasible = [r for r in results if r.feasible]
+    infeasible = [r for r in results if not r.feasible]
+    return feasible, infeasible
+
+
+def _quality_cis(
+    feasible: list[ModelResult], judge_trusted: bool, weight_judge: float
+) -> dict[str, tuple[float, float] | None]:
+    """Per-model bootstrap CIs over the headline quality series used for ranking."""
+    return {
+        r.model: bootstrap_mean_ci(per_case_quality(r, judge_trusted, weight_judge))
+        for r in feasible
+    }
+
+
+def _rank_feasible_rows(
+    feasible: list[ModelResult],
+    judge_trusted: bool,
+    weight_judge: float,
+    avg: dict[str, float],
+    front: set[str],
+    cis: dict[str, tuple[float, float] | None],
+) -> list[BoardRow]:
+    ordered = sorted(
+        feasible,
+        key=lambda r: (
+            avg[r.model],
+            -headline_quality(r, judge_trusted, weight_judge),
+            -r.tokens_per_s,
+            _vram_key(r),
+        ),
+    )
+    rows: list[BoardRow] = []
+    prev_ci: tuple[float, float] | None = None
+    for rank, r in enumerate(ordered, 1):
+        ci = cis.get(r.model)
+        unresolved = bool(ci and prev_ci and ci[1] >= prev_ci[0])
+        rows.append(
+            _board_row(
+                r, rank, avg[r.model], ci, r.model in front, unresolved, judge_trusted, weight_judge
+            )
+        )
+        prev_ci = ci
+    return rows
+
+
 def rank_board(
     results: list[ModelResult],
     *,
@@ -239,54 +305,12 @@ def rank_board(
     objective CIs overlap are flagged `unresolved` (the flip is not statistically resolved).
     Refuses to mix Tier-1 screen and Tier-2 private metrics in one board.
     """
-    model_counts = Counter(result.model for result in results)
-    duplicates = sorted(model for model, count in model_counts.items() if count > 1)
-    if duplicates:
-        raise ValueError(f"board requires one selected config per model; duplicates: {duplicates}")
-    tiers = {r.tier for r in results}
-    if len(tiers) > 1:
-        raise ValueError(f"cannot rank across tiers in one board: {sorted(tiers)}")
-
-    feasible = [r for r in results if r.feasible]
-    infeasible = [r for r in results if not r.feasible]
-    # Reject an incompatible judge cohort: blending the judge for some models but not others
-    # would compare a blended score against a bare objective. All-or-none when the judge is on.
-    if judge_trusted:
-        have_judge = [r.judge_score is not None for r in feasible]
-        if any(have_judge) and not all(have_judge):
-            raise ValueError(
-                "incompatible judge cohort: judge trusted but some models lack a judge score"
-            )
+    _validate_board_cohort(results, judge_trusted)
+    feasible, infeasible = _partition_feasible(results)
     avg = average_ranks(feasible, judge_trusted) if feasible else {}
     front = pareto_front(feasible, judge_trusted, weight_judge) if feasible else set()
-    # The rank-uncertainty CI is over the per-case HEADLINE quality (blend when the judge is
-    # trusted, else objective), so the overlap test compares what the ranking actually uses.
-    cis = {
-        r.model: bootstrap_mean_ci(per_case_quality(r, judge_trusted, weight_judge))
-        for r in feasible
-    }
-
-    ordered = sorted(
-        feasible,
-        key=lambda r: (
-            avg[r.model],
-            -headline_quality(r, judge_trusted, weight_judge),
-            -r.tokens_per_s,
-            _vram_key(r),
-        ),
-    )
-
-    rows: list[BoardRow] = []
-    prev_ci: tuple[float, float] | None = None
-    for rank, r in enumerate(ordered, 1):
-        ci = cis.get(r.model)
-        unresolved = bool(ci and prev_ci and ci[1] >= prev_ci[0])
-        rows.append(
-            _board_row(
-                r, rank, avg[r.model], ci, r.model in front, unresolved, judge_trusted, weight_judge
-            )
-        )
-        prev_ci = ci
+    cis = _quality_cis(feasible, judge_trusted, weight_judge)
+    rows = _rank_feasible_rows(feasible, judge_trusted, weight_judge, avg, front, cis)
     for r in infeasible:
         rows.append(
             _board_row(r, None, float("inf"), None, False, False, judge_trusted, weight_judge)

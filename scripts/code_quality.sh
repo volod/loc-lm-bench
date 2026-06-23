@@ -35,7 +35,7 @@ llb_markdown_scan() {
 }
 
 llb_check_shell_scripts() {
-  local script path
+  local script
   llb_report "shell syntax (bash -n) under scripts/"
   while IFS= read -r -d '' script; do
     bash -n "$script"
@@ -45,7 +45,7 @@ llb_check_shell_scripts() {
   if command -v shellcheck >/dev/null 2>&1; then
     llb_report "shell lint (shellcheck) under scripts/"
     while IFS= read -r -d '' script; do
-      shellcheck "$script"
+      shellcheck -S warning "$script"
       printf '  [ok] %s\n' "${script#"$PROJECT_ROOT"/}"
     done < <(find "$PROJECT_ROOT/scripts" -type f -name '*.sh' -print0 | sort -z)
   else

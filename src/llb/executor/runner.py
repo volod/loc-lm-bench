@@ -342,6 +342,70 @@ def _collect_optional_telemetry(
     )
 
 
+def _build_judge_metadata(config: RunConfig, judge_rho: float | None) -> JudgeStatus:
+    judge_metadata: JudgeStatus = {
+        "calibration_rho": judge_rho,
+        "threshold": config.judge_threshold,
+        "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
+    }
+    if config.judge_model is None:
+        return judge_metadata
+    from llb.scoring.judge import judge_experiment_metadata
+
+    experiment_metadata = judge_experiment_metadata(config.judge_model, config.judge_base_url)
+    judge_metadata["provider"] = experiment_metadata["provider"]
+    judge_metadata["model"] = experiment_metadata["model"]
+    judge_metadata["base_url"] = experiment_metadata["base_url"]
+    judge_metadata["prompt_language"] = experiment_metadata["prompt_language"]
+    judge_metadata["metrics"] = experiment_metadata["metrics"]
+    return judge_metadata
+
+
+def _resolve_eval_runner(
+    config: RunConfig,
+    *,
+    store: Any,
+    launcher: BackendLauncher | None,
+    runner_fn: Callable[[GoldItem], RagState] | None,
+    staging_dir: Path,
+    evict: bool,
+    wait: bool,
+) -> tuple[BackendLauncher, Callable[[GoldItem], RagState], Any, ContentionReport | None]:
+    contention: ContentionReport | None = None
+    if launcher is None:
+        launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
+        if config.backend == "vllm":
+            contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
+    if runner_fn is None:
+        if store is None:
+            from llb.rag.store import RagStore
+
+            store = RagStore.load(config.index_dir())
+        runner_fn = _default_runner_fn(config, store, launcher)
+    return launcher, runner_fn, store, contention
+
+
+def _write_calibration_worksheet(
+    config: RunConfig,
+    batch: CaseBatch,
+    worksheet: Path | str,
+    judge_scorer: JudgeScorer | None,
+) -> int:
+    from llb.judge.calibration import write_filled_worksheet
+
+    judge_ratings: list[float] | None = None
+    if config.judge_model is not None:
+        try:
+            judge_ratings = _judge_ratings(config, batch, judge_scorer)
+        except (Exception, SystemExit) as exc:
+            _LOG.warning(
+                "[run-eval] judge unavailable for the worksheet (%s); judge_rating left blank "
+                "-- pick the judge (OQ2) and install its backend to calibrate.",
+                exc,
+            )
+    return write_filled_worksheet(batch.answers, Path(worksheet), judge_ratings=judge_ratings)
+
+
 def run_eval(
     config: RunConfig,
     *,
@@ -376,18 +440,15 @@ def run_eval(
     run_timestamp = _run_timestamp(run_id)
     run_dir = config.run_dir(run_timestamp)
     staging_dir = config.run_staging_dir(run_timestamp)
-    contention: ContentionReport | None = None
-    if launcher is None:
-        launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
-        if config.backend == "vllm":
-            contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
-    if runner_fn is None:
-        if store is None:
-            from llb.rag.store import RagStore
-
-            store = RagStore.load(config.index_dir())
-        runner_fn = _default_runner_fn(config, store, launcher)
-
+    launcher, runner_fn, store, contention = _resolve_eval_runner(
+        config,
+        store=store,
+        launcher=launcher,
+        runner_fn=runner_fn,
+        staging_dir=staging_dir,
+        evict=evict,
+        wait=wait,
+    )
     embedder = store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
 
     try:
@@ -406,21 +467,6 @@ def run_eval(
     judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
-
-    judge_metadata: JudgeStatus = {
-        "calibration_rho": judge_rho,
-        "threshold": config.judge_threshold,
-        "trusted": judge_is_trusted(judge_rho, config.judge_threshold),
-    }
-    if config.judge_model is not None:
-        from llb.scoring.judge import judge_experiment_metadata
-
-        experiment_metadata = judge_experiment_metadata(config.judge_model, config.judge_base_url)
-        judge_metadata["provider"] = experiment_metadata["provider"]
-        judge_metadata["model"] = experiment_metadata["model"]
-        judge_metadata["base_url"] = experiment_metadata["base_url"]
-        judge_metadata["prompt_language"] = experiment_metadata["prompt_language"]
-        judge_metadata["metrics"] = experiment_metadata["metrics"]
     manifest = RunManifest(
         run_id=run_id,
         run_name=config.run_name,
@@ -428,7 +474,7 @@ def run_eval(
         config=config.fingerprint(),
         metrics=metrics,
         retrieval=retrieval_metrics,
-        judge=judge_metadata,
+        judge=_build_judge_metadata(config, judge_rho),
         telemetry=telemetry_report,
         contention=contention,
         n_cases=len(batch.rows),
@@ -443,24 +489,7 @@ def run_eval(
 
     worksheet_rows = 0
     if worksheet is not None:
-        from llb.judge.calibration import write_filled_worksheet
-
-        # For a calibration worksheet, also run the judge UNGATED so the judge_rating column is
-        # pre-filled and the human only adds human_rating; rho(human, judge) follows.
-        judge_ratings: list[float] | None = None
-        if config.judge_model is not None:
-            try:
-                judge_ratings = _judge_ratings(config, batch, judge_scorer)
-            except (Exception, SystemExit) as exc:
-                _LOG.warning(
-                    "[run-eval] judge unavailable for the worksheet (%s); judge_rating left blank "
-                    "-- pick the judge (OQ2) and install its backend to calibrate.",
-                    exc,
-                )
-        worksheet_path = Path(worksheet)
-        worksheet_rows = write_filled_worksheet(
-            batch.answers, worksheet_path, judge_ratings=judge_ratings
-        )
+        worksheet_rows = _write_calibration_worksheet(config, batch, worksheet, judge_scorer)
         paths["worksheet"] = str(worksheet)
 
     table = format_table(rows)

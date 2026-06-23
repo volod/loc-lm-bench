@@ -8,7 +8,7 @@ mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
 
 ## 1. Install vLLM (once, GPU host)
 
-    make build-vllm                      # binary-only install through uv's shared cache
+    make build-vllm # binary-only install through uv's shared cache
 
 The default path runs `uv pip install --only-binary :all:`. vLLM and all dependencies stay
 in uv's standard shared cache (see `uv cache dir`) and are reusable by other uv projects.
@@ -31,7 +31,8 @@ owns the Python implementation.
 
 ## 2. Cache weights + verify the model id
 
-    make prep-models PREP_BACKEND=vllm   # snapshot-downloads HF weights; a wrong/gated id is reported
+    make prep-models PREP_BACKEND=vllm # snapshot-downloads HF weights; a
+    wrong/gated id is reported
 
 `prep-models` is also the **id verification** step: a wrong repo id 404s and a gated repo
 needs `HF_TOKEN` in `.env` (it is reported per-model, not fatal).
@@ -39,11 +40,13 @@ needs `HF_TOKEN` in `.env` (it is reported per-model, not fatal).
 ## 3. Run on the real backend, with telemetry
 
     make build-index                                  # if not already built
-    llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry   # the M2.4 reference run
+    llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry # the
+    M2.4 reference run
 
 or pick the model directly (cap the context so the KV cache fits -- see Gotchas):
 
-    make run-eval BACKEND=vllm MODEL=google/gemma-4-E4B-it-qat-w4a16-ct TELEMETRY=1
+    make run-eval BACKEND=vllm MODEL=google/gemma-4-E4B-it-qat-w4a16-ct
+    TELEMETRY=1
 
 The launcher starts `vllm serve <model>` (controlling `--gpu-memory-utilization` and
 `--max-model-len`, recorded for VRAM comparability), waits for readiness, runs the eval, then

@@ -15,11 +15,16 @@ Everything an AI *could* do -- drafting schemas, drafting data, cross-checking d
 model -- is implemented as pipeline code elsewhere. What remains is exactly the work that would
 *destroy the guarantee the tool sells* if an AI did it:
 
-| Task | The human act | Why no AI substitute |
-|---|---|---|
-| **Judge calibration** | Independent **ground-truth ratings** to validate the model judge | The point is to measure the LOCAL judge against HUMAN judgment. An LLM-vs-LLM calibration cannot establish a "defensible against humans" claim -- it just compares two models. |
-| **Schema / ontology sign-off** | **Accountable approval** of AI-drafted schemas + facts only you know | Approval is an act of accountable authority; the corpus facts (real vs synthetic, do references exist) are knowledge only the data owner has. |
-| **Eval-data verification** | **Human sample-verification** of AI-drafted, cross-checked data | Dropping the human verification would forfeit the human-ground-truth guarantee for private model-selection data. |
+- - ****Judge calibration**** (Independent **ground-truth ratings** to validate the model judge):
+- The point is to measure the LOCAL judge against HUMAN judgment. An LLM-vs-LLM calibration cannot
+- establish a "defensible against humans" claim -- it just compares two models.
+- - ****Schema / ontology sign-off**** (**Accountable approval** of AI-drafted schemas + facts only
+- you know): Approval is an act of accountable authority; the corpus facts (real vs synthetic, do
+- references exist) are knowledge only the data owner has.
+- - ****Eval-data verification**** (**Human sample-verification** of AI-drafted, cross-checked
+- data): Dropping the human verification would forfeit the human-ground-truth guarantee for private
+- model-selection data.
+
 
 The unifying idea: **AI can draft and cross-check; only a human can be the ground truth, the
 sample verifier, and the accountable sign-off.** All three are human-paced and run in parallel with
@@ -89,7 +94,8 @@ which needs a running judge endpoint.
      Hide or remove that column while you rate, then merge it back for scoring.
    - **Span the full score range** -- clearly good, clearly bad, and middling answers.
    - **Deliberately include fluent-but-wrong answers** -- confident, well-written, factually
-     incorrect. That is the failure mode the judge is most likely to miss, so it is where
+     incorrect. That is the failure mode the judge is most likely to miss, so
+     it is where
      calibration earns its keep.
    - **Rate against the reference and the retrieved context, not your prior knowledge** -- the same
      inputs the judge sees.
@@ -122,7 +128,8 @@ unit-tested.
 - **G-Eval** (Liu et al. 2023) -- <https://arxiv.org/abs/2303.16634> -- the LLM-as-judge metric
   method the project's judge implements.
 - [DeepEval docs](https://docs.confident-ai.com/) -- the maintained engine and metrics.
-- **Spearman's rank correlation** -- <https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient>
+- **Spearman's rank correlation** --
+  <https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient>
   -- why rank (not value) correlation is the right gate.
 - **The bootstrap** -- <https://en.wikipedia.org/wiki/Bootstrapping_(statistics)> (depth: Efron &
   Tibshirani, *An Introduction to the Bootstrap*) -- why the CI tells you whether rho is real on a
@@ -307,12 +314,14 @@ to accept a dataset":
 ## Checklist
 
 - [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled; `human_rating` filled
-      INDEPENDENTLY (judge column hidden), spanning the full range incl. fluent-but-wrong answers;
+      INDEPENDENTLY (judge column hidden), spanning the full range incl.
+      fluent-but-wrong answers;
       rho + CI + decision computed and recorded in the manifest.
 - [ ] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope approved with a
       dated line; corpus facts confirmed (references exist?/real-vs-synthetic).
 - [ ] **Verification:** drafted set validated; stratified sample drawn + documented; four per-item
-      checks passed within tolerance; accepted items flipped to `verified=true` via the ledger, not
+      checks passed within tolerance; accepted items flipped to `verified=true`
+      via the ledger, not
       by hand.
 - [ ] No `verified=true` item scored a model before its sample acceptance.
 - [ ] No judged headline trusted before calibration cleared rho `>= 0.6` (else objective-only, by

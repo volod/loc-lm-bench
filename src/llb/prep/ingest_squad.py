@@ -51,37 +51,90 @@ def _doc_id(context: str) -> str:
     return f"squad/{digest}.txt"
 
 
+def _flatten_squad_paragraph(context: str, qa: Mapping[str, Any]) -> SquadRecord:
+    answers = qa.get("answers", [])
+    return {
+        "id": qa.get("id"),
+        "context": context,
+        "question": qa["question"],
+        "answers": {
+            "text": [a["text"] for a in answers],
+            "answer_start": [a.get("answer_start") for a in answers],
+        },
+    }
+
+
+def _flatten_squad_articles(data: object) -> list[SquadRecord]:
+    if isinstance(data, dict):
+        articles = [data]
+    elif isinstance(data, list):
+        articles = data
+    else:
+        raise ValueError("unrecognized SQuAD data field (expected an article or list)")
+    records: list[SquadRecord] = []
+    for article in articles:
+        for para in article.get("paragraphs", []):
+            context = para["context"]
+            for qa in para.get("qas", []):
+                records.append(_flatten_squad_paragraph(context, qa))
+    return records
+
+
 def normalize(raw: object) -> list[SquadRecord]:
     """Accept flattened records or nested SQuAD; return a list of flattened records."""
     if isinstance(raw, dict) and "data" in raw:
-        records: list[SquadRecord] = []
-        data = raw["data"]
-        if isinstance(data, dict):
-            articles = [data]
-        elif isinstance(data, list):
-            articles = data
-        else:
-            raise ValueError("unrecognized SQuAD data field (expected an article or list)")
-        for article in articles:
-            for para in article.get("paragraphs", []):
-                context = para["context"]
-                for qa in para.get("qas", []):
-                    answers = qa.get("answers", [])
-                    records.append(
-                        {
-                            "id": qa.get("id"),
-                            "context": context,
-                            "question": qa["question"],
-                            "answers": {
-                                "text": [a["text"] for a in answers],
-                                "answer_start": [a.get("answer_start") for a in answers],
-                            },
-                        }
-                    )
-        return records
+        return _flatten_squad_articles(raw["data"])
     if isinstance(raw, list):
         return cast(list[SquadRecord], raw)
     raise ValueError("unrecognized SQuAD JSON shape (expected a list or a {'data': ...} object)")
+
+
+def _answer_char_start(context: str, answer: str, starts: list[int | None]) -> int | None:
+    start = starts[0] if starts else None
+    if isinstance(start, int) and context[start : start + len(answer)] == answer:
+        return start
+    found = context.find(answer)
+    return found if found >= 0 else None
+
+
+def _squad_record_to_gold(
+    rec: SquadRecord,
+    index: int,
+    *,
+    lang: str,
+    provenance: Provenance,
+    verified: bool,
+) -> tuple[str, str, JsonObject] | None:
+    """Map one SQuAD record to (doc_id, context, raw gold item dict), or None if skipped."""
+    context = rec["context"]
+    answers = rec.get("answers") or {}
+    texts = answers.get("text") or []
+    if not texts:
+        return None
+    answer = texts[0]
+    start = _answer_char_start(context, answer, answers.get("answer_start") or [])
+    if start is None:
+        return None
+    doc_id = _doc_id(context)
+    item_id = str(rec.get("id") or f"squad-uk-{index:05d}")
+    raw_item: JsonObject = {
+        "id": item_id,
+        "lang": lang,
+        "question": rec["question"],
+        "reference_answer": answer,
+        "source_doc_id": doc_id,
+        "source_spans": [
+            {
+                "doc_id": doc_id,
+                "char_start": start,
+                "char_end": start + len(answer),
+                "text": answer,
+            }
+        ],
+        "provenance": provenance,
+        "verified": verified,
+    }
+    return doc_id, context, raw_item
 
 
 def squad_to_gold(
@@ -98,42 +151,13 @@ def squad_to_gold(
     for i, rec in enumerate(records):
         if max_items is not None and len(raw_items) >= max_items:
             break
-        context = rec["context"]
-        answers = rec.get("answers") or {}
-        texts = answers.get("text") or []
-        if not texts:
+        mapped = _squad_record_to_gold(rec, i, lang=lang, provenance=provenance, verified=verified)
+        if mapped is None:
             skipped += 1
             continue
-        answer = texts[0]
-        starts = answers.get("answer_start") or []
-        start = starts[0] if starts else None
-        if not isinstance(start, int) or context[start : start + len(answer)] != answer:
-            start = context.find(answer)
-        if start < 0:
-            skipped += 1
-            continue
-        doc_id = _doc_id(context)
+        doc_id, context, raw_item = mapped
         docs[doc_id] = context
-        item_id = str(rec.get("id") or f"squad-uk-{i:05d}")
-        raw_items.append(
-            {
-                "id": item_id,
-                "lang": lang,
-                "question": rec["question"],
-                "reference_answer": answer,
-                "source_doc_id": doc_id,
-                "source_spans": [
-                    {
-                        "doc_id": doc_id,
-                        "char_start": start,
-                        "char_end": start + len(answer),
-                        "text": answer,
-                    }
-                ],
-                "provenance": provenance,
-                "verified": verified,
-            }
-        )
+        raw_items.append(raw_item)
     split_map = assign_splits([r["id"] for r in raw_items], seed=seed)
     items = [GoldItem.model_validate({**r, "split": split_map[r["id"]]}) for r in raw_items]
     return docs, items, skipped

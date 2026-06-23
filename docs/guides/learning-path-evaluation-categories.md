@@ -147,7 +147,8 @@ objective floor.
   real document is not. Results from the two are reported separately and never merged.
 
 ### Learn
-- Embedding-based similarity: [sentence-transformers semantic textual similarity](https://www.sbert.net/docs/usage/semantic_textual_similarity.html)
+- Embedding-based similarity: [sentence-transformers semantic textual
+  similarity](https://www.sbert.net/docs/usage/semantic_textual_similarity.html)
   -- the cosine basis the matcher uses.
 - Why semantic beats lexical for evaluation: **BERTScore** (Zhang et al. 2019) --
   <https://arxiv.org/abs/1904.09675> -- and, for contrast, ROUGE
@@ -191,8 +192,10 @@ zero by refusing everything has failed the usefulness requirement, so you must m
 success on the same task set.
 
 ### Learn
-- [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
-  [MITRE ATLAS](https://atlas.mitre.org/), [NIST GenAI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence).
+- [OWASP Top 10 for LLM
+  Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
+[MITRE ATLAS](https://atlas.mitre.org/), [NIST GenAI
+Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence).
 - **The Instruction Hierarchy** (Wallace et al. 2024) -- <https://arxiv.org/abs/2404.13208>.
 - [JailbreakBench](https://jailbreakbench.github.io/), [HarmBench](https://www.harmbench.org/), and
   AdvBench (in [Zou et al. 2023](https://arxiv.org/abs/2307.15043)) -- seed material to
@@ -337,7 +340,8 @@ Four more capabilities, each a task family with its own schema.
   into a first-class reliability score with a confidence interval.
 - **How to understand it:** these statuses already exist per case in `eval/common.py`; reliability
   *counts and normalizes* them -- reuse, not new instrumentation.
-- **Learn:** [Google SRE -- Service Level Objectives](https://sre.google/sre-book/service-level-objectives/)
+- **Learn:** [Google SRE -- Service Level
+  Objectives](https://sre.google/sre-book/service-level-objectives/)
   for the mindset of turning failure counts into a defensible score.
 
 ### In this repo
@@ -406,14 +410,16 @@ consumer wants it because NVML power is already sampled. Build only when somethi
 result.
 
 ### Learn
-- Vector stores: [Chroma](https://docs.trychroma.com/), [Qdrant](https://qdrant.tech/documentation/),
+- Vector stores: [Chroma](https://docs.trychroma.com/),
+  [Qdrant](https://qdrant.tech/documentation/),
   [LanceDB](https://lancedb.github.io/lancedb/) -- compare the *interface*, since the seam is what
   matters here.
 - Efficiency reporting: [MLPerf Inference](https://mlcommons.org/benchmarks/inference/) -- how
   performance-per-resource is reported defensibly.
 
 ### In this repo
-`src/llb/rag/store.py` (vector-store seam), `src/llb/backends/` (multi-backend), `backends/planner.py`
+`src/llb/rag/store.py` (vector-store seam), `src/llb/backends/` (multi-backend),
+`backends/planner.py`
 (GPU classes), and `backends/telemetry.py` (NVML power for quality-per-watt).
 
 ---
@@ -474,20 +480,31 @@ extraction; the eval graph, scoring, isolation, and board are reused unchanged.
 About 2-4 hours per session; each pairs reading with a concrete repo action. Assumes the main
 learning path is done.
 
-| Session | Read | Do in the repo |
-|---|---|---|
-| 1. The methodology | "Design principles" above + the ranking-tier guard in `scoring/aggregate.py` | Trace how the public-screen / private-eval tiers stay separate; sketch where a security tier slots in. |
-| 2. Orchestration | Long-document + multi-hop section; HotpotQA + Lost-in-the-Middle | Read `eval/{map_reduce,multi_hop}.py`; run their tests; trace one multi-hop controller decision. |
-| 3. Text-analysis scoring | The [scoring schema](../design/text-analysis-schema.md) + worked example | Run `pytest tests/test_text_analysis.py -q`; change the full-credit threshold and watch credit move. |
-| 4. Security | The [security learning path](learning-path-security.md), sessions 1-3 | Sketch one RAG-injection case with a planted canary + a benign control + an objective detector. |
-| 5. Tool use | Tool-use section; OpenAI function calling + Gorilla/BFCL + MCP | Define one tool schema in Pydantic; hand-write an expected `(name, args)` and a validator. |
-| 6. Agents | Agentic section; ReAct + tau-bench | Design a 3-step task over a mock file/DB world with a final-state assertion. |
-| 7. The rest of the taxonomy | Summarization/structured/conversation/reliability section; SummEval + BERTScore | Write a coverage check with pinned-embedder cosine; list the reliability statuses in `eval/common.py`. |
-| 8. Knowledge-graph RAG | GraphRAG section; the GraphRAG paper + Kuzu Cypher tutorial | Build a tiny Kuzu graph (2-3 nodes/edges), run a 1-hop Cypher MATCH, keep `doc_id`+offsets on each node. |
+- - **1. The methodology** ("Design principles" above + the ranking-tier guard in
+- `scoring/aggregate.py`): Trace how the public-screen / private-eval tiers stay separate; sketch
+- where a security tier slots in.
+- - **2. Orchestration** (Long-document + multi-hop section; HotpotQA + Lost-in-the-Middle): Read
+- `eval/{map_reduce,multi_hop}.py`; run their tests; trace one multi-hop controller decision.
+- - **3. Text-analysis scoring** (The [scoring schema](../design/text-analysis-schema.md) + worked
+- example): Run `pytest tests/test_text_analysis.py -q`; change the full-credit threshold and watch
+- credit move.
+- - **4. Security** (The [security learning path](learning-path-security.md), sessions 1-3): Sketch
+- one RAG-injection case with a planted canary + a benign control + an objective detector.
+- - **5. Tool use** (Tool-use section; OpenAI function calling + Gorilla/BFCL + MCP): Define one
+- tool schema in Pydantic; hand-write an expected `(name, args)` and a validator.
+- - **6. Agents** (Agentic section; ReAct + tau-bench): Design a 3-step task over a mock file/DB
+- world with a final-state assertion.
+- - **7. The rest of the taxonomy** (Summarization/structured/conversation/reliability section;
+- SummEval + BERTScore): Write a coverage check with pinned-embedder cosine; list the reliability
+- statuses in `eval/common.py`.
+- - **8. Knowledge-graph RAG** (GraphRAG section; the GraphRAG paper + Kuzu Cypher tutorial): Build
+- a tiny Kuzu graph (2-3 nodes/edges), run a 1-hop Cypher MATCH, keep `doc_id`+offsets on each node.
+
 
 By session 8 you can place any capability on the right tier, name its objective metric and its
 verified-data gate, and explain why graph retrieval preserves source spans. The deepest single
-source remains the [design spec](../design/spec.md); the [current state](../implementation/current.md)
+source remains the [design spec](../design/spec.md); the [current
+state](../implementation/current.md)
 maps each delivered module to its behavior; and the
 [human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md) covers the human gates that
 make the judged metrics trustworthy across every category above.

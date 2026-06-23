@@ -177,6 +177,28 @@ def _hf_cache(source: str, token: str | None, cache_dir: Path | None) -> tuple[b
     return True, path
 
 
+def _prepare_row_status(
+    row: PreparedModel,
+    *,
+    dry_run: bool,
+    ollama_pull: OllamaPull,
+    hf_cache: HfCache,
+    token: str | None,
+    cache_dir: Path | None,
+) -> tuple[str, str]:
+    """Run or plan one manifest row; return (status, detail)."""
+    if dry_run or row["action"] == ACTION_SKIP:
+        status = (
+            "planned" if dry_run else ("skipped" if row["action"] == ACTION_SKIP else "planned")
+        )
+        return status, row["reason"]
+    if row["action"] == ACTION_PULL:
+        ok, detail = ollama_pull(row["source"])
+        return ("done" if ok else "failed"), detail
+    ok, detail = hf_cache(row["source"], token, cache_dir)
+    return ("done" if ok else "failed"), detail
+
+
 def prepare_models(
     models: list[ModelSpec],
     *,
@@ -198,17 +220,14 @@ def prepare_models(
 
     results: list[PreparedModel] = []
     for row in rows:
-        if dry_run or row["action"] == ACTION_SKIP:
-            status = (
-                "planned" if dry_run else ("skipped" if row["action"] == ACTION_SKIP else "planned")
-            )
-            detail = row["reason"]
-        elif row["action"] == ACTION_PULL:
-            ok, detail = ollama_pull(row["source"])
-            status = "done" if ok else "failed"
-        else:  # ACTION_CACHE
-            ok, detail = hf_cache(row["source"], token, cache_dir)
-            status = "done" if ok else "failed"
+        status, detail = _prepare_row_status(
+            row,
+            dry_run=dry_run,
+            ollama_pull=ollama_pull,
+            hf_cache=hf_cache,
+            token=token,
+            cache_dir=cache_dir,
+        )
         url = acceptance_url(row)
         if url and "huggingface.co" not in detail:
             detail = f"{detail}  [license: {url}]"

@@ -41,16 +41,23 @@ Use an isolated test environment for every exercise.
 
 ## Topic map
 
-| Module | Main question | Evidence to record |
-|---|---|---|
-| 1. Threat modeling | What can the attacker influence, and what must be protected? | Assets, trust boundaries, attacker access, impact |
-| 2. Instruction hierarchy | Which instructions should win when inputs conflict? | Clean success, hierarchy violations, over-refusal |
-| 3. Injection and jailbreaks | Can hostile text redirect the model or bypass safeguards? | ASR by attack family and channel |
-| 4. Leakage and output handling | Can secrets escape or generated content harm a consumer? | Canary leakage and validator failures |
-| 5. Tools and agents | Can a model cause an unauthorized or destructive action? | Attempted and executed unsafe actions |
-| 6. Bias and censorship | Does behavior change across groups, topics, languages, or providers? | Refusal, accuracy, omission, framing, consistency |
-| 7. Evaluation quality | Are labels, detectors, and aggregate claims defensible? | Controls, inter-rater checks, CIs, false positives |
-| 8. Mitigation and operations | Which independent controls prevent or limit impact? | Residual risk and regression results |
+- - **1. Threat modeling** (What can the attacker influence, and what must be protected?): Assets,
+- trust boundaries, attacker access, impact
+- - **2. Instruction hierarchy** (Which instructions should win when inputs conflict?): Clean
+- success, hierarchy violations, over-refusal
+- - **3. Injection and jailbreaks** (Can hostile text redirect the model or bypass safeguards?): ASR
+- by attack family and channel
+- - **4. Leakage and output handling** (Can secrets escape or generated content harm a consumer?):
+- Canary leakage and validator failures
+- - **5. Tools and agents** (Can a model cause an unauthorized or destructive action?): Attempted
+- and executed unsafe actions
+- - **6. Bias and censorship** (Does behavior change across groups, topics, languages, or
+- providers?): Refusal, accuracy, omission, framing, consistency
+- - **7. Evaluation quality** (Are labels, detectors, and aggregate claims defensible?): Controls,
+- inter-rater checks, CIs, false positives
+- - **8. Mitigation and operations** (Which independent controls prevent or limit impact?): Residual
+- risk and regression results
+
 
 ## Module 1 -- Threat modeling for an LLM application
 
@@ -67,9 +74,11 @@ For each threat, record:
 - success condition: an observable state change or disclosure, not a vague impression; and
 - impact and containment: what the attacker gains and which boundary limits it.
 
-Use the [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
+Use the [OWASP Top 10 for LLM
+Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 for application risks, [MITRE ATLAS](https://atlas.mitre.org/) for adversary techniques, and the
-[NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
+[NIST Generative AI
+Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
 for lifecycle risk management.
 
 ## Module 2 -- Instruction hierarchy and instruction-following failures
@@ -136,12 +145,13 @@ Treat all model output as untrusted input to the next component. Validate and co
 
 The model must not be the authorization boundary. Classify tools by effect:
 
-| Class | Examples | Minimum control |
-|---|---|---|
-| Read-only | Search, fetch a permitted record | Scope checks, result filtering, audit log |
-| Reversible write | Create a draft, add a temporary label | Allowlist, idempotency key, rollback |
-| Consequential write | Send, publish, deploy, modify access | Preview plus explicit approval at execution time |
-| Irreversible or high impact | Delete, transfer funds, rotate credentials | Keep unavailable to the model or require a separate strongly authenticated workflow |
+- **Read-only** (Search, fetch a permitted record): Scope checks, result filtering, audit log
+- **Reversible write** (Create a draft, add a temporary label): Allowlist, idempotency key, rollback
+- - **Consequential write** (Send, publish, deploy, modify access): Preview plus explicit approval
+- at execution time
+- - **Irreversible or high impact** (Delete, transfer funds, rotate credentials): Keep unavailable
+- to the model or require a separate strongly authenticated workflow
+
 
 Defense in depth includes least privilege, narrowly typed tools, parameter validation, sandboxing,
 dry-run mode, transaction boundaries, rate and spend limits, bounded loops, approval for
@@ -150,7 +160,8 @@ controls but cannot replace them.
 
 Use a deterministic mock tool world and assert final state. Record both `attempted_unsafe_action`
 and `executed_unsafe_action`; a downstream policy gate may correctly block a bad model decision.
-The [OWASP Excessive Agency](https://owasp.org/www-project-top-10-for-large-language-model-applications/2_0_vulns/LLM06_ExcessiveAgency.html)
+The [OWASP Excessive
+Agency](https://owasp.org/www-project-top-10-for-large-language-model-applications/2_0_vulns/LLM06_ExcessiveAgency.html)
 guidance and [AgentDojo](https://arxiv.org/abs/2406.13352) provide useful designs.
 
 ## Module 6 -- Bias, censorship, and multilingual consistency
@@ -191,7 +202,8 @@ Starting resources:
   cultural contexts.
 - [McBE](https://aclanthology.org/2025.findings-acl.313/) expands Chinese bias evaluation across
   multiple task formats and categories.
-- [Political censorship in large language models originating from China](https://academic.oup.com/pnasnexus/article/5/2/pgag013/8487339)
+- [Political censorship in large language models originating from
+  China](https://academic.oup.com/pnasnexus/article/5/2/pgag013/8487339)
   compares China-originating and non-China-originating models across Chinese and English prompts.
 - [This Land is Your, My Land](https://arxiv.org/abs/2305.14610) demonstrates why geopolitical
   consistency should be tested across languages, not assumed from one prompt language.
@@ -241,16 +253,22 @@ masquerade as general robustness.
 
 Plan for 2-4 hours per session.
 
-| Session | Read and learn | Practical deliverable |
-|---|---|---|
-| 1. Scope and threats | Module 1; OWASP and NIST overview | One data-flow diagram and a threat register with five concrete success conditions |
-| 2. Instruction conflicts | Module 2; Instruction Hierarchy | Ten paired conflict/control cases and deterministic hierarchy labels |
-| 3. Injection and jailbreaks | Module 3; inspect JailbreakBench and HarmBench schemas | A pinned, licensed mini-suite split by direct, indirect, RAG, and jailbreak families |
-| 4. Leakage and output handling | Module 4 | Synthetic canaries plus validators for paths, URLs, and one typed tool schema |
-| 5. Destructive actions | Module 5; OWASP Excessive Agency | A mock tool world with read, reversible-write, and blocked high-impact actions |
-| 6. Bias and censorship | Module 6; CBBQ, McBE, and the comparative censorship study | A reviewed multilingual prompt matrix with refusal, accuracy, omission, and consistency labels |
-| 7. Scoring | Module 7 | Per-family ASR, clean success, over-refusal, leakage, and bootstrap CIs |
-| 8. Defend and report | Module 8 | A mitigation, before/after regression report, residual-risk statement, and holdout plan |
+- - **1. Scope and threats** (Module 1; OWASP and NIST overview): One data-flow diagram and a threat
+- register with five concrete success conditions
+- - **2. Instruction conflicts** (Module 2; Instruction Hierarchy): Ten paired conflict/control
+- cases and deterministic hierarchy labels
+- - **3. Injection and jailbreaks** (Module 3; inspect JailbreakBench and HarmBench schemas): A
+- pinned, licensed mini-suite split by direct, indirect, RAG, and jailbreak families
+- - **4. Leakage and output handling** (Module 4): Synthetic canaries plus validators for paths,
+- URLs, and one typed tool schema
+- - **5. Destructive actions** (Module 5; OWASP Excessive Agency): A mock tool world with read,
+- reversible-write, and blocked high-impact actions
+- - **6. Bias and censorship** (Module 6; CBBQ, McBE, and the comparative censorship study): A
+- reviewed multilingual prompt matrix with refusal, accuracy, omission, and consistency labels
+- **7. Scoring** (Module 7): Per-family ASR, clean success, over-refusal, leakage, and bootstrap CIs
+- - **8. Defend and report** (Module 8): A mitigation, before/after regression report, residual-risk
+- statement, and holdout plan
+
 
 ## Capstone for loc-lm-bench
 

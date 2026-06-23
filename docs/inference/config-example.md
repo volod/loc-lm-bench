@@ -31,7 +31,7 @@ make gen-serving-config GPU_GB=32     # override tier without re-detecting
 
 Output directory (example for 16 GiB):
 
-```
+```text
 .data/llb/serving/gpu-16gb/
   tier.json                  # index of generated files + models
   serve_mamaylm.sh           # start serving (ollama or vllm)
@@ -72,9 +72,13 @@ another tier.
 
 | HF repo | Chat variant | License |
 | ------- | ------------ | ------- |
-| [MamayLM 27B FP8](https://huggingface.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic) | instruct | Gemma Terms |
-| [google/gemma-4-31B](https://huggingface.co/google/gemma-4-31B) | **`gemma-4-31B-it`** | Apache 2.0 |
-| [Qwen3.6 35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | same repo | Apache 2.0 |
+| [MamayLM 27B FP8][mamay-fp8] | instruct | Gemma Terms |
+| [google/gemma-4-31B][gemma-31b] | **`gemma-4-31B-it`** | Apache 2.0 |
+| [Qwen3.6 35B-A3B][qwen36] | same repo | Apache 2.0 |
+
+[mamay-fp8]: https://huggingface.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic
+[gemma-31b]: https://huggingface.co/google/gemma-4-31B
+[qwen36]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
 
 ### Traps
 
@@ -163,7 +167,8 @@ MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000, and keep
 
 RTX 4060 Ti, 16380 MiB, sm 89. Full-size target repos need **Ollama**; largest vLLM
 quant on this tier is Gemma 4 12B w4a16 (manifest extra entry). M2.4 validated E4B
-w4a16 at util **0.80**, ctx **8192** ([run_config_vllm_uk.yaml](../../samples/run_config_vllm_uk.yaml)).
+w4a16 at util **0.80**, ctx **8192**
+([run_config_vllm_uk.yaml](../../samples/run_config_vllm_uk.yaml)).
 
 ### 32 GiB GPU / 64 GiB RAM (HP Z2 Tower)
 

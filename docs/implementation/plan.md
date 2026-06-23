@@ -25,11 +25,17 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 [security](../guides/learning-path-security.md) ·
 [evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
 
-| Gate | Human act | Blocks until cleared | Manual section |
-|---|---|---|---|
-| **M3.8 judge calibration** | Fill `human_rating` over the 86 calibration items, then score rho | EVERY judged headline (RAG board + M5 unsafe-content quality, summarization faithfulness, agentic trajectory, free-form text/chat analysis). Objective metrics rank alone meanwhile. **Critical path -- start EARLY.** | "Judge calibration" |
-| **MH.2 sign-offs + corpus facts** | Approve the M6 ontology schema + M6 scope; confirm OQ4 corpus facts (do TA reference answers exist? real vs synthetic) | Milestone 6 (ontology) | "Schema and ontology sign-off" |
-| **MH.5 data verification** | Sample-verify a stratified sample of AI-drafted, frontier-cross-checked items, then flip via the ledger | Any `verified=true` item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6) | "Eval-data verification" |
+- - **Stage **M3.8 judge calibration** -- Fill `human_rating` over the 86 calibration items, then
+- score rho** ("Judge calibration"): EVERY judged headline (RAG board + M5 unsafe-content quality,
+- summarization faithfulness, agentic trajectory, free-form text/chat analysis). Objective metrics
+- rank alone meanwhile. **Critical path -- start EARLY.**
+- - **Stage **MH.2 sign-offs + corpus facts** -- Approve the M6 ontology schema + M6 scope; confirm
+- OQ4 corpus facts (do TA reference answers exist? real vs synthetic)** ("Schema and ontology
+- sign-off"): Milestone 6 (ontology)
+- - **Stage **MH.5 data verification** -- Sample-verify a stratified sample of AI-drafted,
+- frontier-cross-checked items, then flip via the ledger** ("Eval-data verification"): Any
+- `verified=true` item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6)
+
 
 What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
 cross-check, and the optional non-Gemma cross-check judge.
@@ -38,7 +44,8 @@ cross-check, and the optional non-Gemma cross-check judge.
 
 Scaffolding (stats, gate, worksheet pre-fill, scoring) is built + tested; only the human column
 remains. Full procedure + rules:
-[manual "Judge calibration"](../guides/human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings).
+[manual "Judge
+calibration"](../guides/human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings).
 1. Stand up a judge endpoint (12B judge can't co-reside with a vLLM candidate on 16 GB -- use
    GGUF/CPU offload, a smaller test judge, or another host). See
    [judge-experiments guide](../guides/judge-experiments.md).
@@ -52,7 +59,8 @@ remains. Full procedure + rules:
 ### MH.2 -- remaining sign-offs (TODO, step by step)
 
 Procedure + template:
-[manual "Schema and ontology sign-off"](../guides/human-in-the-loop-evaluation.md#schema-and-ontology-sign-off----accountable-approval).
+[manual "Schema and ontology
+sign-off"](../guides/human-in-the-loop-evaluation.md#schema-and-ontology-sign-off----accountable-approval).
 1. When the M6 ontology draft lands, read it + its executable form; confirm the node/relationship
    type set, cap sizes, extraction constraints; record a dated sign-off line at the TOP of the
    proposal doc (until that line exists the schema stays un-trusted for headline use).
@@ -64,7 +72,8 @@ Procedure + template:
 ### MH.5 -- gold/eval data verification (TODO, step by step)
 
 Procedure + the four per-item checks:
-[manual "Eval-data verification"](../guides/human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data).
+[manual "Eval-data
+verification"](../guides/human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data).
 1. Take a drafted bundle (`$DATA_DIR/prepare-goldset/<ts>/`, `verified=false`).
 2. `make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus` (structural gate).
 3. Draw a STRATIFIED sample (kind x difficulty x section x real/synthetic); document size + strata.
@@ -112,7 +121,8 @@ each category is a new TASK FAMILY on the existing substrate (LangGraph template
 - **Objective first, gated judge second.** Plant STRUCTURED ground-truth labels (M3.5
   `prepare-synthetic-corpus`); the gated judge (M3.8) enters only for residual free-form quality and
   only when trusted. Recovery scored on planted-label IDs + embedder-cosine (secondary).
-- **Verified-data gate.** Every gold/eval item is AI-drafted (M4.4 / planter), frontier-cross-checked
+- **Verified-data gate.** Every gold/eval item is AI-drafted (M4.4 / planter),
+  frontier-cross-checked
   in-pipeline, then ⚠ human sample-verified (MH.5) before `verified=true` scores models.
 - **Same isolation contract.** All runs go through `isolate_cell` (process per cell, PID-attributed
   VRAM reclaim gate, capped cooldown).
@@ -125,15 +135,17 @@ each category is a new TASK FAMILY on the existing substrate (LangGraph template
 Prerequisites DELIVERED + schema SIGNED OFF (see `current.md`). Remaining:
 - extend `prepare-synthetic-corpus` to emit the richer per-kind planted labels (today: QA-style
   `key_fact` only);
-- build the scored runner + a `TIER_TEXT_ANALYSIS` board guard (mirroring `TIER_SCREEN`/`TIER_PRIVATE`);
+- build the scored runner + a `TIER_TEXT_ANALYSIS` board guard (mirroring
+  `TIER_SCREEN`/`TIER_PRIVATE`);
 - use a trend label's `attrs.direction` for direction-aware credit (surface-only today).
 
 ### M5.1 Security / robustness benchmark (objective ASR; no human dep to build)
 Subcategories (spec Appendix D): prompt-injection, jailbreak, instruction-hierarchy violation,
 unsafe-content generation, tool-abuse, RAG-injection (malicious instructions in retrieved chunks),
 data-exfiltration resistance (corpus-secret / canary leakage).
-- **Sourcing (decided, hybrid):** reuse public sets (JailbreakBench / HarmBench / AdvBench) UA-adapted
-  for the generic families; the M3.5 planter for the corpus-specific RAG-injection + canary families.
+- **Sourcing (decided, hybrid):** reuse public sets (JailbreakBench / HarmBench / AdvBench)
+  UA-adapted
+for the generic families; the M3.5 planter for the corpus-specific RAG-injection + canary families.
   Every malicious instruction + canary is a STRUCTURED label.
 - Objective detector per family: planted-instruction-followed / canary-leaked match -> per-case
   binary -> ASR (lower better) + refusal-appropriateness (don't over-refuse benign UA prompts).
@@ -166,7 +178,8 @@ data-exfiltration resistance (corpus-secret / canary leakage).
   judge scores only trajectory quality where a deterministic check cannot.
 - LangGraph is the single fixed agent harness; the other five frameworks stay deferred as a
   comparison axis (M5.3 ranks the MODEL under one harness, not frameworks -- out of M5 scope).
-- Run through `isolate_cell` (longer loops -- keep the thermal/VRAM gate); record trajectory length +
+- Run through `isolate_cell` (longer loops -- keep the thermal/VRAM gate); record trajectory length
+  +
   tool-call count as efficiency. New `TIER_AGENTIC`.
 - **Acceptance:** task environment + success checks unit-tested with a fake tool-calling endpoint;
   completion-rate carries CIs; efficiency metrics recorded.
@@ -179,12 +192,12 @@ data-exfiltration resistance (corpus-secret / canary leakage).
 - **chat-period analysis** -- the text-analysis sibling over chat logs; depends on M5.0 + the
   `prepare-synthetic-corpus` planted labels; real-corpus and synthetic results reported SEPARATELY.
 - **reliability** -- aggregate the existing typed failure taxonomy
-  (empty/malformed/refusal/timeout/context-truncation/retrieval-miss/backend-crash/OOM/judge-failure)
+(empty/malformed/refusal/timeout/context-truncation/retrieval-miss/backend-crash/OOM/judge-failure)
   into a first-class reliability score.
 - **Acceptance:** each category scores on a fixed seeded set with CIs; the full composite weights
   activate only once all components carry CIs.
 
-### M5.5 Platform & matrix expansion (deferred within M5; each needs a consumer + sign-off; build last)
+### M5.5 Platform and matrix expansion (deferred within M5)
 - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant metadata
   from M3.2 is the seam);
 - multi-vector-store -- Chroma / Qdrant / LanceDB behind the RAG-store seam (FAISS is v1);
@@ -200,15 +213,18 @@ Run-path items land with whichever lane first sweeps the 16 GB host; data-prep i
   2. M4.2 -- read all GPUs (guard reads GPU 0 only); derive the KV abort headroom from the served
      arch instead of the fixed floor.
   3. M4.3 -- auto-pin a host-compatible flashinfer when the bundled one fails; record the chosen
-     sampler in the manifest; re-run the preflight on a driver change without a full rebuild.
+     sampler in the manifest; re-run the preflight on a driver change without a
+     full rebuild.
   4. M4.5 -- handle further `/props` response shapes; exercise a real partial-offload split on an
      oversized GGUF (only the all-on-GPU path is confirmed).
 - **Data-prep (M4.4; feeds the verified-data gate + the M6 extraction reuse):**
-  1. Wire the second-frontier cross-check (grounding / non-circularity) as pipeline code -- it IS the
+  1. Wire the second-frontier cross-check (grounding / non-circularity) as pipeline code -- it IS
+     the
      verified-data gate; lands with M5's first scored category.
   2. Ship the opt-in Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in (seam exists).
   3. Chunk over-long docs for extraction instead of one truncated call (`EXTRACT_MAX_CHARS`).
-  4. Induce ontology-type confidence from a richer signal than raw frequency; carry the induced types
+  4. Induce ontology-type confidence from a richer signal than raw frequency; carry the induced
+     types
      into the drafting prompt as explicit constraints.
 
 **M5 acceptance:** security + tooling produce objective, CI-bearing boards from fake endpoints with

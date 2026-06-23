@@ -1,13 +1,13 @@
 # Dev setup
 
-Requires [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 for you) on any host.
-On **Debian/Ubuntu**, `make venv` also installs OS packages from [scripts/apt/](../../scripts/apt/)
-(uses `sudo apt-get` when needed).
+Requires [uv](https://docs.astral.sh/uv/) (Python 3.11) on any host. On **Debian/Ubuntu**,
+`make venv` installs OS packages from [scripts/apt/](../../scripts/apt/) (`sudo apt-get` when
+needed).
 
-    make venv     # apt deps + .venv (py3.11) + the package + all extras + .env (one-time setup)
+    make venv     # apt + .venv + package + extras + .env
     make test     # unit tests
-    make ci       # lint (ruff) + tests -- exactly what GitHub CI runs
-    make          # list all targets
+    make ci       # lint (ruff) + tests (GitHub CI)
+    make          # list targets
 
 `make venv` installs every Python extra below so a fresh checkout can run every command without a
 follow-up `uv pip install`. It is a larger one-time download; for a lean install trim it,
@@ -30,8 +30,8 @@ installing.
 
 | Profile | Packages | Used for |
 | ------- | -------- | -------- |
-| **production** | `git`, `make`, `curl` | Makefile entrypoints, git-based vLLM source builds (`make build-vllm`), operational HTTP checks (Ollama unload / endpoint probes) |
-| **dev** | `shellcheck` | Static analysis of `scripts/*.sh` in [scripts/code_quality.sh](../../scripts/code_quality.sh) |
+| **production** | `git`, `make`, `curl` | Makefile, git vLLM builds, HTTP probes |
+| **dev** | `shellcheck` | `scripts/code_quality.sh` shell lint |
 
 Production packages are safe on eval/GPU hosts. Dev packages are optional for contributors;
 GitHub CI does not run `make venv` and does not install them.
@@ -66,7 +66,7 @@ running kernel (`nvidia-smi`); only dpkg configuration is stuck.
 Register the built modules with DKMS (safe when versions match; requires sudo):
 
     sudo dkms install nvidia/595.71.05 -k "$(uname -r)" --force
-    # If older HWE kernels are also half-configured, repeat for each listed kernel, e.g.:
+    # Repeat for each half-configured HWE kernel, e.g.:
     sudo dkms install nvidia/595.71.05 -k 6.17.0-29-generic --force
     sudo dpkg --configure -a
     sudo apt-get -f install
@@ -86,10 +86,10 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 
 | Extra | Pulls | For |
 |-------|-------|-----|
-| `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt | tests, lint, type check, [scripts/code_quality.sh](../../scripts/code_quality.sh) |
+| `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt | tests, lint, code quality |
 | `goldset` | datasets | `ingest_squad --hf-dataset` |
-| `rag` | faiss-cpu, sentence-transformers, langchain-text-splitters, DeepEval | indexing + local judge eval |
-| `eval` | langgraph | the retrieve -> generate eval graph (`run-eval`) |
+| `rag` | faiss-cpu, sentence-transformers, langchain, DeepEval | index + judge |
+| `eval` | langgraph | retrieve -> generate eval graph (`run-eval`) |
 | `track` | mlflow, duckdb, pyarrow, optuna | tracking + config search |
 | `board` | streamlit | leaderboard |
 | `prep` | litellm | frontier-API prep utils |
@@ -101,6 +101,7 @@ light and never pulls the heavy/eval deps. vLLM / torch / flash-attn are hardwar
 plain deps.
 
 ## Conventions
+
 - Runtime output under `.data/` (gitignored); secrets in `.env` (gitignored).
 - Resolve paths from the project root; never hardcode absolute home paths.
 - ASCII in logs/comments; UTF-8 only in data payloads.
