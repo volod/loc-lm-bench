@@ -33,7 +33,7 @@ telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
 goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
 # NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU) and installed via a
 # separate build path per AGENTS.md, never as plain deps here.
-dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.6"]
+dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.6", "radon>=6.0", "complexipy>=5.0", "pymarkdownlnt>=0.9.32"]
 
 [project.scripts]
 llb = "llb.main:main"
@@ -44,6 +44,10 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pymarkdown]
+plugins.MD013.line_length = 100
+plugins.MD013.code_line_length = 100
 
 [tool.mypy]
 python_version = "3.11"

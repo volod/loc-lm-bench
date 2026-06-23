@@ -1,23 +1,92 @@
 # Dev setup
 
-Requires [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 for you).
+Requires [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 for you) on any host.
+On **Debian/Ubuntu**, `make venv` also installs OS packages from [scripts/apt/](../../scripts/apt/)
+(uses `sudo apt-get` when needed).
 
-    make venv     # .venv (py3.11) + the package + all extras + .env (one-time setup)
+    make venv     # apt deps + .venv (py3.11) + the package + all extras + .env (one-time setup)
     make test     # unit tests
     make ci       # lint (ruff) + tests -- exactly what GitHub CI runs
     make          # list all targets
 
-`make venv` installs every extra below so a fresh checkout can run every command without a
+`make venv` installs every Python extra below so a fresh checkout can run every command without a
 follow-up `uv pip install`. It is a larger one-time download; for a lean install trim it,
 e.g. `make venv EXTRAS=dev` (or `EXTRAS=rag,eval` to just run the skeleton).
 
-## Extras (what each group provides)
+Set `SKIP_APT=1` when apt is unavailable (macOS, minimal CI images) -- the Python venv still
+builds; only the OS package step is skipped.
+
+## Apt dependencies (Debian/Ubuntu)
+
+Lists live under [scripts/apt/](../../scripts/apt/). Install manually with:
+
+    make apt-deps                      # production profile (default)
+    make apt-deps APT_PROFILE=dev    # dev-only packages (shellcheck)
+    make apt-deps APT_PROFILE=all    # production + dev
+
+`make venv` installs **production** packages always, and **dev** packages when `EXTRAS` includes
+`dev` (the default full install). Use `APT_DRY_RUN=1` to print missing packages without
+installing.
+
+| Profile | Packages | Used for |
+| ------- | -------- | -------- |
+| **production** | `git`, `make`, `curl` | Makefile entrypoints, git-based vLLM source builds (`make build-vllm`), operational HTTP checks (Ollama unload / endpoint probes) |
+| **dev** | `shellcheck` | Static analysis of `scripts/*.sh` in [scripts/code_quality.sh](../../scripts/code_quality.sh) |
+
+Production packages are safe on eval/GPU hosts. Dev packages are optional for contributors;
+GitHub CI does not run `make venv` and does not install them.
+
+The installer uses `apt-get install --no-upgrade` so a small dev package (for example
+`shellcheck`) does not pull in pending kernel or NVIDIA DKMS upgrades. If apt still exits
+non-zero because of **unrelated** broken packages on the host, `make venv` continues when
+the requested profile packages are verified installed.
+
+### Apt troubleshooting (broken dpkg / NVIDIA DKMS)
+
+If `apt install` fails with errors about `linux-headers-*`, `nvidia-dkms-*`, or
+`Sub-process /usr/bin/dpkg returned an error code (1)` while installing an unrelated package,
+the dev tool may still be installed. Check:
+
+    shellcheck --version
+    dpkg -s shellcheck | grep ^Status
+
+When `Status: install ok installed`, you can use `scripts/code_quality.sh` even though apt
+reported errors configuring kernel/NVIDIA packages that were already pending on the system.
+
+To repair the host package manager (run when convenient; may take several minutes):
+
+    sudo dpkg --configure -a
+    sudo apt-get -f install
+
+NVIDIA DKMS "already installed at version ... override by specifying --force" usually means
+the kernel modules are already present under `/lib/modules/<kernel>/kernel/nvidia-595/`
+but DKMS status shows `built` instead of `installed`. The GPU may still work on the
+running kernel (`nvidia-smi`); only dpkg configuration is stuck.
+
+Register the built modules with DKMS (safe when versions match; requires sudo):
+
+    sudo dkms install nvidia/595.71.05 -k "$(uname -r)" --force
+    # If older HWE kernels are also half-configured, repeat for each listed kernel, e.g.:
+    sudo dkms install nvidia/595.71.05 -k 6.17.0-29-generic --force
+    sudo dpkg --configure -a
+    sudo apt-get -f install
+
+Verify: `dkms status` should show `installed` for each kernel, and
+`dpkg -l | awk '$1 ~ /^(iF|iU|iH)$/'` should print nothing.
+
+If `--force` still fails, inspect with `dkms status` and consider removing unused old
+HWE kernels (`sudo apt autoremove --purge`) after the running kernel is healthy. Full
+driver reinstall is a last resort on Ubuntu (`ubuntu-drivers`/NVIDIA docs).
+
+This is independent of loc-lm-bench.
+
+## Python extras (what each group provides)
 
 The groups installed by `make venv` (and what `EXTRAS=` selects from):
 
 | Extra | Pulls | For |
 |-------|-------|-----|
-| `dev` | pytest, ruff | tests + lint |
+| `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt | tests, lint, type check, [scripts/code_quality.sh](../../scripts/code_quality.sh) |
 | `goldset` | datasets | `ingest_squad --hf-dataset` |
 | `rag` | faiss-cpu, sentence-transformers, langchain-text-splitters, DeepEval | indexing + local judge eval |
 | `eval` | langgraph | the retrieve -> generate eval graph (`run-eval`) |

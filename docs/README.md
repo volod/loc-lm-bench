@@ -20,6 +20,14 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [LLM security learning path](guides/learning-path-security.md) -- extended threat modeling,
   jailbreak and prompt-injection testing, destructive-action controls, bias evaluation, and an
   eight-session practical syllabus.
+- [Evaluation categories learning path](guides/learning-path-evaluation-categories.md) -- the
+  capabilities beyond RAG QA: long-document/multi-hop orchestration, structured text-analysis
+  scoring, tool use / function calling / MCP, agentic workflows, summarization / structured output
+  / conversation analysis / reliability, serving robustness, and knowledge-graph retrieval -- with
+  the essential papers and a time-boxed syllabus.
+- [Human-in-the-loop evaluation](guides/human-in-the-loop-evaluation.md) -- the irreducibly-human
+  tasks: validating LLM-as-judge against human ratings (Spearman rho + bootstrap), accountable
+  schema/ontology sign-off, and stratified human sample-verification of AI-drafted eval data.
 - [Dev setup](guides/dev-setup.md) -- uv, venv, extras, make targets.
 - [Data prep](guides/data-prep.md) -- gold set, ingestion, chunking, calibration commands.
 - [Local judge experiments](guides/judge-experiments.md) -- DeepEval, Ukrainian prompts,
