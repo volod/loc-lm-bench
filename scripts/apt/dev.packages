@@ -1,0 +1,6 @@
+# Dev-only apt packages (Debian/Ubuntu).
+# Installed by `make venv` when EXTRAS includes `dev`, and by
+# `make apt-deps APT_PROFILE=dev`.
+
+# Static analysis for scripts/*.sh (scripts/code_quality.sh).
+shellcheck

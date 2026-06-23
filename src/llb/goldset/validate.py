@@ -11,39 +11,64 @@ import sys
 from pathlib import Path
 
 from llb.contracts import ValidationReport
-from llb.goldset.schema import GoldItem, load_goldset
+from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 
 _LOG = logging.getLogger(__name__)
+CorpusCache = dict[str, str | None]
+
+
+def _get_corpus_text(
+    corpus_root: Path,
+    doc_id: str,
+    cache: CorpusCache,
+    errors: list[str],
+    item_id: str,
+) -> str | None:
+    if doc_id in cache:
+        return cache[doc_id]
+    path = corpus_root / doc_id
+    if not path.exists():
+        errors.append(f"{item_id}: missing corpus doc {doc_id}")
+        cache[doc_id] = None
+        return None
+    cache[doc_id] = path.read_text(encoding="utf-8")
+    return cache[doc_id]
+
+
+def _validate_span(item_id: str, span: SourceSpan, text: str, errors: list[str]) -> None:
+    if span.char_end > len(text):
+        errors.append(f"{item_id}: span out of range in {span.doc_id}")
+        return
+    got = text[span.char_start : span.char_end]
+    if got != span.text:
+        errors.append(f"{item_id}: span mismatch ({got!r} != {span.text!r})")
+
+
+def _validate_item_spans(
+    item: GoldItem,
+    corpus_root: Path,
+    cache: CorpusCache,
+    errors: list[str],
+) -> None:
+    for span in item.source_spans:
+        text = _get_corpus_text(corpus_root, span.doc_id, cache, errors, item.id)
+        if text is None:
+            continue
+        _validate_span(item.id, span, text, errors)
 
 
 def validate_items(items: list[GoldItem], corpus_root: Path) -> ValidationReport:
     """Return a report dict: {n, splits, errors}. Empty errors == PASS."""
     corpus_root = Path(corpus_root)
     errors: list[str] = []
-    cache: dict[str, str | None] = {}
+    cache: CorpusCache = {}
     seen_split: dict[str, str] = {}
     splits: dict[str, int] = {}
 
     for item in items:
         if item.id in seen_split:
             errors.append(f"duplicate id: {item.id}")
-        for span in item.source_spans:
-            if span.doc_id not in cache:
-                path = corpus_root / span.doc_id
-                if not path.exists():
-                    errors.append(f"{item.id}: missing corpus doc {span.doc_id}")
-                    cache[span.doc_id] = None
-                    continue
-                cache[span.doc_id] = path.read_text(encoding="utf-8")
-            text = cache[span.doc_id]
-            if text is None:
-                continue
-            if span.char_end > len(text):
-                errors.append(f"{item.id}: span out of range in {span.doc_id}")
-                continue
-            got = text[span.char_start : span.char_end]
-            if got != span.text:
-                errors.append(f"{item.id}: span mismatch ({got!r} != {span.text!r})")
+        _validate_item_spans(item, corpus_root, cache, errors)
         seen_split[item.id] = item.split
         splits[item.split] = splits.get(item.split, 0) + 1
 

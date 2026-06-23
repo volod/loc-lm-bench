@@ -1,0 +1,218 @@
+"""Map-reduce (long-document) evaluation template -- M5.0.
+
+For a document too long to answer within a single context window: SPLIT it into overlapping
+segments, MAP a partial answer over each segment independently, then REDUCE the partial
+answers into one final answer. This is the substrate for the spec's long-doc comprehension
+sub-task (Appendix D text analysis) and any summarization-style flow over oversized inputs.
+
+Same node-closure shape as the single-call template (`graph.py`): the segmenter, the message
+builders, and the node closures are pure and unit-testable WITHOUT langgraph; only
+`build_map_reduce_graph` imports it (the `[eval]` extra). The shared status taxonomy and
+`classify_response` come from `llb.eval.common`.
+
+Trajectory cost (number of model calls = `n_segments` map calls + 1 reduce call, plus total
+completion tokens) is recorded on the state as an efficiency signal, mirroring how the agentic
+template records hop count.
+"""
+
+from typing import Any, Callable, cast
+
+from typing_extensions import TypedDict
+
+from llb.contracts import ChatMessage, UsageRecord
+from llb.eval.common import EMPTY, classify_response
+
+# A segment that yields no usable answer should say exactly this, so the reduce step can drop it.
+NO_INFO_MARKER = "(немає інформації)"
+
+MAP_SYSTEM_PROMPT = (
+    "Ти аналізуєш ОДИН фрагмент довгого документа. "
+    "Дай відповідь на питання ВИКЛЮЧНО на основі цього фрагмента. "
+    f"Якщо у фрагменті немає відповіді, напиши рівно: {NO_INFO_MARKER}. "
+    "Відповідай стисло українською мовою."
+)
+
+REDUCE_SYSTEM_PROMPT = (
+    "Ти зводиш докупи часткові відповіді, отримані з різних фрагментів одного документа. "
+    "Сформулюй єдину узгоджену відповідь на питання, спираючись лише на ці часткові відповіді. "
+    f"Ігноруй фрагменти, що позначені '{NO_INFO_MARKER}'. "
+    "Відповідай стисло українською мовою."
+)
+
+
+class MapReduceState(TypedDict, total=False):
+    question: str
+    document: str
+    segments: list[str]
+    partials: list[str]
+    answer: str
+    status: str
+    error: str | None
+    usage: UsageRecord
+    n_segments: int
+    n_model_calls: int
+    total_completion_tokens: int
+
+
+def split_document(document: str, max_chars: int, overlap: int) -> list[str]:
+    """Split `document` into overlapping char windows (offset-free; map-reduce scores the
+    synthesized answer, not spans). Pure and dependency-free, mirroring the always-available
+    `fixed` chunker. `overlap` is clamped below `max_chars` so the window always advances."""
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+    text = document.strip()
+    if not text:
+        return []
+    overlap = max(0, min(overlap, max_chars - 1))
+    step = max_chars - overlap
+    segments: list[str] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        segments.append(text[start : start + max_chars])
+        start += step
+    return segments
+
+
+def build_map_messages(question: str, segment: str) -> list[ChatMessage]:
+    user = f"Фрагмент:\n<<<\n{segment}\n>>>\n\nПитання: {question}\n\nВідповідь:"
+    return [
+        {"role": "system", "content": MAP_SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_reduce_messages(question: str, partials: list[str]) -> list[ChatMessage]:
+    joined = "\n".join(f"[{i}] {p}" for i, p in enumerate(partials, 1))
+    user = f"Часткові відповіді:\n<<<\n{joined}\n>>>\n\nПитання: {question}\n\nЗведена відповідь:"
+    return [
+        {"role": "system", "content": REDUCE_SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+
+def is_no_info(partial: str) -> bool:
+    """True when a map partial declined to answer from its segment."""
+    return NO_INFO_MARKER in partial or not partial.strip()
+
+
+def make_split_node(max_chars: int, overlap: int) -> Callable[[MapReduceState], MapReduceState]:
+    """Closure: split the document into segments; flag an empty document as a terminal EMPTY."""
+
+    def split(state: MapReduceState) -> MapReduceState:
+        segments = split_document(state.get("document", ""), max_chars, overlap)
+        update: MapReduceState = {"segments": segments, "n_segments": len(segments)}
+        if not segments:
+            update["status"] = EMPTY
+        return update
+
+    return split
+
+
+def make_map_node(
+    launcher: Any, max_tokens: int, temperature: float, timeout: float
+) -> Callable[[MapReduceState], MapReduceState]:
+    """Closure: run one map call per segment; collect the non-empty partial answers."""
+
+    def map_segments(state: MapReduceState) -> MapReduceState:
+        if state.get("status") == EMPTY:
+            return {"partials": []}  # short-circuit; status already terminal
+        partials: list[str] = []
+        calls = 0
+        completion = 0
+        last_error: str | None = None
+        for segment in state.get("segments", []):
+            result = launcher.chat(
+                build_map_messages(state["question"], segment),
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+            )
+            calls += 1
+            completion += result.completion_tokens or 0
+            if result.error:
+                last_error = result.error
+                continue
+            text = result.text or ""
+            if not is_no_info(text):
+                partials.append(text.strip())
+        update: MapReduceState = {
+            "partials": partials,
+            "n_model_calls": calls,
+            "total_completion_tokens": completion,
+        }
+        if not partials and last_error:
+            update["status"] = last_error  # every segment failed transport -> propagate
+            update["error"] = last_error
+        return update
+
+    return map_segments
+
+
+def make_reduce_node(
+    launcher: Any, max_tokens: int, temperature: float, timeout: float
+) -> Callable[[MapReduceState], MapReduceState]:
+    """Closure: reduce the partial answers into one final answer; classify the response."""
+
+    def reduce(state: MapReduceState) -> MapReduceState:
+        if state.get("status") in (EMPTY, "timeout", "backend_error"):
+            return {"answer": ""}  # short-circuit; status already terminal
+        partials = state.get("partials", [])
+        if not partials:
+            return {"answer": "", "status": EMPTY}  # nothing recovered from any segment
+        result = launcher.chat(
+            build_reduce_messages(state["question"], partials),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+        )
+        completion = state.get("total_completion_tokens", 0) + (result.completion_tokens or 0)
+        return {
+            "answer": result.text or "",
+            "status": classify_response(result.text, result.error),
+            "error": result.error,
+            "n_model_calls": state.get("n_model_calls", 0) + 1,
+            "total_completion_tokens": completion,
+            "usage": {
+                "prompt_tokens": result.prompt_tokens,
+                "completion_tokens": completion,
+                "latency_s": result.latency_s,
+                "tokens_per_s": result.tokens_per_s(),
+            },
+        }
+
+    return reduce
+
+
+def build_map_reduce_graph(
+    launcher: Any,
+    max_chars: int,
+    overlap: int,
+    max_tokens: int,
+    temperature: float,
+    timeout: float,
+) -> Any:
+    """Compile the split -> map -> reduce LangGraph app. Needs the `[eval]` extra."""
+    try:
+        from langgraph.graph import END, START, StateGraph
+    except ImportError as exc:
+        raise SystemExit(
+            'ERROR: the eval graph needs the [eval] extra. Run: uv pip install -e ".[eval]"'
+        ) from exc
+    graph = StateGraph(MapReduceState)
+    # LangGraph's callable overloads cannot express partial TypedDict state updates.
+    graph.add_node("split", cast(Any, make_split_node(max_chars, overlap)))
+    graph.add_node("map", cast(Any, make_map_node(launcher, max_tokens, temperature, timeout)))
+    graph.add_node(
+        "reduce", cast(Any, make_reduce_node(launcher, max_tokens, temperature, timeout))
+    )
+    graph.add_edge(START, "split")
+    graph.add_edge("split", "map")
+    graph.add_edge("map", "reduce")
+    graph.add_edge("reduce", END)
+    return graph.compile()
+
+
+def run_case(app: Any, question: str, document: str) -> MapReduceState:
+    """Invoke a compiled map-reduce graph for one long-doc item; returns the terminal state."""
+    return cast(MapReduceState, app.invoke({"question": question, "document": document}))

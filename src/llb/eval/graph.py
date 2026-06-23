@@ -1,15 +1,14 @@
-"""Single-call RAG evaluation graph + typed failure taxonomy.
+"""Single-call RAG evaluation graph.
 
-The flow is retrieve -> generate, wired as a LangGraph so every eval flow shares one
-uniform pattern (the design standardizes all eval flows on LangGraph; map-reduce and
-multi-hop templates follow the same shape later). The node functions are plain closures
-over a `RagState` dict, so the retrieval, prompt-building, and failure-classification
-logic is unit-testable WITHOUT langgraph installed; only `build_rag_graph` imports it
-(the `[eval]` extra).
+The flow is retrieve -> generate, the first of the three DRY LangGraph templates (the
+map-reduce and multi-hop templates follow the same node-closure shape -- see `map_reduce.py`
+and `multi_hop.py`). The node functions are plain closures over a `RagState` dict, so the
+retrieval, prompt-building, and failure-classification logic is unit-testable WITHOUT
+langgraph installed; only `build_rag_graph` imports it (the `[eval]` extra).
 
-Failure taxonomy (design "distinct typed cases"): each case ends in exactly one status --
-ok / empty / malformed / refusal / timeout / backend_error / retrieval_miss -- recorded
-separately, never collapsed into a single "reliability failure".
+The shared status taxonomy, refusal markers, `classify_response`, and `format_context` live
+in `llb.eval.common` (re-exported here for backward compatibility); see that module for the
+failure-taxonomy contract.
 """
 
 from typing import Any, Callable, cast
@@ -17,26 +16,32 @@ from typing import Any, Callable, cast
 from typing_extensions import TypedDict
 
 from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
-
-# Terminal case statuses.
-OK = "ok"
-EMPTY = "empty"
-MALFORMED = "malformed"
-REFUSAL = "refusal"
-RETRIEVAL_MISS = "retrieval_miss"
-# transport tokens (timeout / backend_error) are passed through from ChatResult.error.
-
-# Markers a model uses when it declines to answer (UA + EN).
-_REFUSAL_MARKERS = (
-    "не можу відповісти",
-    "не маю можливості",
-    "не можу допомогти",
-    "вибачте, але я",
-    "i cannot answer",
-    "i can't answer",
-    "i'm unable to",
-    "as an ai",
+from llb.eval.common import (
+    EMPTY,
+    MALFORMED,
+    OK,
+    REFUSAL,
+    RETRIEVAL_MISS,
+    classify_response,
+    format_context,
 )
+
+__all__ = [
+    "EMPTY",
+    "MALFORMED",
+    "OK",
+    "REFUSAL",
+    "RETRIEVAL_MISS",
+    "RagState",
+    "SYSTEM_PROMPT",
+    "build_messages",
+    "build_rag_graph",
+    "classify_response",
+    "format_context",
+    "make_generate_node",
+    "make_retrieve_node",
+    "run_case",
+]
 
 SYSTEM_PROMPT = (
     "Ти асистент, який відповідає виключно на основі наданого контексту. "
@@ -56,40 +61,12 @@ class RagState(TypedDict, total=False):
     usage: UsageRecord
 
 
-def format_context(chunks: list[ChunkRecord]) -> str:
-    """Render retrieved chunks as a delimited, numbered block (corpus is untrusted input)."""
-    parts = []
-    for i, chunk in enumerate(chunks, 1):
-        parts.append(f"[{i}] ({chunk.get('doc_id', '?')})\n{chunk.get('text', '').strip()}")
-    return "\n\n".join(parts)
-
-
 def build_messages(question: str, context: str) -> list[ChatMessage]:
     user = f"Контекст:\n<<<\n{context}\n>>>\n\nПитання: {question}\n\nВідповідь:"
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
     ]
-
-
-def classify_response(text: str, error: str | None, expect_json: bool = False) -> str:
-    """Map a raw model response to a terminal status."""
-    if error:
-        return error  # "timeout" | "backend_error", passed through verbatim
-    if text is None or not text.strip():
-        return EMPTY
-    stripped = text.strip()
-    low = stripped.lower()
-    if any(marker in low for marker in _REFUSAL_MARKERS):
-        return REFUSAL
-    if expect_json:
-        import json
-
-        try:
-            json.loads(stripped)
-        except (ValueError, TypeError):
-            return MALFORMED
-    return OK
 
 
 def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:

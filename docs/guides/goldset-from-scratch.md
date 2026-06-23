@@ -72,7 +72,8 @@ inventories the docs, extracts entities and evidence-backed relations, induces a
 candidate, samples for coverage, and drafts unverified QA items -- all through one configured
 inference endpoint. It is intentionally not a thin synonym for the one-prompt frontier utility.
 
-    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir> DRAFT_MODEL=<tag>
+    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir>
+    DRAFT_MODEL=<tag>
 
 By default the endpoint is LOCAL (an OpenAI-compatible server such as Ollama; no corpus leaves
 the box). Opt into a frontier endpoint with `DRAFT_ENDPOINT=frontier` (egress; needs a provider
@@ -85,7 +86,8 @@ exact), a verbatim `corpus/` copy, the induced `ontology.json`, per-document `ex
 and `provenance.json` (endpoint, prompt fingerprints, per-doc hashes, stage counts, cost).
 Validate and review before promoting any item:
 
-    make validate-goldset GOLDSET=$DATA_DIR/prepare-goldset/<timestamp>/goldset.jsonl \
+    make validate-goldset
+    GOLDSET=$DATA_DIR/prepare-goldset/<timestamp>/goldset.jsonl \
       CORPUS=$DATA_DIR/prepare-goldset/<timestamp>/corpus
 
 Drafts never score a model until a frontier cross-check and a human stratified sample-verify

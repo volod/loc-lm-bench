@@ -8,9 +8,12 @@ development fixture is committed under `samples/goldsets/`. Module detail is in
 
     make validate-goldset     # committed 250-item fixture: spans + splits
     make gen-rag-items        # tiny generated format fixture under DATA_DIR
-    make ingest-uk-squad GOLDSET_MODE=development  # reproduce reviewed fixture from pinned HF source *
-    make ingest-uk-squad GOLDSET_MODE=skeleton     # editable from-scratch template
-    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>  # M4.4 ontology-assisted draft (verified=false)
+    make ingest-uk-squad GOLDSET_MODE=development
+    # reproduce reviewed fixture from pinned HF source
+    *
+    make ingest-uk-squad GOLDSET_MODE=skeleton # editable from-scratch template
+    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>
+    # M4.4 ontology-assisted draft (verified=false)
 
 `*` may need `HF_TOKEN` in `.env` (the `goldset` extra is installed by `make venv`). The
 committed default requires no token. For a local SQuAD export:
@@ -42,6 +45,7 @@ extra) to also build a FAISS index per strategy.
 
 ## Judge calibration
 
-    make calibration-worksheet         # blank worksheet from the calibration split
+    make calibration-worksheet # blank worksheet from the calibration split
     # after Milestone 1 produces model answers, fill the ratings, then:
-    python -m llb.judge.calibration score --ratings <file>   # rho + CI; gate at 0.6
+    python -m llb.judge.calibration score --ratings <file> # rho + CI; gate at
+    0.6

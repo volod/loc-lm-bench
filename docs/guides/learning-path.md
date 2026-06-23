@@ -21,19 +21,26 @@ with RAG, GPU serving, Optuna, or LLM-as-judge evaluation -- those are what this
 
 ## Syllabus at a glance
 
-| Stage | Module | You will learn | In this repo |
-|---|---|---|---|
-| 0 | Prerequisites | Python, git, CLI, basic ML/LLM vocabulary | -- |
-| 1 | Project tooling | uv, Typer, Pydantic, pytest | `main.py`, `config.py` |
-| 2 | Retrieval + RAG | embeddings, FAISS, chunking, recall@k / MRR | `rag/` |
-| 3 | Serving LLMs locally | Ollama, vLLM, llama.cpp, quantization, OpenAI-compatible API, KV cache / VRAM | `backends/` |
-| 4 | Eval flow orchestration | LangGraph graphs + failure taxonomy | `eval/graph.py` |
-| 5 | Scoring + LLM-as-judge | reference correctness, DeepEval G-Eval, judge calibration (Spearman, bootstrap CI), judge bias | `scoring/`, `judge/` |
-| 6 | Tuning + tracking | Optuna, MLflow, DuckDB / Parquet, manifests, disjoint splits | `optimize/`, `tracking/` |
-| 7 | Hardware + isolation | NVML / pynvml, VRAM, thermal, process-isolated sweeps | `executor/`, `backends/telemetry.py` |
-| 8 | Public benchmarks + UA NLP | lm-evaluation-harness, lang-uk / INSAIT, UA morphology, datasets | `screen/` |
-| 9 | LLM security | Jailbreaks, prompt injection, instruction hierarchy, destructive actions, leakage, bias | `plan.md` (M5.1) |
-| 10 (forward) | Agentic / tooling / GraphRAG | MCP, function calling, agentic eval, knowledge-graph RAG | `plan.md` (M5.2 / M5.3 / M6) |
+- **Stage 0 -- Prerequisites** (--): Python, git, CLI, basic ML/LLM vocabulary
+- **Stage 1 -- Project tooling** (`main.py`, `config.py`): uv, Typer, Pydantic, pytest
+- **Stage 2 -- Retrieval + RAG** (`rag/`): embeddings, FAISS, chunking, recall@k / MRR
+- - **Stage 3 -- Serving LLMs locally** (`backends/`): Ollama, vLLM, llama.cpp, quantization,
+- OpenAI-compatible API, KV cache / VRAM
+- **Stage 4 -- Eval flow orchestration** (`eval/graph.py`): LangGraph graphs + failure taxonomy
+- - **Stage 5 -- Scoring + LLM-as-judge** (`scoring/`, `judge/`): reference correctness, DeepEval
+- G-Eval, judge calibration (Spearman, bootstrap CI), judge bias
+- - **Stage 6 -- Tuning + tracking** (`optimize/`, `tracking/`): Optuna, MLflow, DuckDB / Parquet,
+- manifests, disjoint splits
+- - **Stage 7 -- Hardware + isolation** (`executor/`, `backends/telemetry.py`): NVML / pynvml, VRAM,
+- thermal, process-isolated sweeps
+- - **Stage 8 -- Public benchmarks + UA NLP** (`screen/`): lm-evaluation-harness, lang-uk / INSAIT,
+- UA morphology, datasets
+- - **Stage 9 -- LLM security** ([security learning path](learning-path-security.md)): Jailbreaks,
+- prompt injection, instruction hierarchy, destructive actions, leakage, bias
+- - **Stage 10 (forward) -- Agentic / tooling / GraphRAG** ([evaluation-categories learning
+- path](learning-path-evaluation-categories.md)): MCP, function calling, agentic eval,
+- knowledge-graph RAG
+
 
 ## Stage 0 -- Prerequisites
 
@@ -86,7 +93,8 @@ backend-agnostic. Ollama and vLLM are implemented; llama.cpp is the planned thir
 - Quantization (why a 12B fits in 16 GB): [GGUF](https://huggingface.co/docs/hub/gguf) and the
   [HF quantization overview](https://huggingface.co/docs/transformers/main/en/quantization/overview)
   (w4a16 / AWQ / GPTQ).
-- The shared interface: [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat).
+- The shared interface: [OpenAI Chat
+  Completions](https://platform.openai.com/docs/api-reference/chat).
 
 In this repo: `src/llb/backends/` (base launcher seam, OpenAI client, Ollama, vLLM, the
 availability resolver, hardware detection, prepare, planner, telemetry).
@@ -111,7 +119,7 @@ How models are ranked, and why the judge is gated.
   [G-Eval](https://arxiv.org/abs/2303.16634) and the broader
   [Judging LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) (MT-Bench) study.
 - Calibration: a judge is trusted only if it agrees with humans --
-  [Spearman rank correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
+[Spearman rank correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
   with a [bootstrap confidence interval](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)).
 - Judge bias: a Gemma-family judge may self-prefer Gemma answers -- this project discloses and
   gates it (see the [current-state disclosure](../implementation/current.md)). This is distinct
@@ -152,7 +160,7 @@ In this repo: `src/llb/executor/` (runner, VRAM gate, `isolation.py`) and
 
 ## Stage 8 -- Public benchmarks and Ukrainian NLP
 
-The Tier-1 screen and the Ukrainian-specific gotchas.
+The public-benchmark screen and the Ukrainian-specific gotchas.
 
 - [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) and the
   [UA fork](https://github.com/insait-institute/lm-evaluation-harness-uk) -- standard tasks via
@@ -168,12 +176,15 @@ In this repo: `src/llb/screen/public.py` (two never-cross-ranked tracks: logprob
 
 Learn to distinguish model safety from application security, define the attacker and protected
 assets, and measure failures without giving a model access to real secrets or destructive tools.
-The benchmark implementation is planned, not delivered; see
-[`plan.md`](../implementation/plan.md) M5.1.
+The benchmark implementation is planned, not delivered; see the
+[security learning path](learning-path-security.md) and the
+[forward plan](../implementation/plan.md).
 
 - Threat modeling: start with the
-  [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
-  [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence),
+[OWASP Top 10 for LLM
+Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/),
+[NIST Generative AI
+Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence),
   and [MITRE ATLAS](https://atlas.mitre.org/). Identify assets, trust boundaries, attacker
   access, and impact before selecting attacks.
 - Jailbreaks and prompt injection: a jailbreak tries to bypass a model's safety behavior;
@@ -204,14 +215,14 @@ The benchmark implementation is planned, not delivered; see
 Follow the [extended LLM security learning path](learning-path-security.md) for the full topic
 map, safe lab rules, benchmark design, and an eight-session practical syllabus.
 
-In this repo: the planned M5.1 suite will reuse `src/llb/eval/`, process isolation, manifests,
+In this repo: the planned security suite will reuse `src/llb/eval/`, process isolation, manifests,
 and confidence-interval reporting under a separate security tier. Do not interpret the current
 RAG score as a security score.
 
 ## Stage 10 (forward) -- Agentic, tooling, and GraphRAG
 
-What the roadmap adds after the current stack (designed, not yet built; see
-[`plan.md`](../implementation/plan.md) M5.2 / M5.3 / M6).
+What the roadmap adds after the current stack (designed, not yet built; see the
+[evaluation-categories learning path](learning-path-evaluation-categories.md)).
 
 - Tool use: [OpenAI function calling](https://platform.openai.com/docs/guides/function-calling),
   the [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html),
@@ -228,17 +239,27 @@ What the roadmap adds after the current stack (designed, not yet built; see
 A time-boxed plan (about 2-4 hours per session). Each session pairs reading with a concrete
 action in this repo.
 
-| Session | Read (stages) | Do in the repo |
-|---|---|---|
-| 1. Get it running | README + Stage 1 | `make venv`, `make test`, `make demo-eval`; open the manifest under `.data/llb/`. |
-| 2. RAG basics | Stage 2 | Run `llb build-index --strategy ... --size ...`, then `make validate-retrieval`; watch recall@k move. |
-| 3. Serving | Stage 3 | `make list-models`, `make prep-models`, `make run-eval MODEL=...`; read the telemetry in the manifest. |
-| 4. The eval flow | Stage 4 | Read `eval/graph.py`; trace one case from retrieve to a typed status. |
-| 5. Scoring + judge | Stage 5 | `make calibration-worksheet`; read `scoring/` and `judge/calibration.py`; understand the rho >= 0.6 gate. |
-| 6. Tuning + tracking | Stage 6 | `llb tune --model ... --backend ...` on a small budget; compare trials in `make mlflow`. |
-| 7. Scale + isolation | Stage 7 + 8 | `llb sweep --sweep-id demo` then re-run it (resume); read `src/llb/executor/isolation.py`; try `llb screen-public --model ... --limit 10`. |
-| 8. LLM security | Stage 9 | Complete sessions 1-2 of the [security path](learning-path-security.md); sketch one M5.1 case with a benign control and objective detector. |
-| 9. The roadmap | Stage 10 | Read [`plan.md`](../implementation/plan.md); pick one M5.2, M5.3, or M6 category and sketch its scoring schema. |
+- - **1. Get it running** (README + Stage 1): `make venv`, `make test`, `make demo-eval`; open the
+- manifest under `.data/llb/`.
+- - **2. RAG basics** (Stage 2): Run `llb build-index --strategy ... --size ...`, then `make
+- validate-retrieval`; watch recall@k move.
+- - **3. Serving** (Stage 3): `make list-models`, `make prep-models`, `make run-eval MODEL=...`;
+- read the telemetry in the manifest.
+- - **4. The eval flow** (Stage 4): Read `eval/graph.py`; trace one case from retrieve to a typed
+- status.
+- - **5. Scoring + judge** (Stage 5): `make calibration-worksheet`; read `scoring/` and
+- `judge/calibration.py`; understand the rho >= 0.6 gate.
+- - **6. Tuning + tracking** (Stage 6): `llb tune --model ... --backend ...` on a small budget;
+- compare trials in `make mlflow`.
+- - **7. Scale + isolation** (Stage 7 + 8): `llb sweep --sweep-id demo` then re-run it (resume);
+- read `src/llb/executor/isolation.py`; try `llb screen-public --model ... --limit 10`.
+- - **8. LLM security** (Stage 9): Complete sessions 1-2 of the [security
+- path](learning-path-security.md); sketch one security case with a benign control and objective
+- detector.
+- - **9. The roadmap** (Stage 10): Read the [evaluation-categories learning
+- path](learning-path-evaluation-categories.md); pick one tool-use, agentic, or knowledge-graph
+- category and sketch its scoring schema.
+
 
 By session 9 you can run the full pipeline, explain every number on the board, and reason about
 the forward plan. From here, the deepest single source is the

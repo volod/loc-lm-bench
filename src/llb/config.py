@@ -45,6 +45,38 @@ def _optional_environment_value(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
+def _validate_chunk_sizes(
+    chunk_overlap: int,
+    chunk_size: int,
+    retrieval_mode: RetrievalMode,
+    child_chunk_size: int,
+) -> None:
+    if chunk_overlap >= chunk_size:
+        raise ValueError("chunk_overlap must be smaller than chunk_size")
+    if retrieval_mode == "parent_child" and chunk_overlap >= child_chunk_size:
+        raise ValueError("chunk_overlap must be smaller than child_chunk_size")
+
+
+def _validate_http_endpoint_url(url: str, label: str) -> None:
+    endpoint = urlsplit(url)
+    if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+        raise ValueError(f"{label} must be an http(s) URL with a host")
+    if endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
+        raise ValueError(f"{label} must not contain credentials, query parameters, or a fragment")
+
+
+def _validate_vllm_host_matches_port(vllm_host: str, vllm_port: int) -> None:
+    try:
+        endpoint = urlsplit(vllm_host)
+        endpoint_port = endpoint.port or (443 if endpoint.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError(f"invalid vllm_host: {vllm_host}") from exc
+    if not endpoint.scheme or not endpoint.hostname:
+        raise ValueError(f"invalid vllm_host: {vllm_host}")
+    if endpoint_port != vllm_port:
+        raise ValueError(f"vllm_host port ({endpoint_port}) must match vllm_port ({vllm_port})")
+
+
 class RunConfig(BaseModel):
     """Everything needed to reproduce one (model, config) evaluation."""
 
@@ -144,30 +176,13 @@ class RunConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_cross_field_constraints(self) -> "RunConfig":
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("chunk_overlap must be smaller than chunk_size")
-        if self.retrieval_mode == "parent_child" and self.chunk_overlap >= self.child_chunk_size:
-            raise ValueError("chunk_overlap must be smaller than child_chunk_size")
+        _validate_chunk_sizes(
+            self.chunk_overlap, self.chunk_size, self.retrieval_mode, self.child_chunk_size
+        )
         if self.judge_base_url is not None:
-            endpoint = urlsplit(self.judge_base_url)
-            if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
-                raise ValueError("judge_base_url must be an http(s) URL with a host")
-            if endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
-                raise ValueError(
-                    "judge_base_url must not contain credentials, query parameters, or a fragment"
-                )
+            _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         if self.backend == "vllm":
-            try:
-                endpoint = urlsplit(self.vllm_host)
-                endpoint_port = endpoint.port or (443 if endpoint.scheme == "https" else 80)
-            except ValueError as exc:
-                raise ValueError(f"invalid vllm_host: {self.vllm_host}") from exc
-            if not endpoint.scheme or not endpoint.hostname:
-                raise ValueError(f"invalid vllm_host: {self.vllm_host}")
-            if endpoint_port != self.vllm_port:
-                raise ValueError(
-                    f"vllm_host port ({endpoint_port}) must match vllm_port ({self.vllm_port})"
-                )
+            _validate_vllm_host_matches_port(self.vllm_host, self.vllm_port)
         return self
 
     def index_dir(self) -> Path:

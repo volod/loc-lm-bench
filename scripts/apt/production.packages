@@ -1,0 +1,10 @@
+# Production apt packages for loc-lm-bench on Debian/Ubuntu.
+# Installed by `make venv` (and `make apt-deps APT_PROFILE=production`).
+# One package name per line; blank lines and # comments are ignored.
+
+# Repo and Makefile entrypoints.
+git
+make
+
+# Operational HTTP checks (Ollama unload, endpoint probes in docs).
+curl

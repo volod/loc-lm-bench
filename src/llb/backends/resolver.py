@@ -156,6 +156,7 @@ def resolve(
             "backend": backend,
             "source": source,
             "quant": row["quant"],
+            "gpu_layers": row["gpu_layers"],
             "available": available,
             "verdict": verdict,
             "runnable": runnable,
@@ -181,6 +182,23 @@ def _serving_verdict(chosen: BackendCandidate) -> str:
     if chosen["backend"] == "vllm":
         return planner.VERDICT_GPU
     return chosen["verdict"]
+
+
+def llamacpp_offload_split(resolved: ResolvedModel) -> int | None:
+    """The `-ngl` count to pass to llama.cpp for a resolved model, or None to keep the default.
+
+    For an OFFLOAD verdict, return the planner's GPU/CPU layer split so the runner places only
+    the layers that fit in VRAM on the GPU and lets the rest spill to system RAM -- instead of
+    the launcher default (-1 == every layer on GPU), which would OOM an oversized model. Returns
+    None when the chosen backend is not llama.cpp, when all layers fit on the GPU (the default -1
+    is correct), or when the planner could not size a split (no arch fields)."""
+    if resolved["chosen_backend"] != "llamacpp" or resolved["verdict"] != planner.VERDICT_OFFLOAD:
+        return None
+    chosen = next((c for c in resolved["candidates"] if c["backend"] == "llamacpp"), None)
+    if chosen is None:
+        return None
+    split = chosen.get("gpu_layers")
+    return split if isinstance(split, int) and split > 0 else None
 
 
 def _reason(

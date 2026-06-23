@@ -6,6 +6,7 @@ from llb.backends.resolver import (
     backend_can_run,
     candidate_sources,
     format_resolution,
+    llamacpp_offload_split,
     resolve,
     resolve_all,
 )
@@ -101,6 +102,56 @@ def test_resolve_falls_back_to_ollama_when_vllm_would_offload():
     assert out["chosen_backend"] == "ollama"
     vllm = next(c for c in out["candidates"] if c["backend"] == "vllm")
     assert vllm["runnable"] is False and "offload" in vllm["reason"]
+
+
+# A GGUF-only model too big to hold fully in 16 GB VRAM at q4 -> resolves to llama.cpp by
+# offloading some layers to CPU RAM (the M4.5 run-path: -ngl derived from the planner's split).
+BIG_GGUF: ModelSpec = {
+    "name": "big-gguf",
+    "backend": "llamacpp",
+    "source": "hf.co/org/Big-GGUF:Q4_K_M",
+    "params_b": 27.0,
+    "quant": "q4_k_m",
+    "n_layers": 62,
+    "kv_dim": 2048,
+    "max_context": 8192,
+}
+GGUF_ONLY = ResolverProbes(
+    hf_repo=lambda _s: False, gguf=lambda _s: True, ollama_tag=lambda _s: False
+)
+
+
+def test_candidate_carries_planner_gpu_layers_split():
+    out = resolve(BIG_GGUF, HOST_VRAM, HOST_RAM, probes=GGUF_ONLY)
+    cand = next(c for c in out["candidates"] if c["backend"] == "llamacpp")
+    # The planner offloads only some layers (an oversized model), so 0 < split < n_layers.
+    assert 0 < cand["gpu_layers"] < BIG_GGUF["n_layers"]
+
+
+def test_offload_split_returns_planner_layers_for_llamacpp_offload():
+    out = resolve(BIG_GGUF, HOST_VRAM, HOST_RAM, probes=GGUF_ONLY)
+    assert out["chosen_backend"] == "llamacpp" and out["verdict"] == "offload"
+    cand = next(c for c in out["candidates"] if c["backend"] == "llamacpp")
+    # The runner should pin -ngl to the planner's split, not the launcher default (-1 = all GPU).
+    assert llamacpp_offload_split(out) == cand["gpu_layers"]
+
+
+def test_offload_split_is_none_when_model_fits_gpu():
+    # A small GGUF fits fully (gpu verdict) -> keep the launcher default (-1 = all layers on GPU).
+    small_gguf: ModelSpec = {
+        **SMALL,
+        "backend": "llamacpp",
+        "source": "hf.co/org/Small-GGUF:Q4_K_M",
+    }
+    out = resolve(small_gguf, HOST_VRAM, HOST_RAM, probes=GGUF_ONLY)
+    assert out["chosen_backend"] == "llamacpp" and out["verdict"] == "gpu"
+    assert llamacpp_offload_split(out) is None
+
+
+def test_offload_split_is_none_for_non_llamacpp_backend():
+    out = resolve(BIG, HOST_VRAM, HOST_RAM, probes=ALL_AVAILABLE)  # resolves to Ollama (offload)
+    assert out["chosen_backend"] == "ollama"
+    assert llamacpp_offload_split(out) is None
 
 
 def test_resolve_marks_unavailable_source_not_runnable():

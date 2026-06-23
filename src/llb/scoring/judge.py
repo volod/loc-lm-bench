@@ -251,31 +251,48 @@ def _default_deepeval_evaluate(
     return scores
 
 
+def _served_model_id(judge_model: str) -> str:
+    prefix, separator, model = judge_model.partition("/")
+    if separator and prefix in {"hosted_vllm", "ollama_chat"}:
+        return model
+    return judge_model
+
+
+def _judge_base_url_from_prefix(prefix: str) -> str | None:
+    if prefix == "hosted_vllm":
+        return os.environ.get(env.HOSTED_VLLM_API_BASE) or os.environ.get(env.VLLM_HOST)
+    if prefix == "ollama_chat":
+        return os.environ.get(env.OLLAMA_API_BASE) or os.environ.get(env.OLLAMA_HOST)
+    return None
+
+
+def _normalize_openai_base_url(base_url: str) -> str:
+    parts = urlsplit(base_url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError("judge base URL must be an http(s) URL with a host")
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ValueError(
+            "judge base URL must not contain credentials, query parameters, or a fragment; "
+            f"use {env.DEEPEVAL_JUDGE_API_KEY} for authentication"
+        )
+    path = parts.path.rstrip("/")
+    if not path.endswith("/v1"):
+        path = f"{path}/v1"
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
 def resolve_judge_endpoint(
     judge_model: str, explicit_base_url: str | None = None
 ) -> tuple[str, str | None]:
     """Resolve legacy local-model prefixes and an OpenAI-compatible endpoint."""
     load_project_env()
-    prefix, separator, model = judge_model.partition("/")
-    served_model = model if separator and prefix in {"hosted_vllm", "ollama_chat"} else judge_model
+    prefix, separator, _model = judge_model.partition("/")
+    served_model = _served_model_id(judge_model)
     base_url = explicit_base_url or os.environ.get(env.DEEPEVAL_JUDGE_BASE_URL)
-    if base_url is None and prefix == "hosted_vllm":
-        base_url = os.environ.get(env.HOSTED_VLLM_API_BASE) or os.environ.get(env.VLLM_HOST)
-    if base_url is None and prefix == "ollama_chat":
-        base_url = os.environ.get(env.OLLAMA_API_BASE) or os.environ.get(env.OLLAMA_HOST)
+    if base_url is None and separator:
+        base_url = _judge_base_url_from_prefix(prefix)
     if base_url is not None:
-        parts = urlsplit(base_url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ValueError("judge base URL must be an http(s) URL with a host")
-        if parts.username or parts.password or parts.query or parts.fragment:
-            raise ValueError(
-                "judge base URL must not contain credentials, query parameters, or a fragment; "
-                f"use {env.DEEPEVAL_JUDGE_API_KEY} for authentication"
-            )
-        path = parts.path.rstrip("/")
-        if not path.endswith("/v1"):
-            path = f"{path}/v1"
-        base_url = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+        base_url = _normalize_openai_base_url(base_url)
     return served_model, base_url
 
 
