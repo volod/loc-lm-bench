@@ -62,13 +62,19 @@ human-reviewed calibration split:
       JUDGE_BASE_URL=http://127.0.0.1:8000/v1
 
 The worksheet receives model answers and ungated judge ratings. A human reviewer then fills
-`human_rating` without changing `judge_rating` and computes the decision:
+`human_rating` independently with the interactive rater (the judge column is hidden by default, so
+ratings are not anchored to the judge):
+
+    make calibration-rate
+
+and computes the decision:
 
     make calibration-score RATINGS=.data/llb/calibration_worksheet.csv
 
 The score command reports Spearman rho, a bootstrap confidence interval, and whether the judge
 clears `rho >= 0.6`. Until a completed human worksheet passes, normal evaluations keep the judge
-demoted and rank by objective correctness.
+demoted and rank by objective correctness. The full rater reference and the new-goldset /
+text-corpus-draft cases are in the [calibration-tooling manual](calibration-tooling.md).
 
 On a 16 GB GPU, a 12B judge normally cannot share VRAM with a vLLM candidate. Use an Ollama GGUF
 with CPU offload, a smaller test judge, or another machine on the same local network. Record the

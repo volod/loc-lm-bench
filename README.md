@@ -100,10 +100,12 @@ The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scal
 | Command | Result |
 |---|---|
 | `make calibration-run JUDGE_MODEL=...` | Pre-filled calibration worksheet. |
+| `make calibration-rate` | Interactive rater: fill human ratings/answers (judge column hidden). |
 | `make calibration-score RATINGS=<filled.csv>` | Spearman rho after human ratings. |
 
 Calibration needs human ratings; until rho >= 0.6 the judge stays demoted and objective
-correctness ranks alone. See the [judge guide](docs/guides/judge-experiments.md).
+correctness ranks alone. See the [calibration-tooling manual](docs/guides/calibration-tooling.md)
+and the [judge guide](docs/guides/judge-experiments.md).
 
 ## Documentation
 

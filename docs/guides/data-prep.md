@@ -45,7 +45,10 @@ extra) to also build a FAISS index per strategy.
 
 ## Judge calibration
 
-    make calibration-worksheet # blank worksheet from the calibration split
-    # after Milestone 1 produces model answers, fill the ratings, then:
-    python -m llb.judge.calibration score --ratings <file> # rho + CI; gate at
-    0.6
+    make calibration-run    # candidate answers + ungated judge ratings -> worksheet (CAL_WS)
+    make calibration-rate   # interactive: fill human ratings/answers (judge column hidden)
+    make calibration-score  # rho + bootstrap CI + trust decision; gate at 0.6
+
+`make calibration-worksheet` emits a BLANK worksheet (rows only) when you want the structure
+without a run. Full walkthrough, the rater command reference, and the new-goldset /
+text-corpus-draft cases: the [calibration-tooling manual](calibration-tooling.md).

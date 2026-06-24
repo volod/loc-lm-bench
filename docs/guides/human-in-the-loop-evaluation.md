@@ -89,13 +89,23 @@ which needs a running judge endpoint.
    Equivalent direct CLI:
    `llb run-eval --split calibration --worksheet ws.csv --judge-model <id> --judge-base-url ...`
 
-3. **Fill `human_rating` independently.** This is the irreducible work; the rules matter:
+3. **Rate independently with the interactive rater.** This is the irreducible work. Use the rater
+   instead of hand-editing the CSV -- it walks the worksheet item by item, hides `judge_rating` by
+   default, writes through after every edit (so you can stop and resume), and lets you author your
+   own answer (`a`) alongside the 1-5 rating:
+
+   ```
+   make calibration-rate
+   ```
+
+   The full command reference (`a`, `note`, `j <N>`, `u`, `c`, `q`, the `START=` / `SHOW_JUDGE=` /
+   `CLEAR=` options) and the rating anchors are in the
+   [calibration-tooling manual](calibration-tooling.md#rater-commands). The rules that matter:
    - **Do NOT look at `judge_rating` first.** Anchoring to the judge contaminates the ground truth.
-     Hide or remove that column while you rate, then merge it back for scoring.
+     The rater hides it by default; reveal it (`SHOW_JUDGE=1`) only for post-hoc review.
    - **Span the full score range** -- clearly good, clearly bad, and middling answers.
    - **Deliberately include fluent-but-wrong answers** -- confident, well-written, factually
-     incorrect. That is the failure mode the judge is most likely to miss, so
-     it is where
+     incorrect. That is the failure mode the judge is most likely to miss, so it is where
      calibration earns its keep.
    - **Rate against the reference and the retrieved context, not your prior knowledge** -- the same
      inputs the judge sees.
@@ -138,9 +148,11 @@ unit-tested.
   kappa, Krippendorff's alpha) -- so you understand "do two humans even agree?".
 
 ### In this repo
-`src/llb/judge/calibration.py` (rho + CI + trust decision + worksheet), `src/llb/scoring/judge.py`
-(the gate + bias note), and the calibration commands in the [data-prep guide](data-prep.md) and
-[judge-experiments guide](judge-experiments.md).
+`src/llb/judge/calibration.py` (rho + CI + trust decision + worksheet I/O),
+`src/llb/judge/rate.py` (the interactive rater), `src/llb/scoring/judge.py` (the gate + bias
+note). The operator walkthrough for all three commands -- and the new-goldset / text-corpus-draft
+cases -- is the [calibration-tooling manual](calibration-tooling.md); see also the
+[data-prep guide](data-prep.md) and [judge-experiments guide](judge-experiments.md).
 
 ---
 
@@ -313,10 +325,10 @@ to accept a dataset":
 
 ## Checklist
 
-- [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled; `human_rating` filled
-      INDEPENDENTLY (judge column hidden), spanning the full range incl.
-      fluent-but-wrong answers;
-      rho + CI + decision computed and recorded in the manifest.
+- [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled (`calibration-run`);
+      `human_rating` filled INDEPENDENTLY via `calibration-rate` (judge column hidden), spanning
+      the full range incl. fluent-but-wrong answers; rho + CI + decision computed
+      (`calibration-score`) and recorded in the manifest.
 - [ ] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope approved with a
       dated line; corpus facts confirmed (references exist?/real-vs-synthetic).
 - [ ] **Verification:** drafted set validated; stratified sample drawn + documented; four per-item

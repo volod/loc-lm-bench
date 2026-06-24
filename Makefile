@@ -55,7 +55,7 @@ JUDGE_BASE_URL ?= http://localhost:8000/v1
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -154,6 +154,13 @@ calibration-run: ## Run MODEL on the calibration split -> filled worksheet (mode
 		--goldset "$(GOLDSET)" --split calibration --worksheet "$(CAL_WS)" \
 		$(if $(JUDGE_MODEL),--judge-model "$(JUDGE_MODEL)",) \
 		$(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",)
+
+calibration-rate: ## Interactively fill human ratings/answers in CAL_WS (judge_rating hidden; SHOW_JUDGE=1 to reveal, START=N, CLEAR=1 to reset)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.judge.calibration rate --worksheet "$(CAL_WS)" \
+		$(if $(START),--start $(START),) \
+		$(if $(SHOW_JUDGE),--show-judge,) \
+		$(if $(CLEAR),--clear,)
 
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

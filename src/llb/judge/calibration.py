@@ -123,8 +123,8 @@ WORKSHEET_COLS = [
 
 
 def worksheet_fieldnames(existing: Sequence[str] | None = None) -> list[str]:
-    """Canonical column order: keep an existing header (so old worksheets upgrade in place),
-    then append any `WORKSHEET_COLS` it is missing. A fresh worksheet gets `WORKSHEET_COLS`."""
+    """Canonical column order: keep any columns already in the header, then append any
+    `WORKSHEET_COLS` that are missing. With no header yet, the order is `WORKSHEET_COLS`."""
     names = list(existing) if existing else []
     for col in WORKSHEET_COLS:
         if col not in names:
@@ -133,11 +133,11 @@ def worksheet_fieldnames(existing: Sequence[str] | None = None) -> list[str]:
 
 
 def load_worksheet(path: Path) -> tuple[list[dict[str, str]], list[str]]:
-    """Load a worksheet CSV, upgrading it to carry every `WORKSHEET_COLS` column.
+    """Load a worksheet CSV into `(rows, fieldnames)`.
 
-    Returns `(rows, fieldnames)`. Missing columns are added (blank) so an older 7-column
-    worksheet gains `provenance` + the human columns transparently; unknown columns are
-    preserved in `fieldnames` so a round-trip never drops data.
+    Any `WORKSHEET_COLS` column missing from the header is added blank, so callers can rely on
+    every column being present; any extra columns are preserved in `fieldnames` so a round-trip
+    never drops data.
     """
     text = Path(path).read_text(encoding="utf-8")
     reader = csv.DictReader(text.splitlines())
@@ -296,7 +296,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     sc.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
 
+    rt = sub.add_parser("rate", help="interactively fill the human columns of a worksheet")
+    rt.add_argument("--worksheet", required=True, type=Path, help="pre-filled calibration CSV")
+    rt.add_argument("--start", type=int, default=None, help="begin at this 1-based item")
+    rt.add_argument(
+        "--show-judge",
+        action="store_true",
+        help="reveal judge_rating (post-hoc only; anchors the rater -- off by default)",
+    )
+    rt.add_argument(
+        "--clear",
+        action="store_true",
+        help="wipe ALL human columns first and start fresh (confirmation-gated)",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "rate":
+        from llb.judge.rate import run_session
+
+        run_session(
+            args.worksheet,
+            start=args.start,
+            show_judge=args.show_judge,
+            clear=args.clear,
+        )
+        return 0
 
     if args.cmd == "worksheet":
         from llb.goldset.schema import load_goldset

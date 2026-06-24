@@ -1,0 +1,214 @@
+# Judge-calibration tooling -- how to use it
+
+This is the operator manual for the three `calibration-*` commands that turn the M3.8 judge
+gate into a reproducible workflow. The *why* (the gate, the bias it guards against, the papers)
+lives in the human-in-the-loop manual's
+[Judge calibration](human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings)
+section; this page is the *how*.
+
+Calibration answers one question: **does the local judge rank Ukrainian answers the same way a
+human does?** You produce two columns over the same answers -- the judge's `judge_rating` and
+your `human_rating` -- and measure their Spearman rank correlation. `rho >= 0.6` admits the
+judge into the ranking blend; below it the judge stays a demoted diagnostic and objective
+correctness ranks alone. The decision travels in the run manifest.
+
+## The three commands
+
+| Command | What it does | Needs |
+| --- | --- | --- |
+| `make calibration-run` | Runs a candidate over the `calibration` split and writes a **pre-filled worksheet** (`model_answer` + ungated `judge_rating`). | candidate + judge endpoints |
+| `make calibration-rate` | **Interactive rater**: walk the worksheet item by item and fill the human columns. | nothing (offline; CSV only) |
+| `make calibration-score` | Computes `rho` + bootstrap CI + the mechanical trust decision. | nothing (offline; CSV only) |
+
+Only `calibration-run` needs a GPU/endpoint. Rating and scoring are pure CSV operations -- you
+can rate on a laptop, on a plane, in several sittings.
+
+## The worksheet
+
+The worksheet is a single CSV at `CAL_WS` (default
+`.data/llb/calibration_worksheet.csv`). It **is** the session state -- every interactive edit
+rewrites the whole file atomically, so resume and crash-safety are free. Columns:
+
+| Column | Filled by | Meaning |
+| --- | --- | --- |
+| `item_id`, `split` | `calibration-run` | the gold item this row scores |
+| `provenance` | `calibration-run` | the item's source (`public-reused`, `human-authored`, `frontier-drafted`, ...); lets you see, per card, whether you are rating reused vs AI-drafted data |
+| `question`, `reference_answer` | `calibration-run` | the inputs you rate against |
+| `model_answer` | `calibration-run` | the candidate's answer (what you are rating) |
+| `human_answer` | **you** (`a` command) | your own reference answer for the item |
+| `human_rating` | **you** (a number) | your 1-5 rating of `model_answer` |
+| `human_note` | **you** (`note` command) | optional free-text note |
+| `human_status` | the rater | `pending` / `rated` (a refinement; resume keys on an empty `human_rating`) |
+| `judge_rating` | `calibration-run` | the judge's [0,1] score -- **hidden in the rater by default** |
+
+---
+
+## Case 1: the canonical committed goldset (default)
+
+`samples/goldsets/ua_squad_postedited_v1` ships with the repo and is what `GOLDSET` points at by
+default. Its `calibration` split is 86 `verified=true` post-edited SQuAD-uk items
+(`provenance=public-reused`) -- the canonical set the gate is calibrated on out of the box. You
+do not need to build anything; just run the three steps.
+
+### 1. Stand up a judge endpoint and pre-fill the worksheet
+
+On a 16 GB box a 12B judge usually cannot co-reside with a vLLM candidate; use GGUF/CPU offload,
+a smaller test judge, or another local host (see the
+[local judge guide](judge-experiments.md)). Then:
+
+```
+make calibration-run \
+    MODEL=llama3.2:3b BACKEND=ollama \
+    JUDGE_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
+    JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+```
+
+This runs the candidate over the 86 calibration items and writes `CAL_WS` with `model_answer`
+and an **ungated** `judge_rating` (the gate is irrelevant here -- calibration measures
+agreement, not trust). If the judge endpoint is unreachable, `judge_rating` is left blank and a
+warning is logged; fix the endpoint and re-run before rating.
+
+### 2. Rate independently with the interactive rater
+
+```
+make calibration-rate
+```
+
+This opens the rater on `CAL_WS` and resumes at the first unrated item. The judge's rating is
+**hidden by default**: if you see it first you will unconsciously copy it, and the correlation
+would then measure whether you echoed the judge instead of whether the judge matches an
+*independent* human -- which is the whole point of the exercise. So rate before you peek. For each
+item: read the question, reference, and the candidate's `model_answer`; author your own answer
+(`a`); then give a 1-5 rating.
+
+#### Rater commands
+
+| Key | Action |
+| --- | --- |
+| `1`-`5` | set the rating and advance to the next item |
+| `a` | author/edit `human_answer` (prompts for one line; empty clears it) |
+| `note` | edit `human_note` (prompts for one line; empty clears it) |
+| `n` / Enter | next item (no change) |
+| `p` / `b` | previous item (go back to change an answer) |
+| `j <N>` | jump to item N (1-based) |
+| `u` | jump to the next unrated item |
+| `c` | clear this item's rating |
+| `?` / `h` | help + the rating anchors |
+| `q` | save and quit |
+
+Rating anchors (1-5 Likert; Spearman is rank-based, so this maps cleanly onto the judge's
+[0,1] scale): **1** = wrong / unfaithful, **2** = mostly wrong, **3** = partially correct,
+**4** = mostly correct, **5** = fully correct + faithful.
+
+How to rate well (from the manual, condensed): span the full range; **deliberately include
+fluent-but-wrong answers** (the failure mode the judge is most likely to miss); rate against the
+reference, not your prior knowledge; apply a consistent rubric.
+
+Useful options:
+
+```
+make calibration-rate START=20      # begin at item 20
+make calibration-rate SHOW_JUDGE=1  # reveal judge_rating (POST-HOC review only -- it anchors)
+make calibration-rate CLEAR=1       # wipe all human columns and start fresh (confirmation-gated)
+```
+
+Ctrl-C, EOF, and `q` all save and quit; the last edit is already on disk (write-through), so you
+never lose work. Re-running `make calibration-rate` continues where you left off.
+
+> **Re-running `calibration-run` is safe.** It MERGES your existing human columns into the
+> freshly pre-filled worksheet by `item_id` -- your ratings survive a re-run with the same
+> deterministic candidate. If a regenerated `model_answer` actually CHANGED (you pointed it at a
+> different candidate), the stale rating for that row is cleared with a warning (it no longer
+> applies to the shown answer); your authored `human_answer` is kept either way.
+
+### 3. Score it
+
+```
+make calibration-score
+```
+
+(`RATINGS` defaults to `CAL_WS`.) This prints `rho`, the bootstrap CI, and the mechanical
+decision: `rho >= 0.6` admits the judge, otherwise it stays demoted. A small local judge may not
+clear the gate for Ukrainian, and a 12B is borderline -- a demotion is the gate working as
+designed, not a bug.
+
+---
+
+## Case 2: a new goldset you built
+
+To calibrate against your own set instead of the committed fixture, point `GOLDSET` at a JSONL
+that has a `calibration` split with `verified=true` items. (`run-eval` scores **only**
+`verified=true` items -- an unverified set produces zero calibration rows.) See
+[goldset-from-scratch](goldset-from-scratch.md) for building and splitting one.
+
+```
+make calibration-run GOLDSET=path/to/your/goldset.jsonl \
+    MODEL=<cand> BACKEND=<be> JUDGE_MODEL=<judge> JUDGE_BASE_URL=<url>
+make calibration-rate
+make calibration-score
+```
+
+The rater and the scorer are identical to Case 1 -- only the source of the items changes. The
+`provenance` column on each card tells you what kind of item you are rating (e.g.
+`human-authored` vs `public-reused`), which is worth watching when a set mixes sources.
+
+---
+
+## Case 3: a draft generated from a text corpus
+
+A draft produced by the M4.4 pipeline (`prepare-goldset-draft` over a corpus) lands
+`verified=false`, because its reference answers are AI-drafted and not yet human-checked. Rating
+a candidate against an **unverified** reference would inject that noise straight into the
+calibration, so the draft cannot be calibrated as-is -- `run-eval` will refuse it (no verified
+items). Promote a calibration subset to verified first, exactly as for any scored data:
+
+1. **Draft from the corpus** (M4.4):
+
+   ```
+   make ingest-uk-squad GOLDSET_MODE=draft CORPUS=path/to/corpus
+   # writes a bundle under $DATA_DIR/prepare-goldset/<ts>/ (goldset.jsonl + corpus/)
+   ```
+
+2. **Second-frontier cross-check** (a different model re-confirms grounding/support):
+
+   ```
+   llb cross-check-goldset --goldset <bundle>/goldset.jsonl \
+       --corpus <bundle>/corpus --model <second-frontier-id>
+   ```
+
+3. **Human sample-verify (MH.5)** -- structural validate, draw a stratified sample over a
+   calibration subset, check each item, then flip accepted items to `verified=true` through the
+   **ledger** (never hand-edit the boolean). Full procedure:
+   [Eval-data verification](human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data).
+
+   ```
+   make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus
+   python -m llb.prep.ingest_squad ... --verified-goldset <accepted-ledger>
+   ```
+
+4. **Calibrate against the verified ledger** -- now it has `verified=true` calibration items, so
+   it behaves like Case 2:
+
+   ```
+   make calibration-run GOLDSET=<verified-ledger>.jsonl MODEL=... JUDGE_MODEL=... JUDGE_BASE_URL=...
+   make calibration-rate
+   make calibration-score
+   ```
+
+> **Quick judge sanity on an unverified draft is intentionally NOT supported here** (it would
+> need the worksheet to bypass the `verified` filter, and a headline calibration must never run
+> on unverified references). For a fast "is the judge wired and sane?" check that does not touch
+> the gate, use the recorded fixed cases instead: `make judge-experiment` (see
+> [judge-experiments](judge-experiments.md)).
+
+---
+
+## In this repo
+
+- `src/llb/judge/calibration.py` -- stats (Spearman + bootstrap CI + trust decision) and the
+  worksheet I/O (schema, atomic load/save, merge-on-regenerate); the `worksheet` / `score` /
+  `rate` subcommands.
+- `src/llb/judge/rate.py` -- the interactive rater (`run_session` + the pure
+  `parse_command` / `format_card` / `first_unrated_index` pieces).
+- `tests/test_calibration.py`, `tests/test_rate.py` -- the stats, the worksheet round-trip +
+  merge, and the scripted session loop (no model/endpoint/GPU needed).

@@ -254,36 +254,51 @@ All langchain use is lazy; `fixed` / `sentence` / `markdown` work without `[rag]
 
 On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 breadcrumbs).
 
-### Judge calibration (M0.5 stats + M3.8 close-out scaffolding) — `llb.judge.calibration`
-Spearman rho (no scipy), bootstrap CI, trust decision (`rho >= 0.6` else demote). Two
-worksheet emitters: a blank one, and a pre-filled one driven from a run. The pre-filled
-worksheet fills `model_answer` and (when a judge is configured) the `judge_rating` column,
-running the judge **ungated** -- calibration measures whether the judge agrees with humans, so
-the gate is irrelevant here; the human only adds `human_rating`. When the judge backend is
-unavailable the column is left blank and the run logs a warning rather than failing.
+### Judge calibration (M0.5 stats + M3.8 tooling) — `llb.judge.calibration` + `llb.judge.rate`
+Spearman rho (no scipy), bootstrap CI, and the trust decision (`rho >= 0.6` else demote). The
+worksheet is a single CSV (`CAL_WS`) that is the session's only state -- every edit rewrites the
+whole file atomically (`fsutil.atomic_write_text`), so resume and crash-safety are free with no
+separate journal. Its columns are `item_id, split, provenance, question, reference_answer,
+model_answer, human_answer, human_rating, human_note, human_status, judge_rating`: `provenance` is
+copied from the `GoldItem` so a card shows the item's source; the human authors both `human_answer`
+and `human_rating` (`human_status` is a pending/rated refinement); `judge_rating` is the judge's
+[0,1] score.
 
-The three Make targets drive the loop over the verified committed gold set
-(`GOLDSET` defaults to `samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items
-are `verified: true`, so M3.9 is already satisfied for it; no re-review needed):
+Two worksheet emitters: a blank one (`calibration-worksheet`) and a pre-filled one driven from a run
+(`run-eval --worksheet`, the `calibration-run` target). The pre-filled path fills `model_answer` and
+(when a judge is configured) `judge_rating`, running the judge **ungated** -- calibration measures
+whether the judge agrees with humans, so the `rho >= 0.6` threshold is irrelevant at this step; the
+human columns are left blank. When the judge backend is unavailable that column is left blank and
+the run logs a warning rather than failing. Re-running the pre-fill MERGES existing human columns by
+`item_id` (never clobbers them); a row whose regenerated `model_answer` changed has its now-stale
+`human_rating` cleared with a warning, while the human's own `human_answer` is kept.
 
-    make calibration-worksheet # blank worksheet (86 calibration rows)
-    make calibration-run JUDGE_MODEL=<served-model-id> \
-        JUDGE_BASE_URL=http://127.0.0.1:8000/v1 # answers + judge_rating ->
-        CAL_WS
-    # human fills the human_rating column in CAL_WS, then:
-    make calibration-score RATINGS=<filled.csv> # rho + bootstrap CI + trust
-    decision
+`calibration-rate` (`llb.judge.rate`; also `python -m llb.judge.calibration rate`) is the
+interactive rater -- a terminal session that walks the worksheet item by item and fills the human
+columns in place. Interactive I/O lives here, OUT of the pure-stats module, and the session loop is
+driven by an injectable input iterator + output sink, so it is unit-tested with no model / endpoint
+/ GPU. `judge_rating` is HIDDEN by default (an independence control: seeing it first anchors the
+rater) and `--show-judge` reveals it for post-hoc review only. Commands: `1`-`5` rate + advance,
+`a` author `human_answer`, `note` edit `human_note`, `n`/Enter next, `p`/`b` previous, `j <N>` jump,
+`u` next unrated, `c` clear the rating, `?`/`h` help, `q` save + quit. With no `--start` it resumes
+at the first unrated item; `--clear` wipes all human columns (confirmation-gated); Ctrl-C and EOF
+are caught and treated as save + quit.
 
-Equivalent direct CLI:
+The Make targets drive the loop over the verified committed gold set (`GOLDSET` defaults to
+`samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items are `verified: true`, so M3.9
+is already satisfied for it; no re-review needed):
 
-    llb run-eval --split calibration --worksheet ws.csv --judge-model <id> \
-        --judge-base-url http://127.0.0.1:8000/v1 # pre-fill answers + judge
-    python -m llb.judge.calibration score --ratings ws.csv # rho + CI +
-    decision
+    make calibration-run JUDGE_MODEL=<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+    make calibration-rate    # interactive: fill the human columns (judge_rating hidden)
+    make calibration-score RATINGS=<filled.csv>    # rho + bootstrap CI + trust decision
 
-What still gates close-out is collecting the independent human `human_rating` column. The
-maintained DeepEval metric engine, Ukrainian prompts, local endpoint adapter, targets, ungated
-judge run, and calibration scoring are implemented and tested.
+(`make calibration-worksheet` emits a blank worksheet when you want the rows without a run.) The
+operator walkthrough -- including a new goldset and a text-corpus draft -- is the
+[calibration-tooling guide](../guides/calibration-tooling.md).
+
+What still gates close-out is collecting the independent human `human_rating` column (Milestone H in
+the forward plan). The stats, the worksheet I/O, the interactive rater, and the scoring are
+implemented and tested (`tests/test_calibration.py` + `tests/test_rate.py`).
 
 #### Judge model (OQ2 decided) + bias disclosure
 

@@ -37,6 +37,9 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Data prep](guides/data-prep.md) -- gold set, ingestion, chunking, calibration commands.
 - [Local judge experiments](guides/judge-experiments.md) -- DeepEval, Ukrainian prompts,
   local endpoints, smoke artifacts, and calibration.
+- [Calibration tooling](guides/calibration-tooling.md) -- operator manual for
+  `calibration-run` / `calibration-rate` / `calibration-score`, covering the committed goldset,
+  a new goldset, and a text-corpus draft.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) -- Milestone 1: build-index -> run-eval.
