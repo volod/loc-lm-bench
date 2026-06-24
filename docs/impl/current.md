@@ -40,7 +40,7 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-362 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+The full pytest suite passes; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
@@ -54,7 +54,7 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
     make venv # .venv (py3.11) + package + all extras + .env (idempotent;
     RECREATE_VENV=1 to
     rebuild)
-    make test       # pytest (362 tests)
+    make test       # pytest (full suite)
     make format     # apply canonical Ruff formatting to src/ and tests/
     make ci         # format check + lint + mypy + tests
     make demo-eval # idempotent end-to-end: venv -> gold set -> index ->
@@ -80,8 +80,8 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
 ## Repo layout (current)
 
     pyproject.toml # package "llb": deps + extras, pytest/ruff config
-    Makefile # venv, test, gen-rag-items, validate-goldset,
-# ingest-squad, ingest-uk-squad, build-rag-store, calibration-worksheet
+    Makefile # venv, test, ci, build-index, validate-retrieval, run-eval,
+      # prep-models, calibration-{run,rate,score}, judge-experiment, ingest-uk-squad, ...
     .env.example                   # DATA_DIR + frontier-API key placeholders
     samples/                       # COMMITTED DATA (kept separate from code)
       rag_items_uk.json            #   sample RAG spec: source docs + item defs
@@ -102,7 +102,11 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       config.py # RunConfig (Pydantic) -- the canonical run config
       contracts.py                 # shared TypedDict boundary contracts
       paths.py # project root, .env, and DATA_DIR path resolution
-      main.py # Typer CLI: build-index, validate-retrieval, run-eval
+      main.py # thin Typer entry point -> llb.cli.app
+      cli/ # Typer app root (app.py) + per-area command modules:
+      # eval, models, prep, rag, bench, inference, ui, helpers
+      env.py # canonical env-var names (single source of truth)
+      fsutil.py # atomic_write_text -- safe whole-file rewrites (temp + os.replace)
       runtime.py # shared CLI runtime: graceful Ctrl-C (exit 130) + crash
       logging
       goldset/schema.py # GoldItem + SourceSpan (Pydantic), load/dump
@@ -146,11 +150,22 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       + endpoint)
       board/{data,app}.py # M3.7 thin Streamlit leaderboard over the run
       bundles
-    tests/                         # 362 tests across the above
+      backends/preflight.py # M4.3 flashinfer JIT-sampler preflight
+      inference/generate.py # batch generation helper (cli inference)
+      eval/{common,map_reduce,multi_hop}.py # M1.4 eval templates (map-reduce / multi-hop)
+      judge/{experiment,rate}.py # M3.8 UA judge smoke + interactive calibration rater
+      bench/{security,tooling,agentic,tool_world,structured,summarization,text_analysis,common}.py
+      # M5 category benchmarks (objective floor + opt-in gated judge)
+      scoring/{security,tooling,structured,reliability,text_analysis}.py # M5 per-category scorers
+      prep/{cross_check,verified_ledger,text_analysis_corpus}.py # 2nd-frontier gate / verified
+      ledger / synthetic planter
+    tests/                         # pytest suite (run via make test / make ci)
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
-`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
-`calibration_worksheet.csv`. Immutable eval artifacts are isolated per invocation under
+`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and generated calibration worksheets
+(`$DATA_DIR/llb/calibration/`). The CANONICAL calibration worksheet, by contrast, is TRACKED under
+the repo-root `calibration/` dir (committed -- survives a clone; see `calibration/README.md`).
+Immutable eval artifacts are isolated per invocation under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/` (`manifest.json`,
 `scores.{parquet,jsonl}`, and optional `vllm/` logs); M4.4 draft bundles under
 `$DATA_DIR/prepare-goldset/<UTC timestamp>/` (`goldset.jsonl`, `corpus/`, `ontology.json`,
@@ -313,7 +328,11 @@ calibration split is easy factual QA with little disagreement to measure -- so t
 The decision is not auto-persisted by `calibration-score`; carry it into a scored run with
 `make run-eval JUDGE_RHO=0.628 JUDGE_MODEL=gemma3:27b JUDGE_BASE_URL=http://localhost:11434/v1`,
 which records `calibration_rho` + `trusted` in that run's manifest and admits the gated judge.
-The stats, the worksheet I/O, the interactive rater, and the scoring are implemented and tested
+
+The committed worksheet IS the canonical calibration: `tests/test_published_calibration.py`
+re-derives rho from it on every run (no model/endpoint/GPU), asserting it still clears the 0.6 gate
+and matches the pinned 0.628 -- so a fresh clone reproduces the calibration decision and CI catches
+any drift. The stats, worksheet I/O, the interactive rater, and the scoring are likewise tested
 (`tests/test_calibration.py` + `tests/test_rate.py`).
 
 #### Judge model (OQ2 decided) + bias disclosure
@@ -389,7 +408,8 @@ run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
                      |            backend_error / retrieval_miss
                      v
                   score: reference answer-correctness (objective)
-                         [judge scorer/gate exists but is not wired here yet]
+                         [+ gated judge: scored into the blend only when JUDGE_RHO >= threshold,
+                          else demoted to a diagnostic and objective ranks]
                      v
                   aggregate -> ranked row (Pareto tie-break: tok/s, then VRAM)
                      v
@@ -404,7 +424,12 @@ unknown keys, validates numeric and cross-field chunking constraints, and revali
 CLI override. `llb.paths` loads the project `.env`, honors `DATA_DIR`, and resolves all
 relative paths from the project root rather than the caller's current directory.
 
-### CLI — `llb` (`llb.main`, Typer)
+### CLI — `llb` (`llb.main` -> `llb.cli`, Typer)
+
+`main.py` is a thin entry point; the Typer app root is `llb.cli.app` and commands live in per-area
+modules under `llb.cli/` (`eval`, `models`, `prep`, `rag`, `bench`, `inference`, `ui`, with shared
+helpers in `helpers.py`). Heavy collaborators are lazy-imported at call time, so the package still
+imports in the base install. Representative commands:
 
     llb prep-models # detect GPU; pull Ollama tags + cache vLLM weights
     llb list-models # which candidates can run here (GPU+RAM, context)
@@ -1328,7 +1353,8 @@ The remaining spec categories, each on the shared `bench.common` substrate:
 
 All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU. The
 full composite weights across the M5 components stay OFF (each category reports its own board + CIs)
-until calibration, per the M5 cross-cutting rule.
+until every component carries a CI, per the M5 cross-cutting rule (the M3.8 judge calibration that
+gates the judged signals is itself done -- see the judge-calibration section above).
 
 **Possible further improvements (M5.4):** summarization's gated-judge faithfulness is opt-in (not
 wired); structured-output schemas are flat (no nested-object / array-item validation, no per-field

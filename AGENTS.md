@@ -26,17 +26,39 @@
 
 ## Documentation
 
-- **Future-work hygiene:** `docs/impl/plan.md` tracks open future work only; delivered
-  behavior lives in `docs/impl/current.md`. After implementing an item from the Ordered
-  Implementation Sequence and relates item description section, before finishing the task:
-  (1) move the important implementation details into `docs/impl/current.md`;
-  (2) update the item with the residual "possible further improvements" the implementation
-  surfaced (the still-open gaps and natural next steps or research-grade improvements), keeping
-  only that open work; and (3) delete the now-implemented description from
-  `docs/impl/plan.md`. The plan.md file should contain only unimplemented items with 
-  well-defined specifications, organized by priority and development sequence, with clearly stated
-  dependencies and AGI- and human-to-do instructions. If an item is fully delivered with no 
-  residual work, remove it entirely. Keep each item's sequence number stable as a workstream identifier.
+`docs/impl/plan.md` is FORWARD-ONLY: it contains ONLY work that is not yet implemented.
+`docs/impl/current.md` is the system of record for everything DELIVERED. Running the cycle below is
+PART OF "done" for any feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an
+optional extra. The user should never have to ask you to make `plan.md` forward-only again.
+
+**The plan/current update cycle (run after every implemented feature, before reporting done):**
+
+1. **Record in current.md.** Add or refresh the delivered behavior in `docs/impl/current.md`: what
+   was built, where it lives (modules / commands / tests), how to run it, and the result if any
+   (numbers, decisions, file locations, dates). Results, "DONE" status, and history belong HERE.
+2. **Delete from plan.md.** Remove the implemented item's description ENTIRELY. Do NOT leave a
+   "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
+   is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
+   residual work remains under it; if fully delivered with no residual, delete the whole item.
+3. **Promote insights to forward TODOs.** Implementation surfaces insights you only get by doing the
+   work -- a weakness in the result, a gap, a sharp edge, a research-grade improvement. Capture each
+   as a NEW forward task written as FUTURE work (what to do + why it helps + rough how), NOT as
+   commentary on what you did; flag it optional if it is. (E.g. "strengthen the borderline judge
+   calibration split -- its CI dips below the gate -- by adding harder + fluent-but-wrong items,
+   then re-run the calibrate loop".)
+4. **Keep only forward-actionable context.** When a remaining task needs a fact about delivered
+   behavior to be implementable, state that fact in ONE line and LINK to `docs/impl/current.md` for
+   the detail -- never restate the delivered description in `plan.md`.
+
+**plan.md content rules:**
+
+- Every line must answer "what remains to be done": well-defined specs, dependencies / blockers, and
+  explicit AGI-vs-human to-do instructions, ordered by priority and development sequence.
+- FORBIDDEN in `plan.md`: "DONE", "delivered", "implemented", an ISO date, "we/I did", check marks,
+  result values, or any past-tense status narrative -- all of that lives in `current.md`.
+- Self-check before finishing: the task diff NET-REMOVES the implemented scope from `plan.md` and
+  ADDS it to `current.md`, and a grep of `plan.md` for `DONE` / `delivered` / `implemented` / an ISO
+  date returns nothing left over from this task.
 
 ## Formatting & Conventions
 

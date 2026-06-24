@@ -17,23 +17,19 @@ Milestone 6 build, and a human-only lane (Milestone H).
 
 ## ⚠ HUMAN PREREQUISITES (irreducibly-human -- no AI substitute)
 
-Three gates need a human and CANNOT be done by GPT/Gemini/Claude. They are human-paced and run in
-PARALLEL with the build, but they block specific outputs (below). All drafting + cross-checking is
-already pipeline code; only the human ground-truth, sample-verify, and sign-off remain.
+Two gates need a human and CANNOT be done by GPT/Gemini/Claude. They are human-paced, run in
+PARALLEL with the build, but block specific outputs (below). All drafting + cross-checking is
+already pipeline code; only the human sample-verify and sign-off remain. (The judge-calibration
+gate is satisfied -- the gated judge is calibrated and enabled per run with `JUDGE_RHO=`; details in
+[`current.md`](current.md).)
 
-**The step-by-step manual for all three is
+**The step-by-step manual for both is
 [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)** -- it
 has the procedure, the "done when", and the essential papers for each. Background learning paths:
 [main](../guides/learning-path.md) ·
 [security](../guides/learning-path-security.md) ·
 [evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
 
-- **M3.8 judge calibration** ("Judge calibration") -- **DONE (2026-06-24):** 86 human ratings
-  scored to rho=0.628 (CI [0.428, 0.772], judge `gemma3:27b`), clearing the 0.6 gate
-  (trusted, though borderline -- the CI dips below 0.6). Pass `JUDGE_RHO=0.628` to `run-eval` to
-  admit the gated judge into a scored run (the decision is recorded in that run's manifest); until
-  then objective metrics rank alone. Gates the same judged headlines (RAG board + M5 unsafe-content
-  quality, summarization faithfulness, agentic trajectory, free-form text/chat analysis).
 - **MH.2 sign-offs + corpus facts** ("Schema and ontology sign-off"): approve the M6 ontology
   schema + M6 scope; confirm the OQ4 corpus facts (do text-analysis reference answers exist? real
   vs synthetic). Blocks Milestone 6 (ontology).
@@ -43,36 +39,6 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 
 What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
 cross-check, and the optional non-Gemma cross-check judge.
-
-### M3.8 -- judge calibration (DONE 2026-06-24; recipe retained to re-calibrate)
-
-**Result:** rho=0.628 over 86 human ratings (CI [0.428, 0.772], n=86, judge `gemma3:27b`) ->
-clears the 0.6 gate, `trusted=True` (borderline: the CI lower bound is below 0.6, and the ratings
-skew high -- 68 of 86 are 5s on the easy SQuAD-uk split -- so the pass is statistically weak).
-Carry it into scored runs with `make run-eval JUDGE_RHO=0.628 JUDGE_MODEL=gemma3:27b
-JUDGE_BASE_URL=http://localhost:11434/v1`; the rho + trust decision are then recorded in the run
-manifest. To FIRM IT UP (optional), strengthen the calibration split with harder/ambiguous items +
-more fluent-but-wrong cases and repeat steps 2-4 below.
-
-The tooling (stats, the `rho >= 0.6` trust decision, the worksheet pre-fill, the interactive
-`calibration-rate` rater, and scoring) is built + tested -- see [`current.md`](current.md) for the
-implementation. Operator walkthrough:
-[calibration-tooling manual](../guides/calibration-tooling.md). Procedure + rules:
-[manual "Judge
-calibration"](../guides/human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings).
-1. Stand up a judge endpoint (12B judge can't co-reside with a vLLM candidate on 16 GB -- use
-   GGUF/CPU offload, a smaller test judge, or another host). See
-   [judge-experiments guide](../guides/judge-experiments.md).
-2. `make calibration-run` (defaults: Ollama `gemma3:27b` judge + CPU embedder) -- pre-fills
-   `model_answer` + ungated `judge_rating`. For a vLLM judge:
-   `make calibration-run JUDGE_MODEL=hosted_vllm/<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1`.
-3. Rate INDEPENDENTLY via `make calibration-rate` (the interactive rater; `judge_rating` hidden by
-   default -- full command reference in the calibration-tooling manual): author your own
-   `human_answer` and set `human_rating`, spanning the full range and deliberately including
-   fluent-but-wrong answers.
-4. `make calibration-score` -> rho + bootstrap CI + the mechanical decision (`RATINGS` defaults to
-   the worksheet). `rho >= 0.6` admits the gated judge; else it stays demoted. Carry the decision
-   into scored runs with `make run-eval JUDGE_RHO=<rho>`, which records it in the run manifest.
 
 ### MH.2 -- remaining sign-offs (TODO, step by step)
 
@@ -101,6 +67,15 @@ verification"](../guides/human-in-the-loop-evaluation.md#eval-data-verification-
 6. Flip accepted items to `verified=true` THROUGH THE LEDGER (never hand-edit the boolean):
    `python -m llb.prep.ingest_squad ... --verified-goldset <accepted-ledger>`.
 
+### (optional) Strengthen the judge calibration
+
+The committed calibration is a borderline pass (its 95% CI dips below the 0.6 gate; see
+[`current.md`](current.md)) because the SQuAD-uk calibration split is easy factual QA with little
+human/judge disagreement to measure. To make the gate robust: add harder / ambiguous items and more
+fluent-but-wrong candidate answers to the `calibration` split, then repeat the loop
+(`make calibration-run` -> `calibration-rate` -> `calibration-score`) and re-commit the worksheet.
+Optional -- the current judge is already mechanically trusted; objective scores rank regardless.
+
 ---
 
 ## Ordered Implementation Sequence
@@ -118,16 +93,15 @@ identifiers (AGENTS.md); a workstream appears only while it has open work.
       broaden the task set.
    4. **M5.4** Remaining-taxonomy residuals -- the gated-judge wiring (text-analysis judged
       sub-tasks + `long_doc`, summarization faithfulness), structured nested/array validation, the
-      chat-period chat-log planter; the composite stays off until calibrated.
+      chat-period chat-log planter; the composite stays off until every component carries a CI.
    5. **M5.5** Platform & matrix expansion -- optional; build last (needs a committed consumer).
    6. **M5.6** Host-dependent run-path hardening + the remaining data-prep items (spaCy adapter,
       long-doc chunking, richer ontology confidence); rides the first real-host sweep.
 2. **Milestone 6** (after M5) -- GraphRAG (Kuzu). ⚠ needs MH.2 (M6 ontology + scope sign-off).
-3. **Milestone H** (human-paced, parallel) -- M3.8 DONE; MH.2, MH.5 remain. See the prerequisites
-   block above.
+3. **Milestone H** (human-paced, parallel) -- MH.2, MH.5. See the prerequisites block above.
 
 Real-model scoring of any `verified=true` item still waits on MH.5 (the human gate); the objective
-category boards already do not depend on the M3.8 judge calibration.
+category boards do not depend on the gated judge.
 
 ---
 
@@ -137,16 +111,17 @@ The category build is delivered in [`current.md`](current.md). These constraints
 remaining M5 work (residuals below + the M5.5 expansion):
 - **New Tier per category, never cross-ranked.** A new category stamps its own `ModelResult.tier`;
   the `aggregate` guard refuses a board mixing distinct tiers.
-- **Objective first, gated judge second.** The gated judge (M3.8) enters only for residual
-  free-form quality and only when trusted; objective recovery is the headline meanwhile.
+- **Objective first, gated judge second.** The gated judge enters only for residual free-form
+  quality and only when trusted -- enable it per run with `JUDGE_RHO=` (calibration in
+  [`current.md`](current.md)); objective recovery is the headline meanwhile.
 - **Verified-data gate.** Every gold/eval item is AI-drafted + frontier-cross-checked in-pipeline,
   then ⚠ human sample-verified (MH.5) before `verified=true` scores models.
 - **Same isolation contract.** All real runs go through `isolate_cell` (reuse
   `llb.bench.common.drive_with_backend`).
 - **Record backend capability, don't assume it.** Tool-calling / logprob support varies by backend;
   record per-candidate and never cross-rank capable vs not.
-- **Composite stays off until calibrated.** The spec default weights are recorded but NOT a headline
-  until every component carries a CI; until then each category reports its own Pareto + CIs.
+- **Composite stays off until every component carries a CI.** The spec default weights are recorded
+  but NOT a headline until then; until then each category reports its own Pareto + CIs.
 
 ### M5.1 Security / robustness -- residuals
 - **Sourcing breadth:** wire the public-set adapters (JailbreakBench / HarmBench / AdvBench,
@@ -183,7 +158,7 @@ remaining M5 work (residuals below + the M5.5 expansion):
   template; use a `contradiction`'s paired-span `attrs`; load the per-tier text-analysis runs into
   the Streamlit board.
 - **composite** -- the full composite weights stay OFF (each category reports its own board + CIs)
-  until calibration; activate only once every component is calibrated. MH.5 verify before headline.
+  until every component carries a CI. MH.5 verify before headline.
 
 ### M5.5 Platform and matrix expansion (deferred within M5)
 - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant metadata
@@ -233,7 +208,8 @@ Tasks:
 3. A graph-retrieval layer -- entity-link the question, expand k-hops, serialize the subgraph as
    context PRESERVING source spans so the M1.3 span metric still applies.
 4. Record the retrieval backend in the manifest so graph-vs-FAISS runs are comparable.
-5. Reuse the eval graph, scoring, isolation, and board unchanged.
+5. Reuse the eval graph, scoring (incl. the gated judge for RAG answer quality, enabled per run with
+   `JUDGE_RHO=`), isolation, and board unchanged.
 
 **Acceptance:** a corpus builds a Kuzu graph from M4.4 extraction; graph retrieval returns
 offset-bearing context that scores on the existing span metric; runs are reproducible +
@@ -258,9 +234,8 @@ the official `mcp` Python SDK (M5.2), BFCL cases (M5.2), and JailbreakBench / Ha
   CI-bearing from fake endpoints under their own Tiers -- see `current.md`.)
 - **M6:** a corpus builds a Kuzu graph from M4.4 extraction and graph retrieval scores on the
   existing source-span metric, FAISS unchanged.
-- **Milestone H (⚠ human):** M3.8 DONE -- produced rho=0.628/CI over 86 HUMAN ratings (`gemma3:27b`
-  judge, borderline trust). Remaining: the M6 ontology signed off (MH.2); a human sample-verify
-  (MH.5) accepts the AI-drafted, frontier-cross-checked data before it scores models. See
+- **Milestone H (⚠ human):** the M6 ontology signed off (MH.2); a human sample-verify (MH.5)
+  accepts the AI-drafted, frontier-cross-checked data before it scores models. See
   [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
@@ -272,4 +247,4 @@ the official `mcp` Python SDK (M5.2), BFCL cases (M5.2), and JailbreakBench / Ha
 - **M5.6 residuals:** the host-dependent run-path items attach to whichever lane first sweeps the
   16 GB host; the remaining data-prep items (spaCy adapter, long-doc chunking, ontology confidence).
 - **graph:** Milestone 6 is its own lane after M5, reusing M4.4 extraction.
-- **human-gated:** Milestone H (M3.8, MH.2, MH.5) runs on its own decision-paced lane.
+- **human-gated:** Milestone H (MH.2, MH.5) runs on its own decision-paced lane.
