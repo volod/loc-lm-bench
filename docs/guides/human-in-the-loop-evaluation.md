@@ -5,8 +5,8 @@ do for you**, with the essential papers, manuals, and a how-to-understand explan
 
 These are not project bookkeeping -- they are the three places where *human ground truth* is the
 whole point of the measurement. The design rationale is in the [design spec](../design/spec.md),
-what already exists in code is in the [current state](../implementation/current.md), and the
-sequenced roadmap is in the [forward plan](../implementation/plan.md). This manual turns those into
+what already exists in code is in the [current state](../impl/current.md), and the
+sequenced roadmap is in the [forward plan](../impl/plan.md). This manual turns those into
 runnable procedures.
 
 ## Why a human is irreducible here (read this first)
@@ -65,7 +65,7 @@ ranks alone. The decision travels in the run manifest.
 - **The bias you are guarding against.** The judge is a local Gemma-family model and much of the
   candidate pool is also Gemma-family, so the judge may self-prefer Gemma answers. Calibration is
   one of four mitigations (gate + objective weight + disclosure + an optional non-Gemma cross-check
-  judge). Read the bias disclosure in [`current.md`](../implementation/current.md) before you rate.
+  judge). Read the bias disclosure in [`current.md`](../impl/current.md) before you rate.
 
 ### Step-by-step procedure
 The statistics, the gate, the worksheet pre-fill, and the scoring are already implemented and
@@ -75,7 +75,7 @@ which needs a running judge endpoint.
 1. **Stand up the judge endpoint.** On a 16 GB box a 12B judge usually cannot co-reside with a vLLM
    candidate; use GGUF/CPU offload, a smaller test judge, or another local host while generating
    the worksheet. See the [local judge guide](judge-experiments.md) and the judge tier table in
-   [`current.md`](../implementation/current.md).
+   [`current.md`](../impl/current.md).
 
 2. **Pre-fill the worksheet** (fills `model_answer` and an UNGATED `judge_rating`; leaves
    `human_rating` blank). The judge runs ungated here on purpose -- calibration measures agreement,
@@ -328,6 +328,6 @@ to accept a dataset":
       design).
 
 The settled decisions behind every item above live in the [design spec](../design/spec.md) and the
-"Resolved questions" section of [`current.md`](../implementation/current.md); the categories these
+"Resolved questions" section of [`current.md`](../impl/current.md); the categories these
 gates protect are in the
 [evaluation-categories learning path](learning-path-evaluation-categories.md).

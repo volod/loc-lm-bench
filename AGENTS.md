@@ -26,14 +26,14 @@
 
 ## Documentation
 
-- **Future-work hygiene:** `docs/implementation/plan.md` tracks open future work only; delivered
-  behavior lives in `docs/implementation/current.md`. After implementing an item from the Ordered
+- **Future-work hygiene:** `docs/impl/plan.md` tracks open future work only; delivered
+  behavior lives in `docs/impl/current.md`. After implementing an item from the Ordered
   Implementation Sequence and relates item description section, before finishing the task:
-  (1) move the important implementation details into `docs/implementation/current.md`;
+  (1) move the important implementation details into `docs/impl/current.md`;
   (2) update the item with the residual "possible further improvements" the implementation
   surfaced (the still-open gaps and natural next steps or research-grade improvements), keeping
   only that open work; and (3) delete the now-implemented description from
-  `docs/implementation/plan.md`. The plan.md file should contain only unimplemented items with 
+  `docs/impl/plan.md`. The plan.md file should contain only unimplemented items with 
   well-defined specifications, organized by priority and development sequence, with clearly stated
   dependencies and AGI- and human-to-do instructions. If an item is fully delivered with no 
   residual work, remove it entirely. Keep each item's sequence number stable as a workstream identifier.

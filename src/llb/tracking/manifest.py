@@ -32,6 +32,7 @@ from llb.contracts import (
     RunPaths,
     TelemetryReport,
 )
+from llb.fsutil import atomic_write_text as _atomic_write_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -154,25 +155,3 @@ def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:
         mirror_run(manifest, out_dir)
     except ImportError:
         _LOG.info("[tracking] mlflow not installed; skipping mirror (canonical record on disk).")
-
-
-def _atomic_write_text(path: Path, content: str) -> None:
-    """Atomically replace ``path`` with UTF-8 text using a sibling temporary file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp:
-            temp.write(content)
-            temp_path = Path(temp.name)
-        temp_path.replace(path)
-    except BaseException:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-        raise

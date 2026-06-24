@@ -4,7 +4,7 @@ Milestone 1 runs the loop on prebuilt Ollama. Milestone 2 adds a **vLLM** launch
 HF weights behind the same OpenAI-compatible interface) plus a real telemetry hook. This is
 the heavy, GPU-host path. Prebuilt packages install through uv; an explicit local-checkout
 mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
-[implementation/current.md](../implementation/current.md).
+[implementation/current.md](../impl/current.md).
 
 ## 1. Install vLLM (once, GPU host)
 

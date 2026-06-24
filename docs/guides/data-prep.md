@@ -2,7 +2,7 @@
 
 Runtime output lands under `$DATA_DIR` (default `.data/`, gitignored). The stable public
 development fixture is committed under `samples/goldsets/`. Module detail is in
-[implementation/current.md](../implementation/current.md).
+[implementation/current.md](../impl/current.md).
 
 ## Gold set
 

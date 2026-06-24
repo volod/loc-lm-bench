@@ -53,10 +53,106 @@ calibration"](../guides/human-in-the-loop-evaluation.md#judge-calibration----val
    [judge-experiments guide](../guides/judge-experiments.md).
 2. `make calibration-run JUDGE_MODEL=<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1` -- pre-fills
    `model_answer` + ungated `judge_rating`.
-3. Fill `human_rating` INDEPENDENTLY (hide `judge_rating` first), spanning the full range and
-   deliberately including fluent-but-wrong answers.
+3. Rate INDEPENDENTLY via `make calibration-rate` (the interactive rater below; `judge_rating`
+   hidden by default) -- author your own `human_answer` and set `human_rating`, spanning the full
+   range and deliberately including fluent-but-wrong answers.
 4. `make calibration-score RATINGS=<filled.csv>` -> rho + bootstrap CI + the mechanical decision.
    `rho >= 0.6` admits the gated judge; else it stays demoted. The decision travels in the manifest.
+
+#### M3.8 calibration tooling -- implementation plan 
+
+Two helpers to make step 2 (artifact) reproducible for any goldset and step 3 (human ratings)
+ergonomic instead of hand-editing a CSV. Naming follows the existing `calibration-*` namespace
+(DECIDED): the artifact step stays `calibration-run` (no `judge-corpus` alias) and the new rater is
+`calibration-rate`.
+
+**Part 1 -- the calibration artifact (ALREADY BUILT; document only).**
+The artifact a human rates is the pre-filled worksheet CSV (`CAL_WS`, columns: `item_id, split,
+question, reference_answer, model_answer, human_rating(blank), judge_rating`). It is produced TODAY
+by `make calibration-run` (= `run-eval --split calibration --worksheet $(CAL_WS) --judge-model ...`),
+which fills `model_answer` (the candidate's answer) + the ungated `judge_rating`. No new generation
+logic or alias is needed (DECIDED: keep `calibration-run`); the only work here is documentation.
+Generating it for the three cases:
+- **committed fixture (default):** `make calibration-run MODEL=<cand> JUDGE_MODEL=<judge>
+  JUDGE_BASE_URL=<url>` -- runs over the 86 verified calibration items of
+  `samples/goldsets/ua_squad_postedited_v1`.
+- **a new goldset:** add `GOLDSET=<path/goldset.jsonl>`; it must have a `calibration` split with
+  `verified=true` items (`run-eval` scores only verified items).
+- **a draft from a text corpus (M4.4 `prepare-goldset-draft`):** the draft is `verified=false`, so
+  first cross-check it (`make cross-check-goldset ...`) and human sample-verify a calibration subset
+  (MH.5) into a verified ledger, then point `GOLDSET=` at that ledger. (A draft's reference answers
+  are unverified, so rating against them would add noise -- calibrate only on verified items.)
+  RESIDUAL to decide at review: whether to also support a "quick judge sanity" worksheet over an
+  UNVERIFIED draft calibration split (clearly marked not-for-headline) -- would need the worksheet
+  pre-fill path to bypass the `verified` filter.
+
+**Part 2 -- `calibration-rate` interactive human rater (NEW; the substantive build).**
+A terminal session that walks the worksheet item-by-item and writes the human columns in place. New
+focused module `llb/judge/rate.py` (interactive I/O kept OUT of the pure-stats `calibration.py`);
+exposed as a third subcommand `python -m llb.judge.calibration rate --worksheet <csv> [opts]` and a
+Makefile target `calibration-rate` (wrapping it with `CAL_WS`). Design:
+- **Data model -- goldset vs worksheet (analysis; DECIDED: no new goldset field).** Two distinctions
+  the rater needs are NOT goldset properties: (1) WHO authored an item is already
+  `GoldItem.provenance` (`human-authored` / `human-verified` vs `frontier-drafted` /
+  `ontology-drafted` / `public-reused` / `sample-generated`) -- no new field; (2) whether an item is
+  RATED-by-human is a property of one *(judge, candidate-answer, item)* calibration run, not of the
+  immutable item, so it lives in the WORKSHEET, never the goldset (putting it on `GoldItem` would
+  couple the reproducible goldset to transient per-judge progress and break across judges/candidates).
+  The human's authored answer is likewise calibration data in the worksheet; promoting a superior
+  human answer into the goldset is a separate MH.5-ledger path (-> provenance `human-authored` /
+  `human-verified`), out of the rater's scope.
+- **Worksheet columns:** the human authors their OWN answer in addition to rating (DECIDED), so
+  `WORKSHEET_COLS` gains `human_answer` (free text) + `human_rating`, an optional `human_note`, and a
+  passthrough `provenance` (copied from the `GoldItem`, so the card shows the item's source and
+  `calibration-score` can stratify rho by provenance -- e.g. human-authored vs AI-drafted). An
+  optional `human_status` (pending / rated / skipped) makes a DELIBERATE skip distinguishable from
+  not-yet-reached (default resume keys on empty `human_rating`, so this is a refinement, not
+  required). The rater ADDS any missing column on load, so existing worksheets upgrade
+  transparently; `emit_worksheet` / `write_filled_worksheet` populate `provenance` + leave the human
+  columns blank. `calibration-score` is unchanged (reads `human_rating` + `judge_rating`).
+- **Durability across regeneration (DECIDED):** re-running `make calibration-run` MUST MERGE existing
+  human columns (`human_answer` / `human_rating` / `human_note` / `human_status`) into the freshly
+  pre-filled worksheet by `item_id`, never clobber them; an item whose regenerated `model_answer`
+  CHANGED (different candidate) has its stale human rating cleared with a warning (the rating no
+  longer applies to the shown answer). So a human's work survives a re-run with the same deterministic
+  candidate, and is correctly invalidated only when the rated answer actually changes.
+- **Item "card" (per item):** progress line `item k/N (rated R, remaining N-R)`, then `item_id`,
+  `question`, `reference_answer`, `model_answer`, and the current `human_answer` / `human_rating` if
+  already set. The `judge_rating` is HIDDEN by default (anchoring control -- the manual requires
+  rating INDEPENDENTLY); a `--show-judge` flag reveals it for post-hoc review only.
+- **Rating scale:** integer Likert `RATING_MIN..RATING_MAX` (CONFIRMED `1..5`, named constants;
+  Spearman is rank-based so the 1-5 human vs [0,1] judge scales are compatible). Anchors printed in
+  the help: 1 = wrong / unfaithful; 2 = mostly wrong; 3 = partially correct; 4 = mostly correct;
+  5 = fully correct + faithful.
+- **Prompt commands:** a number in range = set rating + advance; `a` = author/edit the current
+  item's `human_answer` (single-line text input; empty input clears it); `n`/Enter = next (no
+  change); `p`/`b` = previous (navigate back to change an answer); `j <N>` = jump to item N; `u` =
+  jump to next UNRATED; `c` = clear the current item's `human_rating`; `?`/`h` = help; `q` = save +
+  quit. (An optional `note` command edits `human_note`.)
+- **Persistence (the "write immediately?" question -- investigated):** calibration sets are SMALL
+  by design (committed = 86; a calibration split is always a small fraction), so v1 WRITES THROUGH
+  after every edit -- rewrite the whole CSV atomically (temp file + `os.replace`, reusing the
+  `_atomic_write_text` pattern), preserving all columns/order. The CSV IS the state, so resume and
+  crash-safety are free; no separate journal. (Documented fallback for a hypothetical huge set:
+  debounced / batch-on-quit writes + an append-only edit journal -- NOT v1.)
+- **Resume / default mode:** with no `--start`, begin at the FIRST item whose `human_rating` is
+  empty (so re-running continues where you left off).
+- **Options:** `--worksheet` (default `CAL_WS`); `--start N` (1-based) to begin at a specific item;
+  `--clear` to wipe ALL human columns (`human_rating` + `human_answer` + `human_note` +
+  `human_status`) first (confirmation-gated) and start fresh; `--show-judge` (default off).
+- **KeyboardInterrupt / EOF:** Ctrl-C (and EOF) are caught and treated as save + quit (never data
+  loss; the last edit is already on disk via write-through), printing a resume hint + the
+  `make calibration-score` next step.
+- **Testability (acceptance):** the pure pieces -- `format_card`, `parse_command`,
+  `first_unrated_index`, column-upgrade-on-load, the merge-on-regenerate (preserve human columns by
+  `item_id`; clear only on a changed `model_answer`), and the atomic load/save round-trip -- are
+  unit-tested; the session loop is driven by an INJECTED input iterator + output sink (scripted:
+  author an answer, rate, go back, jump, clear, quit) asserting the resulting CSV + that an injected
+  `KeyboardInterrupt` still saves. No model / endpoint / GPU needed (it operates only on the CSV).
+- **Decisions (confirmed 2026-06-24):** (a) the human BOTH authors `human_answer` AND sets
+  `human_rating` (the `a` command + the numeric rating); (b) the 1-5 scale + anchors above are
+  confirmed; (c) command names are `calibration-run` (artifact, unchanged) + `calibration-rate`
+  (rater) -- no `judge-corpus`/`judge-human` aliases.
 
 ### MH.2 -- remaining sign-offs (TODO, step by step)
 

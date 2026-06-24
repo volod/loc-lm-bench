@@ -7,8 +7,8 @@ desktop GPU (validated on an RTX 4060 Ti 16 GB), so the choice is reproducible a
 
 Status: runnable end to end -- data prep, Ollama + vLLM + llama.cpp serving, telemetry, and a
 ranked board, plus VRAM-contention guarding and an ontology-assisted gold-set drafter
-(Milestones 0-4 delivered). See [what's built today](docs/implementation/current.md) and the
-[forward plan](docs/implementation/plan.md).
+(Milestones 0-4 delivered). See [what's built today](docs/impl/current.md) and the
+[forward plan](docs/impl/plan.md).
 
 ## Features
 
@@ -111,8 +111,8 @@ Start at the [documentation index](docs/README.md). High-level entry points:
 
 | Doc | What it covers |
 |---|---|
-| [What's built today](docs/implementation/current.md) | Delivered milestones + command behavior. |
-| [Forward plan](docs/implementation/plan.md) | Roadmap (M5 -> M6 + human lane; M0-M4 done). |
+| [What's built today](docs/impl/current.md) | Delivered milestones + command behavior. |
+| [Forward plan](docs/impl/plan.md) | Roadmap (M5 -> M6 + human lane; M0-M4 done). |
 | [Design spec](docs/design/spec.md) | Problem, wedge, architecture, recorded decisions. |
 | [Learning path](docs/guides/learning-path.md) | Staged syllabus + curated links for the stack. |
 | [AGENTS.md](AGENTS.md) | Contributor + agent guardrails. |

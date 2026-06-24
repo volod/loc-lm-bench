@@ -505,6 +505,7 @@ class RagDataSpec(TypedDict):
 class WorksheetItem(TypedDict):
     id: str
     split: str
+    provenance: NotRequired[str]
     question: str
     reference_answer: str
 
