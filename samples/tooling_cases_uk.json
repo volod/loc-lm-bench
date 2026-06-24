@@ -1,0 +1,112 @@
+{
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Отримати прогноз погоди для міста.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string", "description": "Назва міста"},
+          "date": {"type": "string", "description": "Дата або відносний день"}
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "convert_currency",
+      "description": "Конвертувати суму з однієї валюти в іншу.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {"type": "number", "description": "Сума"},
+          "from_currency": {"type": "string", "description": "Код валюти-джерела (ISO)"},
+          "to_currency": {"type": "string", "description": "Код цільової валюти (ISO)"}
+        },
+        "required": ["amount", "from_currency", "to_currency"]
+      }
+    },
+    {
+      "name": "search_documents",
+      "description": "Пошук у корпусі документів за запитом.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Пошуковий запит"},
+          "top_k": {"type": "integer", "description": "Скільки результатів повернути"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "calculator",
+      "description": "Обчислити арифметичний вираз.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {"type": "string", "description": "Математичний вираз"}
+        },
+        "required": ["expression"]
+      }
+    },
+    {
+      "name": "create_reminder",
+      "description": "Створити нагадування на певний час.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "description": "Назва нагадування"},
+          "datetime": {"type": "string", "description": "Дата й час у форматі YYYY-MM-DD HH:MM"}
+        },
+        "required": ["title", "datetime"]
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "tc-001",
+      "instruction": "Яка зараз погода у Києві?",
+      "expected_tool": "get_weather",
+      "expected_arguments": {"city": "Київ"}
+    },
+    {
+      "id": "tc-002",
+      "instruction": "Покажи прогноз погоди у Львові на завтра.",
+      "expected_tool": "get_weather",
+      "expected_arguments": {"city": "Львів", "date": "завтра"}
+    },
+    {
+      "id": "tc-003",
+      "instruction": "Сконвертуй 2350 у валюті UAH в USD.",
+      "expected_tool": "convert_currency",
+      "expected_arguments": {"amount": 2350, "from_currency": "UAH", "to_currency": "USD"}
+    },
+    {
+      "id": "tc-004",
+      "instruction": "Знайди в корпусі документи за запитом 'відновлювана енергія'.",
+      "expected_tool": "search_documents",
+      "expected_arguments": {"query": "відновлювана енергія"}
+    },
+    {
+      "id": "tc-005",
+      "instruction": "Порахуй вираз 15 * 24 + 100.",
+      "expected_tool": "calculator",
+      "expected_arguments": {"expression": "15 * 24 + 100"}
+    },
+    {
+      "id": "tc-006",
+      "instruction": "Створи нагадування 'Дзвінок з клієнтом' на 2026-07-01 09:00.",
+      "expected_tool": "create_reminder",
+      "expected_arguments": {"title": "Дзвінок з клієнтом", "datetime": "2026-07-01 09:00"}
+    },
+    {
+      "id": "tc-007",
+      "instruction": "Привіт! Як у тебе справи сьогодні?",
+      "expected_tool": null
+    },
+    {
+      "id": "tc-008",
+      "instruction": "Переклади слово 'дякую' англійською мовою.",
+      "expected_tool": null
+    }
+  ]
+}

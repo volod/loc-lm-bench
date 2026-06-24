@@ -29,22 +29,91 @@ def prepare_synthetic_corpus_cmd(
     topics_file: Path = typer.Option(..., help="text file: one synthetic-doc topic per line"),
     planter: str = typer.Option(..., help="litellm model that PLANTS the labels"),
     judge: str = typer.Option(..., help="the eval judge model (must differ from the planter)"),
-    out_dir: Path = typer.Option(..., help="output dir for docs + planted_labels.jsonl"),
-    n_labels: int = typer.Option(3, min=1, help="planted QA pairs per document"),
+    out_dir: Path = typer.Option(..., help="output dir for docs + planted labels"),
+    n_labels: int = typer.Option(
+        3, min=1, help="planted labels per document (per kind in TA mode)"
+    ),
+    text_analysis: bool = typer.Option(
+        False,
+        "--text-analysis/--qa",
+        help="emit RICHER per-kind text-analysis PlantedLabelRecords (M5.0) instead of QA labels",
+    ),
+    kinds: Optional[str] = typer.Option(
+        None, help="comma-separated text-analysis kinds (default: the objective sub-tasks)"
+    ),
 ) -> None:
-    """Generate synthetic docs with structured planted labels (planter must differ from judge)."""
-    from llb.prep.frontier import prepare_synthetic_corpus
+    """Generate synthetic docs with structured planted labels (planter must differ from judge).
 
+    Default emits QA-style key_fact labels (RAG planted set). `--text-analysis` emits the full
+    per-kind text-analysis taxonomy (key_fact/entity/topic/trend/risk/decision/...) as
+    PlantedLabelRecords for the M5.0 scored text-analysis runner.
+    """
     topics = [t.strip() for t in topics_file.read_text(encoding="utf-8").splitlines() if t.strip()]
     if not topics:
         typer.echo(f"[error] no topics found in {topics_file}", err=True)
         raise typer.Exit(code=2)
+
+    if text_analysis:
+        from llb.prep.text_analysis_corpus import DEFAULT_KINDS, prepare_text_analysis_corpus
+
+        chosen = tuple(k.strip() for k in kinds.split(",") if k.strip()) if kinds else DEFAULT_KINDS
+        try:
+            docs, records = prepare_text_analysis_corpus(
+                topics,
+                planter_model=planter,
+                judge_model=judge,
+                kinds=chosen,
+                n_per_kind=n_labels,
+                out_dir=out_dir,
+            )
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2)
+        typer.echo(
+            f"[prepare-synthetic-corpus] text-analysis: {len(docs)} docs, {len(records)} planted "
+            f"labels across {len(chosen)} kinds (planter={planter} != judge={judge}) -> {out_dir}"
+        )
+        return
+
+    from llb.prep.frontier import prepare_synthetic_corpus
+
     docs, items = prepare_synthetic_corpus(
         topics, planter_model=planter, judge_model=judge, n_labels=n_labels, out_dir=out_dir
     )
     typer.echo(
         f"[prepare-synthetic-corpus] {len(docs)} docs, {len(items)} planted items "
         f"(planter={planter} != judge={judge}) -> {out_dir}"
+    )
+
+
+@app.command("cross-check-goldset")
+def cross_check_goldset_cmd(
+    goldset: Path = typer.Option(..., help="drafted gold set JSONL (verified=false)"),
+    corpus: Path = typer.Option(..., help="source corpus dir for the drafted items"),
+    model: str = typer.Option(..., help="SECOND-frontier verifier (must differ from the drafter)"),
+    out: Optional[Path] = typer.Option(
+        None, help="cross-check report JSON (default beside goldset)"
+    ),
+) -> None:
+    """M5.6 verified-data gate: a second frontier re-confirms grounding/support/answerability."""
+    import json
+
+    from llb.goldset.schema import load_goldset
+    from llb.prep.cross_check import (
+        cross_check_goldset,
+        load_doc_texts,
+        second_frontier_verify,
+    )
+
+    items = load_goldset(goldset)
+    report = cross_check_goldset(items, load_doc_texts(corpus), second_frontier_verify(model))
+    out_path = out or goldset.with_name(f"{goldset.stem}.cross_check.json")
+    out_path.write_text(
+        json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    typer.echo(
+        f"[cross-check] {report.n_passed}/{len(items)} items passed the gate "
+        f"(verified=false until MH.5) -> {out_path}"
     )
 
 

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "st-001",
+    "instruction": "З речення 'Олені 34 роки, вона живе у Львові.' витягни ім'я, вік і місто.",
+    "schema": {
+      "name": {"type": "string", "required": true},
+      "age": {"type": "integer", "required": true},
+      "city": {"type": "string", "required": true}
+    },
+    "expected": {"name": "Олена", "age": 34, "city": "Львів"}
+  },
+  {
+    "id": "st-002",
+    "instruction": "Класифікуй відгук 'Чудовий сервіс, рекомендую!' за тональністю (positive/negative/neutral) та впевненістю від 0 до 1.",
+    "schema": {
+      "sentiment": {"type": "string", "required": true},
+      "confidence": {"type": "number", "required": true}
+    },
+    "expected": {"sentiment": "positive"}
+  },
+  {
+    "id": "st-003",
+    "instruction": "Витягни список товарів і загальну кількість із 'Замовлення: 2 ноутбуки і 3 миші.'",
+    "schema": {
+      "items": {"type": "array", "required": true},
+      "total_count": {"type": "integer", "required": true}
+    },
+    "expected": {"total_count": 5}
+  }
+]

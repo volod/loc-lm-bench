@@ -53,6 +53,60 @@ TAU_FULL = 0.85
 TAU_PARTIAL = 0.70
 PARTIAL_CREDIT = 0.5
 
+# Direction-aware trend credit (M5.0 residual). A `trend` label carries a planted
+# `attrs.direction` (up | down | flat); a candidate that names the right subject but the WRONG
+# direction has made a substantive error, so a detectable direction conflict zeroes the credit
+# (the label stays unrecovered AND the prediction is an unmatched false positive). A prediction
+# whose direction cannot be detected keeps its surface credit (we never penalize what we cannot
+# read), and a matching direction keeps it too.
+DIRECTION_CONFLICT_CREDIT = 0.0
+DIRECTION_UP = "up"
+DIRECTION_DOWN = "down"
+DIRECTION_FLAT = "flat"
+# Casefolded stems scanned as substrings of a normalized prediction (UA + EN). Ordered so the
+# first matching direction wins; stems are deliberately morphology-tolerant prefixes.
+_DIRECTION_STEMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        DIRECTION_UP,
+        (
+            "зрос",
+            "зріс",
+            "виріс",
+            "збільш",
+            "підвищ",
+            "поліпш",
+            "increase",
+            "rose",
+            "grow",
+            "rise",
+            "rising",
+            "higher",
+            "uptrend",
+        ),
+    ),
+    (
+        DIRECTION_DOWN,
+        (
+            "зниж",
+            "зменш",
+            "спад",
+            "погірш",
+            "пад",
+            "впа",
+            "скороч",
+            "decrease",
+            "decline",
+            "fall",
+            "fell",
+            "drop",
+            "lower",
+            "down",
+            "shrink",
+        ),
+    ),
+    (DIRECTION_FLAT, ("стаб", "незмін", "сталий", "flat", "stable", "unchanged", "plateau")),
+)
+
 _PUNCT_STRIP = " \t\r\n.,;:!?\"'`«»“”()[]{}-–—"
 
 
@@ -60,6 +114,16 @@ def normalize_surface(text: str) -> str:
     """Casefold, collapse whitespace, and strip surrounding punctuation -- the canonical form
     used for exact label-ID surface matching (deliberately NOT lemmatization, per MH.2)."""
     return " ".join(text.casefold().split()).strip(_PUNCT_STRIP)
+
+
+def direction_of(text: str) -> str | None:
+    """Infer a trend DIRECTION (up | down | flat) from free text via the UA/EN stem lexicon, or
+    None when no direction word is present. Used only for direction-aware `trend` credit."""
+    low = text.casefold()
+    for direction, stems in _DIRECTION_STEMS:
+        if any(stem in low for stem in stems):
+            return direction
+    return None
 
 
 @dataclass(frozen=True)
@@ -107,9 +171,8 @@ def load_planted_labels(records: list[PlantedLabelRecord]) -> list[PlantedLabel]
 # --- matching + per-sub-task scoring -------------------------------------------------------
 
 
-def _credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> float:
-    """Credit a single prediction earns against one label: 1.0 for an exact/normalized surface
-    match, else cosine-banded credit over the label's surfaces."""
+def _surface_credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> float:
+    """Surface credit: 1.0 for an exact/normalized match, else cosine-banded over the surfaces."""
     norm_pred = normalize_surface(prediction)
     if not norm_pred:
         return 0.0
@@ -121,6 +184,27 @@ def _credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> flo
     if best >= TAU_PARTIAL:
         return PARTIAL_CREDIT
     return 0.0
+
+
+def _direction_penalty(prediction: str, label: PlantedLabel, credit: float) -> float:
+    """Zero a `trend` prediction's surface credit when its detectable direction CONFLICTS with the
+    label's planted `attrs.direction` (a right-subject/wrong-direction answer is substantively
+    wrong). A prediction with no detectable direction, or a matching one, keeps its credit."""
+    if credit <= 0.0 or label.kind != TREND:
+        return credit
+    want = str(label.attrs.get("direction", "")).strip().casefold()
+    if not want:
+        return credit
+    got = direction_of(prediction)
+    if got is not None and got != want:
+        return DIRECTION_CONFLICT_CREDIT
+    return credit
+
+
+def _credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> float:
+    """Credit a single prediction earns against one label: surface credit (exact/normalized ->
+    1.0, else cosine-banded), then direction-aware adjustment for `trend` labels."""
+    return _direction_penalty(prediction, label, _surface_credit(prediction, label, similarity))
 
 
 def score_subtask(

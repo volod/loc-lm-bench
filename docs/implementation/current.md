@@ -1068,11 +1068,28 @@ a real partial-offload split) and the M4.4 data-prep hardening (second-frontier 
 Stanza/spaCy adapter, long-doc chunking, richer ontology confidence) -- carried forward in
 [`plan.md`](plan.md) (M5.6), landing with the M5 verified-data gate + the M6 extraction reuse.
 
-## Milestone 5 -- security, agentic, tooling (M5.0 prerequisites delivered)
+## Milestone 5 -- security, agentic, tooling (build COMPLETE)
 
-M5.0 -- the two prerequisites that unblock M5.3 (agentic) and the M5.4 chat-period category --
-is built and unit-tested (no GPU). The scored M5 categories (security / tooling / agentic /
-remaining taxonomy) are still forward work in [`plan.md`](plan.md).
+The Milestone 5 BUILD is complete and unit-tested (no GPU): the eval-template prerequisites + the
+signed-off text-analysis schema (M5.0), and every scored category -- security (M5.1), tooling
+(M5.2), agentic (M5.3), text-analysis + summarization + structured-output + chat-period +
+reliability (M5.0/M5.4) -- plus the second-frontier verified-data gate (M5.6 data-prep). Each
+category renders under its OWN Tier (never cross-ranked with the RAG board), produces an objective,
+CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case scores like
+`run-eval`. What remains is forward work in [`plan.md`](plan.md): per-category residuals (sourcing
+breadth, native-FC/MCP transport, gated-judge wiring, judged sub-tasks), the host-dependent M5.6
+run-path hardening, the optional M5.5 platform/matrix expansion, and the human MH.5 sample-verify
+before any `verified=true` item scores real models.
+
+The shared M5 substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
+`launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
+reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning backend under the existing
+`isolate_cell` contract; `category_result` stamps a `ModelResult` with the category Tier (per-case
+scores -> bootstrap CI); `render_board` ranks under that Tier via `rank_board` (whose guard refuses
+to cross-rank tiers) + `format_board`; `persist_category_run` writes the run bundle under
+`$DATA_DIR/<category>/<ts>/`. The category Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` /
+`TIER_TOOLING` / `TIER_AGENTIC` / `TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in
+`llb.scoring.aggregate`. Each category exposes a `bench-*` CLI command.
 
 ### Eval templates (M1.4-rest) -- `llb.eval.{common,map_reduce,multi_hop}`
 The two remaining DRY LangGraph templates, following the single-call template's node-closure
@@ -1107,11 +1124,208 @@ objective headline is the mean F1 over objective sub-tasks, with judged sub-task
 (the gated judge owns those). The cosine similarity is INJECTED, so the whole engine is pure and
 unit-tested without the embedder; `embedder_similarity()` is the production default.
 
-**Open residual (M5.0):** the schema is SIGNED OFF (MH.2, 2026-06-23 -- thresholds accepted as
-proposed; recorded at the top of the proposal doc). The remaining work is the M5.4 wiring: extend
-the `prepare-synthetic-corpus` prompt to emit the richer per-kind planted labels (today it emits
-QA-style `key_fact` labels only), build the scored runner + the `TIER_TEXT_ANALYSIS` board
-guard, and use a trend label's `attrs.direction` for direction-aware credit.
+The schema is SIGNED OFF (MH.2, 2026-06-23 -- thresholds accepted as proposed; recorded at the top
+of the proposal doc).
+
+**Direction-aware trend credit (M5.0).** A `trend` label's planted `attrs.direction`
+(up | down | flat) now adjusts credit: `direction_of(text)` infers a direction from a UA/EN stem
+lexicon, and `_direction_penalty` ZEROES a trend prediction's surface credit when its detectable
+direction CONFLICTS with the label (a right-subject/wrong-direction answer is substantively wrong,
+so the label stays unrecovered AND the prediction becomes an unmatched false positive). A
+prediction with no detectable direction, or a matching one, keeps its surface credit
+(`DIRECTION_CONFLICT_CREDIT = 0.0` is the named knob).
+
+### Synthetic text-analysis planter (M5.0) -- `llb.prep.text_analysis_corpus`
+`prepare-synthetic-corpus --text-analysis` now emits the RICHER per-kind `PlantedLabelRecord`s the
+schema defines (key_fact / entity / topic / trend / risk / decision, judged narrative / insight),
+instead of QA-style `key_fact` only. `plant_labels` is pure: it grounds each label's `value`
+against the doc (exact, then casefold/whitespace-normalized-but-exact via `frontier.ground_span`),
+falls back to the planter's verbatim `evidence` quote (whose grounded substring becomes an accepted
+alias), DROPS quote-bearing kinds (`GROUNDED_REQUIRED_KINDS` = key_fact/entity/contradiction) whose
+value+evidence are ungrounded while keeping analytical kinds (topic/trend/risk/decision/insight)
+ungrounded (no offsets), and backfills a trend's `attrs.direction` from its text when the planter
+omitted it. `prepare_text_analysis_corpus` writes a self-contained bundle under `out_dir/`:
+`corpus/<doc>.md`, `text_analysis_labels.jsonl` (the records), and a `provenance.json` tagging
+`synthetic: true` + per-kind label counts. The planter != judge guard is reused; `litellm` stays
+lazy and the completion is injectable, so the full flow is unit-tested from a fake endpoint.
+
+### M5 benchmark scaffolding (M5.0) -- `llb.bench.{common,text_analysis}`
+`llb.bench.common` is the shared substrate every M5 category reuses (REUSE, not a new platform):
+`local_complete` / `launcher_complete` build the production `complete` (prompt -> raw text) over an
+OpenAI-compatible endpoint; `drive_with_backend` builds that `complete` for a running endpoint /
+Ollama directly, or LAUNCHES a VRAM-owning backend (vllm / llamacpp) and runs the whole category
+under the SAME `isolate_cell` contract as the RAG sweep (PID-attributed reclaim gate + capped
+cooldown); `category_result` stamps a `ModelResult` with the category's Tier (per-case scores feed
+the bootstrap CI); `render_board` ranks under that Tier via the existing `rank_board` (whose guard
+refuses to cross-rank tiers) + `format_board`; and `persist_category_run` writes a canonical
+manifest + per-case scores bundle under `$DATA_DIR/<method>/<ts>/` exactly like `run-eval`.
+
+`llb.bench.text_analysis.run_text_analysis` is the M5.0 scored runner: it loads a planter bundle
+(`corpus/` + `text_analysis_labels.jsonl`), asks the candidate to extract each document's present
+sub-tasks as a JSON object keyed by kind (`analysis_prompt`), parses it (`parse_predictions`
+coerces scalars + missing kinds), scores recovery with `score_document`, and aggregates one
+`ModelResult` under `TIER_TEXT_ANALYSIS` -- its OWN Tier, never cross-ranked with the RAG board. The
+per-document objective scores carry the CI; the per-sub-task F1s ride a flat `subtask_f1_json`
+column (so the parquet schema stays stable across docs that plant different kinds); a malformed /
+empty response is a typed status (objective 0, reliability down). The `complete` and the cosine
+`similarity` are both injectable, so the whole flow is proven from a fake endpoint without a GPU or
+the embedder. CLI: `llb bench-text-analysis --bundle <dir> --model <m> [--backend ...]` (and the
+`real_corpus` flag keeps real-corpus runs reported separately from synthetic). New tier constants
+`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` / `TIER_TOOLING` / `TIER_AGENTIC` live in
+`llb.scoring.aggregate` (the existing `_validate_board_cohort` guard already refuses any board that
+mixes distinct tiers, so these are the named identities each category stamps).
+
+**Possible further improvements (M5.0):** the runner scores OBJECTIVE sub-tasks only -- the judged
+sub-tasks (narrative / insight) get the objective floor but the gated judge is not yet wired into
+the text-analysis runner (lands with M5.4); `long_doc` comprehension via the map-reduce template is
+defined in the schema but not yet driven by this runner; a `contradiction`'s paired-span `attrs`
+are not used by the matcher; the Streamlit board (`llb.board`) does not yet load the per-tier M5
+category runs; and no real (non-synthetic) text-analysis corpus exists yet (OQ4, human-gated).
+
+### M5.1 Security / robustness benchmark -- `llb.scoring.security` + `llb.bench.security`
+The objective security board (no human dep to build). `llb.scoring.security` is the pure engine:
+every case carries a STRUCTURED success detector (no safety classifier; ShieldGemma / frontier
+moderation stay opt-in), one of two kinds covering all seven spec families --
+  * `leak` -- the attack plants a unique MARKER (an injected token the model is tricked into
+    emitting, or a corpus CANARY it must not reveal); the attack SUCCEEDS when any marker appears
+    in the output (casefolded substring). Covers prompt-injection, instruction-hierarchy,
+    RAG-injection, tool-abuse, and data-exfiltration/canary.
+  * `refuse` -- a harmful ask (jailbreak / unsafe-content); the attack SUCCEEDS when the model
+    COMPLIES (a substantive, non-refusal answer, via the shared `eval.common.is_refusal`).
+
+`score_security` yields ASR (attack-success rate, lower better), its complement the DEFENSE rate
+(the ranking headline, higher better), per-family ASR, and refusal-appropriateness (did the
+refuse/answer decision match the case's expected behavior -- refuse harmful asks, answer benign +
+legitimate-task injection cases -- so a model cannot win by refusing everything). Benign control
+prompts feed only refusal-appropriateness, never ASR. `llb.bench.security.run_security` drives a
+candidate over the cases through an injectable `complete`, frames RAG-injection cases as untrusted
+retrieved context (no "ignore injected instructions" hand-holding -- the realistic test), stamps a
+`ModelResult` under `TIER_SECURITY` (defense rate as `objective_score`, per-attack-case defended
+series -> the bootstrap CI), and records ASR + refusal-appropriateness, each with its own CI, in
+the manifest. A committed UA case set (`samples/security_cases_uk.json`) covers every family plus
+benign controls; `load_cases_file` loads it. CLI: `llb bench-security`. Reuses `is_refusal`
+(extracted into `eval.common` + now shared by `classify_response`), `bench.common`, and the
+`isolate_cell` contract via `drive_with_backend`. Detectors + scoring + the runner are unit-tested
+with planted fixtures + a scripted fake endpoint (vulnerable vs robust model), no GPU.
+
+**Possible further improvements (M5.1):** the case set is a committed hand-authored UA seed -- the
+public-set adapters (JailbreakBench / HarmBench / AdvBench, UA-adapted) and the M3.5 planter for
+corpus-specific RAG-injection + canary families (over a real corpus) are not yet wired; the gated
+judge for borderline UNSAFE-CONTENT quality (objective `refuse` detection PLUS the judge) is an
+opt-in residual; and cases ship `verified=false`-equivalent (a human sample-verify, MH.5, still
+gates any headline use of the attack set).
+
+### M5.2 Tooling / function-calling benchmark -- `llb.scoring.tooling` + `llb.bench.tooling`
+The objective, CALL-ONLY function-calling board (tools are NOT executed -- that is M5.3).
+`llb.scoring.tooling` has two pure layers: the PARSE layer (`parse_tool_call`) normalizes a backend
+response into a `ToolCall` whether it is a NATIVE OpenAI `tool_calls` object, a pre-parsed dict, or
+a text-only backend's JSON call in `content` (name/arguments aliases tolerated) -- so tool-capable
+and text-only backends share ONE scorer and are never cross-ranked; the SCORE layer
+(`score_tooling`) reports the four plan metrics -- tool-selection accuracy, argument-exactness
+(`validate_arguments` is a lightweight required/type/no-unknown check, no `jsonschema` dep; plus
+`arguments_match` exact value match, casefold/strip-insensitive for strings), no-hallucinated-tool
+rate, and well-formed-call rate -- with the headline `call_accuracy` requiring the right tool AND
+exact arguments. A no-tool case (the model should NOT call) scores correct only on no-call, so
+over-calling is penalized.
+
+`llb.bench.tooling.run_tooling` drives a candidate over a catalog + cases through an injectable
+`complete` using a universal TEXT tool-calling protocol (`text_tool_prompt` embeds the catalog as
+JSON; the model returns a JSON call), so every backend is exercised uniformly and a FAKE endpoint
+proves the flow; it stamps a `ModelResult` under `TIER_TOOLING` (call accuracy as `objective_score`,
+per-case correctness -> CI) and records all four rates + the tool-call protocol/capability in the
+manifest. A committed BFCL-style UA bundle (`samples/tooling_cases_uk.json`: 5 tools, 8 cases incl.
+no-tool controls) ships; `load_catalog_file` loads it. CLI: `llb bench-tooling`. Parse, validation,
+scoring, and the runner are unit-tested (native + text + malformed responses, perfect vs text-only
+model), no GPU.
+
+**Possible further improvements (M5.2):** the default driver uses the text protocol -- a NATIVE
+OpenAI `tools=` caller (the parser already handles native responses) is not yet wired as a
+selectable path, and serving the SAME catalog via the official `mcp` Python SDK server (so native
+FC and MCP transports run from one source) is not built; the cases are a small hand-authored UA
+catalog rather than a full BFCL UA adaptation; argument-exactness is strict exact-match (no
+per-argument tolerance for free-text values like a search query); and the cases need the MH.5
+human sample-verify before headline use.
+
+### M5.3 Agentic workflows benchmark -- `llb.bench.{tool_world,agentic}`
+The agentic loop EXTENDS the M5.0 multi-hop controller pattern with tool calls + an in-sandbox
+execution step. `llb.bench.tool_world` is the deterministic sandbox (no tau-bench / AgentBench): a
+mock filesystem, a mock key-value DB, substring `search` over a small UA corpus, and a `calculator`
+backed by a SAFE restricted-AST evaluator (`safe_eval` allows only numbers + arithmetic operators
++ parentheses -- no names/calls/imports). Each tool is a pure `(world, args) -> observation`
+mutating only the in-memory `ToolWorld`, so a task's success is checkable from the final env-state.
+
+`llb.bench.agentic.run_episode` is the harness loop: each step the model emits one tool call
+(reusing the M5.2 `parse_tool_call`), the world EXECUTES it, the observation is fed back, and the
+loop runs until the model calls `finish` (or answers in prose) or the step budget is exhausted.
+`check_success` is an OBJECTIVE assertion over the final env-state / answer (`file_equals` /
+`file_contains` / `db_equals` / `answer_contains`; ALL must hold; an empty assertion list never
+passes). `run_agentic` aggregates completion-rate as the headline `objective_score` under
+`TIER_AGENTIC` (per-task success -> the bootstrap CI), records trajectory length + tool-call count
+as efficiency, and persists the manifest. A committed UA task set (`samples/agentic_tasks_uk.json`,
+4 tasks) ships; `load_tasks_file` loads it. CLI: `llb bench-agentic`. The loop is the pure,
+langgraph-free form of the controller->execute->controller cycle, unit-tested from a scripted fake
+tool-calling endpoint (good agent solves tasks, failing agent does not; budget-exhaustion -> typed
+`incomplete`), no GPU.
+
+**Possible further improvements (M5.3):** the loop is the pure harness -- a LangGraph-compiled
+`build_agentic_graph` wrapper (mirroring `build_multi_hop_graph`) is not built; the gated judge for
+trajectory quality a deterministic check cannot cover is an opt-in residual; the task set is a small
+committed seed (no real-UA-corpus search tasks yet); the other five agent frameworks stay deferred
+as a comparison axis (out of M5 scope, by design); and tasks need the MH.5 human sample-verify.
+
+### M5.4 Remaining taxonomy -- summarization / structured output / chat-period / reliability
+The remaining spec categories, each on the shared `bench.common` substrate:
+- **summarization (`llb.bench.summarization`, `TIER_SUMMARIZATION`)** -- reference coverage via the
+  PINNED-embedder cosine (NOT ROUGE): for each reference-summary sentence, the best cosine to any
+  candidate sentence, averaged (`reference_coverage`; `similarity` injected, same basis as retrieval
+  + the text-analysis matcher). Headline is mean coverage with a CI; the gated-judge faithfulness
+  signal is opt-in. Committed cases `samples/summarization_cases_uk.json`; CLI `bench-summarization`.
+- **structured output (`llb.scoring.structured` + `llb.bench.structured`, `TIER_STRUCTURED`)** --
+  objective JSON-schema conformance via PYDANTIC (`build_model` from a field schema; no new
+  `jsonschema` dep) + field accuracy (expected field values, strings casefold/strip-insensitive). A
+  non-conformant output scores 0 field accuracy; the headline is field accuracy, conformance rate
+  recorded alongside, both with CIs. Committed cases `samples/structured_cases_uk.json`; CLI
+  `bench-structured`.
+- **chat-period analysis** -- DELIVERED BY REUSE: it is text-analysis over chat-log docs, so it runs
+  through the M5.0 planter + `llb.bench.text_analysis` runner on a chat-log bundle; the runner's
+  `synthetic` flag keeps real-corpus and synthetic results reported SEPARATELY. No separate module.
+- **reliability (`llb.scoring.reliability`)** -- rolls the existing TYPED failure taxonomy
+  (ok/empty/malformed/refusal/timeout/backend_error/retrieval_miss/...) from ANY run's per-case
+  scores into a first-class reliability score + per-failure-type breakdown (`reliability_report`);
+  `read_case_statuses` reads a run bundle's `scores.parquet`/`scores.jsonl`. CLI `bench-reliability
+  --run-dir`. Pure + unit-tested.
+
+All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU. The
+full composite weights across the M5 components stay OFF (each category reports its own board + CIs)
+until calibration, per the M5 cross-cutting rule.
+
+**Possible further improvements (M5.4):** summarization's gated-judge faithfulness is opt-in (not
+wired); structured-output schemas are flat (no nested-object / array-item validation, no per-field
+tolerance); chat-period needs a chat-log-shaped planter prompt + a real chat corpus (OQ4); the
+text-analysis judged sub-tasks (narrative/insight) + `long_doc` map-reduce wiring (the M5.0
+carry-over) remain; and all M5.4 cases need the MH.5 human sample-verify before headline use.
+
+### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
+The M4.4 data-prep residual the plan says "lands with M5's first scored category": the in-pipeline
+verified-data gate. Every AI-DRAFTED item is re-confirmed by a SECOND, independent endpoint
+(different from the drafter) layered on cheap deterministic pre-checks: GROUNDED (a labeled span
+still resolves via `ground_span`) + NON-CIRCULAR (the answer is not leaked in the question), then
+the second frontier's SUPPORTED (the cited span supports the answer) + ANSWERABLE (the question is
+sensible/answerable). The pre-checks run FIRST so a clearly-broken item never spends a frontier
+call. The verifier is injectable (`SecondFrontierVerify`); `second_frontier_verify` builds the
+litellm-backed default; `cross_check_goldset` produces a `CrossCheckReport` (per-item verdicts +
+pass count). Passing does NOT set `verified=true` -- only the human MH.5 sample-verify does; the
+cross-check gates which drafted items are even eligible and is the report a human samples. CLI:
+`llb cross-check-goldset --goldset --corpus --model`. Pure + unit-tested (no key).
+
+**Possible further improvements (M5.6):** the cross-check is delivered, but the rest of M5.6 stays
+open and is mostly HOST-dependent (lands with the first real CUDA-host sweep): the run-path items
+(M4.1 sliding-window KV + cached-`config.json` OVERRIDE of curated arch, M4.2 multi-GPU read +
+arch-derived KV abort headroom, M4.3 flashinfer auto-pin + sampler-in-manifest, M4.5 further
+`/props` shapes + a real partial-offload split), and the remaining data-prep items (a concrete
+Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in, long-doc chunking for extraction beyond
+`EXTRACT_MAX_CHARS`, and richer-than-frequency ontology-type confidence carried into the drafting
+prompt).
 
 ## Resolved questions and scope boundaries
 

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ag-001",
+    "prompt": "Обчисли значення виразу 12 * (3 + 4) і запиши результат у файл result.txt.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "result.txt", "value": "84"}]
+  },
+  {
+    "id": "ag-002",
+    "prompt": "Збережи в базі даних під ключем capital значення Київ.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "capital", "value": "Київ"}]
+  },
+  {
+    "id": "ag-003",
+    "prompt": "Знайди в корпусі документ, де згадується бюджет, і повідом, на скільки відсотків зріс бюджет.",
+    "setup": {"corpus": {"report": "Річний звіт: бюджет міста зріс на 15 відсотків."}},
+    "success": [{"kind": "answer_contains", "value": "15"}]
+  },
+  {
+    "id": "ag-004",
+    "prompt": "Прочитай файл config.txt і збережи його вміст у базі даних під ключем config.",
+    "setup": {"files": {"config.txt": "mode=fast"}},
+    "success": [{"kind": "db_equals", "key": "config", "value": "mode=fast"}]
+  }
+]
