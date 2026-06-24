@@ -1338,10 +1338,14 @@ The remaining spec categories, each on the shared `bench.common` substrate:
   signal is opt-in. Committed cases `samples/summarization_cases_uk.json`; CLI `bench-summarization`.
 - **structured output (`llb.scoring.structured` + `llb.bench.structured`, `TIER_STRUCTURED`)** --
   objective JSON-schema conformance via PYDANTIC (`build_model` from a field schema; no new
-  `jsonschema` dep) + field accuracy (expected field values, strings casefold/strip-insensitive). A
-  non-conformant output scores 0 field accuracy; the headline is field accuracy, conformance rate
-  recorded alongside, both with CIs. Committed cases `samples/structured_cases_uk.json`; CLI
-  `bench-structured`.
+  `jsonschema` dep) + field accuracy. Schemas may be NESTED: `_field_type` recurses so a
+  `type: object` field with `fields` builds a nested model and a `type: array` field with `items`
+  builds a typed `list[...]`, so conformance validates the whole shape. Field accuracy recurses too
+  (`_compare`): it counts matching expected LEAF values across nested objects + array items (index-
+  aligned), with strings casefold/strip-insensitive and numbers exact unless the field spec sets a
+  `tolerance` (absolute numeric). A non-conformant output scores 0 field accuracy; the headline is
+  field accuracy, conformance rate recorded alongside, both with CIs. Committed cases
+  `samples/structured_cases_uk.json` (currently flat); CLI `bench-structured`.
 - **chat-period analysis** -- DELIVERED BY REUSE: it is text-analysis over chat-log docs, so it runs
   through the M5.0 planter + `llb.bench.text_analysis` runner on a chat-log bundle; the runner's
   `synthetic` flag keeps real-corpus and synthetic results reported SEPARATELY. No separate module.
@@ -1357,10 +1361,12 @@ until every component carries a CI, per the M5 cross-cutting rule (the M3.8 judg
 gates the judged signals is itself done -- see the judge-calibration section above).
 
 **Possible further improvements (M5.4):** summarization's gated-judge faithfulness is opt-in (not
-wired); structured-output schemas are flat (no nested-object / array-item validation, no per-field
-tolerance); chat-period needs a chat-log-shaped planter prompt + a real chat corpus (OQ4); the
-text-analysis judged sub-tasks (narrative/insight) + `long_doc` map-reduce wiring (the M5.0
-carry-over) remain; and all M5.4 cases need the MH.5 human sample-verify before headline use.
+wired); the committed structured cases are still flat (the engine now validates nested/array + per-
+field tolerance, but the UA cases should adopt nested schemas to exercise it), and array matching is
+index-aligned only (no order-insensitive / set matching, no relative or fuzzy string tolerance);
+chat-period needs a chat-log-shaped planter prompt + a real chat corpus (OQ4); the text-analysis
+judged sub-tasks (narrative/insight) + `long_doc` map-reduce wiring (the M5.0 carry-over) remain;
+and all M5.4 cases need the MH.5 human sample-verify before headline use.
 
 ### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
 The M4.4 data-prep residual the plan says "lands with M5's first scored category": the in-pipeline

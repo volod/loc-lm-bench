@@ -5,9 +5,13 @@ dependency -- Pydantic is already a core dep) and scores field accuracy against 
 Two objective signals per case:
 
   * CONFORMANCE -- the output parses as JSON and validates against the schema's required fields +
-    declared types (a `pydantic` model built from the schema);
-  * FIELD ACCURACY -- the fraction of expected fields whose value matches (strings casefold/strip-
-    insensitive). A non-conformant output scores 0 field accuracy.
+    declared types (a `pydantic` model built from the schema). Schemas may be NESTED: a field of
+    `type: object` carries `fields` (a sub-schema) and a field of `type: array` carries `items`
+    (an element spec, scalar or object), so nested objects and array items are validated too.
+  * FIELD ACCURACY -- the fraction of expected LEAF values that match, recursing into nested objects
+    and array items (so a 2-field address counts as 2 leaves). Strings match casefold/strip-
+    insensitive; numbers match exactly unless the field spec sets a `tolerance` (abs numeric
+    tolerance). A non-conformant output scores 0 field accuracy.
 
 The headline (`field_accuracy`, non-conformant == 0) and the conformance rate are both reported.
 Everything is pure and unit-tested without a model.
@@ -50,11 +54,34 @@ class StructuredCase:
         )
 
 
+def _field_type(spec: dict[str, Any], name: str) -> Any:
+    """Resolve one field spec to a Python/Pydantic type, recursing for nested object/array.
+
+    `{type: object, fields: {...}}` -> a nested model; `{type: array, items: <spec>}` ->
+    `list[item type]` (items may itself be an object). A bare `object`/`array` (no `fields`/`items`)
+    falls back to `dict`/`list`, the flat behavior.
+    """
+    kind = str(spec.get("type", "string"))
+    if kind == "object" and isinstance(spec.get("fields"), dict):
+        return build_model(name, spec["fields"])
+    if kind == "array":
+        items = spec.get("items")
+        if isinstance(items, dict):
+            container: Any = list  # subscript via an Any binding (item type is built at runtime)
+            return container[_field_type(items, f"{name}_item")]
+        return list
+    return _PY_TYPES.get(kind, str)
+
+
 def build_model(name: str, schema: dict[str, dict[str, Any]]) -> type[BaseModel]:
-    """Build a Pydantic model from a field schema ({field: {type, required}})."""
+    """Build a Pydantic model from a field schema ({field: {type, required, fields?, items?}}).
+
+    Nested `object` fields and typed `array` items are built recursively, so conformance validates
+    the whole shape, not just the top level.
+    """
     fields: dict[str, Any] = {}
     for fname, spec in schema.items():
-        ftype = _PY_TYPES.get(str(spec.get("type", "string")), str)
+        ftype = _field_type(spec, f"{name}_{fname}")
         if spec.get("required", True):
             fields[fname] = (ftype, ...)
         else:
@@ -89,14 +116,67 @@ def _norm(value: Any) -> Any:
     return value.strip().casefold() if isinstance(value, str) else value
 
 
-def field_accuracy(expected: dict[str, Any], data: dict[str, Any] | None) -> float:
-    """Fraction of expected fields whose value matches (strings casefold/strip-insensitive)."""
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _leaf_match(expected: Any, actual: Any, spec: dict[str, Any] | None) -> bool:
+    """Compare two scalar values: string casefold/strip, numeric exact-or-`tolerance`, else `==`."""
+    if actual is None:
+        return expected is None
+    if _is_number(expected) and _is_number(actual):
+        tol = (spec or {}).get("tolerance")
+        if tol is not None:
+            return abs(float(expected) - float(actual)) <= float(tol)
+        return float(expected) == float(actual)
+    if isinstance(expected, str) and isinstance(actual, str):
+        return bool(_norm(expected) == _norm(actual))
+    return bool(expected == actual)
+
+
+def _compare(expected: Any, actual: Any, spec: dict[str, Any] | None) -> tuple[int, int]:
+    """Recursively count (matched_leaves, total_leaves) of `expected` vs `actual`.
+
+    Objects recurse per expected key (using the spec's `fields`); arrays recurse per expected index
+    (using the spec's `items`); everything else is one scalar leaf compared via `_leaf_match`.
+    """
+    if isinstance(expected, dict):
+        subspecs = (spec or {}).get("fields") or {}
+        matched = total = 0
+        for key, exp_val in expected.items():
+            act_val = actual.get(key) if isinstance(actual, dict) else None
+            cm, ct = _compare(exp_val, act_val, subspecs.get(key))
+            matched += cm
+            total += ct
+        return matched, total
+    if isinstance(expected, list):
+        item_spec = (spec or {}).get("items") if spec else None
+        matched = total = 0
+        for i, exp_val in enumerate(expected):
+            act_val = actual[i] if isinstance(actual, list) and i < len(actual) else None
+            cm, ct = _compare(exp_val, act_val, item_spec)
+            matched += cm
+            total += ct
+        return matched, total
+    return (1 if _leaf_match(expected, actual, spec) else 0), 1
+
+
+def field_accuracy(
+    expected: dict[str, Any],
+    data: dict[str, Any] | None,
+    schema: dict[str, dict[str, Any]] | None = None,
+) -> float:
+    """Fraction of expected LEAF values that match, recursing into nested objects + array items.
+
+    `schema` (the case's field schema) supplies per-field `tolerance` and the nested `fields`/`items`
+    structure; with no schema this degrades to the flat top-level comparison.
+    """
     if not expected:
         return 1.0
     if data is None:
         return 0.0
-    matched = sum(1 for k, v in expected.items() if k in data and _norm(data[k]) == _norm(v))
-    return matched / len(expected)
+    matched, total = _compare(expected, data, {"type": "object", "fields": schema or {}})
+    return matched / total if total else 1.0
 
 
 @dataclass(frozen=True)
@@ -119,7 +199,7 @@ class StructuredScore:
 def score_case(case: StructuredCase, output: str) -> StructuredCaseScore:
     data = parse_output(output)
     conformant = is_conformant(case, data)
-    accuracy = field_accuracy(case.expected, data) if conformant else 0.0
+    accuracy = field_accuracy(case.expected, data, case.schema) if conformant else 0.0
     return StructuredCaseScore(
         item_id=case.id,
         conformant=1.0 if conformant else 0.0,

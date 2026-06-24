@@ -92,7 +92,7 @@ identifiers (AGENTS.md); a workstream appears only while it has open work.
    3. **M5.3** Agentic -- the LangGraph harness wrapper + the trajectory-quality gated judge;
       broaden the task set.
    4. **M5.4** Remaining-taxonomy residuals -- the gated-judge wiring (text-analysis judged
-      sub-tasks + `long_doc`, summarization faithfulness), structured nested/array validation, the
+      sub-tasks + `long_doc`, summarization faithfulness), nested/array UA structured cases, the
       chat-period chat-log planter; the composite stays off until every component carries a CI.
    5. **M5.5** Platform & matrix expansion -- optional; build last (needs a committed consumer).
    6. **M5.6** Host-dependent run-path hardening + the remaining data-prep items (spaCy adapter,
@@ -150,8 +150,10 @@ remaining M5 work (residuals below + the M5.5 expansion):
 
 ### M5.4 Remaining taxonomy -- residuals
 - **summarization** -- wire the opt-in gated-judge faithfulness signal.
-- **structured output** -- nested-object / array-item validation + per-field value tolerance
-  (schemas are flat exact-match today).
+- **structured output** -- the scorer now validates nested objects / array items + per-field numeric
+  tolerance (see `current.md`); residual is DATA + matcher breadth: author nested/array UA cases in
+  `samples/structured_cases_uk.json` (currently flat) and MH.5-verify them; optionally add order-
+  insensitive array matching and relative / fuzzy-string tolerance.
 - **chat-period** -- a chat-log-shaped planter prompt + a real chat corpus (OQ4, human-gated).
 - **text-analysis judged sub-tasks** -- wire the gated judge into `llb.bench.text_analysis` for
   `narrative` / `insight` (objective floor only today) and drive `long_doc` through the map-reduce
@@ -243,7 +245,7 @@ the official `mcp` Python SDK (M5.2), BFCL cases (M5.2), and JailbreakBench / Ha
 ## Worktree parallelization
 
 - **M5 residuals:** the per-category open items (sourcing breadth, native-FC/MCP transport,
-  gated-judge wiring, judged-subtask + long_doc, structured nested validation) parallelize.
+  gated-judge wiring, judged-subtask + long_doc, nested/array UA structured cases) parallelize.
 - **M5.6 residuals:** the host-dependent run-path items attach to whichever lane first sweeps the
   16 GB host; the remaining data-prep items (spaCy adapter, long-doc chunking, ontology confidence).
 - **graph:** Milestone 6 is its own lane after M5, reusing M4.4 extraction.
