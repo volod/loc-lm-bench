@@ -18,6 +18,7 @@ The session loop is driven by an injected input iterator + output sink, so it is
 unit-testable without a terminal, model, endpoint, or GPU (it operates only on the CSV).
 """
 
+import csv
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
@@ -55,6 +56,15 @@ HELP = "help"
 QUIT = "quit"
 UNKNOWN = "unknown"
 
+# Arrow-key escape sequences. A single arrow submitted as a line maps to navigation as a
+# convenience; full char-by-char arrow handling would need raw terminal mode, which the
+# line-based (and unit-testable) loop deliberately avoids. ESC is shown as `^[` by terminals.
+_ESC = "\x1b"
+_ARROWS = {f"{_ESC}[A": PREV, f"{_ESC}[D": PREV, f"{_ESC}[B": NEXT, f"{_ESC}[C": NEXT}
+
+# Compact, always-visible action + scale legend printed at the prompt (full anchors via `?`).
+PROMPT_HINT = "[1-5]=rate (1=wrong..5=correct)  a=answer  n=next  p=prev  j<N>=jump  ?=help  q=quit"
+
 
 @dataclass(frozen=True)
 class Command:
@@ -76,6 +86,8 @@ def parse_command(raw: str) -> Command:
     s = raw.strip()
     if s == "":
         return Command(NEXT)
+    if s in _ARROWS:  # a lone arrow key -> navigate (up/left = prev, down/right = next)
+        return Command(_ARROWS[s])
     low = s.lower()
     if low in ("n",):
         return Command(NEXT)
@@ -119,11 +131,108 @@ def rated_count(rows: Sequence[dict[str, str]]) -> int:
     return sum(1 for row in rows if (row.get("human_rating") or "").strip())
 
 
+def rating_histogram(rows: Sequence[dict[str, str]]) -> dict[int, int]:
+    """Count of rows at each rating `RATING_MIN..RATING_MAX` (ignores blank/out-of-range)."""
+    hist = {n: 0 for n in range(RATING_MIN, RATING_MAX + 1)}
+    for row in rows:
+        value = (row.get("human_rating") or "").strip()
+        if value.isdigit() and int(value) in hist:
+            hist[int(value)] += 1
+    return hist
+
+
+def summary_lines(rows: Sequence[dict[str, str]], path: Path) -> list[str]:
+    """The end-of-session report: progress, the rating spread, and the next command.
+
+    The spread matters for calibration -- a good worksheet spans the full 1-5 range and
+    deliberately includes fluent-but-wrong answers, so it is surfaced explicitly here.
+    """
+    total = len(rows)
+    rated = rated_count(rows)
+    answered = sum(1 for row in rows if (row.get("human_answer") or "").strip())
+    hist = rating_histogram(rows)
+    spread = "  ".join(f"{n}:{hist[n]}" for n in range(RATING_MIN, RATING_MAX + 1))
+    lines = [
+        f"[calibration] saved {path}",
+        f"[calibration] progress : {rated}/{total} rated, {total - rated} remaining, "
+        f"{answered} with your own answer",
+        f"[calibration] ratings  : {spread}  (1=wrong .. 5=fully correct)",
+    ]
+    if rated < total:
+        lines.append(
+            "[calibration] resume   : re-run `make calibration-rate` "
+            "(continues at the first unrated item)"
+        )
+    lines.append(f"[calibration] score    : make calibration-score RATINGS={path}")
+    return lines
+
+
+def _advanced_index(idx: int, total: int, rows: Sequence[dict[str, str]]) -> int:
+    """Where to go after rating/skipping the item at `idx`.
+
+    Next item normally; at the last item it lands on the completion screen (`total`) once
+    everything is rated, else it wraps back to the first remaining unrated item so gaps left
+    by out-of-order rating still get filled (never stuck re-showing the last card).
+    """
+    if idx < total - 1:
+        return idx + 1
+    if rated_count(rows) == total:
+        return total
+    return first_unrated_index(rows)
+
+
+def completion_panel(rows: Sequence[dict[str, str]], total: int) -> str:
+    """The 'all items rated' review screen shown once you advance past the last item."""
+    answered = sum(1 for row in rows if (row.get("human_answer") or "").strip())
+    hist = rating_histogram(rows)
+    spread = "  ".join(f"{n}:{hist[n]}" for n in range(RATING_MIN, RATING_MAX + 1))
+    return "\n".join(
+        [
+            f"===== all {total} items rated ({answered} with your own answer) =====",
+            f"  rating spread: {spread}   (1=wrong .. 5=fully correct)",
+            "  review/change: p = last item, j <N> = jump to item N, u = next unrated",
+            "  finish: press Enter or q to save + quit (then run make calibration-score)",
+        ]
+    )
+
+
 def clear_human_columns(rows: Sequence[dict[str, str]]) -> None:
     """Wipe every human column in place (the `--clear` start-fresh path)."""
     for row in rows:
         for col in HUMAN_COLS:
             row[col] = ""
+
+
+def save_human_columns(
+    path: Path, rows: Sequence[dict[str, str]], fieldnames: Sequence[str]
+) -> None:
+    """Persist ONLY the human columns, merged into the CURRENT on-disk worksheet by `item_id`.
+
+    The rater owns the human columns; every other column (`model_answer`, `judge_rating`,
+    `provenance`, ...) belongs to `calibration-run`. Re-reading the file on each save and
+    overlaying only the human columns means an intervening `calibration-run` that filled
+    `judge_rating` is never clobbered by the rater's load-time snapshot -- the failure mode
+    that silently dropped a whole judge column. Falls back to a full write if the file is
+    missing or unreadable.
+    """
+    try:
+        disk_rows, disk_fields = load_worksheet(path)
+    except (OSError, csv.Error):
+        disk_rows = []
+        disk_fields = list(fieldnames)
+    if not disk_rows:
+        write_worksheet_rows(path, rows, fieldnames)
+        return
+    human_by_id = {
+        row["item_id"]: {col: row.get(col, "") for col in HUMAN_COLS}
+        for row in rows
+        if row.get("item_id")
+    }
+    for disk_row in disk_rows:
+        overlay = human_by_id.get(disk_row.get("item_id", ""))
+        if overlay is not None:
+            disk_row.update(overlay)
+    write_worksheet_rows(path, disk_rows, disk_fields)
 
 
 def _field(row: dict[str, str], name: str, blank: str) -> str:
@@ -174,6 +283,7 @@ def help_text() -> str:
             "  p/b      previous                 c     clear this rating",
             "  j <N>    jump to item N           u     jump to next unrated",
             "  ?/h      this help                q     save + quit",
+            "  arrow keys: up/left = previous, down/right = next",
             f"rating anchors: {anchors}",
             "rate INDEPENDENTLY -- author your own answer first; do not anchor to the judge.",
         ]
@@ -228,7 +338,7 @@ def run_session(
         return 0
 
     def save() -> None:
-        write_worksheet_rows(path, rows, fieldnames)
+        save_human_columns(path, rows, fieldnames)
 
     if clear:
         ans = read("clear ALL human ratings/answers and start fresh? type 'yes' to confirm: ")
@@ -242,10 +352,16 @@ def run_session(
     total = len(rows)
     if start is not None:
         idx = max(0, min(start - 1, total - 1))
+    elif rated_count(rows) == total:
+        idx = total  # everything already rated -> open on the review/finish screen
     else:
         idx = first_unrated_index(rows)
 
-    emit("judge calibration -- interactive rater. Type ? for help, q to save + quit.")
+    emit(
+        "judge calibration -- rate each model answer against the reference, "
+        f"{RATING_MIN} (wrong) to {RATING_MAX} (fully correct)."
+    )
+    emit(help_text())
 
     def set_rating(row: dict[str, str], value: int) -> None:
         row["human_rating"] = str(value)
@@ -255,11 +371,53 @@ def run_session(
         row["human_rating"] = ""
         row["human_status"] = STATUS_PENDING
 
+    def go_forward() -> None:
+        nonlocal idx
+        new = _advanced_index(idx, total, rows)
+        if idx == total - 1 and new < total:  # wrapped back to fill an unrated gap
+            remaining = total - rated_count(rows)
+            emit(f"[calibration] {remaining} item(s) still unrated -- jumping there.")
+        idx = new
+
+    def jump_to(target: int) -> None:
+        nonlocal idx
+        if 1 <= target <= total:
+            idx = target - 1
+        else:
+            emit(f"[calibration] item out of range 1..{total}: {target}")
+
+    def go_unrated() -> None:
+        nonlocal idx
+        nxt = first_unrated_index(rows)
+        if (rows[nxt].get("human_rating") or "").strip():
+            emit("[calibration] all items are rated.")
+        else:
+            idx = nxt
+
     try:
         while True:
+            if idx >= total:  # past the last item -> the review / finish screen
+                emit(completion_panel(rows, total))
+                cmd = parse_command(read("review (p / j <N> / u) or finish (Enter / q) > "))
+                if cmd.kind in (QUIT, NEXT):
+                    raise _Quit
+                if cmd.kind == HELP:
+                    emit(help_text())
+                elif cmd.kind == PREV:
+                    idx = total - 1
+                elif cmd.kind == JUMP:
+                    jump_to(cmd.value if cmd.value is not None else 0)
+                elif cmd.kind == UNRATED:
+                    go_unrated()
+                else:
+                    emit(
+                        "[calibration] all rated -- p to review, j <N> to jump, Enter/q to finish."
+                    )
+                continue
+
             row = rows[idx]
             emit(format_card(row, idx + 1, total, rated_count(rows), show_judge=show_judge))
-            cmd = parse_command(read("> "))
+            cmd = parse_command(read(f"{PROMPT_HINT}\nrating> "))
 
             if cmd.kind == QUIT:
                 raise _Quit
@@ -267,29 +425,21 @@ def run_session(
                 emit(help_text())
                 continue
             if cmd.kind == NEXT:
-                idx = min(idx + 1, total - 1)
+                go_forward()
                 continue
             if cmd.kind == PREV:
                 idx = max(idx - 1, 0)
                 continue
             if cmd.kind == JUMP:
-                target = cmd.value if cmd.value is not None else 0
-                if 1 <= target <= total:
-                    idx = target - 1
-                else:
-                    emit(f"[calibration] item out of range 1..{total}: {target}")
+                jump_to(cmd.value if cmd.value is not None else 0)
                 continue
             if cmd.kind == UNRATED:
-                nxt = first_unrated_index(rows)
-                if (rows[nxt].get("human_rating") or "").strip():
-                    emit("[calibration] all items are rated.")
-                else:
-                    idx = nxt
+                go_unrated()
                 continue
             if cmd.kind == RATE:
                 set_rating(row, cmd.value or RATING_MIN)
                 save()
-                idx = min(idx + 1, total - 1)
+                go_forward()
                 continue
             if cmd.kind == CLEAR:
                 clear_rating(row)
@@ -305,17 +455,16 @@ def run_session(
                 row["human_note"] = text
                 save()
                 continue
-            emit(f"[calibration] unknown command: {cmd.raw!r} (? for help)")
+            if cmd.raw.startswith(_ESC):
+                emit("[calibration] arrow keys garbled -- use n (next) / p (prev).")
+            else:
+                emit(f"[calibration] not a command: {cmd.raw!r} (? for help; 1-5 to rate).")
     except (_Quit, EOFError):
         pass
     except KeyboardInterrupt:
         emit("")  # break the prompt line cleanly
 
     save()
-    n_rated = rated_count(rows)
-    emit(
-        f"[calibration] saved {path} -- {n_rated}/{total} rated. "
-        "Resume by re-running calibration-rate; score with: "
-        f"make calibration-score RATINGS={path}"
-    )
-    return n_rated
+    for line in summary_lines(rows, path):
+        emit(line)
+    return rated_count(rows)

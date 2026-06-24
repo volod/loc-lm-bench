@@ -157,10 +157,7 @@ calibration-run: ## Run MODEL on the calibration split -> filled worksheet (mode
 
 calibration-rate: ## Interactively fill human ratings/answers in CAL_WS (judge_rating hidden; SHOW_JUDGE=1 to reveal, START=N, CLEAR=1 to reset)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.judge.calibration rate --worksheet "$(CAL_WS)" \
-		$(if $(START),--start $(START),) \
-		$(if $(SHOW_JUDGE),--show-judge,) \
-		$(if $(CLEAR),--clear,)
+	$(PY) -m llb.judge.calibration rate --worksheet "$(CAL_WS)" $(if $(START),--start $(START)) $(if $(SHOW_JUDGE),--show-judge) $(if $(CLEAR),--clear)
 
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

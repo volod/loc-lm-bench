@@ -10,6 +10,11 @@ DATA_DIR = "DATA_DIR"
 # Logging
 LLB_LOG = "LLB_LOG"
 
+# RAG embedder device override (e.g. cpu / cuda / cuda:1). Unset -> sentence-transformers
+# auto-selects (CUDA when available). Force `cpu` to keep the GPU free for a co-resident local
+# judge/candidate (the embedder is tiny, so CPU encoding is cheap).
+LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
+
 # Hugging Face downloads (gated models and datasets)
 HF_TOKEN = "HF_TOKEN"
 

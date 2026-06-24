@@ -18,11 +18,16 @@ from llb.judge.rate import (
     RATE,
     UNKNOWN,
     UNRATED,
+    _advanced_index,
     clear_human_columns,
+    completion_panel,
     first_unrated_index,
     format_card,
     parse_command,
+    rating_histogram,
     run_session,
+    save_human_columns,
+    summary_lines,
 )
 
 
@@ -82,6 +87,35 @@ def test_parse_command_jump():
     assert parse_command("jx").kind == UNKNOWN
 
 
+def test_parse_command_arrow_keys():
+    assert parse_command("\x1b[A").kind == PREV  # up
+    assert parse_command("\x1b[D").kind == PREV  # left
+    assert parse_command("\x1b[B").kind == NEXT  # down
+    assert parse_command("\x1b[C").kind == NEXT  # right
+
+
+def test_rating_histogram_counts_and_ignores_invalid():
+    rows = [
+        _row("a", human_rating="5"),
+        _row("b", human_rating="5"),
+        _row("c"),  # unrated
+        _row("d", human_rating="9"),  # out of range -> ignored
+    ]
+    hist = rating_histogram(rows)
+    assert hist[5] == 2 and hist[1] == 0
+    assert sum(hist.values()) == 2
+
+
+def test_summary_lines_reports_progress_ratings_and_score_cmd(tmp_path):
+    rows = [_row("a", human_rating="5", human_answer="x"), _row("b")]
+    path = tmp_path / "ws.csv"
+    blob = "\n".join(summary_lines(rows, path))
+    assert "1/2 rated" in blob and "1 with your own answer" in blob
+    assert "5:1" in blob  # rating spread surfaced
+    assert "resume" in blob.lower()  # rated < total -> resume hint
+    assert f"make calibration-score RATINGS={path}" in blob
+
+
 def test_first_unrated_index():
     rows = [_row("a", human_rating="3"), _row("b"), _row("c", human_rating="5")]
     assert first_unrated_index(rows) == 1
@@ -138,10 +172,63 @@ def test_session_start_option_overrides_resume(tmp_path):
 
 
 def test_session_clear_command_resets_rating(tmp_path):
+    # A fully-rated worksheet opens on the completion screen, so navigate to the item (p) first.
     path = _make_ws(tmp_path, [_row("a", human_rating="4", human_status="rated")])
-    run_session(path, inputs=["c", "q"], output=lambda _s: None)
+    run_session(path, inputs=["p", "c", "q"], output=lambda _s: None)
     rows, _ = load_worksheet(path)
     assert rows[0]["human_rating"] == "" and rows[0]["human_status"] == "pending"
+
+
+def test_advanced_index_transitions():
+    rated = [_row("a", human_rating="5"), _row("b", human_rating="5")]
+    assert _advanced_index(0, 2, rated) == 1  # not last -> next item
+    assert _advanced_index(1, 2, rated) == 2  # last + all rated -> completion screen (==total)
+    gap = [_row("a"), _row("b", human_rating="5")]  # index 0 still unrated
+    assert _advanced_index(1, 2, gap) == 0  # last + gap -> wrap to the first unrated
+
+
+def test_completion_panel_reports_spread_and_finish():
+    rows = [_row("a", human_rating="5", human_answer="x"), _row("b", human_rating="4")]
+    panel = completion_panel(rows, 2)
+    assert "all 2 items rated" in panel and "1 with your own answer" in panel
+    assert "5:1" in panel and "4:1" in panel
+    assert "finish" in panel.lower()
+
+
+def test_session_lands_on_completion_after_rating_last(tmp_path):
+    path = _make_ws(tmp_path, [_row("a"), _row("b")])
+    out: list[str] = []
+    # rate both; after the last, all rated -> completion screen; Enter finishes.
+    rated = run_session(path, inputs=["3", "4", ""], output=out.append)
+    assert rated == 2
+    assert any("all 2 items rated" in line for line in out)
+
+
+def test_session_opens_on_completion_when_all_already_rated(tmp_path):
+    path = _make_ws(tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")])
+    out: list[str] = []
+    run_session(path, inputs=["q"], output=out.append)
+    assert any("all 2 items rated" in line for line in out)
+
+
+def test_save_human_columns_preserves_disk_non_human_columns(tmp_path):
+    # Disk has judge_rating filled (e.g. a calibration-run ran). A stale in-memory snapshot with
+    # judge blank must NOT clobber the disk judge column -- only the human columns are overlaid.
+    path = _make_ws(tmp_path, [_row("a", judge_rating="0.9"), _row("b", judge_rating="0.4")])
+    rows, fields = load_worksheet(path)
+    stale = [{**r, "judge_rating": "", "human_rating": "5"} for r in rows]
+    save_human_columns(path, stale, fields)
+    out, _ = load_worksheet(path)
+    assert [r["judge_rating"] for r in out] == ["0.9", "0.4"]  # disk judge preserved
+    assert [r["human_rating"] for r in out] == ["5", "5"]  # human columns overlaid
+
+
+def test_session_completion_review_then_change(tmp_path):
+    path = _make_ws(tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")])
+    # open on completion -> p goes to the last item -> clear it -> q.
+    run_session(path, inputs=["p", "c", "q"], output=lambda _s: None)
+    rows, _ = load_worksheet(path)
+    assert rows[1]["human_rating"] == ""  # changed via the review screen
 
 
 def test_session_clear_flag_confirmed(tmp_path):

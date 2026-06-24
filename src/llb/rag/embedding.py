@@ -9,8 +9,10 @@ Heavy imports (`sentence_transformers`, `numpy`) are deferred to first use so th
 imports fine in the base install; the real embedding path needs the `[rag]` extra.
 """
 
+import os
 from typing import Any
 
+from llb import env
 from llb.config import DEFAULT_EMBEDDING_MODEL
 
 
@@ -21,9 +23,15 @@ def _is_e5(model_name: str) -> bool:
 class Embedder:
     """Lazy wrapper over a SentenceTransformer; normalizes vectors for cosine/IP search."""
 
-    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL):
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL, device: str | None = None):
         self.model_name = model_name
+        self._device = device
         self._model = None
+
+    def _resolve_device(self) -> str | None:
+        """Device for the SentenceTransformer: explicit constructor arg wins, else the
+        `LLB_EMBED_DEVICE` env knob, else `None` (sentence-transformers auto-selects)."""
+        return self._device or os.environ.get(env.LLB_EMBED_DEVICE) or None
 
     def _load(self) -> Any:
         if self._model is None:
@@ -36,7 +44,7 @@ class Embedder:
                 ) from exc
             # Persisted CLI logs must remain line-oriented ASCII, not contain tqdm control output.
             disable_progress_bar()
-            self._model = SentenceTransformer(self.model_name)
+            self._model = SentenceTransformer(self.model_name, device=self._resolve_device())
         return self._model
 
     def _prefix(self, texts: list[str], kind: str) -> list[str]:
