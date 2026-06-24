@@ -92,8 +92,8 @@ identifiers (AGENTS.md); a workstream appears only while it has open work.
    3. **M5.3** Agentic -- the LangGraph harness wrapper + the trajectory-quality gated judge;
       broaden the task set.
    4. **M5.4** Remaining-taxonomy residuals -- the gated-judge wiring (text-analysis judged
-      sub-tasks + `long_doc`, summarization faithfulness), nested/array UA structured cases, the
-      chat-period chat-log planter; the composite stays off until every component carries a CI.
+      sub-tasks + `long_doc`), nested/array UA structured cases, the chat-period chat-log planter;
+      the composite stays off until every component carries a CI.
    5. **M5.5** Platform & matrix expansion -- optional; build last (needs a committed consumer).
    6. **M5.6** Host-dependent run-path hardening + the remaining data-prep items (spaCy adapter,
       long-doc chunking, richer ontology confidence); rides the first real-host sweep.
@@ -149,7 +149,9 @@ remaining M5 work (residuals below + the M5.5 expansion):
   check cannot cover; broaden the task set (real-UA-corpus search tasks); MH.5 verify before headline.
 
 ### M5.4 Remaining taxonomy -- residuals
-- **summarization** -- wire the opt-in gated-judge faithfulness signal.
+- **summarization** -- the opt-in gated-judge faithfulness signal is wired via `run_gated_judge`,
+  reusing the M3.8 calibration (see `current.md`); residual: an OPTIONAL summarization-specific judge
+  calibration (the M3.8 rho was fit on SQuAD QA, not summaries) + MH.5-verify the cases.
 - **structured output** -- the scorer now validates nested objects / array items + per-field numeric
   tolerance (see `current.md`); residual is DATA + matcher breadth: author nested/array UA cases in
   `samples/structured_cases_uk.json` (currently flat) and MH.5-verify them; optionally add order-

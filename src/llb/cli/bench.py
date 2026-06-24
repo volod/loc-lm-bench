@@ -193,6 +193,16 @@ def bench_summarization_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint"
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    judge_model: Optional[str] = typer.Option(
+        None,
+        help="opt-in gated faithfulness judge (recorded alongside coverage, never the headline)",
+    ),
+    judge_rho: Optional[float] = typer.Option(
+        None, help="calibration Spearman rho; the judge is used only when rho >= threshold (0.6)"
+    ),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of the judge endpoint"
+    ),
 ) -> None:
     """M5.4: score summaries by pinned-embedder reference coverage under TIER_SUMMARIZATION."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -204,13 +214,22 @@ def bench_summarization_cmd(
 
     def run(complete: LLMComplete) -> SummarizationRun:
         return run_summarization(
-            sum_cases, model=model, backend=backend, complete=complete, data_dir=cfg.data_dir
+            sum_cases,
+            model=model,
+            backend=backend,
+            complete=complete,
+            judge_model=judge_model,
+            judge_rho=judge_rho,
+            judge_base_url=judge_base_url,
+            data_dir=cfg.data_dir,
         )
 
     result = drive_with_backend(
         cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
     )
     typer.echo(f"[bench-summarization] reference-coverage={result.result.objective_score:.3f}")
+    if result.faithfulness is not None:
+        typer.echo(f"[bench-summarization] faithfulness (gated judge)={result.faithfulness:.3f}")
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-summarization] manifest -> {result.paths['manifest']}")

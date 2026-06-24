@@ -138,6 +138,7 @@ class SummarizationCaseRow(TypedDict):
     item_id: str
     status: str  # ok | empty
     coverage: float  # mean reference-sentence best cosine to the candidate summary
+    faithfulness: NotRequired[float]  # gated-judge faithfulness (only when the judge is trusted)
     answer_preview: str
 
 

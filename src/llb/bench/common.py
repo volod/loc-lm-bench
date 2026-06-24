@@ -20,7 +20,15 @@ from typing import TypeVar
 
 from llb.backends.base import BackendLauncher
 from llb.config import RunConfig
-from llb.contracts import ChatMessage, JsonObject, JudgeStatus, RunMetrics, RunPaths
+from llb.contracts import (
+    ChatMessage,
+    JsonObject,
+    JudgeInputRecord,
+    JudgeScore,
+    JudgeStatus,
+    RunMetrics,
+    RunPaths,
+)
 from llb.scoring.aggregate import (
     BoardRow,
     ModelResult,
@@ -28,9 +36,11 @@ from llb.scoring.aggregate import (
     rank_board,
     ranking_policy_note,
 )
+from llb.scoring.judge import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
 
 LLMComplete = Callable[[str], str]  # prompt -> raw completion text
+JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]  # (records, model)->scores
 Mirror = Callable[[RunManifest, Path], None]
 _R = TypeVar("_R")
 
@@ -47,6 +57,32 @@ def new_run_timestamp() -> tuple[str, str]:
 def mean(values: Sequence[float]) -> float:
     """Arithmetic mean, 0.0 for an empty sequence (the category headline convention)."""
     return sum(values) / len(values) if values else 0.0
+
+
+def run_gated_judge(
+    records: list[JudgeInputRecord],
+    *,
+    judge_model: str | None,
+    judge_rho: float | None,
+    threshold: float = DEFAULT_THRESHOLD,
+    scorer: JudgeScorer | None = None,
+    base_url: str | None = None,
+) -> JudgeOutcome:
+    """Run the calibrated, GATED judge for an M5 category (objective stays the headline).
+
+    A thin reuse of `scoring.judge.run_judge`: the outcome carries per-record scores ONLY when a
+    judge is configured AND trusted (`judge_rho >= threshold`); otherwise it is demoted (objective
+    ranks alone) and the caller reads `outcome.reason`. `scorer` is injectable -- a fake in tests --
+    so the wiring is provable without DeepEval / an endpoint / a GPU; the default scorer is the
+    DeepEval judge bound to `base_url`, imported lazily so this stays light in the base install.
+    """
+
+    def _default(recs: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
+        from llb.scoring.judge import deepeval_scorer
+
+        return deepeval_scorer(recs, model, base_url=base_url)
+
+    return run_judge(records, judge_model, judge_rho, threshold, scorer=scorer or _default)
 
 
 def local_complete(

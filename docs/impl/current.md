@@ -1215,6 +1215,12 @@ cooldown); `category_result` stamps a `ModelResult` with the category's Tier (pe
 the bootstrap CI); `render_board` ranks under that Tier via the existing `rank_board` (whose guard
 refuses to cross-rank tiers) + `format_board`; and `persist_category_run` writes a canonical
 manifest + per-case scores bundle under `$DATA_DIR/<method>/<ts>/` exactly like `run-eval`.
+`run_gated_judge` is the shared opt-in GATED-judge seam: a thin reuse of `scoring.judge.run_judge`
+that returns per-record scores ONLY when a judge is configured AND trusted (`judge_rho >= threshold`,
+the M3.8 gate); the `scorer` is injectable (a fake in tests), the default is the DeepEval judge
+bound to a `base_url` (lazy-imported). A category records the judge signal ALONGSIDE its objective
+headline, never folded in (objective-first). Summarization is the first consumer (below); the
+unsafe-content + trajectory wirings (M5.1 / M5.3) reuse the same seam.
 
 `llb.bench.text_analysis.run_text_analysis` is the M5.0 scored runner: it loads a planter bundle
 (`corpus/` + `text_analysis_labels.jsonl`), asks the candidate to extract each document's present
@@ -1334,8 +1340,13 @@ The remaining spec categories, each on the shared `bench.common` substrate:
 - **summarization (`llb.bench.summarization`, `TIER_SUMMARIZATION`)** -- reference coverage via the
   PINNED-embedder cosine (NOT ROUGE): for each reference-summary sentence, the best cosine to any
   candidate sentence, averaged (`reference_coverage`; `similarity` injected, same basis as retrieval
-  + the text-analysis matcher). Headline is mean coverage with a CI; the gated-judge faithfulness
-  signal is opt-in. Committed cases `samples/summarization_cases_uk.json`; CLI `bench-summarization`.
+  + the text-analysis matcher). Headline is mean coverage with a CI. An OPT-IN gated-judge
+  FAITHFULNESS signal (summary vs source) is wired via `run_gated_judge` (the M3.8-calibrated
+  faithfulness metric): when configured AND trusted (`--judge-rho >= 0.6`) it records per-case +
+  mean + CI faithfulness ALONGSIDE coverage (never folded into the headline; the manifest carries a
+  `JudgeStatus`), else the judge is demoted and coverage ranks alone. Committed cases
+  `samples/summarization_cases_uk.json`; CLI `bench-summarization` (`--judge-model` / `--judge-rho`
+  / `--judge-base-url`).
 - **structured output (`llb.scoring.structured` + `llb.bench.structured`, `TIER_STRUCTURED`)** --
   objective JSON-schema conformance via PYDANTIC (`build_model` from a field schema; no new
   `jsonschema` dep) + field accuracy. Schemas may be NESTED: `_field_type` recurses so a
@@ -1360,13 +1371,15 @@ full composite weights across the M5 components stay OFF (each category reports 
 until every component carries a CI, per the M5 cross-cutting rule (the M3.8 judge calibration that
 gates the judged signals is itself done -- see the judge-calibration section above).
 
-**Possible further improvements (M5.4):** summarization's gated-judge faithfulness is opt-in (not
-wired); the committed structured cases are still flat (the engine now validates nested/array + per-
-field tolerance, but the UA cases should adopt nested schemas to exercise it), and array matching is
-index-aligned only (no order-insensitive / set matching, no relative or fuzzy string tolerance);
-chat-period needs a chat-log-shaped planter prompt + a real chat corpus (OQ4); the text-analysis
-judged sub-tasks (narrative/insight) + `long_doc` map-reduce wiring (the M5.0 carry-over) remain;
-and all M5.4 cases need the MH.5 human sample-verify before headline use.
+**Possible further improvements (M5.4):** summarization's gated-judge faithfulness is wired but
+reuses the M3.8 calibration (done on SQuAD QA, not summarization) -- a summarization-specific
+calibration would firm the domain transfer; the committed structured cases are still flat (the
+engine now validates nested/array + per-field tolerance, but the UA cases should adopt nested
+schemas to exercise it), and array matching is index-aligned only (no order-insensitive / set
+matching, no relative or fuzzy string tolerance); chat-period needs a chat-log-shaped planter prompt
++ a real chat corpus (OQ4); the text-analysis judged sub-tasks (narrative/insight) + `long_doc`
+map-reduce wiring (the M5.0 carry-over) remain; and all M5.4 cases need the MH.5 human sample-verify
+before headline use.
 
 ### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
 The M4.4 data-prep residual the plan says "lands with M5's first scored category": the in-pipeline
