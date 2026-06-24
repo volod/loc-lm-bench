@@ -40,18 +40,37 @@ LOG_DIR     := $(DATA_DIR)/llb/logs
 PREP_ALL_BACKEND ?= ollama
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
-# Judge-calibration knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL
-# OpenAI-compatible endpoint (no data egress + reproducible; bias documented in current.md).
-# JUDGE_BASE_URL is explicit so candidate and judge servers can use different endpoints:
+# Judge knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
+# (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
+# Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there
+# too). Alternatives by GPU tier (override JUDGE_MODEL + JUDGE_BASE_URL):
 #   12 GB GPU: ollama_chat/gemma-4-e4b-it                       (GGUF/CPU offload; the 12B won't fit)
-#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (this box; biggest Gemma-4 that fits)
+#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (vLLM on :8000)
 #   32 GB GPU: hosted_vllm/google/gemma-4-12B-it                (bf16, higher fidelity + co-host headroom)
-# On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate; use Ollama GGUF/CPU
-# offload or serve the judge on another local host. Set JUDGE_MODEL empty to skip the judge.
-CAL_WS ?= $(DATA_DIR)/llb/calibration_worksheet.csv
+# Set JUDGE_MODEL empty to skip the judge.
+# JUDGE_RHO is the calibration Spearman rho (from `make calibration-score`); set it on `run-eval`
+# to ENABLE the gated judge in a scored run -- the judge enters the ranking blend only when
+# JUDGE_RHO >= 0.6 and the decision is recorded in the run manifest. Unset -> no judge (default).
+# LLB_EMBED_DEVICE pins the sentence-transformers embedder to the CPU by default so the GPU stays
+# free for a co-resident local judge/candidate (a big judge + a GPU embedder OOMs 16 GB); override
+# with LLB_EMBED_DEVICE=cuda when nothing else needs the GPU.
+# Calibration worksheets carry irreducibly-human ratings, kept in TWO roots:
+#   - PERMANENT: the tracked root calibration/ dir -- committed, so they survive a clone.
+#   - TEMPORARY: $(DATA_DIR)/llb/calibration -- gitignored (generated/in-progress sets).
+# CAL_NAME labels the use case (one worksheet per goldset). A worksheet AUTO-ROUTES by name:
+# names listed in CAL_PERMANENT go to root calibration/, everything else to the temp dir -- so a
+# new/generated set stays local by default. To persist one: copy it into calibration/ and add its
+# name to CAL_PERMANENT (or commit it directly). CAL_DIR overrides the routing explicitly.
+CAL_PERMANENT ?= ua_squad_postedited_v1
+CAL_NAME ?= ua_squad_postedited_v1
+CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
+CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
-JUDGE_MODEL ?= hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
-JUDGE_BASE_URL ?= http://localhost:8000/v1
+JUDGE_MODEL ?= gemma3:27b
+JUDGE_BASE_URL ?= http://localhost:11434/v1
+JUDGE_RHO ?=
+LLB_EMBED_DEVICE ?= cpu
+export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
@@ -200,12 +219,12 @@ validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1
+run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1 JUDGE_RHO= (enables the gated judge)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
-		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry,)
+		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"

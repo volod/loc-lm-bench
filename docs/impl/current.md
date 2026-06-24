@@ -256,9 +256,15 @@ On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 
 
 ### Judge calibration (M0.5 stats + M3.8 tooling) — `llb.judge.calibration` + `llb.judge.rate`
 Spearman rho (no scipy), bootstrap CI, and the trust decision (`rho >= 0.6` else demote). The
-worksheet is a single CSV (`CAL_WS`) that is the session's only state -- every edit rewrites the
-whole file atomically (`fsutil.atomic_write_text`), so resume and crash-safety are free with no
-separate journal. Its columns are `item_id, split, provenance, question, reference_answer,
+worksheet is a single CSV (`CAL_WS`) kept in one of two roots auto-routed by `CAL_NAME`: PERMANENT
+sets (in `CAL_PERMANENT`, the committed goldset by default) live in the TRACKED root `calibration/`
+dir so they survive a clone; every other name routes to gitignored `$DATA_DIR/llb/calibration/`
+(generated sets, persisted by copying into `calibration/`). It is the session's only state -- each
+edit re-reads the
+file and writes back ONLY the human columns, merged by `item_id` and rewritten atomically
+(`fsutil.atomic_write_text`), so resume + crash-safety are free AND a concurrent `calibration-run`
+filling `judge_rating` is never clobbered. Its columns are `item_id, split, provenance, question,
+reference_answer,
 model_answer, human_answer, human_rating, human_note, human_status, judge_rating`: `provenance` is
 copied from the `GoldItem` so a card shows the item's source; the human authors both `human_answer`
 and `human_rating` (`human_status` is a pending/rated refinement); `judge_rating` is the judge's
@@ -286,19 +292,29 @@ are caught and treated as save + quit.
 
 The Make targets drive the loop over the verified committed gold set (`GOLDSET` defaults to
 `samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items are `verified: true`, so M3.9
-is already satisfied for it; no re-review needed):
+is already satisfied for it; its worksheet defaults to the tracked `calibration/ua_squad_postedited_v1.csv`).
+Defaults target a local Ollama judge (`gemma3:27b` on :11434) with the embedder pinned to CPU
+(`LLB_EMBED_DEVICE=cpu`, so the GPU stays free for the judge), so on the committed goldset it is:
 
-    make calibration-run JUDGE_MODEL=<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1
-    make calibration-rate    # interactive: fill the human columns (judge_rating hidden)
-    make calibration-score RATINGS=<filled.csv>    # rho + bootstrap CI + trust decision
+    make calibration-run                  # Ollama gemma3:27b judge (default); vLLM: JUDGE_MODEL=hosted_vllm/... JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+    make calibration-rate                 # interactive: fill the human columns (judge_rating hidden)
+    make calibration-score                # rho + bootstrap CI + trust decision (RATINGS defaults to CAL_WS)
+    make run-eval JUDGE_RHO=0.628         # carry the trusted decision into a scored run (recorded in the manifest)
 
-(`make calibration-worksheet` emits a blank worksheet when you want the rows without a run.) The
-operator walkthrough -- including a new goldset and a text-corpus draft -- is the
+(`make calibration-worksheet` emits a blank worksheet when you want the rows without a run; a new
+goldset / text-corpus draft uses `CAL_NAME=<label>`.) The operator walkthrough is the
 [calibration-tooling guide](../guides/calibration-tooling.md).
 
-What still gates close-out is collecting the independent human `human_rating` column (Milestone H in
-the forward plan). The stats, the worksheet I/O, the interactive rater, and the scoring are
-implemented and tested (`tests/test_calibration.py` + `tests/test_rate.py`).
+**Calibration result (M3.8 DONE, 2026-06-24):** 86 independent human ratings scored to
+**rho=0.628** (95% bootstrap CI [0.428, 0.772], n=86, judge `gemma3:27b` on Ollama) -> clears the
+0.6 gate, `trusted=True`. It is a BORDERLINE pass: the CI lower bound is below 0.6 and the human
+ratings skew high (68 of 86 are 5s, the judge mean is ~0.86) because the committed SQuAD-uk
+calibration split is easy factual QA with little disagreement to measure -- so the rho is fragile.
+The decision is not auto-persisted by `calibration-score`; carry it into a scored run with
+`make run-eval JUDGE_RHO=0.628 JUDGE_MODEL=gemma3:27b JUDGE_BASE_URL=http://localhost:11434/v1`,
+which records `calibration_rho` + `trusted` in that run's manifest and admits the gated judge.
+The stats, the worksheet I/O, the interactive rater, and the scoring are implemented and tested
+(`tests/test_calibration.py` + `tests/test_rate.py`).
 
 #### Judge model (OQ2 decided) + bias disclosure
 

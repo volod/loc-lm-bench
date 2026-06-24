@@ -28,10 +28,12 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 [security](../guides/learning-path-security.md) ·
 [evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
 
-- **M3.8 judge calibration** ("Judge calibration"): fill `human_rating` over the 86 calibration
-  items, then score rho. Blocks EVERY judged headline (RAG board + M5 unsafe-content quality,
-  summarization faithfulness, agentic trajectory, free-form text/chat analysis). Objective metrics
-  rank alone meanwhile. **Critical path -- start EARLY.**
+- **M3.8 judge calibration** ("Judge calibration") -- **DONE (2026-06-24):** 86 human ratings
+  scored to rho=0.628 (CI [0.428, 0.772], judge `gemma3:27b`), clearing the 0.6 gate
+  (trusted, though borderline -- the CI dips below 0.6). Pass `JUDGE_RHO=0.628` to `run-eval` to
+  admit the gated judge into a scored run (the decision is recorded in that run's manifest); until
+  then objective metrics rank alone. Gates the same judged headlines (RAG board + M5 unsafe-content
+  quality, summarization faithfulness, agentic trajectory, free-form text/chat analysis).
 - **MH.2 sign-offs + corpus facts** ("Schema and ontology sign-off"): approve the M6 ontology
   schema + M6 scope; confirm the OQ4 corpus facts (do text-analysis reference answers exist? real
   vs synthetic). Blocks Milestone 6 (ontology).
@@ -42,25 +44,35 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
 cross-check, and the optional non-Gemma cross-check judge.
 
-### M3.8 -- judge calibration (TODO, step by step)
+### M3.8 -- judge calibration (DONE 2026-06-24; recipe retained to re-calibrate)
+
+**Result:** rho=0.628 over 86 human ratings (CI [0.428, 0.772], n=86, judge `gemma3:27b`) ->
+clears the 0.6 gate, `trusted=True` (borderline: the CI lower bound is below 0.6, and the ratings
+skew high -- 68 of 86 are 5s on the easy SQuAD-uk split -- so the pass is statistically weak).
+Carry it into scored runs with `make run-eval JUDGE_RHO=0.628 JUDGE_MODEL=gemma3:27b
+JUDGE_BASE_URL=http://localhost:11434/v1`; the rho + trust decision are then recorded in the run
+manifest. To FIRM IT UP (optional), strengthen the calibration split with harder/ambiguous items +
+more fluent-but-wrong cases and repeat steps 2-4 below.
 
 The tooling (stats, the `rho >= 0.6` trust decision, the worksheet pre-fill, the interactive
 `calibration-rate` rater, and scoring) is built + tested -- see [`current.md`](current.md) for the
-implementation; only the human column remains. Operator walkthrough:
+implementation. Operator walkthrough:
 [calibration-tooling manual](../guides/calibration-tooling.md). Procedure + rules:
 [manual "Judge
 calibration"](../guides/human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings).
 1. Stand up a judge endpoint (12B judge can't co-reside with a vLLM candidate on 16 GB -- use
    GGUF/CPU offload, a smaller test judge, or another host). See
    [judge-experiments guide](../guides/judge-experiments.md).
-2. `make calibration-run JUDGE_MODEL=<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1` -- pre-fills
-   `model_answer` + ungated `judge_rating`.
+2. `make calibration-run` (defaults: Ollama `gemma3:27b` judge + CPU embedder) -- pre-fills
+   `model_answer` + ungated `judge_rating`. For a vLLM judge:
+   `make calibration-run JUDGE_MODEL=hosted_vllm/<id> JUDGE_BASE_URL=http://127.0.0.1:8000/v1`.
 3. Rate INDEPENDENTLY via `make calibration-rate` (the interactive rater; `judge_rating` hidden by
    default -- full command reference in the calibration-tooling manual): author your own
    `human_answer` and set `human_rating`, spanning the full range and deliberately including
    fluent-but-wrong answers.
-4. `make calibration-score RATINGS=<filled.csv>` -> rho + bootstrap CI + the mechanical decision.
-   `rho >= 0.6` admits the gated judge; else it stays demoted. The decision travels in the manifest.
+4. `make calibration-score` -> rho + bootstrap CI + the mechanical decision (`RATINGS` defaults to
+   the worksheet). `rho >= 0.6` admits the gated judge; else it stays demoted. Carry the decision
+   into scored runs with `make run-eval JUDGE_RHO=<rho>`, which records it in the run manifest.
 
 ### MH.2 -- remaining sign-offs (TODO, step by step)
 
@@ -111,7 +123,8 @@ identifiers (AGENTS.md); a workstream appears only while it has open work.
    6. **M5.6** Host-dependent run-path hardening + the remaining data-prep items (spaCy adapter,
       long-doc chunking, richer ontology confidence); rides the first real-host sweep.
 2. **Milestone 6** (after M5) -- GraphRAG (Kuzu). ⚠ needs MH.2 (M6 ontology + scope sign-off).
-3. **Milestone H** (human-paced, parallel) -- M3.8, MH.2, MH.5. See the prerequisites block above.
+3. **Milestone H** (human-paced, parallel) -- M3.8 DONE; MH.2, MH.5 remain. See the prerequisites
+   block above.
 
 Real-model scoring of any `verified=true` item still waits on MH.5 (the human gate); the objective
 category boards already do not depend on the M3.8 judge calibration.
@@ -245,9 +258,10 @@ the official `mcp` Python SDK (M5.2), BFCL cases (M5.2), and JailbreakBench / Ha
   CI-bearing from fake endpoints under their own Tiers -- see `current.md`.)
 - **M6:** a corpus builds a Kuzu graph from M4.4 extraction and graph retrieval scores on the
   existing source-span metric, FAISS unchanged.
-- **Milestone H (⚠ human):** M3.8 produces rho/CI over HUMAN ratings; the M6 ontology is signed off
-  (MH.2); a human sample-verify (MH.5) accepts the AI-drafted, frontier-cross-checked data before it
-  scores models. See [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
+- **Milestone H (⚠ human):** M3.8 DONE -- produced rho=0.628/CI over 86 HUMAN ratings (`gemma3:27b`
+  judge, borderline trust). Remaining: the M6 ontology signed off (MH.2); a human sample-verify
+  (MH.5) accepts the AI-drafted, frontier-cross-checked data before it scores models. See
+  [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 

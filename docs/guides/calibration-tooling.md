@@ -25,9 +25,26 @@ can rate on a laptop, on a plane, in several sittings.
 
 ## The worksheet
 
-The worksheet is a single CSV at `CAL_WS` (default
-`.data/llb/calibration_worksheet.csv`). It **is** the session state -- every interactive edit
-rewrites the whole file atomically, so resume and crash-safety are free. Columns:
+The worksheet is a single CSV at `CAL_WS` (default `calibration/ua_squad_postedited_v1.csv`), kept
+in one of **two roots**, chosen automatically by `CAL_NAME`:
+
+- **permanent** (committed -> survives a clone): the tracked root `calibration/` dir, for names
+  listed in the Makefile's `CAL_PERMANENT` (the committed goldset by default);
+- **temporary** (gitignored): `$DATA_DIR/llb/calibration/`, where every other `CAL_NAME`
+  (generated / in-progress sets) auto-routes.
+
+So:
+
+- committed canonical goldset -> `make calibration-run` -> `calibration/ua_squad_postedited_v1.csv`
+- skeleton goldset -> `make calibration-run CAL_NAME=skeleton …` -> `$DATA_DIR/llb/calibration/skeleton.csv`
+- text-corpus goldset -> `make calibration-run CAL_NAME=<corpus> …` -> `$DATA_DIR/llb/calibration/<corpus>.csv`
+
+To persist a generated set, copy it into `calibration/` and add its name to `CAL_PERMANENT`. This
+two-root split avoids a brittle `.gitignore` exception -- the whole `calibration/` dir is committed,
+generated sets live elsewhere. See [`calibration/README.md`](../../calibration/README.md).
+
+The worksheet **is** the session state -- every interactive edit rewrites only the human columns,
+merged into the file atomically, so resume and crash-safety are free. Columns:
 
 | Column | Filled by | Meaning |
 | --- | --- | --- |
@@ -52,21 +69,29 @@ do not need to build anything; just run the three steps.
 
 ### 1. Stand up a judge endpoint and pre-fill the worksheet
 
-On a 16 GB box a 12B judge usually cannot co-reside with a vLLM candidate; use GGUF/CPU offload,
-a smaller test judge, or another local host (see the
-[local judge guide](judge-experiments.md)). Then:
+The defaults target a local **Ollama** judge (`gemma3:27b` on `:11434`), and the embedder is pinned
+to CPU (`LLB_EMBED_DEVICE=cpu`) so the GPU stays free for the judge -- so on the committed goldset
+this is just:
+
+```
+make calibration-run            # Ollama gemma3:27b judge, llama3.2:3b candidate (defaults)
+```
+
+To use a **vLLM** judge instead (e.g. the 16 GB QAT 12B served on `:8000`), override the knobs --
+on 16 GB a 12B vLLM judge usually cannot co-reside with a vLLM candidate, so keep the candidate on
+Ollama or serve the judge on another host:
 
 ```
 make calibration-run \
     MODEL=llama3.2:3b BACKEND=ollama \
-    JUDGE_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
+    JUDGE_MODEL=hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct \
     JUDGE_BASE_URL=http://127.0.0.1:8000/v1
 ```
 
-This runs the candidate over the 86 calibration items and writes `CAL_WS` with `model_answer`
-and an **ungated** `judge_rating` (the gate is irrelevant here -- calibration measures
-agreement, not trust). If the judge endpoint is unreachable, `judge_rating` is left blank and a
-warning is logged; fix the endpoint and re-run before rating.
+Either way this runs the candidate over the 86 calibration items and writes `CAL_WS` with
+`model_answer` and an **ungated** `judge_rating` (the threshold is irrelevant here -- calibration
+measures agreement, not trust). If the judge endpoint is unreachable, `judge_rating` is left blank
+and a warning is logged; fix the endpoint and re-run before rating.
 
 ### 2. Rate independently with the interactive rater
 
@@ -141,16 +166,19 @@ that has a `calibration` split with `verified=true` items. (`run-eval` scores **
 `verified=true` items -- an unverified set produces zero calibration rows.) See
 [goldset-from-scratch](goldset-from-scratch.md) for building and splitting one.
 
+Set `CAL_NAME` so the worksheet auto-routes to its own gitignored file under
+`$DATA_DIR/llb/calibration/` (copy it into `calibration/` + add to `CAL_PERMANENT` to persist):
+
 ```
-make calibration-run GOLDSET=path/to/your/goldset.jsonl \
-    MODEL=<cand> BACKEND=<be> JUDGE_MODEL=<judge> JUDGE_BASE_URL=<url>
-make calibration-rate
-make calibration-score
+make calibration-run  GOLDSET=path/to/your/goldset.jsonl CAL_NAME=my_goldset   # default Ollama judge
+make calibration-rate  CAL_NAME=my_goldset
+make calibration-score CAL_NAME=my_goldset
 ```
 
-The rater and the scorer are identical to Case 1 -- only the source of the items changes. The
-`provenance` column on each card tells you what kind of item you are rating (e.g.
-`human-authored` vs `public-reused`), which is worth watching when a set mixes sources.
+The judge defaults to the Ollama `gemma3:27b` endpoint; add `JUDGE_MODEL=… JUDGE_BASE_URL=…` to
+point at a vLLM judge instead (as in Case 1). The rater and scorer are identical to Case 1 -- only
+the source of the items changes. The `provenance` column on each card tells you what kind of item
+you are rating (e.g. `human-authored` vs `public-reused`), worth watching when a set mixes sources.
 
 ---
 
@@ -187,12 +215,13 @@ items). Promote a calibration subset to verified first, exactly as for any score
    ```
 
 4. **Calibrate against the verified ledger** -- now it has `verified=true` calibration items, so
-   it behaves like Case 2:
+   it behaves like Case 2 (give it its own `CAL_NAME`; the default Ollama judge applies, or
+   override with `JUDGE_MODEL=… JUDGE_BASE_URL=…` for vLLM):
 
    ```
-   make calibration-run GOLDSET=<verified-ledger>.jsonl MODEL=... JUDGE_MODEL=... JUDGE_BASE_URL=...
-   make calibration-rate
-   make calibration-score
+   make calibration-run  GOLDSET=<verified-ledger>.jsonl CAL_NAME=<corpus>
+   make calibration-rate  CAL_NAME=<corpus>
+   make calibration-score CAL_NAME=<corpus>
    ```
 
 > **Quick judge sanity on an unverified draft is intentionally NOT supported here** (it would

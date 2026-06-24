@@ -82,8 +82,9 @@ which needs a running judge endpoint.
    so the gate is irrelevant at this step:
 
    ```
-   make calibration-run JUDGE_MODEL=<served-model-id> \
-       JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+   make calibration-run                                   # defaults: Ollama gemma3:27b judge + CPU embedder
+   make calibration-run JUDGE_MODEL=hosted_vllm/<id> \
+       JUDGE_BASE_URL=http://127.0.0.1:8000/v1            # or a vLLM judge
    ```
 
    Equivalent direct CLI:
