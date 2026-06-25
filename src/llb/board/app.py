@@ -10,6 +10,7 @@ from pathlib import Path
 from llb.board.data import (
     best_per_model,
     config_summary,
+    load_category_records,
     load_run_records,
     load_screen_reports,
 )
@@ -45,6 +46,16 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
                 st.write(f"**{row['model']}** ({row['backend']})", config_summary(rec.config))
     else:
         st.info(f"No Tier-2 runs under {root}. Run `llb run-eval` (or `llb sweep`) first.")
+
+    # M5 category boards -- each renders under its OWN Tier and is NEVER cross-ranked with the
+    # Tier-2 RAG board or with another category (the aggregate guard refuses a mixed-tier board).
+    category_by_tier = load_category_records(data_dir)
+    if category_by_tier:
+        st.subheader("M5 category boards (each its own Tier, not cross-ranked)")
+        for tier in sorted(category_by_tier):
+            results = category_by_tier[tier]
+            st.caption(f"{tier} -- {ranking_policy_note(results, judge_trusted=False)}")
+            st.dataframe(rank_board(results), use_container_width=True)
 
     # Tier-1 public screens are shown SEPARATELY -- loglikelihood/generation tracks are not
     # comparable to Tier-2 private metrics and are never ranked together.

@@ -197,3 +197,100 @@ def test_parse_predictions_coerces_scalar_and_missing():
     preds = bench_ta.parse_predictions(json.dumps({"entity": "Київ"}), [ta.ENTITY, ta.TOPIC])
     assert preds[ta.ENTITY] == ["Київ"]  # scalar coerced to a one-item list
     assert preds[ta.TOPIC] == []  # missing kind -> empty
+
+
+# --- gated judge for narrative/insight + long_doc map-reduce (M5.4 residual) ---------------
+
+
+def fake_judge(faith, relevancy):
+    def scorer(records, _model):
+        return [{"faithfulness": faith, "answer_relevancy": relevancy} for _ in records]
+
+    return scorer
+
+
+def test_gated_judge_scores_narrative_insight_alongside_objective(tmp_path):
+    bundle = _write_bundle(tmp_path / "b")  # plants entity/topic objective + insight judged
+
+    run = bench_ta.run_text_analysis(
+        bundle,
+        model="m",
+        backend="ollama",
+        complete=lambda _: json.dumps(
+            {"entity": ["Київ", "Львів"], "topic": ["економіка"], "insight": ["ринок зростає"]}
+        ),
+        similarity=ZERO_SIM,
+        judge_model="judge",
+        judge_rho=0.7,  # trusted
+        judge_scorer=fake_judge(0.8, 1.0),
+        persist=False,
+    )
+    assert run.judge_trusted is True
+    assert run.judged_quality == 0.9  # (0.8 + 1.0)/2
+    assert run.result.objective_score == 1.0  # objective headline unchanged by the judge
+    assert run.rows[0]["judged_quality"] == 0.9
+
+
+def test_gated_judge_demoted_below_threshold(tmp_path):
+    bundle = _write_bundle(tmp_path / "b")
+    run = bench_ta.run_text_analysis(
+        bundle,
+        model="m",
+        backend="ollama",
+        complete=lambda _: json.dumps({"entity": ["Київ"], "topic": [], "insight": ["x"]}),
+        similarity=ZERO_SIM,
+        judge_model="judge",
+        judge_rho=0.4,  # below the 0.6 gate
+        judge_scorer=fake_judge(1.0, 1.0),
+        persist=False,
+    )
+    assert run.judge_trusted is False and run.judged_quality is None
+
+
+def _write_long_doc_bundle(tmp_path):
+    corpus = tmp_path / "corpus"
+    corpus.mkdir(parents=True)
+    (corpus / "synth-000.md").write_text(
+        "Перший розділ про бюджет міста та його видатки. " * 40
+        + "Висновок: бюджет зріс на 15 відсотків.",
+        encoding="utf-8",
+    )
+    records = [
+        {
+            "label_id": "synth-000-long_doc-0",
+            "kind": "long_doc",
+            "value": "бюджет зріс на 15 відсотків",
+            "doc_id": "synth-000",
+            "attrs": {"question": "На скільки зріс бюджет?"},
+        }
+    ]
+    (tmp_path / bench_ta.TEXT_ANALYSIS_LABELS).write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_long_doc_driven_through_map_reduce(tmp_path):
+    bundle = _write_long_doc_bundle(tmp_path / "b")
+    calls = []
+
+    def complete(prompt):
+        calls.append(prompt)
+        # the reduce/map prompts ask the comprehension question -> answer with the fact
+        return "Бюджет зріс на 15 відсотків."
+
+    run = bench_ta.run_text_analysis(
+        bundle,
+        model="m",
+        backend="ollama",
+        complete=complete,
+        similarity=ZERO_SIM,
+        judge_model="judge",
+        judge_rho=0.7,
+        judge_scorer=fake_judge(1.0, 1.0),
+        persist=False,
+    )
+    # the long doc was split into multiple segments -> more than one map call
+    assert len(calls) > 1
+    assert run.rows[0].get("long_doc_answer")  # the map-reduce answer recorded
+    assert run.judged_quality == 1.0  # the long_doc answer judged

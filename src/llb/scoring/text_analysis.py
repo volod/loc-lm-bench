@@ -201,9 +201,60 @@ def _direction_penalty(prediction: str, label: PlantedLabel, credit: float) -> f
     return credit
 
 
+def _contradiction_spans(label: PlantedLabel) -> tuple[str, str] | None:
+    """The two contradicting span surfaces from a `contradiction` label's `attrs`, or None.
+
+    A contradiction's paired spans may be `attrs.spans: [a, b]` or `attrs.span_a` / `attrs.span_b`.
+    """
+    spans = label.attrs.get("spans")
+    if (
+        isinstance(spans, list)
+        and len(spans) >= 2
+        and str(spans[0]).strip()
+        and str(spans[1]).strip()
+    ):
+        return str(spans[0]), str(spans[1])
+    span_a = str(label.attrs.get("span_a", "")).strip()
+    span_b = str(label.attrs.get("span_b", "")).strip()
+    if span_a and span_b:
+        return span_a, span_b
+    return None
+
+
+def _side_covered(prediction: str, side_text: str, similarity: Similarity) -> float:
+    """Credit one contradicting side: 1.0 when its normalized surface is CONTAINED in the
+    prediction (a single answer states both sides), else the cosine-banded similarity."""
+    norm_pred = normalize_surface(prediction)
+    norm_side = normalize_surface(side_text)
+    if norm_side and norm_side in norm_pred:
+        return 1.0
+    best = similarity(prediction, side_text)
+    if best >= TAU_FULL:
+        return 1.0
+    if best >= TAU_PARTIAL:
+        return PARTIAL_CREDIT
+    return 0.0
+
+
+def _contradiction_credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> float:
+    """A `contradiction` with paired-span `attrs` earns credit only when the prediction references
+    BOTH contradicting sides (credit = min of the two side credits): naming one side is not enough
+    to identify the contradiction. Falls back to plain surface credit when no spans are planted."""
+    pair = _contradiction_spans(label)
+    if pair is None:
+        return _surface_credit(prediction, label, similarity)
+    return min(
+        _side_covered(prediction, pair[0], similarity),
+        _side_covered(prediction, pair[1], similarity),
+    )
+
+
 def _credit(prediction: str, label: PlantedLabel, similarity: Similarity) -> float:
     """Credit a single prediction earns against one label: surface credit (exact/normalized ->
-    1.0, else cosine-banded), then direction-aware adjustment for `trend` labels."""
+    1.0, else cosine-banded), then per-kind adjustment -- direction-aware for `trend`, paired-span
+    coverage for `contradiction`."""
+    if label.kind == CONTRADICTION:
+        return _contradiction_credit(prediction, label, similarity)
     return _direction_penalty(prediction, label, _surface_credit(prediction, label, similarity))
 
 

@@ -26,5 +26,65 @@
       "total_count": {"type": "integer", "required": true}
     },
     "expected": {"total_count": 5}
+  },
+  {
+    "id": "st-004",
+    "instruction": "З тексту 'Олена Коваль, 34 роки, місто Львів, Україна, тел. +380501112233' сформуй профіль з вкладеною адресою.",
+    "schema": {
+      "name": {"type": "string", "required": true},
+      "age": {"type": "integer", "required": true},
+      "address": {
+        "type": "object",
+        "required": true,
+        "fields": {
+          "city": {"type": "string", "required": true},
+          "country": {"type": "string", "required": true}
+        }
+      },
+      "phone": {"type": "string", "required": false}
+    },
+    "expected": {
+      "name": "Олена Коваль",
+      "age": 34,
+      "address": {"city": "Львів", "country": "Україна"}
+    }
+  },
+  {
+    "id": "st-005",
+    "instruction": "З 'Замовлення: 2 ноутбуки по 25000 грн і 3 миші по 400 грн' сформуй масив позицій (назва, кількість, ціна) та підсумок.",
+    "schema": {
+      "items": {
+        "type": "array",
+        "required": true,
+        "items": {
+          "type": "object",
+          "fields": {
+            "product": {"type": "string", "required": true},
+            "quantity": {"type": "integer", "required": true},
+            "price": {"type": "number", "required": true}
+          }
+        }
+      },
+      "total": {"type": "number", "required": true, "rel_tolerance": 0.01}
+    },
+    "expected": {
+      "items": [
+        {"product": "ноутбук", "quantity": 2, "price": 25000},
+        {"product": "миша", "quantity": 3, "price": 400}
+      ],
+      "total": 51200
+    }
+  },
+  {
+    "id": "st-006",
+    "instruction": "Витягни ключові теми статті як невпорядкований масив тегів і короткий підсумок.",
+    "schema": {
+      "tags": {"type": "array", "required": true, "unordered": true, "items": {"type": "string"}},
+      "summary": {"type": "string", "required": true, "string_match": "fuzzy", "threshold": 0.6}
+    },
+    "expected": {
+      "tags": ["відновлювана енергетика", "інвестиції", "Україна"],
+      "summary": "Стаття про інвестиції у відновлювану енергетику України."
+    }
   }
 ]

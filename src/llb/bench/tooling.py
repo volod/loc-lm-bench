@@ -14,6 +14,7 @@ is exercised uniformly and a FAKE endpoint proves the flow. Native FC responses 
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,73 @@ _LOG = logging.getLogger(__name__)
 
 METHOD = "tooling"
 TOOL_PROTOCOL_TEXT = "text"  # catalog-in-prompt JSON protocol (works on every backend)
+TOOL_PROTOCOL_NATIVE = "native"  # native OpenAI tools= function-calling (tool-capable backends)
+
+# A `ToolCaller` produces one (instruction, catalog) -> parsed `ToolCall | None`. The two transports
+# (text-in-prompt and native OpenAI tools=) implement it from the SAME catalog, so the scorer and
+# board are identical; the runner records WHICH transport ran and never cross-ranks them.
+ToolCaller = Callable[[str, dict[str, ToolDef]], "tooling.ToolCall | None"]
+
+
+def openai_tools(catalog: dict[str, ToolDef]) -> list[dict[str, Any]]:
+    """Convert the project's tool catalog into the OpenAI `tools=` function-calling schema."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool.get("parameters", {}),
+            },
+        }
+        for tool in catalog.values()
+    ]
+
+
+def text_tool_caller(complete: LLMComplete) -> ToolCaller:
+    """The universal text transport: embed the catalog in the prompt, parse the JSON call back."""
+
+    def call(instruction: str, catalog: dict[str, ToolDef]) -> "tooling.ToolCall | None":
+        return tooling.parse_tool_call(complete(text_tool_prompt(instruction, catalog)))
+
+    return call
+
+
+def native_tool_caller(
+    client: Any,
+    model: str,
+    *,
+    temperature: float = 0.0,
+    max_tokens: int = 512,
+    timeout: float = 120.0,
+) -> ToolCaller:
+    """The native OpenAI `tools=` transport over a tool-capable endpoint. `parse_tool_call` already
+    normalizes the native `tool_calls` message, so the SAME scorer runs; `client` is injectable so a
+    fake proves the wiring with no server. Transport errors -> no call attempted (None)."""
+    import openai
+
+    tool_specs_cache: list[dict[str, Any]] | None = None
+
+    def call(instruction: str, catalog: dict[str, ToolDef]) -> "tooling.ToolCall | None":
+        nonlocal tool_specs_cache
+        if tool_specs_cache is None:
+            tool_specs_cache = openai_tools(catalog)
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": instruction}],
+                tools=tool_specs_cache,
+                tool_choice="auto",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+        except openai.APIError:
+            return None
+        message = resp.choices[0].message if resp.choices else None
+        return tooling.parse_tool_call(message)
+
+    return call
 
 
 @dataclass(slots=True)
@@ -81,19 +149,29 @@ def run_tooling(
     *,
     model: str,
     backend: str,
-    complete: LLMComplete,
+    complete: LLMComplete | None = None,
+    caller: ToolCaller | None = None,
     capability: str = TOOL_PROTOCOL_TEXT,
     data_dir: Path | str | None = None,
     run_name: str = "m5-tooling",
     persist: bool = True,
     mirror: Mirror | None = None,
 ) -> ToolingRun:
-    """Score one model's call correctness over the catalog + cases under TIER_TOOLING."""
+    """Score one model's call correctness over the catalog + cases under TIER_TOOLING.
+
+    Pass `caller` to select the transport (text-in-prompt vs native OpenAI tools=); by default the
+    text caller is built over `complete`. `capability` is recorded so native-FC and text runs are
+    comparable but never cross-ranked.
+    """
     if not cases:
         raise SystemExit("no tooling cases provided")
-    calls = [
-        tooling.parse_tool_call(complete(text_tool_prompt(c.instruction, catalog))) for c in cases
-    ]
+    if caller is None:
+        if complete is None:
+            raise ValueError(
+                "run_tooling needs a `complete` (default caller) or an explicit `caller`"
+            )
+        caller = text_tool_caller(complete)
+    calls = [caller(c.instruction, catalog) for c in cases]
     score = tooling.score_tooling(cases, calls, catalog)
     rows = [_row(s) for s in score.cases]
 

@@ -20,6 +20,7 @@ parsing, grounding, and direction backfill are pure and unit-tested without any 
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,6 +33,10 @@ from llb.prep.frontier import (
     parse_json_block,
 )
 from llb.scoring import text_analysis as ta
+
+# A doc prompt builder: (topic, n_per_kind, kinds) -> planter prompt. Swappable so the chat-log
+# planter reuses the same generate -> parse -> ground -> bundle flow with a chat-shaped prompt.
+DocPromptBuilder = Callable[[str, int, tuple[str, ...]], str]
 
 _LOG = logging.getLogger(__name__)
 
@@ -152,12 +157,16 @@ def prepare_text_analysis_corpus(
     complete: LLMComplete | None = None,
     out_dir: Path | str | None = None,
     log: ProvenanceLog | None = None,
+    prompt_builder: DocPromptBuilder = text_analysis_doc_prompt,
+    provenance_kind: str = "synthetic-text-analysis",
 ) -> tuple[dict[str, str], list[PlantedLabelRecord]]:
     """Generate synthetic docs with structured per-kind planted labels. Planter MUST differ from
     the judge (a model grading answers it authored is circular).
 
-    Writes (when `out_dir` is given) `corpus/<doc>.md`, `text_analysis_labels.jsonl`
-    (`PlantedLabelRecord`s), and a `provenance.json` tagging `synthetic: true`.
+    `prompt_builder` swaps the doc-generation prompt (the chat-log planter passes a chat-shaped one),
+    `provenance_kind` tags the bundle. Writes (when `out_dir` is given) `corpus/<doc>.md`,
+    `text_analysis_labels.jsonl` (`PlantedLabelRecord`s), and a `provenance.json` tagging
+    `synthetic: true`.
     """
     if planter_model == judge_model:
         raise ValueError(
@@ -176,7 +185,7 @@ def prepare_text_analysis_corpus(
     records: list[PlantedLabelRecord] = []
     for i, topic in enumerate(topics):
         doc_id = f"synth-{i:03d}"
-        raw = complete(text_analysis_doc_prompt(topic, n_per_kind, kinds))
+        raw = complete(prompt_builder(topic, n_per_kind, kinds))
         try:
             payload = parse_json_block(raw)
         except json.JSONDecodeError:
@@ -203,7 +212,7 @@ def prepare_text_analysis_corpus(
         (out_dir / "provenance.json").write_text(
             json.dumps(
                 {
-                    "kind": "synthetic-text-analysis",
+                    "kind": provenance_kind,
                     "synthetic": True,
                     "planter_model": planter_model,
                     "judge_model": judge_model,

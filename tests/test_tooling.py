@@ -174,6 +174,11 @@ def test_run_tooling_perfect_model_persists(tmp_path):
         '{"name":"create_reminder","arguments":{"title":"Дзвінок з клієнтом","datetime":"2026-07-01 09:00"}}',
         '{"name": null}',
         '{"name": null}',
+        # tc-009..tc-012 exercise per-argument tolerance (contains / numeric / oneof / fuzzy)
+        '{"name":"search_documents","arguments":{"query":"відновлювана енергетика України"}}',
+        '{"name":"convert_currency","arguments":{"amount":99.99,"from_currency":"USD","to_currency":"UAH"}}',
+        '{"name":"get_weather","arguments":{"city":"Dnipro"}}',
+        '{"name":"calculator","arguments":{"expression":"100/4"}}',
     ]
     run = bench_tool.run_tooling(
         catalog,
@@ -193,14 +198,16 @@ def test_run_tooling_perfect_model_persists(tmp_path):
 
 def test_run_tooling_text_only_model_scores_low():
     catalog, cases = bench_tool.load_catalog_file("samples/tooling_cases_uk.json")
-    # always answers in prose, never calls -> only the two no-tool cases score
+    # always answers in prose, never calls -> only the no-tool cases score
     run = bench_tool.run_tooling(
         catalog, cases, model="m", backend="ollama", complete=lambda _: "Звичайно!", persist=False
     )
-    assert round(run.score.call_accuracy, 4) == round(2 / 8, 4)
+    n_no_tool = sum(1 for c in cases if c.expected_tool is None)
+    assert round(run.score.call_accuracy, 4) == round(n_no_tool / len(cases), 4)
 
 
 def test_load_catalog_file_shape():
     catalog, cases = bench_tool.load_catalog_file("samples/tooling_cases_uk.json")
-    assert "get_weather" in catalog and len(cases) == 8
+    assert "get_weather" in catalog and len(cases) == 12
     assert any(c.expected_tool is None for c in cases)  # no-tool cases present
+    assert any(c.arg_match for c in cases)  # per-argument tolerance cases present

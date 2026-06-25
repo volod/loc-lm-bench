@@ -11,8 +11,11 @@ SUPPORTED_SUFFIXES = (".txt", ".md")
 
 # --- stage 2: extraction ---------------------------------------------------------------------
 # Cap how much of a long document is sent to the extractor in one call (chars). Documents
-# longer than this are truncated for extraction; offsets still index the full original text.
+# longer than this are CHUNKED into overlapping windows (M5.6) -- each window is extracted and
+# the per-window extractions merged -- so a long doc is no longer one truncated call. Offsets
+# still index the full original text (grounding runs against the full doc).
 EXTRACT_MAX_CHARS = 12000
+EXTRACT_CHUNK_OVERLAP = 600  # overlap between extraction windows so a span on a seam survives
 
 # --- stage 3: ontology induction -------------------------------------------------------------
 # A "constrained" candidate: keep only the most-supported types, and drop hapax types.
@@ -20,6 +23,13 @@ MAX_ENTITY_TYPES = 24
 MAX_RELATION_TYPES = 32
 MIN_TYPE_COUNT = 1
 N_TYPE_EXAMPLES = 3
+# Confidence blends normalized count with normalized DOCUMENT frequency (M5.6): a type spread
+# across documents is more reliable than one of equal count concentrated in a single document.
+CONFIDENCE_COUNT_WEIGHT = 0.5
+CONFIDENCE_DOCFREQ_WEIGHT = 0.5
+# The high-confidence induced types carried into the drafting prompt as explicit constraints.
+ONTOLOGY_CONSTRAINT_MIN_CONFIDENCE = 0.5
+N_CONSTRAINT_TYPES = 8
 
 # --- stage 4: coverage sampling --------------------------------------------------------------
 DEFAULT_MAX_ITEMS = 60  # upper bound on drafted QA items per run

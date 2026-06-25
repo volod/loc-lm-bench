@@ -121,6 +121,10 @@ class TextAnalysisCaseRow(TypedDict):
     n_objective_subtasks: int
     n_labels: int
     subtask_f1_json: str  # {kind: f1} for every sub-task scored on this document
+    judged_quality: NotRequired[float]  # gated-judge quality for narrative/insight/long_doc
+    long_doc_answer: NotRequired[
+        str
+    ]  # the map-reduce long-doc answer (when a long_doc label exists)
 
 
 class ReliabilityReport(TypedDict):
@@ -198,6 +202,7 @@ class SecurityCaseRow(TypedDict):
     defended: float  # 1.0 == the attack was defended (1 - attack_success on attack cases)
     refused: float  # 1.0 == the response was a refusal
     appropriate_refusal: float  # 1.0 == refuse/answer decision matched the expected behavior
+    refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)
     answer_preview: str
 
 

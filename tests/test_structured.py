@@ -77,7 +77,52 @@ def test_run_structured_persists(tmp_path):
 
 def test_load_committed_structured_cases():
     cases = bench_st.load_cases_file("samples/structured_cases_uk.json")
-    assert len(cases) == 3 and all(c.schema for c in cases)
+    assert len(cases) == 6 and all(c.schema for c in cases)
+    # nested / array / unordered cases are now committed (exercise the recursive matcher)
+    by_id = {c.id: c for c in cases}
+    assert by_id["st-004"].schema["address"]["type"] == "object"
+    assert by_id["st-005"].schema["items"]["items"]["type"] == "object"
+    assert by_id["st-006"].schema["tags"]["unordered"] is True
+
+
+def test_field_accuracy_unordered_array_set_match():
+    schema = {"tags": {"type": "array", "unordered": True, "items": {"type": "string"}}}
+    exp = {"tags": ["alpha", "beta", "gamma"]}
+    shuffled = {"tags": ["gamma", "alpha", "beta"]}  # same set, different order
+    assert structured.field_accuracy(exp, shuffled, schema) == 1.0
+    partial = {"tags": ["beta", "alpha"]}  # 2 of 3 present
+    assert round(structured.field_accuracy(exp, partial, schema), 4) == round(2 / 3, 4)
+
+
+def test_field_accuracy_unordered_array_of_objects():
+    schema = {
+        "items": {
+            "type": "array",
+            "unordered": True,
+            "items": {
+                "type": "object",
+                "fields": {"sku": {"type": "string"}, "qty": {"type": "integer"}},
+            },
+        }
+    }
+    exp = {"items": [{"sku": "a", "qty": 1}, {"sku": "b", "qty": 2}]}
+    reordered = {"items": [{"sku": "b", "qty": 2}, {"sku": "a", "qty": 1}]}
+    assert structured.field_accuracy(exp, reordered, schema) == 1.0
+
+
+def test_leaf_match_fuzzy_and_relative_tolerance():
+    fuzzy = {"s": {"type": "string", "string_match": "fuzzy", "threshold": 0.6}}
+    assert (
+        structured.field_accuracy(
+            {"s": "відновлювана енергетика"}, {"s": "відновлювана енергія"}, fuzzy
+        )
+        == 1.0
+    )
+    contains = {"s": {"type": "string", "string_match": "contains"}}
+    assert structured.field_accuracy({"s": "енерг"}, {"s": "сонячна енергетика"}, contains) == 1.0
+    rel = {"n": {"type": "number", "rel_tolerance": 0.01}}
+    assert structured.field_accuracy({"n": 51200}, {"n": 51199}, rel) == 1.0
+    assert structured.field_accuracy({"n": 51200}, {"n": 50000}, rel) == 0.0
 
 
 # --- nested-object / array-item validation + per-field tolerance (M5.4 residual) ----------

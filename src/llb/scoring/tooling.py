@@ -136,11 +136,55 @@ def _normalize_value(value: Any) -> Any:
     return value.casefold().strip() if isinstance(value, str) else value
 
 
-def arguments_match(expected: dict[str, Any], provided: dict[str, Any]) -> bool:
-    """Exact argument match: same key set, each value equal (strings casefold/strip-insensitive)."""
+# Per-argument match modes (a case may relax exact match for free-text / numeric args; BFCL's
+# possible-answer sets, which list several acceptable values per argument, map onto `oneof`).
+MATCH_EXACT = "exact"
+MATCH_CONTAINS = "contains"  # expected (normalized) is a substring of provided (free-text query)
+MATCH_FUZZY = "fuzzy"  # difflib ratio >= threshold (default 0.8); stdlib, no fuzzy-match dep
+MATCH_NUMERIC = "numeric"  # |provided - expected| <= tol (default 1e-9)
+MATCH_ONEOF = "oneof"  # provided matches any value in the spec's `values` list
+DEFAULT_FUZZY_THRESHOLD = 0.8
+
+
+def _match_value(expected: Any, provided: Any, spec: dict[str, Any] | None) -> bool:
+    """Match one argument value under its per-argument tolerance spec (default: exact)."""
+    mode = (spec or {}).get("mode", MATCH_EXACT)
+    if mode == MATCH_ONEOF:
+        values = [_normalize_value(v) for v in (spec or {}).get("values", [])]
+        return _normalize_value(provided) in values
+    if mode == MATCH_NUMERIC:
+        try:
+            return abs(float(provided) - float(expected)) <= float((spec or {}).get("tol", 1e-9))
+        except (TypeError, ValueError):
+            return False
+    exp = _normalize_value(expected)
+    prov = _normalize_value(provided)
+    if mode == MATCH_CONTAINS:
+        return isinstance(exp, str) and isinstance(prov, str) and exp in prov
+    if mode == MATCH_FUZZY:
+        if not (isinstance(exp, str) and isinstance(prov, str)):
+            return bool(exp == prov)
+        import difflib
+
+        threshold = float((spec or {}).get("threshold", DEFAULT_FUZZY_THRESHOLD))
+        return difflib.SequenceMatcher(None, exp, prov).ratio() >= threshold
+    return bool(exp == prov)  # MATCH_EXACT
+
+
+def arguments_match(
+    expected: dict[str, Any],
+    provided: dict[str, Any],
+    arg_match: dict[str, dict[str, Any]] | None = None,
+) -> bool:
+    """Argument match over the same key set, each value compared under its per-argument tolerance.
+
+    Without `arg_match` every value is exact (strings casefold/strip-insensitive, the legacy
+    behavior). `arg_match[name]` relaxes a single argument to contains / fuzzy / numeric / oneof.
+    """
+    arg_match = arg_match or {}
     if set(expected) != set(provided):
         return False
-    return all(_normalize_value(provided[k]) == _normalize_value(v) for k, v in expected.items())
+    return all(_match_value(expected[k], provided[k], arg_match.get(k)) for k in expected)
 
 
 # --- per-case + aggregate scoring ----------------------------------------------------------
@@ -154,6 +198,7 @@ class ToolingCase:
     instruction: str
     expected_tool: str | None  # None == the model should NOT call any tool
     expected_arguments: dict[str, Any] = field(default_factory=dict)
+    arg_match: dict[str, dict[str, Any]] = field(default_factory=dict)  # per-arg tolerance specs
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "ToolingCase":
@@ -162,6 +207,7 @@ class ToolingCase:
             instruction=str(record["instruction"]),
             expected_tool=record.get("expected_tool"),
             expected_arguments=dict(record.get("expected_arguments", {}) or {}),
+            arg_match=dict(record.get("arg_match", {}) or {}),
         )
 
 
@@ -220,7 +266,9 @@ def score_case(
     if tool_selected and call is not None and in_catalog:
         errors = validate_arguments(catalog[call.name], call.arguments)
         schema_valid = 1.0 if (call.well_formed and not errors) else 0.0
-        if schema_valid and arguments_match(case.expected_arguments, call.arguments):
+        if schema_valid and arguments_match(
+            case.expected_arguments, call.arguments, case.arg_match
+        ):
             arguments_exact = 1.0
     return ToolingCaseScore(
         item_id=case.id,

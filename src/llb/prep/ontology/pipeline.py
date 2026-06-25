@@ -46,7 +46,7 @@ from llb.prep.ontology.extract import (
     extract_corpus,
     extraction_prompt,
 )
-from llb.prep.ontology.induce import induce_ontology
+from llb.prep.ontology.induce import induce_ontology, ontology_constraints
 from llb.prep.ontology.inventory import inventory_corpus
 from llb.prep.ontology.models import (
     DocExtraction,
@@ -175,7 +175,7 @@ def draft_goldset(
     extractions = extract_corpus(docs, adapter)
     ontology = induce_ontology(extractions)
     seeds = sample_seeds(docs, extractions, max_items=max_items, seed=seed)
-    raw_drafts = draft_items(complete, docs, seeds)
+    raw_drafts = draft_items(complete, docs, seeds, ontology_constraints(ontology))
     items = refine_drafts(docs, raw_drafts)
 
     splits = assign_splits([it.id for it in items], seed=seed)

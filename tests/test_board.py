@@ -5,6 +5,7 @@ import json
 from llb.board.data import (
     best_per_model,
     config_summary,
+    load_category_records,
     load_run_records,
     load_screen_reports,
     read_case_objectives,
@@ -12,6 +13,7 @@ from llb.board.data import (
     read_case_splits,
     record_from_manifest,
 )
+from llb.scoring.aggregate import TIER_SECURITY, TIER_TOOLING
 
 
 def _write_run(
@@ -150,3 +152,43 @@ def test_load_screen_reports_separates_tier1(tmp_path):
     (screens / "junk.json").write_text(json.dumps({"not": "a report"}), encoding="utf-8")
     reports = load_screen_reports(screens)
     assert len(reports) == 1 and reports[0]["track"] == "logprob"
+
+
+# --- M5 category boards (each its own Tier, never cross-ranked) -----------------------------
+
+
+def _write_category_run(data_dir, method, tier, model, objective, n_cases=4):
+    safe_model = model.replace(":", "_")
+    run_dir = data_dir / method / f"20260101T000000Z-{method}-{safe_model}-{objective}"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": f"{method}-{model}",
+        "split": "final",
+        "config": {"model": model, "backend": "ollama", "tier": tier, "category": method},
+        "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 0.0},
+        "n_cases": n_cases,
+    }
+    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (run_dir / "scores.jsonl").write_text("", encoding="utf-8")
+    return run_dir
+
+
+def test_load_category_records_groups_by_tier(tmp_path):
+    _write_category_run(tmp_path, "security", TIER_SECURITY, "m:1", 0.4)
+    _write_category_run(tmp_path, "tooling", TIER_TOOLING, "m:1", 0.75)
+    by_tier = load_category_records(tmp_path)
+    assert set(by_tier) == {TIER_SECURITY, TIER_TOOLING}  # each its own tier, not merged
+    assert by_tier[TIER_SECURITY][0].objective_score == 0.4
+    assert by_tier[TIER_TOOLING][0].tier == TIER_TOOLING
+
+
+def test_load_category_records_best_per_model_within_tier(tmp_path):
+    _write_category_run(tmp_path, "security", TIER_SECURITY, "m:1", 0.4)
+    _write_category_run(tmp_path, "security", TIER_SECURITY, "m:1", 0.6)  # better run, same model
+    by_tier = load_category_records(tmp_path)
+    sec = by_tier[TIER_SECURITY]
+    assert len(sec) == 1 and sec[0].objective_score == 0.6  # kept the best
+
+
+def test_load_category_records_empty(tmp_path):
+    assert load_category_records(tmp_path) == {}

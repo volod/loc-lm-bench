@@ -121,24 +121,68 @@ def _is_number(value: Any) -> bool:
 
 
 def _leaf_match(expected: Any, actual: Any, spec: dict[str, Any] | None) -> bool:
-    """Compare two scalar values: string casefold/strip, numeric exact-or-`tolerance`, else `==`."""
+    """Compare two scalar values under the field spec.
+
+    Numbers: exact unless `tolerance` (abs) or `rel_tolerance` (relative). Strings: casefold/strip
+    exact unless `string_match` relaxes it to `fuzzy` (difflib ratio >= `threshold`, default 0.85)
+    or `contains` (expected normalized is a substring of actual). Otherwise `==`.
+    """
+    spec = spec or {}
     if actual is None:
         return expected is None
     if _is_number(expected) and _is_number(actual):
-        tol = (spec or {}).get("tolerance")
+        tol = spec.get("tolerance")
+        rel = spec.get("rel_tolerance")
         if tol is not None:
             return abs(float(expected) - float(actual)) <= float(tol)
+        if rel is not None:
+            return abs(float(expected) - float(actual)) <= float(rel) * abs(float(expected))
         return float(expected) == float(actual)
     if isinstance(expected, str) and isinstance(actual, str):
-        return bool(_norm(expected) == _norm(actual))
+        mode = str(spec.get("string_match", "exact"))
+        exp, act = _norm(expected), _norm(actual)
+        if mode == "contains":
+            return bool(exp in act)
+        if mode == "fuzzy":
+            import difflib
+
+            return difflib.SequenceMatcher(None, exp, act).ratio() >= float(
+                spec.get("threshold", 0.85)
+            )
+        return bool(exp == act)
     return bool(expected == actual)
+
+
+def _compare_unordered(
+    expected_items: list[Any], actual: Any, item_spec: dict[str, Any] | None
+) -> tuple[int, int]:
+    """Order-insensitive array compare: greedily assign each expected item to its best-matching
+    UNUSED actual item, summing matched/total leaves regardless of position."""
+    actual_items = actual if isinstance(actual, list) else []
+    used: set[int] = set()
+    matched_sum = total_sum = 0
+    for exp in expected_items:
+        _, item_total = _compare(exp, None, item_spec)
+        total_sum += item_total
+        best_matched, best_j = 0, -1
+        for j, act in enumerate(actual_items):
+            if j in used:
+                continue
+            cm, _ = _compare(exp, act, item_spec)
+            if cm > best_matched:
+                best_matched, best_j = cm, j
+        if best_j >= 0:
+            used.add(best_j)
+            matched_sum += best_matched
+    return matched_sum, total_sum
 
 
 def _compare(expected: Any, actual: Any, spec: dict[str, Any] | None) -> tuple[int, int]:
     """Recursively count (matched_leaves, total_leaves) of `expected` vs `actual`.
 
     Objects recurse per expected key (using the spec's `fields`); arrays recurse per expected index
-    (using the spec's `items`); everything else is one scalar leaf compared via `_leaf_match`.
+    (using the spec's `items`), or order-insensitively when the array spec sets `unordered: true`;
+    everything else is one scalar leaf compared via `_leaf_match`.
     """
     if isinstance(expected, dict):
         subspecs = (spec or {}).get("fields") or {}
@@ -151,6 +195,8 @@ def _compare(expected: Any, actual: Any, spec: dict[str, Any] | None) -> tuple[i
         return matched, total
     if isinstance(expected, list):
         item_spec = (spec or {}).get("items") if spec else None
+        if (spec or {}).get("unordered"):
+            return _compare_unordered(expected, actual, item_spec)
         matched = total = 0
         for i, exp_val in enumerate(expected):
             act_val = actual[i] if isinstance(actual, list) and i < len(actual) else None

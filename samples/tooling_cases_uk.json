@@ -107,6 +107,34 @@
       "id": "tc-008",
       "instruction": "Переклади слово 'дякую' англійською мовою.",
       "expected_tool": null
+    },
+    {
+      "id": "tc-009",
+      "instruction": "Знайди матеріали про державну підтримку відновлюваної енергетики в Україні.",
+      "expected_tool": "search_documents",
+      "expected_arguments": {"query": "відновлюван"},
+      "arg_match": {"query": {"mode": "contains"}}
+    },
+    {
+      "id": "tc-010",
+      "instruction": "Конвертуй приблизно 99.99 доларів США у гривні.",
+      "expected_tool": "convert_currency",
+      "expected_arguments": {"amount": 100, "from_currency": "USD", "to_currency": "UAH"},
+      "arg_match": {"amount": {"mode": "numeric", "tol": 0.5}}
+    },
+    {
+      "id": "tc-011",
+      "instruction": "Яка погода у місті Дніпро?",
+      "expected_tool": "get_weather",
+      "expected_arguments": {"city": "Дніпро"},
+      "arg_match": {"city": {"mode": "oneof", "values": ["Дніпро", "Dnipro", "м. Дніпро"]}}
+    },
+    {
+      "id": "tc-012",
+      "instruction": "Порахуй, скільки буде сто поділити на чотири.",
+      "expected_tool": "calculator",
+      "expected_arguments": {"expression": "100 / 4"},
+      "arg_match": {"expression": {"mode": "fuzzy", "threshold": 0.6}}
     }
   ]
 }

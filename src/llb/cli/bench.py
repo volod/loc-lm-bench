@@ -24,6 +24,17 @@ def bench_text_analysis_cmd(
     real_corpus: bool = typer.Option(
         False, help="the bundle is a REAL corpus (reported separately from synthetic)"
     ),
+    judge_model: Optional[str] = typer.Option(
+        None,
+        help="opt-in gated judge for narrative/insight/long_doc quality (recorded alongside the "
+        "objective headline, never folded in)",
+    ),
+    judge_rho: Optional[float] = typer.Option(
+        None, help="calibration Spearman rho; the judge is used only when rho >= threshold (0.6)"
+    ),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of the judge endpoint"
+    ),
 ) -> None:
     """M5.0/M5.4: score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -38,6 +49,9 @@ def bench_text_analysis_cmd(
             model=model,
             backend=backend,
             complete=complete,
+            judge_model=judge_model,
+            judge_rho=judge_rho,
+            judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
             limit=limit,
             synthetic=not real_corpus,
@@ -47,6 +61,10 @@ def bench_text_analysis_cmd(
         cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
     )
     typer.echo(result.table)
+    if result.judged_quality is not None:
+        typer.echo(
+            f"[bench-text-analysis] judged-quality (gated judge)={result.judged_quality:.3f}"
+        )
     if result.paths is not None:
         typer.echo(f"[bench-text-analysis] manifest -> {result.paths['manifest']}")
 
@@ -62,6 +80,17 @@ def bench_security_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    judge_model: Optional[str] = typer.Option(
+        None,
+        help="opt-in gated unsafe-content refusal-quality judge (recorded alongside ASR, never "
+        "the headline)",
+    ),
+    judge_rho: Optional[float] = typer.Option(
+        None, help="calibration Spearman rho; the judge is used only when rho >= threshold (0.6)"
+    ),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of the judge endpoint"
+    ),
 ) -> None:
     """M5.1: score a model's objective ASR + refusal-appropriateness under TIER_SECURITY."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -77,6 +106,9 @@ def bench_security_cmd(
             model=model,
             backend=backend,
             complete=complete,
+            judge_model=judge_model,
+            judge_rho=judge_rho,
+            judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
         )
 
@@ -106,14 +138,44 @@ def bench_tooling_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    tool_protocol: str = typer.Option(
+        "text",
+        help="text (catalog-in-prompt, every backend) | native (OpenAI tools=, needs a running "
+        "tool-capable endpoint via --base-url or Ollama)",
+    ),
 ) -> None:
     """M5.2: score a model's call-only function-calling correctness under TIER_TOOLING."""
+    from llb.backends.openai_client import make_client
     from llb.bench.common import LLMComplete, drive_with_backend
-    from llb.bench.tooling import ToolingRun, load_catalog_file, run_tooling
+    from llb.bench.tooling import (
+        TOOL_PROTOCOL_NATIVE,
+        ToolCaller,
+        ToolingRun,
+        load_catalog_file,
+        native_tool_caller,
+        run_tooling,
+    )
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     tool_catalog, cases = load_catalog_file(catalog)
     vram_reader, pid_reader = best_effort_gpu_readers()
+
+    native_caller: Optional[ToolCaller] = None
+    if tool_protocol == TOOL_PROTOCOL_NATIVE:
+        # Native tools= needs a known running endpoint (no launch). Build its caller up front.
+        endpoint = base_url or (
+            f"{cfg.ollama_host.rstrip('/')}/v1" if backend == "ollama" else None
+        )
+        if endpoint is None:
+            typer.echo(
+                "[error] --tool-protocol native needs a running tool-capable endpoint "
+                "(--base-url ... or --backend ollama)",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        native_caller = native_tool_caller(
+            make_client(endpoint), model, timeout=cfg.request_timeout_s
+        )
 
     def run(complete: LLMComplete) -> ToolingRun:
         return run_tooling(
@@ -122,6 +184,8 @@ def bench_tooling_cmd(
             model=model,
             backend=backend,
             complete=complete,
+            caller=native_caller,
+            capability=tool_protocol,
             data_dir=cfg.data_dir,
         )
 
@@ -288,6 +352,24 @@ def bench_structured_cmd(
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-structured] manifest -> {result.paths['manifest']}")
+
+
+@app.command("serve-tools-mcp")
+def serve_tools_mcp_cmd(
+    catalog: Path = typer.Option(
+        Path("samples/tooling_cases_uk.json"), help="tooling bundle (tools + cases JSON)"
+    ),
+    name: str = typer.Option("loc-lm-bench-tools", help="MCP server name"),
+) -> None:
+    """M5.2: serve the SAME tool catalog over the official MCP SDK (stdio); needs the [mcp] extra."""
+    from llb.bench.mcp_server import load_catalog, mcp_tool_specs, serve_stdio
+
+    tool_catalog = load_catalog(catalog)
+    typer.echo(
+        f"[serve-tools-mcp] serving {len(mcp_tool_specs(tool_catalog))} tools over MCP stdio "
+        f"(name={name}); connect an MCP client to its stdin/stdout"
+    )
+    serve_stdio(tool_catalog, name=name)
 
 
 @app.command("bench-reliability")

@@ -98,6 +98,26 @@ def test_score_document_objective_headline_excludes_judged():
     assert result["subtasks"][ta.INSIGHT]["objective"] is False
 
 
+def test_contradiction_paired_spans_require_both_sides():
+    label = ta.PlantedLabel(
+        label_id="c0",
+        kind=ta.CONTRADICTION,
+        value="суперечність про дохід",
+        attrs={"spans": ["дохід зріс", "дохід впав"]},
+    )
+    sim = lambda _a, _b: 0.0  # noqa: E731 - exact-surface only
+    # a prediction naming BOTH contradicting sides earns full credit
+    assert ta._credit("дохід зріс, але потім дохід впав", label, sim) == 1.0
+    # naming only ONE side earns zero (min of the two side credits)
+    assert ta._credit("дохід зріс", label, sim) == 0.0
+
+
+def test_contradiction_without_spans_falls_back_to_surface():
+    label = ta.PlantedLabel(label_id="c1", kind=ta.CONTRADICTION, value="внутрішня суперечність")
+    sim = lambda _a, _b: 0.0  # noqa: E731
+    assert ta._credit("внутрішня суперечність", label, sim) == 1.0
+
+
 def test_from_record_round_trip():
     record = {
         "label_id": "L1",
