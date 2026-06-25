@@ -177,6 +177,9 @@ def collect_telemetry(
         "n_gpu_layers": (launcher.meta.get("n_gpu_layers") if hasattr(launcher, "meta") else None),
         "gpus": _gpu_summary(),
     }
+    if hasattr(launcher, "meta") and launcher.meta.get("sampler") is not None:
+        report["sampler"] = launcher.meta["sampler"]  # vLLM sampler in the manifest (M4.3)
+        report["flashinfer_version"] = launcher.meta.get("flashinfer_version")
     return report
 
 

@@ -176,3 +176,47 @@ def test_runner_guard_applies_derate_and_aborts(monkeypatch):
     monkeypatch.setattr(contention, "apply_contention_guard", lambda **_kw: abort)
     with pytest.raises(SystemExit):
         runner._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
+
+
+# --- M4.2 multi-GPU read + arch-derived KV headroom ----------------------------------------
+
+
+def _gpu(index, free, total=16000):
+    from llb.backends.hardware import Gpu
+
+    return Gpu(index=index, name="x", total_mb=total, free_mb=free, driver="1")
+
+
+def test_select_target_gpu_picks_most_free_when_no_visible_devices():
+    from llb.backends.hardware import select_target_gpu
+
+    gpus = [_gpu(0, free=2000), _gpu(1, free=9000)]
+    assert select_target_gpu(gpus) is not None
+    assert select_target_gpu(gpus).index == 1  # the freest GPU, not blindly GPU 0
+
+
+def test_select_target_gpu_honors_cuda_visible_devices():
+    from llb.backends.hardware import select_target_gpu
+
+    gpus = [_gpu(0, free=2000), _gpu(1, free=9000)]
+    assert select_target_gpu(gpus, "0").index == 0  # the pinned device wins over most-free
+    assert select_target_gpu([], "0") is None
+
+
+def test_model_kv_headroom_is_arch_derived(monkeypatch):
+    from llb.executor import contention as ct
+
+    # A heavy KV-per-token model needs more abort headroom than the fixed floor.
+    monkeypatch.setattr(
+        ct, "_spec_for", lambda _src, _manifest: {"name": "m", "n_layers": 48, "kv_dim": 4096}
+    )
+    assert ct.model_kv_headroom_mb("m", min_serving_ctx=2048) > ct.DEFAULT_MIN_KV_HEADROOM_MB
+
+
+def test_model_kv_headroom_falls_back_without_arch(monkeypatch):
+    from llb.executor import contention as ct
+
+    monkeypatch.setattr(ct, "_spec_for", lambda _src, _manifest: {"name": "m"})
+    assert ct.model_kv_headroom_mb("m") == ct.DEFAULT_MIN_KV_HEADROOM_MB
+    monkeypatch.setattr(ct, "_spec_for", lambda _src, _manifest: None)
+    assert ct.model_kv_headroom_mb("unknown") == ct.DEFAULT_MIN_KV_HEADROOM_MB

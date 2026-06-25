@@ -160,6 +160,7 @@ def _guard_vllm_contention(
         ACTION_ABORT,
         apply_contention_guard,
         default_gpu_reader,
+        model_kv_headroom_mb,
         model_weight_floor_mb,
     )
 
@@ -171,6 +172,7 @@ def _guard_vllm_contention(
         evict=evict,
         wait=wait,
         ollama_host=config.ollama_host,
+        min_kv_headroom_mb=model_kv_headroom_mb(config.model),
     )
     if report is None:
         return None

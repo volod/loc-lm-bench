@@ -71,12 +71,17 @@ def list_models_cmd(
     vram_reserve: int = typer.Option(1024, help="VRAM MiB held back for CUDA/display"),
     ram_reserve: int = typer.Option(2048, help="RAM MiB held back for the OS"),
     runnable_only: bool = typer.Option(False, help="hide models that cannot run at all"),
+    trust_config: bool = typer.Option(
+        False,
+        "--trust-config",
+        help="let a cached config.json OVERRIDE curated arch fields (M4.1), not only fill gaps",
+    ),
 ) -> None:
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
 
-    models = planning_models(manifest)
+    models = planning_models(manifest, trust_config=trust_config)
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()
@@ -100,6 +105,34 @@ def list_models_cmd(
     typer.echo(
         "[list-models] verdict is at ctx_max; ctx_gpu = max context that fits fully "
         "on GPU. gpu = no offload needed; offload = split layers GPU/CPU RAM."
+    )
+
+
+@app.command("preflight-vllm")
+def preflight_vllm_cmd(
+    force: bool = typer.Option(
+        False, "--force", help="re-probe even when a cached verdict is current for this driver"
+    ),
+    auto_pin: bool = typer.Option(
+        False,
+        "--auto-pin",
+        help="when the bundled flashinfer fails, pip-install + try candidate versions "
+        "(LLB_FLASHINFER_CANDIDATES); CHANGES the environment, so it is opt-in",
+    ),
+) -> None:
+    """Probe the vLLM flashinfer sampler and record the verdict (M4.3).
+
+    Reuses a cached verdict when it was recorded under the CURRENT GPU driver; a driver change (or
+    --force) re-runs the probe WITHOUT a full `build-vllm`. With --auto-pin it also tries to install
+    a host-compatible flashinfer when the bundled one fails. Run this after a driver upgrade."""
+    from llb.backends.preflight import configured_candidates, run_preflight
+
+    candidates = configured_candidates() if auto_pin else None
+    verdict = run_preflight(force=force, candidates=candidates)
+    typer.echo(
+        f"[preflight-vllm] sampler={verdict['sampler']} driver={verdict.get('driver')} "
+        f"flashinfer={verdict.get('flashinfer_version')} "
+        f"auto_pinned={verdict.get('auto_pinned')} -- {verdict['detail']}"
     )
 
 

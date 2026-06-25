@@ -39,6 +39,27 @@ def test_parse_served_context_handles_both_shapes():
     assert parse_served_context("{}") is None
 
 
+def test_parse_served_context_handles_newer_props_shapes():
+    # M4.5: n_ctx has moved across llama.cpp versions -- the parser checks the known locations.
+    assert parse_served_context('{"default_generation_settings": {"params": {"n_ctx": 8192}}}') == (
+        8192
+    )
+    assert parse_served_context('{"generation_settings": {"n_ctx": 1024}}') == 1024
+    assert parse_served_context('{"model": {"n_ctx": 16384}}') == 16384
+    assert parse_served_context('{"props": {"n_ctx": 512}}') == 512
+    # the model's TRAINED context must never be mistaken for the served context
+    assert parse_served_context('{"n_ctx_train": 131072}') is None
+    assert parse_served_context('{"default_generation_settings": {"n_ctx": null}}') is None
+
+
+def test_run_eval_gpu_layers_flag_drives_partial_offload():
+    from llb.cli.helpers import load_config as _load_config
+
+    cfg = _load_config(None, model="m.gguf", backend="llamacpp", n_gpu_layers=20)
+    assert cfg.n_gpu_layers == 20  # a partial split (< all) is drivable without a YAML
+    assert _load_config(None, backend="llamacpp").n_gpu_layers == -1  # default stays all-on-GPU
+
+
 class FakeProc:
     """A subprocess stand-in: stays alive (poll() -> None) unless `dead`."""
 

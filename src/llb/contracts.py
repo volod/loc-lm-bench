@@ -266,6 +266,8 @@ class BackendMetadata(TypedDict, total=False):
     tokens_per_s: float
     last_completion_tokens: int
     load_time_s: float | None
+    sampler: str  # vLLM sampler actually used (flashinfer | native; M4.3)
+    flashinfer_version: str | None  # flashinfer version behind the sampler choice
 
 
 class GpuSummary(TypedDict):
@@ -289,6 +291,8 @@ class TelemetryReport(TypedDict):
     backend: str | None
     gpu_memory_utilization: float | None
     n_gpu_layers: int | None  # llama.cpp offload split (None for non-llama.cpp backends)
+    sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; M4.3), recorded in manifest
+    flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
 
 
@@ -349,6 +353,11 @@ class ModelSpec(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
+    # Sliding-window attention (M4.1, Gemma 3/4): the sliding layers cache at most
+    # `sliding_window` tokens, and `sliding_window_pattern` is the period of the full-attention
+    # layers (e.g. 6 -> 1 global layer per 6). Absent -> full attention on every layer.
+    sliding_window: NotRequired[int]
+    sliding_window_pattern: NotRequired[int]
     # Embedding-aware weight estimate (M4.1): under partial quant (w4a16/int4/fp8) the token
     # embedding + norms stay high-precision, so `params_b x bpw` under-counts. The planner reads
     # these from the spec (or a cached config.json) and prices the embedding separately.

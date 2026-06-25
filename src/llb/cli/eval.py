@@ -29,6 +29,12 @@ def run_eval_cmd(
     gpu_memory_utilization: Optional[float] = typer.Option(
         None, help="vLLM GPU memory fraction 0-1 (overrides the config; no YAML needed)"
     ),
+    gpu_layers: Optional[int] = typer.Option(
+        None,
+        "--gpu-layers",
+        help="llama.cpp GPU/CPU layer split (-1 == all on GPU; a smaller value forces a "
+        "partial offload to system RAM)",
+    ),
     split: str = typer.Option("final", help="gold split to evaluate"),
     limit: Optional[int] = typer.Option(None, help="cap the number of eval items"),
     judge_rho: Optional[float] = typer.Option(
@@ -72,6 +78,7 @@ def run_eval_cmd(
         goldset_path=goldset,
         max_model_len=max_model_len,
         gpu_memory_utilization=gpu_memory_utilization,
+        n_gpu_layers=gpu_layers,
         judge_model=judge_model,
         judge_base_url=judge_base_url,
         score_semantic=score_semantic,

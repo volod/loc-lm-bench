@@ -1133,9 +1133,10 @@ reliability (M5.0/M5.4) -- plus the second-frontier verified-data gate (M5.6 dat
 category renders under its OWN Tier (never cross-ranked with the RAG board), produces an objective,
 CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case scores like
 `run-eval`. What remains is forward work in [`plan.md`](plan.md): per-category residuals (sourcing
-breadth, native-FC/MCP transport, gated-judge wiring, judged sub-tasks), the host-dependent M5.6
-run-path hardening, the optional M5.5 platform/matrix expansion, and the human MH.5 sample-verify
-before any `verified=true` item scores real models.
+breadth, native-FC/MCP transport, gated-judge wiring, judged sub-tasks), the M5.6 data-prep items,
+the deferred/blocked M7.3 work (platform/matrix expansion, human-gated judge calibrations, the
+composite headline), and the human MH.5 sample-verify before any `verified=true` item scores real
+models.
 
 The shared M5 substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
 `launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
@@ -1243,7 +1244,11 @@ sub-tasks (narrative / insight) get the objective floor but the gated judge is n
 the text-analysis runner (lands with M5.4); `long_doc` comprehension via the map-reduce template is
 defined in the schema but not yet driven by this runner; a `contradiction`'s paired-span `attrs`
 are not used by the matcher; the Streamlit board (`llb.board`) does not yet load the per-tier M5
-category runs; and no real (non-synthetic) text-analysis corpus exists yet (OQ4, human-gated).
+category runs; and OQ4 is now CONFIRMED (2026-06-25): a REAL text-analysis corpus exists alongside
+synthetic (scored + reported SEPARATELY via the runner's `synthetic` flag), reference answers must
+be AUTHORED, and a real chat-log corpus exists -- so wiring the real path is M5.4 work. Per the
+OQ-egress decision (2026-06-25) the real chat logs use a LOCAL cross-check verifier only (no
+egress) while the real text-analysis corpus may use the frontier (litellm) cross-check.
 
 ### M5.1 Security / robustness benchmark -- `llb.scoring.security` + `llb.bench.security`
 The objective security board (no human dep to build). `llb.scoring.security` is the pure engine:
@@ -1342,12 +1347,12 @@ is demoted and completion-rate ranks alone. The `judge_scorer` is injectable, so
 proven with a fake judge (no DeepEval / endpoint / GPU). CLI: `--judge-model` / `--judge-rho` /
 `--judge-base-url`.
 
-**Possible further improvements (M5.3):** the loop is the pure harness -- a LangGraph-compiled
-`build_agentic_graph` wrapper (mirroring `build_multi_hop_graph`) is not built; the task set is a
-small committed seed (no real-UA-corpus search tasks yet); the trajectory-quality judge reuses the
-M3.8 calibration (fit on SQuAD QA, not agent trajectories), so an agentic-specific calibration would
-firm the domain transfer; the other five agent frameworks stay deferred as a comparison axis (out of
-M5 scope, by design); and tasks need the MH.5 human sample-verify.
+**Possible further improvements (M5.3):** the task set is a small committed seed (no real-UA-corpus
+search tasks yet); the trajectory-quality judge reuses the M3.8 calibration (fit on SQuAD QA, not
+agent trajectories), so an agentic-specific calibration would firm the domain transfer; and tasks
+need the MH.5 human sample-verify. The `build_agentic_graph` LangGraph wrapper and the
+LangGraph-vs-CrewAI harness comparison are scoped to Milestone 7 (the remaining frameworks --
+LangChain / LlamaIndex / Haystack / AutoGen -- stay out of scope; see `plan.md`).
 
 ### M5.4 Remaining taxonomy -- summarization / structured output / chat-period / reliability
 The remaining spec categories, each on the shared `bench.common` substrate:
@@ -1391,8 +1396,11 @@ calibration would firm the domain transfer; the committed structured cases are s
 engine now validates nested/array + per-field tolerance, but the UA cases should adopt nested
 schemas to exercise it), and array matching is index-aligned only (no order-insensitive / set
 matching, no relative or fuzzy string tolerance); chat-period needs a chat-log-shaped planter prompt
-+ a real chat corpus (OQ4); the text-analysis judged sub-tasks (narrative/insight) + `long_doc`
-map-reduce wiring (the M5.0 carry-over) remain; and all M5.4 cases need the MH.5 human sample-verify
++ to ingest the real chat corpus (OQ4 confirmed 2026-06-25: a real chat-log corpus exists, run via
+the real path reported separately, with a LOCAL-only cross-check per OQ-egress -- no egress); the
+text-analysis judged sub-tasks
+(narrative/insight) + `long_doc` map-reduce wiring (the M5.0 carry-over) remain; and all M5.4 cases
+need the MH.5 human sample-verify
 before headline use.
 
 ### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
@@ -1408,14 +1416,89 @@ pass count). Passing does NOT set `verified=true` -- only the human MH.5 sample-
 cross-check gates which drafted items are even eligible and is the report a human samples. CLI:
 `llb cross-check-goldset --goldset --corpus --model`. Pure + unit-tested (no key).
 
-**Possible further improvements (M5.6):** the cross-check is delivered, but the rest of M5.6 stays
-open and is mostly HOST-dependent (lands with the first real CUDA-host sweep): the run-path items
-(M4.1 sliding-window KV + cached-`config.json` OVERRIDE of curated arch, M4.2 multi-GPU read +
-arch-derived KV abort headroom, M4.3 flashinfer auto-pin + sampler-in-manifest, M4.5 further
-`/props` shapes + a real partial-offload split), and the remaining data-prep items (a concrete
-Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in, long-doc chunking for extraction beyond
-`EXTRACT_MAX_CHARS`, and richer-than-frequency ontology-type confidence carried into the drafting
-prompt).
+### M5.6 run-path hardening (M4 carry-overs) -- delivered
+
+The host-dependent M4 run-path residuals are delivered and host-validated (see the Real-host
+verification below):
+- **M4.1 sliding-window KV + config override (`llb.backends.planner`).** KV is now SLIDING-WINDOW
+  -aware: `attention_layer_split` / `kv_mib_at_context` / `max_context_for_kv` cap the KV of Gemma's
+  sliding layers at `sliding_window` while the periodic full-attention layers grow with context, so
+  a long context costs far less KV (piecewise, not linear). `arch_from_config` also reads
+  `sliding_window` / `sliding_window_pattern` (and derives the period from a `layer_types` list), and
+  `enrich_arch(spec, override=True)` lets a cached `config.json` OVERRIDE curated arch fields (the
+  real served architecture wins), exposed as `list-models --trust-config`.
+- **M4.2 multi-GPU read + arch-derived KV headroom (`llb.backends.hardware` + `llb.executor.contention`).**
+  `select_target_gpu` reads ALL GPUs and targets the `CUDA_VISIBLE_DEVICES` device (or the most-free
+  one) instead of hard-coding GPU 0; `default_gpu_reader` uses it. `model_kv_headroom_mb` derives the
+  abort headroom from the served arch (the KV at a minimal serving context, sliding-window-aware)
+  rather than a fixed 512 MB floor, so a heavy-KV model is judged un-launchable at the right
+  threshold.
+- **M4.3 flashinfer auto-pin + sampler-in-manifest + driver re-probe (`llb.backends.preflight` +
+  `vllm` + `telemetry`).** The verdict records the GPU `driver`; `verdict_is_current` invalidates a
+  cached verdict when the driver changes, so `llb preflight-vllm` re-probes WITHOUT a full
+  `build-vllm` (`--force` to re-run regardless). `auto_pin_flashinfer` installs + re-probes candidate
+  flashinfer versions (`LLB_FLASHINFER_CANDIDATES`) when the bundled one fails -- OPT-IN behind
+  `preflight-vllm --auto-pin`, since it changes the environment. The vLLM launcher records the
+  sampler actually used (`flashinfer` | `native`) + the flashinfer version into the manifest
+  telemetry.
+- **M4.5 further `/props` shapes + drivable partial offload (`llb.backends.llamacpp` + `cli.eval`).**
+  `parse_served_context` checks the known `n_ctx` locations across llama.cpp versions (top level,
+  `default_generation_settings[.params|.context]`, `generation_settings`, `model`, `props`) and never
+  mistakes `n_ctx_train`; `run-eval --gpu-layers N` drives a partial GPU/CPU split without a YAML.
+
+**Possible further improvements (M5.6):** only the data-prep items remain (feeding the M6 extraction
+reuse): a concrete Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in, long-doc chunking for
+extraction beyond `EXTRACT_MAX_CHARS`, and richer-than-frequency ontology-type confidence carried
+into the drafting prompt.
+
+## Real-host verification (2026-06-25, RTX 4060 Ti 16 GB)
+
+All three backends + every M5 category benchmark were validated on the real CUDA host (driver
+595.71.05), complementing the fake-endpoint CI boards:
+- **Core RAG eval:** `validate-goldset` PASS (250 items); `build-index` 311 chunks (dim 768);
+  `validate-retrieval` recall@10=0.980, MRR=0.847 (> the 0.8 gate); `run-eval` llama3.2:3b on the
+  final split with telemetry -> ~101 tok/s, peak VRAM 3994 MB, reliability 1.0, manifest + MLflow
+  mirror written. The uncalibrated judge demoted correctly (objective ranks alone).
+- **Three-backend run-path (same `run-eval` interface, source-built backends):**
+  - **Ollama** (prebuilt daemon): llama3.2:3b -- ~101 tok/s, peak VRAM 3994 MB (above).
+  - **vLLM 0.23.0** (`backend=vllm`, `samples/run_config_vllm_uk.yaml`): `google/gemma-4-E4B-it-qat-w4a16-ct`
+    (w4a16, the M2.4 16 GB fit) -- the pre-launch VRAM guard fired (`gpu-memory-utilization 0.80`
+    fits, 14990 MB free), then served at 63.5 tok/s, peak VRAM 14496 MB, cold load 114.0s, served
+    ctx 8192; reliability 1.0. Ollama released the GPU cleanly first.
+  - **llama.cpp** (`backend=llamacpp`, source-built `llama-server` under `.data/llb/llamacpp/build/bin`):
+    `Qwen2.5-0.5B-Instruct` Q4_K_M GGUF (loaded via `-m`, all layers on GPU) -- 401.6 tok/s, peak
+    VRAM 2318 MB, load 2.0s, served ctx 32768; reliability 1.0.
+  All three stamped a ranked row + telemetry + manifest + MLflow mirror under the SAME executor.
+- **M5.6 M4 run-path hardening (host-validated):**
+  - **M4.1:** `list-models --trust-config` over the cached `config.json` of `gemma-4-E4B-it-w4a16`
+    resolved it to `42/42 gpu` at ctx 131072 -- the sliding-window KV fits the full window where the
+    old full-attention estimate forced an offload.
+  - **M4.2:** the vLLM pre-launch guard read the free VRAM and the arch-derived KV headroom
+    (`gpu-memory-utilization 0.80 fits, 15309 MB free`) before launching.
+  - **M4.3:** `preflight-vllm --force` found the cached verdict STALE and re-probed -- the venv's
+    flashinfer 0.2.5 builds + runs here (sampler=flashinfer, driver 595.71.05 recorded). A vLLM
+    `--telemetry` run then recorded `sampler` + `flashinfer_version=0.2.5` in the manifest (the value
+    is the sampler ACTUALLY used: `native`, because an explicit env flag won over the verdict).
+  - **M4.5:** a real PARTIAL-offload split of the oversized `deepseek-r1:32b` Q4 GGUF (19.9 GB > 16
+    GB) at `--gpu-layers 20` served end to end -- peak VRAM 7710 MB (only ~20 of ~64 layers on GPU,
+    the rest in CPU RAM) at 3.36 tok/s, with `n_gpu_layers=20` recorded in the manifest. (Ollama's
+    `gemma3:27b` GGUF would not load -- a llama.cpp-build arch-key mismatch, not a bug here.)
+- **M5 category benches (llama3.2:3b, committed UA case sets):** agentic completion 0.500;
+  security ASR 0.600 / defense 0.400 with a per-family breakdown; tooling call-accuracy 0.750;
+  summarization reference-coverage 0.941 -- each stamped under its OWN Tier with a manifest + CI.
+- **M5.3 gated trajectory-quality judge end-to-end:** with a real judge endpoint (gemma4:e4b on
+  Ollama as the wiring smoke -- the calibrated production judge is gemma3:27b -- `--judge-rho
+  0.628`) the judge was TRUSTED and recorded `trajectory_quality=0.5875` (CI [0.375, 0.85])
+  ALONGSIDE the objective completion (0.500, unchanged), with a `JudgeStatus`
+  (`metrics=["trajectory_quality"]`) persisted in the manifest -- confirming the objective-first
+  "diagnostic alongside, never folded into the headline/ranking" contract on a real model.
+- `make ci` (Ruff format + lint, mypy strict, 551 pytest) is green with zero warnings.
+
+(Still host-pending: only the M5.6 host-dependent M4 hardening items the basic run did not exercise
+-- Gemma sliding-window KV + cached-`config.json` arch override (M4.1), multi-GPU read + arch-derived
+KV abort headroom (M4.2), flashinfer auto-pin + sampler-in-manifest (M4.3, the sampler stays off by
+default), and a real PARTIAL-offload llama.cpp split (M4.5; only the all-on-GPU path is now confirmed)
+-- see `plan.md`.)
 
 ## Resolved questions and scope boundaries
 
@@ -1432,17 +1515,30 @@ Resolved open questions:
   ids are verified via `prep-models`.
 - **OQ6 -- MAX_JOBS build helper (M2):** the canonical `max_jobs()` lives in
   `scripts/shared/common.sh` (AGENTS.md) and caps every CUDA source build.
+- **OQ4 -- text-analysis + chat corpus facts (confirmed 2026-06-25):** text-analysis reference
+  answers must be AUTHORED (AI-draft -> MH.5-verify, the current pipeline -- they do NOT pre-exist);
+  the text-analysis corpus is BOTH real + synthetic, scored + reported SEPARATELY via the runner's
+  `synthetic` flag (never merged); and a REAL chat-log corpus exists for chat-period (run via the
+  real path, reported separately). So the M5.4 text-analysis + chat-period residuals must wire the
+  REAL path, not only the synthetic planter.
+- **OQ-egress -- cross-check egress for the real corpus (resolved 2026-06-25):** the second-frontier
+  cross-check verifier is injectable (`SecondFrontierVerify`), so egress is per-corpus: the real
+  CHAT-LOG corpus uses a LOCAL verifier only (no egress -- inject a local `SecondFrontierVerify`);
+  the real TEXT-ANALYSIS corpus has frontier (litellm) cross-check egress APPROVED; synthetic
+  bundles keep the litellm default. MH.5 remains the human gate for all of them.
 
 Rejected pushbacks (ruled the other way; do NOT revisit -- see spec.md "Outside-voice
 resolutions"): defer-Optuna-to-finalists, LangGraph-only-where-needed, drop-MLflow,
 drop-thermal-gate, defer-vLLM.
 
-Genuinely out of scope (v-next): the six agent frameworks as a comparison axis (M5.3 ranks the
-model under ONE fixed LangGraph harness, not frameworks against each other -- spec Appendix D);
-and loc-lm-bench as a public leaderboard (it consumes lang-uk / INSAIT results as a prior, never
-duplicates them).
+Genuinely out of scope (v-next): a FULL six-framework comparison axis -- M5.3 ranks the model under
+ONE fixed harness (spec Appendix D), and only a TWO-harness comparison (LangGraph vs CrewAI) is
+taken forward, as Milestone 7 in `plan.md`; the remaining frameworks (LangChain / LlamaIndex /
+Haystack / AutoGen) stay deferred. Also out of scope: loc-lm-bench as a public leaderboard (it
+consumes lang-uk / INSAIT results as a prior, never duplicates them).
 
 No longer deferred (now forward work in `plan.md`, not "out of scope"): the security / agentic /
 MCP-tooling categories and the remaining taxonomy (Milestone 5), GraphRAG (Milestone 6, GO
-decided), and the multi-backend / multi-vector-store / GPU-matrix / quality-per-watt expansions
-(M5.5, built only with a committed consumer).
+decided), the LangGraph-vs-CrewAI harness comparison (Milestone 7), and the multi-backend /
+multi-vector-store / GPU-matrix / quality-per-watt expansions (Milestone 7 / M7.3, built only with a
+committed consumer or more hardware).

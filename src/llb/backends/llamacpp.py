@@ -106,11 +106,34 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
         return None
 
 
-def parse_served_context(props_body: str) -> int | None:
-    """Pull the served `n_ctx` from a `llama-server` /props response (best-effort).
+# Locations of the served `n_ctx` across llama-server versions (most-specific first). NOTE: this
+# is the SERVED context, never the model's `n_ctx_train`, so only an exact `n_ctx` key is read.
+_NCTX_PATHS: tuple[tuple[str, ...], ...] = (
+    ("default_generation_settings", "n_ctx"),
+    ("default_generation_settings", "params", "n_ctx"),
+    ("default_generation_settings", "context", "n_ctx"),
+    ("generation_settings", "n_ctx"),
+    ("model", "n_ctx"),
+    ("props", "n_ctx"),
+    ("n_ctx",),
+)
 
-    Across llama.cpp versions `n_ctx` sits either under `default_generation_settings` or at the
-    top level, so both are checked.
+
+def _dig(data: dict[str, Any], path: tuple[str, ...]) -> Any:
+    obj: Any = data
+    for key in path:
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(key)
+    return obj
+
+
+def parse_served_context(props_body: str) -> int | None:
+    """Pull the served `n_ctx` from a `llama-server` /props response (best-effort, M4.5).
+
+    `n_ctx` has moved across llama.cpp versions (top level, `default_generation_settings`, a nested
+    `params`/`context`, `generation_settings`, `model`, `props`), so a known set of paths is
+    checked in order. Only an exact `n_ctx` int is accepted (never `n_ctx_train`).
     """
     try:
         data = json.loads(props_body)
@@ -118,9 +141,10 @@ def parse_served_context(props_body: str) -> int | None:
         return None
     if not isinstance(data, dict):
         return None
-    for obj in (data.get("default_generation_settings"), data):
-        if isinstance(obj, dict) and isinstance(obj.get("n_ctx"), int):
-            return int(obj["n_ctx"])
+    for path in _NCTX_PATHS:
+        value = _dig(data, path)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return int(value)
     return None
 
 

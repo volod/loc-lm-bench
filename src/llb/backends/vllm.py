@@ -184,6 +184,15 @@ class VllmLauncher(BackendLauncher):
             extra_args=self.extra_args,
         )
 
+    def _record_sampler(self, run_env: Mapping[str, str]) -> None:
+        """Record which sampler this launch uses (M4.3) so the manifest captures it."""
+        from llb.backends.preflight import SAMPLER_FLASHINFER, SAMPLER_NATIVE, load_verdict
+
+        use_flashinfer = run_env.get(env.VLLM_USE_FLASHINFER_SAMPLER) == "1"
+        self.meta["sampler"] = SAMPLER_FLASHINFER if use_flashinfer else SAMPLER_NATIVE
+        verdict = load_verdict()
+        self.meta["flashinfer_version"] = verdict["flashinfer_version"] if verdict else None
+
     def _open_log(self) -> int | TextIO:
         if self.log_dir is None:
             return subprocess.DEVNULL
@@ -197,9 +206,11 @@ class VllmLauncher(BackendLauncher):
             raise RuntimeError("vLLM launcher is already started")
         log = self._open_log()
         start = time.monotonic()
+        run_env = launch_env()
+        self._record_sampler(run_env)
         try:
             self._proc = self._popen(
-                self.command(), stdout=log, stderr=subprocess.STDOUT, env=launch_env()
+                self.command(), stdout=log, stderr=subprocess.STDOUT, env=run_env
             )
             where = f" (see {self.log_path})" if self.log_path else ""
             polls = max(1, int(self.startup_timeout / self.poll_interval))

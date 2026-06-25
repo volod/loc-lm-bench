@@ -10,8 +10,9 @@ chat-period / reliability, plus the second-frontier verified-data gate) -- lives
 **Quick start:** `make demo-eval` runs the pipeline end to end (needs a running Ollama); the real
 vLLM path is `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` on a CUDA host.
 
-Remaining work: the Milestone 5 residuals (per-category breadth + host-dependent hardening), the
-Milestone 6 build, and a human-only lane (Milestone H).
+Remaining work: the Milestone 5 residuals (per-category breadth + the remaining data-prep hardening), the
+Milestone 6 build, the Milestone 7 extended-implementation + forward-verification lane, and a
+human-only lane (Milestone H).
 
 ---
 
@@ -30,15 +31,39 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 [security](../guides/learning-path-security.md) ·
 [evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
 
-- **MH.2 sign-offs + corpus facts** ("Schema and ontology sign-off"): approve the M6 ontology
-  schema + M6 scope; confirm the OQ4 corpus facts (do text-analysis reference answers exist? real
-  vs synthetic). Blocks Milestone 6 (ontology).
+- **MH.2 ontology + scope sign-off** ("Schema and ontology sign-off"): approve the M6 ontology
+  schema + M6 scope. Blocks Milestone 6. (The OQ4 corpus facts are already settled -- see
+  `current.md` -- so they are no longer a human TODO; their forward implication lives in the M5.4
+  residuals.)
 - **MH.5 data verification** ("Eval-data verification"): sample-verify a stratified sample of
-  AI-drafted, frontier-cross-checked items, then flip via the ledger. Blocks any `verified=true`
+  AI-drafted, cross-checked items, then flip via the ledger. Blocks any `verified=true`
   item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6).
 
 What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
 cross-check, and the optional non-Gemma cross-check judge.
+
+### Human-only ordered sequence (preferable order)
+
+The two gates run PARALLEL with the build, but they are NOT equal priority and MH.5 is NOT a
+one-shot upfront task -- it verifies what the M5 build DRAFTS, so it cannot "complete before M5".
+Preferable order:
+
+1. **MH.5 first + continuous** (highest priority, parallel with M5). It is the human CRITICAL PATH
+   for the nearest deliverable -- real-model scores in the M5 categories -- and it is the slow,
+   human-paced, PER-BUNDLE gate. Run it PULL-BASED: as each category's bundle is drafted +
+   cross-checked (M5 build) and STABILIZES, verify that bundle, flip accepted items via the ledger,
+   and real-model scoring unblocks for it. Start the moment the first drafted + cross-checked bundle
+   lands; verify a bundle only once its drafting is stable (do not re-verify seeds M5 supersedes).
+   The objective boards never wait on this -- only real-model HEADLINE scoring does.
+2. **MH.2 ontology + M6 scope sign-off -- when the M6 draft lands (after M5).** Gated on the M6
+   ontology DRAFT artifact existing; blocks M6 headline use. Cannot start earlier.
+3. **(optional) Strengthen the judge calibration -- background, lowest priority.** The judge is
+   already mechanically trusted and objective scores rank regardless; do it only with idle capacity.
+
+Rationale: prioritize MH.5 over MH.2's sign-off because MH.5 unblocks the NEARER M5 real-model
+deliverable and is the streaming human-paced bottleneck, while the ontology sign-off cannot begin
+until the M6 draft exists anyway. (The OQ4 corpus facts + the OQ-egress cross-check routing are
+already settled -- see `current.md` -- so they are no longer human TODOs.)
 
 ### MH.2 -- remaining sign-offs (TODO, step by step)
 
@@ -49,9 +74,9 @@ sign-off"](../guides/human-in-the-loop-evaluation.md#schema-and-ontology-sign-of
    type set, cap sizes, extraction constraints; record a dated sign-off line at the TOP of the
    proposal doc (until that line exists the schema stays un-trusted for headline use).
 2. Approve the Milestone 6 scope / acceptance.
-3. Confirm the OQ4 corpus facts only you have: whether text-analysis reference answers already
-   EXIST or must be authored, and which corpus is real vs synthetic (reported separately, never
-   merged).
+
+(The OQ4 corpus facts that MH.2 also used to cover are settled -- see `current.md`; only the
+ontology + scope sign-off remains here.)
 
 ### MH.5 -- gold/eval data verification (TODO, step by step)
 
@@ -83,22 +108,27 @@ Optional -- the current judge is already mechanically trusted; objective scores 
 Canonical order for picking up the remaining work. Sequence numbers are stable workstream
 identifiers (AGENTS.md); a workstream appears only while it has open work.
 
-1. **Milestone 5 -- residuals** (the category BUILD is delivered; see `current.md`). Each category
-   stays its own Tier, never cross-ranked with the RAG board.
+1. **Milestone 5 -- residuals** (per-category open items only; the built categories live in
+   `current.md`). Each category stays its own Tier, never cross-ranked with the RAG board.
    1. **M5.1** Security -- sourcing breadth (public sets UA-adapted + the M3.5 planter for the
       corpus-specific RAG-injection/canary families) + the opt-in unsafe-content gated judge.
    2. **M5.2** Tooling -- the MCP-SDK transport + a selectable native OpenAI `tools=` caller; the
       full BFCL UA dataset adaptation + per-argument value tolerance.
-   3. **M5.3** Agentic -- the LangGraph harness wrapper + the trajectory-quality gated judge;
-      broaden the task set.
+   3. **M5.3** Agentic -- broaden the agentic task set (real-UA-corpus search tasks). The
+      LangGraph-vs-CrewAI harness comparison moved to Milestone 7.
    4. **M5.4** Remaining-taxonomy residuals -- the gated-judge wiring (text-analysis judged
-      sub-tasks + `long_doc`), nested/array UA structured cases, the chat-period chat-log planter;
-      the composite stays off until every component carries a CI.
-   5. **M5.5** Platform & matrix expansion -- optional; build last (needs a committed consumer).
-   6. **M5.6** Host-dependent run-path hardening + the remaining data-prep items (spaCy adapter,
-      long-doc chunking, richer ontology confidence); rides the first real-host sweep.
+      sub-tasks + `long_doc`), nested/array UA structured cases, the chat-period chat-log planter +
+      real-corpus ingestion.
+   5. **M5.6** Remaining data-prep items (spaCy adapter, long-doc chunking, richer ontology
+      confidence); the M4 run-path hardening lives in `current.md`.
 2. **Milestone 6** (after M5) -- GraphRAG (Kuzu). ⚠ needs MH.2 (M6 ontology + scope sign-off).
-3. **Milestone H** (human-paced, parallel) -- MH.2, MH.5. See the prerequisites block above.
+3. **Milestone 7** (parallel) -- extended + deferred + verification: the M7.1 LangGraph-vs-CrewAI
+   harness comparison and the M7.2 non-blocking quality gates (both buildable now), plus M7.3 -- the
+   DEFERRED / BLOCKED work moved out of M5 (human-gated calibrations, the composite headline, the
+   platform/matrix expansion).
+4. **Milestone H** (human-paced, parallel) -- MH.5 first + continuous (per-bundle, parallel with
+   M5), then the MH.2 ontology + scope sign-off when the M6 draft lands. See the prerequisites
+   block above (human-only ordered sequence).
 
 Real-model scoring of any `verified=true` item still waits on MH.5 (the human gate); the objective
 category boards do not depend on the gated judge.
@@ -107,8 +137,8 @@ category boards do not depend on the gated judge.
 
 ## Milestone 5 -- residual work
 
-The category build is delivered in [`current.md`](current.md). These constraints still govern the
-remaining M5 work (residuals below + the M5.5 expansion):
+The built categories live in [`current.md`](current.md). These constraints still govern the
+remaining M5 work (the residuals below; the deferred platform/matrix expansion is now M7.3):
 - **New Tier per category, never cross-ranked.** A new category stamps its own `ModelResult.tier`;
   the `aggregate` guard refuses a board mixing distinct tiers.
 - **Objective first, gated judge second.** The gated judge enters only for residual free-form
@@ -123,6 +153,11 @@ remaining M5 work (residuals below + the M5.5 expansion):
 - **Composite stays off until every component carries a CI.** The spec default weights are recorded
   but NOT a headline until then; until then each category reports its own Pareto + CIs.
 
+Every residual below is AI-automatable in dependency order (pure code + data, no human or hardware
+gate to BUILD). The blocked / deferred work -- the human-gated judge calibrations, the composite
+headline, and the platform/matrix expansion -- lives in Milestone 7; real-model HEADLINE scoring of
+any built data then waits on the MH.5 human gate (Milestone H).
+
 ### M5.1 Security / robustness -- residuals
 - **Sourcing breadth:** wire the public-set adapters (JailbreakBench / HarmBench / AdvBench,
   UA-adapted) for the generic families and the M3.5 planter for the corpus-specific RAG-injection +
@@ -130,7 +165,6 @@ remaining M5 work (residuals below + the M5.5 expansion):
 - **Unsafe-content gated judge:** add the opt-in gated judge for borderline unsafe-content quality
   (objective `refuse` detection PLUS the judge); no new safety classifier (ShieldGemma / frontier
   moderation stay opt-in).
-- **Verified-data gate:** the attack set still needs a human sample-verify (MH.5) before headline use.
 - Deep dive: [security learning path](../guides/learning-path-security.md).
 
 ### M5.2 Tooling / function-calling -- residuals
@@ -139,62 +173,44 @@ remaining M5 work (residuals below + the M5.5 expansion):
   default driver uses a universal text protocol) -- so native FC and MCP run from one source.
 - **Dataset breadth:** adapt the real Berkeley Function-Calling Leaderboard (BFCL) cases to
   Ukrainian (today a small hand-authored UA catalog); add per-argument tolerance for free-text
-  values (exact-match only today); MH.5 human sample-verify before headline use.
+  values (exact-match only today).
 
 ### M5.3 Agentic workflows -- residuals
-- **LangGraph harness wrapper:** a `build_agentic_graph` (mirroring `build_multi_hop_graph`) over
-  the pure loop -- LangGraph stays the single fixed harness; the other five frameworks stay
-  deferred as a comparison axis (ranks the MODEL under one harness -- out of M5 scope, by design).
-- **Trajectory-quality gated judge:** DONE -- the opt-in gated judge for trajectory quality a
-  deterministic check cannot cover is wired via `run_gated_judge` (grounded-in-observations +
-  goal-relevance -> one `trajectory_quality` scalar, recorded alongside completion-rate, never the
-  headline; see `current.md`). Residual: broaden the task set (real-UA-corpus search tasks), an
-  OPTIONAL agentic-specific judge calibration (the M3.8 rho was fit on SQuAD QA), and MH.5-verify.
+- **Task-set breadth:** add real-UA-corpus search tasks (today a small committed seed; the real
+  text-analysis corpus is the source -- see `current.md`).
+- In Milestone 7: the LangGraph harness wrapper + the LangGraph-vs-CrewAI comparison (M7.1), and the
+  OPTIONAL agentic-specific judge calibration (M7.3, human-gated -- the trajectory-quality judge
+  reuses the M3.8 rho, fit on SQuAD QA, not agent trajectories).
 
 ### M5.4 Remaining taxonomy -- residuals
-- **summarization** -- the opt-in gated-judge faithfulness signal is wired via `run_gated_judge`,
-  reusing the M3.8 calibration (see `current.md`); residual: an OPTIONAL summarization-specific judge
-  calibration (the M3.8 rho was fit on SQuAD QA, not summaries) + MH.5-verify the cases.
-- **structured output** -- the scorer now validates nested objects / array items + per-field numeric
-  tolerance (see `current.md`); residual is DATA + matcher breadth: author nested/array UA cases in
-  `samples/structured_cases_uk.json` (currently flat) and MH.5-verify them; optionally add order-
-  insensitive array matching and relative / fuzzy-string tolerance.
-- **chat-period** -- a chat-log-shaped planter prompt + a real chat corpus (OQ4, human-gated).
+- **structured output** -- DATA + matcher breadth: author nested/array UA cases in
+  `samples/structured_cases_uk.json` (currently flat); optionally add order-insensitive array
+  matching and relative / fuzzy-string tolerance.
+- **chat-period** -- a real chat-log corpus exists (corpus facts in `current.md`): build the
+  chat-log-shaped synthetic planter AND ingest the real chat corpus; run both through
+  `bench.text_analysis` via the real path (`--real-corpus`, `synthetic=false`) reported SEPARATELY
+  from synthetic; the real chat logs use a LOCAL cross-check verifier only (no egress).
 - **text-analysis judged sub-tasks** -- wire the gated judge into `llb.bench.text_analysis` for
-  `narrative` / `insight` (objective floor only today) and drive `long_doc` through the map-reduce
-  template; use a `contradiction`'s paired-span `attrs`; load the per-tier text-analysis runs into
-  the Streamlit board.
-- **composite** -- the full composite weights stay OFF (each category reports its own board + CIs)
-  until every component carries a CI. MH.5 verify before headline.
+  `narrative` / `insight` (objective floor only today); drive `long_doc` through the map-reduce
+  template; use a `contradiction`'s paired-span `attrs`; load the per-tier runs into the Streamlit
+  board. Both a real and a synthetic corpus exist (see `current.md`) -- run the real path
+  (`synthetic=false`) on the real corpus, reported separately (the real text-analysis corpus may use
+  the frontier litellm cross-check).
+- In Milestone 7 (M7.3, blocked): the OPTIONAL summarization-specific judge calibration (human
+  ratings) and the full composite headline (needs MH.5-verified data across every CI-bearing
+  component).
 
-### M5.5 Platform and matrix expansion (deferred within M5)
-- multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant metadata
-  from M3.2 is the seam);
-- multi-vector-store -- Chroma / Qdrant / LanceDB behind the RAG-store seam (FAISS is v1);
-- full GPU-class matrix -- 12 / 24 / 48 GB beyond the validated 16 GB class;
-- quality-per-watt -- a derived metric over the NVML power already sampled per cell (M3.3).
+### M5.6 Carried-forward M4 residuals -- data-prep (feeds the M6 extraction reuse)
+The M4 run-path hardening lives in `current.md`; these remaining data-prep items land before the
+M6 extraction reuse:
+1. Ship the opt-in Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in (seam exists).
+2. Chunk over-long docs for extraction instead of one truncated call (`EXTRACT_MAX_CHARS`).
+3. Induce ontology-type confidence from a richer signal than raw frequency; carry the induced
+   types into the drafting prompt as explicit constraints.
 
-### M5.6 Carried-forward M4 residuals (small code hardening)
-Run-path items land with whichever lane first sweeps the 16 GB host; the remaining data-prep items
-land before the M6 extraction reuse.
-- **Run-path (host-dependent):**
-  1. M4.1 -- model Gemma 3/4 sliding-window KV (full-attention today); let a cached `config.json`
-     OVERRIDE curated arch fields, not only fill gaps.
-  2. M4.2 -- read all GPUs (guard reads GPU 0 only); derive the KV abort headroom from the served
-     arch instead of the fixed floor.
-  3. M4.3 -- auto-pin a host-compatible flashinfer when the bundled one fails; record the chosen
-     sampler in the manifest; re-run the preflight on a driver change without a full rebuild.
-  4. M4.5 -- handle further `/props` response shapes; exercise a real partial-offload split on an
-     oversized GGUF (only the all-on-GPU path is confirmed).
-- **Data-prep (feeds the M6 extraction reuse):**
-  1. Ship the opt-in Stanza / spaCy `uk_core_news` `ExtractionAdapter` plug-in (seam exists).
-  2. Chunk over-long docs for extraction instead of one truncated call (`EXTRACT_MAX_CHARS`).
-  3. Induce ontology-type confidence from a richer signal than raw frequency; carry the induced
-     types into the drafting prompt as explicit constraints.
-
-**Remaining M5 verification:** the M5.6 run-path validations pass on the first real CUDA-host sweep,
-and the MH.5 human sample-verify accepts a stratified sample before any `verified=true` item scores
-real models.
+**M5 completion:** the items above are AI-automatable end to end (objective boards prove in CI from
+fake endpoints). Real-model HEADLINE scoring of any built data then waits on the MH.5 human gate
+(Milestone H); the blocked / deferred work is in Milestone 7 (M7.3).
 
 ---
 
@@ -225,33 +241,112 @@ manifest-recorded; the FAISS path is unchanged. Concepts:
 
 ---
 
+## Milestone 7 -- Extended, deferred, and forward-verification tasks
+
+Everything NOT in the immediate M5 automatable sequence. Two parts are non-blocking and buildable
+now -- the extended agentic harness comparison (M7.1) and the non-blocking quality-verification
+actions (M7.2, provable in CI from fake endpoints). The third part (M7.3) parks the DEFERRED /
+BLOCKED work that cannot be finished by AI alone: it needs human input, more hardware, or a
+committed consumer. (Verifications that need a real CUDA host or a human gate stay in
+`Verification (forward)`.)
+
+### M7.1 Extended agentic workflows (LangGraph vs CrewAI harness)
+
+M5.3 ranks the MODEL under ONE fixed harness (the pure controller->execute->controller loop; see
+`current.md`). This task adds exactly ONE alternative harness -- **CrewAI** -- so the comparison
+axis is **LangGraph vs CrewAI**, holding everything else fixed. This isolates the HARNESS effect
+("how much does the agent framework itself move the score" on the same model). The other frameworks
+the spec lists as deferred (LangChain, LlamaIndex, Haystack, AutoGen) stay OUT of scope -- two
+harnesses are enough to establish the comparison method.
+
+**Decided scope:** the candidate model, the M5.3 task set + the deterministic `ToolWorld`, the
+objective scoring (completion-rate + per-task CI), and the opt-in gated trajectory-quality judge are
+all HELD FIXED; the HARNESS is the only variable. CrewAI is an OPT-IN, lazy-imported extra so the
+base install stays light, and a fake crew proves the wiring with no dependency / GPU (the same
+injectable-`complete` discipline as the rest of M5).
+
+**Design (how to compare the two harnesses):**
+1. A `Harness` seam -- a `Protocol` `(task, complete, tools, max_steps) -> Episode` -- so the pure
+   loop, a LangGraph-compiled graph, and a CrewAI crew all return the SAME canonical `Episode`
+   (final answer + tool-call transcript + final env-state). The existing `run_episode` is refactored
+   to implement it with NO behavior change.
+2. `build_agentic_graph` -- the LangGraph-compiled harness (mirroring `build_multi_hop_graph`) over
+   the pure loop, so "LangGraph" is a named harness, not just the implicit substrate.
+3. A CrewAI harness wrapper -- wrap the SAME `ToolWorld` tools as CrewAI tools and the SAME candidate
+   `complete` as the crew's LLM, run a single-agent crew over the task, then adapt its result back
+   into the canonical `Episode` so `check_success` + the scorer + the gated judge are UNCHANGED.
+4. Record the harness id in the manifest (`harness: loop | langgraph | crewai`) and add it as a
+   board axis under `TIER_AGENTIC` -- harness-tagged, never silently mixed (same discipline as the
+   recorded backend capability); a comparison view ranks one model across `{langgraph, crewai}`.
+5. Same isolation contract (`drive_with_backend` / `isolate_cell`), same bootstrap CIs; unit-test
+   each harness from a fake endpoint (+ a fake crew), no GPU.
+
+**Acceptance:** one model runs the SAME agentic task set under both the LangGraph and the CrewAI
+harness, producing comparable completion-rate + trajectory-quality boards with the harness recorded
+in the manifest; the objective scoring / isolation / gated judge are unchanged; CrewAI stays an
+opt-in lazy extra so the base install is unaffected.
+
+### M7.2 Non-blocking forward verification (quality gates -- no host, no human)
+
+Every forward verification that is provable WITHOUT a real CUDA host or a human gate lives here (the
+blocked ones stay in `Verification (forward)` below):
+- **Category + harness boards:** each M5 category and the M7.1 harness comparison ranks objectively
+  under its OWN Tier with bootstrap CIs from FAKE endpoints -- no GPU, no human sample-verify (the
+  real-model headline still rides the MH.5 data gate). See `current.md`.
+- **Code-quality gate:** `make ci` stays green -- Ruff format + lint, mypy (strict), and the full
+  pytest suite -- and every heavy dependency stays lazy-imported so the base install imports.
+- **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
+  helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
+
+### M7.3 Deferred / blocked (needs human input, more hardware, or a committed consumer)
+
+Moved out of M5 because AI cannot finish them in sequence; each unblocks differently:
+- **Domain-specific judge calibrations (human-gated).** Optional summarization-specific and
+  agentic-specific judge calibrations: the wired faithfulness / trajectory-quality judges reuse the
+  M3.8 rho (fit on SQuAD QA, not summaries / agent trajectories). Tightening them needs NEW HUMAN
+  ratings over a harder split -- the same human loop as the "(optional) Strengthen the judge
+  calibration" prerequisite (Milestone H).
+- **Composite headline (blocked on MH.5).** Turn on the spec's weighted composite over the M5
+  categories once every component carries a CI AND its data is MH.5-verified; until then each
+  category reports its own board + CIs (the standing M5 constraint).
+- **Platform & matrix expansion (needs a committed consumer / more hardware).** Build last:
+  - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant
+    metadata from M3.2 is the seam);
+  - multi-vector-store -- Chroma / Qdrant / LanceDB behind the RAG-store seam (FAISS is v1);
+  - full GPU-class matrix -- 12 / 24 / 48 GB beyond the validated 16 GB class (needs other GPUs);
+  - quality-per-watt -- a derived metric over the NVML power already sampled per cell (M3.3).
+
+---
+
 ## Reuse (do not rebuild)
 
 DeepEval G-Eval, FAISS, sentence-transformers, `openai` client (local backends incl. tool/function
 calling for M5.2), litellm (frontier prep), Optuna, MLflow (local), LangGraph (eval templates incl.
 the M5.3 agentic loop), DuckDB, Streamlit, pynvml + psutil, lm-evaluation-harness-uk (Tier-1
-screen), Kuzu (M6 graph store). Public UA datasets: SQuAD-uk + Belebele-uk. For the M5 residuals:
-the official `mcp` Python SDK (M5.2), BFCL cases (M5.2), and JailbreakBench / HarmBench / AdvBench
-(M5.1), all UA-adapted. No servers (no Celery/K8s/Neo4j), no cloud dependence.
+screen), Kuzu (M6 graph store), CrewAI (M7, the opt-in second agent harness -- lazy extra). Public
+UA datasets: SQuAD-uk + Belebele-uk. For the M5 residuals: the official `mcp` Python SDK (M5.2),
+BFCL cases (M5.2), and JailbreakBench / HarmBench / AdvBench (M5.1), all UA-adapted. No servers
+(no Celery/K8s/Neo4j), no cloud dependence.
 
 ## Verification (forward)
 
-- **M5 (remaining):** the M5.6 run-path validations pass on the first real CUDA-host sweep; the
-  MH.5 human sample-verify gates real-model scoring. (The category boards are already objective +
-  CI-bearing from fake endpoints under their own Tiers -- see `current.md`.)
+BLOCKED verifications only -- each needs a real CUDA host or a human gate. The non-blocking
+quality-verification actions live in Milestone 7 (M7.2) above.
+- **M5 (remaining):** the MH.5 human sample-verify gates real-model scoring.
 - **M6:** a corpus builds a Kuzu graph from M4.4 extraction and graph retrieval scores on the
-  existing source-span metric, FAISS unchanged.
+  existing source-span metric, FAISS unchanged (⚠ MH.2).
 - **Milestone H (⚠ human):** the M6 ontology signed off (MH.2); a human sample-verify (MH.5)
   accepts the AI-drafted, frontier-cross-checked data before it scores models. See
   [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
-- **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
-  helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 
 ## Worktree parallelization
 
 - **M5 residuals:** the per-category open items (sourcing breadth, native-FC/MCP transport,
   gated-judge wiring, judged-subtask + long_doc, nested/array UA structured cases) parallelize.
-- **M5.6 residuals:** the host-dependent run-path items attach to whichever lane first sweeps the
-  16 GB host; the remaining data-prep items (spaCy adapter, long-doc chunking, ontology confidence).
+- **M5.6 residuals:** the remaining data-prep items (spaCy adapter, long-doc chunking, ontology
+  confidence) parallelize; the M4 run-path hardening is in `current.md`.
 - **graph:** Milestone 6 is its own lane after M5, reusing M4.4 extraction.
+- **extended-agentic:** Milestone 7 (M7.1 LangGraph vs CrewAI) is its own non-blocking lane over
+  the M5.3 harness seam + task set; M7.2 collects the non-blocking quality gates. No human/host
+  gate to build.
 - **human-gated:** Milestone H (MH.2, MH.5) runs on its own decision-paced lane.
