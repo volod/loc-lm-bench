@@ -53,22 +53,32 @@ evaluation prompt or silently replace malformed scores.
 ## Calibration experiment
 
 With candidate and judge endpoints reachable, generate a pre-filled worksheet over the committed
-human-reviewed calibration split:
+human-reviewed calibration split. The defaults target a local Ollama judge (`gemma3:27b` on
+:11434) with the embedder pinned to CPU, so this is just:
+
+    make calibration-run
+
+To use a vLLM judge instead, override the knobs:
 
     make calibration-run \
-      MODEL=llama3.2:3b \
-      BACKEND=ollama \
-      JUDGE_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
+      MODEL=llama3.2:3b BACKEND=ollama \
+      JUDGE_MODEL=hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct \
       JUDGE_BASE_URL=http://127.0.0.1:8000/v1
 
 The worksheet receives model answers and ungated judge ratings. A human reviewer then fills
-`human_rating` without changing `judge_rating` and computes the decision:
+`human_rating` independently with the interactive rater (the judge column is hidden by default, so
+ratings are not anchored to the judge):
 
-    make calibration-score RATINGS=.data/llb/calibration_worksheet.csv
+    make calibration-rate
+
+and computes the decision (`RATINGS` defaults to the worksheet, `calibration/<CAL_NAME>.csv`):
+
+    make calibration-score
 
 The score command reports Spearman rho, a bootstrap confidence interval, and whether the judge
 clears `rho >= 0.6`. Until a completed human worksheet passes, normal evaluations keep the judge
-demoted and rank by objective correctness.
+demoted and rank by objective correctness. The full rater reference and the new-goldset /
+text-corpus-draft cases are in the [calibration-tooling manual](calibration-tooling.md).
 
 On a 16 GB GPU, a 12B judge normally cannot share VRAM with a vLLM candidate. Use an Ollama GGUF
 with CPU offload, a smaller test judge, or another machine on the same local network. Record the

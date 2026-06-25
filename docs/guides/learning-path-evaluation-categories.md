@@ -10,8 +10,8 @@ to the [LLM security learning path](learning-path-security.md), which is the dee
 security category. This guide teaches the *concepts* behind each category, names the *essential
 papers and manuals*, and points at *where each capability lives or attaches in the code*. The
 project's design rationale lives in the [design spec](../design/spec.md), what already exists in
-the [current state](../implementation/current.md), and the sequenced roadmap in the
-[forward plan](../implementation/plan.md).
+the [current state](../impl/current.md), and the sequenced roadmap in the
+[forward plan](../impl/plan.md).
 
 ## Who this is for
 
@@ -504,7 +504,7 @@ learning path is done.
 By session 8 you can place any capability on the right tier, name its objective metric and its
 verified-data gate, and explain why graph retrieval preserves source spans. The deepest single
 source remains the [design spec](../design/spec.md); the [current
-state](../implementation/current.md)
+state](../impl/current.md)
 maps each delivered module to its behavior; and the
 [human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md) covers the human gates that
 make the judged metrics trustworthy across every category above.

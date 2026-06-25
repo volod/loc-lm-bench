@@ -29,14 +29,15 @@ def load_models(manifest: Path) -> list[ModelSpec]:
         raise typer.Exit(code=2) from None
 
 
-def planning_models(manifest: Path) -> list[ModelSpec]:
-    """Manifest models with missing arch fields filled from a cached config.json (M4.1).
+def planning_models(manifest: Path, *, trust_config: bool = False) -> list[ModelSpec]:
+    """Manifest models with arch fields from a cached config.json (M4.1).
 
     Offline + best-effort: it sharpens the embedding-aware VRAM estimate when weights are
-    already cached, and is a no-op otherwise."""
+    already cached, and is a no-op otherwise. With `trust_config` the cached config OVERRIDES the
+    curated arch fields (the real served architecture wins over hand-curated guesses)."""
     from llb.backends.planner import enrich_arch
 
-    return [enrich_arch(m) for m in load_models(manifest)]
+    return [enrich_arch(m, override=trust_config) for m in load_models(manifest)]
 
 
 def best_effort_gpu_readers() -> tuple[Any, Any]:

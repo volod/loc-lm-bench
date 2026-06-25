@@ -7,8 +7,8 @@ desktop GPU (validated on an RTX 4060 Ti 16 GB), so the choice is reproducible a
 
 Status: runnable end to end -- data prep, Ollama + vLLM + llama.cpp serving, telemetry, and a
 ranked board, plus VRAM-contention guarding and an ontology-assisted gold-set drafter
-(Milestones 0-4 delivered). See [what's built today](docs/implementation/current.md) and the
-[forward plan](docs/implementation/plan.md).
+(Milestones 0-4 delivered). See [what's built today](docs/impl/current.md) and the
+[forward plan](docs/impl/plan.md).
 
 ## Features
 
@@ -56,7 +56,8 @@ default when they share a disk. Set a specific mode (`copy|hardlink|clone|symlin
 ## Commands by result
 
 The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scale -> review.**
-`make venv` installs everything once; `make test` runs the suite (362 tests).
+`make venv` installs everything once; `make test` runs the full suite, while `make test-fast`
+(and `make ci`) run the lightweight group that skips the slow integration tests.
 
 ### 1. Prepare data
 
@@ -100,10 +101,12 @@ The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scal
 | Command | Result |
 |---|---|
 | `make calibration-run JUDGE_MODEL=...` | Pre-filled calibration worksheet. |
+| `make calibration-rate` | Interactive rater: fill human ratings/answers (judge column hidden). |
 | `make calibration-score RATINGS=<filled.csv>` | Spearman rho after human ratings. |
 
 Calibration needs human ratings; until rho >= 0.6 the judge stays demoted and objective
-correctness ranks alone. See the [judge guide](docs/guides/judge-experiments.md).
+correctness ranks alone. See the [calibration-tooling manual](docs/guides/calibration-tooling.md)
+and the [judge guide](docs/guides/judge-experiments.md).
 
 ## Documentation
 
@@ -111,8 +114,8 @@ Start at the [documentation index](docs/README.md). High-level entry points:
 
 | Doc | What it covers |
 |---|---|
-| [What's built today](docs/implementation/current.md) | Delivered milestones + command behavior. |
-| [Forward plan](docs/implementation/plan.md) | Roadmap (M5 -> M6 + human lane; M0-M4 done). |
+| [What's built today](docs/impl/current.md) | Delivered milestones + command behavior. |
+| [Forward plan](docs/impl/plan.md) | Roadmap (M5 -> M6 + human lane; M0-M4 done). |
 | [Design spec](docs/design/spec.md) | Problem, wedge, architecture, recorded decisions. |
 | [Learning path](docs/guides/learning-path.md) | Staged syllabus + curated links for the stack. |
 | [AGENTS.md](AGENTS.md) | Contributor + agent guardrails. |

@@ -216,3 +216,49 @@ def build_map_reduce_graph(
 def run_case(app: Any, question: str, document: str) -> MapReduceState:
     """Invoke a compiled map-reduce graph for one long-doc item; returns the terminal state."""
     return cast(MapReduceState, app.invoke({"question": question, "document": document}))
+
+
+# --- text-prompt driver (the M5 `complete` substrate; no langgraph / launcher) --------------
+
+
+def map_text_prompt(question: str, segment: str) -> str:
+    """A single-string MAP prompt (the M5 categories drive map-reduce via a `complete: str->str`)."""
+    return (
+        f"{MAP_SYSTEM_PROMPT}\n\n"
+        f"Фрагмент:\n<<<\n{segment}\n>>>\n\nПитання: {question}\n\nВідповідь:"
+    )
+
+
+def reduce_text_prompt(question: str, partials: list[str]) -> str:
+    """A single-string REDUCE prompt over the surviving map partials."""
+    joined = "\n".join(f"[{i}] {p}" for i, p in enumerate(partials, 1))
+    return (
+        f"{REDUCE_SYSTEM_PROMPT}\n\n"
+        f"Часткові відповіді:\n<<<\n{joined}\n>>>\n\nПитання: {question}\n\nЗведена відповідь:"
+    )
+
+
+def run_map_reduce_text(
+    complete: Callable[[str], str],
+    question: str,
+    document: str,
+    *,
+    max_chars: int = 1200,
+    overlap: int = 120,
+) -> str:
+    """Drive the split -> map -> reduce template with a `complete: str->str` callable (no langgraph).
+
+    Splits the document, maps a partial per segment (dropping the `NO_INFO` ones), and reduces the
+    survivors into one answer. A single surviving partial is returned directly (no reduce call); no
+    survivors -> empty answer. This is the long-doc comprehension substrate for `bench.text_analysis`.
+    """
+    segments = split_document(document, max_chars, overlap)
+    if not segments:
+        return ""
+    partials = [complete(map_text_prompt(question, seg)) for seg in segments]
+    survivors = [p.strip() for p in partials if not is_no_info(p)]
+    if not survivors:
+        return ""
+    if len(survivors) == 1:
+        return survivors[0]
+    return complete(reduce_text_prompt(question, survivors)).strip()

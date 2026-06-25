@@ -10,11 +10,13 @@ import pytest
 from llb.backends.preflight import (
     SAMPLER_FLASHINFER,
     SAMPLER_NATIVE,
+    auto_pin_flashinfer,
     flashinfer_sampler_ok,
     load_verdict,
     probe_sampler,
     run_preflight,
     save_verdict,
+    verdict_is_current,
     verdict_path,
 )
 
@@ -57,6 +59,72 @@ def test_load_verdict_tolerates_corrupt_file(tmp_path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{ not json", encoding="utf-8")
     assert load_verdict(tmp_path) is None
+
+
+# --- M4.3 auto-pin a host-compatible flashinfer ---------------------------------------------
+
+
+def test_auto_pin_installs_first_working_candidate():
+    installed: list[str] = []
+
+    def installer(version: str) -> bool:
+        installed.append(version)
+        return True
+
+    probes = iter([False, True])  # the first candidate installs but still fails; the second works
+    pinned, ok = auto_pin_flashinfer(
+        ("0.9.9", "0.2.5"), probe=lambda: next(probes), installer=installer
+    )
+    assert ok and pinned == "0.2.5" and installed == ["0.9.9", "0.2.5"]
+
+
+def test_auto_pin_gives_up_when_no_candidate_works():
+    pinned, ok = auto_pin_flashinfer(("a", "b"), probe=lambda: False, installer=lambda _v: True)
+    assert pinned is None and not ok
+
+
+def test_probe_sampler_auto_pins_when_bundled_fails():
+    probes = iter([False, True])  # bundled flashinfer fails, the pinned candidate works
+    verdict = probe_sampler(
+        probe=lambda: next(probes),
+        candidates=("0.2.5",),
+        installer=lambda _v: True,
+        driver="595.71",
+    )
+    assert verdict["sampler"] == SAMPLER_FLASHINFER
+    assert verdict["auto_pinned"] and verdict["pinned_version"] == "0.2.5"
+    assert verdict["driver"] == "595.71" and "auto-pinning" in verdict["detail"]
+
+
+# --- M4.3 re-run the preflight on a driver change (no full rebuild) -------------------------
+
+
+def test_verdict_is_current_only_for_matching_driver():
+    v = probe_sampler(probe=lambda: True, driver="500.1", candidates=())
+    assert verdict_is_current(v, "500.1") is True
+    assert verdict_is_current(v, "600.2") is False  # a driver change invalidates the cache
+    assert verdict_is_current(None, "500.1") is False
+
+
+def test_run_preflight_skips_when_verdict_current(tmp_path):
+    run_preflight(probe=lambda: True, data_dir=tmp_path, driver="500", candidates=())
+    # same driver -> the cached flashinfer verdict is reused even though the probe would now fail
+    again = run_preflight(probe=lambda: False, data_dir=tmp_path, driver="500", candidates=())
+    assert again["sampler"] == SAMPLER_FLASHINFER
+
+
+def test_run_preflight_reprobes_on_driver_change(tmp_path):
+    run_preflight(probe=lambda: True, data_dir=tmp_path, driver="500", candidates=())
+    changed = run_preflight(probe=lambda: False, data_dir=tmp_path, driver="600", candidates=())
+    assert changed["sampler"] == SAMPLER_NATIVE and changed["driver"] == "600"
+
+
+def test_run_preflight_force_reprobes_same_driver(tmp_path):
+    run_preflight(probe=lambda: True, data_dir=tmp_path, driver="500", candidates=())
+    forced = run_preflight(
+        probe=lambda: False, data_dir=tmp_path, driver="500", candidates=(), force=True
+    )
+    assert forced["sampler"] == SAMPLER_NATIVE
 
 
 # --- run-eval serving knobs settable without YAML (Task 1) ---------------------------------

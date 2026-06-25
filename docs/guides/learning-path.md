@@ -122,7 +122,7 @@ How models are ranked, and why the judge is gated.
 [Spearman rank correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
   with a [bootstrap confidence interval](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)).
 - Judge bias: a Gemma-family judge may self-prefer Gemma answers -- this project discloses and
-  gates it (see the [current-state disclosure](../implementation/current.md)). This is distinct
+  gates it (see the [current-state disclosure](../impl/current.md)). This is distinct
   from social, cultural, and political bias, which Stage 9 treats as model behavior to measure
   directly.
 
@@ -178,7 +178,7 @@ Learn to distinguish model safety from application security, define the attacker
 assets, and measure failures without giving a model access to real secrets or destructive tools.
 The benchmark implementation is planned, not delivered; see the
 [security learning path](learning-path-security.md) and the
-[forward plan](../implementation/plan.md).
+[forward plan](../impl/plan.md).
 
 - Threat modeling: start with the
 [OWASP Top 10 for LLM
@@ -263,7 +263,7 @@ action in this repo.
 
 By session 9 you can run the full pipeline, explain every number on the board, and reason about
 the forward plan. From here, the deepest single source is the
-[design spec](../design/spec.md); the [current state](../implementation/current.md) maps each
+[design spec](../design/spec.md); the [current state](../impl/current.md) maps each
 module to its behavior.
 
 ## A note on the project's philosophy

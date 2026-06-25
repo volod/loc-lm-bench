@@ -8,11 +8,14 @@ from llb.backends.planner import (
     VERDICT_OFFLOAD,
     VERDICT_UNKNOWN,
     arch_from_config,
+    attention_layer_split,
     embedding_params,
     enrich_arch,
     hi_precision_params,
+    kv_mib_at_context,
     kv_mib_per_token,
     max_context,
+    max_context_for_kv,
     plan_model,
     resolve_bpw,
     weights_mib,
@@ -227,3 +230,85 @@ def test_enrich_arch_skips_non_hf_sources(monkeypatch):
     gguf = enrich_arch({"name": "m", "backend": "ollama", "source": "hf.co/org/x-GGUF:Q4_K_M"})
     assert ollama.get("vocab_size") is None and gguf.get("vocab_size") is None
     assert seen == []  # the cache is never touched for non-"org/name" sources
+
+
+# --- M4.1 sliding-window KV + config override ---------------------------------------------
+
+
+def test_attention_layer_split():
+    assert attention_layer_split(34, 6) == (5, 29)  # Gemma3-style: 1 global per 6 layers
+    assert attention_layer_split(48, 1) == (48, 0)  # pattern <= 1 -> all full attention
+    assert attention_layer_split(48, 0) == (48, 0)
+
+
+def test_kv_sliding_window_caps_past_the_window():
+    # Past the window the sliding layers stop growing; full attention keeps growing linearly.
+    full = kv_mib_at_context(34, 256, 8192)
+    sliding = kv_mib_at_context(34, 256, 8192, sliding_window=1024, sliding_window_pattern=6)
+    assert sliding < full  # sliding-window caches far less KV at a long context
+    # below the window the two agree (every layer still grows)
+    at_window = kv_mib_at_context(34, 256, 1024, sliding_window=1024, sliding_window_pattern=6)
+    assert round(at_window, 4) == round(kv_mib_at_context(34, 256, 1024), 4)
+
+
+def test_max_context_for_kv_sliding_allows_more_context():
+    # Same VRAM budget admits a longer context once sliding-window KV is modeled.
+    args = (12000.0, 9000.0, 512.0, 34, 256, 131072)
+    full = max_context_for_kv(*args)
+    sliding = max_context_for_kv(*args, sliding_window=1024, sliding_window_pattern=6)
+    assert sliding > full
+    # with no sliding fields it equals the linear full-attention max_context
+    per_tok = kv_mib_per_token(34, 256)
+    assert full == max_context(12000.0, 9000.0, 512.0, per_tok, 131072)
+
+
+def test_arch_from_config_extracts_sliding_window():
+    cfg = {"text_config": {"sliding_window": 1024, "sliding_window_pattern": 6}}
+    out = arch_from_config(cfg)
+    assert out["sliding_window"] == 1024 and out["sliding_window_pattern"] == 6
+
+
+def test_arch_from_config_derives_pattern_from_layer_types():
+    cfg = {
+        "num_hidden_layers": 6,
+        "sliding_window": 512,
+        "layer_types": [
+            "sliding_attention",
+            "sliding_attention",
+            "full_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "full_attention",
+        ],
+    }
+    assert arch_from_config(cfg)["sliding_window_pattern"] == 3  # 6 layers / 2 full = 3
+
+
+def test_enrich_arch_override_replaces_curated(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"num_hidden_layers": 48, "sliding_window": 1024}))
+    monkeypatch.setattr(planner, "cached_config_path", lambda _repo: cfg)
+    spec = {"name": "g", "backend": "vllm", "source": "org/model", "n_layers": 99}
+    # default fill-gaps keeps the curated (wrong) n_layers
+    assert enrich_arch(spec)["n_layers"] == 99
+    # override lets the real served config win
+    out = enrich_arch(spec, override=True)
+    assert out["n_layers"] == 48 and out["sliding_window"] == 1024
+
+
+def test_plan_model_sliding_window_fits_longer_context():
+    base = {
+        "name": "gemma",
+        "backend": "vllm",
+        "params_b": 12.0,
+        "quant": "w4a16",
+        "n_layers": 48,
+        "kv_dim": 256,
+        "max_context": 131072,
+    }
+    full = plan_model(base, vram_mib=12000, ram_mib=0)
+    sliding = plan_model(
+        {**base, "sliding_window": 1024, "sliding_window_pattern": 6}, vram_mib=12000, ram_mib=0
+    )
+    assert 0 < full["ctx_gpu"] < base["max_context"]  # full attention is KV-bound below the cap
+    assert sliding["ctx_gpu"] > full["ctx_gpu"]  # sliding-window frees room for more context

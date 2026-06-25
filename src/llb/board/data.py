@@ -201,3 +201,65 @@ def load_screen_reports(screen_root: Path | str) -> list[ScreenReport]:
 def config_summary(config: JsonObject) -> dict[str, object]:
     """The subset of a config shown as the model's best configuration."""
     return {key: config.get(key) for key in CONFIG_KEYS}
+
+
+# --- M5 category boards (each its OWN Tier, never cross-ranked with the RAG board) ----------
+
+# The per-category run-bundle method dirs (under $DATA_DIR/<method>/<ts>/) the board surfaces.
+CATEGORY_METHODS = (
+    "security",
+    "tooling",
+    "agentic",
+    "summarization",
+    "structured",
+    "text-analysis",
+)
+
+
+def _category_result(manifest: JsonObject, run_dir: Path) -> ModelResult | None:
+    """Build a `ModelResult` from one M5 category run bundle (its config carries the Tier)."""
+    config = manifest.get("config") or {}
+    tier = config.get("tier")
+    model = config.get("model")
+    if not tier or not model:
+        return None
+    metrics = manifest.get("metrics") or {}
+    return ModelResult(
+        model=str(model),
+        backend=str(config.get("backend", "?")),
+        objective_score=float(metrics.get("objective_score", 0.0)),
+        n_cases=int(manifest.get("n_cases", 0)),
+        reliability=float(metrics.get("reliability", 1.0)),
+        tokens_per_s=float(metrics.get("tokens_per_s", 0.0)),
+        tier=str(tier),
+        case_objectives=read_case_objectives(run_dir),  # [] for categories without that column
+    )
+
+
+def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
+    """Load the M5 category run bundles grouped BY TIER (so each renders on its own board).
+
+    Keeps the best run per model within each tier (highest objective score), mirroring the RAG
+    board's best-per-model pick. Never merges tiers -- the `aggregate` guard refuses a mixed board.
+    """
+    by_tier: dict[str, dict[str, ModelResult]] = {}
+    for method in CATEGORY_METHODS:
+        root = Path(data_dir) / method
+        if not root.exists():
+            continue
+        for manifest_path in sorted(root.glob("*/manifest.json")):
+            if manifest_path.parent.name.startswith("."):
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                result = _category_result(manifest, manifest_path.parent)
+            except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+                _LOG.warning("[board] unreadable category bundle %s: %s", manifest_path.parent, exc)
+                continue
+            if result is None:
+                continue
+            best = by_tier.setdefault(result.tier, {})
+            current = best.get(result.model)
+            if current is None or result.objective_score > current.objective_score:
+                best[result.model] = result
+    return {tier: list(models.values()) for tier, models in by_tier.items()}

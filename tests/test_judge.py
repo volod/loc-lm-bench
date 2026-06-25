@@ -115,6 +115,7 @@ def test_deepeval_scorer_requires_explicit_local_endpoint(monkeypatch):
         deepeval_scorer([], "plain-model")
 
 
+@pytest.mark.slow
 def test_real_deepeval_metric_path_uses_ua_prompts(monkeypatch):
     pytest.importorskip("deepeval")
     from deepeval.models import LocalModel

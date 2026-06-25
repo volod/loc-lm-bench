@@ -5,8 +5,8 @@ do for you**, with the essential papers, manuals, and a how-to-understand explan
 
 These are not project bookkeeping -- they are the three places where *human ground truth* is the
 whole point of the measurement. The design rationale is in the [design spec](../design/spec.md),
-what already exists in code is in the [current state](../implementation/current.md), and the
-sequenced roadmap is in the [forward plan](../implementation/plan.md). This manual turns those into
+what already exists in code is in the [current state](../impl/current.md), and the
+sequenced roadmap is in the [forward plan](../impl/plan.md). This manual turns those into
 runnable procedures.
 
 ## Why a human is irreducible here (read this first)
@@ -65,7 +65,7 @@ ranks alone. The decision travels in the run manifest.
 - **The bias you are guarding against.** The judge is a local Gemma-family model and much of the
   candidate pool is also Gemma-family, so the judge may self-prefer Gemma answers. Calibration is
   one of four mitigations (gate + objective weight + disclosure + an optional non-Gemma cross-check
-  judge). Read the bias disclosure in [`current.md`](../implementation/current.md) before you rate.
+  judge). Read the bias disclosure in [`current.md`](../impl/current.md) before you rate.
 
 ### Step-by-step procedure
 The statistics, the gate, the worksheet pre-fill, and the scoring are already implemented and
@@ -75,27 +75,38 @@ which needs a running judge endpoint.
 1. **Stand up the judge endpoint.** On a 16 GB box a 12B judge usually cannot co-reside with a vLLM
    candidate; use GGUF/CPU offload, a smaller test judge, or another local host while generating
    the worksheet. See the [local judge guide](judge-experiments.md) and the judge tier table in
-   [`current.md`](../implementation/current.md).
+   [`current.md`](../impl/current.md).
 
 2. **Pre-fill the worksheet** (fills `model_answer` and an UNGATED `judge_rating`; leaves
    `human_rating` blank). The judge runs ungated here on purpose -- calibration measures agreement,
    so the gate is irrelevant at this step:
 
    ```
-   make calibration-run JUDGE_MODEL=<served-model-id> \
-       JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+   make calibration-run                                   # defaults: Ollama gemma3:27b judge + CPU embedder
+   make calibration-run JUDGE_MODEL=hosted_vllm/<id> \
+       JUDGE_BASE_URL=http://127.0.0.1:8000/v1            # or a vLLM judge
    ```
 
    Equivalent direct CLI:
    `llb run-eval --split calibration --worksheet ws.csv --judge-model <id> --judge-base-url ...`
 
-3. **Fill `human_rating` independently.** This is the irreducible work; the rules matter:
+3. **Rate independently with the interactive rater.** This is the irreducible work. Use the rater
+   instead of hand-editing the CSV -- it walks the worksheet item by item, hides `judge_rating` by
+   default, writes through after every edit (so you can stop and resume), and lets you author your
+   own answer (`a`) alongside the 1-5 rating:
+
+   ```
+   make calibration-rate
+   ```
+
+   The full command reference (`a`, `note`, `j <N>`, `u`, `c`, `q`, the `START=` / `SHOW_JUDGE=` /
+   `CLEAR=` options) and the rating anchors are in the
+   [calibration-tooling manual](calibration-tooling.md#rater-commands). The rules that matter:
    - **Do NOT look at `judge_rating` first.** Anchoring to the judge contaminates the ground truth.
-     Hide or remove that column while you rate, then merge it back for scoring.
+     The rater hides it by default; reveal it (`SHOW_JUDGE=1`) only for post-hoc review.
    - **Span the full score range** -- clearly good, clearly bad, and middling answers.
    - **Deliberately include fluent-but-wrong answers** -- confident, well-written, factually
-     incorrect. That is the failure mode the judge is most likely to miss, so
-     it is where
+     incorrect. That is the failure mode the judge is most likely to miss, so it is where
      calibration earns its keep.
    - **Rate against the reference and the retrieved context, not your prior knowledge** -- the same
      inputs the judge sees.
@@ -138,9 +149,11 @@ unit-tested.
   kappa, Krippendorff's alpha) -- so you understand "do two humans even agree?".
 
 ### In this repo
-`src/llb/judge/calibration.py` (rho + CI + trust decision + worksheet), `src/llb/scoring/judge.py`
-(the gate + bias note), and the calibration commands in the [data-prep guide](data-prep.md) and
-[judge-experiments guide](judge-experiments.md).
+`src/llb/judge/calibration.py` (rho + CI + trust decision + worksheet I/O),
+`src/llb/judge/rate.py` (the interactive rater), `src/llb/scoring/judge.py` (the gate + bias
+note). The operator walkthrough for all three commands -- and the new-goldset / text-corpus-draft
+cases -- is the [calibration-tooling manual](calibration-tooling.md); see also the
+[data-prep guide](data-prep.md) and [judge-experiments guide](judge-experiments.md).
 
 ---
 
@@ -313,10 +326,10 @@ to accept a dataset":
 
 ## Checklist
 
-- [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled; `human_rating` filled
-      INDEPENDENTLY (judge column hidden), spanning the full range incl.
-      fluent-but-wrong answers;
-      rho + CI + decision computed and recorded in the manifest.
+- [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled (`calibration-run`);
+      `human_rating` filled INDEPENDENTLY via `calibration-rate` (judge column hidden), spanning
+      the full range incl. fluent-but-wrong answers; rho + CI + decision computed
+      (`calibration-score`) and recorded in the manifest.
 - [ ] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope approved with a
       dated line; corpus facts confirmed (references exist?/real-vs-synthetic).
 - [ ] **Verification:** drafted set validated; stratified sample drawn + documented; four per-item
@@ -328,6 +341,6 @@ to accept a dataset":
       design).
 
 The settled decisions behind every item above live in the [design spec](../design/spec.md) and the
-"Resolved questions" section of [`current.md`](../implementation/current.md); the categories these
+"Resolved questions" section of [`current.md`](../impl/current.md); the categories these
 gates protect are in the
 [evaluation-categories learning path](learning-path-evaluation-categories.md).

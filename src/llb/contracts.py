@@ -110,6 +110,102 @@ class SubtaskScore(TypedDict):
     f1: float
 
 
+class TextAnalysisCaseRow(TypedDict):
+    """Per-document objective score for one text-analysis case (M5.0 scored runner). Per-sub-task
+    F1s are carried as a JSON string (`subtask_f1_json`) so the parquet schema stays flat across
+    documents that plant different sub-task kinds."""
+
+    item_id: str  # the synthetic doc id
+    status: str  # ok | empty | malformed (shared eval taxonomy)
+    objective_score: float  # mean F1 over the document's OBJECTIVE sub-tasks
+    n_objective_subtasks: int
+    n_labels: int
+    subtask_f1_json: str  # {kind: f1} for every sub-task scored on this document
+    judged_quality: NotRequired[float]  # gated-judge quality for narrative/insight/long_doc
+    long_doc_answer: NotRequired[
+        str
+    ]  # the map-reduce long-doc answer (when a long_doc label exists)
+
+
+class ReliabilityReport(TypedDict):
+    """M5.4 reliability: the typed failure taxonomy aggregated into a first-class score."""
+
+    n: int
+    n_ok: int
+    reliability: float  # fraction of cases ending status=ok
+    failures: dict[str, int]  # count per non-ok status (empty/malformed/refusal/timeout/...)
+
+
+class SummarizationCaseRow(TypedDict):
+    """Per-case outcome for one M5.4 summarization case (reference coverage)."""
+
+    item_id: str
+    status: str  # ok | empty
+    coverage: float  # mean reference-sentence best cosine to the candidate summary
+    faithfulness: NotRequired[float]  # gated-judge faithfulness (only when the judge is trusted)
+    answer_preview: str
+
+
+class StructuredCaseRow(TypedDict):
+    """Per-case outcome for one M5.4 structured-output case."""
+
+    item_id: str
+    conformant: float  # 1.0 == output validated against the schema
+    field_accuracy: float  # fraction of expected fields matched
+    score: float  # headline: field accuracy, 0 when non-conformant
+
+
+class AgenticCaseRow(TypedDict):
+    """Per-task outcome for one M5.3 agentic episode."""
+
+    item_id: str
+    status: str  # completed | incomplete (step budget exhausted before finishing)
+    success: float  # 1.0 == env-state / answer assertions all held
+    n_steps: int  # model calls in the trajectory (efficiency)
+    n_tool_calls: int  # sandbox tools executed (efficiency)
+    trajectory_quality: NotRequired[float]  # gated-judge quality (only when the judge is trusted)
+    answer_preview: str
+
+
+class ToolDef(TypedDict):
+    """An OpenAI-style function/tool definition (the M5.2 tool catalog unit)."""
+
+    name: str
+    description: str
+    parameters: JsonObject  # JSON-schema object: {type, properties, required}
+
+
+class ToolingCaseRow(TypedDict):
+    """Per-case outcome for one M5.2 tooling / function-calling case (call-only)."""
+
+    item_id: str
+    expected_tool: str | None
+    called_tool: str | None
+    attempted: bool
+    tool_selected: float
+    schema_valid: float
+    arguments_exact: float
+    no_hallucinated_tool: float
+    well_formed: float
+    correct: float
+
+
+class SecurityCaseRow(TypedDict):
+    """Per-case outcome for one M5.1 security/robustness attack or benign-control case."""
+
+    item_id: str
+    family: str  # prompt_injection | jailbreak | instruction_hierarchy | unsafe_content | ...
+    benign: bool  # a control prompt that SHOULD be answered (refusing it is over-refusal)
+    expect_refusal: bool  # the model SHOULD refuse this case (harmful asks)
+    status: str  # shared eval taxonomy (ok | empty | refusal | timeout | backend_error)
+    attack_success: float  # 1.0 == the attack succeeded (marker leaked / harmful compliance)
+    defended: float  # 1.0 == the attack was defended (1 - attack_success on attack cases)
+    refused: float  # 1.0 == the response was a refusal
+    appropriate_refusal: float  # 1.0 == refuse/answer decision matched the expected behavior
+    refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)
+    answer_preview: str
+
+
 class CaseScoreRow(TypedDict):
     item_id: str
     split: str
@@ -175,6 +271,8 @@ class BackendMetadata(TypedDict, total=False):
     tokens_per_s: float
     last_completion_tokens: int
     load_time_s: float | None
+    sampler: str  # vLLM sampler actually used (flashinfer | native; M4.3)
+    flashinfer_version: str | None  # flashinfer version behind the sampler choice
 
 
 class GpuSummary(TypedDict):
@@ -198,6 +296,8 @@ class TelemetryReport(TypedDict):
     backend: str | None
     gpu_memory_utilization: float | None
     n_gpu_layers: int | None  # llama.cpp offload split (None for non-llama.cpp backends)
+    sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; M4.3), recorded in manifest
+    flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
 
 
@@ -258,6 +358,11 @@ class ModelSpec(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
+    # Sliding-window attention (M4.1, Gemma 3/4): the sliding layers cache at most
+    # `sliding_window` tokens, and `sliding_window_pattern` is the period of the full-attention
+    # layers (e.g. 6 -> 1 global layer per 6). Absent -> full attention on every layer.
+    sliding_window: NotRequired[int]
+    sliding_window_pattern: NotRequired[int]
     # Embedding-aware weight estimate (M4.1): under partial quant (w4a16/int4/fp8) the token
     # embedding + norms stay high-precision, so `params_b x bpw` under-counts. The planner reads
     # these from the spec (or a cached config.json) and prices the embedding separately.
@@ -416,6 +521,7 @@ class RagDataSpec(TypedDict):
 class WorksheetItem(TypedDict):
     id: str
     split: str
+    provenance: NotRequired[str]
     question: str
     reference_answer: str
 

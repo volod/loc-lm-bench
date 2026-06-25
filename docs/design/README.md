@@ -45,5 +45,5 @@ Ukrainian corpus, *your* task, and *your* GPU, so the pick is reproducible and d
 
 Approved (via /office-hours, /plan-ceo-review HOLD SCOPE, two /plan-eng-review passes, and
 four Codex outside-voice passes). Build progress is tracked in
-[../implementation/current.md](../implementation/current.md) and
-[../implementation/plan.md](../implementation/plan.md).
+[../impl/current.md](../impl/current.md) and
+[../impl/plan.md](../impl/plan.md).

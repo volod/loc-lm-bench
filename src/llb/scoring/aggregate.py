@@ -18,6 +18,16 @@ from llb.contracts import BoardRow, LeaderboardRow
 DEFAULT_WEIGHT_JUDGE = 0.5
 TIER_PRIVATE = "private"  # Tier-2 private gold-set metrics
 TIER_SCREEN = "screen"  # Tier-1 public-screen metrics -- NEVER ranked against private ones
+# Milestone 5 category tiers. Each M5 category is its own Tier and is NEVER cross-ranked with
+# the RAG board or with another category: the `_validate_board_cohort` guard already refuses a
+# board whose `ModelResult`s carry more than one distinct `tier`, so these constants are the
+# named identities the category runners stamp onto their results.
+TIER_TEXT_ANALYSIS = "text_analysis"  # M5.0/M5.4 text-analysis (planted-label recovery)
+TIER_SECURITY = "security"  # M5.1 security / robustness (ASR + refusal-appropriateness)
+TIER_TOOLING = "tooling"  # M5.2 tooling / MCP / function-calling (call-only correctness)
+TIER_AGENTIC = "agentic"  # M5.3 agentic workflows (completion-rate + efficiency)
+TIER_SUMMARIZATION = "summarization"  # M5.4 summarization (reference coverage + faithfulness)
+TIER_STRUCTURED = "structured"  # M5.4 structured output (schema conformance + field accuracy)
 
 
 @dataclass

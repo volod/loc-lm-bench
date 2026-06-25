@@ -57,6 +57,21 @@ def max_vram_mb(gpus: list[Gpu]) -> int:
     return max((g.total_mb for g in gpus), default=0)
 
 
+def select_target_gpu(gpus: list[Gpu], visible_devices: str | None = None) -> Gpu | None:
+    """The GPU a single-GPU run targets (M4.2): the first `CUDA_VISIBLE_DEVICES` entry when set
+    (matched by numeric index; a UUID falls through), else the GPU with the most FREE VRAM. None
+    when no GPU is present. This is what the contention guard reads instead of always GPU 0."""
+    if not gpus:
+        return None
+    if visible_devices:
+        first = visible_devices.split(",")[0].strip()
+        if first.isdigit():
+            for gpu in gpus:
+                if gpu.index == int(first):
+                    return gpu
+    return max(gpus, key=lambda g: g.free_mb)
+
+
 def parse_meminfo(text: str) -> int:
     """Total system RAM in MB from /proc/meminfo contents (MemTotal is in kB)."""
     for line in text.splitlines():

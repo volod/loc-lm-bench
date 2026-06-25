@@ -33,11 +33,16 @@ def _focus_line(seed: DraftSeed) -> str:
     return "Сфокусуйся на наведеному фрагменті."
 
 
-def draft_prompt(seed: DraftSeed, context: str) -> str:
-    """One UA QA pair grounded in `context`, answer = exact substring, difficulty-aware."""
+def draft_prompt(seed: DraftSeed, context: str, ontology_hint: str = "") -> str:
+    """One UA QA pair grounded in `context`, answer = exact substring, difficulty-aware.
+
+    `ontology_hint` (optional, M5.6) carries the corpus's high-confidence induced types as an
+    explicit constraint, nudging the drafter toward the reliable types of THIS corpus."""
+    hint_line = f"{ontology_hint}\n" if ontology_hint else ""
     return (
         "Ти укладач набору запитань для оцінювання україномовних RAG-моделей.\n"
         f"{_focus_line(seed)}\n"
+        f"{hint_line}"
         f"Склади РІВНО одну пару «запитання-відповідь» українською (складність: {seed.difficulty}).\n"
         "Відповідь МАЄ бути дослівною підрядковою цитатою з наведеного контексту.\n"
         "Запитання НЕ повинно містити сам текст відповіді (уникай підказок).\n"
@@ -47,13 +52,15 @@ def draft_prompt(seed: DraftSeed, context: str) -> str:
     )
 
 
-def draft_for_seed(complete: LLMComplete, doc_text: str, seed: DraftSeed) -> dict[str, Any] | None:
+def draft_for_seed(
+    complete: LLMComplete, doc_text: str, seed: DraftSeed, ontology_hint: str = ""
+) -> dict[str, Any] | None:
     """Draft one raw QA dict for `seed` (tagged with its doc_id), or None on failure."""
     context = context_window(
         doc_text, seed.evidence.char_start, seed.evidence.char_end, DRAFT_CONTEXT_RADIUS
     )
     try:
-        payload = parse_json_block(complete(draft_prompt(seed, context)))
+        payload = parse_json_block(complete(draft_prompt(seed, context, ontology_hint)))
     except json.JSONDecodeError:
         _LOG.warning("[ontology] unparseable draft for %s seed; skipping", seed.doc_id)
         return None
@@ -68,16 +75,20 @@ def draft_for_seed(complete: LLMComplete, doc_text: str, seed: DraftSeed) -> dic
 
 
 def draft_items(
-    complete: LLMComplete, docs: list[DocRecord], seeds: list[DraftSeed]
+    complete: LLMComplete,
+    docs: list[DocRecord],
+    seeds: list[DraftSeed],
+    ontology_hint: str = "",
 ) -> list[dict[str, Any]]:
-    """Draft a raw QA dict per seed; failures are skipped (not fatal)."""
+    """Draft a raw QA dict per seed; failures are skipped (not fatal). `ontology_hint` (M5.6)
+    carries the induced high-confidence types into every draft prompt as an explicit constraint."""
     by_id = {doc.doc_id: doc for doc in docs}
     drafts: list[dict[str, Any]] = []
     for seed in seeds:
         doc = by_id.get(seed.doc_id)
         if doc is None:
             continue
-        draft = draft_for_seed(complete, doc.text, seed)
+        draft = draft_for_seed(complete, doc.text, seed, ontology_hint)
         if draft is not None:
             drafts.append(draft)
     _LOG.info("[ontology] stage 5: %d raw drafts from %d seeds", len(drafts), len(seeds))

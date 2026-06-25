@@ -40,6 +40,9 @@ DEFAULT_MARGIN_MB = 512
 DEFAULT_VLLM_OVERHEAD_MB = 2048
 # Minimal KV working set beyond weights + overhead for the abort check (room for >=1 KV block).
 DEFAULT_MIN_KV_HEADROOM_MB = 512
+# Tokens of KV the abort check requires a launch to be able to serve (M4.2): the arch-derived
+# headroom is the KV cache at this context, so a model that cannot hold even this much is aborted.
+DEFAULT_MIN_SERVING_CTX = 2048
 DEFAULT_WAIT_TIMEOUT_S = 120.0
 DEFAULT_WAIT_POLL_S = 3.0
 DEFAULT_MANIFEST = Path("samples/models_uk.yaml")
@@ -221,28 +224,70 @@ def _poll_free(
 
 
 def default_gpu_reader() -> tuple[int, int] | None:
-    """(total_mb, free_mb) for the device a run uses (GPU 0), via nvidia-smi. None if no GPU."""
-    from llb.backends.hardware import detect_gpus
+    """(total_mb, free_mb) for the device the run TARGETS, via nvidia-smi (M4.2). None if no GPU.
 
-    gpus = detect_gpus()
-    if not gpus:
-        return None
-    return gpus[0].total_mb, gpus[0].free_mb
+    Reads ALL GPUs and selects the target (the `CUDA_VISIBLE_DEVICES` device when set, else the
+    most-free GPU) instead of hard-coding GPU 0, so the guard is correct on a multi-GPU host."""
+    from llb.backends.hardware import detect_gpus, select_target_gpu
+
+    gpu = select_target_gpu(detect_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES"))
+    return (gpu.total_mb, gpu.free_mb) if gpu is not None else None
+
+
+def _spec_for(model_source: str, manifest: Path) -> "dict[str, Any] | None":
+    from llb.backends.prepare import load_manifest
+
+    for spec in load_manifest(manifest):
+        if spec.get("source") == model_source or spec.get("name") == model_source:
+            return cast("dict[str, Any]", spec)
+    return None
 
 
 def model_weight_floor_mb(model_source: str, manifest: Path = DEFAULT_MANIFEST) -> float:
     """Embedding-aware weights estimate (MiB, M4.1) for a model by source/name. 0.0 if unknown."""
     try:
         from llb.backends.planner import enrich_arch, plan_model
-        from llb.backends.prepare import load_manifest
 
-        for spec in load_manifest(manifest):
-            if spec.get("source") == model_source or spec.get("name") == model_source:
-                row = plan_model(enrich_arch(spec), vram_mib=1_000_000, ram_mib=1_000_000)
-                return float(row["weights_mib"] or 0.0)
+        spec = _spec_for(model_source, manifest)
+        if spec is None:
+            return 0.0
+        row = plan_model(enrich_arch(cast(Any, spec)), vram_mib=1_000_000, ram_mib=1_000_000)
+        return float(row["weights_mib"] or 0.0)
     except Exception:
         return 0.0
-    return 0.0
+
+
+def model_kv_headroom_mb(
+    model_source: str,
+    manifest: Path = DEFAULT_MANIFEST,
+    *,
+    min_serving_ctx: int = DEFAULT_MIN_SERVING_CTX,
+) -> int:
+    """Arch-derived minimal KV working set (MiB, M4.2): the KV the model needs to serve at least
+    `min_serving_ctx` tokens, sliding-window-aware. The abort check uses this instead of a fixed
+    floor, so a model with a heavy KV per token is judged un-launchable at the right threshold.
+    Falls back to the fixed floor when the arch is unknown."""
+    try:
+        from llb.backends.planner import enrich_arch, kv_mib_at_context
+
+        spec = _spec_for(model_source, manifest)
+        if spec is None:
+            return DEFAULT_MIN_KV_HEADROOM_MB
+        enriched = cast("dict[str, Any]", enrich_arch(cast(Any, spec)))
+        n_layers = enriched.get("n_layers")
+        kv_dim = enriched.get("kv_dim")
+        if not (n_layers and kv_dim):
+            return DEFAULT_MIN_KV_HEADROOM_MB
+        kv = kv_mib_at_context(
+            int(n_layers),
+            int(kv_dim),
+            min_serving_ctx,
+            sliding_window=enriched.get("sliding_window"),
+            sliding_window_pattern=enriched.get("sliding_window_pattern"),
+        )
+        return max(DEFAULT_MIN_KV_HEADROOM_MB, int(kv))
+    except Exception:
+        return DEFAULT_MIN_KV_HEADROOM_MB
 
 
 def evict_ollama(

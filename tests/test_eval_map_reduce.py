@@ -104,3 +104,35 @@ def test_reduce_node_short_circuits_on_terminal_status():
     update = node({"question": "q", "partials": ["A"], "status": ERR_TIMEOUT})
     assert update["answer"] == ""
     assert launcher.calls == []
+
+
+# --- text-prompt driver (the M5 `complete` substrate; M5.4) --------------------------------
+
+
+def test_run_map_reduce_text_splits_maps_reduces():
+    doc = "Розділ один. " * 50 + "Ключовий факт: бюджет зріс."
+    calls = []
+
+    def complete(prompt):
+        calls.append(prompt)
+        if "Зведена відповідь" in prompt:  # the reduce prompt
+            return "Бюджет зріс."
+        return "Бюджет зріс."  # each map partial
+
+    answer = mr.run_map_reduce_text(
+        complete, "Що сталося з бюджетом?", doc, max_chars=200, overlap=20
+    )
+    assert answer == "Бюджет зріс."
+    assert len(calls) > 2  # multiple map calls + one reduce
+
+
+def test_run_map_reduce_text_single_segment_no_reduce():
+    answer = mr.run_map_reduce_text(lambda _p: "коротка відповідь", "питання?", "малий документ")
+    assert answer == "коротка відповідь"
+
+
+def test_run_map_reduce_text_all_no_info_returns_empty():
+    answer = mr.run_map_reduce_text(
+        lambda _p: mr.NO_INFO_MARKER, "q", "doc " * 100, max_chars=100, overlap=0
+    )
+    assert answer == ""

@@ -10,6 +10,11 @@ DATA_DIR = "DATA_DIR"
 # Logging
 LLB_LOG = "LLB_LOG"
 
+# RAG embedder device override (e.g. cpu / cuda / cuda:1). Unset -> sentence-transformers
+# auto-selects (CUDA when available). Force `cpu` to keep the GPU free for a co-resident local
+# judge/candidate (the embedder is tiny, so CPU encoding is cheap).
+LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
+
 # Hugging Face downloads (gated models and datasets)
 HF_TOKEN = "HF_TOKEN"
 
@@ -18,6 +23,8 @@ OLLAMA_HOST = "OLLAMA_HOST"
 VLLM_HOST = "VLLM_HOST"
 LLAMACPP_HOST = "LLAMACPP_HOST"
 VLLM_USE_FLASHINFER_SAMPLER = "VLLM_USE_FLASHINFER_SAMPLER"
+# Comma-separated flashinfer versions the preflight auto-pins when the bundled one fails (M4.3).
+FLASHINFER_CANDIDATES = "LLB_FLASHINFER_CANDIDATES"
 
 # Judge endpoint fallbacks when judge_model uses a legacy prefix
 OLLAMA_API_BASE = "OLLAMA_API_BASE"

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from llb.prep.frontier import LLMComplete, parse_json_block
-from llb.prep.ontology.constants import EXTRACT_MAX_CHARS
+from llb.prep.ontology.constants import EXTRACT_CHUNK_OVERLAP, EXTRACT_MAX_CHARS
 from llb.prep.ontology.grounding import ground_quote
 from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Event, SROFact
 
@@ -114,26 +114,77 @@ def parse_extraction(doc_id: str, text: str, payload: Any) -> DocExtraction:
     )
 
 
+def merge_extractions(doc_id: str, parts: list[DocExtraction]) -> DocExtraction:
+    """Merge per-window extractions for one document (dedup entities by (name,type), merging their
+    mentions + aliases; events/claims/facts deduped by their grounded evidence span + payload)."""
+    entities: dict[tuple[str, str], Entity] = {}
+    for part in parts:
+        for entity in part.entities:
+            key = (entity.name, entity.type)
+            if key not in entities:
+                entities[key] = Entity(name=entity.name, type=entity.type)
+            merged = entities[key]
+            seen_aliases = set(merged.aliases)
+            merged.aliases.extend(a for a in entity.aliases if a not in seen_aliases)
+            seen_spans = {(m.char_start, m.char_end) for m in merged.mentions}
+            merged.mentions.extend(
+                m for m in entity.mentions if (m.char_start, m.char_end) not in seen_spans
+            )
+
+    def _dedup(getter: Any, key: Any) -> list[Any]:
+        out: list[Any] = []
+        seen: set[Any] = set()
+        for part in parts:
+            for item in getter(part):
+                marker = key(item)
+                if marker not in seen:
+                    seen.add(marker)
+                    out.append(item)
+        return out
+
+    return DocExtraction(
+        doc_id=doc_id,
+        entities=list(entities.values()),
+        events=_dedup(lambda p: p.events, lambda e: (e.description, e.evidence.char_start)),
+        claims=_dedup(lambda p: p.claims, lambda c: (c.text, c.evidence.char_start)),
+        facts=_dedup(
+            lambda p: p.facts,
+            lambda f: (f.subject, f.relation, f.object, f.evidence.char_start),
+        ),
+    )
+
+
 @dataclass
 class LLMExtractionAdapter:
-    """Default extractor: one LLM call per document via the injectable `complete`."""
+    """Default extractor via the injectable `complete`. A document longer than `max_chars` is
+    CHUNKED into overlapping windows (M5.6) -- one extraction call per window, merged -- instead of
+    one truncated call, so a long doc's later content is no longer dropped. Offsets stay exact:
+    grounding always runs against the FULL original text."""
 
     complete: LLMComplete
     max_chars: int = EXTRACT_MAX_CHARS
+    chunk_overlap: int = EXTRACT_CHUNK_OVERLAP
+
+    def _extract_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction:
+        try:
+            payload = parse_json_block(self.complete(extraction_prompt(doc_id, window_text)))
+        except json.JSONDecodeError:
+            _LOG.warning("[ontology] unparseable extraction for %s; empty", doc_id)
+            return DocExtraction(doc_id=doc_id)
+        except Exception as exc:  # endpoint/transport error -> skip this window, keep going
+            _LOG.warning("[ontology] extraction call failed for %s: %s", doc_id, exc)
+            return DocExtraction(doc_id=doc_id)
+        # ground against the FULL original text so offsets are exact even for a windowed call
+        return parse_extraction(doc_id, full_text, payload)
 
     def extract(self, doc: DocRecord) -> DocExtraction:
-        text_for_call = doc.text[: self.max_chars]
-        try:
-            raw = self.complete(extraction_prompt(doc.doc_id, text_for_call))
-            payload = parse_json_block(raw)
-        except json.JSONDecodeError:
-            _LOG.warning("[ontology] unparseable extraction for %s; empty", doc.doc_id)
-            return DocExtraction(doc_id=doc.doc_id)
-        except Exception as exc:  # endpoint/transport error -> skip this doc, keep the run going
-            _LOG.warning("[ontology] extraction call failed for %s: %s", doc.doc_id, exc)
-            return DocExtraction(doc_id=doc.doc_id)
-        # ground against the FULL original text so offsets are exact even if the call was truncated
-        return parse_extraction(doc.doc_id, doc.text, payload)
+        if len(doc.text) <= self.max_chars:
+            return self._extract_window(doc.doc_id, doc.text, doc.text)
+        from llb.eval.map_reduce import split_document
+
+        windows = split_document(doc.text, self.max_chars, self.chunk_overlap)
+        parts = [self._extract_window(doc.doc_id, doc.text, w) for w in windows]
+        return merge_extractions(doc.doc_id, parts)
 
 
 def extract_corpus(docs: list[DocRecord], adapter: ExtractionAdapter) -> list[DocExtraction]:

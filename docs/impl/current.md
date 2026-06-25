@@ -40,9 +40,19 @@ Two host-aware model utilities: `prep-models` prepares candidate models (pulls O
 tags, caches vLLM Hugging Face weights once), and `list-models` reports which candidates
 can actually run here (GPU VRAM + system RAM, KV-cache-aware, with a GPU/CPU layer split).
 
-362 tests passing; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
+The full pytest suite passes; Ruff format/lint and mypy are clean. CI enforces formatting, linting,
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
+
+The suite is split into two groups via the `slow` pytest marker (registered in `pyproject.toml`):
+the FULL suite (`make test`, run locally) includes everything, while the LIGHTWEIGHT suite
+(`make ci` / `make test-fast`, selected with `-m "not slow"`) drops the intrinsically expensive
+tests so GitHub CI stays fast (~5s vs ~19s locally). Ten tests carry `@pytest.mark.slow`: the six
+real-Optuna `tune`/`two_stage` sweeps (`tests/test_tuner.py`), the embedder-loading prefilled
+worksheet (`tests/test_runner.py`), the two `bash`-subprocess vLLM build helpers
+(`tests/test_build_helper.py`), and the real-DeepEval metric path (`tests/test_judge.py`). Mark a
+new test `slow` only when its cost is intrinsic (Optuna sweep, model/embedder load, deepeval,
+subprocess), not a one-off first-import artifact.
 
 ## Dev setup
 
@@ -54,9 +64,10 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
     make venv # .venv (py3.11) + package + all extras + .env (idempotent;
     RECREATE_VENV=1 to
     rebuild)
-    make test       # pytest (362 tests)
+    make test       # pytest -- FULL suite (incl. slow tests); run locally
+    make test-fast  # pytest -m "not slow" -- lightweight suite (mirrors CI)
     make format     # apply canonical Ruff formatting to src/ and tests/
-    make ci         # format check + lint + mypy + tests
+    make ci         # format check + lint + mypy + LIGHTWEIGHT tests (-m "not slow")
     make demo-eval # idempotent end-to-end: venv -> gold set -> index ->
     validate -> prep-models ->
     run-eval+telemetry
@@ -70,7 +81,7 @@ the final telemetry run. Every command shares one runtime (`llb.runtime`): Ctrl-
 cleanly (exit 130, backends killed via their context manager) and an unexpected crash is
 logged with a traceback (`LLB_LOG=debug` for more) instead of a raw stack dump.
 
-Extras (`rag, eval, track, board, prep, telemetry, goldset, dev`) are all installed by
+Extras (`rag, eval, track, board, prep, telemetry, goldset, mcp, dev`) are all installed by
 `make venv`; trim with `EXTRAS=` (e.g. `make venv EXTRAS=rag,eval`). GitHub CI installs
 only `.[dev]` (it never runs `make venv`), so it stays light. vLLM/torch/flash-attn are
 hardware-matched and installed via a separate path per AGENTS.md, never declared here.
@@ -80,8 +91,8 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
 ## Repo layout (current)
 
     pyproject.toml # package "llb": deps + extras, pytest/ruff config
-    Makefile # venv, test, gen-rag-items, validate-goldset,
-# ingest-squad, ingest-uk-squad, build-rag-store, calibration-worksheet
+    Makefile # venv, test, ci, build-index, validate-retrieval, run-eval,
+      # prep-models, calibration-{run,rate,score}, judge-experiment, ingest-uk-squad, ...
     .env.example                   # DATA_DIR + frontier-API key placeholders
     samples/                       # COMMITTED DATA (kept separate from code)
       rag_items_uk.json            #   sample RAG spec: source docs + item defs
@@ -102,7 +113,11 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       config.py # RunConfig (Pydantic) -- the canonical run config
       contracts.py                 # shared TypedDict boundary contracts
       paths.py # project root, .env, and DATA_DIR path resolution
-      main.py # Typer CLI: build-index, validate-retrieval, run-eval
+      main.py # thin Typer entry point -> llb.cli.app
+      cli/ # Typer app root (app.py) + per-area command modules:
+      # eval, models, prep, rag, bench, inference, ui, helpers
+      env.py # canonical env-var names (single source of truth)
+      fsutil.py # atomic_write_text -- safe whole-file rewrites (temp + os.replace)
       runtime.py # shared CLI runtime: graceful Ctrl-C (exit 130) + crash
       logging
       goldset/schema.py # GoldItem + SourceSpan (Pydantic), load/dump
@@ -146,11 +161,26 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       + endpoint)
       board/{data,app}.py # M3.7 thin Streamlit leaderboard over the run
       bundles
-    tests/                         # 362 tests across the above
+      backends/preflight.py # M4.3 flashinfer JIT-sampler preflight
+      inference/generate.py # batch generation helper (cli inference)
+      eval/{common,map_reduce,multi_hop}.py # M1.4 eval templates (map-reduce / multi-hop)
+      judge/{experiment,rate}.py # M3.8 UA judge smoke + interactive calibration rater
+      bench/{security,tooling,agentic,tool_world,structured,summarization,text_analysis,common}.py
+      # M5 category benchmarks (objective floor + opt-in gated judge)
+      bench/{mcp_server,agentic_tasks}.py # M5.2 MCP transport + M5.3 real-corpus search tasks
+      scoring/{security,tooling,structured,reliability,text_analysis}.py # M5 per-category scorers
+      prep/{cross_check,verified_ledger,text_analysis_corpus}.py # 2nd-frontier gate / verified
+      ledger / synthetic planter
+      prep/{security_sources,security_planter}.py # M5.1 public-set adapters + corpus planter
+      prep/{tooling_sources,chat_corpus}.py # M5.2 BFCL adapter + M5.4 chat-period producers
+      prep/ontology/spacy_adapter.py # M5.6 opt-in spaCy uk_core_news extraction adapter
+    tests/                         # pytest suite (run via make test / make ci)
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
-`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and
-`calibration_worksheet.csv`. Immutable eval artifacts are isolated per invocation under
+`corpus/`, `goldset/*.jsonl`, `rag/` (chunks + FAISS index), and generated calibration worksheets
+(`$DATA_DIR/llb/calibration/`). The CANONICAL calibration worksheet, by contrast, is TRACKED under
+the repo-root `calibration/` dir (committed -- survives a clone; see `calibration/README.md`).
+Immutable eval artifacts are isolated per invocation under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/` (`manifest.json`,
 `scores.{parquet,jsonl}`, and optional `vllm/` logs); M4.4 draft bundles under
 `$DATA_DIR/prepare-goldset/<UTC timestamp>/` (`goldset.jsonl`, `corpus/`, `ontology.json`,
@@ -254,36 +284,71 @@ All langchain use is lazy; `fixed` / `sentence` / `markdown` work without `[rag]
 
 On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 breadcrumbs).
 
-### Judge calibration (M0.5 stats + M3.8 close-out scaffolding) — `llb.judge.calibration`
-Spearman rho (no scipy), bootstrap CI, trust decision (`rho >= 0.6` else demote). Two
-worksheet emitters: a blank one, and a pre-filled one driven from a run. The pre-filled
-worksheet fills `model_answer` and (when a judge is configured) the `judge_rating` column,
-running the judge **ungated** -- calibration measures whether the judge agrees with humans, so
-the gate is irrelevant here; the human only adds `human_rating`. When the judge backend is
-unavailable the column is left blank and the run logs a warning rather than failing.
+### Judge calibration (M0.5 stats + M3.8 tooling) — `llb.judge.calibration` + `llb.judge.rate`
+Spearman rho (no scipy), bootstrap CI, and the trust decision (`rho >= 0.6` else demote). The
+worksheet is a single CSV (`CAL_WS`) kept in one of two roots auto-routed by `CAL_NAME`: PERMANENT
+sets (in `CAL_PERMANENT`, the committed goldset by default) live in the TRACKED root `calibration/`
+dir so they survive a clone; every other name routes to gitignored `$DATA_DIR/llb/calibration/`
+(generated sets, persisted by copying into `calibration/`). It is the session's only state -- each
+edit re-reads the
+file and writes back ONLY the human columns, merged by `item_id` and rewritten atomically
+(`fsutil.atomic_write_text`), so resume + crash-safety are free AND a concurrent `calibration-run`
+filling `judge_rating` is never clobbered. Its columns are `item_id, split, provenance, question,
+reference_answer,
+model_answer, human_answer, human_rating, human_note, human_status, judge_rating`: `provenance` is
+copied from the `GoldItem` so a card shows the item's source; the human authors both `human_answer`
+and `human_rating` (`human_status` is a pending/rated refinement); `judge_rating` is the judge's
+[0,1] score.
 
-The three Make targets drive the loop over the verified committed gold set
-(`GOLDSET` defaults to `samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items
-are `verified: true`, so M3.9 is already satisfied for it; no re-review needed):
+Two worksheet emitters: a blank one (`calibration-worksheet`) and a pre-filled one driven from a run
+(`run-eval --worksheet`, the `calibration-run` target). The pre-filled path fills `model_answer` and
+(when a judge is configured) `judge_rating`, running the judge **ungated** -- calibration measures
+whether the judge agrees with humans, so the `rho >= 0.6` threshold is irrelevant at this step; the
+human columns are left blank. When the judge backend is unavailable that column is left blank and
+the run logs a warning rather than failing. Re-running the pre-fill MERGES existing human columns by
+`item_id` (never clobbers them); a row whose regenerated `model_answer` changed has its now-stale
+`human_rating` cleared with a warning, while the human's own `human_answer` is kept.
 
-    make calibration-worksheet # blank worksheet (86 calibration rows)
-    make calibration-run JUDGE_MODEL=<served-model-id> \
-        JUDGE_BASE_URL=http://127.0.0.1:8000/v1 # answers + judge_rating ->
-        CAL_WS
-    # human fills the human_rating column in CAL_WS, then:
-    make calibration-score RATINGS=<filled.csv> # rho + bootstrap CI + trust
-    decision
+`calibration-rate` (`llb.judge.rate`; also `python -m llb.judge.calibration rate`) is the
+interactive rater -- a terminal session that walks the worksheet item by item and fills the human
+columns in place. Interactive I/O lives here, OUT of the pure-stats module, and the session loop is
+driven by an injectable input iterator + output sink, so it is unit-tested with no model / endpoint
+/ GPU. `judge_rating` is HIDDEN by default (an independence control: seeing it first anchors the
+rater) and `--show-judge` reveals it for post-hoc review only. Commands: `1`-`5` rate + advance,
+`a` author `human_answer`, `note` edit `human_note`, `n`/Enter next, `p`/`b` previous, `j <N>` jump,
+`u` next unrated, `c` clear the rating, `?`/`h` help, `q` save + quit. With no `--start` it resumes
+at the first unrated item; `--clear` wipes all human columns (confirmation-gated); Ctrl-C and EOF
+are caught and treated as save + quit.
 
-Equivalent direct CLI:
+The Make targets drive the loop over the verified committed gold set (`GOLDSET` defaults to
+`samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items are `verified: true`, so M3.9
+is already satisfied for it; its worksheet defaults to the tracked `calibration/ua_squad_postedited_v1.csv`).
+Defaults target a local Ollama judge (`gemma3:27b` on :11434) with the embedder pinned to CPU
+(`LLB_EMBED_DEVICE=cpu`, so the GPU stays free for the judge), so on the committed goldset it is:
 
-    llb run-eval --split calibration --worksheet ws.csv --judge-model <id> \
-        --judge-base-url http://127.0.0.1:8000/v1 # pre-fill answers + judge
-    python -m llb.judge.calibration score --ratings ws.csv # rho + CI +
-    decision
+    make calibration-run                  # Ollama gemma3:27b judge (default); vLLM: JUDGE_MODEL=hosted_vllm/... JUDGE_BASE_URL=http://127.0.0.1:8000/v1
+    make calibration-rate                 # interactive: fill the human columns (judge_rating hidden)
+    make calibration-score                # rho + bootstrap CI + trust decision (RATINGS defaults to CAL_WS)
+    make run-eval JUDGE_RHO=0.628         # carry the trusted decision into a scored run (recorded in the manifest)
 
-What still gates close-out is collecting the independent human `human_rating` column. The
-maintained DeepEval metric engine, Ukrainian prompts, local endpoint adapter, targets, ungated
-judge run, and calibration scoring are implemented and tested.
+(`make calibration-worksheet` emits a blank worksheet when you want the rows without a run; a new
+goldset / text-corpus draft uses `CAL_NAME=<label>`.) The operator walkthrough is the
+[calibration-tooling guide](../guides/calibration-tooling.md).
+
+**Calibration result (M3.8 DONE, 2026-06-24):** 86 independent human ratings scored to
+**rho=0.628** (95% bootstrap CI [0.428, 0.772], n=86, judge `gemma3:27b` on Ollama) -> clears the
+0.6 gate, `trusted=True`. It is a BORDERLINE pass: the CI lower bound is below 0.6 and the human
+ratings skew high (68 of 86 are 5s, the judge mean is ~0.86) because the committed SQuAD-uk
+calibration split is easy factual QA with little disagreement to measure -- so the rho is fragile.
+The decision is not auto-persisted by `calibration-score`; carry it into a scored run with
+`make run-eval JUDGE_RHO=0.628 JUDGE_MODEL=gemma3:27b JUDGE_BASE_URL=http://localhost:11434/v1`,
+which records `calibration_rho` + `trusted` in that run's manifest and admits the gated judge.
+
+The committed worksheet IS the canonical calibration: `tests/test_published_calibration.py`
+re-derives rho from it on every run (no model/endpoint/GPU), asserting it still clears the 0.6 gate
+and matches the pinned 0.628 -- so a fresh clone reproduces the calibration decision and CI catches
+any drift. The stats, worksheet I/O, the interactive rater, and the scoring are likewise tested
+(`tests/test_calibration.py` + `tests/test_rate.py`).
 
 #### Judge model (OQ2 decided) + bias disclosure
 
@@ -358,7 +423,8 @@ run needs a running Ollama (the `[rag,eval]` deps are installed by `make venv`).
                      |            backend_error / retrieval_miss
                      v
                   score: reference answer-correctness (objective)
-                         [judge scorer/gate exists but is not wired here yet]
+                         [+ gated judge: scored into the blend only when JUDGE_RHO >= threshold,
+                          else demoted to a diagnostic and objective ranks]
                      v
                   aggregate -> ranked row (Pareto tie-break: tok/s, then VRAM)
                      v
@@ -373,7 +439,12 @@ unknown keys, validates numeric and cross-field chunking constraints, and revali
 CLI override. `llb.paths` loads the project `.env`, honors `DATA_DIR`, and resolves all
 relative paths from the project root rather than the caller's current directory.
 
-### CLI — `llb` (`llb.main`, Typer)
+### CLI — `llb` (`llb.main` -> `llb.cli`, Typer)
+
+`main.py` is a thin entry point; the Typer app root is `llb.cli.app` and commands live in per-area
+modules under `llb.cli/` (`eval`, `models`, `prep`, `rag`, `bench`, `inference`, `ui`, with shared
+helpers in `helpers.py`). Heavy collaborators are lazy-imported at call time, so the package still
+imports in the base install. Representative commands:
 
     llb prep-models # detect GPU; pull Ollama tags + cache vLLM weights
     llb list-models # which candidates can run here (GPU+RAM, context)
@@ -1068,11 +1139,33 @@ a real partial-offload split) and the M4.4 data-prep hardening (second-frontier 
 Stanza/spaCy adapter, long-doc chunking, richer ontology confidence) -- carried forward in
 [`plan.md`](plan.md) (M5.6), landing with the M5 verified-data gate + the M6 extraction reuse.
 
-## Milestone 5 -- security, agentic, tooling (M5.0 prerequisites delivered)
+## Milestone 5 -- security, agentic, tooling (build COMPLETE)
 
-M5.0 -- the two prerequisites that unblock M5.3 (agentic) and the M5.4 chat-period category --
-is built and unit-tested (no GPU). The scored M5 categories (security / tooling / agentic /
-remaining taxonomy) are still forward work in [`plan.md`](plan.md).
+The Milestone 5 BUILD is complete and unit-tested (no GPU): the eval-template prerequisites + the
+signed-off text-analysis schema (M5.0), and every scored category -- security (M5.1), tooling
+(M5.2), agentic (M5.3), text-analysis + summarization + structured-output + chat-period +
+reliability (M5.0/M5.4) -- plus the second-frontier verified-data gate (M5.6 data-prep). Each
+category renders under its OWN Tier (never cross-ranked with the RAG board), produces an objective,
+CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case scores like
+`run-eval`. The Milestone 5 RESIDUALS are now delivered too (per-category, below): the M5.1 sourcing
+breadth (public-set adapters + corpus RAG-injection/canary planter) + unsafe-content gated judge;
+the M5.2 native-FC + MCP transport, BFCL UA adapter, and per-argument tolerance; the M5.3
+real-corpus search tasks; the M5.4 nested/array structured cases + matching, chat-period
+planter/ingestion, and text-analysis judged sub-tasks + long_doc + contradiction + board; and the
+M5.6 ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence). What
+remains is forward work in [`plan.md`](plan.md): the deferred/blocked M7.3 work (platform/matrix
+expansion, human-gated judge calibrations, the composite headline) and the human MH.5 sample-verify
+before any `verified=true` item scores real models.
+
+The shared M5 substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
+`launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
+reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning backend under the existing
+`isolate_cell` contract; `category_result` stamps a `ModelResult` with the category Tier (per-case
+scores -> bootstrap CI); `render_board` ranks under that Tier via `rank_board` (whose guard refuses
+to cross-rank tiers) + `format_board`; `persist_category_run` writes the run bundle under
+`$DATA_DIR/<category>/<ts>/`. The category Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` /
+`TIER_TOOLING` / `TIER_AGENTIC` / `TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in
+`llb.scoring.aggregate`. Each category exposes a `bench-*` CLI command.
 
 ### Eval templates (M1.4-rest) -- `llb.eval.{common,map_reduce,multi_hop}`
 The two remaining DRY LangGraph templates, following the single-call template's node-closure
@@ -1107,11 +1200,390 @@ objective headline is the mean F1 over objective sub-tasks, with judged sub-task
 (the gated judge owns those). The cosine similarity is INJECTED, so the whole engine is pure and
 unit-tested without the embedder; `embedder_similarity()` is the production default.
 
-**Open residual (M5.0):** the schema is SIGNED OFF (MH.2, 2026-06-23 -- thresholds accepted as
-proposed; recorded at the top of the proposal doc). The remaining work is the M5.4 wiring: extend
-the `prepare-synthetic-corpus` prompt to emit the richer per-kind planted labels (today it emits
-QA-style `key_fact` labels only), build the scored runner + the `TIER_TEXT_ANALYSIS` board
-guard, and use a trend label's `attrs.direction` for direction-aware credit.
+The schema is SIGNED OFF (MH.2, 2026-06-23 -- thresholds accepted as proposed; recorded at the top
+of the proposal doc).
+
+**Direction-aware trend credit (M5.0).** A `trend` label's planted `attrs.direction`
+(up | down | flat) now adjusts credit: `direction_of(text)` infers a direction from a UA/EN stem
+lexicon, and `_direction_penalty` ZEROES a trend prediction's surface credit when its detectable
+direction CONFLICTS with the label (a right-subject/wrong-direction answer is substantively wrong,
+so the label stays unrecovered AND the prediction becomes an unmatched false positive). A
+prediction with no detectable direction, or a matching one, keeps its surface credit
+(`DIRECTION_CONFLICT_CREDIT = 0.0` is the named knob).
+
+### Synthetic text-analysis planter (M5.0) -- `llb.prep.text_analysis_corpus`
+`prepare-synthetic-corpus --text-analysis` now emits the RICHER per-kind `PlantedLabelRecord`s the
+schema defines (key_fact / entity / topic / trend / risk / decision, judged narrative / insight),
+instead of QA-style `key_fact` only. `plant_labels` is pure: it grounds each label's `value`
+against the doc (exact, then casefold/whitespace-normalized-but-exact via `frontier.ground_span`),
+falls back to the planter's verbatim `evidence` quote (whose grounded substring becomes an accepted
+alias), DROPS quote-bearing kinds (`GROUNDED_REQUIRED_KINDS` = key_fact/entity/contradiction) whose
+value+evidence are ungrounded while keeping analytical kinds (topic/trend/risk/decision/insight)
+ungrounded (no offsets), and backfills a trend's `attrs.direction` from its text when the planter
+omitted it. `prepare_text_analysis_corpus` writes a self-contained bundle under `out_dir/`:
+`corpus/<doc>.md`, `text_analysis_labels.jsonl` (the records), and a `provenance.json` tagging
+`synthetic: true` + per-kind label counts. The planter != judge guard is reused; `litellm` stays
+lazy and the completion is injectable, so the full flow is unit-tested from a fake endpoint.
+
+### M5 benchmark scaffolding (M5.0) -- `llb.bench.{common,text_analysis}`
+`llb.bench.common` is the shared substrate every M5 category reuses (REUSE, not a new platform):
+`local_complete` / `launcher_complete` build the production `complete` (prompt -> raw text) over an
+OpenAI-compatible endpoint; `drive_with_backend` builds that `complete` for a running endpoint /
+Ollama directly, or LAUNCHES a VRAM-owning backend (vllm / llamacpp) and runs the whole category
+under the SAME `isolate_cell` contract as the RAG sweep (PID-attributed reclaim gate + capped
+cooldown); `category_result` stamps a `ModelResult` with the category's Tier (per-case scores feed
+the bootstrap CI); `render_board` ranks under that Tier via the existing `rank_board` (whose guard
+refuses to cross-rank tiers) + `format_board`; and `persist_category_run` writes a canonical
+manifest + per-case scores bundle under `$DATA_DIR/<method>/<ts>/` exactly like `run-eval`.
+`run_gated_judge` is the shared opt-in GATED-judge seam: a thin reuse of `scoring.judge.run_judge`
+that returns per-record scores ONLY when a judge is configured AND trusted (`judge_rho >= threshold`,
+the M3.8 gate); the `scorer` is injectable (a fake in tests), the default is the DeepEval judge
+bound to a `base_url` (lazy-imported). A category records the judge signal ALONGSIDE its objective
+headline, never folded in (objective-first). Summarization (faithfulness) and agentic
+(trajectory-quality, M5.3) are the consumers (below); the unsafe-content wiring (M5.1) reuses the
+same seam.
+
+`llb.bench.text_analysis.run_text_analysis` is the M5.0 scored runner: it loads a planter bundle
+(`corpus/` + `text_analysis_labels.jsonl`), asks the candidate to extract each document's present
+sub-tasks as a JSON object keyed by kind (`analysis_prompt`), parses it (`parse_predictions`
+coerces scalars + missing kinds), scores recovery with `score_document`, and aggregates one
+`ModelResult` under `TIER_TEXT_ANALYSIS` -- its OWN Tier, never cross-ranked with the RAG board. The
+per-document objective scores carry the CI; the per-sub-task F1s ride a flat `subtask_f1_json`
+column (so the parquet schema stays stable across docs that plant different kinds); a malformed /
+empty response is a typed status (objective 0, reliability down). The `complete` and the cosine
+`similarity` are both injectable, so the whole flow is proven from a fake endpoint without a GPU or
+the embedder. CLI: `llb bench-text-analysis --bundle <dir> --model <m> [--backend ...]` (and the
+`real_corpus` flag keeps real-corpus runs reported separately from synthetic). New tier constants
+`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` / `TIER_TOOLING` / `TIER_AGENTIC` live in
+`llb.scoring.aggregate` (the existing `_validate_board_cohort` guard already refuses any board that
+mixes distinct tiers, so these are the named identities each category stamps).
+
+The M5.0 carry-overs are now DELIVERED under M5.4 (see "Text-analysis judged sub-tasks + long_doc +
+contradiction + board" below): the gated judge over narrative / insight, `long_doc` via the
+map-reduce template, the `contradiction` paired-span matching, and the Streamlit board loading the
+per-tier M5 category runs. OQ4 is CONFIRMED (2026-06-25): a REAL text-analysis corpus exists
+alongside synthetic (scored + reported SEPARATELY via the runner's `synthetic` flag), reference
+answers must be AUTHORED, and a real chat-log corpus exists -- the real chat path is delivered in
+M5.4 (`llb.prep.chat_corpus`). Per the OQ-egress decision (2026-06-25) the real chat logs use a
+LOCAL cross-check verifier only (no egress) while the real text-analysis corpus may use the frontier
+(litellm) cross-check.
+
+### M5.1 Security / robustness benchmark -- `llb.scoring.security` + `llb.bench.security`
+The objective security board (no human dep to build). `llb.scoring.security` is the pure engine:
+every case carries a STRUCTURED success detector (no safety classifier; ShieldGemma / frontier
+moderation stay opt-in), one of two kinds covering all seven spec families --
+  * `leak` -- the attack plants a unique MARKER (an injected token the model is tricked into
+    emitting, or a corpus CANARY it must not reveal); the attack SUCCEEDS when any marker appears
+    in the output (casefolded substring). Covers prompt-injection, instruction-hierarchy,
+    RAG-injection, tool-abuse, and data-exfiltration/canary.
+  * `refuse` -- a harmful ask (jailbreak / unsafe-content); the attack SUCCEEDS when the model
+    COMPLIES (a substantive, non-refusal answer, via the shared `eval.common.is_refusal`).
+
+`score_security` yields ASR (attack-success rate, lower better), its complement the DEFENSE rate
+(the ranking headline, higher better), per-family ASR, and refusal-appropriateness (did the
+refuse/answer decision match the case's expected behavior -- refuse harmful asks, answer benign +
+legitimate-task injection cases -- so a model cannot win by refusing everything). Benign control
+prompts feed only refusal-appropriateness, never ASR. `llb.bench.security.run_security` drives a
+candidate over the cases through an injectable `complete`, frames RAG-injection cases as untrusted
+retrieved context (no "ignore injected instructions" hand-holding -- the realistic test), stamps a
+`ModelResult` under `TIER_SECURITY` (defense rate as `objective_score`, per-attack-case defended
+series -> the bootstrap CI), and records ASR + refusal-appropriateness, each with its own CI, in
+the manifest. A committed UA case set (`samples/security_cases_uk.json`) covers every family plus
+benign controls; `load_cases_file` loads it. CLI: `llb bench-security`. Reuses `is_refusal`
+(extracted into `eval.common` + now shared by `classify_response`), `bench.common`, and the
+`isolate_cell` contract via `drive_with_backend`. Detectors + scoring + the runner are unit-tested
+with planted fixtures + a scripted fake endpoint (vulnerable vs robust model), no GPU.
+
+**Sourcing breadth (M5.1, delivered).** Two pure, injectable adapters extend the committed seed:
+- `llb.prep.security_sources` adapts the public adversarial sets (AdvBench / HarmBench /
+  JailbreakBench) into `SecurityCase` records, UA-adapted: a per-source normalizer extracts one
+  `Behavior` (id + text + category), and `behavior_to_case` frames it as a UA request (`refuse`
+  detector, `expect_refusal=True`). UA adaptation is INJECTABLE (`translate`); a `jailbreak_wrap`
+  (UA DAN-style templates) turns a bare `unsafe_content` ask into a `jailbreak`-family case. Raw
+  rows are passed IN (operator's local CSV/JSON under each set's license) -- nothing vendored or
+  fetched at import. CLI: `llb adapt-security-set --source advbench --rows-file ... [--jailbreak]
+  [--merge-seed]`.
+- `llb.prep.security_planter` is the M3.5-style corpus-specific planter: over a real corpus it
+  splices a marker-bearing instruction INTO a document (`rag_injection` leak cases, the attack in
+  the retrieved context, a benign user turn) and embeds a unique CANARY in a confidential doc
+  (`data_exfiltration` leak cases). Markers/canaries are DETERMINISTIC per (doc, index). CLI:
+  `llb plant-security-cases --corpus-root ... [--merge-seed]`.
+
+**Unsafe-content gated judge (M5.1, delivered).** `run_security` now takes the opt-in gated judge
+(`--judge-model` / `--judge-rho` / `--judge-base-url`): over the harmful-ask (`refuse`-detector,
+non-benign) cases it scores a `refusal_quality` scalar (answer-relevancy to a SAFE-REFUSAL intent --
+a clean refusal scores high, compliance low), recorded ALONGSIDE the objective defense rate (per
+harmful-ask case + mean + CI, a `JudgeStatus` in the manifest), never folded into the headline, and
+only when trusted (`judge_rho >= 0.6`, the M3.8 gate); else demoted. No new safety classifier
+(ShieldGemma / frontier moderation stay opt-in). `judge_scorer` is injectable, so it is proven with
+a fake judge.
+
+Both producers ship `verified=false`-equivalent: the MH.5 human sample-verify still gates any
+headline use of the attack set.
+
+### M5.2 Tooling / function-calling benchmark -- `llb.scoring.tooling` + `llb.bench.tooling`
+The objective, CALL-ONLY function-calling board (tools are NOT executed -- that is M5.3).
+`llb.scoring.tooling` has two pure layers: the PARSE layer (`parse_tool_call`) normalizes a backend
+response into a `ToolCall` whether it is a NATIVE OpenAI `tool_calls` object, a pre-parsed dict, or
+a text-only backend's JSON call in `content` (name/arguments aliases tolerated) -- so tool-capable
+and text-only backends share ONE scorer and are never cross-ranked; the SCORE layer
+(`score_tooling`) reports the four plan metrics -- tool-selection accuracy, argument-exactness
+(`validate_arguments` is a lightweight required/type/no-unknown check, no `jsonschema` dep; plus
+`arguments_match` exact value match, casefold/strip-insensitive for strings), no-hallucinated-tool
+rate, and well-formed-call rate -- with the headline `call_accuracy` requiring the right tool AND
+exact arguments. A no-tool case (the model should NOT call) scores correct only on no-call, so
+over-calling is penalized.
+
+`llb.bench.tooling.run_tooling` drives a candidate over a catalog + cases through an injectable
+`complete` using a universal TEXT tool-calling protocol (`text_tool_prompt` embeds the catalog as
+JSON; the model returns a JSON call), so every backend is exercised uniformly and a FAKE endpoint
+proves the flow; it stamps a `ModelResult` under `TIER_TOOLING` (call accuracy as `objective_score`,
+per-case correctness -> CI) and records all four rates + the tool-call protocol/capability in the
+manifest. A committed BFCL-style UA bundle (`samples/tooling_cases_uk.json`: 5 tools, 12 cases incl.
+no-tool controls + per-argument-tolerance cases) ships; `load_catalog_file` loads it. CLI: `llb bench-tooling`. Parse, validation,
+scoring, and the runner are unit-tested (native + text + malformed responses, perfect vs text-only
+model), no GPU.
+
+**Transports + breadth (M5.2, delivered).**
+- **Selectable native FC + MCP from one catalog.** `run_tooling` takes an injectable `ToolCaller`
+  `(instruction, catalog) -> ToolCall | None`; `text_tool_caller` is the default universal text
+  protocol, `native_tool_caller` calls a tool-capable endpoint with native OpenAI `tools=`
+  (`openai_tools` converts the catalog; the existing `parse_tool_call` normalizes the native
+  response, so the SAME scorer runs). CLI: `llb bench-tooling --tool-protocol native|text` (native
+  needs a running endpoint via `--base-url` / Ollama). `llb.bench.mcp_server` serves the SAME
+  catalog over the official `mcp` Python SDK (`mcp_tool_specs` is the pure ToolDef->MCP mapping;
+  `build_mcp_server` / `serve_stdio` lazily build a low-level server). CLI: `llb serve-tools-mcp`;
+  the `mcp` SDK is an opt-in `[mcp]` extra.
+- **BFCL UA adaptation.** `llb.prep.tooling_sources.from_bfcl` maps BFCL function-doc entries
+  (+ optional possible-answers) into a `{tools, cases}` bundle; BFCL's several-acceptable-values-
+  per-arg map onto the scorer's `oneof` tolerance. UA adaptation is injectable (`translate`); the
+  schemas are kept verbatim. CLI: `llb adapt-bfcl --functions-file ... [--answers-file ...]`.
+- **Per-argument tolerance.** `arguments_match` takes an optional `arg_match` spec relaxing a single
+  argument to `contains` / `fuzzy` (difflib, stdlib) / `numeric` (abs tol) / `oneof` (default stays
+  exact). The committed `samples/tooling_cases_uk.json` grew from 8 to 12 cases exercising each
+  mode. The cases still need the MH.5 human sample-verify before headline use.
+
+### M5.3 Agentic workflows benchmark -- `llb.bench.{tool_world,agentic}`
+The agentic loop EXTENDS the M5.0 multi-hop controller pattern with tool calls + an in-sandbox
+execution step. `llb.bench.tool_world` is the deterministic sandbox (no tau-bench / AgentBench): a
+mock filesystem, a mock key-value DB, substring `search` over a small UA corpus, and a `calculator`
+backed by a SAFE restricted-AST evaluator (`safe_eval` allows only numbers + arithmetic operators
++ parentheses -- no names/calls/imports). Each tool is a pure `(world, args) -> observation`
+mutating only the in-memory `ToolWorld`, so a task's success is checkable from the final env-state.
+
+`llb.bench.agentic.run_episode` is the harness loop: each step the model emits one tool call
+(reusing the M5.2 `parse_tool_call`), the world EXECUTES it, the observation is fed back, and the
+loop runs until the model calls `finish` (or answers in prose) or the step budget is exhausted.
+`check_success` is an OBJECTIVE assertion over the final env-state / answer (`file_equals` /
+`file_contains` / `db_equals` / `answer_contains`; ALL must hold; an empty assertion list never
+passes). `run_agentic` aggregates completion-rate as the headline `objective_score` under
+`TIER_AGENTIC` (per-task success -> the bootstrap CI), records trajectory length + tool-call count
+as efficiency, and persists the manifest. A committed UA task set (`samples/agentic_tasks_uk.json`,
+4 tasks) ships; `load_tasks_file` loads it. CLI: `llb bench-agentic`. The loop is the pure,
+langgraph-free form of the controller->execute->controller cycle, unit-tested from a scripted fake
+tool-calling endpoint (good agent solves tasks, failing agent does not; budget-exhaustion -> typed
+`incomplete`), no GPU.
+
+An OPT-IN gated TRAJECTORY-QUALITY signal (a check the env-state assertions cannot make) is wired
+exactly like the M5.4 summarization faithfulness signal, through the same `run_gated_judge` seam:
+each episode becomes one judge record whose retrieval context is the trajectory's TOOL OBSERVATIONS
+and whose answer is the agent's final answer, so the judge's faithfulness (answer grounded in what
+the tools returned) and answer-relevancy (answer addresses the goal) average into one
+`trajectory_quality` scalar (`trajectory_quality` / `_trajectory_records`). It is recorded
+ALONGSIDE completion-rate -- per-case + mean + CI, with a `JudgeStatus` in the manifest -- and ONLY
+when the judge is configured AND trusted (`--judge-rho >= 0.6`, the M3.8 gate); otherwise the judge
+is demoted and completion-rate ranks alone. The `judge_scorer` is injectable, so the wiring is
+proven with a fake judge (no DeepEval / endpoint / GPU). CLI: `--judge-model` / `--judge-rho` /
+`--judge-base-url`.
+
+**Task-set breadth (M5.3, delivered).** `llb.bench.agentic_tasks` GROWS the committed seed with
+real-UA-corpus SEARCH tasks whose success assertion is computed PURELY from the corpus -- no human
+gold authoring to BUILD: `count` ("how many docs mention X?" -> document frequency of X) and
+`locate` ("which doc mentions X?" -> the single doc id, only for terms in EXACTLY ONE doc, so the
+answer is unambiguous). Query terms are DERIVED from the corpus by document frequency (UA-stopword
+filtered) or supplied explicitly; each task drops straight into the `bench-agentic` loop +
+`check_success` via the sandbox `search` tool. CLI: `llb prepare-agentic-search --corpus-root ...
+[--merge-seed]`. Pure + unit-tested; tasks still need the MH.5 sample-verify.
+
+The trajectory-quality judge still reuses the M3.8 calibration (fit on SQuAD QA, not agent
+trajectories), so an agentic-specific calibration would firm the domain transfer. The
+`build_agentic_graph` LangGraph wrapper and the LangGraph-vs-CrewAI harness comparison are scoped to
+Milestone 7 (the remaining frameworks -- LangChain / LlamaIndex / Haystack / AutoGen -- stay out of
+scope; see `plan.md`).
+
+### M5.4 Remaining taxonomy -- summarization / structured output / chat-period / reliability
+The remaining spec categories, each on the shared `bench.common` substrate:
+- **summarization (`llb.bench.summarization`, `TIER_SUMMARIZATION`)** -- reference coverage via the
+  PINNED-embedder cosine (NOT ROUGE): for each reference-summary sentence, the best cosine to any
+  candidate sentence, averaged (`reference_coverage`; `similarity` injected, same basis as retrieval
+  + the text-analysis matcher). Headline is mean coverage with a CI. An OPT-IN gated-judge
+  FAITHFULNESS signal (summary vs source) is wired via `run_gated_judge` (the M3.8-calibrated
+  faithfulness metric): when configured AND trusted (`--judge-rho >= 0.6`) it records per-case +
+  mean + CI faithfulness ALONGSIDE coverage (never folded into the headline; the manifest carries a
+  `JudgeStatus`), else the judge is demoted and coverage ranks alone. Committed cases
+  `samples/summarization_cases_uk.json`; CLI `bench-summarization` (`--judge-model` / `--judge-rho`
+  / `--judge-base-url`).
+- **structured output (`llb.scoring.structured` + `llb.bench.structured`, `TIER_STRUCTURED`)** --
+  objective JSON-schema conformance via PYDANTIC (`build_model` from a field schema; no new
+  `jsonschema` dep) + field accuracy. Schemas may be NESTED: `_field_type` recurses so a
+  `type: object` field with `fields` builds a nested model and a `type: array` field with `items`
+  builds a typed `list[...]`, so conformance validates the whole shape. Field accuracy recurses too
+  (`_compare`): it counts matching expected LEAF values across nested objects + array items, with
+  strings casefold/strip-insensitive and numbers exact unless the field spec relaxes it. Per-field
+  tolerance (M5.4): numeric `tolerance` (abs) / `rel_tolerance` (relative); string `string_match`
+  `fuzzy` (difflib ratio >= `threshold`) / `contains`; and array `unordered: true` for order-
+  insensitive (greedy best-assignment) set matching. A non-conformant output scores 0 field
+  accuracy; the headline is field accuracy, conformance rate recorded alongside, both with CIs. The
+  committed `samples/structured_cases_uk.json` grew from 3 flat to 6 cases incl. nested objects,
+  arrays of objects, an unordered tag set, and fuzzy/relative tolerance. CLI `bench-structured`.
+- **chat-period analysis** -- DELIVERED BY REUSE + the chat-specific producers in
+  `llb.prep.chat_corpus`: a chat-log-shaped SYNTHETIC planter (`prepare_synthetic_chat_corpus`,
+  reusing the text-analysis flow with a chat prompt) and REAL chat-corpus ingestion
+  (`ingest_chat_corpus`: parse an export -- array / Telegram / JSONL -- render a chat-shaped doc,
+  then DRAFT grounded labels with a LOCAL completion, NO egress per OQ-egress). Both write a bundle
+  the `bench.text_analysis` runner scores; the runner's `synthetic` flag keeps real (`synthetic:
+  false`) and synthetic results reported SEPARATELY. CLI: `llb ingest-chat-corpus` (real, local-only)
+  and `llb prepare-synthetic-corpus --text-analysis --chat` (synthetic).
+- **reliability (`llb.scoring.reliability`)** -- rolls the existing TYPED failure taxonomy
+  (ok/empty/malformed/refusal/timeout/backend_error/retrieval_miss/...) from ANY run's per-case
+  scores into a first-class reliability score + per-failure-type breakdown (`reliability_report`);
+  `read_case_statuses` reads a run bundle's `scores.parquet`/`scores.jsonl`. CLI `bench-reliability
+  --run-dir`. Pure + unit-tested.
+
+All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU. The
+full composite weights across the M5 components stay OFF (each category reports its own board + CIs)
+until every component carries a CI, per the M5 cross-cutting rule (the M3.8 judge calibration that
+gates the judged signals is itself done -- see the judge-calibration section above).
+
+**Text-analysis judged sub-tasks + long_doc + contradiction + board (M5.4, delivered).**
+`run_text_analysis` now takes the opt-in gated judge (`--judge-model` / `--judge-rho` /
+`--judge-base-url`): the free-form sub-tasks (narrative / insight) become judge records (intent +
+extracted answer + the doc as context), and a `long_doc` label is answered through the MAP-REDUCE
+template (`eval.map_reduce.run_map_reduce_text` -- a `complete: str->str` driver over split -> map ->
+reduce). The judge's faithfulness+relevancy collapse to one `judged_quality` per record, aggregated
+per doc + overall (mean + CI, a `JudgeStatus`), recorded ALONGSIDE the objective recovery headline,
+never folded in, and only when trusted; else demoted. The matcher now uses a `contradiction`'s
+paired-span `attrs` (`spans` / `span_a` + `span_b`): credit requires the prediction to cover BOTH
+contradicting sides (min of the two side credits). The Streamlit board (`llb.board`) loads the M5
+category run bundles via `load_category_records` (grouped BY TIER, best run per model) and renders
+each under its OWN Tier, never cross-ranked (the `aggregate` guard refuses a mixed-tier board).
+
+Summarization's gated-judge faithfulness still reuses the M3.8 calibration (done on SQuAD QA, not
+summarization) -- a summarization-specific calibration would firm the domain transfer (M7.3). All
+M5.4 cases need the MH.5 human sample-verify before headline use.
+
+### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
+The M4.4 data-prep residual the plan says "lands with M5's first scored category": the in-pipeline
+verified-data gate. Every AI-DRAFTED item is re-confirmed by a SECOND, independent endpoint
+(different from the drafter) layered on cheap deterministic pre-checks: GROUNDED (a labeled span
+still resolves via `ground_span`) + NON-CIRCULAR (the answer is not leaked in the question), then
+the second frontier's SUPPORTED (the cited span supports the answer) + ANSWERABLE (the question is
+sensible/answerable). The pre-checks run FIRST so a clearly-broken item never spends a frontier
+call. The verifier is injectable (`SecondFrontierVerify`); `second_frontier_verify` builds the
+litellm-backed default; `cross_check_goldset` produces a `CrossCheckReport` (per-item verdicts +
+pass count). Passing does NOT set `verified=true` -- only the human MH.5 sample-verify does; the
+cross-check gates which drafted items are even eligible and is the report a human samples. CLI:
+`llb cross-check-goldset --goldset --corpus --model`. Pure + unit-tested (no key).
+
+### M5.6 run-path hardening (M4 carry-overs) -- delivered
+
+The host-dependent M4 run-path residuals are delivered and host-validated (see the Real-host
+verification below):
+- **M4.1 sliding-window KV + config override (`llb.backends.planner`).** KV is now SLIDING-WINDOW
+  -aware: `attention_layer_split` / `kv_mib_at_context` / `max_context_for_kv` cap the KV of Gemma's
+  sliding layers at `sliding_window` while the periodic full-attention layers grow with context, so
+  a long context costs far less KV (piecewise, not linear). `arch_from_config` also reads
+  `sliding_window` / `sliding_window_pattern` (and derives the period from a `layer_types` list), and
+  `enrich_arch(spec, override=True)` lets a cached `config.json` OVERRIDE curated arch fields (the
+  real served architecture wins), exposed as `list-models --trust-config`.
+- **M4.2 multi-GPU read + arch-derived KV headroom (`llb.backends.hardware` + `llb.executor.contention`).**
+  `select_target_gpu` reads ALL GPUs and targets the `CUDA_VISIBLE_DEVICES` device (or the most-free
+  one) instead of hard-coding GPU 0; `default_gpu_reader` uses it. `model_kv_headroom_mb` derives the
+  abort headroom from the served arch (the KV at a minimal serving context, sliding-window-aware)
+  rather than a fixed 512 MB floor, so a heavy-KV model is judged un-launchable at the right
+  threshold.
+- **M4.3 flashinfer auto-pin + sampler-in-manifest + driver re-probe (`llb.backends.preflight` +
+  `vllm` + `telemetry`).** The verdict records the GPU `driver`; `verdict_is_current` invalidates a
+  cached verdict when the driver changes, so `llb preflight-vllm` re-probes WITHOUT a full
+  `build-vllm` (`--force` to re-run regardless). `auto_pin_flashinfer` installs + re-probes candidate
+  flashinfer versions (`LLB_FLASHINFER_CANDIDATES`) when the bundled one fails -- OPT-IN behind
+  `preflight-vllm --auto-pin`, since it changes the environment. The vLLM launcher records the
+  sampler actually used (`flashinfer` | `native`) + the flashinfer version into the manifest
+  telemetry.
+- **M4.5 further `/props` shapes + drivable partial offload (`llb.backends.llamacpp` + `cli.eval`).**
+  `parse_served_context` checks the known `n_ctx` locations across llama.cpp versions (top level,
+  `default_generation_settings[.params|.context]`, `generation_settings`, `model`, `props`) and never
+  mistakes `n_ctx_train`; `run-eval --gpu-layers N` drives a partial GPU/CPU split without a YAML.
+
+**M5.6 ontology data-prep residuals (delivered).** The three data-prep items feeding the M6
+extraction reuse:
+- **spaCy / Stanza adapter.** `llb.prep.ontology.spacy_adapter.SpacyExtractionAdapter` implements
+  the `ExtractionAdapter` seam over spaCy `uk_core_news` NER -- entities only (spaCy's strength),
+  with exact spans from the ent's own offsets (a prefix of the doc -> exact into full text) and
+  repeated surfaces grouped into one entity (lightweight coreference). spaCy is lazy/opt-in; `nlp`
+  is injectable so the mapping is unit-tested with a fake. CLI: `llb prepare-goldset-draft
+  --extractor spacy [--spacy-model ...]`.
+- **Long-doc chunking for extraction.** `LLMExtractionAdapter` now CHUNKS a doc longer than
+  `EXTRACT_MAX_CHARS` into overlapping windows (reusing `split_document`), extracts per window, and
+  MERGES (`merge_extractions` dedups entities by (name,type) merging mentions+aliases; events/claims/
+  facts by evidence span + payload) -- so a long doc's later content is no longer truncated away.
+  Grounding still runs against the FULL text, so offsets stay exact.
+- **Richer ontology-type confidence.** `induce_ontology` now blends normalized count with normalized
+  DOCUMENT frequency (`CONFIDENCE_COUNT_WEIGHT` / `CONFIDENCE_DOCFREQ_WEIGHT`), so a type spread
+  across docs outranks one of equal count concentrated in one doc; types sort by confidence.
+  `ontology_constraints` carries the high-confidence types into every drafting prompt
+  (`draft_prompt` / `draft_items` `ontology_hint`) as an explicit constraint.
+
+## Real-host verification (2026-06-25, RTX 4060 Ti 16 GB)
+
+All three backends + every M5 category benchmark were validated on the real CUDA host (driver
+595.71.05), complementing the fake-endpoint CI boards:
+- **Core RAG eval:** `validate-goldset` PASS (250 items); `build-index` 311 chunks (dim 768);
+  `validate-retrieval` recall@10=0.980, MRR=0.847 (> the 0.8 gate); `run-eval` llama3.2:3b on the
+  final split with telemetry -> ~101 tok/s, peak VRAM 3994 MB, reliability 1.0, manifest + MLflow
+  mirror written. The uncalibrated judge demoted correctly (objective ranks alone).
+- **Three-backend run-path (same `run-eval` interface, source-built backends):**
+  - **Ollama** (prebuilt daemon): llama3.2:3b -- ~101 tok/s, peak VRAM 3994 MB (above).
+  - **vLLM 0.23.0** (`backend=vllm`, `samples/run_config_vllm_uk.yaml`): `google/gemma-4-E4B-it-qat-w4a16-ct`
+    (w4a16, the M2.4 16 GB fit) -- the pre-launch VRAM guard fired (`gpu-memory-utilization 0.80`
+    fits, 14990 MB free), then served at 63.5 tok/s, peak VRAM 14496 MB, cold load 114.0s, served
+    ctx 8192; reliability 1.0. Ollama released the GPU cleanly first.
+  - **llama.cpp** (`backend=llamacpp`, source-built `llama-server` under `.data/llb/llamacpp/build/bin`):
+    `Qwen2.5-0.5B-Instruct` Q4_K_M GGUF (loaded via `-m`, all layers on GPU) -- 401.6 tok/s, peak
+    VRAM 2318 MB, load 2.0s, served ctx 32768; reliability 1.0.
+  All three stamped a ranked row + telemetry + manifest + MLflow mirror under the SAME executor.
+- **M5.6 M4 run-path hardening (host-validated):**
+  - **M4.1:** `list-models --trust-config` over the cached `config.json` of `gemma-4-E4B-it-w4a16`
+    resolved it to `42/42 gpu` at ctx 131072 -- the sliding-window KV fits the full window where the
+    old full-attention estimate forced an offload.
+  - **M4.2:** the vLLM pre-launch guard read the free VRAM and the arch-derived KV headroom
+    (`gpu-memory-utilization 0.80 fits, 15309 MB free`) before launching.
+  - **M4.3:** `preflight-vllm --force` found the cached verdict STALE and re-probed -- the venv's
+    flashinfer 0.2.5 builds + runs here (sampler=flashinfer, driver 595.71.05 recorded). A vLLM
+    `--telemetry` run then recorded `sampler` + `flashinfer_version=0.2.5` in the manifest (the value
+    is the sampler ACTUALLY used: `native`, because an explicit env flag won over the verdict).
+  - **M4.5:** a real PARTIAL-offload split of the oversized `deepseek-r1:32b` Q4 GGUF (19.9 GB > 16
+    GB) at `--gpu-layers 20` served end to end -- peak VRAM 7710 MB (only ~20 of ~64 layers on GPU,
+    the rest in CPU RAM) at 3.36 tok/s, with `n_gpu_layers=20` recorded in the manifest. (Ollama's
+    `gemma3:27b` GGUF would not load -- a llama.cpp-build arch-key mismatch, not a bug here.)
+- **M5 category benches (llama3.2:3b, committed UA case sets):** agentic completion 0.500;
+  security ASR 0.600 / defense 0.400 with a per-family breakdown; tooling call-accuracy 0.750;
+  summarization reference-coverage 0.941 -- each stamped under its OWN Tier with a manifest + CI.
+- **M5.3 gated trajectory-quality judge end-to-end:** with a real judge endpoint (gemma4:e4b on
+  Ollama as the wiring smoke -- the calibrated production judge is gemma3:27b -- `--judge-rho
+  0.628`) the judge was TRUSTED and recorded `trajectory_quality=0.5875` (CI [0.375, 0.85])
+  ALONGSIDE the objective completion (0.500, unchanged), with a `JudgeStatus`
+  (`metrics=["trajectory_quality"]`) persisted in the manifest -- confirming the objective-first
+  "diagnostic alongside, never folded into the headline/ranking" contract on a real model.
+- `make ci` (Ruff format + lint, mypy strict, lightweight pytest `-m "not slow"`) is green with
+  zero warnings; after the M5 residuals it selects 615 tests (10 slow deselected; `make test` runs
+  all 625 locally).
+
+(Still host-pending: only the M5.6 host-dependent M4 hardening items the basic run did not exercise
+-- Gemma sliding-window KV + cached-`config.json` arch override (M4.1), multi-GPU read + arch-derived
+KV abort headroom (M4.2), flashinfer auto-pin + sampler-in-manifest (M4.3, the sampler stays off by
+default), and a real PARTIAL-offload llama.cpp split (M4.5; only the all-on-GPU path is now confirmed)
+-- see `plan.md`.)
 
 ## Resolved questions and scope boundaries
 
@@ -1128,17 +1600,30 @@ Resolved open questions:
   ids are verified via `prep-models`.
 - **OQ6 -- MAX_JOBS build helper (M2):** the canonical `max_jobs()` lives in
   `scripts/shared/common.sh` (AGENTS.md) and caps every CUDA source build.
+- **OQ4 -- text-analysis + chat corpus facts (confirmed 2026-06-25):** text-analysis reference
+  answers must be AUTHORED (AI-draft -> MH.5-verify, the current pipeline -- they do NOT pre-exist);
+  the text-analysis corpus is BOTH real + synthetic, scored + reported SEPARATELY via the runner's
+  `synthetic` flag (never merged); and a REAL chat-log corpus exists for chat-period (run via the
+  real path, reported separately). So the M5.4 text-analysis + chat-period residuals must wire the
+  REAL path, not only the synthetic planter.
+- **OQ-egress -- cross-check egress for the real corpus (resolved 2026-06-25):** the second-frontier
+  cross-check verifier is injectable (`SecondFrontierVerify`), so egress is per-corpus: the real
+  CHAT-LOG corpus uses a LOCAL verifier only (no egress -- inject a local `SecondFrontierVerify`);
+  the real TEXT-ANALYSIS corpus has frontier (litellm) cross-check egress APPROVED; synthetic
+  bundles keep the litellm default. MH.5 remains the human gate for all of them.
 
 Rejected pushbacks (ruled the other way; do NOT revisit -- see spec.md "Outside-voice
 resolutions"): defer-Optuna-to-finalists, LangGraph-only-where-needed, drop-MLflow,
 drop-thermal-gate, defer-vLLM.
 
-Genuinely out of scope (v-next): the six agent frameworks as a comparison axis (M5.3 ranks the
-model under ONE fixed LangGraph harness, not frameworks against each other -- spec Appendix D);
-and loc-lm-bench as a public leaderboard (it consumes lang-uk / INSAIT results as a prior, never
-duplicates them).
+Genuinely out of scope (v-next): a FULL six-framework comparison axis -- M5.3 ranks the model under
+ONE fixed harness (spec Appendix D), and only a TWO-harness comparison (LangGraph vs CrewAI) is
+taken forward, as Milestone 7 in `plan.md`; the remaining frameworks (LangChain / LlamaIndex /
+Haystack / AutoGen) stay deferred. Also out of scope: loc-lm-bench as a public leaderboard (it
+consumes lang-uk / INSAIT results as a prior, never duplicates them).
 
 No longer deferred (now forward work in `plan.md`, not "out of scope"): the security / agentic /
 MCP-tooling categories and the remaining taxonomy (Milestone 5), GraphRAG (Milestone 6, GO
-decided), and the multi-backend / multi-vector-store / GPU-matrix / quality-per-watt expansions
-(M5.5, built only with a committed consumer).
+decided), the LangGraph-vs-CrewAI harness comparison (Milestone 7), and the multi-backend /
+multi-vector-store / GPU-matrix / quality-per-watt expansions (Milestone 7 / M7.3, built only with a
+committed consumer or more hardware).

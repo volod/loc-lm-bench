@@ -4,7 +4,7 @@ The walking skeleton: retrieve -> generate -> score -> one ranked row + a reprod
 manifest, on one Ollama model. It is **compile-free** -- prebuilt Ollama (which still runs
 on your GPU), no vLLM/flash-attn source build -- so the loop is proven before Milestone 2
 takes on that build. Module detail is in
-[implementation/current.md](../implementation/current.md).
+[implementation/current.md](../impl/current.md).
 
 ## Prerequisites
 

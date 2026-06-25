@@ -40,22 +40,41 @@ LOG_DIR     := $(DATA_DIR)/llb/logs
 PREP_ALL_BACKEND ?= ollama
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
-# Judge-calibration knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL
-# OpenAI-compatible endpoint (no data egress + reproducible; bias documented in current.md).
-# JUDGE_BASE_URL is explicit so candidate and judge servers can use different endpoints:
+# Judge knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
+# (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
+# Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there
+# too). Alternatives by GPU tier (override JUDGE_MODEL + JUDGE_BASE_URL):
 #   12 GB GPU: ollama_chat/gemma-4-e4b-it                       (GGUF/CPU offload; the 12B won't fit)
-#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (this box; biggest Gemma-4 that fits)
+#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (vLLM on :8000)
 #   32 GB GPU: hosted_vllm/google/gemma-4-12B-it                (bf16, higher fidelity + co-host headroom)
-# On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate; use Ollama GGUF/CPU
-# offload or serve the judge on another local host. Set JUDGE_MODEL empty to skip the judge.
-CAL_WS ?= $(DATA_DIR)/llb/calibration_worksheet.csv
+# Set JUDGE_MODEL empty to skip the judge.
+# JUDGE_RHO is the calibration Spearman rho (from `make calibration-score`); set it on `run-eval`
+# to ENABLE the gated judge in a scored run -- the judge enters the ranking blend only when
+# JUDGE_RHO >= 0.6 and the decision is recorded in the run manifest. Unset -> no judge (default).
+# LLB_EMBED_DEVICE pins the sentence-transformers embedder to the CPU by default so the GPU stays
+# free for a co-resident local judge/candidate (a big judge + a GPU embedder OOMs 16 GB); override
+# with LLB_EMBED_DEVICE=cuda when nothing else needs the GPU.
+# Calibration worksheets carry irreducibly-human ratings, kept in TWO roots:
+#   - PERMANENT: the tracked root calibration/ dir -- committed, so they survive a clone.
+#   - TEMPORARY: $(DATA_DIR)/llb/calibration -- gitignored (generated/in-progress sets).
+# CAL_NAME labels the use case (one worksheet per goldset). A worksheet AUTO-ROUTES by name:
+# names listed in CAL_PERMANENT go to root calibration/, everything else to the temp dir -- so a
+# new/generated set stays local by default. To persist one: copy it into calibration/ and add its
+# name to CAL_PERMANENT (or commit it directly). CAL_DIR overrides the routing explicitly.
+CAL_PERMANENT ?= ua_squad_postedited_v1
+CAL_NAME ?= ua_squad_postedited_v1
+CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
+CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
-JUDGE_MODEL ?= hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
-JUDGE_BASE_URL ?= http://localhost:8000/v1
+JUDGE_MODEL ?= gemma3:27b
+JUDGE_BASE_URL ?= http://localhost:11434/v1
+JUDGE_RHO ?=
+LLB_EMBED_DEVICE ?= cpu
+export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -116,20 +135,30 @@ venv: ## Create/update .venv (py3.11) + apt deps + all extras + .env. Idempotent
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
 
-test: ## Run the test suite (pytest)
+# Two test groups (markers registered in pyproject.toml):
+#   `make test`      -- FULL local suite: every test, including the `slow` ones (real Optuna
+#                       sweeps, embedder/model loads, deepeval, subprocess builds).
+#   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) so GitHub CI stays fast.
+NOT_SLOW := -m "not slow"
+
+test: ## Run the FULL test suite locally (pytest, includes slow tests)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pytest
+
+test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m pytest $(NOT_SLOW)
 
 format: ## Format Python sources and tests with Ruff
 	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
 	$(VENV)/bin/ruff format src tests
 
-ci: ## Format check + lint + type check + unit tests -- used by GitHub CI
+ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitHub CI
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- create one + install '.[dev]' first"; exit 1; }
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy
-	$(PY) -m pytest
+	$(PY) -m pytest $(NOT_SLOW)
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -154,6 +183,10 @@ calibration-run: ## Run MODEL on the calibration split -> filled worksheet (mode
 		--goldset "$(GOLDSET)" --split calibration --worksheet "$(CAL_WS)" \
 		$(if $(JUDGE_MODEL),--judge-model "$(JUDGE_MODEL)",) \
 		$(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",)
+
+calibration-rate: ## Interactively fill human ratings/answers in CAL_WS (judge_rating hidden; SHOW_JUDGE=1 to reveal, START=N, CLEAR=1 to reset)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.judge.calibration rate --worksheet "$(CAL_WS)" $(if $(START),--start $(START)) $(if $(SHOW_JUDGE),--show-judge) $(if $(CLEAR),--clear)
 
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -196,12 +229,12 @@ validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-run-eval: ## Run the eval on one model; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1
+run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1 JUDGE_RHO= (enables the gated judge)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
-		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry,)
+		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"

@@ -5,6 +5,7 @@ Import submodules so their @app.command handlers register on the shared Typer ap
 
 from llb.cli.app import app
 
+import llb.cli.bench  # noqa: F401
 import llb.cli.eval  # noqa: F401
 import llb.cli.inference  # noqa: F401
 import llb.cli.models  # noqa: F401

@@ -98,6 +98,26 @@ def test_score_document_objective_headline_excludes_judged():
     assert result["subtasks"][ta.INSIGHT]["objective"] is False
 
 
+def test_contradiction_paired_spans_require_both_sides():
+    label = ta.PlantedLabel(
+        label_id="c0",
+        kind=ta.CONTRADICTION,
+        value="суперечність про дохід",
+        attrs={"spans": ["дохід зріс", "дохід впав"]},
+    )
+    sim = lambda _a, _b: 0.0  # noqa: E731 - exact-surface only
+    # a prediction naming BOTH contradicting sides earns full credit
+    assert ta._credit("дохід зріс, але потім дохід впав", label, sim) == 1.0
+    # naming only ONE side earns zero (min of the two side credits)
+    assert ta._credit("дохід зріс", label, sim) == 0.0
+
+
+def test_contradiction_without_spans_falls_back_to_surface():
+    label = ta.PlantedLabel(label_id="c1", kind=ta.CONTRADICTION, value="внутрішня суперечність")
+    sim = lambda _a, _b: 0.0  # noqa: E731
+    assert ta._credit("внутрішня суперечність", label, sim) == 1.0
+
+
 def test_from_record_round_trip():
     record = {
         "label_id": "L1",
@@ -123,3 +143,41 @@ def test_judged_kind_objective_floor_still_scored():
     score = ta.score_subtask(["піднесення і занепад"], labels, ZERO_SIM)
     assert score["objective"] is False
     assert score["recall"] == 1.0  # objective floor is computed even for judged kinds
+
+
+def trend_label(label_id, value, direction, aliases=()):
+    return ta.PlantedLabel(
+        label_id=label_id,
+        kind=ta.TREND,
+        value=value,
+        aliases=tuple(aliases),
+        attrs={"direction": direction},
+    )
+
+
+def test_direction_of_lexicon():
+    assert ta.direction_of("частка ВДЕ зросла") == ta.DIRECTION_UP
+    assert ta.direction_of("ціни впали") == ta.DIRECTION_DOWN
+    assert ta.direction_of("показник стабільний") == ta.DIRECTION_FLAT
+    assert ta.direction_of("просто текст") is None
+
+
+def test_trend_direction_conflict_zeroes_surface_match():
+    # Surface exact-matches the label value, but the prediction states the WRONG direction.
+    labels = [trend_label("L1", "частка ВДЕ зросла", "up")]
+    conflict = ta.score_subtask(["частка ВДЕ впала"], labels, ZERO_SIM)
+    assert conflict["recall"] == 0.0  # wrong direction -> credit zeroed -> label unrecovered
+    assert conflict["precision"] == 0.0  # the prediction is now an unmatched false positive
+
+
+def test_trend_direction_agreement_keeps_exact_credit():
+    labels = [trend_label("L1", "частка ВДЕ зросла", "up")]
+    ok = ta.score_subtask(["частка ВДЕ зросла"], labels, ZERO_SIM)
+    assert ok["recall"] == 1.0  # right subject + right direction -> full credit
+
+
+def test_trend_no_detectable_direction_keeps_surface_credit():
+    labels = [trend_label("L1", "інфляція", "up")]
+    # prediction surface-matches but carries no direction word -> we cannot penalize it.
+    keep = ta.score_subtask(["інфляція"], labels, ZERO_SIM)
+    assert keep["recall"] == 1.0

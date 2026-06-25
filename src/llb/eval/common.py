@@ -34,6 +34,15 @@ _REFUSAL_MARKERS = (
 )
 
 
+def is_refusal(text: str) -> bool:
+    """True when the response is one of the recognized UA/EN refusals. Shared by the eval
+    templates' `classify_response` and the M5.1 security benchmark (refusal-appropriateness)."""
+    if not text or not text.strip():
+        return False
+    low = text.strip().lower()
+    return any(marker in low for marker in _REFUSAL_MARKERS)
+
+
 def format_context(chunks: list[ChunkRecord]) -> str:
     """Render retrieved chunks as a delimited, numbered block (corpus is untrusted input)."""
     parts = []
@@ -49,8 +58,7 @@ def classify_response(text: str, error: str | None, expect_json: bool = False) -
     if text is None or not text.strip():
         return EMPTY
     stripped = text.strip()
-    low = stripped.lower()
-    if any(marker in low for marker in _REFUSAL_MARKERS):
+    if is_refusal(stripped):
         return REFUSAL
     if expect_json:
         import json
