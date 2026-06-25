@@ -112,6 +112,7 @@ def test_objective_prunes_over_context_trial(tmp_path):
         objective(trial)
 
 
+@pytest.mark.slow
 def test_tune_optimizes_toward_higher_quality(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path)
@@ -125,6 +126,7 @@ def test_tune_optimizes_toward_higher_quality(tmp_path):
     assert result.best_value == pytest.approx(evaluate(result.best_config))
 
 
+@pytest.mark.slow
 def test_two_stage_scores_winner_on_final(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path)
@@ -151,6 +153,7 @@ def test_two_stage_scores_winner_on_final(tmp_path):
     assert out.final["rows"][0]["quality"] == 0.9
 
 
+@pytest.mark.slow
 def test_tune_persists_sqlite_study_for_resume(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path)
@@ -199,6 +202,7 @@ def test_objective_prunes_measured_oom(tmp_path):
         objective(trial)
 
 
+@pytest.mark.slow
 def test_tune_breaks_quality_ties_by_throughput(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path)
@@ -214,6 +218,7 @@ def test_tune_breaks_quality_ties_by_throughput(tmp_path):
     assert result.best_config.top_k >= 10  # tie broken toward higher throughput
 
 
+@pytest.mark.slow
 def test_tune_invokes_on_trial_callback(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path)
@@ -268,6 +273,7 @@ def test_with_isolation_aborts_trial_on_leak(tmp_path):
         wrapped(base)
 
 
+@pytest.mark.slow
 def test_tune_isolate_runs_each_trial_isolated(tmp_path):
     pytest.importorskip("optuna")
     base = RunConfig(data_dir=tmp_path, backend="vllm")

@@ -219,6 +219,7 @@ def test_run_eval_errors_when_split_empty(tmp_path):
         pass
 
 
+@pytest.mark.slow
 def test_run_eval_emits_prefilled_worksheet(tmp_path):
     items = [gold_item("cal-1", "Яка столиця України?", "Київ", "Київ", split="calibration")]
     store = FakeStore(

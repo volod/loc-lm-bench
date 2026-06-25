@@ -293,8 +293,9 @@ blocked ones stay in `Verification (forward)` below):
 - **Category + harness boards:** each M5 category and the M7.1 harness comparison ranks objectively
   under its OWN Tier with bootstrap CIs from FAKE endpoints -- no GPU, no human sample-verify (the
   real-model headline still rides the MH.5 data gate). See `current.md`.
-- **Code-quality gate:** `make ci` stays green -- Ruff format + lint, mypy (strict), and the full
-  pytest suite -- and every heavy dependency stays lazy-imported so the base install imports.
+- **Code-quality gate:** `make ci` stays green -- Ruff format + lint, mypy (strict), and the
+  lightweight pytest group (`-m "not slow"`); the full suite (incl. `@pytest.mark.slow`) runs
+  locally via `make test`. Every heavy dependency stays lazy-imported so the base install imports.
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 

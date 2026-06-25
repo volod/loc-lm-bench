@@ -44,6 +44,16 @@ The full pytest suite passes; Ruff format/lint and mypy are clean. CI enforces f
 static typing, and unit tests only (no GPU / network / heavy extras); every heavy dependency
 is lazy-imported so the base install stays importable.
 
+The suite is split into two groups via the `slow` pytest marker (registered in `pyproject.toml`):
+the FULL suite (`make test`, run locally) includes everything, while the LIGHTWEIGHT suite
+(`make ci` / `make test-fast`, selected with `-m "not slow"`) drops the intrinsically expensive
+tests so GitHub CI stays fast (~5s vs ~19s locally). Ten tests carry `@pytest.mark.slow`: the six
+real-Optuna `tune`/`two_stage` sweeps (`tests/test_tuner.py`), the embedder-loading prefilled
+worksheet (`tests/test_runner.py`), the two `bash`-subprocess vLLM build helpers
+(`tests/test_build_helper.py`), and the real-DeepEval metric path (`tests/test_judge.py`). Mark a
+new test `slow` only when its cost is intrinsic (Optuna sweep, model/embedder load, deepeval,
+subprocess), not a one-off first-import artifact.
+
 ## Dev setup
 
 Requires [`uv`](https://docs.astral.sh/uv/). `make venv` creates `.venv` (Python 3.11),
@@ -54,9 +64,10 @@ so a fresh checkout can run every command without a follow-up `uv pip install`.
     make venv # .venv (py3.11) + package + all extras + .env (idempotent;
     RECREATE_VENV=1 to
     rebuild)
-    make test       # pytest (full suite)
+    make test       # pytest -- FULL suite (incl. slow tests); run locally
+    make test-fast  # pytest -m "not slow" -- lightweight suite (mirrors CI)
     make format     # apply canonical Ruff formatting to src/ and tests/
-    make ci         # format check + lint + mypy + tests
+    make ci         # format check + lint + mypy + LIGHTWEIGHT tests (-m "not slow")
     make demo-eval # idempotent end-to-end: venv -> gold set -> index ->
     validate -> prep-models ->
     run-eval+telemetry
@@ -1492,7 +1503,8 @@ All three backends + every M5 category benchmark were validated on the real CUDA
   ALONGSIDE the objective completion (0.500, unchanged), with a `JudgeStatus`
   (`metrics=["trajectory_quality"]`) persisted in the manifest -- confirming the objective-first
   "diagnostic alongside, never folded into the headline/ranking" contract on a real model.
-- `make ci` (Ruff format + lint, mypy strict, 551 pytest) is green with zero warnings.
+- `make ci` (Ruff format + lint, mypy strict, lightweight pytest `-m "not slow"`: 541 selected,
+  10 slow deselected) is green with zero warnings; `make test` runs all 551 locally.
 
 (Still host-pending: only the M5.6 host-dependent M4 hardening items the basic run did not exercise
 -- Gemma sliding-window KV + cached-`config.json` arch override (M4.1), multi-GPU read + arch-derived

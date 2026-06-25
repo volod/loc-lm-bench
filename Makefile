@@ -74,7 +74,7 @@ export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -135,20 +135,30 @@ venv: ## Create/update .venv (py3.11) + apt deps + all extras + .env. Idempotent
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
 
-test: ## Run the test suite (pytest)
+# Two test groups (markers registered in pyproject.toml):
+#   `make test`      -- FULL local suite: every test, including the `slow` ones (real Optuna
+#                       sweeps, embedder/model loads, deepeval, subprocess builds).
+#   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) so GitHub CI stays fast.
+NOT_SLOW := -m "not slow"
+
+test: ## Run the FULL test suite locally (pytest, includes slow tests)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pytest
+
+test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m pytest $(NOT_SLOW)
 
 format: ## Format Python sources and tests with Ruff
 	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
 	$(VENV)/bin/ruff format src tests
 
-ci: ## Format check + lint + type check + unit tests -- used by GitHub CI
+ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitHub CI
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- create one + install '.[dev]' first"; exit 1; }
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy
-	$(PY) -m pytest
+	$(PY) -m pytest $(NOT_SLOW)
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -56,7 +56,8 @@ default when they share a disk. Set a specific mode (`copy|hardlink|clone|symlin
 ## Commands by result
 
 The pipeline is a chain: **prepare data -> build retrieval -> run + rank -> scale -> review.**
-`make venv` installs everything once; `make test` runs the suite (362 tests).
+`make venv` installs everything once; `make test` runs the full suite, while `make test-fast`
+(and `make ci`) run the lightweight group that skips the slow integration tests.
 
 ### 1. Prepare data
 

@@ -78,6 +78,7 @@ def test_common_sh_exposes_helpers():
     assert out.stdout.strip() == "ok"
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path):
     bin_dir, uv_log = _fake_toolchain(tmp_path)
@@ -100,6 +101,7 @@ def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path)
     assert not (data_dir / "wheels").exists()
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     shutil.which("bash") is None or shutil.which("git") is None,
     reason="bash and git are required",
