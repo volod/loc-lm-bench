@@ -1219,8 +1219,9 @@ manifest + per-case scores bundle under `$DATA_DIR/<method>/<ts>/` exactly like 
 that returns per-record scores ONLY when a judge is configured AND trusted (`judge_rho >= threshold`,
 the M3.8 gate); the `scorer` is injectable (a fake in tests), the default is the DeepEval judge
 bound to a `base_url` (lazy-imported). A category records the judge signal ALONGSIDE its objective
-headline, never folded in (objective-first). Summarization is the first consumer (below); the
-unsafe-content + trajectory wirings (M5.1 / M5.3) reuse the same seam.
+headline, never folded in (objective-first). Summarization (faithfulness) and agentic
+(trajectory-quality, M5.3) are the consumers (below); the unsafe-content wiring (M5.1) reuses the
+same seam.
 
 `llb.bench.text_analysis.run_text_analysis` is the M5.0 scored runner: it loads a planter bundle
 (`corpus/` + `text_analysis_labels.jsonl`), asks the candidate to extract each document's present
@@ -1329,11 +1330,24 @@ langgraph-free form of the controller->execute->controller cycle, unit-tested fr
 tool-calling endpoint (good agent solves tasks, failing agent does not; budget-exhaustion -> typed
 `incomplete`), no GPU.
 
+An OPT-IN gated TRAJECTORY-QUALITY signal (a check the env-state assertions cannot make) is wired
+exactly like the M5.4 summarization faithfulness signal, through the same `run_gated_judge` seam:
+each episode becomes one judge record whose retrieval context is the trajectory's TOOL OBSERVATIONS
+and whose answer is the agent's final answer, so the judge's faithfulness (answer grounded in what
+the tools returned) and answer-relevancy (answer addresses the goal) average into one
+`trajectory_quality` scalar (`trajectory_quality` / `_trajectory_records`). It is recorded
+ALONGSIDE completion-rate -- per-case + mean + CI, with a `JudgeStatus` in the manifest -- and ONLY
+when the judge is configured AND trusted (`--judge-rho >= 0.6`, the M3.8 gate); otherwise the judge
+is demoted and completion-rate ranks alone. The `judge_scorer` is injectable, so the wiring is
+proven with a fake judge (no DeepEval / endpoint / GPU). CLI: `--judge-model` / `--judge-rho` /
+`--judge-base-url`.
+
 **Possible further improvements (M5.3):** the loop is the pure harness -- a LangGraph-compiled
-`build_agentic_graph` wrapper (mirroring `build_multi_hop_graph`) is not built; the gated judge for
-trajectory quality a deterministic check cannot cover is an opt-in residual; the task set is a small
-committed seed (no real-UA-corpus search tasks yet); the other five agent frameworks stay deferred
-as a comparison axis (out of M5 scope, by design); and tasks need the MH.5 human sample-verify.
+`build_agentic_graph` wrapper (mirroring `build_multi_hop_graph`) is not built; the task set is a
+small committed seed (no real-UA-corpus search tasks yet); the trajectory-quality judge reuses the
+M3.8 calibration (fit on SQuAD QA, not agent trajectories), so an agentic-specific calibration would
+firm the domain transfer; the other five agent frameworks stay deferred as a comparison axis (out of
+M5 scope, by design); and tasks need the MH.5 human sample-verify.
 
 ### M5.4 Remaining taxonomy -- summarization / structured output / chat-period / reliability
 The remaining spec categories, each on the shared `bench.common` substrate:

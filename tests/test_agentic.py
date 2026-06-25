@@ -178,3 +178,89 @@ def test_agentic_case_row_shape():
     )
     row = run.rows[0]
     assert row["item_id"] == "a" and row["success"] == 1.0 and json.dumps(row)
+
+
+# --- opt-in gated-judge trajectory quality (M5.3 residual) ---------------------------------
+
+
+def fake_judge(faith=0.8, relevancy=0.6):
+    """A judge scorer returning fixed G-Eval signals per record (no DeepEval / endpoint)."""
+
+    def scorer(records, _model):
+        return [{"faithfulness": faith, "answer_relevancy": relevancy} for _ in records]
+
+    return scorer
+
+
+def test_trajectory_quality_averages_the_two_signals():
+    assert agentic.trajectory_quality({"faithfulness": 0.8, "answer_relevancy": 0.6}) == 0.7
+
+
+def test_trajectory_records_carry_observations_as_context():
+    task = agentic.AgenticTask("t", "обчисли", success=[])
+    episode = agentic.Episode(
+        success=False,
+        status=agentic.STATUS_COMPLETED,
+        n_steps=1,
+        n_tool_calls=1,
+        answer="готово",
+        world=tw.ToolWorld(),
+        transcript=[("calculator", {"expression": "2+2"}, "4")],
+    )
+    recs = agentic._trajectory_records([task], [episode])
+    assert recs[0]["answer"] == "готово"
+    assert "обчисли" in recs[0]["question"]
+    assert recs[0]["contexts"] == ['calculator({"expression": "2+2"}) -> 4']
+
+
+def test_agentic_gated_judge_trusted_records_quality(tmp_path):
+    tasks = [
+        agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        agentic.AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+    ]
+    # the model finishes with an empty answer -> objective completion stays 0
+    run = agentic.run_agentic(
+        tasks,
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"finish","arguments":{"answer":""}}',
+        judge_model="judge",
+        judge_rho=0.7,  # >= 0.6 -> trusted
+        judge_scorer=fake_judge(0.8, 0.6),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+    )
+    assert run.judge_trusted is True
+    assert run.trajectory_quality == 0.7 and run.trajectory_quality_ci is not None
+    assert all(row["trajectory_quality"] == 0.7 for row in run.rows)
+    # the headline stays OBJECTIVE completion-rate -- trajectory quality is NOT folded in
+    assert run.result.objective_score == 0.0
+
+
+def test_agentic_gated_judge_below_threshold_is_demoted():
+    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = agentic.run_agentic(
+        tasks,
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"finish","arguments":{"answer":"x"}}',
+        judge_model="judge",
+        judge_rho=0.3,  # < 0.6 -> demoted
+        judge_scorer=fake_judge(0.9, 0.9),
+        persist=False,
+    )
+    assert run.judge_trusted is False and run.trajectory_quality is None
+    assert "trajectory_quality" not in run.rows[0]
+
+
+def test_agentic_no_judge_is_objective_only():
+    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = agentic.run_agentic(
+        tasks,
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"finish","arguments":{"answer":"x"}}',
+        persist=False,
+    )
+    assert run.judge_trusted is False and run.trajectory_quality is None
+    assert run.judge_reason == "no judge configured"

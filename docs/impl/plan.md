@@ -145,8 +145,11 @@ remaining M5 work (residuals below + the M5.5 expansion):
 - **LangGraph harness wrapper:** a `build_agentic_graph` (mirroring `build_multi_hop_graph`) over
   the pure loop -- LangGraph stays the single fixed harness; the other five frameworks stay
   deferred as a comparison axis (ranks the MODEL under one harness -- out of M5 scope, by design).
-- **Trajectory-quality gated judge:** wire the gated judge for trajectory quality a deterministic
-  check cannot cover; broaden the task set (real-UA-corpus search tasks); MH.5 verify before headline.
+- **Trajectory-quality gated judge:** DONE -- the opt-in gated judge for trajectory quality a
+  deterministic check cannot cover is wired via `run_gated_judge` (grounded-in-observations +
+  goal-relevance -> one `trajectory_quality` scalar, recorded alongside completion-rate, never the
+  headline; see `current.md`). Residual: broaden the task set (real-UA-corpus search tasks), an
+  OPTIONAL agentic-specific judge calibration (the M3.8 rho was fit on SQuAD QA), and MH.5-verify.
 
 ### M5.4 Remaining taxonomy -- residuals
 - **summarization** -- the opt-in gated-judge faithfulness signal is wired via `run_gated_judge`,

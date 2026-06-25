@@ -4,9 +4,15 @@ The agentic loop is the M5.0 multi-hop controller pattern extended with TOOL CAL
 execution step: each step the model emits one tool call (reusing the M5.2 `parse_tool_call`), the
 deterministic `ToolWorld` EXECUTES it, the observation is fed back, and the loop runs until the
 model calls `finish` (or answers in prose) or the step budget is exhausted. Task success is an
-OBJECTIVE assertion over the final env-state and/or the final answer; the gated judge (opt-in) is
-reserved for trajectory quality a deterministic check cannot cover. Completion-rate is the headline
-under `TIER_AGENTIC`; trajectory length + tool-call count are recorded as efficiency.
+OBJECTIVE assertion over the final env-state and/or the final answer; completion-rate is the
+headline under `TIER_AGENTIC` and trajectory length + tool-call count are recorded as efficiency.
+
+An OPT-IN, GATED judge adds a TRAJECTORY-QUALITY signal a deterministic check cannot cover (is the
+final answer grounded in what the tools actually returned, and does it address the goal?). It is
+recorded ALONGSIDE completion-rate -- never folded into the headline -- and only when the judge is
+configured AND trusted (calibration `judge_rho >= threshold`, the M3.8 gate). The judge `scorer`
+is injectable, so the wiring is provable with a FAKE judge (no DeepEval / endpoint / GPU), exactly
+like the M5.4 summarization faithfulness signal.
 
 LangGraph is the fixed single agent harness for the design; this loop is the pure, langgraph-free
 form of that controller -> execute -> controller cycle, so it is unit-tested from a FAKE
@@ -20,15 +26,27 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.common import (
+    DEFAULT_THRESHOLD,
+    JudgeScorer,
     LLMComplete,
     Mirror,
     category_result,
     mean,
     persist_category_run,
     render_board,
+    run_gated_judge,
 )
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
-from llb.contracts import AgenticCaseRow, BoardRow, RunMetrics, RunPaths, ToolDef
+from llb.contracts import (
+    AgenticCaseRow,
+    BoardRow,
+    JudgeInputRecord,
+    JudgeScore,
+    JudgeStatus,
+    RunMetrics,
+    RunPaths,
+    ToolDef,
+)
 from llb.scoring.aggregate import TIER_AGENTIC, ModelResult, bootstrap_mean_ci
 from llb.scoring.tooling import parse_tool_call
 
@@ -36,6 +54,11 @@ _LOG = logging.getLogger(__name__)
 
 METHOD = "agentic"
 DEFAULT_MAX_STEPS = 6
+
+# The judge "question" for trajectory quality: a fixed UA intent that frames the agent's job, so
+# answer-relevancy scores whether the final answer addresses the goal while faithfulness scores
+# whether it stays grounded in the tool observations fed back as the retrieval context.
+_TRAJECTORY_INTENT = "Виконай завдання інструментами та дай відповідь, підкріплену їх результатами."
 
 STATUS_COMPLETED = "completed"
 STATUS_INCOMPLETE = "incomplete"
@@ -91,6 +114,10 @@ class AgenticRun:
     mean_steps: float
     mean_tool_calls: float
     paths: RunPaths | None
+    trajectory_quality: float | None = None  # mean gated-judge quality (None when not trusted/run)
+    trajectory_quality_ci: tuple[float, float] | None = None
+    judge_trusted: bool = False
+    judge_reason: str = "no judge configured"
 
 
 def _norm(value: Any) -> str:
@@ -182,6 +209,34 @@ def run_episode(
     )
 
 
+def _trajectory_records(
+    tasks: list[AgenticTask], episodes: list[Episode]
+) -> list[JudgeInputRecord]:
+    """One (goal, final answer, [tool observations]) record per episode for the trajectory judge.
+
+    The tool observations become the retrieval context, so faithfulness scores whether the final
+    answer stays grounded in what the tools actually returned (a check the env-state assertions
+    cannot make), while answer-relevancy scores whether it addresses the goal.
+    """
+    return [
+        {
+            "question": f"{_TRAJECTORY_INTENT}\n\nЗавдання: {task.prompt}",
+            "answer": episode.answer,
+            "contexts": [
+                f"{name}({json.dumps(args, ensure_ascii=False)}) -> {obs}"
+                for name, args, obs in episode.transcript
+            ],
+        }
+        for task, episode in zip(tasks, episodes)
+    ]
+
+
+def trajectory_quality(score: JudgeScore) -> float:
+    """Collapse the judge's two G-Eval signals into one trajectory-quality scalar: the answer is
+    GROUNDED in the tool observations (faithfulness) AND addresses the goal (answer_relevancy)."""
+    return (float(score["faithfulness"]) + float(score["answer_relevancy"])) / 2.0
+
+
 def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
     return {
         "item_id": task.id,
@@ -200,17 +255,48 @@ def run_agentic(
     backend: str,
     complete: LLMComplete,
     max_steps: int = DEFAULT_MAX_STEPS,
+    judge_model: str | None = None,
+    judge_rho: float | None = None,
+    judge_threshold: float = DEFAULT_THRESHOLD,
+    judge_scorer: JudgeScorer | None = None,
+    judge_base_url: str | None = None,
     data_dir: Path | str | None = None,
     run_name: str = "m5-agentic",
     persist: bool = True,
     mirror: Mirror | None = None,
 ) -> AgenticRun:
-    """Score one model's task-completion rate over the deterministic tool-world under TIER_AGENTIC."""
+    """Score one model's task-completion rate over the deterministic tool-world under TIER_AGENTIC.
+
+    Objective completion-rate is the headline. When a judge is configured AND trusted
+    (`judge_rho >= judge_threshold`), an opt-in trajectory-quality signal is recorded ALONGSIDE
+    (per-case + mean + CI) but never folded into the headline; otherwise the judge is demoted and
+    completion-rate ranks alone. `judge_scorer` is injectable for tests.
+    """
     if not tasks:
         raise SystemExit("no agentic tasks provided")
     episodes = [run_episode(task, complete, max_steps=max_steps) for task in tasks]
     rows = [_row(task, ep) for task, ep in zip(tasks, episodes)]
     case_success = [1.0 if ep.success else 0.0 for ep in episodes]
+
+    # Opt-in, gated trajectory-quality signal (objective completion-rate stays the headline).
+    outcome = run_gated_judge(
+        _trajectory_records(tasks, episodes),
+        judge_model=judge_model,
+        judge_rho=judge_rho,
+        threshold=judge_threshold,
+        scorer=judge_scorer,
+        base_url=judge_base_url,
+    )
+    quality: float | None = None
+    quality_ci: tuple[float, float] | None = None
+    if outcome.trusted and outcome.scores:
+        per_case = [trajectory_quality(s) for s in outcome.scores]
+        for row, value in zip(rows, per_case):
+            row["trajectory_quality"] = round(value, 6)
+        quality = round(mean(per_case), 6)
+        quality_ci = bootstrap_mean_ci(per_case)
+    elif judge_model is not None:
+        _LOG.info("[agentic] judge demoted (%s); objective completion ranks alone", outcome.reason)
 
     reliability = sum(1 for ep in episodes if ep.status == STATUS_COMPLETED) / len(episodes)
     mean_steps = mean([ep.n_steps for ep in episodes])
@@ -243,7 +329,19 @@ def run_agentic(
             "mean_trajectory_steps": round(mean_steps, 4),
             "mean_tool_calls": round(mean_tool_calls, 4),
             "completion_rate_ci": list(completion_ci) if completion_ci else None,
+            "judge_trusted": outcome.trusted,
+            "trajectory_quality": quality,  # gated diagnostic, NOT the headline
+            "trajectory_quality_ci": list(quality_ci) if quality_ci else None,
         }
+        judge_status: JudgeStatus | None = None
+        if judge_model is not None:
+            judge_status = {
+                "calibration_rho": judge_rho,
+                "threshold": judge_threshold,
+                "trusted": outcome.trusted,
+                "model": judge_model,
+                "metrics": ["trajectory_quality"],
+            }
         paths = persist_category_run(
             method=METHOD,
             data_dir=data_dir,
@@ -251,14 +349,16 @@ def run_agentic(
             config=config,
             metrics=metrics,
             case_rows=rows,
+            judge=judge_status,
             mirror=mirror,
         )
         _LOG.info(
-            "[agentic] %s completion=%.3f mean-steps=%.2f mean-tool-calls=%.2f -> %s",
+            "[agentic] %s completion=%.3f mean-steps=%.2f mean-tool-calls=%.2f quality=%s -> %s",
             model,
             result.objective_score,
             mean_steps,
             mean_tool_calls,
+            f"{quality:.3f}" if quality is not None else "n/a",
             paths["manifest"],
         )
     return AgenticRun(
@@ -271,6 +371,10 @@ def run_agentic(
         mean_steps=mean_steps,
         mean_tool_calls=mean_tool_calls,
         paths=paths,
+        trajectory_quality=quality,
+        trajectory_quality_ci=quality_ci,
+        judge_trusted=outcome.trusted,
+        judge_reason=outcome.reason,
     )
 
 

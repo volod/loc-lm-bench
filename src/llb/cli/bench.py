@@ -151,6 +151,17 @@ def bench_agentic_cmd(
     ),
     max_steps: int = typer.Option(6, min=1, help="step budget per task"),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    judge_model: Optional[str] = typer.Option(
+        None,
+        help="opt-in gated trajectory-quality judge (recorded alongside completion, never the "
+        "headline)",
+    ),
+    judge_rho: Optional[float] = typer.Option(
+        None, help="calibration Spearman rho; the judge is used only when rho >= threshold (0.6)"
+    ),
+    judge_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of the judge endpoint"
+    ),
 ) -> None:
     """M5.3: score a model's task-completion in the deterministic tool-world under TIER_AGENTIC."""
     from llb.bench.agentic import AgenticRun, load_tasks_file, run_agentic
@@ -167,6 +178,9 @@ def bench_agentic_cmd(
             backend=backend,
             complete=complete,
             max_steps=max_steps,
+            judge_model=judge_model,
+            judge_rho=judge_rho,
+            judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
         )
 
@@ -177,6 +191,10 @@ def bench_agentic_cmd(
         f"[bench-agentic] completion-rate={result.result.objective_score:.3f} "
         f"mean-steps={result.mean_steps:.2f} mean-tool-calls={result.mean_tool_calls:.2f}"
     )
+    if result.trajectory_quality is not None:
+        typer.echo(
+            f"[bench-agentic] trajectory-quality (gated judge)={result.trajectory_quality:.3f}"
+        )
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-agentic] manifest -> {result.paths['manifest']}")

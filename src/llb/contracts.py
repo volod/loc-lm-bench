@@ -159,6 +159,7 @@ class AgenticCaseRow(TypedDict):
     success: float  # 1.0 == env-state / answer assertions all held
     n_steps: int  # model calls in the trajectory (efficiency)
     n_tool_calls: int  # sandbox tools executed (efficiency)
+    trajectory_quality: NotRequired[float]  # gated-judge quality (only when the judge is trusted)
     answer_preview: str
 
 
