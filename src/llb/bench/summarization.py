@@ -28,6 +28,7 @@ from llb.bench.common import (
     persist_category_run,
     render_board,
     run_gated_judge,
+    verified_data_config,
 )
 from llb.contracts import (
     BoardRow,
@@ -129,6 +130,8 @@ def run_summarization(
     run_name: str = "m5-summarization",
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> SummarizationRun:
     """Score one model's summaries by reference coverage under TIER_SUMMARIZATION.
 
@@ -139,6 +142,9 @@ def run_summarization(
     """
     if not cases:
         raise SystemExit("no summarization cases provided")
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     if similarity is None:
         similarity = ta.embedder_similarity()
     summaries = [complete(summarize_prompt(c.document)) for c in cases]
@@ -149,6 +155,7 @@ def run_summarization(
             "item_id": c.id,
             "status": EMPTY if not s.strip() else OK,
             "coverage": round(cov, 6),
+            "objective_score": round(cov, 6),
             "answer_preview": (s or "")[:280],
         }
         for c, s, cov in zip(cases, summaries, coverages)
@@ -205,6 +212,7 @@ def run_summarization(
             "judge_trusted": outcome.trusted,
             "faithfulness": faithfulness,  # gated diagnostic, NOT the headline
             "faithfulness_ci": list(faithfulness_ci) if faithfulness_ci else None,
+            **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
         if judge_model is not None:

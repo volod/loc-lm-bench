@@ -15,6 +15,7 @@ from pathlib import Path
 
 from llb.contracts import JsonObject, ScreenReport
 from llb.scoring.aggregate import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
+from llb.scoring.composite import CompositeComponent, CompositeIssue, build_m5_composite_rows
 
 _LOG = logging.getLogger(__name__)
 
@@ -30,6 +31,17 @@ class RunRecord:
     run_dir: str
     created_at: str
     split: str
+
+
+@dataclass
+class CategoryRunRecord:
+    result: ModelResult
+    config: JsonObject
+    run_dir: str
+    created_at: str
+    data_verified: bool
+    verification_ref: str | None
+    verification_error: str | None = None
 
 
 def read_case_splits(run_dir: Path) -> set[str]:
@@ -215,16 +227,36 @@ CATEGORY_METHODS = (
     "text-analysis",
 )
 
+CATEGORY_OBJECTIVE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "security": ("objective_score", "defended"),
+    "tooling": ("objective_score", "correct"),
+    "agentic": ("objective_score", "success"),
+    "summarization": ("objective_score", "coverage"),
+    "structured": ("objective_score", "score"),
+    "text_analysis": ("objective_score",),
+    "text-analysis": ("objective_score",),
+}
 
-def _category_result(manifest: JsonObject, run_dir: Path) -> ModelResult | None:
-    """Build a `ModelResult` from one M5 category run bundle (its config carries the Tier)."""
+
+def _category_case_objectives(config: JsonObject, run_dir: Path) -> list[float]:
+    category = str(config.get("category", ""))
+    columns = CATEGORY_OBJECTIVE_COLUMNS.get(category, ("objective_score",))
+    for column in columns:
+        values = read_case_series(run_dir, column)
+        if values:
+            return values
+    return []
+
+
+def _category_record(manifest: JsonObject, run_dir: Path) -> CategoryRunRecord | None:
+    """Build a category run record from one M5 run bundle (its config carries the Tier)."""
     config = manifest.get("config") or {}
     tier = config.get("tier")
     model = config.get("model")
     if not tier or not model:
         return None
     metrics = manifest.get("metrics") or {}
-    return ModelResult(
+    result = ModelResult(
         model=str(model),
         backend=str(config.get("backend", "?")),
         objective_score=float(metrics.get("objective_score", 0.0)),
@@ -232,17 +264,38 @@ def _category_result(manifest: JsonObject, run_dir: Path) -> ModelResult | None:
         reliability=float(metrics.get("reliability", 1.0)),
         tokens_per_s=float(metrics.get("tokens_per_s", 0.0)),
         tier=str(tier),
-        case_objectives=read_case_objectives(run_dir),  # [] for categories without that column
+        case_objectives=_category_case_objectives(config, run_dir),
+    )
+    verification_ref = config.get("verification_ref")
+    verification_error: str | None = None
+    data_verified = bool(config.get("data_verified", False))
+    if data_verified:
+        if not verification_ref:
+            verification_error = "missing verification_ref"
+        else:
+            from llb.goldset.verify import check_verification_ref
+
+            status = check_verification_ref(str(verification_ref), base_dir=run_dir)
+            if not status.valid:
+                verification_error = status.reason
+    return CategoryRunRecord(
+        result=result,
+        config=config,
+        run_dir=str(run_dir),
+        created_at=str(manifest.get("created_at", "")),
+        data_verified=data_verified,
+        verification_ref=str(verification_ref) if verification_ref else None,
+        verification_error=verification_error,
     )
 
 
-def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
-    """Load the M5 category run bundles grouped BY TIER (so each renders on its own board).
+def load_category_run_records(data_dir: Path | str) -> dict[str, list[CategoryRunRecord]]:
+    """Load M5 category run bundles grouped BY TIER, preserving config/gate metadata.
 
     Keeps the best run per model within each tier (highest objective score), mirroring the RAG
     board's best-per-model pick. Never merges tiers -- the `aggregate` guard refuses a mixed board.
     """
-    by_tier: dict[str, dict[str, ModelResult]] = {}
+    by_tier: dict[str, dict[str, CategoryRunRecord]] = {}
     for method in CATEGORY_METHODS:
         root = Path(data_dir) / method
         if not root.exists():
@@ -252,14 +305,49 @@ def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                result = _category_result(manifest, manifest_path.parent)
+                record = _category_record(manifest, manifest_path.parent)
             except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
                 _LOG.warning("[board] unreadable category bundle %s: %s", manifest_path.parent, exc)
                 continue
-            if result is None:
+            if record is None:
                 continue
-            best = by_tier.setdefault(result.tier, {})
-            current = best.get(result.model)
-            if current is None or result.objective_score > current.objective_score:
-                best[result.model] = result
+            best = by_tier.setdefault(record.result.tier, {})
+            current = best.get(record.result.model)
+            if current is None or record.result.objective_score > current.result.objective_score:
+                best[record.result.model] = record
     return {tier: list(models.values()) for tier, models in by_tier.items()}
+
+
+def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
+    """Load the M5 category run bundles grouped BY TIER (so each renders on its own board)."""
+    return {
+        tier: [record.result for record in records]
+        for tier, records in load_category_run_records(data_dir).items()
+    }
+
+
+def load_m5_composite(
+    data_dir: Path | str,
+    *,
+    require_verified: bool = True,
+    require_ci: bool = True,
+) -> tuple[list[JsonObject], list[CompositeIssue]]:
+    """Load the guarded M5 composite headline from persisted category runs."""
+    records_by_tier = load_category_run_records(data_dir)
+    components_by_tier = {
+        tier: [
+            CompositeComponent(
+                result=record.result,
+                data_verified=record.data_verified,
+                verification_ref=record.verification_ref,
+                verification_error=record.verification_error,
+            )
+            for record in records
+        ]
+        for tier, records in records_by_tier.items()
+    }
+    return build_m5_composite_rows(
+        components_by_tier,
+        require_verified=require_verified,
+        require_ci=require_ci,
+    )

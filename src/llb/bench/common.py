@@ -59,6 +59,39 @@ def mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def verified_data_config(*, data_verified: bool, verification_ref: str | None) -> dict[str, object]:
+    """Manifest fields for the data-verification gate.
+
+    A run cannot be stamped as verified by a bare boolean: the operator must provide a concrete
+    MH.5 artifact, and that artifact must pass the verification-reference checker.
+    """
+    if not data_verified:
+        return {"data_verified": False, "verification_ref": verification_ref}
+    if not verification_ref:
+        from llb.goldset.verify import (
+            VerificationRefStatus,
+            format_verification_status,
+        )
+
+        status = VerificationRefStatus(
+            False,
+            Path("<missing>"),
+            "missing",
+            "--data-verified requires --verification-ref",
+        )
+        raise ValueError(format_verification_status(status))
+    from llb.goldset.verify import check_verification_ref, format_verification_status
+
+    status = check_verification_ref(verification_ref)
+    if not status.valid:
+        raise ValueError(format_verification_status(status))
+    return {
+        "data_verified": True,
+        "verification_ref": verification_ref,
+        "verification_kind": status.kind,
+    }
+
+
 def run_gated_judge(
     records: list[JudgeInputRecord],
     *,

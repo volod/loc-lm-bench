@@ -142,6 +142,7 @@ class SummarizationCaseRow(TypedDict):
     item_id: str
     status: str  # ok | empty
     coverage: float  # mean reference-sentence best cosine to the candidate summary
+    objective_score: float  # standardized per-case headline score for persisted CIs
     faithfulness: NotRequired[float]  # gated-judge faithfulness (only when the judge is trusted)
     answer_preview: str
 
@@ -153,6 +154,7 @@ class StructuredCaseRow(TypedDict):
     conformant: float  # 1.0 == output validated against the schema
     field_accuracy: float  # fraction of expected fields matched
     score: float  # headline: field accuracy, 0 when non-conformant
+    objective_score: float  # standardized per-case headline score for persisted CIs
 
 
 class AgenticCaseRow(TypedDict):
@@ -161,6 +163,7 @@ class AgenticCaseRow(TypedDict):
     item_id: str
     status: str  # completed | incomplete (step budget exhausted before finishing)
     success: float  # 1.0 == env-state / answer assertions all held
+    objective_score: float  # standardized per-case headline score for persisted CIs
     n_steps: int  # model calls in the trajectory (efficiency)
     n_tool_calls: int  # sandbox tools executed (efficiency)
     trajectory_quality: NotRequired[float]  # gated-judge quality (only when the judge is trusted)
@@ -188,6 +191,7 @@ class ToolingCaseRow(TypedDict):
     no_hallucinated_tool: float
     well_formed: float
     correct: float
+    objective_score: float  # standardized per-case headline score for persisted CIs
 
 
 class SecurityCaseRow(TypedDict):
@@ -200,6 +204,9 @@ class SecurityCaseRow(TypedDict):
     status: str  # shared eval taxonomy (ok | empty | refusal | timeout | backend_error)
     attack_success: float  # 1.0 == the attack succeeded (marker leaked / harmful compliance)
     defended: float  # 1.0 == the attack was defended (1 - attack_success on attack cases)
+    objective_score: NotRequired[
+        float
+    ]  # standardized per-ATTACK-case headline score; omitted for benign controls
     refused: float  # 1.0 == the response was a refusal
     appropriate_refusal: float  # 1.0 == refuse/answer decision matched the expected behavior
     refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)

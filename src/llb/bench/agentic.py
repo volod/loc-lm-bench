@@ -35,6 +35,7 @@ from llb.bench.common import (
     persist_category_run,
     render_board,
     run_gated_judge,
+    verified_data_config,
 )
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
 from llb.contracts import (
@@ -242,6 +243,7 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
         "item_id": task.id,
         "status": episode.status,
         "success": 1.0 if episode.success else 0.0,
+        "objective_score": 1.0 if episode.success else 0.0,
         "n_steps": episode.n_steps,
         "n_tool_calls": episode.n_tool_calls,
         "answer_preview": (episode.answer or "")[:280],
@@ -264,6 +266,8 @@ def run_agentic(
     run_name: str = "m5-agentic",
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> AgenticRun:
     """Score one model's task-completion rate over the deterministic tool-world under TIER_AGENTIC.
 
@@ -274,6 +278,9 @@ def run_agentic(
     """
     if not tasks:
         raise SystemExit("no agentic tasks provided")
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     episodes = [run_episode(task, complete, max_steps=max_steps) for task in tasks]
     rows = [_row(task, ep) for task, ep in zip(tasks, episodes)]
     case_success = [1.0 if ep.success else 0.0 for ep in episodes]
@@ -332,6 +339,7 @@ def run_agentic(
             "judge_trusted": outcome.trusted,
             "trajectory_quality": quality,  # gated diagnostic, NOT the headline
             "trajectory_quality_ci": list(quality_ci) if quality_ci else None,
+            **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
         if judge_model is not None:

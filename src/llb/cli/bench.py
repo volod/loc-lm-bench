@@ -35,6 +35,13 @@ def bench_text_analysis_cmd(
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
 ) -> None:
     """M5.0/M5.4: score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -55,6 +62,8 @@ def bench_text_analysis_cmd(
             data_dir=cfg.data_dir,
             limit=limit,
             synthetic=not real_corpus,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -91,6 +100,13 @@ def bench_security_cmd(
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
 ) -> None:
     """M5.1: score a model's objective ASR + refusal-appropriateness under TIER_SECURITY."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -110,6 +126,8 @@ def bench_security_cmd(
             judge_rho=judge_rho,
             judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -142,6 +160,13 @@ def bench_tooling_cmd(
         "text",
         help="text (catalog-in-prompt, every backend) | native (OpenAI tools=, needs a running "
         "tool-capable endpoint via --base-url or Ollama)",
+    ),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
     """M5.2: score a model's call-only function-calling correctness under TIER_TOOLING."""
@@ -187,6 +212,8 @@ def bench_tooling_cmd(
             caller=native_caller,
             capability=tool_protocol,
             data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -226,6 +253,13 @@ def bench_agentic_cmd(
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
 ) -> None:
     """M5.3: score a model's task-completion in the deterministic tool-world under TIER_AGENTIC."""
     from llb.bench.agentic import AgenticRun, load_tasks_file, run_agentic
@@ -246,6 +280,8 @@ def bench_agentic_cmd(
             judge_rho=judge_rho,
             judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -285,6 +321,13 @@ def bench_summarization_cmd(
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
 ) -> None:
     """M5.4: score summaries by pinned-embedder reference coverage under TIER_SUMMARIZATION."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -304,6 +347,8 @@ def bench_summarization_cmd(
             judge_rho=judge_rho,
             judge_base_url=judge_base_url,
             data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -328,6 +373,13 @@ def bench_structured_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint"
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    data_verified: bool = typer.Option(
+        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
 ) -> None:
     """M5.4: score JSON-schema conformance + field accuracy under TIER_STRUCTURED."""
     from llb.bench.common import LLMComplete, drive_with_backend
@@ -339,7 +391,13 @@ def bench_structured_cmd(
 
     def run(complete: LLMComplete) -> StructuredRun:
         return run_structured(
-            st_cases, model=model, backend=backend, complete=complete, data_dir=cfg.data_dir
+            st_cases,
+            model=model,
+            backend=backend,
+            complete=complete,
+            data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
         )
 
     result = drive_with_backend(
@@ -352,6 +410,32 @@ def bench_structured_cmd(
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-structured] manifest -> {result.paths['manifest']}")
+
+
+@app.command("bench-composite")
+def bench_composite_cmd(
+    allow_unverified: bool = typer.Option(
+        False, help="diagnostic only: allow runs not stamped with --data-verified"
+    ),
+    allow_missing_ci: bool = typer.Option(
+        False, help="diagnostic only: allow categories without a reloadable per-case CI series"
+    ),
+) -> None:
+    """M7: render the guarded M5 composite headline from persisted category runs."""
+    from llb.board.data import load_m5_composite
+    from llb.scoring.composite import format_composite_issues, format_composite_rows
+
+    cfg = load_config(None)
+    rows, issues = load_m5_composite(
+        cfg.data_dir,
+        require_verified=not allow_unverified,
+        require_ci=not allow_missing_ci,
+    )
+    if rows:
+        typer.echo(format_composite_rows(rows))
+        return
+    typer.echo(format_composite_issues(issues) or "[bench-composite] no category runs found")
+    raise typer.Exit(code=2)
 
 
 @app.command("serve-tools-mcp")

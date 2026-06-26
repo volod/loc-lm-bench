@@ -77,6 +77,23 @@ VERIFY_WS ?= $(if $(BUNDLE),$(BUNDLE)/verify_sample.csv,)
 VERIFY_N ?= 30
 VERIFY_SEED ?= 13
 VERIFY_TOLERANCE ?= 0.05
+# Composite-headline pipeline knobs. Each verification ref must point at a reviewed
+# verify_sample.csv, a sample_manifest.json that points to one, or an accepted-ledger bundle.
+COMPOSITE_TEXT_ANALYSIS_BUNDLE ?=
+COMPOSITE_SUMMARIZATION_CASES ?= $(PROJECT_ROOT)/samples/summarization_cases_uk.json
+COMPOSITE_STRUCTURED_CASES ?= $(PROJECT_ROOT)/samples/structured_cases_uk.json
+COMPOSITE_SECURITY_CASES ?= $(PROJECT_ROOT)/samples/security_cases_uk.json
+COMPOSITE_AGENTIC_TASKS ?= $(PROJECT_ROOT)/samples/agentic_tasks_uk.json
+COMPOSITE_TOOLING_CATALOG ?= $(PROJECT_ROOT)/samples/tooling_cases_uk.json
+COMPOSITE_VERIFICATION_REF ?=
+COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_SUMMARIZATION_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_STRUCTURED_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_SECURITY_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_AGENTIC_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_TOOLING_VERIFICATION_REF ?= $(COMPOSITE_VERIFICATION_REF)
+COMPOSITE_BASE_URL ?=
+COMPOSITE_REAL_CORPUS ?=
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
@@ -85,7 +102,7 @@ export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval composite-headline prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -284,6 +301,47 @@ run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TEL
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+composite-headline: ## Run verified M5 category suite for MODEL, then require a clean bench-composite preflight
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(COMPOSITE_TEXT_ANALYSIS_BUNDLE)" || { echo "ERROR: set COMPOSITE_TEXT_ANALYSIS_BUNDLE=<verified text-analysis bundle>"; exit 1; }
+	@test -n "$(COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	@test -n "$(COMPOSITE_SUMMARIZATION_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_SUMMARIZATION_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	@test -n "$(COMPOSITE_STRUCTURED_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_STRUCTURED_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	@test -n "$(COMPOSITE_SECURITY_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_SECURITY_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	@test -n "$(COMPOSITE_AGENTIC_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_AGENTIC_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	@test -n "$(COMPOSITE_TOOLING_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_TOOLING_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main bench-text-analysis --bundle "$(COMPOSITE_TEXT_ANALYSIS_BUNDLE)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		$(if $(COMPOSITE_REAL_CORPUS),--real-corpus,) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),) \
+		--data-verified --verification-ref "$(COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-summarization --cases "$(COMPOSITE_SUMMARIZATION_CASES)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),) \
+		--data-verified --verification-ref "$(COMPOSITE_SUMMARIZATION_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-structured --cases "$(COMPOSITE_STRUCTURED_CASES)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		--data-verified --verification-ref "$(COMPOSITE_STRUCTURED_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-security --cases "$(COMPOSITE_SECURITY_CASES)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),) \
+		--data-verified --verification-ref "$(COMPOSITE_SECURITY_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-agentic --tasks "$(COMPOSITE_AGENTIC_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),) \
+		--data-verified --verification-ref "$(COMPOSITE_AGENTIC_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-tooling --catalog "$(COMPOSITE_TOOLING_CATALOG)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
+		--data-verified --verification-ref "$(COMPOSITE_TOOLING_VERIFICATION_REF)" && \
+	$(PY) -m llb.main bench-composite
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"

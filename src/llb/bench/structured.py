@@ -18,6 +18,7 @@ from llb.bench.common import (
     category_result,
     persist_category_run,
     render_board,
+    verified_data_config,
 )
 from llb.contracts import BoardRow, RunMetrics, RunPaths, StructuredCaseRow
 from llb.scoring import structured
@@ -54,6 +55,7 @@ def _row(score: structured.StructuredCaseScore) -> StructuredCaseRow:
         "conformant": score.conformant,
         "field_accuracy": score.field_accuracy,
         "score": score.score,
+        "objective_score": score.score,
     }
 
 
@@ -67,10 +69,15 @@ def run_structured(
     run_name: str = "m5-structured",
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> StructuredRun:
     """Score one model's structured-output conformance + field accuracy under TIER_STRUCTURED."""
     if not cases:
         raise SystemExit("no structured-output cases provided")
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     outputs = [complete(structured_prompt(c)) for c in cases]
     score = structured.score_structured(cases, outputs)
     rows = [_row(s) for s in score.cases]
@@ -101,6 +108,7 @@ def run_structured(
             "field_accuracy": score.field_accuracy,
             "conformance_rate": score.conformance_rate,
             "field_accuracy_ci": list(accuracy_ci) if accuracy_ci else None,
+            **verification_cfg,
         }
         paths = persist_category_run(
             method=METHOD,

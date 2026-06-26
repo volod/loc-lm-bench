@@ -25,6 +25,7 @@ from llb.bench.common import (
     category_result,
     persist_category_run,
     render_board,
+    verified_data_config,
 )
 from llb.contracts import BoardRow, RunMetrics, RunPaths, ToolDef, ToolingCaseRow
 from llb.scoring import tooling
@@ -140,6 +141,7 @@ def _row(score: tooling.ToolingCaseScore) -> ToolingCaseRow:
         "no_hallucinated_tool": score.no_hallucinated_tool,
         "well_formed": score.well_formed,
         "correct": score.correct,
+        "objective_score": score.correct,
     }
 
 
@@ -156,6 +158,8 @@ def run_tooling(
     run_name: str = "m5-tooling",
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> ToolingRun:
     """Score one model's call correctness over the catalog + cases under TIER_TOOLING.
 
@@ -165,6 +169,9 @@ def run_tooling(
     """
     if not cases:
         raise SystemExit("no tooling cases provided")
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     if caller is None:
         if complete is None:
             raise ValueError(
@@ -207,6 +214,7 @@ def run_tooling(
             "no_hallucinated_tool_rate": score.no_hallucinated_tool_rate,
             "well_formed_rate": score.well_formed_rate,
             "call_accuracy_ci": list(accuracy_ci) if accuracy_ci else None,
+            **verification_cfg,
         }
         paths = persist_category_run(
             method=METHOD,

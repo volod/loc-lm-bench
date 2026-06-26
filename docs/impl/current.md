@@ -168,7 +168,8 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       bench/{security,tooling,agentic,tool_world,structured,summarization,text_analysis,common}.py
       # M5 category benchmarks (objective floor + opt-in gated judge)
       bench/{mcp_server,agentic_tasks}.py # M5.2 MCP transport + M5.3 real-corpus search tasks
-      scoring/{security,tooling,structured,reliability,text_analysis}.py # M5 per-category scorers
+      scoring/{security,tooling,structured,reliability,text_analysis,composite}.py
+      # M5 per-category scorers + guarded composite headline
       prep/{cross_check,verified_ledger,text_analysis_corpus}.py # 2nd-frontier gate / verified
       ledger / synthetic planter
       prep/{security_sources,security_planter}.py # M5.1 public-set adapters + corpus planter
@@ -196,6 +197,7 @@ or model); they are NOT open plan items. Run the linked guide when a task needs 
   [`verification-tooling.md`](../guides/verification-tooling.md).
 - **Judge calibration (incl. a harder split):** [`calibration-tooling.md`](../guides/calibration-tooling.md).
 - **Graph-vs-FAISS retrieval comparison:** [`graph-vs-faiss-comparison.md`](../guides/graph-vs-faiss-comparison.md).
+- **Composite headline close-out:** [`composite-headline.md`](../guides/composite-headline.md).
 
 **Data gate (always):** a NEW gold set or corpus runs the
 [data-verification workflow](../guides/goldset-from-scratch.md) before any `verified=true` item
@@ -1174,10 +1176,9 @@ breadth (public-set adapters + corpus RAG-injection/canary planter) + unsafe-con
 the M5.2 native-FC + MCP transport, BFCL UA adapter, and per-argument tolerance; the M5.3
 real-corpus search tasks; the M5.4 nested/array structured cases + matching, chat-period
 planter/ingestion, and text-analysis judged sub-tasks + long_doc + contradiction + board; and the
-M5.6 ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence). What
-remains is forward work in [`plan.md`](plan.md): the deferred/blocked M7.3 work (platform/matrix
-expansion, human-gated judge calibrations, the composite headline) and the human MH.5 sample-verify
-before any `verified=true` item scores real models.
+M5.6 ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence).
+What remains is forward work in [`plan.md`](plan.md): the M7 harness comparison, RAG prompt-system
+generation/tuning, and platform/matrix expansion.
 
 The shared M5 substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
 `launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
@@ -1428,11 +1429,11 @@ filtered) or supplied explicitly; each task drops straight into the `bench-agent
 `check_success` via the sandbox `search` tool. CLI: `llb prepare-agentic-search --corpus-root ...
 [--merge-seed]`. Pure + unit-tested; tasks still need the MH.5 sample-verify.
 
-The trajectory-quality judge still reuses the M3.8 calibration (fit on SQuAD QA, not agent
-trajectories), so an agentic-specific calibration would firm the domain transfer. The
-`build_agentic_graph` LangGraph wrapper and the LangGraph-vs-CrewAI harness comparison are scoped to
-Milestone 7 (the remaining frameworks -- LangChain / LlamaIndex / Haystack / AutoGen -- stay out of
-scope; see `plan.md`).
+The trajectory-quality judge stays gated by the existing M3.8 calibration; corpus/task-specific
+judge tuning is part of future corpus onboarding and prompt-system benchmark runs, while objective
+completion-rate remains the ranking floor. The `build_agentic_graph` LangGraph wrapper and the
+LangGraph-vs-CrewAI harness comparison are scoped to Milestone 7 (the remaining frameworks --
+LangChain / LlamaIndex / Haystack / AutoGen -- stay out of scope; see `plan.md`).
 
 ### M5.4 Remaining taxonomy -- summarization / structured output / chat-period / reliability
 The remaining spec categories, each on the shared `bench.common` substrate:
@@ -1473,10 +1474,28 @@ The remaining spec categories, each on the shared `bench.common` substrate:
   `read_case_statuses` reads a run bundle's `scores.parquet`/`scores.jsonl`. CLI `bench-reliability
   --run-dir`. Pure + unit-tested.
 
-All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU. The
-full composite weights across the M5 components stay OFF (each category reports its own board + CIs)
-until every component carries a CI, per the M5 cross-cutting rule (the M3.8 judge calibration that
-gates the judged signals is itself done -- see the judge-calibration section above).
+All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU.
+
+**Guarded M5 composite headline (M7 support).** `llb.scoring.composite` builds a separate composite
+row only when every required M5 tier for a model is present, has a reloadable per-case objective
+series for bootstrap CIs, and is stamped with `data_verified=true`. The weights use the spec's
+M5-category proportions and renormalize over the M5 subset: text-analysis 20, summarization 10,
+structured 10, security 10, agentic 10, tooling 5. Category runners now persist a standardized
+per-case `objective_score`, and the `bench-*` commands accept `--data-verified` plus
+`--verification-ref` so verified runs can be made composite-eligible. `llb.goldset.verify` validates
+those references mechanically before model calls and before a verified manifest can be persisted:
+accepted forms are a fully decided `verify_sample.csv` within tolerance, a `sample_manifest.json`
+that points to one, or an accepted-ledger bundle whose items are all `verified=true`. Invalid
+references render a detailed operator diagnostic (`format_verification_status`) with path, kind,
+reason, worksheet or ledger statistics, failing strata or unverified ids, and the exact
+`verify-review` / `verify-accept` / rerun instruction needed to make the reference usable.
+`llb.board.data` preserves category run metadata via `CategoryRunRecord` and re-checks verification
+refs when building the composite; `load_m5_composite` returns either ranked composite rows or
+concrete blockers. CLI: `llb bench-composite` (diagnostic escape hatches: `--allow-unverified`,
+`--allow-missing-ci`). The Makefile target `make composite-headline` chains all six required
+category benches with `--data-verified --verification-ref ...`, then runs `llb bench-composite` as
+the clean preflight. Streamlit shows the composite section only when the verified, CI-capable suite
+is complete. Operator flow: [`composite-headline.md`](../guides/composite-headline.md).
 
 **Text-analysis judged sub-tasks + long_doc + contradiction + board (M5.4, delivered).**
 `run_text_analysis` now takes the opt-in gated judge (`--judge-model` / `--judge-rho` /
@@ -1491,9 +1510,9 @@ contradicting sides (min of the two side credits). The Streamlit board (`llb.boa
 category run bundles via `load_category_records` (grouped BY TIER, best run per model) and renders
 each under its OWN Tier, never cross-ranked (the `aggregate` guard refuses a mixed-tier board).
 
-Summarization's gated-judge faithfulness still reuses the M3.8 calibration (done on SQuAD QA, not
-summarization) -- a summarization-specific calibration would firm the domain transfer (M7.3). All
-M5.4 cases need the MH.5 human sample-verify before headline use.
+Summarization's gated-judge faithfulness stays gated by the existing M3.8 calibration; corpus/task
+judge tuning belongs with future corpus onboarding and prompt-system benchmark runs. All M5.4 cases
+need the MH.5 human sample-verify before headline use.
 
 ### M5.6 second-frontier cross-check (verified-data gate) -- `llb.prep.cross_check`
 The M4.4 data-prep residual the plan says "lands with M5's first scored category": the in-pipeline
@@ -1815,6 +1834,6 @@ consumes lang-uk / INSAIT results as a prior, never duplicates them).
 
 No longer deferred (now forward work in `plan.md`, not "out of scope"): the security / agentic /
 MCP-tooling categories and the remaining taxonomy (Milestone 5), GraphRAG (Milestone 6, GO
-decided), the LangGraph-vs-CrewAI harness comparison (Milestone 7), and the multi-backend /
-multi-vector-store / GPU-matrix / quality-per-watt expansions (Milestone 7 / M7.3, built only with a
-committed consumer or more hardware).
+decided), the LangGraph-vs-CrewAI harness comparison and RAG prompt-system generation/tuning
+(Milestone 7), and the multi-backend / multi-vector-store / GPU-matrix / quality-per-watt
+expansions (Milestone 7 / M7.4, built only with a committed consumer or more hardware).

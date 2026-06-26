@@ -12,10 +12,10 @@ sequence number is a stable identifier (AGENTS.md); it appears only while it has
 
 ## Milestone 7 -- Extended, deferred, and forward-verification tasks
 
-Two parts are non-blocking and buildable now in their own worktree lane (no host gate) -- the
-extended agentic harness comparison (M7.1) and the non-blocking quality-verification actions (M7.2,
-provable in CI from fake endpoints). The third part (M7.3) parks deferred work that needs more
-hardware, a committed consumer, or a separate calibration pass.
+Four parts are non-blocking or deferred: the extended agentic harness comparison (M7.1), the
+non-blocking quality-verification actions (M7.2, provable in CI from fake endpoints), the
+human-assisted RAG prompt-system generation lane (M7.3), and deferred work that needs more
+hardware or a committed consumer (M7.4).
 
 ### M7.1 Extended agentic workflows (LangGraph vs CrewAI harness)
 
@@ -65,18 +65,45 @@ Every forward verification provable WITHOUT a real CUDA host:
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 
-### M7.3 Deferred / blocked (needs more hardware, a committed consumer, or a separate calibration)
+### M7.3 Human-assisted RAG prompt-system generation and tuning
+
+Add operator-facing tools that turn a supplied text corpus into candidate RAG prompt systems and
+benchmark those systems across models and harnesses. The goal is to raise grounded-answer scores by
+tuning the prompt template and its attached context package while preserving a fair, reproducible
+measurement path.
+
+**Scope:**
+1. Corpus preparation command -- ingest a caller-provided text corpus and emit a compact anthology
+   of selected passages, document metadata, and a knowledge-graph-to-RAG mapping artifact under
+   `$DATA_DIR/<method_name>/<run_timestamp>/`.
+2. Prompt-template generator -- create candidate system/additional prompts that embed the anthology,
+   metadata summary, and graph/RAG mapping references in a structured template suitable for the
+   existing RAG benchmark path.
+3. Context-budget controller -- estimate per-model context windows and tokenizer costs, reserve
+   space for the question, retrieved chunks, tool transcripts, and answer budget, then trim or
+   summarize the anthology/metadata/graph sections so every prompt candidate fits the selected
+   model context.
+4. Human review loop -- expose the generated prompt candidates, budget breakdown, dropped-context
+   report, and editable template fields so an operator can approve, revise, pin, or reject
+   candidates before benchmarking.
+5. Prompt-tuning loop -- search over prompt variants, metadata density, graph-reference style, and
+   anthology size; keep all runs manifest-addressable so scores can be compared without mixing
+   prompt systems.
+6. Benchmark integration -- add a board axis for the prompt-system id and run the same corpus-backed
+   RAG task set across selected models and harnesses, with CIs and manifests that record context
+   budget, tokenizer, prompt template revision, corpus digest, and graph/RAG mapping digest.
+7. Harness compatibility -- make the prompt package usable by the baseline RAG path and the
+   agentic/harness comparison lane without changing objective scoring, so the benchmark can answer
+   whether the additional system prompt helps a model, a harness, or both.
+
+**Acceptance:** an operator can provide a corpus, generate and review prompt-system candidates with
+bounded context size, run the same RAG benchmark across selected models/harnesses, and compare
+scores by prompt-system id with all corpus, template, metadata, graph mapping, and context-budget
+inputs recorded in the run artifacts.
+
+### M7.4 Deferred / blocked (needs more hardware or a committed consumer)
 
 Each unblocks differently:
-- **Domain-specific judge calibrations (optional).** The summarization-specific and agentic-specific
-  judges reuse the M3.8 rho (fit on SQuAD QA, not summaries / agent trajectories). Tightening them
-  means calibrating on a harder split for those tasks -- run the
-  [calibration workflow](../guides/calibration-tooling.md) over that split; the wired faithfulness /
-  trajectory-quality judges already rank mechanically, so this is a refinement, not a blocker.
-- **Composite headline.** Turn on the spec's weighted composite over the M5 categories once every
-  component carries a CI AND its gold data is verified (the
-  [data-verification workflow](../guides/goldset-from-scratch.md)); until then each category reports
-  its own board + CIs.
 - **Platform & matrix expansion (needs a committed consumer / more hardware).** Build last:
   - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant
     metadata from M3.2 is the seam);

@@ -45,6 +45,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Verification tooling](guides/verification-tooling.md) -- operator manual for the MH.5
   `verify-sample` / `verify-review` / `verify-accept` gate: stratified sample -> per-item review
   -> accepted-ledger flip, for real-corpus and synthetic bundles.
+- [Composite headline](guides/composite-headline.md) -- close-out flow for the guarded M5
+  composite: verify category data, stamp category runs, preflight blockers, and publish the board.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) -- Milestone 1: build-index -> run-eval.
