@@ -21,6 +21,8 @@ from llb.graph.model import KnowledgeGraph
 from llb.graph.retrieval import (
     link_communities,
     link_seed_nodes,
+    morph_key,
+    node_link_scores,
     serialize_subgraph,
     tokenize,
 )
@@ -214,6 +216,33 @@ def test_link_communities_picks_the_matching_cluster():
     assert link_communities(graph, "Розкажи про Франко", 1) == [franko_community]
 
 
+def test_morph_key_collapses_inflected_forms_but_keeps_distinct_names_apart():
+    # the genitive "Франка" and nominative "Франко" share one stem key
+    assert morph_key("франка") == morph_key("франко")
+    # unrelated names stay distinct
+    assert morph_key("шевченко") != morph_key("франко")
+    # short tokens key on themselves (only ever match exactly)
+    assert morph_key("ук") == "ук"
+
+
+def test_morphology_links_inflected_question_form():
+    graph = _graph()
+    assign_communities(graph)
+    # the node name is "Франко"; the question uses the genitive "Франка" -- still links via the stem
+    seeds = link_seed_nodes(graph, "Що написав Франка?", 5)
+    names = {graph.node_by_id()[s].name for s in seeds}
+    assert "Іван Франко" in names
+    assert "Тарас Шевченко" not in names  # an unrelated stem must NOT link
+
+
+def test_exact_token_match_outranks_morphological_match():
+    graph = _graph()
+    by_name = {n.name: n.node_id for n in graph.nodes}
+    # "Шевченка" (genitive, stem match) vs "Кобзар" (exact match) in one question
+    scores = node_link_scores(graph, "Що Шевченка написано у Кобзар?")
+    assert scores[by_name["Кобзар"]] > scores[by_name["Тарас Шевченко"]]
+
+
 def test_serialize_subgraph_is_offset_bearing_and_dedups():
     graph = _graph()
     # one member node with two mentions -> two distinct spans, ranked, no duplicates
@@ -326,6 +355,17 @@ def test_summarize_skips_endpoint_errors():
     graph = _graph()
     assign_communities(graph)
     assert summarize_communities(graph, boom, min_size=3) == {}  # errors skipped, not fatal
+
+
+def test_build_graph_summarize_requires_a_model():
+    # --summarize with no endpoint model is a clean CLI error, not a crash
+    import typer
+
+    from llb.cli.rag import _summarize_graph
+
+    with pytest.raises(typer.Exit) as excinfo:
+        _summarize_graph(object(), None)
+    assert excinfo.value.exit_code == 2
 
 
 # --- ingest --------------------------------------------------------------------------------

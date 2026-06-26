@@ -12,7 +12,13 @@ entirely and recorded only as a tagged diagnostic.
 import re
 
 from llb.contracts import ChunkRecord
-from llb.graph.constants import KIND_EDGE_FACT, KIND_NODE_MENTION
+from llb.graph.constants import (
+    CONFIDENCE_TIE_BOOST,
+    KIND_EDGE_FACT,
+    KIND_NODE_MENTION,
+    MIN_STEM_LEN,
+    STEM_MATCH_WEIGHT,
+)
 from llb.graph.model import GraphMention, KnowledgeGraph
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
@@ -82,6 +88,17 @@ def tokenize(text: str) -> set[str]:
     }
 
 
+def morph_key(token: str) -> str:
+    """Morphological linking key: the leading `MIN_STEM_LEN` chars of a token.
+
+    A Ukrainian name and its inflected forms differ only in the ENDING, so collapsing each token
+    to its leading stem lets an inflected question form (e.g. "Франка" genitive) still link the
+    "Франко" node. Tokens shorter than the stem length key on themselves (they only match exactly).
+    This is the dependency-free morphology seam -- no lemmatizer, no embedder.
+    """
+    return token[:MIN_STEM_LEN] if len(token) >= MIN_STEM_LEN else token
+
+
 def _node_surface_tokens(graph: KnowledgeGraph) -> dict[int, set[str]]:
     """Per-node bag of tokens drawn from its NAME + aliases.
 
@@ -101,18 +118,25 @@ def _node_surface_tokens(graph: KnowledgeGraph) -> dict[int, set[str]]:
 def node_link_scores(graph: KnowledgeGraph, question: str) -> dict[int, float]:
     """Lexical link score per node: question tokens it covers, with confidence as a tiny boost.
 
-    A node with zero token overlap is omitted (not linked to the question).
+    Exact token overlap scores full weight; a morphological (shared-stem) match that is NOT already
+    an exact hit scores `STEM_MATCH_WEIGHT` (so an inflected question form still links the node, but
+    exact hits always rank first). A node with neither kind of overlap is omitted (not linked).
     """
     q_tokens = tokenize(question)
     if not q_tokens:
         return {}
+    q_keys = {morph_key(tok) for tok in q_tokens}
     surface = _node_surface_tokens(graph)
     confidence = {n.node_id: n.confidence for n in graph.nodes}
     scores: dict[int, float] = {}
     for node_id, toks in surface.items():
-        overlap = len(q_tokens & toks)
-        if overlap:
-            scores[node_id] = overlap + 0.01 * confidence[node_id]
+        exact = len(q_tokens & toks)
+        # surface stems matched by a question stem, beyond the ones already counted as exact hits
+        stem_only = max(len(q_keys & {morph_key(tok) for tok in toks}) - exact, 0)
+        if exact or stem_only:
+            scores[node_id] = (
+                exact + STEM_MATCH_WEIGHT * stem_only + CONFIDENCE_TIE_BOOST * confidence[node_id]
+            )
     return scores
 
 

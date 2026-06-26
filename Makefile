@@ -85,7 +85,7 @@ export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -264,6 +264,10 @@ build-graph: ## M6: build the GraphRAG store from an M4.4 draft bundle (BUNDLE=.
 validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
+
+compare-retrieval: ## M6: compare faiss vs both graph strategies' recall@k/MRR on the gold set
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
 run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1 JUDGE_RHO= (enables the gated judge)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

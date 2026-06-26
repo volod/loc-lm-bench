@@ -186,6 +186,23 @@ Immutable eval artifacts are isolated per invocation under
 `$DATA_DIR/prepare-goldset/<UTC timestamp>/` (`goldset.jsonl`, `corpus/`, `ontology.json`,
 `extraction.jsonl`, `provenance.json`).
 
+## Operator workflows (delivered tooling -- run as needed, not plan items)
+
+These are reproducible `make` flows an operator runs repeatedly (e.g. when onboarding a new corpus
+or model); they are NOT open plan items. Run the linked guide when a task needs one:
+
+- **Create a new gold set (end-to-end):** [`goldset-from-scratch.md`](../guides/goldset-from-scratch.md).
+- **Second-frontier cross-check + MH.5 human sample-verify:**
+  [`verification-tooling.md`](../guides/verification-tooling.md).
+- **Judge calibration (incl. a harder split):** [`calibration-tooling.md`](../guides/calibration-tooling.md).
+- **Graph-vs-FAISS retrieval comparison:** [`graph-vs-faiss-comparison.md`](../guides/graph-vs-faiss-comparison.md).
+
+**Data gate (always):** a NEW gold set or corpus runs the
+[data-verification workflow](../guides/goldset-from-scratch.md) before any `verified=true` item
+scores a real model (needs a real CUDA host). The objective category boards do not depend on the
+gated judge. The committed `ua_squad_postedited_v1` set is already verified + calibrated, so it needs
+no further data gate.
+
 ## Milestone 0 -- modules + how to run
 
 ### Canonical gold-item schema — `llb.goldset.schema`
@@ -1604,7 +1621,11 @@ still imports.
 - `retrieval.py` -- pure question linking + span-preserving serialization. Lexical entity linking
   keys on entity NAME + aliases (not mention text, which would link unrelated entities sharing a
   relation verb); `serialize_subgraph` renders member node mentions + intra-member edge evidence to
-  ranked, span-deduplicated, offset-bearing `ChunkRecord`s.
+  ranked, span-deduplicated, offset-bearing `ChunkRecord`s. Linking is **morphology-aware**
+  (`morph_key`): an exact token match scores full weight, and a shared leading-stem match (first
+  `MIN_STEM_LEN` chars -- so the genitive "Франка" links the "Франко" node) scores `STEM_MATCH_WEIGHT`
+  below it, so inflected Ukrainian question forms still link while exact hits rank first. Stays pure +
+  deterministic -- no lemmatizer, no embedder (constants in `graph/constants.py`).
 - `store.py` -- `GraphStore`: `.build` / `.save` / `.load` + the `.retrieve(question, k)` seam (so
   the eval graph, scoring incl. the gated judge, isolation, and the board are UNCHANGED). The two
   strategies, recorded per run as `retrieval_strategy`:
@@ -1615,7 +1636,13 @@ still imports.
 - `summary.py` -- OPTIONAL `summarize_communities(graph, complete)`: an LLM one-paragraph summary
   per sizable community, recorded as a TAGGED DIAGNOSTIC (`community_summaries`, its own file) and
   NEVER returned by `.retrieve` -- the un-grounded abstraction never enters the span metric (the
-  same recorded-but-not-ranked discipline as `--score-semantic`). Off by default.
+  same recorded-but-not-ranked discipline as `--score-semantic`). Off by default; reachable from the
+  operator CLI via `build-graph --summarize` (see below).
+- `rag/compare.py` -- `compare_retrieval(stores, items, k)` scores several backends' `recall@k` /
+  `MRR` on the SAME goldset by the one source-span metric, with `format_comparison` (ASCII table)
+  and `load_compare_stores(cfg)` (loads `{faiss, graph/local_khop, graph/global_community}`, skipping
+  any whose store is not built). Pure -- driven by the `.retrieve` seam, so it is unit-tested with
+  fake stores (no FAISS / DuckDB / GPU). Backs the `compare-retrieval` command (below).
 - `ingest.py` -- load the M4.4 extraction back: `load_bundle` reads a `prepare-goldset` draft
   bundle's `extraction.jsonl` + `corpus/` + `ontology.json`; `load_extractions` reads an explicit
   `extraction.jsonl`.
@@ -1630,22 +1657,77 @@ local-vs-global runs are comparable. `run-eval` and `validate-retrieval` take `-
     llb build-graph --bundle <prepare-goldset dir>     # reads extraction.jsonl + corpus/
     llb build-graph --extraction <e.jsonl> --corpus-root <dir>   # explicit M4.4 extraction
     llb build-graph --corpus-root <dir> --extract-model llama3.2:3b   # extract fresh (M4.4)
+    llb build-graph --bundle <dir> --summarize --summarize-model llama3.2:3b  # + diagnostic summaries
     llb validate-retrieval --retrieval-backend graph --retrieval-strategy local_khop
+    llb compare-retrieval --k 10 [--out report.json]   # faiss vs both graph strategies on one goldset
     llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 
-Or via make: `make build-graph BUNDLE=<dir>`. The `graph` extra (`duckdb`) is in the default
+`build-graph --summarize` attaches the tagged-diagnostic community summaries via the M4.4 local
+endpoint adapter (`--summarize-model`, defaulting to `--extract-model`); they persist to
+`community_summaries.json` and are NEVER span-scored. `compare-retrieval` reuses the runner's
+`_load_store` (varying backend/strategy via `with_overrides`) to rank `{faiss, graph/local_khop,
+graph/global_community}` on `recall@k` / `MRR` over the same goldset, skipping any backend whose
+store is not built (answer-quality comparison rides `run-eval --retrieval-backend ...`, which needs a
+model). Or via make: `make build-graph BUNDLE=<dir>`. The `graph` extra (`duckdb`) is in the default
 `make venv` EXTRAS.
 
 ### Tests + acceptance
-`tests/test_graph.py` (21 tests): construction (offsets/section/confidence carry-through,
+`tests/test_graph.py` (25 tests): construction (offsets/section/confidence carry-through,
 fact-endpoint linking, fact-only nodes), deterministic community detection, linking +
-serialization, both strategies returning offset-bearing context that scores recall@k=1.0 on the
-existing span metric, k-hop depth bounding, save/load round-trip, the tagged-diagnostic summaries
-(asserting they never appear as retrieved chunks), ingest round-trip, and the full vertical through
-`run_eval` (manifest records backend + strategy). The DuckDB-engine tests `importorskip("duckdb")`
-so the lightweight CI install skips them while the pure-graph logic runs everywhere; `make ci` is
-green (ruff + mypy strict + `-m "not slow"`). Smoke-validated end to end via the CLI: `build-graph`
-from a bundle -> `validate-retrieval --retrieval-backend graph` recall@5=1.000.
+serialization, **morphology-aware linking** (`morph_key` collapses inflected forms, an inflected
+question links the node, exact match outranks a stem match), both strategies returning
+offset-bearing context that scores recall@k=1.0 on the existing span metric, k-hop depth bounding,
+save/load round-trip, the tagged-diagnostic summaries (asserting they never appear as retrieved
+chunks) + the `build-graph --summarize` no-model guard, ingest round-trip, and the full vertical
+through `run_eval` (manifest records backend + strategy). `tests/test_compare_retrieval.py` (5
+tests) covers the comparison core from fake stores (recall ranking, MRR tie-break, empty backends,
+ASCII output). The DuckDB-engine tests `importorskip("duckdb")` so the lightweight CI install skips
+them while the pure-graph logic runs everywhere; `make ci` is green (ruff + mypy strict + `-m "not
+slow"`, 671 passed). Smoke-validated end to end: `build-graph` from a bundle ->
+`validate-retrieval --retrieval-backend graph` recall@5=1.000, and `compare-retrieval` over a saved
+GraphStore renders the ranked table (FAISS skipped when not built).
+
+### M6 residuals (engineering)
+The three optional/forward M6 residuals are delivered + CI-proven from fakes:
+1. **Morphology-aware entity linking** -- `morph_key` stem matching in `graph/retrieval.py` (above);
+   lifts graph recall on inflected Ukrainian questions without an embedder, behind the pure linking
+   seam.
+2. **`build-graph --summarize`** -- exposes `summarize_communities` to operators via the M4.4 local
+   endpoint adapter (above); summaries stay tagged-diagnostic.
+3. **`compare-retrieval`** -- the graph-vs-FAISS comparison tool (`rag/compare.py` + the CLI
+   command, above), RUN on the real CUDA host over the committed corpus (result below).
+
+### Reasoning-model extraction (build-graph fresh extraction)
+Fresh `build-graph` extraction can drive a calibrated reasoning model. `EndpointConfig` gained
+`think` (None | True | False) and `chat_once` an `extra_body` passthrough; when `think` is set the
+local adapter routes to Ollama's **native `/api/chat`** (`_ollama_native_complete` /
+`_native_chat_url`) because the OpenAI `/v1` layer ignores `think` and the model then burns the whole
+token budget on hidden reasoning and returns empty JSON. `build-graph` exposes `--extract-base-url`
+(point at a vLLM `/v1`), `--extract-max-tokens`, and `--extract-no-think`. Tests:
+`tests/test_ontology_draft.py` (`_native_chat_url` mapping, think routes to native + records tokens +
+provenance). See [`graph-vs-faiss-comparison.md`](../guides/graph-vs-faiss-comparison.md) for the
+operator flow incl. the Ollama-vs-vLLM throughput finding on the 16 GB host.
+
+### M6 verification -- real-host graph-vs-FAISS (2026-06-26, RTX 4060 Ti 16 GB)
+Graph built from a fresh `gemma4:26b` extraction (Ollama, reasoning disabled, 3 concurrent workers,
+~2.6 h) over the committed `ua_squad_postedited_v1` corpus: 250 docs -> **2396 nodes, 558 edges,
+1839 communities** (21 docs yielded no extraction). `compare-retrieval --k 10` over the 250-item
+gold set:
+
+| backend | recall@10 | MRR |
+| --- | --- | --- |
+| **faiss** | **0.980** | **0.847** |
+| graph/local_khop | 0.292 | 0.091 |
+| graph/global_community | 0.284 | 0.229 |
+
+**Flat vector retrieval strongly beats GraphRAG on this factoid corpus.** SQuAD paragraphs are
+short and weakly connected, so the LLM extraction is sparse (0.23 edges/node) and the answer span is
+usually not an extracted entity mention / edge evidence -- the graph has nothing to return for most
+questions; `local_khop`'s low MRR (0.091 vs recall 0.292) shows the answer ranks behind many node
+mentions when it is covered. GraphRAG is expected to pay off on multi-hop / narrative corpora, which
+the committed factoid set is not -- this run quantifies that. Throughput finding: on the 16 GB card
+Ollama's llama.cpp offload (~32 s/doc) out-throughputs vLLM `--cpu-offload-gb` (MoE 26B ~49 s/doc;
+dense 31B w4a16 <5 tok/s) -- a model that fits fully in VRAM is the only way to get native speed.
 
 ## Real-host verification (2026-06-25, RTX 4060 Ti 16 GB)
 
