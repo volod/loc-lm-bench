@@ -1,4 +1,4 @@
-# Knowledge-Graph Ontology + GraphRAG Scope (M6 proposal -- MH.2 sign-off have provided).
+# Knowledge-Graph Ontology + GraphRAG Scope (M6 proposal -- MH.2 sign-off has been provided).
 
 Signed off 2026-06-26 by volod; scope accepted.
 

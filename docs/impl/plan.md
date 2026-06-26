@@ -3,85 +3,25 @@
 Forward-only. Everything DELIVERED -- Milestones 0-4 (live-validated on the CUDA host) and the
 Milestone 5 BUILD (the eval-template + text-analysis-schema prerequisites and every scored
 category: security / tooling / agentic / text-analysis / summarization / structured-output /
-chat-period / reliability, plus the second-frontier verified-data gate) -- lives in
-[`current.md`](current.md) and is NOT repeated here. Spec (source of truth):
+chat-period / reliability, the second-frontier verified-data gate, and the MH.5 sample-verify
+tooling) -- lives in [`current.md`](current.md) and is NOT repeated here. Spec (source of truth):
 [`docs/design/spec.md`](../design/spec.md).
 
 **Quick start:** `make demo-eval` runs the pipeline end to end (needs a running Ollama); the real
 vLLM path is `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` on a CUDA host.
 
-Remaining work: optional Milestone 6 residuals (the M6 GraphRAG build lives in
-[`current.md`](current.md)), the Milestone 7 extended-implementation + forward-verification lane,
-and a human-only lane (Milestone H). (The Milestone 5 residuals -- per-category breadth + data-prep
-hardening -- now live in [`current.md`](current.md), not here.)
+**Operator workflows (not plan items).** Creating a new gold set, the second-frontier cross-check,
+the MH.5 human sample-verify, and judge calibration are reproducible `make` workflows -- not open
+milestones. When a future task needs human interaction (verify a new bundle, calibrate a judge on a
+harder split), run the documented flow rather than tracking it here:
+[create a gold set (end-to-end)](../guides/goldset-from-scratch.md) ·
+[verification tooling](../guides/verification-tooling.md) ·
+[calibration tooling](../guides/calibration-tooling.md). The committed `ua_squad_postedited_v1` set
+is already verified + calibrated; the M6 ontology + scope sign-off is signed (the schema is
+[`graph-ontology-schema.md`](../design/graph-ontology-schema.md), recorded in [`current.md`](current.md)).
 
----
-
-## ⚠ HUMAN PREREQUISITES (irreducibly-human -- no AI substitute)
-
-One gate still needs a human and CANNOT be done by GPT/Gemini/Claude: MH.5 eval-data verification.
-It is human-paced, runs in PARALLEL with the build, and blocks specific outputs (below). All
-drafting + cross-checking is already pipeline code; only the human sample-verify remains. (The MH.2
-M6 ontology + scope sign-off is satisfied -- the signed schema is
-[`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md), recorded in
-[`current.md`](current.md). The judge-calibration gate is satisfied -- the gated judge is calibrated
-and enabled per run with `JUDGE_RHO=`; details in [`current.md`](current.md).)
-
-**The step-by-step manual for both is
-[`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)** -- it
-has the procedure, the "done when", and the essential papers for each. Background learning paths:
-[main](../guides/learning-path.md) ·
-[security](../guides/learning-path-security.md) ·
-[evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
-
-- **MH.5 data verification** ("Eval-data verification"): sample-verify a stratified sample of
-  AI-drafted, cross-checked items, then flip via the ledger. Blocks any `verified=true`
-  item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6). This is now the ONLY open
-  human gate (MH.2 is signed off; the OQ4 corpus facts are settled -- see `current.md`).
-
-What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
-cross-check, and the optional non-Gemma cross-check judge.
-
-### Human-only ordered sequence (preferable order)
-
-MH.5 runs PARALLEL with the remaining (M7 + optional M6 residual) work. It is NOT a one-shot upfront
-task -- it verifies what the M5 producers (see [`current.md`](current.md)) DRAFT, per bundle:
-
-1. **MH.5 first + continuous** (highest priority). It is the human CRITICAL PATH for the nearest
-   deliverable -- real-model scores in the M5 categories (and M6 graph runs) -- and it is the slow,
-   human-paced, PER-BUNDLE gate. Run it PULL-BASED: as each category's bundle is drafted +
-   cross-checked and STABILIZES, verify that bundle, flip accepted items via the ledger, and
-   real-model scoring unblocks for it. Start the moment the first drafted + cross-checked bundle
-   lands; verify a bundle only once its drafting is stable (do not re-verify seeds a newer bundle
-   supersedes). The objective boards never wait on this -- only real-model HEADLINE scoring does.
-2. **(optional) Strengthen the judge calibration -- background, lowest priority.** The judge is
-   already mechanically trusted and objective scores rank regardless; do it only with idle capacity.
-
-(MH.2 -- the M6 ontology + scope sign-off -- is done; the OQ4 corpus facts + the OQ-egress
-cross-check routing are settled -- see `current.md` -- so none of those remain human TODOs.)
-
-### MH.5 -- gold/eval data verification (TODO, step by step)
-
-Procedure + the four per-item checks:
-[manual "Eval-data
-verification"](../guides/human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data).
-1. Take a drafted bundle (`$DATA_DIR/prepare-goldset/<ts>/`, `verified=false`).
-2. `make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus` (structural gate).
-3. Draw a STRATIFIED sample (kind x difficulty x section x real/synthetic); document size + strata.
-4. Verify each sampled item: grounded span / non-circular + answerable / correct reference / planted
-   labels match the doc.
-5. Accept if the error rate is within tolerance, else reject back to the pipeline.
-6. Flip accepted items to `verified=true` THROUGH THE LEDGER (never hand-edit the boolean):
-   `python -m llb.prep.ingest_squad ... --verified-goldset <accepted-ledger>`.
-
-### (optional) Strengthen the judge calibration
-
-The committed calibration is a borderline pass (its 95% CI dips below the 0.6 gate; see
-[`current.md`](current.md)) because the SQuAD-uk calibration split is easy factual QA with little
-human/judge disagreement to measure. To make the gate robust: add harder / ambiguous items and more
-fluent-but-wrong candidate answers to the `calibration` split, then repeat the loop
-(`make calibration-run` -> `calibration-rate` -> `calibration-score`) and re-commit the worksheet.
-Optional -- the current judge is already mechanically trusted; objective scores rank regardless.
+Remaining work is engineering only: optional Milestone 6 residuals (the M6 GraphRAG build lives in
+[`current.md`](current.md)) and the Milestone 7 extended-implementation + forward-verification lane.
 
 ---
 
@@ -93,27 +33,25 @@ residuals -- per-category sourcing breadth, transports, gated-judge wiring, and 
 -- now live in [`current.md`](current.md), no longer open work here.)
 
 1. **Milestone 6 residuals** (optional) -- the GraphRAG build lives in `current.md` (DuckDB store,
-   both strategies, manifest-recorded) and MH.2 is signed off, so the schema is trusted for
-   HEADLINE use. Only the optional improvements + the graph-vs-FAISS comparison remain (below);
-   real-model graph headline numbers ride the standing MH.5 data gate, like every M5 category.
+   both strategies, manifest-recorded) and the ontology + scope is signed off, so the schema is
+   trusted for HEADLINE use. Only the optional improvements + the graph-vs-FAISS comparison remain
+   (below).
 2. **Milestone 7** (parallel) -- extended + deferred + verification: the M7.1 LangGraph-vs-CrewAI
    harness comparison and the M7.2 non-blocking quality gates (both buildable now), plus M7.3 -- the
-   DEFERRED / BLOCKED work moved out of M5 (human-gated calibrations, the composite headline, the
-   platform/matrix expansion).
-3. **Milestone H** (human-paced, parallel) -- MH.5 first + continuous (per-bundle); MH.2 is signed
-   off. See the prerequisites block above (human-only ordered sequence).
+   deferred work moved out of M5 (the composite headline, the platform/matrix expansion, optional
+   domain-specific judge calibrations).
 
-Real-model scoring of any `verified=true` item still waits on MH.5 (the human gate); the objective
-category boards do not depend on the gated judge.
+A NEW gold set's real-model HEADLINE scoring first runs the
+[data-verification workflow](../guides/goldset-from-scratch.md); the objective category boards do
+not depend on the gated judge.
 
 ---
 
 ## Milestone 6 residuals -- GraphRAG (optional, forward)
 
 The M6 GraphRAG build lives in `current.md` (DuckDB store, `local_khop` + `global_community`,
-manifest-recorded backend + strategy, tagged-diagnostic community summaries) and MH.2 is signed off
-(the ontology + scope is trusted). Remaining work is optional improvement + comparison; the only
-standing gate is MH.5 (it blocks real-model scoring of `verified=true` items, like every category).
+manifest-recorded backend + strategy, tagged-diagnostic community summaries) and the ontology +
+scope is signed off (the schema is trusted). Remaining work is optional improvement + comparison.
 Concepts: [evaluation-categories learning path](../guides/learning-path-evaluation-categories.md).
 
 1. **Morphology-aware entity linking (optional).** The v1 entity-linker (`llb.graph.retrieval`)
@@ -133,7 +71,9 @@ Concepts: [evaluation-categories learning path](../guides/learning-path-evaluati
    quality across `{faiss, graph/local_khop, graph/global_community}` on the same goldset (the
    manifest already records backend + strategy). Why it helps: quantifies when the multi-hop /
    narrative paths beat flat vector retrieval. Needs the M4.4 extraction over the corpus (a real
-   local-endpoint run); for real-model HEADLINE numbers it also rides the MH.5 data gate.
+   local-endpoint run); the committed goldset is already verified, so HEADLINE scoring needs no
+   further data gate (a NEW corpus would first run the
+   [data-verification workflow](../guides/goldset-from-scratch.md)).
 
 ---
 
@@ -141,10 +81,9 @@ Concepts: [evaluation-categories learning path](../guides/learning-path-evaluati
 
 Everything NOT in the immediate M5 automatable sequence. Two parts are non-blocking and buildable
 now -- the extended agentic harness comparison (M7.1) and the non-blocking quality-verification
-actions (M7.2, provable in CI from fake endpoints). The third part (M7.3) parks the DEFERRED /
-BLOCKED work that cannot be finished by AI alone: it needs human input, more hardware, or a
-committed consumer. (Verifications that need a real CUDA host or a human gate stay in
-`Verification (forward)`.)
+actions (M7.2, provable in CI from fake endpoints). The third part (M7.3) parks the deferred work
+that needs more hardware, a committed consumer, or a separate calibration pass. (Verifications that
+need a real CUDA host stay in `Verification (forward)`.)
 
 ### M7.1 Extended agentic workflows (LangGraph vs CrewAI harness)
 
@@ -182,30 +121,32 @@ harness, producing comparable completion-rate + trajectory-quality boards with t
 in the manifest; the objective scoring / isolation / gated judge are unchanged; CrewAI stays an
 opt-in lazy extra so the base install is unaffected.
 
-### M7.2 Non-blocking forward verification (quality gates -- no host, no human)
+### M7.2 Non-blocking forward verification (quality gates -- no host)
 
-Every forward verification that is provable WITHOUT a real CUDA host or a human gate lives here (the
-blocked ones stay in `Verification (forward)` below):
+Every forward verification that is provable WITHOUT a real CUDA host lives here (the host-blocked
+ones stay in `Verification (forward)` below):
 - **Category + harness boards:** each M5 category and the M7.1 harness comparison ranks objectively
-  under its OWN Tier with bootstrap CIs from FAKE endpoints -- no GPU, no human sample-verify (the
-  real-model headline still rides the MH.5 data gate). See `current.md`.
+  under its OWN Tier with bootstrap CIs from FAKE endpoints -- no GPU (a NEW gold set's real-model
+  headline first runs the [data-verification workflow](../guides/goldset-from-scratch.md)). See
+  `current.md`.
 - **Code-quality gate:** `make ci` stays green -- Ruff format + lint, mypy (strict), and the
   lightweight pytest group (`-m "not slow"`); the full suite (incl. `@pytest.mark.slow`) runs
   locally via `make test`. Every heavy dependency stays lazy-imported so the base install imports.
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 
-### M7.3 Deferred / blocked (needs human input, more hardware, or a committed consumer)
+### M7.3 Deferred / blocked (needs more hardware, a committed consumer, or a separate calibration)
 
-Moved out of M5 because AI cannot finish them in sequence; each unblocks differently:
-- **Domain-specific judge calibrations (human-gated).** Optional summarization-specific and
-  agentic-specific judge calibrations: the wired faithfulness / trajectory-quality judges reuse the
-  M3.8 rho (fit on SQuAD QA, not summaries / agent trajectories). Tightening them needs NEW HUMAN
-  ratings over a harder split -- the same human loop as the "(optional) Strengthen the judge
-  calibration" prerequisite (Milestone H).
-- **Composite headline (blocked on MH.5).** Turn on the spec's weighted composite over the M5
-  categories once every component carries a CI AND its data is MH.5-verified; until then each
-  category reports its own board + CIs (the standing M5 constraint).
+Moved out of M5 because they cannot be finished in the immediate sequence; each unblocks differently:
+- **Domain-specific judge calibrations (optional).** The summarization-specific and agentic-specific
+  judges reuse the M3.8 rho (fit on SQuAD QA, not summaries / agent trajectories). Tightening them
+  means calibrating on a harder split for those tasks -- run the
+  [calibration workflow](../guides/calibration-tooling.md) over that split; the wired faithfulness /
+  trajectory-quality judges already rank mechanically, so this is a refinement, not a blocker.
+- **Composite headline.** Turn on the spec's weighted composite over the M5 categories once every
+  component carries a CI AND its gold data is verified (the
+  [data-verification workflow](../guides/goldset-from-scratch.md)); until then each category reports
+  its own board + CIs (the standing M5 constraint).
 - **Platform & matrix expansion (needs a committed consumer / more hardware).** Build last:
   - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant
     metadata from M3.2 is the seam);
@@ -230,19 +171,17 @@ adapters (BFCL for tooling; JailbreakBench / HarmBench / AdvBench for security).
 
 ## Verification (forward)
 
-BLOCKED verifications only -- each needs a real CUDA host or a human gate. The non-blocking
+Host-BLOCKED verifications only -- each needs a real CUDA host. The non-blocking
 quality-verification actions live in Milestone 7 (M7.2) above.
-- **M5 (remaining):** the MH.5 human sample-verify gates real-model scoring.
-- **M6 (build lives in `current.md`; CI-proven from fakes; MH.2 signed off):** what remains is the
-  real-host graph-vs-FAISS comparison on the committed goldset (M6 residual #3 above -- needs a
-  local-endpoint extraction run); real-model headline numbers ride the MH.5 data gate.
-- **Milestone H (⚠ human):** a human sample-verify (MH.5) accepts the AI-drafted,
-  frontier-cross-checked data before it scores models (MH.2 is already signed off). See
-  [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
+- **M6 (build lives in `current.md`; CI-proven from fakes; ontology signed off):** what remains is
+  the real-host graph-vs-FAISS comparison on the committed goldset (M6 residual #3 above -- needs a
+  local-endpoint extraction run).
+- **A NEW gold set** runs the [data-verification workflow](../guides/goldset-from-scratch.md) before
+  its `verified=true` items score real models; the committed `ua_squad_postedited_v1` set is already
+  verified, so it needs no further data gate.
 
 ## Worktree parallelization
 
 - **extended-agentic:** Milestone 7 (M7.1 LangGraph vs CrewAI) is its own non-blocking lane over
-  the M5.3 harness seam + task set; M7.2 collects the non-blocking quality gates. No human/host
-  gate to build.
-- **human-gated:** Milestone H (MH.5; MH.2 already signed off) runs on its own decision-paced lane.
+  the M5.3 harness seam + task set; M7.2 collects the non-blocking quality gates. No host gate to
+  build.

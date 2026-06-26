@@ -1493,7 +1493,32 @@ call. The verifier is injectable (`SecondFrontierVerify`); `second_frontier_veri
 litellm-backed default; `cross_check_goldset` produces a `CrossCheckReport` (per-item verdicts +
 pass count). Passing does NOT set `verified=true` -- only the human MH.5 sample-verify does; the
 cross-check gates which drafted items are even eligible and is the report a human samples. CLI:
-`llb cross-check-goldset --goldset --corpus --model`. Pure + unit-tested (no key).
+`llb cross-check-goldset --goldset --corpus --model` (`make cross-check-goldset BUNDLE= CROSS_CHECK_MODEL=`).
+Pure + unit-tested (no key).
+
+### MH.5 human sample-verify tooling -- `llb.goldset.verify` + `llb.goldset.verify_session`
+The codeable half of the MH.5 gate: the operator tooling that turns a drafted + cross-checked bundle
+into an accepted ledger, the verification-side twin of the `calibration-*` trio (mirrors how
+`judge/calibration.py` pairs with `judge/rate.py`). `llb.goldset.verify` is the pure half --
+stratification (`provenance|split|source_doc_id`; the `synthetic` flag is a BUNDLE-level fact read
+from `provenance.json`, since the canonical `GoldItem` carries no per-item synthetic tag),
+deterministic proportional sampling with a floor of one per stratum, the acceptance-sampling
+arithmetic (per-stratum + overall reject rate vs tolerance, plus `undecided_with_failures`),
+atomic CSV worksheet I/O, and `emit_accepted_ledger` (accepted items with `verified=true` + their
+copied corpus, so the flip is an ADOPTION by replacement, never a boolean edit). It detects the gold
+file (`goldset.jsonl` or the planter's `planted_labels.jsonl`) and surfaces any `*.cross_check.json`
+verdict as read-only `cc_*` context. `llb.goldset.verify_session` is the interactive reviewer
+(`run_session` + pure `parse_command` / `format_card` / `first_undecided_index`): a per-item card
+showing the cited span inside its corpus window, the four checks (`g/a/r/p` pass, uppercase fail),
+`y`/`x` accept/reject, resumable CSV-as-state; the cross-check is hidden by default (anti-anchoring,
+`--show-crosscheck` reveals it). Subcommands `sample` / `review` / `accept`
+(`python -m llb.goldset.verify`); make shortcuts `verify-sample` / `verify-review` / `verify-accept`
+(`BUNDLE=`, `VERIFY_WS=`, `VERIFY_N=`, `VERIFY_TOLERANCE=`). Fully unit-tested with injected
+inputs/output -- no model/endpoint/GPU (`tests/test_goldset_verify.py`). The committed
+`ua_squad_postedited_v1` set is the verified side of the ledger (`DEFAULT_VERIFIED_GOLDSET`), already
+250/250 `verified=true`, so MH.5 has no open work against it; the gate fires per NEW drafted bundle.
+Operator workflow: [`docs/guides/goldset-from-scratch.md`](../guides/goldset-from-scratch.md) +
+[`verification-tooling.md`](../guides/verification-tooling.md).
 
 ### M5.6 run-path hardening (M4 carry-overs) -- delivered
 

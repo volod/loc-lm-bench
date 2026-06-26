@@ -17,8 +17,13 @@ development fixture is committed under `samples/goldsets/`. Module detail is in
 
 `*` may need `HF_TOKEN` in `.env` (the `goldset` extra is installed by `make venv`). The
 committed default requires no token. For a local SQuAD export:
-`make ingest-squad SQUAD_JSON=path.json`. See the
-[from-scratch guide](goldset-from-scratch.md) for authoring and review rules.
+`make ingest-squad SQUAD_JSON=path.json`.
+
+A drafted set is `verified=false` and cannot score a model until it clears the data gates --
+`make cross-check-goldset` (second-frontier re-confirm) then the MH.5 sample-verify
+(`make verify-sample` / `verify-review` / `verify-accept`) and the ledger flip. The full ordered
+flow, with authoring + review rules, is the
+[create-a-gold-set workflow](goldset-from-scratch.md).
 
 Schema (one JSON object per line): `id, lang, question, reference_answer, source_doc_id,
 source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`. Labels are

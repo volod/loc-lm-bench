@@ -274,19 +274,30 @@ question-answering gold set, every evaluation category, and the graph ontology d
    ```
 
    It already checks every span resolves to its labeled text, ids are unique, and splits disjoint.
-3. **Draw a stratified sample** across the tags (kind x difficulty x section x real/synthetic). Size
-   it for the error rate you will tolerate -- a few dozen across strata is typical for an acceptance
-   check; document the size and the strata.
-4. **Verify each sampled item** against the four checks above, reading the cited span in the corpus.
-   Record pass/fail and the reason for any fail.
-5. **Decide.** If the sample's error rate is within tolerance, accept; otherwise reject and send the
-   drafts back to the pipeline.
+   Steps 3-6 are driven by the `make verify-*` trio (`llb.goldset.verify`) -- the human-paced
+   analog of the `calibration-*` tooling: a stratified-sample worksheet, an interactive per-item
+   review, and an acceptance report that emits the accepted-ledger. The worksheet IS the state
+   (atomic CSV rewrite per edit), so you can stop and resume mid-sample.
+3. **Draw a stratified sample.** `make verify-sample BUNDLE=<bundle> VERIFY_N=<size>` allocates the
+   budget across strata (provenance x split x source-doc; the synthetic flag is a bundle-level fact
+   from `provenance.json`, so the planted check applies to all items or none) and writes
+   `sample_manifest.json` documenting the size + per-stratum counts. A few dozen across strata is
+   typical for an acceptance check.
+4. **Verify each sampled item.** `make verify-review VERIFY_WS=<bundle>/verify_sample.csv` walks the
+   sample; each card shows the cited span inside its surrounding corpus window so you confirm
+   grounding without leaving the tool. Mark the four checks (`g/a/r/p` = pass, uppercase = fail),
+   then accept/reject. The second-frontier cross-check is HIDDEN by default (`SHOW_CROSSCHECK=1` to
+   reveal) so it cannot anchor you -- verify independently.
+5. **Decide.** `make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv` prints the
+   per-stratum + overall reject rate against `VERIFY_TOLERANCE` (default 0.05). It always emits the
+   items that individually passed, and warns FAIL if a stratum/overall exceeds tolerance -- you
+   decide whether to send the bundle back to the pipeline.
 6. **Flip accepted items to `verified=true` via the ledger** (do NOT hand-edit the boolean alone).
-   Keep the stable IDs, flip only human-approved entries, and adopt them through the ingester so a
-   reused ID can never certify changed content:
+   `verify-accept` writes an accepted-ledger bundle (`<bundle>/accepted/`: the accepted items with
+   `verified=true` + their copied corpus) and prints the exact adoption command:
 
    ```
-   python -m llb.prep.ingest_squad ... --verified-goldset <accepted-ledger>
+   python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset.jsonl
    ```
 
    Canonical-item *replacement* (not a boolean-only flip) is what prevents a reused ID from
@@ -311,9 +322,12 @@ A documented stratified sample passes the four checks and the accepted items are
   `build_drafted_items`) so you know what "grounded" already guarantees before you sample.
 
 ### In this repo
-`src/llb/goldset/validate.py` (the structural gate), `src/llb/prep/frontier.py` +
-`src/llb/prep/ontology/` (the drafting + grounding the human sample verifies),
-`src/llb/prep/verified_ledger.py` (the adoption mechanism), and the
+`src/llb/goldset/verify.py` + `src/llb/goldset/verify_session.py` (the `make verify-*` sample /
+review / accept tooling), `src/llb/goldset/validate.py` (the structural gate),
+`src/llb/prep/frontier.py` + `src/llb/prep/ontology/` (the drafting + grounding the human sample
+verifies), `src/llb/prep/verified_ledger.py` (the adoption mechanism). The operator walkthrough for
+all three commands -- real-corpus and synthetic bundles -- is the
+[verification-tooling manual](verification-tooling.md); see also the
 [gold-set-from-scratch guide](goldset-from-scratch.md).
 
 ---

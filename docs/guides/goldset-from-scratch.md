@@ -1,51 +1,176 @@
-# Prepare a gold set from scratch
+# Create a gold set (end-to-end workflow)
 
-The benchmark separates stable public development data from user-specific private evaluation
-data. `make demo-eval` uses the committed public fixture and never regenerates it. Arbitrary
-runtime imports and drafts remain unverified until explicitly reviewed.
+This is the spine for building a new gold set and getting it to the point where it can **score
+real models** -- including the human-assisted steps. The benchmark separates stable public
+*development* data from user-specific private *evaluation* data: `make demo-eval` uses the
+committed public fixture and never regenerates it, and any runtime import or AI draft stays
+`verified=false` (cannot score a model) until a human accepts it.
 
-## Choose a workflow
+The full pipeline, with one `make` shortcut per stage:
 
-### Stable public development fixture
+```
+ create ─▶ validate ─▶ cross-check ─▶ MH.5 sample-verify ─▶ flip via ledger ─▶ (calibrate) ─▶ score
+  §1         §2           §3                §4                    §4.4            §5          run-eval
+```
 
-No gold-set generation or dataset download is required:
+Stages 3-4 are the **human-assisted** part. The detailed human how-to lives in two operator
+manuals this guide links into: [verification tooling](verification-tooling.md) (the MH.5 gate) and
+[calibration tooling](calibration-tooling.md) (the judge gate). Everything is offline except the
+draft/cross-check endpoints and the eventual model run.
 
-    make validate-goldset
-    make build-index
-    make run-eval MODEL=llama3.2:3b LIMIT=20
+---
 
-`build-index` may download the pinned embedding on its first run, and evaluation still requires
-the selected model/backend. `validate-goldset` itself is fully offline.
+## 1. Create the items
 
-The default paths point to `samples/goldsets/ua_squad_postedited_v1/`. Its README records the
-upstream revision, selection rule, verification basis, attribution, and data license.
+Pick the workflow that matches where the data comes from. All of them land a gold set + a sibling
+`corpus/`; only the source differs.
 
-### Reproduce the reviewed development fixture
+### 1a. Stable public development fixture (no creation needed)
 
-Use this to exercise ingestion against the exact pinned source behind the fixture:
+The committed `samples/goldsets/ua_squad_postedited_v1/` (250 items, all `verified=true`,
+`provenance=public-reused`) ships ready to score. Its README records the upstream revision,
+selection rule, verification basis, attribution, and license. Just use it:
 
-    make ingest-uk-squad GOLDSET_MODE=development GOLDSET_N=250
+```
+make validate-goldset
+make build-index
+make run-eval MODEL=llama3.2:3b LIMIT=20
+```
 
-The command uses the code-owned `--pinned-development-source` profile: exact dataset revision,
-validation split, and first-grounded-QA-per-context selection. Its 250 output items are adopted
-from the reviewed ledger and are all verified. Output is written under
-`$DATA_DIR/llb/goldset/goldset_uk_development.jsonl`, with matching documents under
-`$DATA_DIR/llb/corpus/`. For a different HF source, invoke `llb.prep.ingest_squad` directly;
-nonmatching IDs remain unverified.
+It is already human-verified (upstream post-editing), so it skips stages 3-5 -- go straight to
+scoring. Regenerate it only to exercise ingestion:
+`make ingest-uk-squad GOLDSET_MODE=development GOLDSET_N=250` (pinned revision/split; its 250 items
+re-adopt from the reviewed ledger and all come out verified).
 
-### Manual skeleton
+### 1b. Manual skeleton (you author the items)
 
-Create a timestamped, editable SQuAD file plus concise instructions:
+```
+make ingest-uk-squad GOLDSET_MODE=skeleton          # editable template under $DATA_DIR/goldset-skeleton/<ts>/
+# edit squad_goldset.json: your contexts + QA pairs
+make ingest-squad SQUAD_JSON=<path-to-edited-squad-json>
+```
 
-    make ingest-uk-squad GOLDSET_MODE=skeleton
+The imported canonical JSONL is `verified=false`. Follow the [authoring rules](#authoring-rules)
+below, then take it through stages 2-4.
 
-The command writes `$DATA_DIR/goldset-skeleton/<timestamp>/squad_goldset.json`. Replace the
-example with your own contexts and QA pairs, then import it:
+### 1c. Assisted corpus drafting (ontology-assisted, M4.4)
 
-    make ingest-squad SQUAD_JSON=<path-to-edited-squad-json>
+`GOLDSET_MODE=draft` runs the ontology-assisted pipeline over a corpus: inventory docs, extract
+entities + evidence-backed relations, induce an ontology candidate, sample for coverage, and draft
+unverified QA -- through one configured endpoint.
 
-The imported canonical JSONL remains unverified. Review it before setting accepted items to
-`verified: true` and, for locally reviewed items, `provenance: human-verified`.
+```
+make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir> DRAFT_MODEL=<tag>
+```
+
+The endpoint is LOCAL by default (an OpenAI-compatible server such as Ollama; no corpus leaves the
+box); opt into a frontier endpoint with `DRAFT_ENDPOINT=frontier` (egress; needs a provider key).
+CLI form: `llb prepare-goldset-draft --corpus-root <dir> --model <id> [--endpoint local|frontier]
+[--base-url <url>] [--max-items N]`. It writes a self-contained bundle under
+`$DATA_DIR/prepare-goldset/<ts>/`: `goldset.jsonl` (every item `verified=false`,
+`provenance=ontology-drafted`, spans exact), a verbatim `corpus/`, the induced `ontology.json`,
+per-doc `extraction.jsonl`, and `provenance.json` (endpoint, prompt fingerprints, per-doc hashes,
+stage counts, cost). A synthetic-planted bundle (`llb prepare-synthetic-corpus`) is the same shape
+with `planted_labels.jsonl` + `provenance.json` carrying `synthetic: true`.
+
+For the rest of this guide, `BUNDLE=$DATA_DIR/prepare-goldset/<ts>` is the drafted bundle.
+
+---
+
+## 2. Validate (structural gate)
+
+Before reading anything, confirm every span resolves to its labeled text, ids are unique, and
+splits are disjoint:
+
+```
+make validate-goldset GOLDSET=$BUNDLE/goldset.jsonl CORPUS=$BUNDLE/corpus
+```
+
+Fully offline. Structural validity is necessary but not sufficient -- it says nothing about factual
+correctness; that is what stages 3-4 establish.
+
+---
+
+## 3. Cross-check (second-frontier data gate)
+
+A SECOND, independent frontier model (different from the drafter) re-confirms each item's grounding
++ support + answerability, layered on cheap deterministic pre-checks. This filters the obvious
+failures so the human sample only has to confirm the residual.
+
+```
+make cross-check-goldset BUNDLE=$BUNDLE CROSS_CHECK_MODEL=<second-frontier id>
+```
+
+This writes `$BUNDLE/goldset.cross_check.json` (per-item verdicts + pass count). **Passing does NOT
+set `verified=true`** -- it only marks which drafted items are eligible and produces the report the
+human samples in stage 4. (`CROSS_CHECK_MODEL` must differ from the drafter -- a model grading its
+own drafts is circular.)
+
+---
+
+## 4. MH.5 -- human sample-verify, then flip via the ledger
+
+The irreducibly-human stage: verify a **stratified sample** and accept it; only accepted items flip
+to `verified=true`. A clean sample accepts the bundle; a dirty one sends the drafts back. Three
+`make` shortcuts (full how-to + the per-item check legend: the
+[verification-tooling manual](verification-tooling.md)):
+
+```
+make verify-sample  BUNDLE=$BUNDLE VERIFY_N=30            # stratified sample -> verify_sample.csv + sample_manifest.json
+make verify-review  VERIFY_WS=$BUNDLE/verify_sample.csv   # interactive: four checks per item, accept/reject (resumable)
+make verify-accept  BUNDLE=$BUNDLE VERIFY_WS=$BUNDLE/verify_sample.csv VERIFY_TOLERANCE=0.05
+```
+
+`verify-review` shows each cited span inside its corpus window and hides the cross-check verdict by
+default (so it cannot anchor you -- `SHOW_CROSSCHECK=1` to reveal post-hoc). The four checks:
+grounded span / non-circular + answerable / correct reference / planted labels match (synthetic
+only). `verify-accept` prints the per-stratum + overall reject rate vs `VERIFY_TOLERANCE` and writes
+an accepted-ledger at `$BUNDLE/accepted/` (accepted items, `verified=true`, + their copied corpus).
+
+### 4.4. Flip via the ledger (never hand-edit the boolean)
+
+`verify-accept` prints the exact command. Adopt the accepted items into your scored gold set by
+**replacement** through the ingester, so a reused id can never certify changed content:
+
+```
+python -m llb.prep.ingest_squad --squad-json <source> --verified-goldset $BUNDLE/accepted/goldset.jsonl
+```
+
+MH.5 is **per-bundle and pull-based**: run it on each bundle as its drafting stabilizes, not once
+upfront. Keep the `sample_manifest.json` -- it is your record of what you sampled and the strata you
+covered.
+
+---
+
+## 5. (If the run is judged) calibrate the judge
+
+Skip this for objective-only scoring. If a board uses the LLM-as-judge (QA faithfulness,
+summarization, agentic trajectory quality, free-form text-analysis), calibrate the judge against
+human ratings on the new set's `calibration` split first -- the judge enters the ranking blend only
+when its Spearman `rho >= 0.6`. Full walkthrough: the
+[calibration-tooling manual](calibration-tooling.md).
+
+```
+make calibration-run   GOLDSET=<verified-goldset>.jsonl CAL_NAME=<name>   # candidate answers + ungated judge ratings
+make calibration-rate  CAL_NAME=<name>                                    # interactive: human ratings (judge column hidden)
+make calibration-score CAL_NAME=<name>                                    # rho + bootstrap CI + trust decision
+```
+
+Calibration needs `verified=true` calibration items (it scores only verified rows), so it comes
+after stage 4. The committed fixture is already calibrated out of the box.
+
+---
+
+## 6. Score
+
+With the gold set verified (and the judge calibrated if judged), it scores models like any other:
+
+```
+make build-index   GOLDSET=<verified-goldset>.jsonl CORPUS=<corpus>
+make run-eval      MODEL=<tag> GOLDSET=<verified-goldset>.jsonl [JUDGE_RHO=<rho> to enable the gated judge]
+```
+
+---
 
 ## Authoring rules
 
@@ -55,41 +180,18 @@ For every item:
 2. Ensure the answer is supported by the supplied context.
 3. Copy the answer verbatim and record its zero-based character offset.
 4. Avoid ambiguous questions, duplicate facts, and clues that expose the answer trivially.
-5. Preserve calibration, tuning, and final split isolation after canonical import.
-6. Record reviewer, decision, timestamp, and notes in a sidecar review log.
+5. Preserve calibration / tuning / final split isolation after canonical import.
+6. Record reviewer, decision, timestamp, and notes in a sidecar review log (the `sample_manifest.json`
+   + the reviewed `verify_sample.csv` are that log for the MH.5 stage).
 
-Validate the result against its corpus:
+Schema (one JSON object per line): `id, lang, question, reference_answer, source_doc_id,
+source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`. Labels are
+SOURCE-SPAN (char offsets, not chunk ids). Only `verified: true` items score models.
 
-    make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<corpus-dir>
+## See also
 
-Structural validation checks ids, files, offsets, exact span text, and split counts. Human
-review remains responsible for factual correctness, question quality, and sufficient evidence.
-
-## Assisted corpus drafting (ontology-assisted, M4.4)
-
-`GOLDSET_MODE=draft` runs the ontology-assisted draft pipeline over a supplied corpus: it
-inventories the docs, extracts entities and evidence-backed relations, induces an ontology
-candidate, samples for coverage, and drafts unverified QA items -- all through one configured
-inference endpoint. It is intentionally not a thin synonym for the one-prompt frontier utility.
-
-    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir>
-    DRAFT_MODEL=<tag>
-
-By default the endpoint is LOCAL (an OpenAI-compatible server such as Ollama; no corpus leaves
-the box). Opt into a frontier endpoint with `DRAFT_ENDPOINT=frontier` (egress; needs a provider
-key). The CLI form is `llb prepare-goldset-draft --corpus-root <dir> --model <id>
-[--endpoint local|frontier] [--base-url <url>] [--max-items N]`.
-
-The run writes a self-contained bundle under `$DATA_DIR/prepare-goldset/<timestamp>/`:
-`goldset.jsonl` (every item `verified: false`, `provenance: ontology-drafted`, answer spans
-exact), a verbatim `corpus/` copy, the induced `ontology.json`, per-document `extraction.jsonl`,
-and `provenance.json` (endpoint, prompt fingerprints, per-doc hashes, stage counts, cost).
-Validate and review before promoting any item:
-
-    make validate-goldset
-    GOLDSET=$DATA_DIR/prepare-goldset/<timestamp>/goldset.jsonl \
-      CORPUS=$DATA_DIR/prepare-goldset/<timestamp>/corpus
-
-Drafts never score a model until a frontier cross-check and a human stratified sample-verify
-accept them (set accepted items to `verified: true`, and `provenance: human-verified` for
-locally reviewed items).
+- [Verification tooling](verification-tooling.md) -- the MH.5 `verify-*` operator manual (stages 3-4).
+- [Calibration tooling](calibration-tooling.md) -- the judge `calibration-*` operator manual (stage 5).
+- [Data prep](data-prep.md) -- the create-stage commands in brief.
+- [Human-in-the-loop evaluation](human-in-the-loop-evaluation.md) -- the *why* behind the human
+  gates (acceptance sampling, the ground-truth guarantee, the papers).
