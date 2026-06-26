@@ -16,7 +16,9 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 ## Implementation
 
 - [Current state](implementation/current.md) -- delivered Milestones 0-4 and their commands.
-- [Forward plan](implementation/plan.md) -- the ordered roadmap (M5 -> M6 + a human-only lane).
+- [Forward plan](implementation/plan.md) -- the ordered roadmap (M6 residuals + M7; M0-M5 done).
+  Data-creation / verification / calibration are operator workflows, not plan items:
+  [create a gold set](guides/goldset-from-scratch.md).
 
 ## Guides
 
@@ -40,6 +42,9 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Calibration tooling](guides/calibration-tooling.md) -- operator manual for
   `calibration-run` / `calibration-rate` / `calibration-score`, covering the committed goldset,
   a new goldset, and a text-corpus draft.
+- [Verification tooling](guides/verification-tooling.md) -- operator manual for the MH.5
+  `verify-sample` / `verify-review` / `verify-accept` gate: stratified sample -> per-item review
+  -> accepted-ledger flip, for real-corpus and synthetic bundles.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) -- Milestone 1: build-index -> run-eval.

@@ -352,6 +352,43 @@ def test_build_complete_local_records_tokens_and_raises_on_error(monkeypatch):
         build_complete(EndpointConfig(kind="local", model="m"), ProvenanceLog())("hi")
 
 
+def test_native_chat_url_maps_v1_to_api_chat():
+    assert ep._native_chat_url("http://localhost:11434/v1") == "http://localhost:11434/api/chat"
+    assert ep._native_chat_url("http://h:8000/v1/") == "http://h:8000/api/chat"
+    assert ep._native_chat_url("http://h:11434") == "http://h:11434/api/chat"
+
+
+def test_think_disabled_routes_through_native_endpoint(monkeypatch):
+    # think is honored only by Ollama's native /api/chat, so a think-set config must NOT use /v1
+    monkeypatch.setattr(
+        ep, "make_client", lambda *a, **k: pytest.fail("must not use the /v1 client when think set")
+    )
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": "OK"}, "prompt_eval_count": 7, "eval_count": 3}
+
+    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
+        captured["url"] = url
+        captured["think"] = json["think"]
+        captured["num_predict"] = json["options"]["num_predict"]
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    log = ProvenanceLog()
+    cfg = EndpointConfig(kind="local", model="gemma4:26b", think=False, max_tokens=4096)
+    assert cfg.provenance()["think"] is False
+    assert build_complete(cfg, log)("hi") == "OK"
+    assert captured["url"].endswith("/api/chat")
+    assert captured["think"] is False and captured["num_predict"] == 4096
+    assert log.summary()["total_prompt_tokens"] == 7
+
+
 # --- stage 7: full flow over a fake local endpoint -------------------------------------------
 
 

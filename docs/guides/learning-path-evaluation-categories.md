@@ -427,34 +427,55 @@ result.
 ## Knowledge-graph retrieval (GraphRAG)
 
 ### What it measures
-A second retrieval backend that answers "connect these facts" / multi-hop questions a single chunk
-cannot. It is an ADDED backend behind the existing retrieval seam -- vector search stays the
-default -- so the same eval, scoring, isolation, and board score it unchanged, and runs record the
-backend so graph-vs-vector results are comparable.
+A second retrieval backend with TWO span-preserving strategies: **local k-hop** answers "connect
+these facts" / multi-hop questions a single chunk cannot, and **global community** answers
+corpus-level theme / trend / narrative questions no single chunk or neighborhood contains. It is an
+ADDED backend behind the existing retrieval seam -- vector search stays the default -- so the same
+eval, scoring, isolation, and board score it unchanged, and runs record the backend + strategy so
+graph-vs-vector and local-vs-global results are comparable.
 
 ### Design choices
-- **Embedded property graph (Kuzu)** -- Apache-2.0, Cypher, pip-installable, no server, with a
-  native vector index -- chosen over server databases and the commercially restricted Neo4j to keep
-  the "no servers, single desktop" ethos.
+- **Store: DuckDB if it covers narratives, else NetworkX (was Kuzu).** Kuzu -- the originally chosen
+  embedded property graph -- was abandoned 2025-10 (repo archived, sponsor acqui-hired), so the store
+  choice reopened. For a MEDIUM corpus the graph is small and RAM-resident, so reuse beats adopting a
+  graph DB, and the NARRATIVE (community) layer decides which reuse store: **DuckDB** (already a dep
+  -- node/edge tables, k-hop via recursive CTEs / the DuckPGQ extension) is the DEFAULT when
+  community detection can run once offline and ride as a `community_id` column; otherwise fall back to
+  **NetworkX + the existing FAISS** (in-memory graph, native Leiden community detection, FAISS for
+  entity-link vectors). The "no servers, single desktop, reproducible" ethos is the binding
+  constraint either way.
 - **Construction reuses the existing extraction.** Feed already-extracted entities / relations /
   subject-relation-object facts (with source spans) into the graph -- no second extraction
-  framework. Extraction defaults to a local model (no corpus egress), frontier opt-in.
-- Swappable via a `--retrieval-backend graph` flag. Needs the human-signed-off ontology schema.
+  framework. Carry the induced ontology-type confidence, section, and community id as typed node/edge
+  properties. Extraction defaults to a local model (no corpus egress), frontier opt-in.
+- **The narrative layer stays grounded.** A community serializes as its MEMBER nodes/edges WITH
+  offsets, so the span metric still applies; any LLM community SUMMARY is a tagged DIAGNOSTIC
+  artifact (recorded, never span-scored) -- the same discipline as the recorded-but-not-ranked
+  semantic-similarity signal -- so an un-grounded abstraction never enters the metric.
+- Swappable via a `--retrieval-backend graph` flag (+ `retrieval_strategy`). Needs the
+  human-signed-off ontology schema and M6 scope (MH.2, which now also covers the narrative layer).
 
 ### How to understand it
 - **Vector RAG vs graph RAG.** Vector RAG retrieves *chunks similar to the question*. Graph RAG
   retrieves a *connected subgraph of entities and relations* around the question's entities -- so
   it answers questions no single chunk contains. They are complementary; this project keeps vector
   search and *adds* the graph.
-- **Property graph.** Nodes (entities) and edges (relations) carry typed properties; you query it
-  with **Cypher**, the declarative graph language Neo4j popularized and Kuzu implements.
+- **Property graph.** Nodes (entities) and edges (relations) carry typed properties. You query it
+  declaratively -- with **Cypher** (the language Neo4j popularized) on a graph DB, or with recursive
+  SQL / a graph library on the reuse stores; the model is the same regardless of store.
 - **Source-span preservation is the hard constraint.** Every node/edge keeps its `doc_id` + char
   offsets, so when a retrieved subgraph is serialized into the prompt, the source-span retrieval
   metric still scores it. That is *why* construction reuses the grounded extraction pipeline instead
-  of a black-box graph builder that would lose the offsets.
-- **Retrieval = entity-link + k-hop expand + serialize.** Map the question's mentions to graph nodes
-  (entity linking), walk k edges out (k-hop expansion), then linearize that subgraph into text
+  of a black-box graph builder that would lose the offsets -- and *why* the narrative layer
+  serializes member nodes (which carry offsets), not an un-grounded summary.
+- **Local retrieval = entity-link + k-hop expand + serialize.** Map the question's mentions to graph
+  nodes (entity linking), walk k edges out (k-hop expansion), then linearize that subgraph into text
   context.
+- **Global retrieval = community detect + select + serialize.** Partition the graph into communities
+  (Leiden), map the question to its relevant communities, then serialize each community's member
+  nodes/edges. This is the "global vs local" distinction from Microsoft GraphRAG -- global is what
+  answers corpus-level narrative questions -- kept grounded here by serializing members, not
+  summaries.
 
 ### Learn
 - **Microsoft GraphRAG** (Edge et al. 2024) -- <https://arxiv.org/abs/2404.16130> + the
@@ -462,16 +483,25 @@ backend so graph-vs-vector results are comparable.
   local" query distinction.
 - **LightRAG** (Guo et al. 2024) -- <https://arxiv.org/abs/2410.05779> -- a lighter graph+vector
   hybrid, close in spirit to "add a graph behind the seam".
-- [Kuzu docs](https://docs.kuzudb.com/) + the [Cypher tutorial](https://docs.kuzudb.com/cypher/) --
-  hands-on: create node/rel tables, MATCH, and the native vector index.
+- Reuse stores (single box): [DuckDB recursive
+  CTEs](https://duckdb.org/docs/sql/query_syntax/with.html) + the
+  [DuckPGQ](https://duckpgq.org/) property-graph extension, and
+  [NetworkX](https://networkx.org/documentation/stable/) (`ego_graph` for k-hop). The Cypher model is
+  still worth learning as background -- the [Kuzu Cypher tutorial](https://docs.kuzudb.com/cypher/)
+  remains a readable primer even though Kuzu itself is no longer maintained (fork: Ladybug).
+- Community detection (the narrative layer): **Leiden** (Traag et al. 2019) --
+  <https://www.nature.com/articles/s41598-019-41695-z> -- via
+  [`igraph`](https://python.igraph.org/) / [`leidenalg`](https://leidenalg.readthedocs.io/), and
+  Microsoft GraphRAG's "global" query above for how communities answer corpus-level questions.
 - Relation extraction (the artifact the graph ingests): **REBEL** (Huguet Cabot & Navigli 2021) --
   <https://aclanthology.org/2021.findings-emnlp.204/>.
 - Entity linking background: the
   [spaCy entity linking](https://spacy.io/usage/linguistic-features#entity-linking) concept page.
 
 ### In this repo
-Planned. A Kuzu-backed store behind `src/llb/rag/store.py`, ingesting `src/llb/prep/ontology/`
-extraction; the eval graph, scoring, isolation, and board are reused unchanged.
+Planned. A reuse-first store (DuckDB or NetworkX+FAISS) behind `src/llb/rag/store.py`, ingesting
+`src/llb/prep/ontology/` extraction, with local-k-hop + global-community retrieval; the eval graph,
+scoring, isolation, and board are reused unchanged.
 
 ---
 
@@ -497,8 +527,10 @@ learning path is done.
 - - **7. The rest of the taxonomy** (Summarization/structured/conversation/reliability section;
 - SummEval + BERTScore): Write a coverage check with pinned-embedder cosine; list the reliability
 - statuses in `eval/common.py`.
-- - **8. Knowledge-graph RAG** (GraphRAG section; the GraphRAG paper + Kuzu Cypher tutorial): Build
-- a tiny Kuzu graph (2-3 nodes/edges), run a 1-hop Cypher MATCH, keep `doc_id`+offsets on each node.
+- - **8. Knowledge-graph RAG** (GraphRAG section; the GraphRAG paper + the Leiden paper): Build a
+- tiny graph (2-3 nodes/edges) in NetworkX or DuckDB, run a 1-hop expansion keeping `doc_id`+offsets
+- on each node, then group those nodes into a community and serialize its members (the narrative
+- layer) -- still offset-bearing.
 
 
 By session 8 you can place any capability on the right tier, name its objective metric and its

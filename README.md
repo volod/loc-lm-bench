@@ -115,7 +115,7 @@ Start at the [documentation index](docs/README.md). High-level entry points:
 | Doc | What it covers |
 |---|---|
 | [What's built today](docs/impl/current.md) | Delivered milestones + command behavior. |
-| [Forward plan](docs/impl/plan.md) | Roadmap (M5 -> M6 + human lane; M0-M4 done). |
+| [Forward plan](docs/impl/plan.md) | Roadmap (M6 residuals + M7; M0-M5 done). |
 | [Design spec](docs/design/spec.md) | Problem, wedge, architecture, recorded decisions. |
 | [Learning path](docs/guides/learning-path.md) | Staged syllabus + curated links for the stack. |
 | [AGENTS.md](AGENTS.md) | Contributor + agent guardrails. |

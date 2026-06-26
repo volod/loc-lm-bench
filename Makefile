@@ -10,7 +10,7 @@ DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; 
 # checkout can run every command without a follow-up `uv pip install`. vLLM/torch/flash-attn
 # are deliberately NOT here: they are hardware-matched and built separately (AGENTS.md).
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,eval,track,board,prep,telemetry,goldset,dev
+EXTRAS ?= rag,eval,graph,track,board,prep,telemetry,goldset,dev
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -66,6 +66,17 @@ CAL_NAME ?= ua_squad_postedited_v1
 CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
 CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
+# Data-verification knobs (the new-goldset flow: cross-check -> MH.5 sample-verify). BUNDLE is a
+# draft dir (goldset.jsonl + corpus/) under $(DATA_DIR)/prepare-goldset/<ts>/; the sample worksheet
+# + accepted-ledger default beside it. CROSS_CHECK_MODEL is the SECOND-frontier verifier (must
+# differ from the drafter). VERIFY_N sizes the stratified sample; VERIFY_TOLERANCE is the accepted
+# reject rate. Full workflow: docs/guides/goldset-from-scratch.md.
+BUNDLE ?=
+CROSS_CHECK_MODEL ?=
+VERIFY_WS ?= $(if $(BUNDLE),$(BUNDLE)/verify_sample.csv,)
+VERIFY_N ?= 30
+VERIFY_SEED ?= 13
+VERIFY_TOLERANCE ?= 0.05
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
@@ -74,7 +85,7 @@ export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score judge-experiment build-index validate-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -192,6 +203,26 @@ calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decis
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.judge.calibration score --ratings "$(RATINGS)"
 
+cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/support on a draft BUNDLE (CROSS_CHECK_MODEL=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
+	@test -n "$(CROSS_CHECK_MODEL)" || { echo "ERROR: set CROSS_CHECK_MODEL=<second-frontier id, != the drafter>"; exit 1; }
+	$(PY) -m llb.main cross-check-goldset --goldset "$(BUNDLE)/goldset.jsonl" --corpus "$(BUNDLE)/corpus" --model "$(CROSS_CHECK_MODEL)"
+
+verify-sample: ## MH.5: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
+	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED)
+
+verify-review: ## MH.5: interactively verify the sampled items (VERIFY_WS=path, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.goldset.verify review --worksheet "$(VERIFY_WS)" $(if $(START),--start $(START)) $(if $(SHOW_CROSSCHECK),--show-crosscheck) $(if $(CLEAR),--clear)
+
+verify-accept: ## MH.5: acceptance report + emit the accepted-ledger bundle (VERIFY_WS=, BUNDLE=, VERIFY_TOLERANCE=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the sample came from>"; exit 1; }
+	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE)
+
 judge-experiment: ## Run fixed UA judge cases against a local OpenAI-compatible endpoint
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main judge-experiment --judge-model "$(JUDGE_MODEL)" \
@@ -225,9 +256,18 @@ build-index: ## M1: chunk + embed CORPUS into the FAISS store (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)"
 
+build-graph: ## M6: build the GraphRAG store from an M4.4 draft bundle (BUNDLE=...; needs ".[graph]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
+	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
+
 validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
+
+compare-retrieval: ## M6: compare faiss vs both graph strategies' recall@k/MRR on the gold set
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
 run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1 JUDGE_RHO= (enables the gated judge)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

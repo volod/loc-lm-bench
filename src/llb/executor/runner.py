@@ -380,11 +380,27 @@ def _resolve_eval_runner(
             contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
     if runner_fn is None:
         if store is None:
-            from llb.rag.store import RagStore
-
-            store = RagStore.load(config.index_dir())
+            store = _load_store(config)
         runner_fn = _default_runner_fn(config, store, launcher)
     return launcher, runner_fn, store, contention
+
+
+def _load_store(config: RunConfig) -> Any:
+    """Load the configured retrieval store: the GraphRAG backend (M6) or the default FAISS store.
+
+    Both expose the same `.retrieve(question, k) -> list[ChunkRecord]` seam, so the eval graph,
+    scoring, isolation, and board are unchanged regardless of backend."""
+    if config.retrieval_backend == "graph":
+        from llb.graph.store import GraphStore
+
+        return GraphStore.load(
+            config.graph_dir(),
+            strategy=config.retrieval_strategy,
+            khop_depth=config.graph_khop_depth,
+        )
+    from llb.rag.store import RagStore
+
+    return RagStore.load(config.index_dir())
 
 
 def _write_calibration_worksheet(

@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from llb.prep.frontier import LLMComplete, parse_json_block
 from llb.prep.ontology.constants import EXTRACT_CHUNK_OVERLAP, EXTRACT_MAX_CHARS
+from llb.prep.ontology.entity_types import entity_types_prompt_block, normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
 from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Event, SROFact
 
@@ -34,7 +35,8 @@ def extraction_prompt(doc_id: str, text: str) -> str:
     return (
         "Ти аналітик, що будує онтологію з україномовного документа для оцінювання RAG.\n"
         "Виокреми з тексту нижче (нічого не вигадуй; усе має спиратися на текст):\n"
-        "1. named entities -- name, type (PERSON/ORG/LOC/EVENT/DATE/MISC), aliases, mentions;\n"
+        "1. named entities -- name, type, aliases, mentions. Тип ОБОВ'ЯЗКОВО один із набору "
+        "(якщо не підходить жоден -- став MISC): " + entity_types_prompt_block() + ";\n"
         "2. events -- короткий опис + evidence;\n"
         "3. claims -- твердження + evidence;\n"
         "4. facts -- трійки subject-relation-object + evidence.\n"
@@ -58,7 +60,8 @@ def _entities(doc_id: str, text: str, raw: Any) -> list[Entity]:
     for entry in raw if isinstance(raw, list) else []:
         if not isinstance(entry, dict):
             continue
-        name, etype = _str(entry.get("name")), _str(entry.get("type")) or "MISC"
+        name = _str(entry.get("name"))
+        etype = normalize_entity_type(_str(entry.get("type")))  # enforce the closed vocabulary
         if not name:
             continue
         aliases = [_str(a) for a in entry.get("aliases", []) if _str(a)]

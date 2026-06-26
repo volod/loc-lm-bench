@@ -25,6 +25,8 @@ from llb.paths import load_project_env, resolve_data_dir, resolve_project_path
 
 Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
 RetrievalMode = Literal["flat", "parent_child"]
+RetrievalBackend = Literal["faiss", "graph"]
+RetrievalStrategy = Literal["local_khop", "global_community"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
@@ -134,6 +136,16 @@ class RunConfig(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
+    # Retrieval backend (M6). "faiss" is the default vector store; "graph" selects the GraphRAG
+    # knowledge-graph backend (built from the M4.4 extraction). `retrieval_strategy` chooses the
+    # span-preserving graph strategy: "local_khop" (entity-link + k-hop subgraph) or
+    # "global_community" (the narrative layer over offline-detected communities). Both are recorded
+    # in the manifest (via the config fingerprint) so graph-vs-FAISS and local-vs-global runs are
+    # comparable. `graph_khop_depth` is the local_khop expansion radius.
+    retrieval_backend: RetrievalBackend = "faiss"
+    retrieval_strategy: RetrievalStrategy = "local_khop"
+    graph_khop_depth: int = Field(default=2, ge=1)
+
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default
     # from the environment (JUDGE_MODEL unset -> no judge runs); an explicit value or CLI flag
     # always wins.
@@ -188,6 +200,10 @@ class RunConfig(BaseModel):
     def index_dir(self) -> Path:
         """Where the built RAG store (chunks + FAISS index) lives for this config."""
         return self.data_dir / "llb" / "rag"
+
+    def graph_dir(self) -> Path:
+        """Where the built GraphRAG store (node/edge JSONL + meta) lives for this config (M6)."""
+        return self.data_dir / "llb" / "graph"
 
     def run_dir(self, run_timestamp: str) -> Path:
         """Per-run artifact root: ``$DATA_DIR/run-eval/<run_timestamp>/``."""

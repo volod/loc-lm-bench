@@ -18,6 +18,7 @@ from typing import Any
 
 from llb.goldset.schema import SourceSpan
 from llb.prep.ontology.constants import EXTRACT_MAX_CHARS
+from llb.prep.ontology.entity_types import normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
 from llb.prep.ontology.models import DocExtraction, DocRecord, Entity
 
@@ -25,22 +26,14 @@ _LOG = logging.getLogger(__name__)
 
 DEFAULT_SPACY_MODEL = "uk_core_news_sm"
 
-# spaCy `uk_core_news` entity labels -> the ontology's entity-type vocabulary (extract.py uses
-# PERSON/ORG/LOC/EVENT/DATE/MISC). Unknown labels pass through unchanged.
-_LABEL_MAP = {
-    "PER": "PERSON",
-    "PERS": "PERSON",
-    "ORG": "ORG",
-    "LOC": "LOC",
-    "GPE": "LOC",
-    "DATE": "DATE",
-    "MISC": "MISC",
-}
-
 
 def map_label(label: str) -> str:
-    """Map a spaCy entity label onto the ontology entity-type vocabulary."""
-    return _LABEL_MAP.get(label.upper(), label.upper() or "MISC")
+    """Map a spaCy entity label onto the CLOSED ontology entity-type vocabulary.
+
+    Reuses the one normalizer (`entity_types.normalize_entity_type`), so spaCy's `PER`/`GPE`/...
+    collapse to the same canonical types the LLM extractor uses, and an out-of-vocabulary label
+    becomes `MISC` (the schema stays closed)."""
+    return normalize_entity_type(label)
 
 
 @dataclass

@@ -27,8 +27,13 @@ def chat_once(
     max_tokens: int = 512,
     temperature: float = 0.0,
     timeout: float = 120.0,
+    extra_body: dict[str, Any] | None = None,
 ) -> ChatResult:
-    """One chat completion. Maps timeouts/transport errors to ChatResult.error."""
+    """One chat completion. Maps timeouts/transport errors to ChatResult.error.
+
+    `extra_body` forwards backend-specific fields (e.g. Ollama's `think` to disable a reasoning
+    model's hidden thinking) that the OpenAI schema does not model.
+    """
     start = time.monotonic()
     try:
         resp = client.chat.completions.create(
@@ -37,6 +42,7 @@ def chat_once(
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=timeout,
+            **({"extra_body": extra_body} if extra_body else {}),
         )
     except openai.APITimeoutError:
         return ChatResult(text="", latency_s=time.monotonic() - start, error=ERR_TIMEOUT)

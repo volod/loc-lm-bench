@@ -41,6 +41,10 @@ class EndpointConfig:
     temperature: float = 0.2
     max_tokens: int = 1024
     timeout: float = 120.0
+    # Local reasoning models (gemma4, deepseek-r1, qwen3) spend the token budget on hidden thinking
+    # before any JSON, so structured extraction comes back empty. `think=False` disables it (Ollama
+    # `think`); None leaves the endpoint's own default. Pair with a larger `max_tokens`.
+    think: bool | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in ENDPOINT_KINDS:
@@ -57,10 +61,18 @@ class EndpointConfig:
         rec: dict[str, object] = {"kind": self.kind, "model": self.model, "egress": self.egress}
         if self.kind == ENDPOINT_LOCAL:
             rec["base_url"] = self.base_url
+        if self.think is not None:
+            rec["think"] = self.think
         return rec
 
 
 def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
+    # Disabling a reasoning model's thinking is honored only by Ollama's NATIVE /api/chat `think`
+    # field -- the OpenAI-compatible /v1 layer ignores it and the model burns the whole token budget
+    # on hidden reasoning, returning empty structured output. So route the think-set case there.
+    if cfg.think is not None:
+        return _ollama_native_complete(cfg, log)
+
     client = make_client(cfg.base_url, api_key=cfg.api_key)
 
     def complete(prompt: str) -> str:
@@ -77,6 +89,46 @@ def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
         if result.error:
             raise RuntimeError(f"local endpoint error ({cfg.base_url}): {result.error}")
         return result.text
+
+    return complete
+
+
+def _native_chat_url(base_url: str) -> str:
+    """Map an OpenAI-compatible base URL to Ollama's native chat endpoint."""
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    return f"{root}/api/chat"
+
+
+def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
+    """Completion via Ollama's native /api/chat, which honors `think` (reasoning on/off)."""
+    import httpx
+
+    url = _native_chat_url(cfg.base_url)
+
+    def complete(prompt: str) -> str:
+        payload = {
+            "model": cfg.model,
+            "think": cfg.think,
+            "stream": False,
+            "messages": [{"role": "user", "content": prompt}],
+            "options": {"temperature": cfg.temperature, "num_predict": cfg.max_tokens},
+        }
+        try:
+            resp = httpx.post(url, json=payload, timeout=cfg.timeout)
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"local endpoint error ({url}): {exc}") from exc
+        data = resp.json()
+        log.record(
+            cfg.model,
+            int(data.get("prompt_eval_count", 0) or 0),
+            int(data.get("eval_count", 0) or 0),
+            0.0,
+        )
+        message = data.get("message") or {}
+        return str(message.get("content") or "")
 
     return complete
 
