@@ -48,9 +48,22 @@ line-length = 100
 target-version = "py311"
 
 [tool.pymarkdown]
+# Enable GFM tables so the line-length rule (MD013) recognizes table rows as table tokens; without
+# this extension pymarkdown parses a table as plain text and length-checks every (often wide) row.
+extensions.markdown-tables.enabled = true
 plugins.MD013.line_length = 100
-plugins.MD013.code_line_length = 100
-plugins.MD013.tables = false
+plugins.MD013.code_block_line_length = 100  # the real key (was the ignored `code_line_length`)
+plugins.MD013.heading_line_length = 100  # keep headings on the same 100-col budget as body text
+plugins.MD013.tables = false  # do not length-check table rows (data tables are legitimately wide)
+# House-style rules this repo deliberately diverges from -- disabled so `make lint-md` surfaces
+# substantive issues, not style noise (re-enable any to tighten):
+plugins.MD022.enabled = false  # blanks around headings (docs use a compact heading style)
+plugins.MD032.enabled = false  # blanks around lists (docs use compact lists under an intro line)
+plugins.MD024.enabled = false  # duplicate heading text (section names repeat across milestones)
+plugins.MD040.enabled = false  # fenced-code language tag (plain command / shell fences)
+plugins.MD004.enabled = false  # unordered-list marker style ("+" is used as a wrapped "plus" connector)
+plugins.MD007.enabled = false  # nested-list indentation (compact nested lists)
+plugins.MD026.enabled = false  # trailing punctuation in headings (sentence-style schema titles)
 
 [tool.mypy]
 python_version = "3.11"

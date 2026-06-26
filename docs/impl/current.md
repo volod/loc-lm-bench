@@ -343,10 +343,10 @@ is already satisfied for it; its worksheet defaults to the tracked `calibration/
 Defaults target a local Ollama judge (`gemma3:27b` on :11434) with the embedder pinned to CPU
 (`LLB_EMBED_DEVICE=cpu`, so the GPU stays free for the judge), so on the committed goldset it is:
 
-    make calibration-run                  # Ollama gemma3:27b judge (default); vLLM: JUDGE_MODEL=hosted_vllm/... JUDGE_BASE_URL=http://127.0.0.1:8000/v1
-    make calibration-rate                 # interactive: fill the human columns (judge_rating hidden)
-    make calibration-score                # rho + bootstrap CI + trust decision (RATINGS defaults to CAL_WS)
-    make run-eval JUDGE_RHO=0.628         # carry the trusted decision into a scored run (recorded in the manifest)
+    make calibration-run                  # Ollama gemma3:27b judge (default); vLLM via JUDGE_*
+    make calibration-rate                 # interactive: fill the human columns (judge hidden)
+    make calibration-score                # rho + bootstrap CI + trust decision (RATINGS=CAL_WS)
+    make run-eval JUDGE_RHO=0.628         # carry the trusted decision into a scored run
 
 (`make calibration-worksheet` emits a blank worksheet when you want the rows without a run; a new
 goldset / text-corpus draft uses `CAL_NAME=<label>`.) The operator walkthrough is the
@@ -382,7 +382,6 @@ and are stripped before requests.
 - fits; the configured default
 - - **32 GB** (`hosted_vllm/google/gemma-4-12B-it`): bf16 12B (higher fidelity) + headroom to
 - co-host judge + a candidate
-
 
 On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate. Use Ollama GGUF/CPU
 offload, a smaller test judge, or another local host while generating the calibration worksheet.
@@ -596,7 +595,6 @@ required, while Ruff formatting and linting are enforced by `make ci` and GitHub
 - **M1.7** (minimal sequential runner + NVML VRAM gate): DONE
 - **M1.8** (`run-eval` prints one ranked row (SQuAD-uk seed)): DONE
 
-
 Residual M1 work is scoped forward in [`plan.md`](plan.md): human judge calibration (M3.8). The
 map-reduce / multi-hop eval templates (M1.4-rest) are now DELIVERED under M5.0 (see Milestone 5
 below). The optional semantic-similarity correctness signal is built (`--score-semantic`).
@@ -655,7 +653,6 @@ regression anchor in `samples/models_uk.yaml`.
 - - **M2.3** (candidate list in `samples/models_uk.yaml`; vLLM repo ids verified via `prep-models`):
 - DONE
 - **M2.4** (validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real telemetry): DONE
-
 
 The M2.4 run surfaced three non-blocking gaps, all now DELIVERED in Milestone 4 below: the
 embedding-aware VRAM estimate (M4.1), a pre-launch VRAM-contention guard (M4.2), and the vLLM
@@ -935,7 +932,6 @@ trial) runs the LIVE PID-attributed reclaim gate -- `classify_residual` over a `
 - canonical adoption/custom ledgers + public task defaults): DONE (live importer acceptance: 250/250
 - verified, exact item/corpus match)
 
-
 ## Milestone 4 -- robustness + ontology data prep + third backend (complete)
 
 ### Embedding-aware VRAM estimate -- `llb.backends.planner` (M4.1)
@@ -1152,7 +1148,6 @@ strata only).
 - `ontology-drafted` bundle with full provenance): DONE (per-stage + fake-endpoint full-flow unit
 - tests; frontier cross-check + spaCy/Stanza plug-in are residual)
 
-
 **Milestone 4 is complete and ALL on-hardware live validation has now passed on the CUDA host**
 (RTX 4060 Ti, vLLM 0.23.0, driver 595.71.05): M4.1 the planner's embedding-aware estimate matched a
 live vLLM load (predicted 9.81 vs measured 9.80 GiB, gemma-4-E4B w4a16); M4.2 the contention guard
@@ -1367,7 +1362,8 @@ JSON; the model returns a JSON call), so every backend is exercised uniformly an
 proves the flow; it stamps a `ModelResult` under `TIER_TOOLING` (call accuracy as `objective_score`,
 per-case correctness -> CI) and records all four rates + the tool-call protocol/capability in the
 manifest. A committed BFCL-style UA bundle (`samples/tooling_cases_uk.json`: 5 tools, 12 cases incl.
-no-tool controls + per-argument-tolerance cases) ships; `load_catalog_file` loads it. CLI: `llb bench-tooling`. Parse, validation,
+no-tool controls + per-argument-tolerance cases) ships; `load_catalog_file` loads it. CLI:
+`llb bench-tooling`. Parse, validation,
 scoring, and the runner are unit-tested (native + text + malformed responses, perfect vs text-only
 model), no GPU.
 
@@ -1623,8 +1619,8 @@ still imports.
   relation verb); `serialize_subgraph` renders member node mentions + intra-member edge evidence to
   ranked, span-deduplicated, offset-bearing `ChunkRecord`s. Linking is **morphology-aware**
   (`morph_key`): an exact token match scores full weight, and a shared leading-stem match (first
-  `MIN_STEM_LEN` chars -- so the genitive "Франка" links the "Франко" node) scores `STEM_MATCH_WEIGHT`
-  below it, so inflected Ukrainian question forms still link while exact hits rank first. Stays pure +
+  `MIN_STEM_LEN` chars -- so the genitive "Франка" links "Франко") scores `STEM_MATCH_WEIGHT`
+  below it, so inflected Ukrainian question forms still link while exact hits rank first. Pure +
   deterministic -- no lemmatizer, no embedder (constants in `graph/constants.py`).
 - `store.py` -- `GraphStore`: `.build` / `.save` / `.load` + the `.retrieve(question, k)` seam (so
   the eval graph, scoring incl. the gated judge, isolation, and the board are UNCHANGED). The two

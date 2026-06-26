@@ -25,7 +25,6 @@ model -- is implemented as pipeline code elsewhere. What remains is exactly the 
 - data): Dropping the human verification would forfeit the human-ground-truth guarantee for private
 - model-selection data.
 
-
 The unifying idea: **AI can draft and cross-check; only a human can be the ground truth, the
 sample verifier, and the accountable sign-off.** All three are human-paced and run in parallel with
 the build -- but judge calibration is on the **critical path** for any *judged* result.

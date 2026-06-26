@@ -69,6 +69,14 @@ optional extra. The user should never have to ask you to make `plan.md` forward-
 - **Logging:** Use Python's `logging` module instead of `print()`.
 - **Optimization Stack:** Prefer Python-native packages (`pytorch`, `numpy`, `scipy`) to keep the
   stack Pythonic. Use `Optuna` and `MLflow` for tuning and tracking when necessary.
+- **Markdown:** Lint docs with `make lint-md` (pymarkdown; config in `pyproject.toml`
+  `[tool.pymarkdown]`). It runs in the full `make test` precommit flow, NOT in `make ci`. Fix any
+  findings BY HAND. **Do NOT run `pymarkdown fix`** -- it is unreliable on this version (0.9.38): it
+  crashes mid-run and rewrites a line-leading `+`/`-` "plus" connector (e.g. `model + config`
+  wrapped to a new line) into a Markdown list bullet, corrupting prose. When the wide-table rule
+  fires spuriously, the `markdown-tables` extension + `MD013.tables = false` already handle it;
+  reach for a per-rule `enabled = false` in `[tool.pymarkdown]` over editing content to match a
+  cosmetic rule.
 
 ## Heavy compilation (ninja / cmake / CUDA)
 

@@ -2,7 +2,7 @@
 
 Signed off 2026-06-26 by volod; scope accepted.
 
-Status: **APPROVED** 
+Status: **APPROVED**
 
 This is the Milestone 6 proposal for the human gate **MH.2** (Milestone H). The GraphRAG build
 already exists and is tested -- this document is the *accountable acceptance* of the constrained
