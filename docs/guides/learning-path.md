@@ -41,7 +41,6 @@ with RAG, GPU serving, Optuna, or LLM-as-judge evaluation -- those are what this
 - path](learning-path-evaluation-categories.md)): MCP, function calling, agentic eval,
 - knowledge-graph RAG
 
-
 ## Stage 0 -- Prerequisites
 
 - Python: [official tutorial](https://docs.python.org/3/tutorial/).
@@ -262,7 +261,6 @@ action in this repo.
 - - **9. The roadmap** (Stage 10): Read the [evaluation-categories learning
 - path](learning-path-evaluation-categories.md); pick one tool-use, agentic, or knowledge-graph
 - category and sketch its scoring schema.
-
 
 By session 9 you can run the full pipeline, explain every number on the board, and reason about
 the forward plan. From here, the deepest single source is the

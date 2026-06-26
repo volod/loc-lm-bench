@@ -15,8 +15,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 
 ## Implementation
 
-- [Current state](implementation/current.md) -- delivered Milestones 0-4 and their commands.
-- [Forward plan](implementation/plan.md) -- the ordered roadmap (M6 residuals + M7; M0-M5 done).
+- [Current state](impl/current.md) -- delivered Milestones 0-4 and their commands.
+- [Forward plan](impl/plan.md) -- the ordered roadmap (M6 residuals + M7; M0-M5 done).
   Data-creation / verification / calibration are operator workflows, not plan items:
   [create a gold set](guides/goldset-from-scratch.md).
 

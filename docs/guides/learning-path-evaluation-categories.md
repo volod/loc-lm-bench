@@ -532,7 +532,6 @@ learning path is done.
 - on each node, then group those nodes into a community and serialize its members (the narrative
 - layer) -- still offset-bearing.
 
-
 By session 8 you can place any capability on the right tier, name its objective metric and its
 verified-data gate, and explain why graph retrieval preserves source spans. The deepest single
 source remains the [design spec](../design/spec.md); the [current

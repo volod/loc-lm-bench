@@ -2,10 +2,9 @@
 
 Signed off 2026-06-23 by volod; thresholds accepted.
 
-Status: **APPROVED** 
+Status: **APPROVED**
 
-This is proposal M5.0; a human sign-off (Milestone H, item MH.2) is provided. 
-
+This is proposal M5.0; a human sign-off (Milestone H, item MH.2) is provided.
 
 - Executable form: [`src/llb/scoring/text_analysis.py`](../../src/llb/scoring/text_analysis.py)
   (taxonomy, planted-label model, matching engine) + the `PlantedLabelRecord` / `SubtaskScore`

@@ -58,7 +58,6 @@ Use an isolated test environment for every exercise.
 - - **8. Mitigation and operations** (Which independent controls prevent or limit impact?): Residual
 - risk and regression results
 
-
 ## Module 1 -- Threat modeling for an LLM application
 
 Start with the system, not the model. Draw the flow from user input through prompts, retrieval,
@@ -151,7 +150,6 @@ The model must not be the authorization boundary. Classify tools by effect:
 - at execution time
 - - **Irreversible or high impact** (Delete, transfer funds, rotate credentials): Keep unavailable
 - to the model or require a separate strongly authenticated workflow
-
 
 Defense in depth includes least privilege, narrowly typed tools, parameter validation, sandboxing,
 dry-run mode, transaction boundaries, rate and spend limits, bounded loops, approval for
@@ -268,7 +266,6 @@ Plan for 2-4 hours per session.
 - **7. Scoring** (Module 7): Per-family ASR, clean success, over-refusal, leakage, and bootstrap CIs
 - - **8. Defend and report** (Module 8): A mitigation, before/after regression report, residual-risk
 - statement, and holdout plan
-
 
 ## Capstone for loc-lm-bench
 

@@ -152,9 +152,13 @@ apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to
 #   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) so GitHub CI stays fast.
 NOT_SLOW := -m "not slow"
 
-test: ## Run the FULL test suite locally (pytest, includes slow tests)
+# Markdown docs linted by `make lint-md` (override to narrow scope, e.g. MD_PATHS=docs/design).
+MD_PATHS ?= README.md AGENTS.md CLAUDE.md GEMINI.md docs
+
+test: ## FULL local precommit flow: pytest (incl. slow) + markdown lint (NOT run in GitHub CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pytest
+	$(MAKE) lint-md
 
 test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -170,6 +174,11 @@ ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitH
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy
 	$(PY) -m pytest $(NOT_SLOW)
+
+# Fix findings BY HAND. Do NOT run `pymarkdown fix` -- it corrupts prose on this version (AGENTS.md).
+lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m pymarkdown scan -r --respect-gitignore $(MD_PATHS)
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

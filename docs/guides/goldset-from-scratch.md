@@ -116,8 +116,8 @@ to `verified=true`. A clean sample accepts the bundle; a dirty one sends the dra
 [verification-tooling manual](verification-tooling.md)):
 
 ```
-make verify-sample  BUNDLE=$BUNDLE VERIFY_N=30            # stratified sample -> verify_sample.csv + sample_manifest.json
-make verify-review  VERIFY_WS=$BUNDLE/verify_sample.csv   # interactive: four checks per item, accept/reject (resumable)
+make verify-sample  BUNDLE=$BUNDLE VERIFY_N=30            # stratified sample -> verify_sample.csv
+make verify-review  VERIFY_WS=$BUNDLE/verify_sample.csv   # interactive: four checks per item
 make verify-accept  BUNDLE=$BUNDLE VERIFY_WS=$BUNDLE/verify_sample.csv VERIFY_TOLERANCE=0.05
 ```
 
@@ -151,9 +151,9 @@ when its Spearman `rho >= 0.6`. Full walkthrough: the
 [calibration-tooling manual](calibration-tooling.md).
 
 ```
-make calibration-run   GOLDSET=<verified-goldset>.jsonl CAL_NAME=<name>   # candidate answers + ungated judge ratings
-make calibration-rate  CAL_NAME=<name>                                    # interactive: human ratings (judge column hidden)
-make calibration-score CAL_NAME=<name>                                    # rho + bootstrap CI + trust decision
+make calibration-run   GOLDSET=<verified-goldset>.jsonl CAL_NAME=<name>  # answers + ungated judge
+make calibration-rate  CAL_NAME=<name>   # interactive: human ratings (judge column hidden)
+make calibration-score CAL_NAME=<name>   # rho + bootstrap CI + trust decision
 ```
 
 Calibration needs `verified=true` calibration items (it scores only verified rows), so it comes
@@ -167,7 +167,7 @@ With the gold set verified (and the judge calibrated if judged), it scores model
 
 ```
 make build-index   GOLDSET=<verified-goldset>.jsonl CORPUS=<corpus>
-make run-eval      MODEL=<tag> GOLDSET=<verified-goldset>.jsonl [JUDGE_RHO=<rho> to enable the gated judge]
+make run-eval      MODEL=<tag> GOLDSET=<verified-goldset>.jsonl [JUDGE_RHO=<rho> enables the judge]
 ```
 
 ---
