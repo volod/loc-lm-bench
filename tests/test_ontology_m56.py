@@ -65,29 +65,30 @@ def test_merge_extractions_dedups_entities_and_facts():
 
 
 def test_confidence_rewards_document_spread_over_concentration():
-    # doc a: 3x CONCENTRATED + 1x SPREAD; doc b: 1x SPREAD -> SPREAD is in both docs.
+    # doc a: 3x WORK (concentrated in one doc) + 1x LAW; doc b: 1x LAW -> LAW is in both docs.
+    # (canonical vocabulary types, since extraction now normalizes to the closed set.)
     ea = parse_extraction(
         "a.md",
         "alpha beta gamma delta",
         {
             "entities": [
-                {"name": "alpha", "type": "CONCENTRATED", "mentions": ["alpha"]},
-                {"name": "beta", "type": "CONCENTRATED", "mentions": ["beta"]},
-                {"name": "gamma", "type": "CONCENTRATED", "mentions": ["gamma"]},
-                {"name": "delta", "type": "SPREAD", "mentions": ["delta"]},
+                {"name": "alpha", "type": "WORK", "mentions": ["alpha"]},
+                {"name": "beta", "type": "WORK", "mentions": ["beta"]},
+                {"name": "gamma", "type": "WORK", "mentions": ["gamma"]},
+                {"name": "delta", "type": "LAW", "mentions": ["delta"]},
             ]
         },
     )
     eb = parse_extraction(
         "b.md",
         "delta epsilon",
-        {"entities": [{"name": "epsilon", "type": "SPREAD", "mentions": ["epsilon"]}]},
+        {"entities": [{"name": "epsilon", "type": "LAW", "mentions": ["epsilon"]}]},
     )
     ontology = induce_ontology([ea, eb])
     by_name = {t.name: t for t in ontology.entity_types}
-    # SPREAD has a lower count (2 < 3) but appears in BOTH docs -> higher confidence
-    assert by_name["SPREAD"].confidence > by_name["CONCENTRATED"].confidence
-    assert ontology.entity_types[0].name == "SPREAD"  # sorted by confidence
+    # LAW has a lower count (2 < 3) but appears in BOTH docs -> higher confidence
+    assert by_name["LAW"].confidence > by_name["WORK"].confidence
+    assert ontology.entity_types[0].name == "LAW"  # sorted by confidence
 
 
 def test_ontology_constraints_lists_high_confidence_types():
@@ -159,7 +160,8 @@ class _FakeNlp:
 def test_map_label_maps_spacy_to_ontology_vocab():
     assert map_label("PER") == "PERSON"
     assert map_label("LOC") == "LOC"
-    assert map_label("xyz") == "XYZ"  # unknown passes through uppercased
+    assert map_label("GPE") == "LOC"  # OntoNotes geo-political folds into LOC
+    assert map_label("xyz") == "MISC"  # out-of-vocabulary collapses to MISC (closed set)
 
 
 def test_spacy_adapter_extracts_grounded_entities():
@@ -182,3 +184,46 @@ def test_spacy_adapter_drops_ungrounded_entity():
     adapter = SpacyExtractionAdapter(nlp=nlp)
     ext = adapter.extract(DocRecord(doc_id="d", text="Земля і Місяць.", sha256="x", n_chars=14))
     assert ext.entities == []
+
+
+# --- closed entity-type vocabulary (granular + enforced) -----------------------------------
+
+
+def test_normalize_entity_type_maps_into_the_closed_set():
+    from llb.prep.ontology.entity_types import ENTITY_TYPES, normalize_entity_type
+
+    # canonical types pass through
+    for t in ENTITY_TYPES:
+        assert normalize_entity_type(t) == t
+    # granular additions are reachable via common synonyms / alternate labels
+    assert normalize_entity_type("treaty") == "LAW"
+    assert normalize_entity_type("work of art") == "WORK"  # space/case folded
+    assert normalize_entity_type("INVENTION") == "WORK"
+    assert normalize_entity_type("GPE") == "LOC"
+    assert normalize_entity_type("Period") == "DURATION"
+    assert normalize_entity_type("percent") == "QUANTITY"
+    # out-of-vocabulary and empty collapse to MISC, so the schema stays closed
+    assert normalize_entity_type("Gadget") == "MISC"
+    assert normalize_entity_type("") == "MISC"
+
+
+def test_extraction_enforces_closed_vocabulary():
+    text = "Патент охороняє винахід."
+    payload = {
+        "entities": [
+            {"name": "патент", "type": "patent", "mentions": ["Патент"]},  # synonym -> WORK
+            {"name": "винахід", "type": "Widget", "mentions": ["винахід"]},  # unknown -> MISC
+        ]
+    }
+    ext = parse_extraction("d", text, payload)
+    by_name = {e.name: e.type for e in ext.entities}
+    assert by_name["патент"] == "WORK"
+    assert by_name["винахід"] == "MISC"
+
+
+def test_extraction_prompt_lists_the_vocabulary():
+    from llb.prep.ontology.extract import extraction_prompt
+
+    prompt = extraction_prompt("d", "текст")
+    for canonical in ("PERSON", "ORG", "LOC", "LAW", "WORK", "DURATION", "MISC"):
+        assert canonical in prompt

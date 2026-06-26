@@ -10,7 +10,7 @@ DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; 
 # checkout can run every command without a follow-up `uv pip install`. vLLM/torch/flash-attn
 # are deliberately NOT here: they are hardware-matched and built separately (AGENTS.md).
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,eval,track,board,prep,telemetry,goldset,dev
+EXTRAS ?= rag,eval,graph,track,board,prep,telemetry,goldset,dev
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -224,6 +224,11 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 build-index: ## M1: chunk + embed CORPUS into the FAISS store (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)"
+
+build-graph: ## M6: build the GraphRAG store from an M4.4 draft bundle (BUNDLE=...; needs ".[graph]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
+	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
 
 validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

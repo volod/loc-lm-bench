@@ -1075,6 +1075,16 @@ Milestone 6). One small module per grained stage, each injected-unit-tested:
   against the FULL doc (so a truncated long-doc call still anchors exactly); ungrounded artifacts
   and evidence-less entities are dropped. The Python-native NER/coreference adapter (Stanza / spaCy
   `uk_core_news`) is an opt-in plug-in implementing the protocol, kept out of base deps.
+- **Closed entity-type vocabulary (`entity_types.py`).** Entity nodes carry one type from a CLOSED,
+  13-type OntoNotes-derived set (`PERSON, NORP, ORG, LOC, LAW, WORK, PRODUCT, EVENT, DATE, DURATION,
+  MONEY, QUANTITY, MISC`) -- granular enough for typed facts (e.g. legal codes/treaties -> `LAW`,
+  IP objects -> `WORK`, time spans -> `DURATION`). It is ENFORCED, not just suggested: the
+  vocabulary (with Ukrainian glosses) is injected into `extraction_prompt`, and every emitted type
+  (LLM or spaCy `map_label`) passes through `normalize_entity_type`, so synonyms collapse to their
+  canonical type (`GPE`->`LOC`, `WORK_OF_ART`/`PATENT`->`WORK`, `TREATY`->`LAW`, ...) and any
+  out-of-vocabulary label becomes `MISC` -- the schema can never silently expand. The signed schema
+  is [`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md). Extend by editing
+  the one module (`tests/test_ontology_m56.py` covers the normalizer + closure).
 - **stage 3 induce (`induce.py`).** Pure deterministic aggregation of extracted entity types +
   relations into a CONSTRAINED `OntologyCandidate` (capped groups, hapax-dropped) with support
   count, frequency confidence, and example surface forms.
@@ -1533,6 +1543,84 @@ extraction reuse:
   across docs outranks one of equal count concentrated in one doc; types sort by confidence.
   `ontology_constraints` carries the high-confidence types into every drafting prompt
   (`draft_prompt` / `draft_items` `ontology_hint`) as an explicit constraint.
+
+## Milestone 6 -- GraphRAG (knowledge-graph + narrative retrieval) (build COMPLETE)
+
+A graph retrieval backend behind the RAG-store seam, selected with `--retrieval-backend graph`.
+FAISS stays the default and is untouched. The BUILD is delivered + unit-tested without a GPU.
+**MH.2 is signed off (2026-06-26):** the 13-type closed node vocabulary + relationship caps + the
+GraphRAG scope are accepted, so the ontology/scope is trusted for HEADLINE use -- the signed schema
+is [`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md) (`APPROVED`; node
+vocab + caps + scope + a worked example over `samples/corpus/ip_regulation_uk.md`). Real-model graph
+HEADLINE numbers ride only the standing MH.5 data gate now, exactly like the M5 categories; the
+objective graph boards rank regardless.
+
+**Store choice -- DuckDB (the abandoned Kuzu pick was dropped).** `duckdb` is already a dependency
+(now also its own `[graph]` extra) so no new/abandoned dep is added. The graph is persisted as
+node/edge JSONL (inspectable, diffable -- the same shape as the FAISS store's chunks) and loaded
+into an in-memory DuckDB engine that carries the two graph queries: local k-hop via a recursive CTE
+over the (undirected) edge table, and community grouping via `WHERE community_id IN (...)`. The
+community ids are detected ONCE offline (so query time needs no graph-analytics dep) -- the
+condition under which "DuckDB covers narratives". `duckdb` is lazy-imported, so the base install
+still imports.
+
+### Modules -- `llb.graph.*`
+- `model.py` -- the RAM-resident `KnowledgeGraph` (`GraphNode` / `GraphEdge` / `GraphMention`).
+  Every mention + edge evidence keeps `doc_id` + char offsets + exact text, and carries the
+  induced ontology `type`/`confidence`, the containing `section_title`, and the `community_id`.
+- `build.py` -- `build_graph(extractions, docs, ontology=None)` REUSES the M4.4 `DocExtraction`
+  (no second extraction framework): entity mentions -> nodes, SRO facts -> directed edges; a fact
+  endpoint that is not a known entity becomes a lightweight fact-only node (no grounded fact is
+  dropped). Pure + deterministic; the ontology is induced from the extractions when not supplied,
+  so each node carries its type confidence.
+- `community.py` -- deterministic, seeded asynchronous label propagation (`detect_communities` /
+  `assign_communities`): no graph-analytics dependency, the same corpus always partitions
+  identically; an isolated node stays its own community.
+- `retrieval.py` -- pure question linking + span-preserving serialization. Lexical entity linking
+  keys on entity NAME + aliases (not mention text, which would link unrelated entities sharing a
+  relation verb); `serialize_subgraph` renders member node mentions + intra-member edge evidence to
+  ranked, span-deduplicated, offset-bearing `ChunkRecord`s.
+- `store.py` -- `GraphStore`: `.build` / `.save` / `.load` + the `.retrieve(question, k)` seam (so
+  the eval graph, scoring incl. the gated judge, isolation, and the board are UNCHANGED). The two
+  strategies, recorded per run as `retrieval_strategy`:
+  - **local_khop** -- entity-link the question to seed nodes, expand `graph_khop_depth` hops with
+    the recursive CTE, serialize the subgraph (the multi-hop "connect these facts" path).
+  - **global_community** -- map the question to its communities, serialize each community's member
+    nodes/edges WITH their offsets (the narrative layer for corpus-level theme/trend questions).
+- `summary.py` -- OPTIONAL `summarize_communities(graph, complete)`: an LLM one-paragraph summary
+  per sizable community, recorded as a TAGGED DIAGNOSTIC (`community_summaries`, its own file) and
+  NEVER returned by `.retrieve` -- the un-grounded abstraction never enters the span metric (the
+  same recorded-but-not-ranked discipline as `--score-semantic`). Off by default.
+- `ingest.py` -- load the M4.4 extraction back: `load_bundle` reads a `prepare-goldset` draft
+  bundle's `extraction.jsonl` + `corpus/` + `ontology.json`; `load_extractions` reads an explicit
+  `extraction.jsonl`.
+
+### Config + CLI + manifest
+`RunConfig` gained `retrieval_backend` (`faiss` | `graph`), `retrieval_strategy` (`local_khop` |
+`global_community`), and `graph_khop_depth`, plus `graph_dir()` (`$DATA_DIR/llb/graph/`). They ride
+in the config fingerprint, so the manifest records backend + strategy and graph-vs-FAISS /
+local-vs-global runs are comparable. `run-eval` and `validate-retrieval` take `--retrieval-backend`
+/ `--retrieval-strategy`; the runner's `_load_store` picks `GraphStore` vs `RagStore` by backend.
+
+    llb build-graph --bundle <prepare-goldset dir>     # reads extraction.jsonl + corpus/
+    llb build-graph --extraction <e.jsonl> --corpus-root <dir>   # explicit M4.4 extraction
+    llb build-graph --corpus-root <dir> --extract-model llama3.2:3b   # extract fresh (M4.4)
+    llb validate-retrieval --retrieval-backend graph --retrieval-strategy local_khop
+    llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
+
+Or via make: `make build-graph BUNDLE=<dir>`. The `graph` extra (`duckdb`) is in the default
+`make venv` EXTRAS.
+
+### Tests + acceptance
+`tests/test_graph.py` (21 tests): construction (offsets/section/confidence carry-through,
+fact-endpoint linking, fact-only nodes), deterministic community detection, linking +
+serialization, both strategies returning offset-bearing context that scores recall@k=1.0 on the
+existing span metric, k-hop depth bounding, save/load round-trip, the tagged-diagnostic summaries
+(asserting they never appear as retrieved chunks), ingest round-trip, and the full vertical through
+`run_eval` (manifest records backend + strategy). The DuckDB-engine tests `importorskip("duckdb")`
+so the lightweight CI install skips them while the pure-graph logic runs everywhere; `make ci` is
+green (ruff + mypy strict + `-m "not slow"`). Smoke-validated end to end via the CLI: `build-graph`
+from a bundle -> `validate-retrieval --retrieval-backend graph` recall@5=1.000.
 
 ## Real-host verification (2026-06-25, RTX 4060 Ti 16 GB)
 

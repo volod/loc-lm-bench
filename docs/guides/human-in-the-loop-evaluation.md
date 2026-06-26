@@ -165,8 +165,9 @@ Approving AI-drafted artifacts and confirming facts only you know:
 1. **Done:** the AI-drafted **text-analysis scoring schema** is approved (thresholds accepted as
    proposed), recorded at the top of
    [`docs/design/text-analysis-schema.md`](../design/text-analysis-schema.md).
-2. **Remaining:** approve the AI-drafted **knowledge-graph ontology schema** + the graph-retrieval
-   **scope / acceptance**.
+2. **Done (2026-06-26):** the AI-drafted **knowledge-graph ontology schema** (the 13-type closed
+   node vocabulary + caps) + the **GraphRAG scope** are approved, recorded at the top of
+   [`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md).
 3. **Remaining:** confirm the **corpus facts** only you have -- whether text-analysis reference
    answers already EXIST or must be authored, and which corpus is real vs synthetic (the two are
    reported separately and must never be merged).
@@ -186,8 +187,10 @@ Approving AI-drafted artifacts and confirming facts only you know:
   changes which board it lands on. No AI can know these about *your* private data.
 
 ### Step-by-step: how to do a schema sign-off
-The text-analysis schema doc contains a worked sign-off procedure; reuse it as the template for the
-ontology when its draft lands. The shape is always:
+Both schema docs are now signed: the text-analysis schema
+(`docs/design/text-analysis-schema.md`) and the graph ontology + GraphRAG scope
+([`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md), signed 2026-06-26).
+Kept here as the reusable template -- the shape is always:
 
 1. **Read** the proposal doc + its executable form (the engine is short) and run its tests if you
    want to see the numbers move:
@@ -199,9 +202,11 @@ ontology when its draft lands. The shape is always:
 
 2. **Confirm or adjust the decisions that are genuinely yours.** For the text-analysis schema those
    were: the sub-task set, the objective-vs-judged split, the credit thresholds, and the matching
-   basis. For the graph ontology they will be: the node/relationship type set, the cap sizes, and
-   the extraction constraints. To change a knob, edit the named constant -- the tests assert against
-   constants, not hardcoded values, so they follow your change.
+   basis. For the graph ontology they will be: the node/relationship type set, the cap sizes, the
+   extraction constraints, and -- added with the narrative layer -- the global-community/narrative
+   retrieval scope plus the rule that any LLM community summary stays a tagged diagnostic (never
+   span-scored). To change a knob, edit the named constant -- the tests assert against constants, not
+   hardcoded values, so they follow your change.
 
 3. **Confirm the dependent corpus facts** (do references exist? real vs synthetic?).
 
@@ -214,17 +219,20 @@ ontology when its draft lands. The shape is always:
 - Ontology engineering primer: **Ontology Development 101** (Noy & McGuinness, 2001) --
   <https://protege.stanford.edu/publications/ontology_development/ontology101.pdf> -- how to decide
   classes, relations, and granularity for a constrained schema.
-- The form a graph enforces a schema in: the
-  [Kuzu data-definition docs](https://docs.kuzudb.com/cypher/data-definition/) (node/rel tables).
+- The form a graph enforces a schema in (store-agnostic): node/edge tables -- via Pydantic
+  node/edge models, DuckDB `CREATE TABLE`, or property-graph DDL such as the
+  [Kuzu data-definition docs](https://docs.kuzudb.com/cypher/data-definition/) (a readable primer
+  even though Kuzu itself is unmaintained).
 - Documenting the decision defensibly: **Datasheets for Datasets** (Gebru et al. 2018) --
   <https://arxiv.org/abs/1803.09010> -- and **Data Statements for NLP** (Bender & Friedman 2018) --
   <https://aclanthology.org/Q18-1041/> -- the discipline of recording provenance, real-vs-synthetic,
   and intended use (exactly the corpus facts you confirm).
 
 ### In this repo
-`docs/design/text-analysis-schema.md` (the template sign-off, already done), the future ontology
-proposal (drafted by `src/llb/prep/ontology/`), and the manifest, which carries the trust decisions
-a sign-off produces.
+`docs/design/text-analysis-schema.md` (the template sign-off, done),
+`docs/design/graph-ontology-schema.md` (the M6 ontology + GraphRAG scope, drafted from
+`src/llb/prep/ontology/` + `src/llb/graph/`, signed off 2026-06-26), and the manifest, which carries
+the trust decisions a sign-off produces.
 
 ---
 
@@ -322,7 +330,8 @@ to accept a dataset":
 4. **Datasheets for Datasets** (Gebru et al. 2018) -- the documentation mindset behind sign-off +
    verification.
 5. **Stratified + acceptance sampling** (the two primers) -- the verification procedure.
-6. **Ontology Development 101** (Noy & McGuinness) -- when the graph ontology sign-off is live.
+6. **Ontology Development 101** (Noy & McGuinness) -- the background behind the graph ontology
+   sign-off (done).
 
 ## Checklist
 
@@ -330,8 +339,8 @@ to accept a dataset":
       `human_rating` filled INDEPENDENTLY via `calibration-rate` (judge column hidden), spanning
       the full range incl. fluent-but-wrong answers; rho + CI + decision computed
       (`calibration-score`) and recorded in the manifest.
-- [ ] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope approved with a
-      dated line; corpus facts confirmed (references exist?/real-vs-synthetic).
+- [x] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope signed off
+      (done, 2026-06-26). Remaining: corpus facts confirmed (references exist?/real-vs-synthetic).
 - [ ] **Verification:** drafted set validated; stratified sample drawn + documented; four per-item
       checks passed within tolerance; accepted items flipped to `verified=true`
       via the ledger, not

@@ -34,6 +34,13 @@ MODULES = [
     "llb.tracking.server",
     "llb.executor.vram",
     "llb.executor.runner",
+    "llb.graph",
+    "llb.graph.build",
+    "llb.graph.community",
+    "llb.graph.retrieval",
+    "llb.graph.store",
+    "llb.graph.ingest",
+    "llb.graph.summary",
 ]
 
 

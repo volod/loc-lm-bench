@@ -46,6 +46,12 @@ def run_eval_cmd(
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible judge endpoint, e.g. http://localhost:8000/v1"
     ),
+    retrieval_backend: Optional[str] = typer.Option(
+        None, help="faiss (default vector store) | graph (M6 GraphRAG knowledge-graph backend)"
+    ),
+    retrieval_strategy: Optional[str] = typer.Option(
+        None, help="graph backend strategy: local_khop | global_community"
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",
@@ -81,6 +87,8 @@ def run_eval_cmd(
         n_gpu_layers=gpu_layers,
         judge_model=judge_model,
         judge_base_url=judge_base_url,
+        retrieval_backend=retrieval_backend,
+        retrieval_strategy=retrieval_strategy,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )

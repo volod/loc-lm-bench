@@ -26,6 +26,7 @@ rag = [
   "deepeval>=4.0.6,<5",
 ]
 eval = ["langgraph>=0.2"]
+graph = ["duckdb>=1.0"]  # M6 GraphRAG backend: persisted graph + recursive-CTE k-hop engine
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]
 prep = ["litellm>=1.40"]

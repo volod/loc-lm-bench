@@ -10,19 +10,22 @@ chat-period / reliability, plus the second-frontier verified-data gate) -- lives
 **Quick start:** `make demo-eval` runs the pipeline end to end (needs a running Ollama); the real
 vLLM path is `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry` on a CUDA host.
 
-Remaining work: the Milestone 6 build, the Milestone 7 extended-implementation + forward-verification
-lane, and a human-only lane (Milestone H). (The Milestone 5 residuals -- per-category breadth +
-data-prep hardening -- now live in [`current.md`](current.md), not here.)
+Remaining work: optional Milestone 6 residuals (the M6 GraphRAG build lives in
+[`current.md`](current.md)), the Milestone 7 extended-implementation + forward-verification lane,
+and a human-only lane (Milestone H). (The Milestone 5 residuals -- per-category breadth + data-prep
+hardening -- now live in [`current.md`](current.md), not here.)
 
 ---
 
 ## ⚠ HUMAN PREREQUISITES (irreducibly-human -- no AI substitute)
 
-Two gates need a human and CANNOT be done by GPT/Gemini/Claude. They are human-paced, run in
-PARALLEL with the build, but block specific outputs (below). All drafting + cross-checking is
-already pipeline code; only the human sample-verify and sign-off remain. (The judge-calibration
-gate is satisfied -- the gated judge is calibrated and enabled per run with `JUDGE_RHO=`; details in
-[`current.md`](current.md).)
+One gate still needs a human and CANNOT be done by GPT/Gemini/Claude: MH.5 eval-data verification.
+It is human-paced, runs in PARALLEL with the build, and blocks specific outputs (below). All
+drafting + cross-checking is already pipeline code; only the human sample-verify remains. (The MH.2
+M6 ontology + scope sign-off is satisfied -- the signed schema is
+[`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md), recorded in
+[`current.md`](current.md). The judge-calibration gate is satisfied -- the gated judge is calibrated
+and enabled per run with `JUDGE_RHO=`; details in [`current.md`](current.md).)
 
 **The step-by-step manual for both is
 [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)** -- it
@@ -31,52 +34,31 @@ has the procedure, the "done when", and the essential papers for each. Backgroun
 [security](../guides/learning-path-security.md) ·
 [evaluation categories + GraphRAG](../guides/learning-path-evaluation-categories.md).
 
-- **MH.2 ontology + scope sign-off** ("Schema and ontology sign-off"): approve the M6 ontology
-  schema + M6 scope. Blocks Milestone 6. (The OQ4 corpus facts are already settled -- see
-  `current.md` -- so they are no longer a human TODO; their forward implication lives in the M5.4
-  residuals.)
 - **MH.5 data verification** ("Eval-data verification"): sample-verify a stratified sample of
   AI-drafted, cross-checked items, then flip via the ledger. Blocks any `verified=true`
-  item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6).
+  item SCORING REAL MODELS in any category (M5.1-M5.4 real runs, M6). This is now the ONLY open
+  human gate (MH.2 is signed off; the OQ4 corpus facts are settled -- see `current.md`).
 
 What is NOT human work (already automatable / built): schema/data DRAFTING, the second-frontier
 cross-check, and the optional non-Gemma cross-check judge.
 
 ### Human-only ordered sequence (preferable order)
 
-The two gates run PARALLEL with the remaining build (M6/M7), but they are NOT equal priority and
-MH.5 is NOT a one-shot upfront task -- it verifies what the M5 producers (see [`current.md`](current.md))
-DRAFT, per bundle. Preferable order:
+MH.5 runs PARALLEL with the remaining (M7 + optional M6 residual) work. It is NOT a one-shot upfront
+task -- it verifies what the M5 producers (see [`current.md`](current.md)) DRAFT, per bundle:
 
 1. **MH.5 first + continuous** (highest priority). It is the human CRITICAL PATH for the nearest
-   deliverable -- real-model scores in the M5 categories -- and it is the slow, human-paced,
-   PER-BUNDLE gate. Run it PULL-BASED: as each category's bundle is drafted + cross-checked and
-   STABILIZES, verify that bundle, flip accepted items via the ledger, and real-model scoring
-   unblocks for it. Start the moment the first drafted + cross-checked bundle lands; verify a bundle
-   only once its drafting is stable (do not re-verify seeds a newer bundle supersedes). The
-   objective boards never wait on this -- only real-model HEADLINE scoring does.
-2. **MH.2 ontology + M6 scope sign-off -- when the M6 draft lands (after M5).** Gated on the M6
-   ontology DRAFT artifact existing; blocks M6 headline use. Cannot start earlier.
-3. **(optional) Strengthen the judge calibration -- background, lowest priority.** The judge is
+   deliverable -- real-model scores in the M5 categories (and M6 graph runs) -- and it is the slow,
+   human-paced, PER-BUNDLE gate. Run it PULL-BASED: as each category's bundle is drafted +
+   cross-checked and STABILIZES, verify that bundle, flip accepted items via the ledger, and
+   real-model scoring unblocks for it. Start the moment the first drafted + cross-checked bundle
+   lands; verify a bundle only once its drafting is stable (do not re-verify seeds a newer bundle
+   supersedes). The objective boards never wait on this -- only real-model HEADLINE scoring does.
+2. **(optional) Strengthen the judge calibration -- background, lowest priority.** The judge is
    already mechanically trusted and objective scores rank regardless; do it only with idle capacity.
 
-Rationale: prioritize MH.5 over MH.2's sign-off because MH.5 unblocks the NEARER M5 real-model
-deliverable and is the streaming human-paced bottleneck, while the ontology sign-off cannot begin
-until the M6 draft exists anyway. (The OQ4 corpus facts + the OQ-egress cross-check routing are
-already settled -- see `current.md` -- so they are no longer human TODOs.)
-
-### MH.2 -- remaining sign-offs (TODO, step by step)
-
-Procedure + template:
-[manual "Schema and ontology
-sign-off"](../guides/human-in-the-loop-evaluation.md#schema-and-ontology-sign-off----accountable-approval).
-1. When the M6 ontology draft lands, read it + its executable form; confirm the node/relationship
-   type set, cap sizes, extraction constraints; record a dated sign-off line at the TOP of the
-   proposal doc (until that line exists the schema stays un-trusted for headline use).
-2. Approve the Milestone 6 scope / acceptance.
-
-(The OQ4 corpus facts that MH.2 also used to cover are settled -- see `current.md`; only the
-ontology + scope sign-off remains here.)
+(MH.2 -- the M6 ontology + scope sign-off -- is done; the OQ4 corpus facts + the OQ-egress
+cross-check routing are settled -- see `current.md` -- so none of those remain human TODOs.)
 
 ### MH.5 -- gold/eval data verification (TODO, step by step)
 
@@ -110,44 +92,48 @@ identifiers (AGENTS.md); a workstream appears only while it has open work. (The 
 residuals -- per-category sourcing breadth, transports, gated-judge wiring, and the data-prep items
 -- now live in [`current.md`](current.md), no longer open work here.)
 
-1. **Milestone 6** -- GraphRAG (Kuzu). ⚠ needs MH.2 (M6 ontology + scope sign-off).
+1. **Milestone 6 residuals** (optional) -- the GraphRAG build lives in `current.md` (DuckDB store,
+   both strategies, manifest-recorded) and MH.2 is signed off, so the schema is trusted for
+   HEADLINE use. Only the optional improvements + the graph-vs-FAISS comparison remain (below);
+   real-model graph headline numbers ride the standing MH.5 data gate, like every M5 category.
 2. **Milestone 7** (parallel) -- extended + deferred + verification: the M7.1 LangGraph-vs-CrewAI
    harness comparison and the M7.2 non-blocking quality gates (both buildable now), plus M7.3 -- the
    DEFERRED / BLOCKED work moved out of M5 (human-gated calibrations, the composite headline, the
    platform/matrix expansion).
-3. **Milestone H** (human-paced, parallel) -- MH.5 first + continuous (per-bundle), then the MH.2
-   ontology + scope sign-off when the M6 draft lands. See the prerequisites block above (human-only
-   ordered sequence).
+3. **Milestone H** (human-paced, parallel) -- MH.5 first + continuous (per-bundle); MH.2 is signed
+   off. See the prerequisites block above (human-only ordered sequence).
 
 Real-model scoring of any `verified=true` item still waits on MH.5 (the human gate); the objective
 category boards do not depend on the gated judge.
 
 ---
 
-## Milestone 6 -- GraphRAG (knowledge-graph RAG)
+## Milestone 6 residuals -- GraphRAG (optional, forward)
 
-⚠ **Blocked on MH.2** (human sign-off of the AI-drafted ontology schema + the M6 scope) -- see the
-prerequisites block. GO decided; an ADDED retrieval backend behind the RAG-store seam, FAISS stays
-default. Architecture locked.
+The M6 GraphRAG build lives in `current.md` (DuckDB store, `local_khop` + `global_community`,
+manifest-recorded backend + strategy, tagged-diagnostic community summaries) and MH.2 is signed off
+(the ontology + scope is trusted). Remaining work is optional improvement + comparison; the only
+standing gate is MH.5 (it blocks real-model scoring of `verified=true` items, like every category).
+Concepts: [evaluation-categories learning path](../guides/learning-path-evaluation-categories.md).
 
-**Decided architecture:** graph store **Kuzu** (embedded, Apache-2.0 property graph, Cypher,
-pip-install, native vector index); construction REUSES M4.4 extraction (no second extraction
-framework); extraction LLM local by default, frontier opt-in via the M4.4 endpoint adapter.
-
-Tasks:
-1. A Kuzu-backed graph store behind the RAG-store seam, swappable via `--retrieval-backend graph`;
-   ingest M4.4 extraction into nodes/edges keeping `doc_id` + char offsets.
-2. Apply the AI-drafted, ⚠ human-signed-off (MH.2) constrained node/relationship ontology schema.
-3. A graph-retrieval layer -- entity-link the question, expand k-hops, serialize the subgraph as
-   context PRESERVING source spans so the M1.3 span metric still applies.
-4. Record the retrieval backend in the manifest so graph-vs-FAISS runs are comparable.
-5. Reuse the eval graph, scoring (incl. the gated judge for RAG answer quality, enabled per run with
-   `JUDGE_RHO=`), isolation, and board unchanged.
-
-**Acceptance:** a corpus builds a Kuzu graph from M4.4 extraction; graph retrieval returns
-offset-bearing context that scores on the existing span metric; runs are reproducible +
-manifest-recorded; the FAISS path is unchanged. Concepts:
-[evaluation-categories learning path](../guides/learning-path-evaluation-categories.md).
+1. **Morphology-aware entity linking (optional).** The v1 entity-linker (`llb.graph.retrieval`)
+   matches exact casefolded tokens of a node's name + aliases, so a Ukrainian inflected question
+   form (e.g. "Франка" genitive vs the "Франко" node) can miss the link and return empty. Why it
+   helps: it lifts graph recall on morphologically-varied questions toward the FAISS path's level
+   without an embedder. Rough how: add lemma- or prefix-aware matching, or reuse the pinned embedder
+   to embed node names + the question and link by cosine (the NetworkX-fallback "FAISS entity-link
+   vectors" idea), kept behind the existing pure-linking seam.
+2. **CLI flag for diagnostic community summaries (optional).** `summarize_communities` exists and is
+   tested but is only reachable programmatically. Why it helps: lets an operator attach the
+   narrative summaries during `build-graph`. Rough how: add `--summarize` + an endpoint to
+   `build-graph`, reusing the M4.4 endpoint adapter; keep the summaries tagged-diagnostic (never
+   span-scored).
+3. **Graph-vs-FAISS retrieval comparison on the committed goldset (verification).** Build the graph
+   from an M4.4 extraction over the committed corpus, then compare `recall@k`/`MRR` and answer
+   quality across `{faiss, graph/local_khop, graph/global_community}` on the same goldset (the
+   manifest already records backend + strategy). Why it helps: quantifies when the multi-hop /
+   narrative paths beat flat vector retrieval. Needs the M4.4 extraction over the corpus (a real
+   local-endpoint run); for real-model HEADLINE numbers it also rides the MH.5 data gate.
 
 ---
 
@@ -233,8 +219,10 @@ Moved out of M5 because AI cannot finish them in sequence; each unblocks differe
 
 DeepEval G-Eval, FAISS, sentence-transformers, `openai` client (local backends incl. tool/function
 calling for M5.2), litellm (frontier prep), Optuna, MLflow (local), LangGraph (eval templates incl.
-the M5.3 agentic loop), DuckDB, Streamlit, pynvml + psutil, lm-evaluation-harness-uk (Tier-1
-screen), Kuzu (M6 graph store), CrewAI (M7, the opt-in second agent harness -- lazy extra), the
+the M5.3 agentic loop), DuckDB (also the M6 GraphRAG store -- recursive-CTE k-hop +
+community grouping over node/edge JSONL, `[graph]` extra; see `current.md`), Streamlit, pynvml +
+psutil, lm-evaluation-harness-uk (Tier-1 screen), CrewAI (M7, the opt-in second agent harness --
+lazy extra), the
 official `mcp` Python SDK (M5.2 MCP transport, `[mcp]` extra), spaCy `uk_core_news` (M5.6 opt-in
 extraction adapter). Public UA datasets: SQuAD-uk + Belebele-uk; UA-adapted public sets feed the M5
 adapters (BFCL for tooling; JailbreakBench / HarmBench / AdvBench for security). No servers
@@ -245,16 +233,16 @@ adapters (BFCL for tooling; JailbreakBench / HarmBench / AdvBench for security).
 BLOCKED verifications only -- each needs a real CUDA host or a human gate. The non-blocking
 quality-verification actions live in Milestone 7 (M7.2) above.
 - **M5 (remaining):** the MH.5 human sample-verify gates real-model scoring.
-- **M6:** a corpus builds a Kuzu graph from M4.4 extraction and graph retrieval scores on the
-  existing source-span metric, FAISS unchanged (⚠ MH.2).
-- **Milestone H (⚠ human):** the M6 ontology signed off (MH.2); a human sample-verify (MH.5)
-  accepts the AI-drafted, frontier-cross-checked data before it scores models. See
+- **M6 (build lives in `current.md`; CI-proven from fakes; MH.2 signed off):** what remains is the
+  real-host graph-vs-FAISS comparison on the committed goldset (M6 residual #3 above -- needs a
+  local-endpoint extraction run); real-model headline numbers ride the MH.5 data gate.
+- **Milestone H (⚠ human):** a human sample-verify (MH.5) accepts the AI-drafted,
+  frontier-cross-checked data before it scores models (MH.2 is already signed off). See
   [`human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
 
 ## Worktree parallelization
 
-- **graph:** Milestone 6 is its own lane, reusing M4.4 extraction.
 - **extended-agentic:** Milestone 7 (M7.1 LangGraph vs CrewAI) is its own non-blocking lane over
   the M5.3 harness seam + task set; M7.2 collects the non-blocking quality gates. No human/host
   gate to build.
-- **human-gated:** Milestone H (MH.2, MH.5) runs on its own decision-paced lane.
+- **human-gated:** Milestone H (MH.5; MH.2 already signed off) runs on its own decision-paced lane.

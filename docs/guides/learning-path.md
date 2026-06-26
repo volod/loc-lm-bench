@@ -230,9 +230,12 @@ What the roadmap adds after the current stack (designed, not yet built; see the
   ([Python SDK](https://github.com/modelcontextprotocol/python-sdk)).
 - Agentic workflows: multi-step LangGraph tasks over a deterministic sandbox, with objective
   state assertions and tool-call efficiency. Security tests for those tools belong to Stage 9.
-- Knowledge-graph RAG: [Kuzu](https://kuzudb.com/) (embedded graph DB,
-  [docs](https://docs.kuzudb.com/)) and Microsoft's
-  [GraphRAG](https://microsoft.github.io/graphrag/) ([paper](https://arxiv.org/abs/2404.16130)).
+- Knowledge-graph RAG: a reuse-first single-box store -- [DuckDB](https://duckdb.org/) (recursive
+  CTEs / DuckPGQ) by default, with [NetworkX](https://networkx.org/) + FAISS as the fallback when the
+  narrative (community) layer needs native graph analytics (the original Kuzu pick was abandoned
+  2025-10) -- with local-k-hop and global-community retrieval following Microsoft's
+  [GraphRAG](https://microsoft.github.io/graphrag/) ([paper](https://arxiv.org/abs/2404.16130))
+  "global vs local" distinction.
 
 ## Syllabus for a learner with basic knowledge
 

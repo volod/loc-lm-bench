@@ -1,12 +1,16 @@
 """RAG index build and retrieval validation commands."""
 
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
+
+if TYPE_CHECKING:
+    from llb.config import RunConfig
+    from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 
 
 @app.command("build-index")
@@ -52,21 +56,98 @@ def build_index(
     )
 
 
+@app.command("build-graph")
+def build_graph_cmd(
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    bundle: Optional[Path] = typer.Option(
+        None,
+        help="prepare-goldset draft bundle dir (reads its extraction.jsonl + corpus/ + ontology.json)",
+    ),
+    extraction: Optional[Path] = typer.Option(
+        None, help="explicit M4.4 extraction.jsonl (pair with --corpus-root)"
+    ),
+    corpus_root: Optional[Path] = typer.Option(
+        None, help="corpus dir for --extraction, or to extract fresh when no extraction is given"
+    ),
+    extract_model: Optional[str] = typer.Option(
+        None, help="extract fresh: local endpoint model id (e.g. llama3.2:3b) over --corpus-root"
+    ),
+    khop_depth: Optional[int] = typer.Option(None, help="local_khop expansion radius (default 2)"),
+) -> None:
+    """Build the M6 GraphRAG store from the M4.4 extraction (nodes/edges + communities).
+
+    Source precedence: --bundle, else --extraction + --corpus-root, else fresh extraction over
+    --corpus-root via a local endpoint (--extract-model). Writes node/edge JSONL + meta under the
+    config's graph dir; select it at eval time with `--retrieval-backend graph`.
+    """
+    from llb.graph.store import GraphStore
+
+    cfg = load_config(config, corpus_root=corpus_root, graph_khop_depth=khop_depth)
+    extractions, docs, ontology = _resolve_graph_inputs(cfg, bundle, extraction, extract_model)
+    store = GraphStore.build(extractions, docs, ontology, khop_depth=cfg.graph_khop_depth)
+    store.save(cfg.graph_dir())
+    typer.echo(
+        f"[build-graph] {store.meta['n_nodes']} nodes, {store.meta['n_edges']} edges, "
+        f"{store.meta['n_communities']} communities -> {cfg.graph_dir()}"
+    )
+
+
+def _resolve_graph_inputs(
+    cfg: "RunConfig",
+    bundle: Optional[Path],
+    extraction: Optional[Path],
+    extract_model: Optional[str],
+) -> "tuple[list[DocExtraction], list[DocRecord], OntologyCandidate | None]":
+    """Load (extractions, docs, ontology) from a bundle, explicit paths, or fresh extraction."""
+    from llb.graph.ingest import load_bundle, load_extractions
+    from llb.prep.ontology.inventory import inventory_corpus
+
+    if bundle is not None:
+        return load_bundle(bundle)
+    if extraction is not None:
+        docs = inventory_corpus(cfg.corpus_root)
+        return load_extractions(extraction), docs, None
+    if extract_model is not None:
+        from llb.prep.frontier import ProvenanceLog
+        from llb.prep.ontology.endpoint import ENDPOINT_LOCAL, EndpointConfig, build_complete
+        from llb.prep.ontology.extract import LLMExtractionAdapter, extract_corpus
+
+        docs = inventory_corpus(cfg.corpus_root)
+        endpoint = EndpointConfig(kind=ENDPOINT_LOCAL, model=extract_model)
+        complete = build_complete(endpoint, ProvenanceLog())
+        return extract_corpus(docs, LLMExtractionAdapter(complete)), docs, None
+    typer.echo(
+        "[error] build-graph needs one of: --bundle, --extraction (+ --corpus-root), "
+        "or --extract-model (+ --corpus-root)",
+        err=True,
+    )
+    raise typer.Exit(code=2)
+
+
 @app.command("validate-retrieval")
 def validate_retrieval(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
+    retrieval_backend: Optional[str] = typer.Option(None, help="faiss | graph (M6)"),
+    retrieval_strategy: Optional[str] = typer.Option(
+        None, help="graph strategy: local_khop | global_community"
+    ),
 ) -> None:
-    """Score the pinned embedding's retrieval over the gold set (does not rank models)."""
+    """Score the configured backend's retrieval over the gold set (does not rank models)."""
     from llb.executor.cases import spans_as_dicts
+    from llb.executor.runner import _load_store
     from llb.goldset.schema import load_goldset
     from llb.rag import retrieval
-    from llb.rag.store import RagStore
 
-    cfg = load_config(config, goldset_path=goldset)
-    store = RagStore.load(cfg.index_dir())
+    cfg = load_config(
+        config,
+        goldset_path=goldset,
+        retrieval_backend=retrieval_backend,
+        retrieval_strategy=retrieval_strategy,
+    )
+    store = _load_store(cfg)
     items = load_goldset(cfg.goldset_path)
     if split:
         items = [it for it in items if it.split == split]

@@ -1,4 +1,4 @@
-# Text-Analysis Scoring Schema (M5.0 proposal -- MH.2 sign-off is provided).
+# Text-Analysis Scoring Schema (M5.0 proposal -- MH.2 sign-off have provided).
 
 Signed off 2026-06-23 by volod; thresholds accepted.
 
