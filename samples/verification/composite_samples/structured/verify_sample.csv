@@ -1,0 +1,7 @@
+item_id,stratum,chk_grounded,chk_answerable,chk_reference,chk_planted,decision,human_note,human_status
+st-001,committed-sample|structured|st-001,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+st-002,committed-sample|structured|st-002,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+st-003,committed-sample|structured|st-003,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+st-004,committed-sample|structured|st-004,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+st-005,committed-sample|structured|st-005,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+st-006,committed-sample|structured|st-006,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided

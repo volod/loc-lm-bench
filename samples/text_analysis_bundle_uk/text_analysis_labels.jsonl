@@ -1,0 +1,11 @@
+{"label_id":"sample-001-key_fact-0","kind":"key_fact","value":"пасажиропотік зріс на 18 відсотків","doc_id":"sample-001","aliases":["пасажиропотік зріс на 18 відсотків"],"scoring":"objective"}
+{"label_id":"sample-001-entity-0","kind":"entity","value":"Київська міська рада","doc_id":"sample-001","scoring":"objective"}
+{"label_id":"sample-001-topic-0","kind":"topic","value":"міський транспорт","doc_id":"sample-001","aliases":["трамвайні маршрути"],"scoring":"objective"}
+{"label_id":"sample-001-trend-0","kind":"trend","value":"пасажиропотік зріс","doc_id":"sample-001","attrs":{"subject":"пасажиропотік","direction":"up"},"scoring":"objective"}
+{"label_id":"sample-001-risk-0","kind":"risk","value":"нестача водіїв","doc_id":"sample-001","scoring":"objective"}
+{"label_id":"sample-001-decision-0","kind":"decision","value":"модернізувати трамвайні маршрути","doc_id":"sample-001","scoring":"objective"}
+{"label_id":"sample-002-key_fact-0","kind":"key_fact","value":"320 консультацій","doc_id":"sample-002","aliases":["сервіс провів 320 консультацій"],"scoring":"objective"}
+{"label_id":"sample-002-entity-0","kind":"entity","value":"Львівська лікарня","doc_id":"sample-002","scoring":"objective"}
+{"label_id":"sample-002-topic-0","kind":"topic","value":"телемедицина","doc_id":"sample-002","aliases":["телемедичний сервіс"],"scoring":"objective"}
+{"label_id":"sample-002-risk-0","kind":"risk","value":"нестабільний інтернет","doc_id":"sample-002","scoring":"objective"}
+{"label_id":"sample-002-decision-0","kind":"decision","value":"додати мобільну бригаду","doc_id":"sample-002","scoring":"objective"}

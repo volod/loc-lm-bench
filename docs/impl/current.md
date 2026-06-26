@@ -103,6 +103,8 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
         source.json # pinned revision, source digest, selection rule
       corpus/ip_regulation_uk.md # substantial UA domain doc (IP regulation)
       for chunking
+      text_analysis_bundle_uk/ # committed text-analysis fixture (corpus/ + labels)
+      verification/composite_samples/ # committed sample verification refs for composite smoke runs
     scripts/
       shared/common.sh # shared bootstrap + canonical max_jobs() helper
       (AGENTS.md)
@@ -368,6 +370,11 @@ re-derives rho from it on every run (no model/endpoint/GPU), asserting it still 
 and matches the pinned 0.628 -- so a fresh clone reproduces the calibration decision and CI catches
 any drift. The stats, worksheet I/O, the interactive rater, and the scoring are likewise tested
 (`tests/test_calibration.py` + `tests/test_rate.py`).
+
+The runtime judge scorer is failure-tolerant for local-model diagnostics: an empty candidate answer
+gets zero faithfulness/relevancy without calling DeepEval, and a malformed local-judge JSON response
+zeros only the affected metric with a warning. The benchmark continues, objective scores remain the
+headline, and the diagnostic zero records the judge-quality failure instead of aborting a run.
 
 #### Judge model (OQ2 decided) + bias disclosure
 
@@ -1494,8 +1501,12 @@ refs when building the composite; `load_m5_composite` returns either ranked comp
 concrete blockers. CLI: `llb bench-composite` (diagnostic escape hatches: `--allow-unverified`,
 `--allow-missing-ci`). The Makefile target `make composite-headline` chains all six required
 category benches with `--data-verified --verification-ref ...`, then runs `llb bench-composite` as
-the clean preflight. Streamlit shows the composite section only when the verified, CI-capable suite
-is complete. Operator flow: [`composite-headline.md`](../guides/composite-headline.md).
+the clean preflight. Its defaults point at the committed sample suite, including
+`samples/text_analysis_bundle_uk` and category-specific sample refs under
+`samples/verification/composite_samples/`, for local smoke/demo composite runs. Real headline runs
+override those paths with frozen category bundles and their MH.5 artifacts. Streamlit shows the
+composite section only when the verified, CI-capable suite is complete. Operator flow:
+[`composite-headline.md`](../guides/composite-headline.md).
 
 **Text-analysis judged sub-tasks + long_doc + contradiction + board (M5.4, delivered).**
 `run_text_analysis` now takes the opt-in gated judge (`--judge-model` / `--judge-rho` /

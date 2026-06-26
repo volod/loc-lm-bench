@@ -1,0 +1,5 @@
+item_id,stratum,chk_grounded,chk_answerable,chk_reference,chk_planted,decision,human_note,human_status
+ag-001,committed-sample|agentic|file,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+ag-002,committed-sample|agentic|db,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+ag-003,committed-sample|agentic|search,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+ag-004,committed-sample|agentic|file_db,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided

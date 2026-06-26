@@ -42,6 +42,17 @@ make composite-headline \
   COMPOSITE_VERIFICATION_REF=<bundle>/sample_manifest.json
 ```
 
+For the committed sample fixtures, the Makefile defaults already point at
+`samples/text_analysis_bundle_uk`, the other `samples/*_uk.json` category files, and the
+category-specific sample refs under `samples/verification/composite_samples/`:
+
+```sh
+make composite-headline MODEL=<model-id> BACKEND=<backend>
+```
+
+This is a smoke/demo path over repo-authored fixtures. For real headline use, override the inputs
+and refs with the actual frozen category bundles and their MH.5 artifacts.
+
 If categories use different bundles or verification worksheets, pass one reference per category:
 
 ```sh
@@ -118,6 +129,10 @@ or:
 Do not backfill a committed seed set by editing manifests. If a committed sample file is promoted
 to headline data, first package or adapt it as a category bundle, run MH.5, and use the resulting
 verification artifact.
+
+The repository's committed sample refs are intentionally scoped to smoke/demo composite runs over
+repo-authored fixtures. They are not a substitute for MH.5 on new AI-drafted, adapted, or external
+data.
 
 ## Future AI-drafted or adapted bundle flow
 

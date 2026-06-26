@@ -1,0 +1,11 @@
+{
+  "kind": "committed-sample-fixture-review",
+  "artifact": "../../../agentic_tasks_uk.json",
+  "worksheet": "verify_sample.csv",
+  "sample_size": 4,
+  "population": 4,
+  "strata": {
+    "committed-sample|agentic": 4
+  },
+  "note": "Repository sample fixture verification reference for smoke/demo composite runs only."
+}

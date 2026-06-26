@@ -1,0 +1,11 @@
+{
+  "kind": "committed-sample-fixture-review",
+  "artifact": "../../../summarization_cases_uk.json",
+  "worksheet": "verify_sample.csv",
+  "sample_size": 3,
+  "population": 3,
+  "strata": {
+    "committed-sample|summarization": 3
+  },
+  "note": "Repository sample fixture verification reference for smoke/demo composite runs only."
+}

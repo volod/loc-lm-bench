@@ -6,6 +6,7 @@ OpenAI-compatible local endpoint through its maintained LocalModel adapter.
 """
 
 import os
+import logging
 import textwrap
 from dataclasses import dataclass
 from typing import Any, Callable, cast
@@ -15,7 +16,10 @@ from llb.contracts import JudgeInputRecord, JudgeScore
 from llb import env
 from llb.paths import load_project_env
 
+_LOG = logging.getLogger(__name__)
+
 DEFAULT_THRESHOLD = 0.6
+_EMPTY_ANSWER_JUDGE_SCORE: JudgeScore = {"faithfulness": 0.0, "answer_relevancy": 0.0}
 
 # Judge-model bias disclosure (OQ2). The v1 default judge is a LOCAL Gemma-4 model, chosen for
 # no data egress + reproducibility -- but it is NOT independent of the candidate pool: Gemma-4
@@ -174,6 +178,30 @@ def deepeval_scorer(
     base_url: str | None = None,
 ) -> list[JudgeScore]:
     """Score faithfulness and answer relevancy with Ukrainian DeepEval G-Eval prompts."""
+    if records and any(not str(record.get("answer", "")).strip() for record in records):
+        nonempty_records: list[JudgeInputRecord] = []
+        nonempty_positions: list[int] = []
+        for index, record in enumerate(records):
+            if str(record.get("answer", "")).strip():
+                nonempty_positions.append(index)
+                nonempty_records.append(record)
+        judged = (
+            deepeval_scorer(
+                nonempty_records, judge_model, evaluate_fn=evaluate_fn, base_url=base_url
+            )
+            if nonempty_records
+            else []
+        )
+        scores: list[JudgeScore] = [
+            {
+                "faithfulness": _EMPTY_ANSWER_JUDGE_SCORE["faithfulness"],
+                "answer_relevancy": _EMPTY_ANSWER_JUDGE_SCORE["answer_relevancy"],
+            }
+            for _ in records
+        ]
+        for index, score in zip(nonempty_positions, judged):
+            scores[index] = score
+        return scores
     if evaluate_fn is not None:
         return extract_scores(evaluate_fn(records, judge_model))
     return _default_deepeval_evaluate(records, judge_model, base_url=base_url)
@@ -234,21 +262,45 @@ def _default_deepeval_evaluate(
     )
 
     scores: list[JudgeScore] = []
-    for record in records:
+    for index, record in enumerate(records):
         test_case = LLMTestCase(
             input=record["question"],
             actual_output=record["answer"],
             retrieval_context=list(record.get("contexts", [])),
         )
-        faith_score = faithfulness.measure(test_case, _show_indicator=False)
-        relevancy_score = relevancy.measure(test_case, _show_indicator=False)
         scores.append(
             {
-                "faithfulness": float(faith_score),
-                "answer_relevancy": float(relevancy_score),
+                "faithfulness": _measure_judge_metric(
+                    faithfulness, test_case, metric_name="faithfulness", record_index=index
+                ),
+                "answer_relevancy": _measure_judge_metric(
+                    relevancy, test_case, metric_name="answer_relevancy", record_index=index
+                ),
             }
         )
     return scores
+
+
+def _measure_judge_metric(
+    metric: Any, test_case: Any, *, metric_name: str, record_index: int
+) -> float:
+    """Measure one DeepEval metric, converting malformed local-judge responses to zero.
+
+    Local judges can fail to return the strict JSON DeepEval expects. That is a judge-quality
+    failure, not a reason to abort the benchmark; the objective score remains the headline, and
+    the diagnostic metric gets zero for the affected record.
+    """
+    try:
+        return float(metric.measure(test_case, _show_indicator=False))
+    except Exception as exc:
+        _LOG.warning(
+            "[judge] %s failed for record %d (%s: %s); assigning 0.0",
+            metric_name,
+            record_index,
+            type(exc).__name__,
+            exc,
+        )
+        return 0.0
 
 
 def _served_model_id(judge_model: str) -> str:

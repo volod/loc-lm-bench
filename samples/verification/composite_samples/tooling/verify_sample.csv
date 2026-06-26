@@ -1,0 +1,13 @@
+item_id,stratum,chk_grounded,chk_answerable,chk_reference,chk_planted,decision,human_note,human_status
+tc-001,committed-sample|tooling|get_weather,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-002,committed-sample|tooling|get_weather,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-003,committed-sample|tooling|convert_currency,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-004,committed-sample|tooling|search_documents,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-005,committed-sample|tooling|calculator,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-006,committed-sample|tooling|create_reminder,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-007,committed-sample|tooling|no_tool,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-008,committed-sample|tooling|no_tool,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-009,committed-sample|tooling|search_documents,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-010,committed-sample|tooling|convert_currency,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-011,committed-sample|tooling|get_weather,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+tc-012,committed-sample|tooling|calculator,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
