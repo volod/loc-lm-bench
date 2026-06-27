@@ -14,7 +14,7 @@ _LOG = logging.getLogger(__name__)
 
 MLFLOW_EXPERIMENT = "loc-lm-bench"
 MLFLOW_STORE_DIR = "mlflow"
-MLFLOW_MIRROR_SCHEMA = "2"
+MLFLOW_MIRROR_SCHEMA = "3"
 MLFLOW_RUN_ID_TAG = "llb.canonical_run_id"
 MLFLOW_SCHEMA_TAG = "llb.mirror_schema"
 
@@ -124,9 +124,6 @@ def _mlflow_metrics(manifest: RunManifest) -> dict[str, float]:
             if _numeric(value):
                 values[f"{prefix}.{key}"] = float(value)
 
-    for key, value in (manifest.metrics or {}).items():
-        if _numeric(value):
-            values[key] = float(value)
     add("quality", manifest.metrics)
     add("retrieval", manifest.retrieval)
     add("telemetry", manifest.telemetry)

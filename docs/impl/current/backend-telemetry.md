@@ -44,18 +44,21 @@ so the KV cache fits (the native 131072 window would over-reserve and fail start
 Planner-vs-measured fit: the model's **weights load 9.8 GiB**, ~2.3x the old flat ~4.2 GiB
 estimate (`params_b x bpw`). w4a16 quantizes only the linear layers while Gemma's 256k-token
 embedding stays high-precision, so the flat product under-estimated w4a16 weights. The
-embedding-aware estimator that fixes this is now delivered (memory planner below); the measured floor is the
-regression anchor in `samples/models_uk.yaml`.
+embedding-aware estimator that fixes this is now delivered (memory planner below);
+the measured floor is the regression anchor in `samples/models_uk.yaml`.
 
 ### backend telemetry status
 
 - **vLLM launcher** (`VllmLauncher` + `build_vllm_command` + MAX_JOBS build helper / script): DONE
-- **telemetry hook** (telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time, tok/char)): DONE
-- - **candidate-model list** (candidate list in `samples/models_uk.yaml`; vLLM repo ids verified via `prep-models`):
-- DONE
-- **real-model validation** (validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real telemetry): DONE
+- **telemetry hook** (telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time,
+tok/char)): DONE
+- - **candidate-model list** (candidate list in `samples/models_uk.yaml`; vLLM repo ids verified
+via `prep-models`): DONE
+- **real-model validation** (validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real
+telemetry): DONE
 
-The real-model validation run surfaced three non-blocking gaps, all now DELIVERED in robust backend prep below: the
-embedding-aware VRAM estimate (memory planner), a pre-launch VRAM-contention guard (VRAM contention guard), and the vLLM
-serving knobs as `run-eval` CLI flags (vLLM serving preflight). The only remaining on-hardware confirmation (a real
+The real-model validation run surfaced three non-blocking gaps, all now DELIVERED in robust
+backend prep below: the embedding-aware VRAM estimate (memory planner), a pre-launch
+VRAM-contention guard (VRAM contention guard), and the vLLM serving knobs as `run-eval` CLI
+flags (vLLM serving preflight). The only remaining on-hardware confirmation (a real
 contended launch) is tracked forward in [`plan.md`](../plan.md) (verified-data hardening).

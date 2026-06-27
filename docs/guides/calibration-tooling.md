@@ -84,7 +84,7 @@ Ollama or serve the judge on another host:
 ```
 make calibration-run \
     MODEL=llama3.2:3b BACKEND=ollama \
-    JUDGE_MODEL=hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct \
+    JUDGE_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
     JUDGE_BASE_URL=http://127.0.0.1:8000/v1
 ```
 

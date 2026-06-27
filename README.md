@@ -1,89 +1,98 @@
-# loc-lm-bench -- Local Language Model Benchmark
+# loc-lm-bench -- Production Local LLM Benchmark
 
-Pick the best open-weight LLM for **your** Ukrainian RAG and text-analysis tasks, on **your**
-hardware. Public leaderboards rank general capability on someone else's data with unlimited VRAM;
-loc-lm-bench re-ranks a handful of candidate models on your own corpus, on a single desktop GPU
-(validated on an RTX 4060 Ti 16 GB), so the choice is reproducible and defensible.
+loc-lm-bench is a production-ready benchmark for selecting open-weight LLMs on local Ukrainian RAG
+and text-analysis workloads. It evaluates candidate models on your corpus and hardware, records the
+full run bundle, and ranks results with reproducible telemetry, confidence intervals, and reviewable
+data gates.
 
-Status: runs end to end -- data prep, Ollama + vLLM + llama.cpp serving, telemetry, a ranked board,
-GraphRAG, and category benchmarks (Milestones 0-6). Milestone 7 (extended agentic workflows) is the
-open workstream. See [what's built today](docs/impl/current.md) and the
-[forward plan](docs/impl/plan.md).
+## Quick Start
 
-## Features
+Requires [`uv`](https://docs.astral.sh/uv/) and a running local backend such as Ollama.
+CUDA and `HF_TOKEN` are only needed for GPU serving or gated model weights.
 
-Each feature links to its manual.
+```sh
+make venv
+make demo-eval
 
-| Feature | What you get |
-|---|---|
-| [Corpus-grounded gold set](docs/guides/goldset-from-scratch.md) | Char-offset source-span labels, stable under chunk tuning. |
-| [Backend-agnostic serving](docs/guides/vllm-backend.md) | Ollama + vLLM + llama.cpp; resolver + VRAM-contention guard. |
-| [Hardware-aware planning](docs/inference/config-example.md) | `list-models` reports which candidates fit this GPU + RAM. |
-| [Gated LLM judge](docs/guides/calibration-tooling.md) | Judge ranks only after UA calibration (Spearman rho >= 0.6). |
-| [Rigorous leaderboard](docs/guides/mlflow-analysis.md) | Average rank + Pareto front + bootstrap CIs; local MLflow. |
-| [Graph + FAISS retrieval](docs/guides/graph-vs-faiss-comparison.md) | FAISS and GraphRAG stores, compared on one gold set. |
-| [Human-in-the-loop gates](docs/guides/human-in-the-loop-evaluation.md) | Schema sign-off, cross-check, sample-verify. |
+make build-index CORPUS=<dir>
+make validate-retrieval
 
-## Quick start
+make sweep SWEEP_ID=run1
+make pipeline
 
-Requires [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11) and a running Ollama
-(`ollama serve`). A CUDA GPU and an `HF_TOKEN` are only needed for vLLM / llama.cpp and gated
-weights. The first `make venv` seeds `.env` and stops with a setup notice (exit 0, **not** an
-error); set `HF_TOKEN`, `DATA_DIR`, and `OLLAMA_HOST` / `VLLM_HOST`, then re-run. From a fresh
-clone to a ranked leaderboard:
+make board
+make mlflow
+```
 
-    # 0. One-time setup: .venv (py3.11) + all extras + .env (idempotent).
-    make venv
+Run `make` with no target to list commands. `.env.example` documents runtime settings.
 
-    # 1. Smoke the whole chain end to end (idempotent): gold set -> index ->
-    #    prep-models -> one ranked row + telemetry under .data/llb/.
-    make demo-eval
+## Core Capabilities
 
-    # 2. Point retrieval at your own corpus and validate it.
-    make build-index CORPUS=<dir>
-    make validate-retrieval        # recall@k / MRR of the pinned embedder
-
-    # 3. Rank candidates, then tune and finalize.
-    llb sweep --sweep-id run1      # VRAM + thermal gated, process-isolated
-    llb pipeline                   # finalists -> Optuna tune -> final board
-
-    # 4. Review the leaderboard.
-    llb board                      # avg rank, Pareto front, bootstrap CIs
-    make mlflow                    # per-run inspection at 127.0.0.1:5000
-
-Run `make` with no target to list every command; `.env.example` documents every variable.
+- **Corpus-grounded gold sets.** Build or ingest Ukrainian eval data with exact source spans,
+  verified splits, and reusable corpus bundles.
+  Entry points: [Gold-set guide](docs/guides/goldset-from-scratch.md),
+  [data prep](docs/guides/data-prep.md), `make validate-goldset`, `make ingest-uk-squad`.
+- **Human verification gates.** Cross-check AI-drafted data, review a stratified sample, and emit
+  accepted ledgers before real model scoring.
+  Entry points: [verification tooling](docs/guides/verification-tooling.md),
+  [human evaluation](docs/guides/human-in-the-loop-evaluation.md),
+  `make verify-sample`, `make verify-review`, `make verify-accept`.
+- **FAISS and GraphRAG retrieval.** Build vector and graph stores, validate recall/MRR, and compare
+  retrieval strategies before attributing failures to the model.
+  Entry points: [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md),
+  `make build-index`, `make build-graph`, `make validate-retrieval`, `make compare-retrieval`.
+- **Local serving and model planning.** Resolve which candidate models fit the host, prepare
+  weights, and run through Ollama, vLLM, or llama.cpp.
+  Entry points: [vLLM backend guide](docs/guides/vllm-backend.md),
+  [inference config](docs/inference/config-example.md), `make list-models`, `make prep-models`.
+- **Private model leaderboards.** Evaluate candidate models on your corpus, isolate sweep cells,
+  tune finalists, and inspect ranked boards with confidence intervals.
+  Entry points: [run skeleton](docs/guides/run-skeleton.md),
+  [MLflow analysis](docs/guides/mlflow-analysis.md), `make run-eval`, `make sweep`,
+  `make pipeline`, `make board`, `make mlflow`.
+- **Calibrated judge gates.** Use a local DeepEval judge only after human-rated Ukrainian
+  calibration clears the Spearman threshold.
+  Entry points: [calibration tooling](docs/guides/calibration-tooling.md),
+  [judge experiments](docs/guides/judge-experiments.md), `make calibration-run`,
+  `make calibration-rate`, `make calibration-score`, `make judge-experiment`.
+- **Prompt-system tuning.** Generate reviewable prompt packages, tune on one split, and verify
+  generalization on a held-out final split.
+  Entry point: [prompt-system guide](docs/guides/prompt-system-rag.md).
+- **Category benchmark suites.** Score security, tooling, agentic, summarization, structured
+  output, and text-analysis categories, then publish a guarded composite headline.
+  Entry points: [composite headline guide](docs/guides/composite-headline.md),
+  [category learning path](docs/guides/learning-path-evaluation-categories.md),
+  `make composite-headline`.
+- **Agentic harness comparison.** Run the same task set through the loop, LangGraph, and CrewAI
+  harnesses to separate model quality from orchestration effects.
+  Entry point: [CrewAI harness guide](docs/guides/crewai-harness.md).
+- **Platform matrix telemetry.** Compare a logical model base across serving backends with VRAM,
+  throughput, power, and quality-per-watt telemetry.
+  Entry point: [platform matrix guide](docs/guides/platform-matrix.md), `make platform-matrix`.
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). Key entry points:
+Start at the [documentation index](docs/README.md). The main implementation reference is
+[current.md](docs/impl/current.md), and contributor guardrails live in [AGENTS.md](AGENTS.md).
 
-| Doc | What it covers |
-|---|---|
-| [What's built today](docs/impl/current.md) | Delivered milestones, modules, commands, results. |
-| [Forward plan](docs/impl/plan.md) | Open roadmap (Milestone 7). |
-| [Design spec](docs/design/spec.md) | Problem, wedge, architecture, recorded decisions. |
-| [Dev setup](docs/guides/dev-setup.md) | Requirements, uv, venv, extras, apt deps, targets. |
-| [AGENTS.md](AGENTS.md) | Contributor + agent guardrails (paths, MAX_JOBS, doc cycle). |
-| [Learning path](docs/guides/learning-path.md) | Staged syllabus + links for the whole stack. |
+## Data Licenses
 
-## Related projects & benchmarks
+Ready-to-use public fixtures and public-screen tasks keep their upstream data terms:
 
-loc-lm-bench is **not** a public leaderboard -- it consumes Ukrainian eval prior art as a free prior
-and re-ranks on your private corpus. Re-verify each dataset's license and preserve attribution before
-any redistribution (see the [design spec](docs/design/spec.md)).
+- The committed UA-SQuAD fixture derives from
+  [`FIdo-AI/ua-squad`](https://huggingface.co/datasets/FIdo-AI/ua-squad). Its dataset-card
+  metadata is MIT-marked, and the fixture applies the upstream derivative-text note that
+  SQuAD-derived text inherits [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+  See the local [fixture license](samples/goldsets/ua_squad_postedited_v1/LICENSE.md),
+  [source metadata](samples/goldsets/ua_squad_postedited_v1/source.json), and
+  [SQuAD](https://rajpurkar.github.io/SQuAD-explorer/) attribution.
+- The Tier-1 public screen does not vendor task records. Its default task sources should be
+  checked before publishing or redistributing data:
+  [Belebele](https://huggingface.co/datasets/facebook/belebele) and
+  [ARC](https://huggingface.co/datasets/allenai/ai2_arc) are CC BY-SA 4.0;
+  [HellaSwag](https://huggingface.co/datasets/Rowan/hellaswag) and
+  [MMLU](https://huggingface.co/datasets/cais/mmlu) are MIT;
+  [PIQA](https://huggingface.co/datasets/piqa) is marked license-unknown on its dataset card.
 
-- **Ukrainian LLM Leaderboard** -- public UA ranking / transfer baseline
-  ([HF](https://huggingface.co/spaces/lang-uk/ukrainian-llm-leaderboard),
-  [GitHub](https://github.com/lang-uk/ukrainian-llm-leaderboard)).
-- **lm-evaluation-harness-uk** -- INSAIT EleutherAI fork; powers the Tier-1 public screen
-  ([GitHub](https://github.com/insait-institute/lm-evaluation-harness-uk)).
-- **Candidate models** -- [MamayLM v2](https://models.mamay.ai/) (Gemma-3 UA-specialized; top
-  candidate + possible local judge), [Lapa LLM](https://huggingface.co/spaces/lapa-llm/lapa),
-  [Gemma 4](https://huggingface.co/collections/google/gemma-4),
-  [Qwen 3.6](https://huggingface.co/collections/Qwen/qwen36), and
-  [Mistral Small](https://huggingface.co/collections/mistralai/mistral-small-4).
-- **Datasets** -- UA-SQuAD ([`FIdo-AI/ua-squad`](https://huggingface.co/datasets/FIdo-AI/ua-squad),
-  the committed gold-set fixture) and Belebele-uk
-  ([`facebook/belebele`](https://huggingface.co/datasets/facebook/belebele), Tier-1 MCQ screen).
-- **MamayLM v2 benchmarks** (reference only; (c) INSAIT / MamayLM) --
-  [release post](https://models.mamay.ai/blog/mamaylm-v2-release-en/).
+Other committed tutorial fixtures are repo-authored unless their local README or provenance file
+states otherwise. Preserve attribution and license notices when redistributing derived artifacts.

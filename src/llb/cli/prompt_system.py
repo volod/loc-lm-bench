@@ -114,7 +114,10 @@ def prompt_system_compare_cmd(
     ),
 ) -> None:
     """RAG prompt-system comparison: rank ONE model's runs across prompt-system ids."""
-    from llb.board.data import prompt_system_comparison, rag_prompt_system_comparison
+    from llb.board.prompt_systems import (
+        prompt_system_comparison,
+        rag_prompt_system_comparison,
+    )
 
     cfg = load_config(None)
     if lane == "rag":

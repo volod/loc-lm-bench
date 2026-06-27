@@ -12,6 +12,7 @@ import pytest
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.config import RunConfig
+from llb.eval import common
 from llb.eval import graph
 from llb.executor import runner as runner_module
 from llb.executor.runner import run_eval
@@ -167,7 +168,12 @@ def test_run_eval_persists_prompt_system_provenance(tmp_path):
         cfg,
         items=items,
         launcher=FakeLauncher(lambda messages: ChatResult(text="Київ")),
-        runner_fn=lambda item: {"answer": "Київ", "status": graph.OK, "retrieved": [], "usage": {}},
+        runner_fn=lambda item: {
+            "answer": "Київ",
+            "status": common.OK,
+            "retrieved": [],
+            "usage": {},
+        },
         prompt_system_provenance=provenance,
         mirror=lambda *a: None,
         emit=False,
@@ -343,7 +349,7 @@ def test_score_case_records_semantic_with_embedder():
             return [[1.0, 0.0] for _ in texts]
 
     item = gold_item("x", "q", "Київ", "Київ")
-    state = {"answer": "Київ", "status": graph.OK, "retrieved": [], "usage": {}}
+    state = {"answer": "Київ", "status": common.OK, "retrieved": [], "usage": {}}
     row = score_case(item, state, embedder=Emb())
     assert row["semantic"] == 1.0
 
@@ -397,7 +403,7 @@ def test_run_eval_scores_only_verified_items(tmp_path):
         cfg,
         items=[unverified, verified],
         launcher=launcher,
-        runner_fn=lambda item: {"answer": "Київ", "status": graph.OK},
+        runner_fn=lambda item: {"answer": "Київ", "status": common.OK},
         mirror=lambda *args: None,
         emit=False,
     )

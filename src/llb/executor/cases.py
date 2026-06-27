@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from llb.contracts import CaseScoreRow, RetrievalPair, SourceSpanRecord
+from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
@@ -36,7 +37,7 @@ def spans_as_dicts(item: GoldItem) -> list[SourceSpanRecord]:
 def score_case(item: GoldItem, state: RagState, embedder: Any = None) -> CaseScoreRow:
     """Build one per-case score row from a terminal graph state."""
     answer = state.get("answer", "")
-    status = state.get("status", eval_graph.OK)
+    status = state.get("status", eval_common.OK)
     spans = spans_as_dicts(item)
     retrieved = state.get("retrieved", [])
     corr = correctness.answer_correctness(answer, item.reference_answer, embedder=embedder)

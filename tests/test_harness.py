@@ -7,7 +7,7 @@ from llb.bench import tool_world as tw
 from llb.bench.harness import get_harness, loop_harness
 from llb.bench.harness import crewai as crewai_harness
 from llb.bench.harness import langgraph as lg
-from llb.board.data import harness_comparison, load_agentic_harness_records
+from llb.board.harnesses import harness_comparison, load_agentic_harness_records
 
 
 def scripted(outputs):

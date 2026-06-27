@@ -274,7 +274,7 @@ def pipeline_cmd(
     """
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import resolve_all
-    from llb.board.data import best_per_model, load_run_records, load_screen_reports
+    from llb.board.runs import best_per_model, load_run_records, load_screen_reports
     from llb.optimize.tuner import two_stage
     from llb.scoring.aggregate import format_board, rank_board, ranking_policy_note
     from llb.screen.public import select_finalists

@@ -2,43 +2,46 @@
 
 ## category suite -- security, agentic, tooling (build COMPLETE)
 
-The category suite BUILD is complete and unit-tested (no GPU): the eval-template prerequisites + the
-signed-off text-analysis schema (text analysis), and every scored category -- security (security benchmark), tooling
-(tooling benchmark), agentic (agentic benchmark), text-analysis + summarization + structured-output + chat-period +
-reliability (text-analysis and category expansion) -- plus the second-frontier verified-data gate (verified-data hardening). Each
-category renders under its OWN Tier (never cross-ranked with the RAG board), produces an objective,
-CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case scores like
-`run-eval`. The category suite RESIDUALS are now delivered too (per-category, below): the security benchmark sourcing
-breadth (public-set adapters + corpus RAG-injection/canary planter) + unsafe-content gated judge;
-the tooling benchmark native-FC + MCP transport, BFCL UA adapter, and per-argument tolerance; the agentic benchmark
-real-corpus search tasks; the category expansion nested/array structured cases + matching, chat-period
-planter/ingestion, and text-analysis judged sub-tasks + long_doc + contradiction + board; and the
-verified-data hardening ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence).
-What remains is forward work in [`plan.md`](../plan.md): the extended workflow harness comparison, RAG prompt-system
-generation/tuning, and platform/matrix expansion.
+The category suite BUILD is complete and unit-tested (no GPU): the eval-template prerequisites +
+the signed-off text-analysis schema (text analysis), and every scored category -- security
+(security benchmark), tooling (tooling benchmark), agentic (agentic benchmark), text-analysis +
+summarization + structured-output + chat-period + reliability (text-analysis and category
+expansion) -- plus the second-frontier verified-data gate (verified-data hardening). Each
+category renders under its OWN Tier (never cross-ranked with the RAG board), produces an
+objective, CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case
+scores like `run-eval`. The category suite RESIDUALS are now delivered too (per-category, below):
+the security benchmark sourcing breadth (public-set adapters + corpus RAG-injection/canary
+planter) + unsafe-content gated judge; the tooling benchmark native-FC + MCP transport, BFCL UA
+adapter, and per-argument tolerance; the agentic benchmark real-corpus search tasks; the category
+expansion nested/array structured cases + matching, chat-period planter/ingestion, and
+text-analysis judged sub-tasks + long_doc + contradiction + board; and the verified-data hardening
+ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence).
+What remains is forward work in [`plan.md`](../plan.md): the extended workflow harness comparison,
+RAG prompt-system generation/tuning, and platform/matrix expansion.
 
-The shared category suite substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
-`launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
-reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning backend under the existing
-`isolate_cell` contract; `category_result` stamps a `ModelResult` with the category Tier (per-case
-scores -> bootstrap CI); `render_board` ranks under that Tier via `rank_board` (whose guard refuses
-to cross-rank tiers) + `format_board`; `persist_category_run` writes the run bundle under
-`$DATA_DIR/<category>/<ts>/`. The category Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` /
-`TIER_TOOLING` / `TIER_AGENTIC` / `TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in
-`llb.scoring.aggregate`. Each category exposes a `bench-*` CLI command.
+The shared category suite substrate (REUSE, not a new platform) lives in `llb.bench.common`:
+`local_complete` / `launcher_complete` build the production `complete` (prompt -> raw text);
+`drive_with_backend` reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning
+backend under the existing `isolate_cell` contract; `category_result` stamps a `ModelResult`
+with the category Tier (per-case scores -> bootstrap CI); `render_board` ranks under that
+Tier via `rank_board` (whose guard refuses to cross-rank tiers) + `format_board`;
+`persist_category_run` writes the run bundle under `$DATA_DIR/<category>/<ts>/`. The category
+Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` / `TIER_TOOLING` / `TIER_AGENTIC` /
+`TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in `llb.scoring.aggregate`.
+Each category exposes a `bench-*` CLI command.
 
 ### Eval templates (deferred eval templates) -- `llb.eval.{common,map_reduce,multi_hop}`
 The two remaining DRY LangGraph templates, following the single-call template's node-closure
 shape (`graph.py`). The shared status taxonomy, refusal markers, `classify_response`, and
-`format_context` were extracted into `llb.eval.common` (re-exported from `graph.py`, so the RAG core
-single-call path is unchanged) and are reused by all three templates.
+`format_context` live in `llb.eval.common` and are reused by all three templates.
 - **map-reduce (`map_reduce.py`)** -- split a long document into overlapping segments, MAP a
   partial answer per segment, REDUCE the partials into one answer. The long-doc comprehension
   substrate; segments that find nothing emit a `(немає інформації)` marker the reduce step drops.
 - **multi-hop (`multi_hop.py`)** -- retrieve -> CONTROLLER -> {retrieve again | answer} with a
   conditional edge, bounded by `max_hops`; gathered chunks are deduped across hops. This is the
-  agentic benchmark substrate (agentic benchmark grows the controller into tool calls + an in-sandbox exec node).
-  Trajectory length (`n_hops`) + model-call/token counts are recorded as the efficiency signal.
+  agentic benchmark substrate (agentic benchmark grows the controller into tool calls +
+  an in-sandbox exec node). Trajectory length (`n_hops`) + model-call/token counts are recorded
+  as the efficiency signal.
 Like `graph.py`, every node closure / parser / message builder is pure and unit-tested WITHOUT
 langgraph; only `build_map_reduce_graph` / `build_multi_hop_graph` import it. Both compiled
 graphs were smoke-run end to end with fake store/launcher.
@@ -52,16 +55,17 @@ the text-analysis SUB-TASKS (the per-sub-task unit of credit -- key_fact / entit
 trend / risk / decision / contradiction objective, narrative / insight / long_doc judged); the
 PLANTED-LABEL taxonomy `prepare-synthetic-corpus` must emit (stable `label_id`, surface `value`
 + `aliases`, grounding offsets, `attrs`, objective/judged flag); and the MATCHING engine -- the
-text-analysis sign-off-decided basis of label-ID exact/normalized surface match, then PINNED-EMBEDDER COSINE as the
-secondary signal (`TAU_FULL=0.85` full, `[0.70, 0.85)` partial credit 0.5), NOT lemmatization and
-NOT LLM-entailment. Greedy one-to-one assignment yields per-sub-task precision / recall / F1
-(unmatched predictions are false positives, penalizing hallucinated extractions); the document
-objective headline is the mean F1 over objective sub-tasks, with judged sub-tasks kept out of it
-(the gated judge owns those). The cosine similarity is INJECTED, so the whole engine is pure and
-unit-tested without the embedder; `embedder_similarity()` is the production default.
+text-analysis sign-off-decided basis of label-ID exact/normalized surface match, then
+PINNED-EMBEDDER COSINE as the secondary signal (`TAU_FULL=0.85` full, `[0.70, 0.85)` partial
+credit 0.5), NOT lemmatization and NOT LLM-entailment. Greedy one-to-one assignment yields
+per-sub-task precision / recall / F1 (unmatched predictions are false positives, penalizing
+hallucinated extractions); the document objective headline is the mean F1 over objective sub-tasks,
+with judged sub-tasks kept out of it (the gated judge owns those). The cosine similarity is
+INJECTED, so the whole engine is pure and unit-tested without the embedder; `embedder_similarity()`
+is the production default.
 
-The schema is SIGNED OFF (text-analysis sign-off, 2026-06-23 -- thresholds accepted as proposed; recorded at the top
-of the proposal doc).
+The schema is SIGNED OFF (text-analysis sign-off, 2026-06-23 -- thresholds accepted as proposed;
+recorded at the top of the proposal doc).
 
 **Direction-aware trend credit (text analysis).** A `trend` label's planted `attrs.direction`
 (up | down | flat) now adjusts credit: `direction_of(text)` infers a direction from a UA/EN stem
@@ -96,12 +100,12 @@ the bootstrap CI); `render_board` ranks under that Tier via the existing `rank_b
 refuses to cross-rank tiers) + `format_board`; and `persist_category_run` writes a canonical
 manifest + per-case scores bundle under `$DATA_DIR/<method>/<ts>/` exactly like `run-eval`.
 `run_gated_judge` is the shared opt-in GATED-judge seam: a thin reuse of `scoring.judge.run_judge`
-that returns per-record scores ONLY when a judge is configured AND trusted (`judge_rho >= threshold`,
-the judge calibration gate gate); the `scorer` is injectable (a fake in tests), the default is the DeepEval judge
-bound to a `base_url` (lazy-imported). A category records the judge signal ALONGSIDE its objective
-headline, never folded in (objective-first). Summarization (faithfulness) and agentic
-(trajectory-quality, agentic benchmark) are the consumers (below); the unsafe-content wiring (security benchmark) reuses the
-same seam.
+that returns per-record scores ONLY when a judge is configured AND trusted
+(`judge_rho >= threshold`, the judge calibration gate gate); the `scorer` is injectable (a fake
+in tests), the default is the DeepEval judge bound to a `base_url` (lazy-imported). A category
+records the judge signal ALONGSIDE its objective headline, never folded in (objective-first).
+Summarization (faithfulness) and agentic (trajectory-quality, agentic benchmark) are the
+consumers (below); the unsafe-content wiring (security benchmark) reuses the same seam.
 
 `llb.bench.text_analysis.run_text_analysis` is the text analysis scored runner: it loads a planter bundle
 (`corpus/` + `text_analysis_labels.jsonl`), asks the candidate to extract each document's present
@@ -118,20 +122,21 @@ the embedder. CLI: `llb bench-text-analysis --bundle <dir> --model <m> [--backen
 `llb.scoring.aggregate` (the existing `_validate_board_cohort` guard already refuses any board that
 mixes distinct tiers, so these are the named identities each category stamps).
 
-The text analysis carry-overs are now DELIVERED under category expansion (see "Text-analysis judged sub-tasks + long_doc +
-contradiction + board" below): the gated judge over narrative / insight, `long_doc` via the
-map-reduce template, the `contradiction` paired-span matching, and the Streamlit board loading the
-per-tier category runs. OQ4 is CONFIRMED (2026-06-25): a REAL text-analysis corpus exists
-alongside synthetic (scored + reported SEPARATELY via the runner's `synthetic` flag), reference
-answers must be AUTHORED, and a real chat-log corpus exists -- the real chat path is delivered in
-category expansion (`llb.prep.chat_corpus`). Per the OQ-egress decision (2026-06-25) the real chat logs use a
-LOCAL cross-check verifier only (no egress) while the real text-analysis corpus may use the frontier
-(litellm) cross-check.
+The text analysis carry-overs are now DELIVERED under category expansion (see "Text-analysis judged
+sub-tasks + long_doc + contradiction + board" below): the gated judge over narrative / insight,
+`long_doc` via the map-reduce template, the `contradiction` paired-span matching, and the Streamlit
+board loading the per-tier category runs. OQ4 is CONFIRMED (2026-06-25): a REAL text-analysis
+corpus exists alongside synthetic (scored + reported SEPARATELY via the runner's `synthetic` flag),
+reference answers must be AUTHORED, and a real chat-log corpus exists -- the real chat path is
+delivered in category expansion (`llb.prep.chat_corpus`). Per the OQ-egress decision (2026-06-25)
+the real chat logs use a LOCAL cross-check verifier only (no egress) while the real text-analysis
+corpus may use the frontier (litellm) cross-check.
 
-### security benchmark Security / robustness benchmark -- `llb.scoring.security` + `llb.bench.security`
-The objective security board (no human dep to build). `llb.scoring.security` is the pure engine:
-every case carries a STRUCTURED success detector (no safety classifier; ShieldGemma / frontier
-moderation stay opt-in), one of two kinds covering all seven spec families --
+### security benchmark Security / robustness benchmark -- `llb.scoring.security` +
+`llb.bench.security` The objective security board (no human dep to build). `llb.scoring.security`
+is the pure engine: every case carries a STRUCTURED success detector (no safety classifier;
+ShieldGemma / frontier moderation stay opt-in), one of two kinds covering all seven spec
+families --
   * `leak` -- the attack plants a unique MARKER (an injected token the model is tricked into
     emitting, or a corpus CANARY it must not reveal); the attack SUCCEEDS when any marker appears
     in the output (casefolded substring). Covers prompt-injection, instruction-hierarchy,
@@ -154,7 +159,8 @@ benign controls; `load_cases_file` loads it. CLI: `llb bench-security`. Reuses `
 `isolate_cell` contract via `drive_with_backend`. Detectors + scoring + the runner are unit-tested
 with planted fixtures + a scripted fake endpoint (vulnerable vs robust model), no GPU.
 
-**Sourcing breadth (security benchmark, delivered).** Two pure, injectable adapters extend the committed seed:
+**Sourcing breadth (security benchmark, delivered).** Two pure, injectable adapters extend
+the committed seed:
 - `llb.prep.security_sources` adapts the public adversarial sets (AdvBench / HarmBench /
   JailbreakBench) into `SecurityCase` records, UA-adapted: a per-source normalizer extracts one
   `Behavior` (id + text + category), and `behavior_to_case` frames it as a UA request (`refuse`
@@ -163,23 +169,23 @@ with planted fixtures + a scripted fake endpoint (vulnerable vs robust model), n
   rows are passed IN (operator's local CSV/JSON under each set's license) -- nothing vendored or
   fetched at import. CLI: `llb adapt-security-set --source advbench --rows-file ... [--jailbreak]
   [--merge-seed]`.
-- `llb.prep.security_planter` is the frontier drafting-style corpus-specific planter: over a real corpus it
-  splices a marker-bearing instruction INTO a document (`rag_injection` leak cases, the attack in
-  the retrieved context, a benign user turn) and embeds a unique CANARY in a confidential doc
-  (`data_exfiltration` leak cases). Markers/canaries are DETERMINISTIC per (doc, index). CLI:
-  `llb plant-security-cases --corpus-root ... [--merge-seed]`.
+- `llb.prep.security_planter` is the frontier drafting-style corpus-specific planter: over a real
+  corpus it splices a marker-bearing instruction INTO a document (`rag_injection` leak cases,
+  the attack in the retrieved context, a benign user turn) and embeds a unique CANARY in
+  a confidential doc (`data_exfiltration` leak cases). Markers/canaries are DETERMINISTIC per
+  (doc, index). CLI: `llb plant-security-cases --corpus-root ... [--merge-seed]`.
 
-**Unsafe-content gated judge (security benchmark, delivered).** `run_security` now takes the opt-in gated judge
-(`--judge-model` / `--judge-rho` / `--judge-base-url`): over the harmful-ask (`refuse`-detector,
-non-benign) cases it scores a `refusal_quality` scalar (answer-relevancy to a SAFE-REFUSAL intent --
-a clean refusal scores high, compliance low), recorded ALONGSIDE the objective defense rate (per
-harmful-ask case + mean + CI, a `JudgeStatus` in the manifest), never folded into the headline, and
-only when trusted (`judge_rho >= 0.6`, the judge calibration gate gate); else demoted. No new safety classifier
-(ShieldGemma / frontier moderation stay opt-in). `judge_scorer` is injectable, so it is proven with
-a fake judge.
+**Unsafe-content gated judge (security benchmark, delivered).** `run_security` now takes
+the opt-in gated judge (`--judge-model` / `--judge-rho` / `--judge-base-url`): over the harmful-ask
+(`refuse`-detector, non-benign) cases it scores a `refusal_quality` scalar (answer-relevancy to
+a SAFE-REFUSAL intent -- a clean refusal scores high, compliance low), recorded ALONGSIDE
+the objective defense rate (per harmful-ask case + mean + CI, a `JudgeStatus` in the manifest),
+never folded into the headline, and only when trusted (`judge_rho >= 0.6`, the judge
+calibration gate); else demoted. No new safety classifier (ShieldGemma / frontier moderation
+stay opt-in). `judge_scorer` is injectable, so it is proven with a fake judge.
 
-Both producers ship `verified=false`-equivalent: the human verification gate human sample-verify still gates any
-headline use of the attack set.
+Both producers ship `verified=false`-equivalent: the human verification gate human sample-verify
+still gates any headline use of the attack set.
 
 ### tooling benchmark Tooling / function-calling benchmark -- `llb.scoring.tooling` + `llb.bench.tooling`
 The objective, CALL-ONLY function-calling board (tools are NOT executed -- that is agentic benchmark).
@@ -225,16 +231,18 @@ model), no GPU.
   mode. The cases still need the human verification gate human sample-verify before headline use.
 
 ### agentic benchmark Agentic workflows benchmark -- `llb.bench.{tool_world,agentic}`
-The agentic loop EXTENDS the text analysis multi-hop controller pattern with tool calls + an in-sandbox
-execution step. `llb.bench.tool_world` is the deterministic sandbox (no tau-bench / AgentBench): a
-mock filesystem, a mock key-value DB, substring `search` over a small UA corpus, and a `calculator`
-backed by a SAFE restricted-AST evaluator (`safe_eval` allows only numbers + arithmetic operators
-+ parentheses -- no names/calls/imports). Each tool is a pure `(world, args) -> observation`
-mutating only the in-memory `ToolWorld`, so a task's success is checkable from the final env-state.
+The agentic loop EXTENDS the text analysis multi-hop controller pattern with tool calls +
+an in-sandbox execution step. `llb.bench.tool_world` is the deterministic sandbox (no tau-bench
+/ AgentBench): a mock filesystem, a mock key-value DB, substring `search` over a small UA corpus,
+and a `calculator` backed by a SAFE restricted-AST evaluator (`safe_eval` allows only numbers +
+arithmetic operators + parentheses -- no names/calls/imports). Each tool is a pure
+`(world, args) -> observation` mutating only the in-memory `ToolWorld`, so a task's success is
+checkable from the final env-state.
 
 `llb.bench.agentic.run_episode` is the harness loop: each step the model emits one tool call
-(reusing the tooling benchmark `parse_tool_call`), the world EXECUTES it, the observation is fed back, and the
-loop runs until the model calls `finish` (or answers in prose) or the step budget is exhausted.
+(reusing the tooling benchmark `parse_tool_call`), the world EXECUTES it, the observation is
+fed back, and the loop runs until the model calls `finish` (or answers in prose) or the step
+budget is exhausted.
 `check_success` is an OBJECTIVE assertion over the final env-state / answer (`file_equals` /
 `file_contains` / `db_equals` / `answer_contains`; ALL must hold; an empty assertion list never
 passes). `run_agentic` aggregates completion-rate as the headline `objective_score` under
@@ -313,9 +321,10 @@ The remaining spec categories, each on the shared `bench.common` substrate:
 
 All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU.
 
-**Guarded category suite composite headline (extended workflow support).** `llb.scoring.composite` builds a separate composite
-row only when every required category suite tier for a model is present, has a reloadable per-case objective
-series for bootstrap CIs, and is stamped with `data_verified=true`. The weights use the spec's
+**Guarded category suite composite headline (extended workflow support).** `llb.scoring.composite_builder`
+builds a separate composite row only when every required category suite tier for a model is present,
+has a reloadable per-case objective series for bootstrap CIs, and is stamped with
+`data_verified=true`. The weights use the spec's
 category suite-category proportions and renormalize over the category suite subset: text-analysis 20, summarization 10,
 structured 10, security 10, agentic 10, tooling 5. Category runners now persist a standardized
 per-case `objective_score`, and the `bench-*` commands accept `--data-verified` plus
@@ -326,7 +335,7 @@ that points to one, or an accepted-ledger bundle whose items are all `verified=t
 references render a detailed operator diagnostic (`format_verification_status`) with path, kind,
 reason, worksheet or ledger statistics, failing strata or unverified ids, and the exact
 `verify-review` / `verify-accept` / rerun instruction needed to make the reference usable.
-`llb.board.data` preserves category run metadata via `CategoryRunRecord` and re-checks verification
+`llb.board.categories` preserves category run metadata via `CategoryRunRecord` and re-checks verification
 refs when building the composite; `load_category_composite` returns either ranked composite rows or
 concrete blockers. CLI: `llb bench-composite` (diagnostic escape hatches: `--allow-unverified`,
 `--allow-missing-ci`). The Makefile target `make composite-headline` chains all six required

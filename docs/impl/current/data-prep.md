@@ -188,14 +188,13 @@ The v1 judge is a **local Gemma-4 model**, chosen over a frontier API for **no c
 data-egress and reproducibility**. The id is configured through `judge_model` /
 `--judge-model` / `JUDGE_MODEL` and must match the id exposed by the local OpenAI-compatible
 endpoint. `judge_base_url` / `--judge-base-url` / `JUDGE_BASE_URL` keeps that endpoint separate
-from the candidate backend. Existing `hosted_vllm/` and `ollama_chat/` prefixes remain accepted
-and are stripped before requests.
+from the candidate backend.
 
-- - **12 GB** (`ollama_chat/gemma-4-e4b-it`): smallest Gemma 4 via GGUF/CPU offload; the 12B will
+- - **12 GB** (`gemma-4-e4b-it`): smallest Gemma 4 via GGUF/CPU offload; the 12B will
 - not fit
-- - **16 GB (this box)** (`hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct`): biggest Gemma 4 that
+- - **16 GB (this box)** (`google/gemma-4-12B-it-qat-w4a16-ct`): biggest Gemma 4 that
 - fits; the configured default
-- - **32 GB** (`hosted_vllm/google/gemma-4-12B-it`): bf16 12B (higher fidelity) + headroom to
+- - **32 GB** (`google/gemma-4-12B-it`): bf16 12B (higher fidelity) + headroom to
 - co-host judge + a candidate
 
 On 16 GB a 12B judge normally cannot co-reside with a vLLM candidate. Use Ollama GGUF/CPU

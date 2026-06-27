@@ -349,21 +349,6 @@ def _measure_judge_metric(
         return 0.0
 
 
-def _served_model_id(judge_model: str) -> str:
-    prefix, separator, model = judge_model.partition("/")
-    if separator and prefix in {"hosted_vllm", "ollama_chat"}:
-        return model
-    return judge_model
-
-
-def _judge_base_url_from_prefix(prefix: str) -> str | None:
-    if prefix == "hosted_vllm":
-        return os.environ.get(env.HOSTED_VLLM_API_BASE) or os.environ.get(env.VLLM_HOST)
-    if prefix == "ollama_chat":
-        return os.environ.get(env.OLLAMA_API_BASE) or os.environ.get(env.OLLAMA_HOST)
-    return None
-
-
 def _normalize_openai_base_url(base_url: str) -> str:
     parts = urlsplit(base_url)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -382,16 +367,12 @@ def _normalize_openai_base_url(base_url: str) -> str:
 def resolve_judge_endpoint(
     judge_model: str, explicit_base_url: str | None = None
 ) -> tuple[str, str | None]:
-    """Resolve legacy local-model prefixes and an OpenAI-compatible endpoint."""
+    """Resolve the served judge model id and OpenAI-compatible endpoint."""
     load_project_env()
-    prefix, separator, _model = judge_model.partition("/")
-    served_model = _served_model_id(judge_model)
     base_url = explicit_base_url or os.environ.get(env.DEEPEVAL_JUDGE_BASE_URL)
-    if base_url is None and separator:
-        base_url = _judge_base_url_from_prefix(prefix)
     if base_url is not None:
         base_url = _normalize_openai_base_url(base_url)
-    return served_model, base_url
+    return judge_model, base_url
 
 
 def judge_experiment_metadata(judge_model: str, base_url: str | None = None) -> dict[str, Any]:

@@ -40,13 +40,21 @@ LOG_DIR     := $(DATA_DIR)/llb/logs
 PREP_ALL_BACKEND ?= ollama
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
+BOARD_HOST ?= 127.0.0.1
+BOARD_PORT ?= 8501
+SWEEP_ID ?= run1
+SWEEP_MAX_MODEL_LEN ?= 8192
+SWEEP_OFFLINE ?=
+PIPELINE_TOP_N ?= 2
+PIPELINE_TRIALS ?= 20
+PIPELINE_OFFLINE ?=
 # Judge knobs (judge calibration gate). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
 # (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
 # Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there
 # too). Alternatives by GPU tier (override JUDGE_MODEL + JUDGE_BASE_URL):
-#   12 GB GPU: ollama_chat/gemma-4-e4b-it                       (GGUF/CPU offload; the 12B won't fit)
-#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (vLLM on :8000)
-#   32 GB GPU: hosted_vllm/google/gemma-4-12B-it                (bf16, higher fidelity + co-host headroom)
+#   12 GB GPU: gemma-4-e4b-it                                  (GGUF/CPU offload; the 12B won't fit)
+#   16 GB GPU: google/gemma-4-12B-it-qat-w4a16-ct              (vLLM on :8000)
+#   32 GB GPU: google/gemma-4-12B-it                           (bf16, higher fidelity + co-host headroom)
 # Set JUDGE_MODEL empty to skip the judge.
 # JUDGE_RHO is the calibration Spearman rho (from `make calibration-score`); set it on `run-eval`
 # to ENABLE the gated judge in a scored run -- the judge enters the ranking blend only when
@@ -114,7 +122,7 @@ PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0
 PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -156,6 +164,10 @@ demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> pre
 mlflow: ## Serve the shared MLflow experiment UI (MLFLOW_HOST=127.0.0.1 MLFLOW_PORT=5000)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main mlflow-ui --host "$(MLFLOW_HOST)" --port "$(MLFLOW_PORT)"
+
+board: ## Serve the Streamlit leaderboard (BOARD_HOST=127.0.0.1 BOARD_PORT=8501)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main board --host "$(BOARD_HOST)" --port "$(BOARD_PORT)"
 
 venv: ## Create/update .venv (py3.11) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
@@ -313,6 +325,20 @@ run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TEL
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main sweep --manifest "$(MODELS_MANIFEST)" --split "$(SPLIT)" \
+		--goldset "$(GOLDSET)" --sweep-id "$(SWEEP_ID)" \
+		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,)
+
+pipeline: ## Select public-screen finalists, tune, and print the final board
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main pipeline --manifest "$(MODELS_MANIFEST)" --goldset "$(GOLDSET)" \
+		--top-n "$(PIPELINE_TOP_N)" --trials "$(PIPELINE_TRIALS)" \
+		$(if $(PIPELINE_OFFLINE),--offline,)
 
 composite-headline: ## Run the verified category suite for MODEL, then require a clean bench-composite preflight
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

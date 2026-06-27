@@ -7,8 +7,7 @@ retrieval, prompt-building, and failure-classification logic is unit-testable WI
 langgraph installed; only `build_rag_graph` imports it (the `[eval]` extra).
 
 The shared status taxonomy, refusal markers, `classify_response`, and `format_context` live
-in `llb.eval.common` (re-exported here for backward compatibility); see that module for the
-failure-taxonomy contract.
+in `llb.eval.common`; see that module for the failure-taxonomy contract.
 """
 
 from typing import Any, Callable, cast
@@ -16,28 +15,13 @@ from typing import Any, Callable, cast
 from typing_extensions import TypedDict
 
 from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
-from llb.eval.common import (
-    EMPTY,
-    MALFORMED,
-    OK,
-    REFUSAL,
-    RETRIEVAL_MISS,
-    classify_response,
-    format_context,
-)
+from llb.eval import common as eval_common
 
 __all__ = [
-    "EMPTY",
-    "MALFORMED",
-    "OK",
-    "REFUSAL",
-    "RETRIEVAL_MISS",
     "RagState",
     "SYSTEM_PROMPT",
     "build_messages",
     "build_rag_graph",
-    "classify_response",
-    "format_context",
     "make_generate_node",
     "make_retrieve_node",
     "run_case",
@@ -82,9 +66,9 @@ def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:
 
     def retrieve(state: RagState) -> RagState:
         chunks = store.retrieve(state["question"], k)
-        update: RagState = {"retrieved": chunks, "context": format_context(chunks)}
+        update: RagState = {"retrieved": chunks, "context": eval_common.format_context(chunks)}
         if not chunks:
-            update["status"] = RETRIEVAL_MISS
+            update["status"] = eval_common.RETRIEVAL_MISS
         return update
 
     return retrieve
@@ -100,7 +84,7 @@ def make_generate_node(
     """Closure: call the backend on the retrieved context; classify the response."""
 
     def generate(state: RagState) -> RagState:
-        if state.get("status") == RETRIEVAL_MISS:
+        if state.get("status") == eval_common.RETRIEVAL_MISS:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
         messages = build_messages(state["question"], state.get("context", ""), prompt_package)
         result = launcher.chat(
@@ -108,7 +92,7 @@ def make_generate_node(
         )
         return {
             "answer": result.text or "",
-            "status": classify_response(result.text, result.error),
+            "status": eval_common.classify_response(result.text, result.error),
             "error": result.error,
             "usage": {
                 "prompt_tokens": result.prompt_tokens,

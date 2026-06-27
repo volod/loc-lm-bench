@@ -118,8 +118,8 @@ def test_ua_metric_prompts_are_ukrainian():
 
 
 def test_resolve_local_judge_endpoint(monkeypatch):
-    monkeypatch.setenv("VLLM_HOST", "http://localhost:8000")
-    assert resolve_judge_endpoint("hosted_vllm/org/model") == (
+    monkeypatch.setenv("DEEPEVAL_JUDGE_BASE_URL", "http://localhost:8000")
+    assert resolve_judge_endpoint("org/model") == (
         "org/model",
         "http://localhost:8000/v1",
     )
@@ -130,7 +130,7 @@ def test_resolve_local_judge_endpoint(monkeypatch):
 
 
 def test_judge_experiment_metadata_has_no_secret():
-    metadata = judge_experiment_metadata("ollama_chat/gemma", "http://localhost:11434")
+    metadata = judge_experiment_metadata("gemma", "http://localhost:11434")
     assert metadata == {
         "provider": "deepeval-geval",
         "model": "gemma",

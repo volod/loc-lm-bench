@@ -1,4 +1,5 @@
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, ChatResult
+from llb.eval import common
 from llb.eval import graph
 
 
@@ -20,31 +21,31 @@ class FakeLauncher:
 
 
 def test_classify_ok():
-    assert graph.classify_response("Київ - столиця", None) == graph.OK
+    assert common.classify_response("Київ - столиця", None) == common.OK
 
 
 def test_classify_empty():
-    assert graph.classify_response("   ", None) == graph.EMPTY
+    assert common.classify_response("   ", None) == common.EMPTY
 
 
 def test_classify_refusal():
-    assert graph.classify_response("Вибачте, але я не можу відповісти.", None) == graph.REFUSAL
+    assert common.classify_response("Вибачте, але я не можу відповісти.", None) == common.REFUSAL
 
 
 def test_classify_passes_through_transport_errors():
-    assert graph.classify_response("", ERR_TIMEOUT) == ERR_TIMEOUT
-    assert graph.classify_response("anything", ERR_BACKEND) == ERR_BACKEND
+    assert common.classify_response("", ERR_TIMEOUT) == ERR_TIMEOUT
+    assert common.classify_response("anything", ERR_BACKEND) == ERR_BACKEND
 
 
 def test_classify_malformed_json():
-    assert graph.classify_response("{not json", None, expect_json=True) == graph.MALFORMED
-    assert graph.classify_response('{"a": 1}', None, expect_json=True) == graph.OK
+    assert common.classify_response("{not json", None, expect_json=True) == common.MALFORMED
+    assert common.classify_response('{"a": 1}', None, expect_json=True) == common.OK
 
 
 def test_retrieve_node_flags_miss_on_empty():
     node = graph.make_retrieve_node(FakeStore([]), k=5)
     update = node({"question": "q"})
-    assert update["status"] == graph.RETRIEVAL_MISS
+    assert update["status"] == common.RETRIEVAL_MISS
     assert update["retrieved"] == []
 
 
@@ -60,7 +61,7 @@ def test_generate_node_ok_path():
     launcher = FakeLauncher(ChatResult(text="Київ", completion_tokens=3, latency_s=0.5))
     node = graph.make_generate_node(launcher, max_tokens=64, temperature=0.0, timeout=10)
     update = node({"question": "q", "context": "ctx"})
-    assert update["status"] == graph.OK
+    assert update["status"] == common.OK
     assert update["answer"] == "Київ"
     assert update["usage"]["tokens_per_s"] > 0
 
@@ -68,7 +69,7 @@ def test_generate_node_ok_path():
 def test_generate_node_short_circuits_on_retrieval_miss():
     launcher = FakeLauncher(ChatResult(text="should not be called"))
     node = graph.make_generate_node(launcher, max_tokens=64, temperature=0.0, timeout=10)
-    update = node({"question": "q", "status": graph.RETRIEVAL_MISS})
+    update = node({"question": "q", "status": common.RETRIEVAL_MISS})
     assert update["answer"] == ""
 
 
