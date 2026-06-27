@@ -14,8 +14,10 @@ from llb.board.data import (
     load_agentic_harness_records,
     load_category_records,
     load_m5_composite,
+    load_rag_prompt_system_records,
     load_run_records,
     load_screen_reports,
+    rag_prompt_system_comparison,
 )
 from llb.paths import resolve_data_dir
 from llb.scoring.aggregate import rank_board, ranking_policy_note
@@ -70,6 +72,18 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
             rows, _table, harnesses = harness_comparison(data_dir, model)
             if rows:
                 st.caption(f"**{model}** -- harnesses: {', '.join(sorted(set(harnesses)))}")
+                st.dataframe(rows, use_container_width=True)
+
+    rag_prompt_records = load_rag_prompt_system_records(data_dir)
+    if rag_prompt_records:
+        st.subheader("M7.3 RAG prompt-system comparison")
+        st.caption(
+            "Per model, retrieval/scoring stay fixed; only the prepended prompt system varies."
+        )
+        for model in sorted({r.model for r in rag_prompt_records}):
+            rows, _table, ids = rag_prompt_system_comparison(data_dir, model)
+            if rows:
+                st.caption(f"**{model}** -- prompt systems: {', '.join(ids)}")
                 st.dataframe(rows, use_container_width=True)
 
     composite_rows, composite_issues = load_m5_composite(data_dir)

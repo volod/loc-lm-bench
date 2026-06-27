@@ -67,6 +67,17 @@ def run_eval_cmd(
         help="emit a judge-calibration worksheet pre-filled with answers "
         "(pair with --split calibration)",
     ),
+    prompt_system: Optional[str] = typer.Option(
+        None,
+        help="prompt-system id to prepend to the baseline RAG generation prompt",
+    ),
+    prompt_package: Optional[Path] = typer.Option(
+        None,
+        help=(
+            "prompt-system run dir, candidates.json, or compact <run_dir>/<id>; "
+            "defaults to searching DATA_DIR/prompt-system"
+        ),
+    ),
     evict: bool = typer.Option(
         False, help="vLLM contention guard: unload Ollama's resident models before launching"
     ),
@@ -76,6 +87,10 @@ def run_eval_cmd(
 ) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
+    from llb.prompt_system.selection import (
+        prompt_system_id_from_package_path,
+        resolve_prompt_package,
+    )
 
     cfg = load_config(
         config,
@@ -92,6 +107,10 @@ def run_eval_cmd(
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )
+    selected_prompt = None
+    prompt_id = prompt_system or prompt_system_id_from_package_path(prompt_package)
+    if prompt_id is not None:
+        selected_prompt = resolve_prompt_package(cfg.data_dir, prompt_id, prompt_package)
     run_eval(
         cfg,
         split=split,
@@ -100,6 +119,10 @@ def run_eval_cmd(
         worksheet=worksheet,
         evict=evict,
         wait=wait,
+        prompt_package=selected_prompt.package if selected_prompt is not None else None,
+        prompt_system_provenance=(
+            selected_prompt.provenance if selected_prompt is not None else None
+        ),
     )
 
 

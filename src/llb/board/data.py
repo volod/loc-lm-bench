@@ -448,7 +448,7 @@ def harness_comparison(data_dir: Path | str, model: str) -> tuple[list[BoardRow]
     return rows, table, [r.harness for r in records]
 
 
-# --- M7.3 prompt-system comparison (one model+harness across prompt-system ids) -------------
+# --- M7.3 prompt-system comparison ---------------------------------------------------------
 
 
 @dataclass
@@ -508,6 +508,64 @@ def prompt_system_comparison(
         for r in load_prompt_system_records(data_dir)
         if r.model == model and (harness is None or r.harness == harness)
     ]
+    if not records:
+        return [], "", []
+    ordered = sorted(records, key=lambda r: r.prompt_system)
+    results = [replace(r.result, model=r.prompt_system) for r in ordered]
+    rows = rank_board(results)
+    table = format_board(rows, policy=ranking_policy_note(results, judge_trusted=False))
+    return rows, table, [r.prompt_system for r in ordered]
+
+
+@dataclass
+class RagPromptSystemRunRecord:
+    """One final-split RAG run tagged by prompt-system id."""
+
+    model: str
+    prompt_system: str
+    result: ModelResult
+    run_dir: str
+
+
+def load_rag_prompt_system_records(data_dir: Path | str) -> list[RagPromptSystemRunRecord]:
+    """Load baseline `run-eval` bundles tagged with prompt-system provenance."""
+    root = Path(data_dir) / "run-eval"
+    best: dict[tuple[str, str], RagPromptSystemRunRecord] = {}
+    if not root.exists():
+        return []
+    for manifest_path in sorted(root.glob("*/manifest.json")):
+        if manifest_path.parent.name.startswith("."):
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        provenance = manifest.get("prompt_system_provenance") or {}
+        if not isinstance(provenance, dict):
+            continue
+        prompt_system = provenance.get("prompt_system_id")
+        if not prompt_system:
+            continue
+        record = record_from_manifest(manifest, manifest_path.parent)
+        if record is None:
+            continue
+        key = (record.result.model, str(prompt_system))
+        current = best.get(key)
+        if current is None or record.result.objective_score > current.result.objective_score:
+            best[key] = RagPromptSystemRunRecord(
+                model=record.result.model,
+                prompt_system=str(prompt_system),
+                result=record.result,
+                run_dir=record.run_dir,
+            )
+    return list(best.values())
+
+
+def rag_prompt_system_comparison(
+    data_dir: Path | str, model: str
+) -> tuple[list[BoardRow], str, list[str]]:
+    """Rank ONE baseline RAG model across prompt-system ids."""
+    records = [r for r in load_rag_prompt_system_records(data_dir) if r.model == model]
     if not records:
         return [], "", []
     ordered = sorted(records, key=lambda r: r.prompt_system)

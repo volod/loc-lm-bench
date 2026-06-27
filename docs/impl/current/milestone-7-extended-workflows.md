@@ -72,13 +72,59 @@ a supplied corpus into reviewable, budget-fitted, manifest-addressable RAG promp
 - `tuning.py`: `variant_grid` over the knobs + `generate_candidates` (deduped by prompt-system id).
 - `manifest.py`: corpus/mapping/template digests + `prompt_system_id` (same corpus + fields -> same
   id) + `prompt_system_provenance`.
-- `pipeline.prepare_prompt_system` writes `$DATA_DIR/prompt-system/<ts>/` (anthology, doc_metadata,
+- `pipeline.prepare_prompt_system` writes `$DATA_DIR/prompt-system/<ts>/` by default, or a stable
+  review/sample directory via `out_dir` / CLI `--out-dir` (anthology, doc_metadata,
   graph_rag_mapping, candidates, manifest with digests + tokenizer + context budget).
 - Benchmark integration: `run_agentic(..., prompt_system=)` records `config.prompt_system`; board
   axis `board.data.prompt_system_comparison(data_dir, model, harness=None)` ranks one model across
   prompt-system ids under `TIER_AGENTIC`.
-- CLI: `prompt-system-prepare --corpus-root ...`, `prompt-system-review --run-dir ... --action
-  summary|approve|pin|reject [--id]`, `prompt-system-compare --model ...`.
+- Baseline RAG integration: `run-eval --prompt-system <id> [--prompt-package <run-dir|file|run/id>]`
+  loads a reviewed candidate through `prompt_system.selection`, prepends the candidate system
+  prompt and attached context to the normal retrieve->generate graph, records
+  `prompt_system_provenance` at the top level of the run manifest, and mirrors the id into
+  `config.prompt_system` for board lookup.
+- Board integration: `board.data.load_rag_prompt_system_records` scans final `$DATA_DIR/run-eval/*`
+  bundles and keeps the best run per `(model, prompt_system)`. `rag_prompt_system_comparison` ranks
+  one model across prompt ids. The Streamlit board shows a RAG prompt-system comparison section when
+  such final bundles exist.
+- CLI: `prompt-system-prepare --corpus-root ... [--out-dir ...] [--role ...] [--instruction ...]`,
+  `prompt-system-review --run-dir ... --action summary|approve|pin|reject [--id]`,
+  `prompt-system-compare --lane rag|agentic --model ...`.
 - Tests: `tests/test_prompt_system.py` (corpus spans, budget trim, template styles, digests, review
-  round-trip, tuning dedupe, pipeline artifacts, agentic prompt-system board axis). Smoke: 18
-  candidates over the sample corpus with budget breakdowns.
+  round-trip, tuning dedupe, stable `out_dir`, prompt package selection, pipeline artifacts,
+  agentic prompt-system board axis); `tests/test_runner.py` (RAG prompt injection + run manifest
+  provenance); `tests/test_board.py` (final-split RAG prompt-system records and comparison).
+- How-to: [`docs/guides/prompt-system-rag.md`](../../guides/prompt-system-rag.md).
+
+### M7.3r IP regulation sample and Gemma 4 comparison
+
+Committed sample assets:
+
+- `samples/goldsets/ip_regulation_uk/`: 8 verified, human-authored items over the IP regulation
+  corpus, split into 4 `tuning` and 4 `final` cases. The canonical corpus file is
+  `samples/corpus/ip_regulation_uk.md`; the gold-set-local `corpus/ip_regulation_uk.md` path is a
+  relative symlink for tools that expect a fixture-local corpus root.
+- `samples/prompt_system/ip_regulation_uk/`: default generated prompt-system package.
+- `samples/prompt_system/ip_regulation_uk/tuned/`: prompt package generated with a short-answer
+  instruction override; candidate `14d263ea6a40` is pinned after tuning.
+- `samples/prompt_system/ip_regulation_uk/graph/`: curated GraphRAG-shape tutorial graph. A live
+  `build-graph --extract-model gemma4:e4b --extract-no-think` run reached Ollama, but Gemma returned
+  unparseable extraction JSON, so the committed graph is explicitly marked `curated-sample`.
+- `samples/prompt_system/ip_regulation_uk/example_results.json`: exact command/result record for the
+  local Gemma run.
+
+Manual local run on `gemma4:e4b` / Ollama under `DATA_DIR=.data/m7_3r_ip_example`:
+
+- Retrieval: `validate-retrieval --k 5` on the IP gold set gave recall@5=1.000 and MRR=1.000.
+- Tuning split: baseline objective 0.709; default prompt candidates tied 0.709; tuned lean prompt
+  `14d263ea6a40` improved to 0.778; richer tuned prompt `913266aa4cb3` regressed to 0.683.
+- Final split: baseline objective 0.687; tuned lean prompt `14d263ea6a40` regressed to 0.578;
+  default prompt `0a68e417ea71` regressed to 0.487.
+- RAG prompt-system compare: `prompt-system-compare --lane rag --model gemma4:e4b` ranked
+  `14d263ea6a40` above `0a68e417ea71` among final prompt-system-tagged runs, but both remained below
+  the plain baseline. The operating decision for this tiny corpus is to keep baseline RAG and use
+  the prompt-system lane as the audit trail.
+
+The arXiv paper [2406.18902](https://arxiv.org/abs/2406.18902) was used only as a methodology
+guardrail: prompt tuning is a selected pipeline, so tuning wins are not reported as final wins unless
+the held-out final split confirms them.

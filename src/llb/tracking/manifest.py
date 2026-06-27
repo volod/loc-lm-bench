@@ -63,6 +63,7 @@ class RunManifest(BaseModel):
     judge: JudgeStatus | None = None
     telemetry: TelemetryReport | None = None
     contention: ContentionReport | None = None
+    prompt_system_provenance: JsonObject | None = None
     n_cases: int = 0
 
 

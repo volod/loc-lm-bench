@@ -16,6 +16,7 @@ from llb.prompt_system.pipeline import (
     MANIFEST_FILE,
     prepare_prompt_system,
 )
+from llb.prompt_system.selection import resolve_prompt_package, prompt_system_id_from_package_path
 from llb.prompt_system.template import (
     GRAPH_INLINE,
     GRAPH_NONE,
@@ -246,6 +247,42 @@ def test_prepare_prompt_system_writes_artifacts(tmp_path):
     assert manifest["corpus_digest"] and manifest["context_window"] == 4096
     candidates = json.loads((run.run_dir / CANDIDATES_FILE).read_text(encoding="utf-8"))
     assert len(candidates) == len(run.candidates)
+
+
+def test_prepare_prompt_system_supports_stable_out_dir(tmp_path):
+    out_dir = tmp_path / "sample_prompt_system"
+    run = prepare_prompt_system(
+        SAMPLE_CORPUS,
+        data_dir=tmp_path,
+        out_dir=out_dir,
+        context_window=4096,
+        max_passages=4,
+    )
+
+    assert run.run_dir == out_dir
+    assert (out_dir / MANIFEST_FILE).exists()
+    assert (out_dir / CANDIDATES_FILE).exists()
+
+
+def test_resolve_prompt_package_from_compact_path(tmp_path):
+    out_dir = tmp_path / "prompt-system" / "stable"
+    run = prepare_prompt_system(
+        SAMPLE_CORPUS,
+        data_dir=tmp_path,
+        out_dir=out_dir,
+        context_window=4096,
+        max_passages=4,
+    )
+    target = run.candidates[0].prompt_system_id
+    selector = out_dir / target
+
+    assert prompt_system_id_from_package_path(selector) == target
+    selected = resolve_prompt_package(tmp_path, target, selector)
+
+    assert selected.run_dir == out_dir
+    assert selected.package.system_prompt == run.candidates[0].system_prompt
+    assert selected.provenance["prompt_system_id"] == target
+    assert selected.provenance["context_window"] == 4096
 
 
 # --- benchmark integration: prompt-system board axis --------------------------------------

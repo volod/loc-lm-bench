@@ -189,7 +189,7 @@ def _guard_vllm_contention(
 
 
 def _default_runner_fn(
-    config: RunConfig, store: Any, launcher: BackendLauncher
+    config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
 ) -> Callable[[GoldItem], RagState]:
     app = eval_graph.build_rag_graph(
         store,
@@ -198,6 +198,7 @@ def _default_runner_fn(
         config.max_tokens,
         config.temperature,
         config.request_timeout_s,
+        prompt_package=prompt_package,
     )
 
     def run(item: GoldItem) -> RagState:
@@ -376,6 +377,7 @@ def _resolve_eval_runner(
     store: Any,
     launcher: BackendLauncher | None,
     runner_fn: Callable[[GoldItem], RagState] | None,
+    prompt_package: Any | None,
     staging_dir: Path,
     evict: bool,
     wait: bool,
@@ -388,7 +390,7 @@ def _resolve_eval_runner(
     if runner_fn is None:
         if store is None:
             store = _load_store(config)
-        runner_fn = _default_runner_fn(config, store, launcher)
+        runner_fn = _default_runner_fn(config, store, launcher, prompt_package)
     return launcher, runner_fn, store, contention
 
 
@@ -438,6 +440,8 @@ def run_eval(
     store: Any = None,
     launcher: BackendLauncher | None = None,
     runner_fn: Callable[[GoldItem], RagState] | None = None,
+    prompt_package: Any | None = None,
+    prompt_system_provenance: Mapping[str, object] | None = None,
     mirror: Callable[[RunManifest, Path], None] | None = None,
     judge_rho: float | None = None,
     judge_scorer: JudgeScorer | None = None,
@@ -470,6 +474,7 @@ def run_eval(
         store=store,
         launcher=launcher,
         runner_fn=runner_fn,
+        prompt_package=prompt_package,
         staging_dir=staging_dir,
         evict=evict,
         wait=wait,
@@ -492,16 +497,23 @@ def run_eval(
     judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
+    config_payload = config.fingerprint()
+    if prompt_system_provenance is not None:
+        config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
+
     manifest = RunManifest(
         run_id=run_id,
         run_name=config.run_name,
         split=split,
-        config=config.fingerprint(),
+        config=config_payload,
         metrics=metrics,
         retrieval=retrieval_metrics,
         judge=_build_judge_metadata(config, judge_rho),
         telemetry=telemetry_report,
         contention=contention,
+        prompt_system_provenance=dict(prompt_system_provenance)
+        if prompt_system_provenance is not None
+        else None,
         n_cases=len(batch.rows),
     )
     paths = persist_run(
