@@ -1,4 +1,4 @@
-"""AvailabilityResolver (M3.2): backend priority + offload-aware fit, driven by fakes."""
+"""AvailabilityResolver (backend resolver): backend priority + offload-aware fit, driven by fakes."""
 
 from llb.backends import resolver
 from llb.backends.resolver import (
@@ -105,7 +105,7 @@ def test_resolve_falls_back_to_ollama_when_vllm_would_offload():
 
 
 # A GGUF-only model too big to hold fully in 16 GB VRAM at q4 -> resolves to llama.cpp by
-# offloading some layers to CPU RAM (the M4.5 run-path: -ngl derived from the planner's split).
+# offloading some layers to CPU RAM (the llama.cpp launcher run-path: -ngl derived from the planner's split).
 BIG_GGUF: ModelSpec = {
     "name": "big-gguf",
     "backend": "llamacpp",

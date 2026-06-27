@@ -1,4 +1,4 @@
-"""Inference-endpoint adapter for the M4.4 pipeline (local default, frontier opt-in).
+"""Inference-endpoint adapter for the ontology-assisted drafting pipeline (local default, frontier opt-in).
 
 Every pipeline stage drives ONE injectable `LLMComplete` (prompt -> text). This module builds
 that callable from an `EndpointConfig`:
@@ -6,8 +6,8 @@ that callable from an `EndpointConfig`:
   - local (default, NO corpus egress): an OpenAI-compatible endpoint -- the same `chat_once`
     seam the eval backends use -- pointed at a local server (Ollama/vLLM/llama.cpp). Token
     counts are recorded; cost is 0 (local compute).
-  - frontier (opt-in -- the Milestone H egress decision): reuses `frontier.litellm_complete`,
-    so provider/model/token/cost provenance accumulates exactly as the M3.5 utilities do.
+  - frontier (opt-in -- the human decision egress decision): reuses `frontier.litellm_complete`,
+    so provider/model/token/cost provenance accumulates exactly as the frontier drafting utilities do.
 
 The completion is the only thing the stages see, so the whole pipeline is unit-tested with a
 fake `complete` and never needs a server or a provider key.

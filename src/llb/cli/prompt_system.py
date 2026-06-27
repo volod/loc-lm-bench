@@ -1,4 +1,4 @@
-"""M7.3 prompt-system CLI -- prepare, review, and compare RAG prompt systems."""
+"""RAG prompt-system comparison prompt-system CLI -- prepare, review, and compare RAG prompt systems."""
 
 from pathlib import Path
 from typing import Optional
@@ -113,7 +113,7 @@ def prompt_system_compare_cmd(
         None, help="restrict to one harness (loop/langgraph/...)"
     ),
 ) -> None:
-    """M7.3: rank ONE model's runs across prompt-system ids."""
+    """RAG prompt-system comparison: rank ONE model's runs across prompt-system ids."""
     from llb.board.data import prompt_system_comparison, rag_prompt_system_comparison
 
     cfg = load_config(None)

@@ -5,9 +5,9 @@ relations from the SRO facts. Each type carries a support `count`, a `confidence
 example surface forms with their evidence. The candidate is CONSTRAINED -- hapax types below
 `MIN_TYPE_COUNT` are dropped and each group is capped -- so the ontology stays small and
 reviewable. Examples preserve source spans, so every induced type links back to exact evidence
-(M4.4 acceptance).
+(ontology-assisted drafting acceptance).
 
-`confidence` is a richer signal than raw frequency (M5.6): a type seen many times in ONE document
+`confidence` is a richer signal than raw frequency (verified-data hardening): a type seen many times in ONE document
 is less trustworthy than one of similar count SPREAD across documents, so confidence blends the
 normalized count with the normalized DOCUMENT frequency. The high-confidence induced types are
 carried into the drafting prompt as explicit constraints (`ontology_constraints`).
@@ -30,7 +30,7 @@ from llb.prep.ontology.models import DocExtraction, OntologyCandidate, OntologyT
 
 
 def _confidence(count: int, max_count: int, n_docs: int, total_docs: int) -> float:
-    """Blend normalized count with normalized document frequency (M5.6 richer signal)."""
+    """Blend normalized count with normalized document frequency (verified-data hardening richer signal)."""
     count_norm = count / max_count if max_count else 0.0
     docfreq_norm = n_docs / total_docs if total_docs else 0.0
     return round(CONFIDENCE_COUNT_WEIGHT * count_norm + CONFIDENCE_DOCFREQ_WEIGHT * docfreq_norm, 4)
@@ -122,7 +122,7 @@ def ontology_constraints(
     n_types: int = N_CONSTRAINT_TYPES,
 ) -> str:
     """A drafting-prompt hint listing the HIGH-CONFIDENCE induced types (entities + relations) as
-    explicit constraints, so the drafter focuses questions on the corpus's reliable types (M5.6).
+    explicit constraints, so the drafter focuses questions on the corpus's reliable types (verified-data hardening).
 
     Returns an empty string when no induced type clears the confidence floor (no hint added)."""
     entities = [t for t in candidate.entity_types if t.confidence >= min_confidence][:n_types]

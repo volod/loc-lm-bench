@@ -1,4 +1,4 @@
-"""M5.4 summarization -- reference coverage via injected cosine."""
+"""category expansion summarization -- reference coverage via injected cosine."""
 
 from llb.bench import summarization as bench_sm
 from llb.scoring.aggregate import TIER_SUMMARIZATION
@@ -68,7 +68,7 @@ def test_load_committed_summarization_cases():
     assert len(cases) == 3 and all(c.reference for c in cases)
 
 
-# --- opt-in gated-judge faithfulness (M5.4 residual) ---------------------------------------
+# --- opt-in gated-judge faithfulness (category expansion residual) ---------------------------------------
 
 
 def fake_judge(faith=0.8):

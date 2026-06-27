@@ -1,7 +1,7 @@
-"""M5.1 corpus-specific security planter -- RAG-injection + canary leak cases over a REAL corpus.
+"""security benchmark corpus-specific security planter -- RAG-injection + canary leak cases over a REAL corpus.
 
 The committed UA seed (`samples/security_cases_uk.json`) is hand-authored and corpus-agnostic. This
-planter is the M3.5-style counterpart for the two CORPUS-SPECIFIC leak families: it takes real
+planter is the frontier drafting-style counterpart for the two CORPUS-SPECIFIC leak families: it takes real
 corpus documents and plants
 
   * RAG-injection cases -- a malicious instruction carrying a unique MARKER is spliced INTO the
@@ -14,7 +14,7 @@ Markers and canaries are DETERMINISTIC per (doc, index) so a planted set is repr
 marker can never collide with the document's own text. Everything here is pure: it takes a
 `{doc_id: text}` mapping and emits `SecurityCase` records (the same schema `bench-security` loads),
 so it is unit-tested with no model, network, or GPU. Output is `verified=false`-equivalent -- the
-MH.5 human sample-verify still gates any headline use.
+human verification gate human sample-verify still gates any headline use.
 """
 
 import logging

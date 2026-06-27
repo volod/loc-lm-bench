@@ -36,7 +36,7 @@ def prepare_synthetic_corpus_cmd(
     text_analysis: bool = typer.Option(
         False,
         "--text-analysis/--qa",
-        help="emit RICHER per-kind text-analysis PlantedLabelRecords (M5.0) instead of QA labels",
+        help="emit RICHER per-kind text-analysis PlantedLabelRecords (text analysis) instead of QA labels",
     ),
     kinds: Optional[str] = typer.Option(
         None, help="comma-separated text-analysis kinds (default: the objective sub-tasks)"
@@ -49,7 +49,7 @@ def prepare_synthetic_corpus_cmd(
 
     Default emits QA-style key_fact labels (RAG planted set). `--text-analysis` emits the full
     per-kind text-analysis taxonomy (key_fact/entity/topic/trend/risk/decision/...) as
-    PlantedLabelRecords for the M5.0 scored text-analysis runner; add `--chat` for chat-log-shaped
+    PlantedLabelRecords for the text analysis scored text-analysis runner; add `--chat` for chat-log-shaped
     synthetic docs (chat-period).
     """
     topics = [t.strip() for t in topics_file.read_text(encoding="utf-8").splitlines() if t.strip()]
@@ -111,7 +111,7 @@ def ingest_chat_corpus_cmd(
         None, help="comma-separated text-analysis kinds (default: the objective sub-tasks)"
     ),
 ) -> None:
-    """M5.4 chat-period: ingest a REAL chat corpus, draft grounded labels LOCALLY (no egress)."""
+    """category expansion chat-period: ingest a REAL chat corpus, draft grounded labels LOCALLY (no egress)."""
     from llb.bench.common import local_complete
     from llb.prep.chat_corpus import ingest_chat_corpus, load_chat_conversations
     from llb.prep.text_analysis_corpus import DEFAULT_KINDS
@@ -147,7 +147,7 @@ def cross_check_goldset_cmd(
         None, help="cross-check report JSON (default beside goldset)"
     ),
 ) -> None:
-    """M5.6 verified-data gate: a second frontier re-confirms grounding/support/answerability."""
+    """verified-data hardening verified-data gate: a second frontier re-confirms grounding/support/answerability."""
     import json
 
     from llb.goldset.schema import load_goldset
@@ -165,7 +165,7 @@ def cross_check_goldset_cmd(
     )
     typer.echo(
         f"[cross-check] {report.n_passed}/{len(items)} items passed the gate "
-        f"(verified=false until MH.5) -> {out_path}"
+        f"(verified=false until human verification gate) -> {out_path}"
     )
 
 
@@ -186,7 +186,7 @@ def adapt_security_set_cmd(
         False, help="prepend the committed UA seed (samples/security_cases_uk.json)"
     ),
 ) -> None:
-    """M5.1: adapt a public adversarial set (UA-framed) into SecurityCase records for bench-security."""
+    """security benchmark: adapt a public adversarial set (UA-framed) into SecurityCase records for bench-security."""
     import json as _json
 
     from llb.prep.security_sources import JAILBREAK_TEMPLATES, adapt_public_set, load_rows
@@ -208,7 +208,7 @@ def adapt_security_set_cmd(
         cases = list(seed) + cases
     out.write_text(_json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(
-        f"[adapt-security-set] {len(cases)} cases from {source} (verified=false; MH.5 before "
+        f"[adapt-security-set] {len(cases)} cases from {source} (verified=false; human verification gate before "
         f"headline) -> {out}"
     )
 
@@ -226,7 +226,7 @@ def plant_security_cases_cmd(
         False, help="prepend the committed UA seed (samples/security_cases_uk.json)"
     ),
 ) -> None:
-    """M5.1: plant corpus-specific RAG-injection + canary leak cases over a real corpus."""
+    """security benchmark: plant corpus-specific RAG-injection + canary leak cases over a real corpus."""
     import json as _json
 
     from llb.prep.security_planter import plant_from_corpus
@@ -246,7 +246,7 @@ def plant_security_cases_cmd(
         cases = list(seed) + cases
     out.write_text(_json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(
-        f"[plant-security-cases] {len(cases)} planted cases (verified=false; MH.5 before "
+        f"[plant-security-cases] {len(cases)} planted cases (verified=false; human verification gate before "
         f"headline) -> {out}"
     )
 
@@ -263,7 +263,7 @@ def prepare_agentic_search_cmd(
         False, help="prepend the committed UA seed (samples/agentic_tasks_uk.json)"
     ),
 ) -> None:
-    """M5.3: build deterministic real-corpus agentic SEARCH tasks (count + locate) from a corpus."""
+    """agentic benchmark: build deterministic real-corpus agentic SEARCH tasks (count + locate) from a corpus."""
     import json as _json
 
     from llb.bench.agentic_tasks import build_from_corpus
@@ -278,7 +278,7 @@ def prepare_agentic_search_cmd(
         tasks = list(seed) + tasks
     out.write_text(_json.dumps(tasks, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(
-        f"[prepare-agentic-search] {len(tasks)} tasks (verified=false; MH.5 before headline) -> {out}"
+        f"[prepare-agentic-search] {len(tasks)} tasks (verified=false; human verification gate before headline) -> {out}"
     )
 
 
@@ -291,7 +291,7 @@ def adapt_bfcl_cmd(
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of adapted cases"),
 ) -> None:
-    """M5.2: adapt the Berkeley Function-Calling Leaderboard (BFCL) cases into a UA tooling bundle."""
+    """tooling benchmark: adapt the Berkeley Function-Calling Leaderboard (BFCL) cases into a UA tooling bundle."""
     import json as _json
 
     from llb.prep.tooling_sources import from_bfcl, load_jsonl_or_json
@@ -304,7 +304,7 @@ def adapt_bfcl_cmd(
     out.write_text(_json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(
         f"[adapt-bfcl] {len(bundle['cases'])} cases over {len(bundle['tools'])} tools "
-        f"(verified=false; translate + MH.5 before headline) -> {out}"
+        f"(verified=false; translate + human verification gate before headline) -> {out}"
     )
 
 
@@ -332,7 +332,7 @@ def prepare_goldset_draft_cmd(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
     ),
 ) -> None:
-    """M4.4: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
+    """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
     from llb.prep.ontology import EndpointConfig, draft_goldset
 
     try:

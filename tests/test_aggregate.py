@@ -82,7 +82,7 @@ def test_format_table_is_ascii():
     assert all(line == line.rstrip() for line in table.splitlines())
 
 
-# --- M3.6 N-model rigor -------------------------------------------------------------------
+# --- ranking rigor N-model rigor -------------------------------------------------------------------
 
 
 def test_bootstrap_mean_ci_brackets_mean_and_none_for_singleton():
@@ -144,7 +144,7 @@ def test_format_board_ascii_with_markers():
     assert all(line == line.rstrip() for line in table.splitlines())
 
 
-# --- M3.6 statistical completeness --------------------------------------------------------
+# --- ranking rigor statistical completeness --------------------------------------------------------
 
 
 def test_per_case_quality_blends_only_when_judge_trusted():

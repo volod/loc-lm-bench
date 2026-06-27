@@ -7,7 +7,7 @@ mirrors the `--score-semantic` discipline (recorded but not ranked): the summary
 store as a diagnostic (`community_summaries`) and persisted to its own file, and the retrieval path
 (`GraphStore.retrieve`) never returns it.
 
-`complete` is the injectable M4.4 endpoint callable, so this is unit-tested with a fake endpoint
+`complete` is the injectable ontology-assisted drafting endpoint callable, so this is unit-tested with a fake endpoint
 and never needs a server.
 """
 

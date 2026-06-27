@@ -1,6 +1,6 @@
-"""Build the knowledge graph from the M4.4 extraction (Milestone 6, construction stage).
+"""Build the knowledge graph from the ontology-assisted drafting extraction (GraphRAG backend, construction stage).
 
-REUSES the M4.4 `DocExtraction` (entities + SRO facts) -- no second extraction framework. Entity
+REUSES the ontology-assisted drafting `DocExtraction` (entities + SRO facts) -- no second extraction framework. Entity
 mentions become nodes; SRO facts become directed edges between the subject/object nodes. Each
 mention and evidence span keeps its `doc_id` + char offsets + exact text, and is tagged with the
 induced ontology `type`/`confidence` and the containing `section_title`. A fact whose subject or
@@ -125,7 +125,7 @@ def build_graph(
     """Construct the knowledge graph from per-document extractions + their inventoried docs.
 
     `ontology` carries the induced type confidences onto the nodes; it is induced from the
-    extractions when not supplied (the same constrained ontology the M4.4 pipeline produces).
+    extractions when not supplied (the same constrained ontology the ontology-assisted drafting pipeline produces).
     """
     induced = ontology if ontology is not None else induce_ontology(extractions)
     type_confidence = {t.name: t.confidence for t in induced.entity_types}

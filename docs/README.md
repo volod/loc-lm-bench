@@ -16,7 +16,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 ## Implementation
 
 - [Current state](impl/current.md) -- compact index into delivered facts under `impl/current/`.
-- [Forward plan](impl/plan.md) -- the ordered roadmap (M6 residuals + M7; M0-M5 done).
+- [Forward plan](impl/plan.md) -- the ordered roadmap (GraphRAG backend residuals +
+ extended workflow; data bootstrap-category suite done).
   Data-creation / verification / calibration are operator workflows, not plan items:
   [create a gold set](guides/goldset-from-scratch.md).
 
@@ -42,19 +43,19 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 - [Calibration tooling](guides/calibration-tooling.md) -- operator manual for
   `calibration-run` / `calibration-rate` / `calibration-score`, covering the committed goldset,
   a new goldset, and a text-corpus draft.
-- [Verification tooling](guides/verification-tooling.md) -- operator manual for the MH.5
-  `verify-sample` / `verify-review` / `verify-accept` gate: stratified sample -> per-item review
-  -> accepted-ledger flip, for real-corpus and synthetic bundles.
-- [Composite headline](guides/composite-headline.md) -- close-out flow for the guarded M5
+- [Verification tooling](guides/verification-tooling.md) -- operator manual for the human
+verification gate `verify-sample` / `verify-review` / `verify-accept` gate: stratified sample ->
+per-item review -> accepted-ledger flip, for real-corpus and synthetic bundles.
+- [Composite headline](guides/composite-headline.md) -- close-out flow for the guarded category suite
   composite: verify category data, stamp category runs, preflight blockers, and publish the board.
-- [Platform matrix](guides/platform-matrix.md) -- M7.4 backend matrix, power metrics, and
+- [Platform matrix](guides/platform-matrix.md) -- platform matrix backend matrix, power metrics, and
   GPU-class extension commands.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
-- [Run the eval skeleton](guides/run-skeleton.md) -- Milestone 1: build-index -> run-eval.
+- [Run the eval skeleton](guides/run-skeleton.md) -- RAG core: build-index -> run-eval.
 - [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
   compare metrics, and inspect canonical case artifacts.
-- [vLLM backend + telemetry](guides/vllm-backend.md) -- Milestone 2: build-vllm -> run-eval on
+- [vLLM backend + telemetry](guides/vllm-backend.md) -- backend telemetry: build-vllm -> run-eval on
   a real model.
 
 ## Inference

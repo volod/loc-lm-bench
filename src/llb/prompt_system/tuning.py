@@ -1,4 +1,4 @@
-"""M7.3 prompt-tuning loop -- search prompt-system variants over the editable knobs.
+"""RAG prompt-system comparison prompt-tuning loop -- search prompt-system variants over the editable knobs.
 
 Enumerates a deterministic grid over the tuning axes the plan names -- prompt variant (role /
 instruction), metadata density, graph-reference style, and anthology size -- rendering one

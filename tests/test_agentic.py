@@ -1,4 +1,4 @@
-"""M5.3 agentic workflows -- tool-world, success checks, episode loop, runner."""
+"""agentic workflows -- tool-world, success checks, episode loop, runner."""
 
 import json
 
@@ -180,7 +180,7 @@ def test_agentic_case_row_shape():
     assert row["item_id"] == "a" and row["success"] == 1.0 and json.dumps(row)
 
 
-# --- opt-in gated-judge trajectory quality (M5.3 residual) ---------------------------------
+# --- opt-in gated-judge trajectory quality (agentic benchmark residual) ---------------------------------
 
 
 def fake_judge(faith=0.8, relevancy=0.6):

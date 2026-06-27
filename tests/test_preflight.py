@@ -1,4 +1,4 @@
-"""M4.3: the flashinfer sampler preflight + verdict-gated launch_env + run-eval CLI knobs.
+"""vLLM serving preflight: the flashinfer sampler preflight + verdict-gated launch_env + run-eval CLI knobs.
 
 All driven by injected probes / config overrides -- no CUDA, no vLLM, no YAML.
 """
@@ -61,7 +61,7 @@ def test_load_verdict_tolerates_corrupt_file(tmp_path):
     assert load_verdict(tmp_path) is None
 
 
-# --- M4.3 auto-pin a host-compatible flashinfer ---------------------------------------------
+# --- vLLM serving preflight auto-pin a host-compatible flashinfer ---------------------------------------------
 
 
 def test_auto_pin_installs_first_working_candidate():
@@ -96,7 +96,7 @@ def test_probe_sampler_auto_pins_when_bundled_fails():
     assert verdict["driver"] == "595.71" and "auto-pinning" in verdict["detail"]
 
 
-# --- M4.3 re-run the preflight on a driver change (no full rebuild) -------------------------
+# --- vLLM serving preflight re-run the preflight on a driver change (no full rebuild) -------------------------
 
 
 def test_verdict_is_current_only_for_matching_driver():

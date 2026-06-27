@@ -1,14 +1,14 @@
-"""Board data loaders (M3.7): manifest/scores -> ModelResults + best-per-model (pure)."""
+"""Board data loaders: manifest/scores -> ModelResults + best-per-model."""
 
 import json
 
 from llb.board.data import (
     best_per_model,
     config_summary,
+    load_category_composite,
     load_category_records,
     load_category_run_records,
     load_rag_prompt_system_records,
-    load_m5_composite,
     load_run_records,
     load_screen_reports,
     rag_prompt_system_comparison,
@@ -161,7 +161,7 @@ def test_rag_prompt_system_records_and_comparison_use_final_run_eval_bundles(tmp
     assert "policy:" in table
 
 
-# --- M3.7 board completion: judge/semantic series, policy best-pick, Tier-1 separation -----
+# --- Board completion: judge/semantic series, policy best-pick, Tier-1 separation -----------
 
 
 def test_record_loads_semantic_and_judge_series(tmp_path):
@@ -196,7 +196,7 @@ def test_load_screen_reports_separates_tier1(tmp_path):
     assert len(reports) == 1 and reports[0]["track"] == "logprob"
 
 
-# --- M5 category boards (each its own Tier, never cross-ranked) -----------------------------
+# --- Category boards (each its own Tier, never cross-ranked) --------------------------------
 
 
 def _write_category_run(
@@ -306,7 +306,7 @@ def _write_full_composite_model(tmp_path, model, objectives, *, data_verified=Tr
         )
 
 
-def test_load_m5_composite_requires_verified_data(tmp_path):
+def test_load_category_composite_requires_verified_data(tmp_path):
     objectives = {
         TIER_TEXT_ANALYSIS: 1.0,
         TIER_SUMMARIZATION: 1.0,
@@ -316,12 +316,12 @@ def test_load_m5_composite_requires_verified_data(tmp_path):
         TIER_TOOLING: 1.0,
     }
     _write_full_composite_model(tmp_path, "m:1", objectives, data_verified=False)
-    rows, issues = load_m5_composite(tmp_path)
+    rows, issues = load_category_composite(tmp_path)
     assert rows == []
     assert {issue.reason for issue in issues} == {"category data is not verified"}
 
 
-def test_load_m5_composite_scores_complete_verified_models(tmp_path):
+def test_load_category_composite_scores_complete_verified_models(tmp_path):
     weak = {
         TIER_TEXT_ANALYSIS: 0.2,
         TIER_SUMMARIZATION: 0.2,
@@ -340,7 +340,7 @@ def test_load_m5_composite_scores_complete_verified_models(tmp_path):
     }
     _write_full_composite_model(tmp_path, "weak", weak)
     _write_full_composite_model(tmp_path, "strong", strong)
-    rows, issues = load_m5_composite(tmp_path)
+    rows, issues = load_category_composite(tmp_path)
     assert issues == []
     assert [row["model"] for row in rows] == ["strong", "weak"]
     assert rows[0]["score"] == 1.0
@@ -348,7 +348,7 @@ def test_load_m5_composite_scores_complete_verified_models(tmp_path):
     assert "score_ci" in rows[0]
 
 
-def test_load_m5_composite_reports_missing_tier(tmp_path):
+def test_load_category_composite_reports_missing_tier(tmp_path):
     _write_category_run(
         tmp_path,
         "security",
@@ -358,12 +358,12 @@ def test_load_m5_composite_reports_missing_tier(tmp_path):
         data_verified=True,
         scores=[1.0, 1.0],
     )
-    rows, issues = load_m5_composite(tmp_path)
+    rows, issues = load_category_composite(tmp_path)
     assert rows == []
     assert any(issue.reason == "missing required tier" for issue in issues)
 
 
-def test_load_m5_composite_rejects_invalid_verification_ref(tmp_path):
+def test_load_category_composite_rejects_invalid_verification_ref(tmp_path):
     objectives = {
         TIER_TEXT_ANALYSIS: 1.0,
         TIER_SUMMARIZATION: 1.0,
@@ -393,6 +393,6 @@ def test_load_m5_composite_rejects_invalid_verification_ref(tmp_path):
             verification_ref=bad_ref,
             scores=[1.0, 1.0],
         )
-    rows, issues = load_m5_composite(tmp_path)
+    rows, issues = load_category_composite(tmp_path)
     assert rows == []
     assert any("verification ref invalid" in issue.reason for issue in issues)

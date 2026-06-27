@@ -1,4 +1,4 @@
-"""Walking-skeleton end-to-end (Milestone 1 acceptance), driven by fakes.
+"""Walking-skeleton end-to-end (RAG core acceptance), driven by fakes.
 
 Exercises the full vertical -- retrieve -> generate -> classify -> score -> aggregate ->
 persist -- without FAISS, langgraph, Ollama, or a GPU, by injecting a fake store, a fake

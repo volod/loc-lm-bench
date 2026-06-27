@@ -1,4 +1,4 @@
-"""M7.3 corpus preparation -- turn a supplied text corpus into a compact prompt-ready package.
+"""RAG prompt-system comparison corpus preparation -- turn a supplied text corpus into a compact prompt-ready package.
 
 Deterministic + dependency-free: a caller-provided corpus is read, split into paragraph passages
 (with exact source-span offsets preserved), the most salient passages are selected into an

@@ -1,4 +1,4 @@
-"""M7.1 LangGraph agentic harness -- the pure loop compiled as a LangGraph app.
+"""agentic harness comparison LangGraph agentic harness -- the pure loop compiled as a LangGraph app.
 
 Mirrors `llb.eval.multi_hop.build_multi_hop_graph`: the controller->execute->controller cycle is
 decomposed into an `agent` node (the model proposes one tool call), a `tool` node (the

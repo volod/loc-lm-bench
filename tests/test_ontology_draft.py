@@ -1,4 +1,4 @@
-"""M4.4 ontology-assisted gold-set drafting: per-stage units + a fake-endpoint full flow.
+"""ontology-assisted gold-set drafting: per-stage units + a fake-endpoint full flow.
 
 No server, no provider key, no GPU: every LLM call is an injected fake, so the inventory,
 extraction grounding, ontology induction, coverage sampling, drafting, refinement, endpoint

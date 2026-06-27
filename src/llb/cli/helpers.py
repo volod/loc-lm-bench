@@ -30,7 +30,7 @@ def load_models(manifest: Path) -> list[ModelSpec]:
 
 
 def planning_models(manifest: Path, *, trust_config: bool = False) -> list[ModelSpec]:
-    """Manifest models with arch fields from a cached config.json (M4.1).
+    """Manifest models with arch fields from a cached config.json (memory planner).
 
     Offline + best-effort: it sharpens the embedding-aware VRAM estimate when weights are
     already cached, and is a no-op otherwise. With `trust_config` the cached config OVERRIDES the

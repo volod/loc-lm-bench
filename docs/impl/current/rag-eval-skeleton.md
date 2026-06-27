@@ -1,6 +1,6 @@
-# Milestone 1 Current State
+# RAG core Current State
 
-## Milestone 1 -- modules + how to run
+## RAG core -- modules + how to run
 
 The walking skeleton: one model, fixed config, retrieve -> generate -> score -> ranked row
 + manifest. It is compile-free (prebuilt Ollama, which still uses the GPU; no vLLM/flash-attn
@@ -76,12 +76,12 @@ Lists which candidate models can be benchmarked on THIS host, optimizing for ABI
 RUN rather than speed. The memory budget is GPU VRAM + system RAM (detected via
 `nvidia-smi` + `/proc/meminfo`); a model that does not fit in VRAM alone can still run by
 splitting layers between GPU and CPU. For each model it estimates the weights footprint
-(embedding-aware -- see M4.1 below), the KV cache per token (`2 x n_layers x kv_dim x 2B`, batch=1,
+(embedding-aware -- see memory planner below), the KV cache per token (`2 x n_layers x kv_dim x 2B`, batch=1,
 no parallelism), and reports the max context fully on GPU (`ctx_gpu`), the max context
 using GPU+RAM offload (`ctx_max`), the GPU/CPU layer split, and a verdict
 (gpu / offload / no). `--context N` plans for a fixed context instead of the maximum.
 All values are planning estimates from `samples/models_uk.yaml`; the real fit test is a
-launch (Milestone 2).
+launch (backend telemetry).
 
     make list-models # plan at the max context the host can hold
     make list-models CONTEXT=8192    # plan at a target context
@@ -102,8 +102,8 @@ can compare flat vs parent-child.
 ### Backends -- `llb.backends.{base,openai_client,ollama,vllm}`
 `BackendLauncher` is the seam (Premise 1): all backends speak OpenAI-compatible HTTP, so
 only the launcher + telemetry hook are backend-specific. `openai_client.chat_once` maps
-transport failures to normalized tokens (`timeout` / `backend_error`). M1 ships the prebuilt
-`OllamaLauncher`; M2 adds `VllmLauncher` (M2.1) -- it starts `vllm serve <model>` as a
+transport failures to normalized tokens (`timeout` / `backend_error`). RAG core ships the prebuilt
+`OllamaLauncher`; backend telemetry adds `VllmLauncher` (vLLM launcher) -- it starts `vllm serve <model>` as a
 subprocess (controlling + recording `gpu-memory-utilization` / `max-model-len`), waits for
 readiness, serves chat through the same `chat_once`, and kills the server on stop. It is a
 subprocess CLI, so the module imports in the base install and is tested by injecting the
@@ -163,18 +163,18 @@ and persisted run paths. External YAML model entries are validated by Pydantic b
 converted to those contracts. Mypy checks all production modules with generic type arguments
 required, while Ruff formatting and linting are enforced by `make ci` and GitHub Actions.
 
-### Milestone 1 status
+### RAG core status
 
-- **M1.1** (`RunConfig` + Typer CLI (`build-index`, `validate-retrieval`, `run-eval`)): DONE
-- **M1.2** (pinned-embedding FAISS RAG store (`build-index`)): DONE
-- **M1.3** (recall@k / MRR by source-span overlap): DONE
-- **M1.4** (LangGraph retrieve->generate over Ollama + typed failure taxonomy): DONE
-- - **M1.5** (objective answer-correctness (+ semantic) + judge gate seam): CORE (executor judge
-- wiring -> M3.8)
-- **M1.6** (canonical manifest + scores, MLflow mirror): DONE
-- **M1.7** (minimal sequential runner + NVML VRAM gate): DONE
-- **M1.8** (`run-eval` prints one ranked row (SQuAD-uk seed)): DONE
+- **config and CLI** (`RunConfig` + Typer CLI (`build-index`, `validate-retrieval`, `run-eval`)): DONE
+- **FAISS RAG store** (pinned-embedding FAISS RAG store (`build-index`)): DONE
+- **source-span metric** (recall@k / MRR by source-span overlap): DONE
+- **retrieve-generate loop** (LangGraph retrieve->generate over Ollama + typed failure taxonomy): DONE
+- - **judge gate seam** (objective answer-correctness (+ semantic) + judge gate seam): CORE (executor judge
+- wiring -> judge calibration gate)
+- **run manifest and scores** (canonical manifest + scores, MLflow mirror): DONE
+- **sequential runner** (minimal sequential runner + NVML VRAM gate): DONE
+- **ranked-row output** (`run-eval` prints one ranked row (SQuAD-uk seed)): DONE
 
-Residual M1 work is scoped forward in [`plan.md`](../plan.md): human judge calibration (M3.8). The
-map-reduce / multi-hop eval templates (M1.4-rest) are now DELIVERED under M5.0 (see Milestone 5
+Residual RAG core work is scoped forward in [`plan.md`](../plan.md): human judge calibration (judge calibration gate). The
+map-reduce / multi-hop eval templates (deferred eval templates) are now DELIVERED under text analysis (see category suite
 below). The optional semantic-similarity correctness signal is built (`--score-semantic`).

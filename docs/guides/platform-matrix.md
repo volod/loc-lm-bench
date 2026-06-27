@@ -1,6 +1,6 @@
 # Platform Matrix
 
-Use this guide to run M7.4 platform comparisons: same logical model base across backend families,
+Use this guide to run platform comparisons: same logical model base across backend families,
 power-aware telemetry, and GPU-class extension configs.
 
 ## Common-Base Backend Run
@@ -12,7 +12,7 @@ Default common base for the 16 GB CUDA host:
 
 Run the full chain:
 
-    make m7-4-platform-matrix
+    make platform-matrix
 
 The target does:
 1. rebuild the committed FAISS RAG index;
@@ -22,19 +22,19 @@ The target does:
 
 Override the defaults for another common base:
 
-    make m7-4-platform-matrix \
-      M7_4_OLLAMA_MODEL=<ollama-tag-or-hf.co-gguf> \
-      M7_4_VLLM_MODEL=<hf-vllm-checkpoint> \
-      M7_4_LLAMACPP_MODEL=<hf.co-gguf-source> \
-      M7_4_MAX_MODEL_LEN=8192 \
-      M7_4_LIMIT=20
+    make platform-matrix \
+      PLATFORM_MATRIX_OLLAMA_MODEL=<ollama-tag-or-hf.co-gguf> \
+      PLATFORM_MATRIX_VLLM_MODEL=<hf-vllm-checkpoint> \
+      PLATFORM_MATRIX_LLAMACPP_MODEL=<hf.co-gguf-source> \
+      PLATFORM_MATRIX_MAX_MODEL_LEN=8192 \
+      PLATFORM_MATRIX_LIMIT=20
 
 For a larger Gemma 4 common base, use the 12B artifacts:
 
-    make m7-4-platform-matrix \
-      M7_4_VLLM_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
-      M7_4_OLLAMA_MODEL=hf.co/google/gemma-4-12B-it-qat-q4_0-gguf \
-      M7_4_LLAMACPP_MODEL=hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:q4_0
+    make platform-matrix \
+      PLATFORM_MATRIX_VLLM_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
+      PLATFORM_MATRIX_OLLAMA_MODEL=hf.co/google/gemma-4-12B-it-qat-q4_0-gguf \
+      PLATFORM_MATRIX_LLAMACPP_MODEL=hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:q4_0
 
 Use one split, one limit, one RAG index, and one telemetry protocol for every backend row. Do not
 compare rows produced with different gold sets, splits, limits, retrieval configs, or context caps.
@@ -88,4 +88,4 @@ objective score, reliability, tok/s, peak VRAM, load time, mean power, and quali
 
 Do not treat GraphRAG comparison as the multi-vector-store matrix. The current vector store is
 FAISS. A Chroma/Qdrant/LanceDB matrix requires real adapters behind the RAG-store seam, then the
-same source-span retrieval metric and `run-eval` path can compare them.
+same source-span metric and `run-eval` path can compare them.

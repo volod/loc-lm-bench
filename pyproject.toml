@@ -26,19 +26,19 @@ rag = [
   "deepeval>=4.0.6,<5",
 ]
 eval = ["langgraph>=0.2"]
-crewai = ["crewai>=1.15,<2"]  # M7.1 alt agentic harness (LangGraph vs CrewAI); validated on 1.15.0
-# M7.4 alternative vector stores behind the RAG-store seam (FAISS stays the default in [rag]).
+crewai = ["crewai>=1.15,<2"]  # agentic harness comparison alt agentic harness (LangGraph vs CrewAI); validated on 1.15.0
+# platform matrix alternative vector stores behind the RAG-store seam (FAISS stays the default in [rag]).
 # Pinned because these clients have version-sensitive query/score APIs.
 rag-chroma = ["chromadb==1.5.9"]
 rag-qdrant = ["qdrant-client==1.18.0"]
 rag-lancedb = ["lancedb==0.33.0"]
-graph = ["duckdb>=1.0"]  # M6 GraphRAG backend: persisted graph + recursive-CTE k-hop engine
+graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]
 prep = ["litellm>=1.40"]
 telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
 goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
-mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (M5.2 MCP transport)
+mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (tooling benchmark MCP transport)
 # NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU) and installed via a
 # separate build path per AGENTS.md, never as plain deps here.
 dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.6", "radon>=6.0", "complexipy>=5.0", "pymarkdownlnt>=0.9.32"]
@@ -65,7 +65,7 @@ plugins.MD013.tables = false  # do not length-check table rows (data tables are 
 # substantive issues, not style noise (re-enable any to tighten):
 plugins.MD022.enabled = false  # blanks around headings (docs use a compact heading style)
 plugins.MD032.enabled = false  # blanks around lists (docs use compact lists under an intro line)
-plugins.MD024.enabled = false  # duplicate heading text (section names repeat across milestones)
+plugins.MD024.enabled = false  # duplicate heading text (section names repeat across current-state topics)
 plugins.MD040.enabled = false  # fenced-code language tag (plain command / shell fences)
 plugins.MD004.enabled = false  # unordered-list marker style ("+" is used as a wrapped "plus" connector)
 plugins.MD007.enabled = false  # nested-list indentation (compact nested lists)

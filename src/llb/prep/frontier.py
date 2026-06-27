@@ -1,4 +1,4 @@
-"""Frontier-LLM data-prep utilities (M3.5) -- GPU-free, litellm-backed.
+"""Frontier-LLM data-prep utilities (frontier drafting) -- GPU-free, litellm-backed.
 
 Two utilities, both producing UNVERIFIED material a human then reviews (only `verified=True`
 items ever score a model):
@@ -37,7 +37,7 @@ PROVENANCE_DRAFTED: Provenance = "frontier-drafted"
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
-# --- per-call cost / model provenance (M3.5) ----------------------------------------------
+# --- per-call cost / model provenance (frontier drafting) ----------------------------------------------
 
 
 @dataclass
@@ -72,7 +72,7 @@ class ProvenanceLog:
         }
 
 
-# --- fuzzy-but-exact span grounding (M3.5) ------------------------------------------------
+# --- fuzzy-but-exact span grounding (frontier drafting) ------------------------------------------------
 
 
 def _normalize(text: str) -> tuple[str, list[int]]:
@@ -188,7 +188,7 @@ def build_drafted_items(
 ) -> list[GoldItem]:
     """Turn raw drafts into GoldItems, dropping any whose answer span is not in the doc.
 
-    `provenance` / `id_prefix` let other drafters (e.g. the M4.4 ontology pipeline) reuse the
+    `provenance` / `id_prefix` let other drafters (e.g. the ontology-assisted pipeline) reuse the
     exact-grounding + GoldItem construction while tagging their own provenance and id namespace.
     """
     items: list[GoldItem] = []

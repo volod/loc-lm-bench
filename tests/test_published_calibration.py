@@ -1,6 +1,6 @@
 """The committed canonical calibration worksheet still clears the judge-trust gate.
 
-This is what makes the M3.8 decision reproducible after a fresh clone: the worksheet (86 human +
+This is what makes the judge calibration gate decision reproducible after a fresh clone: the worksheet (86 human +
 judge ratings for the committed `ua_squad_postedited_v1` goldset) is tracked under `calibration/`,
 and this test re-derives rho from it on every run -- no model, endpoint, or GPU needed. If someone
 edits the worksheet and the calibration stops clearing the gate, CI fails here.

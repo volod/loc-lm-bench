@@ -1,6 +1,6 @@
 # Composite headline close-out
 
-This guide is the operator flow for turning the M5 category boards into one guarded composite
+This guide is the operator flow for turning the category boards into one guarded composite
 headline. The composite is a separate layer over the category boards; it does not weaken the rule
 that security, tooling, agentic, summarization, structured output, and text-analysis each render
 under their own Tier.
@@ -10,14 +10,14 @@ The headline is allowed only when every required category for a model is:
 - present for the same frozen model cohort;
 - scored on final inputs, not tuning or draft inputs;
 - backed by a per-case objective series so a CI can be recomputed after reload;
-- stamped as MH.5-verified with a valid verification reference.
+- stamped as human verification gate-verified with a valid verification reference.
 
 ## Weights
 
-The first composite is M5-only. It uses the spec taxonomy proportions for the M5 categories and
-renormalizes them over this subset:
+The first composite is category suite-only. It uses the spec taxonomy proportions
+for the category suite categories and renormalizes them over this subset:
 
-| Component | Raw weight | Normalized M5 weight |
+| Component | Raw weight | Normalized category suite weight |
 | --- | ---: | ---: |
 | `text_analysis` | 20 | 0.3077 |
 | `summarization` | 10 | 0.1538 |
@@ -26,13 +26,13 @@ renormalizes them over this subset:
 | `agentic` | 10 | 0.1538 |
 | `tooling` | 5 | 0.0769 |
 
-RAG quality, chat-period analysis, reliability, and efficiency stay outside this first M5
+RAG quality, chat-period analysis, reliability, and efficiency stay outside this first category suite
 headline. Reliability is still shown as a diagnostic (`avg_reliability`) so a high composite score
 does not hide flaky runs.
 
 ## One-command pipeline
 
-Use this after each category input has its MH.5 verification artifact:
+Use this after each category input has its human verification gate verification artifact:
 
 ```sh
 make composite-headline \
@@ -51,7 +51,7 @@ make composite-headline MODEL=<model-id> BACKEND=<backend>
 ```
 
 This is a smoke/demo path over repo-authored fixtures. For real headline use, override the inputs
-and refs with the actual frozen category bundles and their MH.5 artifacts.
+and refs with the actual frozen category bundles and their human verification gate artifacts.
 
 If categories use different bundles or verification worksheets, pass one reference per category:
 
@@ -111,7 +111,7 @@ statistics include `n`, decided, accepted, rejected, undecided, undecided failed
 rate, tolerance, and failing strata. Accepted-ledger statistics include item counts and sample
 unverified ids.
 
-Fix an invalid reference with the same MH.5 loop:
+Fix an invalid reference with the same human verification gate loop:
 
 ```sh
 make verify-sample BUNDLE=<bundle> VERIFY_N=<n>
@@ -132,12 +132,12 @@ or:
 ```
 
 Do not backfill a committed seed set by editing manifests. If a committed sample file is promoted
-to headline data, first package or adapt it as a category bundle, run MH.5, and use the resulting
-verification artifact.
+to headline data, first package or adapt it as a category bundle, run human verification gate,
+and use the resulting verification artifact.
 
 The repository's committed sample refs are intentionally scoped to smoke/demo composite runs over
-repo-authored fixtures. They are not a substitute for MH.5 on new AI-drafted, adapted, or external
-data.
+repo-authored fixtures. They are not a substitute for human verification gate on new AI-drafted,
+adapted, or external data.
 
 ## Future AI-drafted or adapted bundle flow
 

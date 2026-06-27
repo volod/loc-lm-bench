@@ -1,8 +1,8 @@
-# Milestone 4 Current State
+# robust backend prep Current State
 
-## Milestone 4 -- robustness + ontology data prep + third backend (complete)
+## robust backend prep -- robustness + ontology data prep + third backend (complete)
 
-### Embedding-aware VRAM estimate -- `llb.backends.planner` (M4.1)
+### Embedding-aware VRAM estimate -- `llb.backends.planner` (memory planner)
 The weights estimate is no longer a flat `params_b x bpw`. Partial quants (w4a16 / int4 / fp8)
 quantize only the linear layers while the token embedding + norms stay high-precision; with a
 256k-token vocab that premium is large. `weights_mib_detailed(params_b, quant_bpw, hi_params,
@@ -12,7 +12,7 @@ the quant bpw. The high-precision mass is `hi_precision_params(spec)`: an explic
 Embeddings), else -- ONLY for a partial quant (`PARTIAL_QUANT_FORMATS`) -- the token embedding
 (`vocab_size x hidden_size`, plus the untied head) derived from the spec. GGUF k-quants and
 bf16/fp32 get no premium (they quantize uniformly). The detailed estimate flows through
-`plan_model`, so the `AvailabilityResolver` fit (M3.2) and Optuna's over-VRAM prune (M3.4)
+`plan_model`, so the `AvailabilityResolver` fit (backend resolver) and Optuna's over-VRAM prune (Optuna tuning)
 inherit it for free.
 
 Arch fields come from the spec or, when omitted, a cached `config.json`: `enrich_arch(spec)`
@@ -21,7 +21,7 @@ reads `vocab_size` / `hidden_size` / `num_hidden_layers` / `tie_word_embeddings`
 never downloads). It fills only missing fields (curated YAML wins) and skips non-HF sources
 (Ollama tags, `hf.co/...:Q4_K_M`). `list-models` / `resolve-models` enrich specs before planning.
 
-Validated against the M2.4 measurement: gemma-4-E4B-it-w4a16 now estimates **9.81 GiB** (the
+Validated against the real-model validation measurement: gemma-4-E4B-it-w4a16 now estimates **9.81 GiB** (the
 measured floor is 9.8 GiB) vs the old flat ~4.2 GiB; the Gemma 12B w4a16 gains a ~1.3 GiB
 embedding premium (6.3 -> 7.6 GiB) and the 27B fp8 ~1.3 GiB. The E4B floor + the new arch fields
 are recorded in `samples/models_uk.yaml` as the regression anchor.
@@ -31,14 +31,14 @@ Possible further improvements: the E4B high-precision mass is measurement-anchor
 sliding-window KV (Gemma 3/4) is still estimated as full attention (conservative at long ctx);
 and `enrich_arch` fills gaps rather than letting `config.json` override curated values.
 
-### Pre-launch VRAM-contention guard -- `llb.executor.contention` (M4.2)
+### Pre-launch VRAM-contention guard -- `llb.executor.contention` (VRAM contention guard)
 Before a VRAM-owning backend (vLLM) starts, `run-eval` runs a guard so a resident process can no
-longer trip vLLM's startup free-memory check (the original M2.4 failure: Ollama held ~2.8 GB, so
+longer trip vLLM's startup free-memory check (the original real-model validation failure: Ollama held ~2.8 GB, so
 `gpu-memory-utilization x total` exceeded free VRAM). `plan_guard(total, free, requested_util,
 weight_floor)` (pure) caps `gpu-memory-utilization` at `(free - margin) / total` (rounded down,
 only ever lowered) -- the non-destructive default AUTO-DERATE -- and returns a `ContentionReport`
 {total, free, safe_util, target, residents, derated, fits, action, note}. It ABORTS with an
-actionable message when even the derated target cannot hold the M4.1 weight floor + vLLM's ~2 GB
+actionable message when even the derated target cannot hold the memory planner weight floor + vLLM's ~2 GB
 non-weight serving overhead (`DEFAULT_VLLM_OVERHEAD_MB`: CUDA context, peak activations, CUDA-graph
 capture) + a minimal KV working set; without that overhead term the guard would derate into a
 doomed launch (the live finding: a budget that left 0 for KV blocks tripped vLLM's "No available
@@ -61,8 +61,8 @@ nvidia-smi free-VRAM read + NVML attributing the resident PID. Possible further 
 guard reads GPU 0 only (single-GPU assumption); the abort's KV headroom is a fixed floor rather than
 the arch-derived KV for the served context.
 
-### llama.cpp launcher -- `llb.backends.llamacpp` (M4.5)
-The third backend the M3.2 resolver routes to: a model too big for vLLM's no-offload VRAM
+### llama.cpp launcher -- `llb.backends.llamacpp` (llama.cpp launcher)
+The third backend the backend resolver resolver routes to: a model too big for vLLM's no-offload VRAM
 resolves to its GGUF, which `llama-server` runs by splitting layers GPU<->CPU. `LlamaCppLauncher`
 sits behind the same `BackendLauncher` + OpenAI-compatible `chat_once` seam as Ollama/vLLM, so the
 eval/RAG/judge code is unchanged. `build_llamacpp_command` assembles the `llama-server` argv:
@@ -75,7 +75,7 @@ vLLM), then reads the served `n_ctx` from `/props` (falling back to the requeste
 Telemetry reuses the backend-agnostic `collect_telemetry` (steady tokens/sec + peak VRAM); the
 launcher records `n_gpu_layers` + `ctx_size` in its meta, and `TelemetryReport` now carries
 `n_gpu_layers` so the served-vs-requested context (`requested_context`/`served_context`) and the
-offload split land in the manifest. `llamacpp` is in `GATE_BACKENDS`, so the M3.3 reclaim gate
+offload split land in the manifest. `llamacpp` is in `GATE_BACKENDS`, so the isolation reclaim reclaim gate
 applies (it owns its VRAM). The runner's `_make_launcher` builds it from `RunConfig.llamacpp_host`
 (env `LLAMACPP_HOST`, port parsed from the URL) + `n_gpu_layers`, with the context from
 `max_model_len`. The process factory, HTTP probe, and sleep are injectable, so command building,
@@ -107,7 +107,7 @@ Possible further improvements: keep extending the `/props` served-context parser
 llama.cpp builds move `n_ctx` again. Known response shapes are handled with a fallback, and both
 all-on-GPU and partial-offload run paths have real-host coverage.
 
-### vLLM serving knobs + flashinfer preflight (M4.3)
+### vLLM serving knobs + flashinfer preflight (vLLM serving preflight)
 `run-eval` now takes `--max-model-len` and `--gpu-memory-utilization` directly (previously only via
 `--config`); both flow through `_load_config` -> `RunConfig.with_overrides`, so they are revalidated
 by `RunConfig` (range-checked) and no YAML file is needed to tune a single run.
@@ -133,17 +133,17 @@ Possible further improvements: auto-PIN a host-compatible flashinfer when the bu
 manifest for provenance; re-run the preflight on a flashinfer/driver change without a full vLLM
 rebuild.
 
-### Ontology-assisted gold-set drafting -- `llb.prep.ontology` (M4.4)
+### Ontology-assisted gold-set drafting -- `llb.prep.ontology` (ontology-assisted drafting)
 The reserved `GOLDSET_MODE=draft` is now a 7-stage prep pipeline (CLI `prepare-goldset-draft`,
 Makefile `GOLDSET_MODE=draft` over `CORPUS`) that drafts UNVERIFIED RAG gold items from a corpus
-and links every artifact to exact evidence. It is deliberately NOT a synonym for the M3.5
+and links every artifact to exact evidence. It is deliberately NOT a synonym for the frontier drafting
 one-prompt `prepare-goldset`; it is a data-preparation ontology, not a GraphRAG runtime (that is
-Milestone 6). One small module per grained stage, each injected-unit-tested:
+GraphRAG backend). One small module per grained stage, each injected-unit-tested:
 
 - **endpoint adapter (`endpoint.py`).** All stages drive one injectable `LLMComplete`.
   `build_complete`
   returns a LOCAL OpenAI-compatible call (`make_client` + `chat_once`, no corpus egress -- the
-  default) or, opt-in, the frontier `litellm_complete` (egress -- the Milestone H decision).
+  default) or, opt-in, the frontier `litellm_complete` (egress -- the human decision decision).
   `EndpointConfig` validates kind/model and exposes `egress` + a provenance dict; cost/tokens
   accrue in the shared `ProvenanceLog`.
 - **stage 1 inventory (`inventory.py`).** Reads `.md`/`.txt` recursively (corpus-relative ids),
@@ -164,7 +164,7 @@ Milestone 6). One small module per grained stage, each injected-unit-tested:
   canonical type (`GPE`->`LOC`, `WORK_OF_ART`/`PATENT`->`WORK`, `TREATY`->`LAW`, ...) and any
   out-of-vocabulary label becomes `MISC` -- the schema can never silently expand. The signed schema
   is [`docs/design/graph-ontology-schema.md`](../../design/graph-ontology-schema.md). Extend by editing
-  the one module (`tests/test_ontology_m56.py` covers the normalizer + closure).
+  the one module (`tests/test_ontology_hardening.py` covers the normalizer + closure).
 - **stage 3 induce (`induce.py`).** Pure deterministic aggregation of extracted entity types +
   relations into a CONSTRAINED `OntologyCandidate` (capped groups, hapax-dropped) with support
   count, frequency confidence, and example surface forms.
@@ -182,48 +182,48 @@ Milestone 6). One small module per grained stage, each injected-unit-tested:
   bundle self-validates), `ontology.json`, `extraction.jsonl`, and a `provenance.json` linking
   endpoint / prompt fingerprints / per-doc hashes / stage counts / cost.
 
-Nothing is verified: a frontier cross-check + a human stratified sample-verify (MH.5) still gate
+Nothing is verified: a frontier cross-check + a human stratified sample-verify (human verification gate) still gate
 any scoring. The full flow is proven by a fake-endpoint test (one callable answering both the
 extraction and drafting prompts, like a real local model) that runs all stages and validates the
-emitted bundle with the M0 validator.
+emitted bundle with the data bootstrap validator.
 
 Possible further improvements: ship a concrete Stanza / spaCy `ExtractionAdapter` plug-in (today
 only the LLM adapter + seam exist); add the second-frontier cross-check (grounding/non-circularity)
-as pipeline code before MH.5; chunk over-long docs for extraction rather than one truncated call
+as pipeline code before human verification gate; chunk over-long docs for extraction rather than one truncated call
 (`EXTRACT_MAX_CHARS`); derive type confidence from a richer signal than raw frequency; and feed the
 induced ontology types into the drafting prompt as explicit constraints (today they inform coverage
 strata only).
 
-- - **M4.1** (embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`,
+- - **memory planner** (embedding-aware weights (`weights_mib_detailed` + `hi_precision_params`,
 - partial-quant-gated) + `config.json` enrichment (`enrich_arch`/`arch_from_config`); fed through
 - `plan_model` to resolver + Optuna; YAML arch fields + measured anchor): DONE + LIVE-VALIDATED (E4B
 - predicted 9.81 vs measured 9.80 GiB on a live vLLM load, 0.1%)
-- - **M4.2** (pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`),
+- - **VRAM contention guard** (pre-launch VRAM-contention guard (`plan_guard` derate + abort, `--evict`/`--wait`),
 - wired into `run-eval` for vLLM, recorded in the manifest): DONE + LIVE-VALIDATED (real resident
 - user: derate 0.80->0.78 + abort end-to-end through `run-eval`, no vLLM started)
-- - **M4.5** (llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source,
+- - **llama.cpp launcher** (llama.cpp launcher (`LlamaCppLauncher` `llama-server` subprocess: `-hf`/`-m` source,
 - `-ngl` offload split, `/health`+`/props`), telemetry (`n_gpu_layers` + served ctx), reclaim gate,
 - `_make_launcher` wiring; planner-derived `-ngl` (`llamacpp_offload_split` -> `sweep`);
 - `scripts/build_llamacpp.sh` (CUDA)): DONE + LIVE-VALIDATED (RTX 4060 Ti: real GGUF served on GPU
 - under the isolation gate, VRAM reclaimed; routing + auto-derive confirmed)
-- - **M4.3** (run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) +
+- - **vLLM serving preflight** (run-eval `--max-model-len` / `--gpu-memory-utilization` (revalidated, no YAML) +
 - flashinfer sampler preflight (`build-vllm` records a verdict; `launch_env` gates the sampler on
 - it)): DONE + LIVE-VALIDATED (host preflight verdict recorded: `native` on sm_89, flashinfer
 - 0.6.12)
-- - **M4.4** (ontology-assisted draft pipeline (`llb.prep.ontology`: 7 grained stages + endpoint
+- - **ontology-assisted drafting** (ontology-assisted draft pipeline (`llb.prep.ontology`: 7 grained stages + endpoint
 - adapter, `prepare-goldset-draft` / `GOLDSET_MODE=draft`), exact-evidence-grounded `verified=false`
 - `ontology-drafted` bundle with full provenance): DONE (per-stage + fake-endpoint full-flow unit
 - tests; frontier cross-check + spaCy/Stanza plug-in are residual)
 
-**Milestone 4 is complete and ALL on-hardware live validation has now passed on the CUDA host**
-(RTX 4060 Ti, vLLM 0.23.0, driver 595.71.05): M4.1 the planner's embedding-aware estimate matched a
-live vLLM load (predicted 9.81 vs measured 9.80 GiB, gemma-4-E4B w4a16); M4.2 the contention guard
+**robust backend prep is complete and ALL on-hardware live validation has now passed on the CUDA host**
+(RTX 4060 Ti, vLLM 0.23.0, driver 595.71.05): memory planner the planner's embedding-aware estimate matched a
+live vLLM load (predicted 9.81 vs measured 9.80 GiB, gemma-4-E4B w4a16); VRAM contention guard the contention guard
 derated (0.80 -> 0.78) and aborted as designed against a real resident VRAM user, end-to-end through
-`run-eval` (no vLLM started); M4.3 the host flashinfer preflight verdict was recorded (`native` on
-sm_89); M4.5 a real GGUF resolved to and served through the llama.cpp launcher on the GPU under the
+`run-eval` (no vLLM started); vLLM serving preflight the host flashinfer preflight verdict was recorded (`native` on
+sm_89); llama.cpp launcher a real GGUF resolved to and served through the llama.cpp launcher on the GPU under the
 isolation gate with the planner-derived `-ngl`. The remaining residuals are NOT live validation:
-the small run-path CODE hardening (M4.1 sliding-window KV + config override, M4.2 multi-GPU +
-arch-derived KV abort floor, M4.3 flashinfer auto-pin / sampler-in-manifest, M4.5 `/props` shape +
-a real partial-offload split) and the M4.4 data-prep hardening (second-frontier cross-check, opt-in
+the small run-path CODE hardening (memory planner sliding-window KV + config override, VRAM contention guard multi-GPU +
+arch-derived KV abort floor, vLLM serving preflight flashinfer auto-pin / sampler-in-manifest, llama.cpp launcher `/props` shape +
+a real partial-offload split) and the ontology-assisted drafting data-prep hardening (second-frontier cross-check, opt-in
 Stanza/spaCy adapter, long-doc chunking, richer ontology confidence) -- carried forward in
-[`plan.md`](../plan.md) (M5.6), landing with the M5 verified-data gate + the M6 extraction reuse.
+[`plan.md`](../plan.md) (verified-data hardening), landing with the category suite verified-data gate + the GraphRAG backend extraction reuse.

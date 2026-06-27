@@ -1,4 +1,4 @@
-"""Per-backend telemetry: steady-state throughput, peak VRAM, served context (M2.2).
+"""Per-backend telemetry: steady-state throughput, peak VRAM, served context (telemetry hook).
 
 Tokens/sec is measured at STEADY STATE -- a fixed prompt set + fixed max_new_tokens + N
 warmup iterations -- so it is comparable across models (the design's throughput protocol).
@@ -265,7 +265,9 @@ def collect_telemetry(
             round(tput.steady_tokens_per_s / mean_power, 4) if mean_power > 0 else 0.0
         )
     if hasattr(launcher, "meta") and launcher.meta.get("sampler") is not None:
-        report["sampler"] = launcher.meta["sampler"]  # vLLM sampler in the manifest (M4.3)
+        report["sampler"] = launcher.meta[
+            "sampler"
+        ]  # vLLM sampler in the manifest (vLLM serving preflight)
         report["flashinfer_version"] = launcher.meta.get("flashinfer_version")
     return report
 

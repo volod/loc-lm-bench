@@ -1,18 +1,18 @@
-"""Multi-hop retrieval evaluation template -- M5.0.
+"""Multi-hop retrieval evaluation template -- text analysis.
 
 Iterative retrieve -> reason -> (optionally retrieve again) for questions whose answer must
 chain several facts. After each retrieval, a CONTROLLER node decides whether the gathered
 context is sufficient (stop and answer) or another sub-query is needed (hop again), bounded by
 `max_hops`. An answer node then synthesizes the final answer over everything gathered.
 
-This is the SUBSTRATE for the M5.3 agentic benchmark: that milestone extends the controller
+This is the SUBSTRATE for the agentic benchmark: that benchmark extends the controller
 to emit tool calls and adds an in-sandbox tool-execution node, but the retrieve/controller/
 answer loop + conditional routing defined here is the fixed shape it grows from.
 
 Same node-closure convention as `graph.py`: the controller parser, message builders, node
 closures, and the router are pure and unit-testable WITHOUT langgraph; only
 `build_multi_hop_graph` imports it (the `[eval]` extra). Trajectory length (`n_hops`) and the
-model-call/token counts are recorded on the state as the efficiency signal M5.3 ranks on.
+model-call/token counts are recorded on the state as the efficiency signal agentic benchmark ranks on.
 """
 
 from typing import Any, Callable, cast

@@ -1,10 +1,10 @@
-"""Question linking + span-preserving serialization for the GraphRAG strategies (Milestone 6).
+"""Question linking + span-preserving serialization for the GraphRAG strategies (GraphRAG backend).
 
 Pure, dependency-free (no DuckDB, no embedder): the graph STORE owns persistence and the graph
 queries (k-hop via recursive CTE, community grouping via `WHERE community_id`); this module owns
 "what is relevant to the question" (lexical entity linking) and "render a node/edge set back to
 offset-bearing context". Both retrieval strategies serialize node MENTIONS and edge EVIDENCE with
-their exact `doc_id` + char offsets, so the result scores on the SAME source-span metric (M1.3)
+their exact `doc_id` + char offsets, so the result scores on the SAME source-span metric (source-span metric)
 the FAISS path uses -- the un-grounded abstraction (an LLM community summary) is kept out of here
 entirely and recorded only as a tagged diagnostic.
 """

@@ -1,4 +1,4 @@
-"""Validate a gold set against its corpus and structural invariants (M0 acceptance).
+"""Validate a gold set against its corpus and structural invariants (data bootstrap acceptance).
 
 Schema validity is enforced when items are loaded (pydantic). This adds the checks that
 need the corpus on disk and the whole set: span offsets resolve to the labeled text,

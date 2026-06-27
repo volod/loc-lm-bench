@@ -1,6 +1,6 @@
 """llama.cpp launcher: serve a GGUF behind the OpenAI-compatible HTTP API (Premise 1).
 
-The third backend the M3.2 resolver routes to: an oversized model that vLLM cannot hold in
+The third backend the backend resolver resolver routes to: an oversized model that vLLM cannot hold in
 VRAM (no CPU offload) resolves to its GGUF, which `llama-server` runs by splitting layers
 between the GPU (`-ngl`) and system RAM. `llama-server` exposes an OpenAI-compatible endpoint,
 so -- exactly like the Ollama and vLLM launchers -- only this launcher + its telemetry are
@@ -139,7 +139,7 @@ def _dig(data: dict[str, Any], path: tuple[str, ...]) -> Any:
 
 
 def parse_served_context(props_body: str) -> int | None:
-    """Pull the served `n_ctx` from a `llama-server` /props response (best-effort, M4.5).
+    """Pull the served `n_ctx` from a `llama-server` /props response (best-effort, llama.cpp launcher).
 
     `n_ctx` has moved across llama.cpp versions (top level, `default_generation_settings`, a nested
     `params`/`context`, `generation_settings`, `model`, `props`), so a known set of paths is

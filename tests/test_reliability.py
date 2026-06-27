@@ -1,4 +1,4 @@
-"""M5.4 reliability -- typed failure taxonomy aggregation."""
+"""category expansion reliability -- typed failure taxonomy aggregation."""
 
 import json
 

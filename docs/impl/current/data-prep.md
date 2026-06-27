@@ -1,6 +1,6 @@
-# Milestone 0 Current State
+# data prep Current State
 
-## Milestone 0 -- modules + how to run
+## data prep -- modules + how to run
 
 ### Canonical gold-item schema -- `llb.goldset.schema`
 Pydantic `GoldItem` + `SourceSpan`. Fields: `id, lang, question, reference_answer,
@@ -14,7 +14,7 @@ fixture; `provenance` and fixture metadata preserve the distinction. `load_golds
 ### Splits -- `llb.goldset.splits`
 `assign_splits(ids, ratios, seed)` -> deterministic, disjoint `calibration / tuning / final`.
 
-### Validator (M0 acceptance) -- `llb.goldset.validate`
+### Validator (data bootstrap acceptance) -- `llb.goldset.validate`
 Checks every span resolves to its labeled text on disk, ids unique, splits disjoint.
 
     make validate-goldset          # PASS on the committed public fixture
@@ -26,7 +26,7 @@ default demo gold set.
 
     make gen-rag-items # -> .data/llb/goldset/sample_rag_items.jsonl (6 items)
 
-### SQuAD ingestion (M0.3) -- `llb.prep.ingest_squad`
+### SQuAD ingestion (Ukrainian SQuAD ingest) -- `llb.prep.ingest_squad`
 Maps SQuAD-format UA QA (flattened, nested, or HF rows where `answers` is a dict-string) ->
 canonical items, with spans from the answer offset and a `find()` fallback. Drafts start with
 `provenance: public-reused`, `verified: false`. The default ID-keyed verification ledger then
@@ -39,7 +39,7 @@ source's nested SQuAD article rows.
     reviewed set
     make ingest-uk-squad GOLDSET_MODE=skeleton # editable SQuAD template +
     instructions
-    make ingest-uk-squad GOLDSET_MODE=draft # M4.4 ontology-assisted draft over
+    make ingest-uk-squad GOLDSET_MODE=draft # ontology-assisted draft over
     CORPUS
     (verified=false)
     make ingest-squad                          # the bundled fixture (4 items)
@@ -57,7 +57,7 @@ revision, source SHA-256, selection rule, verification basis, attribution, and d
 The pinned selection was reviewed by a human and all 250 items are `verified: true`.
 
 `--verified-goldset <path>` replaces the default ledger and may be repeated to combine reviewed
-sets. This is the review handoff for M3.5 `prepare-goldset` and planted-label outputs after a
+sets. This is the review handoff for frontier drafting `prepare-goldset` and planted-label outputs after a
 human flips accepted entries to true; each ledger JSONL has a sibling `corpus/`. Canonical item
 replacement, rather than a boolean-only flip, prevents a reused ID from certifying changed
 content. `--no-verification-ledger` explicitly disables adoption. A zero-match import warns and
@@ -68,7 +68,7 @@ the Makefile cannot drift from the fixture metadata. It loads `FIdo-AI/ua-squad`
 `943ef27daea65e400350ef1875d07c7e97288177`, split `validation`, then applies the exact fixture
 selection: first grounded QA per distinct context, in source order. Live acceptance generated
 250/250 verified items with 86/82/82 calibration/tuning/final splits; all canonical items and
-all 250 corpus files exactly matched the committed fixture. This closes M3.9 and provides a
+all 250 corpus files exactly matched the committed fixture. This closes verified gold-set ledger and provides a
 stable regenerated bundle for initial model tests. Normal initial tests should still use the
 committed fixture through `make demo-eval`, which is offline and avoids unnecessary downloads.
 
@@ -98,7 +98,7 @@ All langchain use is lazy; `fixed` / `sentence` / `markdown` work without `[rag]
 
 On the bundled IP doc: recursive 10 / markdown 8 chunks (markdown carries h1/h2 breadcrumbs).
 
-### Judge calibration (M0.5 stats + M3.8 tooling) -- `llb.judge.calibration` + `llb.judge.rate`
+### Judge calibration (judge calibration statistics stats + judge calibration gate tooling) -- `llb.judge.calibration` + `llb.judge.rate`
 Spearman rho (no scipy), bootstrap CI, and the trust decision (`rho >= 0.6` else demote). The
 worksheet is a single CSV (`CAL_WS`) kept in one of two roots auto-routed by `CAL_NAME`: PERMANENT
 sets (in `CAL_PERMANENT`, the committed goldset by default) live in the TRACKED root `calibration/`
@@ -135,7 +135,7 @@ at the first unrated item; `--clear` wipes all human columns (confirmation-gated
 are caught and treated as save + quit.
 
 The Make targets drive the loop over the verified committed gold set (`GOLDSET` defaults to
-`samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items are `verified: true`, so M3.9
+`samples/goldsets/ua_squad_postedited_v1` -- all 86 calibration items are `verified: true`, so verified gold-set ledger
 is already satisfied for it; its worksheet defaults to the tracked `calibration/ua_squad_postedited_v1.csv`).
 Defaults target a local Ollama judge (`gemma3:27b` on :11434) with the embedder pinned to CPU
 (`LLB_EMBED_DEVICE=cpu`, so the GPU stays free for the judge), so on the committed goldset it is:
@@ -149,7 +149,7 @@ Defaults target a local Ollama judge (`gemma3:27b` on :11434) with the embedder 
 goldset / text-corpus draft uses `CAL_NAME=<label>`.) The operator walkthrough is the
 [calibration-tooling guide](../../guides/calibration-tooling.md).
 
-**Calibration result (M3.8 DONE, 2026-06-24):** 86 independent human ratings scored to
+**Calibration result (judge calibration gate DONE, 2026-06-24):** 86 independent human ratings scored to
 **rho=0.628** (95% bootstrap CI [0.428, 0.772], n=86, judge `gemma3:27b` on Ollama) -> clears the
 0.6 gate, `trusted=True`. It is a BORDERLINE pass: the CI lower bound is below 0.6 and the human
 ratings skew high (68 of 86 are 5s, the judge mean is ~0.86) because the committed SQuAD-uk
@@ -215,20 +215,20 @@ delta, with the board's judge-cohort guard preventing mixed cohorts in one board
 cautions a small local judge may not clear the gate for Ukrainian -- a 12B is borderline; if rho
 < 0.6 the judge stays demoted, which is the gate working as designed.
 
-## Milestone 0 status
+## data prep status
 
 | Step | What | State |
 |------|------|-------|
-| M0.1 schema | Pydantic `GoldItem` / `SourceSpan` | DONE |
-| M0.2 sample generator | `gen_rag_items` + sample spec | DONE |
-| M0.3 stable public gold set | pinned post-edited UA-SQuAD fixture (250 items/docs) | DONE |
-| M0.4 splits | deterministic disjoint partition | DONE |
-| M0.5 calibration stats | rho + CI + blank/pre-filled worksheet | DONE (code) |
+| data bootstrap.1 schema | Pydantic `GoldItem` / `SourceSpan` | DONE |
+| data bootstrap.2 sample generator | `gen_rag_items` + sample spec | DONE |
+| Ukrainian SQuAD ingest stable public gold set | pinned post-edited UA-SQuAD fixture (250 items/docs) | DONE |
+| data bootstrap.4 splits | deterministic disjoint partition | DONE |
+| judge calibration statistics calibration stats | rho + CI + blank/pre-filled worksheet | DONE (code) |
 | chunking | fixed/sentence/recursive RAG-store builder | DONE |
 | acceptance | validator PASS (sample + fixture + 250-item set), suite green | DONE |
 
 Remaining (blocked on a judge choice or human input; scoped forward in [`plan.md`](../plan.md)):
-- **Judge-calibration close-out (plan M3.8):** the stats, the gate, the executor judge
+- **Judge-calibration close-out (plan judge calibration gate):** the stats, the gate, the executor judge
   wiring, the chosen judge (OQ2 -- a local Gemma-4 model, bias disclosed above), and the full
   pre-filled-worksheet scaffolding (model answers + ungated `judge_rating` via
   `make calibration-run` / `run-eval --worksheet --judge-model`, scored by

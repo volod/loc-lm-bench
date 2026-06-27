@@ -1,9 +1,9 @@
-"""Typed in-memory knowledge graph for the GraphRAG backend (Milestone 6).
+"""Typed in-memory knowledge graph for the GraphRAG backend (GraphRAG backend).
 
-Nodes are entities, edges are subject-relation-object facts -- both built from the M4.4
+Nodes are entities, edges are subject-relation-object facts -- both built from the ontology-assisted drafting
 `DocExtraction` (no second extraction framework). Every node mention and every edge's evidence
 keeps its `doc_id` + char offsets + exact text (a `GraphMention`), so a serialized subgraph or
-community scores on the SAME source-span metric the FAISS path uses (M1.3). The induced ontology
+community scores on the SAME source-span metric the FAISS path uses (source-span metric). The induced ontology
 type/confidence, the containing `section_title`, and the detected `community_id` ride along as
 typed properties, exactly the carry-through the spec calls for.
 

@@ -1,4 +1,4 @@
-"""M7.3 prompt-system identity + run artifacts -- digests that make every run addressable.
+"""RAG prompt-system comparison prompt-system identity + run artifacts -- digests that make every run addressable.
 
 A prompt SYSTEM is identified by the corpus it was built from and the template fields used, so two
 runs are comparable iff they share a `prompt_system_id`. The digests (corpus / mapping / template)

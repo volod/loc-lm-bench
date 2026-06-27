@@ -1,7 +1,7 @@
-"""Text-analysis scoring schema (M5.0) -- objective recovery of planted labels.
+"""Text-analysis scoring schema (text analysis) -- objective recovery of planted labels.
 
 This module is the executable form of the proposal in
-`docs/design/text-analysis-schema.md` (the artifact a human signs off via MH.2). It defines:
+`docs/design/text-analysis-schema.md` (the artifact a human signs off via text-analysis sign-off). It defines:
 
   * the text-analysis SUB-TASKS (the unit of credit per sub-task) -- spec Appendix D;
   * the PLANTED-LABEL taxonomy `prepare-synthetic-corpus` must emit (`PlantedLabel`);
@@ -9,7 +9,7 @@ This module is the executable form of the proposal in
   * the MATCHING engine: label-ID matching by exact/normalized surface form, then pinned-
     embedder COSINE as the secondary signal, with explicit thresholds + partial credit.
 
-The matching basis is the MH.2-decided engine: planted-label-ID matching + embedder cosine,
+The matching basis is the text-analysis sign-off-decided engine: planted-label-ID matching + embedder cosine,
 NOT lemmatization and NOT LLM-entailment. The engine is PURE -- the cosine similarity is
 INJECTED as a `similarity(a, b) -> float` callable, so scoring is unit-testable without the
 embedder; `embedder_similarity()` supplies the production default over the pinned embedder.
@@ -44,7 +44,7 @@ OBJECTIVE_KINDS = frozenset({KEY_FACT, ENTITY, TOPIC, TREND, RISK, DECISION, CON
 JUDGED_KINDS = frozenset({NARRATIVE, INSIGHT, LONG_DOC})
 ALL_KINDS = OBJECTIVE_KINDS | JUDGED_KINDS
 
-# --- matching thresholds (PROPOSAL values; signed off / tuned via MH.2) --------------------
+# --- matching thresholds (PROPOSAL values; signed off / tuned via text-analysis sign-off) --------------------
 
 # Exact or normalized surface match -> full credit (1.0). Otherwise the pinned-embedder cosine
 # decides: at/above TAU_FULL is a paraphrase/morphology match (full credit); in the partial band
@@ -53,7 +53,7 @@ TAU_FULL = 0.85
 TAU_PARTIAL = 0.70
 PARTIAL_CREDIT = 0.5
 
-# Direction-aware trend credit (M5.0 residual). A `trend` label carries a planted
+# Direction-aware trend credit (text analysis residual). A `trend` label carries a planted
 # `attrs.direction` (up | down | flat); a candidate that names the right subject but the WRONG
 # direction has made a substantive error, so a detectable direction conflict zeroes the credit
 # (the label stays unrecovered AND the prediction is an unmatched false positive). A prediction
@@ -112,7 +112,7 @@ _PUNCT_STRIP = " \t\r\n.,;:!?\"'`«»“”()[]{}-–—"
 
 def normalize_surface(text: str) -> str:
     """Casefold, collapse whitespace, and strip surrounding punctuation -- the canonical form
-    used for exact label-ID surface matching (deliberately NOT lemmatization, per MH.2)."""
+    used for exact label-ID surface matching (deliberately NOT lemmatization, per text-analysis sign-off)."""
     return " ".join(text.casefold().split()).strip(_PUNCT_STRIP)
 
 
@@ -342,7 +342,7 @@ def score_document(
 
 
 def embedder_similarity(embedder: Any = None) -> Similarity:
-    """Production `similarity`: cosine over the PINNED embedder (the MH.2 matching basis).
+    """Production `similarity`: cosine over the PINNED embedder (the text-analysis sign-off matching basis).
 
     Vectors are L2-normalized by the `Embedder`, so cosine is their dot product. Heavy imports
     (the embedder, numpy) stay lazy; the returned callable caches encodings per surface string so

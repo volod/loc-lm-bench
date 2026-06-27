@@ -1,4 +1,4 @@
-"""Tier-1 public screen via lm-evaluation-harness-uk (M3.1, + Belebele wiring from M3.9).
+"""Tier-1 public screen via lm-evaluation-harness-uk (public screen, + Belebele wiring from verified gold-set ledger).
 
 The Tier-1 screen narrows the candidate field on PUBLIC UA benchmarks before the expensive
 Tier-2 private eval. It drives lm-eval-harness through its `local-completions` model against an
@@ -40,7 +40,12 @@ TRACK_GENERATION = "generation"
 #  - logprob (multiple_choice -> loglikelihood): the standard UA leaderboard MCQ set.
 #  - generation (generate_until): `global_piqa_prompted_ukr_cyrl` is the only stock UA
 #    generate-until task; there is no stock UA SQuAD. Override per harness build with `--tasks`.
-LOGPROB_TASKS = ["belebele_ukr_Cyrl", "arc_uk", "hellaswag_uk", "m_mmlu_uk"]  # MCQ (M3.9)
+LOGPROB_TASKS = [
+    "belebele_ukr_Cyrl",
+    "arc_uk",
+    "hellaswag_uk",
+    "m_mmlu_uk",
+]  # MCQ (verified gold-set ledger)
 GENERATION_TASKS = ["global_piqa_prompted_ukr_cyrl"]  # generate-until (Ollama-compatible)
 
 # Primary metric per task, in preference order (lm-eval emits several; we report one).
@@ -188,7 +193,7 @@ def run_screen_isolated(
     cooldown_temp_c: int | None = None,
     cooldown_max_s: float | None = None,
 ) -> tuple[ScreenReport, "IsolationOutcome"]:
-    """Run a screen under the SAME isolation contract as a Tier-2 sweep cell (M3.1).
+    """Run a screen under the SAME isolation contract as a Tier-2 sweep cell (public screen).
 
     `run_screen_fn` launches the backend, runs lm-eval against it, and kills the backend (its own
     process). This REUSES the shared `executor.isolation.isolate_cell` primitive -- VRAM baseline,
@@ -222,7 +227,7 @@ def screen_score(report: ScreenReport) -> float:
 
 
 def select_finalists(reports: list[ScreenReport], top_n: int) -> list[str]:
-    """Deterministic per-track finalist policy (M3.1): the top-N models by mean screen score,
+    """Deterministic per-track finalist policy (public screen): the top-N models by mean screen score,
     computed SEPARATELY per track (logprob vs generation are never cross-ranked) and tie-broken
     by model name so the handoff to Tier-2 is reproducible. Returns the union of per-track picks.
     """

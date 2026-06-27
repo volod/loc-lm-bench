@@ -1,20 +1,27 @@
 # loc-lm-bench -- Implementation Plan (forward work)
 
-Forward-only: every milestone line in this file must describe work that remains. Current behavior,
+Forward-only: every task line in this file must describe work that remains. Current behavior,
 operator workflows, run evidence, and decisions live in [`current.md`](current.md) and the topic
 files under [`current/`](current/). The product spec lives in [`docs/design/spec.md`](../design/spec.md).
 
-## No Open Work
+## Forward Tasks
 
-There are no queued milestone tasks at this time.
+- Refactor interactive review sessions in `llb.goldset.verify_session` and `llb.judge.rate`.
+  Extract command parsing, state transitions, display rendering, and persistence into small
+  helpers so the session loops can read as orchestration.
+- Split the remaining benchmark-runner hotspots in `llb.bench.text_analysis`,
+  `llb.bench.summarization`, `llb.bench.agentic`, and `llb.scoring.tooling`. Keep each runner's
+  prompt construction, model call, scoring, and artifact writing in named helper functions.
+- Reduce the remaining markdown line-length warnings from `scripts/code_quality.sh` by wrapping
+  prose in current-state docs and guides without changing command blocks or tables.
 
-## Adding Future Milestones
+## Adding Future Tasks
 
-Add a milestone only when there is concrete forward work with enough detail for an engineer or an
-agent to execute without guessing. Use a stable id such as `M8.1` or `M8.1r`; keep the id only while
-work remains under it.
+Add a task only when there is concrete forward work with enough detail for an engineer or an
+agent to execute without guessing. Use a stable descriptive id such as `platform-matrix-power`
+or `prompt-system-tuning`; keep the id only while work remains under it.
 
-Each milestone entry must include:
+Each task entry must include:
 
 - User-visible outcome: what new capability or decision the work should create.
 - Scope boundary: what is in scope, what is explicitly out of scope, and which existing modules or
@@ -28,5 +35,5 @@ Each milestone entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a milestone surfaces new future work, add that as a new forward task. Put run results,
+When a task surfaces new future work, add that as a new forward task. Put run results,
 decisions, and historical notes in current docs, never in this plan.

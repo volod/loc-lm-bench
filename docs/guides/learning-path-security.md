@@ -269,7 +269,7 @@ Plan for 2-4 hours per session.
 
 ## Capstone for loc-lm-bench
 
-Draft a small M5.1-compatible security suite without executing real tools:
+Draft a small security benchmark-compatible security suite without executing real tools:
 
 - 10 direct prompt-injection cases;
 - 10 RAG-injection cases with malicious text embedded in mock Ukrainian documents;

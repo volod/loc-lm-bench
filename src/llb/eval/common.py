@@ -36,7 +36,7 @@ _REFUSAL_MARKERS = (
 
 def is_refusal(text: str) -> bool:
     """True when the response is one of the recognized UA/EN refusals. Shared by the eval
-    templates' `classify_response` and the M5.1 security benchmark (refusal-appropriateness)."""
+    templates' `classify_response` and the security benchmark security benchmark (refusal-appropriateness)."""
     if not text or not text.strip():
         return False
     low = text.strip().lower()

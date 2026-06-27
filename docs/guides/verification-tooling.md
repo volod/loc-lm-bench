@@ -1,6 +1,6 @@
 # Data-verification tooling -- how to use it
 
-This is the operator manual for the three `verify-*` commands that turn the MH.5 human
+This is the operator manual for the three `verify-*` commands that turn the human verification gate human
 sample-acceptance gate into a reproducible workflow. The *why* (the gate, the human-ground-truth
 guarantee, the acceptance-sampling framing, the papers) lives in the human-in-the-loop manual's
 [Eval-data verification](human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data)
@@ -9,10 +9,10 @@ section; this page is the *how*. It is the verification-side twin of the
 
 Verification answers one question: **can the AI-drafted, frontier-cross-checked data be trusted to
 score models?** The pipeline already drafts items and a *second* frontier model cross-checks each
-one for grounding + support. MH.5 is the irreducibly-human stage: you verify a **stratified sample**
-and accept it, and only then may those items flip to `verified=true` and score real models. A clean
-sample accepts the bundle; a dirty one sends the drafts back. Nothing scores a real model until its
-data clears this gate.
+one for grounding + support. human verification gate is the irreducibly-human stage: you verify
+a **stratified sample** and accept it, and only then may those items flip to `verified=true`
+and score real models. A clean sample accepts the bundle; a dirty one sends the drafts back.
+Nothing scores a real model until its data clears this gate.
 
 ## The three commands
 
@@ -83,8 +83,8 @@ The four checks (the same ones the second frontier ran -- you are confirming it 
 
 ## Case 1: a draft from a real corpus (the common case)
 
-A bundle from the M4.4 pipeline (`prepare-goldset-draft` over a corpus) lands `verified=false` with
-its gold file as `goldset.jsonl`. This is the normal path.
+A bundle from the ontology-assisted drafting pipeline (`prepare-goldset-draft` over a corpus)
+lands `verified=false` with its gold file as `goldset.jsonl`. This is the normal path.
 
 ### 1. Draw the stratified sample
 
@@ -203,10 +203,11 @@ planted check applies to all of its items or none.
 
 ## Case 3: per-category, pull-based verification
 
-MH.5 is **not** a one-shot upfront task -- it runs in parallel with the build and is pull-based:
-as each category's bundle is drafted + cross-checked and **stabilizes**, verify *that* bundle, flip
-its accepted items, and real-model scoring unblocks for it. The objective category boards never wait
-on this -- only real-model HEADLINE scoring does. Practical notes:
+human verification gate is **not** a one-shot upfront task -- it runs in parallel with the build
+and is pull-based: as each category's bundle is drafted + cross-checked and **stabilizes**,
+verify *that* bundle, flip its accepted items, and real-model scoring unblocks for it.
+The objective category boards never wait on this -- only real-model HEADLINE scoring does.
+Practical notes:
 
 - Verify a bundle only once its drafting is stable; do not re-verify seeds a newer bundle
   supersedes.
@@ -214,9 +215,9 @@ on this -- only real-model HEADLINE scoring does. Practical notes:
   categories' verifications can be in flight independently.
 - Keep the `sample_manifest.json` -- it is your record of what you sampled and the strata you
   covered (the "document the sample" discipline from *Datasheets for Datasets*).
-- When a verified category bundle is ready for the M5 composite headline, rerun that category with
-  `--data-verified --verification-ref <bundle>/sample_manifest.json`, then follow the
-  [composite-headline close-out](composite-headline.md).
+- When a verified category bundle is ready for the category suite composite headline,
+  rerun that category with `--data-verified --verification-ref <bundle>/sample_manifest.json`,
+  then follow the [composite-headline close-out](composite-headline.md).
 
 ### Verification references in category runs
 

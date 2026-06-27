@@ -1,14 +1,14 @@
-"""Pre-launch VRAM-contention guard (M4.2).
+"""Pre-launch VRAM-contention guard (VRAM contention guard).
 
 vLLM's startup free-memory check requires `gpu-memory-utilization x total_vram` to be
 AVAILABLE (free) on the device -- it cannot reserve memory another process already holds. The
-first M2.4 launch failed because Ollama held ~2.8 GB resident. This guard runs before a
+first real-model validation launch failed because Ollama held ~2.8 GB resident. This guard runs before a
 VRAM-owning backend (vLLM) starts: it reads the device's free VRAM + the resident users, then
 AUTO-DERATES `gpu-memory-utilization` to the actually-free fraction (the non-destructive
 default). `--evict` (unload Ollama) and `--wait` (poll until VRAM frees) are explicit opt-in and
 never kill another process implicitly. If even the derated target cannot hold the model's weight
-floor (the embedding-aware M4.1 estimate) plus a minimal KV working set, it aborts with an
-actionable message. The single-run analogue of the M3.3 cross-cell VRAM gate.
+floor (the embedding-aware memory planner estimate) plus a minimal KV working set, it aborts with an
+actionable message. The single-run analogue of the isolation reclaim cross-cell VRAM gate.
 
 The free VRAM comes from nvidia-smi (so the derate works without the `[telemetry]` extra); the
 resident-PID attribution uses NVML when present (best-effort). Readers, the Ollama evict, and
@@ -34,13 +34,13 @@ _LOG = logging.getLogger(__name__)
 DEFAULT_MARGIN_MB = 512
 # vLLM reserves a large NON-weight working set inside its budget before any KV blocks: the CUDA
 # context, peak activations, and CUDA-graph capture. Measured ~1.8-2.4 GB for an 8B model on the
-# RTX 4060 Ti (M4.2 live validation: at a 11793 MB budget, weights ~10035 MB left 0 for KV and
+# RTX 4060 Ti (VRAM contention guard live validation: at a 11793 MB budget, weights ~10035 MB left 0 for KV and
 # vLLM aborted with "No available memory for the cache blocks"). The abort check must include it,
 # or the guard derates into a doomed launch.
 DEFAULT_VLLM_OVERHEAD_MB = 2048
 # Minimal KV working set beyond weights + overhead for the abort check (room for >=1 KV block).
 DEFAULT_MIN_KV_HEADROOM_MB = 512
-# Tokens of KV the abort check requires a launch to be able to serve (M4.2): the arch-derived
+# Tokens of KV the abort check requires a launch to be able to serve (VRAM contention guard): the arch-derived
 # headroom is the KV cache at this context, so a model that cannot hold even this much is aborted.
 DEFAULT_MIN_SERVING_CTX = 2048
 DEFAULT_WAIT_TIMEOUT_S = 120.0
@@ -224,7 +224,7 @@ def _poll_free(
 
 
 def default_gpu_reader() -> tuple[int, int] | None:
-    """(total_mb, free_mb) for the device the run TARGETS, via nvidia-smi (M4.2). None if no GPU.
+    """(total_mb, free_mb) for the device the run TARGETS, via nvidia-smi (VRAM contention guard). None if no GPU.
 
     Reads ALL GPUs and selects the target (the `CUDA_VISIBLE_DEVICES` device when set, else the
     most-free GPU) instead of hard-coding GPU 0, so the guard is correct on a multi-GPU host."""
@@ -244,7 +244,7 @@ def _spec_for(model_source: str, manifest: Path) -> "dict[str, Any] | None":
 
 
 def model_weight_floor_mb(model_source: str, manifest: Path = DEFAULT_MANIFEST) -> float:
-    """Embedding-aware weights estimate (MiB, M4.1) for a model by source/name. 0.0 if unknown."""
+    """Embedding-aware weights estimate (MiB, memory planner) for a model by source/name. 0.0 if unknown."""
     try:
         from llb.backends.planner import enrich_arch, plan_model
 
@@ -263,7 +263,7 @@ def model_kv_headroom_mb(
     *,
     min_serving_ctx: int = DEFAULT_MIN_SERVING_CTX,
 ) -> int:
-    """Arch-derived minimal KV working set (MiB, M4.2): the KV the model needs to serve at least
+    """Arch-derived minimal KV working set (MiB, VRAM contention guard): the KV the model needs to serve at least
     `min_serving_ctx` tokens, sliding-window-aware. The abort check uses this instead of a fixed
     floor, so a model with a heavy KV per token is judged un-launchable at the right threshold.
     Falls back to the fixed floor when the arch is unknown."""

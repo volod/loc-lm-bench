@@ -1,4 +1,4 @@
-"""M5.6 second-frontier cross-check -- the automated verified-data gate."""
+"""verified-data hardening second-frontier cross-check -- the automated verified-data gate."""
 
 from llb.goldset.schema import GoldItem, SourceSpan
 from llb.prep import cross_check

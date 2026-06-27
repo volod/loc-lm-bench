@@ -14,7 +14,7 @@ from llb.executor.contention import (
 # A 16 GB card with the configured gpu-memory-utilization default.
 TOTAL = 16000
 REQ = 0.85
-E4B_FLOOR = 9800  # the M4.1 embedding-aware weight floor (MiB), ~ the measured 9.8 GiB
+E4B_FLOOR = 9800  # the memory planner embedding-aware weight floor (MiB), ~ the measured 9.8 GiB
 
 
 def test_plan_guard_no_contention_keeps_requested():
@@ -35,7 +35,7 @@ def test_plan_guard_derates_under_contention():
 
 
 def test_plan_guard_aborts_when_overhead_leaves_no_kv():
-    # The live M4.2 finding: at ~2.75 GB contention, free ~12.4 GB cannot hold E4B's weights
+    # The live VRAM contention guard finding: at ~2.75 GB contention, free ~12.4 GB cannot hold E4B's weights
     # (~10 GB) + vLLM's ~2 GB serving overhead + KV, so the guard must ABORT, not derate into the
     # "No available memory for the cache blocks" failure.
     report = plan_guard(16380, free_mb=12398, requested_util=0.80, weight_floor_mb=10049)
@@ -151,7 +151,7 @@ def test_evict_ollama_swallows_errors():
 
 
 def test_model_weight_floor_uses_embedding_aware_estimate():
-    # Integration with M4.1: the E4B floor must reflect the corrected ~9.8 GiB, not the flat 4.2.
+    # Integration with memory planner: the E4B floor must reflect the corrected ~9.8 GiB, not the flat 4.2.
     floor = model_weight_floor_mb("google/gemma-4-E4B-it-qat-w4a16-ct")
     assert 9500 <= floor <= 10500
     assert model_weight_floor_mb("does/not-exist") == 0.0
@@ -178,7 +178,7 @@ def test_runner_guard_applies_derate_and_aborts(monkeypatch):
         runner._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
 
 
-# --- M4.2 multi-GPU read + arch-derived KV headroom ----------------------------------------
+# --- VRAM contention guard multi-GPU read + arch-derived KV headroom ----------------------------------------
 
 
 def _gpu(index, free, total=16000):

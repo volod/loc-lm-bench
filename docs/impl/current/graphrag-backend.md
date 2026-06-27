@@ -1,14 +1,14 @@
-# Milestone 6 Current State
+# GraphRAG backend Current State
 
-## Milestone 6 -- GraphRAG (knowledge-graph + narrative retrieval) (build COMPLETE)
+## GraphRAG backend -- GraphRAG (knowledge-graph + narrative retrieval) (build COMPLETE)
 
 A graph retrieval backend behind the RAG-store seam, selected with `--retrieval-backend graph`.
 FAISS stays the default and is untouched. The BUILD is delivered + unit-tested without a GPU.
-**MH.2 is signed off (2026-06-26):** the 13-type closed node vocabulary + relationship caps + the
+**text-analysis sign-off is signed off (2026-06-26):** the 13-type closed node vocabulary + relationship caps + the
 GraphRAG scope are accepted, so the ontology/scope is trusted for HEADLINE use -- the signed schema
 is [`docs/design/graph-ontology-schema.md`](../../design/graph-ontology-schema.md) (`APPROVED`; node
 vocab + caps + scope + a worked example over `samples/corpus/ip_regulation_uk.md`). Real-model graph
-HEADLINE numbers ride only the standing MH.5 data gate now, exactly like the M5 categories; the
+HEADLINE numbers ride only the standing human verification gate data gate now, exactly like the category suite categories; the
 objective graph boards rank regardless.
 
 **Store choice -- DuckDB (the abandoned Kuzu pick was dropped).** `duckdb` is already a dependency
@@ -24,7 +24,7 @@ still imports.
 - `model.py` -- the RAM-resident `KnowledgeGraph` (`GraphNode` / `GraphEdge` / `GraphMention`).
   Every mention + edge evidence keeps `doc_id` + char offsets + exact text, and carries the
   induced ontology `type`/`confidence`, the containing `section_title`, and the `community_id`.
-- `build.py` -- `build_graph(extractions, docs, ontology=None)` REUSES the M4.4 `DocExtraction`
+- `build.py` -- `build_graph(extractions, docs, ontology=None)` REUSES the ontology-assisted drafting `DocExtraction`
   (no second extraction framework): entity mentions -> nodes, SRO facts -> directed edges; a fact
   endpoint that is not a known entity becomes a lightweight fact-only node (no grounded fact is
   dropped). Pure + deterministic; the ontology is induced from the extractions when not supplied,
@@ -57,7 +57,7 @@ still imports.
   and `load_compare_stores(cfg)` (loads `{faiss, graph/local_khop, graph/global_community}`, skipping
   any whose store is not built). Pure -- driven by the `.retrieve` seam, so it is unit-tested with
   fake stores (no FAISS / DuckDB / GPU). Backs the `compare-retrieval` command (below).
-- `ingest.py` -- load the M4.4 extraction back: `load_bundle` reads a `prepare-goldset` draft
+- `ingest.py` -- load the ontology-assisted drafting extraction back: `load_bundle` reads a `prepare-goldset` draft
   bundle's `extraction.jsonl` + `corpus/` + `ontology.json`; `load_extractions` reads an explicit
   `extraction.jsonl`.
 
@@ -69,14 +69,14 @@ local-vs-global runs are comparable. `run-eval` and `validate-retrieval` take `-
 / `--retrieval-strategy`; the runner's `_load_store` picks `GraphStore` vs `RagStore` by backend.
 
     llb build-graph --bundle <prepare-goldset dir>     # reads extraction.jsonl + corpus/
-    llb build-graph --extraction <e.jsonl> --corpus-root <dir>   # explicit M4.4 extraction
-    llb build-graph --corpus-root <dir> --extract-model llama3.2:3b   # extract fresh (M4.4)
+    llb build-graph --extraction <e.jsonl> --corpus-root <dir>   # explicit ontology-assisted drafting extraction
+    llb build-graph --corpus-root <dir> --extract-model llama3.2:3b   # extract fresh (ontology-assisted drafting)
     llb build-graph --bundle <dir> --summarize --summarize-model llama3.2:3b  # + diagnostic summaries
     llb validate-retrieval --retrieval-backend graph --retrieval-strategy local_khop
     llb compare-retrieval --k 10 [--out report.json]   # faiss vs both graph strategies on one goldset
     llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 
-`build-graph --summarize` attaches the tagged-diagnostic community summaries via the M4.4 local
+`build-graph --summarize` attaches the tagged-diagnostic community summaries via the ontology-assisted drafting local
 endpoint adapter (`--summarize-model`, defaulting to `--extract-model`); they persist to
 `community_summaries.json` and are NEVER span-scored. `compare-retrieval` reuses the runner's
 `_load_store` (varying backend/strategy via `with_overrides`) to rank `{faiss, graph/local_khop,
@@ -101,12 +101,12 @@ slow"`, 671 passed). Smoke-validated end to end: `build-graph` from a bundle ->
 `validate-retrieval --retrieval-backend graph` recall@5=1.000, and `compare-retrieval` over a saved
 GraphStore renders the ranked table (FAISS skipped when not built).
 
-### M6 residuals (engineering)
-The three optional/forward M6 residuals are delivered + CI-proven from fakes:
+### GraphRAG backend residuals (engineering)
+The three optional/forward GraphRAG backend residuals are delivered + CI-proven from fakes:
 1. **Morphology-aware entity linking** -- `morph_key` stem matching in `graph/retrieval.py` (above);
    lifts graph recall on inflected Ukrainian questions without an embedder, behind the pure linking
    seam.
-2. **`build-graph --summarize`** -- exposes `summarize_communities` to operators via the M4.4 local
+2. **`build-graph --summarize`** -- exposes `summarize_communities` to operators via the ontology-assisted drafting local
    endpoint adapter (above); summaries stay tagged-diagnostic.
 3. **`compare-retrieval`** -- the graph-vs-FAISS comparison tool (`rag/compare.py` + the CLI
    command, above), RUN on the real CUDA host over the committed corpus (result below).
@@ -122,7 +122,7 @@ token budget on hidden reasoning and returns empty JSON. `build-graph` exposes `
 provenance). See [`graph-vs-faiss-comparison.md`](../../guides/graph-vs-faiss-comparison.md) for the
 operator flow incl. the Ollama-vs-vLLM throughput finding on the 16 GB host.
 
-### M6 verification -- real-host graph-vs-FAISS (2026-06-26, RTX 4060 Ti 16 GB)
+### GraphRAG backend verification -- real-host graph-vs-FAISS (2026-06-26, RTX 4060 Ti 16 GB)
 Graph built from a fresh `gemma4:26b` extraction (Ollama, reasoning disabled, 3 concurrent workers,
 ~2.6 h) over the committed `ua_squad_postedited_v1` corpus: 250 docs -> **2396 nodes, 558 edges,
 1839 communities** (21 docs yielded no extraction). `compare-retrieval --k 10` over the 250-item

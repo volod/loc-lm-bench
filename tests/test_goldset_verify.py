@@ -1,4 +1,4 @@
-"""Tests for MH.5 data verification (`llb.goldset.verify` + `verify_session`).
+"""Tests for human verification gate data verification (`llb.goldset.verify` + `verify_session`).
 
 The pure pieces (stratification, deterministic sampling, acceptance arithmetic, the
 accepted-ledger round-trip, parse_command) are checked directly; the session loop is driven by

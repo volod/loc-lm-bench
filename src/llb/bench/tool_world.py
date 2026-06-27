@@ -1,4 +1,4 @@
-"""M5.3 deterministic in-memory tool-world -- the agentic sandbox (pure).
+"""agentic benchmark deterministic in-memory tool-world -- the agentic sandbox (pure).
 
 A small DETERMINISTIC environment the agentic loop's tools EXECUTE against (no tau-bench /
 AgentBench): a mock filesystem, a mock key-value DB, substring search over a small UA corpus, and

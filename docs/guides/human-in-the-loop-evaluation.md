@@ -229,7 +229,7 @@ Kept here as the reusable template -- the shape is always:
 
 ### In this repo
 `docs/design/text-analysis-schema.md` (the template sign-off, done),
-`docs/design/graph-ontology-schema.md` (the M6 ontology + GraphRAG scope, drafted from
+`docs/design/graph-ontology-schema.md` (the GraphRAG backend ontology + GraphRAG scope, drafted from
 `src/llb/prep/ontology/` + `src/llb/graph/`, signed off 2026-06-26), and the manifest, which carries
 the trust decisions a sign-off produces.
 

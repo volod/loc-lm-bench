@@ -1,17 +1,17 @@
 """Typer application root for loc-lm-bench.
 
-Commands by milestone:
-  build-index / validate-retrieval / run-eval        M1 skeleton (retrieve -> generate -> score)
-  prep-models / list-models / build-vllm             M1/M2 model prep + feasibility + vLLM build
+Commands by area:
+  build-index / validate-retrieval / run-eval        RAG core (retrieve -> generate -> score)
+  prep-models / list-models / build-vllm             RAG/vLLM model prep + feasibility + vLLM build
   detect-gpu-vram / gen-serving-config             per-GPU-tier serve + run-eval artifacts
-  resolve-models                                     M3.2 pick the backend that can serve a model
-  sweep                                              M3.3 isolated cell-per-model sweep (resume)
-  tune                                               M3.4 two-stage Optuna (tuning -> final)
-  prepare-goldset / prepare-synthetic-corpus         M3.5 frontier data-prep (litellm)
-  prepare-goldset-draft                              M4.4 ontology-assisted draft (local/frontier)
-  judge-experiment                                   M3.8 local DeepEval UA smoke artifact
-  screen-public                                      M3.1 Tier-1 lm-eval-harness-uk screen
-  board / mlflow-ui                                  M3.7 Streamlit leaderboard / MLflow UI
+  resolve-models                                     backend resolver pick the backend that can serve a model
+  sweep                                              hard-isolation cell-per-model sweep (resume)
+  tune                                               two-stage Optuna (tuning -> final)
+  prepare-goldset / prepare-synthetic-corpus         frontier data-prep (litellm)
+  prepare-goldset-draft                              ontology-assisted draft (local/frontier)
+  judge-experiment                                   local judge calibration DeepEval UA smoke artifact
+  screen-public                                      Tier-1 public lm-eval-harness-uk screen
+  board / mlflow-ui                                  Streamlit leaderboard / MLflow UI
 
 Heavy collaborators (FAISS, sentence-transformers, langgraph, optuna, litellm, streamlit, a
 running backend) are lazy-imported at call time, so the module imports in the base install.

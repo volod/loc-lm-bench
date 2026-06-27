@@ -1,4 +1,4 @@
-"""Minimal sequential eval runner -- the Milestone 1 walking skeleton.
+"""Minimal sequential eval runner -- the RAG core walking skeleton.
 
 Orchestrates one (model, config) end to end: load eval items -> retrieve+generate per
 case through the LangGraph RAG flow -> score objective correctness + collect retrieval
@@ -142,7 +142,7 @@ def _vram_reader() -> Callable[[], int] | None:
 
 
 def _pid_usage_reader() -> Callable[[], dict[int, int]] | None:
-    """Best-effort NVML per-PID VRAM reader (for the M4.2 contention guard's resident attribution)."""
+    """Best-effort NVML per-PID VRAM reader (for the VRAM contention guard contention guard's resident attribution)."""
     try:
         from llb.executor.vram import nvml_process_reader
 
@@ -154,7 +154,7 @@ def _pid_usage_reader() -> Callable[[], dict[int, int]] | None:
 def _guard_vllm_contention(
     config: RunConfig, launcher: BackendLauncher, *, evict: bool, wait: bool
 ) -> "ContentionReport | None":
-    """Pre-launch VRAM-contention guard for vLLM (M4.2): derate gpu-memory-utilization to the
+    """Pre-launch VRAM-contention guard for vLLM (VRAM contention guard): derate gpu-memory-utilization to the
     actually-free VRAM, or abort if even that cannot hold the model. No-op without a GPU."""
     from llb.backends.vllm import VllmLauncher
     from llb.executor.contention import (
@@ -269,7 +269,7 @@ def _judge_cases(
 def _judge_ratings(
     config: RunConfig, batch: CaseBatch, scorer: JudgeScorer | None
 ) -> list[float] | None:
-    """Run the judge UNGATED and return one rating per case (M3.8 calibration scaffolding).
+    """Run the judge UNGATED and return one rating per case (judge calibration gate calibration scaffolding).
 
     Calibration measures whether the judge AGREES with humans, so the judge runs regardless of
     its (not-yet-known) trust -- the gate is irrelevant here. Returns None when no judge is
@@ -395,7 +395,7 @@ def _resolve_eval_runner(
 
 
 def _load_store(config: RunConfig) -> Any:
-    """Load the configured retrieval store: the GraphRAG backend (M6) or the default FAISS store.
+    """Load the configured retrieval store: the GraphRAG backend (GraphRAG backend) or the default FAISS store.
 
     Both expose the same `.retrieve(question, k) -> list[ChunkRecord]` seam, so the eval graph,
     scoring, isolation, and board are unchanged regardless of backend."""

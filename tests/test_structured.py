@@ -1,4 +1,4 @@
-"""M5.4 structured-output -- Pydantic conformance + field accuracy."""
+"""structured-output -- Pydantic conformance + field accuracy."""
 
 import pytest
 
@@ -152,7 +152,7 @@ def test_leaf_match_fuzzy_and_relative_tolerance():
     assert structured.field_accuracy({"n": 51200}, {"n": 50000}, rel) == 0.0
 
 
-# --- nested-object / array-item validation + per-field tolerance (M5.4 residual) ----------
+# --- nested-object / array-item validation + per-field tolerance (category expansion residual) ----------
 
 NESTED_SCHEMA = {
     "name": {"type": "string", "required": True},

@@ -1,16 +1,17 @@
-# Knowledge-Graph Ontology + GraphRAG Scope (M6 proposal -- MH.2 sign-off has been provided).
+# Knowledge-Graph Ontology + GraphRAG Scope (GraphRAG backend proposal --
+text-analysis sign-off has been provided).
 
 Signed off 2026-06-26 by volod; scope accepted.
 
 Status: **APPROVED**
 
-This is the Milestone 6 proposal for the human gate **MH.2** (Milestone H). The GraphRAG build
-already exists and is tested -- this document is the *accountable acceptance* of the constrained
-ontology + the retrieval scope it operates under. Recording the dated sign-off line above is what
-authorizes graph runs to produce a PUBLISHED HEADLINE; until then graph boards rank
-**objective-only** (recall@k / MRR / objective correctness rank regardless of this gate -- see
-[`plan.md`](../impl/plan.md) and [`current.md`](../impl/current.md)). MH.5 (the stratified
-human sample-verify of any `verified=true` item) remains a separate gate.
+This is the GraphRAG backend proposal for the human gate **text-analysis sign-off** (human decision).
+The GraphRAG build already exists and is tested -- this document is the *accountable acceptance*
+of the constrained ontology + the retrieval scope it operates under. Recording the dated sign-off
+line above is what authorizes graph runs to produce a PUBLISHED HEADLINE; until then graph boards
+rank **objective-only** (recall@k / MRR / objective correctness rank regardless of this gate -- see
+[`plan.md`](../impl/plan.md) and [`current.md`](../impl/current.md)). human verification gate
+(the stratified human sample-verify of any `verified=true` item) remains a separate gate.
 
 - Executable form -- the closed node vocabulary:
   [`src/llb/prep/ontology/entity_types.py`](../../src/llb/prep/ontology/entity_types.py) (the 13
@@ -30,12 +31,12 @@ human sample-verify of any `verified=true` item) remains a separate gate.
   + the `retrieval_backend` / `retrieval_strategy` / `graph_khop_depth` fields in
   [`src/llb/config.py`](../../src/llb/config.py).
 - Tests: [`tests/test_graph.py`](../../tests/test_graph.py).
-- Spec basis: `docs/design/spec.md` (GraphRAG / knowledge-graph retrieval), the M4.4
-  extraction-reuse constraint, and the source-span grounding premise (M1.3).
+- Spec basis: `docs/design/spec.md` (GraphRAG / knowledge-graph retrieval), the ontology-assisted drafting
+  extraction-reuse constraint, and the source-span grounding premise (source-span metric).
 
-The ontology is REUSED from the M4.4 extraction (no second extraction framework). Free-form RAG
-answer quality is scored by the gated judge (M3.8) exactly as on the FAISS board, only when the
-judge is trusted.
+The ontology is REUSED from the ontology-assisted drafting extraction (no second extraction framework).
+Free-form RAG answer quality is scored by the gated judge (judge calibration gate) exactly as on the
+FAISS board, only when the judge is trusted.
 
 ---
 
@@ -96,15 +97,15 @@ The induced `confidence` rides onto every node as a typed property and is record
   (`ground_quote`): a node/edge can never point at text that is not there.
 - Nodes carry the containing `section_title` (from the document's heading/paragraph segmentation)
   and the detected `community_id` as typed properties.
-- Extraction is LLM-by-default via the M4.4 endpoint adapter (local, no corpus egress); a spaCy
-  `uk_core_news` adapter is an opt-in alternative. Long documents are windowed + merged; grounding
-  always runs against the FULL text so offsets stay exact.
+- Extraction is LLM-by-default via the ontology-assisted drafting endpoint adapter (local,
+no corpus egress); a spaCy `uk_core_news` adapter is an opt-in alternative. Long documents are
+windowed + merged; grounding always runs against the FULL text so offsets stay exact.
 
 ## 4. GraphRAG retrieval scope (`retrieval_strategy`)
 
 The graph backend (`--retrieval-backend graph`) exposes TWO span-preserving strategies behind one
 store; both serialize node mentions + edge evidence WITH their offsets, so every returned context
-scores on the existing source-span metric (M1.3):
+scores on the existing source-span metric (source-span metric):
 
 - **`local_khop`** -- entity-link the question to seed nodes, expand `graph_khop_depth` hops
   (`DEFAULT_KHOP_DEPTH = 2`) via a DuckDB recursive CTE, serialize the subgraph. The multi-hop
@@ -124,8 +125,8 @@ community_id`.
 
 ## 5. Worked example (over `samples/corpus/ip_regulation_uk.md`)
 
-Building the graph from a representative M4.4 extraction over the committed IP-regulation document
-(`llb build-graph` over its `extraction.jsonl`) yields:
+Building the graph from a representative ontology-assisted drafting extraction over the committed
+IP-regulation document (`llb build-graph` over its `extraction.jsonl`) yields:
 
 - **23 nodes, 12 edges, 11 communities.**
 - **Entity types induced (the granular vocabulary at work):** `WORK` (count 5, confidence 1.0:
@@ -155,7 +156,7 @@ the optional "graph-vs-FAISS comparison" residual in `plan.md`.
 
 ---
 
-## Sign-off (MH.2) -- how to approve this schema
+## Sign-off (text-analysis sign-off) -- how to approve this schema
 
 This is the human gate. Nothing about it requires running a GPU.
 
@@ -168,8 +169,8 @@ This is the human gate. Nothing about it requires running a GPU.
    ```
 
    To regenerate the worked-example numbers over your own corpus, run `llb build-graph` (from an
-   M4.4 `prepare-goldset-draft` bundle, or `--corpus-root <dir> --extract-model <id>` to extract
-   fresh) and inspect `nodes.jsonl` / `graph_meta.json` under the graph dir.
+ontology-assisted drafting `prepare-goldset-draft` bundle, or `--corpus-root <dir> --extract-model <id>`
+to extract fresh) and inspect `nodes.jsonl` / `graph_meta.json` under the graph dir.
 
 2. **Confirm or adjust the decisions** that are genuinely yours:
    - the **node-type vocabulary** (Section 1) -- the 13-type closed set; extend or split a type
@@ -183,8 +184,8 @@ This is the human gate. Nothing about it requires running a GPU.
 
    The tests assert against the named constants, not hardcoded values, so they follow your change.
 
-3. **Confirm the dependent corpus facts** (MH.2 item 3): which graph corpus is real vs synthetic
-   (the two are reported on separate boards and never merged).
+3. **Confirm the dependent corpus facts** (text-analysis sign-off item 3): which graph corpus is
+real vs synthetic (the two are reported on separate boards and never merged).
 
 4. **Record the sign-off.** Fill the dated line at the top of this file, e.g.
    `Signed off 2026-06-__ by <name>; the 13-type closed node vocabulary + caps + GraphRAG scope

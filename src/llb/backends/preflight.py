@@ -1,4 +1,4 @@
-"""vLLM flashinfer sampler preflight (M4.3).
+"""vLLM flashinfer sampler preflight (vLLM serving preflight).
 
 vLLM JIT-compiles flashinfer's sampling kernel at engine startup. On consumer sm_89 GPUs the
 flashinfer 0.6.x `sampling.cuh` calls a `cub::BlockAdjacentDifference::FlagHeads` that newer
@@ -28,7 +28,7 @@ _LOG = logging.getLogger(__name__)
 SAMPLER_FLASHINFER = "flashinfer"  # the JIT sampler builds + runs here -> enable it
 SAMPLER_NATIVE = "native"  # build/run failed (or no flashinfer) -> vLLM's native sampler (safe)
 
-# Candidate flashinfer versions to try when the bundled one fails the probe (M4.3 auto-pin), in
+# Candidate flashinfer versions to try when the bundled one fails the probe (vLLM serving preflight auto-pin), in
 # order. A starting list of releases that predate the CCCL/CUB break; override with
 # LLB_FLASHINFER_CANDIDATES (comma-separated) for a host whose working version differs.
 DEFAULT_FLASHINFER_CANDIDATES = ("0.2.5", "0.1.6")
@@ -44,7 +44,9 @@ class SamplerVerdict(TypedDict):
     flashinfer_version: str | None
     detail: str
     checked_at: str  # ISO-8601 UTC, for provenance
-    driver: str | None  # GPU driver at probe time -- a change re-runs the preflight (M4.3)
+    driver: (
+        str | None
+    )  # GPU driver at probe time -- a change re-runs the preflight (vLLM serving preflight)
     pinned_version: str | None  # flashinfer version auto-pinned to make the sampler work, or None
     auto_pinned: bool  # True when a candidate flashinfer was installed to enable the sampler
 
@@ -77,7 +79,7 @@ def probe_sampler(
     """Run the flashinfer-sampler build probe and return a definitive verdict (never raises).
 
     When the bundled flashinfer fails AND `candidates` are given, try to AUTO-PIN a host-compatible
-    version (install + re-probe each candidate in order, M4.3); the pinned version is recorded.
+    version (install + re-probe each candidate in order, vLLM serving preflight); the pinned version is recorded.
     """
     runner = probe or _default_flashinfer_probe
     ok, detail = _run_probe(runner)
@@ -105,7 +107,7 @@ def auto_pin_flashinfer(
     probe: SamplerProbe | None = None,
     installer: FlashinferInstaller | None = None,
 ) -> tuple[str | None, bool]:
-    """Install + verify a host-compatible flashinfer from `candidates` in order (M4.3).
+    """Install + verify a host-compatible flashinfer from `candidates` in order (vLLM serving preflight).
 
     Returns (pinned_version, ok). Each install is injectable so the auto-pin is testable without
     pip / CUDA; a candidate that installs but still fails the probe is skipped."""
@@ -141,7 +143,7 @@ def current_driver() -> str | None:
 
 
 def verdict_is_current(verdict: SamplerVerdict | None, driver: str | None) -> bool:
-    """True when a verdict exists AND was recorded under the current driver (M4.3): a driver change
+    """True when a verdict exists AND was recorded under the current driver (vLLM serving preflight): a driver change
     invalidates the cached verdict, so the preflight re-runs WITHOUT a full vLLM rebuild."""
     if verdict is None:
         return False
@@ -201,7 +203,7 @@ def run_preflight(
 
     Idempotent on a stable host: a cached verdict recorded under the CURRENT driver is reused, so
     re-running is cheap. A DRIVER CHANGE (or `force`) re-runs the probe WITHOUT a full vLLM rebuild
-    (M4.3). When the bundled flashinfer fails, `candidates` are auto-pinned (install + re-probe)."""
+    (vLLM serving preflight). When the bundled flashinfer fails, `candidates` are auto-pinned (install + re-probe)."""
     drv = driver if driver is not None else current_driver()
     if not force:
         existing = load_verdict(data_dir)

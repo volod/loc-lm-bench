@@ -1,4 +1,4 @@
-"""M7.4 Chroma vector-store adapter (opt-in `[rag-chroma]` extra).
+"""platform matrix Chroma vector-store adapter (opt-in `[rag-chroma]` extra).
 
 A cosine-space Chroma collection over the same normalized embeddings FAISS indexes, behind the
 shared `VectorStoreAdapter` contract. Chroma reports cosine DISTANCE, converted back to similarity

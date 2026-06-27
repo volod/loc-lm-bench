@@ -1,10 +1,10 @@
-# Text-Analysis Scoring Schema (M5.0 proposal -- MH.2 sign-off has been provided).
+# Text-Analysis Scoring Schema (text analysis proposal -- text-analysis sign-off sign-off has been provided).
 
 Signed off 2026-06-23 by volod; thresholds accepted.
 
 Status: **APPROVED**
 
-This is proposal M5.0; a human sign-off (Milestone H, item MH.2) is provided.
+This is proposal text analysis; a human sign-off (human decision, item text-analysis sign-off) is provided.
 
 - Executable form: [`src/llb/scoring/text_analysis.py`](../../src/llb/scoring/text_analysis.py)
   (taxonomy, planted-label model, matching engine) + the `PlantedLabelRecord` / `SubtaskScore`
@@ -16,7 +16,7 @@ This is proposal M5.0; a human sign-off (Milestone H, item MH.2) is provided.
   define before that benchmark is trusted").
 
 This schema covers the OBJECTIVE, checkable part. Free-form quality is scored by the gated
-judge (M3.8) exactly as on the RAG board, and only when the judge is trusted.
+judge (judge calibration gate) exactly as on the RAG board, and only when the judge is trusted.
 
 ---
 
@@ -77,19 +77,20 @@ checkable without hand-labeling. The planter emits one JSON object per label:
   considers equivalent). Matching tries all of `value` + `aliases`.
 - `doc_id` / `char_start` / `char_end` -- ground the label in the synthetic doc (the
   exact-substring grounding already enforced by the planter), so a label can never point at
-  text that is not there, and the M1.3 span metric still applies.
+  text that is not there, and the source-span metric span metric still applies.
 - `scoring` -- `"objective"` or `"judged"` (defaults to the kind's column above).
 - `attrs` -- kind-specific structure for the author / judge: a trend's `subject` + `direction`,
   a contradiction's paired span ids, etc. Not used by the surface matcher today (documented as
   a residual in `plan.md` -- direction-aware trend credit is a natural next step).
 
-Wiring note: M5.0 DEFINES this taxonomy + the engine. Extending the `prepare-synthetic-corpus`
+Wiring note: text analysis DEFINES this taxonomy + the engine. Extending the `prepare-synthetic-corpus`
 prompt to emit the richer per-kind labels (today it emits QA-style `key_fact` labels) lands
-with the first scored text-analysis category (M5.4 chat-period), behind the verified-data gate.
+with the first scored text-analysis category (category expansion chat-period), behind the
+verified-data gate.
 
-## 3. Matching engine (the MH.2 matching basis)
+## 3. Matching engine (the text-analysis sign-off matching basis)
 
-Decided engine (MH.2): **planted-label-ID matching + pinned-embedder cosine. NOT lemmatization,
+Decided engine (text-analysis sign-off): **planted-label-ID matching + pinned-embedder cosine. NOT lemmatization,
 NOT LLM-entailment.** A candidate emits free-text items per sub-task; each is matched to at most
 one planted label:
 
@@ -101,7 +102,7 @@ one planted label:
    - `TAU_PARTIAL <= cosine < TAU_FULL` -> `PARTIAL_CREDIT` -- near miss;
    - `cosine < TAU_PARTIAL` -> no match.
 
-The embedder is the project's PINNED embedder (the same one used for retrieval and the M5.4
+The embedder is the project's PINNED embedder (the same one used for retrieval and the category expansion
 summarization-coverage metric), so the cosine basis is consistent across the framework.
 
 **Proposed thresholds (sign-off knobs):**
@@ -113,8 +114,9 @@ summarization-coverage metric), so the cosine basis is consistent across the fra
 | `PARTIAL_CREDIT` | `0.5` | weight of a partial match |
 
 These are the explicit numbers to confirm or adjust at sign-off. They live as named constants
-in `text_analysis.py` (no magic numbers), and the MH.5 stratified human sample is the empirical
-check that they neither over-credit paraphrases nor reject valid morphology.
+in `text_analysis.py` (no magic numbers), and the human verification gate stratified human
+sample is the empirical check that they neither over-credit paraphrases nor reject valid
+morphology.
 
 ## 4. Per-sub-task credit and aggregation
 
@@ -133,11 +135,11 @@ are scored (floor) but kept OUT of the objective headline, which the gated judge
 
 Reporting rules (consistent with the rest of the framework):
 
-- Every headline carries a bootstrap CI (the M3.6 machinery), over the per-document scores.
+- Every headline carries a bootstrap CI (the ranking rigor machinery), over the per-document scores.
 - Real-corpus and synthetic results are reported SEPARATELY, never merged (spec; the planter
   already tags `synthetic: true` in provenance).
 - The category renders under its own tier (proposed `TIER_TEXT_ANALYSIS`) and is never
-  cross-ranked with the RAG board -- wired when M5.4 builds the runner, mirroring the existing
+  cross-ranked with the RAG board -- wired when category expansion builds the runner, mirroring the existing
   `TIER_SCREEN` / `TIER_PRIVATE` guard.
 
 ## 5. Worked example
@@ -152,7 +154,7 @@ Planted `topic` labels `T1="економіка"`, `T2="енергетика"`; c
 
 ---
 
-## Sign-off (MH.2) -- how to approve this schema
+## Sign-off (text-analysis sign-off) -- how to approve this schema
 
 This is the human gate. Nothing about it requires running a GPU.
 
@@ -175,14 +177,14 @@ This is the human gate. Nothing about it requires running a GPU.
    To change a number, edit the constant in `text_analysis.py` (the tests assert against the
    constants, not hardcoded values, so they follow your change).
 
-3. **Confirm the OQ4 corpus fact** this depends on (MH.2 item 3): whether your text-analysis
+3. **Confirm the OQ4 corpus fact** this depends on (text-analysis sign-off item 3): whether your text-analysis
    reference answers already EXIST or must be authored, and which corpus is real vs synthetic.
 
 4. **Record the sign-off.** Add a dated line to the top of this file, e.g.
    `Signed off 2026-06-__ by <name>; thresholds accepted as proposed (or: TAU_FULL -> 0.9).`
-   That line is the trust signal the downstream M5.4 runner reads before it lets a text-analysis
-   `verified=true` item score models. (The MH.5 stratified human sample-verify of drafted items
-   remains a separate gate, per Spec Premise 3.)
+   That line is the trust signal the downstream category expansion runner reads before it lets
+   a text-analysis `verified=true` item score models. (The human verification gate stratified
+   human sample-verify of drafted items remains a separate gate, per Spec Premise 3.)
 
 Until step 4 is recorded, the schema is a committed proposal only -- the engine and templates
 exist and are tested, but the benchmark stays un-trusted for headline use.

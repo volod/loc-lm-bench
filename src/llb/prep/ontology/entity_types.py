@@ -1,4 +1,4 @@
-"""The CLOSED entity-type vocabulary for the constrained ontology (MH.2-signed schema).
+"""The CLOSED entity-type vocabulary for the constrained ontology (text-analysis sign-off-signed schema).
 
 The graph ontology is meant to be a closed, reviewable type set, not whatever the extractor
 invents. Two things make that true here:

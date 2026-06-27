@@ -1,4 +1,4 @@
-"""VRAM reclaim gate (basic, Milestone 1).
+"""VRAM reclaim gate (basic, RAG core).
 
 The sequential-execution contract: after a backend is killed, VRAM must return to the
 pre-run baseline within a TOLERANCE band (drivers/display hold a little, so the exact
@@ -17,7 +17,7 @@ from llb.contracts import VramReclaimReport
 DEFAULT_TOLERANCE_MB = 512
 DEFAULT_MAX_POLLS = 30
 
-# Residual classification (M3.3): distinguish a real leak from an unrelated baseline shift.
+# Residual classification (isolation reclaim): distinguish a real leak from an unrelated baseline shift.
 VERDICT_RECLAIMED = "reclaimed"
 VERDICT_LEAKED = "leaked"  # residual is held by the launched process tree -> abort
 VERDICT_BASELINE_SHIFT = "baseline_shift"  # an unrelated process grew -> tolerate
@@ -30,7 +30,7 @@ class VramNotReclaimed(RuntimeError):
 def classify_residual(
     residual_mb: int, pid_held_mb: int, tolerance_mb: int = DEFAULT_TOLERANCE_MB
 ) -> str:
-    """Attribute a post-run VRAM residual (M3.3).
+    """Attribute a post-run VRAM residual (isolation reclaim).
 
     A residual within tolerance is `reclaimed`. Above tolerance, it is a `leaked` cell only when
     the LAUNCHED process tree still holds VRAM (`pid_held_mb` above tolerance) -- the killed

@@ -1,10 +1,11 @@
 # CrewAI agentic harness -- validate, extend, and ground in documents
 
-The M7.1 agentic benchmark runs one model under a pluggable harness so the comparison axis is
-LangGraph vs CrewAI vs the pure loop, holding the task set, `ToolWorld`, objective scoring, and the
-gated judge fixed (see [`milestone-7-extended-workflows.md`](../impl/current/milestone-7-extended-workflows.md)).
-CrewAI is an opt-in extra; this guide is the host-only validation how-to plus the actor / model /
-document extension guide.
+The agentic harness comparison agentic benchmark runs one model under a pluggable harness
+so the comparison axis is LangGraph vs CrewAI vs the pure loop, holding the task set,
+`ToolWorld`, objective scoring, and the gated judge fixed
+(see [`extended-workflows.md`](../impl/current/extended-workflows.md)).
+CrewAI is an opt-in extra; this guide is the host-only validation how-to plus the actor
+/ model / document extension guide.
 
 ## 1. Install and pin
 
@@ -93,14 +94,15 @@ fields.
 - **Add tools.** Extend the deterministic `ToolWorld` (a pure `(env, args) -> observation` handler in
   `src/llb/bench/tool_world.py`) and add it to `tool_catalog()`; `crew_tool_specs` picks it up
   automatically with an args schema derived from its ToolDef.
-- **Multi-actor crews (future).** `run_real_crew` builds a single-agent crew on purpose (the M7.1
-  comparison is one agent under different harnesses). A multi-agent crew is a separate experiment:
-  add agents/tasks to the `Crew`, but record it as a distinct harness id so its scores never mix
-  with the single-agent cells.
+- **Multi-actor crews (future).** `run_real_crew` builds a single-agent crew on purpose
+  (the agentic harness comparison comparison is one agent under different harnesses).
+  A multi-agent crew is a separate experiment: add agents/tasks to the `Crew`, but record
+  it as a distinct harness id so its scores never mix with the single-agent cells.
 
 ## 5. Ground the crew in documents (RAG prompt system)
 
-Combine the harness with the M7.3 prompt-system lane so the crew answers from a supplied corpus:
+Combine the harness with the RAG prompt-system comparison prompt-system lane so the crew
+answers from a supplied corpus:
 
     .venv/bin/llb prompt-system-prepare --corpus-root <corpus_dir>
 

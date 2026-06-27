@@ -90,7 +90,7 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
 # `sampling.cuh` calls `cub::BlockAdjacentDifference::FlagHeads`, which newer CCCL/CUB
 # (shipped with CUDA 12.x toolchains) removed -- so the build fails on consumer GPUs such as
 # the sm_89 RTX 4060 Ti and the engine never comes up. So the sampler is gated on the
-# `build-vllm` preflight (M4.3): it is enabled ONLY when the recorded verdict confirms the
+# `build-vllm` preflight (vLLM serving preflight): it is enabled ONLY when the recorded verdict confirms the
 # kernel builds on this host, else kept OFF (greedy / temperature-0 decoding, the eval default,
 # does not need it). An explicit VLLM_USE_FLASHINFER_SAMPLER in the environment always wins.
 
@@ -185,7 +185,7 @@ class VllmLauncher(BackendLauncher):
         )
 
     def _record_sampler(self, run_env: Mapping[str, str]) -> None:
-        """Record which sampler this launch uses (M4.3) so the manifest captures it."""
+        """Record which sampler this launch uses (vLLM serving preflight) so the manifest captures it."""
         from llb.backends.preflight import SAMPLER_FLASHINFER, SAMPLER_NATIVE, load_verdict
 
         use_flashinfer = run_env.get(env.VLLM_USE_FLASHINFER_SAMPLER) == "1"

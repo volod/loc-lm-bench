@@ -1,4 +1,4 @@
-"""M7.4 Qdrant vector-store adapter (opt-in `[rag-qdrant]` extra).
+"""platform matrix Qdrant vector-store adapter (opt-in `[rag-qdrant]` extra).
 
 An in-memory cosine Qdrant collection over the same normalized embeddings FAISS indexes, behind the
 shared `VectorStoreAdapter` contract. Qdrant's cosine SCORE is already a similarity (higher is

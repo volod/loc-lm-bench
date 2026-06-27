@@ -36,7 +36,7 @@ def _focus_line(seed: DraftSeed) -> str:
 def draft_prompt(seed: DraftSeed, context: str, ontology_hint: str = "") -> str:
     """One UA QA pair grounded in `context`, answer = exact substring, difficulty-aware.
 
-    `ontology_hint` (optional, M5.6) carries the corpus's high-confidence induced types as an
+    `ontology_hint` (optional, verified-data hardening) carries the corpus's high-confidence induced types as an
     explicit constraint, nudging the drafter toward the reliable types of THIS corpus."""
     hint_line = f"{ontology_hint}\n" if ontology_hint else ""
     return (
@@ -80,7 +80,7 @@ def draft_items(
     seeds: list[DraftSeed],
     ontology_hint: str = "",
 ) -> list[dict[str, Any]]:
-    """Draft a raw QA dict per seed; failures are skipped (not fatal). `ontology_hint` (M5.6)
+    """Draft a raw QA dict per seed; failures are skipped (not fatal). `ontology_hint` (verified-data hardening)
     carries the induced high-confidence types into every draft prompt as an explicit constraint."""
     by_id = {doc.doc_id: doc for doc in docs}
     drafts: list[dict[str, Any]] = []
