@@ -1,0 +1,156 @@
+{
+  "method": "prompt-system",
+  "corpus_digest": "9526f54a4037",
+  "mapping_digest": "e6f1c879a007",
+  "tokenizer": "char-ratio",
+  "context_window": 8192,
+  "prompt_budget_tokens": 6592,
+  "reserved_tokens": 1600,
+  "n_candidates": 18,
+  "candidates": [
+    {
+      "prompt_system_id": "8cba970e06d5",
+      "anthology_size": 5,
+      "metadata_density": "none",
+      "graph_reference_style": "none",
+      "used_tokens": 539,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "0a68e417ea71",
+      "anthology_size": 5,
+      "metadata_density": "none",
+      "graph_reference_style": "inline",
+      "used_tokens": 827,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "df3828824a74",
+      "anthology_size": 5,
+      "metadata_density": "none",
+      "graph_reference_style": "appendix",
+      "used_tokens": 827,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "26bddd9c005f",
+      "anthology_size": 5,
+      "metadata_density": "compact",
+      "graph_reference_style": "none",
+      "used_tokens": 559,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "b5cfeca4f539",
+      "anthology_size": 5,
+      "metadata_density": "compact",
+      "graph_reference_style": "inline",
+      "used_tokens": 847,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "8aea55d3ce73",
+      "anthology_size": 5,
+      "metadata_density": "compact",
+      "graph_reference_style": "appendix",
+      "used_tokens": 847,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "13652d9f0dc0",
+      "anthology_size": 5,
+      "metadata_density": "full",
+      "graph_reference_style": "none",
+      "used_tokens": 591,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "cdd6c27c9cd9",
+      "anthology_size": 5,
+      "metadata_density": "full",
+      "graph_reference_style": "inline",
+      "used_tokens": 879,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "2e3a7ee357c8",
+      "anthology_size": 5,
+      "metadata_density": "full",
+      "graph_reference_style": "appendix",
+      "used_tokens": 879,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "deae2872bffb",
+      "anthology_size": 10,
+      "metadata_density": "none",
+      "graph_reference_style": "none",
+      "used_tokens": 1024,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "667c3a63d77a",
+      "anthology_size": 10,
+      "metadata_density": "none",
+      "graph_reference_style": "inline",
+      "used_tokens": 1312,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "30980c2992cf",
+      "anthology_size": 10,
+      "metadata_density": "none",
+      "graph_reference_style": "appendix",
+      "used_tokens": 1312,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "1d3a2ae76ada",
+      "anthology_size": 10,
+      "metadata_density": "compact",
+      "graph_reference_style": "none",
+      "used_tokens": 1044,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "8cc13063c1a0",
+      "anthology_size": 10,
+      "metadata_density": "compact",
+      "graph_reference_style": "inline",
+      "used_tokens": 1332,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "c4a1965cf916",
+      "anthology_size": 10,
+      "metadata_density": "compact",
+      "graph_reference_style": "appendix",
+      "used_tokens": 1332,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "27b41937730a",
+      "anthology_size": 10,
+      "metadata_density": "full",
+      "graph_reference_style": "none",
+      "used_tokens": 1076,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "ff2c0b84c1aa",
+      "anthology_size": 10,
+      "metadata_density": "full",
+      "graph_reference_style": "inline",
+      "used_tokens": 1364,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "e4f9b9aeb16b",
+      "anthology_size": 10,
+      "metadata_density": "full",
+      "graph_reference_style": "appendix",
+      "used_tokens": 1364,
+      "status": "pending"
+    }
+  ]
+}

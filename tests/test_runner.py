@@ -5,6 +5,7 @@ persist -- without FAISS, langgraph, Ollama, or a GPU, by injecting a fake store
 launcher, and a runner_fn that composes the real eval-graph node closures sequentially.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from llb.eval import graph
 from llb.executor import runner as runner_module
 from llb.executor.runner import run_eval
 from llb.goldset.schema import GoldItem
+from llb.prompt_system.template import PromptPackage, TemplateFields
 
 DOC = "Київ є столицею України. Дніпро тече через місто."
 
@@ -131,6 +133,52 @@ def test_walking_skeleton_end_to_end(tmp_path):
     assert run_dir == Path(result["paths"]["manifest"]).parent
     assert (run_dir / "manifest.json").exists()
     assert any(run_dir.glob("scores.*"))
+
+
+def test_build_messages_applies_prompt_system_package():
+    pkg = PromptPackage(
+        system_prompt="SYS PROMPT",
+        additional_prompt="AUGMENTED KNOWLEDGE",
+        fields=TemplateFields(),
+        dropped_context={"budget_tokens": 10, "used_tokens": 1, "sections": []},
+    )
+    messages = graph.build_messages("Питання?", "BASE CONTEXT", pkg)
+
+    assert messages[0]["content"].startswith("SYS PROMPT")
+    assert graph.SYSTEM_PROMPT in messages[0]["content"]
+    assert "AUGMENTED KNOWLEDGE" in messages[1]["content"]
+    assert "BASE CONTEXT" in messages[1]["content"]
+
+
+def test_run_eval_persists_prompt_system_provenance(tmp_path):
+    q = "Яка столиця України?"
+    items = [gold_item("uk-1", q, "Київ", "Київ")]
+    cfg = RunConfig(data_dir=tmp_path, run_name="prompt-system", model="fake-uk")
+    provenance = {
+        "prompt_system_id": "ps-test",
+        "corpus_digest": "corpus",
+        "mapping_digest": "mapping",
+        "template_revision": "template",
+        "tokenizer": "char-ratio",
+        "context_window": 4096,
+        "prompt_budget_tokens": 3000,
+    }
+    result = run_eval(
+        cfg,
+        items=items,
+        launcher=FakeLauncher(lambda messages: ChatResult(text="Київ")),
+        runner_fn=lambda item: {"answer": "Київ", "status": graph.OK, "retrieved": [], "usage": {}},
+        prompt_system_provenance=provenance,
+        mirror=lambda *a: None,
+        emit=False,
+    )
+
+    manifest = result["manifest"]
+    assert manifest.config["prompt_system"] == "ps-test"
+    assert manifest.prompt_system_provenance == provenance
+    persisted = json.loads(Path(result["paths"]["manifest"]).read_text(encoding="utf-8"))
+    assert persisted["config"]["prompt_system"] == "ps-test"
+    assert persisted["prompt_system_provenance"] == provenance
 
 
 def test_run_eval_wires_trusted_judge_and_persists_scores(tmp_path):

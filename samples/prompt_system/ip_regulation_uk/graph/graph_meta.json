@@ -1,0 +1,10 @@
+{
+  "backend": "graph",
+  "source": "curated-sample",
+  "n_nodes": 12,
+  "n_edges": 9,
+  "n_communities": 3,
+  "n_documents": 1,
+  "khop_depth": 2,
+  "note": "Curated from the verified IP regulation sample spans. The local Gemma extraction run was attempted for the workflow but returned unparseable JSON, so this sample graph is human-authored tutorial data."
+}

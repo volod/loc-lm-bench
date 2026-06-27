@@ -59,6 +59,7 @@ def prepare_prompt_system(
     corpus_root: Path | str,
     *,
     data_dir: Path | str | None = None,
+    out_dir: Path | str | None = None,
     base_fields: TemplateFields | None = None,
     context_window: int = 8192,
     tokenizer: Tokenizer | None = None,
@@ -92,7 +93,11 @@ def prepare_prompt_system(
     )
     candidates = generate_candidates(corpus, grid, budget, tok)
 
-    run_dir = resolve_data_dir(data_dir) / METHOD / new_run_timestamp()[1]
+    run_dir = (
+        Path(out_dir)
+        if out_dir is not None
+        else resolve_data_dir(data_dir) / METHOD / new_run_timestamp()[1]
+    )
     if persist:
         _write_run(run_dir, corpus, candidates, budget, tokenizer_name)
         _LOG.info(

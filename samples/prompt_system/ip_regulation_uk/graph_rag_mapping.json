@@ -1,0 +1,65 @@
+{
+  "власності": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p021",
+    "ip_regulation_uk.md::p002",
+    "ip_regulation_uk.md::p024",
+    "ip_regulation_uk.md::p005",
+    "ip_regulation_uk.md::p023"
+  ],
+  "права": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p008",
+    "ip_regulation_uk.md::p002",
+    "ip_regulation_uk.md::p005",
+    "ip_regulation_uk.md::p009"
+  ],
+  "інтелектуальної": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p021",
+    "ip_regulation_uk.md::p002",
+    "ip_regulation_uk.md::p024",
+    "ip_regulation_uk.md::p005",
+    "ip_regulation_uk.md::p023"
+  ],
+  "право": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p008",
+    "ip_regulation_uk.md::p002",
+    "ip_regulation_uk.md::p011",
+    "ip_regulation_uk.md::p015"
+  ],
+  "прав": [
+    "ip_regulation_uk.md::p021",
+    "ip_regulation_uk.md::p008"
+  ],
+  "промислової": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p024",
+    "ip_regulation_uk.md::p023",
+    "ip_regulation_uk.md::p011"
+  ],
+  "від": [
+    "ip_regulation_uk.md::p011",
+    "ip_regulation_uk.md::p015"
+  ],
+  "заявки": [
+    "ip_regulation_uk.md::p023",
+    "ip_regulation_uk.md::p011",
+    "ip_regulation_uk.md::p015"
+  ],
+  "марки": [
+    "ip_regulation_uk.md::p003",
+    "ip_regulation_uk.md::p005",
+    "ip_regulation_uk.md::p015"
+  ],
+  "може": [
+    "ip_regulation_uk.md::p015"
+  ],
+  "охорона": [
+    "ip_regulation_uk.md::p015"
+  ],
+  "охорони": [
+    "ip_regulation_uk.md::p024"
+  ]
+}

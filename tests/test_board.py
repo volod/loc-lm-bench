@@ -7,9 +7,11 @@ from llb.board.data import (
     config_summary,
     load_category_records,
     load_category_run_records,
+    load_rag_prompt_system_records,
     load_m5_composite,
     load_run_records,
     load_screen_reports,
+    rag_prompt_system_comparison,
     read_case_objectives,
     read_case_series,
     read_case_splits,
@@ -36,6 +38,7 @@ def _write_run(
     split="final",
     judge=None,
     semantic=None,
+    prompt_system=None,
 ):
     run_dir = root / name
     run_dir.mkdir(parents=True)
@@ -49,6 +52,17 @@ def _write_run(
         "telemetry": {"peak_vram_mb": 5500},
         "n_cases": len(cases),
     }
+    if prompt_system is not None:
+        manifest["config"]["prompt_system"] = prompt_system
+        manifest["prompt_system_provenance"] = {
+            "prompt_system_id": prompt_system,
+            "corpus_digest": "corpus",
+            "mapping_digest": "mapping",
+            "template_revision": "template",
+            "tokenizer": "char-ratio",
+            "context_window": 4096,
+            "prompt_budget_tokens": 3000,
+        }
     (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     rows = []
     for i, c in enumerate(cases):
@@ -126,6 +140,25 @@ def test_config_summary_selects_known_keys():
     summary = config_summary({"strategy": "markdown", "top_k": 6, "model": "m", "junk": 1})
     assert summary["strategy"] == "markdown" and summary["top_k"] == 6
     assert "model" not in summary and "junk" not in summary
+
+
+def test_rag_prompt_system_records_and_comparison_use_final_run_eval_bundles(tmp_path):
+    run_root = tmp_path / "run-eval"
+    _write_run(run_root, "ps1", "m:1", 0.25, [0.0, 0.5], prompt_system="ps1")
+    _write_run(run_root, "ps2-weak", "m:1", 0.1, [0.1], prompt_system="ps2")
+    _write_run(run_root, "ps2-strong", "m:1", 0.9, [1.0, 0.8], prompt_system="ps2")
+    _write_run(run_root, "tuning", "m:1", 1.0, [1.0], split="tuning", prompt_system="leak")
+
+    records = load_rag_prompt_system_records(tmp_path)
+    assert {(r.model, r.prompt_system, r.result.objective_score) for r in records} == {
+        ("m:1", "ps1", 0.25),
+        ("m:1", "ps2", 0.9),
+    }
+
+    rows, table, ids = rag_prompt_system_comparison(tmp_path, "m:1")
+    assert ids == ["ps1", "ps2"]
+    assert rows[0]["model"] == "ps2"
+    assert "policy:" in table
 
 
 # --- M3.7 board completion: judge/semantic series, policy best-pick, Tier-1 separation -----

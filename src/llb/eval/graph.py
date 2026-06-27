@@ -61,10 +61,18 @@ class RagState(TypedDict, total=False):
     usage: UsageRecord
 
 
-def build_messages(question: str, context: str) -> list[ChatMessage]:
+def build_messages(
+    question: str, context: str, prompt_package: Any | None = None
+) -> list[ChatMessage]:
+    system_prompt = SYSTEM_PROMPT
+    if prompt_package is not None:
+        system_prompt = f"{prompt_package.system_prompt}\n\n{SYSTEM_PROMPT}".strip()
+        extra = str(prompt_package.additional_prompt).strip()
+        if extra:
+            context = f"{extra}\n\n=== Поточний знайдений RAG-контекст ===\n{context}"
     user = f"Контекст:\n<<<\n{context}\n>>>\n\nПитання: {question}\n\nВідповідь:"
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user},
     ]
 
@@ -83,14 +91,18 @@ def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:
 
 
 def make_generate_node(
-    launcher: Any, max_tokens: int, temperature: float, timeout: float
+    launcher: Any,
+    max_tokens: int,
+    temperature: float,
+    timeout: float,
+    prompt_package: Any | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response."""
 
     def generate(state: RagState) -> RagState:
         if state.get("status") == RETRIEVAL_MISS:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
-        messages = build_messages(state["question"], state.get("context", ""))
+        messages = build_messages(state["question"], state.get("context", ""), prompt_package)
         result = launcher.chat(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
         )
@@ -116,6 +128,7 @@ def build_rag_graph(
     max_tokens: int,
     temperature: float,
     timeout: float,
+    prompt_package: Any | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -128,7 +141,8 @@ def build_rag_graph(
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
     graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k)))
     graph.add_node(
-        "generate", cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout))
+        "generate",
+        cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package)),
     )
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "generate")
