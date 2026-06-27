@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from llb.contracts import JudgeInputRecord, JudgeScore
+from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb import env
 from llb.paths import load_project_env
 
@@ -20,6 +20,7 @@ _LOG = logging.getLogger(__name__)
 
 DEFAULT_THRESHOLD = 0.6
 _EMPTY_ANSWER_JUDGE_SCORE: JudgeScore = {"faithfulness": 0.0, "answer_relevancy": 0.0}
+_EMPTY_ANSWER_REASON = "empty_answer"  # mirrors judge_diag.JUDGE_DIAG_EMPTY_ANSWER
 
 # Judge-model bias disclosure (OQ2). The v1 default judge is a LOCAL Gemma-4 model, chosen for
 # no data egress + reproducibility -- but it is NOT independent of the candidate pool: Gemma-4
@@ -136,6 +137,7 @@ class JudgeOutcome:
     trusted: bool
     reason: str
     scores: list[JudgeScore] | None = None
+    diagnostics: JudgeDiagnostics | None = None  # M7.2 zero-valued-judge observability
 
 
 def run_judge(
@@ -176,8 +178,13 @@ def deepeval_scorer(
     *,
     evaluate_fn: JudgeEvaluate | None = None,
     base_url: str | None = None,
+    diagnostics_out: list[str | None] | None = None,
 ) -> list[JudgeScore]:
-    """Score faithfulness and answer relevancy with Ukrainian DeepEval G-Eval prompts."""
+    """Score faithfulness and answer relevancy with Ukrainian DeepEval G-Eval prompts.
+
+    `diagnostics_out`, when provided, is filled with one precise reason per record (or None) for
+    the M7.2 zero-valued-judge observability: `empty_answer` for blank candidate answers and the
+    classified failure reason for a judge that could not score a non-empty answer."""
     if records and any(not str(record.get("answer", "")).strip() for record in records):
         nonempty_records: list[JudgeInputRecord] = []
         nonempty_positions: list[int] = []
@@ -185,9 +192,14 @@ def deepeval_scorer(
             if str(record.get("answer", "")).strip():
                 nonempty_positions.append(index)
                 nonempty_records.append(record)
+        sub_reasons: list[str | None] = []
         judged = (
             deepeval_scorer(
-                nonempty_records, judge_model, evaluate_fn=evaluate_fn, base_url=base_url
+                nonempty_records,
+                judge_model,
+                evaluate_fn=evaluate_fn,
+                base_url=base_url,
+                diagnostics_out=sub_reasons,
             )
             if nonempty_records
             else []
@@ -199,16 +211,29 @@ def deepeval_scorer(
             }
             for _ in records
         ]
-        for index, score in zip(nonempty_positions, judged):
+        reasons: list[str | None] = [_EMPTY_ANSWER_REASON for _ in records]
+        for index, score, reason in zip(nonempty_positions, judged, sub_reasons):
             scores[index] = score
+            reasons[index] = reason
+        if diagnostics_out is not None:
+            diagnostics_out.extend(reasons)
         return scores
     if evaluate_fn is not None:
-        return extract_scores(evaluate_fn(records, judge_model))
-    return _default_deepeval_evaluate(records, judge_model, base_url=base_url)
+        result = extract_scores(evaluate_fn(records, judge_model))
+        if diagnostics_out is not None:
+            diagnostics_out.extend(None for _ in records)
+        return result
+    return _default_deepeval_evaluate(
+        records, judge_model, base_url=base_url, diagnostics_out=diagnostics_out
+    )
 
 
 def _default_deepeval_evaluate(
-    records: list[JudgeInputRecord], judge_model: str, *, base_url: str | None = None
+    records: list[JudgeInputRecord],
+    judge_model: str,
+    *,
+    base_url: str | None = None,
+    diagnostics_out: list[str | None] | None = None,
 ) -> list[JudgeScore]:
     served_model, resolved_base_url = resolve_judge_endpoint(judge_model, base_url)
     if resolved_base_url is None:
@@ -262,6 +287,7 @@ def _default_deepeval_evaluate(
     )
 
     scores: list[JudgeScore] = []
+    failures: dict[int, str] = {}
     for index, record in enumerate(records):
         test_case = LLMTestCase(
             input=record["question"],
@@ -271,24 +297,40 @@ def _default_deepeval_evaluate(
         scores.append(
             {
                 "faithfulness": _measure_judge_metric(
-                    faithfulness, test_case, metric_name="faithfulness", record_index=index
+                    faithfulness,
+                    test_case,
+                    metric_name="faithfulness",
+                    record_index=index,
+                    failures=failures,
                 ),
                 "answer_relevancy": _measure_judge_metric(
-                    relevancy, test_case, metric_name="answer_relevancy", record_index=index
+                    relevancy,
+                    test_case,
+                    metric_name="answer_relevancy",
+                    record_index=index,
+                    failures=failures,
                 ),
             }
         )
+    if diagnostics_out is not None:
+        diagnostics_out.extend(failures.get(index) for index in range(len(records)))
     return scores
 
 
 def _measure_judge_metric(
-    metric: Any, test_case: Any, *, metric_name: str, record_index: int
+    metric: Any,
+    test_case: Any,
+    *,
+    metric_name: str,
+    record_index: int,
+    failures: dict[int, str] | None = None,
 ) -> float:
     """Measure one DeepEval metric, converting malformed local-judge responses to zero.
 
     Local judges can fail to return the strict JSON DeepEval expects. That is a judge-quality
     failure, not a reason to abort the benchmark; the objective score remains the headline, and
-    the diagnostic metric gets zero for the affected record.
+    the diagnostic metric gets zero for the affected record. When `failures` is provided the
+    failure is classified (malformed JSON vs transport) and recorded for the M7.2 diagnostics.
     """
     try:
         return float(metric.measure(test_case, _show_indicator=False))
@@ -300,6 +342,10 @@ def _measure_judge_metric(
             type(exc).__name__,
             exc,
         )
+        if failures is not None:
+            from llb.scoring.judge_diag import classify_judge_exception
+
+            failures[record_index] = classify_judge_exception(exc)
         return 0.0
 
 

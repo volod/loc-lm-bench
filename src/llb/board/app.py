@@ -10,6 +10,8 @@ from pathlib import Path
 from llb.board.data import (
     best_per_model,
     config_summary,
+    harness_comparison,
+    load_agentic_harness_records,
     load_category_records,
     load_m5_composite,
     load_run_records,
@@ -57,6 +59,18 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
             results = category_by_tier[tier]
             st.caption(f"{tier} -- {ranking_policy_note(results, judge_trusted=False)}")
             st.dataframe(rank_board(results), use_container_width=True)
+
+    # M7.1 agentic harness comparison -- ranks ONE model across {loop, langgraph, crewai} under
+    # TIER_AGENTIC, so the harness effect is isolated without cross-ranking models.
+    harness_records = load_agentic_harness_records(data_dir)
+    if harness_records:
+        st.subheader("M7.1 agentic harness comparison (LangGraph vs CrewAI vs loop)")
+        st.caption("Per model, the same task set + scoring + judge are held fixed; harness varies.")
+        for model in sorted({r.model for r in harness_records}):
+            rows, _table, harnesses = harness_comparison(data_dir, model)
+            if rows:
+                st.caption(f"**{model}** -- harnesses: {', '.join(sorted(set(harnesses)))}")
+                st.dataframe(rows, use_container_width=True)
 
     composite_rows, composite_issues = load_m5_composite(data_dir)
     if composite_rows:

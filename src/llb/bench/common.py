@@ -108,14 +108,27 @@ def run_gated_judge(
     ranks alone) and the caller reads `outcome.reason`. `scorer` is injectable -- a fake in tests --
     so the wiring is provable without DeepEval / an endpoint / a GPU; the default scorer is the
     DeepEval judge bound to `base_url`, imported lazily so this stays light in the base install.
+
+    When the judge runs, the outcome is annotated with the M7.2 `diagnostics` (counts + reasons for
+    zero-valued scores: empty candidate answer vs malformed judge JSON vs judge transport error),
+    recorded ALONGSIDE the objective headline so a candidate failure is distinguishable from a local
+    judge format/transport failure.
     """
+    precise_reasons: list[str | None] = []
 
     def _default(recs: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
         from llb.scoring.judge import deepeval_scorer
 
-        return deepeval_scorer(recs, model, base_url=base_url)
+        return deepeval_scorer(recs, model, base_url=base_url, diagnostics_out=precise_reasons)
 
-    return run_judge(records, judge_model, judge_rho, threshold, scorer=scorer or _default)
+    outcome = run_judge(records, judge_model, judge_rho, threshold, scorer=scorer or _default)
+    if outcome.trusted and outcome.scores is not None:
+        from llb.scoring.judge_diag import summarize_judge_diagnostics
+
+        outcome.diagnostics = summarize_judge_diagnostics(
+            records, outcome.scores, precise_reasons or None
+        )
+    return outcome
 
 
 def local_complete(

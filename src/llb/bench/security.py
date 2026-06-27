@@ -237,6 +237,7 @@ def run_security(
             "judge_trusted": outcome.trusted,
             "refusal_quality": quality,  # gated diagnostic, NOT the headline
             "refusal_quality_ci": list(quality_ci) if quality_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
@@ -247,6 +248,7 @@ def run_security(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["refusal_quality"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,

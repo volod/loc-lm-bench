@@ -27,8 +27,23 @@ def build_index(
     embedding_model: Optional[str] = typer.Option(None, help="pinned embedding model"),
     mode: Optional[str] = typer.Option(None, help="flat | parent_child"),
     child_size: Optional[int] = typer.Option(None, help="child chunk size (parent_child mode)"),
+    vector_store: str = typer.Option(
+        "faiss",
+        help="vector backend behind the RAG-store seam: faiss (default) | chroma ([rag-chroma]) | "
+        "qdrant ([rag-qdrant]) | lancedb ([rag-lancedb]); the backend is recorded in the store meta",
+    ),
 ) -> None:
-    """Chunk + embed the corpus into a FAISS RAG store under the index dir."""
+    """Chunk + embed the corpus into a RAG store (FAISS by default) under the index dir."""
+    from llb.rag.store import RagStore
+    from llb.rag.vector_index import RAG_BACKENDS
+
+    if vector_store not in RAG_BACKENDS:
+        typer.echo(
+            f"[error] unknown --vector-store '{vector_store}'; choose one of "
+            f"{', '.join(RAG_BACKENDS)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     cfg = load_config(
         config,
         corpus_root=corpus_root,
@@ -39,7 +54,6 @@ def build_index(
         retrieval_mode=mode,
         child_chunk_size=child_size,
     )
-    from llb.rag.store import RagStore
 
     store = RagStore.build(
         cfg.corpus_root,
@@ -49,12 +63,14 @@ def build_index(
         cfg.embedding_model,
         mode=cfg.retrieval_mode,
         child_size=cfg.child_chunk_size,
+        vector_store=vector_store,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
     typer.echo(
         f"[build-index] {store.meta['n_indexed']} indexed chunks{parents} "
-        f"({cfg.strategy}/{cfg.retrieval_mode}, dim {store.meta['dim']}) -> {cfg.index_dir()}"
+        f"({cfg.strategy}/{cfg.retrieval_mode}, {vector_store}, dim {store.meta['dim']}) "
+        f"-> {cfg.index_dir()}"
     )
 
 
@@ -284,3 +300,39 @@ def compare_retrieval_cmd(
     if out is not None:
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[compare-retrieval] wrote report -> {out}")
+
+
+@app.command("compare-vector-stores")
+def compare_vector_stores_cmd(
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    backends: str = typer.Option(
+        "faiss,chroma,qdrant,lancedb",
+        help="comma-separated vector backends to compare (each over the SAME corpus + embedder)",
+    ),
+    k: int = typer.Option(10, help="recall@k / MRR cutoff"),
+    split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
+    out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
+) -> None:
+    """M7.4: compare vector-store backends (FAISS vs Chroma/Qdrant/LanceDB) by the source-span metric.
+
+    Builds the SAME corpus under each backend with the SAME chunking + pinned embedder, then scores
+    recall@k / MRR on the gold set -- the model-independent retrieval gate before a backend's runs
+    can be compared to FAISS. Each non-FAISS backend needs its optional extra installed."""
+    import json
+
+    from llb.executor.cases import spans_as_dicts
+    from llb.goldset.schema import load_goldset
+    from llb.rag.compare import build_vector_store_comparison, compare_retrieval, format_comparison
+
+    cfg = load_config(config, goldset_path=goldset)
+    items = load_goldset(cfg.goldset_path)
+    if split:
+        items = [it for it in items if it.split == split]
+    selected = [b.strip() for b in backends.split(",") if b.strip()]
+    stores = build_vector_store_comparison(cfg, selected)
+    report = compare_retrieval(stores, [(it.question, spans_as_dicts(it)) for it in items], k)
+    typer.echo(format_comparison(report))
+    if out is not None:
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        typer.echo(f"[compare-vector-stores] wrote report -> {out}")

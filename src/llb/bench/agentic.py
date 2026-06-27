@@ -23,7 +23,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from llb.bench.common import (
     DEFAULT_THRESHOLD,
@@ -41,6 +41,7 @@ from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
 from llb.contracts import (
     AgenticCaseRow,
     BoardRow,
+    JudgeDiagnostics,
     JudgeInputRecord,
     JudgeScore,
     JudgeStatus,
@@ -55,6 +56,16 @@ _LOG = logging.getLogger(__name__)
 
 METHOD = "agentic"
 DEFAULT_MAX_STEPS = 6
+
+# Named harnesses (M7.1) -- the comparison axis under TIER_AGENTIC. `loop` is the pure,
+# framework-free controller->execute->controller cycle (`run_episode`); `langgraph` compiles that
+# same cycle as a LangGraph app; `crewai` drives it through a single-agent CrewAI crew. Holding
+# the task set + ToolWorld + objective scoring + gated judge FIXED, the harness is the only
+# variable, isolating "how much the agent framework itself moves the score".
+HARNESS_LOOP = "loop"
+HARNESS_LANGGRAPH = "langgraph"
+HARNESS_CREWAI = "crewai"
+HARNESS_NAMES = (HARNESS_LOOP, HARNESS_LANGGRAPH, HARNESS_CREWAI)
 
 # The judge "question" for trajectory quality: a fixed UA intent that frames the agent's job, so
 # answer-relevancy scores whether the final answer addresses the goal while faithfulness scores
@@ -104,6 +115,25 @@ class Episode:
     transcript: list[tuple[str, dict[str, Any], str]]
 
 
+class Harness(Protocol):
+    """A pluggable agentic harness (M7.1): drive ONE task to a canonical `Episode`.
+
+    Every harness takes the same `(task, complete, catalog, max_steps)` and returns the same
+    `Episode` (final answer + tool-call transcript + final env-state), so `check_success`, the
+    scorer, and the gated judge are UNCHANGED across harnesses -- the framework is the only
+    variable. The pure loop (`run_episode`), the LangGraph app, and the CrewAI crew all conform.
+    """
+
+    def __call__(
+        self,
+        task: AgenticTask,
+        complete: LLMComplete,
+        catalog: dict[str, ToolDef],
+        *,
+        max_steps: int = DEFAULT_MAX_STEPS,
+    ) -> Episode: ...
+
+
 @dataclass(slots=True)
 class AgenticRun:
     result: ModelResult
@@ -119,6 +149,7 @@ class AgenticRun:
     trajectory_quality_ci: tuple[float, float] | None = None
     judge_trusted: bool = False
     judge_reason: str = "no judge configured"
+    judge_diagnostics: JudgeDiagnostics | None = None  # M7.2 zero-valued-judge observability
 
 
 def _norm(value: Any) -> str:
@@ -174,11 +205,19 @@ def build_agent_prompt(
 
 
 def run_episode(
-    task: AgenticTask, complete: LLMComplete, *, max_steps: int = DEFAULT_MAX_STEPS
+    task: AgenticTask,
+    complete: LLMComplete,
+    *,
+    catalog: dict[str, ToolDef] | None = None,
+    max_steps: int = DEFAULT_MAX_STEPS,
 ) -> Episode:
-    """Drive one task to completion (or the step budget) in the deterministic sandbox."""
+    """Drive one task to completion (or the step budget) in the deterministic sandbox.
+
+    This is the pure `loop` harness: the controller->execute->controller cycle with no agent
+    framework. `catalog` is injectable so every harness shares ONE tool catalog; it defaults to
+    the canonical `tool_catalog()` (so existing callers are unchanged)."""
     world = ToolWorld.from_setup(task.setup)
-    catalog = tool_catalog()
+    catalog = catalog if catalog is not None else tool_catalog()
     transcript: list[tuple[str, dict[str, Any], str]] = []
     answer = ""
     finished = False
@@ -257,6 +296,9 @@ def run_agentic(
     backend: str,
     complete: LLMComplete,
     max_steps: int = DEFAULT_MAX_STEPS,
+    harness_name: str = HARNESS_LOOP,
+    harness: "Harness | None" = None,
+    prompt_system: str | None = None,
     judge_model: str | None = None,
     judge_rho: float | None = None,
     judge_threshold: float = DEFAULT_THRESHOLD,
@@ -281,7 +323,12 @@ def run_agentic(
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
-    episodes = [run_episode(task, complete, max_steps=max_steps) for task in tasks]
+    if harness is None:
+        from llb.bench.harness import get_harness
+
+        harness = get_harness(harness_name)
+    catalog = tool_catalog()
+    episodes = [harness(task, complete, catalog, max_steps=max_steps) for task in tasks]
     rows = [_row(task, ep) for task, ep in zip(tasks, episodes)]
     case_success = [1.0 if ep.success else 0.0 for ep in episodes]
 
@@ -330,6 +377,8 @@ def run_agentic(
             "backend": backend,
             "tier": TIER_AGENTIC,
             "category": "agentic",
+            "harness": harness_name,  # loop | langgraph | crewai (board comparison axis)
+            "prompt_system": prompt_system,  # M7.3 prompt-system id (board comparison axis)
             "n_tasks": len(tasks),
             "max_steps": max_steps,
             "completion_rate": result.objective_score,
@@ -339,6 +388,7 @@ def run_agentic(
             "judge_trusted": outcome.trusted,
             "trajectory_quality": quality,  # gated diagnostic, NOT the headline
             "trajectory_quality_ci": list(quality_ci) if quality_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
@@ -349,6 +399,7 @@ def run_agentic(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["trajectory_quality"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,
@@ -383,6 +434,7 @@ def run_agentic(
         trajectory_quality_ci=quality_ci,
         judge_trusted=outcome.trusted,
         judge_reason=outcome.reason,
+        judge_diagnostics=outcome.diagnostics,
     )
 
 

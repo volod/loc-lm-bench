@@ -50,6 +50,7 @@ class RagStoreMeta(TypedDict):
     n_indexed: int
     n_parents: int
     dim: int
+    backend: NotRequired[str]  # M7.4 vector-store backend (faiss default; chroma/qdrant/lancedb)
 
 
 class UsageRecord(TypedDict, total=False):
@@ -327,6 +328,18 @@ class RunEnvironment(TypedDict):
     platform: str
 
 
+class JudgeDiagnostics(TypedDict):
+    """M7.2 zero-valued-judge observability: counts + reasons for judge diagnostics that scored
+    zero, so a candidate failure (empty answer) is distinguished from a LOCAL judge format/transport
+    failure (malformed strict JSON, transport error). The objective score stays the headline; these
+    are recorded ALONGSIDE it in manifests and the board."""
+
+    n: int  # records the judge scored
+    n_ok: int  # records with a non-zero, well-formed judge score
+    n_zero: int  # records whose judge score was zero (sum of the reason counts below)
+    reasons: dict[str, int]  # reason -> count (empty_answer | malformed_judge_json | ...)
+
+
 class JudgeStatus(TypedDict):
     calibration_rho: float | None
     threshold: float
@@ -336,6 +349,7 @@ class JudgeStatus(TypedDict):
     base_url: NotRequired[str | None]
     prompt_language: NotRequired[str]
     metrics: NotRequired[list[str]]
+    diagnostics: NotRequired[JudgeDiagnostics | None]  # M7.2 zero-valued-judge observability
 
 
 class RunPaths(TypedDict):

@@ -19,7 +19,8 @@ or lookup path is needed.
 | VRAM estimates, contention guard, llama.cpp, ontology-assisted drafting | [Milestone 4 robustness, ontology, backends](current/milestone-4-robustness-ontology-backends.md) |
 | Composite headline, M5 category benches, text-analysis bundle, sample verification refs | [Milestone 5 composite benchmarks](current/milestone-5-composite-benchmarks.md) |
 | GraphRAG modules, CLI, manifests, tests, graph-vs-FAISS verification | [Milestone 6 GraphRAG](current/milestone-6-graphrag.md) |
-| 16 GB backend matrix, power telemetry, GPU-class extension path | [Milestone 7 platform matrix](current/milestone-7-platform-matrix.md) |
+| 16 GB backend matrix, power telemetry, GPU-class extension path, multi-vector-store adapters | [Milestone 7 platform matrix](current/milestone-7-platform-matrix.md) |
+| Agentic harness comparison (LangGraph/CrewAI/loop), judge diagnostics + smoke, RAG prompt-system lane | [Milestone 7 extended workflows](current/milestone-7-extended-workflows.md) |
 | Real-host run evidence and hardware validation notes | [Real-host verification](current/real-host-verification.md) |
 | Settled design choices, rejected scope, out-of-scope boundaries | [Scope boundaries](current/scope-boundaries.md) |
 

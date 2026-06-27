@@ -212,6 +212,7 @@ def run_summarization(
             "judge_trusted": outcome.trusted,
             "faithfulness": faithfulness,  # gated diagnostic, NOT the headline
             "faithfulness_ci": list(faithfulness_ci) if faithfulness_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
@@ -222,6 +223,7 @@ def run_summarization(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["faithfulness"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,

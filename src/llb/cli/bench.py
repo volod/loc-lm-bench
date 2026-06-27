@@ -241,6 +241,11 @@ def bench_agentic_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
     ),
     max_steps: int = typer.Option(6, min=1, help="step budget per task"),
+    harness: str = typer.Option(
+        "loop",
+        help="agentic harness: loop (pure) | langgraph ([eval] extra) | crewai ([crewai] extra). "
+        "The comparison axis under TIER_AGENTIC; task set + scoring + judge are held fixed.",
+    ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
     judge_model: Optional[str] = typer.Option(
         None,
@@ -262,9 +267,15 @@ def bench_agentic_cmd(
     ),
 ) -> None:
     """M5.3: score a model's task-completion in the deterministic tool-world under TIER_AGENTIC."""
-    from llb.bench.agentic import AgenticRun, load_tasks_file, run_agentic
+    from llb.bench.agentic import HARNESS_NAMES, AgenticRun, load_tasks_file, run_agentic
     from llb.bench.common import LLMComplete, drive_with_backend
 
+    if harness not in HARNESS_NAMES:
+        typer.echo(
+            f"[error] unknown --harness '{harness}'; choose one of {', '.join(HARNESS_NAMES)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     vram_reader, pid_reader = best_effort_gpu_readers()
@@ -276,6 +287,7 @@ def bench_agentic_cmd(
             backend=backend,
             complete=complete,
             max_steps=max_steps,
+            harness_name=harness,
             judge_model=judge_model,
             judge_rho=judge_rho,
             judge_base_url=judge_base_url,
@@ -288,16 +300,48 @@ def bench_agentic_cmd(
         cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
     )
     typer.echo(
-        f"[bench-agentic] completion-rate={result.result.objective_score:.3f} "
+        f"[bench-agentic] harness={harness} "
+        f"completion-rate={result.result.objective_score:.3f} "
         f"mean-steps={result.mean_steps:.2f} mean-tool-calls={result.mean_tool_calls:.2f}"
     )
     if result.trajectory_quality is not None:
         typer.echo(
             f"[bench-agentic] trajectory-quality (gated judge)={result.trajectory_quality:.3f}"
         )
+    if result.judge_diagnostics is not None:
+        diag = result.judge_diagnostics
+        typer.echo(
+            f"[bench-agentic] judge-diagnostics ok={diag['n_ok']} zero={diag['n_zero']} "
+            f"reasons={diag['reasons'] or '{}'}"
+        )
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-agentic] manifest -> {result.paths['manifest']}")
+
+
+@app.command("bench-agentic-compare")
+def bench_agentic_compare_cmd(
+    model: str = typer.Option(..., help="the candidate model to compare across harnesses"),
+) -> None:
+    """M7.1: rank ONE model's agentic runs across its harnesses (loop/langgraph/crewai).
+
+    Reads the persisted `agentic` run bundles, keeps the best run per (model, harness), and ranks
+    the harnesses for the chosen model under TIER_AGENTIC -- isolating the harness effect with the
+    same bootstrap CIs as the category boards."""
+    from llb.board.data import harness_comparison
+
+    cfg = load_config(None)
+    rows, table, harnesses = harness_comparison(cfg.data_dir, model)
+    if not rows:
+        typer.echo(
+            f"[bench-agentic-compare] no agentic runs for model '{model}' under {cfg.data_dir}; "
+            "run `llb bench-agentic --harness loop|langgraph|crewai ...` first"
+        )
+        raise typer.Exit(code=2)
+    typer.echo(
+        f"[bench-agentic-compare] model={model} harnesses={', '.join(sorted(set(harnesses)))}"
+    )
+    typer.echo(table)
 
 
 @app.command("bench-summarization")

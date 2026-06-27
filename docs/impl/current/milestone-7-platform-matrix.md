@@ -105,9 +105,25 @@ Generated files land under `.data/llb/serving/gpu-<tier>gb/` with `tier.json`, s
 run-eval YAML/scripts. The same manifest fields above provide comparable score, throughput, VRAM,
 load, and power metrics.
 
-## Multi-Vector-Store Status
+## Multi-Vector-Store Adapters (plan M7.4)
 
-Only FAISS is a vector-store implementation in the current RAG store. The existing GraphRAG
-comparison is a graph-vs-vector retrieval comparison, not a Chroma/Qdrant/LanceDB vector-store
-matrix. A real multi-vector-store run requires new adapters behind the RAG-store seam before it can
-be benchmarked honestly.
+Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS stays the default.
+
+- Seam: `src/llb/rag/vector_index.py` -- `VectorIndex` Protocol (`search`/`save`) +
+  `RAG_BACKENDS = (faiss, chroma, qdrant, lancedb)` + `build_vector_index` / `save_vector_index` /
+  `load_vector_index` dispatch. `RagStore` keeps the chunk records (ids + source-span offsets) and
+  only asks the index to map a query to build-order ids + cosine similarity, so `.retrieve(question,
+  k)` and the gold-span metrics are unchanged across backends.
+- Adapters `src/llb/rag/stores/`: shared `VectorStoreAdapter` base (build-order id shaping + uniform
+  `vectors.npy` persistence; subclasses implement `_index` + `_search_row`) and `ChromaIndex` /
+  `QdrantIndex` / `LanceDBIndex`. Each lazy-imports its client and converts the store's distance to a
+  FAISS-comparable cosine similarity. Optional extras: `[rag-chroma]` / `[rag-qdrant]` /
+  `[rag-lancedb]`.
+- The chosen backend is recorded in the store meta (`backend`), so `RagStore.load` re-selects it
+  without a config. Build: `build-index --vector-store faiss|chroma|qdrant|lancedb`. Compare:
+  `compare-vector-stores --backends faiss,chroma,... --goldset ...` builds the SAME corpus under each
+  backend (same chunking + pinned embedder) and reports recall@k / MRR by the source-span metric
+  (`rag.compare.build_vector_store_comparison` + the shared `compare_retrieval`).
+- Tests: `tests/test_vector_index.py` -- dispatch, score conversion, base shaping (dependency-free),
+  the missing-extra SystemExit per backend, and `@slow` FAISS-seam + vector round-trip. The real
+  Chroma/Qdrant/LanceDB round-trips are host-only (each needs its extra) and unverified in CI.

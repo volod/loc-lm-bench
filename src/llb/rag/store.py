@@ -18,11 +18,16 @@ from llb.config import DEFAULT_EMBEDDING_MODEL
 from llb.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
-from llb.rag.index import FaissIndex
+from llb.rag.vector_index import (
+    RAG_BACKEND_FAISS,
+    VectorIndex,
+    build_vector_index,
+    load_vector_index,
+    save_vector_index,
+)
 
 CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
 PARENTS_FILE = "parents.jsonl"  # the parent docstore (parent_child mode only)
-INDEX_FILE = "index.faiss"
 META_FILE = "store_meta.json"
 
 
@@ -83,7 +88,7 @@ class RagStore:
     def __init__(
         self,
         chunks: list[ChunkRecord],
-        index: FaissIndex,
+        index: VectorIndex,
         embedder: Embedder,
         meta: RagStoreMeta,
         parents: list[ChunkRecord] | None = None,
@@ -93,6 +98,7 @@ class RagStore:
         self.embedder = embedder
         self.meta = meta
         self.parents = parents
+        self.backend = str(meta.get("backend", RAG_BACKEND_FAISS))  # M7.4 vector-store backend
         self._parent_by_id = {p["chunk_id"]: p for p in parents} if parents else {}
 
     @classmethod
@@ -105,6 +111,7 @@ class RagStore:
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         mode: str = "flat",
         child_size: int = 400,
+        vector_store: str = RAG_BACKEND_FAISS,
     ) -> "RagStore":
         if mode not in ("flat", "parent_child"):
             raise ValueError(f"unknown retrieval mode: {mode}")
@@ -126,7 +133,7 @@ class RagStore:
             indexed = units
 
         vectors = embedder.encode_passages([c["text"] for c in indexed])
-        index = FaissIndex.build(vectors)
+        index = build_vector_index(vector_store, vectors)
         meta: RagStoreMeta = {
             "mode": mode,
             "strategy": strategy,
@@ -137,6 +144,7 @@ class RagStore:
             "n_indexed": len(indexed),
             "n_parents": len(parents) if parents else 0,
             "dim": int(vectors.shape[1]),
+            "backend": vector_store,
         }
         return cls(indexed, index, embedder, meta, parents=parents)
 
@@ -174,7 +182,7 @@ class RagStore:
         _write_jsonl(self.chunks, index_dir / CHUNKS_FILE)
         if self.parents is not None:
             _write_jsonl(self.parents, index_dir / PARENTS_FILE)
-        self.index.save(index_dir / INDEX_FILE)
+        save_vector_index(self.index, self.backend, index_dir)
         (index_dir / META_FILE).write_text(
             json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -184,7 +192,7 @@ class RagStore:
         index_dir = Path(index_dir)
         chunks = _read_jsonl(index_dir / CHUNKS_FILE)
         meta = json.loads((index_dir / META_FILE).read_text(encoding="utf-8"))
-        index = FaissIndex.load(index_dir / INDEX_FILE)
+        index = load_vector_index(meta.get("backend", RAG_BACKEND_FAISS), index_dir)
         embedder = Embedder(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
         parents = None
         if meta.get("mode") == "parent_child":

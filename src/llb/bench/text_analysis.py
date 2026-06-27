@@ -328,6 +328,7 @@ def run_text_analysis(
             "judge_trusted": outcome.trusted,
             "judged_quality": quality,  # gated diagnostic, NOT the headline
             "judged_quality_ci": list(quality_ci) if quality_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
@@ -338,6 +339,7 @@ def run_text_analysis(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["judged_quality"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,
