@@ -23,7 +23,7 @@ OLLAMA_HOST = "OLLAMA_HOST"
 VLLM_HOST = "VLLM_HOST"
 LLAMACPP_HOST = "LLAMACPP_HOST"
 VLLM_USE_FLASHINFER_SAMPLER = "VLLM_USE_FLASHINFER_SAMPLER"
-# Comma-separated flashinfer versions the preflight auto-pins when the bundled one fails (M4.3).
+# Comma-separated flashinfer versions the preflight auto-pins when the bundled one fails (vLLM serving preflight).
 FLASHINFER_CANDIDATES = "LLB_FLASHINFER_CANDIDATES"
 
 # Judge endpoint fallbacks when judge_model uses a legacy prefix

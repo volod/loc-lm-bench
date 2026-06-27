@@ -1,4 +1,4 @@
-"""M5.1 security / robustness -- detectors + scored runner."""
+"""security benchmark security / robustness -- detectors + scored runner."""
 
 import json
 

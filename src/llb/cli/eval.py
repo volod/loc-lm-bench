@@ -47,7 +47,7 @@ def run_eval_cmd(
         None, help="OpenAI-compatible judge endpoint, e.g. http://localhost:8000/v1"
     ),
     retrieval_backend: Optional[str] = typer.Option(
-        None, help="faiss (default vector store) | graph (M6 GraphRAG knowledge-graph backend)"
+        None, help="faiss (default vector store) | graph (GraphRAG knowledge-graph backend)"
     ),
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph backend strategy: local_khop | global_community"
@@ -155,7 +155,7 @@ def judge_smoke_cmd(
         None, help="OpenAI-compatible endpoint, e.g. http://localhost:8000/v1"
     ),
 ) -> None:
-    """M7.2: strict-JSON judge precheck. Run ONE grounded case and confirm the local judge returns
+    """judge diagnostics: strict-JSON judge precheck. Run ONE grounded case and confirm the local judge returns
     a well-formed, non-zero score BEFORE a long judged run; exits non-zero (naming the reason) when
     the judge cannot emit strict JSON or its endpoint is unreachable."""
     from llb.judge.experiment import judge_smoke_check

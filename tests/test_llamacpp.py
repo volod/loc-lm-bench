@@ -1,4 +1,4 @@
-"""llama.cpp launcher (M4.5): command building, readiness, telemetry, resolver routing, and
+"""llama.cpp launcher (llama.cpp launcher): command building, readiness, telemetry, resolver routing, and
 the reclaim gate -- all driven by fakes (no llama.cpp / GPU / subprocess)."""
 
 import pytest
@@ -48,7 +48,7 @@ def test_parse_served_context_handles_both_shapes():
 
 
 def test_parse_served_context_handles_newer_props_shapes():
-    # M4.5: n_ctx has moved across llama.cpp versions -- the parser checks the known locations.
+    # llama.cpp launcher: n_ctx has moved across llama.cpp versions -- the parser checks the known locations.
     assert parse_served_context('{"default_generation_settings": {"params": {"n_ctx": 8192}}}') == (
         8192
     )
@@ -216,7 +216,7 @@ def test_resolver_routes_gguf_only_model_to_llamacpp():
 
 
 def test_reclaim_gate_runs_for_llamacpp():
-    # llama.cpp owns its VRAM, so it is in GATE_BACKENDS and the M3.3 reclaim gate applies:
+    # llama.cpp owns its VRAM, so it is in GATE_BACKENDS and the isolation reclaim reclaim gate applies:
     # a NEW pid still holding VRAM after the cell is a leak -> abort (same contract as vLLM).
     from llb.executor.isolation import GATE_BACKENDS, isolate_cell
     from llb.executor.vram import VramNotReclaimed

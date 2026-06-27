@@ -1,4 +1,4 @@
-"""Frontier prep utilities (M3.5): pure parsing/grounding/guards, fake LLM completions."""
+"""Frontier prep utilities (frontier drafting): pure parsing/grounding/guards, fake LLM completions."""
 
 import json
 
@@ -102,7 +102,7 @@ def test_prepare_synthetic_corpus_writes_docs_labels_and_provenance(tmp_path):
     assert "total_cost_usd" in prov["cost"]
 
 
-# --- M3.5 additions: fuzzy-but-exact grounding + per-call cost provenance ------------------
+# --- frontier drafting additions: fuzzy-but-exact grounding + per-call cost provenance ------------------
 
 
 def test_ground_span_exact_then_normalized_then_none():

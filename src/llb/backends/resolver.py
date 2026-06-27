@@ -1,4 +1,4 @@
-"""AvailabilityResolver: pick the backend that actually serves a model on THIS host (M3.2).
+"""AvailabilityResolver: pick the backend that actually serves a model on THIS host (backend resolver).
 
 The feasibility planner (`planner.plan_model`) answers "does the model fit the VRAM+RAM
 budget, and at what context". The resolver adds the two things on top of that:

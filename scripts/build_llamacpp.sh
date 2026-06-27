@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build llama.cpp's `llama-server` from source with CUDA, so the M4.5 LlamaCppLauncher has a
+# Build llama.cpp's `llama-server` from source with CUDA, so the llama.cpp launcher LlamaCppLauncher has a
 # real hardware-matched binary (the launcher invokes `llama-server` as a subprocess; the binary
 # itself is a separate build, like vLLM -- see AGENTS.md "Heavy compilation").
 #

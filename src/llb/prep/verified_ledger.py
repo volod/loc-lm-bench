@@ -1,8 +1,8 @@
-"""Human-verified gold-set ledger (M3.9).
+"""Human-verified gold-set ledger (verified gold-set ledger).
 
 The committed `samples/goldsets/ua_squad_postedited_v1` set is human-verified (every item is
 `verified: true`). When a NEW gold set is generated -- ingested SQuAD drafts (the default
-`ingest-uk-squad` development mode) or the M3.5 `prepare-goldset` frontier drafts + synthetic
+`ingest-uk-squad` development mode) or the frontier drafting `prepare-goldset` frontier drafts + synthetic
 planted labels -- any draft whose id is ALREADY in that human-verified set has been reviewed, so
 we adopt the verified item verbatim (its post-edited content + grounded spans) and it needs no
 re-review. Drafts not in the ledger stay `verified: false` pending review. This is what lets the

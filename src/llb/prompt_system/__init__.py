@@ -1,4 +1,4 @@
-"""M7.3 human-assisted RAG prompt-system generation and tuning.
+"""RAG prompt-system comparison human-assisted RAG prompt-system generation and tuning.
 
 Operator-facing tooling that turns a supplied text corpus into candidate RAG prompt systems, fits
 them to a model's context budget, exposes them for human review, searches prompt-system variants,

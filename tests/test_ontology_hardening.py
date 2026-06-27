@@ -1,4 +1,4 @@
-"""M5.6 ontology data-prep residuals: long-doc chunking, richer confidence, spaCy adapter."""
+"""verified-data hardening ontology data-prep residuals: long-doc chunking, richer confidence, spaCy adapter."""
 
 import json
 

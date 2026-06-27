@@ -451,7 +451,8 @@ graph-vs-vector and local-vs-global results are comparable.
   artifact (recorded, never span-scored) -- the same discipline as the recorded-but-not-ranked
   semantic-similarity signal -- so an un-grounded abstraction never enters the metric.
 - Swappable via a `--retrieval-backend graph` flag (+ `retrieval_strategy`). Needs the
-  human-signed-off ontology schema and M6 scope (MH.2, which now also covers the narrative layer).
+  human-signed-off ontology schema and GraphRAG backend scope (text-analysis sign-off,
+  which now also covers the narrative layer).
 
 ### How to understand it
 - **Vector RAG vs graph RAG.** Vector RAG retrieves *chunks similar to the question*. Graph RAG

@@ -42,7 +42,7 @@ def _utc_now() -> str:
 
 
 def capture_env() -> RunEnvironment:
-    """Minimal reproducibility environment (GPU/driver added with telemetry in M2)."""
+    """Minimal reproducibility environment (GPU/driver added with telemetry in backend telemetry)."""
     return {
         "python": sys.version.split()[0],
         "platform": platform.platform(),

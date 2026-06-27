@@ -1,4 +1,4 @@
-"""M7.3 human-assisted RAG prompt-system generation -- corpus, budget, template, review, tuning."""
+"""RAG prompt-system comparison human-assisted RAG prompt-system generation -- corpus, budget, template, review, tuning."""
 
 import json
 

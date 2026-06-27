@@ -1,4 +1,4 @@
-"""Compare retrieval backends on ONE gold set by the source-span metric (M6 residual 3).
+"""Compare retrieval backends on ONE gold set by the source-span metric (GraphRAG backend residual 3).
 
 Quantifies when the GraphRAG multi-hop / narrative paths beat flat vector retrieval: it runs the
 SAME goldset through several backends -- typically `{faiss, graph/local_khop, graph/global_community}`
@@ -90,7 +90,7 @@ def build_vector_store_comparison(config: Any, backends: list[str]) -> dict[str,
 
     Every store reuses the config's chunking + PINNED embedder and differs ONLY in the vector
     backend (faiss / chroma / qdrant / lancedb), so `compare_retrieval` isolates the backend's
-    effect on recall@k / MRR -- the model-independent gate the M7.4 plan requires before a backend's
+    effect on recall@k / MRR -- the model-independent gate the platform matrix plan requires before a backend's
     runs can be compared to FAISS. Real path: needs the [rag] embedder + each backend's extra."""
     from llb.rag.store import RagStore
     from llb.rag.vector_index import RAG_BACKENDS

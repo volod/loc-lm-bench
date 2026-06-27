@@ -1,4 +1,4 @@
-"""M7.1 agentic harnesses -- the named-harness registry (LangGraph vs CrewAI vs the pure loop).
+"""agentic harness comparison agentic harnesses -- the named-harness registry (LangGraph vs CrewAI vs the pure loop).
 
 Each harness returns the SAME canonical `Episode`, so the objective scorer + isolation contract +
 gated judge are unchanged and only the agent framework varies. The two framework harnesses are

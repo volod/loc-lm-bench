@@ -1,4 +1,4 @@
-"""M5.2 Berkeley Function-Calling Leaderboard (BFCL) adapter -- UA-adapted tooling cases.
+"""tooling benchmark Berkeley Function-Calling Leaderboard (BFCL) adapter -- UA-adapted tooling cases.
 
 Maps the public BFCL cases into the project's tooling bundle shape (a `{tools, cases}` object the
 `bench-tooling` runner loads), so the function-calling board can score against the established BFCL
@@ -7,7 +7,7 @@ catalog, not only the committed hand-authored UA seed. BFCL splits the data acro
   * the function-doc file -- one entry per case `{id, question, function: [schema, ...]}`;
   * the possible-answer file -- `{id, ground_truth: [{func_name: {arg: [acceptable, ...]}}]}`,
     where each argument lists SEVERAL acceptable values. That list maps directly onto the scorer's
-    per-argument `oneof` tolerance (M5.2), so a free-text / formatting variant still counts.
+    per-argument `oneof` tolerance (tooling benchmark), so a free-text / formatting variant still counts.
 
 UA adaptation is INJECTABLE: pass `translate` to render the BFCL instruction in Ukrainian; the tool
 SCHEMAS (names + JSON parameters) are kept verbatim, as tool identifiers are language-neutral. The

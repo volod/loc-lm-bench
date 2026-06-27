@@ -1,4 +1,4 @@
-"""M5.0 scored text-analysis runner + richer planted-label emit."""
+"""text analysis scored text-analysis runner + richer planted-label emit."""
 
 import json
 
@@ -199,7 +199,7 @@ def test_parse_predictions_coerces_scalar_and_missing():
     assert preds[ta.TOPIC] == []  # missing kind -> empty
 
 
-# --- gated judge for narrative/insight + long_doc map-reduce (M5.4 residual) ---------------
+# --- gated judge for narrative/insight + long_doc map-reduce (category expansion residual) ---------------
 
 
 def fake_judge(faith, relevancy):

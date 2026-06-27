@@ -5,7 +5,7 @@ the eval graph, the scoring, and is recorded verbatim in the run manifest. That 
 source keeps a run reproducible -- every knob that affects a score lives here and is
 serialized into the manifest.
 
-Defaults target the compile-free Milestone 1 skeleton: a small (prebuilt) Ollama model
+Defaults target the compile-free RAG core: a small (prebuilt) Ollama model
 behind its OpenAI-compatible endpoint, a pinned multilingual embedding, deterministic
 decoding. "Compile-free" means no vLLM/flash-attn source build -- the GPU is still used.
 Load from YAML with `RunConfig.load(path)`; unset fields fall back to these defaults.
@@ -85,10 +85,10 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     # Identity
-    run_name: str = Field(default="m1-skeleton", min_length=1)
+    run_name: str = Field(default="rag-eval", min_length=1)
     seed: int = 13
 
-    # Model + backend (v1: backend resolved per model; M1 ships Ollama, M2 adds vLLM)
+    # Model + backend (v1: backend resolved per model; RAG core ships Ollama, backend telemetry adds vLLM)
     model: str = Field(default="llama3.2:3b", min_length=1)
     backend: Backend = "ollama"
     ollama_host: str = Field(
@@ -120,7 +120,7 @@ class RunConfig(BaseModel):
     n_gpu_layers: int = Field(default=-1, ge=-1)
 
     # Telemetry: when set, run-eval also measures steady-state tokens/sec + peak VRAM on a
-    # fixed prompt set and records it in the manifest (needs a running backend; M2.2).
+    # fixed prompt set and records it in the manifest (needs a running backend; telemetry hook).
     measure_telemetry: bool = False
 
     # Retrieval (embedding pinned; chunking + top_k are tunable later via Optuna)
@@ -136,8 +136,8 @@ class RunConfig(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
-    # Retrieval backend (M6). "faiss" is the default vector store; "graph" selects the GraphRAG
-    # knowledge-graph backend (built from the M4.4 extraction). `retrieval_strategy` chooses the
+    # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
+    # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the
     # span-preserving graph strategy: "local_khop" (entity-link + k-hop subgraph) or
     # "global_community" (the narrative layer over offline-detected communities). Both are recorded
     # in the manifest (via the config fingerprint) so graph-vs-FAISS and local-vs-global runs are
@@ -202,7 +202,7 @@ class RunConfig(BaseModel):
         return self.data_dir / "llb" / "rag"
 
     def graph_dir(self) -> Path:
-        """Where the built GraphRAG store (node/edge JSONL + meta) lives for this config (M6)."""
+        """Where the built GraphRAG store (node/edge JSONL + meta) lives for this config (GraphRAG backend)."""
         return self.data_dir / "llb" / "graph"
 
     def run_dir(self, run_timestamp: str) -> Path:

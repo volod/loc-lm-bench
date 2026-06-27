@@ -1,4 +1,4 @@
-"""M7.2 judge diagnostic observability -- classifier, summary, gated wiring, strict-JSON smoke."""
+"""judge diagnostics judge diagnostics -- classifier, summary, gated wiring, strict-JSON smoke."""
 
 from llb.bench import agentic
 from llb.bench.common import run_gated_judge

@@ -1,4 +1,4 @@
-"""M5.4 chat-period -- chat-log-shaped synthetic planter + real chat-corpus ingestion."""
+"""category expansion chat-period -- chat-log-shaped synthetic planter + real chat-corpus ingestion."""
 
 import json
 

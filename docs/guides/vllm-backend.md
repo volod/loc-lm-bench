@@ -1,6 +1,6 @@
-# Real backend: vLLM + telemetry (Milestone 2)
+# Real backend: vLLM + telemetry (backend telemetry)
 
-Milestone 1 runs the loop on prebuilt Ollama. Milestone 2 adds a **vLLM** launcher (serves
+RAG core runs the loop on prebuilt Ollama. backend telemetry adds a **vLLM** launcher (serves
 HF weights behind the same OpenAI-compatible interface) plus a real telemetry hook. This is
 the heavy, GPU-host path. Prebuilt packages install through uv; an explicit local-checkout
 mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
@@ -41,7 +41,7 @@ needs `HF_TOKEN` in `.env` (it is reported per-model, not fatal).
 
     make build-index                                  # if not already built
     llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry # the
-    M2.4 reference run
+    real-model validation reference run
 
 or pick the model directly (cap the context so the KV cache fits -- see Gotchas):
 
@@ -57,11 +57,11 @@ efficiency** (tokens per UA char). vLLM logs land under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/vllm/`; if the engine dies during startup the
 log is preserved to `$DATA_DIR/llb/logs/failed-*.log` (the run bundle is discarded).
 
-Validated (M2.4, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-it-qat-w4a16-ct` scored 0.801
+Validated (real-model validation, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-it-qat-w4a16-ct` scored 0.801
 objective at **63.8 tok/s**, peak VRAM **15.7 GB** (gpu-mem-util 0.80), cold load **112 s**,
 served ctx 8192.
 
-## Gotchas (from the M2.4 run)
+## Gotchas (from the real-model validation run)
 
 - **flashinfer sampler is defaulted off.** vLLM JIT-compiles a flashinfer sampling kernel at
   startup; flashinfer 0.6.x's `sampling.cuh` calls `cub::BlockAdjacentDifference::FlagHeads`,
@@ -73,7 +73,7 @@ served ctx 8192.
 - **Free VRAM first.** vLLM's startup check needs `gpu-memory-utilization x total` VRAM free.
   A resident Ollama model (it keeps weights ~5 min) can fail the launch; unload it
   (`curl -s localhost:11434/api/generate -d '{"model":"<tag>","keep_alive":0}'`) or lower
-  `gpu_memory_utilization`. A pre-launch guard is planned (plan.md Milestone 4).
+  `gpu_memory_utilization`. A pre-launch guard is planned (plan.md robust backend prep).
 
 ## Config
 
@@ -84,8 +84,8 @@ vLLM serving knobs live in `RunConfig` (set in YAML or via flags): `backend: vll
 ## What needs your GPU
 
 The launcher, telemetry, and build helper are built + unit-tested with fakes and now
-**validated on a real model** (M2.4 above). The from-source build path still runs only on a
-CUDA host. The M2.4 fit correction is already fed back into `samples/models_uk.yaml`: w4a16
+**validated on a real model** (real-model validation above). The from-source build path still runs only on a
+CUDA host. The real-model validation fit correction is already fed back into `samples/models_uk.yaml`: w4a16
 weights are under-estimated by `list-models` (`params_b x bpw` ignores the high-precision
 large-vocab embedding -- measured 9.8 GiB vs predicted ~4.2 GiB). An embedding-aware estimate
-is forward work (plan.md Milestone 4).
+is forward work (plan.md robust backend prep).

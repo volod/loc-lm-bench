@@ -1,4 +1,4 @@
-"""M5.2 tooling / function-calling -- parse, validate, score, runner."""
+"""tooling benchmark tooling / function-calling -- parse, validate, score, runner."""
 
 import types
 

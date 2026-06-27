@@ -1,4 +1,4 @@
-# Data prep (Milestone 0)
+# Data prep (data prep)
 
 Runtime output lands under `$DATA_DIR` (default `.data/`, gitignored). The stable public
 development fixture is committed under `samples/goldsets/`. Module detail is in
@@ -13,14 +13,14 @@ development fixture is committed under `samples/goldsets/`. Module detail is in
     *
     make ingest-uk-squad GOLDSET_MODE=skeleton # editable from-scratch template
     make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>
-    # M4.4 ontology-assisted draft (verified=false)
+    # ontology-assisted draft (verified=false)
 
 `*` may need `HF_TOKEN` in `.env` (the `goldset` extra is installed by `make venv`). The
 committed default requires no token. For a local SQuAD export:
 `make ingest-squad SQUAD_JSON=path.json`.
 
 A drafted set is `verified=false` and cannot score a model until it clears the data gates --
-`make cross-check-goldset` (second-frontier re-confirm) then the MH.5 sample-verify
+`make cross-check-goldset` (second-frontier re-confirm) then the human verification gate sample-verify
 (`make verify-sample` / `verify-review` / `verify-accept`) and the ledger flip. The full ordered
 flow, with authoring + review rules, is the
 [create-a-gold-set workflow](goldset-from-scratch.md).
@@ -30,7 +30,7 @@ source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`
 SOURCE-SPAN (char offsets, not chunk ids). Only `verified: true` items score models. Fresh
 imports start false, then the ingester replaces matching IDs with canonical items and corpus
 files from the committed human-reviewed fixture. Unmatched IDs remain false. Use repeatable
-`--verified-goldset <reviewed.jsonl>` options for reviewed M3.5 draft/planted-label bundles, or
+`--verified-goldset <reviewed.jsonl>` options for reviewed frontier draft/planted-label bundles, or
 `--no-verification-ledger` for a raw import. Each custom JSONL must have a sibling `corpus/`.
 
 The development target pins the exact `FIdo-AI/ua-squad` revision and validation split recorded

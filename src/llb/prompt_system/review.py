@@ -1,4 +1,4 @@
-"""M7.3 human review loop -- approve / revise / pin / reject prompt-system candidates.
+"""RAG prompt-system comparison human review loop -- approve / revise / pin / reject prompt-system candidates.
 
 Exposes each generated candidate with its rendered prompts, context-budget breakdown, and
 dropped-context report, plus the editable template fields, so an operator can ACCEPT a candidate,

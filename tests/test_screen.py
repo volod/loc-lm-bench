@@ -1,4 +1,4 @@
-"""Tier-1 public screen (M3.1 + M3.9 Belebele wiring): tracks, parsing, coverage -- faked."""
+"""Tier-1 public screen (public screen + verified gold-set ledger Belebele wiring): tracks, parsing, coverage -- faked."""
 
 import pytest
 

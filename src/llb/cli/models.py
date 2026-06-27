@@ -74,7 +74,7 @@ def list_models_cmd(
     trust_config: bool = typer.Option(
         False,
         "--trust-config",
-        help="let a cached config.json OVERRIDE curated arch fields (M4.1), not only fill gaps",
+        help="let a cached config.json OVERRIDE curated arch fields (memory planner), not only fill gaps",
     ),
 ) -> None:
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
@@ -120,7 +120,7 @@ def preflight_vllm_cmd(
         "(LLB_FLASHINFER_CANDIDATES); CHANGES the environment, so it is opt-in",
     ),
 ) -> None:
-    """Probe the vLLM flashinfer sampler and record the verdict (M4.3).
+    """Probe the vLLM flashinfer sampler and record the verdict (vLLM serving preflight).
 
     Reuses a cached verdict when it was recorded under the CURRENT GPU driver; a driver change (or
     --force) re-runs the probe WITHOUT a full `build-vllm`. With --auto-pin it also tries to install

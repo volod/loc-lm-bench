@@ -1,8 +1,8 @@
-"""M5.0/M5.4 scored text-analysis runner -- objective planted-label recovery.
+"""text-analysis and category expansion scored text-analysis runner -- objective planted-label recovery.
 
 Drives a candidate over a synthetic text-analysis bundle (the planter's `corpus/` docs plus
 `text_analysis_labels.jsonl` of `PlantedLabelRecord`s), asks it to extract the per-sub-task
-elements present in each document, scores recovery with the MH.2 matching engine
+elements present in each document, scores recovery with the text-analysis sign-off matching engine
 (`llb.scoring.text_analysis`), and aggregates one `ModelResult` under `TIER_TEXT_ANALYSIS` --
 its OWN Tier, never cross-ranked with the RAG board. The per-document objective scores carry the
 bootstrap CI; real-corpus and synthetic bundles are run + reported SEPARATELY (the planter tags
@@ -184,7 +184,7 @@ def run_text_analysis(
     judge_scorer: JudgeScorer | None = None,
     judge_base_url: str | None = None,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-text-analysis",
+    run_name: str = "text-analysis",
     limit: int | None = None,
     synthetic: bool = True,
     persist: bool = True,
@@ -328,7 +328,7 @@ def run_text_analysis(
             "judge_trusted": outcome.trusted,
             "judged_quality": quality,  # gated diagnostic, NOT the headline
             "judged_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None

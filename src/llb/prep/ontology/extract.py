@@ -7,7 +7,7 @@ injectable `complete` (local endpoint by default). A Python-native NER/coreferen
 
 Every extracted artifact must quote EXACT evidence; each quote is grounded back to offsets via
 `ground_quote`, and anything ungrounded is dropped, so the extraction links to exact evidence
-(M4.4 acceptance). Aliases collected per entity are the lightweight coreference signal.
+(ontology-assisted drafting acceptance). Aliases collected per entity are the lightweight coreference signal.
 """
 
 import json
@@ -160,7 +160,7 @@ def merge_extractions(doc_id: str, parts: list[DocExtraction]) -> DocExtraction:
 @dataclass
 class LLMExtractionAdapter:
     """Default extractor via the injectable `complete`. A document longer than `max_chars` is
-    CHUNKED into overlapping windows (M5.6) -- one extraction call per window, merged -- instead of
+    CHUNKED into overlapping windows (verified-data hardening) -- one extraction call per window, merged -- instead of
     one truncated call, so a long doc's later content is no longer dropped. Offsets stay exact:
     grounding always runs against the FULL original text."""
 

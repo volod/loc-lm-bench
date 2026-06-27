@@ -1,4 +1,4 @@
-"""M7.1 agentic harnesses -- loop / langgraph / crewai seam, registry, and board comparison."""
+"""agentic harness comparison agentic harnesses -- loop / langgraph / crewai seam, registry, and board comparison."""
 
 import pytest
 

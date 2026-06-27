@@ -1,8 +1,8 @@
-"""Load the M4.4 extraction artifacts that feed the graph build (Milestone 6 construction).
+"""Load the ontology-assisted drafting extraction artifacts that feed the graph build (GraphRAG backend construction).
 
-The graph REUSES the M4.4 extraction; this module reads it back. The primary input is a
+The graph REUSES the ontology-assisted drafting extraction; this module reads it back. The primary input is a
 `prepare-goldset` draft bundle (its `extraction.jsonl` + `corpus/`), but explicit paths are also
-supported, and a corpus with no prior extraction can be extracted fresh through the same M4.4
+supported, and a corpus with no prior extraction can be extracted fresh through the same ontology-assisted drafting
 endpoint adapter. Kept separate from the CLI so the loading is unit-testable.
 """
 

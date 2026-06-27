@@ -1,4 +1,4 @@
-"""M7.2 judge diagnostic observability -- classify and count zero-valued judge scores.
+"""judge diagnostics judge diagnostics -- classify and count zero-valued judge scores.
 
 A gated judge can return zero for very different reasons, and conflating them hides whether a
 benchmark dipped because the CANDIDATE failed (it produced no answer) or because the LOCAL JUDGE

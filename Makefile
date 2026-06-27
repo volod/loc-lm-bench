@@ -20,12 +20,12 @@ SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
-# M4.4 ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
+# Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
 DRAFT_MODEL ?= llama3.2:3b
 DRAFT_ENDPOINT ?= local
 DRAFT_MAX_ITEMS ?= 60
 
-# Milestone 1/2 eval knobs (override on the command line).
+# RAG/vLLM eval knobs (override on the command line).
 MODEL ?= llama3.2:3b
 BACKEND ?= ollama
 SPLIT ?= final
@@ -40,7 +40,7 @@ LOG_DIR     := $(DATA_DIR)/llb/logs
 PREP_ALL_BACKEND ?= ollama
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
-# Judge knobs (M3.8). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
+# Judge knobs (judge calibration gate). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
 # (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
 # Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there
 # too). Alternatives by GPU tier (override JUDGE_MODEL + JUDGE_BASE_URL):
@@ -66,7 +66,7 @@ CAL_NAME ?= ua_squad_postedited_v1
 CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
 CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
-# Data-verification knobs (the new-goldset flow: cross-check -> MH.5 sample-verify). BUNDLE is a
+# Data-verification knobs (the new-goldset flow: cross-check -> human verification gate sample-verify). BUNDLE is a
 # draft dir (goldset.jsonl + corpus/) under $(DATA_DIR)/prepare-goldset/<ts>/; the sample worksheet
 # + accepted-ledger default beside it. CROSS_CHECK_MODEL is the SECOND-frontier verifier (must
 # differ from the drafter). VERIFY_N sizes the stratified sample; VERIFY_TOLERANCE is the accepted
@@ -101,20 +101,20 @@ JUDGE_RHO ?=
 LLB_EMBED_DEVICE ?= cpu
 export LLB_EMBED_DEVICE
 APT_PROFILE ?= production
-# M7.4 platform matrix knobs. Defaults target the common Gemma 4 E4B logical base that fits this
+# Platform and vector-store matrix knobs. Defaults target the common Gemma 4 E4B logical base that fits this
 # 16 GB CUDA host across all three backend families. Override these to run a larger common base.
-M7_4_GOLDSET ?= $(GOLDSET)
-M7_4_SPLIT ?= final
-M7_4_LIMIT ?= 20
-M7_4_MAX_MODEL_LEN ?= 8192
-M7_4_GPU_MEMORY_UTILIZATION ?= 0.80
-M7_4_OLLAMA_MODEL ?= gemma4:e4b
-M7_4_VLLM_MODEL ?= google/gemma-4-E4B-it-qat-w4a16-ct
-M7_4_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it
-M7_4_LLAMACPP_GPU_LAYERS ?= -1
+PLATFORM_MATRIX_GOLDSET ?= $(GOLDSET)
+PLATFORM_MATRIX_SPLIT ?= final
+PLATFORM_MATRIX_LIMIT ?= 20
+PLATFORM_MATRIX_MAX_MODEL_LEN ?= 8192
+PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION ?= 0.80
+PLATFORM_MATRIX_OLLAMA_MODEL ?= gemma4:e4b
+PLATFORM_MATRIX_VLLM_MODEL ?= google/gemma-4-E4B-it-qat-w4a16-ct
+PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it
+PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval composite-headline m7-4-platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -247,16 +247,16 @@ cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/suppo
 	@test -n "$(CROSS_CHECK_MODEL)" || { echo "ERROR: set CROSS_CHECK_MODEL=<second-frontier id, != the drafter>"; exit 1; }
 	$(PY) -m llb.main cross-check-goldset --goldset "$(BUNDLE)/goldset.jsonl" --corpus "$(BUNDLE)/corpus" --model "$(CROSS_CHECK_MODEL)"
 
-verify-sample: ## MH.5: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=)
+verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
 	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED)
 
-verify-review: ## MH.5: interactively verify the sampled items (VERIFY_WS=path, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
+verify-review: ## human verification gate: interactively verify the sampled items (VERIFY_WS=path, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.goldset.verify review --worksheet "$(VERIFY_WS)" $(if $(START),--start $(START)) $(if $(SHOW_CROSSCHECK),--show-crosscheck) $(if $(CLEAR),--clear)
 
-verify-accept: ## MH.5: acceptance report + emit the accepted-ledger bundle (VERIFY_WS=, BUNDLE=, VERIFY_TOLERANCE=)
+verify-accept: ## human verification gate: acceptance report + emit the accepted-ledger bundle (VERIFY_WS=, BUNDLE=, VERIFY_TOLERANCE=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the sample came from>"; exit 1; }
 	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE)
@@ -266,7 +266,7 @@ judge-experiment: ## Run fixed UA judge cases against a local OpenAI-compatible 
 	$(PY) -m llb.main judge-experiment --judge-model "$(JUDGE_MODEL)" \
 		$(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",)
 
-ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft (draft is M4)
+ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft (draft is robust backend prep)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@echo "[ingest-uk-squad] mode=$(GOLDSET_MODE)"; \
 	case "$(GOLDSET_MODE)" in \
@@ -290,20 +290,20 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(DATA_DIR)/llb/rag" --strategy all --size 800 --overlap 120
 
-build-index: ## M1: chunk + embed CORPUS into the FAISS store (needs ".[rag]")
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)"
 
-build-graph: ## M6: build the GraphRAG store from an M4.4 draft bundle (BUNDLE=...; needs ".[graph]")
+build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=...; needs ".[graph]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
 	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
 
-validate-retrieval: ## M1: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
+validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the gold set (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-compare-retrieval: ## M6: compare faiss vs both graph strategies' recall@k/MRR on the gold set
+compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' recall@k/MRR on the gold set
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
@@ -314,7 +314,7 @@ run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TEL
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-composite-headline: ## Run verified M5 category suite for MODEL, then require a clean bench-composite preflight
+composite-headline: ## Run the verified category suite for MODEL, then require a clean bench-composite preflight
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(COMPOSITE_TEXT_ANALYSIS_BUNDLE)" || { echo "ERROR: set COMPOSITE_TEXT_ANALYSIS_BUNDLE=<verified text-analysis bundle>"; exit 1; }
 	@test -n "$(COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_TEXT_ANALYSIS_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
@@ -355,26 +355,26 @@ composite-headline: ## Run verified M5 category suite for MODEL, then require a 
 		--data-verified --verification-ref "$(COMPOSITE_TOOLING_VERIFICATION_REF)" && \
 	$(PY) -m llb.main bench-composite
 
-m7-4-platform-matrix: ## Run same logical model base across Ollama, vLLM, and llama.cpp with telemetry
+platform-matrix: ## Run same logical model base across Ollama, vLLM, and llama.cpp with telemetry
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(MAKE) --no-print-directory build-index
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
-	$(PY) -m llb.main run-eval --model "$(M7_4_OLLAMA_MODEL)" --backend ollama \
-		--goldset "$(M7_4_GOLDSET)" --split "$(M7_4_SPLIT)" --limit "$(M7_4_LIMIT)" \
+	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_OLLAMA_MODEL)" --backend ollama \
+		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
 		--telemetry && \
-	$(PY) -m llb.main run-eval --model "$(M7_4_VLLM_MODEL)" --backend vllm \
-		--goldset "$(M7_4_GOLDSET)" --split "$(M7_4_SPLIT)" --limit "$(M7_4_LIMIT)" \
-		--telemetry --max-model-len "$(M7_4_MAX_MODEL_LEN)" \
-		--gpu-memory-utilization "$(M7_4_GPU_MEMORY_UTILIZATION)" --evict && \
-	$(PY) -m llb.main run-eval --model "$(M7_4_LLAMACPP_MODEL)" --backend llamacpp \
-		--goldset "$(M7_4_GOLDSET)" --split "$(M7_4_SPLIT)" --limit "$(M7_4_LIMIT)" \
-		--telemetry --max-model-len "$(M7_4_MAX_MODEL_LEN)" \
-		--gpu-layers "$(M7_4_LLAMACPP_GPU_LAYERS)"
+	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_VLLM_MODEL)" --backend vllm \
+		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
+		--telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
+		--gpu-memory-utilization "$(PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION)" --evict && \
+	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_LLAMACPP_MODEL)" --backend llamacpp \
+		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
+		--telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
+		--gpu-layers "$(PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS)"
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
 
-build-llamacpp: ## Build CUDA llama-server for the M4.5 launcher; CUDA_ARCH=/LLAMACPP_REF= override
+build-llamacpp: ## Build CUDA llama-server for the llama.cpp launcher; CUDA_ARCH=/LLAMACPP_REF= override
 	bash "$(PROJECT_ROOT)/scripts/build_llamacpp.sh"
 
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)

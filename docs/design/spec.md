@@ -454,7 +454,7 @@ so they run OUTSIDE the sequential GPU isolation path. This partially un-defers
    results.
 
 Both are "data prep" commands feeding the gold set / test corpora; they do not touch the
-VRAM/thermal isolation path (no local GPU). They unlock the text-analysis benchmark with
+VRAM/thermal isolation path (no local GPU). They unlock the text analysis with
 objective ground truth.
 
 ### Eng-review resolutions (2026-06-19)
@@ -491,7 +491,7 @@ Folded-in refinements (Codex, no decision needed):
   context truncation, token accounting, streaming, error semantics), not just telemetry.
 - Resolve the first concrete candidate-model list (Open Question 3) BEFORE finalizing
   launcher priority / install path / quant assumptions / vLLM timing.
-- Walking-skeleton milestone 2 adds one REAL backend + telemetry path (not only CUDA-free
+- Walking-skeleton backend telemetry adds one REAL backend + telemetry path (not only CUDA-free
   plumbing) so CUDA / HF-loading / tokenizer assumptions are validated before the full sweep.
 - Prep-util provenance: every gold/corpus item records provenance (frontier-drafted /
   human-authored / human-verified). Private model-selection items require human verification.
@@ -541,7 +541,7 @@ Decisions ruled on:
   unresolved"; the Pareto + per-metric CIs stay as prominent as the average-rank line;
   the weighted-blend view is labeled policy-dependent, not an objective leaderboard.
 - DATASET REUSE. SQuAD-uk + Belebele-uk (public, span-labeled UA in-context QA, which
-  lang-uk treats as a RAG proxy) seed and smoke-test the RAG loop in Milestone 1 before
+  lang-uk treats as a RAG proxy) seed and smoke-test the RAG loop in RAG core before
   the hand-built corpus gold set exists, and serve as a transfer baseline. The development
   fixture is committed and pinned; fresh downloads remain unverified runtime material.
 - CANDIDATE MATRIX adds Ukrainian-specialized models: MamayLM v2 12B + 27B, Lapa LLM,

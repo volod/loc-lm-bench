@@ -1,4 +1,4 @@
-"""Stage 7 -- orchestrate the M4.4 ontology-assisted gold-set drafting pipeline.
+"""Stage 7 -- orchestrate the ontology-assisted gold-set drafting pipeline.
 
 Runs the grained stages in order:
 
@@ -9,7 +9,7 @@ and writes a self-contained, traceable bundle under `$DATA_DIR/prepare-goldset/<
 the `verified=false` canonical drafts, a copy of the corpus they index (so the validator runs
 on the bundle), the induced ontology, the per-document extraction, and a provenance record
 linking ontology / extraction / endpoint / prompt / model / cost / document hashes. Nothing is
-verified -- a frontier cross-check and a human sample-verify (MH.5) gate any scoring.
+verified -- a frontier cross-check and a human sample-verify (human verification gate) gate any scoring.
 
 `complete` and `extraction_adapter` are injectable, so the whole flow is unit-tested with a
 fake endpoint and never needs a server or a provider key.

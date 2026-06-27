@@ -1,4 +1,4 @@
-"""Hard-isolation sweep executor (M3.3), driven entirely by fakes (no GPU / subprocess)."""
+"""Hard-isolation sweep executor (isolation reclaim), driven entirely by fakes (no GPU / subprocess)."""
 
 import pytest
 
@@ -217,7 +217,7 @@ def test_run_sweep_records_cell_failure_and_continues(tmp_path):
     assert bad["status"] == "failed" and "boom" in bad["detail"]
 
 
-# --- M3.3 isolate_cell + live PID attribution ---------------------------------------------
+# --- isolation reclaim isolate_cell + live PID attribution ---------------------------------------------
 
 
 def test_isolate_cell_reclaimed_runs_work_and_cools_down():

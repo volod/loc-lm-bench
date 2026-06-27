@@ -1,4 +1,4 @@
-"""M7.4 vector-store seam -- dispatch, adapter contracts, FAISS round-trip, store backend tag."""
+"""platform matrix vector-store seam -- dispatch, adapter contracts, FAISS round-trip, store backend tag."""
 
 import pytest
 

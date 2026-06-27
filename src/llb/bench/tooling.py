@@ -1,8 +1,8 @@
-"""M5.2 tooling / function-calling runner -- objective call-only board under TIER_TOOLING.
+"""tooling benchmark tooling / function-calling runner -- objective call-only board under TIER_TOOLING.
 
 Drives a candidate over a catalog of tools + UA instruction cases, parses the emitted tool call
 (native OpenAI `tool_calls` OR a text-only backend's JSON call -- one scorer for both), and scores
-call correctness OBJECTIVELY without executing the tool (execution is M5.3). The headline is
+call correctness OBJECTIVELY without executing the tool (execution is agentic benchmark). The headline is
 call-accuracy (right tool + exact arguments); tool-selection / argument-exactness /
 no-hallucinated-tool / well-formed rates are recorded alongside, all under `TIER_TOOLING` --
 never cross-ranked with the RAG board or text-only candidates.
@@ -155,7 +155,7 @@ def run_tooling(
     caller: ToolCaller | None = None,
     capability: str = TOOL_PROTOCOL_TEXT,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-tooling",
+    run_name: str = "tooling",
     persist: bool = True,
     mirror: Mirror | None = None,
     data_verified: bool = False,

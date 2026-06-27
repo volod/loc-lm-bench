@@ -1,10 +1,11 @@
 # Graph-vs-FAISS retrieval comparison -- how to run it
 
-This is the operator manual for the M6 verification that answers one question: **on a given corpus,
-does the GraphRAG backend beat flat vector (FAISS) retrieval?** It scores `recall@k` / `MRR` for
-`{faiss, graph/local_khop, graph/global_community}` over the SAME gold set, by the source-span
-metric, so the three are directly comparable (the manifest already records backend + strategy). The
-*why* of GraphRAG lives in [`current.md`](../impl/current.md) (Milestone 6); this page is the *how*,
+This is the operator manual for the GraphRAG backend verification that answers one question:
+**on a given corpus, does the GraphRAG backend beat flat vector (FAISS) retrieval?**
+It scores `recall@k` / `MRR` for `{faiss, graph/local_khop, graph/global_community}` over
+the SAME gold set, by the source-span metric, so the three are directly comparable
+(the manifest already records backend + strategy). The *why* of GraphRAG lives in
+[`current.md`](../impl/current.md) (GraphRAG backend); this page is the *how*,
 plus the first real-host result.
 
 Answer-quality comparison (the model's answers, not just retrieval) rides the normal
@@ -15,7 +16,7 @@ model-independent **retrieval** signal, which is CI-provable from fakes.
 
 | Command | What it does | Needs |
 | --- | --- | --- |
-| `llb build-graph` | Builds the GraphRAG store (node/edge JSONL + communities) from an M4.4 extraction over the corpus. | a local endpoint when extracting fresh |
+| `llb build-graph` | Builds the GraphRAG store (node/edge JSONL + communities) from an ontology-assisted drafting extraction over the corpus. | a local endpoint when extracting fresh |
 | `llb compare-retrieval` | Scores recall@k / MRR for every BUILT backend on one gold set; skips a backend whose store is absent. | a built FAISS index and/or graph store |
 
 `make compare-retrieval GOLDSET=... RAG_K=10` wraps the second command.
@@ -27,9 +28,10 @@ model-independent **retrieval** signal, which is CI-provable from fakes.
 
 ## Step 2 -- build the graph from a real extraction
 
-The graph REUSES the M4.4 extraction (entities + SRO facts -> nodes + edges). Extracting fresh needs
-a local endpoint. **Use a capable instruction model** -- a tiny model (llama3.2:3b) is fine only for
-a smoke test; it does not reliably emit the structured JSON the extractor parses.
+The graph REUSES the ontology-assisted drafting extraction (entities + SRO facts -> nodes + edges).
+Extracting fresh needs a local endpoint. **Use a capable instruction model** -- a tiny model
+(llama3.2:3b) is fine only for a smoke test; it does not reliably emit the structured JSON
+the extractor parses.
 
 ### Reasoning models need their thinking disabled
 

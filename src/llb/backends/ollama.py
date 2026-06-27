@@ -1,12 +1,12 @@
 """Ollama launcher: the prebuilt backend that proves the full loop (Premise 1).
 
 Ollama ships as a prebuilt binary -- it uses the host GPU (CUDA) itself but needs no
-from-source build -- so it proves the whole eval loop before Milestone 2 takes on the
+from-source build -- so it proves the whole eval loop before backend telemetry takes on the
 heavy vLLM/flash-attn source build. It runs as a host daemon exposing an OpenAI-compatible
 endpoint at `<host>/v1`; this launcher verifies the daemon is reachable, optionally pulls
-the model, and serves chat calls through `openai_client.chat_once`. Telemetry for M1 is the
+the model, and serves chat calls through `openai_client.chat_once`. Telemetry for RAG core is the
 steady-state tokens/sec observed on the last call; richer per-backend telemetry (served
-context, peak VRAM) lands in Milestone 2.
+context, peak VRAM) lands in backend telemetry.
 
 `urllib`/`subprocess` are stdlib; the `openai` client is a base dep. Nothing to compile.
 """

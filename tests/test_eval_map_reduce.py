@@ -106,7 +106,7 @@ def test_reduce_node_short_circuits_on_terminal_status():
     assert launcher.calls == []
 
 
-# --- text-prompt driver (the M5 `complete` substrate; M5.4) --------------------------------
+# --- text-prompt driver (the category suite `complete` substrate; category expansion) --------------------------------
 
 
 def test_run_map_reduce_text_splits_maps_reduces():

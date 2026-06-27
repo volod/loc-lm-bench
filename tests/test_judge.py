@@ -49,7 +49,7 @@ def test_trusted_routes_to_scorer():
     assert out.scores == [{"faithfulness": 1.0}]
 
 
-# --- M3.8 DeepEval scorer (pure extraction + injected evaluate) ---------------------------
+# --- judge calibration gate DeepEval scorer (pure extraction + injected evaluate) ---------------------------
 
 
 def test_extract_scores_normalizes_signals():

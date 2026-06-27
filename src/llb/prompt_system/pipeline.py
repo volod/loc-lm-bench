@@ -1,6 +1,6 @@
-"""M7.3 prompt-system pipeline -- corpus -> candidates -> reviewable, manifest-addressable run.
+"""RAG prompt-system comparison prompt-system pipeline -- corpus -> candidates -> reviewable, manifest-addressable run.
 
-Ties the M7.3 stages together: read a caller-provided corpus, build the anthology / metadata /
+Ties the RAG prompt-system comparison stages together: read a caller-provided corpus, build the anthology / metadata /
 graph-RAG mapping, plan the per-model context budget, search the template-variant grid, render
 budget-fitted candidates, and persist everything under `$DATA_DIR/prompt-system/<run_timestamp>/`
 (anthology, metadata, mapping, candidates, and a manifest carrying the corpus / mapping / template

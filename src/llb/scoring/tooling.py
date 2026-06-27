@@ -1,7 +1,7 @@
-"""M5.2 tooling / function-calling scoring -- objective, CALL-ONLY (pure).
+"""tooling benchmark tooling / function-calling scoring -- objective, CALL-ONLY (pure).
 
 Scores a candidate's emitted tool call against an expected (tool name + argument JSON), without
-EXECUTING the tool (execution is the M5.3 agentic benchmark). Two layers, both pure:
+EXECUTING the tool (execution is the agentic benchmark). Two layers, both pure:
 
   * the PARSE layer (`parse_tool_call`) normalizes a backend response into a `ToolCall` whether
     the backend emits a NATIVE OpenAI `tool_calls` object or a text-only backend emits a JSON
@@ -14,7 +14,7 @@ EXECUTING the tool (execution is the M5.3 agentic benchmark). Two layers, both p
 
 Argument validation is a lightweight structural check (required present, declared types, no
 unknown properties) -- no new `jsonschema` dependency (the heavier Pydantic conformance check is
-the M5.4 structured-output category).
+the structured-output category).
 """
 
 import json

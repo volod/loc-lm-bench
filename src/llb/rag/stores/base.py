@@ -1,4 +1,4 @@
-"""Shared base for the M7.4 vector-store adapters (Chroma / Qdrant / LanceDB).
+"""Shared base for the platform matrix vector-store adapters (Chroma / Qdrant / LanceDB).
 
 Each adapter is a thin ANN index over the SAME normalized embeddings FAISS indexes, behind the
 SAME `VectorIndex` contract (`build` / `search` / `save` / `load`), so `RagStore` is unchanged and

@@ -1,4 +1,4 @@
-"""M7.3 context-budget controller -- fit a prompt-system package into a model's context window.
+"""RAG prompt-system comparison context-budget controller -- fit a prompt-system package into a model's context window.
 
 Estimates per-model token costs (tokenizer injectable, defaulting to a char/token ratio so the base
 install needs no tokenizer dependency), RESERVES space for the question, retrieved chunks, tool

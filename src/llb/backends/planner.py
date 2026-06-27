@@ -11,14 +11,14 @@ Memory model (estimates, MiB):
   kv per token = 2 (K+V) * n_layers * kv_dim * 2 bytes (fp16 KV)   # batch 1, no parallel
   footprint(ctx) = weights + kv(ctx) + compute_overhead
 
-KV is SLIDING-WINDOW-AWARE (M4.1): Gemma 3/4 interleave sliding-window layers (KV pinned at the
+KV is SLIDING-WINDOW-AWARE (memory planner): Gemma 3/4 interleave sliding-window layers (KV pinned at the
 `sliding_window` size) with a periodic full-attention layer (`sliding_window_pattern`), so past the
 window only the full-attention layers keep growing -- which is why a 12B Gemma fits a 16 GB card at
 a long context. Absent those fields the estimate is the linear full-attention `kv_per_token * ctx`.
 Arch fields come from the spec or a cached `config.json` (`enrich_arch`, which can also OVERRIDE
 curated guesses with the real served config).
 
-Weights are EMBEDDING-AWARE (M4.1): partial quants (w4a16 / int4 / fp8) quantize only the
+Weights are EMBEDDING-AWARE (memory planner): partial quants (w4a16 / int4 / fp8) quantize only the
 linear layers, while the token embedding + norms stay high-precision. With a 256k-token vocab
 that premium is large -- measured gemma-4-E4B w4a16 loads 9.8 GiB, not the 4.2 GiB a flat
 `params_b x bpw` predicts. We price the high-precision mass (vocab embedding, untied output
@@ -34,7 +34,7 @@ Budgets:
 Per model we report: max context fully on GPU (`ctx_gpu`), max context using GPU+RAM offload
 (`ctx_max`), the GPU/CPU layer split at the planning context, and a verdict
 (gpu / offload / no / unknown). Everything is a planning estimate; the real fit test is a
-launch (Milestone 2).
+launch (backend telemetry).
 """
 
 import json

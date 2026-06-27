@@ -1,9 +1,9 @@
-"""Judge calibration statistics (M0.5, codeable half).
+"""Judge calibration statistics (judge calibration statistics, codeable half).
 
 Given paired (human_rating, judge_rating) over the calibration split, compute the
 Spearman rank correlation and a bootstrap confidence interval, then decide whether the
 judge is trustworthy (rho >= threshold). Producing the judge ratings needs a running
-model (Milestone 1+); this module is pure stats so it can be built and tested now.
+model (RAG core+); this module is pure stats so it can be built and tested now.
 
 No third-party stats deps: Spearman is Pearson over average ranks; CI is a bootstrap.
 """

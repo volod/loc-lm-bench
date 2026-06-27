@@ -1,4 +1,4 @@
-"""Two-stage Optuna tuner (M3.4): pure search-space/fit logic + Optuna-driven studies."""
+"""Two-stage Optuna tuner (Optuna tuning): pure search-space/fit logic + Optuna-driven studies."""
 
 import pytest
 
@@ -161,7 +161,7 @@ def test_tune_persists_sqlite_study_for_resume(tmp_path):
     assert (tmp_path / "optuna" / "resume_me.db").exists()  # persistent -> resumable
 
 
-# --- M3.4 backend-aware Optuna: serving params, measured OOM prune, throughput tie-break ----
+# --- Optuna tuning backend-aware Optuna: serving params, measured OOM prune, throughput tie-break ----
 
 BASE_OVERRIDES = {
     "strategy": "markdown",
@@ -234,7 +234,7 @@ def test_tune_invokes_on_trial_callback(tmp_path):
     assert len(seen) == 3 and "quality" in seen[0] and "throughput" in seen[0]
 
 
-# --- M3.3 reuse: each trial runs through the executor's isolate_cell -----------------------
+# --- isolation reclaim reuse: each trial runs through the executor's isolate_cell -----------------------
 
 _GPU = [{"index": 0, "temp_c": 40, "power_w": 100.0, "sm_clock_mhz": 2000, "mem_clock_mhz": 9000}]
 

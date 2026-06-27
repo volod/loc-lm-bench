@@ -1,4 +1,4 @@
-"""Tunable constants for the M4.4 ontology-assisted gold-set drafting pipeline.
+"""Tunable constants for the ontology-assisted gold-set drafting pipeline.
 
 Kept in one place (AGENTS.md: no magic numbers) so the stage modules read declaratively and
 a single edit re-tunes the pipeline.
@@ -11,7 +11,7 @@ SUPPORTED_SUFFIXES = (".txt", ".md")
 
 # --- stage 2: extraction ---------------------------------------------------------------------
 # Cap how much of a long document is sent to the extractor in one call (chars). Documents
-# longer than this are CHUNKED into overlapping windows (M5.6) -- each window is extracted and
+# longer than this are CHUNKED into overlapping windows (verified-data hardening) -- each window is extracted and
 # the per-window extractions merged -- so a long doc is no longer one truncated call. Offsets
 # still index the full original text (grounding runs against the full doc).
 EXTRACT_MAX_CHARS = 12000
@@ -23,7 +23,7 @@ MAX_ENTITY_TYPES = 24
 MAX_RELATION_TYPES = 32
 MIN_TYPE_COUNT = 1
 N_TYPE_EXAMPLES = 3
-# Confidence blends normalized count with normalized DOCUMENT frequency (M5.6): a type spread
+# Confidence blends normalized count with normalized DOCUMENT frequency (verified-data hardening): a type spread
 # across documents is more reliable than one of equal count concentrated in a single document.
 CONFIDENCE_COUNT_WEIGHT = 0.5
 CONFIDENCE_DOCFREQ_WEIGHT = 0.5

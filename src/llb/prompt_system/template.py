@@ -1,4 +1,4 @@
-"""M7.3 prompt-template generator -- assemble a budget-fitted RAG prompt system from the corpus.
+"""RAG prompt-system comparison prompt-template generator -- assemble a budget-fitted RAG prompt system from the corpus.
 
 Builds candidate system + additional prompts that embed the anthology, a metadata summary, and the
 graph/RAG mapping references in a structured template with EDITABLE fields (role / instruction /
@@ -173,7 +173,7 @@ def render_package(
 def wrap_complete(complete: Callable[[str], str], package: PromptPackage) -> Callable[[str], str]:
     """Wrap a candidate `complete` (prompt -> text) so the prompt system is prepended to EVERY call.
 
-    This is the harness-compatibility hook (M7.3 sub-part 7): the SAME `PromptPackage` can drive the
+    This is the harness-compatibility hook (RAG prompt-system comparison sub-part 7): the SAME `PromptPackage` can drive the
     baseline RAG path and the agentic harness lane (loop / langgraph / crewai) without touching the
     objective scorer -- it only adds grounding context to the prompt the harness already builds."""
 

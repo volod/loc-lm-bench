@@ -1,7 +1,7 @@
-"""Second-frontier cross-check (M5.6 / M4.4 carry-over) -- the automated verified-data gate.
+"""Second-frontier cross-check (verified-data hardening / ontology-assisted drafting carry-over) -- the automated verified-data gate.
 
-Every gold/eval item is AI-DRAFTED (M3.5 / M4.4 planter). Before a human stratified sample-verify
-(MH.5) flips it to `verified=true`, this module runs the in-pipeline cross-check the plan calls
+Every gold/eval item is AI-DRAFTED (frontier drafting / ontology-assisted drafting planter). Before a human stratified sample-verify
+(human verification gate) flips it to `verified=true`, this module runs the in-pipeline cross-check the plan calls
 "the verified-data gate": a SECOND, independent endpoint (different from the drafter) re-confirms
 each item, layered on top of cheap deterministic pre-checks:
 
@@ -13,7 +13,7 @@ each item, layered on top of cheap deterministic pre-checks:
 The second-frontier verifier is INJECTABLE (`SecondFrontierVerify`), so the gate is pure and
 unit-tested without a key; `second_frontier_verify` builds the litellm-backed default. The
 deterministic pre-checks run first so a clearly-broken item never spends a frontier call. Passing
-the cross-check does NOT set `verified=true` (only MH.5 does) -- it produces the report a human
+the cross-check does NOT set `verified=true` (only human verification gate does) -- it produces the report a human
 sample-verifies, and gates which items are even eligible.
 """
 
@@ -89,7 +89,7 @@ def second_frontier_verify(
     model: str, *, complete: LLMComplete | None = None, log: ProvenanceLog | None = None
 ) -> SecondFrontierVerify:
     """The litellm-backed default verifier (a DIFFERENT model from the drafter -- the egress is the
-    Milestone H decision). The completion is injectable, so the gate is tested without a key."""
+    human decision decision). The completion is injectable, so the gate is tested without a key."""
     completer = complete or litellm_complete(model, log=log)
 
     def verify(item: GoldItem, doc_text: str) -> tuple[bool, bool, str]:

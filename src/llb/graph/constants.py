@@ -1,4 +1,4 @@
-"""Constants for the Milestone 6 GraphRAG knowledge-graph + narrative retrieval backend.
+"""Constants for the GraphRAG knowledge-graph + narrative retrieval backend.
 
 Named so the build, community detection, and retrieval strategies share one source of truth
 (AGENTS.md: avoid magic numbers).
@@ -14,7 +14,7 @@ STRATEGIES = (STRATEGY_LOCAL_KHOP, STRATEGY_GLOBAL_COMMUNITY)
 KIND_NODE_MENTION = "node_mention"  # an entity mention span
 KIND_EDGE_FACT = "edge_fact"  # an SRO-fact evidence span
 
-# Morphology-aware entity linking (M6 residual 1). A Ukrainian name and its inflected forms
+# Morphology-aware entity linking (GraphRAG backend residual 1). A Ukrainian name and its inflected forms
 # (Франко -> Франка / Франком / Франкові) differ only in the ending, so linking ALSO matches on a
 # shared leading stem of this length -- two tokens whose first MIN_STEM_LEN chars agree share a
 # prefix of at least that length. Keeps the linker pure + deterministic (no embedder, no lemmatizer).

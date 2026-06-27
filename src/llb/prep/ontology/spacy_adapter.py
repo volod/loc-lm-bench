@@ -1,4 +1,4 @@
-"""Opt-in Stanza / spaCy `uk_core_news` extraction adapter (M5.6).
+"""Opt-in Stanza / spaCy `uk_core_news` extraction adapter (verified-data hardening).
 
 A Python-native NER extractor implementing the `ExtractionAdapter` seam (`extract.py`), kept OUT of
 the base deps: install spaCy + the `uk_core_news` pipeline yourself, then pass this adapter to

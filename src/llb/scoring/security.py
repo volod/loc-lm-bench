@@ -1,4 +1,4 @@
-"""M5.1 security / robustness scoring -- objective attack-success detection (pure).
+"""security benchmark security / robustness scoring -- objective attack-success detection (pure).
 
 The security benchmark plants a STRUCTURED label on every case so attack success is checkable
 WITHOUT a safety classifier (ShieldGemma / frontier moderation stay opt-in, per the plan). Two

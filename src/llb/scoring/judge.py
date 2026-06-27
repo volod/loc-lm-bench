@@ -137,7 +137,7 @@ class JudgeOutcome:
     trusted: bool
     reason: str
     scores: list[JudgeScore] | None = None
-    diagnostics: JudgeDiagnostics | None = None  # M7.2 zero-valued-judge observability
+    diagnostics: JudgeDiagnostics | None = None  # judge diagnostics zero-valued-judge observability
 
 
 def run_judge(
@@ -183,7 +183,7 @@ def deepeval_scorer(
     """Score faithfulness and answer relevancy with Ukrainian DeepEval G-Eval prompts.
 
     `diagnostics_out`, when provided, is filled with one precise reason per record (or None) for
-    the M7.2 zero-valued-judge observability: `empty_answer` for blank candidate answers and the
+    the judge diagnostics zero-valued-judge observability: `empty_answer` for blank candidate answers and the
     classified failure reason for a judge that could not score a non-empty answer."""
     if records and any(not str(record.get("answer", "")).strip() for record in records):
         nonempty_records: list[JudgeInputRecord] = []
@@ -330,7 +330,7 @@ def _measure_judge_metric(
     Local judges can fail to return the strict JSON DeepEval expects. That is a judge-quality
     failure, not a reason to abort the benchmark; the objective score remains the headline, and
     the diagnostic metric gets zero for the affected record. When `failures` is provided the
-    failure is classified (malformed JSON vs transport) and recorded for the M7.2 diagnostics.
+    failure is classified (malformed JSON vs transport) and recorded for the judge diagnostics diagnostics.
     """
     try:
         return float(metric.measure(test_case, _show_indicator=False))

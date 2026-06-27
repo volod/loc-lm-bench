@@ -9,14 +9,18 @@ committed public fixture and never regenerates it, and any runtime import or AI 
 The full pipeline, with one `make` shortcut per stage:
 
 ```
- create ─▶ validate ─▶ cross-check ─▶ MH.5 sample-verify ─▶ flip via ledger ─▶ (calibrate) ─▶ score
-  §1         §2           §3                §4                    §4.4            §5          run-eval
+create ─▶ validate ─▶ cross-check ─▶ human verification gate sample-verify ─▶ 
+  §1         §2           §3                §4                    §4.4
+
+flip via ledger ─▶ (calibrate) ─▶ score
+        §5          run-eval
 ```
 
 Stages 3-4 are the **human-assisted** part. The detailed human how-to lives in two operator
-manuals this guide links into: [verification tooling](verification-tooling.md) (the MH.5 gate) and
-[calibration tooling](calibration-tooling.md) (the judge gate). Everything is offline except the
-draft/cross-check endpoints and the eventual model run.
+manuals this guide links into: [verification tooling](verification-tooling.md)
+(the human verification gate gate) and [calibration tooling](calibration-tooling.md)
+(the judge gate). Everything is offline except the draft/cross-check endpoints and
+the eventual model run.
 
 ---
 
@@ -53,7 +57,7 @@ make ingest-squad SQUAD_JSON=<path-to-edited-squad-json>
 The imported canonical JSONL is `verified=false`. Follow the [authoring rules](#authoring-rules)
 below, then take it through stages 2-4.
 
-### 1c. Assisted corpus drafting (ontology-assisted, M4.4)
+### 1c. Assisted corpus drafting (ontology-assisted, ontology-assisted drafting)
 
 `GOLDSET_MODE=draft` runs the ontology-assisted pipeline over a corpus: inventory docs, extract
 entities + evidence-backed relations, induce an ontology candidate, sample for coverage, and draft
@@ -108,7 +112,7 @@ own drafts is circular.)
 
 ---
 
-## 4. MH.5 -- human sample-verify, then flip via the ledger
+## 4. human verification gate -- human sample-verify, then flip via the ledger
 
 The irreducibly-human stage: verify a **stratified sample** and accept it; only accepted items flip
 to `verified=true`. A clean sample accepts the bundle; a dirty one sends the drafts back. Three
@@ -136,9 +140,9 @@ an accepted-ledger at `$BUNDLE/accepted/` (accepted items, `verified=true`, + th
 python -m llb.prep.ingest_squad --squad-json <source> --verified-goldset $BUNDLE/accepted/goldset.jsonl
 ```
 
-MH.5 is **per-bundle and pull-based**: run it on each bundle as its drafting stabilizes, not once
-upfront. Keep the `sample_manifest.json` -- it is your record of what you sampled and the strata you
-covered.
+human verification gate is **per-bundle and pull-based**: run it on each bundle as its
+drafting stabilizes, not once upfront. Keep the `sample_manifest.json` -- it is your record
+of what you sampled and the strata you covered.
 
 ---
 
@@ -182,7 +186,7 @@ For every item:
 4. Avoid ambiguous questions, duplicate facts, and clues that expose the answer trivially.
 5. Preserve calibration / tuning / final split isolation after canonical import.
 6. Record reviewer, decision, timestamp, and notes in a sidecar review log (the `sample_manifest.json`
-   + the reviewed `verify_sample.csv` are that log for the MH.5 stage).
+   + the reviewed `verify_sample.csv` are that log for the human verification gate stage).
 
 Schema (one JSON object per line): `id, lang, question, reference_answer, source_doc_id,
 source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`. Labels are
@@ -190,7 +194,8 @@ SOURCE-SPAN (char offsets, not chunk ids). Only `verified: true` items score mod
 
 ## See also
 
-- [Verification tooling](verification-tooling.md) -- the MH.5 `verify-*` operator manual (stages 3-4).
+- [Verification tooling](verification-tooling.md) -- the human verification gate `verify-*`
+  operator manual (stages 3-4).
 - [Calibration tooling](calibration-tooling.md) -- the judge `calibration-*` operator manual (stage 5).
 - [Data prep](data-prep.md) -- the create-stage commands in brief.
 - [Human-in-the-loop evaluation](human-in-the-loop-evaluation.md) -- the *why* behind the human

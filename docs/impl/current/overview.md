@@ -4,36 +4,36 @@ A snapshot of what exists and runs **today**. Forward work lives in
 [`plan.md`](../plan.md); the full spec is [`spec.md`](../../design/spec.md).
 
 **Status:**
-- **Milestone 0 (data prep) complete:** schema, validator, disjoint splits, SQuAD
+- **data prep (data prep) complete:** schema, validator, disjoint splits, SQuAD
   ingestion, a committed 250-item post-edited Ukrainian development fixture, a manual
   gold-set skeleton, judge-calibration stats, and a chunking RAG-store builder.
-- **Milestone 1 (eval skeleton) complete:** a canonical `RunConfig` + Typer
-  CLI, a pinned-embedding FAISS RAG store + source-span retrieval metrics, a LangGraph
+- **RAG core complete:** a canonical `RunConfig` + Typer
+  CLI, a pinned-embedding FAISS RAG store + source-span metrics, a LangGraph
   retrieve -> generate flow over an OpenAI-compatible backend (Ollama), objective
   answer-correctness + judge gate/scorer seams, a canonical manifest + scores record (MLflow
   mirror), and a minimal sequential runner with a VRAM gate. `llb run-eval` prints one
   ranked row. The skeleton is **compile-free** -- prebuilt Ollama (which uses the GPU),
-  no vLLM/flash-attn source build -- so the loop is proven before that build (M2).
-- **Milestone 2 (real backend + telemetry) complete:** a vLLM launcher (serves HF weights
+  no vLLM/flash-attn source build -- so the loop is proven before that build (backend telemetry).
+- **backend telemetry (real backend + telemetry) complete:** a vLLM launcher (serves HF weights
   behind the same OpenAI-compatible interface), a per-backend telemetry hook (steady-state
   tokens/sec, peak VRAM, served vs requested context, load time, tokenizer efficiency), and a
   MAX_JOBS-capped vLLM build script -- now **validated end to end on a real model**:
   `google/gemma-4-E4B-it-qat-w4a16-ct` served via vLLM 0.23.0 on the RTX 4060 Ti 16 GB,
   scored under the executor with real telemetry (~64 tok/s, peak VRAM 15.7 GB, cold load
   ~112 s, served ctx 8192). See the [vLLM guide](../../guides/vllm-backend.md).
-- **Milestone 3 core delivered:** backend resolution, process-isolated resumable sweeps,
+- **evaluation rigor core delivered:** backend resolution, process-isolated resumable sweeps,
   two-stage RAG tuning, public-screen and frontier-prep adapters, N-model ranking, and a
   final-only Streamlit board. The audit fixes prevent tuning/calibration leakage into the
   board, make sweep markers interruption-safe, align drafted document ids with the RAG index,
   and harden external JSON/metric parsing. Full design acceptance gaps remain in `plan.md`.
-- **Milestone 4 (robustness + ontology data prep + third backend) complete:** an
+- **robust backend prep (robustness + ontology data prep + third backend) complete:** an
   embedding-aware VRAM estimate (prices the high-precision embedding mass; E4B 9.81 vs 9.8 GiB
   measured), a pre-launch VRAM-contention guard (auto-derate + `--evict`/`--wait`), vLLM serving
   knobs as `run-eval` flags + a flashinfer sampler preflight, the ontology-assisted gold-set
   draft pipeline (`prepare-goldset-draft`: 7 grained stages, local/frontier endpoint adapter,
   exact-grounded `verified=false` bundles), and the llama.cpp launcher (the third backend behind
   the same OpenAI-compatible seam). All unit-tested without a GPU; the on-hardware confirmations
-  are carried forward in `plan.md` (M5.6). The only M3 residual is human-gated (judge
+  are carried forward in `plan.md` (verified-data hardening). The only evaluation rigor residual is human-gated (judge
   calibration ratings).
 
 Two host-aware model utilities: `prep-models` prepares candidate models (pulls Ollama
@@ -151,32 +151,32 @@ Gitignored: `.data/` (runtime output), `.env` (secrets), `.venv/`.
       executor/{cases,reporting,runner,vram,isolation}.py # per-case work +
       reporting + sweep
       isolation
-      backends/resolver.py # M3.2 AvailabilityResolver (discovery + backend
+      backends/resolver.py # backend resolver AvailabilityResolver (discovery + backend
       priority + fit)
-      optimize/tuner.py # M3.4 two-stage Optuna (tuning-split search -> stage-2
+      optimize/tuner.py # two-stage Optuna (tuning-split search -> stage-2
       entry)
-      screen/public.py # M3.1 Tier-1 lm-eval-harness-uk adapter
+      screen/public.py # Tier-1 public lm-eval-harness-uk adapter
       (logprob/generation tracks)
-      prep/frontier.py # M3.5 prepare-goldset + prepare-synthetic-corpus
+      prep/frontier.py # frontier drafting prepare-goldset + prepare-synthetic-corpus
       (litellm)
-      prep/ontology/ # M4.4 ontology-assisted draft pipeline (7 grained stages
+      prep/ontology/ # ontology-assisted draft pipeline (7 grained stages
       + endpoint)
-      board/{data,app}.py # M3.7 thin Streamlit leaderboard over the run
+      board/{data,app}.py # board view thin Streamlit leaderboard over the run
       bundles
-      backends/preflight.py # M4.3 flashinfer JIT-sampler preflight
+      backends/preflight.py # vLLM serving preflight flashinfer JIT-sampler preflight
       inference/generate.py # batch generation helper (cli inference)
-      eval/{common,map_reduce,multi_hop}.py # M1.4 eval templates (map-reduce / multi-hop)
-      judge/{experiment,rate}.py # M3.8 UA judge smoke + interactive calibration rater
+      eval/{common,map_reduce,multi_hop}.py # retrieve-generate loop eval templates (map-reduce / multi-hop)
+      judge/{experiment,rate}.py # judge calibration gate UA judge smoke + interactive calibration rater
       bench/{security,tooling,agentic,tool_world,structured,summarization,text_analysis,common}.py
-      # M5 category benchmarks (objective floor + opt-in gated judge)
-      bench/{mcp_server,agentic_tasks}.py # M5.2 MCP transport + M5.3 real-corpus search tasks
+      # category benchmarks (objective floor + opt-in gated judge)
+      bench/{mcp_server,agentic_tasks}.py # tooling benchmark MCP transport + agentic benchmark real-corpus search tasks
       scoring/{security,tooling,structured,reliability,text_analysis,composite}.py
-      # M5 per-category scorers + guarded composite headline
+      # category suite per-category scorers + guarded composite headline
       prep/{cross_check,verified_ledger,text_analysis_corpus}.py # 2nd-frontier gate / verified
       ledger / synthetic planter
-      prep/{security_sources,security_planter}.py # M5.1 public-set adapters + corpus planter
-      prep/{tooling_sources,chat_corpus}.py # M5.2 BFCL adapter + M5.4 chat-period producers
-      prep/ontology/spacy_adapter.py # M5.6 opt-in spaCy uk_core_news extraction adapter
+      prep/{security_sources,security_planter}.py # security benchmark public-set adapters + corpus planter
+      prep/{tooling_sources,chat_corpus}.py # tooling benchmark BFCL adapter + category expansion chat-period producers
+      prep/ontology/spacy_adapter.py # verified-data hardening opt-in spaCy uk_core_news extraction adapter
     tests/                         # pytest suite (run via make test / make ci)
 
 Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
@@ -185,7 +185,7 @@ Shared runtime data is gitignored under `$DATA_DIR/llb/` (default `.data/llb/`):
 the repo-root `calibration/` dir (committed -- survives a clone; see `calibration/README.md`).
 Immutable eval artifacts are isolated per invocation under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/` (`manifest.json`,
-`scores.{parquet,jsonl}`, and optional `vllm/` logs); M4.4 draft bundles under
+`scores.{parquet,jsonl}`, and optional `vllm/` logs); ontology-assisted draft bundles under
 `$DATA_DIR/prepare-goldset/<UTC timestamp>/` (`goldset.jsonl`, `corpus/`, `ontology.json`,
 `extraction.jsonl`, `provenance.json`).
 
@@ -195,7 +195,7 @@ These are reproducible `make` flows an operator runs repeatedly (e.g. when onboa
 or model); they are NOT open plan items. Run the linked guide when a task needs one:
 
 - **Create a new gold set (end-to-end):** [`goldset-from-scratch.md`](../../guides/goldset-from-scratch.md).
-- **Second-frontier cross-check + MH.5 human sample-verify:**
+- **Second-frontier cross-check + human verification gate human sample-verify:**
   [`verification-tooling.md`](../../guides/verification-tooling.md).
 - **Judge calibration (incl. a harder split):** [`calibration-tooling.md`](../../guides/calibration-tooling.md).
 - **Graph-vs-FAISS retrieval comparison:** [`graph-vs-faiss-comparison.md`](../../guides/graph-vs-faiss-comparison.md).

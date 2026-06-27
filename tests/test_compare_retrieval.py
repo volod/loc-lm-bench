@@ -1,4 +1,4 @@
-"""M6 residual 3 -- graph-vs-FAISS retrieval comparison core (`llb.rag.compare`).
+"""GraphRAG backend residual 3 -- graph-vs-FAISS retrieval comparison core (`llb.rag.compare`).
 
 Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lightweight CI install
 (no FAISS, no DuckDB, no GPU). The CLI wiring (`compare-retrieval`) layers real stores on top.

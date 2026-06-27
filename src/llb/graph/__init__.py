@@ -1,7 +1,7 @@
-"""Milestone 6 -- GraphRAG knowledge-graph + narrative retrieval backend.
+"""GraphRAG backend -- GraphRAG knowledge-graph + narrative retrieval backend.
 
 A graph retrieval backend behind the RAG-store seam (`--retrieval-backend graph`), built by
-REUSING the M4.4 extraction (`DocExtraction` entities + SRO facts) as nodes/edges -- no second
+REUSING the ontology-assisted drafting extraction (`DocExtraction` entities + SRO facts) as nodes/edges -- no second
 extraction framework. Store = DuckDB (already a dependency; the abandoned Kuzu pick was dropped):
 node/edge JSONL persistence loaded into an in-memory DuckDB engine that carries local k-hop
 (recursive CTE) and community grouping (`WHERE community_id`). Two span-preserving strategies
@@ -12,7 +12,7 @@ share the one backend, recorded per run as `retrieval_strategy`:
                          each community's member nodes/edges WITH their offsets (the narrative
                          layer).
 
-Both keep `doc_id` + char offsets so the M1.3 span metric still applies; an optional LLM community
+Both keep `doc_id` + char offsets so the source-span metric span metric still applies; an optional LLM community
 summary is a tagged DIAGNOSTIC (`summary.summarize_communities`), never span-scored.
 """
 

@@ -1,6 +1,6 @@
-"""Hard-isolation sweep executor (M3.3).
+"""Hard-isolation sweep executor (isolation reclaim).
 
-The M1 runner evaluates one (model, config) in-process. A multi-model sweep needs more: a
+The RAG core runner evaluates one (model, config) in-process. A multi-model sweep needs more: a
 leak or crash in one cell must not bias the next, and a hot GPU must cool before the next
 throughput measurement. So each cell runs in its OWN PROCESS (`vllm serve` already dies with
 its launcher; the whole `run-eval` running as a subprocess guarantees the Python/CUDA context

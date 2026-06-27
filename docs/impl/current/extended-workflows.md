@@ -1,10 +1,10 @@
-# Milestone 7 Extended Workflows Current State
+# extended workflow Extended Workflows Current State
 
 Covers the delivered extended-agentic / verification / prompt-system work. The 16 GB backend matrix,
 power metric, and vector-store adapters live in
-[`milestone-7-platform-matrix.md`](milestone-7-platform-matrix.md).
+[`platform-vector-matrix.md`](platform-vector-matrix.md).
 
-## M7.1 Agentic harness comparison (LangGraph vs CrewAI vs loop)
+## agentic harness comparison Agentic harness comparison (LangGraph vs CrewAI vs loop)
 
 The agentic benchmark (`TIER_AGENTIC`) now runs under a pluggable HARNESS, holding the task set,
 `ToolWorld`, objective scoring, and gated judge fixed so the harness is the only variable.
@@ -34,9 +34,9 @@ The agentic benchmark (`TIER_AGENTIC`) now runs under a pluggable HARNESS, holdi
   `n_tool_calls=2`, `n_steps=3`). How-to + actor/model/document extension guide:
   [`docs/guides/crewai-harness.md`](../../guides/crewai-harness.md).
 
-## M7.2 Non-blocking forward verification
+## judge diagnostics Non-blocking forward verification
 
-- Harness board: the M7.1 comparison ranks objectively with bootstrap CIs from FAKE endpoints (no
+- Harness board: the agentic harness comparison comparison ranks objectively with bootstrap CIs from FAKE endpoints (no
   GPU), harness-tagged.
 - Judge diagnostic observability (`src/llb/scoring/judge_diag.py`): per-record classification of a
   zero-valued judge score -- `empty_answer` (candidate fault) vs `malformed_judge_json` /
@@ -53,7 +53,7 @@ The agentic benchmark (`TIER_AGENTIC`) now runs under a pluggable HARNESS, holdi
 - Tests: `tests/test_judge_diag.py` (classifier, summary, gated wiring, agentic manifest, smoke
   pass/zero/malformed).
 
-## M7.3 Human-assisted RAG prompt-system generation
+## RAG prompt-system comparison Human-assisted RAG prompt-system generation
 
 Operator-facing package `src/llb/prompt_system/` (pure + deterministic, injectable tokenizer) turning
 a supplied corpus into reviewable, budget-fitted, manifest-addressable RAG prompt systems.
@@ -96,7 +96,7 @@ a supplied corpus into reviewable, budget-fitted, manifest-addressable RAG promp
   provenance); `tests/test_board.py` (final-split RAG prompt-system records and comparison).
 - How-to: [`docs/guides/prompt-system-rag.md`](../../guides/prompt-system-rag.md).
 
-### M7.3r IP regulation sample and Gemma 4 comparison
+### RAG prompt-system sample IP regulation sample and Gemma 4 comparison
 
 Committed sample assets:
 
@@ -113,7 +113,7 @@ Committed sample assets:
 - `samples/prompt_system/ip_regulation_uk/example_results.json`: exact command/result record for the
   local Gemma run.
 
-Manual local run on `gemma4:e4b` / Ollama under `DATA_DIR=.data/m7_3r_ip_example`:
+Manual local run on `gemma4:e4b` / Ollama under `DATA_DIR=.data/prompt_system_ip_example`:
 
 - Retrieval: `validate-retrieval --k 5` on the IP gold set gave recall@5=1.000 and MRR=1.000.
 - Tuning split: baseline objective 0.709; default prompt candidates tied 0.709; tuned lean prompt

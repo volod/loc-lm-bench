@@ -1,4 +1,4 @@
-"""Map-reduce (long-document) evaluation template -- M5.0.
+"""Map-reduce (long-document) evaluation template -- text analysis.
 
 For a document too long to answer within a single context window: SPLIT it into overlapping
 segments, MAP a partial answer over each segment independently, then REDUCE the partial
@@ -218,11 +218,11 @@ def run_case(app: Any, question: str, document: str) -> MapReduceState:
     return cast(MapReduceState, app.invoke({"question": question, "document": document}))
 
 
-# --- text-prompt driver (the M5 `complete` substrate; no langgraph / launcher) --------------
+# --- text-prompt driver (the category suite `complete` substrate; no langgraph / launcher) --------------
 
 
 def map_text_prompt(question: str, segment: str) -> str:
-    """A single-string MAP prompt (the M5 categories drive map-reduce via a `complete: str->str`)."""
+    """A single-string MAP prompt (the category suite categories drive map-reduce via a `complete: str->str`)."""
     return (
         f"{MAP_SYSTEM_PROMPT}\n\n"
         f"Фрагмент:\n<<<\n{segment}\n>>>\n\nПитання: {question}\n\nВідповідь:"

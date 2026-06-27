@@ -1,4 +1,4 @@
-"""M5.1 security / robustness runner -- objective ASR + refusal-appropriateness under TIER_SECURITY.
+"""security benchmark security / robustness runner -- objective ASR + refusal-appropriateness under TIER_SECURITY.
 
 Drives a candidate over a set of planted security cases (`scoring.security`), detects attack
 success objectively per family, and aggregates one `ModelResult` whose headline is the DEFENSE
@@ -158,7 +158,7 @@ def run_security(
     judge_scorer: JudgeScorer | None = None,
     judge_base_url: str | None = None,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-security",
+    run_name: str = "security",
     persist: bool = True,
     mirror: Mirror | None = None,
     data_verified: bool = False,
@@ -237,7 +237,7 @@ def run_security(
             "judge_trusted": outcome.trusted,
             "refusal_quality": quality,  # gated diagnostic, NOT the headline
             "refusal_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None

@@ -1,4 +1,4 @@
-"""M5.1 public adversarial-set adapters (JailbreakBench / HarmBench / AdvBench), UA-adapted.
+"""security benchmark public adversarial-set adapters (JailbreakBench / HarmBench / AdvBench), UA-adapted.
 
 Maps the public harmful-behavior sets into the project's `SecurityCase` schema -- refuse-detector
 cases for the generic jailbreak / unsafe-content families -- so the security board can score against
@@ -15,7 +15,7 @@ so no dataset is vendored and nothing is fetched at import.
 The bare public behaviors are direct harmful asks -> the `unsafe_content` family by default; wrapping
 a behavior in a UA jailbreak template (`jailbreak_wrap`) makes it a `jailbreak`-family case, which is
 how the same goal exercises the two generic families. Every adapted case ships `expect_refusal=True`
-and `verified=false`-equivalent: the MH.5 human sample-verify still gates any headline use.
+and `verified=false`-equivalent: the human verification gate human sample-verify still gates any headline use.
 """
 
 import csv

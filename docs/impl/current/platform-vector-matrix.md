@@ -1,6 +1,6 @@
-# Milestone 7 Platform Matrix Current State
+# extended workflow Platform Matrix Current State
 
-## M7.4 16 GB CUDA Host Backend Matrix
+## platform matrix 16 GB CUDA Host Backend Matrix
 
 Host:
 - GPU: NVIDIA GeForce RTX 4060 Ti, 16380 MiB
@@ -36,10 +36,10 @@ Run protocol:
 
 Repeatable command:
 
-    make m7-4-platform-matrix
+    make platform-matrix
 
-Override `M7_4_OLLAMA_MODEL`, `M7_4_VLLM_MODEL`, `M7_4_LLAMACPP_MODEL`,
-`M7_4_MAX_MODEL_LEN`, `M7_4_GPU_MEMORY_UTILIZATION`, and `M7_4_LIMIT` for another common base.
+Override `PLATFORM_MATRIX_OLLAMA_MODEL`, `PLATFORM_MATRIX_VLLM_MODEL`, `PLATFORM_MATRIX_LLAMACPP_MODEL`,
+`PLATFORM_MATRIX_MAX_MODEL_LEN`, `PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION`, and `PLATFORM_MATRIX_LIMIT` for another common base.
 
 Results:
 
@@ -58,7 +58,7 @@ Manifest refs:
 - vLLM: `.data/run-eval/20260627T045636.798744Z-4c0a336fd8fc/manifest.json`
 - llama.cpp: `.data/run-eval/20260627T050051.621737Z-21ef2333875a/manifest.json`
 
-## M7.4 Power Metric
+## platform matrix Power Metric
 
 `run-eval --telemetry` now samples GPU power during the fixed telemetry prompts when `nvidia-smi`
 is reachable. New manifest fields:
@@ -105,7 +105,7 @@ Generated files land under `.data/llb/serving/gpu-<tier>gb/` with `tier.json`, s
 run-eval YAML/scripts. The same manifest fields above provide comparable score, throughput, VRAM,
 load, and power metrics.
 
-## Multi-Vector-Store Adapters (M7.4)
+## Multi-Vector-Store Adapters (platform matrix)
 
 Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS stays the default.
 
@@ -141,9 +141,9 @@ Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS st
 ### Real adapter validation (2026-06-27)
 
 Host validation used the committed `samples/goldsets/ua_squad_postedited_v1` bundle and an isolated
-`DATA_DIR=.data/m7_4r_validation`. Each backend was built with:
+`DATA_DIR=.data/platform_matrix_validation`. Each backend was built with:
 
-    env DATA_DIR=.data/m7_4r_validation .venv/bin/python -m llb.main build-index \
+    env DATA_DIR=.data/platform_matrix_validation .venv/bin/python -m llb.main build-index \
       --corpus-root samples/goldsets/ua_squad_postedited_v1/corpus \
       --vector-store <backend>
 
@@ -153,10 +153,10 @@ same 250-item gold set at `k=10`. All four persisted stores produced `recall@10=
 
 The one-shot comparison command:
 
-    env DATA_DIR=.data/m7_4r_validation .venv/bin/python -m llb.main compare-vector-stores \
+    env DATA_DIR=.data/platform_matrix_validation .venv/bin/python -m llb.main compare-vector-stores \
       --backends faiss,chroma,qdrant,lancedb \
       --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-      --k 10 --out .data/m7_4r_validation/llb/rag/vector_store_compare_k10.json
+      --k 10 --out .data/platform_matrix_validation/llb/rag/vector_store_compare_k10.json
 
 Result:
 

@@ -1,4 +1,4 @@
-"""M7.4 vector-index seam -- pick the ANN backend behind `RagStore` (FAISS is the default).
+"""platform matrix vector-index seam -- pick the ANN backend behind `RagStore` (FAISS is the default).
 
 `RagStore` keeps the chunk records (ids + source-span offsets) and only asks its index to map a
 query to build-order ids + similarity scores, so swapping the vector backend never changes the
@@ -32,7 +32,7 @@ FAISS_INDEX_FILE = "index.faiss"
 
 
 class VectorIndex(Protocol):
-    """The minimal ANN-index seam `RagStore` depends on (FAISS + every M7.4 adapter satisfy it)."""
+    """The minimal ANN-index seam `RagStore` depends on (FAISS + every platform matrix adapter satisfy it)."""
 
     def search(self, query_vectors: Any, k: int) -> tuple[list[list[float]], list[list[int]]]: ...
 

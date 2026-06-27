@@ -1,10 +1,10 @@
-"""M4.4 ontology-assisted gold-set drafting.
+"""ontology-assisted gold-set drafting.
 
 A multi-stage pipeline over a supplied text directory that drafts UNVERIFIED RAG gold items
 linked to exact evidence. Default extraction is LLM-only via the endpoint adapter (local by
 default, frontier opt-in); a Python-native NER/coreference adapter (Stanza / spaCy
 `uk_core_news`) is a pluggable opt-in implementing `ExtractionAdapter`, kept out of base deps.
-This is a data-preparation ontology, NOT a GraphRAG runtime (that is Milestone 6).
+This is a data-preparation ontology, NOT a GraphRAG runtime (that is GraphRAG backend).
 """
 
 from llb.prep.ontology.endpoint import (

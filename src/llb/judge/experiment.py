@@ -49,7 +49,7 @@ SMOKE_CASE: JudgeInputRecord = EXPERIMENT_CASES[0]
 
 @dataclass(slots=True)
 class JudgeSmokeResult:
-    """Outcome of the M7.2 strict-JSON judge smoke precheck."""
+    """Outcome of the judge diagnostics strict-JSON judge smoke precheck."""
 
     ok: bool
     reason: str

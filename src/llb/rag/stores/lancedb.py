@@ -1,4 +1,4 @@
-"""M7.4 LanceDB vector-store adapter (opt-in `[rag-lancedb]` extra).
+"""platform matrix LanceDB vector-store adapter (opt-in `[rag-lancedb]` extra).
 
 A cosine LanceDB table over the same normalized embeddings FAISS indexes, behind the shared
 `VectorStoreAdapter` contract. LanceDB needs an on-disk connection even for a transient table, so

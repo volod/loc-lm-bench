@@ -1,4 +1,4 @@
-"""M5.2 tooling residuals -- per-argument tolerance, native FC caller, MCP specs, BFCL adapter."""
+"""tooling benchmark tooling residuals -- per-argument tolerance, native FC caller, MCP specs, BFCL adapter."""
 
 from llb.bench import mcp_server
 from llb.bench import tooling as bench_tooling

@@ -1,4 +1,4 @@
-"""M5.1 public adversarial-set adapters (AdvBench / HarmBench / JailbreakBench), UA-adapted."""
+"""security benchmark public adversarial-set adapters (AdvBench / HarmBench / JailbreakBench), UA-adapted."""
 
 import json
 

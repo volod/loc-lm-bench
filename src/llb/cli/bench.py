@@ -1,4 +1,4 @@
-"""Milestone 5 benchmark commands (each category renders under its OWN Tier)."""
+"""Benchmark category commands, each rendered under its own Tier."""
 
 from pathlib import Path
 from typing import Optional
@@ -36,14 +36,14 @@ def bench_text_analysis_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.0/M5.4: score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
+    """Score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
     from llb.bench.common import LLMComplete, drive_with_backend
     from llb.bench.text_analysis import TextAnalysisRun, run_text_analysis
 
@@ -101,14 +101,14 @@ def bench_security_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.1: score a model's objective ASR + refusal-appropriateness under TIER_SECURITY."""
+    """Score a model's objective ASR + refusal-appropriateness under TIER_SECURITY."""
     from llb.bench.common import LLMComplete, drive_with_backend
     from llb.bench.security import SecurityRun, load_cases_file, run_security
 
@@ -162,14 +162,14 @@ def bench_tooling_cmd(
         "tool-capable endpoint via --base-url or Ollama)",
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.2: score a model's call-only function-calling correctness under TIER_TOOLING."""
+    """Score a model's call-only function-calling correctness under TIER_TOOLING."""
     from llb.backends.openai_client import make_client
     from llb.bench.common import LLMComplete, drive_with_backend
     from llb.bench.tooling import (
@@ -259,14 +259,14 @@ def bench_agentic_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.3: score a model's task-completion in the deterministic tool-world under TIER_AGENTIC."""
+    """Score a model's task completion in the deterministic tool-world under TIER_AGENTIC."""
     from llb.bench.agentic import HARNESS_NAMES, AgenticRun, load_tasks_file, run_agentic
     from llb.bench.common import LLMComplete, drive_with_backend
 
@@ -323,7 +323,7 @@ def bench_agentic_cmd(
 def bench_agentic_compare_cmd(
     model: str = typer.Option(..., help="the candidate model to compare across harnesses"),
 ) -> None:
-    """M7.1: rank ONE model's agentic runs across its harnesses (loop/langgraph/crewai).
+    """Rank one model's agentic runs across its harnesses (loop/langgraph/crewai).
 
     Reads the persisted `agentic` run bundles, keeps the best run per (model, harness), and ranks
     the harnesses for the chosen model under TIER_AGENTIC -- isolating the harness effect with the
@@ -366,14 +366,14 @@ def bench_summarization_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.4: score summaries by pinned-embedder reference coverage under TIER_SUMMARIZATION."""
+    """Score summaries by pinned-embedder reference coverage under TIER_SUMMARIZATION."""
     from llb.bench.common import LLMComplete, drive_with_backend
     from llb.bench.summarization import SummarizationRun, load_cases_file, run_summarization
 
@@ -418,14 +418,14 @@ def bench_structured_cmd(
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as MH.5-verified for composite-headline eligibility"
+        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
         help="path or label for the verification worksheet, sample manifest, or accepted ledger",
     ),
 ) -> None:
-    """M5.4: score JSON-schema conformance + field accuracy under TIER_STRUCTURED."""
+    """Score JSON-schema conformance + field accuracy under TIER_STRUCTURED."""
     from llb.bench.common import LLMComplete, drive_with_backend
     from llb.bench.structured import StructuredRun, load_cases_file, run_structured
 
@@ -465,12 +465,12 @@ def bench_composite_cmd(
         False, help="diagnostic only: allow categories without a reloadable per-case CI series"
     ),
 ) -> None:
-    """M7: render the guarded M5 composite headline from persisted category runs."""
-    from llb.board.data import load_m5_composite
+    """Render the guarded category composite headline from persisted category runs."""
+    from llb.board.data import load_category_composite
     from llb.scoring.composite import format_composite_issues, format_composite_rows
 
     cfg = load_config(None)
-    rows, issues = load_m5_composite(
+    rows, issues = load_category_composite(
         cfg.data_dir,
         require_verified=not allow_unverified,
         require_ci=not allow_missing_ci,
@@ -489,7 +489,7 @@ def serve_tools_mcp_cmd(
     ),
     name: str = typer.Option("loc-lm-bench-tools", help="MCP server name"),
 ) -> None:
-    """M5.2: serve the SAME tool catalog over the official MCP SDK (stdio); needs the [mcp] extra."""
+    """Serve the same tool catalog over the official MCP SDK (stdio); needs the [mcp] extra."""
     from llb.bench.mcp_server import load_catalog, mcp_tool_specs, serve_stdio
 
     tool_catalog = load_catalog(catalog)
@@ -504,7 +504,7 @@ def serve_tools_mcp_cmd(
 def bench_reliability_cmd(
     run_dir: Path = typer.Option(..., help="a run bundle dir (scores.parquet / scores.jsonl)"),
 ) -> None:
-    """M5.4: aggregate a run's typed failure taxonomy into a first-class reliability score."""
+    """Aggregate a run's typed failure taxonomy into a first-class reliability score."""
     from llb.scoring.reliability import read_case_statuses, reliability_report
 
     report = reliability_report(read_case_statuses(run_dir))

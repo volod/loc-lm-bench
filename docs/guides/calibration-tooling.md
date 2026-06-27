@@ -1,8 +1,8 @@
 # Judge-calibration tooling -- how to use it
 
-This is the operator manual for the three `calibration-*` commands that turn the M3.8 judge
-gate into a reproducible workflow. The *why* (the gate, the bias it guards against, the papers)
-lives in the human-in-the-loop manual's
+This is the operator manual for the three `calibration-*` commands that turn the judge
+calibration gate judge gate into a reproducible workflow. The *why* (the gate, the bias
+it guards against, the papers) lives in the human-in-the-loop manual's
 [Judge calibration](human-in-the-loop-evaluation.md#judge-calibration----validating-llm-as-judge-against-human-ratings)
 section; this page is the *how*.
 
@@ -184,13 +184,13 @@ you are rating (e.g. `human-authored` vs `public-reused`), worth watching when a
 
 ## Case 3: a draft generated from a text corpus
 
-A draft produced by the M4.4 pipeline (`prepare-goldset-draft` over a corpus) lands
+A draft produced by the ontology-assisted drafting pipeline (`prepare-goldset-draft` over a corpus) lands
 `verified=false`, because its reference answers are AI-drafted and not yet human-checked. Rating
 a candidate against an **unverified** reference would inject that noise straight into the
 calibration, so the draft cannot be calibrated as-is -- `run-eval` will refuse it (no verified
 items). Promote a calibration subset to verified first, exactly as for any scored data:
 
-1. **Draft from the corpus** (M4.4):
+1. **Draft from the corpus** (ontology-assisted drafting):
 
    ```
    make ingest-uk-squad GOLDSET_MODE=draft CORPUS=path/to/corpus
@@ -204,9 +204,9 @@ items). Promote a calibration subset to verified first, exactly as for any score
        --corpus <bundle>/corpus --model <second-frontier-id>
    ```
 
-3. **Human sample-verify (MH.5)** -- structural validate, draw a stratified sample over a
-   calibration subset, check each item, then flip accepted items to `verified=true` through the
-   **ledger** (never hand-edit the boolean). Full procedure:
+3. **Human sample-verify (human verification gate)** -- structural validate, draw a stratified
+   sample over a calibration subset, check each item, then flip accepted items to `verified=true`
+   through the **ledger** (never hand-edit the boolean). Full procedure:
    [Eval-data verification](human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data).
 
    ```

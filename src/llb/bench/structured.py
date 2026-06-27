@@ -1,4 +1,4 @@
-"""M5.4 structured-output runner -- JSON-schema conformance + field accuracy under TIER_STRUCTURED.
+"""structured-output runner -- JSON-schema conformance + field accuracy under TIER_STRUCTURED.
 
 Drives a candidate over instruction + target-schema cases, validates each output with Pydantic
 (`scoring.structured`), and scores conformance + field accuracy. The headline is field accuracy
@@ -66,7 +66,7 @@ def run_structured(
     backend: str,
     complete: LLMComplete,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-structured",
+    run_name: str = "structured",
     persist: bool = True,
     mirror: Mirror | None = None,
     data_verified: bool = False,

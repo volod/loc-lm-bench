@@ -1,4 +1,4 @@
-"""M5.1 corpus-specific security planter -- RAG-injection + canary leak cases over a real corpus."""
+"""security benchmark corpus-specific security planter -- RAG-injection + canary leak cases over a real corpus."""
 
 from llb.prep import security_planter as sp
 from llb.scoring import security

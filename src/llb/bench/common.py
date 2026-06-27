@@ -1,6 +1,6 @@
-"""Shared scaffolding for the Milestone 5 benchmark categories (REUSE, not a new platform).
+"""Shared scaffolding for the category suite benchmark categories (REUSE, not a new platform).
 
-Each M5 category (security / tooling / agentic / text-analysis) is a TASK FAMILY on the existing
+Each category (security / tooling / agentic / text-analysis) is a TASK FAMILY on the existing
 substrate, not a new framework: it drives a model through one injectable `complete` callable
 (prompt -> raw text), scores objectively, aggregates into a `ModelResult` under its OWN Tier
 (never cross-ranked with the RAG board -- the `aggregate` Tier guard enforces this), and persists
@@ -63,7 +63,7 @@ def verified_data_config(*, data_verified: bool, verification_ref: str | None) -
     """Manifest fields for the data-verification gate.
 
     A run cannot be stamped as verified by a bare boolean: the operator must provide a concrete
-    MH.5 artifact, and that artifact must pass the verification-reference checker.
+    human verification gate artifact, and that artifact must pass the verification-reference checker.
     """
     if not data_verified:
         return {"data_verified": False, "verification_ref": verification_ref}
@@ -101,7 +101,7 @@ def run_gated_judge(
     scorer: JudgeScorer | None = None,
     base_url: str | None = None,
 ) -> JudgeOutcome:
-    """Run the calibrated, GATED judge for an M5 category (objective stays the headline).
+    """Run the calibrated, GATED judge for a category (objective stays the headline).
 
     A thin reuse of `scoring.judge.run_judge`: the outcome carries per-record scores ONLY when a
     judge is configured AND trusted (`judge_rho >= threshold`); otherwise it is demoted (objective
@@ -109,7 +109,7 @@ def run_gated_judge(
     so the wiring is provable without DeepEval / an endpoint / a GPU; the default scorer is the
     DeepEval judge bound to `base_url`, imported lazily so this stays light in the base install.
 
-    When the judge runs, the outcome is annotated with the M7.2 `diagnostics` (counts + reasons for
+    When the judge runs, the outcome is annotated with the judge diagnostics `diagnostics` (counts + reasons for
     zero-valued scores: empty candidate answer vs malformed judge JSON vs judge transport error),
     recorded ALONGSIDE the objective headline so a candidate failure is distinguishable from a local
     judge format/transport failure.
@@ -182,7 +182,7 @@ def drive_with_backend(
 
     A running endpoint (`base_url`) or Ollama is called directly; a VRAM-owning backend
     (vllm / llamacpp) is launched and the whole `run` executes under the shared `isolate_cell`
-    contract (PID-attributed VRAM-reclaim gate + capped thermal cooldown), so every M5 category
+    contract (PID-attributed VRAM-reclaim gate + capped thermal cooldown), so every category
     honors the SAME isolation contract as the RAG sweep.
     """
     if base_url is not None or cfg.backend == "ollama":

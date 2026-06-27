@@ -60,7 +60,7 @@ notes below).
 
 | Host | GPU tier | System RAM | Notes |
 | ---- | -------- | ---------- | ----- |
-| Dev / benchmark | 16 GiB | 128 GiB | RTX 4060 Ti; M2.4 vLLM reference (E4B w4a16) |
+| Dev / benchmark | 16 GiB | 128 GiB | RTX 4060 Ti; real-model validation vLLM reference (E4B w4a16) |
 | HP Z2 Tower | 32 GiB | 64 GiB | RTX 5090; vLLM for MamayLM + Gemma 31B |
 
 Use `make gen-serving-config` on either machine; override with `GPU_GB=` when testing
@@ -166,7 +166,7 @@ MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000, and keep
 ### 16 GiB GPU / 128 GiB RAM (dev machine)
 
 RTX 4060 Ti, 16380 MiB, sm 89. Full-size target repos need **Ollama**; largest vLLM
-quant on this tier is Gemma 4 12B w4a16 (manifest extra entry). M2.4 validated E4B
+quant on this tier is Gemma 4 12B w4a16 (manifest extra entry). real-model validation validated E4B
 w4a16 at util **0.80**, ctx **8192**
 ([run_config_vllm_uk.yaml](../../samples/run_config_vllm_uk.yaml)).
 

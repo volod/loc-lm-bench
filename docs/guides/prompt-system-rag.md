@@ -21,10 +21,10 @@ and keep the final decision separate from the selected prompt.
 Build and validate the vector index:
 
 ```bash
-env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main build-index \
+env DATA_DIR=.data/prompt_system_ip_example .venv/bin/python -m llb.main build-index \
   --corpus-root samples/corpus
 
-env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main validate-retrieval \
+env DATA_DIR=.data/prompt_system_ip_example .venv/bin/python -m llb.main validate-retrieval \
   --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --k 5
 ```
 
@@ -35,7 +35,7 @@ PROMPT_INSTRUCTION="Відповідай коротко, переважно то
 Якщо питання просить перелік або строк, дай тільки потрібні елементи без пояснень. \
 Не додавай зовнішніх фактів."
 
-env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main prompt-system-prepare \
+env DATA_DIR=.data/prompt_system_ip_example .venv/bin/python -m llb.main prompt-system-prepare \
   --corpus-root samples/corpus \
   --out-dir samples/prompt_system/ip_regulation_uk/tuned \
   --context-window 8192 --chunk-tokens 1024 --answer-tokens 512 --max-passages 10 \
@@ -45,7 +45,7 @@ env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main prompt-system-p
 Run the tuning split and pin the selected prompt:
 
 ```bash
-env DATA_DIR=.data/m7_3r_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
+env DATA_DIR=.data/prompt_system_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
   --model gemma4:e4b --backend ollama \
   --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --split tuning \
   --prompt-system 14d263ea6a40 --prompt-package samples/prompt_system/ip_regulation_uk/tuned
@@ -58,11 +58,11 @@ env DATA_DIR=.data/m7_3r_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.mai
 Run the held-out final split:
 
 ```bash
-env DATA_DIR=.data/m7_3r_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
+env DATA_DIR=.data/prompt_system_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
   --model gemma4:e4b --backend ollama \
   --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --split final
 
-env DATA_DIR=.data/m7_3r_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
+env DATA_DIR=.data/prompt_system_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.main run-eval \
   --model gemma4:e4b --backend ollama \
   --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --split final \
   --prompt-system 14d263ea6a40 --prompt-package samples/prompt_system/ip_regulation_uk/tuned
@@ -71,7 +71,7 @@ env DATA_DIR=.data/m7_3r_ip_example HF_HUB_OFFLINE=1 .venv/bin/python -m llb.mai
 Compare prompt systems on final `run-eval` bundles:
 
 ```bash
-env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main prompt-system-compare \
+env DATA_DIR=.data/prompt_system_ip_example .venv/bin/python -m llb.main prompt-system-compare \
   --lane rag --model gemma4:e4b
 ```
 

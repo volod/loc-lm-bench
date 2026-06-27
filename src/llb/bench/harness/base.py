@@ -1,9 +1,9 @@
-"""M7.1 harness seam -- the pure `loop` harness.
+"""agentic harness comparison harness seam -- the pure `loop` harness.
 
 The loop harness is the framework-free controller->execute->controller cycle (`run_episode`)
 presented as a named `Harness`, so "loop" sits on the same comparison axis as the LangGraph app
 and the CrewAI crew. It adds NO behavior: it just forwards to `run_episode` with the shared tool
-catalog, so the loop's results are unchanged by the M7.1 refactor.
+catalog, so the loop's results are unchanged by the agentic harness comparison refactor.
 """
 
 from llb.bench.agentic import (

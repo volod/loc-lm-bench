@@ -94,7 +94,7 @@ def test_start_times_out_when_never_ready():
 
 
 def test_record_sampler_reflects_launch_env():
-    """M4.3: the launcher records which sampler the launch used, for the manifest."""
+    """vLLM serving preflight: the launcher records which sampler the launch used, for the manifest."""
     launcher = make_launcher(FakeProc(), [(200, '{"data": []}')])
     launcher._record_sampler({"VLLM_USE_FLASHINFER_SAMPLER": "1"})
     assert launcher.meta["sampler"] == "flashinfer"

@@ -1,6 +1,6 @@
-"""M5.4 chat-period -- chat-log-shaped synthetic planter + REAL chat-corpus ingestion.
+"""category expansion chat-period -- chat-log-shaped synthetic planter + REAL chat-corpus ingestion.
 
-chat-period analysis is text-analysis over CHAT-LOG documents, so it reuses the M5.0 planted-label
+chat-period analysis is text-analysis over CHAT-LOG documents, so it reuses the text analysis planted-label
 schema + the `bench.text_analysis` runner unchanged. This module adds the two chat-specific
 producers the plan calls for:
 

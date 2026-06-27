@@ -1,4 +1,4 @@
-"""M5.3 real-UA-corpus agentic search-task generation (count + locate), deterministic."""
+"""agentic benchmark real-UA-corpus agentic search-task generation (count + locate), deterministic."""
 
 from llb.bench import agentic_tasks as at
 from llb.bench.agentic import AgenticTask, run_episode

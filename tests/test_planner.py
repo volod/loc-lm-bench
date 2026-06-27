@@ -112,9 +112,9 @@ def test_no_spec_fields_is_unknown():
     assert row["verdict"] == VERDICT_UNKNOWN
 
 
-# --- M4.1 embedding-aware weight estimate -------------------------------------------------
+# --- memory planner embedding-aware weight estimate -------------------------------------------------
 
-# The Gemma-4 E4B w4a16 entry: weights MEASURED at 9.8 GiB on the RTX 4060 Ti (M2.4). The
+# The Gemma-4 E4B w4a16 entry: weights MEASURED at 9.8 GiB on the RTX 4060 Ti (real-model validation). The
 # int4 quant covers only linear layers; the embedding + Gemma 3n PLE stay bf16, captured by the
 # measurement-anchored `hi_precision_params_b`.
 E4B_W4A16 = {
@@ -161,7 +161,7 @@ def test_weights_mib_detailed_noop_for_full_precision():
 
 
 def test_e4b_w4a16_weights_match_measured_floor():
-    # The whole point of M4.1: the estimate lands on the MEASURED 9.8 GiB, not the flat ~4.2.
+    # The whole point of memory planner: the estimate lands on the MEASURED 9.8 GiB, not the flat ~4.2.
     row = plan_model(E4B_W4A16, vram_mib=16000, ram_mib=64000)
     assert row["weights_mib"] is not None
     gib = row["weights_mib"] / 1024
@@ -232,7 +232,7 @@ def test_enrich_arch_skips_non_hf_sources(monkeypatch):
     assert seen == []  # the cache is never touched for non-"org/name" sources
 
 
-# --- M4.1 sliding-window KV + config override ---------------------------------------------
+# --- memory planner sliding-window KV + config override ---------------------------------------------
 
 
 def test_attention_layer_split():

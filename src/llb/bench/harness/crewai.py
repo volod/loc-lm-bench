@@ -1,4 +1,4 @@
-"""M7.1 CrewAI agentic harness -- the SAME task/tools/candidate driven by a single-agent crew.
+"""agentic harness comparison CrewAI agentic harness -- the SAME task/tools/candidate driven by a single-agent crew.
 
 CrewAI is an OPT-IN, lazy extra (`[crewai]`): the base install and `make ci` never import it. The
 harness wraps the SAME deterministic `ToolWorld` tools as crew tools and the SAME candidate
@@ -7,7 +7,7 @@ back into the canonical `Episode` -- so `check_success`, the scorer, and the gat
 UNCHANGED and only the framework differs.
 
 The crew driver is injectable (`crew_runner`): a FAKE crew proves the whole adaptation path with no
-dependency / GPU (the same injectable discipline as the rest of M5/M7), so CI covers the wiring
+dependency / GPU (the same injectable discipline as the rest of category suite/extended workflow), so CI covers the wiring
 while the real CrewAI path is exercised only on a host that has the extra installed.
 """
 

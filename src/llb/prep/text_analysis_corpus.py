@@ -1,9 +1,9 @@
-"""Synthetic text-analysis corpus planter (M5.0) -- richer per-kind planted labels.
+"""Synthetic text-analysis corpus planter (text analysis) -- richer per-kind planted labels.
 
 `prepare-synthetic-corpus` historically planted QA-style `key_fact` labels only (one
 question/answer/span triple per fact). This module extends the planter to the FULL text-analysis
 sub-task taxonomy -- key_fact / entity / topic / trend / risk / decision / contradiction, plus the
-judged narrative / insight -- each emitted as a structured `PlantedLabelRecord` the M5.0 scorer
+judged narrative / insight -- each emitted as a structured `PlantedLabelRecord` the text analysis scorer
 (`llb.scoring.text_analysis`) consumes.
 
 Grounding discipline (so a label can never point at absent text): the planter quotes a verbatim

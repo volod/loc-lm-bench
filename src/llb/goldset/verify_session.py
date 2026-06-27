@@ -1,4 +1,4 @@
-"""Interactive human verifier for the MH.5 sample worksheet.
+"""Interactive human verifier for the human verification gate sample worksheet.
 
 A terminal session that walks a stratified sample item by item and writes the HUMAN columns
 (the four checks, the accept/reject decision, a note, a status) in place. Interactive I/O lives
@@ -359,7 +359,7 @@ def run_session(
         idx = first_undecided_index(rows)
 
     emit(
-        "MH.5 data verification -- verify each sampled item against the corpus, then accept/reject."
+        "human verification gate data verification -- verify each sampled item against the corpus, then accept/reject."
     )
     emit(help_text())
 

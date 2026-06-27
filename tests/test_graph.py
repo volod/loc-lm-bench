@@ -1,4 +1,4 @@
-"""Milestone 6 GraphRAG backend: construction, community detection, the two span-preserving
+"""GraphRAG backend: construction, community detection, the two span-preserving
 retrieval strategies, persistence, the tagged-diagnostic summaries, and the full vertical.
 
 The pure pieces (build / community / linking / serialize / ingest) run everywhere. The GraphStore

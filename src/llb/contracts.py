@@ -50,7 +50,7 @@ class RagStoreMeta(TypedDict):
     n_indexed: int
     n_parents: int
     dim: int
-    backend: NotRequired[str]  # M7.4 vector-store backend (faiss default; chroma/qdrant/lancedb)
+    backend: NotRequired[str]  # platform matrix vector-store backend (faiss default; chroma/qdrant/lancedb)
 
 
 class UsageRecord(TypedDict, total=False):
@@ -80,7 +80,7 @@ class CorrectnessScores(TypedDict):
 
 class PlantedLabelRecord(TypedDict):
     """One planted ground-truth label `prepare-synthetic-corpus` emits for the text-analysis
-    benchmark (M5.0 scoring schema). `kind` is a text-analysis sub-task (see
+    benchmark (text analysis scoring schema). `kind` is a text-analysis sub-task (see
     `llb.scoring.text_analysis`); `value` is the canonical surface string a candidate must
     recover; `aliases` are other accepted surface forms; `doc_id`/`char_start`/`char_end`
     ground the label in the synthetic doc; `attrs` carries kind-specific structure (e.g. a
@@ -99,7 +99,7 @@ class PlantedLabelRecord(TypedDict):
 
 
 class SubtaskScore(TypedDict):
-    """Objective recovery score for one text-analysis sub-task over one document (M5.0)."""
+    """Objective recovery score for one text-analysis sub-task over one document (text analysis)."""
 
     kind: str
     objective: bool
@@ -112,7 +112,7 @@ class SubtaskScore(TypedDict):
 
 
 class TextAnalysisCaseRow(TypedDict):
-    """Per-document objective score for one text-analysis case (M5.0 scored runner). Per-sub-task
+    """Per-document objective score for one text-analysis case (text analysis scored runner). Per-sub-task
     F1s are carried as a JSON string (`subtask_f1_json`) so the parquet schema stays flat across
     documents that plant different sub-task kinds."""
 
@@ -129,7 +129,7 @@ class TextAnalysisCaseRow(TypedDict):
 
 
 class ReliabilityReport(TypedDict):
-    """M5.4 reliability: the typed failure taxonomy aggregated into a first-class score."""
+    """category expansion reliability: the typed failure taxonomy aggregated into a first-class score."""
 
     n: int
     n_ok: int
@@ -138,7 +138,7 @@ class ReliabilityReport(TypedDict):
 
 
 class SummarizationCaseRow(TypedDict):
-    """Per-case outcome for one M5.4 summarization case (reference coverage)."""
+    """Per-case outcome for one category expansion summarization case (reference coverage)."""
 
     item_id: str
     status: str  # ok | empty
@@ -149,7 +149,7 @@ class SummarizationCaseRow(TypedDict):
 
 
 class StructuredCaseRow(TypedDict):
-    """Per-case outcome for one M5.4 structured-output case."""
+    """Per-case outcome for one structured-output case."""
 
     item_id: str
     conformant: float  # 1.0 == output validated against the schema
@@ -159,7 +159,7 @@ class StructuredCaseRow(TypedDict):
 
 
 class AgenticCaseRow(TypedDict):
-    """Per-task outcome for one M5.3 agentic episode."""
+    """Per-task outcome for one agentic episode."""
 
     item_id: str
     status: str  # completed | incomplete (step budget exhausted before finishing)
@@ -172,7 +172,7 @@ class AgenticCaseRow(TypedDict):
 
 
 class ToolDef(TypedDict):
-    """An OpenAI-style function/tool definition (the M5.2 tool catalog unit)."""
+    """An OpenAI-style function/tool definition (the tooling benchmark tool catalog unit)."""
 
     name: str
     description: str
@@ -180,7 +180,7 @@ class ToolDef(TypedDict):
 
 
 class ToolingCaseRow(TypedDict):
-    """Per-case outcome for one M5.2 tooling / function-calling case (call-only)."""
+    """Per-case outcome for one tooling benchmark tooling / function-calling case (call-only)."""
 
     item_id: str
     expected_tool: str | None
@@ -196,7 +196,7 @@ class ToolingCaseRow(TypedDict):
 
 
 class SecurityCaseRow(TypedDict):
-    """Per-case outcome for one M5.1 security/robustness attack or benign-control case."""
+    """Per-case outcome for one security benchmark security/robustness attack or benign-control case."""
 
     item_id: str
     family: str  # prompt_injection | jailbreak | instruction_hierarchy | unsafe_content | ...
@@ -279,7 +279,7 @@ class BackendMetadata(TypedDict, total=False):
     tokens_per_s: float
     last_completion_tokens: int
     load_time_s: float | None
-    sampler: str  # vLLM sampler actually used (flashinfer | native; M4.3)
+    sampler: str  # vLLM sampler actually used (flashinfer | native; vLLM serving preflight)
     flashinfer_version: str | None  # flashinfer version behind the sampler choice
 
 
@@ -308,7 +308,7 @@ class TelemetryReport(TypedDict):
     peak_power_w: NotRequired[float]  # peak total GPU power during telemetry, when available
     power_samples: NotRequired[int]
     tokens_per_watt: NotRequired[float]  # steady tokens/sec divided by mean_power_w
-    sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; M4.3), recorded in manifest
+    sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; vLLM serving preflight), recorded in manifest
     flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
 
@@ -329,7 +329,7 @@ class RunEnvironment(TypedDict):
 
 
 class JudgeDiagnostics(TypedDict):
-    """M7.2 zero-valued-judge observability: counts + reasons for judge diagnostics that scored
+    """judge diagnostics zero-valued-judge observability: counts + reasons for judge diagnostics that scored
     zero, so a candidate failure (empty answer) is distinguished from a LOCAL judge format/transport
     failure (malformed strict JSON, transport error). The objective score stays the headline; these
     are recorded ALONGSIDE it in manifests and the board."""
@@ -349,7 +349,7 @@ class JudgeStatus(TypedDict):
     base_url: NotRequired[str | None]
     prompt_language: NotRequired[str]
     metrics: NotRequired[list[str]]
-    diagnostics: NotRequired[JudgeDiagnostics | None]  # M7.2 zero-valued-judge observability
+    diagnostics: NotRequired[JudgeDiagnostics | None]  # judge diagnostics zero-valued-judge observability
 
 
 class RunPaths(TypedDict):
@@ -386,12 +386,12 @@ class ModelSpec(TypedDict):
     n_layers: NotRequired[int]
     kv_dim: NotRequired[int]
     max_context: NotRequired[int]
-    # Sliding-window attention (M4.1, Gemma 3/4): the sliding layers cache at most
+    # Sliding-window attention (memory planner, Gemma 3/4): the sliding layers cache at most
     # `sliding_window` tokens, and `sliding_window_pattern` is the period of the full-attention
     # layers (e.g. 6 -> 1 global layer per 6). Absent -> full attention on every layer.
     sliding_window: NotRequired[int]
     sliding_window_pattern: NotRequired[int]
-    # Embedding-aware weight estimate (M4.1): under partial quant (w4a16/int4/fp8) the token
+    # Embedding-aware weight estimate (memory planner): under partial quant (w4a16/int4/fp8) the token
     # embedding + norms stay high-precision, so `params_b x bpw` under-counts. The planner reads
     # these from the spec (or a cached config.json) and prices the embedding separately.
     vocab_size: NotRequired[int]
@@ -403,7 +403,7 @@ class ModelSpec(TypedDict):
     # Escape hatch for architectures whose always-high-precision mass is not just the vocab
     # embedding (e.g. Gemma 3n Per-Layer Embeddings): billions of params kept at `embed_bpw`.
     hi_precision_params_b: NotRequired[float]
-    # Optional cross-backend serving options for the AvailabilityResolver (M3.2): a map of
+    # Optional cross-backend serving options for the AvailabilityResolver (backend resolver): a map of
     # backend -> source string OR a per-source record carrying its own quant/arch overrides,
     # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata).
     sources: NotRequired[dict[str, "str | SourceRecord"]]
@@ -566,14 +566,14 @@ class ResidentProc(TypedDict):
 
 
 class ContentionReport(TypedDict):
-    """Pre-launch VRAM-contention guard outcome (M4.2)."""
+    """Pre-launch VRAM-contention guard outcome (VRAM contention guard)."""
 
     total_mb: int
     free_mb: int
     requested_util: float
     safe_util: float  # gpu-memory-utilization to actually use (derated to fit free VRAM)
     target_mb: int  # safe_util x total -- what vLLM may reserve
-    weight_floor_mb: int  # embedding-aware weights estimate (M4.1) used for the abort check
+    weight_floor_mb: int  # embedding-aware weights estimate (memory planner) used for the abort check
     residents: list[ResidentProc]  # other GPU processes holding VRAM
     derated: bool  # True when safe_util < requested_util (contention lowered it)
     fits: bool  # False -> even the derated target cannot hold weights + KV

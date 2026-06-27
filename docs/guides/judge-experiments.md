@@ -1,9 +1,9 @@
 # Local Ukrainian judge experiments
 
-The M3.8 judge path uses DeepEval 4 G-Eval metrics with explicit Ukrainian criteria for
-faithfulness and answer relevancy. Ragas is not part of the dependency graph: its installed
-0.4.3 release did not import against the project's current LangChain stack, and compatibility
-shims or dependency downgrades would make the benchmark fragile.
+The judge calibration gate judge path uses DeepEval 4 G-Eval metrics with explicit Ukrainian
+criteria for faithfulness and answer relevancy. Ragas is not part of the dependency graph:
+its installed 0.4.3 release did not import against the project's current LangChain stack, and
+compatibility shims or dependency downgrades would make the benchmark fragile.
 
 The judge remains a diagnostic until its Spearman correlation with human ratings reaches the
 configured threshold. A successful smoke experiment validates model connectivity and structured

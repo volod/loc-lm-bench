@@ -82,7 +82,7 @@ def build_graph_cmd(
         help="prepare-goldset draft bundle dir (reads its extraction.jsonl + corpus/ + ontology.json)",
     ),
     extraction: Optional[Path] = typer.Option(
-        None, help="explicit M4.4 extraction.jsonl (pair with --corpus-root)"
+        None, help="explicit ontology-assisted drafting extraction.jsonl (pair with --corpus-root)"
     ),
     corpus_root: Optional[Path] = typer.Option(
         None, help="corpus dir for --extraction, or to extract fresh when no extraction is given"
@@ -111,7 +111,7 @@ def build_graph_cmd(
         None, help="local endpoint model for --summarize (defaults to --extract-model)"
     ),
 ) -> None:
-    """Build the M6 GraphRAG store from the M4.4 extraction (nodes/edges + communities).
+    """Build the GraphRAG store from the ontology-assisted drafting extraction (nodes/edges + communities).
 
     Source precedence: --bundle, else --extraction + --corpus-root, else fresh extraction over
     --corpus-root via a local endpoint (--extract-model). Writes node/edge JSONL + meta under the
@@ -156,7 +156,7 @@ def _local_complete(
     max_tokens: Optional[int] = None,
     think: Optional[bool] = None,
 ) -> "LLMComplete":
-    """Build the injectable M4.4 local-endpoint completion callable for `model`.
+    """Build the injectable ontology-assisted drafting local-endpoint completion callable for `model`.
 
     `base_url` points at the OpenAI-compatible server (defaults to local Ollama; pass a vLLM
     `http://host:port/v1` to serve a quantized HF checkpoint). `max_tokens` raises the per-call
@@ -235,7 +235,7 @@ def validate_retrieval(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
-    retrieval_backend: Optional[str] = typer.Option(None, help="faiss | graph (M6)"),
+    retrieval_backend: Optional[str] = typer.Option(None, help="faiss | graph (GraphRAG backend)"),
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph strategy: local_khop | global_community"
     ),
@@ -273,7 +273,7 @@ def compare_retrieval_cmd(
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
-    """Compare FAISS vs graph/local_khop vs graph/global_community retrieval on one gold set (M6).
+    """Compare FAISS vs graph/local_khop vs graph/global_community retrieval on one gold set (GraphRAG backend).
 
     Scores each BUILT backend's recall@k / MRR on the SAME items by the source-span metric (a
     backend whose store is not built is skipped). Quantifies when the graph paths beat flat vector
@@ -321,7 +321,7 @@ def compare_vector_stores_cmd(
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
-    """M7.4: compare vector-store backends (FAISS vs Chroma/Qdrant/LanceDB) by the source-span metric.
+    """platform matrix: compare vector-store backends (FAISS vs Chroma/Qdrant/LanceDB) by the source-span metric.
 
     Builds the SAME corpus under each backend with the SAME chunking + pinned embedder, then scores
     recall@k / MRR on the gold set -- the model-independent retrieval gate before a backend's runs

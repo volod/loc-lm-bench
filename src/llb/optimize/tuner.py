@@ -1,11 +1,11 @@
-"""Two-stage Optuna tuning of backend + RAG parameters (M3.4).
+"""Two-stage Optuna tuning of backend + RAG parameters (Optuna tuning).
 
 The split discipline keeps the leaderboard honest: STAGE 1 searches the RAG/backend space on
 the disjoint `tuning` split (a proxy -- never the final gold items), STAGE 2 scores ONLY the
 winning config on the full `final` split, and only that stage-2 run is the leaderboard entry.
 The embedding is PINNED (Premise 4) and is never a search dimension.
 
-Search space (the chunking machinery already exists in M1):
+Search space (the chunking machinery already exists in RAG core):
   strategy   {fixed, sentence, recursive, markdown, semantic}
   chunk_size / chunk_overlap (as a fraction, so overlap < size always holds)
   top_k
@@ -37,7 +37,7 @@ OPTUNA_METHOD = "optuna"
 
 STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
 RETRIEVAL_MODES = ["flat", "parent_child"]
-CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in M2.4 -> ~3 chars/token
+CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
 # config -> quality on the tuning split, OR (quality, throughput) for the latency tie-break.
@@ -54,7 +54,7 @@ def with_isolation(
     sleep: Callable[[float], None] | None = None,
 ) -> Objective:
     """Wrap a trial `evaluate` so each Optuna trial runs through the SAME `isolate_cell` contract
-    as a sweep cell (M3.3): VRAM baseline -> trial -> PID-attributed reclaim gate (a leaked trial
+    as a sweep cell (isolation reclaim): VRAM baseline -> trial -> PID-attributed reclaim gate (a leaked trial
     aborts the study) -> capped thermal cooldown. This reuses the executor's cell isolation for
     tuning, so a trial that leaks VRAM cannot bias later trials' fit/throughput."""
     import functools

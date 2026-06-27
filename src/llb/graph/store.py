@@ -1,4 +1,4 @@
-"""GraphStore -- the Milestone 6 GraphRAG retrieval backend behind the RAG-store seam.
+"""GraphStore -- the GraphRAG retrieval backend behind the RAG-store seam.
 
 It quacks like `rag.store.RagStore`: a `.retrieve(question, k) -> list[ChunkRecord]` of
 offset-bearing context, so the eval graph, scoring (incl. the gated judge), isolation, and the
@@ -144,7 +144,7 @@ class GraphStore:
         n_seeds: int = DEFAULT_N_SEED_NODES,
         n_communities: int = DEFAULT_N_COMMUNITIES,
     ) -> "GraphStore":
-        """Build the graph from M4.4 extraction, detect communities, return the store."""
+        """Build the graph from ontology-assisted drafting extraction, detect communities, return the store."""
         from llb.graph.build import build_graph
 
         graph = build_graph(extractions, docs, ontology)

@@ -1,4 +1,4 @@
-"""M5.2 MCP transport -- serve the SAME tool catalog via the official `mcp` Python SDK.
+"""tooling benchmark MCP transport -- serve the SAME tool catalog via the official `mcp` Python SDK.
 
 The tooling benchmark already drives a candidate two ways from one source (the `ToolDef` catalog):
 the universal text-in-prompt protocol and the native OpenAI `tools=` caller (`bench.tooling`). This
@@ -10,7 +10,7 @@ tools. The catalog is the single source of truth across all three transports.
 inputSchema), unit-tested without the dependency. `build_mcp_server` lazily imports the `mcp` SDK
 (an opt-in extra, kept out of the base install) and builds a low-level server whose `list_tools`
 returns the catalog and whose `call_tool` echoes the call (the catalog is CALL-ONLY here -- tool
-EXECUTION is the M5.3 agentic sandbox, not this transport).
+EXECUTION is the agentic sandbox, not this transport).
 """
 
 import json
@@ -69,7 +69,7 @@ def build_mcp_server(catalog: dict[str, ToolDef], *, name: str = "loc-lm-bench-t
 
     @server.call_tool()
     async def _call_tool(tool_name: str, arguments: dict[str, Any]) -> list[Any]:
-        # Call-only catalog: echo the recognized call (real execution is the M5.3 sandbox).
+        # Call-only catalog: echo the recognized call (real execution is the agentic benchmark sandbox).
         if tool_name not in catalog:
             raise ValueError(f"unknown tool: {tool_name}")
         echo = {"tool": tool_name, "arguments": arguments}

@@ -1,4 +1,4 @@
-"""M5.4 summarization runner -- reference coverage via pinned-embedder cosine (not ROUGE).
+"""category expansion summarization runner -- reference coverage via pinned-embedder cosine (not ROUGE).
 
 Scores a candidate summary by REFERENCE COVERAGE: for each reference-summary sentence, the best
 cosine to any candidate sentence (over the project's PINNED embedder -- the same basis as
@@ -7,8 +7,8 @@ runner is unit-tested from a fake endpoint + a fake similarity, no embedder or G
 
 The objective coverage is the headline. An OPT-IN gated-judge FAITHFULNESS signal (does the summary
 stay grounded in the source?) is recorded ALONGSIDE -- never folded into the headline -- and only
-when the judge is configured AND trusted (calibration `judge_rho >= threshold`, the M3.8 gate; the
-faithfulness signal is exactly what M3.8 calibrated). The judge `scorer` is injectable, so the
+when the judge is configured AND trusted (calibration `judge_rho >= threshold`, the judge calibration gate gate; the
+faithfulness signal is exactly what judge calibration gate calibrated). The judge `scorer` is injectable, so the
 wiring is provable with a fake judge (no DeepEval / endpoint / GPU).
 """
 
@@ -127,7 +127,7 @@ def run_summarization(
     judge_scorer: JudgeScorer | None = None,
     judge_base_url: str | None = None,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-summarization",
+    run_name: str = "summarization",
     persist: bool = True,
     mirror: Mirror | None = None,
     data_verified: bool = False,
@@ -212,7 +212,7 @@ def run_summarization(
             "judge_trusted": outcome.trusted,
             "faithfulness": faithfulness,  # gated diagnostic, NOT the headline
             "faithfulness_ci": list(faithfulness_ci) if faithfulness_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None

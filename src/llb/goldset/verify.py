@@ -1,8 +1,8 @@
-"""Human sample-verification of AI-drafted gold data (MH.5 -- codeable half).
+"""Human sample-verification of AI-drafted gold data (human verification gate -- codeable half).
 
 The drafting pipeline (`llb.prep.frontier` / `llb.prep.ontology`) plus the second-frontier
 cross-check (`llb.prep.cross_check`) produce an UNVERIFIED bundle (`goldset.jsonl` + a
-self-contained `corpus/`, every item `verified=false`). MH.5 is the irreducibly-human gate:
+self-contained `corpus/`, every item `verified=false`). human verification gate is the irreducibly-human gate:
 draw a STRATIFIED sample, verify each item against the four checks (grounded / answerable +
 non-circular / reference correct / planted labels match), accept if the error rate is within
 tolerance, then flip the accepted items to `verified=true` THROUGH THE LEDGER -- never by
@@ -317,7 +317,7 @@ def _generic_verification_instruction(ref: Path | None = None) -> str:
     suffix = f" {ref}" if ref is not None else ""
     return "\n".join(
         [
-            "Create or point at one of the accepted MH.5 artifacts:",
+            "Create or point at one of the accepted human verification gate artifacts:",
             "make verify-sample BUNDLE=<bundle> VERIFY_N=<n>",
             "make verify-review VERIFY_WS=<bundle>/verify_sample.csv",
             "make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv",
@@ -830,7 +830,7 @@ def _log_report(report: dict[str, object]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MH.5 human sample-verification of draft data.")
+    parser = argparse.ArgumentParser(description="human verification gate human sample-verification of draft data.")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sa = sub.add_parser("sample", help="draw a stratified sample from a draft bundle -> worksheet")

@@ -1,7 +1,7 @@
-"""M5.3 agentic workflows runner -- in-sandbox tool execution under TIER_AGENTIC.
+"""agentic workflows runner -- in-sandbox tool execution under TIER_AGENTIC.
 
-The agentic loop is the M5.0 multi-hop controller pattern extended with TOOL CALLS + an in-sandbox
-execution step: each step the model emits one tool call (reusing the M5.2 `parse_tool_call`), the
+The agentic loop is the text analysis multi-hop controller pattern extended with TOOL CALLS + an in-sandbox
+execution step: each step the model emits one tool call (reusing the tooling benchmark `parse_tool_call`), the
 deterministic `ToolWorld` EXECUTES it, the observation is fed back, and the loop runs until the
 model calls `finish` (or answers in prose) or the step budget is exhausted. Task success is an
 OBJECTIVE assertion over the final env-state and/or the final answer; completion-rate is the
@@ -10,9 +10,9 @@ headline under `TIER_AGENTIC` and trajectory length + tool-call count are record
 An OPT-IN, GATED judge adds a TRAJECTORY-QUALITY signal a deterministic check cannot cover (is the
 final answer grounded in what the tools actually returned, and does it address the goal?). It is
 recorded ALONGSIDE completion-rate -- never folded into the headline -- and only when the judge is
-configured AND trusted (calibration `judge_rho >= threshold`, the M3.8 gate). The judge `scorer`
+configured AND trusted (calibration `judge_rho >= threshold`, the judge calibration gate gate). The judge `scorer`
 is injectable, so the wiring is provable with a FAKE judge (no DeepEval / endpoint / GPU), exactly
-like the M5.4 summarization faithfulness signal.
+like the category expansion summarization faithfulness signal.
 
 LangGraph is the fixed single agent harness for the design; this loop is the pure, langgraph-free
 form of that controller -> execute -> controller cycle, so it is unit-tested from a FAKE
@@ -57,7 +57,7 @@ _LOG = logging.getLogger(__name__)
 METHOD = "agentic"
 DEFAULT_MAX_STEPS = 6
 
-# Named harnesses (M7.1) -- the comparison axis under TIER_AGENTIC. `loop` is the pure,
+# Named harnesses (agentic harness comparison) -- the comparison axis under TIER_AGENTIC. `loop` is the pure,
 # framework-free controller->execute->controller cycle (`run_episode`); `langgraph` compiles that
 # same cycle as a LangGraph app; `crewai` drives it through a single-agent CrewAI crew. Holding
 # the task set + ToolWorld + objective scoring + gated judge FIXED, the harness is the only
@@ -116,7 +116,7 @@ class Episode:
 
 
 class Harness(Protocol):
-    """A pluggable agentic harness (M7.1): drive ONE task to a canonical `Episode`.
+    """A pluggable agentic harness (agentic harness comparison): drive ONE task to a canonical `Episode`.
 
     Every harness takes the same `(task, complete, catalog, max_steps)` and returns the same
     `Episode` (final answer + tool-call transcript + final env-state), so `check_success`, the
@@ -149,7 +149,7 @@ class AgenticRun:
     trajectory_quality_ci: tuple[float, float] | None = None
     judge_trusted: bool = False
     judge_reason: str = "no judge configured"
-    judge_diagnostics: JudgeDiagnostics | None = None  # M7.2 zero-valued-judge observability
+    judge_diagnostics: JudgeDiagnostics | None = None  # judge diagnostics zero-valued-judge observability
 
 
 def _norm(value: Any) -> str:
@@ -305,7 +305,7 @@ def run_agentic(
     judge_scorer: JudgeScorer | None = None,
     judge_base_url: str | None = None,
     data_dir: Path | str | None = None,
-    run_name: str = "m5-agentic",
+    run_name: str = "agentic",
     persist: bool = True,
     mirror: Mirror | None = None,
     data_verified: bool = False,
@@ -378,7 +378,7 @@ def run_agentic(
             "tier": TIER_AGENTIC,
             "category": "agentic",
             "harness": harness_name,  # loop | langgraph | crewai (board comparison axis)
-            "prompt_system": prompt_system,  # M7.3 prompt-system id (board comparison axis)
+            "prompt_system": prompt_system,  # RAG prompt-system comparison prompt-system id (board comparison axis)
             "n_tasks": len(tasks),
             "max_steps": max_steps,
             "completion_rate": result.objective_score,
@@ -388,7 +388,7 @@ def run_agentic(
             "judge_trusted": outcome.trusted,
             "trajectory_quality": quality,  # gated diagnostic, NOT the headline
             "trajectory_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
             **verification_cfg,
         }
         judge_status: JudgeStatus | None = None

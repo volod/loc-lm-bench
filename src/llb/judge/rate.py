@@ -1,4 +1,4 @@
-"""Interactive human rater for the judge-calibration worksheet (M3.8).
+"""Interactive human rater for the judge-calibration worksheet (judge calibration gate).
 
 A terminal session that walks a pre-filled calibration worksheet item by item and writes
 the HUMAN columns (`human_answer`, `human_rating`, `human_note`, `human_status`) in place.

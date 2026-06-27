@@ -1,4 +1,4 @@
-"""Ingest SQuAD-format Ukrainian QA into canonical gold items (M0.3).
+"""Ingest SQuAD-format Ukrainian QA into canonical gold items (Ukrainian SQuAD ingest).
 
 Input is either a local SQuAD-format JSON (`--squad-json`: flattened records, or nested
 SQuAD `data/paragraphs/qas`), or a Hugging Face dataset id (`--hf-dataset`, needs the

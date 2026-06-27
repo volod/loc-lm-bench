@@ -1,4 +1,4 @@
-"""Typed intermediate artifacts for the M4.4 ontology-assisted drafting pipeline.
+"""Typed intermediate artifacts for the ontology-assisted drafting pipeline.
 
 Every grounded artifact reuses the canonical `SourceSpan` (doc id + char offsets + exact
 text), so extraction, the induced ontology, and the drafted gold items all link back to the

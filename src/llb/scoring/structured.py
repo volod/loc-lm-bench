@@ -1,4 +1,4 @@
-"""M5.4 structured-output scoring -- JSON-schema conformance + field accuracy via Pydantic (pure).
+"""structured-output scoring -- JSON-schema conformance + field accuracy via Pydantic (pure).
 
 Validates a model's JSON output against a target schema with Pydantic (no new `jsonschema`
 dependency -- Pydantic is already a core dep) and scores field accuracy against expected values.

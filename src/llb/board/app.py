@@ -1,9 +1,4 @@
-"""Streamlit board (M3.7) -- a thin page over the canonical run bundles.
-
-Deliberately minimal: the average-rank leaderboard (with Pareto + CI-overlap markers from
-M3.6) plus the best config per model. Deep per-run inspection lives in the MLflow UI
-(`make mlflow`). Run with `llb board` (which shells out to `streamlit run` on this file).
-"""
+"""Streamlit board over canonical run bundles."""
 
 from pathlib import Path
 
@@ -12,8 +7,8 @@ from llb.board.data import (
     config_summary,
     harness_comparison,
     load_agentic_harness_records,
+    load_category_composite,
     load_category_records,
-    load_m5_composite,
     load_rag_prompt_system_records,
     load_run_records,
     load_screen_reports,
@@ -32,84 +27,96 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
     st.set_page_config(page_title="loc-lm-bench", layout="wide")
     st.title("loc-lm-bench -- local Ukrainian LLM leaderboard")
 
+    _render_private_leaderboard(st, root)
+    _render_category_boards(st, data_dir)
+    _render_harness_comparison(st, data_dir)
+    _render_prompt_system_comparison(st, data_dir)
+    _render_category_composite(st, data_dir)
+    _render_public_screens(st, screens)
+    st.caption("Deep per-run inspection: the MLflow UI (`make mlflow`).")
+
+
+def _render_private_leaderboard(st, root: Path) -> None:
     records = best_per_model(load_run_records(root))
-    if records:
-        results = [r.result for r in records]
-        rows = rank_board(results)
-        st.subheader("Tier-2 private leaderboard (final split)")
-        st.caption(ranking_policy_note(results, judge_trusted=False))
-        st.caption(
-            "`*` = Pareto-optimal (quality / speed / VRAM); `~` = CI overlaps the model above."
-        )
-        st.dataframe(rows, use_container_width=True)
-
-        st.subheader("Best config per model")
-        by_model = {r.result.model: r for r in records}
-        for row in rows:
-            rec = by_model.get(row["model"])
-            if rec is not None:
-                st.write(f"**{row['model']}** ({row['backend']})", config_summary(rec.config))
-    else:
+    if not records:
         st.info(f"No Tier-2 runs under {root}. Run `llb run-eval` (or `llb sweep`) first.")
+        return
 
-    # M5 category boards -- each renders under its OWN Tier and is NEVER cross-ranked with the
-    # Tier-2 RAG board or with another category (the aggregate guard refuses a mixed-tier board).
+    results = [r.result for r in records]
+    rows = rank_board(results)
+    st.subheader("Tier-2 private leaderboard (final split)")
+    st.caption(ranking_policy_note(results, judge_trusted=False))
+    st.caption("`*` = Pareto-optimal (quality / speed / VRAM); `~` = CI overlaps the model above.")
+    st.dataframe(rows, use_container_width=True)
+
+    st.subheader("Best config per model")
+    by_model = {r.result.model: r for r in records}
+    for row in rows:
+        rec = by_model.get(row["model"])
+        if rec is not None:
+            st.write(f"**{row['model']}** ({row['backend']})", config_summary(rec.config))
+
+
+def _render_category_boards(st, data_dir: Path) -> None:
     category_by_tier = load_category_records(data_dir)
-    if category_by_tier:
-        st.subheader("M5 category boards (each its own Tier, not cross-ranked)")
-        for tier in sorted(category_by_tier):
-            results = category_by_tier[tier]
-            st.caption(f"{tier} -- {ranking_policy_note(results, judge_trusted=False)}")
-            st.dataframe(rank_board(results), use_container_width=True)
+    if not category_by_tier:
+        return
+    st.subheader("Category boards (each own Tier, not cross-ranked)")
+    for tier in sorted(category_by_tier):
+        results = category_by_tier[tier]
+        st.caption(f"{tier} -- {ranking_policy_note(results, judge_trusted=False)}")
+        st.dataframe(rank_board(results), use_container_width=True)
 
-    # M7.1 agentic harness comparison -- ranks ONE model across {loop, langgraph, crewai} under
-    # TIER_AGENTIC, so the harness effect is isolated without cross-ranking models.
+
+def _render_harness_comparison(st, data_dir: Path) -> None:
     harness_records = load_agentic_harness_records(data_dir)
-    if harness_records:
-        st.subheader("M7.1 agentic harness comparison (LangGraph vs CrewAI vs loop)")
-        st.caption("Per model, the same task set + scoring + judge are held fixed; harness varies.")
-        for model in sorted({r.model for r in harness_records}):
-            rows, _table, harnesses = harness_comparison(data_dir, model)
-            if rows:
-                st.caption(f"**{model}** -- harnesses: {', '.join(sorted(set(harnesses)))}")
-                st.dataframe(rows, use_container_width=True)
+    if not harness_records:
+        return
+    st.subheader("Agentic harness comparison (LangGraph vs CrewAI vs loop)")
+    st.caption("Per model, the same task set + scoring + judge are held fixed; harness varies.")
+    for model in sorted({r.model for r in harness_records}):
+        rows, _table, harnesses = harness_comparison(data_dir, model)
+        if rows:
+            st.caption(f"**{model}** -- harnesses: {', '.join(sorted(set(harnesses)))}")
+            st.dataframe(rows, use_container_width=True)
 
+
+def _render_prompt_system_comparison(st, data_dir: Path) -> None:
     rag_prompt_records = load_rag_prompt_system_records(data_dir)
-    if rag_prompt_records:
-        st.subheader("M7.3 RAG prompt-system comparison")
-        st.caption(
-            "Per model, retrieval/scoring stay fixed; only the prepended prompt system varies."
-        )
-        for model in sorted({r.model for r in rag_prompt_records}):
-            rows, _table, ids = rag_prompt_system_comparison(data_dir, model)
-            if rows:
-                st.caption(f"**{model}** -- prompt systems: {', '.join(ids)}")
-                st.dataframe(rows, use_container_width=True)
+    if not rag_prompt_records:
+        return
+    st.subheader("RAG prompt-system comparison")
+    st.caption("Per model, retrieval/scoring stay fixed; only the prepended prompt system varies.")
+    for model in sorted({r.model for r in rag_prompt_records}):
+        rows, _table, ids = rag_prompt_system_comparison(data_dir, model)
+        if rows:
+            st.caption(f"**{model}** -- prompt systems: {', '.join(ids)}")
+            st.dataframe(rows, use_container_width=True)
 
-    composite_rows, composite_issues = load_m5_composite(data_dir)
+
+def _render_category_composite(st, data_dir: Path) -> None:
+    composite_rows, composite_issues = load_category_composite(data_dir)
     if composite_rows:
-        st.subheader("M5 composite headline (verified category suite)")
+        st.subheader("Category composite headline (verified suite)")
         st.caption(
-            "Shown only when every required M5 category is present, CI-capable, and stamped "
-            "as verified."
+            "Shown only when every required category is present, CI-capable, and stamped as verified."
         )
         st.dataframe(composite_rows, use_container_width=True)
     elif composite_issues:
         st.info(
-            "M5 composite headline is gated until every required category has verified data "
+            "Category composite headline is gated until every required category has verified data "
             "and a reloadable per-case CI series."
         )
 
-    # Tier-1 public screens are shown SEPARATELY -- loglikelihood/generation tracks are not
-    # comparable to Tier-2 private metrics and are never ranked together.
-    reports = load_screen_reports(screens)
-    if reports:
-        st.subheader("Tier-1 public screen (NOT comparable to Tier-2)")
-        for track in sorted({r["track"] for r in reports}):
-            st.caption(f"track: {track}")
-            st.dataframe([r for r in reports if r["track"] == track], use_container_width=True)
 
-    st.caption("Deep per-run inspection: the MLflow UI (`make mlflow`).")
+def _render_public_screens(st, screens: Path) -> None:
+    reports = load_screen_reports(screens)
+    if not reports:
+        return
+    st.subheader("Tier-1 public screen (NOT comparable to Tier-2)")
+    for track in sorted({r["track"] for r in reports}):
+        st.caption(f"track: {track}")
+        st.dataframe([r for r in reports if r["track"] == track], use_container_width=True)
 
 
 def main() -> None:
