@@ -47,6 +47,8 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
   -> accepted-ledger flip, for real-corpus and synthetic bundles.
 - [Composite headline](guides/composite-headline.md) -- close-out flow for the guarded M5
   composite: verify category data, stamp category runs, preflight blockers, and publish the board.
+- [Platform matrix](guides/platform-matrix.md) -- M7.4 backend matrix, power metrics, and
+  GPU-class extension commands.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run the eval skeleton](guides/run-skeleton.md) -- Milestone 1: build-index -> run-eval.

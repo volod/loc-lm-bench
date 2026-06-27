@@ -12,10 +12,9 @@ sequence number is a stable identifier (AGENTS.md); it appears only while it has
 
 ## Milestone 7 -- Extended, deferred, and forward-verification tasks
 
-Four parts are non-blocking or deferred: the extended agentic harness comparison (M7.1), the
-non-blocking quality-verification actions (M7.2, provable in CI from fake endpoints), the
-human-assisted RAG prompt-system generation lane (M7.3), and deferred work that needs more
-hardware or a committed consumer (M7.4).
+Four parts remain: the extended agentic harness comparison (M7.1), the non-blocking
+quality-verification actions (M7.2, provable in CI from fake endpoints), the human-assisted RAG
+prompt-system generation lane (M7.3), and remaining vector-store expansion work (M7.4).
 
 ### M7.1 Extended agentic workflows (LangGraph vs CrewAI harness)
 
@@ -105,12 +104,14 @@ bounded context size, run the same RAG benchmark across selected models/harnesse
 scores by prompt-system id with all corpus, template, metadata, graph mapping, and context-budget
 inputs recorded in the run artifacts.
 
-### M7.4 Deferred / blocked (needs more hardware or a committed consumer)
+### M7.4 Remaining vector-store expansion
 
-Each unblocks differently:
-- **Platform & matrix expansion (needs a committed consumer / more hardware).** Build last:
-  - multi-backend comparison -- same model across vLLM / Ollama / llama.cpp (per-source quant
-    metadata from M3.2 is the seam);
-  - multi-vector-store -- Chroma / Qdrant / LanceDB behind the RAG-store seam (FAISS is v1);
-  - full GPU-class matrix -- 12 / 24 / 48 GB beyond the validated 16 GB class (needs other GPUs);
-  - quality-per-watt -- a derived metric over the NVML power already sampled per cell (M3.3).
+Current reference for the 16 GB backend matrix, power metric, and per-GPU serving-config commands:
+[`milestone-7-platform-matrix.md`](current/milestone-7-platform-matrix.md).
+
+Remaining work:
+- **Multi-vector-store adapters.** Add real Chroma, Qdrant, and LanceDB adapters behind the
+  RAG-store seam while keeping FAISS as the default. Each adapter must preserve chunk ids,
+  source-span offsets, retrieval scores, and the existing `.retrieve(question, k)` contract. Add
+  build/load commands, optional dependency groups, fake unit tests, and one real source-span
+  retrieval comparison over the committed gold set before any run can be compared to FAISS.

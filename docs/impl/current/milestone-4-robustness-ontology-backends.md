@@ -103,10 +103,9 @@ return to baseline (residual 0 MB, verdict `reclaimed`). Resolver routing was co
 live HF probe (a real GGUF-only repo -> `chosen_backend=llamacpp`), and the auto-derived split
 produced `-ngl 49 of 62` for an oversized offload candidate.
 
-Possible further improvements: the `/props` served-context parse depends on the llama.cpp build's
-response shape (both known shapes are handled, with a fallback); a true layer-split (partial
-offload) has not yet been exercised on a real oversized GGUF -- only the all-on-GPU path and the
-derived-split arithmetic are confirmed live.
+Possible further improvements: keep extending the `/props` served-context parser if future
+llama.cpp builds move `n_ctx` again. Known response shapes are handled with a fallback, and both
+all-on-GPU and partial-offload run paths have real-host coverage.
 
 ### vLLM serving knobs + flashinfer preflight (M4.3)
 `run-eval` now takes `--max-model-len` and `--gpu-memory-utilization` directly (previously only via

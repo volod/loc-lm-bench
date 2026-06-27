@@ -2,6 +2,7 @@
 
 from llb.backends.base import ChatResult
 from llb.backends.telemetry import (
+    PowerSampler,
     VramSampler,
     collect_telemetry,
     measure_throughput,
@@ -59,6 +60,15 @@ def test_vram_sampler_no_reader_is_noop():
     assert s.peak_mb == 0
 
 
+def test_power_sampler_tracks_mean_and_peak():
+    values = iter([40.0, 120.0, 80.0])
+    sampler = PowerSampler(reader=lambda: next(values))
+    for _ in range(3):
+        sampler.sample()
+    assert sampler.mean_w == 80.0
+    assert sampler.peak_w == 120.0
+
+
 def test_collect_telemetry_assembles_record():
     class FakeLauncher:
         load_time_s = 3.5
@@ -71,13 +81,20 @@ def test_collect_telemetry_assembles_record():
             return 4096
 
     report = collect_telemetry(
-        FakeLauncher(), requested_context=8192, vram_reader=lambda: 7000, warmup=0
+        FakeLauncher(),
+        requested_context=8192,
+        vram_reader=lambda: 7000,
+        power_reader=lambda: 100.0,
+        warmup=0,
     )
     assert report["steady_tokens_per_s"] == 20.0  # 5 tokens / 0.25 s
     assert report["served_context"] == 4096 and report["requested_context"] == 8192
     assert report["load_time_s"] == 3.5
     assert report["backend"] == "vllm"
     assert report["peak_vram_mb"] == 7000
+    assert report["mean_power_w"] == 100.0
+    assert report["tokens_per_watt"] == 0.2
+    assert report["power_samples"] >= 1
 
     FakeLauncher.load_time_s = None
     assert collect_telemetry(FakeLauncher(), warmup=0)["load_time_s"] is None

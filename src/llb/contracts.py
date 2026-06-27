@@ -303,6 +303,10 @@ class TelemetryReport(TypedDict):
     backend: str | None
     gpu_memory_utilization: float | None
     n_gpu_layers: int | None  # llama.cpp offload split (None for non-llama.cpp backends)
+    mean_power_w: NotRequired[float]  # mean total GPU power during telemetry, when available
+    peak_power_w: NotRequired[float]  # peak total GPU power during telemetry, when available
+    power_samples: NotRequired[int]
+    tokens_per_watt: NotRequired[float]  # steady tokens/sec divided by mean_power_w
     sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; M4.3), recorded in manifest
     flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
@@ -312,6 +316,9 @@ class RunMetrics(TypedDict):
     objective_score: float
     reliability: float
     tokens_per_s: float
+    mean_power_w: NotRequired[float]
+    tokens_per_watt: NotRequired[float]
+    quality_per_watt: NotRequired[float]  # objective_score * tokens_per_s / mean_power_w
     judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
 
 

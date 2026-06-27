@@ -37,8 +37,8 @@ taken forward, as Milestone 7 in `plan.md`; the remaining frameworks (LangChain 
 Haystack / AutoGen) stay deferred. Also out of scope: loc-lm-bench as a public leaderboard (it
 consumes lang-uk / INSAIT results as a prior, never duplicates them).
 
-No longer deferred (now forward work in `plan.md`, not "out of scope"): the security / agentic /
-MCP-tooling categories and the remaining taxonomy (Milestone 5), GraphRAG (Milestone 6, GO
-decided), the LangGraph-vs-CrewAI harness comparison and RAG prompt-system generation/tuning
-(Milestone 7), and the multi-backend / multi-vector-store / GPU-matrix / quality-per-watt
-expansions (Milestone 7 / M7.4, built only with a committed consumer or more hardware).
+No longer deferred (now forward work in `plan.md`, not "out of scope"): the LangGraph-vs-CrewAI
+harness comparison and RAG prompt-system generation/tuning (Milestone 7), plus the remaining
+multi-vector-store adapters. The 16 GB backend matrix, quality-per-watt path, and generated
+per-GPU serving-config workflow are current-state facts; see
+[`milestone-7-platform-matrix.md`](milestone-7-platform-matrix.md).
