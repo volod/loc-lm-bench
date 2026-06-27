@@ -306,6 +306,13 @@ def compare_retrieval_cmd(
 def compare_vector_stores_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    corpus_root: Optional[Path] = typer.Option(
+        None,
+        help=(
+            "corpus directory to build for each backend; defaults to the sibling corpus/ of "
+            "--goldset when present, else the config corpus_root"
+        ),
+    ),
     backends: str = typer.Option(
         "faiss,chroma,qdrant,lancedb",
         help="comma-separated vector backends to compare (each over the SAME corpus + embedder)",
@@ -325,7 +332,11 @@ def compare_vector_stores_cmd(
     from llb.goldset.schema import load_goldset
     from llb.rag.compare import build_vector_store_comparison, compare_retrieval, format_comparison
 
-    cfg = load_config(config, goldset_path=goldset)
+    cfg = load_config(
+        config,
+        goldset_path=goldset,
+        corpus_root=_compare_vector_corpus_root(goldset, corpus_root),
+    )
     items = load_goldset(cfg.goldset_path)
     if split:
         items = [it for it in items if it.split == split]
@@ -336,3 +347,15 @@ def compare_vector_stores_cmd(
     if out is not None:
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[compare-vector-stores] wrote report -> {out}")
+
+
+def _compare_vector_corpus_root(
+    goldset: Optional[Path], corpus_root: Optional[Path]
+) -> Optional[Path]:
+    """Resolve the corpus used by compare-vector-stores without surprising config overrides."""
+    if corpus_root is not None:
+        return corpus_root
+    if goldset is None:
+        return None
+    sibling = goldset.parent / "corpus"
+    return sibling if sibling.exists() else None

@@ -105,7 +105,7 @@ Generated files land under `.data/llb/serving/gpu-<tier>gb/` with `tier.json`, s
 run-eval YAML/scripts. The same manifest fields above provide comparable score, throughput, VRAM,
 load, and power metrics.
 
-## Multi-Vector-Store Adapters (plan M7.4)
+## Multi-Vector-Store Adapters (M7.4)
 
 Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS stays the default.
 
@@ -117,13 +117,85 @@ Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS st
 - Adapters `src/llb/rag/stores/`: shared `VectorStoreAdapter` base (build-order id shaping + uniform
   `vectors.npy` persistence; subclasses implement `_index` + `_search_row`) and `ChromaIndex` /
   `QdrantIndex` / `LanceDBIndex`. Each lazy-imports its client and converts the store's distance to a
-  FAISS-comparable cosine similarity. Optional extras: `[rag-chroma]` / `[rag-qdrant]` /
-  `[rag-lancedb]`.
+  FAISS-comparable cosine similarity. Optional extras pin the validated client APIs:
+  `[rag-chroma]` = `chromadb==1.5.9`, `[rag-qdrant]` = `qdrant-client==1.18.0`, and
+  `[rag-lancedb]` = `lancedb==0.33.0`.
+- Live API fixes: Chroma transient indexes use a per-instance collection name so repeated
+  save/load round-trips do not collide in one process; Qdrant uses `create_collection` plus
+  `query_points(...)` because client 1.18 no longer exposes `search`; LanceDB keeps
+  `.metric("cosine")` and maps `_distance` back to cosine similarity.
 - The chosen backend is recorded in the store meta (`backend`), so `RagStore.load` re-selects it
   without a config. Build: `build-index --vector-store faiss|chroma|qdrant|lancedb`. Compare:
   `compare-vector-stores --backends faiss,chroma,... --goldset ...` builds the SAME corpus under each
   backend (same chunking + pinned embedder) and reports recall@k / MRR by the source-span metric
-  (`rag.compare.build_vector_store_comparison` + the shared `compare_retrieval`).
+  (`rag.compare.build_vector_store_comparison` + the shared `compare_retrieval`). The compare command
+  accepts `--corpus-root`; when `--goldset <bundle>/goldset.jsonl` is passed and `<bundle>/corpus`
+  exists, it uses that sibling corpus automatically.
 - Tests: `tests/test_vector_index.py` -- dispatch, score conversion, base shaping (dependency-free),
-  the missing-extra SystemExit per backend, and `@slow` FAISS-seam + vector round-trip. The real
-  Chroma/Qdrant/LanceDB round-trips are host-only (each needs its extra) and unverified in CI.
+  the missing-extra SystemExit per backend, `@slow` FAISS-seam + vector round-trip, and real
+  Chroma/Qdrant round-trips when those extras are installed. LanceDB is validated through the CLI
+  host path because `lancedb.connect()` can hang under pytest-specific environment variables on this
+  host while working normally from the command line. The real-client round-trips stay marked
+  `@pytest.mark.slow`, so `make ci` (`pytest -m "not slow"`) remains the GitHub-safe quick suite.
+
+### Real adapter validation (2026-06-27)
+
+Host validation used the committed `samples/goldsets/ua_squad_postedited_v1` bundle and an isolated
+`DATA_DIR=.data/m7_4r_validation`. Each backend was built with:
+
+    env DATA_DIR=.data/m7_4r_validation .venv/bin/python -m llb.main build-index \
+      --corpus-root samples/goldsets/ua_squad_postedited_v1/corpus \
+      --vector-store <backend>
+
+Immediately after each build, `validate-retrieval` reloaded the persisted store and scored the
+same 250-item gold set at `k=10`. All four persisted stores produced `recall@10=0.980` and
+`MRR=0.847`, matching the FAISS baseline.
+
+The one-shot comparison command:
+
+    env DATA_DIR=.data/m7_4r_validation .venv/bin/python -m llb.main compare-vector-stores \
+      --backends faiss,chroma,qdrant,lancedb \
+      --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+      --k 10 --out .data/m7_4r_validation/llb/rag/vector_store_compare_k10.json
+
+Result:
+
+| Backend | recall@10 | MRR |
+| --- | ---: | ---: |
+| faiss | 0.980 | 0.847 |
+| chroma | 0.980 | 0.847 |
+| qdrant | 0.980 | 0.847 |
+| lancedb | 0.980 | 0.847 |
+
+`best_recall` is `chroma` only because the report tie-breaks identical recall/MRR by label; there is
+no measured retrieval-quality difference on this corpus. No Locust scenario was needed because these
+adapters run as in-process local stores, not as live HTTP services. If a future remote vector-store
+mode is added, use Locust (`https://github.com/locustio/locust`) to drive concurrent
+`retrieve(question, k)` calls against that service path, then compare recall/MRR separately with the
+same source-span metric.
+
+Manual procedure for a future text corpus:
+
+1. Prepare a verified bundle with `<bundle>/goldset.jsonl` and `<bundle>/corpus/`; run the normal
+   data-verification gate before treating results as headline-capable.
+2. Install the needed extras:
+
+        uv pip install --python .venv/bin/python -e ".[rag,rag-chroma,rag-qdrant,rag-lancedb]"
+
+3. For persisted-store reload checks, build and validate one backend at a time:
+
+        export DATA_DIR=.data/vector-store-validation
+        .venv/bin/python -m llb.main build-index --corpus-root <bundle>/corpus \
+          --vector-store <backend>
+        .venv/bin/python -m llb.main validate-retrieval --goldset <bundle>/goldset.jsonl --k 10
+
+   Repeat with `<backend>` = `faiss`, `chroma`, `qdrant`, and `lancedb`. This overwrites the single
+   validation store between backends; use a backend-specific `DATA_DIR` if you need to keep each
+   persisted store.
+4. Run the comparison:
+
+        .venv/bin/python -m llb.main compare-vector-stores \
+          --backends faiss,chroma,qdrant,lancedb --goldset <bundle>/goldset.jsonl --k 10 \
+          --out <report>.json
+
+   If the gold set and corpus are not siblings, pass `--corpus-root <corpus>`.

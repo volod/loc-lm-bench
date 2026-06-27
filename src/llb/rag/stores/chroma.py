@@ -6,10 +6,11 @@ so `retrieval_score` stays on the FAISS-comparable cosine scale.
 """
 
 from typing import Any
+from uuid import uuid4
 
 from llb.rag.stores.base import VectorStoreAdapter, cosine_distance_to_similarity
 
-_COLLECTION = "llb"
+_COLLECTION_PREFIX = "llb"
 
 
 class ChromaIndex(VectorStoreAdapter):
@@ -25,8 +26,9 @@ class ChromaIndex(VectorStoreAdapter):
             ) from exc
         client = chromadb.EphemeralClient()
         # cosine space so the distance is 1 - cosine_similarity over the normalized vectors.
-        self._collection = client.create_collection(
-            name=_COLLECTION, metadata={"hnsw:space": "cosine"}
+        collection_name = f"{_COLLECTION_PREFIX}-{uuid4().hex}"
+        self._collection: Any = client.create_collection(
+            name=collection_name, metadata={"hnsw:space": "cosine"}
         )
         self._collection.add(
             ids=[str(i) for i in range(len(vectors))],
@@ -34,7 +36,7 @@ class ChromaIndex(VectorStoreAdapter):
         )
 
     def _search_row(self, query: list[float], k: int) -> list[tuple[int, float]]:
-        result = self._collection.query(query_embeddings=[query], n_results=k)
+        result: dict[str, Any] = self._collection.query(query_embeddings=[query], n_results=k)
         ids = result["ids"][0]
         distances = result["distances"][0]
         return [

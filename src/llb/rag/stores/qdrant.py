@@ -26,7 +26,9 @@ class QdrantIndex(VectorStoreAdapter):
         self._models = models
         self._client = QdrantClient(location=":memory:")
         dim = int(vectors.shape[1])
-        self._client.recreate_collection(
+        if self._client.collection_exists(collection_name=_COLLECTION):
+            self._client.delete_collection(collection_name=_COLLECTION)
+        self._client.create_collection(
             collection_name=_COLLECTION,
             vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
         )
@@ -36,5 +38,6 @@ class QdrantIndex(VectorStoreAdapter):
         )
 
     def _search_row(self, query: list[float], k: int) -> list[tuple[int, float]]:
-        hits = self._client.search(collection_name=_COLLECTION, query_vector=query, limit=k)
+        result = self._client.query_points(collection_name=_COLLECTION, query=query, limit=k)
+        hits = result.points
         return [(int(hit.id), float(hit.score)) for hit in hits]

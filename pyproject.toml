@@ -28,9 +28,10 @@ rag = [
 eval = ["langgraph>=0.2"]
 crewai = ["crewai>=1.15,<2"]  # M7.1 alt agentic harness (LangGraph vs CrewAI); validated on 1.15.0
 # M7.4 alternative vector stores behind the RAG-store seam (FAISS stays the default in [rag]).
-rag-chroma = ["chromadb>=0.5"]
-rag-qdrant = ["qdrant-client>=1.9"]
-rag-lancedb = ["lancedb>=0.10"]
+# Pinned because these clients have version-sensitive query/score APIs.
+rag-chroma = ["chromadb==1.5.9"]
+rag-qdrant = ["qdrant-client==1.18.0"]
+rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # M6 GraphRAG backend: persisted graph + recursive-CTE k-hop engine
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]

@@ -11,27 +11,11 @@ extended-agentic harness comparison, the judge-diagnostic + smoke verification, 
 generation lane, and the multi-vector-store adapters live in
 [`current/milestone-7-extended-workflows.md`](current/milestone-7-extended-workflows.md) and
 [`current/milestone-7-platform-matrix.md`](current/milestone-7-platform-matrix.md); only the
-host-only validation residuals below remain open.
+residual below remains open.
 
 ---
 
-## Milestone 7 -- Remaining host-only validation residuals
-
-Real-dependency / real-host validation for paths whose seam, adaptation, and scoring the lightweight
-CI already covers through fakes, but whose true third-party API behavior the CI cannot exercise. Only
-the live integration is open.
-
-### M7.4r Validate the real Chroma/Qdrant/LanceDB adapters + one gold-set comparison
-
-The vector-store seam and per-backend score conversion are tested; the live client APIs are not.
-Install `[rag-chroma]` / `[rag-qdrant]` / `[rag-lancedb]` on a host and, for each backend:
-`build-index --vector-store <backend>` over the committed gold-set corpus, confirm the persisted
-store reloads and `validate-retrieval` matches the FAISS recall@k within noise, then run one
-`compare-vector-stores --backends faiss,chroma,qdrant,lancedb --goldset
-samples/goldsets/ua_squad_postedited_v1/goldset.jsonl` and record the source-span recall@k / MRR
-table. The query/score APIs are version-sensitive (Qdrant `search` vs `query_points`, LanceDB
-`.metric("cosine")`, Chroma `query` distances) -- pin working versions and fix any adapter
-`_index` / `_search_row` that the live API rejects.
+## Milestone 7 -- Remaining work
 
 ### M7.3r Extend the prompt-system board axis to the baseline RAG `run-eval` lane
 

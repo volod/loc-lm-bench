@@ -106,3 +106,32 @@ def test_base_adapter_vector_roundtrip(tmp_path):
     reloaded = _StubAdapter.load(tmp_path)
     _scores, ids = reloaded.search([[0.0, 1.0]], 1)
     assert ids == [[1]]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "backend,module",
+    [
+        (vi.RAG_BACKEND_CHROMA, "chromadb"),
+        (vi.RAG_BACKEND_QDRANT, "qdrant_client"),
+    ],
+)
+def test_real_adapter_build_search_save_load(tmp_path, backend, module):
+    pytest.importorskip(module)
+    pytest.importorskip("numpy")
+    import numpy as np
+
+    vectors = np.array([[1.0, 0.0], [0.0, 1.0], [0.8, 0.6]], dtype="float32")
+    query = np.array([[1.0, 0.0]], dtype="float32")
+    index = vi.build_vector_index(backend, vectors)
+    scores, ids = index.search(query, 2)
+    assert ids == [[0, 2]]
+    assert scores[0][0] == pytest.approx(1.0)
+    assert scores[0][1] == pytest.approx(0.8)
+
+    vi.save_vector_index(index, backend, tmp_path)
+    assert (tmp_path / backend / "vectors.npy").exists()
+    reloaded = vi.load_vector_index(backend, tmp_path)
+    scores2, ids2 = reloaded.search(query, 2)
+    assert ids2 == ids
+    assert scores2[0] == pytest.approx(scores[0])
