@@ -76,6 +76,11 @@ Optional knobs:
 - `JUDGE_RHO=<rho> JUDGE_MODEL=<judge-id> JUDGE_BASE_URL=<url>` enables the gated judge
   diagnostics for categories that support it.
 
+Judge diagnostics are admitted only when `JUDGE_RHO` clears the configured gate. They stay
+diagnostic: objective scores remain the headline. Empty candidate answers receive zero judge
+scores, and malformed local-judge JSON zeros only the affected metric with a warning so the
+composite preflight can still finish.
+
 The target chains the required commands in order:
 
 ```sh
@@ -169,6 +174,8 @@ Use these only to inspect data shape. Do not use diagnostic output as a headline
   then rerun sample -> review -> accept.
 - `ledger contains unverified item(s)`: rerun `make verify-accept` from a reviewed worksheet so the
   accepted ledger is emitted by the tool.
+- `judge ... invalid JSON`: use the warning as a judge-quality diagnostic; the affected metric is
+  zeroed, and objective category scoring still controls the headline.
 - `category lacks per-case CI series`: rerun the category with current code so each per-case row
   carries `objective_score`.
 - `missing required tier`: run that category for the same model id and verified data revision.

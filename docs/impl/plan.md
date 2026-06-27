@@ -62,6 +62,10 @@ Every forward verification provable WITHOUT a real CUDA host:
 - **Code-quality gate:** keep `make ci` green -- Ruff format + lint, mypy (strict), and the
   lightweight pytest group (`-m "not slow"`); the full suite (incl. `@pytest.mark.slow`) runs
   locally via `make test`. Every heavy dependency stays lazy-imported so the base install imports.
+- **Judge diagnostic observability:** record counts and reasons for zero-valued judge diagnostics
+  in manifests and the board (empty candidate answer, malformed judge JSON, judge transport error),
+  and add a strict-json judge smoke check before long judged runs; this helps distinguish candidate
+  failures from local-judge format failures while keeping objective scores as the headline.
 - **AGENTS.md guardrails:** paths under `.data/llb/`; ASCII logs; confirm the canonical `max_jobs()`
   helper (`scripts/shared/common.sh`) before any vLLM/llama.cpp source build.
 
