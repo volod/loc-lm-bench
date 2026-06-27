@@ -10,11 +10,21 @@ trial onto the board would leak stage-1 results into the final leaderboard. No S
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from llb.contracts import JsonObject, ScreenReport
-from llb.scoring.aggregate import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
+from llb.bench.agentic import HARNESS_LOOP
+from llb.contracts import BoardRow, JsonObject, ScreenReport
+from llb.scoring.aggregate import (
+    DEFAULT_WEIGHT_JUDGE,
+    TIER_AGENTIC,
+    ModelResult,
+    format_board,
+    headline_quality,
+    rank_board,
+    ranking_policy_note,
+)
+from llb.scoring.composite import CompositeComponent, CompositeIssue, build_m5_composite_rows
 
 _LOG = logging.getLogger(__name__)
 
@@ -30,6 +40,17 @@ class RunRecord:
     run_dir: str
     created_at: str
     split: str
+
+
+@dataclass
+class CategoryRunRecord:
+    result: ModelResult
+    config: JsonObject
+    run_dir: str
+    created_at: str
+    data_verified: bool
+    verification_ref: str | None
+    verification_error: str | None = None
 
 
 def read_case_splits(run_dir: Path) -> set[str]:
@@ -215,16 +236,36 @@ CATEGORY_METHODS = (
     "text-analysis",
 )
 
+CATEGORY_OBJECTIVE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "security": ("objective_score", "defended"),
+    "tooling": ("objective_score", "correct"),
+    "agentic": ("objective_score", "success"),
+    "summarization": ("objective_score", "coverage"),
+    "structured": ("objective_score", "score"),
+    "text_analysis": ("objective_score",),
+    "text-analysis": ("objective_score",),
+}
 
-def _category_result(manifest: JsonObject, run_dir: Path) -> ModelResult | None:
-    """Build a `ModelResult` from one M5 category run bundle (its config carries the Tier)."""
+
+def _category_case_objectives(config: JsonObject, run_dir: Path) -> list[float]:
+    category = str(config.get("category", ""))
+    columns = CATEGORY_OBJECTIVE_COLUMNS.get(category, ("objective_score",))
+    for column in columns:
+        values = read_case_series(run_dir, column)
+        if values:
+            return values
+    return []
+
+
+def _category_record(manifest: JsonObject, run_dir: Path) -> CategoryRunRecord | None:
+    """Build a category run record from one M5 run bundle (its config carries the Tier)."""
     config = manifest.get("config") or {}
     tier = config.get("tier")
     model = config.get("model")
     if not tier or not model:
         return None
     metrics = manifest.get("metrics") or {}
-    return ModelResult(
+    result = ModelResult(
         model=str(model),
         backend=str(config.get("backend", "?")),
         objective_score=float(metrics.get("objective_score", 0.0)),
@@ -232,17 +273,38 @@ def _category_result(manifest: JsonObject, run_dir: Path) -> ModelResult | None:
         reliability=float(metrics.get("reliability", 1.0)),
         tokens_per_s=float(metrics.get("tokens_per_s", 0.0)),
         tier=str(tier),
-        case_objectives=read_case_objectives(run_dir),  # [] for categories without that column
+        case_objectives=_category_case_objectives(config, run_dir),
+    )
+    verification_ref = config.get("verification_ref")
+    verification_error: str | None = None
+    data_verified = bool(config.get("data_verified", False))
+    if data_verified:
+        if not verification_ref:
+            verification_error = "missing verification_ref"
+        else:
+            from llb.goldset.verify import check_verification_ref
+
+            status = check_verification_ref(str(verification_ref), base_dir=run_dir)
+            if not status.valid:
+                verification_error = status.reason
+    return CategoryRunRecord(
+        result=result,
+        config=config,
+        run_dir=str(run_dir),
+        created_at=str(manifest.get("created_at", "")),
+        data_verified=data_verified,
+        verification_ref=str(verification_ref) if verification_ref else None,
+        verification_error=verification_error,
     )
 
 
-def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
-    """Load the M5 category run bundles grouped BY TIER (so each renders on its own board).
+def load_category_run_records(data_dir: Path | str) -> dict[str, list[CategoryRunRecord]]:
+    """Load M5 category run bundles grouped BY TIER, preserving config/gate metadata.
 
     Keeps the best run per model within each tier (highest objective score), mirroring the RAG
     board's best-per-model pick. Never merges tiers -- the `aggregate` guard refuses a mixed board.
     """
-    by_tier: dict[str, dict[str, ModelResult]] = {}
+    by_tier: dict[str, dict[str, CategoryRunRecord]] = {}
     for method in CATEGORY_METHODS:
         root = Path(data_dir) / method
         if not root.exists():
@@ -252,14 +314,204 @@ def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                result = _category_result(manifest, manifest_path.parent)
+                record = _category_record(manifest, manifest_path.parent)
             except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
                 _LOG.warning("[board] unreadable category bundle %s: %s", manifest_path.parent, exc)
                 continue
-            if result is None:
+            if record is None:
                 continue
-            best = by_tier.setdefault(result.tier, {})
-            current = best.get(result.model)
-            if current is None or result.objective_score > current.objective_score:
-                best[result.model] = result
+            best = by_tier.setdefault(record.result.tier, {})
+            current = best.get(record.result.model)
+            if current is None or record.result.objective_score > current.result.objective_score:
+                best[record.result.model] = record
     return {tier: list(models.values()) for tier, models in by_tier.items()}
+
+
+def load_category_records(data_dir: Path | str) -> dict[str, list[ModelResult]]:
+    """Load the M5 category run bundles grouped BY TIER (so each renders on its own board)."""
+    return {
+        tier: [record.result for record in records]
+        for tier, records in load_category_run_records(data_dir).items()
+    }
+
+
+def load_m5_composite(
+    data_dir: Path | str,
+    *,
+    require_verified: bool = True,
+    require_ci: bool = True,
+) -> tuple[list[JsonObject], list[CompositeIssue]]:
+    """Load the guarded M5 composite headline from persisted category runs."""
+    records_by_tier = load_category_run_records(data_dir)
+    components_by_tier = {
+        tier: [
+            CompositeComponent(
+                result=record.result,
+                data_verified=record.data_verified,
+                verification_ref=record.verification_ref,
+                verification_error=record.verification_error,
+            )
+            for record in records
+        ]
+        for tier, records in records_by_tier.items()
+    }
+    return build_m5_composite_rows(
+        components_by_tier,
+        require_verified=require_verified,
+        require_ci=require_ci,
+    )
+
+
+# --- M7.1 agentic harness comparison (LangGraph vs CrewAI, one model, TIER_AGENTIC) ----------
+
+AGENTIC_METHOD = "agentic"
+
+
+@dataclass
+class HarnessRunRecord:
+    """One agentic run tagged by its harness (the M7.1 comparison axis)."""
+
+    model: str
+    harness: str
+    result: ModelResult  # tier=TIER_AGENTIC, with the per-case objective series for CIs
+    run_dir: str
+    created_at: str
+
+
+def load_agentic_harness_records(data_dir: Path | str) -> list[HarnessRunRecord]:
+    """Load agentic run bundles tagged BY HARNESS, keeping the best run per (model, harness).
+
+    The harness is never silently mixed into the per-model best pick (that would hide the very
+    effect we measure): records stay keyed by (model, harness) so a comparison can rank one model
+    across `{loop, langgraph, crewai}`."""
+    root = Path(data_dir) / AGENTIC_METHOD
+    best: dict[tuple[str, str], HarnessRunRecord] = {}
+    if not root.exists():
+        return []
+    for manifest_path in sorted(root.glob("*/manifest.json")):
+        if manifest_path.parent.name.startswith("."):
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _LOG.warning("[board] unreadable agentic manifest: %s", manifest_path)
+            continue
+        record = _harness_record(manifest, manifest_path.parent)
+        if record is None:
+            continue
+        key = (record.model, record.harness)
+        current = best.get(key)
+        if current is None or record.result.objective_score > current.result.objective_score:
+            best[key] = record
+    return list(best.values())
+
+
+def _harness_record(manifest: JsonObject, run_dir: Path) -> HarnessRunRecord | None:
+    config = manifest.get("config") or {}
+    if config.get("tier") != TIER_AGENTIC:
+        return None
+    model = config.get("model")
+    if not model:
+        return None
+    metrics = manifest.get("metrics") or {}
+    result = ModelResult(
+        model=str(model),
+        backend=str(config.get("backend", "?")),
+        objective_score=float(metrics.get("objective_score", 0.0)),
+        n_cases=int(manifest.get("n_cases", 0)),
+        reliability=float(metrics.get("reliability", 1.0)),
+        tokens_per_s=float(metrics.get("tokens_per_s", 0.0)),
+        tier=TIER_AGENTIC,
+        case_objectives=_category_case_objectives(config, run_dir),
+    )
+    return HarnessRunRecord(
+        model=str(model),
+        harness=str(config.get("harness", HARNESS_LOOP)),
+        result=result,
+        run_dir=str(run_dir),
+        created_at=str(manifest.get("created_at", "")),
+    )
+
+
+def harness_comparison(data_dir: Path | str, model: str) -> tuple[list[BoardRow], str, list[str]]:
+    """Rank ONE model's agentic runs across its harnesses under TIER_AGENTIC.
+
+    Each harness becomes its own board row (the `model` cell carries the harness id, the candidate
+    model being held fixed), so the existing average-rank + bootstrap-CI ranker compares harness
+    effect without ever cross-ranking models or tiers. Returns (rows, ascii table, harness ids)."""
+    records = [r for r in load_agentic_harness_records(data_dir) if r.model == model]
+    if not records:
+        return [], "", []
+    results = [replace(r.result, model=r.harness) for r in sorted(records, key=lambda r: r.harness)]
+    rows = rank_board(results)
+    table = format_board(rows, policy=ranking_policy_note(results, judge_trusted=False))
+    return rows, table, [r.harness for r in records]
+
+
+# --- M7.3 prompt-system comparison (one model+harness across prompt-system ids) -------------
+
+
+@dataclass
+class PromptSystemRunRecord:
+    """One agentic run tagged by its prompt-system id (the M7.3 comparison axis)."""
+
+    model: str
+    harness: str
+    prompt_system: str
+    result: ModelResult
+    run_dir: str
+
+
+def load_prompt_system_records(data_dir: Path | str) -> list[PromptSystemRunRecord]:
+    """Load agentic run bundles that carry a prompt-system id, best per (model, harness, system)."""
+    root = Path(data_dir) / AGENTIC_METHOD
+    best: dict[tuple[str, str, str], PromptSystemRunRecord] = {}
+    if not root.exists():
+        return []
+    for manifest_path in sorted(root.glob("*/manifest.json")):
+        if manifest_path.parent.name.startswith("."):
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        config = manifest.get("config") or {}
+        prompt_system = config.get("prompt_system")
+        if config.get("tier") != TIER_AGENTIC or not config.get("model") or not prompt_system:
+            continue
+        record = _harness_record(manifest, manifest_path.parent)
+        if record is None:
+            continue
+        key = (record.model, record.harness, str(prompt_system))
+        current = best.get(key)
+        if current is None or record.result.objective_score > current.result.objective_score:
+            best[key] = PromptSystemRunRecord(
+                model=record.model,
+                harness=record.harness,
+                prompt_system=str(prompt_system),
+                result=record.result,
+                run_dir=record.run_dir,
+            )
+    return list(best.values())
+
+
+def prompt_system_comparison(
+    data_dir: Path | str, model: str, harness: str | None = None
+) -> tuple[list[BoardRow], str, list[str]]:
+    """Rank ONE model (optionally one harness) across prompt-system ids under TIER_AGENTIC.
+
+    Each prompt-system id becomes its own board row (the `model` cell carries the id), so the
+    average-rank + bootstrap-CI ranker isolates whether the additional prompt system helps -- without
+    mixing prompt systems or cross-ranking models. Returns (rows, ascii table, prompt-system ids)."""
+    records = [
+        r
+        for r in load_prompt_system_records(data_dir)
+        if r.model == model and (harness is None or r.harness == harness)
+    ]
+    if not records:
+        return [], "", []
+    ordered = sorted(records, key=lambda r: r.prompt_system)
+    results = [replace(r.result, model=r.prompt_system) for r in ordered]
+    rows = rank_board(results)
+    table = format_board(rows, policy=ranking_policy_note(results, judge_trusted=False))
+    return rows, table, [r.prompt_system for r in ordered]

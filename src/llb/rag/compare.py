@@ -85,6 +85,35 @@ def format_comparison(report: ComparisonReport) -> str:
     return "\n".join(lines)
 
 
+def build_vector_store_comparison(config: Any, backends: list[str]) -> dict[str, Retriever]:
+    """Build the SAME corpus under each vector-store backend for a source-span retrieval comparison.
+
+    Every store reuses the config's chunking + PINNED embedder and differs ONLY in the vector
+    backend (faiss / chroma / qdrant / lancedb), so `compare_retrieval` isolates the backend's
+    effect on recall@k / MRR -- the model-independent gate the M7.4 plan requires before a backend's
+    runs can be compared to FAISS. Real path: needs the [rag] embedder + each backend's extra."""
+    from llb.rag.store import RagStore
+    from llb.rag.vector_index import RAG_BACKENDS
+
+    stores: dict[str, Retriever] = {}
+    for backend in backends:
+        if backend not in RAG_BACKENDS:
+            raise ValueError(
+                f"unknown vector store backend: {backend!r}; choose from {RAG_BACKENDS}"
+            )
+        stores[backend] = RagStore.build(
+            config.corpus_root,
+            config.strategy,
+            config.chunk_size,
+            config.chunk_overlap,
+            config.embedding_model,
+            mode=config.retrieval_mode,
+            child_size=config.child_chunk_size,
+            vector_store=backend,
+        )
+    return stores
+
+
 def load_compare_stores(config: Any) -> dict[str, Retriever]:
     """Load the three standard backends for `config`, skipping any whose store is not built.
 

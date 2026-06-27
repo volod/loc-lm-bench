@@ -59,6 +59,39 @@ def mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def verified_data_config(*, data_verified: bool, verification_ref: str | None) -> dict[str, object]:
+    """Manifest fields for the data-verification gate.
+
+    A run cannot be stamped as verified by a bare boolean: the operator must provide a concrete
+    MH.5 artifact, and that artifact must pass the verification-reference checker.
+    """
+    if not data_verified:
+        return {"data_verified": False, "verification_ref": verification_ref}
+    if not verification_ref:
+        from llb.goldset.verify import (
+            VerificationRefStatus,
+            format_verification_status,
+        )
+
+        status = VerificationRefStatus(
+            False,
+            Path("<missing>"),
+            "missing",
+            "--data-verified requires --verification-ref",
+        )
+        raise ValueError(format_verification_status(status))
+    from llb.goldset.verify import check_verification_ref, format_verification_status
+
+    status = check_verification_ref(verification_ref)
+    if not status.valid:
+        raise ValueError(format_verification_status(status))
+    return {
+        "data_verified": True,
+        "verification_ref": verification_ref,
+        "verification_kind": status.kind,
+    }
+
+
 def run_gated_judge(
     records: list[JudgeInputRecord],
     *,
@@ -75,14 +108,27 @@ def run_gated_judge(
     ranks alone) and the caller reads `outcome.reason`. `scorer` is injectable -- a fake in tests --
     so the wiring is provable without DeepEval / an endpoint / a GPU; the default scorer is the
     DeepEval judge bound to `base_url`, imported lazily so this stays light in the base install.
+
+    When the judge runs, the outcome is annotated with the M7.2 `diagnostics` (counts + reasons for
+    zero-valued scores: empty candidate answer vs malformed judge JSON vs judge transport error),
+    recorded ALONGSIDE the objective headline so a candidate failure is distinguishable from a local
+    judge format/transport failure.
     """
+    precise_reasons: list[str | None] = []
 
     def _default(recs: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
         from llb.scoring.judge import deepeval_scorer
 
-        return deepeval_scorer(recs, model, base_url=base_url)
+        return deepeval_scorer(recs, model, base_url=base_url, diagnostics_out=precise_reasons)
 
-    return run_judge(records, judge_model, judge_rho, threshold, scorer=scorer or _default)
+    outcome = run_judge(records, judge_model, judge_rho, threshold, scorer=scorer or _default)
+    if outcome.trusted and outcome.scores is not None:
+        from llb.scoring.judge_diag import summarize_judge_diagnostics
+
+        outcome.diagnostics = summarize_judge_diagnostics(
+            records, outcome.scores, precise_reasons or None
+        )
+    return outcome
 
 
 def local_complete(

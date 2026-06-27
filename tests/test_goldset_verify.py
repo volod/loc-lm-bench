@@ -8,15 +8,20 @@ operates only on the CSV.
 
 import json
 
+import pytest
+
+from llb.bench.common import verified_data_config
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.verify import (
     WORKSHEET_COLS,
     acceptance_report,
     accepted_ids,
     build_sample_worksheet,
+    check_verification_ref,
     corpus_window,
     draw_stratified_sample,
     emit_accepted_ledger,
+    format_verification_status,
     load_cross_check,
     load_worksheet,
     stratify,
@@ -192,6 +197,48 @@ def test_acceptance_flags_undecided_failures():
     assert report["undecided"] == 1 and report["undecided_with_failures"] == 1
 
 
+def test_check_verification_ref_accepts_decided_worksheet(tmp_path):
+    path = tmp_path / "verify_sample.csv"
+    path.write_text("item_id,stratum,decision\nok,s,accept\n", encoding="utf-8")
+    status = check_verification_ref(path)
+    assert status.valid is True and status.kind == "worksheet"
+
+
+def test_check_verification_ref_rejects_undecided_worksheet(tmp_path):
+    path = tmp_path / "verify_sample.csv"
+    path.write_text("item_id,stratum,decision\nok,s,\n", encoding="utf-8")
+    status = check_verification_ref(path)
+    assert status.valid is False and "undecided" in status.reason
+    assert status.stats["undecided"] == 1
+    message = format_verification_status(status)
+    assert "stats:" in message
+    assert "undecided: 1" in message
+    assert "make verify-review VERIFY_WS=" in message
+    assert "--data-verified --verification-ref" in message
+
+
+def test_verified_data_config_rejects_invalid_ref_with_operator_diagnostics(tmp_path):
+    path = tmp_path / "verify_sample.csv"
+    path.write_text("item_id,stratum,decision\nok,s,\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        verified_data_config(data_verified=True, verification_ref=str(path))
+
+    message = str(excinfo.value)
+    assert "verification reference cannot be used with --data-verified" in message
+    assert "undecided: 1" in message
+    assert "make verify-review VERIFY_WS=" in message
+
+
+def test_check_verification_ref_accepts_sample_manifest(tmp_path):
+    path = tmp_path / "verify_sample.csv"
+    path.write_text("item_id,stratum,decision\nok,s,accept\n", encoding="utf-8")
+    manifest = tmp_path / "sample_manifest.json"
+    manifest.write_text(json.dumps({"worksheet": str(path)}), encoding="utf-8")
+    status = check_verification_ref(manifest)
+    assert status.valid is True and status.kind == "sample_manifest"
+
+
 def test_per_stratum_failure_is_isolated():
     rows = [_ws_row(f"x{i}", "accept", stratum="clean") for i in range(10)]
     rows += [_ws_row("y0", "reject", stratum="dirty"), _ws_row("y1", "accept", stratum="dirty")]
@@ -218,6 +265,14 @@ def test_emit_accepted_ledger_round_trips_through_the_ledger(tmp_path):
     assert n_verified == 1
     assert next(i for i in merged if i.id == "keep").verified is True
     assert next(i for i in merged if i.id == "drop").verified is False
+
+
+def test_check_verification_ref_accepts_accepted_ledger(tmp_path):
+    bundle = _bundle(tmp_path / "draft", [_item("keep")])
+    out_dir = tmp_path / "accepted"
+    emit_accepted_ledger(bundle, ["keep"], out_dir)
+    status = check_verification_ref(out_dir)
+    assert status.valid is True and status.kind == "accepted_ledger"
 
 
 def test_accepted_ids_only_accept_decisions():

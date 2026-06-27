@@ -118,7 +118,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":
-        from llb.backends.llamacpp import LlamaCppLauncher
+        from llb.backends.llamacpp import LlamaCppLauncher, resolve_llama_server_binary
 
         return LlamaCppLauncher(
             config.model,
@@ -126,6 +126,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             n_gpu_layers=config.n_gpu_layers,
             ctx_size=config.max_model_len,
             log_dir=log_dir,
+            binary=resolve_llama_server_binary(config.data_dir),
         )
     raise SystemExit(f"backend '{config.backend}' is not wired (ollama, vllm, llamacpp supported).")
 
@@ -319,6 +320,11 @@ def _aggregate(
         "reliability": reliability,
         "tokens_per_s": tokens_per_s,
     }
+    mean_power = telemetry.get("mean_power_w")
+    if isinstance(mean_power, int | float) and mean_power > 0:
+        metrics["mean_power_w"] = round(float(mean_power), 2)
+        metrics["tokens_per_watt"] = round(tokens_per_s / float(mean_power), 4)
+        metrics["quality_per_watt"] = round(objective * tokens_per_s / float(mean_power), 4)
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
     return rows, metrics
@@ -334,13 +340,14 @@ def _collect_optional_telemetry(
 ) -> TelemetryReport | None:
     if not config.measure_telemetry:
         return None
-    from llb.backends.telemetry import collect_telemetry
+    from llb.backends.telemetry import collect_telemetry, nvidia_smi_power_reader
 
     return collect_telemetry(
         launcher,
         requested_context=config.max_model_len,
         timeout=config.request_timeout_s,
         vram_reader=_vram_reader(),
+        power_reader=nvidia_smi_power_reader(),
     )
 
 

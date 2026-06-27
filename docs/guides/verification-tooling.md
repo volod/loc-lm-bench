@@ -214,6 +214,41 @@ on this -- only real-model HEADLINE scoring does. Practical notes:
   categories' verifications can be in flight independently.
 - Keep the `sample_manifest.json` -- it is your record of what you sampled and the strata you
   covered (the "document the sample" discipline from *Datasheets for Datasets*).
+- When a verified category bundle is ready for the M5 composite headline, rerun that category with
+  `--data-verified --verification-ref <bundle>/sample_manifest.json`, then follow the
+  [composite-headline close-out](composite-headline.md).
+
+### Verification references in category runs
+
+The `bench-* --data-verified` commands do not trust a boolean alone. They validate the
+`--verification-ref` before model calls and before a verified manifest can be persisted. Accepted
+forms are:
+
+- a reviewed `verify_sample.csv` whose rows are all decided and whose reject rate is within
+  tolerance;
+- a `sample_manifest.json` whose `worksheet` points to such a reviewed worksheet;
+- an accepted-ledger directory or `accepted/goldset.jsonl` whose items are all `verified=true`.
+
+If the artifact is missing or invalid, the command fails with the path, kind, reason, detailed
+statistics, and the commands needed to repair the verification data. Worksheet diagnostics include
+sample size, decided/accepted/rejected/undecided counts, undecided failed checks, reject rate,
+tolerance, and failing strata. Accepted-ledger diagnostics include total, verified, unverified, and
+sample unverified ids.
+
+Use the printed next steps directly:
+
+```
+make verify-review VERIFY_WS=<bundle>/verify_sample.csv
+make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
+```
+
+Then rerun the category command with one of:
+
+```
+--data-verified --verification-ref <bundle>/verify_sample.csv
+--data-verified --verification-ref <bundle>/sample_manifest.json
+--data-verified --verification-ref <bundle>/accepted
+```
 
 ---
 

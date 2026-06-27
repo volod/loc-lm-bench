@@ -1,0 +1,12 @@
+{
+  "kind": "committed-sample-fixture-review",
+  "artifact": "../../../text_analysis_bundle_uk",
+  "worksheet": "verify_sample.csv",
+  "sample_size": 2,
+  "population": 2,
+  "strata": {
+    "committed-sample|text_analysis|sample-001": 1,
+    "committed-sample|text_analysis|sample-002": 1
+  },
+  "note": "Repository sample fixture verification reference for smoke/demo composite runs only."
+}

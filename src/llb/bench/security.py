@@ -26,6 +26,7 @@ from llb.bench.common import (
     persist_category_run,
     render_board,
     run_gated_judge,
+    verified_data_config,
 )
 from llb.contracts import (
     BoardRow,
@@ -97,7 +98,7 @@ def _status(output: str, refused: bool) -> str:
 def _row(case: security.SecurityCase, output: str) -> SecurityCaseRow:
     attack = False if case.benign else security.attack_succeeded(case, output)
     refused = is_refusal(output) or not output.strip()
-    return {
+    row: SecurityCaseRow = {
         "item_id": case.id,
         "family": case.family,
         "benign": case.benign,
@@ -109,6 +110,9 @@ def _row(case: security.SecurityCase, output: str) -> SecurityCaseRow:
         "appropriate_refusal": 1.0 if security.appropriate_refusal(case, output) else 0.0,
         "answer_preview": (output or "")[:280],
     }
+    if not case.benign:
+        row["objective_score"] = row["defended"]
+    return row
 
 
 def _refusal_records(
@@ -157,6 +161,8 @@ def run_security(
     run_name: str = "m5-security",
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> SecurityRun:
     """Score one model's robustness over the planted cases and return its board under TIER_SECURITY.
 
@@ -167,6 +173,9 @@ def run_security(
     """
     if not cases:
         raise SystemExit("no security cases provided")
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     outputs = [complete(build_prompt(case)) for case in cases]
     score = security.score_security(cases, outputs)
     rows = [_row(case, output) for case, output in zip(cases, outputs)]
@@ -228,6 +237,8 @@ def run_security(
             "judge_trusted": outcome.trusted,
             "refusal_quality": quality,  # gated diagnostic, NOT the headline
             "refusal_quality_ci": list(quality_ci) if quality_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
         if judge_model is not None:
@@ -237,6 +248,7 @@ def run_security(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["refusal_quality"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,

@@ -396,18 +396,17 @@ exercises the host or the draft pipeline.
 ## Platform and hardware-matrix breadth
 
 ### What it measures
-Infrastructure breadth with **no committed consumer yet** -- build last, each behind a sign-off.
-The same model across multiple serving backends (vLLM / Ollama / llama.cpp) as a comparison axis;
-multiple vector stores (Chroma / Qdrant / LanceDB) behind the RAG-store seam (FAISS stays the
-default); a full GPU-class matrix beyond the validated 16 GB tier; and quality-per-watt, a derived
-metric over the NVML power already sampled per cell.
+Infrastructure breadth: the same logical model base across multiple serving backends (vLLM /
+Ollama / llama.cpp), power-aware telemetry, multiple vector stores (Chroma / Qdrant / LanceDB)
+behind the RAG-store seam (FAISS stays the default), and generated serving configs for adding
+per-GPU-class rows as operators get access to new hosts.
 
 ### How to understand it
 These are *generalizations of existing seams*, not new science: per-source quant metadata is the
 seam for multi-backend; the RAG-store interface (`rag/store.py`) is the seam for multi-vector-store;
-the KV-cache-aware planner generalizes to other GPU classes; and quality-per-watt is trivial once a
-consumer wants it because NVML power is already sampled. Build only when something consumes the
-result.
+the KV-cache-aware planner generalizes to other GPU classes; and `run-eval --telemetry` records
+mean power plus quality-per-watt when `nvidia-smi` is reachable. Use the
+[platform matrix guide](platform-matrix.md) for the runnable backend/power flow.
 
 ### Learn
 - Vector stores: [Chroma](https://docs.trychroma.com/),
@@ -419,8 +418,7 @@ result.
 
 ### In this repo
 `src/llb/rag/store.py` (vector-store seam), `src/llb/backends/` (multi-backend),
-`backends/planner.py`
-(GPU classes), and `backends/telemetry.py` (NVML power for quality-per-watt).
+`backends/planner.py` (GPU classes), and `backends/telemetry.py` (power telemetry).
 
 ---
 

@@ -13,6 +13,7 @@ from llb.scoring.judge import (
     judge_is_trusted,
     resolve_judge_endpoint,
     run_judge,
+    _measure_judge_metric,
 )
 
 
@@ -70,6 +71,40 @@ def test_deepeval_scorer_uses_injected_evaluate():
 
     scores = deepeval_scorer(records, "judge-x", evaluate_fn=fake_evaluate)
     assert scores == [{"faithfulness": 1.0, "answer_relevancy": 0.9}]
+
+
+def test_deepeval_scorer_zeroes_empty_answers_before_evaluate():
+    records = [
+        {"question": "Порожньо?", "answer": "", "contexts": ["Контекст."]},
+        {"question": "Столиця?", "answer": "Київ", "contexts": ["Київ - столиця."]},
+    ]
+
+    def fake_evaluate(received, judge_model):
+        assert received == [records[1]]
+        assert judge_model == "judge-x"
+        return [{"faithfulness": 1.0, "answer_relevancy": 0.8}]
+
+    scores = deepeval_scorer(records, "judge-x", evaluate_fn=fake_evaluate)
+    assert scores == [
+        {"faithfulness": 0.0, "answer_relevancy": 0.0},
+        {"faithfulness": 1.0, "answer_relevancy": 0.8},
+    ]
+
+
+def test_measure_judge_metric_zeroes_malformed_judge_response():
+    class BadMetric:
+        def measure(self, _test_case, _show_indicator=False):
+            raise ValueError("invalid json")
+
+    assert (
+        _measure_judge_metric(
+            BadMetric(),
+            object(),
+            metric_name="faithfulness",
+            record_index=0,
+        )
+        == 0.0
+    )
 
 
 def test_ua_metric_prompts_are_ukrainian():

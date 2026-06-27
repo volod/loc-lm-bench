@@ -75,6 +75,33 @@ def test_run_structured_persists(tmp_path):
     assert run.paths is not None and "structured" in run.paths["manifest"]
 
 
+def test_run_structured_invalid_verification_ref_does_not_call_model(tmp_path):
+    bad_ref = tmp_path / "verify_sample.csv"
+    bad_ref.write_text("item_id,stratum,decision\nok,s,\n", encoding="utf-8")
+    calls = 0
+
+    def complete(_: str) -> str:
+        nonlocal calls
+        calls += 1
+        return '{"name":"Олена","age":34}'
+
+    with pytest.raises(ValueError) as excinfo:
+        bench_st.run_structured(
+            [case("a", {"name": "Олена", "age": 34})],
+            model="m",
+            backend="ollama",
+            complete=complete,
+            data_dir=tmp_path,
+            data_verified=True,
+            verification_ref=str(bad_ref),
+            mirror=lambda *_: None,
+        )
+
+    assert calls == 0
+    assert "verification reference cannot be used with --data-verified" in str(excinfo.value)
+    assert "undecided: 1" in str(excinfo.value)
+
+
 def test_load_committed_structured_cases():
     cases = bench_st.load_cases_file("samples/structured_cases_uk.json")
     assert len(cases) == 6 and all(c.schema for c in cases)

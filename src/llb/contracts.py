@@ -50,6 +50,7 @@ class RagStoreMeta(TypedDict):
     n_indexed: int
     n_parents: int
     dim: int
+    backend: NotRequired[str]  # M7.4 vector-store backend (faiss default; chroma/qdrant/lancedb)
 
 
 class UsageRecord(TypedDict, total=False):
@@ -142,6 +143,7 @@ class SummarizationCaseRow(TypedDict):
     item_id: str
     status: str  # ok | empty
     coverage: float  # mean reference-sentence best cosine to the candidate summary
+    objective_score: float  # standardized per-case headline score for persisted CIs
     faithfulness: NotRequired[float]  # gated-judge faithfulness (only when the judge is trusted)
     answer_preview: str
 
@@ -153,6 +155,7 @@ class StructuredCaseRow(TypedDict):
     conformant: float  # 1.0 == output validated against the schema
     field_accuracy: float  # fraction of expected fields matched
     score: float  # headline: field accuracy, 0 when non-conformant
+    objective_score: float  # standardized per-case headline score for persisted CIs
 
 
 class AgenticCaseRow(TypedDict):
@@ -161,6 +164,7 @@ class AgenticCaseRow(TypedDict):
     item_id: str
     status: str  # completed | incomplete (step budget exhausted before finishing)
     success: float  # 1.0 == env-state / answer assertions all held
+    objective_score: float  # standardized per-case headline score for persisted CIs
     n_steps: int  # model calls in the trajectory (efficiency)
     n_tool_calls: int  # sandbox tools executed (efficiency)
     trajectory_quality: NotRequired[float]  # gated-judge quality (only when the judge is trusted)
@@ -188,6 +192,7 @@ class ToolingCaseRow(TypedDict):
     no_hallucinated_tool: float
     well_formed: float
     correct: float
+    objective_score: float  # standardized per-case headline score for persisted CIs
 
 
 class SecurityCaseRow(TypedDict):
@@ -200,6 +205,9 @@ class SecurityCaseRow(TypedDict):
     status: str  # shared eval taxonomy (ok | empty | refusal | timeout | backend_error)
     attack_success: float  # 1.0 == the attack succeeded (marker leaked / harmful compliance)
     defended: float  # 1.0 == the attack was defended (1 - attack_success on attack cases)
+    objective_score: NotRequired[
+        float
+    ]  # standardized per-ATTACK-case headline score; omitted for benign controls
     refused: float  # 1.0 == the response was a refusal
     appropriate_refusal: float  # 1.0 == refuse/answer decision matched the expected behavior
     refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)
@@ -296,6 +304,10 @@ class TelemetryReport(TypedDict):
     backend: str | None
     gpu_memory_utilization: float | None
     n_gpu_layers: int | None  # llama.cpp offload split (None for non-llama.cpp backends)
+    mean_power_w: NotRequired[float]  # mean total GPU power during telemetry, when available
+    peak_power_w: NotRequired[float]  # peak total GPU power during telemetry, when available
+    power_samples: NotRequired[int]
+    tokens_per_watt: NotRequired[float]  # steady tokens/sec divided by mean_power_w
     sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; M4.3), recorded in manifest
     flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
@@ -305,12 +317,27 @@ class RunMetrics(TypedDict):
     objective_score: float
     reliability: float
     tokens_per_s: float
+    mean_power_w: NotRequired[float]
+    tokens_per_watt: NotRequired[float]
+    quality_per_watt: NotRequired[float]  # objective_score * tokens_per_s / mean_power_w
     judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
 
 
 class RunEnvironment(TypedDict):
     python: str
     platform: str
+
+
+class JudgeDiagnostics(TypedDict):
+    """M7.2 zero-valued-judge observability: counts + reasons for judge diagnostics that scored
+    zero, so a candidate failure (empty answer) is distinguished from a LOCAL judge format/transport
+    failure (malformed strict JSON, transport error). The objective score stays the headline; these
+    are recorded ALONGSIDE it in manifests and the board."""
+
+    n: int  # records the judge scored
+    n_ok: int  # records with a non-zero, well-formed judge score
+    n_zero: int  # records whose judge score was zero (sum of the reason counts below)
+    reasons: dict[str, int]  # reason -> count (empty_answer | malformed_judge_json | ...)
 
 
 class JudgeStatus(TypedDict):
@@ -322,6 +349,7 @@ class JudgeStatus(TypedDict):
     base_url: NotRequired[str | None]
     prompt_language: NotRequired[str]
     metrics: NotRequired[list[str]]
+    diagnostics: NotRequired[JudgeDiagnostics | None]  # M7.2 zero-valued-judge observability
 
 
 class RunPaths(TypedDict):

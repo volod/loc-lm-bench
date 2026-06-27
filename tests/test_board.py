@@ -6,6 +6,8 @@ from llb.board.data import (
     best_per_model,
     config_summary,
     load_category_records,
+    load_category_run_records,
+    load_m5_composite,
     load_run_records,
     load_screen_reports,
     read_case_objectives,
@@ -13,7 +15,14 @@ from llb.board.data import (
     read_case_splits,
     record_from_manifest,
 )
-from llb.scoring.aggregate import TIER_SECURITY, TIER_TOOLING
+from llb.scoring.aggregate import (
+    TIER_AGENTIC,
+    TIER_SECURITY,
+    TIER_STRUCTURED,
+    TIER_SUMMARIZATION,
+    TIER_TEXT_ANALYSIS,
+    TIER_TOOLING,
+)
 
 
 def _write_run(
@@ -157,20 +166,49 @@ def test_load_screen_reports_separates_tier1(tmp_path):
 # --- M5 category boards (each its own Tier, never cross-ranked) -----------------------------
 
 
-def _write_category_run(data_dir, method, tier, model, objective, n_cases=4):
+def _write_category_run(
+    data_dir,
+    method,
+    tier,
+    model,
+    objective,
+    n_cases=4,
+    *,
+    data_verified=False,
+    verification_ref=None,
+    scores=None,
+):
     safe_model = model.replace(":", "_")
     run_dir = data_dir / method / f"20260101T000000Z-{method}-{safe_model}-{objective}"
     run_dir.mkdir(parents=True)
+    scores = scores if scores is not None else []
+    if data_verified and verification_ref is None:
+        verification_ref = _write_verification_ref(data_dir)
     manifest = {
         "run_id": f"{method}-{model}",
         "split": "final",
-        "config": {"model": model, "backend": "ollama", "tier": tier, "category": method},
+        "created_at": "2026-06-21T00:00:00Z",
+        "config": {
+            "model": model,
+            "backend": "ollama",
+            "tier": tier,
+            "category": method,
+            "data_verified": data_verified,
+            "verification_ref": str(verification_ref) if verification_ref else None,
+        },
         "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 0.0},
         "n_cases": n_cases,
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (run_dir / "scores.jsonl").write_text("", encoding="utf-8")
+    rows = [json.dumps({"objective_score": score}) for score in scores]
+    (run_dir / "scores.jsonl").write_text("\n".join(rows), encoding="utf-8")
     return run_dir
+
+
+def _write_verification_ref(root):
+    path = root / "verify_sample.csv"
+    path.write_text("item_id,stratum,decision\nsample,s,accept\n", encoding="utf-8")
+    return path
 
 
 def test_load_category_records_groups_by_tier(tmp_path):
@@ -192,3 +230,136 @@ def test_load_category_records_best_per_model_within_tier(tmp_path):
 
 def test_load_category_records_empty(tmp_path):
     assert load_category_records(tmp_path) == {}
+
+
+def test_load_category_run_records_preserves_verification_metadata(tmp_path):
+    _write_category_run(
+        tmp_path,
+        "security",
+        TIER_SECURITY,
+        "m:1",
+        0.5,
+        data_verified=True,
+        scores=[1.0, 0.0],
+    )
+    by_tier = load_category_run_records(tmp_path)
+    rec = by_tier[TIER_SECURITY][0]
+    assert rec.data_verified is True
+    assert rec.verification_ref is not None and rec.verification_ref.endswith("verify_sample.csv")
+    assert rec.verification_error is None
+    assert rec.result.case_objectives == [1.0, 0.0]
+
+
+def _write_full_composite_model(tmp_path, model, objectives, *, data_verified=True):
+    tiers = [
+        ("text-analysis", TIER_TEXT_ANALYSIS),
+        ("summarization", TIER_SUMMARIZATION),
+        ("structured", TIER_STRUCTURED),
+        ("security", TIER_SECURITY),
+        ("agentic", TIER_AGENTIC),
+        ("tooling", TIER_TOOLING),
+    ]
+    for method, tier in tiers:
+        objective = objectives[tier]
+        _write_category_run(
+            tmp_path,
+            method,
+            tier,
+            model,
+            objective,
+            n_cases=2,
+            data_verified=data_verified,
+            scores=[objective, objective],
+        )
+
+
+def test_load_m5_composite_requires_verified_data(tmp_path):
+    objectives = {
+        TIER_TEXT_ANALYSIS: 1.0,
+        TIER_SUMMARIZATION: 1.0,
+        TIER_STRUCTURED: 1.0,
+        TIER_SECURITY: 1.0,
+        TIER_AGENTIC: 1.0,
+        TIER_TOOLING: 1.0,
+    }
+    _write_full_composite_model(tmp_path, "m:1", objectives, data_verified=False)
+    rows, issues = load_m5_composite(tmp_path)
+    assert rows == []
+    assert {issue.reason for issue in issues} == {"category data is not verified"}
+
+
+def test_load_m5_composite_scores_complete_verified_models(tmp_path):
+    weak = {
+        TIER_TEXT_ANALYSIS: 0.2,
+        TIER_SUMMARIZATION: 0.2,
+        TIER_STRUCTURED: 0.2,
+        TIER_SECURITY: 0.2,
+        TIER_AGENTIC: 0.2,
+        TIER_TOOLING: 0.2,
+    }
+    strong = {
+        TIER_TEXT_ANALYSIS: 1.0,
+        TIER_SUMMARIZATION: 1.0,
+        TIER_STRUCTURED: 1.0,
+        TIER_SECURITY: 1.0,
+        TIER_AGENTIC: 1.0,
+        TIER_TOOLING: 1.0,
+    }
+    _write_full_composite_model(tmp_path, "weak", weak)
+    _write_full_composite_model(tmp_path, "strong", strong)
+    rows, issues = load_m5_composite(tmp_path)
+    assert issues == []
+    assert [row["model"] for row in rows] == ["strong", "weak"]
+    assert rows[0]["score"] == 1.0
+    assert rows[1]["score"] == 0.2
+    assert "score_ci" in rows[0]
+
+
+def test_load_m5_composite_reports_missing_tier(tmp_path):
+    _write_category_run(
+        tmp_path,
+        "security",
+        TIER_SECURITY,
+        "m:1",
+        1.0,
+        data_verified=True,
+        scores=[1.0, 1.0],
+    )
+    rows, issues = load_m5_composite(tmp_path)
+    assert rows == []
+    assert any(issue.reason == "missing required tier" for issue in issues)
+
+
+def test_load_m5_composite_rejects_invalid_verification_ref(tmp_path):
+    objectives = {
+        TIER_TEXT_ANALYSIS: 1.0,
+        TIER_SUMMARIZATION: 1.0,
+        TIER_STRUCTURED: 1.0,
+        TIER_SECURITY: 1.0,
+        TIER_AGENTIC: 1.0,
+        TIER_TOOLING: 1.0,
+    }
+    tiers = [
+        ("text-analysis", TIER_TEXT_ANALYSIS),
+        ("summarization", TIER_SUMMARIZATION),
+        ("structured", TIER_STRUCTURED),
+        ("security", TIER_SECURITY),
+        ("agentic", TIER_AGENTIC),
+        ("tooling", TIER_TOOLING),
+    ]
+    bad_ref = tmp_path / "missing.csv"
+    for method, tier in tiers:
+        _write_category_run(
+            tmp_path,
+            method,
+            tier,
+            "m:1",
+            objectives[tier],
+            n_cases=2,
+            data_verified=True,
+            verification_ref=bad_ref,
+            scores=[1.0, 1.0],
+        )
+    rows, issues = load_m5_composite(tmp_path)
+    assert rows == []
+    assert any("verification ref invalid" in issue.reason for issue in issues)

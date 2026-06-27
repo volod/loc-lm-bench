@@ -1,0 +1,4 @@
+item_id,stratum,chk_grounded,chk_answerable,chk_reference,chk_planted,decision,human_note,human_status
+sm-001,committed-sample|summarization|sm-001,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+sm-002,committed-sample|summarization|sm-002,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided
+sm-003,committed-sample|summarization|sm-003,pass,pass,pass,,accept,Committed sample fixture review for demo composite gate,decided

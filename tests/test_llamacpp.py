@@ -9,6 +9,7 @@ from llb.backends.llamacpp import (
     build_llamacpp_command,
     llamacpp_source_args,
     parse_served_context,
+    resolve_llama_server_binary,
 )
 from llb.contracts import ModelSpec
 
@@ -30,6 +31,13 @@ def test_build_command_includes_serving_flags():
     assert "--port" in cmd and "8081" in cmd
     assert "-ngl" in cmd and "20" in cmd  # the GPU/CPU offload split
     assert "-c" in cmd and "4096" in cmd  # served context
+
+
+def test_resolve_binary_prefers_data_dir_build(tmp_path):
+    binary = tmp_path / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("", encoding="utf-8")
+    assert resolve_llama_server_binary(tmp_path) == str(binary)
 
 
 def test_parse_served_context_handles_both_shapes():

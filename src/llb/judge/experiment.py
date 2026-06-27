@@ -1,12 +1,14 @@
 """Recorded Ukrainian judge sanity experiment for local OpenAI-compatible models."""
 
 import json
+import math
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from llb.contracts import JudgeInputRecord, JudgeScore
+from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb.paths import resolve_data_dir
 from llb.scoring.judge import (
     UA_ANSWER_RELEVANCY_STEPS,
@@ -15,6 +17,7 @@ from llb.scoring.judge import (
     deepeval_scorer,
     judge_experiment_metadata,
 )
+from llb.scoring.judge_diag import summarize_judge_diagnostics
 
 METHOD = "judge-experiment"
 _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
@@ -38,6 +41,67 @@ EXPERIMENT_CASES: list[JudgeInputRecord] = [
 ]
 
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
+
+# A single grounded-TRUE case: a healthy strict-JSON judge scores it well above zero, so a zero or
+# malformed result is an unambiguous judge fault (not a candidate fault).
+SMOKE_CASE: JudgeInputRecord = EXPERIMENT_CASES[0]
+
+
+@dataclass(slots=True)
+class JudgeSmokeResult:
+    """Outcome of the M7.2 strict-JSON judge smoke precheck."""
+
+    ok: bool
+    reason: str
+    score: JudgeScore | None
+    diagnostics: JudgeDiagnostics
+
+
+def _well_formed(score: JudgeScore) -> bool:
+    """True only when both judge signals are finite floats in [0, 1] (a strict-JSON score)."""
+    for key in ("faithfulness", "answer_relevancy"):
+        value = score.get(key)
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+        if not 0.0 <= float(value) <= 1.0:
+            return False
+    return True
+
+
+def judge_smoke_check(
+    judge_model: str,
+    *,
+    base_url: str | None = None,
+    scorer: JudgeScorer | None = None,
+) -> JudgeSmokeResult:
+    """Strict-JSON judge smoke precheck: run ONE grounded-true case and verify a well-formed,
+    non-zero score before a long judged run, so a local judge that cannot emit strict JSON (or
+    whose endpoint is unreachable) is caught up front and named, not discovered mid-run.
+
+    `scorer` is injectable so the precheck is provable from a fake judge with no DeepEval / endpoint;
+    the default scorer is the real DeepEval judge bound to `base_url`."""
+    records = [SMOKE_CASE]
+    reasons: list[str | None] = []
+    if scorer is None:
+        scores = deepeval_scorer(records, judge_model, base_url=base_url, diagnostics_out=reasons)
+    else:
+        scores = scorer(records, judge_model)
+    diagnostics = summarize_judge_diagnostics(records, scores, reasons or None)
+    score = scores[0] if scores else None
+    if score is None:
+        return JudgeSmokeResult(False, "judge returned no score", None, diagnostics)
+    if not _well_formed(score):
+        return JudgeSmokeResult(
+            False, "judge score is not a well-formed strict-JSON score", score, diagnostics
+        )
+    if diagnostics["n_zero"]:
+        return JudgeSmokeResult(
+            False,
+            f"grounded-true smoke case scored zero (reasons={diagnostics['reasons']})",
+            score,
+            diagnostics,
+        )
+    return JudgeSmokeResult(True, "ok", score, diagnostics)
 
 
 def run_judge_experiment(

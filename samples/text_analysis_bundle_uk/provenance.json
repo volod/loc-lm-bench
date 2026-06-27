@@ -1,0 +1,8 @@
+{
+  "kind": "committed-text-analysis-sample",
+  "synthetic": true,
+  "source": "repo-authored fixture",
+  "n_docs": 2,
+  "n_labels": 11,
+  "note": "Small committed Ukrainian text-analysis fixture for smoke tests and composite demo runs."
+}

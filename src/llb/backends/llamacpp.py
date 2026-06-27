@@ -12,6 +12,7 @@ binary itself is a separate hardware-matched build, like vLLM (AGENTS.md).
 """
 
 import json
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -68,6 +69,7 @@ def llamacpp_source_args(source: str) -> list[str]:
 def build_llamacpp_command(
     source: str,
     *,
+    binary: str = "llama-server",
     bind_host: str = "127.0.0.1",
     port: int = 8080,
     n_gpu_layers: int = OFFLOAD_ALL_LAYERS,
@@ -79,7 +81,7 @@ def build_llamacpp_command(
     offload knob) and `ctx_size` (`-c`) the served context, both recorded so served-vs-requested
     context is comparable across runs."""
     cmd = [
-        "llama-server",
+        binary,
         *llamacpp_source_args(source),
         "--host",
         bind_host,
@@ -95,6 +97,14 @@ def build_llamacpp_command(
     if extra_args:
         cmd += list(extra_args)
     return cmd
+
+
+def resolve_llama_server_binary(data_dir: Path) -> str:
+    """Prefer the project-managed llama.cpp build, then fall back to PATH."""
+    built = data_dir / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
+    if built.exists():
+        return str(built)
+    return shutil.which("llama-server") or "llama-server"
 
 
 def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
@@ -162,6 +172,7 @@ class LlamaCppLauncher(BackendLauncher):
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
         log_dir: Path | str | None = None,
+        binary: str = "llama-server",
         popen: Callable[..., _Process] | None = None,
         http_get: _HttpGetter | None = None,
         sleep: Callable[[float], None] | None = None,
@@ -185,6 +196,7 @@ class LlamaCppLauncher(BackendLauncher):
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
         self.log_dir = Path(log_dir) if log_dir else None
+        self.binary = binary
         self._popen = popen or cast(Callable[..., _Process], subprocess.Popen)
         self._http_get = http_get or _http_get
         self._sleep = sleep or time.sleep
@@ -198,6 +210,7 @@ class LlamaCppLauncher(BackendLauncher):
     def command(self) -> list[str]:
         return build_llamacpp_command(
             self.model,
+            binary=self.binary,
             bind_host=self._bind_host,
             port=self.port,
             n_gpu_layers=self.n_gpu_layers,

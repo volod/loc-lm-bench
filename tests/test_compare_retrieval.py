@@ -4,6 +4,7 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 (no FAISS, no DuckDB, no GPU). The CLI wiring (`compare-retrieval`) layers real stores on top.
 """
 
+from llb.cli.rag import _compare_vector_corpus_root
 from llb.contracts import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import compare_retrieval, format_comparison
 
@@ -70,3 +71,16 @@ def test_format_comparison_is_ascii_and_lists_backends():
 def test_format_comparison_handles_no_backends():
     text = format_comparison(compare_retrieval({}, _items(), k=5))
     assert "no backends loaded" in text
+
+
+def test_compare_vector_stores_infers_sibling_corpus(tmp_path):
+    root = tmp_path / "bundle"
+    corpus = root / "corpus"
+    corpus.mkdir(parents=True)
+    goldset = root / "goldset.jsonl"
+    goldset.write_text("", encoding="utf-8")
+
+    assert _compare_vector_corpus_root(goldset, None) == corpus
+    explicit = tmp_path / "other-corpus"
+    assert _compare_vector_corpus_root(goldset, explicit) == explicit
+    assert _compare_vector_corpus_root(tmp_path / "missing" / "goldset.jsonl", None) is None

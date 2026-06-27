@@ -27,15 +27,18 @@
 ## Documentation
 
 `docs/impl/plan.md` is FORWARD-ONLY: it contains ONLY work that is not yet implemented.
-`docs/impl/current.md` is the system of record for everything DELIVERED. Running the cycle below is
-PART OF "done" for any feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an
-optional extra. The user should never have to ask you to make `plan.md` forward-only again.
+`docs/impl/current.md` is the compact index for everything DELIVERED; detailed delivered facts live
+in topic files under `docs/impl/current/`. Running the cycle below is PART OF "done" for any
+feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an optional extra. The user
+should never have to ask you to make `plan.md` forward-only again.
 
 **The plan/current update cycle (run after every implemented feature, before reporting done):**
 
-1. **Record in current.md.** Add or refresh the delivered behavior in `docs/impl/current.md`: what
-   was built, where it lives (modules / commands / tests), how to run it, and the result if any
-   (numbers, decisions, file locations, dates). Results, "DONE" status, and history belong HERE.
+1. **Record in current docs.** Add or refresh the delivered behavior in the narrowest matching
+   topic file under `docs/impl/current/`: what was built, where it lives (modules / commands /
+   tests), how to run it, and the result if any (numbers, decisions, file locations, dates). Update
+   `docs/impl/current.md` only when a new topic or lookup path is needed. Results, "DONE" status,
+   and history belong HERE.
 2. **Delete from plan.md.** Remove the implemented item's description ENTIRELY. Do NOT leave a
    "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
    is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
@@ -47,8 +50,9 @@ optional extra. The user should never have to ask you to make `plan.md` forward-
    calibration split -- its CI dips below the gate -- by adding harder + fluent-but-wrong items,
    then re-run the calibrate loop".)
 4. **Keep only forward-actionable context.** When a remaining task needs a fact about delivered
-   behavior to be implementable, state that fact in ONE line and LINK to `docs/impl/current.md` for
-   the detail -- never restate the delivered description in `plan.md`.
+   behavior to be implementable, state that fact in ONE line and LINK to `docs/impl/current.md` or
+   the specific `docs/impl/current/*.md` topic for the detail -- never restate the delivered
+   description in `plan.md`.
 
 **plan.md content rules:**
 
@@ -57,8 +61,8 @@ optional extra. The user should never have to ask you to make `plan.md` forward-
 - FORBIDDEN in `plan.md`: "DONE", "delivered", "implemented", an ISO date, "we/I did", check marks,
   result values, or any past-tense status narrative -- all of that lives in `current.md`.
 - Self-check before finishing: the task diff NET-REMOVES the implemented scope from `plan.md` and
-  ADDS it to `current.md`, and a grep of `plan.md` for `DONE` / `delivered` / `implemented` / an ISO
-  date returns nothing left over from this task.
+  ADDS it to the current docs (`current.md` index or `current/*.md` topic), and a grep of `plan.md`
+  for `DONE` / `delivered` / `implemented` / an ISO date returns nothing left over from this task.
 
 ## Formatting & Conventions
 

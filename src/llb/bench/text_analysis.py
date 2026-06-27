@@ -29,6 +29,7 @@ from llb.bench.common import (
     persist_category_run,
     render_board,
     run_gated_judge,
+    verified_data_config,
 )
 from llb.contracts import (
     BoardRow,
@@ -188,6 +189,8 @@ def run_text_analysis(
     synthetic: bool = True,
     persist: bool = True,
     mirror: Mirror | None = None,
+    data_verified: bool = False,
+    verification_ref: str | None = None,
 ) -> TextAnalysisRun:
     """Score one model over a text-analysis bundle and return its board under TIER_TEXT_ANALYSIS.
 
@@ -198,6 +201,9 @@ def run_text_analysis(
     the objective headline; otherwise the judge is demoted. `synthetic` flags planted vs real corpus
     so the two are never merged. `judge_scorer` / `similarity` are injectable for tests.
     """
+    verification_cfg = verified_data_config(
+        data_verified=data_verified, verification_ref=verification_ref
+    )
     labels_by_doc = load_planted_by_doc(bundle)
     # `iter_docs` ids are corpus-relative paths WITH the extension (e.g. "synth-000.md"); planted
     # labels key by the planter's bare doc id ("synth-000"). Index both so either form resolves.
@@ -322,6 +328,8 @@ def run_text_analysis(
             "judge_trusted": outcome.trusted,
             "judged_quality": quality,  # gated diagnostic, NOT the headline
             "judged_quality_ci": list(quality_ci) if quality_ci else None,
+            "judge_diagnostics": outcome.diagnostics,  # M7.2 zero-valued-judge observability
+            **verification_cfg,
         }
         judge_status: JudgeStatus | None = None
         if judge_model is not None:
@@ -331,6 +339,7 @@ def run_text_analysis(
                 "trusted": outcome.trusted,
                 "model": judge_model,
                 "metrics": ["judged_quality"],
+                "diagnostics": outcome.diagnostics,
             }
         paths = persist_category_run(
             method=METHOD,
