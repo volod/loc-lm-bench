@@ -830,7 +830,9 @@ def _log_report(report: dict[str, object]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="human verification gate human sample-verification of draft data.")
+    parser = argparse.ArgumentParser(
+        description="human verification gate human sample-verification of draft data."
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sa = sub.add_parser("sample", help="draw a stratified sample from a draft bundle -> worksheet")

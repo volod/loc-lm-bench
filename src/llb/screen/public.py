@@ -40,7 +40,12 @@ TRACK_GENERATION = "generation"
 #  - logprob (multiple_choice -> loglikelihood): the standard UA leaderboard MCQ set.
 #  - generation (generate_until): `global_piqa_prompted_ukr_cyrl` is the only stock UA
 #    generate-until task; there is no stock UA SQuAD. Override per harness build with `--tasks`.
-LOGPROB_TASKS = ["belebele_ukr_Cyrl", "arc_uk", "hellaswag_uk", "m_mmlu_uk"]  # MCQ (verified gold-set ledger)
+LOGPROB_TASKS = [
+    "belebele_ukr_Cyrl",
+    "arc_uk",
+    "hellaswag_uk",
+    "m_mmlu_uk",
+]  # MCQ (verified gold-set ledger)
 GENERATION_TASKS = ["global_piqa_prompted_ukr_cyrl"]  # generate-until (Ollama-compatible)
 
 # Primary metric per task, in preference order (lm-eval emits several; we report one).

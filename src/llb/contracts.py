@@ -50,7 +50,9 @@ class RagStoreMeta(TypedDict):
     n_indexed: int
     n_parents: int
     dim: int
-    backend: NotRequired[str]  # platform matrix vector-store backend (faiss default; chroma/qdrant/lancedb)
+    backend: NotRequired[
+        str
+    ]  # platform matrix vector-store backend (faiss default; chroma/qdrant/lancedb)
 
 
 class UsageRecord(TypedDict, total=False):
@@ -308,7 +310,9 @@ class TelemetryReport(TypedDict):
     peak_power_w: NotRequired[float]  # peak total GPU power during telemetry, when available
     power_samples: NotRequired[int]
     tokens_per_watt: NotRequired[float]  # steady tokens/sec divided by mean_power_w
-    sampler: NotRequired[str]  # vLLM sampler used (flashinfer | native; vLLM serving preflight), recorded in manifest
+    sampler: NotRequired[
+        str
+    ]  # vLLM sampler used (flashinfer | native; vLLM serving preflight), recorded in manifest
     flashinfer_version: NotRequired[str | None]
     gpus: list[GpuSummary]
 
@@ -349,7 +353,9 @@ class JudgeStatus(TypedDict):
     base_url: NotRequired[str | None]
     prompt_language: NotRequired[str]
     metrics: NotRequired[list[str]]
-    diagnostics: NotRequired[JudgeDiagnostics | None]  # judge diagnostics zero-valued-judge observability
+    diagnostics: NotRequired[
+        JudgeDiagnostics | None
+    ]  # judge diagnostics zero-valued-judge observability
 
 
 class RunPaths(TypedDict):
@@ -573,7 +579,9 @@ class ContentionReport(TypedDict):
     requested_util: float
     safe_util: float  # gpu-memory-utilization to actually use (derated to fit free VRAM)
     target_mb: int  # safe_util x total -- what vLLM may reserve
-    weight_floor_mb: int  # embedding-aware weights estimate (memory planner) used for the abort check
+    weight_floor_mb: (
+        int  # embedding-aware weights estimate (memory planner) used for the abort check
+    )
     residents: list[ResidentProc]  # other GPU processes holding VRAM
     derated: bool  # True when safe_util < requested_util (contention lowered it)
     fits: bool  # False -> even the derated target cannot hold weights + KV

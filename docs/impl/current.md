@@ -55,8 +55,10 @@ How to run the touched paths:
   tests/test_prompt_system.py tests/test_ontology_hardening.py -q`
 - `python -m compileall -q src/llb tests`
 - `scripts/code_quality.sh`
+- `make ci`
 
 The focused tests and compile check pass. The final quality run no longer lists `board.app`,
 `board.categories`, or the category-composite builder in the cognitive-complexity output. It still
 reports existing markdown line-length warnings and older high-complexity hotspots in the judge,
 verification, benchmark-runner, and scoring modules.
+`make ci` passes with ruff format/check, mypy, and the lightweight pytest suite.

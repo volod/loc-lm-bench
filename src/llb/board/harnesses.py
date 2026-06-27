@@ -55,9 +55,7 @@ def load_agentic_harness_records(data_dir: Path | str) -> list[HarnessRunRecord]
     return list(best.values())
 
 
-def harness_record_from_manifest(
-    manifest: JsonObject, run_dir: Path
-) -> HarnessRunRecord | None:
+def harness_record_from_manifest(manifest: JsonObject, run_dir: Path) -> HarnessRunRecord | None:
     config = manifest.get("config") or {}
     if config.get("tier") != TIER_AGENTIC:
         return None

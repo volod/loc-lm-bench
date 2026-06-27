@@ -22,11 +22,19 @@ TIER_SCREEN = "screen"  # Tier-1 public-screen metrics -- NEVER ranked against p
 # the RAG board or with another category: the `_validate_board_cohort` guard already refuses a
 # board whose `ModelResult`s carry more than one distinct `tier`, so these constants are the
 # named identities the category runners stamp onto their results.
-TIER_TEXT_ANALYSIS = "text_analysis"  # text-analysis and category expansion text-analysis (planted-label recovery)
-TIER_SECURITY = "security"  # security benchmark security / robustness (ASR + refusal-appropriateness)
-TIER_TOOLING = "tooling"  # tooling benchmark tooling / MCP / function-calling (call-only correctness)
+TIER_TEXT_ANALYSIS = (
+    "text_analysis"  # text-analysis and category expansion text-analysis (planted-label recovery)
+)
+TIER_SECURITY = (
+    "security"  # security benchmark security / robustness (ASR + refusal-appropriateness)
+)
+TIER_TOOLING = (
+    "tooling"  # tooling benchmark tooling / MCP / function-calling (call-only correctness)
+)
 TIER_AGENTIC = "agentic"  # agentic workflows (completion-rate + efficiency)
-TIER_SUMMARIZATION = "summarization"  # category expansion summarization (reference coverage + faithfulness)
+TIER_SUMMARIZATION = (
+    "summarization"  # category expansion summarization (reference coverage + faithfulness)
+)
 TIER_STRUCTURED = "structured"  # structured output (schema conformance + field accuracy)
 
 

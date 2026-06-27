@@ -44,7 +44,9 @@ class SamplerVerdict(TypedDict):
     flashinfer_version: str | None
     detail: str
     checked_at: str  # ISO-8601 UTC, for provenance
-    driver: str | None  # GPU driver at probe time -- a change re-runs the preflight (vLLM serving preflight)
+    driver: (
+        str | None
+    )  # GPU driver at probe time -- a change re-runs the preflight (vLLM serving preflight)
     pinned_version: str | None  # flashinfer version auto-pinned to make the sampler work, or None
     auto_pinned: bool  # True when a candidate flashinfer was installed to enable the sampler
 

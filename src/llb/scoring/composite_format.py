@@ -1,18 +1,12 @@
 """ASCII formatters for guarded category composite outputs."""
 
 from collections.abc import Sequence
-from typing import Protocol
 
 from llb.contracts import JsonObject
+from llb.scoring.composite_types import CompositeIssue
 
 
-class IssueLike(Protocol):
-    model: str
-    reason: str
-    tier: str | None
-
-
-def format_composite_issues(issues: Sequence[IssueLike], *, limit: int = 12) -> str:
+def format_composite_issues(issues: Sequence[CompositeIssue], *, limit: int = 12) -> str:
     """ASCII summary of why the composite headline is blocked."""
     if not issues:
         return ""

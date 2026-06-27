@@ -98,7 +98,9 @@ class RagStore:
         self.embedder = embedder
         self.meta = meta
         self.parents = parents
-        self.backend = str(meta.get("backend", RAG_BACKEND_FAISS))  # platform matrix vector-store backend
+        self.backend = str(
+            meta.get("backend", RAG_BACKEND_FAISS)
+        )  # platform matrix vector-store backend
         self._parent_by_id = {p["chunk_id"]: p for p in parents} if parents else {}
 
     @classmethod

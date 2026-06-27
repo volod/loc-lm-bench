@@ -58,9 +58,7 @@ def category_case_objectives(config: JsonObject, run_dir: Path) -> list[float]:
     return []
 
 
-def category_record_from_manifest(
-    manifest: JsonObject, run_dir: Path
-) -> CategoryRunRecord | None:
+def category_record_from_manifest(manifest: JsonObject, run_dir: Path) -> CategoryRunRecord | None:
     """Build a category run record from one persisted run bundle."""
     config = manifest.get("config") or {}
     tier = config.get("tier")
@@ -91,9 +89,7 @@ def category_record_from_manifest(
     )
 
 
-def _verification_error(
-    config: JsonObject, verification_ref: object, run_dir: Path
-) -> str | None:
+def _verification_error(config: JsonObject, verification_ref: object, run_dir: Path) -> str | None:
     if not bool(config.get("data_verified", False)):
         return None
     if not verification_ref:

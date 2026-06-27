@@ -149,7 +149,9 @@ class AgenticRun:
     trajectory_quality_ci: tuple[float, float] | None = None
     judge_trusted: bool = False
     judge_reason: str = "no judge configured"
-    judge_diagnostics: JudgeDiagnostics | None = None  # judge diagnostics zero-valued-judge observability
+    judge_diagnostics: JudgeDiagnostics | None = (
+        None  # judge diagnostics zero-valued-judge observability
+    )
 
 
 def _norm(value: Any) -> str:

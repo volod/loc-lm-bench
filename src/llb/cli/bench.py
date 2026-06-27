@@ -36,7 +36,8 @@ def bench_text_analysis_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
@@ -101,7 +102,8 @@ def bench_security_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
@@ -162,7 +164,8 @@ def bench_tooling_cmd(
         "tool-capable endpoint via --base-url or Ollama)",
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
@@ -259,7 +262,8 @@ def bench_agentic_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
@@ -366,7 +370,8 @@ def bench_summarization_cmd(
         None, help="OpenAI-compatible base URL of the judge endpoint"
     ),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,
@@ -418,7 +423,8 @@ def bench_structured_cmd(
     ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
     data_verified: bool = typer.Option(
-        False, help="stamp the run as human verification gate-verified for composite-headline eligibility"
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
     ),
     verification_ref: Optional[str] = typer.Option(
         None,

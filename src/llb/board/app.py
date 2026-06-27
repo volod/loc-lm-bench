@@ -1,6 +1,7 @@
 """Streamlit board over canonical run bundles."""
 
 from pathlib import Path
+from typing import Any
 
 from llb.board.data import (
     best_per_model,
@@ -36,7 +37,7 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
     st.caption("Deep per-run inspection: the MLflow UI (`make mlflow`).")
 
 
-def _render_private_leaderboard(st, root: Path) -> None:
+def _render_private_leaderboard(st: Any, root: Path) -> None:
     records = best_per_model(load_run_records(root))
     if not records:
         st.info(f"No Tier-2 runs under {root}. Run `llb run-eval` (or `llb sweep`) first.")
@@ -57,7 +58,7 @@ def _render_private_leaderboard(st, root: Path) -> None:
             st.write(f"**{row['model']}** ({row['backend']})", config_summary(rec.config))
 
 
-def _render_category_boards(st, data_dir: Path) -> None:
+def _render_category_boards(st: Any, data_dir: Path) -> None:
     category_by_tier = load_category_records(data_dir)
     if not category_by_tier:
         return
@@ -68,7 +69,7 @@ def _render_category_boards(st, data_dir: Path) -> None:
         st.dataframe(rank_board(results), use_container_width=True)
 
 
-def _render_harness_comparison(st, data_dir: Path) -> None:
+def _render_harness_comparison(st: Any, data_dir: Path) -> None:
     harness_records = load_agentic_harness_records(data_dir)
     if not harness_records:
         return
@@ -81,7 +82,7 @@ def _render_harness_comparison(st, data_dir: Path) -> None:
             st.dataframe(rows, use_container_width=True)
 
 
-def _render_prompt_system_comparison(st, data_dir: Path) -> None:
+def _render_prompt_system_comparison(st: Any, data_dir: Path) -> None:
     rag_prompt_records = load_rag_prompt_system_records(data_dir)
     if not rag_prompt_records:
         return
@@ -94,7 +95,7 @@ def _render_prompt_system_comparison(st, data_dir: Path) -> None:
             st.dataframe(rows, use_container_width=True)
 
 
-def _render_category_composite(st, data_dir: Path) -> None:
+def _render_category_composite(st: Any, data_dir: Path) -> None:
     composite_rows, composite_issues = load_category_composite(data_dir)
     if composite_rows:
         st.subheader("Category composite headline (verified suite)")
@@ -109,7 +110,7 @@ def _render_category_composite(st, data_dir: Path) -> None:
         )
 
 
-def _render_public_screens(st, screens: Path) -> None:
+def _render_public_screens(st: Any, screens: Path) -> None:
     reports = load_screen_reports(screens)
     if not reports:
         return

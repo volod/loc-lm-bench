@@ -265,7 +265,9 @@ def collect_telemetry(
             round(tput.steady_tokens_per_s / mean_power, 4) if mean_power > 0 else 0.0
         )
     if hasattr(launcher, "meta") and launcher.meta.get("sampler") is not None:
-        report["sampler"] = launcher.meta["sampler"]  # vLLM sampler in the manifest (vLLM serving preflight)
+        report["sampler"] = launcher.meta[
+            "sampler"
+        ]  # vLLM sampler in the manifest (vLLM serving preflight)
         report["flashinfer_version"] = launcher.meta.get("flashinfer_version")
     return report
 
