@@ -51,6 +51,14 @@ across `llb.scoring.composite_builder`, `composite_types`, `composite_stats`, an
 
 The root README is a concise production entry point. It describes the current product surface,
 links to operator documentation, and avoids release-cycle and numbered implementation labels.
+Its Core Capabilities section is the single feature inventory, with each item naming the operator
+use case plus guide and Makefile entry points.
+Its Data Licenses section links the upstream dataset cards and license texts behind the committed
+UA-SQuAD fixture and default Tier-1 public-screen tasks.
+Its quick start uses Makefile entry points only: `make sweep`, `make pipeline`, `make board`, and
+`make mlflow` wrap the corresponding operator commands.
+`scripts/code_quality.sh` reports the largest tracked files without a broken-pipe diagnostic from
+the top-N listing.
 
 Retired aggregate import surfaces were removed: board imports target the focused board modules,
 composite imports target the concrete scoring modules, `llb.eval.graph` exposes only the graph API,

@@ -59,7 +59,7 @@ echo "[code-quality] top ${TOP_K} largest tracked files (bytes, path)"
   set +o pipefail
   git -C "$PROJECT_ROOT" ls-tree -r --long HEAD \
     | sort -k 4 -n -r \
-    | head -n "$TOP_K" \
+    | sed -n "1,${TOP_K}p" \
     | awk '{printf "%-10s %s\n", $4, $5}'
 )
 
