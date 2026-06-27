@@ -89,6 +89,7 @@ def test_manifest_written_before_mirror(tmp_path):
     )
     metrics = mlflow_module._mlflow_metrics(rich_manifest)
     assert metrics["quality.objective_score"] == 0.75
+    assert "objective_score" not in metrics
     assert metrics["retrieval.mrr"] == 0.8
     assert metrics["telemetry.peak_vram_mb"] == 4000
     assert metrics["hardware.gpu_total_mb"] == 16000

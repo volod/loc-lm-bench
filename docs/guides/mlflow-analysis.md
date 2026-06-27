@@ -53,9 +53,6 @@ Use the Runs table column selector to show these fields:
 | `metrics.cases.n` | Number of scored cases; compare scores only at matching scale |
 | `metrics.judge.trusted` | `1` only when judge calibration passed its threshold |
 
-The unprefixed `objective_score`, `reliability`, and `tokens_per_s` metrics remain for
-backward compatibility. Prefer the grouped `quality.*` names for new analysis.
-
 ## Parameters and tags
 
 Parameters capture the effective benchmark configuration. Check these before comparing runs:

@@ -5,7 +5,7 @@ import json
 import pytest
 
 from llb.bench import agentic
-from llb.board.data import load_prompt_system_records, prompt_system_comparison
+from llb.board.prompt_systems import load_prompt_system_records, prompt_system_comparison
 from llb.prompt_system import budget as bud
 from llb.prompt_system import corpus as cp
 from llb.prompt_system import manifest as psm

@@ -40,14 +40,22 @@ such as `category-benchmark-suite.md`, `platform-vector-matrix.md`, and `rag-eva
 
 The board loader was split from one large module into focused modules:
 `llb.board.runs`, `llb.board.categories`, `llb.board.harnesses`,
-`llb.board.prompt_systems`, and `llb.board.io`. `llb.board.data` remains the import facade.
+`llb.board.prompt_systems`, and `llb.board.io`; imports now target those modules directly.
 The Streamlit board renderer now delegates to section helpers in `llb.board.app`.
 
 The guarded category composite now uses descriptive public names:
 `load_category_composite`, `build_category_composite_rows`,
 `CATEGORY_COMPOSITE_RAW_WEIGHTS`, and `normalized_composite_weights`. Its implementation is split
 across `llb.scoring.composite_builder`, `composite_types`, `composite_stats`, and
-`composite_format`, with `llb.scoring.composite` as the compatibility facade.
+`composite_format`; imports now target the concrete composite modules directly.
+
+The root README is a concise production entry point. It describes the current product surface,
+links to operator documentation, and avoids release-cycle and numbered implementation labels.
+
+Retired aggregate import surfaces were removed: board imports target the focused board modules,
+composite imports target the concrete scoring modules, `llb.eval.graph` exposes only the graph API,
+judge model ids are passed directly with an explicit endpoint, and the MLflow mirror writes the
+grouped metric schema (`llb.mirror_schema=3`).
 
 How to run the touched paths:
 

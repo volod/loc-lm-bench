@@ -2,43 +2,46 @@
 
 ## category suite -- security, agentic, tooling (build COMPLETE)
 
-The category suite BUILD is complete and unit-tested (no GPU): the eval-template prerequisites + the
-signed-off text-analysis schema (text analysis), and every scored category -- security (security benchmark), tooling
-(tooling benchmark), agentic (agentic benchmark), text-analysis + summarization + structured-output + chat-period +
-reliability (text-analysis and category expansion) -- plus the second-frontier verified-data gate (verified-data hardening). Each
-category renders under its OWN Tier (never cross-ranked with the RAG board), produces an objective,
-CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case scores like
-`run-eval`. The category suite RESIDUALS are now delivered too (per-category, below): the security benchmark sourcing
-breadth (public-set adapters + corpus RAG-injection/canary planter) + unsafe-content gated judge;
-the tooling benchmark native-FC + MCP transport, BFCL UA adapter, and per-argument tolerance; the agentic benchmark
-real-corpus search tasks; the category expansion nested/array structured cases + matching, chat-period
-planter/ingestion, and text-analysis judged sub-tasks + long_doc + contradiction + board; and the
-verified-data hardening ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence).
-What remains is forward work in [`plan.md`](../plan.md): the extended workflow harness comparison, RAG prompt-system
-generation/tuning, and platform/matrix expansion.
+The category suite BUILD is complete and unit-tested (no GPU): the eval-template prerequisites +
+the signed-off text-analysis schema (text analysis), and every scored category -- security
+(security benchmark), tooling (tooling benchmark), agentic (agentic benchmark), text-analysis +
+summarization + structured-output + chat-period + reliability (text-analysis and category
+expansion) -- plus the second-frontier verified-data gate (verified-data hardening). Each
+category renders under its OWN Tier (never cross-ranked with the RAG board), produces an
+objective, CI-bearing board from a fake endpoint, and persists a canonical manifest + per-case
+scores like `run-eval`. The category suite RESIDUALS are now delivered too (per-category, below):
+the security benchmark sourcing breadth (public-set adapters + corpus RAG-injection/canary
+planter) + unsafe-content gated judge; the tooling benchmark native-FC + MCP transport, BFCL UA
+adapter, and per-argument tolerance; the agentic benchmark real-corpus search tasks; the category
+expansion nested/array structured cases + matching, chat-period planter/ingestion, and
+text-analysis judged sub-tasks + long_doc + contradiction + board; and the verified-data hardening
+ontology data-prep items (spaCy adapter, long-doc extraction chunking, richer confidence).
+What remains is forward work in [`plan.md`](../plan.md): the extended workflow harness comparison,
+RAG prompt-system generation/tuning, and platform/matrix expansion.
 
-The shared category suite substrate (REUSE, not a new platform) lives in `llb.bench.common`: `local_complete` /
-`launcher_complete` build the production `complete` (prompt -> raw text); `drive_with_backend`
-reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning backend under the existing
-`isolate_cell` contract; `category_result` stamps a `ModelResult` with the category Tier (per-case
-scores -> bootstrap CI); `render_board` ranks under that Tier via `rank_board` (whose guard refuses
-to cross-rank tiers) + `format_board`; `persist_category_run` writes the run bundle under
-`$DATA_DIR/<category>/<ts>/`. The category Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` /
-`TIER_TOOLING` / `TIER_AGENTIC` / `TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in
-`llb.scoring.aggregate`. Each category exposes a `bench-*` CLI command.
+The shared category suite substrate (REUSE, not a new platform) lives in `llb.bench.common`:
+`local_complete` / `launcher_complete` build the production `complete` (prompt -> raw text);
+`drive_with_backend` reaches a running endpoint / Ollama directly or LAUNCHES a VRAM-owning
+backend under the existing `isolate_cell` contract; `category_result` stamps a `ModelResult`
+with the category Tier (per-case scores -> bootstrap CI); `render_board` ranks under that
+Tier via `rank_board` (whose guard refuses to cross-rank tiers) + `format_board`;
+`persist_category_run` writes the run bundle under `$DATA_DIR/<category>/<ts>/`. The category
+Tier constants (`TIER_TEXT_ANALYSIS` / `TIER_SECURITY` / `TIER_TOOLING` / `TIER_AGENTIC` /
+`TIER_SUMMARIZATION` / `TIER_STRUCTURED`) live in `llb.scoring.aggregate`.
+Each category exposes a `bench-*` CLI command.
 
 ### Eval templates (deferred eval templates) -- `llb.eval.{common,map_reduce,multi_hop}`
 The two remaining DRY LangGraph templates, following the single-call template's node-closure
 shape (`graph.py`). The shared status taxonomy, refusal markers, `classify_response`, and
-`format_context` were extracted into `llb.eval.common` (re-exported from `graph.py`, so the RAG core
-single-call path is unchanged) and are reused by all three templates.
+`format_context` live in `llb.eval.common` and are reused by all three templates.
 - **map-reduce (`map_reduce.py`)** -- split a long document into overlapping segments, MAP a
   partial answer per segment, REDUCE the partials into one answer. The long-doc comprehension
   substrate; segments that find nothing emit a `(немає інформації)` marker the reduce step drops.
 - **multi-hop (`multi_hop.py`)** -- retrieve -> CONTROLLER -> {retrieve again | answer} with a
   conditional edge, bounded by `max_hops`; gathered chunks are deduped across hops. This is the
-  agentic benchmark substrate (agentic benchmark grows the controller into tool calls + an in-sandbox exec node).
-  Trajectory length (`n_hops`) + model-call/token counts are recorded as the efficiency signal.
+  agentic benchmark substrate (agentic benchmark grows the controller into tool calls + 
+  an in-sandbox exec node). Trajectory length (`n_hops`) + model-call/token counts are recorded
+  as the efficiency signal.
 Like `graph.py`, every node closure / parser / message builder is pure and unit-tested WITHOUT
 langgraph; only `build_map_reduce_graph` / `build_multi_hop_graph` import it. Both compiled
 graphs were smoke-run end to end with fake store/launcher.
@@ -313,9 +316,10 @@ The remaining spec categories, each on the shared `bench.common` substrate:
 
 All four score on a fixed seeded set with CIs and are pure/fake-endpoint unit-tested, no GPU.
 
-**Guarded category suite composite headline (extended workflow support).** `llb.scoring.composite` builds a separate composite
-row only when every required category suite tier for a model is present, has a reloadable per-case objective
-series for bootstrap CIs, and is stamped with `data_verified=true`. The weights use the spec's
+**Guarded category suite composite headline (extended workflow support).** `llb.scoring.composite_builder`
+builds a separate composite row only when every required category suite tier for a model is present,
+has a reloadable per-case objective series for bootstrap CIs, and is stamped with
+`data_verified=true`. The weights use the spec's
 category suite-category proportions and renormalize over the category suite subset: text-analysis 20, summarization 10,
 structured 10, security 10, agentic 10, tooling 5. Category runners now persist a standardized
 per-case `objective_score`, and the `bench-*` commands accept `--data-verified` plus
@@ -326,7 +330,7 @@ that points to one, or an accepted-ledger bundle whose items are all `verified=t
 references render a detailed operator diagnostic (`format_verification_status`) with path, kind,
 reason, worksheet or ledger statistics, failing strata or unverified ids, and the exact
 `verify-review` / `verify-accept` / rerun instruction needed to make the reference usable.
-`llb.board.data` preserves category run metadata via `CategoryRunRecord` and re-checks verification
+`llb.board.categories` preserves category run metadata via `CategoryRunRecord` and re-checks verification
 refs when building the composite; `load_category_composite` returns either ranked composite rows or
 concrete blockers. CLI: `llb bench-composite` (diagnostic escape hatches: `--allow-unverified`,
 `--allow-missing-ci`). The Makefile target `make composite-headline` chains all six required

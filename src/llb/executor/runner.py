@@ -32,6 +32,7 @@ from llb.contracts import (
     RunMetrics,
     TelemetryReport,
 )
+from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.executor.cases import CaseBatch, execute_cases, spans_as_dicts
 from llb.executor.reporting import emit_summary
@@ -291,7 +292,7 @@ def _aggregate(
 ) -> tuple[list[LeaderboardRow], RunMetrics]:
     n = len(case_rows)
     objective = sum(r["objective_score"] for r in case_rows) / n if n else 0.0
-    ok = [r for r in case_rows if r["status"] == eval_graph.OK]
+    ok = [r for r in case_rows if r["status"] == eval_common.OK]
     reliability = len(ok) / n if n else 0.0
     tok_rates = [r["tokens_per_s"] for r in ok if r["tokens_per_s"] > 0]
     observed_tokens_per_s = sum(tok_rates) / len(tok_rates) if tok_rates else 0.0

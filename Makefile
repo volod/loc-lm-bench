@@ -44,9 +44,9 @@ MLFLOW_PORT ?= 5000
 # (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
 # Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there
 # too). Alternatives by GPU tier (override JUDGE_MODEL + JUDGE_BASE_URL):
-#   12 GB GPU: ollama_chat/gemma-4-e4b-it                       (GGUF/CPU offload; the 12B won't fit)
-#   16 GB GPU: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct   (vLLM on :8000)
-#   32 GB GPU: hosted_vllm/google/gemma-4-12B-it                (bf16, higher fidelity + co-host headroom)
+#   12 GB GPU: gemma-4-e4b-it                                  (GGUF/CPU offload; the 12B won't fit)
+#   16 GB GPU: google/gemma-4-12B-it-qat-w4a16-ct              (vLLM on :8000)
+#   32 GB GPU: google/gemma-4-12B-it                           (bf16, higher fidelity + co-host headroom)
 # Set JUDGE_MODEL empty to skip the judge.
 # JUDGE_RHO is the calibration Spearman rho (from `make calibration-score`); set it on `run-eval`
 # to ENABLE the gated judge in a scored run -- the judge enters the ranking blend only when

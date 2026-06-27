@@ -26,10 +26,6 @@ VLLM_USE_FLASHINFER_SAMPLER = "VLLM_USE_FLASHINFER_SAMPLER"
 # Comma-separated flashinfer versions the preflight auto-pins when the bundled one fails (vLLM serving preflight).
 FLASHINFER_CANDIDATES = "LLB_FLASHINFER_CANDIDATES"
 
-# Judge endpoint fallbacks when judge_model uses a legacy prefix
-OLLAMA_API_BASE = "OLLAMA_API_BASE"
-HOSTED_VLLM_API_BASE = "HOSTED_VLLM_API_BASE"
-
 # Local LLM judge. JUDGE_MODEL is the litellm route for the judge model; unset -> no judge
 # runs (objective correctness ranks alone). Mirrors the Makefile JUDGE_MODEL knob and the
 # --judge-model CLI flag. DEEPEVAL_* configure the OpenAI-compatible judge endpoint (no cloud

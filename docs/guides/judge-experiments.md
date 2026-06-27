@@ -22,8 +22,7 @@ Install the project extras and configure a local OpenAI-compatible endpoint:
 `DEEPEVAL_TELEMETRY_OPT_OUT=YES` for a local-only experiment.
 
 For vLLM, use the model id returned by `GET /v1/models`. For Ollama's OpenAI-compatible API, use
-`http://127.0.0.1:11434/v1` and the locally installed tag. The historical `hosted_vllm/` and
-`ollama_chat/` prefixes are accepted for existing configs but are removed before the request.
+`http://127.0.0.1:11434/v1` and the locally installed tag.
 
 ## Recorded smoke experiment
 
@@ -62,7 +61,7 @@ To use a vLLM judge instead, override the knobs:
 
     make calibration-run \
       MODEL=llama3.2:3b BACKEND=ollama \
-      JUDGE_MODEL=hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct \
+      JUDGE_MODEL=google/gemma-4-12B-it-qat-w4a16-ct \
       JUDGE_BASE_URL=http://127.0.0.1:8000/v1
 
 The worksheet receives model answers and ungated judge ratings. A human reviewer then fills

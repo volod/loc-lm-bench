@@ -82,7 +82,7 @@ which needs a running judge endpoint.
 
    ```
    make calibration-run                                   # defaults: Ollama gemma3:27b judge + CPU embedder
-   make calibration-run JUDGE_MODEL=hosted_vllm/<id> \
+   make calibration-run JUDGE_MODEL=<served-model-id> \
        JUDGE_BASE_URL=http://127.0.0.1:8000/v1            # or a vLLM judge
    ```
 

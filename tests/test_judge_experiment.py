@@ -8,7 +8,7 @@ from llb.judge.experiment import EXPERIMENT_CASES, run_judge_experiment
 def test_judge_experiment_records_prompts_scores_and_endpoint(tmp_path):
     def scorer(records, model):
         assert records == EXPERIMENT_CASES
-        assert model == "hosted_vllm/test-judge"
+        assert model == "test-judge"
         return [
             {"faithfulness": 1.0, "answer_relevancy": 1.0},
             {"faithfulness": 0.0, "answer_relevancy": 1.0},
@@ -16,7 +16,7 @@ def test_judge_experiment_records_prompts_scores_and_endpoint(tmp_path):
         ]
 
     report, out_path = run_judge_experiment(
-        "hosted_vllm/test-judge",
+        "test-judge",
         base_url="http://localhost:8000",
         data_dir=tmp_path,
         scorer=scorer,

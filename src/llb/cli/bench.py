@@ -332,7 +332,7 @@ def bench_agentic_compare_cmd(
     Reads the persisted `agentic` run bundles, keeps the best run per (model, harness), and ranks
     the harnesses for the chosen model under TIER_AGENTIC -- isolating the harness effect with the
     same bootstrap CIs as the category boards."""
-    from llb.board.data import harness_comparison
+    from llb.board.harnesses import harness_comparison
 
     cfg = load_config(None)
     rows, table, harnesses = harness_comparison(cfg.data_dir, model)
@@ -472,8 +472,8 @@ def bench_composite_cmd(
     ),
 ) -> None:
     """Render the guarded category composite headline from persisted category runs."""
-    from llb.board.data import load_category_composite
-    from llb.scoring.composite import format_composite_issues, format_composite_rows
+    from llb.board.categories import load_category_composite
+    from llb.scoring.composite_format import format_composite_issues, format_composite_rows
 
     cfg = load_config(None)
     rows, issues = load_category_composite(

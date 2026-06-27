@@ -57,9 +57,9 @@ efficiency** (tokens per UA char). vLLM logs land under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/vllm/`; if the engine dies during startup the
 log is preserved to `$DATA_DIR/llb/logs/failed-*.log` (the run bundle is discarded).
 
-Validated (real-model validation, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-it-qat-w4a16-ct` scored 0.801
-objective at **63.8 tok/s**, peak VRAM **15.7 GB** (gpu-mem-util 0.80), cold load **112 s**,
-served ctx 8192.
+Validated (real-model validation, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-it-qat-w4a16-ct`
+scored 0.801 objective at **63.8 tok/s**, peak VRAM **15.7 GB** (gpu-mem-util 0.80),
+cold load **112 s**, served ctx 8192.
 
 ## Gotchas (from the real-model validation run)
 
@@ -84,8 +84,9 @@ vLLM serving knobs live in `RunConfig` (set in YAML or via flags): `backend: vll
 ## What needs your GPU
 
 The launcher, telemetry, and build helper are built + unit-tested with fakes and now
-**validated on a real model** (real-model validation above). The from-source build path still runs only on a
-CUDA host. The real-model validation fit correction is already fed back into `samples/models_uk.yaml`: w4a16
-weights are under-estimated by `list-models` (`params_b x bpw` ignores the high-precision
-large-vocab embedding -- measured 9.8 GiB vs predicted ~4.2 GiB). An embedding-aware estimate
-is forward work (plan.md robust backend prep).
+**validated on a real model** (real-model validation above). The from-source build path
+still runs only on a CUDA host. The real-model validation fit correction is already fed
+back into `samples/models_uk.yaml`: w4a16 weights are under-estimated by `list-models`
+(`params_b x bpw` ignores the high-precision large-vocab embedding -- measured 9.8 GiB
+vs predicted ~4.2 GiB). An embedding-aware estimate is forward work
+(plan.md robust backend prep).
