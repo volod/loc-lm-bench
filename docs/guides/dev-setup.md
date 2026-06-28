@@ -11,7 +11,7 @@ needed).
 
 `make venv` installs every Python extra below so a fresh checkout can run every command without a
 follow-up `uv pip install`. It is a larger one-time download; for a lean install trim it,
-e.g. `make venv EXTRAS=dev` (or `EXTRAS=rag,eval` to just run the skeleton).
+e.g. `make venv EXTRAS=dev` (or `EXTRAS=rag,eval` for the RAG core path).
 
 Set `SKIP_APT=1` when apt is unavailable (macOS, minimal CI images) -- the Python venv still
 builds; only the OS package step is skipped.

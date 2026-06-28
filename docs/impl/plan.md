@@ -1,8 +1,9 @@
 # loc-lm-bench -- Implementation Plan (forward work)
 
 Forward-only: every task line in this file must describe work that remains. Current behavior,
-operator workflows, run evidence, and decisions live in [`current.md`](current.md) and the topic
-files under [`current/`](current/). The product spec lives in [`docs/design/spec.md`](../design/spec.md).
+operator workflows, durable evidence, and design decisions live in [`current.md`](current.md) and
+the topic files under [`current/`](current/). The product spec lives in
+[`docs/design/spec.md`](../design/spec.md).
 
 ## Forward Tasks
 
@@ -12,8 +13,6 @@ files under [`current/`](current/). The product spec lives in [`docs/design/spec
 - Split the remaining benchmark-runner hotspots in `llb.bench.text_analysis`,
   `llb.bench.summarization`, `llb.bench.agentic`, and `llb.scoring.tooling`. Keep each runner's
   prompt construction, model call, scoring, and artifact writing in named helper functions.
-- Reduce the remaining markdown line-length warnings from `scripts/code_quality.sh` by wrapping
-  prose in current-state docs and guides without changing command blocks or tables.
 
 ## Adding Future Tasks
 
@@ -35,5 +34,5 @@ Each task entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a task surfaces new future work, add that as a new forward task. Put run results,
-decisions, and historical notes in current docs, never in this plan.
+When a task surfaces new future work, add that as a new forward task. Put current behavior and
+durable decisions in current docs, never in this plan.

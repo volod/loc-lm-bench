@@ -83,20 +83,21 @@ survives `chunk_size` changes.
 ## Stage 3 -- Serving open-weight LLMs locally
 
 The serving design standardizes on one OpenAI-compatible HTTP API so eval code stays
-backend-agnostic. Ollama and vLLM are implemented; llama.cpp is the planned third backend.
+backend-agnostic. Ollama, vLLM, and llama.cpp all sit behind that launcher seam.
 
 - [Ollama](https://github.com/ollama/ollama) -- easiest local serving (GGUF, CPU offload).
 - [vLLM](https://docs.vllm.ai/en/latest/) -- high-throughput HF-weight serving; read its
   [PagedAttention paper](https://arxiv.org/abs/2309.06180) for the KV-cache idea.
-- [llama.cpp](https://github.com/ggml-org/llama.cpp) -- portable GGUF serving (planned backend).
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) -- portable GGUF serving with GPU/CPU layer
+  offload.
 - Quantization (why a 12B fits in 16 GB): [GGUF](https://huggingface.co/docs/hub/gguf) and the
   [HF quantization overview](https://huggingface.co/docs/transformers/main/en/quantization/overview)
   (w4a16 / AWQ / GPTQ).
 - The shared interface: [OpenAI Chat
   Completions](https://platform.openai.com/docs/api-reference/chat).
 
-In this repo: `src/llb/backends/` (base launcher seam, OpenAI client, Ollama, vLLM, the
-availability resolver, hardware detection, prepare, planner, telemetry).
+In this repo: `src/llb/backends/` (base launcher seam, OpenAI client, Ollama, vLLM, llama.cpp,
+the availability resolver, hardware detection, prepare, planner, telemetry).
 
 ## Stage 4 -- Orchestrating eval flows
 
@@ -175,9 +176,9 @@ In this repo: `src/llb/screen/public.py` (two never-cross-ranked tracks: logprob
 
 Learn to distinguish model safety from application security, define the attacker and protected
 assets, and measure failures without giving a model access to real secrets or destructive tools.
-The benchmark implementation is planned, not delivered; see the
-[security learning path](learning-path-security.md) and the
-[forward plan](../impl/plan.md).
+The current security benchmark code lives in `src/llb/bench/security.py`,
+`src/llb/scoring/security.py`, and `src/llb/prep/security_*`; see the
+[security learning path](learning-path-security.md).
 
 - Threat modeling: start with the
 [OWASP Top 10 for LLM

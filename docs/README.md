@@ -4,7 +4,7 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 
 ## Start here
 
-- [Project README](../README.md) -- pitch, quick start, status.
+- [Project README](../README.md) -- pitch, quick start, and product surface.
 - [Design](design/README.md) -- contents map into the design spec (problem, wedge,
   architecture, decisions, prior art).
 
@@ -15,9 +15,9 @@ Entry point for the docs. Each area lives in its own subdirectory with its own i
 
 ## Implementation
 
-- [Current state](impl/current.md) -- compact index into delivered facts under `impl/current/`.
-- [Forward plan](impl/plan.md) -- the ordered roadmap (GraphRAG backend residuals +
- extended workflow; data bootstrap-category suite done).
+- [Current implementation](impl/current.md) -- agent-facing map of current behavior under
+  `impl/current/`.
+- [Forward plan](impl/plan.md) -- future engineering tasks only.
   Data-creation / verification / calibration are operator workflows, not plan items:
   [create a gold set](guides/goldset-from-scratch.md).
 
@@ -52,7 +52,7 @@ per-item review -> accepted-ledger flip, for real-corpus and synthetic bundles.
   GPU-class extension commands.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
-- [Run the eval skeleton](guides/run-skeleton.md) -- RAG core: build-index -> run-eval.
+- [Run RAG core](guides/run-rag-core.md) -- build-index -> run-eval.
 - [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
   compare metrics, and inspect canonical case artifacts.
 - [vLLM backend + telemetry](guides/vllm-backend.md) -- backend telemetry: build-vllm -> run-eval on

@@ -82,7 +82,7 @@ native speed. Pick the largest model that **fits**, or accept the offload penalt
 It prints an ASCII table and (with `--out`) writes the JSON report. A backend whose store is not
 built is skipped with a log line, so you can compare whatever is present.
 
-## First real-host result (2026-06-26, RTX 4060 Ti 16 GB)
+## Reference factoid-corpus result
 
 Graph built from a fresh `gemma4:26b` extraction (Ollama, think-disabled) over the committed
 `ua_squad_postedited_v1` corpus: 250 docs -> **2396 nodes, 558 edges, 1839 communities** (21 docs

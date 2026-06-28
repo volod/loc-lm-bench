@@ -5,25 +5,23 @@ do for you**, with the essential papers, manuals, and a how-to-understand explan
 
 These are not project bookkeeping -- they are the three places where *human ground truth* is the
 whole point of the measurement. The design rationale is in the [design spec](../design/spec.md),
-what already exists in code is in the [current state](../impl/current.md), and the
-sequenced roadmap is in the [forward plan](../impl/plan.md). This manual turns those into
-runnable procedures.
+and the current implementation map is in [current.md](../impl/current.md). This manual turns those
+into runnable procedures.
 
 ## Why a human is irreducible here (read this first)
 
-Everything an AI *could* do -- drafting schemas, drafting data, cross-checking data with a second
-model -- is implemented as pipeline code elsewhere. What remains is exactly the work that would
-*destroy the guarantee the tool sells* if an AI did it:
+The pipeline can draft schemas, draft data, and cross-check data with a second model. The human work
+is exactly the part that would destroy the guarantee the tool sells if an AI did it:
 
-- - ****Judge calibration**** (Independent **ground-truth ratings** to validate the model judge):
-- The point is to measure the LOCAL judge against HUMAN judgment. An LLM-vs-LLM calibration cannot
-- establish a "defensible against humans" claim -- it just compares two models.
-- - ****Schema / ontology sign-off**** (**Accountable approval** of AI-drafted schemas + facts only
-- you know): Approval is an act of accountable authority; the corpus facts (real vs synthetic, do
-- references exist) are knowledge only the data owner has.
-- - ****Eval-data verification**** (**Human sample-verification** of AI-drafted, cross-checked
-- data): Dropping the human verification would forfeit the human-ground-truth guarantee for private
-- model-selection data.
+- **Judge calibration**: independent ground-truth ratings validate the model judge. The point is
+  to measure the local judge against human judgment. An LLM-vs-LLM calibration cannot establish a
+  defensible-against-humans claim; it just compares two models.
+- **Schema / ontology sign-off**: accountable approval of AI-drafted schemas and facts only the
+  data owner knows. Approval is an act of accountable authority; corpus facts such as real vs
+  synthetic and whether references exist are not inferable from code.
+- **Eval-data verification**: human sample-verification of AI-drafted, cross-checked data.
+  Dropping the human verification would forfeit the human-ground-truth guarantee for private
+  model-selection data.
 
 The unifying idea: **AI can draft and cross-check; only a human can be the ground truth, the
 sample verifier, and the accountable sign-off.** All three are human-paced and run in parallel with
@@ -67,9 +65,8 @@ ranks alone. The decision travels in the run manifest.
   judge). Read the bias disclosure in [`current.md`](../impl/current.md) before you rate.
 
 ### Step-by-step procedure
-The statistics, the gate, the worksheet pre-fill, and the scoring are already implemented and
-tested. Your residual is the human column. Everything is offline except generating the worksheet,
-which needs a running judge endpoint.
+The tooling provides the statistics, gate, worksheet pre-fill, and scoring. Your job is the human
+column. Everything is offline except generating the worksheet, which needs a running judge endpoint.
 
 1. **Stand up the judge endpoint.** On a 16 GB box a 12B judge usually cannot co-reside with a vLLM
    candidate; use GGUF/CPU offload, a smaller test judge, or another local host while generating
@@ -124,12 +121,11 @@ which needs a running judge endpoint.
 5. **(Optional, automatable -- not your work) non-Gemma cross-check judge.** A Qwen/Llama or
    frontier judge can re-score the same split to quantify the Gemma family delta; the board's
    judge-cohort guard prevents mixing cohorts in one board. Listed only so you know it is *not* part
-   of the human residual.
+   of the human work.
 
-### Done when
+### Completion check
 `make calibration-score` produces rho + CI + decision over YOUR ratings, and that decision is
-recorded in the manifest. Everything else (engine, prompts, gate, worksheet) already exists and is
-unit-tested.
+recorded in the manifest. The engine, prompts, gate, and worksheet are handled by the tooling.
 
 ### Learn (essential papers + manuals)
 - **Judging LLM-as-a-Judge / MT-Bench** (Zheng et al. 2023) -- <https://arxiv.org/abs/2306.05685> --
@@ -161,15 +157,15 @@ cases -- is the [calibration-tooling manual](calibration-tooling.md); see also t
 ### What you are doing
 Approving AI-drafted artifacts and confirming facts only you know:
 
-1. **Done:** the AI-drafted **text-analysis scoring schema** is approved (thresholds accepted as
-   proposed), recorded at the top of
+1. The AI-drafted **text-analysis scoring schema** is approved (thresholds accepted as proposed),
+   recorded at the top of
    [`docs/design/text-analysis-schema.md`](../design/text-analysis-schema.md).
-2. **Done (2026-06-26):** the AI-drafted **knowledge-graph ontology schema** (the 13-type closed
-   node vocabulary + caps) + the **GraphRAG scope** are approved, recorded at the top of
+2. The AI-drafted **knowledge-graph ontology schema** (the 13-type closed node vocabulary + caps)
+   and the **GraphRAG scope** are approved, recorded at the top of
    [`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md).
-3. **Remaining:** confirm the **corpus facts** only you have -- whether text-analysis reference
-   answers already EXIST or must be authored, and which corpus is real vs synthetic (the two are
-   reported separately and must never be merged).
+3. Confirm the **corpus facts** only you have: whether text-analysis reference answers already
+   exist or must be authored, and which corpus is real vs synthetic. The two are reported
+   separately and must never be merged.
 
 ### How to understand it (the mental model)
 - A **sign-off** is not a code review -- it is an *accountable acceptance* of trade-offs that then
@@ -186,10 +182,10 @@ Approving AI-drafted artifacts and confirming facts only you know:
   changes which board it lands on. No AI can know these about *your* private data.
 
 ### Step-by-step: how to do a schema sign-off
-Both schema docs are now signed: the text-analysis schema
-(`docs/design/text-analysis-schema.md`) and the graph ontology + GraphRAG scope
-([`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md), signed 2026-06-26).
-Kept here as the reusable template -- the shape is always:
+The text-analysis schema and the graph ontology plus GraphRAG scope are the reference examples:
+`docs/design/text-analysis-schema.md` and
+[`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md). Kept here as the
+reusable template, the shape is always:
 
 1. **Read** the proposal doc + its executable form (the engine is short) and run its tests if you
    want to see the numbers move:
@@ -228,10 +224,9 @@ Kept here as the reusable template -- the shape is always:
   and intended use (exactly the corpus facts you confirm).
 
 ### In this repo
-`docs/design/text-analysis-schema.md` (the template sign-off, done),
-`docs/design/graph-ontology-schema.md` (the GraphRAG backend ontology + GraphRAG scope, drafted from
-`src/llb/prep/ontology/` + `src/llb/graph/`, signed off 2026-06-26), and the manifest, which carries
-the trust decisions a sign-off produces.
+`docs/design/text-analysis-schema.md`,
+`docs/design/graph-ontology-schema.md`, `src/llb/prep/ontology/`, `src/llb/graph/`, and the
+manifest fields that carry trust decisions.
 
 ---
 
@@ -251,7 +246,7 @@ question-answering gold set, every evaluation category, and the graph ontology d
   guarantee.
 - **Why a sample, not everything.** Verifying every item by hand does not scale and is not the
   point: the frontier cross-check already filtered the obvious failures. Your sample is a
-  *statistical acceptance check* on the residual error rate. Clean sample -> accept the set; dirty
+  *statistical acceptance check* on the sample error rate. Clean sample -> accept the set; dirty
   sample -> reject and the drafts go back.
 - **Why stratified.** A random sample can miss rare-but-important cells. **Stratified** sampling
   draws from each stratum -- per sub-task kind, per difficulty band, per section, per
@@ -346,23 +341,23 @@ to accept a dataset":
 6. **Ontology Development 101** (Noy & McGuinness) -- the background behind the graph ontology
    sign-off (done).
 
-## Checklist
+## Operator Checks
 
-- [ ] **Judge calibration:** judge endpoint up; worksheet pre-filled (`calibration-run`);
+- **Judge calibration:** judge endpoint up; worksheet pre-filled (`calibration-run`);
       `human_rating` filled INDEPENDENTLY via `calibration-rate` (judge column hidden), spanning
       the full range incl. fluent-but-wrong answers; rho + CI + decision computed
       (`calibration-score`) and recorded in the manifest.
-- [x] **Sign-off:** text-analysis schema signed off (done); graph ontology + scope signed off
-      (done, 2026-06-26). Remaining: corpus facts confirmed (references exist?/real-vs-synthetic).
-- [ ] **Verification:** drafted set validated; stratified sample drawn + documented; four per-item
+- **Sign-off:** text-analysis schema, graph ontology, and GraphRAG scope have accountable
+      approval; corpus facts are confirmed for the target dataset.
+- **Verification:** drafted set validated; stratified sample drawn + documented; four per-item
       checks passed within tolerance; accepted items flipped to `verified=true`
       via the ledger, not
       by hand.
-- [ ] No `verified=true` item scored a model before its sample acceptance.
-- [ ] No judged headline trusted before calibration cleared rho `>= 0.6` (else objective-only, by
-      design).
+- No `verified=true` item scored a model before its sample acceptance.
+- No judged headline trusted before calibration cleared rho `>= 0.6`; otherwise objective-only
+  ranking applies.
 
-The settled decisions behind every item above live in the [design spec](../design/spec.md) and the
-"Resolved questions" section of [`current.md`](../impl/current.md); the categories these
-gates protect are in the
+The settled decisions behind every item above live in the [design spec](../design/spec.md) and
+[`current/scope-boundaries.md`](../impl/current/scope-boundaries.md); the categories these gates
+protect are in the
 [evaluation-categories learning path](learning-path-evaluation-categories.md).
