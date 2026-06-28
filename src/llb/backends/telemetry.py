@@ -40,6 +40,20 @@ class ThroughputResult:
     max_new_tokens: int
 
 
+@dataclass(frozen=True)
+class _PowerTelemetry:
+    mean_power_w: float
+    peak_power_w: float
+    power_samples: int
+    tokens_per_watt: float
+
+
+@dataclass(frozen=True)
+class _SamplerTelemetry:
+    sampler: str
+    flashinfer_version: str | None
+
+
 def measure_throughput(
     chat: Callable[[list[ChatMessage], int, float, float], ChatResult],
     prompts: list[str] | None = None,
@@ -204,6 +218,72 @@ class PowerSampler:
         return max(self.samples) if self.samples else None
 
 
+def _required_report(
+    tput: ThroughputResult,
+    launcher: Any,
+    sampler: VramSampler,
+    requested_context: int | None,
+) -> TelemetryReport:
+    meta = _launcher_meta(launcher)
+    return {
+        "steady_tokens_per_s": round(tput.steady_tokens_per_s, 2),
+        "mean_completion_tokens": round(tput.mean_completion_tokens, 1),
+        "tokens_per_char": round(tput.tokens_per_char, 4),
+        "max_new_tokens": tput.max_new_tokens,
+        "n_warmup": tput.n_warmup,
+        "n_measured": tput.n_measured,
+        "n_failed": tput.n_failed,
+        "load_time_s": _rounded_load_time(launcher),
+        "peak_vram_mb": sampler.peak_mb or None,
+        "requested_context": requested_context,
+        "served_context": _served_context(launcher),
+        "backend": meta.get("backend"),
+        "gpu_memory_utilization": meta.get("gpu_memory_utilization"),
+        "n_gpu_layers": meta.get("n_gpu_layers"),
+        "gpus": _gpu_summary(),
+    }
+
+
+def _launcher_meta(launcher: Any) -> Any:
+    meta = getattr(launcher, "meta", None)
+    return meta if hasattr(meta, "get") else {}
+
+
+def _rounded_load_time(launcher: Any) -> float | None:
+    load_time = getattr(launcher, "load_time_s", None)
+    return round(load_time, 2) if isinstance(load_time, int | float) else None
+
+
+def _served_context(launcher: Any) -> int | None:
+    served = getattr(launcher, "served_context", None)
+    return served() if callable(served) else None
+
+
+def _power_report(power: PowerSampler, tput: ThroughputResult) -> _PowerTelemetry | None:
+    mean_power = power.mean_w
+    peak_power = power.peak_w
+    if mean_power is None:
+        return None
+    return _PowerTelemetry(
+        mean_power_w=round(mean_power, 2),
+        peak_power_w=round(peak_power, 2) if peak_power is not None else 0.0,
+        power_samples=len(power.samples),
+        tokens_per_watt=(
+            round(tput.steady_tokens_per_s / mean_power, 4) if mean_power > 0 else 0.0
+        ),
+    )
+
+
+def _sampler_report(launcher: Any) -> _SamplerTelemetry | None:
+    meta = _launcher_meta(launcher)
+    if meta.get("sampler") is None:
+        return None
+    return _SamplerTelemetry(
+        sampler=str(meta["sampler"]),
+        flashinfer_version=meta.get("flashinfer_version"),
+    )
+
+
 def collect_telemetry(
     launcher: Any,
     *,
@@ -230,42 +310,17 @@ def collect_telemetry(
             sampler.sample()
         if power_reader is not None:
             power.sample()
-    load_time = getattr(launcher, "load_time_s", None)
-    report: TelemetryReport = {
-        "steady_tokens_per_s": round(tput.steady_tokens_per_s, 2),
-        "mean_completion_tokens": round(tput.mean_completion_tokens, 1),
-        "tokens_per_char": round(tput.tokens_per_char, 4),
-        "max_new_tokens": tput.max_new_tokens,
-        "n_warmup": tput.n_warmup,
-        "n_measured": tput.n_measured,
-        "n_failed": tput.n_failed,
-        "load_time_s": round(load_time, 2) if isinstance(load_time, int | float) else None,
-        "peak_vram_mb": sampler.peak_mb or None,
-        "requested_context": requested_context,
-        "served_context": launcher.served_context()
-        if hasattr(launcher, "served_context")
-        else None,
-        "backend": launcher.meta.get("backend") if hasattr(launcher, "meta") else None,
-        "gpu_memory_utilization": (
-            launcher.meta.get("gpu_memory_utilization") if hasattr(launcher, "meta") else None
-        ),
-        "n_gpu_layers": (launcher.meta.get("n_gpu_layers") if hasattr(launcher, "meta") else None),
-        "gpus": _gpu_summary(),
-    }
-    mean_power = power.mean_w
-    peak_power = power.peak_w
-    if mean_power is not None:
-        report["mean_power_w"] = round(mean_power, 2)
-        report["peak_power_w"] = round(peak_power, 2) if peak_power is not None else 0.0
-        report["power_samples"] = len(power.samples)
-        report["tokens_per_watt"] = (
-            round(tput.steady_tokens_per_s / mean_power, 4) if mean_power > 0 else 0.0
-        )
-    if hasattr(launcher, "meta") and launcher.meta.get("sampler") is not None:
-        report["sampler"] = launcher.meta[
-            "sampler"
-        ]  # vLLM sampler in the manifest (vLLM serving preflight)
-        report["flashinfer_version"] = launcher.meta.get("flashinfer_version")
+    report = _required_report(tput, launcher, sampler, requested_context)
+    power_report = _power_report(power, tput)
+    if power_report is not None:
+        report["mean_power_w"] = power_report.mean_power_w
+        report["peak_power_w"] = power_report.peak_power_w
+        report["power_samples"] = power_report.power_samples
+        report["tokens_per_watt"] = power_report.tokens_per_watt
+    sampler_report = _sampler_report(launcher)
+    if sampler_report is not None:
+        report["sampler"] = sampler_report.sampler
+        report["flashinfer_version"] = sampler_report.flashinfer_version
     return report
 
 

@@ -70,6 +70,33 @@ def _from_dict(obj: dict[str, Any], raw: str = "") -> ToolCall | None:
     return ToolCall(name=name, arguments=arguments, well_formed=well, raw=raw or json.dumps(obj))
 
 
+def _from_native_tool_call(raw: Any) -> ToolCall | None:
+    tool_calls = getattr(raw, "tool_calls", None)
+    if not tool_calls:
+        return None
+    fn = tool_calls[0].function
+    name = str(getattr(fn, "name", "") or "")
+    raw_args = str(getattr(fn, "arguments", ""))
+    arguments, well = _load_args(raw_args or "")
+    return ToolCall(
+        name=name,
+        arguments=arguments,
+        well_formed=well and bool(name),
+        raw=raw_args,
+    )
+
+
+def _from_text_tool_call(raw: str) -> ToolCall | None:
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        obj = parse_json_block(text)
+    except json.JSONDecodeError:
+        return None  # a plain text answer is not a tool-call attempt
+    return _from_dict(obj, raw=text) if isinstance(obj, dict) else None
+
+
 def parse_tool_call(raw: Any) -> ToolCall | None:
     """Normalize a backend response into a `ToolCall`, or None when no tool call was attempted.
 
@@ -79,31 +106,34 @@ def parse_tool_call(raw: Any) -> ToolCall | None:
     """
     if raw is None:
         return None
-    tool_calls = getattr(raw, "tool_calls", None)
-    if tool_calls:
-        fn = tool_calls[0].function
-        arguments, well = _load_args(getattr(fn, "arguments", "") or "")
-        return ToolCall(
-            name=str(getattr(fn, "name", "") or ""),
-            arguments=arguments,
-            well_formed=well and bool(getattr(fn, "name", "")),
-            raw=str(getattr(fn, "arguments", "")),
-        )
+    native = _from_native_tool_call(raw)
+    if native is not None:
+        return native
     if isinstance(raw, dict):
         return _from_dict(raw)
     if isinstance(raw, str):
-        text = raw.strip()
-        if not text:
-            return None
-        try:
-            obj = parse_json_block(text)
-        except json.JSONDecodeError:
-            return None  # a plain text answer is not a tool-call attempt
-        return _from_dict(obj, raw=text) if isinstance(obj, dict) else None
+        return _from_text_tool_call(raw)
     return None
 
 
 # --- argument schema validation (lightweight; no jsonschema dep) ---------------------------
+
+
+def _required_argument_errors(required: list[str], arguments: dict[str, Any]) -> list[str]:
+    return [f"missing required argument: {name}" for name in required if name not in arguments]
+
+
+def _type_error(name: str, value: Any, declared: str | None) -> str | None:
+    accepted = _TYPE_MAP.get(declared) if declared else None
+    if accepted and (not isinstance(value, accepted) or _bad_bool(declared or "", value)):
+        return f"argument {name}: expected {declared}, got {type(value).__name__}"
+    return None
+
+
+def _argument_schema_error(name: str, value: Any, properties: dict[str, Any]) -> str | None:
+    if name not in properties:
+        return f"unknown argument: {name}"
+    return _type_error(name, value, properties[name].get("type"))
 
 
 def validate_arguments(tool: ToolDef, arguments: dict[str, Any]) -> list[str]:
@@ -112,19 +142,11 @@ def validate_arguments(tool: ToolDef, arguments: dict[str, Any]) -> list[str]:
     schema = tool.get("parameters", {}) or {}
     properties: dict[str, Any] = schema.get("properties", {}) or {}
     required: list[str] = list(schema.get("required", []) or [])
-    errors: list[str] = []
-    for name in required:
-        if name not in arguments:
-            errors.append(f"missing required argument: {name}")
+    errors = _required_argument_errors(required, arguments)
     for name, value in arguments.items():
-        if name not in properties:
-            errors.append(f"unknown argument: {name}")
-            continue
-        declared = properties[name].get("type")
-        accepted = _TYPE_MAP.get(declared) if declared else None
-        # bool is a subclass of int -- reject it for integer/number to keep types exact.
-        if accepted and (not isinstance(value, accepted) or _bad_bool(declared, value)):
-            errors.append(f"argument {name}: expected {declared}, got {type(value).__name__}")
+        error = _argument_schema_error(name, value, properties)
+        if error is not None:
+            errors.append(error)
     return errors
 
 
@@ -146,29 +168,47 @@ MATCH_ONEOF = "oneof"  # provided matches any value in the spec's `values` list
 DEFAULT_FUZZY_THRESHOLD = 0.8
 
 
+def _match_oneof(provided: Any, spec: dict[str, Any] | None) -> bool:
+    values = [_normalize_value(v) for v in (spec or {}).get("values", [])]
+    return _normalize_value(provided) in values
+
+
+def _match_numeric(expected: Any, provided: Any, spec: dict[str, Any] | None) -> bool:
+    try:
+        return abs(float(provided) - float(expected)) <= float((spec or {}).get("tol", 1e-9))
+    except (TypeError, ValueError):
+        return False
+
+
+def _match_contains(expected: Any, provided: Any) -> bool:
+    exp = _normalize_value(expected)
+    prov = _normalize_value(provided)
+    return isinstance(exp, str) and isinstance(prov, str) and exp in prov
+
+
+def _match_fuzzy(expected: Any, provided: Any, spec: dict[str, Any] | None) -> bool:
+    exp = _normalize_value(expected)
+    prov = _normalize_value(provided)
+    if not (isinstance(exp, str) and isinstance(prov, str)):
+        return bool(exp == prov)
+    import difflib
+
+    threshold = float((spec or {}).get("threshold", DEFAULT_FUZZY_THRESHOLD))
+    return difflib.SequenceMatcher(None, exp, prov).ratio() >= threshold
+
+
 def _match_value(expected: Any, provided: Any, spec: dict[str, Any] | None) -> bool:
     """Match one argument value under its per-argument tolerance spec (default: exact)."""
     mode = (spec or {}).get("mode", MATCH_EXACT)
     if mode == MATCH_ONEOF:
-        values = [_normalize_value(v) for v in (spec or {}).get("values", [])]
-        return _normalize_value(provided) in values
+        return _match_oneof(provided, spec)
     if mode == MATCH_NUMERIC:
-        try:
-            return abs(float(provided) - float(expected)) <= float((spec or {}).get("tol", 1e-9))
-        except (TypeError, ValueError):
-            return False
-    exp = _normalize_value(expected)
-    prov = _normalize_value(provided)
+        return _match_numeric(expected, provided, spec)
     if mode == MATCH_CONTAINS:
-        return isinstance(exp, str) and isinstance(prov, str) and exp in prov
+        return _match_contains(expected, provided)
     if mode == MATCH_FUZZY:
-        if not (isinstance(exp, str) and isinstance(prov, str)):
-            return bool(exp == prov)
-        import difflib
-
-        threshold = float((spec or {}).get("threshold", DEFAULT_FUZZY_THRESHOLD))
-        return difflib.SequenceMatcher(None, exp, prov).ratio() >= threshold
-    return bool(exp == prov)  # MATCH_EXACT
+        return _match_fuzzy(expected, provided, spec)
+    return bool(_normalize_value(expected) == _normalize_value(provided))  # MATCH_EXACT
 
 
 def arguments_match(
@@ -237,55 +277,114 @@ class ToolingScore:
     cases: list[ToolingCaseScore]
 
 
-def score_case(
-    case: ToolingCase, call: ToolCall | None, catalog: dict[str, ToolDef]
-) -> ToolingCaseScore:
-    """Score one tooling case against the candidate's (parsed) tool call."""
+@dataclass(frozen=True)
+class _CallContext:
+    attempted: bool
+    in_catalog: bool
+    called_tool: str | None
+    no_hallucinated_tool: float
+    well_formed: float
+
+
+def _call_context(call: ToolCall | None, catalog: dict[str, ToolDef]) -> _CallContext:
     attempted = call is not None
     in_catalog = call is not None and call.name in catalog
-    no_hallucinated = 1.0 if (not attempted or in_catalog) else 0.0
+    return _CallContext(
+        attempted=attempted,
+        in_catalog=in_catalog,
+        called_tool=call.name if call else None,
+        no_hallucinated_tool=1.0 if (not attempted or in_catalog) else 0.0,
+        well_formed=(1.0 if (call and call.well_formed) else 0.0) if attempted else 0.0,
+    )
 
-    if case.expected_tool is None:
-        correct = 0.0 if attempted else 1.0
-        return ToolingCaseScore(
-            item_id=case.id,
-            expected_tool=None,
-            called_tool=call.name if call else None,
-            attempted=attempted,
-            tool_selected=correct,
-            schema_valid=0.0,
-            arguments_exact=0.0,
-            no_hallucinated_tool=no_hallucinated,
-            well_formed=(1.0 if (call and call.well_formed) else 0.0) if attempted else 0.0,
-            correct=correct,
-        )
 
-    tool_selected = 1.0 if (call and call.name == case.expected_tool) else 0.0
-    schema_valid = 0.0
-    arguments_exact = 0.0
-    if tool_selected and call is not None and in_catalog:
-        errors = validate_arguments(catalog[call.name], call.arguments)
-        schema_valid = 1.0 if (call.well_formed and not errors) else 0.0
-        if schema_valid and arguments_match(
-            case.expected_arguments, call.arguments, case.arg_match
-        ):
-            arguments_exact = 1.0
+def _no_tool_expected_score(case: ToolingCase, ctx: _CallContext) -> ToolingCaseScore:
+    correct = 0.0 if ctx.attempted else 1.0
+    return ToolingCaseScore(
+        item_id=case.id,
+        expected_tool=None,
+        called_tool=ctx.called_tool,
+        attempted=ctx.attempted,
+        tool_selected=correct,
+        schema_valid=0.0,
+        arguments_exact=0.0,
+        no_hallucinated_tool=ctx.no_hallucinated_tool,
+        well_formed=ctx.well_formed,
+        correct=correct,
+    )
+
+
+def _tool_selected(case: ToolingCase, call: ToolCall | None) -> float:
+    return 1.0 if (call and call.name == case.expected_tool) else 0.0
+
+
+def _schema_valid(
+    call: ToolCall | None,
+    ctx: _CallContext,
+    catalog: dict[str, ToolDef],
+    tool_selected: float,
+) -> float:
+    if not (tool_selected and call is not None and ctx.in_catalog):
+        return 0.0
+    errors = validate_arguments(catalog[call.name], call.arguments)
+    return 1.0 if (call.well_formed and not errors) else 0.0
+
+
+def _arguments_exact(case: ToolingCase, call: ToolCall | None, schema_valid: float) -> float:
+    if not (schema_valid and call is not None):
+        return 0.0
+    return 1.0 if arguments_match(case.expected_arguments, call.arguments, case.arg_match) else 0.0
+
+
+def _tool_expected_score(
+    case: ToolingCase,
+    call: ToolCall | None,
+    ctx: _CallContext,
+    catalog: dict[str, ToolDef],
+) -> ToolingCaseScore:
+    tool_selected = _tool_selected(case, call)
+    schema_valid = _schema_valid(call, ctx, catalog, tool_selected)
+    arguments_exact = _arguments_exact(case, call, schema_valid)
     return ToolingCaseScore(
         item_id=case.id,
         expected_tool=case.expected_tool,
-        called_tool=call.name if call else None,
-        attempted=attempted,
+        called_tool=ctx.called_tool,
+        attempted=ctx.attempted,
         tool_selected=tool_selected,
         schema_valid=schema_valid,
         arguments_exact=arguments_exact,
-        no_hallucinated_tool=no_hallucinated,
-        well_formed=(1.0 if (call and call.well_formed) else 0.0) if attempted else 0.0,
+        no_hallucinated_tool=ctx.no_hallucinated_tool,
+        well_formed=ctx.well_formed,
         correct=arguments_exact,  # full correctness requires the right tool AND exact args
     )
 
 
+def score_case(
+    case: ToolingCase, call: ToolCall | None, catalog: dict[str, ToolDef]
+) -> ToolingCaseScore:
+    """Score one tooling case against the candidate's (parsed) tool call."""
+    ctx = _call_context(call, catalog)
+    if case.expected_tool is None:
+        return _no_tool_expected_score(case, ctx)
+    return _tool_expected_score(case, call, ctx, catalog)
+
+
 def _rate(values: list[float]) -> float:
     return round(sum(values) / len(values), 6) if values else 0.0
+
+
+def _score_cases(
+    cases: list[ToolingCase], calls: list[ToolCall | None], catalog: dict[str, ToolDef]
+) -> list[ToolingCaseScore]:
+    return [score_case(case, call, catalog) for case, call in zip(cases, calls)]
+
+
+def _expecting_tool(scored: list[ToolingCaseScore]) -> list[ToolingCaseScore]:
+    return [score for score in scored if score.expected_tool is not None]
+
+
+def _attempted_calls(scored: list[ToolingCaseScore]) -> list[ToolingCaseScore]:
+    return [score for score in scored if score.attempted]
 
 
 def score_tooling(
@@ -294,17 +393,17 @@ def score_tooling(
     """Aggregate the four objective tooling metrics over a model's calls (aligned by index)."""
     if len(cases) != len(calls):
         raise ValueError("cases and calls must be aligned (same length)")
-    scored = [score_case(c, call, catalog) for c, call in zip(cases, calls)]
-    case_correct = [s.correct for s in scored]
-    expecting = [s for s in scored if s.expected_tool is not None]
-    attempted = [s for s in scored if s.attempted]
+    scored = _score_cases(cases, calls, catalog)
+    case_correct = [score.correct for score in scored]
+    expecting = _expecting_tool(scored)
+    attempted = _attempted_calls(scored)
     return ToolingScore(
         n_cases=len(cases),
         call_accuracy=_rate(case_correct),
-        tool_selection_accuracy=_rate([s.tool_selected for s in scored]),
-        argument_exactness=_rate([s.arguments_exact for s in expecting]),
-        no_hallucinated_tool_rate=_rate([s.no_hallucinated_tool for s in scored]),
-        well_formed_rate=_rate([s.well_formed for s in attempted]),
+        tool_selection_accuracy=_rate([score.tool_selected for score in scored]),
+        argument_exactness=_rate([score.arguments_exact for score in expecting]),
+        no_hallucinated_tool_rate=_rate([score.no_hallucinated_tool for score in scored]),
+        well_formed_rate=_rate([score.well_formed for score in attempted]),
         case_correct=case_correct,
         cases=scored,
     )

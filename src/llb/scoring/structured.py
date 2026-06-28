@@ -177,6 +177,40 @@ def _compare_unordered(
     return matched_sum, total_sum
 
 
+def _compare_object(
+    expected: dict[str, Any], actual: Any, spec: dict[str, Any] | None
+) -> tuple[int, int]:
+    subspecs = (spec or {}).get("fields") or {}
+    matched = total = 0
+    for key, exp_val in expected.items():
+        act_val = actual.get(key) if isinstance(actual, dict) else None
+        cm, ct = _compare(exp_val, act_val, subspecs.get(key))
+        matched += cm
+        total += ct
+    return matched, total
+
+
+def _compare_ordered_array(
+    expected: list[Any], actual: Any, item_spec: dict[str, Any] | None
+) -> tuple[int, int]:
+    matched = total = 0
+    for i, exp_val in enumerate(expected):
+        act_val = actual[i] if isinstance(actual, list) and i < len(actual) else None
+        cm, ct = _compare(exp_val, act_val, item_spec)
+        matched += cm
+        total += ct
+    return matched, total
+
+
+def _compare_array(
+    expected: list[Any], actual: Any, spec: dict[str, Any] | None
+) -> tuple[int, int]:
+    item_spec = (spec or {}).get("items") if spec else None
+    if (spec or {}).get("unordered"):
+        return _compare_unordered(expected, actual, item_spec)
+    return _compare_ordered_array(expected, actual, item_spec)
+
+
 def _compare(expected: Any, actual: Any, spec: dict[str, Any] | None) -> tuple[int, int]:
     """Recursively count (matched_leaves, total_leaves) of `expected` vs `actual`.
 
@@ -185,25 +219,9 @@ def _compare(expected: Any, actual: Any, spec: dict[str, Any] | None) -> tuple[i
     everything else is one scalar leaf compared via `_leaf_match`.
     """
     if isinstance(expected, dict):
-        subspecs = (spec or {}).get("fields") or {}
-        matched = total = 0
-        for key, exp_val in expected.items():
-            act_val = actual.get(key) if isinstance(actual, dict) else None
-            cm, ct = _compare(exp_val, act_val, subspecs.get(key))
-            matched += cm
-            total += ct
-        return matched, total
+        return _compare_object(expected, actual, spec)
     if isinstance(expected, list):
-        item_spec = (spec or {}).get("items") if spec else None
-        if (spec or {}).get("unordered"):
-            return _compare_unordered(expected, actual, item_spec)
-        matched = total = 0
-        for i, exp_val in enumerate(expected):
-            act_val = actual[i] if isinstance(actual, list) and i < len(actual) else None
-            cm, ct = _compare(exp_val, act_val, item_spec)
-            matched += cm
-            total += ct
-        return matched, total
+        return _compare_array(expected, actual, spec)
     return (1 if _leaf_match(expected, actual, spec) else 0), 1
 
 

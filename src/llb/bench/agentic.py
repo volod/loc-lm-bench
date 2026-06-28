@@ -51,6 +51,7 @@ from llb.contracts import (
 )
 from llb.prompts import render_text
 from llb.scoring.aggregate import TIER_AGENTIC, ModelResult, bootstrap_mean_ci
+from llb.scoring.judge import JudgeOutcome
 from llb.scoring.tooling import parse_tool_call
 
 _LOG = logging.getLogger(__name__)
@@ -153,6 +154,50 @@ class AgenticRun:
     judge_diagnostics: JudgeDiagnostics | None = (
         None  # judge diagnostics zero-valued-judge observability
     )
+
+
+@dataclass(slots=True)
+class _ScoredAgenticEpisodes:
+    rows: list[AgenticCaseRow]
+    case_success: list[float]
+    reliability: float
+    completion_ci: tuple[float, float] | None
+    mean_steps: float
+    mean_tool_calls: float
+
+
+@dataclass(slots=True)
+class _TrajectoryQualityResult:
+    outcome: JudgeOutcome
+    value: float | None
+    ci: tuple[float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _JudgeConfig:
+    model: str | None
+    rho: float | None
+    threshold: float
+    scorer: JudgeScorer | None
+    base_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _AgenticPersistInput:
+    data_dir: Path | str | None
+    run_name: str
+    model: str
+    backend: str
+    harness_name: str
+    prompt_system: str | None
+    n_tasks: int
+    max_steps: int
+    result: ModelResult
+    scored: _ScoredAgenticEpisodes
+    quality: _TrajectoryQualityResult
+    judge_config: _JudgeConfig
+    verification_cfg: dict[str, object]
+    mirror: Mirror | None
 
 
 def _norm(value: Any) -> str:
@@ -296,6 +341,144 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
     }
 
 
+def _resolve_harness(harness_name: str, harness: Harness | None) -> Harness:
+    if harness is not None:
+        return harness
+    from llb.bench.harness import get_harness
+
+    return get_harness(harness_name)
+
+
+def _run_episodes(
+    tasks: list[AgenticTask],
+    complete: LLMComplete,
+    harness: Harness,
+    max_steps: int,
+) -> list[Episode]:
+    catalog = tool_catalog()
+    return [harness(task, complete, catalog, max_steps=max_steps) for task in tasks]
+
+
+def _score_episodes(tasks: list[AgenticTask], episodes: list[Episode]) -> _ScoredAgenticEpisodes:
+    rows = [_row(task, episode) for task, episode in zip(tasks, episodes)]
+    case_success = [1.0 if episode.success else 0.0 for episode in episodes]
+    reliability = sum(1 for episode in episodes if episode.status == STATUS_COMPLETED) / len(
+        episodes
+    )
+    return _ScoredAgenticEpisodes(
+        rows=rows,
+        case_success=case_success,
+        reliability=reliability,
+        completion_ci=bootstrap_mean_ci(case_success),
+        mean_steps=mean([episode.n_steps for episode in episodes]),
+        mean_tool_calls=mean([episode.n_tool_calls for episode in episodes]),
+    )
+
+
+def _attach_trajectory_quality(
+    rows: list[AgenticCaseRow], scores: list[JudgeScore]
+) -> tuple[float, tuple[float, float] | None]:
+    per_case = [trajectory_quality(score) for score in scores]
+    for row, value in zip(rows, per_case):
+        row["trajectory_quality"] = round(value, 6)
+    return round(mean(per_case), 6), bootstrap_mean_ci(per_case)
+
+
+def _run_trajectory_judge(
+    tasks: list[AgenticTask],
+    episodes: list[Episode],
+    rows: list[AgenticCaseRow],
+    config: _JudgeConfig,
+) -> _TrajectoryQualityResult:
+    outcome = run_gated_judge(
+        _trajectory_records(tasks, episodes),
+        judge_model=config.model,
+        judge_rho=config.rho,
+        threshold=config.threshold,
+        scorer=config.scorer,
+        base_url=config.base_url,
+    )
+    if outcome.trusted and outcome.scores:
+        value, ci = _attach_trajectory_quality(rows, outcome.scores)
+        return _TrajectoryQualityResult(outcome=outcome, value=value, ci=ci)
+    if config.model is not None:
+        _LOG.info("[agentic] judge demoted (%s); objective completion ranks alone", outcome.reason)
+    return _TrajectoryQualityResult(outcome=outcome, value=None, ci=None)
+
+
+def _agentic_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+    return {
+        "objective_score": result.objective_score,  # completion rate
+        "reliability": reliability,
+        "tokens_per_s": 0.0,
+    }
+
+
+def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
+    return {
+        "model": request.model,
+        "backend": request.backend,
+        "tier": TIER_AGENTIC,
+        "category": "agentic",
+        "harness": request.harness_name,
+        "prompt_system": request.prompt_system,
+        "n_tasks": request.n_tasks,
+        "max_steps": request.max_steps,
+        "completion_rate": request.result.objective_score,
+        "mean_trajectory_steps": round(request.scored.mean_steps, 4),
+        "mean_tool_calls": round(request.scored.mean_tool_calls, 4),
+        "completion_rate_ci": list(request.scored.completion_ci)
+        if request.scored.completion_ci
+        else None,
+        "judge_trusted": request.quality.outcome.trusted,
+        "trajectory_quality": request.quality.value,  # gated diagnostic, NOT the headline
+        "trajectory_quality_ci": list(request.quality.ci) if request.quality.ci else None,
+        "judge_diagnostics": request.quality.outcome.diagnostics,
+        **request.verification_cfg,
+    }
+
+
+def _agentic_judge_status(
+    config: _JudgeConfig,
+    outcome: JudgeOutcome,
+) -> JudgeStatus | None:
+    if config.model is None:
+        return None
+    return {
+        "calibration_rho": config.rho,
+        "threshold": config.threshold,
+        "trusted": outcome.trusted,
+        "model": config.model,
+        "metrics": ["trajectory_quality"],
+        "diagnostics": outcome.diagnostics,
+    }
+
+
+def _persist_agentic_run(request: _AgenticPersistInput) -> RunPaths | None:
+    if request.data_dir is None:
+        return None
+    paths = persist_category_run(
+        method=METHOD,
+        data_dir=request.data_dir,
+        run_name=request.run_name,
+        config=_agentic_config(request),
+        metrics=_agentic_metrics(request.result, request.scored.reliability),
+        case_rows=request.scored.rows,
+        judge=_agentic_judge_status(request.judge_config, request.quality.outcome),
+        mirror=request.mirror,
+    )
+    _LOG.info(
+        "[agentic] %s completion=%.3f mean-steps=%.2f mean-tool-calls=%.2f quality=%s -> %s",
+        request.model,
+        request.result.objective_score,
+        request.scored.mean_steps,
+        request.scored.mean_tool_calls,
+        f"{request.quality.value:.3f}" if request.quality.value is not None else "n/a",
+        paths["manifest"],
+    )
+    return paths
+
+
 def run_agentic(
     tasks: list[AgenticTask],
     *,
@@ -330,118 +513,61 @@ def run_agentic(
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
-    if harness is None:
-        from llb.bench.harness import get_harness
-
-        harness = get_harness(harness_name)
-    catalog = tool_catalog()
-    episodes = [harness(task, complete, catalog, max_steps=max_steps) for task in tasks]
-    rows = [_row(task, ep) for task, ep in zip(tasks, episodes)]
-    case_success = [1.0 if ep.success else 0.0 for ep in episodes]
-
-    # Opt-in, gated trajectory-quality signal (objective completion-rate stays the headline).
-    outcome = run_gated_judge(
-        _trajectory_records(tasks, episodes),
-        judge_model=judge_model,
-        judge_rho=judge_rho,
+    episodes = _run_episodes(tasks, complete, _resolve_harness(harness_name, harness), max_steps)
+    scored = _score_episodes(tasks, episodes)
+    judge_config = _JudgeConfig(
+        model=judge_model,
+        rho=judge_rho,
         threshold=judge_threshold,
         scorer=judge_scorer,
         base_url=judge_base_url,
     )
-    quality: float | None = None
-    quality_ci: tuple[float, float] | None = None
-    if outcome.trusted and outcome.scores:
-        per_case = [trajectory_quality(s) for s in outcome.scores]
-        for row, value in zip(rows, per_case):
-            row["trajectory_quality"] = round(value, 6)
-        quality = round(mean(per_case), 6)
-        quality_ci = bootstrap_mean_ci(per_case)
-    elif judge_model is not None:
-        _LOG.info("[agentic] judge demoted (%s); objective completion ranks alone", outcome.reason)
-
-    reliability = sum(1 for ep in episodes if ep.status == STATUS_COMPLETED) / len(episodes)
-    mean_steps = mean([ep.n_steps for ep in episodes])
-    mean_tool_calls = mean([ep.n_tool_calls for ep in episodes])
+    quality = _run_trajectory_judge(tasks, episodes, scored.rows, judge_config)
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_AGENTIC,
-        case_objectives=case_success,
-        reliability=reliability,
+        case_objectives=scored.case_success,
+        reliability=scored.reliability,
     )
-    completion_ci = bootstrap_mean_ci(case_success)
     board, table = render_board([result])
-
-    paths: RunPaths | None = None
-    if persist and data_dir is not None:
-        metrics: RunMetrics = {
-            "objective_score": result.objective_score,  # completion rate
-            "reliability": reliability,
-            "tokens_per_s": 0.0,
-        }
-        config = {
-            "model": model,
-            "backend": backend,
-            "tier": TIER_AGENTIC,
-            "category": "agentic",
-            "harness": harness_name,  # loop | langgraph | crewai (board comparison axis)
-            "prompt_system": prompt_system,  # RAG prompt-system comparison prompt-system id (board comparison axis)
-            "n_tasks": len(tasks),
-            "max_steps": max_steps,
-            "completion_rate": result.objective_score,
-            "mean_trajectory_steps": round(mean_steps, 4),
-            "mean_tool_calls": round(mean_tool_calls, 4),
-            "completion_rate_ci": list(completion_ci) if completion_ci else None,
-            "judge_trusted": outcome.trusted,
-            "trajectory_quality": quality,  # gated diagnostic, NOT the headline
-            "trajectory_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
-            **verification_cfg,
-        }
-        judge_status: JudgeStatus | None = None
-        if judge_model is not None:
-            judge_status = {
-                "calibration_rho": judge_rho,
-                "threshold": judge_threshold,
-                "trusted": outcome.trusted,
-                "model": judge_model,
-                "metrics": ["trajectory_quality"],
-                "diagnostics": outcome.diagnostics,
-            }
-        paths = persist_category_run(
-            method=METHOD,
-            data_dir=data_dir,
-            run_name=run_name,
-            config=config,
-            metrics=metrics,
-            case_rows=rows,
-            judge=judge_status,
-            mirror=mirror,
+    paths = (
+        _persist_agentic_run(
+            _AgenticPersistInput(
+                data_dir=data_dir,
+                run_name=run_name,
+                model=model,
+                backend=backend,
+                harness_name=harness_name,
+                prompt_system=prompt_system,
+                n_tasks=len(tasks),
+                max_steps=max_steps,
+                result=result,
+                scored=scored,
+                quality=quality,
+                judge_config=judge_config,
+                verification_cfg=verification_cfg,
+                mirror=mirror,
+            )
         )
-        _LOG.info(
-            "[agentic] %s completion=%.3f mean-steps=%.2f mean-tool-calls=%.2f quality=%s -> %s",
-            model,
-            result.objective_score,
-            mean_steps,
-            mean_tool_calls,
-            f"{quality:.3f}" if quality is not None else "n/a",
-            paths["manifest"],
-        )
+        if persist
+        else None
+    )
     return AgenticRun(
         result=result,
         episodes=episodes,
-        rows=rows,
+        rows=scored.rows,
         board=board,
         table=table,
-        completion_ci=completion_ci,
-        mean_steps=mean_steps,
-        mean_tool_calls=mean_tool_calls,
+        completion_ci=scored.completion_ci,
+        mean_steps=scored.mean_steps,
+        mean_tool_calls=scored.mean_tool_calls,
         paths=paths,
-        trajectory_quality=quality,
-        trajectory_quality_ci=quality_ci,
-        judge_trusted=outcome.trusted,
-        judge_reason=outcome.reason,
-        judge_diagnostics=outcome.diagnostics,
+        trajectory_quality=quality.value,
+        trajectory_quality_ci=quality.ci,
+        judge_trusted=quality.outcome.trusted,
+        judge_reason=quality.outcome.reason,
+        judge_diagnostics=quality.outcome.diagnostics,
     )
 
 

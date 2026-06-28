@@ -55,6 +55,8 @@ The repository does not vendor vLLM or CUDA build outputs.
 - backend-specific fields such as vLLM sampler or llama.cpp GPU layer split.
 
 Telemetry is enabled with `--telemetry` or `TELEMETRY=1` through Make.
+Report assembly is split into required telemetry fields, optional power metrics, and optional
+backend sampler metadata so the manifest shape stays typed while the collection flow stays small.
 
 ## Manifest Semantics
 

@@ -90,6 +90,11 @@ Run the repository checks after host-specific validation:
 ```bash
 make ci
 make lint-md
+scripts/code_quality.sh
 ```
+
+`scripts/code_quality.sh` always prints the largest tracked Python files and largest tracked
+non-Python files. Root-file, markdown, shell, and complexity sections are quiet when clean and
+appear only when they have findings, missing optional tools, or failures.
 
 `make test` is the full local precommit flow when slow tests are acceptable.

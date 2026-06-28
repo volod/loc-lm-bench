@@ -76,6 +76,46 @@ class Command:
     raw: str = ""
 
 
+_SIMPLE_COMMANDS: dict[str, str] = {
+    "n": NEXT,
+    "p": PREV,
+    "b": PREV,
+    "u": UNRATED,
+    "c": CLEAR,
+    "q": QUIT,
+    "quit": QUIT,
+    "?": HELP,
+    "h": HELP,
+    "help": HELP,
+    "a": ANSWER,
+    "answer": ANSWER,
+    "note": NOTE,
+}
+
+
+def _simple_command(text: str) -> Command | None:
+    kind = _SIMPLE_COMMANDS.get(text.lower())
+    return Command(kind) if kind is not None else None
+
+
+def _jump_command(text: str) -> Command | None:
+    if not text.lower().startswith("j"):
+        return None
+    target = text[1:].strip()
+    if target.isdigit():
+        return Command(JUMP, value=int(target))
+    return Command(UNKNOWN, raw=text)
+
+
+def _rating_command(text: str) -> Command | None:
+    if not text.isdigit():
+        return None
+    value = int(text)
+    if RATING_MIN <= value <= RATING_MAX:
+        return Command(RATE, value=value)
+    return Command(UNKNOWN, raw=text)
+
+
 def parse_command(raw: str) -> Command:
     """Parse one prompt line into a `Command` (pure; no I/O, no state).
 
@@ -88,33 +128,10 @@ def parse_command(raw: str) -> Command:
         return Command(NEXT)
     if s in _ARROWS:  # a lone arrow key -> navigate (up/left = prev, down/right = next)
         return Command(_ARROWS[s])
-    low = s.lower()
-    if low in ("n",):
-        return Command(NEXT)
-    if low in ("p", "b"):
-        return Command(PREV)
-    if low in ("u",):
-        return Command(UNRATED)
-    if low in ("c",):
-        return Command(CLEAR)
-    if low in ("q", "quit"):
-        return Command(QUIT)
-    if low in ("?", "h", "help"):
-        return Command(HELP)
-    if low in ("a", "answer"):
-        return Command(ANSWER)
-    if low in ("note",):
-        return Command(NOTE)
-    if low[0] == "j":  # jump: "j 5" or "j5"
-        rest = s[1:].strip()
-        if rest.isdigit():
-            return Command(JUMP, value=int(rest))
-        return Command(UNKNOWN, raw=s)
-    if s.isdigit():
-        value = int(s)
-        if RATING_MIN <= value <= RATING_MAX:
-            return Command(RATE, value=value)
-        return Command(UNKNOWN, raw=s)
+    for parser in (_simple_command, _jump_command, _rating_command):
+        command = parser(s)
+        if command is not None:
+            return command
     return Command(UNKNOWN, raw=s)
 
 

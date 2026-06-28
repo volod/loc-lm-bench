@@ -14,80 +14,160 @@ PYTHON="${PROJECT_ROOT}/.venv/bin/python"
 COGNITIVE_MAX="${COGNITIVE_MAX:-15}"
 
 ROOT_MARKDOWN=(README.md AGENTS.md CLAUDE.md GEMINI.md)
+LLB_PRINTED_BLOCK=0
 
-llb_report() {
+llb_print_block() {
+  local label="$1"
+  local output="${2:-}"
+  if [ "$LLB_PRINTED_BLOCK" -eq 1 ]; then
+    echo
+  fi
+  echo "[code-quality] ${label}"
+  LLB_PRINTED_BLOCK=1
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
+}
+
+llb_report_if_output() {
   local label="$1"
   shift
-  echo
-  echo "[code-quality] ${label}"
-  "$@"
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
+    llb_print_block "$label" "$output"
+  fi
+  return "$status"
 }
 
 llb_markdown_scan() {
   local label="$1"
   shift
-  echo
-  echo "[code-quality] ${label}"
-  (
+  local output
+  set +e
+  output="$(
     cd "$PROJECT_ROOT"
-    "$PYMARKDOWN" --continue-on-error --log-level WARNING scan "$@" || true
-  )
-}
-
-llb_check_shell_scripts() {
-  local script
-  llb_report "shell syntax (bash -n) under scripts/"
-  while IFS= read -r -d '' script; do
-    bash -n "$script"
-    printf '  [ok] %s\n' "${script#"$PROJECT_ROOT"/}"
-  done < <(find "$PROJECT_ROOT/scripts" -type f -name '*.sh' -print0 | sort -z)
-
-  if command -v shellcheck >/dev/null 2>&1; then
-    llb_report "shell lint (shellcheck) under scripts/"
-    while IFS= read -r -d '' script; do
-      shellcheck -S warning "$script"
-      printf '  [ok] %s\n' "${script#"$PROJECT_ROOT"/}"
-    done < <(find "$PROJECT_ROOT/scripts" -type f -name '*.sh' -print0 | sort -z)
-  else
-    echo
-    echo "[code-quality] shell lint (shellcheck) skipped -- run: make apt-deps APT_PROFILE=dev"
+    "$PYMARKDOWN" --continue-on-error --log-level WARNING scan "$@" 2>&1 || true
+  )"
+  set -e
+  if [ -n "$output" ]; then
+    llb_print_block "$label" "$output"
   fi
 }
 
-echo "[code-quality] top ${TOP_K} largest tracked files (bytes, path)"
-(
-  set +o pipefail
-  git -C "$PROJECT_ROOT" ls-tree -r --long HEAD \
-    | sort -k 4 -n -r \
-    | sed -n "1,${TOP_K}p" \
-    | awk '{printf "%-10s %s\n", $4, $5}'
-)
+llb_largest_tracked_files() {
+  local label="$1"
+  local python_filter="$2"
+  local output
+  output="$(
+    set +o pipefail
+    git -C "$PROJECT_ROOT" ls-tree -r --long -z HEAD \
+      | awk -v RS='\0' -v python_filter="$python_filter" '
+          {
+            split($0, parts, "\t")
+            split(parts[1], meta, " ")
+            size = meta[4]
+            path = parts[2]
+            is_python = path ~ /\.py$/
+            if ((python_filter == "yes" && is_python) || (python_filter == "no" && !is_python)) {
+              printf "%s\t%s\n", size, path
+            }
+          }
+        ' \
+      | sort -k 1 -n -r \
+      | sed -n "1,${TOP_K}p" \
+      | awk -F '\t' '{printf "%-10s %s\n", $1, $2}'
+  )"
+  llb_print_block "$label" "$output"
+}
+
+llb_check_root_files() {
+  llb_report_if_output \
+    "project root files (pyproject.toml, Makefile, root markdown)" \
+    bash -c '
+      cd "$1"
+      "$2" -c "import tomllib; tomllib.load(open(\"pyproject.toml\", \"rb\"))"
+      make -n help >/dev/null
+    ' _ "$PROJECT_ROOT" "$PYTHON"
+}
+
+llb_print_script_failure() {
+  local label="$1"
+  local script="$2"
+  local output="$3"
+  llb_print_block "$label"
+  printf '  [failed] %s\n' "${script#"$PROJECT_ROOT"/}"
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output" | sed 's/^/    /'
+  fi
+}
+
+llb_check_shell_syntax() {
+  local script output status failed
+  failed=0
+  while IFS= read -r -d '' script; do
+    set +e
+    output="$(bash -n "$script" 2>&1)"
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+      llb_print_script_failure "shell syntax (bash -n) under scripts/" "$script" "$output"
+      failed=1
+    fi
+  done < <(find "$PROJECT_ROOT/scripts" -type f -name '*.sh' -print0 | sort -z)
+  return "$failed"
+}
+
+llb_check_shellcheck() {
+  local script output status failed
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    llb_print_block "shell lint (shellcheck) skipped -- run: make apt-deps APT_PROFILE=dev"
+    return 0
+  fi
+
+  failed=0
+  while IFS= read -r -d '' script; do
+    set +e
+    output="$(shellcheck -S warning "$script" 2>&1)"
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ] || [ -n "$output" ]; then
+      llb_print_script_failure "shell lint (shellcheck) under scripts/" "$script" "$output"
+      [ "$status" -ne 0 ] && failed=1
+    fi
+  done < <(find "$PROJECT_ROOT/scripts" -type f -name '*.sh' -print0 | sort -z)
+  return "$failed"
+}
+
+llb_check_shell_scripts() {
+  llb_check_shell_syntax
+  llb_check_shellcheck
+}
+
+llb_largest_tracked_files "top ${TOP_K} largest tracked Python files (bytes, path)" yes
+llb_largest_tracked_files "top ${TOP_K} largest tracked non-Python files (bytes, path)" no
 
 if [ ! -x "$RADON" ] || [ ! -x "$COMPLEXIPY" ] || [ ! -x "$PYMARKDOWN" ] || [ ! -x "$PYTHON" ]; then
   echo "ERROR: dev tools missing in .venv -- run 'make venv EXTRAS=dev' first" >&2
   exit 1
 fi
 
-llb_report "project root files (pyproject.toml, Makefile, root markdown)"
-(
-  cd "$PROJECT_ROOT"
-  "$PYTHON" -c "import tomllib; tomllib.load(open('pyproject.toml', 'rb'))"
-  printf '  [ok] pyproject.toml\n'
-  make -n help >/dev/null
-  printf '  [ok] Makefile\n'
-)
+llb_check_root_files
 llb_markdown_scan "project root markdown" "${ROOT_MARKDOWN[@]}"
 
 llb_check_shell_scripts
 
 llb_markdown_scan "docs markdown (recursive)" -r docs
 
-llb_report "cyclomatic complexity grade D or worse (src tests only)" \
+llb_report_if_output "cyclomatic complexity grade D or worse (src tests only)" \
   "$RADON" cc src tests -s -n D
 
-llb_report "maintainability index grade C only (repo root; hidden dirs skipped)" \
+llb_report_if_output "maintainability index grade C only (repo root; hidden dirs skipped)" \
   bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$RADON"
 
-llb_report "cognitive complexity above ${COGNITIVE_MAX} (src tests only)" \
+llb_report_if_output "cognitive complexity above ${COGNITIVE_MAX} (src tests only)" \
   bash -c 'cd "$1" && "$2" src tests --max-complexity-allowed "$3" --failed --ignore-complexity --color no --plain --sort desc' \
   _ "$PROJECT_ROOT" "$COMPLEXIPY" "$COGNITIVE_MAX"

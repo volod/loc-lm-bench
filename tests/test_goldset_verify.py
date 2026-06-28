@@ -36,6 +36,8 @@ from llb.goldset.verify_session import (
     PREV,
     QUIT,
     REJECT_CMD,
+    _go_forward,
+    _go_undecided,
     decided_count,
     first_undecided_index,
     format_card,
@@ -367,6 +369,49 @@ def test_session_save_preserves_context_column(tmp_path):
     run_session(path, inputs=iter(["y", "q"]), output=[].append)
     rows, _ = load_worksheet(path)
     assert rows[0]["context"] == "some>>>span<<<text"  # sampler-owned column not clobbered
+
+
+def test_session_clear_flag_confirmed(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a", "accept"), _ws_row("b", "reject")])
+    decided = run_session(path, inputs=iter(["yes", "q"]), output=[].append, clear=True)
+    rows, _ = load_worksheet(path)
+    assert decided == 0
+    assert all(row["decision"] == "" for row in rows)
+
+
+def test_session_clear_flag_aborted_keeps_data(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a", "accept")])
+    out: list[str] = []
+    decided = run_session(path, inputs=iter(["no"]), output=out.append, clear=True)
+    rows, _ = load_worksheet(path)
+    assert decided == 1
+    assert rows[0]["decision"] == "accept"
+    assert any("clear aborted" in line for line in out)
+    assert not any("item 1/1" in line for line in out)
+
+
+def test_session_completion_undecided_reports_all_decided(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a", "accept")])
+    out: list[str] = []
+    run_session(path, inputs=iter(["u", "q"]), output=out.append)
+    assert any("all items are decided" in line for line in out)
+
+
+def test_go_forward_returns_next_index_and_reports_gap():
+    output: list[str] = []
+    rows = [_ws_row("a", ""), _ws_row("b", "accept")]
+    assert _go_forward(1, 2, rows, output.append) == 0
+    assert any("1 item(s) still undecided" in line for line in output)
+
+
+def test_go_undecided_handles_completion_index():
+    output: list[str] = []
+    decided = [_ws_row("a", "accept")]
+    assert _go_undecided(len(decided), decided, output.append) == len(decided)
+    assert any("all items are decided" in line for line in output)
+
+    gap = [_ws_row("a", "accept"), _ws_row("b", "")]
+    assert _go_undecided(len(gap), gap, output.append) == 1
 
 
 def test_decided_count(tmp_path):

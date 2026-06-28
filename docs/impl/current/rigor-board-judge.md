@@ -101,6 +101,9 @@ make board
 `src/llb/scoring/judge.py` uses a local OpenAI-compatible endpoint for DeepEval G-Eval metrics.
 The judge is gated by calibration rho. If it is not trusted, objective correctness ranks alone and
 judge output remains diagnostic.
+The DeepEval scorer separates empty-answer short-circuiting, injected-evaluator scoring, default
+DeepEval scoring, and diagnostics merging so zero-valued candidate failures remain distinct from
+local judge failures.
 
 ```bash
 llb judge-experiment --judge-model <model> --judge-base-url <url>

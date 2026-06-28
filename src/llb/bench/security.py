@@ -41,6 +41,7 @@ from llb.eval.common import EMPTY, is_refusal
 from llb.prompts import render_text
 from llb.scoring import security
 from llb.scoring.aggregate import TIER_SECURITY, ModelResult, bootstrap_mean_ci
+from llb.scoring.judge import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 
@@ -70,6 +71,32 @@ class SecurityRun:
     refusal_quality_ci: tuple[float, float] | None = None
     judge_trusted: bool = False
     judge_reason: str = "no judge configured"
+
+
+@dataclass(frozen=True, slots=True)
+class _SecurityJudgeConfig:
+    model: str | None
+    rho: float | None
+    threshold: float
+    scorer: JudgeScorer | None
+    base_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ScoredSecurityCases:
+    outputs: list[str]
+    score: security.SecurityScore
+    rows: list[SecurityCaseRow]
+    reliability: float
+    asr_ci: tuple[float, float] | None
+    refusal_ci: tuple[float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RefusalJudgeRun:
+    outcome: JudgeOutcome
+    quality: float | None
+    quality_ci: tuple[float, float] | None
 
 
 def build_prompt(case: security.SecurityCase) -> str:
@@ -146,6 +173,143 @@ def refusal_quality(score: JudgeScore) -> float:
     return float(score["answer_relevancy"])
 
 
+def _score_cases(cases: list[security.SecurityCase], complete: LLMComplete) -> _ScoredSecurityCases:
+    outputs = [complete(build_prompt(case)) for case in cases]
+    score = security.score_security(cases, outputs)
+    rows = [_row(case, output) for case, output in zip(cases, outputs)]
+    n_ok = sum(1 for r in rows if r["status"] not in _RELIABILITY_FAILURES)
+    reliability = n_ok / len(rows) if rows else 0.0
+    return _ScoredSecurityCases(
+        outputs=outputs,
+        score=score,
+        rows=rows,
+        reliability=reliability,
+        asr_ci=bootstrap_mean_ci(score.case_defended),
+        refusal_ci=bootstrap_mean_ci(score.case_appropriate),
+    )
+
+
+def _attach_refusal_quality(
+    rows: list[SecurityCaseRow], indices: list[int], values: list[float]
+) -> None:
+    for idx, value in zip(indices, values):
+        rows[idx]["refusal_quality"] = round(value, 6)
+
+
+def _trusted_refusal_quality(
+    outcome: JudgeOutcome, rows: list[SecurityCaseRow], indices: list[int]
+) -> _RefusalJudgeRun:
+    per_case = [refusal_quality(s) for s in outcome.scores or []]
+    _attach_refusal_quality(rows, indices, per_case)
+    return _RefusalJudgeRun(
+        outcome=outcome,
+        quality=round(mean(per_case), 6),
+        quality_ci=bootstrap_mean_ci(per_case),
+    )
+
+
+def _run_refusal_judge(
+    cases: list[security.SecurityCase],
+    outputs: list[str],
+    rows: list[SecurityCaseRow],
+    config: _SecurityJudgeConfig,
+) -> _RefusalJudgeRun:
+    judge_records, judge_indices = _refusal_records(cases, outputs)
+    outcome = run_gated_judge(
+        judge_records,
+        judge_model=config.model,
+        judge_rho=config.rho,
+        threshold=config.threshold,
+        scorer=config.scorer,
+        base_url=config.base_url,
+    )
+    if outcome.trusted and outcome.scores:
+        return _trusted_refusal_quality(outcome, rows, judge_indices)
+    if config.model is not None:
+        _LOG.info("[security] judge demoted (%s); objective ASR ranks alone", outcome.reason)
+    return _RefusalJudgeRun(outcome=outcome, quality=None, quality_ci=None)
+
+
+def _security_result(model: str, backend: str, scored: _ScoredSecurityCases) -> ModelResult:
+    return category_result(
+        model=model,
+        backend=backend,
+        tier=TIER_SECURITY,
+        case_objectives=scored.score.case_defended,  # per-attack-case defended -> defense-rate CI
+        reliability=scored.reliability,
+    )
+
+
+def _security_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+    return {
+        "objective_score": result.objective_score,  # defense rate (1 - ASR)
+        "reliability": reliability,
+        "tokens_per_s": 0.0,
+    }
+
+
+def _score_config(
+    model: str,
+    backend: str,
+    score: security.SecurityScore,
+    asr_ci: tuple[float, float] | None,
+    refusal_ci: tuple[float, float] | None,
+) -> dict[str, Any]:
+    return {
+        "model": model,
+        "backend": backend,
+        "tier": TIER_SECURITY,
+        "category": "security",
+        "n_cases": score.n_cases,
+        "n_attacks": score.n_attacks,
+        "asr": score.asr,
+        "defense_rate": score.defense_rate,
+        "refusal_appropriateness": score.refusal_appropriateness,
+        "asr_by_family": score.asr_by_family,
+        "defense_ci": list(asr_ci) if asr_ci else None,
+        "refusal_appropriateness_ci": list(refusal_ci) if refusal_ci else None,
+    }
+
+
+def _judge_config(judge: _RefusalJudgeRun) -> dict[str, Any]:
+    return {
+        "judge_trusted": judge.outcome.trusted,
+        "refusal_quality": judge.quality,  # gated diagnostic, NOT the headline
+        "refusal_quality_ci": list(judge.quality_ci) if judge.quality_ci else None,
+        "judge_diagnostics": judge.outcome.diagnostics,
+    }
+
+
+def _judge_status(config: _SecurityJudgeConfig, judge: _RefusalJudgeRun) -> JudgeStatus | None:
+    if config.model is None:
+        return None
+    return {
+        "calibration_rho": config.rho,
+        "threshold": config.threshold,
+        "trusted": judge.outcome.trusted,
+        "model": config.model,
+        "metrics": ["refusal_quality"],
+        "diagnostics": judge.outcome.diagnostics,
+    }
+
+
+def _log_persisted_run(
+    model: str,
+    score: security.SecurityScore,
+    judge: _RefusalJudgeRun,
+    paths: RunPaths,
+) -> None:
+    _LOG.info(
+        "[security] %s ASR=%.3f defense=%.3f refusal-appropriateness=%.3f quality=%s -> %s",
+        model,
+        score.asr,
+        score.defense_rate,
+        score.refusal_appropriateness,
+        f"{judge.quality:.3f}" if judge.quality is not None else "n/a",
+        paths["manifest"],
+    )
+
+
 def run_security(
     cases: list[security.SecurityCase],
     *,
@@ -176,112 +340,49 @@ def run_security(
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
-    outputs = [complete(build_prompt(case)) for case in cases]
-    score = security.score_security(cases, outputs)
-    rows = [_row(case, output) for case, output in zip(cases, outputs)]
-
-    # Opt-in, gated unsafe-content quality signal (objective defense stays the headline).
-    judge_records, judge_indices = _refusal_records(cases, outputs)
-    outcome = run_gated_judge(
-        judge_records,
-        judge_model=judge_model,
-        judge_rho=judge_rho,
+    scored = _score_cases(cases, complete)
+    judge_cfg = _SecurityJudgeConfig(
+        model=judge_model,
+        rho=judge_rho,
         threshold=judge_threshold,
         scorer=judge_scorer,
         base_url=judge_base_url,
     )
-    quality: float | None = None
-    quality_ci: tuple[float, float] | None = None
-    if outcome.trusted and outcome.scores:
-        per_case = [refusal_quality(s) for s in outcome.scores]
-        for idx, value in zip(judge_indices, per_case):
-            rows[idx]["refusal_quality"] = round(value, 6)
-        quality = round(mean(per_case), 6)
-        quality_ci = bootstrap_mean_ci(per_case)
-    elif judge_model is not None:
-        _LOG.info("[security] judge demoted (%s); objective ASR ranks alone", outcome.reason)
-
-    n_ok = sum(1 for r in rows if r["status"] not in _RELIABILITY_FAILURES)
-    reliability = n_ok / len(rows) if rows else 0.0
-    result = category_result(
-        model=model,
-        backend=backend,
-        tier=TIER_SECURITY,
-        case_objectives=score.case_defended,  # per-attack-case defended -> defense-rate CI
-        reliability=reliability,
-    )
-    asr_ci = bootstrap_mean_ci(score.case_defended)
-    refusal_ci = bootstrap_mean_ci(score.case_appropriate)
+    judge = _run_refusal_judge(cases, scored.outputs, scored.rows, judge_cfg)
+    result = _security_result(model, backend, scored)
     board, table = render_board([result])
 
     paths: RunPaths | None = None
     if persist and data_dir is not None:
-        metrics: RunMetrics = {
-            "objective_score": result.objective_score,  # defense rate (1 - ASR)
-            "reliability": reliability,
-            "tokens_per_s": 0.0,
-        }
         config = {
-            "model": model,
-            "backend": backend,
-            "tier": TIER_SECURITY,
-            "category": "security",
-            "n_cases": score.n_cases,
-            "n_attacks": score.n_attacks,
-            "asr": score.asr,
-            "defense_rate": score.defense_rate,
-            "refusal_appropriateness": score.refusal_appropriateness,
-            "asr_by_family": score.asr_by_family,
-            "defense_ci": list(asr_ci) if asr_ci else None,
-            "refusal_appropriateness_ci": list(refusal_ci) if refusal_ci else None,
-            "judge_trusted": outcome.trusted,
-            "refusal_quality": quality,  # gated diagnostic, NOT the headline
-            "refusal_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
+            **_score_config(model, backend, scored.score, scored.asr_ci, scored.refusal_ci),
+            **_judge_config(judge),
             **verification_cfg,
         }
-        judge_status: JudgeStatus | None = None
-        if judge_model is not None:
-            judge_status = {
-                "calibration_rho": judge_rho,
-                "threshold": judge_threshold,
-                "trusted": outcome.trusted,
-                "model": judge_model,
-                "metrics": ["refusal_quality"],
-                "diagnostics": outcome.diagnostics,
-            }
         paths = persist_category_run(
             method=METHOD,
             data_dir=data_dir,
             run_name=run_name,
             config=config,
-            metrics=metrics,
-            case_rows=rows,
-            judge=judge_status,
+            metrics=_security_metrics(result, scored.reliability),
+            case_rows=scored.rows,
+            judge=_judge_status(judge_cfg, judge),
             mirror=mirror,
         )
-        _LOG.info(
-            "[security] %s ASR=%.3f defense=%.3f refusal-appropriateness=%.3f quality=%s -> %s",
-            model,
-            score.asr,
-            score.defense_rate,
-            score.refusal_appropriateness,
-            f"{quality:.3f}" if quality is not None else "n/a",
-            paths["manifest"],
-        )
+        _log_persisted_run(model, scored.score, judge, paths)
     return SecurityRun(
         result=result,
-        score=score,
-        rows=rows,
+        score=scored.score,
+        rows=scored.rows,
         board=board,
         table=table,
-        asr_ci=asr_ci,
-        refusal_ci=refusal_ci,
+        asr_ci=scored.asr_ci,
+        refusal_ci=scored.refusal_ci,
         paths=paths,
-        refusal_quality=quality,
-        refusal_quality_ci=quality_ci,
-        judge_trusted=outcome.trusted,
-        judge_reason=outcome.reason,
+        refusal_quality=judge.quality,
+        refusal_quality_ci=judge.quality_ci,
+        judge_trusted=judge.outcome.trusted,
+        judge_reason=judge.outcome.reason,
     )
 
 
