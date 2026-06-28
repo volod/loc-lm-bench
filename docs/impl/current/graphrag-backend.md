@@ -86,8 +86,8 @@ models this uses the native `/api/chat` path because the OpenAI-compatible `/v1`
 honor the `think` control.
 
 The graph build path has been smoke-tested with
-`.data/prepare-goldset/20260628T131439Z-smoke`: it loaded two drafted extractions and wrote a graph
-with 19 nodes, 7 edges, and 12 communities under `$DATA_DIR/llb/graph/`.
+`.data/prepare-goldset/{timestamp}-smoke`: it loaded two drafted extractions and wrote
+a graph with nodes, edges, and communities under `$DATA_DIR/llb/graph/`.
 
 ## Ontology Scope
 

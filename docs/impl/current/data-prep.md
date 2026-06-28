@@ -79,8 +79,8 @@ extracted text is below `--min-chars`.
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <run>/corpus --min-chars 500
 ```
 
-For `.data/_doc`, the local run at `.data/pdf-corpus/20260628T131439Z/corpus` extracted 16 of 19
-PDFs; three source PDFs had no extractable text through `pdftotext`.
+For `.data/<docs_corp>/*pdf`, the local run at `.data/pdf-corpus/<timestemp>/corpus`
+some source PDFs had no extractable text through `pdftotext`.
 
 ## Verification Gate
 
