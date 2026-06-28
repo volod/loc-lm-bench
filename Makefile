@@ -3,7 +3,7 @@ SHELL := /bin/bash
 PROJECT_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 VENV := $(PROJECT_ROOT)/.venv
 PY := $(VENV)/bin/python
-PYTHON_VERSION := 3.11
+PYTHON_VERSION := 3.13
 DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_load_env; printf "%s" "$$DATA_DIR"')
 
 # Extras installed by `make venv` -- every declared optional-dependency group, so a fresh
@@ -233,7 +233,7 @@ ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitH
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- create one + install '.[dev]' first"; exit 1; }
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
-	$(VENV)/bin/mypy
+	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
 	$(PY) -m pytest $(NOT_SLOW)
 
 # Fix findings BY HAND. Do NOT run `pymarkdown fix` -- it corrupts prose on this version (AGENTS.md).
