@@ -14,6 +14,7 @@ CUDA and `HF_TOKEN` are only needed for GPU serving or gated model weights.
 make venv
 make demo-eval
 
+llb pdf-to-markdown .data/_doc
 make build-index CORPUS=<dir>
 make validate-retrieval
 
@@ -30,7 +31,7 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 
 | Capability | Functional use case | Pipeline commands |
 |---|---|---|
-| Corpus-grounded gold sets | Build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/goldset-from-scratch.md) and [data prep](docs/guides/data-prep.md). | `make ingest-uk-squad` -> `make validate-goldset` |
+| Corpus-grounded gold sets | Convert local PDFs to markdown, then build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/goldset-from-scratch.md) and [data prep](docs/guides/data-prep.md). | `llb pdf-to-markdown <pdf-dir>` -> `make ingest-uk-squad` -> `make validate-goldset` |
 | Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/verification-tooling.md) and [human evaluation](docs/guides/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
 | FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
 | Local serving and model planning | Resolve which candidate models fit the host, prepare weights, and run through Ollama, vLLM, or llama.cpp. See [vLLM backend guide](docs/guides/vllm-backend.md) and [inference config](docs/inference/config-example.md). | `make list-models` -> `make prep-models` |
@@ -40,6 +41,18 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 | Category benchmark suites | Score security, tooling, agentic, summarization, structured output, and text-analysis categories, then publish a guarded composite headline. See [composite headline guide](docs/guides/composite-headline.md) and [category learning path](docs/guides/learning-path-evaluation-categories.md). | `make composite-headline` |
 | Agentic harness comparison | Run the same task set through loop, LangGraph, and CrewAI harnesses to separate model quality from orchestration effects. See [CrewAI harness guide](docs/guides/crewai-harness.md) and [category learning path](docs/guides/learning-path-evaluation-categories.md). | `make agentic-harness-compare` |
 | Platform matrix telemetry | Compare a logical model base across serving backends with VRAM, throughput, power, and quality-per-watt telemetry. See [platform matrix guide](docs/guides/platform-matrix.md). | `make platform-matrix` |
+
+## PDF Corpus Prep
+
+Use PyMuPDF4LLM-backed conversion before indexing, ontology drafting, or GraphRAG runs:
+
+```sh
+llb pdf-to-markdown <pdf-dir>
+llb pdf-to-markdown <pdf-dir> <out-dir> --min-chars 500
+```
+
+When `<out-dir>` is omitted, markdown files and `pdf_corpus_manifest.json` are written to
+`<pdf-dir>/_md`; for example, `.data/_doc/_md`.
 
 ## Documentation
 

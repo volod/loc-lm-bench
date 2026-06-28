@@ -13,8 +13,10 @@ The CrewAI harness is pinned to the 1.x line and validated on `crewai==1.15.0`:
 
     uv pip install -e ".[crewai]"
 
-The base install and `make ci` never import CrewAI; only this extra pulls it. If you upgrade past
-1.x, re-run the validation below -- CrewAI's custom-LLM and tool APIs change across majors.
+The base install and `make ci` never import CrewAI; only this extra pulls it. Install it in a
+dedicated environment rather than combining it with `[dev]`, `[rag]`, `[rag-chroma]`, or
+`[rag-lancedb]`: upstream CrewAI pins older shared dependencies than those lanes. If you upgrade
+past 1.x, re-run the validation below -- CrewAI's custom-LLM and tool APIs change across majors.
 
 ## 2. Validate the real crew on a host
 

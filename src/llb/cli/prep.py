@@ -11,13 +11,40 @@ from llb.cli.app import app
 @app.command("ingest-pdf-corpus")
 def ingest_pdf_corpus_cmd(
     pdf_root: Path = typer.Option(..., help="directory of local PDF source documents"),
-    out_dir: Path = typer.Option(..., help="output corpus dir of extracted .md files"),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="output corpus dir of extracted .md files (default: <pdf-root>/_md)"
+    ),
     min_chars: int = typer.Option(
         500, min=1, help="skip PDFs whose extracted text is shorter than this"
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to ingest"),
 ) -> None:
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
+    _run_pdf_markdown_ingest("ingest-pdf-corpus", pdf_root, out_dir, min_chars, limit)
+
+
+@app.command("pdf-to-markdown")
+def pdf_to_markdown_cmd(
+    pdf_root: Path = typer.Argument(..., help="directory of local PDF source documents"),
+    out_dir: Optional[Path] = typer.Argument(
+        None, help="output dir of extracted .md files (default: <pdf-root>/_md)"
+    ),
+    min_chars: int = typer.Option(
+        500, min=1, help="skip PDFs whose extracted text is shorter than this"
+    ),
+    limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to convert"),
+) -> None:
+    """Convert local PDFs into markdown files with PyMuPDF4LLM."""
+    _run_pdf_markdown_ingest("pdf-to-markdown", pdf_root, out_dir, min_chars, limit)
+
+
+def _run_pdf_markdown_ingest(
+    command: str,
+    pdf_root: Path,
+    out_dir: Optional[Path],
+    min_chars: int,
+    limit: Optional[int],
+) -> None:
     from llb.prep.pdf_corpus import ingest_pdf_corpus
 
     try:
@@ -31,7 +58,7 @@ def ingest_pdf_corpus_cmd(
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     typer.echo(
-        f"[ingest-pdf-corpus] {result.n_docs}/{len(result.items)} PDFs extracted "
+        f"[{command}] {result.n_docs}/{len(result.items)} PDFs extracted "
         f"({result.n_skipped} skipped) -> {result.out_dir}"
     )
 

@@ -14,6 +14,7 @@ dependencies = [
   "pyyaml>=6.0",
   "huggingface-hub>=0.24",
   "openai>=1.40",
+  "pymupdf4llm",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,26 @@ mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (tooling b
 # NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU) and installed via a
 # separate build path per AGENTS.md, never as plain deps here.
 dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.6", "radon>=6.0", "complexipy>=5.0", "pymarkdownlnt>=0.9.32"]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "crewai" },
+    { extra = "rag-chroma" },
+  ],
+  [
+    { extra = "crewai" },
+    { extra = "rag-lancedb" },
+  ],
+  [
+    { extra = "crewai" },
+    { extra = "dev" },
+  ],
+  [
+    { extra = "crewai" },
+    { extra = "rag" },
+  ],
+]
 
 [project.scripts]
 llb = "llb.main:main"
