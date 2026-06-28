@@ -28,6 +28,7 @@ from typing import Any, Callable, cast
 
 from llb.goldset.schema import GoldItem, Provenance, SourceSpan, Split, dump_goldset
 from llb.goldset.splits import assign_splits
+from llb.prompts import render_text
 from llb.rag.chunking import iter_docs
 
 _LOG = logging.getLogger(__name__)
@@ -167,13 +168,9 @@ def litellm_complete(
 
 def goldset_draft_prompt(doc_id: str, text: str, n: int) -> str:
     """Ask for `n` UA QA pairs grounded in `text`, each quoting an EXACT answer substring."""
-    return (
-        "Ти укладач набору запитань для оцінювання україномовних RAG-моделей.\n"
-        f"З наведеного документа склади рівно {n} пар «запитання-відповідь» українською.\n"
-        "Відповідь МАЄ бути дослівною підрядковою цитатою з документа (скопіюй точно).\n"
-        'Поверни лише JSON-масив об\'єктів {"question": ..., "reference_answer": ..., '
-        '"answer_span": ...}, де answer_span -- точна цитата з тексту.\n\n'
-        f"Документ [{doc_id}]:\n{text}\n"
+    return render_text(
+        "prep.frontier.goldset_draft",
+        {"doc_id": doc_id, "text": text, "n": n},
     )
 
 
@@ -290,14 +287,9 @@ def prepare_goldset(
 
 def synthetic_doc_prompt(topic: str, n_labels: int) -> str:
     """Ask for a short UA factual doc on `topic` plus `n_labels` planted, span-grounded QA."""
-    return (
-        "Ти генеруєш синтетичний україномовний документ із контрольованими фактами для "
-        "оцінювання RAG.\n"
-        f"Напиши короткий фактичний документ (3-6 абзаців) на тему: {topic}.\n"
-        f"Поряд сплануй рівно {n_labels} «закладені» факти у вигляді пар запитання-відповідь, "
-        "де відповідь -- дослівна цитата з документа.\n"
-        'Поверни лише JSON {"document": ..., "labels": [{"question": ..., '
-        '"reference_answer": ..., "answer_span": ...}]}.\n'
+    return render_text(
+        "prep.frontier.synthetic_doc",
+        {"topic": topic, "n_labels": n_labels},
     )
 
 

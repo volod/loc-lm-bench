@@ -1,0 +1,8 @@
+{
+  "id": "eval.rag.chat",
+  "kind": "chat",
+  "messages": [
+    {"role": "system", "template": "system.txt"},
+    {"role": "user", "template": "user.txt"}
+  ]
+}

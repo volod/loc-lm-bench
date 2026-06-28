@@ -1,0 +1,10 @@
+{
+  "id": "scoring.judge.relevancy_steps",
+  "kind": "text_list",
+  "templates": [
+    "relevancy_step_1.txt",
+    "relevancy_step_2.txt",
+    "relevancy_step_3.txt",
+    "relevancy_step_4.txt"
+  ]
+}

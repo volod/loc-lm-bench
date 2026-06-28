@@ -1,0 +1,5 @@
+{
+  "id": "bench.text_analysis.long_doc_default_question",
+  "kind": "text",
+  "template": "long_doc_default_question.txt"
+}

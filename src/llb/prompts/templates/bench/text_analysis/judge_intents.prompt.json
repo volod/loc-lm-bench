@@ -1,0 +1,9 @@
+{
+  "id": "bench.text_analysis.judge_intents",
+  "kind": "text_map",
+  "templates": {
+    "narrative": "intent_narrative.txt",
+    "insight": "intent_insight.txt",
+    "long_doc": "intent_long_doc.txt"
+  }
+}

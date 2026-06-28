@@ -28,6 +28,7 @@ from llb.bench.common import (
     verified_data_config,
 )
 from llb.contracts import BoardRow, RunMetrics, RunPaths, ToolDef, ToolingCaseRow
+from llb.prompts import render_text
 from llb.scoring import tooling
 from llb.scoring.aggregate import TIER_TOOLING, ModelResult, bootstrap_mean_ci
 
@@ -119,13 +120,9 @@ def text_tool_prompt(instruction: str, catalog: dict[str, ToolDef]) -> str:
     """A backend-agnostic tool-calling prompt: the catalog as JSON + the user instruction, asking
     for a single JSON tool call (or a null call when no tool is needed)."""
     tools_json = json.dumps(list(catalog.values()), ensure_ascii=False, indent=2)
-    return (
-        "Ти асистент із доступом до інструментів. Доступні інструменти (назва, опис, JSON-схема "
-        f"аргументів):\n{tools_json}\n\n"
-        f"Запит користувача: {instruction}\n\n"
-        'Якщо потрібен інструмент, поверни ЛИШЕ JSON {"name": <назва інструмента>, '
-        '"arguments": {<аргументи за схемою>}}.\n'
-        'Якщо жоден інструмент не потрібен, поверни ЛИШЕ {"name": null}.\n'
+    return render_text(
+        "bench.tooling.text_tool_prompt",
+        {"instruction": instruction, "tools_json": tools_json},
     )
 
 

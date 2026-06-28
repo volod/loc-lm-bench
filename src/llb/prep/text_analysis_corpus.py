@@ -32,6 +32,7 @@ from llb.prep.frontier import (
     litellm_complete,
     parse_json_block,
 )
+from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 
 # A doc prompt builder: (topic, n_per_kind, kinds) -> planter prompt. Swappable so the chat-log
@@ -57,20 +58,9 @@ GROUNDED_REQUIRED_KINDS = frozenset({ta.KEY_FACT, ta.ENTITY, ta.CONTRADICTION})
 def text_analysis_doc_prompt(topic: str, n_per_kind: int, kinds: tuple[str, ...]) -> str:
     """Ask the planter for a short UA factual doc plus `n_per_kind` planted labels per kind."""
     asks = "\n".join(f'  - "{kind}"' for kind in kinds)
-    return (
-        "Ти генеруєш синтетичний україномовний документ із контрольованими фактами для "
-        "оцінювання аналізу тексту.\n"
-        f"Напиши короткий фактичний документ (4-7 абзаців) на тему: {topic}.\n"
-        f"Поряд сплануй «закладені» мітки для таких категорій (рівно {n_per_kind} на категорію):\n"
-        f"{asks}\n\n"
-        "Кожна мітка -- це об'єкт з полями:\n"
-        '  "kind" (одна з категорій вище),\n'
-        '  "value" (канонічний короткий рядок, який має назвати модель),\n'
-        '  "aliases" (масив інших прийнятних формулювань, може бути порожнім),\n'
-        '  "evidence" (ДОСЛІВНА цитата з документа, що підтверджує мітку),\n'
-        '  "attrs" (необов\'язково; для "trend" -- {"subject": ..., "direction": '
-        '"up"|"down"|"flat"}).\n\n'
-        'Поверни ЛИШЕ JSON {"document": ..., "labels": [ ... ]}.\n'
+    return render_text(
+        "prep.text_analysis_corpus.doc",
+        {"topic": topic, "n_per_kind": n_per_kind, "asks": asks},
     )
 
 

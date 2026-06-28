@@ -1,0 +1,15 @@
+{
+  "id": "bench.text_analysis.kind_labels",
+  "kind": "text_map",
+  "templates": {
+    "key_fact": "kind_key_fact.txt",
+    "entity": "kind_entity.txt",
+    "topic": "kind_topic.txt",
+    "trend": "kind_trend.txt",
+    "risk": "kind_risk.txt",
+    "decision": "kind_decision.txt",
+    "contradiction": "kind_contradiction.txt",
+    "narrative": "kind_narrative.txt",
+    "insight": "kind_insight.txt"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "prompt_system.headings",
+  "kind": "text_map",
+  "templates": {
+    "anthology": "heading_anthology.txt",
+    "metadata": "heading_metadata.txt",
+    "graph_inline": "heading_graph_inline.txt",
+    "graph_appendix": "heading_graph_appendix.txt"
+  }
+}

@@ -1,0 +1,1 @@
+judge is a local Gemma-4 model (not pool-independent): shares lineage with the Gemma-4 / MamayLM / Lapa candidates -> possible self-preference for Gemma-family answers; gated by calibration and objective score retains weight; cross-check with a non-Gemma judge to quantify the family delta

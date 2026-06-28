@@ -43,6 +43,7 @@ from llb.contracts import (
 from llb.eval.common import EMPTY, MALFORMED, OK
 from llb.eval.map_reduce import run_map_reduce_text
 from llb.prep.frontier import parse_json_block
+from llb.prompts import render_text, render_text_map
 from llb.rag.chunking import iter_docs
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS, ModelResult, bootstrap_mean_ci
@@ -56,25 +57,11 @@ TEXT_ANALYSIS_LABELS = "text_analysis_labels.jsonl"
 _JUDGED_EXTRACT_KINDS = (ta.NARRATIVE, ta.INSIGHT)
 # A UA intent framing per judged sub-task: faithfulness scores grounding in the doc, answer-
 # relevancy scores whether the free-form output addresses the sub-task.
-_JUDGE_INTENT: dict[str, str] = {
-    ta.NARRATIVE: "Стисло й точно виклади загальну оповідь документа, не додаючи зайвого.",
-    ta.INSIGHT: "Сформулюй обґрунтовані висновки, що випливають з документа.",
-    ta.LONG_DOC: "Дай повну відповідь на питання, спираючись лише на документ.",
-}
-_DEFAULT_LONG_DOC_QUESTION = "Про що цей документ і які його ключові висновки?"
+_JUDGE_INTENT = render_text_map("bench.text_analysis.judge_intents")
+_DEFAULT_LONG_DOC_QUESTION = render_text("bench.text_analysis.long_doc_default_question")
 
 # UA instruction phrasing per sub-task kind (the candidate-facing extraction ask).
-_KIND_UA: dict[str, str] = {
-    ta.KEY_FACT: "ключові факти",
-    ta.ENTITY: "іменовані сутності (особи, організації, місця)",
-    ta.TOPIC: "теми документа",
-    ta.TREND: "тенденції (вкажи напрям: зростання, спад або стабільність)",
-    ta.RISK: "ризики або проблеми",
-    ta.DECISION: "рішення або дії",
-    ta.CONTRADICTION: "внутрішні суперечності",
-    ta.NARRATIVE: "стислий виклад загальної оповіді",
-    ta.INSIGHT: "висновки, прямо не зазначені в тексті",
-}
+_KIND_UA = render_text_map("bench.text_analysis.kind_labels")
 
 
 @dataclass(slots=True)
@@ -97,13 +84,9 @@ def analysis_prompt(doc_id: str, text: str, kinds: Sequence[str]) -> str:
     the sub-task name, value = a list of short Ukrainian strings."""
     bullets = "\n".join(f"- {kind}: {_KIND_UA.get(kind, kind)}" for kind in kinds)
     keys = ", ".join(kinds)
-    return (
-        "Ти аналізуєш україномовний документ. Витягни перелічені нижче елементи.\n"
-        f"{bullets}\n\n"
-        "Поверни ЛИШЕ JSON-об'єкт, де кожен ключ -- назва категорії (англійською, точно як "
-        f"нижче), а значення -- масив коротких рядків українською. Категорії: {keys}.\n"
-        "Якщо для категорії нічого немає, поверни порожній масив.\n\n"
-        f"Документ [{doc_id}]:\n{text}\n"
+    return render_text(
+        "bench.text_analysis.analysis",
+        {"doc_id": doc_id, "text": text, "bullets": bullets, "keys": keys},
     )
 
 

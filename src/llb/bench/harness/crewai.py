@@ -29,6 +29,7 @@ from llb.bench.agentic import (
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
 from llb.contracts import ToolDef
+from llb.prompts import render_text_map
 
 _LOG = logging.getLogger(__name__)
 
@@ -177,10 +178,11 @@ def run_real_crew(
     specs = crew_tool_specs(catalog, executor)
     llm, calls = _make_candidate_llm(complete)
     tools = [_build_crew_tool(spec) for spec in specs]
+    agent_prompt = render_text_map("bench.harness.crewai.agent")
     agent = Agent(
-        role="Виконавець завдань",
-        goal="Виконати завдання користувача за допомогою наданих інструментів.",
-        backstory="Ти методичний агент, що покроково користується інструментами.",
+        role=agent_prompt["role"],
+        goal=agent_prompt["goal"],
+        backstory=agent_prompt["backstory"],
         tools=tools,
         llm=llm,
         max_iter=max_steps,
@@ -188,7 +190,7 @@ def run_real_crew(
     )
     crew_task = Task(
         description=build_agent_prompt(task, catalog, transcript),
-        expected_output="Стисла фінальна відповідь, підкріплена результатами інструментів.",
+        expected_output=agent_prompt["expected_output"],
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[crew_task], verbose=False)

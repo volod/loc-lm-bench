@@ -5,9 +5,8 @@ human ratings clears the Spearman-rho floor. DeepEval is imported lazily and tal
 OpenAI-compatible local endpoint through its maintained LocalModel adapter.
 """
 
-import os
 import logging
-import textwrap
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, cast
 from urllib.parse import urlsplit, urlunsplit
@@ -15,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb import env
 from llb.paths import load_project_env
+from llb.prompts import render_text, render_text_list, render_text_map
 
 _LOG = logging.getLogger(__name__)
 
@@ -28,30 +28,10 @@ _EMPTY_ANSWER_REASON = "empty_answer"  # mirrors judge_diag.JUDGE_DIAG_EMPTY_ANS
 # architecture / tokenizer / pretraining lineage with most of the pool and may self-prefer
 # Gemma-family answers over the non-Gemma ones (Qwen, Llama). It is accepted only because the
 # judge is gated and objective correctness keeps weight in the blend.
-JUDGE_BIAS_NOTE = (
-    "judge is a local Gemma-4 model (not pool-independent): shares lineage with the "
-    "Gemma-4 / MamayLM / Lapa candidates -> possible self-preference for Gemma-family "
-    "answers; gated by calibration and objective score retains weight; cross-check with a "
-    "non-Gemma judge to quantify the family delta"
-)
+JUDGE_BIAS_NOTE = render_text("scoring.judge.bias_note")
 
-UA_FAITHFULNESS_STEPS = [
-    "Виділи всі фактичні твердження з фактичної відповіді.",
-    "Для кожного твердження перевір, чи воно безпосередньо підтверджене хоча б одним "
-    "фрагментом контексту пошуку.",
-    "Знизь оцінку за кожне непідтверджене, суперечливе або вигадане твердження; не використовуй "
-    "зовнішні знання.",
-    "Найвища оцінка дозволена лише тоді, коли всі фактичні твердження повністю підтверджені "
-    "контекстом пошуку.",
-]
-UA_ANSWER_RELEVANCY_STEPS = [
-    "Визнач, яку інформацію прямо запитує вхідне запитання.",
-    "Перевір, чи фактична відповідь безпосередньо й по суті відповідає на це запитання.",
-    "Знизь оцінку за ухильність, неоднозначність, пропущену ключову інформацію або зайві "
-    "відомості, що не допомагають відповісти на запитання.",
-    "Не оцінюй правдивість за зовнішніми знаннями: тут оцінюється лише релевантність відповіді "
-    "вхідному запитанню.",
-]
+UA_FAITHFULNESS_STEPS = render_text_list("scoring.judge.faithfulness_steps")
+UA_ANSWER_RELEVANCY_STEPS = render_text_list("scoring.judge.relevancy_steps")
 
 JudgeEvaluate = Callable[[list[JudgeInputRecord], str], list[dict[str, float]]]
 
@@ -59,11 +39,7 @@ JudgeEvaluate = Callable[[list[JudgeInputRecord], str], list[dict[str, float]]]
 class UkrainianGEvalTemplate:
     """DeepEval G-Eval result prompt with Ukrainian-only judge instructions."""
 
-    _PARAMETER_LABELS = {
-        "Actual Output": "Фактична відповідь",
-        "Retrieval Context": "Контекст пошуку",
-        "Input": "Вхідне запитання",
-    }
+    _PARAMETER_LABELS = render_text_map("scoring.judge.parameter_labels")
 
     @classmethod
     def _localize_parameter_labels(cls, text: str) -> str:
@@ -85,25 +61,15 @@ class UkrainianGEvalTemplate:
         del rubric, _additional_context, multimodal
         test_case_content = cls._localize_parameter_labels(test_case_content)
         parameters = cls._localize_parameter_labels(parameters)
-        return textwrap.dedent(
-            f"""\
-            Ти оцінювач україномовної RAG-системи. Виконай наведені кроки та оціни тестовий
-            приклад цілим числом від {score_range[0]} до {score_range[1]}, де
-            {score_range[1]} означає повну відповідність крокам, а {score_range[0]} -- повну
-            невідповідність.
-
-            Кроки оцінювання:
-            {evaluation_steps}
-
-            Тестовий приклад:
-            {test_case_content}
-
-            Параметри, які треба зіставити:
-            {parameters}
-
-            Поверни лише коректний JSON без Markdown і додаткового тексту:
-            {{"score": <ціле число>, "reason": "стисле обгрунтування українською"}}
-            """
+        return render_text(
+            "scoring.judge.evaluation_results",
+            {
+                "score_min": score_range[0],
+                "score_max": score_range[1],
+                "evaluation_steps": evaluation_steps,
+                "test_case_content": test_case_content,
+                "parameters": parameters,
+            },
         )
 
     @classmethod

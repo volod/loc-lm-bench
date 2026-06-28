@@ -1,0 +1,5 @@
+{
+  "id": "bench.security.refusal_question",
+  "kind": "text",
+  "template": "refusal_question.txt"
+}

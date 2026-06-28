@@ -1,0 +1,5 @@
+{
+  "id": "bench.tooling.text_tool_prompt",
+  "kind": "text",
+  "template": "text_tool_prompt.txt"
+}

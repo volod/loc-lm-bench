@@ -13,6 +13,7 @@ from typing import Any
 from llb.prep.frontier import LLMComplete, parse_json_block
 from llb.prep.ontology.constants import DRAFT_CONTEXT_RADIUS
 from llb.prep.ontology.models import DocRecord, DraftSeed
+from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -38,17 +39,14 @@ def draft_prompt(seed: DraftSeed, context: str, ontology_hint: str = "") -> str:
 
     `ontology_hint` (optional, verified-data hardening) carries the corpus's high-confidence induced types as an
     explicit constraint, nudging the drafter toward the reliable types of THIS corpus."""
-    hint_line = f"{ontology_hint}\n" if ontology_hint else ""
-    return (
-        "Ти укладач набору запитань для оцінювання україномовних RAG-моделей.\n"
-        f"{_focus_line(seed)}\n"
-        f"{hint_line}"
-        f"Склади РІВНО одну пару «запитання-відповідь» українською (складність: {seed.difficulty}).\n"
-        "Відповідь МАЄ бути дослівною підрядковою цитатою з наведеного контексту.\n"
-        "Запитання НЕ повинно містити сам текст відповіді (уникай підказок).\n"
-        'Поверни лише JSON-об\'єкт {"question": ..., "reference_answer": ..., '
-        '"answer_span": ...}, де answer_span -- точна цитата з контексту.\n\n'
-        f"Контекст:\n{context}\n"
+    return render_text(
+        "prep.ontology.draft",
+        {
+            "focus_line": _focus_line(seed),
+            "ontology_hint_line": f"{ontology_hint}\n" if ontology_hint else "",
+            "difficulty": seed.difficulty,
+            "context": context,
+        },
     )
 
 

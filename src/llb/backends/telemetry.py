@@ -17,13 +17,10 @@ from typing import Any, Callable
 
 from llb.backends.base import ChatResult
 from llb.contracts import ChatMessage, GpuSummary, TelemetryReport
+from llb.prompts import render_text_list
 
 # Fixed Ukrainian prompts for the throughput protocol (comparable across models).
-DEFAULT_THROUGHPUT_PROMPTS = [
-    "Поясни своїми словами, що таке авторське право і навіщо воно потрібне.",
-    "Стисло опиши основні кроки реєстрації торговельної марки в Україні.",
-    "Назви типові обов'язки сторін у договорі про надання послуг.",
-]
+DEFAULT_THROUGHPUT_PROMPTS = render_text_list("telemetry.throughput")
 
 
 def tokens_per_char(token_count: int, text: str) -> float:

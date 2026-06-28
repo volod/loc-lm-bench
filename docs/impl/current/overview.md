@@ -67,6 +67,7 @@ src/llb/
   executor/         run orchestration, isolation, VRAM and contention gates
   scoring/          correctness, judge, board aggregation, category metrics
   bench/            category benchmark runners and deterministic tool worlds
+  prompts/          shared prompt-template engine, templates, generated registry
   prompt_system/    prompt-system packages, review state, selection
   board/            run loaders, category/harness/prompt-system comparisons, UI
   tracking/         canonical manifests and MLflow mirror

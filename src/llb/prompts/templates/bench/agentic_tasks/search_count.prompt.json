@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic_tasks.search_count",
+  "kind": "text",
+  "template": "search_count.txt"
+}

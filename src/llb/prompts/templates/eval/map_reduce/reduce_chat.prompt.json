@@ -1,0 +1,8 @@
+{
+  "id": "eval.map_reduce.reduce_chat",
+  "kind": "chat",
+  "messages": [
+    {"role": "system", "template": "reduce_system.txt"},
+    {"role": "user", "template": "reduce_user.txt"}
+  ]
+}

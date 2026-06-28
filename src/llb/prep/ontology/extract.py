@@ -20,6 +20,7 @@ from llb.prep.ontology.constants import EXTRACT_CHUNK_OVERLAP, EXTRACT_MAX_CHARS
 from llb.prep.ontology.entity_types import entity_types_prompt_block, normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
 from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Event, SROFact
+from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -32,22 +33,9 @@ class ExtractionAdapter(Protocol):
 
 def extraction_prompt(doc_id: str, text: str) -> str:
     """Ask for entities/coreference/events/claims/SRO facts, each quoting EXACT evidence."""
-    return (
-        "Ти аналітик, що будує онтологію з україномовного документа для оцінювання RAG.\n"
-        "Виокреми з тексту нижче (нічого не вигадуй; усе має спиратися на текст):\n"
-        "1. named entities -- name, type, aliases, mentions. Тип ОБОВ'ЯЗКОВО один із набору "
-        "(якщо не підходить жоден -- став MISC): " + entity_types_prompt_block() + ";\n"
-        "2. events -- короткий опис + evidence;\n"
-        "3. claims -- твердження + evidence;\n"
-        "4. facts -- трійки subject-relation-object + evidence.\n"
-        "Кожне поле evidence та кожен елемент mentions МАЄ бути дослівною цитатою з тексту "
-        "(скопіюй точно, символ у символ).\n"
-        "Поверни лише JSON-об'єкт:\n"
-        '{"entities": [{"name": ..., "type": ..., "aliases": [...], "mentions": [<цитата>]}],\n'
-        ' "events": [{"description": ..., "evidence": <цитата>}],\n'
-        ' "claims": [{"text": ..., "evidence": <цитата>}],\n'
-        ' "facts": [{"subject": ..., "relation": ..., "object": ..., "evidence": <цитата>}]}\n\n'
-        f"Документ [{doc_id}]:\n{text}\n"
+    return render_text(
+        "prep.ontology.extraction",
+        {"doc_id": doc_id, "text": text, "entity_types": entity_types_prompt_block()},
     )
 
 

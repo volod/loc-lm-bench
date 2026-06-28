@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.default_role",
+  "kind": "text",
+  "template": "default_role.txt"
+}

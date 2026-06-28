@@ -21,22 +21,14 @@ from typing_extensions import TypedDict
 
 from llb.contracts import ChatMessage, UsageRecord
 from llb.eval.common import EMPTY, classify_response
+from llb.prompts import render_chat, render_text
 
 # A segment that yields no usable answer should say exactly this, so the reduce step can drop it.
 NO_INFO_MARKER = "(немає інформації)"
 
-MAP_SYSTEM_PROMPT = (
-    "Ти аналізуєш ОДИН фрагмент довгого документа. "
-    "Дай відповідь на питання ВИКЛЮЧНО на основі цього фрагмента. "
-    f"Якщо у фрагменті немає відповіді, напиши рівно: {NO_INFO_MARKER}. "
-    "Відповідай стисло українською мовою."
-)
-
-REDUCE_SYSTEM_PROMPT = (
-    "Ти зводиш докупи часткові відповіді, отримані з різних фрагментів одного документа. "
-    "Сформулюй єдину узгоджену відповідь на питання, спираючись лише на ці часткові відповіді. "
-    f"Ігноруй фрагменти, що позначені '{NO_INFO_MARKER}'. "
-    "Відповідай стисло українською мовою."
+MAP_SYSTEM_PROMPT = render_text("eval.map_reduce.map_system", {"no_info_marker": NO_INFO_MARKER})
+REDUCE_SYSTEM_PROMPT = render_text(
+    "eval.map_reduce.reduce_system", {"no_info_marker": NO_INFO_MARKER}
 )
 
 
@@ -75,20 +67,18 @@ def split_document(document: str, max_chars: int, overlap: int) -> list[str]:
 
 
 def build_map_messages(question: str, segment: str) -> list[ChatMessage]:
-    user = f"Фрагмент:\n<<<\n{segment}\n>>>\n\nПитання: {question}\n\nВідповідь:"
-    return [
-        {"role": "system", "content": MAP_SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+    return render_chat(
+        "eval.map_reduce.map_chat",
+        {"no_info_marker": NO_INFO_MARKER, "question": question, "segment": segment},
+    )
 
 
 def build_reduce_messages(question: str, partials: list[str]) -> list[ChatMessage]:
     joined = "\n".join(f"[{i}] {p}" for i, p in enumerate(partials, 1))
-    user = f"Часткові відповіді:\n<<<\n{joined}\n>>>\n\nПитання: {question}\n\nЗведена відповідь:"
-    return [
-        {"role": "system", "content": REDUCE_SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+    return render_chat(
+        "eval.map_reduce.reduce_chat",
+        {"no_info_marker": NO_INFO_MARKER, "question": question, "partials": joined},
+    )
 
 
 def is_no_info(partial: str) -> bool:
@@ -223,18 +213,18 @@ def run_case(app: Any, question: str, document: str) -> MapReduceState:
 
 def map_text_prompt(question: str, segment: str) -> str:
     """A single-string MAP prompt (the category suite categories drive map-reduce via a `complete: str->str`)."""
-    return (
-        f"{MAP_SYSTEM_PROMPT}\n\n"
-        f"Фрагмент:\n<<<\n{segment}\n>>>\n\nПитання: {question}\n\nВідповідь:"
+    return render_text(
+        "eval.map_reduce.map_text",
+        {"system_prompt": MAP_SYSTEM_PROMPT, "question": question, "segment": segment},
     )
 
 
 def reduce_text_prompt(question: str, partials: list[str]) -> str:
     """A single-string REDUCE prompt over the surviving map partials."""
     joined = "\n".join(f"[{i}] {p}" for i, p in enumerate(partials, 1))
-    return (
-        f"{REDUCE_SYSTEM_PROMPT}\n\n"
-        f"Часткові відповіді:\n<<<\n{joined}\n>>>\n\nПитання: {question}\n\nЗведена відповідь:"
+    return render_text(
+        "eval.map_reduce.reduce_text",
+        {"system_prompt": REDUCE_SYSTEM_PROMPT, "question": question, "partials": joined},
     )
 
 

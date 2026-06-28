@@ -1,0 +1,9 @@
+{
+  "id": "scoring.judge.parameter_labels",
+  "kind": "text_map",
+  "templates": {
+    "Actual Output": "label_actual_output.txt",
+    "Retrieval Context": "label_retrieval_context.txt",
+    "Input": "label_input.txt"
+  }
+}

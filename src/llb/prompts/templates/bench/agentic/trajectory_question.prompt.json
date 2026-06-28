@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.trajectory_question",
+  "kind": "text",
+  "template": "trajectory_question.txt"
+}

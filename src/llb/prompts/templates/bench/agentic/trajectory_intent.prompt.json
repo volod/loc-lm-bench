@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.trajectory_intent",
+  "kind": "text",
+  "template": "trajectory_intent.txt"
+}

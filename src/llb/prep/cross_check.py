@@ -32,6 +32,7 @@ from llb.prep.frontier import (
     litellm_complete,
     parse_json_block,
 )
+from llb.prompts import render_text
 from llb.rag.chunking import iter_docs
 from llb.scoring.text_analysis import normalize_surface
 
@@ -72,16 +73,14 @@ def is_non_circular(item: GoldItem) -> bool:
 def verify_prompt(item: GoldItem, doc_text: str) -> str:
     """Ask the SECOND frontier model to confirm support + answerability (JSON verdict)."""
     span = item.source_spans[0].text if item.source_spans else ""
-    return (
-        "Ти незалежний перевіряючий якості оцінювальних даних. Підтверди два факти про пару "
-        "питання-відповідь, спираючись на наведений документ.\n\n"
-        f"Документ:\n{doc_text}\n\n"
-        f"Питання: {item.question}\n"
-        f"Відповідь: {item.reference_answer}\n"
-        f"Цитата-підстава: {span}\n\n"
-        'Поверни ЛИШЕ JSON {"supported": <true|false>, "answerable": <true|false>, '
-        '"note": <короткий коментар>}, де supported = чи підтверджує цитата відповідь, '
-        "answerable = чи є питання осмисленим і відповідним документу.\n"
+    return render_text(
+        "prep.cross_check.verify",
+        {
+            "doc_text": doc_text,
+            "question": item.question,
+            "reference_answer": item.reference_answer,
+            "span": span,
+        },
     )
 
 

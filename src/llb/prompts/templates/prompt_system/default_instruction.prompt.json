@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.default_instruction",
+  "kind": "text",
+  "template": "default_instruction.txt"
+}

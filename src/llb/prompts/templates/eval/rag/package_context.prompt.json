@@ -1,0 +1,5 @@
+{
+  "id": "eval.rag.package_context",
+  "kind": "text",
+  "template": "package_context.txt"
+}

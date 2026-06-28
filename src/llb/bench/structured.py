@@ -21,6 +21,7 @@ from llb.bench.common import (
     verified_data_config,
 )
 from llb.contracts import BoardRow, RunMetrics, RunPaths, StructuredCaseRow
+from llb.prompts import render_text
 from llb.scoring import structured
 from llb.scoring.aggregate import TIER_STRUCTURED, ModelResult, bootstrap_mean_ci
 
@@ -43,9 +44,9 @@ class StructuredRun:
 def structured_prompt(case: structured.StructuredCase) -> str:
     """Ask for a JSON object matching the target schema."""
     schema_json = json.dumps(case.schema, ensure_ascii=False, indent=2)
-    return (
-        f"{case.instruction}\n\n"
-        f"Поверни ЛИШЕ JSON-об'єкт за цією схемою полів (назва -> тип):\n{schema_json}\n"
+    return render_text(
+        "bench.structured.structured",
+        {"instruction": case.instruction, "schema_json": schema_json},
     )
 
 

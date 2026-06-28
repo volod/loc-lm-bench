@@ -49,6 +49,7 @@ from llb.contracts import (
     RunPaths,
     ToolDef,
 )
+from llb.prompts import render_text
 from llb.scoring.aggregate import TIER_AGENTIC, ModelResult, bootstrap_mean_ci
 from llb.scoring.tooling import parse_tool_call
 
@@ -70,7 +71,7 @@ HARNESS_NAMES = (HARNESS_LOOP, HARNESS_LANGGRAPH, HARNESS_CREWAI)
 # The judge "question" for trajectory quality: a fixed UA intent that frames the agent's job, so
 # answer-relevancy scores whether the final answer addresses the goal while faithfulness scores
 # whether it stays grounded in the tool observations fed back as the retrieval context.
-_TRAJECTORY_INTENT = "Виконай завдання інструментами та дай відповідь, підкріплену їх результатами."
+_TRAJECTORY_INTENT = render_text("bench.agentic.trajectory_intent")
 
 STATUS_COMPLETED = "completed"
 STATUS_INCOMPLETE = "incomplete"
@@ -194,15 +195,16 @@ def build_agent_prompt(
         f"- {name}({json.dumps(args, ensure_ascii=False)}) -> {obs}"
         for name, args, obs in transcript
     )
-    history_block = f"Виконані кроки:\n{history}\n\n" if transcript else ""
-    return (
-        "Ти агент, що покроково виконує завдання за допомогою інструментів.\n"
-        f"Доступні інструменти (JSON-схеми):\n{tools_json}\n\n"
-        f"Завдання: {task.prompt}\n\n"
-        f"{history_block}"
-        'На КОЖНОМУ кроці поверни ЛИШЕ один JSON-виклик {"name": <інструмент>, '
-        '"arguments": {<аргументи>}}.\n'
-        'Коли завдання виконано, виклич {"name": "finish", "arguments": {"answer": <відповідь>}}.\n'
+    history_block = (
+        render_text("bench.agentic.history_block", {"history": history}) if transcript else ""
+    )
+    return render_text(
+        "bench.agentic.agent_step",
+        {
+            "tools_json": tools_json,
+            "task_prompt": task.prompt,
+            "history_block": history_block,
+        },
     )
 
 
@@ -262,7 +264,10 @@ def _trajectory_records(
     """
     return [
         {
-            "question": f"{_TRAJECTORY_INTENT}\n\nЗавдання: {task.prompt}",
+            "question": render_text(
+                "bench.agentic.trajectory_question",
+                {"intent": _TRAJECTORY_INTENT, "task_prompt": task.prompt},
+            ),
             "answer": episode.answer,
             "contexts": [
                 f"{name}({json.dumps(args, ensure_ascii=False)}) -> {obs}"

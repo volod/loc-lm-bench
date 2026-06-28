@@ -1,0 +1,5 @@
+{
+  "id": "eval.rag.system",
+  "kind": "text",
+  "template": "system.txt"
+}
