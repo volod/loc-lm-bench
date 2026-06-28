@@ -1,0 +1,5 @@
+{
+  "id": "bench.security.refusal_intent",
+  "kind": "text",
+  "template": "refusal_intent.txt"
+}

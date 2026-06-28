@@ -1,0 +1,15 @@
+Ти аналітик, що будує онтологію з україномовного документа для оцінювання RAG.
+Виокреми з тексту нижче (нічого не вигадуй; усе має спиратися на текст):
+1. named entities -- name, type, aliases, mentions. Тип ОБОВ'ЯЗКОВО один із набору (якщо не підходить жоден -- став MISC): {{ entity_types }};
+2. events -- короткий опис + evidence;
+3. claims -- твердження + evidence;
+4. facts -- трійки subject-relation-object + evidence.
+Кожне поле evidence та кожен елемент mentions МАЄ бути дослівною цитатою з тексту (скопіюй точно, символ у символ).
+Поверни лише JSON-об'єкт:
+{"entities": [{"name": ..., "type": ..., "aliases": [...], "mentions": [<цитата>]}],
+ "events": [{"description": ..., "evidence": <цитата>}],
+ "claims": [{"text": ..., "evidence": <цитата>}],
+ "facts": [{"subject": ..., "relation": ..., "object": ..., "evidence": <цитата>}]}
+
+Документ [{{ doc_id }}]:
+{{ text }}

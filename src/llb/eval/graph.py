@@ -16,6 +16,7 @@ from typing_extensions import TypedDict
 
 from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
 from llb.eval import common as eval_common
+from llb.prompts import PromptAugmentation, render_chat, render_text
 
 __all__ = [
     "RagState",
@@ -27,11 +28,7 @@ __all__ = [
     "run_case",
 ]
 
-SYSTEM_PROMPT = (
-    "Ти асистент, який відповідає виключно на основі наданого контексту. "
-    "Якщо відповіді немає в контексті, скажи, що інформації недостатньо. "
-    "Відповідай стисло українською мовою."
-)
+SYSTEM_PROMPT = render_text("eval.rag.system")
 
 
 class RagState(TypedDict, total=False):
@@ -48,17 +45,20 @@ class RagState(TypedDict, total=False):
 def build_messages(
     question: str, context: str, prompt_package: Any | None = None
 ) -> list[ChatMessage]:
-    system_prompt = SYSTEM_PROMPT
+    augmentation: PromptAugmentation | None = None
     if prompt_package is not None:
-        system_prompt = f"{prompt_package.system_prompt}\n\n{SYSTEM_PROMPT}".strip()
+        augmentation = PromptAugmentation(system_prefix=str(prompt_package.system_prompt))
         extra = str(prompt_package.additional_prompt).strip()
         if extra:
-            context = f"{extra}\n\n=== Поточний знайдений RAG-контекст ===\n{context}"
-    user = f"Контекст:\n<<<\n{context}\n>>>\n\nПитання: {question}\n\nВідповідь:"
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user},
-    ]
+            context = render_text(
+                "eval.rag.package_context",
+                {"additional_prompt": extra, "context": context},
+            )
+    return render_chat(
+        "eval.rag.chat",
+        {"context": context, "question": question},
+        augmentation=augmentation,
+    )
 
 
 def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:

@@ -20,6 +20,7 @@ from llb.prompt_system.budget import (
     fit_sections,
 )
 from llb.prompt_system.corpus import CorpusPackage, DocMetadata, Passage
+from llb.prompts import render_text, render_text_map
 
 # Metadata density: how much per-document summary the attached context carries.
 METADATA_NONE = "none"
@@ -37,11 +38,9 @@ SECTION_ANTHOLOGY = "anthology"
 SECTION_METADATA = "metadata"
 SECTION_GRAPH = "graph"
 
-_DEFAULT_ROLE = "Ти експертний асистент, що відповідає українською мовою на основі наданих джерел."
-_DEFAULT_INSTRUCTION = (
-    "Відповідай ВИКЛЮЧНО на основі наведеного контексту. Якщо інформації недостатньо, "
-    "прямо про це скажи. Не вигадуй фактів і не використовуй зовнішні знання."
-)
+_DEFAULT_ROLE = render_text("prompt_system.default_role")
+_DEFAULT_INSTRUCTION = render_text("prompt_system.default_instruction")
+_HEADINGS = render_text_map("prompt_system.headings")
 
 
 @dataclass(slots=True)
@@ -89,12 +88,24 @@ def _metadata_items(metadata: list[DocMetadata], density: str) -> list[SectionIt
         if not metadata:
             return []
         summary = "; ".join(f"{m['title']} ({m['doc_id']})" for m in metadata)
-        return [{"item_id": "metadata::compact", "text": f"Документи: {summary}"}]
+        return [
+            {
+                "item_id": "metadata::compact",
+                "text": render_text("prompt_system.metadata_compact", {"summary": summary}),
+            }
+        ]
     return [
         {
             "item_id": f"metadata::{m['doc_id']}",
-            "text": f"{m['title']} [{m['doc_id']}] -- {m['n_chars']} симв., "
-            f"ключові терміни: {', '.join(m['top_terms'])}",
+            "text": render_text(
+                "prompt_system.metadata_full_item",
+                {
+                    "title": m["title"],
+                    "doc_id": m["doc_id"],
+                    "n_chars": m["n_chars"],
+                    "top_terms": ", ".join(m["top_terms"]),
+                },
+            ),
         }
         for m in metadata
     ]
@@ -104,14 +115,26 @@ def _graph_items(mapping: dict[str, list[str]], style: str) -> list[SectionItem]
     if style == GRAPH_NONE or not mapping:
         return []
     return [
-        {"item_id": f"graph::{term}", "text": f"{term}: {', '.join(passage_ids)}"}
+        {
+            "item_id": f"graph::{term}",
+            "text": render_text(
+                "prompt_system.graph_item",
+                {"term": term, "passage_ids": ", ".join(passage_ids)},
+            ),
+        }
         for term, passage_ids in mapping.items()
     ]
 
 
 def _anthology_items(anthology: list[Passage], size: int) -> list[SectionItem]:
     return [
-        {"item_id": p["passage_id"], "text": f"[{p['passage_id']}] {p['text']}"}
+        {
+            "item_id": p["passage_id"],
+            "text": render_text(
+                "prompt_system.anthology_item",
+                {"passage_id": p["passage_id"], "text": p["text"]},
+            ),
+        }
         for p in anthology[: max(0, size)]
     ]
 
@@ -132,21 +155,21 @@ def _render_additional_prompt(kept: dict[str, list[SectionItem]], graph_style: s
     anthology = kept.get(SECTION_ANTHOLOGY, [])
     if anthology:
         body = "\n\n".join(item["text"] for item in anthology)
-        blocks.append(f"=== Джерела (антологія) ===\n{body}")
+        blocks.append(_section_block(_HEADINGS["anthology"], body))
     metadata = kept.get(SECTION_METADATA, [])
     if metadata:
         body = "\n".join(item["text"] for item in metadata)
-        blocks.append(f"=== Метадані документів ===\n{body}")
+        blocks.append(_section_block(_HEADINGS["metadata"], body))
     graph = kept.get(SECTION_GRAPH, [])
     if graph:
         body = "\n".join(item["text"] for item in graph)
-        heading = (
-            "=== Карта понять -> джерела ==="
-            if graph_style == GRAPH_APPENDIX
-            else "=== Поняття та джерела, що їх підтверджують ==="
-        )
-        blocks.append(f"{heading}\n{body}")
+        heading = _HEADINGS["graph_appendix" if graph_style == GRAPH_APPENDIX else "graph_inline"]
+        blocks.append(_section_block(heading, body))
     return "\n\n".join(blocks)
+
+
+def _section_block(heading: str, body: str) -> str:
+    return render_text("prompt_system.section_block", {"heading": heading, "body": body})
 
 
 def render_package(
@@ -159,7 +182,10 @@ def render_package(
     fields.validate()
     sections = build_sections(corpus, fields)
     fit = fit_sections(sections, budget.prompt_budget, tokenizer)
-    system_prompt = f"{fields.role}\n\n{fields.instruction}"
+    system_prompt = render_text(
+        "prompt_system.system_prompt",
+        {"role": fields.role, "instruction": fields.instruction},
+    )
     additional_prompt = _render_additional_prompt(fit.kept, fields.graph_reference_style)
     return PromptPackage(
         system_prompt=system_prompt,

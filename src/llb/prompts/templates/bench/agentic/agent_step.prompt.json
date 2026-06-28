@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.agent_step",
+  "kind": "text",
+  "template": "agent_step.txt"
+}

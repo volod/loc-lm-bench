@@ -1,0 +1,3 @@
+{{ intent }}
+
+Завдання: {{ task_prompt }}

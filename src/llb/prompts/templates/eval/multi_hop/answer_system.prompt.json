@@ -1,0 +1,5 @@
+{
+  "id": "eval.multi_hop.answer_system",
+  "kind": "text",
+  "template": "answer_system.txt"
+}

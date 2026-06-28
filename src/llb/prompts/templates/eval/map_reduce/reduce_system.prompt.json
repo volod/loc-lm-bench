@@ -1,0 +1,5 @@
+{
+  "id": "eval.map_reduce.reduce_system",
+  "kind": "text",
+  "template": "reduce_system.txt"
+}

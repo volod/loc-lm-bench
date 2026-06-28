@@ -1,0 +1,4 @@
+{{ additional_prompt }}
+
+=== Поточний знайдений RAG-контекст ===
+{{ context }}

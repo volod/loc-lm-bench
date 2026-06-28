@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.anthology_item",
+  "kind": "text",
+  "template": "anthology_item.txt"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "scoring.judge.faithfulness_steps",
+  "kind": "text_list",
+  "templates": [
+    "faithfulness_step_1.txt",
+    "faithfulness_step_2.txt",
+    "faithfulness_step_3.txt",
+    "faithfulness_step_4.txt"
+  ]
+}

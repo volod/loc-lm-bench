@@ -1,0 +1,5 @@
+{
+  "id": "bench.summarization.faithfulness_intent",
+  "kind": "text",
+  "template": "faithfulness_intent.txt"
+}

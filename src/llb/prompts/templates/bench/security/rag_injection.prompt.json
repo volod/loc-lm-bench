@@ -1,0 +1,5 @@
+{
+  "id": "bench.security.rag_injection",
+  "kind": "text",
+  "template": "rag_injection.txt"
+}

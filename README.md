@@ -1,9 +1,9 @@
 # loc-lm-bench -- Production Local LLM Benchmark
 
-loc-lm-bench is a production-ready benchmark for selecting open-weight LLMs on local Ukrainian RAG
-and text-analysis workloads. It evaluates candidate models on your corpus and hardware, records the
-full run bundle, and ranks results with reproducible telemetry, confidence intervals, and reviewable
-data gates.
+loc-lm-bench is a benchmark for selecting open-weight LLMs on local Ukrainian RAG
+and text-analysis workloads. It evaluates candidate models on your corpus and hardware,
+records the full run bundle, and ranks results with reproducible telemetry,
+confidence intervals, and reviewable data gates.
 
 ## Quick Start
 

@@ -1,0 +1,10 @@
+{
+  "id": "bench.harness.crewai.agent",
+  "kind": "text_map",
+  "templates": {
+    "role": "role.txt",
+    "goal": "goal.txt",
+    "backstory": "backstory.txt",
+    "expected_output": "expected_output.txt"
+  }
+}

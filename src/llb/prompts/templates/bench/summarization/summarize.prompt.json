@@ -1,0 +1,5 @@
+{
+  "id": "bench.summarization.summarize",
+  "kind": "text",
+  "template": "summarize.txt"
+}

@@ -1,0 +1,5 @@
+{
+  "id": "scoring.judge.bias_note",
+  "kind": "text",
+  "template": "bias_note.txt"
+}

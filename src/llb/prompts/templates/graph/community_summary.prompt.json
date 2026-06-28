@@ -1,0 +1,5 @@
+{
+  "id": "graph.community_summary",
+  "kind": "text",
+  "template": "community_summary.txt"
+}

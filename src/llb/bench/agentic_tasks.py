@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.agentic import ASSERT_ANSWER_CONTAINS
+from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -99,10 +100,7 @@ def search_count_task(corpus: Mapping[str, str], query: str, index: int) -> dict
     count = _doc_count(corpus, query)
     return {
         "id": f"search-count-{index:03d}",
-        "prompt": (
-            f"Скориставшись інструментом пошуку, з'ясуй, у скількох документах корпусу згадується "
-            f"«{query}». Повідом лише число."
-        ),
+        "prompt": render_text("bench.agentic_tasks.search_count", {"query": query}),
         "setup": {"corpus": dict(corpus)},
         "success": [{"kind": ASSERT_ANSWER_CONTAINS, "value": str(count)}],
     }
@@ -115,10 +113,7 @@ def search_locate_task(corpus: Mapping[str, str], query: str, index: int) -> dic
         return None
     return {
         "id": f"search-locate-{index:03d}",
-        "prompt": (
-            f"Скориставшись інструментом пошуку, знайди документ, у якому згадується «{query}», "
-            f"і повідом його ідентифікатор."
-        ),
+        "prompt": render_text("bench.agentic_tasks.search_locate", {"query": query}),
         "setup": {"corpus": dict(corpus)},
         "success": [{"kind": ASSERT_ANSWER_CONTAINS, "value": hits[0]}],
     }

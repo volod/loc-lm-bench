@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.graph_item",
+  "kind": "text",
+  "template": "graph_item.txt"
+}

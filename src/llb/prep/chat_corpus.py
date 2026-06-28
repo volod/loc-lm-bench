@@ -26,6 +26,7 @@ from typing import Any
 from llb.contracts import PlantedLabelRecord
 from llb.prep.frontier import LLMComplete, parse_json_block
 from llb.prep.text_analysis_corpus import DEFAULT_KINDS, _count_by_kind, plant_labels
+from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 
 _LOG = logging.getLogger(__name__)
@@ -91,15 +92,9 @@ def load_chat_conversations(path: Path | str) -> list[tuple[str, list[dict[str, 
 def chat_doc_prompt(topic: str, n_per_kind: int, kinds: tuple[str, ...]) -> str:
     """Synthetic CHAT-LOG planter prompt: a UA conversation (not an essay) + planted labels."""
     asks = "\n".join(f'  - "{kind}"' for kind in kinds)
-    return (
-        "Ти генеруєш синтетичний україномовний ЧАТ-ЛОГ (розмову кількох учасників) із "
-        "контрольованими фактами для оцінювання аналізу тексту.\n"
-        f"Напиши коротку розмову (6-12 реплік у форматі «Ім'я: репліка») на тему: {topic}.\n"
-        f"Поряд сплануй «закладені» мітки для категорій (рівно {n_per_kind} на категорію):\n"
-        f"{asks}\n\n"
-        'Кожна мітка -- об\'єкт з полями: "kind", "value", "aliases" (масив), '
-        '"evidence" (ДОСЛІВНА цитата з розмови), "attrs" (необов\'язково).\n'
-        'Поверни ЛИШЕ JSON {"document": <чат-лог>, "labels": [ ... ]}.\n'
+    return render_text(
+        "prep.chat_corpus.doc",
+        {"topic": topic, "n_per_kind": n_per_kind, "asks": asks},
     )
 
 
@@ -108,14 +103,14 @@ def chat_label_draft_prompt(
 ) -> str:
     """Draft text-analysis labels FROM a real chat-log document (no doc generation, no egress)."""
     asks = "\n".join(f'  - "{kind}"' for kind in kinds)
-    return (
-        "Ти укладаєш мітки для оцінювання аналізу україномовного чат-логу.\n"
-        f"З наведеної розмови виділи «закладені» мітки для категорій (до {n_per_kind} на категорію):\n"
-        f"{asks}\n\n"
-        'Кожна мітка -- об\'єкт з полями: "kind", "value" (канонічний короткий рядок), '
-        '"aliases" (масив), "evidence" (ДОСЛІВНА цитата з розмови).\n'
-        f"Чат-лог [{doc_id}]:\n{chat_text}\n\n"
-        "Поверни ЛИШЕ JSON-масив міток.\n"
+    return render_text(
+        "prep.chat_corpus.label_draft",
+        {
+            "doc_id": doc_id,
+            "chat_text": chat_text,
+            "n_per_kind": n_per_kind,
+            "asks": asks,
+        },
     )
 
 

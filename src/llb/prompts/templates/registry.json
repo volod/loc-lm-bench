@@ -1,0 +1,625 @@
+{
+  "version": 1,
+  "templates": {
+    "bench.agentic.agent_step": {
+      "kind": "text",
+      "descriptor": "bench/agentic/agent_step.prompt.json",
+      "template": {
+        "path": "bench/agentic/agent_step.txt",
+        "sha256": "46fbaf4bc5e3e03acb355dbbc819f0520f7dcc4f14429f5fe298581c2a552940"
+      }
+    },
+    "bench.agentic.history_block": {
+      "kind": "text",
+      "descriptor": "bench/agentic/history_block.prompt.json",
+      "template": {
+        "path": "bench/agentic/history_block.txt",
+        "sha256": "acd9063e73a92dcfad62219937c6db7948a0463844c51c350aef6e79c8635dbd"
+      }
+    },
+    "bench.agentic.trajectory_intent": {
+      "kind": "text",
+      "descriptor": "bench/agentic/trajectory_intent.prompt.json",
+      "template": {
+        "path": "bench/agentic/trajectory_intent.txt",
+        "sha256": "ec06b000308a12ac6730f310676f601602591ace653ce24f3fcfa948aaefd020"
+      }
+    },
+    "bench.agentic.trajectory_question": {
+      "kind": "text",
+      "descriptor": "bench/agentic/trajectory_question.prompt.json",
+      "template": {
+        "path": "bench/agentic/trajectory_question.txt",
+        "sha256": "fcab7e4e8802487fd2e0ea141bc12a563bdb5595c02804158ac00a03ce6cace0"
+      }
+    },
+    "bench.agentic_tasks.search_count": {
+      "kind": "text",
+      "descriptor": "bench/agentic_tasks/search_count.prompt.json",
+      "template": {
+        "path": "bench/agentic_tasks/search_count.txt",
+        "sha256": "99069c3a2ec38742f57a247c949812671c3f94ef8bf7a8c3f3e43f8deafe848a"
+      }
+    },
+    "bench.agentic_tasks.search_locate": {
+      "kind": "text",
+      "descriptor": "bench/agentic_tasks/search_locate.prompt.json",
+      "template": {
+        "path": "bench/agentic_tasks/search_locate.txt",
+        "sha256": "1c1ce2ece5b7ecc9be9988da6d65f97980d4fcb46f928903848ba04d4229df9f"
+      }
+    },
+    "bench.harness.crewai.agent": {
+      "kind": "text_map",
+      "descriptor": "bench/harness/crewai/agent.prompt.json",
+      "templates": {
+        "role": {
+          "path": "bench/harness/crewai/role.txt",
+          "sha256": "a90a60322d05d7a6424f4480b7bb51baa96f6d3e2e5022d90d969c355bd5eb5a"
+        },
+        "goal": {
+          "path": "bench/harness/crewai/goal.txt",
+          "sha256": "3c7a952c0ec9a36e7aed4425b149292f858ffe6533fd5efd43d40ca2b3a1445f"
+        },
+        "backstory": {
+          "path": "bench/harness/crewai/backstory.txt",
+          "sha256": "27048c9e380584ac8616d415550c62a9d4923f5b02de825f64ab5039d1283200"
+        },
+        "expected_output": {
+          "path": "bench/harness/crewai/expected_output.txt",
+          "sha256": "eda9f38cbd1f3d490a8d1ba9cc227c49ef45d5cef46d0b8f69eaa9ee06b69728"
+        }
+      }
+    },
+    "bench.security.rag_injection": {
+      "kind": "text",
+      "descriptor": "bench/security/rag_injection.prompt.json",
+      "template": {
+        "path": "bench/security/rag_injection.txt",
+        "sha256": "57710b8f06911923edf15fa1a22bbc03cd61f6175cb4115693c2c81a7fe8a418"
+      }
+    },
+    "bench.security.refusal_intent": {
+      "kind": "text",
+      "descriptor": "bench/security/refusal_intent.prompt.json",
+      "template": {
+        "path": "bench/security/refusal_intent.txt",
+        "sha256": "da2b80d95ad74361290b5cd4583638336f2c9f569c19dcb846ec0345efce5e36"
+      }
+    },
+    "bench.security.refusal_question": {
+      "kind": "text",
+      "descriptor": "bench/security/refusal_question.prompt.json",
+      "template": {
+        "path": "bench/security/refusal_question.txt",
+        "sha256": "346cb0fcc4151e17442aba23348724e1946057aeefc227db0bf27490ed252cf8"
+      }
+    },
+    "bench.structured.structured": {
+      "kind": "text",
+      "descriptor": "bench/structured/structured.prompt.json",
+      "template": {
+        "path": "bench/structured/structured.txt",
+        "sha256": "05283512201335b2c1e0b496a7a2438453b2e2a937193db65a0b7b9d1596d0cd"
+      }
+    },
+    "bench.summarization.faithfulness_intent": {
+      "kind": "text",
+      "descriptor": "bench/summarization/faithfulness_intent.prompt.json",
+      "template": {
+        "path": "bench/summarization/faithfulness_intent.txt",
+        "sha256": "a0a3317a9957d7d60f845ff3207da978dc9504079a70c7d482c3fe745373a2b2"
+      }
+    },
+    "bench.summarization.summarize": {
+      "kind": "text",
+      "descriptor": "bench/summarization/summarize.prompt.json",
+      "template": {
+        "path": "bench/summarization/summarize.txt",
+        "sha256": "586ec2d40e35628273a703dfc6ed7c377d4c4775082e6d6d872a7812cc1e779d"
+      }
+    },
+    "bench.text_analysis.analysis": {
+      "kind": "text",
+      "descriptor": "bench/text_analysis/analysis.prompt.json",
+      "template": {
+        "path": "bench/text_analysis/analysis.txt",
+        "sha256": "ec237f093496e8ab795fbafa2dd0209000c8ea3f73382e52de808e1cf47d9805"
+      }
+    },
+    "bench.text_analysis.judge_intents": {
+      "kind": "text_map",
+      "descriptor": "bench/text_analysis/judge_intents.prompt.json",
+      "templates": {
+        "narrative": {
+          "path": "bench/text_analysis/intent_narrative.txt",
+          "sha256": "5bf4d0ca4aaf5d6d28844c807d5af663da49c1391e632893eab7ed4f748aa315"
+        },
+        "insight": {
+          "path": "bench/text_analysis/intent_insight.txt",
+          "sha256": "71596d0891186e7710c614c061b787e75a53110ca792176a17da36ad776f4875"
+        },
+        "long_doc": {
+          "path": "bench/text_analysis/intent_long_doc.txt",
+          "sha256": "2d4ab126fdf92b7caa4cf19bdcd08f213c589e6408f6445c54da5da922f173e9"
+        }
+      }
+    },
+    "bench.text_analysis.kind_labels": {
+      "kind": "text_map",
+      "descriptor": "bench/text_analysis/kind_labels.prompt.json",
+      "templates": {
+        "key_fact": {
+          "path": "bench/text_analysis/kind_key_fact.txt",
+          "sha256": "d23f398e17d1e0acbdaf75f26ffe270d5abe34980fff2229712d12c4e21e2276"
+        },
+        "entity": {
+          "path": "bench/text_analysis/kind_entity.txt",
+          "sha256": "caa871fe506577ab13b80b55af74a2e5ca0dd1e172c074ebc6cd7e756d900e5d"
+        },
+        "topic": {
+          "path": "bench/text_analysis/kind_topic.txt",
+          "sha256": "107da905dec701b817bdca852fd9657ab7ed87ff3a033dd9ee6b573653d9d1ac"
+        },
+        "trend": {
+          "path": "bench/text_analysis/kind_trend.txt",
+          "sha256": "ab6322e31a538fe96aaf802e379238490c59b29df1984a1689f50a7f671da304"
+        },
+        "risk": {
+          "path": "bench/text_analysis/kind_risk.txt",
+          "sha256": "43e1eb054f2723e58316262d030e2b8bb19e2a51ee4c58532c60fbae98937ffc"
+        },
+        "decision": {
+          "path": "bench/text_analysis/kind_decision.txt",
+          "sha256": "0e03e56cfbf27b4aefbe81707d3eff7e655199ea255d657fd3629fa042537bdc"
+        },
+        "contradiction": {
+          "path": "bench/text_analysis/kind_contradiction.txt",
+          "sha256": "46b78cba52893873c087dd180282c6f599080858ff64031ba84a3f262b68d634"
+        },
+        "narrative": {
+          "path": "bench/text_analysis/kind_narrative.txt",
+          "sha256": "6fc002a43451a047641213a494e9dc6ef6592d4cb0b366133cc4401ab6c2a4df"
+        },
+        "insight": {
+          "path": "bench/text_analysis/kind_insight.txt",
+          "sha256": "2c4d8be3c80be24f898fedc9febf8ab98f979740e159e5127c46b8b4df8ade6e"
+        }
+      }
+    },
+    "bench.text_analysis.long_doc_default_question": {
+      "kind": "text",
+      "descriptor": "bench/text_analysis/long_doc_default_question.prompt.json",
+      "template": {
+        "path": "bench/text_analysis/long_doc_default_question.txt",
+        "sha256": "31a91c6787b2b43514a73466af4b51e6ceed07ca8a26e4c6695e878ba4a316d6"
+      }
+    },
+    "bench.tooling.text_tool_prompt": {
+      "kind": "text",
+      "descriptor": "bench/tooling/text_tool_prompt.prompt.json",
+      "template": {
+        "path": "bench/tooling/text_tool_prompt.txt",
+        "sha256": "5c55b6a83297585d1ea091109df5335f829431a7f70725efd8ebe4fa1f1516af"
+      }
+    },
+    "eval.map_reduce.map_chat": {
+      "kind": "chat",
+      "descriptor": "eval/map_reduce/map_chat.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/map_reduce/map_system.txt",
+            "sha256": "548f99eed6219515435bb8d130e7c1a4dc6abe31948870250ff093d0514c19e5"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/map_reduce/map_user.txt",
+            "sha256": "982623953d13facf813ff1ed90a170d77558a40b05d4021fab54ef2526dcd643"
+          }
+        }
+      ]
+    },
+    "eval.map_reduce.map_system": {
+      "kind": "text",
+      "descriptor": "eval/map_reduce/map_system.prompt.json",
+      "template": {
+        "path": "eval/map_reduce/map_system.txt",
+        "sha256": "548f99eed6219515435bb8d130e7c1a4dc6abe31948870250ff093d0514c19e5"
+      }
+    },
+    "eval.map_reduce.map_text": {
+      "kind": "text",
+      "descriptor": "eval/map_reduce/map_text.prompt.json",
+      "template": {
+        "path": "eval/map_reduce/map_text.txt",
+        "sha256": "2fd8fa06b10600eb60e868276b0126b7a3459ab7fdf13098728d724c6530e159"
+      }
+    },
+    "eval.map_reduce.reduce_chat": {
+      "kind": "chat",
+      "descriptor": "eval/map_reduce/reduce_chat.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/map_reduce/reduce_system.txt",
+            "sha256": "03fead7ab6005795fb1529bf12aef1ede72ef7f56ee2aed33f983b5ae075c34f"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/map_reduce/reduce_user.txt",
+            "sha256": "ebbe48360acb8fd63795d35f602c46f0d347ed83cefa1185cae42ddc3470ba37"
+          }
+        }
+      ]
+    },
+    "eval.map_reduce.reduce_system": {
+      "kind": "text",
+      "descriptor": "eval/map_reduce/reduce_system.prompt.json",
+      "template": {
+        "path": "eval/map_reduce/reduce_system.txt",
+        "sha256": "03fead7ab6005795fb1529bf12aef1ede72ef7f56ee2aed33f983b5ae075c34f"
+      }
+    },
+    "eval.map_reduce.reduce_text": {
+      "kind": "text",
+      "descriptor": "eval/map_reduce/reduce_text.prompt.json",
+      "template": {
+        "path": "eval/map_reduce/reduce_text.txt",
+        "sha256": "2215c08bbb1c1309133478c0c8bbf13e2055a40fa5e8a42a2a073869f9521ddb"
+      }
+    },
+    "eval.multi_hop.answer_chat": {
+      "kind": "chat",
+      "descriptor": "eval/multi_hop/answer_chat.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/multi_hop/answer_system.txt",
+            "sha256": "970bcac91d52ac5588ebed78b5f7e0aa70122b8a6ca19c0f2204df331ea36d6e"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/multi_hop/answer_user.txt",
+            "sha256": "92659b05749360b7efb23b9a2e305f6d9b2c836c5790eebdaccc82491284be07"
+          }
+        }
+      ]
+    },
+    "eval.multi_hop.answer_system": {
+      "kind": "text",
+      "descriptor": "eval/multi_hop/answer_system.prompt.json",
+      "template": {
+        "path": "eval/multi_hop/answer_system.txt",
+        "sha256": "970bcac91d52ac5588ebed78b5f7e0aa70122b8a6ca19c0f2204df331ea36d6e"
+      }
+    },
+    "eval.multi_hop.controller_chat": {
+      "kind": "chat",
+      "descriptor": "eval/multi_hop/controller_chat.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/multi_hop/controller_system.txt",
+            "sha256": "4340848fb7eb39cb3dcd64651857c8b07af20143c0cfab4a8fdb7782a24ba31e"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/multi_hop/controller_user.txt",
+            "sha256": "6a9953071f1dbc4eab245b6f1a7549d84281e54b8eb2ff5e39ca82bb865b50f2"
+          }
+        }
+      ]
+    },
+    "eval.multi_hop.controller_system": {
+      "kind": "text",
+      "descriptor": "eval/multi_hop/controller_system.prompt.json",
+      "template": {
+        "path": "eval/multi_hop/controller_system.txt",
+        "sha256": "4340848fb7eb39cb3dcd64651857c8b07af20143c0cfab4a8fdb7782a24ba31e"
+      }
+    },
+    "eval.rag.chat": {
+      "kind": "chat",
+      "descriptor": "eval/rag/chat.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/system.txt",
+            "sha256": "a7574f735829fddc4ad6b953b232acf71d081251ef2594ef4122fd9ca2c729ac"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/user.txt",
+            "sha256": "412b37385f500443e3daa2d4a2347d67ee20ed11de6cab3c24ef98a5b6f2a02e"
+          }
+        }
+      ]
+    },
+    "eval.rag.package_context": {
+      "kind": "text",
+      "descriptor": "eval/rag/package_context.prompt.json",
+      "template": {
+        "path": "eval/rag/package_context.txt",
+        "sha256": "281e443f4553ebe2beb845a65aded77e7cd61e5ad9713c33a8b7565f0bbc36ac"
+      }
+    },
+    "eval.rag.system": {
+      "kind": "text",
+      "descriptor": "eval/rag/system.prompt.json",
+      "template": {
+        "path": "eval/rag/system.txt",
+        "sha256": "a7574f735829fddc4ad6b953b232acf71d081251ef2594ef4122fd9ca2c729ac"
+      }
+    },
+    "graph.community_summary": {
+      "kind": "text",
+      "descriptor": "graph/community_summary.prompt.json",
+      "template": {
+        "path": "graph/community_summary.txt",
+        "sha256": "81a3b21545e9abaf3934b1968380c83314d66be51ff795ffef97e234307c8c01"
+      }
+    },
+    "prep.chat_corpus.doc": {
+      "kind": "text",
+      "descriptor": "prep/chat_corpus/doc.prompt.json",
+      "template": {
+        "path": "prep/chat_corpus/doc.txt",
+        "sha256": "cf25dbd990ec3f564aaa4d50a9ccc0e476efdc42f02d4114099e36fc5b8c9059"
+      }
+    },
+    "prep.chat_corpus.label_draft": {
+      "kind": "text",
+      "descriptor": "prep/chat_corpus/label_draft.prompt.json",
+      "template": {
+        "path": "prep/chat_corpus/label_draft.txt",
+        "sha256": "656307c9465419c83d8df0ce475789c032408f066e86f44cb3017e028c38b7b7"
+      }
+    },
+    "prep.cross_check.verify": {
+      "kind": "text",
+      "descriptor": "prep/cross_check/verify.prompt.json",
+      "template": {
+        "path": "prep/cross_check/verify.txt",
+        "sha256": "f825e1264fecd7dc1649cbe44a83f71cb3388a14f51a65dbd8db9719cb973610"
+      }
+    },
+    "prep.frontier.goldset_draft": {
+      "kind": "text",
+      "descriptor": "prep/frontier/goldset_draft.prompt.json",
+      "template": {
+        "path": "prep/frontier/goldset_draft.txt",
+        "sha256": "d5c7af25486bc30d16cd175c39803fe73fe6142d54cc549af7f947ed60b04dad"
+      }
+    },
+    "prep.frontier.synthetic_doc": {
+      "kind": "text",
+      "descriptor": "prep/frontier/synthetic_doc.prompt.json",
+      "template": {
+        "path": "prep/frontier/synthetic_doc.txt",
+        "sha256": "f0444bdcf4492cb8e1284742a7685e29ce8cb3ec28803e6525a9d123eae23be8"
+      }
+    },
+    "prep.ontology.draft": {
+      "kind": "text",
+      "descriptor": "prep/ontology/draft.prompt.json",
+      "template": {
+        "path": "prep/ontology/draft.txt",
+        "sha256": "226436707fea5b8bf6ad927ed77d7ae9a290d57bde41d2da81775e4e91155fd2"
+      }
+    },
+    "prep.ontology.extraction": {
+      "kind": "text",
+      "descriptor": "prep/ontology/extraction.prompt.json",
+      "template": {
+        "path": "prep/ontology/extraction.txt",
+        "sha256": "fdcbe47785af6f2d8b8b87042589d78bed1f7fd4fa7293849230031d3e76101f"
+      }
+    },
+    "prep.text_analysis_corpus.doc": {
+      "kind": "text",
+      "descriptor": "prep/text_analysis_corpus/doc.prompt.json",
+      "template": {
+        "path": "prep/text_analysis_corpus/doc.txt",
+        "sha256": "e7f5a604b2f90c98ee33c74b690afe2ed7c7f3012e2e33cb172b434fbcf2bec5"
+      }
+    },
+    "prompt_system.anthology_item": {
+      "kind": "text",
+      "descriptor": "prompt_system/anthology_item.prompt.json",
+      "template": {
+        "path": "prompt_system/anthology_item.txt",
+        "sha256": "3db846b1ba97161636a83414b8288925e8a39cb300295196646ed201bc6466d8"
+      }
+    },
+    "prompt_system.default_instruction": {
+      "kind": "text",
+      "descriptor": "prompt_system/default_instruction.prompt.json",
+      "template": {
+        "path": "prompt_system/default_instruction.txt",
+        "sha256": "614f1381f1c453ae4f407c7f21dadc6fa1edcf21163119c97a6417c51bcf71bd"
+      }
+    },
+    "prompt_system.default_role": {
+      "kind": "text",
+      "descriptor": "prompt_system/default_role.prompt.json",
+      "template": {
+        "path": "prompt_system/default_role.txt",
+        "sha256": "81cc3e4e4d8c5c0a844408c77b30c234f0b61c380c0b390c28ae6d67601fc195"
+      }
+    },
+    "prompt_system.graph_item": {
+      "kind": "text",
+      "descriptor": "prompt_system/graph_item.prompt.json",
+      "template": {
+        "path": "prompt_system/graph_item.txt",
+        "sha256": "a0a7254cc02a70fc4cf9964602b05d96ddc38fda29b73c5ced7b849ebced83f1"
+      }
+    },
+    "prompt_system.headings": {
+      "kind": "text_map",
+      "descriptor": "prompt_system/headings.prompt.json",
+      "templates": {
+        "anthology": {
+          "path": "prompt_system/heading_anthology.txt",
+          "sha256": "45f3ca6176eac0d8b7bd71503b12fd8c4388dc45bfa260db515f37256efcae98"
+        },
+        "metadata": {
+          "path": "prompt_system/heading_metadata.txt",
+          "sha256": "e7a9d785943902b30551e90d80b698ab9543fb0edcc021b99f000ebe611f728c"
+        },
+        "graph_inline": {
+          "path": "prompt_system/heading_graph_inline.txt",
+          "sha256": "27f09a45b77f603b2ab4382c268cd2f1dce70ecaf7a66f91e84a3b4a36dd3a6d"
+        },
+        "graph_appendix": {
+          "path": "prompt_system/heading_graph_appendix.txt",
+          "sha256": "e73adacf697c1a66c6792374cd55379991cb2343a3e9e33cca87f2892b899a6a"
+        }
+      }
+    },
+    "prompt_system.metadata_compact": {
+      "kind": "text",
+      "descriptor": "prompt_system/metadata_compact.prompt.json",
+      "template": {
+        "path": "prompt_system/metadata_compact.txt",
+        "sha256": "c56955844182dedf889cbd8d2b91e21b9e167853d8711771f3e3f363f235a9bb"
+      }
+    },
+    "prompt_system.metadata_full_item": {
+      "kind": "text",
+      "descriptor": "prompt_system/metadata_full_item.prompt.json",
+      "template": {
+        "path": "prompt_system/metadata_full_item.txt",
+        "sha256": "a5cf60c2fb3f7f6482b1687998b1bc42c97049dd8a4ed86de9b21f53b5080b6d"
+      }
+    },
+    "prompt_system.section_block": {
+      "kind": "text",
+      "descriptor": "prompt_system/section_block.prompt.json",
+      "template": {
+        "path": "prompt_system/section_block.txt",
+        "sha256": "bc768cdfc9a5e9877e998520fdbd59bdd28abea3884b7ceefb111a6e777a27c7"
+      }
+    },
+    "prompt_system.system_prompt": {
+      "kind": "text",
+      "descriptor": "prompt_system/system_prompt.prompt.json",
+      "template": {
+        "path": "prompt_system/system_prompt.txt",
+        "sha256": "3e20fe761be86b6befaa1a134336d3d2d55dd4fe6bfe5afe1f72fe993a924033"
+      }
+    },
+    "scoring.judge.bias_note": {
+      "kind": "text",
+      "descriptor": "scoring/judge/bias_note.prompt.json",
+      "template": {
+        "path": "scoring/judge/bias_note.txt",
+        "sha256": "a38c1ad6e5b7fa3ed1a727c3e00962efce52d0699d11012549b337afdbc4c508"
+      }
+    },
+    "scoring.judge.evaluation_results": {
+      "kind": "text",
+      "descriptor": "scoring/judge/evaluation_results.prompt.json",
+      "template": {
+        "path": "scoring/judge/evaluation_results.txt",
+        "sha256": "0963077d2bda073ea5d32a7adbc9c9e15faeacf6079ddded7062afb0e6e40abb"
+      }
+    },
+    "scoring.judge.faithfulness_steps": {
+      "kind": "text_list",
+      "descriptor": "scoring/judge/faithfulness_steps.prompt.json",
+      "templates": [
+        {
+          "path": "scoring/judge/faithfulness_step_1.txt",
+          "sha256": "af64448a5efa068d0065620993700855a222a57183853c40632d9e681ca14e86"
+        },
+        {
+          "path": "scoring/judge/faithfulness_step_2.txt",
+          "sha256": "824a4e93896bc6f55504c1e4cd1ef6c22a526e662ed51238d307f6c0c2b06b7e"
+        },
+        {
+          "path": "scoring/judge/faithfulness_step_3.txt",
+          "sha256": "6fca2002aebd6d7bb05c7766047756afe007e84b21bb0b5f9e4ad7aef31c74a6"
+        },
+        {
+          "path": "scoring/judge/faithfulness_step_4.txt",
+          "sha256": "af9415b280533e0d774b1508d6f7ed8461c26771c2bf17678e0f6ea2f79851ca"
+        }
+      ]
+    },
+    "scoring.judge.parameter_labels": {
+      "kind": "text_map",
+      "descriptor": "scoring/judge/parameter_labels.prompt.json",
+      "templates": {
+        "Actual Output": {
+          "path": "scoring/judge/label_actual_output.txt",
+          "sha256": "5060061e83e9f23c77b1384da969f22b8091052d2c1426f090b85968d7e275cc"
+        },
+        "Retrieval Context": {
+          "path": "scoring/judge/label_retrieval_context.txt",
+          "sha256": "77ee8cccf37548fb17c015bb9421a0d45d02c8722847eb05fb219079ba439642"
+        },
+        "Input": {
+          "path": "scoring/judge/label_input.txt",
+          "sha256": "f62ae795c596dabcef26b3791c9a7670969cc9716a2eb0b9137ef243e476c3b3"
+        }
+      }
+    },
+    "scoring.judge.relevancy_steps": {
+      "kind": "text_list",
+      "descriptor": "scoring/judge/relevancy_steps.prompt.json",
+      "templates": [
+        {
+          "path": "scoring/judge/relevancy_step_1.txt",
+          "sha256": "f5a2d427662d779db21a8ddfd713f98070c3115157ce32c43d3be1b96d367892"
+        },
+        {
+          "path": "scoring/judge/relevancy_step_2.txt",
+          "sha256": "cd55d1cff7f69e09bcd10b77e046528dec54c672e4f09e010536f837bd3394f0"
+        },
+        {
+          "path": "scoring/judge/relevancy_step_3.txt",
+          "sha256": "f4b3f102b5ba8ce4105b066db730f4b99fc3a30289379110bf1ff1a04ad3a42d"
+        },
+        {
+          "path": "scoring/judge/relevancy_step_4.txt",
+          "sha256": "2056aadc14afae2b4d4e02c8d02cb0fd6f2b5d761dbe8bb334324be0ece59359"
+        }
+      ]
+    },
+    "telemetry.throughput": {
+      "kind": "text_list",
+      "descriptor": "telemetry/throughput/throughput.prompt.json",
+      "templates": [
+        {
+          "path": "telemetry/throughput/author_rights.txt",
+          "sha256": "d782133e4272a921b68778d0a3e0e68eb1ed235530c33eac18562e0dde357d29"
+        },
+        {
+          "path": "telemetry/throughput/trademark_steps.txt",
+          "sha256": "91c833b123c15fb6f38183cb555ebde4a77e4b76039cfc047248928423f3e813"
+        },
+        {
+          "path": "telemetry/throughput/service_contract.txt",
+          "sha256": "43e8a9012d240894814ad88612b6cc3eae361117720e1fc6d6323c78f0a269d8"
+        }
+      ]
+    }
+  }
+}

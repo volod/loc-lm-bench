@@ -39,6 +39,7 @@ from llb.contracts import (
     SummarizationCaseRow,
 )
 from llb.eval.common import EMPTY, OK
+from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_SUMMARIZATION, ModelResult, bootstrap_mean_ci
 
@@ -46,7 +47,7 @@ _LOG = logging.getLogger(__name__)
 
 # The judge "question" for faithfulness: DeepEval faithfulness compares the answer (summary)
 # against the retrieval context (the source document); a fixed UA intent frames the task.
-_FAITHFULNESS_INTENT = "Підсумуй документ, не додаючи фактів, яких у ньому немає."
+_FAITHFULNESS_INTENT = render_text("bench.summarization.faithfulness_intent")
 
 METHOD = "summarization"
 _SENTENCE_SPLIT = re.compile(r"[.!?\n]+")
@@ -97,11 +98,7 @@ def reference_coverage(reference: str, candidate: str, similarity: ta.Similarity
 
 
 def summarize_prompt(document: str) -> str:
-    return (
-        "Стисло підсумуй наведений документ українською мовою (2-4 речення), "
-        "зберігаючи ключові факти.\n\n"
-        f"Документ:\n{document}\n\nПідсумок:"
-    )
+    return render_text("bench.summarization.summarize", {"document": document})
 
 
 def _faithfulness_records(

@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic_tasks.search_locate",
+  "kind": "text",
+  "template": "search_locate.txt"
+}

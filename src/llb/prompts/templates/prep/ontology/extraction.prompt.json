@@ -1,0 +1,5 @@
+{
+  "id": "prep.ontology.extraction",
+  "kind": "text",
+  "template": "extraction.txt"
+}

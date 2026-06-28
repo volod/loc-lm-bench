@@ -15,6 +15,7 @@ import logging
 
 from llb.graph.model import KnowledgeGraph
 from llb.prep.frontier import LLMComplete
+from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -28,13 +29,7 @@ def community_summary_prompt(names: list[str], relations: list[str]) -> str:
     """Ask for a short Ukrainian narrative summary of one community's entities + relations."""
     entities = ", ".join(names)
     facts = "; ".join(relations) if relations else "(без явних відношень)"
-    return (
-        "Ти аналітик. Нижче -- спільнота пов'язаних сутностей з україномовного корпусу.\n"
-        f"Сутності: {entities}.\n"
-        f"Відношення: {facts}.\n"
-        "Стисло (1-2 речення) опиши спільну тему цієї спільноти українською. "
-        "Не вигадуй фактів поза наведеними."
-    )
+    return render_text("graph.community_summary", {"entities": entities, "facts": facts})
 
 
 def summarize_communities(

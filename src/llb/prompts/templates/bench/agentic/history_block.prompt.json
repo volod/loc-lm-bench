@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.history_block",
+  "kind": "text",
+  "template": "history_block.txt"
+}

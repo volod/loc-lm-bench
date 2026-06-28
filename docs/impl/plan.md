@@ -12,7 +12,7 @@ the topic files under [`current/`](current/). The product spec lives in
   helpers so the session loops can read as orchestration.
 - Split the remaining benchmark-runner hotspots in `llb.bench.text_analysis`,
   `llb.bench.summarization`, `llb.bench.agentic`, and `llb.scoring.tooling`. Keep each runner's
-  prompt construction, model call, scoring, and artifact writing in named helper functions.
+  model call, scoring, and artifact writing in named helper functions.
 
 ## Adding Future Tasks
 

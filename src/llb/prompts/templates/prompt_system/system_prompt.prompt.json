@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.system_prompt",
+  "kind": "text",
+  "template": "system_prompt.txt"
+}

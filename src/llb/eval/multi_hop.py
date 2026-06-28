@@ -21,6 +21,7 @@ from typing_extensions import TypedDict
 
 from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
 from llb.eval.common import RETRIEVAL_MISS, classify_response, format_context
+from llb.prompts import render_chat, render_text
 
 # Controller decisions.
 CONTINUE = "continue"
@@ -32,18 +33,11 @@ NEXT_MARKER = "ДАЛІ:"  # need more -> the text after the colon is the next s
 
 DEFAULT_MAX_HOPS = 3
 
-CONTROLLER_SYSTEM_PROMPT = (
-    "Ти плануєш багатокроковий пошук відповіді. Тобі дано питання та вже зібрані факти. "
-    f"Якщо зібраних фактів достатньо, щоб відповісти, напиши рівно: {DONE_MARKER}. "
-    f"Якщо ще чогось бракує, напиши: {NEXT_MARKER} <наступний підзапит для пошуку>. "
-    "Постав лише ОДИН наступний підзапит і нічого більше."
+CONTROLLER_SYSTEM_PROMPT = render_text(
+    "eval.multi_hop.controller_system",
+    {"done_marker": DONE_MARKER, "next_marker": NEXT_MARKER},
 )
-
-ANSWER_SYSTEM_PROMPT = (
-    "Ти відповідаєш на питання, спираючись ВИКЛЮЧНО на зібрані факти. "
-    "Якщо їх недостатньо, скажи, що інформації недостатньо. "
-    "Відповідай стисло українською мовою."
-)
+ANSWER_SYSTEM_PROMPT = render_text("eval.multi_hop.answer_system")
 
 
 class MultiHopState(TypedDict, total=False):
@@ -94,20 +88,23 @@ def _chunk_key(chunk: ChunkRecord) -> str:
 
 def build_controller_messages(question: str, gathered: list[ChunkRecord]) -> list[ChatMessage]:
     facts = format_context(gathered) if gathered else "(поки що нічого не знайдено)"
-    user = f"Питання: {question}\n\nЗібрані факти:\n<<<\n{facts}\n>>>"
-    return [
-        {"role": "system", "content": CONTROLLER_SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+    return render_chat(
+        "eval.multi_hop.controller_chat",
+        {
+            "done_marker": DONE_MARKER,
+            "next_marker": NEXT_MARKER,
+            "question": question,
+            "facts": facts,
+        },
+    )
 
 
 def build_answer_messages(question: str, gathered: list[ChunkRecord]) -> list[ChatMessage]:
     facts = format_context(gathered)
-    user = f"Зібрані факти:\n<<<\n{facts}\n>>>\n\nПитання: {question}\n\nВідповідь:"
-    return [
-        {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+    return render_chat(
+        "eval.multi_hop.answer_chat",
+        {"question": question, "facts": facts},
+    )
 
 
 def make_retrieve_node(store: Any, k: int) -> Callable[[MultiHopState], MultiHopState]:

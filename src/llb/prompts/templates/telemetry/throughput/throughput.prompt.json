@@ -1,0 +1,9 @@
+{
+  "id": "telemetry.throughput",
+  "kind": "text_list",
+  "templates": [
+    "author_rights.txt",
+    "trademark_steps.txt",
+    "service_contract.txt"
+  ]
+}

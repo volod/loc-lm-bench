@@ -1,0 +1,5 @@
+{
+  "id": "bench.text_analysis.analysis",
+  "kind": "text",
+  "template": "analysis.txt"
+}
