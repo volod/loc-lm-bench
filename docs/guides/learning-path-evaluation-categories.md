@@ -46,7 +46,7 @@ design questions answer themselves once you know them:
    first; every new category copies its shape.
 2. **Objective metric first, model-judge second.** The headline of every category is an *objective*
    check against STRUCTURED ground-truth labels (planted by the synthetic-corpus generator, which
-   is never also the judge). An LLM judge enters only for residual free-form quality, and only once
+   is never also the judge). An LLM judge enters only for free-form quality, and only once
    it has been *calibrated against humans* (see the
    [human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md)). Until then, objective
    correctness ranks alone.
@@ -106,7 +106,7 @@ themselves.
   <https://arxiv.org/abs/2210.03350> for the "ask a follow-up" controller idea.
 
 ### In this repo
-`src/llb/eval/{common,map_reduce,multi_hop}.py` (delivered, unit-tested). The shared status
+`src/llb/eval/{common,map_reduce,multi_hop}.py`. The shared status
 taxonomy, refusal markers, and context formatting live in `eval/common.py` and are reused by all
 three templates.
 
@@ -534,7 +534,7 @@ learning path is done.
 By session 8 you can place any capability on the right tier, name its objective metric and its
 verified-data gate, and explain why graph retrieval preserves source spans. The deepest single
 source remains the [design spec](../design/spec.md); the [current
-state](../impl/current.md)
-maps each delivered module to its behavior; and the
+implementation](../impl/current.md)
+maps each current module to its behavior; and the
 [human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md) covers the human gates that
 make the judged metrics trustworthy across every category above.

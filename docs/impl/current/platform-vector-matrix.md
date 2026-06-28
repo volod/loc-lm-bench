@@ -1,201 +1,117 @@
-# extended workflow Platform Matrix Current State
+# Platform Matrix And Vector Stores
 
-## platform matrix 16 GB CUDA Host Backend Matrix
+The platform matrix compares a logical model family across serving backends on the same host and
+gold split. The vector-store matrix compares local vector backends under the same chunking,
+embedding, and source-span retrieval metric.
 
-Host:
-- GPU: NVIDIA GeForce RTX 4060 Ti, 16380 MiB
-- Driver: 595.71.05
-- Tier detector: `gpu_tier=16`
-- Post-run state: 15281 MiB free, 25.83 W draw
+## Backend Matrix
 
-Requested base was "Gemma 4 27B". No exact `gemma4:27b` tag or matching vLLM/llama.cpp artifact
-was available locally. The comparable common base for this host is Gemma 4 E4B IT:
-- Ollama: `gemma4:e4b`
-- vLLM: `google/gemma-4-E4B-it-qat-w4a16-ct`
-- llama.cpp: `hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it`
+`make platform-matrix` runs the same logical base across Ollama, vLLM, and llama.cpp when matching
+artifacts are available for the host.
 
-The larger Gemma 4 12B common-base path exists for future reruns:
-- vLLM: `google/gemma-4-12B-it-qat-w4a16-ct`
-- GGUF backends: `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf`
+```bash
+make platform-matrix
+```
 
-Run protocol:
+Useful overrides:
 
-    make build-index
-    .venv/bin/python -m llb.main run-eval --model gemma4:e4b --backend ollama \
-      --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-      --split final --limit 20 --telemetry
-    .venv/bin/python -m llb.main run-eval \
-      --model google/gemma-4-E4B-it-qat-w4a16-ct --backend vllm \
-      --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-      --split final --limit 20 --telemetry --max-model-len 8192 \
-      --gpu-memory-utilization 0.80 --evict
-    .venv/bin/python -m llb.main run-eval \
-      --model hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it --backend llamacpp \
-      --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-      --split final --limit 20 --telemetry --max-model-len 8192 --gpu-layers -1
+```text
+PLATFORM_MATRIX_OLLAMA_MODEL
+PLATFORM_MATRIX_VLLM_MODEL
+PLATFORM_MATRIX_LLAMACPP_MODEL
+PLATFORM_MATRIX_MAX_MODEL_LEN
+PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION
+PLATFORM_MATRIX_LIMIT
+```
 
-Repeatable command:
+The matrix uses `run-eval --telemetry`, so each row records objective quality, reliability,
+tokens/sec, VRAM, load time, power, tokens per watt, and quality per watt.
 
-    make platform-matrix
+The current default common base for a 16 GB CUDA host is Gemma 4 E4B IT:
 
-Override `PLATFORM_MATRIX_OLLAMA_MODEL`, `PLATFORM_MATRIX_VLLM_MODEL`, `PLATFORM_MATRIX_LLAMACPP_MODEL`,
-`PLATFORM_MATRIX_MAX_MODEL_LEN`, `PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION`, and `PLATFORM_MATRIX_LIMIT` for another common base.
+- Ollama: `gemma4:e4b`;
+- vLLM: `google/gemma-4-E4B-it-qat-w4a16-ct`;
+- llama.cpp: `hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it`.
 
-Results:
+If a requested larger base has no matching artifact for one backend, prefer an actually comparable
+common base over mixing unrelated checkpoints.
 
-| Backend | Model | Objective | Reliability | Tok/s | Peak VRAM MB | Mean W | Tok/W | Quality/W |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ollama | `gemma4:e4b` | 0.4203 | 0.750 | 59.27 | 10930 | 119.28 | 0.4969 | 0.2089 |
-| vllm | `google/gemma-4-E4B-it-qat-w4a16-ct` | 0.4091 | 1.000 | 58.24 | 14107 | 106.43 | 0.5472 | 0.2239 |
-| llamacpp | `hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it` | 0.4752 | 0.850 | 61.70 | 5517 | 109.24 | 0.5648 | 0.2684 |
+## Power Metrics
 
-All three cells used the same final split (`n=20`), same FAISS RAG index, same retrieval context
-(`recall@5=0.900`, `MRR=0.7875`), and telemetry enabled. The judge was demoted because this run did
-not pass a `JUDGE_RHO`; objective scores are the ranking signal.
+When `nvidia-smi` is reachable, telemetry records:
 
-Manifest refs:
-- Ollama: `.data/run-eval/20260627T045419.834658Z-048bf1ae269b/manifest.json`
-- vLLM: `.data/run-eval/20260627T045636.798744Z-4c0a336fd8fc/manifest.json`
-- llama.cpp: `.data/run-eval/20260627T050051.621737Z-21ef2333875a/manifest.json`
+- `telemetry.mean_power_w`;
+- `telemetry.peak_power_w`;
+- `telemetry.power_samples`;
+- `telemetry.tokens_per_watt`;
+- `metrics.mean_power_w`;
+- `metrics.tokens_per_watt`;
+- `metrics.quality_per_watt`.
 
-## platform matrix Power Metric
+`quality_per_watt = objective_score * tokens_per_s / mean_power_w`. Keep raw
+`tokens_per_watt` for serving efficiency and `quality_per_watt` for benchmark efficiency.
 
-`run-eval --telemetry` now samples GPU power during the fixed telemetry prompts when `nvidia-smi`
-is reachable. New manifest fields:
-- `telemetry.mean_power_w`
-- `telemetry.peak_power_w`
-- `telemetry.power_samples`
-- `telemetry.tokens_per_watt`
-- `metrics.mean_power_w`
-- `metrics.tokens_per_watt`
-- `metrics.quality_per_watt`
+## GPU-Class Configs
 
-`quality_per_watt = objective_score * tokens_per_s / mean_power_w`. This is a quality-weighted
-throughput-per-watt metric; raw `tokens_per_watt` remains available for pure serving efficiency.
+`detect-gpu-vram` and `gen-serving-config` generate host-specific serving scripts and run configs
+under `$DATA_DIR/llb/serving/gpu-<tier>gb/`.
 
-## llama.cpp Binary Resolution
+```bash
+llb detect-gpu-vram
+llb gen-serving-config
+llb gen-serving-config --gpu-gb 12
+llb gen-serving-config --gpu-gb 24
+llb gen-serving-config --gpu-gb 32
+```
 
-The llama.cpp launcher now resolves the project-managed binary at
-`$DATA_DIR/llb/llamacpp/build/bin/llama-server` before falling back to `PATH`. This lets
-`run-eval --backend llamacpp` work after `make build-llamacpp` without requiring a shell `PATH`
-edit.
+The generated directory contains `tier.json`, serve scripts, and `run-eval` YAML/scripts. This path
+lets another physical GPU host contribute comparable manifest rows without hardcoding host paths.
 
-## GPU-Class Matrix Extension
+## llama.cpp Binary Lookup
 
-The GPU-class matrix is an operator-run extension path, not a finite plan item. This host validates
-the 16 GB row; each additional physical GPU host contributes its own comparable manifest row.
+The llama.cpp launcher first checks the project-managed binary under
+`$DATA_DIR/llb/llamacpp/build/bin/llama-server`, then falls back to `PATH`. This lets
+`make build-llamacpp` feed `run-eval --backend llamacpp` without requiring a shell profile edit.
 
-To prepare another GPU class on the target host:
+## Vector-Store Seam
 
-    .venv/bin/python -m llb.main detect-gpu-vram
-    .venv/bin/python -m llb.main gen-serving-config
+`src/llb/rag/vector_index.py` defines the `VectorIndex` protocol and backend dispatch:
 
-Run a generated row on that host:
+```text
+faiss
+chroma
+qdrant
+lancedb
+```
 
-    .data/llb/serving/gpu-<tier>gb/serve_<target>.sh
-    .data/llb/serving/gpu-<tier>gb/run_eval_<target>.sh
+`RagStore` owns chunk records and source offsets. Vector indexes only map query embeddings to
+build-order ids plus similarity. That design keeps `.retrieve(question, k)` and source-span
+metrics unchanged across backends.
 
-To generate configs for a target tier without running on that tier:
+Adapters live under `src/llb/rag/stores/`:
 
-    .venv/bin/python -m llb.main gen-serving-config --gpu-gb 12
-    .venv/bin/python -m llb.main gen-serving-config --gpu-gb 24
-    .venv/bin/python -m llb.main gen-serving-config --gpu-gb 32
+- `base.py`: shared id shaping and persistence helpers;
+- `chroma.py`: Chroma adapter;
+- `qdrant.py`: Qdrant adapter;
+- `lancedb.py`: LanceDB adapter.
 
-Generated files land under `.data/llb/serving/gpu-<tier>gb/` with `tier.json`, serve scripts, and
-run-eval YAML/scripts. The same manifest fields above provide comparable score, throughput, VRAM,
-load, and power metrics.
+Optional extras pin validated client APIs: `[rag-chroma]`, `[rag-qdrant]`, and `[rag-lancedb]`.
 
-## Multi-Vector-Store Adapters (platform matrix)
+## Vector-Store Commands
 
-Chroma, Qdrant, and LanceDB adapters now sit behind the RAG-store seam; FAISS stays the default.
+```bash
+llb build-index --corpus-root <bundle>/corpus --vector-store faiss
+llb build-index --corpus-root <bundle>/corpus --vector-store chroma
+llb build-index --corpus-root <bundle>/corpus --vector-store qdrant
+llb build-index --corpus-root <bundle>/corpus --vector-store lancedb
+llb validate-retrieval --goldset <bundle>/goldset.jsonl --k 10
+llb compare-vector-stores --backends faiss,chroma,qdrant,lancedb \
+  --goldset <bundle>/goldset.jsonl --k 10 --out <report>.json
+```
 
-- Seam: `src/llb/rag/vector_index.py` -- `VectorIndex` Protocol (`search`/`save`) +
-  `RAG_BACKENDS = (faiss, chroma, qdrant, lancedb)` + `build_vector_index` / `save_vector_index` /
-  `load_vector_index` dispatch. `RagStore` keeps the chunk records (ids + source-span offsets) and
-  only asks the index to map a query to build-order ids + cosine similarity, so `.retrieve(question,
-  k)` and the gold-span metrics are unchanged across backends.
-- Adapters `src/llb/rag/stores/`: shared `VectorStoreAdapter` base (build-order id shaping + uniform
-  `vectors.npy` persistence; subclasses implement `_index` + `_search_row`) and `ChromaIndex` /
-  `QdrantIndex` / `LanceDBIndex`. Each lazy-imports its client and converts the store's distance to a
-  FAISS-comparable cosine similarity. Optional extras pin the validated client APIs:
-  `[rag-chroma]` = `chromadb==1.5.9`, `[rag-qdrant]` = `qdrant-client==1.18.0`, and
-  `[rag-lancedb]` = `lancedb==0.33.0`.
-- Live API fixes: Chroma transient indexes use a per-instance collection name so repeated
-  save/load round-trips do not collide in one process; Qdrant uses `create_collection` plus
-  `query_points(...)` because client 1.18 no longer exposes `search`; LanceDB keeps
-  `.metric("cosine")` and maps `_distance` back to cosine similarity.
-- The chosen backend is recorded in the store meta (`backend`), so `RagStore.load` re-selects it
-  without a config. Build: `build-index --vector-store faiss|chroma|qdrant|lancedb`. Compare:
-  `compare-vector-stores --backends faiss,chroma,... --goldset ...` builds the SAME corpus under each
-  backend (same chunking + pinned embedder) and reports recall@k / MRR by the source-span metric
-  (`rag.compare.build_vector_store_comparison` + the shared `compare_retrieval`). The compare command
-  accepts `--corpus-root`; when `--goldset <bundle>/goldset.jsonl` is passed and `<bundle>/corpus`
-  exists, it uses that sibling corpus automatically.
-- Tests: `tests/test_vector_index.py` -- dispatch, score conversion, base shaping (dependency-free),
-  the missing-extra SystemExit per backend, `@slow` FAISS-seam + vector round-trip, and real
-  Chroma/Qdrant round-trips when those extras are installed. LanceDB is validated through the CLI
-  host path because `lancedb.connect()` can hang under pytest-specific environment variables on this
-  host while working normally from the command line. The real-client round-trips stay marked
-  `@pytest.mark.slow`, so `make ci` (`pytest -m "not slow"`) remains the GitHub-safe quick suite.
+When `--goldset <bundle>/goldset.jsonl` is passed and `<bundle>/corpus/` exists,
+`compare-vector-stores` uses the sibling corpus automatically. Pass `--corpus-root` when the paths
+are separate.
 
-### Real adapter validation (2026-06-27)
-
-Host validation used the committed `samples/goldsets/ua_squad_postedited_v1` bundle and an isolated
-`DATA_DIR=.data/platform_matrix_validation`. Each backend was built with:
-
-    env DATA_DIR=.data/platform_matrix_validation .venv/bin/python -m llb.main build-index \
-      --corpus-root samples/goldsets/ua_squad_postedited_v1/corpus \
-      --vector-store <backend>
-
-Immediately after each build, `validate-retrieval` reloaded the persisted store and scored the
-same 250-item gold set at `k=10`. All four persisted stores produced `recall@10=0.980` and
-`MRR=0.847`, matching the FAISS baseline.
-
-The one-shot comparison command:
-
-    env DATA_DIR=.data/platform_matrix_validation .venv/bin/python -m llb.main compare-vector-stores \
-      --backends faiss,chroma,qdrant,lancedb \
-      --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-      --k 10 --out .data/platform_matrix_validation/llb/rag/vector_store_compare_k10.json
-
-Result:
-
-| Backend | recall@10 | MRR |
-| --- | ---: | ---: |
-| faiss | 0.980 | 0.847 |
-| chroma | 0.980 | 0.847 |
-| qdrant | 0.980 | 0.847 |
-| lancedb | 0.980 | 0.847 |
-
-`best_recall` is `chroma` only because the report tie-breaks identical recall/MRR by label; there is
-no measured retrieval-quality difference on this corpus. No Locust scenario was needed because these
-adapters run as in-process local stores, not as live HTTP services. If a future remote vector-store
-mode is added, use Locust (`https://github.com/locustio/locust`) to drive concurrent
-`retrieve(question, k)` calls against that service path, then compare recall/MRR separately with the
-same source-span metric.
-
-Manual procedure for a future text corpus:
-
-1. Prepare a verified bundle with `<bundle>/goldset.jsonl` and `<bundle>/corpus/`; run the normal
-   data-verification gate before treating results as headline-capable.
-2. Install the needed extras:
-
-        uv pip install --python .venv/bin/python -e ".[rag,rag-chroma,rag-qdrant,rag-lancedb]"
-
-3. For persisted-store reload checks, build and validate one backend at a time:
-
-        export DATA_DIR=.data/vector-store-validation
-        .venv/bin/python -m llb.main build-index --corpus-root <bundle>/corpus \
-          --vector-store <backend>
-        .venv/bin/python -m llb.main validate-retrieval --goldset <bundle>/goldset.jsonl --k 10
-
-   Repeat with `<backend>` = `faiss`, `chroma`, `qdrant`, and `lancedb`. This overwrites the single
-   validation store between backends; use a backend-specific `DATA_DIR` if you need to keep each
-   persisted store.
-4. Run the comparison:
-
-        .venv/bin/python -m llb.main compare-vector-stores \
-          --backends faiss,chroma,qdrant,lancedb --goldset <bundle>/goldset.jsonl --k 10 \
-          --out <report>.json
-
-   If the gold set and corpus are not siblings, pass `--corpus-root <corpus>`.
+Use one isolated `DATA_DIR` per validation run when you need to keep persisted stores for multiple
+backends.

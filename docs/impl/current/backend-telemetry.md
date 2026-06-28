@@ -1,64 +1,76 @@
-# backend telemetry Current State
+# Backend Telemetry
 
-## backend telemetry -- real backend + telemetry (complete)
+Backend telemetry explains how model-serving backends are launched, measured, and recorded. The
+motivation is comparability: model quality, throughput, VRAM, load time, and power should be
+captured in the same manifest shape regardless of whether the serving path is Ollama, vLLM, or
+llama.cpp.
 
-A real vLLM backend behind the same interface, a steady-state telemetry hook, and the
-MAX_JOBS-capped build entrypoint -- validated end to end on a real model (see the
-[vLLM guide](../../guides/vllm-backend.md) and `samples/run_config_vllm_uk.yaml`).
+## vLLM Launcher
 
-### vLLM launcher -- `llb.backends.vllm` (vLLM launcher)
-`VllmLauncher` + `build_vllm_command` (pure). Documented under Backends above (incl. the
-`launch_env` flashinfer-sampler default and the on-failure log preservation). The thin
-`scripts/build_vllm.sh` entrypoint sources `scripts/shared/common.sh`, exports its canonical
-`max_jobs()` result (`min(cores//2, RAM_GiB//14)`, AGENTS.md), and delegates to
-`llb.build.vllm`. The default binary-only install and all ordinary dependencies use uv's
-shared cache. Only a wheel built from `VLLM_SOURCE_DIR=<clean-git-checkout>` is exported
-under `$DATA_DIR/wheels/vllm_<abi-key>_git<revision>/`. Weights are cached by `prep-models`.
+`src/llb/backends/vllm.py` implements `VllmLauncher`. It starts `vllm serve <model>`, waits for a
+healthy OpenAI-compatible endpoint, exposes chat through the shared client, and stops the process
+through the context manager.
 
-    make build-vllm # prebuilt wheel via uv shared cache
-    VLLM_SOURCE_DIR=../vllm make build-vllm # one ABI-keyed checkout wheel
-    make prep-models PREP_BACKEND=vllm # cache HF weights (verifies repo ids)
-    llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry # the
-    real-model validation run
+Important knobs flow from `RunConfig` and CLI flags:
 
-### Telemetry hook -- `llb.backends.telemetry` (telemetry hook)
-`measure_throughput` runs the steady-state protocol (fixed UA prompt set + fixed
-max_new_tokens + N warmup iters) over `launcher.chat`, so tokens/sec is comparable across
-models; cold-start `load_time_s` is recorded separately by launchers that own the backend
-lifecycle, and remains null for an already-running external daemon such as Ollama.
-`VramSampler` polls NVML (injected reader) for peak VRAM. `collect_telemetry` assembles the manifest
-record:
-steady tokens/sec, tokenizer efficiency (tokens/UA-char), peak VRAM, requested-vs-served
-context, load time, gpu-memory-utilization, and detected GPU. Wired into `run-eval`
-behind `config.measure_telemetry` (`--telemetry`); recorded under `manifest.telemetry`.
+- `max_model_len`;
+- `gpu_memory_utilization`;
+- host and port;
+- sampler environment from the vLLM preflight verdict.
 
-### real-model validation real-model validation (RTX 4060 Ti 16 GB)
-`google/gemma-4-E4B-it-qat-w4a16-ct` served via vLLM 0.23.0 and scored under the executor
-produced a real ranked row + full telemetry: objective quality 0.801, **63.8 tok/s** steady,
-peak VRAM **15.7 GB** (at gpu-memory-utilization 0.80), cold load **112 s**, served context
-8192, tokenizer 0.33 tok/UA-char. vLLM resolves `Gemma4ForConditionalGeneration` +
-`compressed-tensors` natively; attention falls back to TRITON (Gemma-4 heterogeneous head
-dims), the flashinfer sampler is disabled (see `launch_env`), and `max_model_len` is capped
-so the KV cache fits (the native 131072 window would over-reserve and fail startup).
+The launcher preserves startup logs when readiness fails. This is important because vLLM failures
+often happen before a JSON API is available.
 
-Planner-vs-measured fit: the model's **weights load 9.8 GiB**, ~2.3x the old flat ~4.2 GiB
-estimate (`params_b x bpw`). w4a16 quantizes only the linear layers while Gemma's 256k-token
-embedding stays high-precision, so the flat product under-estimated w4a16 weights. The
-embedding-aware estimator that fixes this is now delivered (memory planner below);
-the measured floor is the regression anchor in `samples/models_uk.yaml`.
+## Build Rules
 
-### backend telemetry status
+`scripts/build_vllm.sh` is the shell entry point. It sources `scripts/shared/common.sh` and uses the
+canonical `max_jobs()` helper for source builds. Ordinary installs use `uv` and the shared package
+cache. Only wheels intentionally built from a clean local checkout are exported under
+`$DATA_DIR/wheels/<package>_<abi-key>_git<revision>/`.
 
-- **vLLM launcher** (`VllmLauncher` + `build_vllm_command` + MAX_JOBS build helper / script): DONE
-- **telemetry hook** (telemetry hook (steady tokens/sec, peak VRAM, served ctx, load time,
-tok/char)): DONE
-- - **candidate-model list** (candidate list in `samples/models_uk.yaml`; vLLM repo ids verified
-via `prep-models`): DONE
-- **real-model validation** (validated on a real vLLM-served model (gemma-4-E4B-it-w4a16) w/ real
-telemetry): DONE
+```bash
+make build-vllm
+VLLM_SOURCE_DIR=../vllm make build-vllm
+make prep-models PREP_BACKEND=vllm
+```
 
-The real-model validation run surfaced three non-blocking gaps, all now DELIVERED in robust
-backend prep below: the embedding-aware VRAM estimate (memory planner), a pre-launch
-VRAM-contention guard (VRAM contention guard), and the vLLM serving knobs as `run-eval` CLI
-flags (vLLM serving preflight). The only remaining on-hardware confirmation (a real
-contended launch) is tracked forward in [`plan.md`](../plan.md) (verified-data hardening).
+The repository does not vendor vLLM or CUDA build outputs.
+
+## Telemetry Fields
+
+`src/llb/backends/telemetry.py` contains the backend-neutral measurement protocol.
+
+`measure_throughput` runs fixed Ukrainian prompts with warmup iterations and a fixed output budget.
+`VramSampler` polls NVML through an injectable reader. `collect_telemetry` records:
+
+- steady tokens per second;
+- tokenizer efficiency in tokens per Ukrainian character;
+- peak VRAM;
+- requested and served context;
+- backend load time when the launcher owns startup;
+- GPU memory utilization;
+- mean and peak power when available;
+- tokens per watt and quality per watt;
+- detected GPU metadata;
+- backend-specific fields such as vLLM sampler or llama.cpp GPU layer split.
+
+Telemetry is enabled with `--telemetry` or `TELEMETRY=1` through Make.
+
+## Manifest Semantics
+
+Telemetry is stored under `manifest.telemetry`; selected summary values are also mirrored into
+`manifest.metrics` for board and MLflow use. A missing field should mean "not measured on this
+path", not zero.
+
+When a backend is already running and is reused by `--base-url`, cold load time is intentionally
+null. When a launcher owns the process, load time is measured from launch to readiness.
+
+## vLLM Sampler Preflight
+
+`src/llb/backends/preflight.py` probes whether the flashinfer sampler works on the host. The
+verdict is cached under `$DATA_DIR/llb/preflight/vllm_sampler.json` and includes the GPU driver so
+driver changes can invalidate stale verdicts.
+
+`launch_env` enables flashinfer only when the current verdict says it is safe. An explicit
+environment value wins. This keeps the default path robust on consumer CUDA stacks where flashinfer
+kernel compilation may fail, while still allowing faster sampling on hosts that support it.

@@ -28,47 +28,18 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 
 ## Core Capabilities
 
-- **Corpus-grounded gold sets.** Build or ingest Ukrainian eval data with exact source spans,
-  verified splits, and reusable corpus bundles.
-  Entry points: [Gold-set guide](docs/guides/goldset-from-scratch.md),
-  [data prep](docs/guides/data-prep.md), `make validate-goldset`, `make ingest-uk-squad`.
-- **Human verification gates.** Cross-check AI-drafted data, review a stratified sample, and emit
-  accepted ledgers before real model scoring.
-  Entry points: [verification tooling](docs/guides/verification-tooling.md),
-  [human evaluation](docs/guides/human-in-the-loop-evaluation.md),
-  `make verify-sample`, `make verify-review`, `make verify-accept`.
-- **FAISS and GraphRAG retrieval.** Build vector and graph stores, validate recall/MRR, and compare
-  retrieval strategies before attributing failures to the model.
-  Entry points: [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md),
-  `make build-index`, `make build-graph`, `make validate-retrieval`, `make compare-retrieval`.
-- **Local serving and model planning.** Resolve which candidate models fit the host, prepare
-  weights, and run through Ollama, vLLM, or llama.cpp.
-  Entry points: [vLLM backend guide](docs/guides/vllm-backend.md),
-  [inference config](docs/inference/config-example.md), `make list-models`, `make prep-models`.
-- **Private model leaderboards.** Evaluate candidate models on your corpus, isolate sweep cells,
-  tune finalists, and inspect ranked boards with confidence intervals.
-  Entry points: [run skeleton](docs/guides/run-skeleton.md),
-  [MLflow analysis](docs/guides/mlflow-analysis.md), `make run-eval`, `make sweep`,
-  `make pipeline`, `make board`, `make mlflow`.
-- **Calibrated judge gates.** Use a local DeepEval judge only after human-rated Ukrainian
-  calibration clears the Spearman threshold.
-  Entry points: [calibration tooling](docs/guides/calibration-tooling.md),
-  [judge experiments](docs/guides/judge-experiments.md), `make calibration-run`,
-  `make calibration-rate`, `make calibration-score`, `make judge-experiment`.
-- **Prompt-system tuning.** Generate reviewable prompt packages, tune on one split, and verify
-  generalization on a held-out final split.
-  Entry point: [prompt-system guide](docs/guides/prompt-system-rag.md).
-- **Category benchmark suites.** Score security, tooling, agentic, summarization, structured
-  output, and text-analysis categories, then publish a guarded composite headline.
-  Entry points: [composite headline guide](docs/guides/composite-headline.md),
-  [category learning path](docs/guides/learning-path-evaluation-categories.md),
-  `make composite-headline`.
-- **Agentic harness comparison.** Run the same task set through the loop, LangGraph, and CrewAI
-  harnesses to separate model quality from orchestration effects.
-  Entry point: [CrewAI harness guide](docs/guides/crewai-harness.md).
-- **Platform matrix telemetry.** Compare a logical model base across serving backends with VRAM,
-  throughput, power, and quality-per-watt telemetry.
-  Entry point: [platform matrix guide](docs/guides/platform-matrix.md), `make platform-matrix`.
+| Capability | Functional use case | Pipeline commands |
+|---|---|---|
+| Corpus-grounded gold sets | Build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/goldset-from-scratch.md) and [data prep](docs/guides/data-prep.md). | `make ingest-uk-squad` -> `make validate-goldset` |
+| Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/verification-tooling.md) and [human evaluation](docs/guides/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
+| FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
+| Local serving and model planning | Resolve which candidate models fit the host, prepare weights, and run through Ollama, vLLM, or llama.cpp. See [vLLM backend guide](docs/guides/vllm-backend.md) and [inference config](docs/inference/config-example.md). | `make list-models` -> `make prep-models` |
+| Private model leaderboards | Evaluate candidates on your corpus, isolate sweep cells, tune finalists, and inspect ranked boards with CIs. See [RAG core](docs/guides/run-rag-core.md) and [MLflow analysis](docs/guides/mlflow-analysis.md). | `make run-eval` -> `make sweep` -> `make pipeline` -> `make board` -> `make mlflow` |
+| Calibrated judge gates | Use a local DeepEval judge only after human-rated Ukrainian calibration clears the Spearman threshold. See [calibration tooling](docs/guides/calibration-tooling.md) and [judge experiments](docs/guides/judge-experiments.md). | `make calibration-run` -> `make calibration-rate` -> `make calibration-score` -> `make judge-experiment` |
+| Prompt-system tuning | Generate reviewable prompt packages, tune on one split, and verify generalization on held-out final data. See [prompt-system guide](docs/guides/prompt-system-rag.md) and [RAG core](docs/guides/run-rag-core.md). | `make prompt-system-prepare PROMPT_SYSTEM_CORPUS=<dir>` -> `make prompt-system-review PROMPT_SYSTEM_RUN_DIR=<dir> PROMPT_SYSTEM_ACTION=pin PROMPT_SYSTEM_ID=<id>` -> `make run-eval PROMPT_SYSTEM_ID=<id> PROMPT_PACKAGE=<dir>` -> `make prompt-system-compare` |
+| Category benchmark suites | Score security, tooling, agentic, summarization, structured output, and text-analysis categories, then publish a guarded composite headline. See [composite headline guide](docs/guides/composite-headline.md) and [category learning path](docs/guides/learning-path-evaluation-categories.md). | `make composite-headline` |
+| Agentic harness comparison | Run the same task set through loop, LangGraph, and CrewAI harnesses to separate model quality from orchestration effects. See [CrewAI harness guide](docs/guides/crewai-harness.md) and [category learning path](docs/guides/learning-path-evaluation-categories.md). | `make agentic-harness-compare` |
+| Platform matrix telemetry | Compare a logical model base across serving backends with VRAM, throughput, power, and quality-per-watt telemetry. See [platform matrix guide](docs/guides/platform-matrix.md). | `make platform-matrix` |
 
 ## Documentation
 

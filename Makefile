@@ -33,6 +33,26 @@ LIMIT ?= 20
 RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
+PROMPT_SYSTEM_CORPUS ?= $(CORPUS)
+PROMPT_SYSTEM_OUT_DIR ?=
+PROMPT_SYSTEM_RUN_DIR ?= $(PROMPT_SYSTEM_OUT_DIR)
+PROMPT_SYSTEM_ID ?=
+PROMPT_PACKAGE ?=
+PROMPT_SYSTEM_CONTEXT_WINDOW ?= 8192
+PROMPT_SYSTEM_CHUNK_TOKENS ?= 1024
+PROMPT_SYSTEM_ANSWER_TOKENS ?= 512
+PROMPT_SYSTEM_MAX_PASSAGES ?= 12
+PROMPT_SYSTEM_ROLE ?=
+PROMPT_SYSTEM_INSTRUCTION ?=
+PROMPT_SYSTEM_ACTION ?= summary
+PROMPT_SYSTEM_NOTE ?=
+PROMPT_SYSTEM_LANE ?= rag
+PROMPT_SYSTEM_HARNESS ?=
+AGENTIC_TASKS ?= $(PROJECT_ROOT)/samples/agentic_tasks_uk.json
+AGENTIC_MAX_STEPS ?= 6
+AGENTIC_HARNESS ?= loop
+AGENTIC_HARNESSES ?= loop langgraph crewai
+AGENTIC_BASE_URL ?=
 # `make demo-eval` end-to-end pipeline knobs (idempotent; CUDA-free defaults).
 ALL_GOLDSET ?= $(GOLDSET)
 ALL_CORPUS  ?= $(CORPUS)
@@ -122,7 +142,7 @@ PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0
 PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -319,12 +339,15 @@ compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-run-eval: ## Run the eval; MODEL= BACKEND=ollama|vllm GOLDSET= LIMIT= SPLIT= TELEMETRY=1 JUDGE_RHO= (enables the gated judge)
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
-		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) $(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
+		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
+		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
+		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
 sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -339,6 +362,50 @@ pipeline: ## Select public-screen finalists, tune, and print the final board
 	$(PY) -m llb.main pipeline --manifest "$(MODELS_MANIFEST)" --goldset "$(GOLDSET)" \
 		--top-n "$(PIPELINE_TOP_N)" --trials "$(PIPELINE_TRIALS)" \
 		$(if $(PIPELINE_OFFLINE),--offline,)
+
+prompt-system-prepare: ## Generate reviewable RAG prompt-system candidates
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main prompt-system-prepare --corpus-root "$(PROMPT_SYSTEM_CORPUS)" \
+		--context-window "$(PROMPT_SYSTEM_CONTEXT_WINDOW)" \
+		--chunk-tokens "$(PROMPT_SYSTEM_CHUNK_TOKENS)" \
+		--answer-tokens "$(PROMPT_SYSTEM_ANSWER_TOKENS)" \
+		--max-passages "$(PROMPT_SYSTEM_MAX_PASSAGES)" \
+		$(if $(PROMPT_SYSTEM_OUT_DIR),--out-dir "$(PROMPT_SYSTEM_OUT_DIR)",) \
+		$(if $(PROMPT_SYSTEM_ROLE),--role "$(PROMPT_SYSTEM_ROLE)",) \
+		$(if $(PROMPT_SYSTEM_INSTRUCTION),--instruction "$(PROMPT_SYSTEM_INSTRUCTION)",)
+
+prompt-system-review: ## Review prompt-system candidates (PROMPT_SYSTEM_RUN_DIR= PROMPT_SYSTEM_ACTION= PROMPT_SYSTEM_ID=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(PROMPT_SYSTEM_RUN_DIR)" || { echo "ERROR: set PROMPT_SYSTEM_RUN_DIR=<run-dir>"; exit 1; }
+	$(PY) -m llb.main prompt-system-review --run-dir "$(PROMPT_SYSTEM_RUN_DIR)" \
+		--action "$(PROMPT_SYSTEM_ACTION)" \
+		$(if $(PROMPT_SYSTEM_ID),--id "$(PROMPT_SYSTEM_ID)",) \
+		$(if $(PROMPT_SYSTEM_NOTE),--note "$(PROMPT_SYSTEM_NOTE)",)
+
+prompt-system-compare: ## Rank one model across prompt-system-tagged runs
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main prompt-system-compare --model "$(MODEL)" \
+		--lane "$(PROMPT_SYSTEM_LANE)" \
+		$(if $(PROMPT_SYSTEM_HARNESS),--harness "$(PROMPT_SYSTEM_HARNESS)",)
+
+bench-agentic: ## Run one agentic harness cell (AGENTIC_HARNESS=loop|langgraph|crewai)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main bench-agentic --tasks "$(AGENTIC_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" --max-steps "$(AGENTIC_MAX_STEPS)" \
+		--harness "$(AGENTIC_HARNESS)" \
+		$(if $(AGENTIC_BASE_URL),--base-url "$(AGENTIC_BASE_URL)",) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),)
+
+agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@for harness in $(AGENTIC_HARNESSES); do \
+		$(MAKE) --no-print-directory bench-agentic AGENTIC_HARNESS="$$harness" || exit 1; \
+	done
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
 
 composite-headline: ## Run the verified category suite for MODEL, then require a clean bench-composite preflight
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
