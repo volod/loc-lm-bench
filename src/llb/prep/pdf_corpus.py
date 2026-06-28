@@ -1,16 +1,15 @@
 """PDF corpus ingestion for local Ukrainian document collections.
 
 The rest of the RAG/goldset pipeline consumes `.md` and `.txt` files with stable character
-offsets. This module turns a local PDF directory into that canonical text corpus using the
-system `pdftotext` binary when available. The extracted `.md` files become the source of truth
-for later span validation; original PDFs are recorded only as provenance in the manifest.
+offsets. This module turns a local PDF directory into that canonical text corpus using
+PyMuPDF4LLM markdown extraction. The extracted `.md` files become the source of truth for later
+span validation; original PDFs are recorded only as provenance in the manifest.
 """
 
 import hashlib
 import json
 import logging
 import re
-import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -19,6 +18,8 @@ _LOG = logging.getLogger(__name__)
 
 PDF_CORPUS_MANIFEST = "pdf_corpus_manifest.json"
 PDF_SUFFIX = ".pdf"
+DEFAULT_MARKDOWN_DIRNAME = "_md"
+PYMUPDF4LLM_TOOL = "pymupdf4llm"
 _MANY_BLANK_LINES = re.compile(r"\n{3,}")
 
 PdfTextExtractor = Callable[[Path, str], str]
@@ -69,33 +70,31 @@ def doc_id_for_pdf(pdf_root: Path | str, pdf_path: Path | str) -> str:
     return f"pdf-{digest}.md"
 
 
+def default_markdown_out_dir(pdf_root: Path | str) -> Path:
+    """Return the default markdown output directory for a PDF corpus root."""
+    return Path(pdf_root) / DEFAULT_MARKDOWN_DIRNAME
+
+
 def clean_pdf_text(text: str) -> str:
-    """Normalize pdftotext output enough for chunking while preserving readable content."""
+    """Normalize extracted markdown enough for chunking while preserving readable content."""
     text = text.replace("\x0c", "\n\n")
     lines = [line.rstrip() for line in text.splitlines()]
     return _MANY_BLANK_LINES.sub("\n\n", "\n".join(lines)).strip()
 
 
-def extract_pdf_text(pdf_path: Path, pdftotext: str = "pdftotext") -> str:
-    """Extract UTF-8 text from one PDF with Poppler's `pdftotext`."""
+def extract_pdf_markdown(pdf_path: Path) -> str:
+    """Extract markdown from one PDF with PyMuPDF4LLM."""
     try:
-        out = subprocess.run(
-            [pdftotext, "-layout", "-enc", "UTF-8", str(pdf_path), "-"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=180,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"missing pdftotext executable: {pdftotext}") from exc
-    except subprocess.SubprocessError as exc:
-        raise RuntimeError(f"pdftotext failed for {pdf_path.name}: {exc}") from exc
-    if out.returncode != 0:
-        detail = (out.stderr or "").strip().splitlines()
-        message = detail[0] if detail else f"exit code {out.returncode}"
-        raise RuntimeError(f"pdftotext failed for {pdf_path.name}: {message}")
-    return out.stdout
+        import pymupdf4llm
+    except ImportError as exc:
+        raise RuntimeError("missing pymupdf4llm dependency") from exc
+    try:
+        markdown = pymupdf4llm.to_markdown(str(pdf_path))
+    except Exception as exc:
+        raise RuntimeError(f"pymupdf4llm failed for {pdf_path.name}: {exc}") from exc
+    if not isinstance(markdown, str):
+        raise RuntimeError(f"pymupdf4llm returned non-text markdown for {pdf_path.name}")
+    return markdown
 
 
 def _source_rel(pdf_root: Path, pdf_path: Path) -> str:
@@ -134,7 +133,7 @@ def _ingest_one_pdf(
 ) -> PdfCorpusItem:
     source = _source_rel(pdf_root, pdf_path)
     try:
-        text = clean_pdf_text(extractor(pdf_path, "pdftotext"))
+        text = clean_pdf_text(extractor(pdf_path, PYMUPDF4LLM_TOOL))
     except RuntimeError as exc:
         return PdfCorpusItem(source=source, doc_id=None, n_chars=0, status="error", error=str(exc))
     if len(text) < min_chars:
@@ -152,9 +151,8 @@ def _ingest_one_pdf(
 
 def ingest_pdf_corpus(
     pdf_root: Path | str,
-    out_dir: Path | str,
+    out_dir: Path | str | None = None,
     *,
-    pdftotext: str = "pdftotext",
     min_chars: int = 500,
     limit: int | None = None,
     extractor: PdfTextExtractor | None = None,
@@ -168,9 +166,9 @@ def ingest_pdf_corpus(
         pdfs = pdfs[:limit]
     if not pdfs:
         raise ValueError(f"no PDF files under {root}")
-    target = Path(out_dir)
+    target = Path(out_dir) if out_dir is not None else default_markdown_out_dir(root)
     target.mkdir(parents=True, exist_ok=True)
-    selected_extractor = extractor or (lambda path, _tool: extract_pdf_text(path, pdftotext))
+    selected_extractor = extractor or (lambda path, _tool: extract_pdf_markdown(path))
     items = [_ingest_one_pdf(root, pdf, target, selected_extractor, min_chars) for pdf in pdfs]
     result = PdfCorpusResult(pdf_root=root, out_dir=target, items=items)
     _write_manifest(result)

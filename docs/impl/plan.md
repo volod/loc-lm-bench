@@ -14,9 +14,9 @@ the topic files under [`current/`](current/). The product spec lives in
 - Scope boundary: Reuse `llb ingest-pdf-corpus`, `llb prepare-goldset-draft`, and `llb build-graph`;
   focus on extraction prompt shape, document/window selection controls, and relation/fact yield.
   Do not replace the existing human verification gate or add a separate graph database.
-- Data and artifact paths: Use `.data/_doc` as the source PDF directory and write runtime outputs
-  under `$DATA_DIR/pdf-corpus/<run>/`, `$DATA_DIR/prepare-goldset/<run>/`, and `$DATA_DIR/llb/graph/`.
-  Current mechanics and smoke evidence live in
+- Data and artifact paths: Use `.data/_doc/_md` as the prepared markdown corpus for ontology and
+  graph runs, then write runtime outputs under `$DATA_DIR/prepare-goldset/<run>/` and
+  `$DATA_DIR/llb/graph/`. Current mechanics and smoke evidence live in
   [`current/data-prep.md`](current/data-prep.md),
   [`current/robustness-ontology-backends.md`](current/robustness-ontology-backends.md), and
   [`current/graphrag-backend.md`](current/graphrag-backend.md).

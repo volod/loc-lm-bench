@@ -31,6 +31,11 @@ CrewAI is optional and lazy-imported. The adapter wraps the candidate completion
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.
 
+The `[crewai]` extra is a standalone install lane in `uv`: upstream CrewAI pins older Chroma,
+LanceDB, and `tomli` ranges than the repo's RAG/vector/dev extras. `pyproject.toml` declares those
+extra conflicts so `uv lock` stays resolvable while `uv pip install -e ".[crewai]"` still works for
+host validation.
+
 ## Judge Diagnostics
 
 `src/llb/scoring/judge_diag.py` classifies zero-valued judge outcomes so a diagnostic score can be
