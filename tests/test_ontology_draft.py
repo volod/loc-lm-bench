@@ -95,6 +95,24 @@ def test_parse_extraction_grounds_spans_and_drops_ungrounded():
     assert len(extraction.claims) == 1
 
 
+def test_parse_extraction_accepts_relations_synonym_when_evidenced():
+    payload = {
+        "relations": [
+            {
+                "source": "Київ",
+                "type": "столиця",
+                "target": "України",
+                "evidence": "Київ є столицею України",
+            }
+        ]
+    }
+    extraction = parse_extraction("a.md", DOC1, payload)
+    assert len(extraction.facts) == 1
+    assert extraction.facts[0].subject == "Київ"
+    assert extraction.facts[0].relation == "столиця"
+    assert extraction.facts[0].object == "України"
+
+
 def test_llm_extraction_adapter_grounds_against_full_text_when_truncated():
     # truncate the call input, but evidence still grounds against the full doc
     adapter = LLMExtractionAdapter(

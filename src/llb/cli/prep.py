@@ -8,6 +8,34 @@ import typer
 from llb.cli.app import app
 
 
+@app.command("ingest-pdf-corpus")
+def ingest_pdf_corpus_cmd(
+    pdf_root: Path = typer.Option(..., help="directory of local PDF source documents"),
+    out_dir: Path = typer.Option(..., help="output corpus dir of extracted .md files"),
+    min_chars: int = typer.Option(
+        500, min=1, help="skip PDFs whose extracted text is shorter than this"
+    ),
+    limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to ingest"),
+) -> None:
+    """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
+    from llb.prep.pdf_corpus import ingest_pdf_corpus
+
+    try:
+        result = ingest_pdf_corpus(
+            pdf_root,
+            out_dir,
+            min_chars=min_chars,
+            limit=limit,
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    typer.echo(
+        f"[ingest-pdf-corpus] {result.n_docs}/{len(result.items)} PDFs extracted "
+        f"({result.n_skipped} skipped) -> {result.out_dir}"
+    )
+
+
 @app.command("prepare-goldset")
 def prepare_goldset_cmd(
     corpus_root: Path = typer.Option(..., help="directory of .md/.txt source docs"),
@@ -328,18 +356,37 @@ def prepare_goldset_draft_cmd(
     spacy_model: str = typer.Option(
         "uk_core_news_sm", help="spaCy pipeline (with --extractor spacy)"
     ),
+    max_tokens: int = typer.Option(
+        4096, min=1, help="per-call completion token budget for ontology drafting"
+    ),
+    temperature: float = typer.Option(
+        0.0, min=0.0, help="per-call generation temperature for ontology drafting"
+    ),
+    timeout: float = typer.Option(
+        300.0, min=1.0, help="per-call local/frontier endpoint timeout in seconds"
+    ),
+    no_think: bool = typer.Option(
+        False,
+        "--no-think",
+        help="disable Ollama native reasoning mode for local JSON-producing models",
+    ),
     out_dir: Optional[Path] = typer.Option(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
     ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
     from llb.prep.ontology import EndpointConfig, draft_goldset
+    from llb.prep.ontology.endpoint import DEFAULT_LOCAL_BASE_URL
 
     try:
-        cfg = (
-            EndpointConfig(kind=endpoint, model=model, base_url=base_url)
-            if base_url
-            else EndpointConfig(kind=endpoint, model=model)
+        cfg = EndpointConfig(
+            kind=endpoint,
+            model=model,
+            base_url=base_url or DEFAULT_LOCAL_BASE_URL,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            think=False if no_think else None,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

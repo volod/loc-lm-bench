@@ -23,6 +23,7 @@ from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Ev
 from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
+_WINDOW_LOG_INTERVAL = 10
 
 
 class ExtractionAdapter(Protocol):
@@ -40,6 +41,8 @@ def extraction_prompt(doc_id: str, text: str) -> str:
 
 
 def _str(value: Any) -> str:
+    if value is None:
+        return ""
     return str(value).strip()
 
 
@@ -78,6 +81,21 @@ def _evidenced(doc_id: str, text: str, raw: Any, build: Any) -> list[Any]:
     return out
 
 
+def _fact_entries(payload: dict[str, Any]) -> Any:
+    facts = payload.get("facts")
+    if facts is not None:
+        return facts
+    return payload.get("relations")
+
+
+def _entry_text(entry: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = _str(entry.get(key))
+        if value:
+            return value
+    return ""
+
+
 def parse_extraction(doc_id: str, text: str, payload: Any) -> DocExtraction:
     """Turn a parsed extraction payload into a fully grounded DocExtraction."""
     if not isinstance(payload, dict):
@@ -93,7 +111,9 @@ def parse_extraction(doc_id: str, text: str, payload: Any) -> DocExtraction:
         return Claim(text=claim, evidence=span) if claim else None
 
     def build_fact(entry: dict[str, Any], span: Any) -> SROFact | None:
-        s, r, o = _str(entry.get("subject")), _str(entry.get("relation")), _str(entry.get("object"))
+        s = _entry_text(entry, "subject", "source")
+        r = _entry_text(entry, "relation", "predicate", "type")
+        o = _entry_text(entry, "object", "target")
         return SROFact(subject=s, relation=r, object=o, evidence=span) if (s and r and o) else None
 
     return DocExtraction(
@@ -101,7 +121,7 @@ def parse_extraction(doc_id: str, text: str, payload: Any) -> DocExtraction:
         entities=_entities(doc_id, text, payload.get("entities")),
         events=_evidenced(doc_id, text, payload.get("events"), build_event),
         claims=_evidenced(doc_id, text, payload.get("claims"), build_claim),
-        facts=_evidenced(doc_id, text, payload.get("facts"), build_fact),
+        facts=_evidenced(doc_id, text, _fact_entries(payload), build_fact),
     )
 
 
@@ -145,6 +165,13 @@ def merge_extractions(doc_id: str, parts: list[DocExtraction]) -> DocExtraction:
     )
 
 
+def _log_window_progress(doc_id: str, index: int, total: int) -> None:
+    if total <= 1:
+        return
+    if index == 1 or index == total or index % _WINDOW_LOG_INTERVAL == 0:
+        _LOG.info("[ontology] extracting %s window %d/%d", doc_id, index, total)
+
+
 @dataclass
 class LLMExtractionAdapter:
     """Default extractor via the injectable `complete`. A document longer than `max_chars` is
@@ -174,13 +201,25 @@ class LLMExtractionAdapter:
         from llb.eval.map_reduce import split_document
 
         windows = split_document(doc.text, self.max_chars, self.chunk_overlap)
-        parts = [self._extract_window(doc.doc_id, doc.text, w) for w in windows]
+        parts = []
+        for index, window in enumerate(windows, start=1):
+            _log_window_progress(doc.doc_id, index, len(windows))
+            parts.append(self._extract_window(doc.doc_id, doc.text, window))
         return merge_extractions(doc.doc_id, parts)
 
 
 def extract_corpus(docs: list[DocRecord], adapter: ExtractionAdapter) -> list[DocExtraction]:
     """Run the extractor over every inventoried document."""
-    extractions = [adapter.extract(doc) for doc in docs]
+    extractions = []
+    for index, doc in enumerate(docs, start=1):
+        _LOG.info(
+            "[ontology] stage 2: extracting doc %d/%d %s (%d chars)",
+            index,
+            len(docs),
+            doc.doc_id,
+            doc.n_chars,
+        )
+        extractions.append(adapter.extract(doc))
     n_facts = sum(len(e.facts) for e in extractions)
     n_ent = sum(len(e.entities) for e in extractions)
     _LOG.info("[ontology] stage 2: %d entities, %d facts across %d docs", n_ent, n_facts, len(docs))

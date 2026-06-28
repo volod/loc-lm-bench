@@ -7,7 +7,28 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-No open implementation tasks are queued.
+### pdf-ontology-extraction-calibration
+
+- User-visible outcome: Make long PDF-corpus ontology drafting practical enough for routine
+  gold-set and GraphRAG construction on a 16 GB local CUDA host.
+- Scope boundary: Reuse `llb ingest-pdf-corpus`, `llb prepare-goldset-draft`, and `llb build-graph`;
+  focus on extraction prompt shape, document/window selection controls, and relation/fact yield.
+  Do not replace the existing human verification gate or add a separate graph database.
+- Data and artifact paths: Use `.data/_doc` as the source PDF directory and write runtime outputs
+  under `$DATA_DIR/pdf-corpus/<run>/`, `$DATA_DIR/prepare-goldset/<run>/`, and `$DATA_DIR/llb/graph/`.
+  Current mechanics and smoke evidence live in
+  [`current/data-prep.md`](current/data-prep.md),
+  [`current/robustness-ontology-backends.md`](current/robustness-ontology-backends.md), and
+  [`current/graphrag-backend.md`](current/graphrag-backend.md).
+- Execution path: Compare local extraction settings such as `--max-tokens`, `--temperature 0`,
+  `--no-think`, and optional document/window caps before launching a full multi-hour run. Prefer
+  a measurable one-window or one-document probe that reports parse rate, grounded fact count, and
+  elapsed time.
+- Acceptance gates: Focused tests for any parser or prompt changes, a successful full draft bundle
+  with nonzero grounded facts, a graph with useful edge count, a verification worksheet for human
+  review, and retrieval comparison against the vector store.
+- Documentation target: Update the same current-doc topics with the final command, artifact paths,
+  model choice, timing, and score comparison once the workflow is repeatable.
 
 ## Adding Future Tasks
 

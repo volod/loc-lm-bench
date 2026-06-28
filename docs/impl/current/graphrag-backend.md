@@ -85,6 +85,10 @@ Fresh extraction can disable hidden reasoning with `--extract-no-think`. For Oll
 models this uses the native `/api/chat` path because the OpenAI-compatible `/v1` path does not
 honor the `think` control.
 
+The graph build path has been smoke-tested with
+`.data/prepare-goldset/{timestamp}-smoke`: it loaded two drafted extractions and wrote
+a graph with nodes, edges, and communities under `$DATA_DIR/llb/graph/`.
+
 ## Ontology Scope
 
 Graph nodes use the closed 13-type vocabulary in
