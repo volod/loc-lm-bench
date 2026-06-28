@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "llb"
 version = "0.1.0"
 description = "loc-lm-bench: local Ukrainian LLM model-selection benchmark"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "typer>=0.12",
   "pydantic>=2.6",
@@ -75,7 +75,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 
 [tool.pymarkdown]
 # Enable GFM tables so the line-length rule (MD013) recognizes table rows as table tokens; without
@@ -96,7 +96,7 @@ plugins.MD007.enabled = false  # nested-list indentation (compact nested lists)
 plugins.MD026.enabled = false  # trailing punctuation in headings (sentence-style schema titles)
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 files = ["src/llb"]
 check_untyped_defs = true
 disallow_any_generics = true

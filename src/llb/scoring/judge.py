@@ -8,7 +8,7 @@ OpenAI-compatible local endpoint through its maintained LocalModel adapter.
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, cast
+from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
@@ -253,6 +253,51 @@ def deepeval_scorer(
     )
 
 
+_UKRAINIAN_GEVAL_CACHE: dict[type[Any], type[Any]] = {}
+
+
+def _ukrainian_geval_class(geval_cls: type[Any]) -> type[Any]:
+    """Subclass GEval so its result prompts come from `UkrainianGEvalTemplate`.
+
+    DeepEval 4.x dropped the `evaluation_template` constructor argument and now resolves every
+    prompt through `_get_prompt(method, ...)`. We override that single hook and route the two
+    result methods to our Ukrainian template; the evaluation-steps prompt is never reached
+    because the metrics are constructed with `evaluation_steps` already supplied. The class is
+    cached per GEval type so the lazy optional dependency stays import-light."""
+    cached = _UKRAINIAN_GEVAL_CACHE.get(geval_cls)
+    if cached is not None:
+        return cached
+
+    class _UkrainianGEval(geval_cls):
+        def _get_prompt(
+            self,
+            method: str,
+            *,
+            template_class: str | None = None,
+            multimodal: bool = False,
+            strict: bool = True,
+            **kwargs: Any,
+        ) -> str:
+            if method == "generate_evaluation_results":
+                return UkrainianGEvalTemplate.generate_evaluation_results(
+                    multimodal=multimodal, **kwargs
+                )
+            if method == "generate_strict_evaluation_results":
+                return UkrainianGEvalTemplate.generate_strict_evaluation_results(
+                    multimodal=multimodal, **kwargs
+                )
+            return super()._get_prompt(  # type: ignore[no-any-return]
+                method,
+                template_class=template_class,
+                multimodal=multimodal,
+                strict=strict,
+                **kwargs,
+            )
+
+    _UKRAINIAN_GEVAL_CACHE[geval_cls] = _UkrainianGEval
+    return _UkrainianGEval
+
+
 def _default_deepeval_evaluate(
     records: list[JudgeInputRecord],
     judge_model: str,
@@ -285,11 +330,10 @@ def _default_deepeval_evaluate(
         temperature=0.0,
         format="json",
     )
-    # DeepEval types this as a GEvalTemplate subclass. Keeping our small compatible template
-    # independent preserves the lazy optional dependency while the metric engine calls the same
-    # two static methods at runtime.
-    evaluation_template = cast(Any, UkrainianGEvalTemplate)
-    faithfulness = GEval(
+    # DeepEval 4.x renders prompts through `_get_prompt`, so a thin subclass borrows our
+    # Ukrainian template while keeping the metric engine otherwise untouched.
+    ua_geval = _ukrainian_geval_class(GEval)
+    faithfulness = ua_geval(
         name="UA Faithfulness",
         evaluation_params=[
             SingleTurnParams.ACTUAL_OUTPUT,
@@ -298,16 +342,14 @@ def _default_deepeval_evaluate(
         evaluation_steps=UA_FAITHFULNESS_STEPS,
         model=model,
         async_mode=False,
-        evaluation_template=evaluation_template,
         _include_g_eval_suffix=False,
     )
-    relevancy = GEval(
+    relevancy = ua_geval(
         name="UA Answer Relevancy",
         evaluation_params=[SingleTurnParams.INPUT, SingleTurnParams.ACTUAL_OUTPUT],
         evaluation_steps=UA_ANSWER_RELEVANCY_STEPS,
         model=model,
         async_mode=False,
-        evaluation_template=evaluation_template,
         _include_g_eval_suffix=False,
     )
 
