@@ -113,6 +113,8 @@ make run-eval JUDGE_RHO=<rho> JUDGE_MODEL=<model> JUDGE_BASE_URL=<url>
 
 `calibration-run` pre-fills model answers and optional ungated judge ratings.
 `calibration-rate` hides judge ratings by default so the human rating is independent.
+It stores only human-owned worksheet columns, supports resume/review navigation, and exits without
+editing when the start-fresh clear prompt is not confirmed.
 `calibration-score` computes rho and confidence interval from the filled worksheet.
 
 Tracked calibration worksheets live in `calibration/`. Generated worksheets for temporary corpora

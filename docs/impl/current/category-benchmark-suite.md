@@ -31,6 +31,9 @@ The schema is documented in `docs/design/text-analysis-schema.md`. Planted label
 ids, values, aliases, grounding offsets, attributes, and a kind. Objective sub-tasks include
 `key_fact`, `entity`, `topic`, `trend`, `risk`, `decision`, and `contradiction`. Free-form
 sub-tasks such as `narrative`, `insight`, and long-document answers use the gated judge path.
+The synthetic planter validates kinds before grounding, drops ungrounded quote-bearing labels,
+adds grounded evidence aliases, preserves label attributes such as trend direction, and increments
+per-kind label ids only for records it emits.
 
 Matching is deterministic: label id, normalized surface, aliases, then pinned-embedder cosine.
 Trend labels are direction-aware; a right-subject wrong-direction answer receives no credit.

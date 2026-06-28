@@ -303,6 +303,172 @@ class _Quit(Exception):
     """Internal: end the session (q, EOF, or exhausted injected input)."""
 
 
+def _emit_help(emit: Callable[[str], None]) -> None:
+    emit(
+        "judge calibration -- rate each model answer against the reference, "
+        f"{RATING_MIN} (wrong) to {RATING_MAX} (fully correct)."
+    )
+    emit(help_text())
+
+
+def _get_idx(start: int | None, total: int, rows: Sequence[dict[str, str]]) -> int:
+    if start is not None:
+        idx = max(0, min(start - 1, total - 1))
+    elif rated_count(rows) == total:
+        idx = total  # everything already rated -> open on the review/finish screen
+    else:
+        idx = first_unrated_index(rows)
+    return idx
+
+
+def _read(prompt: str, it: Iterator[str] | None, emit: Callable[[str], None]) -> str:
+    if it is None:
+        return _stdin_reader(prompt)
+    emit(prompt)
+    try:
+        return next(it)
+    except StopIteration as exc:
+        raise _Quit from exc
+
+
+def _save(path: Path, rows: Sequence[dict[str, str]], fieldnames: Sequence[str]) -> None:
+    save_human_columns(path, rows, fieldnames)
+
+
+def _set_rating(row: dict[str, str], value: int) -> None:
+    row["human_rating"] = str(value)
+    row["human_status"] = STATUS_RATED
+
+
+def _maybe_clear_human_columns(
+    clear: bool,
+    rows: Sequence[dict[str, str]],
+    path: Path,
+    fieldnames: Sequence[str],
+    it: Iterator[str] | None,
+    emit: Callable[[str], None],
+) -> bool:
+    if not clear:
+        return True
+    ans = _read(
+        "clear ALL human ratings/answers and start fresh? type 'yes' to confirm: ", it, emit
+    )
+    if ans.strip().lower() != "yes":
+        emit("[calibration] clear aborted; nothing changed.")
+        return False
+    clear_human_columns(rows)
+    _save(path, rows, fieldnames)
+    emit("[calibration] cleared all human columns.")
+    return True
+
+
+def _clear_rating(row: dict[str, str]) -> None:
+    row["human_rating"] = ""
+    row["human_status"] = STATUS_PENDING
+
+
+def _go_forward(
+    idx: int, total: int, rows: Sequence[dict[str, str]], emit: Callable[[str], None]
+) -> int:
+    new = _advanced_index(idx, total, rows)
+    if idx == total - 1 and new < total:  # wrapped back to fill an unrated gap
+        remaining = total - rated_count(rows)
+        emit(f"[calibration] {remaining} item(s) still unrated -- jumping there.")
+    return new
+
+
+def _jump_to(idx: int, target: int, total: int, emit: Callable[[str], None]) -> int:
+    if 1 <= target <= total:
+        idx = target - 1
+    else:
+        emit(f"[calibration] item out of range 1..{total}: {target}")
+    return idx
+
+
+def _go_unrated(idx: int, rows: Sequence[dict[str, str]], emit: Callable[[str], None]) -> int:
+    next_idx = first_unrated_index(rows)
+    if (rows[next_idx].get("human_rating") or "").strip():
+        emit("[calibration] all items are rated.")
+    else:
+        idx = next_idx
+    return idx
+
+
+def _handle_idx_eq_total(
+    idx: int,
+    total: int,
+    rows: Sequence[dict[str, str]],
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+) -> tuple[int, bool]:
+    is_last_item = idx >= total
+    if is_last_item:  # past the last item -> the review / finish screen
+        emit(completion_panel(rows, total))
+        cmd = parse_command(_read("review (p / j <N> / u) or finish (Enter / q) > ", it, emit))
+        if cmd.kind in (QUIT, NEXT):
+            raise _Quit
+        if cmd.kind == HELP:
+            emit(help_text())
+        elif cmd.kind == PREV:
+            idx = total - 1
+        elif cmd.kind == JUMP:
+            idx = _jump_to(idx, cmd.value if cmd.value is not None else 0, total, emit)
+        elif cmd.kind == UNRATED:
+            idx = _go_unrated(idx, rows, emit)
+        else:
+            emit("[calibration] all rated -- p to review, j <N> to jump, Enter/q to finish.")
+    return idx, is_last_item
+
+
+def _handle_row_action(
+    rows: Sequence[dict[str, str]],
+    idx: int,
+    total: int,
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+    path: Path,
+    fieldnames: Sequence[str],
+    show_judge: bool = False,
+) -> int:
+    row = rows[idx]
+    emit(format_card(row, idx + 1, total, rated_count(rows), show_judge=show_judge))
+    cmd = parse_command(_read(f"{PROMPT_HINT}\nrating> ", it, emit))
+    kind = cmd.kind
+
+    if kind == QUIT:
+        raise _Quit
+    elif kind == HELP:
+        emit(help_text())
+    elif kind == NEXT:
+        idx = _go_forward(idx, total, rows, emit)
+    elif kind == PREV:
+        idx = max(idx - 1, 0)
+    elif kind == JUMP:
+        idx = _jump_to(idx, cmd.value if cmd.value is not None else 0, total, emit)
+    elif kind == UNRATED:
+        idx = _go_unrated(idx, rows, emit)
+    elif kind == RATE:
+        _set_rating(row, cmd.value or RATING_MIN)
+        _save(path, rows, fieldnames)
+        idx = _go_forward(idx, total, rows, emit)
+    elif kind == CLEAR:
+        _clear_rating(row)
+        _save(path, rows, fieldnames)
+    elif kind == ANSWER:
+        text = _read("your answer (empty to clear): ", it, emit).strip()
+        row["human_answer"] = text
+        _save(path, rows, fieldnames)
+    elif kind == NOTE:
+        text = _read("note (empty to clear): ", it, emit).strip()
+        row["human_note"] = text
+        _save(path, rows, fieldnames)
+    elif cmd.raw.startswith(_ESC):
+        emit("[calibration] arrow keys garbled -- use n (next) / p (prev).")
+    else:
+        emit(f"[calibration] not a command: {cmd.raw!r} (? for help; 1-5 to rate).")
+    return idx
+
+
 def run_session(
     worksheet_path: Path | str,
     *,
@@ -323,148 +489,33 @@ def run_session(
     emit = output or _default_output
     it: Iterator[str] | None = iter(inputs) if inputs is not None else None
 
-    def read(prompt: str) -> str:
-        if it is None:
-            return _stdin_reader(prompt)
-        emit(prompt)
-        try:
-            return next(it)
-        except StopIteration as exc:
-            raise _Quit from exc
-
     rows, fieldnames = load_worksheet(path)
     if not rows:
         emit(f"[calibration] worksheet has no rows: {path}")
         return 0
 
-    def save() -> None:
-        save_human_columns(path, rows, fieldnames)
-
-    if clear:
-        ans = read("clear ALL human ratings/answers and start fresh? type 'yes' to confirm: ")
-        if ans.strip().lower() != "yes":
-            emit("[calibration] clear aborted; nothing changed.")
-            return rated_count(rows)
-        clear_human_columns(rows)
-        save()
-        emit("[calibration] cleared all human columns.")
+    if not _maybe_clear_human_columns(clear, rows, path, fieldnames, it, emit):
+        return rated_count(rows)
 
     total = len(rows)
-    if start is not None:
-        idx = max(0, min(start - 1, total - 1))
-    elif rated_count(rows) == total:
-        idx = total  # everything already rated -> open on the review/finish screen
-    else:
-        idx = first_unrated_index(rows)
+    idx = _get_idx(start, total, rows)
 
-    emit(
-        "judge calibration -- rate each model answer against the reference, "
-        f"{RATING_MIN} (wrong) to {RATING_MAX} (fully correct)."
-    )
-    emit(help_text())
-
-    def set_rating(row: dict[str, str], value: int) -> None:
-        row["human_rating"] = str(value)
-        row["human_status"] = STATUS_RATED
-
-    def clear_rating(row: dict[str, str]) -> None:
-        row["human_rating"] = ""
-        row["human_status"] = STATUS_PENDING
-
-    def go_forward() -> None:
-        nonlocal idx
-        new = _advanced_index(idx, total, rows)
-        if idx == total - 1 and new < total:  # wrapped back to fill an unrated gap
-            remaining = total - rated_count(rows)
-            emit(f"[calibration] {remaining} item(s) still unrated -- jumping there.")
-        idx = new
-
-    def jump_to(target: int) -> None:
-        nonlocal idx
-        if 1 <= target <= total:
-            idx = target - 1
-        else:
-            emit(f"[calibration] item out of range 1..{total}: {target}")
-
-    def go_unrated() -> None:
-        nonlocal idx
-        nxt = first_unrated_index(rows)
-        if (rows[nxt].get("human_rating") or "").strip():
-            emit("[calibration] all items are rated.")
-        else:
-            idx = nxt
+    _emit_help(emit)
 
     try:
         while True:
-            if idx >= total:  # past the last item -> the review / finish screen
-                emit(completion_panel(rows, total))
-                cmd = parse_command(read("review (p / j <N> / u) or finish (Enter / q) > "))
-                if cmd.kind in (QUIT, NEXT):
-                    raise _Quit
-                if cmd.kind == HELP:
-                    emit(help_text())
-                elif cmd.kind == PREV:
-                    idx = total - 1
-                elif cmd.kind == JUMP:
-                    jump_to(cmd.value if cmd.value is not None else 0)
-                elif cmd.kind == UNRATED:
-                    go_unrated()
-                else:
-                    emit(
-                        "[calibration] all rated -- p to review, j <N> to jump, Enter/q to finish."
-                    )
+            idx, is_last_item = _handle_idx_eq_total(idx, total, rows, emit, it)
+            if is_last_item:
                 continue
 
-            row = rows[idx]
-            emit(format_card(row, idx + 1, total, rated_count(rows), show_judge=show_judge))
-            cmd = parse_command(read(f"{PROMPT_HINT}\nrating> "))
+            idx = _handle_row_action(rows, idx, total, emit, it, path, fieldnames, show_judge)
 
-            if cmd.kind == QUIT:
-                raise _Quit
-            if cmd.kind == HELP:
-                emit(help_text())
-                continue
-            if cmd.kind == NEXT:
-                go_forward()
-                continue
-            if cmd.kind == PREV:
-                idx = max(idx - 1, 0)
-                continue
-            if cmd.kind == JUMP:
-                jump_to(cmd.value if cmd.value is not None else 0)
-                continue
-            if cmd.kind == UNRATED:
-                go_unrated()
-                continue
-            if cmd.kind == RATE:
-                set_rating(row, cmd.value or RATING_MIN)
-                save()
-                go_forward()
-                continue
-            if cmd.kind == CLEAR:
-                clear_rating(row)
-                save()
-                continue
-            if cmd.kind == ANSWER:
-                text = read("your answer (empty to clear): ").strip()
-                row["human_answer"] = text
-                save()
-                continue
-            if cmd.kind == NOTE:
-                text = read("note (empty to clear): ").strip()
-                row["human_note"] = text
-                save()
-                continue
-            if cmd.raw.startswith(_ESC):
-                emit("[calibration] arrow keys garbled -- use n (next) / p (prev).")
-            else:
-                emit(f"[calibration] not a command: {cmd.raw!r} (? for help; 1-5 to rate).")
     except (_Quit, EOFError):
         pass
     except KeyboardInterrupt:
         emit("")  # break the prompt line cleanly
 
-    save()
+    _save(path, rows, fieldnames)
     for line in summary_lines(rows, path):
         emit(line)
     return rated_count(rows)

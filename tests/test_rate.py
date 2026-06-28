@@ -5,6 +5,9 @@ directly; the session loop is driven by an INJECTED input iterator + output sink
 terminal / model / endpoint / GPU is needed -- it operates only on the CSV.
 """
 
+from dataclasses import dataclass
+from pathlib import Path
+
 from llb.judge.calibration import WORKSHEET_COLS, load_worksheet, write_worksheet_rows
 from llb.judge.rate import (
     ANSWER,
@@ -19,6 +22,8 @@ from llb.judge.rate import (
     UNKNOWN,
     UNRATED,
     _advanced_index,
+    _go_forward,
+    _go_unrated,
     clear_human_columns,
     completion_panel,
     first_unrated_index,
@@ -29,6 +34,14 @@ from llb.judge.rate import (
     save_human_columns,
     summary_lines,
 )
+
+
+@dataclass
+class SessionResult:
+    path: Path
+    rated: int
+    rows: list[dict[str, str]]
+    output: list[str]
 
 
 def _row(item_id, **over):
@@ -51,6 +64,18 @@ def _make_ws(tmp_path, rows):
     path = tmp_path / "ws.csv"
     write_worksheet_rows(path, rows, WORKSHEET_COLS)
     return path
+
+
+def _run_session(tmp_path, rows, inputs, **kwargs):
+    path = _make_ws(tmp_path, rows)
+    output: list[str] = []
+    rated = run_session(path, inputs=inputs, output=output.append, **kwargs)
+    loaded, _ = load_worksheet(path)
+    return SessionResult(path=path, rated=rated, rows=loaded, output=output)
+
+
+def _by_id(rows):
+    return {row["item_id"]: row for row in rows}
 
 
 # --- pure pieces -----------------------------------------------------------------------
@@ -142,15 +167,15 @@ def test_clear_human_columns():
 
 
 def test_session_author_rate_navigate_quit(tmp_path):
-    path = _make_ws(tmp_path, [_row("a"), _row("b"), _row("c")])
-    out: list[str] = []
     # author an answer on item1, rate it 4, go back and re-rate 3, jump to item3, rate 2, quit.
-    inputs = ["a", "Kyiv is the capital", "4", "p", "3", "j 3", "2", "q"]
-    rated = run_session(path, inputs=inputs, output=out.append)
+    result = _run_session(
+        tmp_path,
+        [_row("a"), _row("b"), _row("c")],
+        ["a", "Kyiv is the capital", "4", "p", "3", "j 3", "2", "q"],
+    )
 
-    assert rated == 2
-    rows, _ = load_worksheet(path)
-    by_id = {r["item_id"]: r for r in rows}
+    assert result.rated == 2
+    by_id = _by_id(result.rows)
     assert by_id["a"]["human_answer"] == "Kyiv is the capital"
     assert by_id["a"]["human_rating"] == "3" and by_id["a"]["human_status"] == "rated"
     assert by_id["b"]["human_rating"] == ""  # never rated
@@ -158,25 +183,21 @@ def test_session_author_rate_navigate_quit(tmp_path):
 
 
 def test_session_resume_starts_at_first_unrated(tmp_path):
-    path = _make_ws(tmp_path, [_row("a", human_rating="5"), _row("b"), _row("c")])
-    out: list[str] = []
-    run_session(path, inputs=["q"], output=out.append)
-    assert any("item 2/3" in line for line in out)  # resumed at first unrated (item b)
+    result = _run_session(tmp_path, [_row("a", human_rating="5"), _row("b"), _row("c")], ["q"])
+    assert any("item 2/3" in line for line in result.output)  # resumed at first unrated (item b)
 
 
 def test_session_start_option_overrides_resume(tmp_path):
-    path = _make_ws(tmp_path, [_row("a"), _row("b"), _row("c")])
-    out: list[str] = []
-    run_session(path, inputs=["q"], output=out.append, start=3)
-    assert any("item 3/3" in line for line in out)
+    result = _run_session(tmp_path, [_row("a"), _row("b"), _row("c")], ["q"], start=3)
+    assert any("item 3/3" in line for line in result.output)
 
 
 def test_session_clear_command_resets_rating(tmp_path):
     # A fully-rated worksheet opens on the completion screen, so navigate to the item (p) first.
-    path = _make_ws(tmp_path, [_row("a", human_rating="4", human_status="rated")])
-    run_session(path, inputs=["p", "c", "q"], output=lambda _s: None)
-    rows, _ = load_worksheet(path)
-    assert rows[0]["human_rating"] == "" and rows[0]["human_status"] == "pending"
+    result = _run_session(
+        tmp_path, [_row("a", human_rating="4", human_status="rated")], ["p", "c", "q"]
+    )
+    assert result.rows[0]["human_rating"] == "" and result.rows[0]["human_status"] == "pending"
 
 
 def test_advanced_index_transitions():
@@ -185,6 +206,23 @@ def test_advanced_index_transitions():
     assert _advanced_index(1, 2, rated) == 2  # last + all rated -> completion screen (==total)
     gap = [_row("a"), _row("b", human_rating="5")]  # index 0 still unrated
     assert _advanced_index(1, 2, gap) == 0  # last + gap -> wrap to the first unrated
+
+
+def test_go_forward_returns_next_index_and_reports_gap():
+    output: list[str] = []
+    rows = [_row("a"), _row("b", human_rating="5")]
+    assert _go_forward(1, 2, rows, output.append) == 0
+    assert any("1 item(s) still unrated" in line for line in output)
+
+
+def test_go_unrated_handles_completion_index():
+    output: list[str] = []
+    rated = [_row("a", human_rating="5")]
+    assert _go_unrated(len(rated), rated, output.append) == len(rated)
+    assert any("all items are rated" in line for line in output)
+
+    gap = [_row("a", human_rating="5"), _row("b")]
+    assert _go_unrated(len(gap), gap, output.append) == 1
 
 
 def test_completion_panel_reports_spread_and_finish():
@@ -196,19 +234,22 @@ def test_completion_panel_reports_spread_and_finish():
 
 
 def test_session_lands_on_completion_after_rating_last(tmp_path):
-    path = _make_ws(tmp_path, [_row("a"), _row("b")])
-    out: list[str] = []
     # rate both; after the last, all rated -> completion screen; Enter finishes.
-    rated = run_session(path, inputs=["3", "4", ""], output=out.append)
-    assert rated == 2
-    assert any("all 2 items rated" in line for line in out)
+    result = _run_session(tmp_path, [_row("a"), _row("b")], ["3", "4", ""])
+    assert result.rated == 2
+    assert any("all 2 items rated" in line for line in result.output)
 
 
 def test_session_opens_on_completion_when_all_already_rated(tmp_path):
-    path = _make_ws(tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")])
-    out: list[str] = []
-    run_session(path, inputs=["q"], output=out.append)
-    assert any("all 2 items rated" in line for line in out)
+    result = _run_session(
+        tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")], ["q"]
+    )
+    assert any("all 2 items rated" in line for line in result.output)
+
+
+def test_session_completion_unrated_reports_all_rated(tmp_path):
+    result = _run_session(tmp_path, [_row("a", human_rating="5")], ["u", "q"])
+    assert any("all items are rated" in line for line in result.output)
 
 
 def test_save_human_columns_preserves_disk_non_human_columns(tmp_path):
@@ -224,46 +265,44 @@ def test_save_human_columns_preserves_disk_non_human_columns(tmp_path):
 
 
 def test_session_completion_review_then_change(tmp_path):
-    path = _make_ws(tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")])
     # open on completion -> p goes to the last item -> clear it -> q.
-    run_session(path, inputs=["p", "c", "q"], output=lambda _s: None)
-    rows, _ = load_worksheet(path)
-    assert rows[1]["human_rating"] == ""  # changed via the review screen
+    result = _run_session(
+        tmp_path, [_row("a", human_rating="5"), _row("b", human_rating="4")], ["p", "c", "q"]
+    )
+    assert result.rows[1]["human_rating"] == ""  # changed via the review screen
 
 
 def test_session_clear_flag_confirmed(tmp_path):
-    path = _make_ws(tmp_path, [_row("a", human_rating="4"), _row("b", human_rating="5")])
-    rated = run_session(path, inputs=["yes", "q"], output=lambda _s: None, clear=True)
-    assert rated == 0
-    rows, _ = load_worksheet(path)
-    assert all(r["human_rating"] == "" for r in rows)
+    result = _run_session(
+        tmp_path,
+        [_row("a", human_rating="4"), _row("b", human_rating="5")],
+        ["yes", "q"],
+        clear=True,
+    )
+    assert result.rated == 0
+    assert all(row["human_rating"] == "" for row in result.rows)
 
 
 def test_session_clear_flag_aborted_keeps_data(tmp_path):
-    path = _make_ws(tmp_path, [_row("a", human_rating="4")])
-    rated = run_session(path, inputs=["no"], output=lambda _s: None, clear=True)
-    assert rated == 1
-    rows, _ = load_worksheet(path)
-    assert rows[0]["human_rating"] == "4"
+    result = _run_session(tmp_path, [_row("a", human_rating="4")], ["no"], clear=True)
+    assert result.rated == 1
+    assert result.rows[0]["human_rating"] == "4"
+    assert any("clear aborted" in line for line in result.output)
+    assert not any("item 1/1" in line for line in result.output)
 
 
 def test_session_keyboardinterrupt_still_saves(tmp_path):
-    path = _make_ws(tmp_path, [_row("a"), _row("b")])
-
     def feed():
         yield "4"  # rate item a -> 4 (written through)
         raise KeyboardInterrupt  # Ctrl-C while at item b
 
-    rated = run_session(path, inputs=feed(), output=lambda _s: None)
-    assert rated == 1
-    rows, _ = load_worksheet(path)
-    assert rows[0]["human_rating"] == "4"
+    result = _run_session(tmp_path, [_row("a"), _row("b")], feed())
+    assert result.rated == 1
+    assert result.rows[0]["human_rating"] == "4"
 
 
 def test_session_eof_saves_and_returns(tmp_path):
-    path = _make_ws(tmp_path, [_row("a")])
     # exhausting the injected inputs (no 'q') is treated as save + quit.
-    rated = run_session(path, inputs=["4"], output=lambda _s: None)
-    assert rated == 1
-    rows, _ = load_worksheet(path)
-    assert rows[0]["human_rating"] == "4"
+    result = _run_session(tmp_path, [_row("a")], ["4"])
+    assert result.rated == 1
+    assert result.rows[0]["human_rating"] == "4"
