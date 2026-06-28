@@ -5,7 +5,12 @@
 3. claims -- твердження + evidence;
 4. facts -- трійки subject-relation-object + evidence.
 Кожне поле evidence та кожен елемент mentions МАЄ бути дослівною цитатою з тексту (скопіюй точно, символ у символ).
-Поверни лише JSON-об'єкт:
+Поверни лише JSON-об'єкт з ТОЧНО такими ключами верхнього рівня: "entities", "events", "claims", "facts".
+Не використовуй ключ "relations": відношення записуй тільки у "facts".
+Якщо для якогось списку немає елементів, поверни порожній список [].
+Обмеження розміру: максимум 8 entities, 4 events, 4 claims, 8 facts.
+Пріоритет: спочатку facts і claims з явним evidence, потім найважливіші entities; не виписуй довгі переліки назв, якщо через це бракує facts.
+Схема:
 {"entities": [{"name": ..., "type": ..., "aliases": [...], "mentions": [<цитата>]}],
  "events": [{"description": ..., "evidence": <цитата>}],
  "claims": [{"text": ..., "evidence": <цитата>}],

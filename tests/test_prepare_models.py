@@ -1,7 +1,8 @@
 import pytest
 
 from llb.backends import prepare
-from llb.backends.hardware import Gpu, max_vram_mb, parse_smi
+from llb.backends import hardware
+from llb.backends.hardware import Gpu, detect_gpus, max_vram_mb, parse_smi
 
 
 def test_load_manifest_bad_yaml_raises_clean_error(tmp_path):
@@ -64,6 +65,27 @@ def test_parse_smi_reads_fields():
 def test_parse_smi_skips_garbage_lines():
     assert parse_smi("\n  \nbad line\n") == []
     assert max_vram_mb([]) == 0
+
+
+def test_detect_gpus_falls_back_to_absolute_nvidia_smi(monkeypatch):
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "NVIDIA GeForce RTX 4060 Ti, 16380, 15000, 595.71.05\n"
+
+    def fake_run(argv, **_kwargs):
+        calls.append(argv[0])
+        if argv[0] == "nvidia-smi":
+            raise FileNotFoundError
+        return Result()
+
+    monkeypatch.setattr(hardware.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(hardware.subprocess, "run", fake_run)
+
+    gpus = detect_gpus()
+    assert calls[:2] == ["nvidia-smi", "/usr/bin/nvidia-smi"]
+    assert gpus == [Gpu(0, "NVIDIA GeForce RTX 4060 Ti", 16380, 15000, "595.71.05")]
 
 
 def test_decide_ollama_pulls_even_when_oversized():

@@ -428,7 +428,7 @@
       "descriptor": "prep/ontology/extraction.prompt.json",
       "template": {
         "path": "prep/ontology/extraction.txt",
-        "sha256": "fdcbe47785af6f2d8b8b87042589d78bed1f7fd4fa7293849230031d3e76101f"
+        "sha256": "6757dc9381c4a46899f8d1074b2eae0241b28b0c46f47cb28e84545cb81a1d1e"
       }
     },
     "prep.text_analysis_corpus.doc": {

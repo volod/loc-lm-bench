@@ -70,6 +70,18 @@ certifying changed content.
 `src/llb/prep/goldset_skeleton.py` writes an editable from-scratch SQuAD template under
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
+`llb ingest-pdf-corpus` extracts local PDF directories into the canonical `.md` corpus shape used
+by RAG, ontology drafting, prompt-system packages, and GraphRAG. It uses Poppler `pdftotext`, writes
+stable ASCII `pdf-<digest>.md` ids, preserves the source PDF path in a manifest, and skips PDFs whose
+extracted text is below `--min-chars`.
+
+```bash
+llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <run>/corpus --min-chars 500
+```
+
+For `.data/_doc`, the local run at `.data/pdf-corpus/20260628T131439Z/corpus` extracted 16 of 19
+PDFs; three source PDFs had no extractable text through `pdftotext`.
+
 ## Verification Gate
 
 The verification path has a mechanical half and a human half.

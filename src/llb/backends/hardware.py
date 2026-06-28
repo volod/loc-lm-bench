@@ -6,10 +6,12 @@ on a bare host before any heavy dependency is installed.
 """
 
 import subprocess
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 _SMI_QUERY = "name,memory.total,memory.free,driver_version"
+_NVIDIA_SMI_CANDIDATES = ("nvidia-smi", "/usr/bin/nvidia-smi", "/usr/local/bin/nvidia-smi")
 
 
 @dataclass
@@ -36,20 +38,38 @@ def parse_smi(stdout: str) -> list[Gpu]:
     return gpus
 
 
+def _nvidia_smi_candidates() -> list[str]:
+    """Executable candidates for nvidia-smi, de-duplicated in preference order."""
+    candidates: list[str] = []
+    resolved = shutil.which("nvidia-smi")
+    if resolved is not None:
+        candidates.append(resolved)
+    candidates.extend(_NVIDIA_SMI_CANDIDATES)
+    out: list[str] = []
+    for candidate in candidates:
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
 def detect_gpus() -> list[Gpu]:
     """Detect host GPUs via nvidia-smi. Returns [] when none / no driver."""
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", f"--query-gpu={_SMI_QUERY}", "--format=csv,noheader,nounits"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError):
-        return []
-    if out.returncode != 0:
-        return []
-    return parse_smi(out.stdout)
+    for executable in _nvidia_smi_candidates():
+        try:
+            out = subprocess.run(
+                [executable, f"--query-gpu={_SMI_QUERY}", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError):
+            continue
+        if out.returncode != 0:
+            continue
+        gpus = parse_smi(out.stdout)
+        if gpus:
+            return gpus
+    return []
 
 
 def max_vram_mb(gpus: list[Gpu]) -> int:

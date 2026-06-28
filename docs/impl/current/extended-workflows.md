@@ -80,6 +80,12 @@ llb prompt-system-compare --lane rag --model <model>
 `prompt_system_provenance` in the manifest. Board loaders can rank one model across prompt-system
 ids for RAG or agentic lanes.
 
+For the extracted PDF corpus at `.data/pdf-corpus/20260628T131439Z/corpus`,
+`prompt-system-prepare` wrote 18 candidates to
+`.data/prompt-system/20260628T131439Z-pdf-docs`. Candidate `31221998c232` is pinned for the
+baseline-vs-augmented RAG comparison: compact metadata, inline graph references, six anthology
+passages, and 5623 tokens inside an 8192-token context budget.
+
 ## Sample Prompt Assets
 
 The IP regulation samples provide a small checked prompt-system fixture:

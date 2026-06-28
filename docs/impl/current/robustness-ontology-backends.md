@@ -22,6 +22,12 @@ The rationale is practical fit prediction. A quantized checkpoint can still carr
 high-precision embedding table, and vLLM startup failures are expensive compared with a conservative
 pre-flight estimate.
 
+`src/llb/backends/hardware.py` detects CUDA hosts through `nvidia-smi`. Detection first tries the
+resolved executable from `PATH`, then falls back to common absolute locations such as
+`/usr/bin/nvidia-smi`, so planner commands still see the GPU when an execution environment has a
+minimal `PATH`. On the local RTX 4060 Ti host, `detect-gpu-vram`, `list-models`, and
+`resolve-models --offline` now report a 16,380 MiB GPU tier.
+
 ## VRAM Contention Guard
 
 `src/llb/executor/contention.py` protects vLLM launches from resident GPU users.
@@ -89,7 +95,8 @@ Pipeline stages:
    the bundle.
 
 ```bash
-llb prepare-goldset-draft --corpus-root <dir> --model <local-model>
+llb prepare-goldset-draft --corpus-root <dir> --model <local-model> \
+  --max-tokens 2048 --temperature 0 --timeout 300 --no-think
 llb prepare-goldset-draft --corpus-root <dir> --model <model> --extractor spacy
 ```
 
@@ -115,3 +122,7 @@ closed vocabulary as LLM extraction.
 `LLMExtractionAdapter` chunks over-long documents, extracts per window, and merges entities and
 facts while grounding offsets against the full original document. This keeps later sections from
 being silently truncated by endpoint context limits.
+
+For long local PDF corpora, extraction logs document and window progress. Ollama reasoning models
+should use `--no-think`; the command routes through Ollama native `/api/chat` so `think=false` is
+honored and JSON extraction is not spent on hidden reasoning.
