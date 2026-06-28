@@ -86,6 +86,8 @@ second verifier for support and answerability. A pass means the item is reviewab
 
 `src/llb/goldset/verify.py` handles stratified sampling, worksheet IO, acceptance arithmetic, and
 accepted-ledger emission. `src/llb/goldset/verify_session.py` owns the interactive terminal loop.
+The review session keeps command parsing, navigation, row edits, clear confirmation, and
+persistence in small helpers so the loop reads as worksheet orchestration.
 The accepted ledger writes copied corpus files plus canonical `verified=true` rows.
 
 The rationale is anti-anchoring and auditability: automated cross-check context can be shown to a
@@ -114,7 +116,8 @@ make run-eval JUDGE_RHO=<rho> JUDGE_MODEL=<model> JUDGE_BASE_URL=<url>
 `calibration-run` pre-fills model answers and optional ungated judge ratings.
 `calibration-rate` hides judge ratings by default so the human rating is independent.
 It stores only human-owned worksheet columns, supports resume/review navigation, and exits without
-editing when the start-fresh clear prompt is not confirmed.
+editing when the start-fresh clear prompt is not confirmed. The rating session uses the same
+parser/navigation/edit-helper shape as verification review.
 `calibration-score` computes rho and confidence interval from the filled worksheet.
 
 Tracked calibration worksheets live in `calibration/`. Generated worksheets for temporary corpora

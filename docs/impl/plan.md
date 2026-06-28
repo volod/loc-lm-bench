@@ -7,12 +7,7 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-- Refactor interactive review sessions in `llb.goldset.verify_session` and `llb.judge.rate`.
-  Extract command parsing, state transitions, display rendering, and persistence into small
-  helpers so the session loops can read as orchestration.
-- Split the remaining benchmark-runner hotspots in `llb.bench.text_analysis`,
-  `llb.bench.summarization`, `llb.bench.agentic`, and `llb.scoring.tooling`. Keep each runner's
-  model call, scoring, and artifact writing in named helper functions.
+No open implementation tasks are queued.
 
 ## Adding Future Tasks
 

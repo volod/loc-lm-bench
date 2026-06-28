@@ -33,6 +33,7 @@ from llb.bench.common import (
 from llb.contracts import (
     BoardRow,
     JudgeInputRecord,
+    JudgeScore,
     JudgeStatus,
     RunMetrics,
     RunPaths,
@@ -42,6 +43,7 @@ from llb.eval.common import EMPTY, OK
 from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_SUMMARIZATION, ModelResult, bootstrap_mean_ci
+from llb.scoring.judge import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 
@@ -82,6 +84,46 @@ class SummarizationRun:
     judge_reason: str = "no judge configured"
 
 
+@dataclass(slots=True)
+class _ScoredSummarizationCases:
+    summaries: list[str]
+    coverages: list[float]
+    rows: list[SummarizationCaseRow]
+    reliability: float
+    coverage_ci: tuple[float, float] | None
+
+
+@dataclass(slots=True)
+class _FaithfulnessResult:
+    outcome: JudgeOutcome
+    value: float | None
+    ci: tuple[float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _JudgeConfig:
+    model: str | None
+    rho: float | None
+    threshold: float
+    scorer: JudgeScorer | None
+    base_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SummarizationPersistInput:
+    data_dir: Path | str | None
+    run_name: str
+    model: str
+    backend: str
+    n_cases: int
+    result: ModelResult
+    scored: _ScoredSummarizationCases
+    faithfulness: _FaithfulnessResult
+    judge_config: _JudgeConfig
+    verification_cfg: dict[str, object]
+    mirror: Mirror | None
+
+
 def split_sentences(text: str) -> list[str]:
     """Split into non-empty trimmed sentences on terminal punctuation / newlines (UA-safe)."""
     return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip()]
@@ -109,6 +151,141 @@ def _faithfulness_records(
         {"question": _FAITHFULNESS_INTENT, "answer": summary, "contexts": [c.document]}
         for c, summary in zip(cases, summaries)
     ]
+
+
+def _generate_summaries(cases: list[SummarizationCase], complete: LLMComplete) -> list[str]:
+    return [complete(summarize_prompt(case.document)) for case in cases]
+
+
+def _case_row(case: SummarizationCase, summary: str, coverage: float) -> SummarizationCaseRow:
+    return {
+        "item_id": case.id,
+        "status": EMPTY if not summary.strip() else OK,
+        "coverage": round(coverage, 6),
+        "objective_score": round(coverage, 6),
+        "answer_preview": (summary or "")[:280],
+    }
+
+
+def _score_summaries(
+    cases: list[SummarizationCase],
+    summaries: list[str],
+    similarity: ta.Similarity,
+) -> _ScoredSummarizationCases:
+    coverages = [
+        reference_coverage(case.reference, summary, similarity)
+        for case, summary in zip(cases, summaries)
+    ]
+    rows = [
+        _case_row(case, summary, coverage)
+        for case, summary, coverage in zip(cases, summaries, coverages)
+    ]
+    reliability = sum(1 for row in rows if row["status"] == OK) / len(rows)
+    return _ScoredSummarizationCases(
+        summaries=summaries,
+        coverages=coverages,
+        rows=rows,
+        reliability=reliability,
+        coverage_ci=bootstrap_mean_ci(coverages),
+    )
+
+
+def _attach_faithfulness(
+    rows: list[SummarizationCaseRow], scores: list[JudgeScore]
+) -> tuple[float, tuple[float, float] | None]:
+    per_case = [float(score["faithfulness"]) for score in scores]
+    for row, value in zip(rows, per_case):
+        row["faithfulness"] = round(value, 6)
+    return round(mean(per_case), 6), bootstrap_mean_ci(per_case)
+
+
+def _run_faithfulness_judge(
+    cases: list[SummarizationCase],
+    scored: _ScoredSummarizationCases,
+    config: _JudgeConfig,
+) -> _FaithfulnessResult:
+    outcome = run_gated_judge(
+        _faithfulness_records(cases, scored.summaries),
+        judge_model=config.model,
+        judge_rho=config.rho,
+        threshold=config.threshold,
+        scorer=config.scorer,
+        base_url=config.base_url,
+    )
+    if outcome.trusted and outcome.scores:
+        value, ci = _attach_faithfulness(scored.rows, outcome.scores)
+        return _FaithfulnessResult(outcome=outcome, value=value, ci=ci)
+    if config.model is not None:
+        _LOG.info(
+            "[summarization] judge demoted (%s); objective coverage ranks alone", outcome.reason
+        )
+    return _FaithfulnessResult(outcome=outcome, value=None, ci=None)
+
+
+def _summarization_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+    return {
+        "objective_score": result.objective_score,  # mean reference coverage
+        "reliability": reliability,
+        "tokens_per_s": 0.0,
+    }
+
+
+def _summarization_config(request: _SummarizationPersistInput) -> dict[str, object]:
+    return {
+        "model": request.model,
+        "backend": request.backend,
+        "tier": TIER_SUMMARIZATION,
+        "category": "summarization",
+        "n_cases": request.n_cases,
+        "reference_coverage": request.result.objective_score,
+        "reference_coverage_ci": list(request.scored.coverage_ci)
+        if request.scored.coverage_ci
+        else None,
+        "judge_trusted": request.faithfulness.outcome.trusted,
+        "faithfulness": request.faithfulness.value,  # gated diagnostic, NOT the headline
+        "faithfulness_ci": list(request.faithfulness.ci) if request.faithfulness.ci else None,
+        "judge_diagnostics": request.faithfulness.outcome.diagnostics,
+        **request.verification_cfg,
+    }
+
+
+def _summarization_judge_status(
+    config: _JudgeConfig,
+    outcome: JudgeOutcome,
+) -> JudgeStatus | None:
+    if config.model is None:
+        return None
+    return {
+        "calibration_rho": config.rho,
+        "threshold": config.threshold,
+        "trusted": outcome.trusted,
+        "model": config.model,
+        "metrics": ["faithfulness"],
+        "diagnostics": outcome.diagnostics,
+    }
+
+
+def _persist_summarization_run(request: _SummarizationPersistInput) -> RunPaths | None:
+    if request.data_dir is None:
+        return None
+    paths = persist_category_run(
+        method=METHOD,
+        data_dir=request.data_dir,
+        run_name=request.run_name,
+        config=_summarization_config(request),
+        metrics=_summarization_metrics(request.result, request.scored.reliability),
+        case_rows=request.scored.rows,
+        judge=_summarization_judge_status(request.judge_config, request.faithfulness.outcome),
+        mirror=request.mirror,
+    )
+    _LOG.info(
+        "[summarization] %s reference-coverage=%.3f faithfulness=%s -> %s",
+        request.model,
+        request.result.objective_score,
+        f"{request.faithfulness.value:.3f}" if request.faithfulness.value is not None else "n/a",
+        paths["manifest"],
+    )
+    return paths
 
 
 def run_summarization(
@@ -142,114 +319,55 @@ def run_summarization(
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
-    if similarity is None:
-        similarity = ta.embedder_similarity()
-    summaries = [complete(summarize_prompt(c.document)) for c in cases]
-    coverages = [reference_coverage(c.reference, s, similarity) for c, s in zip(cases, summaries)]
-
-    rows: list[SummarizationCaseRow] = [
-        {
-            "item_id": c.id,
-            "status": EMPTY if not s.strip() else OK,
-            "coverage": round(cov, 6),
-            "objective_score": round(cov, 6),
-            "answer_preview": (s or "")[:280],
-        }
-        for c, s, cov in zip(cases, summaries, coverages)
-    ]
-
-    # Opt-in, gated faithfulness signal (objective coverage stays the headline).
-    outcome = run_gated_judge(
-        _faithfulness_records(cases, summaries),
-        judge_model=judge_model,
-        judge_rho=judge_rho,
+    similarity_fn = similarity if similarity is not None else ta.embedder_similarity()
+    scored = _score_summaries(cases, _generate_summaries(cases, complete), similarity_fn)
+    judge_config = _JudgeConfig(
+        model=judge_model,
+        rho=judge_rho,
         threshold=judge_threshold,
         scorer=judge_scorer,
         base_url=judge_base_url,
     )
-    faithfulness: float | None = None
-    faithfulness_ci: tuple[float, float] | None = None
-    if outcome.trusted and outcome.scores:
-        per_case = [float(s["faithfulness"]) for s in outcome.scores]
-        for row, value in zip(rows, per_case):
-            row["faithfulness"] = round(value, 6)
-        faithfulness = round(mean(per_case), 6)
-        faithfulness_ci = bootstrap_mean_ci(per_case)
-    elif judge_model is not None:
-        _LOG.info(
-            "[summarization] judge demoted (%s); objective coverage ranks alone", outcome.reason
-        )
+    faithfulness = _run_faithfulness_judge(cases, scored, judge_config)
 
-    reliability = sum(1 for r in rows if r["status"] == OK) / len(rows) if rows else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_SUMMARIZATION,
-        case_objectives=coverages,
-        reliability=reliability,
+        case_objectives=scored.coverages,
+        reliability=scored.reliability,
     )
-    coverage_ci = bootstrap_mean_ci(coverages)
     board, table = render_board([result])
-
-    paths: RunPaths | None = None
-    if persist and data_dir is not None:
-        metrics: RunMetrics = {
-            "objective_score": result.objective_score,  # mean reference coverage
-            "reliability": reliability,
-            "tokens_per_s": 0.0,
-        }
-        config = {
-            "model": model,
-            "backend": backend,
-            "tier": TIER_SUMMARIZATION,
-            "category": "summarization",
-            "n_cases": len(cases),
-            "reference_coverage": result.objective_score,
-            "reference_coverage_ci": list(coverage_ci) if coverage_ci else None,
-            "judge_trusted": outcome.trusted,
-            "faithfulness": faithfulness,  # gated diagnostic, NOT the headline
-            "faithfulness_ci": list(faithfulness_ci) if faithfulness_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
-            **verification_cfg,
-        }
-        judge_status: JudgeStatus | None = None
-        if judge_model is not None:
-            judge_status = {
-                "calibration_rho": judge_rho,
-                "threshold": judge_threshold,
-                "trusted": outcome.trusted,
-                "model": judge_model,
-                "metrics": ["faithfulness"],
-                "diagnostics": outcome.diagnostics,
-            }
-        paths = persist_category_run(
-            method=METHOD,
-            data_dir=data_dir,
-            run_name=run_name,
-            config=config,
-            metrics=metrics,
-            case_rows=rows,
-            judge=judge_status,
-            mirror=mirror,
+    paths = (
+        _persist_summarization_run(
+            _SummarizationPersistInput(
+                data_dir=data_dir,
+                run_name=run_name,
+                model=model,
+                backend=backend,
+                n_cases=len(cases),
+                result=result,
+                scored=scored,
+                faithfulness=faithfulness,
+                judge_config=judge_config,
+                verification_cfg=verification_cfg,
+                mirror=mirror,
+            )
         )
-        _LOG.info(
-            "[summarization] %s reference-coverage=%.3f faithfulness=%s -> %s",
-            model,
-            result.objective_score,
-            f"{faithfulness:.3f}" if faithfulness is not None else "n/a",
-            paths["manifest"],
-        )
+        if persist
+        else None
+    )
     return SummarizationRun(
         result=result,
-        rows=rows,
+        rows=scored.rows,
         board=board,
         table=table,
-        coverage_ci=coverage_ci,
+        coverage_ci=scored.coverage_ci,
         paths=paths,
-        faithfulness=faithfulness,
-        faithfulness_ci=faithfulness_ci,
-        judge_trusted=outcome.trusted,
-        judge_reason=outcome.reason,
+        faithfulness=faithfulness.value,
+        faithfulness_ci=faithfulness.ci,
+        judge_trusted=faithfulness.outcome.trusted,
+        judge_reason=faithfulness.outcome.reason,
     )
 
 

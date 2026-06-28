@@ -86,6 +86,56 @@ def _expected_from_ground_truth(
     return str(func_name), expected, arg_match
 
 
+def _answer_by_id(answers: Iterable[dict[str, Any]] | None) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for ans in answers or []:
+        if isinstance(ans, dict) and "id" in ans:
+            out[str(ans["id"])] = ans.get("ground_truth", ans.get("possible_answer"))
+    return out
+
+
+def _add_entry_tools(catalog: dict[str, ToolDef], entry: dict[str, Any]) -> None:
+    for tool in _tooldefs(entry.get("function")):
+        catalog.setdefault(tool["name"], tool)
+
+
+def _case_id(entry: dict[str, Any], index: int) -> str:
+    return str(entry.get("id", f"bfcl-{index:04d}"))
+
+
+def _translated_instruction(entry: dict[str, Any], translate: Translate | None) -> str:
+    instruction = _question_text(entry.get("question"))
+    if translate is not None and instruction:
+        return translate(instruction)
+    return instruction
+
+
+def _case_expectations(answer: Any) -> dict[str, Any]:
+    tool_name, expected, arg_match = _expected_from_ground_truth(answer)
+    expectations: dict[str, Any] = {"expected_tool": tool_name}
+    if expected:
+        expectations["expected_arguments"] = expected
+    if arg_match:
+        expectations["arg_match"] = arg_match
+    return expectations
+
+
+def _bfcl_case_record(
+    entry: dict[str, Any],
+    index: int,
+    answers: dict[str, Any],
+    translate: Translate | None,
+) -> dict[str, Any]:
+    case_id = _case_id(entry, index)
+    record: dict[str, Any] = {
+        "id": case_id,
+        "instruction": _translated_instruction(entry, translate),
+    }
+    if case_id in answers:
+        return {**record, **_case_expectations(answers[case_id])}
+    return {**record, "expected_tool": None}
+
+
 def from_bfcl(
     entries: Iterable[dict[str, Any]],
     answers: Iterable[dict[str, Any]] | None = None,
@@ -93,31 +143,12 @@ def from_bfcl(
     translate: Translate | None = None,
 ) -> dict[str, Any]:
     """Adapt BFCL function-doc entries (+ optional possible-answers) into a `{tools, cases}` bundle."""
-    answer_by_id: dict[str, Any] = {}
-    for ans in answers or []:
-        if isinstance(ans, dict) and "id" in ans:
-            answer_by_id[str(ans["id"])] = ans.get("ground_truth", ans.get("possible_answer"))
-
+    answers_by_case = _answer_by_id(answers)
     catalog: dict[str, ToolDef] = {}
     cases: list[dict[str, Any]] = []
     for i, entry in enumerate(entries):
-        for tool in _tooldefs(entry.get("function")):
-            catalog.setdefault(tool["name"], tool)
-        case_id = str(entry.get("id", f"bfcl-{i:04d}"))
-        instruction = _question_text(entry.get("question"))
-        if translate is not None and instruction:
-            instruction = translate(instruction)
-        record: dict[str, Any] = {"id": case_id, "instruction": instruction}
-        if case_id in answer_by_id:
-            tool_name, expected, arg_match = _expected_from_ground_truth(answer_by_id[case_id])
-            record["expected_tool"] = tool_name
-            if expected:
-                record["expected_arguments"] = expected
-            if arg_match:
-                record["arg_match"] = arg_match
-        else:
-            record["expected_tool"] = None  # no ground truth -> a no-call control until reviewed
-        cases.append(record)
+        _add_entry_tools(catalog, entry)
+        cases.append(_bfcl_case_record(entry, i, answers_by_case, translate))
 
     _LOG.info("[tooling-sources] adapted %d BFCL cases over %d tools", len(cases), len(catalog))
     return {"tools": list(catalog.values()), "cases": cases}

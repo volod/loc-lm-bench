@@ -47,6 +47,7 @@ from llb.prompts import render_text, render_text_map
 from llb.rag.chunking import iter_docs
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS, ModelResult, bootstrap_mean_ci
+from llb.scoring.judge import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 
@@ -77,6 +78,50 @@ class TextAnalysisRun:
     judged_quality_ci: tuple[float, float] | None = None
     judge_trusted: bool = False
     judge_reason: str = "no judge configured"
+
+
+@dataclass(slots=True)
+class _ScoredTextAnalysisDocs:
+    doc_ids: list[str]
+    rows: list[TextAnalysisCaseRow]
+    case_objectives: list[float]
+    judge_records: list[JudgeInputRecord]
+    judge_row_index: list[int]
+    n_ok: int
+
+
+@dataclass(slots=True)
+class _JudgeQualityResult:
+    outcome: JudgeOutcome
+    value: float | None
+    ci: tuple[float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _JudgeConfig:
+    model: str | None
+    rho: float | None
+    threshold: float
+    scorer: JudgeScorer | None
+    base_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _TextAnalysisPersistInput:
+    data_dir: Path | str | None
+    run_name: str
+    model: str
+    backend: str
+    bundle: Path | str
+    synthetic: bool
+    n_docs: int
+    result: ModelResult
+    reliability: float
+    rows: list[TextAnalysisCaseRow]
+    judge_result: _JudgeQualityResult
+    judge_config: _JudgeConfig
+    verification_cfg: dict[str, object]
+    mirror: Mirror | None
 
 
 def analysis_prompt(doc_id: str, text: str, kinds: Sequence[str]) -> str:
@@ -154,6 +199,239 @@ def _judged_answer(predictions: dict[str, list[str]], kind: str) -> str:
     return " ".join(predictions.get(kind, [])).strip()
 
 
+def _load_corpus_docs(bundle: Path | str) -> dict[str, str]:
+    # `iter_docs` ids are corpus-relative paths WITH the extension (e.g. "synth-000.md");
+    # planted labels key by the planter's bare doc id ("synth-000"). Index both forms.
+    docs: dict[str, str] = {}
+    for rel, text in iter_docs(Path(bundle) / "corpus"):
+        docs[rel] = text
+        docs.setdefault(Path(rel).stem, text)
+    return docs
+
+
+def _matching_doc_ids(
+    bundle: Path | str,
+    labels_by_doc: dict[str, list[ta.PlantedLabel]],
+    docs: dict[str, str],
+    limit: int | None,
+) -> list[str]:
+    doc_ids = sorted(doc_id for doc_id in labels_by_doc if doc_id in docs)
+    if not doc_ids:
+        raise SystemExit(
+            f"no text-analysis documents with planted labels under {bundle} "
+            f"(need {TEXT_ANALYSIS_LABELS} + a matching corpus/)"
+        )
+    return doc_ids[:limit] if limit is not None else doc_ids
+
+
+def _extract_kinds(labels: list[ta.PlantedLabel]) -> list[str]:
+    return sorted({label.kind for label in labels if label.kind != ta.LONG_DOC})
+
+
+def _predict_doc_extractions(
+    doc_id: str,
+    doc_text: str,
+    labels: list[ta.PlantedLabel],
+    complete: LLMComplete,
+) -> tuple[str, dict[str, list[str]]]:
+    extract_kinds = _extract_kinds(labels)
+    raw = complete(analysis_prompt(doc_id, doc_text, extract_kinds)) if extract_kinds else ""
+    if extract_kinds and not raw.strip():
+        return EMPTY, {}
+    if not extract_kinds:
+        return OK, {}
+    try:
+        return OK, parse_predictions(raw, extract_kinds)
+    except (ValueError, json.JSONDecodeError):
+        return MALFORMED, {}
+
+
+def _long_doc_judge_record(
+    labels: list[ta.PlantedLabel],
+    doc_text: str,
+    complete: LLMComplete,
+) -> tuple[str, JudgeInputRecord] | None:
+    question = long_doc_question(labels)
+    if question is None:
+        return None
+    answer = run_map_reduce_text(complete, question, doc_text)
+    return answer, {"question": question, "answer": answer, "contexts": [doc_text]}
+
+
+def _append_freeform_judge_records(
+    predictions: dict[str, list[str]],
+    doc_text: str,
+    judge_records: list[JudgeInputRecord],
+    judge_row_index: list[int],
+    row_idx: int,
+) -> None:
+    for kind in _JUDGED_EXTRACT_KINDS:
+        answer = _judged_answer(predictions, kind)
+        if answer:
+            judge_records.append(
+                {
+                    "question": _JUDGE_INTENT[kind],
+                    "answer": answer,
+                    "contexts": [doc_text],
+                }
+            )
+            judge_row_index.append(row_idx)
+
+
+def _score_doc_batch(
+    doc_ids: list[str],
+    labels_by_doc: dict[str, list[ta.PlantedLabel]],
+    docs: dict[str, str],
+    complete: LLMComplete,
+    similarity: ta.Similarity,
+) -> _ScoredTextAnalysisDocs:
+    rows: list[TextAnalysisCaseRow] = []
+    case_objectives: list[float] = []
+    judge_records: list[JudgeInputRecord] = []
+    judge_row_index: list[int] = []
+    n_ok = 0
+
+    for doc_id in doc_ids:
+        labels = labels_by_doc[doc_id]
+        doc_text = docs[doc_id]
+        status, predictions = _predict_doc_extractions(doc_id, doc_text, labels, complete)
+        scored = ta.score_document(predictions, labels, similarity)
+        if status == OK:
+            n_ok += 1
+        case_objectives.append(float(scored["objective_score"]))
+        row = _case_row(doc_id, status, scored, len(labels))
+        row_idx = len(rows)
+        long_doc_record = _long_doc_judge_record(labels, doc_text, complete)
+        if long_doc_record is not None:
+            answer, record = long_doc_record
+            row["long_doc_answer"] = answer[:280]
+            judge_records.append(record)
+            judge_row_index.append(row_idx)
+        _append_freeform_judge_records(
+            predictions, doc_text, judge_records, judge_row_index, row_idx
+        )
+        rows.append(row)
+
+    return _ScoredTextAnalysisDocs(
+        doc_ids=doc_ids,
+        rows=rows,
+        case_objectives=case_objectives,
+        judge_records=judge_records,
+        judge_row_index=judge_row_index,
+        n_ok=n_ok,
+    )
+
+
+def _attach_judged_quality(
+    rows: list[TextAnalysisCaseRow],
+    scores: list[JudgeScore],
+    judge_row_index: list[int],
+) -> tuple[float, tuple[float, float] | None]:
+    per_record = [judged_quality(score) for score in scores]
+    per_row: dict[int, list[float]] = {}
+    for row_idx, value in zip(judge_row_index, per_record):
+        per_row.setdefault(row_idx, []).append(value)
+    for row_idx, values in per_row.items():
+        rows[row_idx]["judged_quality"] = round(mean(values), 6)
+    return round(mean(per_record), 6), bootstrap_mean_ci(per_record)
+
+
+def _run_judged_quality(
+    scored: _ScoredTextAnalysisDocs,
+    config: _JudgeConfig,
+) -> _JudgeQualityResult:
+    outcome = run_gated_judge(
+        scored.judge_records,
+        judge_model=config.model,
+        judge_rho=config.rho,
+        threshold=config.threshold,
+        scorer=config.scorer,
+        base_url=config.base_url,
+    )
+    if outcome.trusted and outcome.scores:
+        quality, quality_ci = _attach_judged_quality(
+            scored.rows, outcome.scores, scored.judge_row_index
+        )
+        return _JudgeQualityResult(outcome=outcome, value=quality, ci=quality_ci)
+    if config.model is not None:
+        _LOG.info(
+            "[text-analysis] judge demoted (%s); objective recovery ranks alone", outcome.reason
+        )
+    return _JudgeQualityResult(outcome=outcome, value=None, ci=None)
+
+
+def _text_analysis_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+    return {
+        "objective_score": result.objective_score,
+        "reliability": reliability,
+        "tokens_per_s": 0.0,
+    }
+
+
+def _text_analysis_config(request: _TextAnalysisPersistInput) -> dict[str, object]:
+    return {
+        "model": request.model,
+        "backend": request.backend,
+        "tier": TIER_TEXT_ANALYSIS,
+        "category": "text_analysis",
+        "bundle": str(request.bundle),
+        "synthetic": request.synthetic,
+        "n_docs": request.n_docs,
+        "judge_trusted": request.judge_result.outcome.trusted,
+        "judged_quality": request.judge_result.value,  # gated diagnostic, NOT the headline
+        "judged_quality_ci": list(request.judge_result.ci) if request.judge_result.ci else None,
+        "judge_diagnostics": request.judge_result.outcome.diagnostics,
+        **request.verification_cfg,
+    }
+
+
+def _text_analysis_judge_status(
+    judge_model: str | None,
+    judge_rho: float | None,
+    judge_threshold: float,
+    outcome: JudgeOutcome,
+) -> JudgeStatus | None:
+    if judge_model is None:
+        return None
+    return {
+        "calibration_rho": judge_rho,
+        "threshold": judge_threshold,
+        "trusted": outcome.trusted,
+        "model": judge_model,
+        "metrics": ["judged_quality"],
+        "diagnostics": outcome.diagnostics,
+    }
+
+
+def _persist_text_analysis_run(request: _TextAnalysisPersistInput) -> RunPaths | None:
+    if request.data_dir is None:
+        return None
+    paths = persist_category_run(
+        method=METHOD,
+        data_dir=request.data_dir,
+        run_name=request.run_name,
+        config=_text_analysis_config(request),
+        metrics=_text_analysis_metrics(request.result, request.reliability),
+        case_rows=request.rows,
+        judge=_text_analysis_judge_status(
+            request.judge_config.model,
+            request.judge_config.rho,
+            request.judge_config.threshold,
+            request.judge_result.outcome,
+        ),
+        mirror=request.mirror,
+    )
+    _LOG.info(
+        "[text-analysis] %s scored %d docs (objective=%.3f, judged-quality=%s) -> %s",
+        request.model,
+        request.n_docs,
+        request.result.objective_score,
+        f"{request.judge_result.value:.3f}" if request.judge_result.value is not None else "n/a",
+        paths["manifest"],
+    )
+    return paths
+
+
 def run_text_analysis(
     bundle: Path | str,
     *,
@@ -188,168 +466,58 @@ def run_text_analysis(
         data_verified=data_verified, verification_ref=verification_ref
     )
     labels_by_doc = load_planted_by_doc(bundle)
-    # `iter_docs` ids are corpus-relative paths WITH the extension (e.g. "synth-000.md"); planted
-    # labels key by the planter's bare doc id ("synth-000"). Index both so either form resolves.
-    docs: dict[str, str] = {}
-    for rel, text in iter_docs(Path(bundle) / "corpus"):
-        docs[rel] = text
-        docs.setdefault(Path(rel).stem, text)
-    if similarity is None:
-        similarity = ta.embedder_similarity()
-
-    doc_ids = sorted(doc_id for doc_id in labels_by_doc if doc_id in docs)
-    if not doc_ids:
-        raise SystemExit(
-            f"no text-analysis documents with planted labels under {bundle} "
-            f"(need {TEXT_ANALYSIS_LABELS} + a matching corpus/)"
-        )
-    if limit is not None:
-        doc_ids = doc_ids[:limit]
-
-    rows: list[TextAnalysisCaseRow] = []
-    case_objectives: list[float] = []
-    judge_records: list[JudgeInputRecord] = []
-    judge_row_index: list[int] = []  # the row each judge record's quality attaches to
-    n_ok = 0
-    for doc_id in doc_ids:
-        labels = labels_by_doc[doc_id]
-        # long_doc is answered via map-reduce, not the single extraction prompt.
-        extract_kinds = sorted({label.kind for label in labels if label.kind != ta.LONG_DOC})
-        raw = (
-            complete(analysis_prompt(doc_id, docs[doc_id], extract_kinds)) if extract_kinds else ""
-        )
-        predictions: dict[str, list[str]]
-        if extract_kinds and not raw.strip():
-            status, predictions = EMPTY, {}
-        elif not extract_kinds:
-            status, predictions = OK, {}
-        else:
-            try:
-                predictions = parse_predictions(raw, extract_kinds)
-                status = OK
-            except (ValueError, json.JSONDecodeError):
-                status, predictions = MALFORMED, {}
-        scored = ta.score_document(predictions, labels, similarity)
-        if status == OK:
-            n_ok += 1
-        case_objectives.append(float(scored["objective_score"]))
-        row = _case_row(doc_id, status, scored, len(labels))
-
-        # long-doc comprehension answer via the map-reduce template (the judged headline).
-        question = long_doc_question(labels)
-        if question is not None:
-            answer = run_map_reduce_text(complete, question, docs[doc_id])
-            row["long_doc_answer"] = answer[:280]
-            judge_records.append(
-                {"question": question, "answer": answer, "contexts": [docs[doc_id]]}
-            )
-            judge_row_index.append(len(rows))
-        # narrative / insight free-form judged sub-tasks present on this doc.
-        for kind in _JUDGED_EXTRACT_KINDS:
-            answer = _judged_answer(predictions, kind)
-            if answer:
-                judge_records.append(
-                    {
-                        "question": _JUDGE_INTENT[kind],
-                        "answer": answer,
-                        "contexts": [docs[doc_id]],
-                    }
-                )
-                judge_row_index.append(len(rows))
-        rows.append(row)
-
-    # Opt-in, gated judged-quality signal (objective recovery stays the headline).
-    outcome = run_gated_judge(
-        judge_records,
-        judge_model=judge_model,
-        judge_rho=judge_rho,
+    docs = _load_corpus_docs(bundle)
+    doc_ids = _matching_doc_ids(bundle, labels_by_doc, docs, limit)
+    similarity_fn = similarity if similarity is not None else ta.embedder_similarity()
+    scored_docs = _score_doc_batch(doc_ids, labels_by_doc, docs, complete, similarity_fn)
+    judge_config = _JudgeConfig(
+        model=judge_model,
+        rho=judge_rho,
         threshold=judge_threshold,
         scorer=judge_scorer,
         base_url=judge_base_url,
     )
-    quality: float | None = None
-    quality_ci: tuple[float, float] | None = None
-    if outcome.trusted and outcome.scores:
-        per_record = [judged_quality(s) for s in outcome.scores]
-        per_row: dict[int, list[float]] = {}
-        for row_idx, value in zip(judge_row_index, per_record):
-            per_row.setdefault(row_idx, []).append(value)
-        for row_idx, values in per_row.items():
-            rows[row_idx]["judged_quality"] = round(mean(values), 6)
-        quality = round(mean(per_record), 6)
-        quality_ci = bootstrap_mean_ci(per_record)
-    elif judge_model is not None:
-        _LOG.info(
-            "[text-analysis] judge demoted (%s); objective recovery ranks alone", outcome.reason
-        )
+    judge_result = _run_judged_quality(scored_docs, judge_config)
 
-    reliability = n_ok / len(doc_ids) if doc_ids else 0.0
+    reliability = scored_docs.n_ok / len(scored_docs.doc_ids)
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_TEXT_ANALYSIS,
-        case_objectives=case_objectives,
+        case_objectives=scored_docs.case_objectives,
         reliability=reliability,
     )
     board, table = render_board([result])
-
-    paths: RunPaths | None = None
-    if persist and data_dir is not None:
-        metrics: RunMetrics = {
-            "objective_score": result.objective_score,
-            "reliability": reliability,
-            "tokens_per_s": 0.0,
-        }
-        config = {
-            "model": model,
-            "backend": backend,
-            "tier": TIER_TEXT_ANALYSIS,
-            "category": "text_analysis",
-            "bundle": str(bundle),
-            "synthetic": synthetic,
-            "n_docs": len(doc_ids),
-            "judge_trusted": outcome.trusted,
-            "judged_quality": quality,  # gated diagnostic, NOT the headline
-            "judged_quality_ci": list(quality_ci) if quality_ci else None,
-            "judge_diagnostics": outcome.diagnostics,  # judge diagnostics zero-valued-judge observability
-            **verification_cfg,
-        }
-        judge_status: JudgeStatus | None = None
-        if judge_model is not None:
-            judge_status = {
-                "calibration_rho": judge_rho,
-                "threshold": judge_threshold,
-                "trusted": outcome.trusted,
-                "model": judge_model,
-                "metrics": ["judged_quality"],
-                "diagnostics": outcome.diagnostics,
-            }
-        paths = persist_category_run(
-            method=METHOD,
-            data_dir=data_dir,
-            run_name=run_name,
-            config=config,
-            metrics=metrics,
-            case_rows=rows,
-            judge=judge_status,
-            mirror=mirror,
+    paths = (
+        _persist_text_analysis_run(
+            _TextAnalysisPersistInput(
+                data_dir=data_dir,
+                run_name=run_name,
+                model=model,
+                backend=backend,
+                bundle=bundle,
+                synthetic=synthetic,
+                n_docs=len(scored_docs.doc_ids),
+                result=result,
+                reliability=reliability,
+                rows=scored_docs.rows,
+                judge_result=judge_result,
+                judge_config=judge_config,
+                verification_cfg=verification_cfg,
+                mirror=mirror,
+            )
         )
-        _LOG.info(
-            "[text-analysis] %s scored %d docs (objective=%.3f, judged-quality=%s) -> %s",
-            model,
-            len(doc_ids),
-            result.objective_score,
-            f"{quality:.3f}" if quality is not None else "n/a",
-            paths["manifest"],
-        )
+        if persist
+        else None
+    )
     return TextAnalysisRun(
         result=result,
-        rows=rows,
+        rows=scored_docs.rows,
         board=board,
         table=table,
         paths=paths,
-        judged_quality=quality,
-        judged_quality_ci=quality_ci,
-        judge_trusted=outcome.trusted,
-        judge_reason=outcome.reason,
+        judged_quality=judge_result.value,
+        judged_quality_ci=judge_result.ci,
+        judge_trusted=judge_result.outcome.trusted,
+        judge_reason=judge_result.outcome.reason,
     )

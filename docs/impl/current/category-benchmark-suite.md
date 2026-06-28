@@ -38,6 +38,8 @@ per-kind label ids only for records it emits.
 Matching is deterministic: label id, normalized surface, aliases, then pinned-embedder cosine.
 Trend labels are direction-aware; a right-subject wrong-direction answer receives no credit.
 Contradiction labels require both paired sides to be covered.
+The runner separates corpus/label loading, model extraction calls, per-document scoring, gated
+free-form judge attachment, and artifact persistence into named helpers.
 
 ```bash
 llb bench-text-analysis --bundle <bundle> --model <model> --backend <backend>
@@ -63,6 +65,8 @@ Security cases use structured detectors instead of a safety classifier:
 
 The headline is defense rate, with ASR and refusal-appropriateness recorded alongside. Benign
 controls affect refusal-appropriateness but not ASR.
+The runner separates model prompting, objective scoring, gated refusal-quality judging, manifest
+config assembly, judge-status assembly, and artifact persistence into named helper phases.
 
 ```bash
 llb bench-security --cases samples/security_cases_uk.json --model <model>
@@ -84,6 +88,10 @@ Modules:
 The tooling benchmark is call-only: tools are not executed. The parser accepts native OpenAI
 `tool_calls`, pre-parsed dicts, and text JSON calls. Scoring reports tool selection, argument
 exactness, no-hallucinated-tool rate, well-formed-call rate, and headline call accuracy.
+Case scoring is split by no-call expectations, tool selection, schema validation, argument
+matching, and aggregate metric assembly.
+The BFCL adapter builds the answer index, tool catalog, case instruction, and expected-call
+sections independently before returning the `{tools, cases}` bundle.
 
 ```bash
 llb bench-tooling --catalog samples/tooling_cases_uk.json --model <model>
@@ -107,6 +115,8 @@ The agentic suite runs deterministic tasks in a sandboxed world: mock filesystem
 DB, corpus search, and restricted arithmetic. Success is an objective assertion over final state or
 answer text. The headline is completion rate; step count, tool-call count, and optional
 trajectory-quality judge signals are recorded as context.
+The runner separates harness resolution, episode execution, objective scoring, gated trajectory
+judge attachment, and artifact persistence into named helper phases.
 
 ```bash
 llb bench-agentic --tasks samples/agentic_tasks_uk.json --harness loop --model <model>
@@ -122,6 +132,8 @@ set so orchestration is the variable.
 `src/llb/bench/summarization.py` scores reference coverage by pinned-embedder cosine between
 reference sentences and candidate summary sentences. ROUGE is not used because the product cares
 about semantic coverage in Ukrainian text, not lexical overlap alone.
+The runner separates summary generation, coverage scoring, optional faithfulness judging, board
+assembly, and artifact persistence into named helper phases.
 
 ```bash
 llb bench-summarization --cases samples/summarization_cases_uk.json --model <model>
@@ -135,6 +147,8 @@ Optional faithfulness uses the same gated judge side-channel as other free-form 
 accuracy. Schemas are built with Pydantic, including nested objects and arrays. Field comparison
 supports case-insensitive strings, numeric tolerances, fuzzy or contains strings, and unordered
 arrays.
+The recursive field matcher is split by object comparison, ordered arrays, unordered arrays, and
+scalar leaf matching so nested scoring remains inspectable.
 
 ```bash
 llb bench-structured --cases samples/structured_cases_uk.json --model <model>

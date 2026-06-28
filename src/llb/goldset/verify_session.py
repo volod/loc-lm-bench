@@ -68,6 +68,21 @@ UNKNOWN = "unknown"
 
 _ESC = "\x1b"
 _ARROWS = {f"{_ESC}[A": PREV, f"{_ESC}[D": PREV, f"{_ESC}[B": NEXT, f"{_ESC}[C": NEXT}
+_SIMPLE_COMMANDS = {
+    "": NEXT,
+    "n": NEXT,
+    "b": PREV,
+    "u": UNDECIDED,
+    "c": CLEAR,
+    "y": ACCEPT_CMD,
+    "x": REJECT_CMD,
+    "q": QUIT,
+    "quit": QUIT,
+    "?": HELP,
+    "h": HELP,
+    "help": HELP,
+    "note": NOTE,
+}
 
 PROMPT_HINT = "g/a/r/p=check PASS  G/A/R/P=FAIL  y=accept  x=reject  n=next  b=prev  j<N>=jump  ?=help  q=quit"
 
@@ -83,6 +98,28 @@ class Command:
     raw: str = ""
 
 
+def _parse_simple_command(s: str) -> Command | None:
+    kind = _SIMPLE_COMMANDS.get(s.lower())
+    return Command(kind) if kind is not None else None
+
+
+def _parse_check_command(s: str) -> Command | None:
+    if s in CHECK_KEYS:
+        return Command(CHECK, field=CHECK_KEYS[s], value=True)
+    if s.lower() in CHECK_KEYS and s.isupper():
+        return Command(CHECK, field=CHECK_KEYS[s.lower()], value=False)
+    return None
+
+
+def _parse_jump_command(s: str) -> Command | None:
+    if not s.lower().startswith("j"):
+        return None
+    rest = s[1:].strip()
+    if rest.isdigit():
+        return Command(JUMP, value=int(rest))
+    return Command(UNKNOWN, raw=s)
+
+
 def parse_command(raw: str) -> Command:
     """Parse one prompt line into a `Command` (pure; no I/O, no state).
 
@@ -91,38 +128,12 @@ def parse_command(raw: str) -> Command:
     undecided; `c` = clear this item; `?`/`h` = help; `q` = save + quit.
     """
     s = raw.strip()
-    if s == "":
-        return Command(NEXT)
     if s in _ARROWS:
         return Command(_ARROWS[s])
-    low = s.lower()
-    if low == "n":
-        return Command(NEXT)
-    if low == "b":
-        return Command(PREV)
-    if low == "u":
-        return Command(UNDECIDED)
-    if low == "c":
-        return Command(CLEAR)
-    if low == "y":
-        return Command(ACCEPT_CMD)
-    if low == "x":
-        return Command(REJECT_CMD)
-    if low in ("q", "quit"):
-        return Command(QUIT)
-    if low in ("?", "h", "help"):
-        return Command(HELP)
-    if low == "note":
-        return Command(NOTE)
-    if s in CHECK_KEYS:  # lowercase letter -> mark PASS
-        return Command(CHECK, field=CHECK_KEYS[s], value=True)
-    if s.lower() in CHECK_KEYS and s.isupper():  # uppercase letter -> mark FAIL
-        return Command(CHECK, field=CHECK_KEYS[s.lower()], value=False)
-    if low[0] == "j":  # jump: "j 5" or "j5"
-        rest = s[1:].strip()
-        if rest.isdigit():
-            return Command(JUMP, value=int(rest))
-        return Command(UNKNOWN, raw=s)
+    for parser in (_parse_simple_command, _parse_check_command, _parse_jump_command):
+        cmd = parser(s)
+        if cmd is not None:
+            return cmd
     return Command(UNKNOWN, raw=s)
 
 
@@ -304,6 +315,236 @@ class _Quit(Exception):
     """Internal: end the session (q, EOF, or exhausted injected input)."""
 
 
+def _emit_intro(emit: Callable[[str], None]) -> None:
+    emit(
+        "human verification gate data verification -- verify each sampled item against the "
+        "corpus, then accept/reject."
+    )
+    emit(help_text())
+
+
+def _read(prompt: str, it: Iterator[str] | None, emit: Callable[[str], None]) -> str:
+    if it is None:
+        return _stdin_reader(prompt)
+    emit(prompt)
+    try:
+        return next(it)
+    except StopIteration as exc:
+        raise _Quit from exc
+
+
+def _save(path: Path, rows: Sequence[dict[str, str]], fieldnames: Sequence[str]) -> None:
+    save_human_columns(path, rows, fieldnames)
+
+
+def _maybe_clear_human_columns(
+    clear: bool,
+    rows: Sequence[dict[str, str]],
+    path: Path,
+    fieldnames: Sequence[str],
+    it: Iterator[str] | None,
+    emit: Callable[[str], None],
+) -> bool:
+    if not clear:
+        return True
+    ans = _read(
+        "clear ALL human marks/decisions and start fresh? type 'yes' to confirm: ", it, emit
+    )
+    if ans.strip().lower() != "yes":
+        emit("[verify] clear aborted; nothing changed.")
+        return False
+    clear_human_columns(rows)
+    _save(path, rows, fieldnames)
+    emit("[verify] cleared all human columns.")
+    return True
+
+
+def _get_idx(start: int | None, total: int, rows: Sequence[dict[str, str]]) -> int:
+    if start is not None:
+        return max(0, min(start - 1, total - 1))
+    if decided_count(rows) == total:
+        return total
+    return first_undecided_index(rows)
+
+
+def _set_decision(row: dict[str, str], decision: str) -> None:
+    row["decision"] = decision
+    row["human_status"] = STATUS_DECIDED
+
+
+def _clear_row(row: dict[str, str]) -> None:
+    for col in HUMAN_COLS:
+        row[col] = ""
+    row["human_status"] = STATUS_PENDING
+
+
+def _go_forward(
+    idx: int, total: int, rows: Sequence[dict[str, str]], emit: Callable[[str], None]
+) -> int:
+    new = _advanced_index(idx, total, rows)
+    if idx == total - 1 and new < total:
+        remaining = total - decided_count(rows)
+        emit(f"[verify] {remaining} item(s) still undecided -- jumping there.")
+    return new
+
+
+def _jump_to(idx: int, target: int, total: int, emit: Callable[[str], None]) -> int:
+    if 1 <= target <= total:
+        return target - 1
+    emit(f"[verify] item out of range 1..{total}: {target}")
+    return idx
+
+
+def _go_undecided(idx: int, rows: Sequence[dict[str, str]], emit: Callable[[str], None]) -> int:
+    next_idx = first_undecided_index(rows)
+    if (rows[next_idx].get("decision") or "").strip() in (ACCEPT, REJECT):
+        emit("[verify] all items are decided.")
+        return idx
+    return next_idx
+
+
+def _handle_completion_screen(
+    idx: int,
+    total: int,
+    rows: Sequence[dict[str, str]],
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+) -> tuple[int, bool]:
+    is_completion = idx >= total
+    if not is_completion:
+        return idx, False
+
+    emit(completion_panel(rows, total))
+    cmd = parse_command(_read("review (b / j <N> / u) or finish (Enter / q) > ", it, emit))
+    if cmd.kind in (QUIT, NEXT):
+        raise _Quit
+    if cmd.kind == HELP:
+        emit(help_text())
+    elif cmd.kind == PREV:
+        idx = total - 1
+    elif cmd.kind == JUMP:
+        idx = _jump_to(idx, cmd.value if isinstance(cmd.value, int) else 0, total, emit)
+    elif cmd.kind == UNDECIDED:
+        idx = _go_undecided(idx, rows, emit)
+    else:
+        emit("[verify] all decided -- b to review, j <N> to jump, Enter/q to finish.")
+    return idx, True
+
+
+def _set_check(row: dict[str, str], cmd: Command, emit: Callable[[str], None]) -> bool:
+    if cmd.field == "chk_planted" and not _is_synthetic_row(row):
+        emit("[verify] planted check is N/A for a real (non-synthetic) item.")
+        return False
+    row[cmd.field] = PASS if cmd.value else FAIL
+    return True
+
+
+def _handle_navigation_action(
+    cmd: Command,
+    idx: int,
+    total: int,
+    rows: Sequence[dict[str, str]],
+    emit: Callable[[str], None],
+) -> tuple[int, bool]:
+    if cmd.kind == HELP:
+        emit(help_text())
+    elif cmd.kind == NEXT:
+        idx = _go_forward(idx, total, rows, emit)
+    elif cmd.kind == PREV:
+        idx = max(idx - 1, 0)
+    elif cmd.kind == JUMP:
+        idx = _jump_to(idx, cmd.value if isinstance(cmd.value, int) else 0, total, emit)
+    elif cmd.kind == UNDECIDED:
+        idx = _go_undecided(idx, rows, emit)
+    else:
+        return idx, False
+    return idx, True
+
+
+def _handle_decision_action(
+    cmd: Command,
+    row: dict[str, str],
+    idx: int,
+    total: int,
+    rows: Sequence[dict[str, str]],
+    emit: Callable[[str], None],
+    path: Path,
+    fieldnames: Sequence[str],
+) -> tuple[int, bool]:
+    if cmd.kind == ACCEPT_CMD:
+        decision = ACCEPT
+    elif cmd.kind == REJECT_CMD:
+        decision = REJECT
+    else:
+        return idx, False
+
+    _set_decision(row, decision)
+    _save(path, rows, fieldnames)
+    return _go_forward(idx, total, rows, emit), True
+
+
+def _handle_edit_action(
+    cmd: Command,
+    row: dict[str, str],
+    rows: Sequence[dict[str, str]],
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+    path: Path,
+    fieldnames: Sequence[str],
+) -> bool:
+    if cmd.kind == CHECK:
+        if _set_check(row, cmd, emit):
+            _save(path, rows, fieldnames)
+    elif cmd.kind == CLEAR:
+        _clear_row(row)
+        _save(path, rows, fieldnames)
+    elif cmd.kind == NOTE:
+        text = _read("note (empty to clear): ", it, emit).strip()
+        row["human_note"] = text
+        _save(path, rows, fieldnames)
+    else:
+        return False
+    return True
+
+
+def _emit_unknown_command(cmd: Command, emit: Callable[[str], None]) -> None:
+    if cmd.raw.startswith(_ESC):
+        emit("[verify] arrow keys garbled -- use n (next) / b (prev).")
+    else:
+        emit(f"[verify] not a command: {cmd.raw!r} (? for help).")
+
+
+def _handle_row_action(
+    rows: Sequence[dict[str, str]],
+    idx: int,
+    total: int,
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+    path: Path,
+    fieldnames: Sequence[str],
+    show_crosscheck: bool = False,
+) -> int:
+    row = rows[idx]
+    emit(format_card(row, idx + 1, total, decided_count(rows), show_crosscheck=show_crosscheck))
+    cmd = parse_command(_read(f"{PROMPT_HINT}\nverify> ", it, emit))
+
+    if cmd.kind == QUIT:
+        raise _Quit
+    idx, handled = _handle_navigation_action(cmd, idx, total, rows, emit)
+    if handled:
+        return idx
+
+    idx, handled = _handle_decision_action(cmd, row, idx, total, rows, emit, path, fieldnames)
+    if handled:
+        return idx
+
+    if _handle_edit_action(cmd, row, rows, emit, it, path, fieldnames):
+        return idx
+
+    _emit_unknown_command(cmd, emit)
+    return idx
+
+
 def run_session(
     worksheet_path: Path | str,
     *,
@@ -324,154 +565,32 @@ def run_session(
     emit = output or _default_output
     it: Iterator[str] | None = iter(inputs) if inputs is not None else None
 
-    def read(prompt: str) -> str:
-        if it is None:
-            return _stdin_reader(prompt)
-        emit(prompt)
-        try:
-            return next(it)
-        except StopIteration as exc:
-            raise _Quit from exc
-
     rows, fieldnames = load_worksheet(path)
     if not rows:
         emit(f"[verify] worksheet has no rows: {path}")
         return 0
 
-    def save() -> None:
-        save_human_columns(path, rows, fieldnames)
-
-    if clear:
-        ans = read("clear ALL human marks/decisions and start fresh? type 'yes' to confirm: ")
-        if ans.strip().lower() != "yes":
-            emit("[verify] clear aborted; nothing changed.")
-            return decided_count(rows)
-        clear_human_columns(rows)
-        save()
-        emit("[verify] cleared all human columns.")
+    if not _maybe_clear_human_columns(clear, rows, path, fieldnames, it, emit):
+        return decided_count(rows)
 
     total = len(rows)
-    if start is not None:
-        idx = max(0, min(start - 1, total - 1))
-    elif decided_count(rows) == total:
-        idx = total
-    else:
-        idx = first_undecided_index(rows)
+    idx = _get_idx(start, total, rows)
 
-    emit(
-        "human verification gate data verification -- verify each sampled item against the corpus, then accept/reject."
-    )
-    emit(help_text())
-
-    def set_decision(row: dict[str, str], decision: str) -> None:
-        row["decision"] = decision
-        row["human_status"] = STATUS_DECIDED
-
-    def go_forward() -> None:
-        nonlocal idx
-        new = _advanced_index(idx, total, rows)
-        if idx == total - 1 and new < total:
-            remaining = total - decided_count(rows)
-            emit(f"[verify] {remaining} item(s) still undecided -- jumping there.")
-        idx = new
-
-    def jump_to(target: int) -> None:
-        nonlocal idx
-        if 1 <= target <= total:
-            idx = target - 1
-        else:
-            emit(f"[verify] item out of range 1..{total}: {target}")
-
-    def go_undecided() -> None:
-        nonlocal idx
-        nxt = first_undecided_index(rows)
-        if (rows[nxt].get("decision") or "").strip() in (ACCEPT, REJECT):
-            emit("[verify] all items are decided.")
-        else:
-            idx = nxt
+    _emit_intro(emit)
 
     try:
         while True:
-            if idx >= total:  # past the last item -> the review / finish screen
-                emit(completion_panel(rows, total))
-                cmd = parse_command(read("review (b / j <N> / u) or finish (Enter / q) > "))
-                if cmd.kind in (QUIT, NEXT):
-                    raise _Quit
-                if cmd.kind == HELP:
-                    emit(help_text())
-                elif cmd.kind == PREV:
-                    idx = total - 1
-                elif cmd.kind == JUMP:
-                    jump_to(cmd.value if isinstance(cmd.value, int) else 0)
-                elif cmd.kind == UNDECIDED:
-                    go_undecided()
-                else:
-                    emit("[verify] all decided -- b to review, j <N> to jump, Enter/q to finish.")
+            idx, is_completion = _handle_completion_screen(idx, total, rows, emit, it)
+            if is_completion:
                 continue
 
-            row = rows[idx]
-            emit(
-                format_card(
-                    row, idx + 1, total, decided_count(rows), show_crosscheck=show_crosscheck
-                )
-            )
-            cmd = parse_command(read(f"{PROMPT_HINT}\nverify> "))
-
-            if cmd.kind == QUIT:
-                raise _Quit
-            if cmd.kind == HELP:
-                emit(help_text())
-                continue
-            if cmd.kind == NEXT:
-                go_forward()
-                continue
-            if cmd.kind == PREV:
-                idx = max(idx - 1, 0)
-                continue
-            if cmd.kind == JUMP:
-                jump_to(cmd.value if isinstance(cmd.value, int) else 0)
-                continue
-            if cmd.kind == UNDECIDED:
-                go_undecided()
-                continue
-            if cmd.kind == CHECK:
-                if cmd.field == "chk_planted" and not _is_synthetic_row(row):
-                    emit("[verify] planted check is N/A for a real (non-synthetic) item.")
-                    continue
-                row[cmd.field] = PASS if cmd.value else FAIL
-                save()
-                continue
-            if cmd.kind == ACCEPT_CMD:
-                set_decision(row, ACCEPT)
-                save()
-                go_forward()
-                continue
-            if cmd.kind == REJECT_CMD:
-                set_decision(row, REJECT)
-                save()
-                go_forward()
-                continue
-            if cmd.kind == CLEAR:
-                for col in HUMAN_COLS:
-                    row[col] = ""
-                row["human_status"] = STATUS_PENDING
-                save()
-                continue
-            if cmd.kind == NOTE:
-                text = read("note (empty to clear): ").strip()
-                row["human_note"] = text
-                save()
-                continue
-            if cmd.raw.startswith(_ESC):
-                emit("[verify] arrow keys garbled -- use n (next) / b (prev).")
-            else:
-                emit(f"[verify] not a command: {cmd.raw!r} (? for help).")
+            idx = _handle_row_action(rows, idx, total, emit, it, path, fieldnames, show_crosscheck)
     except (_Quit, EOFError):
         pass
     except KeyboardInterrupt:
         emit("")
 
-    save()
+    _save(path, rows, fieldnames)
     for line in summary_lines(rows, path):
         emit(line)
     return decided_count(rows)

@@ -106,6 +106,12 @@ class JudgeOutcome:
     diagnostics: JudgeDiagnostics | None = None  # judge diagnostics zero-valued-judge observability
 
 
+@dataclass(frozen=True)
+class _NonEmptyJudgeRecords:
+    records: list[JudgeInputRecord]
+    positions: list[int]
+
+
 def run_judge(
     records: list[JudgeInputRecord],
     judge_model: str | None,
@@ -138,6 +144,88 @@ def extract_scores(rows: list[dict[str, float]]) -> list[JudgeScore]:
     ]
 
 
+def _has_empty_answers(records: list[JudgeInputRecord]) -> bool:
+    return any(not str(record.get("answer", "")).strip() for record in records)
+
+
+def _split_nonempty_records(records: list[JudgeInputRecord]) -> _NonEmptyJudgeRecords:
+    nonempty_records: list[JudgeInputRecord] = []
+    nonempty_positions: list[int] = []
+    for index, record in enumerate(records):
+        if str(record.get("answer", "")).strip():
+            nonempty_positions.append(index)
+            nonempty_records.append(record)
+    return _NonEmptyJudgeRecords(records=nonempty_records, positions=nonempty_positions)
+
+
+def _empty_answer_scores(count: int) -> list[JudgeScore]:
+    return [
+        {
+            "faithfulness": _EMPTY_ANSWER_JUDGE_SCORE["faithfulness"],
+            "answer_relevancy": _EMPTY_ANSWER_JUDGE_SCORE["answer_relevancy"],
+        }
+        for _ in range(count)
+    ]
+
+
+def _score_nonempty_records(
+    records: list[JudgeInputRecord],
+    judge_model: str,
+    evaluate_fn: JudgeEvaluate | None,
+    base_url: str | None,
+) -> tuple[list[JudgeScore], list[str | None]]:
+    reasons: list[str | None] = []
+    scores = (
+        deepeval_scorer(
+            records,
+            judge_model,
+            evaluate_fn=evaluate_fn,
+            base_url=base_url,
+            diagnostics_out=reasons,
+        )
+        if records
+        else []
+    )
+    return scores, reasons
+
+
+def _merge_empty_answer_scores(
+    records: list[JudgeInputRecord],
+    nonempty: _NonEmptyJudgeRecords,
+    judged: list[JudgeScore],
+    reasons: list[str | None],
+) -> tuple[list[JudgeScore], list[str | None]]:
+    scores = _empty_answer_scores(len(records))
+    merged_reasons: list[str | None] = [_EMPTY_ANSWER_REASON for _ in records]
+    for index, score, reason in zip(nonempty.positions, judged, reasons):
+        scores[index] = score
+        merged_reasons[index] = reason
+    return scores, merged_reasons
+
+
+def _score_with_empty_answer_handling(
+    records: list[JudgeInputRecord],
+    judge_model: str,
+    evaluate_fn: JudgeEvaluate | None,
+    base_url: str | None,
+) -> tuple[list[JudgeScore], list[str | None]]:
+    nonempty = _split_nonempty_records(records)
+    judged, reasons = _score_nonempty_records(nonempty.records, judge_model, evaluate_fn, base_url)
+    return _merge_empty_answer_scores(records, nonempty, judged, reasons)
+
+
+def _score_with_injected_evaluate(
+    records: list[JudgeInputRecord],
+    judge_model: str,
+    evaluate_fn: JudgeEvaluate,
+    diagnostics_out: list[str | None] | None,
+) -> list[JudgeScore]:
+    result = extract_scores(evaluate_fn(records, judge_model))
+    if diagnostics_out is not None:
+        diagnostics_out.extend(None for _ in records)
+    return result
+
+
 def deepeval_scorer(
     records: list[JudgeInputRecord],
     judge_model: str,
@@ -151,44 +239,15 @@ def deepeval_scorer(
     `diagnostics_out`, when provided, is filled with one precise reason per record (or None) for
     the judge diagnostics zero-valued-judge observability: `empty_answer` for blank candidate answers and the
     classified failure reason for a judge that could not score a non-empty answer."""
-    if records and any(not str(record.get("answer", "")).strip() for record in records):
-        nonempty_records: list[JudgeInputRecord] = []
-        nonempty_positions: list[int] = []
-        for index, record in enumerate(records):
-            if str(record.get("answer", "")).strip():
-                nonempty_positions.append(index)
-                nonempty_records.append(record)
-        sub_reasons: list[str | None] = []
-        judged = (
-            deepeval_scorer(
-                nonempty_records,
-                judge_model,
-                evaluate_fn=evaluate_fn,
-                base_url=base_url,
-                diagnostics_out=sub_reasons,
-            )
-            if nonempty_records
-            else []
+    if records and _has_empty_answers(records):
+        scores, reasons = _score_with_empty_answer_handling(
+            records, judge_model, evaluate_fn, base_url
         )
-        scores: list[JudgeScore] = [
-            {
-                "faithfulness": _EMPTY_ANSWER_JUDGE_SCORE["faithfulness"],
-                "answer_relevancy": _EMPTY_ANSWER_JUDGE_SCORE["answer_relevancy"],
-            }
-            for _ in records
-        ]
-        reasons: list[str | None] = [_EMPTY_ANSWER_REASON for _ in records]
-        for index, score, reason in zip(nonempty_positions, judged, sub_reasons):
-            scores[index] = score
-            reasons[index] = reason
         if diagnostics_out is not None:
             diagnostics_out.extend(reasons)
         return scores
     if evaluate_fn is not None:
-        result = extract_scores(evaluate_fn(records, judge_model))
-        if diagnostics_out is not None:
-            diagnostics_out.extend(None for _ in records)
-        return result
+        return _score_with_injected_evaluate(records, judge_model, evaluate_fn, diagnostics_out)
     return _default_deepeval_evaluate(
         records, judge_model, base_url=base_url, diagnostics_out=diagnostics_out
     )
