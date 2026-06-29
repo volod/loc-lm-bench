@@ -13,6 +13,14 @@ needed).
 follow-up `uv pip install`. It is a larger one-time download; for a lean install trim it,
 e.g. `make venv EXTRAS=dev` (or `EXTRAS=rag,eval` for the RAG core path).
 
+`make venv` resolves uv's package link mode per host. If this checkout and uv's shared cache are on
+different devices, it sets `UV_LINK_MODE=copy` to avoid failed cross-device hardlinks; otherwise it
+uses uv's default. For one-off `uv` commands, load the same resolver first:
+
+    source scripts/shared/common.sh
+    llb_load_env
+    uv run --extra dev python -m pytest
+
 Set `SKIP_APT=1` when apt is unavailable (macOS, minimal CI images) -- the Python venv still
 builds; only the OS package step is skipped.
 
@@ -89,16 +97,31 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 | `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt | tests, lint, code quality |
 | `goldset` | datasets | `ingest_squad --hf-dataset` |
 | `rag` | faiss-cpu, sentence-transformers, langchain, DeepEval | index + judge |
+| `rag-chroma` | chromadb | Chroma vector-store adapter |
+| `rag-qdrant` | qdrant-client | Qdrant vector-store adapter |
+| `rag-lancedb` | lancedb | LanceDB vector-store adapter, opt-in |
 | `eval` | langgraph | retrieve -> generate eval graph (`run-eval`) |
 | `track` | mlflow, duckdb, pyarrow, optuna | tracking + config search |
 | `board` | streamlit | leaderboard |
 | `prep` | litellm | frontier-API prep utils |
 | `telemetry` | nvidia-ml-py, psutil | GPU/host telemetry |
+| `pdf-quality` | Docling, Unstructured, MarkItDown OCR/layout helpers | scanned-PDF recovery and parser probes |
 
-GitHub CI installs only `.[dev]` (it never runs `make venv`), so the lint+test job stays
-light and never pulls the heavy/eval deps. vLLM / torch / flash-attn are hardware-matched
-(host CUDA/GPU) and installed via a separate path per [AGENTS.md](../../AGENTS.md), never as
-plain deps.
+`make venv` includes the Chroma and Qdrant vector-store extras so the full local suite runs their
+live adapter checks without skips. GitHub CI installs only `.[dev]` (it never runs `make venv`), so
+the lint+test job stays light and never pulls the heavy/eval deps. vLLM / torch / flash-attn are
+hardware-matched (host CUDA/GPU) and installed via a separate path per [AGENTS.md](../../AGENTS.md),
+never as plain deps. CrewAI remains a dedicated environment because its pins conflict with the
+dev/RAG/vector lanes.
+
+`pdf-quality` is opt-in because OCR/layout packages are large. `make apt-deps` installs the system
+helpers used by that path: `poppler-utils`, `libmagic-dev`, `tesseract-ocr`, `tesseract-ocr-eng`,
+and `tesseract-ocr-ukr`. Install the Python extra on transform hosts with:
+
+    uv pip install --link-mode copy --python .venv/bin/python -e ".[pdf-quality]"
+
+Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Install
+`marker-pdf` only in the dedicated CUDA transform environment when benchmarking it explicitly.
 
 ## Conventions
 

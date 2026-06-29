@@ -33,6 +33,8 @@ make ci
 
 `make venv` creates `.venv`, installs the editable package with extras, and seeds `.env` from
 `.env.example`. GitHub CI uses the lighter dev dependency set and does not require GPU services.
+`scripts/shared/common.sh` resolves `UV_LINK_MODE` adaptively: when uv's cache and this checkout
+are on different devices it exports `copy`, otherwise it leaves uv's default link mode in place.
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.

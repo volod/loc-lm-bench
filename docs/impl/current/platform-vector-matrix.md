@@ -96,6 +96,9 @@ Adapters live under `src/llb/rag/stores/`:
 - `lancedb.py`: LanceDB adapter.
 
 Optional extras pin validated client APIs: `[rag-chroma]`, `[rag-qdrant]`, and `[rag-lancedb]`.
+The default `make venv` installs the Chroma and Qdrant extras so the full local test suite
+exercises their live adapter round-trips without optional-dependency skips. LanceDB remains an
+opt-in adapter lane.
 
 ## Vector-Store Commands
 

@@ -6,11 +6,12 @@ PY := $(VENV)/bin/python
 PYTHON_VERSION := 3.13
 DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_load_env; printf "%s" "$$DATA_DIR"')
 
-# Extras installed by `make venv` -- every declared optional-dependency group, so a fresh
-# checkout can run every command without a follow-up `uv pip install`. vLLM/torch/flash-attn
-# are deliberately NOT here: they are hardware-matched and built separately (AGENTS.md).
+# Extras installed by `make venv` -- the standard local workflow groups, so a fresh checkout can
+# run the normal test/eval/vector-store commands without a follow-up `uv pip install`.
+# vLLM/torch/flash-attn are deliberately NOT here: they are hardware-matched and built separately
+# (AGENTS.md). CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,eval,graph,track,board,prep,telemetry,goldset,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,prep,telemetry,goldset,dev
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -18,6 +19,10 @@ GOLDSET ?= $(PUBLISHED_GOLDSET_ROOT)/goldset.jsonl
 CORPUS ?= $(PUBLISHED_GOLDSET_ROOT)/corpus
 SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
+PDF_DIR ?= $(DATA_DIR)/_doc
+PDF_OUT_DIR ?=
+PDF_MIN_CHARS ?=
+PDF_PARSER ?= auto
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
@@ -142,7 +147,7 @@ PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0
 PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -189,7 +194,7 @@ board: ## Serve the Streamlit leaderboard (BOARD_HOST=127.0.0.1 BOARD_PORT=8501)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main board --host "$(BOARD_HOST)" --port "$(BOARD_PORT)"
 
-venv: ## Create/update .venv (py3.11) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
+venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
 	@case ",$(EXTRAS)," in *,dev,*|*,dev) SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" dev ;; esac
@@ -244,6 +249,14 @@ lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS ov
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh"
+
+pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/_doc; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(); \
+	if [ -n "$(PDF_OUT_DIR)" ]; then args+=("$(PDF_OUT_DIR)"); fi; \
+	if [ -n "$(PDF_MIN_CHARS)" ]; then args+=(--min-chars "$(PDF_MIN_CHARS)"); fi; \
+	if [ -n "$(PDF_PARSER)" ]; then args+=(--parser "$(PDF_PARSER)"); fi; \
+	$(PY) -m llb.main pdf-to-markdown "$(PDF_DIR)" "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

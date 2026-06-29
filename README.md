@@ -14,7 +14,7 @@ CUDA and `HF_TOKEN` are only needed for GPU serving or gated model weights.
 make venv
 make demo-eval
 
-llb pdf-to-markdown .data/_doc
+make pdf-to-markdown
 make build-index CORPUS=<dir>
 make validate-retrieval
 
@@ -31,7 +31,7 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 
 | Capability | Functional use case | Pipeline commands |
 |---|---|---|
-| Corpus-grounded gold sets | Convert local PDFs to markdown, then build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/goldset-from-scratch.md) and [data prep](docs/guides/data-prep.md). | `llb pdf-to-markdown <pdf-dir>` -> `make ingest-uk-squad` -> `make validate-goldset` |
+| Corpus-grounded gold sets | Convert local PDFs to markdown, then build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/goldset-from-scratch.md) and [data prep](docs/guides/data-prep.md). | `make pdf-to-markdown PDF_DIR=<pdf-dir>` -> `make ingest-uk-squad` -> `make validate-goldset` |
 | Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/verification-tooling.md) and [human evaluation](docs/guides/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
 | FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
 | Local serving and model planning | Resolve which candidate models fit the host, prepare weights, and run through Ollama, vLLM, or llama.cpp. See [vLLM backend guide](docs/guides/vllm-backend.md) and [inference config](docs/inference/config-example.md). | `make list-models` -> `make prep-models` |
@@ -44,15 +44,18 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 
 ## PDF Corpus Prep
 
-Use PyMuPDF4LLM-backed conversion before indexing, ontology drafting, or GraphRAG runs:
+Use citation-preserving conversion before indexing, ontology drafting, or GraphRAG runs:
 
 ```sh
-llb pdf-to-markdown <pdf-dir>
-llb pdf-to-markdown <pdf-dir> <out-dir> --min-chars 500
+make pdf-to-markdown
+make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<out-dir> PDF_MIN_CHARS=500 PDF_PARSER=auto
 ```
 
-When `<out-dir>` is omitted, markdown files and `pdf_corpus_manifest.json` are written to
-`<pdf-dir>/_md`; for example, `.data/_doc/_md`.
+`PDF_DIR` defaults to `$DATA_DIR/_doc`, which is `.data/_doc` unless `.env` overrides
+`DATA_DIR`. When `PDF_OUT_DIR` is omitted, markdown files, page citation sidecars,
+`pdf_corpus_manifest.json`, and `pdf_corpus_quality.json` are written to `<pdf-dir>/_md`; for
+example, `.data/_doc/_md`. `PDF_PARSER=auto` uses PyMuPDF4LLM for born-digital PDFs and Docling
+OCR for image-only scans when the `pdf-quality` extra and OCR apt packages are installed.
 
 ## Documentation
 

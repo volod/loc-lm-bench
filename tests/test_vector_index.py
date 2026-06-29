@@ -1,5 +1,7 @@
 """platform matrix vector-store seam -- dispatch, adapter contracts, FAISS round-trip, store backend tag."""
 
+import builtins
+
 import pytest
 
 from llb.rag import vector_index as vi
@@ -39,16 +41,18 @@ def test_build_vector_index_unknown_backend_raises():
         (vi.RAG_BACKEND_LANCEDB, "lancedb"),
     ],
 )
-def test_adapter_raises_systemexit_when_extra_missing(backend, module):
+def test_adapter_raises_systemexit_when_extra_missing(backend, module, monkeypatch):
     """With the optional extra absent, instantiating the adapter names the install path."""
-    try:
-        __import__(module)
-        pytest.skip(f"{module} installed; the missing-extra path is exercised only when absent")
-    except ImportError:
-        pass
-    cls = vi._adapter_class(backend)
+    real_import = builtins.__import__
+
+    def block_optional_extra(name, *args, **kwargs):
+        if name == module or name.startswith(f"{module}."):
+            raise ImportError(f"blocked optional dependency: {module}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_optional_extra)
     with pytest.raises(SystemExit, match=backend):
-        cls([[0.1, 0.2]])  # __init__ -> _index -> lazy import fails -> SystemExit
+        vi._adapter_class(backend)([[0.1, 0.2]])  # __init__ -> _index -> lazy import fails
 
 
 # --- base adapter shaping (fake subclass, no numpy needed) ---------------------------------

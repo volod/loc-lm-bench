@@ -3,11 +3,19 @@
 ## Development Guardrails
 
 - **Git:** Do not create git commits or revert user changes unless explicitly asked.
-- **Python:** Use `uv` and `pyproject.toml` for all dependency management (Python >= 3.10).
+- **Python:** Use `uv` and `pyproject.toml` for all dependency management (Python >= 3.12).
+  For direct `uv` commands, source `scripts/shared/common.sh` and run `llb_load_env` first so
+  `UV_LINK_MODE` is resolved adaptively: cross-device repo/cache hosts use `copy`, same-device
+  hosts keep uv's default linking. Leave `UV_LINK_MODE` unset or `auto` unless forcing a mode is
+  the explicit purpose of the command.
 - **Typing:** Do not add `from __future__ import annotations`; use normal annotations and
   `TYPE_CHECKING` imports when needed.
 - **Paths:** Never hardcode absolute directories (e.g., `/home/...`). Resolve every path from
   the project base directory and honor `.env`/`DATA_DIR` settings.
+- **Make aliases:** Quick-start and standard workflow commands must use `make` targets when a
+  target exists. Add a Makefile target with a `##` help description before documenting a repeated
+  workflow in README, guides, or AGENTS.md; keep raw `llb` or `python -m` commands only for
+  low-level CLI reference or one-off debugging.
 
 ## Code Organization
 
