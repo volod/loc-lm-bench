@@ -8,3 +8,10 @@ make
 
 # Operational HTTP checks (Ollama unload, endpoint probes in docs).
 curl
+
+# PDF OCR/layout parser support (Docling Tesseract CLI, Unstructured PDF helpers).
+libmagic-dev
+poppler-utils
+tesseract-ocr
+tesseract-ocr-eng
+tesseract-ocr-ukr

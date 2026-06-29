@@ -70,18 +70,38 @@ certifying changed content.
 `src/llb/prep/goldset_skeleton.py` writes an editable from-scratch SQuAD template under
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
-`llb pdf-to-markdown` and `llb ingest-pdf-corpus` extract local PDF directories into the canonical
-`.md` corpus shape used by RAG, ontology drafting, prompt-system packages, and GraphRAG. Extraction
-uses PyMuPDF4LLM, writes stable ASCII `pdf-<digest>.md` ids, preserves the source PDF path in a
-manifest, and skips PDFs whose extracted markdown is below `--min-chars`.
+`make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
+directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system
+packages, and GraphRAG. The default `PDF_PARSER=auto` path uses PyMuPDF4LLM with OCR disabled for
+born-digital PDFs, and Docling with Tesseract CLI OCR (`ukr+eng`) for image-only PDFs when the
+`pdf-quality` extra and OCR apt packages are installed. Marker, Unstructured, and MarkItDown remain
+available as explicit `PDF_PARSER=<tool>` probes, but they are not default full-corpus candidates.
+The converter writes stable ASCII `pdf-<digest>.md` ids, preserves the source PDF path in a manifest,
+and skips PDFs only when the selected parser output stays below `--min-chars`.
 
 ```bash
-llb pdf-to-markdown <pdf-dir>
-llb pdf-to-markdown <pdf-dir> <out-dir> --min-chars 500
-llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500
+make pdf-to-markdown
+make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<out-dir> PDF_MIN_CHARS=500 PDF_PARSER=auto
+llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
-When `out-dir` is omitted, the default is `<pdf-dir>/_md`, for example `.data/_doc/_md`.
+The make alias defaults `PDF_DIR` to `$DATA_DIR/_doc`. When `out-dir` is omitted, the default is
+`<pdf-dir>/_md`, for example `.data/_doc/_md`. Each successful document gets a
+`pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF diagnostics, page numbers,
+generated-corpus character spans, and page-local block spans when the parser exposes them. The same
+directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`; the quality report
+records parser attempts, diagnostics, page coverage, citation coverage, structure markers, and the
+selection score.
+
+The local `$DATA_DIR/_doc` corpus run produced 19 markdown files, 19 citation sidecars, and zero
+skips under `.data/_doc/_md`. Sixteen born-digital PDFs used PyMuPDF4LLM. The three PDFs that had
+zero embedded text were recovered by Docling OCR:
+
+| Source PDF | Pages | OCR chars | Citation pages |
+| --- | ---: | ---: | ---: |
+| `Doktryna_MPZ_OS.pdf` | 24 | 50,548 | 24 |
+| `Доктрина БПЛА.pdf` | 61 | 120,556 | 60 |
+| `Настанова з бойової підготовки Mastanova_z_b_pidotovky.PDF` | 59 | 136,351 | 59 |
 
 ## Verification Gate
 

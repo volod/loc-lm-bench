@@ -17,10 +17,13 @@ def ingest_pdf_corpus_cmd(
     min_chars: int = typer.Option(
         500, min=1, help="skip PDFs whose extracted text is shorter than this"
     ),
+    parser: str = typer.Option(
+        "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
+    ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to ingest"),
 ) -> None:
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
-    _run_pdf_markdown_ingest("ingest-pdf-corpus", pdf_root, out_dir, min_chars, limit)
+    _run_pdf_markdown_ingest("ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit)
 
 
 @app.command("pdf-to-markdown")
@@ -32,10 +35,13 @@ def pdf_to_markdown_cmd(
     min_chars: int = typer.Option(
         500, min=1, help="skip PDFs whose extracted text is shorter than this"
     ),
+    parser: str = typer.Option(
+        "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
+    ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to convert"),
 ) -> None:
-    """Convert local PDFs into markdown files with PyMuPDF4LLM."""
-    _run_pdf_markdown_ingest("pdf-to-markdown", pdf_root, out_dir, min_chars, limit)
+    """Convert local PDFs into markdown files plus quality/citation sidecars."""
+    _run_pdf_markdown_ingest("pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit)
 
 
 def _run_pdf_markdown_ingest(
@@ -43,6 +49,7 @@ def _run_pdf_markdown_ingest(
     pdf_root: Path,
     out_dir: Optional[Path],
     min_chars: int,
+    parser: str,
     limit: Optional[int],
 ) -> None:
     from llb.prep.pdf_corpus import ingest_pdf_corpus
@@ -52,6 +59,7 @@ def _run_pdf_markdown_ingest(
             pdf_root,
             out_dir,
             min_chars=min_chars,
+            parser=parser,
             limit=limit,
         )
     except ValueError as exc:
