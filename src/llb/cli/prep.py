@@ -384,6 +384,9 @@ def prepare_goldset_draft_cmd(
         None, help="local endpoint base URL (default: Ollama OpenAI-compatible /v1)"
     ),
     max_items: int = typer.Option(60, min=1, help="upper bound on drafted QA items"),
+    doc_limit: Optional[int] = typer.Option(
+        None, min=1, help="bounded probe: only process the first N corpus documents"
+    ),
     seed: int = typer.Option(13, help="deterministic sampling/split seed"),
     extractor: str = typer.Option(
         "llm", help="llm (default) | spacy (opt-in Python-native uk_core_news NER, no egress)"
@@ -393,6 +396,14 @@ def prepare_goldset_draft_cmd(
     ),
     max_tokens: int = typer.Option(
         4096, min=1, help="per-call completion token budget for ontology drafting"
+    ),
+    extract_max_chars: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="bounded probe/window size: max document characters per extraction call",
+    ),
+    extract_chunk_overlap: Optional[int] = typer.Option(
+        None, min=0, help="overlap between extraction windows when a document is split"
     ),
     temperature: float = typer.Option(
         0.0, min=0.0, help="per-call generation temperature for ontology drafting"
@@ -407,6 +418,11 @@ def prepare_goldset_draft_cmd(
     ),
     out_dir: Optional[Path] = typer.Option(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
+    ),
+    verification_sample_size: int = typer.Option(
+        0,
+        min=0,
+        help="also write verify_sample.csv for human review (0 leaves review to make verify-sample)",
     ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
@@ -438,7 +454,20 @@ def prepare_goldset_draft_cmd(
         max_items=max_items,
         seed=seed,
         out_dir=out_dir,
+        doc_limit=doc_limit,
+        extract_max_chars=extract_max_chars,
+        extract_chunk_overlap=extract_chunk_overlap,
     )
+    if verification_sample_size:
+        from llb.goldset.verify import build_sample_worksheet
+
+        worksheet = result.out_dir / "verify_sample.csv"
+        sample_size, _strata = build_sample_worksheet(
+            result.out_dir, worksheet, n=verification_sample_size, seed=seed
+        )
+        typer.echo(
+            f"[prepare-goldset-draft] verification sample: {sample_size} rows -> {worksheet}"
+        )
     typer.echo(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
         f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"

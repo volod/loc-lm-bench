@@ -22,7 +22,9 @@ immutable run artifacts, and tier-separated leaderboards.
 
 ## Setup Surface
 
-The repo uses `uv` and `pyproject.toml` for Python dependency management.
+The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
+Python `>=3.12`; pytest has no legacy interpreter-specific warning filters, and build-helper tests
+derive fake wheel ABI tags from the running supported interpreter.
 
 ```bash
 make

@@ -125,7 +125,3 @@ addopts = "-q -p no:deepeval -p no:rerunfailures"
 markers = [
   "slow: long-running test, excluded from the lightweight `make ci` suite (run via `make test`)",
 ]
-filterwarnings = [
-  # Emitted at interpreter shutdown by SciPy's bundled SWIG extension on Python 3.11.
-  "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",
-]

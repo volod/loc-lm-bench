@@ -86,8 +86,17 @@ models this uses the native `/api/chat` path because the OpenAI-compatible `/v1`
 honor the `think` control.
 
 The graph build path has been smoke-tested with
-`.data/prepare-goldset/{timestamp}-smoke`: it loaded two drafted extractions and wrote
-a graph with nodes, edges, and communities under `$DATA_DIR/llb/graph/`.
+`.data/prepare-goldset/{timestamp}-smoke`: it loaded two drafted extractions and wrote 19 nodes,
+7 edges, and 12 communities under `$DATA_DIR/llb/graph/`.
+
+The PDF ontology draft artifacts feed this same path. Build the graph from the completed draft
+bundle, then run the vector/graph retrieval comparison before using graph context in scoring:
+
+```bash
+make build-index CORPUS=<draft-bundle>/corpus
+make build-graph BUNDLE=<draft-bundle>
+make compare-retrieval GOLDSET=<draft-bundle>/goldset.jsonl RAG_K=10
+```
 
 ## Ontology Scope
 

@@ -29,6 +29,17 @@ GOLDSET_MODE ?= development
 DRAFT_MODEL ?= llama3.2:3b
 DRAFT_ENDPOINT ?= local
 DRAFT_MAX_ITEMS ?= 60
+DRAFT_CORPUS ?= $(CORPUS)
+DRAFT_DOC_LIMIT ?=
+DRAFT_EXTRACT_MAX_CHARS ?=
+DRAFT_EXTRACT_CHUNK_OVERLAP ?=
+DRAFT_MAX_TOKENS ?= 4096
+DRAFT_TEMPERATURE ?= 0
+DRAFT_TIMEOUT ?= 300
+DRAFT_NO_THINK ?= 0
+DRAFT_EXTRACTOR ?= llm
+DRAFT_OUT_DIR ?=
+DRAFT_VERIFY_N ?= 0
 
 # RAG/vLLM eval knobs (override on the command line).
 MODEL ?= llama3.2:3b
@@ -147,7 +158,7 @@ PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0
 PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -324,11 +335,31 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 	    $(PY) -m llb.prep.goldset_skeleton ;; \
 	  draft) \
 	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
-	    $(PY) -m llb.main prepare-goldset-draft --corpus-root "$(CORPUS)" \
-	      --model "$(DRAFT_MODEL)" --endpoint "$(DRAFT_ENDPOINT)" --max-items $(DRAFT_MAX_ITEMS) ;; \
+	    $(MAKE) --no-print-directory prepare-goldset-draft DRAFT_CORPUS="$(CORPUS)" ;; \
 	  *) \
 	    echo "ERROR: GOLDSET_MODE must be development, skeleton, or draft" >&2; exit 2 ;; \
 	esac
+
+prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 for PDF probe
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	args=( \
+	  --corpus-root "$(DRAFT_CORPUS)" \
+	  --model "$(DRAFT_MODEL)" \
+	  --endpoint "$(DRAFT_ENDPOINT)" \
+	  --max-items "$(DRAFT_MAX_ITEMS)" \
+	  --extractor "$(DRAFT_EXTRACTOR)" \
+	  --max-tokens "$(DRAFT_MAX_TOKENS)" \
+	  --temperature "$(DRAFT_TEMPERATURE)" \
+	  --timeout "$(DRAFT_TIMEOUT)" \
+	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
+	); \
+	if [ -n "$(DRAFT_DOC_LIMIT)" ]; then args+=(--doc-limit "$(DRAFT_DOC_LIMIT)"); fi; \
+	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
+	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
+	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
+	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
+	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

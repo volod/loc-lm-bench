@@ -11,6 +11,8 @@ import pytest
 
 COMMON_SH = Path(__file__).resolve().parents[1] / "scripts" / "shared" / "common.sh"
 BUILD_VLLM = COMMON_SH.parents[1] / "build_vllm.sh"
+PYTHON_ABI_TAG = f"cp{sys.version_info.major}{sys.version_info.minor}"
+FAKE_VLLM_WHEEL = f"vllm-0.0.0-{PYTHON_ABI_TAG}-{PYTHON_ABI_TAG}-linux_x86_64.whl"
 
 
 def _write_executable(path: Path, text: str) -> None:
@@ -24,7 +26,7 @@ def _fake_toolchain(tmp_path: Path) -> tuple[Path, Path]:
     uv_log = tmp_path / "uv.log"
     _write_executable(
         bin_dir / "uv",
-        """#!/usr/bin/env bash
+        f"""#!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$UV_LOG"
 if [ "$1 $2" = "cache dir" ]; then
@@ -34,7 +36,7 @@ elif [ "$1" = "build" ]; then
     if [ "$1" = "--out-dir" ]; then
       shift
       mkdir -p "$1"
-      : > "$1/vllm-0.0.0-cp311-cp311-linux_x86_64.whl"
+      : > "$1/{FAKE_VLLM_WHEEL}"
       break
     fi
     shift
@@ -165,7 +167,7 @@ cuda = _Cuda()
     cached_files = list((data_dir / "wheels").rglob("*"))
     cached_wheels = [path for path in cached_files if path.is_file()]
     assert len(cached_wheels) == 1
-    assert cached_wheels[0].name == "vllm-0.0.0-cp311-cp311-linux_x86_64.whl"
+    assert cached_wheels[0].name == FAKE_VLLM_WHEEL
     python_tag = f"py{sys.version_info.major}{sys.version_info.minor}"
     assert cached_wheels[0].parent.name.startswith(f"vllm_{python_tag}_torch2.9.1_cu128_sm89_git")
     calls = uv_log.read_text(encoding="utf-8")

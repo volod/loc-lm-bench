@@ -49,5 +49,9 @@ ONTOLOGY_FILENAME = "ontology.json"
 EXTRACTION_FILENAME = "extraction.jsonl"
 PROVENANCE_FILENAME = "provenance.json"
 CORPUS_DIRNAME = "corpus"
+PDF_ONTOLOGY_REPORT_FILENAME = "pdf_ontology_report.json"
+PROMPT_DICTIONARY_FILENAME = "prompt_dictionary_candidates.jsonl"
+NEEDLE_GOLDSET_FILENAME = "needle_items.jsonl"
+PROMPT_DICTIONARY_MAX_EXAMPLES = 5
 
 PROVENANCE_KIND: Provenance = "ontology-drafted"

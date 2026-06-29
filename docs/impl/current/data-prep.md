@@ -93,6 +93,19 @@ directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`
 records parser attempts, diagnostics, page coverage, citation coverage, structure markers, and the
 selection score.
 
+Ontology draft bundles preserve that PDF evidence. When a source document has a matching
+`*.citations.json` sidecar, `prepare-goldset-draft` copies it into the bundle `corpus/` directory
+and writes these review artifacts beside `goldset.jsonl`:
+
+- `pdf_ontology_report.json`: parse rate, elapsed seconds, grounded entity/fact/claim counts,
+  page-span citation coverage, citation-valid needle count, and dictionary-term yield.
+- `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
+  spans and PDF page references when sidecars exist.
+- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars.
+
+The artifacts are diagnostics for review and construction. Drafted rows still remain
+`verified=false` until the human verification gate emits an accepted ledger.
+
 The local `$DATA_DIR/_doc` corpus run produced 19 markdown files, 19 citation sidecars, and zero
 skips under `.data/_doc/_md`. Sixteen born-digital PDFs used PyMuPDF4LLM. The three PDFs that had
 zero embedded text were recovered by Docling OCR:
@@ -122,6 +135,8 @@ accepted-ledger emission. `src/llb/goldset/verify_session.py` owns the interacti
 The review session keeps command parsing, navigation, row edits, clear confirmation, and
 persistence in small helpers so the loop reads as worksheet orchestration.
 The accepted ledger writes copied corpus files plus canonical `verified=true` rows.
+`prepare-goldset-draft` can also write the first worksheet in the same run with
+`--verification-sample-size <n>`; the make wrapper exposes this as `DRAFT_VERIFY_N=<n>`.
 
 The rationale is anti-anchoring and auditability: automated cross-check context can be shown to a
 reviewer, but it is hidden by default; the accepted ledger is a new reviewed artifact rather than an
