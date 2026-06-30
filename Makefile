@@ -6,12 +6,23 @@ PY := $(VENV)/bin/python
 PYTHON_VERSION := 3.13
 DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_load_env; printf "%s" "$$DATA_DIR"')
 
+# Tool caches live under one $DATA_DIR/cache/<tool> tree (not the project root), so the root stays
+# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars override
+# the static pyproject defaults, so the caches follow a custom DATA_DIR. deepeval reads
+# DEEPEVAL_CACHE_FOLDER (its `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
+LLB_CACHE_DIR := $(DATA_DIR)/cache
+export RUFF_CACHE_DIR := $(LLB_CACHE_DIR)/ruff
+export MYPY_CACHE_DIR := $(LLB_CACHE_DIR)/mypy
+export DEEPEVAL_CACHE_FOLDER := $(LLB_CACHE_DIR)/deepeval
+export DEEPEVAL_RESULTS_FOLDER := $(LLB_CACHE_DIR)/deepeval/results
+PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
+
 # Extras installed by `make venv` -- the standard local workflow groups, so a fresh checkout can
 # run the normal test/eval/vector-store commands without a follow-up `uv pip install`.
 # vLLM/torch/flash-attn are deliberately NOT here: they are hardware-matched and built separately
 # (AGENTS.md). CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,prep,telemetry,goldset,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,dev
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -82,9 +93,13 @@ MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
 BOARD_HOST ?= 127.0.0.1
 BOARD_PORT ?= 8501
+RECOMMEND_MIN_CASES ?= 1
+RECOMMEND_GPU_GB ?=
+RECOMMEND_MIN_TOK_S ?=
 SWEEP_ID ?= run1
 SWEEP_MAX_MODEL_LEN ?= 8192
 SWEEP_OFFLINE ?=
+SWEEP_RAG_GRID ?=
 PIPELINE_TOP_N ?= 2
 PIPELINE_TRIALS ?= 20
 PIPELINE_OFFLINE ?=
@@ -224,7 +239,7 @@ export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL 
 export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -319,6 +334,13 @@ board: ## Serve the Streamlit leaderboard (BOARD_HOST=127.0.0.1 BOARD_PORT=8501)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main board --host "$(BOARD_HOST)" --port "$(BOARD_PORT)"
 
+recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_CASES= RECOMMEND_GPU_GB= RECOMMEND_MIN_TOK_S=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main recommend --min-cases "$(RECOMMEND_MIN_CASES)" \
+		$(if $(RECOMMEND_GPU_GB),--gpu-gb $(RECOMMEND_GPU_GB),) \
+		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),)
+
 venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
@@ -348,12 +370,12 @@ MD_PATHS ?= README.md AGENTS.md CLAUDE.md GEMINI.md docs
 
 test: ## FULL local precommit flow: pytest (incl. slow) + markdown lint (NOT run in GitHub CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m pytest
+	$(PY) -m pytest $(PYTEST_CACHE_OPT)
 	$(MAKE) lint-md
 
 test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m pytest $(NOT_SLOW)
+	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
 
 format: ## Format Python sources and tests with Ruff
 	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
@@ -364,7 +386,7 @@ ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitH
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
-	$(PY) -m pytest $(NOT_SLOW)
+	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
 
 # Fix findings BY HAND. Do NOT run `pymarkdown fix` -- it corrupts prose on this version (AGENTS.md).
 lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)
@@ -507,12 +529,13 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PRO
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET=)
+sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_RAG_GRID=top_k=3,5,8)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main sweep --manifest "$(MODELS_MANIFEST)" --split "$(SPLIT)" \
 		--goldset "$(GOLDSET)" --sweep-id "$(SWEEP_ID)" \
-		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,)
+		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,) \
+		$(if $(SWEEP_RAG_GRID),--rag-grid "$(SWEEP_RAG_GRID)",)
 
 pipeline: ## Select public-screen finalists, tune, and print the final board
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

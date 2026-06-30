@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb import env
-from llb.paths import load_project_env
+from llb.paths import load_project_env, resolve_data_dir
 from llb.prompts import render_text, render_text_list, render_text_map
 
 _LOG = logging.getLogger(__name__)
@@ -34,6 +34,18 @@ UA_FAITHFULNESS_STEPS = render_text_list("scoring.judge.faithfulness_steps")
 UA_ANSWER_RELEVANCY_STEPS = render_text_list("scoring.judge.relevancy_steps")
 
 JudgeEvaluate = Callable[[list[JudgeInputRecord], str], list[dict[str, float]]]
+
+
+def _isolate_deepeval_artifacts() -> None:
+    """Point DeepEval's keystore (`.deepeval`) + results folder under $DATA_DIR/cache, not the root.
+
+    Uses `setdefault` so an explicit env (e.g. exported by the Makefile) wins; the default follows
+    the resolved DATA_DIR. Must run BEFORE `import deepeval` -- DeepEval reads DEEPEVAL_CACHE_FOLDER
+    at import time (`constants.HIDDEN_DIR`).
+    """
+    cache_root = resolve_data_dir() / "cache" / "deepeval"
+    os.environ.setdefault(env.DEEPEVAL_CACHE_FOLDER, str(cache_root))
+    os.environ.setdefault(env.DEEPEVAL_RESULTS_FOLDER, str(cache_root / "results"))
 
 
 class UkrainianGEvalTemplate:
@@ -313,6 +325,7 @@ def _default_deepeval_evaluate(
         )
 
     os.environ.setdefault(env.DEEPEVAL_TELEMETRY_OPT_OUT, "YES")
+    _isolate_deepeval_artifacts()
     try:
         from deepeval.metrics import GEval
         from deepeval.models import LocalModel

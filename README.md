@@ -95,6 +95,13 @@ make sweep SWEEP_ID=qs-committed
 # executables are logged as skips unless PLATFORM_MATRIX_STRICT=1.
 make platform-matrix
 
+# Purpose: turn the sweep into host-adaptive operator picks + a model-comparison chart.
+# Default input: $DATA_DIR/run-eval/ final-split bundles, detected CUDA tier (RECOMMEND_GPU_GB= to
+# simulate another tier; RECOMMEND_MIN_CASES= to drop partial runs).
+# Output/result: best RAG accuracy, best efficiency (quality/W), best model for THIS host, RAG
+# health, and $DATA_DIR/recommend/{summary.md,comparison.png}.
+make recommend RECOMMEND_MIN_CASES=50
+
 # Purpose: run security tests as a separate benchmark tier; do not mix ASR with RAG quality.
 # Default input: samples/security_cases_uk.json, SECURITY_MODEL=MamayLM 27B GGUF,
 # SECURITY_BACKEND=ollama.
@@ -241,7 +248,7 @@ Run `make` with no target to list commands. `.env.example` documents runtime set
 | Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/verification-tooling.md) and [human evaluation](docs/guides/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
 | FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
 | Local serving and model planning | Resolve which candidate models fit the host, prepare weights, and run through Ollama, vLLM, or llama.cpp. See [vLLM backend guide](docs/guides/vllm-backend.md) and [inference config](docs/inference/config-example.md). | `make list-models` -> `make prep-models` |
-| Private model leaderboards | Evaluate candidates on your corpus, isolate sweep cells, tune finalists, and inspect ranked boards with CIs. See [RAG core](docs/guides/run-rag-core.md) and [MLflow analysis](docs/guides/mlflow-analysis.md). | `make run-eval` -> `make sweep` -> `make pipeline` -> `make board` -> `make mlflow` |
+| Private model leaderboards | Evaluate candidates on your corpus, isolate sweep cells, tune finalists, and inspect ranked boards with CIs. Then `recommend` distills the sweep into host-adaptive picks (best accuracy, best quality/watt, best model for this GPU tier) plus a comparison chart. See [RAG core](docs/guides/run-rag-core.md) and [MLflow analysis](docs/guides/mlflow-analysis.md). | `make run-eval` -> `make sweep` -> `make pipeline` -> `make recommend` -> `make board` -> `make mlflow` |
 | Calibrated judge gates | Use a local DeepEval judge only after human-rated Ukrainian calibration clears the Spearman threshold. See [calibration tooling](docs/guides/calibration-tooling.md) and [judge experiments](docs/guides/judge-experiments.md). | `make calibration-run` -> `make calibration-rate` -> `make calibration-score` -> `make judge-experiment` |
 | Prompt-system tuning | Generate reviewable prompt packages, tune on one split, and verify generalization on held-out final data. See [prompt-system guide](docs/guides/prompt-system-rag.md) and [RAG core](docs/guides/run-rag-core.md). | `make prompt-system-prepare PROMPT_SYSTEM_CORPUS=<dir>` -> `make prompt-system-review PROMPT_SYSTEM_RUN_DIR=<dir> PROMPT_SYSTEM_ACTION=pin PROMPT_SYSTEM_ID=<id>` -> `make run-eval PROMPT_SYSTEM_ID=<id> PROMPT_PACKAGE=<dir>` -> `make prompt-system-compare` |
 | Security robustness | Score jailbreak, prompt-injection, RAG-injection, exfiltration, and benign-control cases as a separate security tier. See [security learning path](docs/guides/learning-path-security.md). | `make bench-security MODEL=<model> BACKEND=<backend>` |
@@ -273,6 +280,34 @@ see
 
 Start at the [documentation index](docs/README.md). The main implementation reference is
 [current.md](docs/impl/current.md), and contributor guardrails live in [AGENTS.md](AGENTS.md).
+
+## Model Families and Licenses
+
+The default candidate sweep compares five open-weight families -- two Ukrainian-specialized and
+three multilingual baselines. Each links to its upstream weights; comply with the listed license
+when serving or redistributing.
+
+| Family | Focus | Default weights | License |
+| --- | --- | --- | --- |
+| MamayLM v2 (INSAIT) | Ukrainian-specialized | [MamayLM v2.0 (Gemma 3) collection][mamay-col] | [Gemma Terms][gemma-lic] |
+| Lapa v0.1.2 (lang-uk) | Ukrainian-specialized | [lapa-llm/lapa-v0.1.2-instruct][lapa-repo] | [Gemma Terms][gemma-lic] |
+| Gemma 4 (Google) | Multilingual baseline | [google/gemma-4 collection][gemma-col] | [Gemma Terms][gemma-lic] |
+| Qwen 3.6 (Alibaba) | Multilingual baseline | [Qwen/Qwen3.6-35B-A3B][qwen-repo] | [Apache 2.0][apache-lic] |
+| Mistral Small 3.1 (Mistral AI) | Multilingual baseline | [mistralai/Mistral-Small-3.1-24B-Instruct-2503][mistral-repo] | [Apache 2.0][apache-lic] |
+
+The Ukrainian families build on the prior art tracked by the
+[lang-uk leaderboard](https://github.com/lang-uk) and the
+[MamayLM project](https://models.mamay.ai/). Per-tier concrete variants (GGUF / w4a16 / FP8) and
+serving knobs live in [docs/inference/config-example.md](docs/inference/config-example.md) and
+[samples/models_uk.yaml](samples/models_uk.yaml).
+
+[mamay-col]: https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
+[lapa-repo]: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
+[gemma-col]: https://huggingface.co/collections/google/gemma-4
+[qwen-repo]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
+[mistral-repo]: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
+[gemma-lic]: https://ai.google.dev/gemma/terms
+[apache-lic]: https://www.apache.org/licenses/LICENSE-2.0
 
 ## Data Licenses
 

@@ -134,3 +134,19 @@ Isolation and GPU safety live outside the scoring path:
 - `src/llb/executor/vram.py`: basic reclaim checks;
 - `src/llb/executor/contention.py`: pre-launch vLLM contention guard;
 - `src/llb/executor/isolation.py`: process-per-cell sweep and cooldown primitive.
+
+## Sweep RAG-config grid
+
+`llb sweep` runs one isolated cell per runnable model. By default every cell reuses the manifest's
+single retrieval config, so the sweep answers "which model" but not "which RAG config". The opt-in
+`--rag-grid top_k=3,5,8` (Make: `SWEEP_RAG_GRID=top_k=3,5,8`) expands each model into one cell per
+`top_k`, so the sweep answers "which `(model, top_k)`" for THIS host. Only the query-time `top_k` is
+gridded -- it changes retrieval depth against the SAME index, so no re-index is needed; `top_k` is
+part of the cell fingerprint, so each grid point gets its own resume key, and `recommend`'s
+best-per-model dedup then represents each model by its highest-scoring `top_k`. Index-time knobs
+(`chunk_size`/`chunk_overlap`) are out of scope because they need rebuilt indexes.
+
+```bash
+make sweep SWEEP_ID=grid SWEEP_RAG_GRID=top_k=3,5,8   # 5 models x 3 top_k -> 15 cells
+make recommend                                        # ranks each model at its best top_k
+```

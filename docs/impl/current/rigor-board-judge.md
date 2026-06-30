@@ -101,6 +101,50 @@ and prompt-system comparisons.
 make board
 ```
 
+## Recommendation Summary
+
+`llb recommend` (`make recommend`) distills a sweep into the few operator-facing picks a leaderboard
+implies but does not state, plus a comparison chart. It reuses the board loaders
+(`load_run_records` -> `best_per_model`) and the `aggregate` ranking (`rank_board`, `pareto_front`),
+adding the host-efficiency + retrieval fields the `ModelResult` omits (`quality_per_watt`,
+`mean_power_w`, `recall@k`, `MRR`); the logic lives in `src/llb/board/recommend.py` and the
+matplotlib chart in `src/llb/board/charts.py` (guarded `[viz]` extra).
+
+Picks:
+
+- Recommended for this host: the highest-accuracy model that is feasible, Pareto-optimal, AND fits
+  the GPU tier's VRAM budget with headroom (`peak_vram_mb <= 0.92 * total`). This is the
+  HOST-ADAPTIVE pick -- on the same bundles a 16 GiB host recommends Lapa while a (simulated)
+  24 GiB host recommends the larger MamayLM-27B, because the budget admits it. The pick also names
+  its `best RAG top_k`, which is meaningful once the sweep gridded `top_k` (see the RAG-config grid
+  in [`rag-core.md`](rag-core.md#sweep-rag-config-grid)): best-per-model dedup represents each model
+  by its highest-scoring retrieval depth, so the recommendation answers `(model, top_k)`, not just
+  model.
+- Best RAG accuracy: rank-1 by objective/blended quality.
+- Best efficiency: max `quality_per_watt` (the platform-matrix benchmark-efficiency axis).
+- Fastest: max tokens/sec.
+
+Only the dominant `(split, n_cases)` cohort is ranked. Comparing models is apples-to-apples only
+within a shared split AND case count, so `select_cohort` keeps the cohort with the most models
+(ties -> the larger `n_cases`, the more robust comparison) and lists the rest under an
+`Excluded (off-cohort, not ranked): MODEL n=N` note rather than ranking a 20-case platform-matrix
+row beside an 82-case sweep. `--min-cases` still pre-filters smoke bundles BEFORE the best-per-model
+dedup so a 3-case manual run never shadows a full sweep; the cohort split is the backstop when
+several real case counts coexist (the quickstart's `--min-cases 1` default would otherwise rank a
+2-case bundle beside the 82-case cohort). `--gpu-gb` simulates another CUDA tier's VRAM budget for
+the fit check. Outputs land at `$DATA_DIR/recommend/{summary.md,comparison.png}`, and
+`quickstart-goldset` runs it as the final eval step.
+
+```bash
+make recommend RECOMMEND_MIN_CASES=50          # detected host tier
+make recommend RECOMMEND_GPU_GB=24             # would a 24 GiB box pick a bigger model?
+```
+
+Validated on the 16 GiB RTX 4060 Ti committed-goldset sweep (5 families, 82 final cases): MamayLM-27B
+led accuracy (objective 0.546), Lapa was the recommended host pick (0.505, fits with headroom),
+Qwen3.6 led efficiency (0.216 quality/W), and the Ukrainian-specialized models out-scored the
+multilingual Mistral Small 3.1 (0.399) and Qwen baselines on Ukrainian RAG.
+
 ## Local Judge
 
 `src/llb/scoring/judge.py` uses a local OpenAI-compatible endpoint for DeepEval G-Eval metrics.

@@ -279,6 +279,46 @@ def _sweep_cell_overrides(
     return overrides
 
 
+def _parse_rag_grid(spec: str | None) -> list[int | None]:
+    """Parse an opt-in RAG-config grid like `top_k=3,5,8` into a list of `top_k` overrides.
+
+    Returns `[None]` (keep the manifest's single config) when no grid is given, so the default
+    sweep is unchanged. Only the query-time `top_k` is supported: it changes retrieval depth
+    against the SAME index, so the grid needs no re-index. Index-time knobs (chunk_size/overlap)
+    are out of scope.
+    """
+    if not spec:
+        return [None]
+    key, sep, raw = spec.partition("=")
+    if key.strip() != "top_k" or not sep or not raw.strip():
+        raise typer.BadParameter("--rag-grid must look like 'top_k=3,5,8'")
+    try:
+        values = [int(v) for v in raw.split(",") if v.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter(f"--rag-grid top_k values must be integers: {raw!r}") from exc
+    if not values or any(v < 1 for v in values):
+        raise typer.BadParameter("--rag-grid top_k values must be positive integers")
+    return list(dict.fromkeys(values))  # de-dupe, preserve order
+
+
+def _grid_cells(
+    base: RunConfig, overrides: dict[str, Any], rag_grid: list[int | None]
+) -> list[RunConfig]:
+    """One revalidated RunConfig per grid point for a resolved model (a single cell when no grid).
+
+    `top_k` is part of the cell fingerprint, so distinct grid points get distinct resume keys; the
+    `-k<top_k>` run-name suffix only makes the sweep log readable.
+    """
+    cells: list[RunConfig] = []
+    for top_k in rag_grid:
+        cell = dict(overrides)
+        if top_k is not None:
+            cell["top_k"] = top_k
+            cell["run_name"] = f"{overrides['run_name']}-k{top_k}"
+        cells.append(base.with_overrides(**cell))
+    return cells
+
+
 def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
     """Return whether the local serving binary needed by a resolved backend is installed."""
     if backend == "vllm":
@@ -305,12 +345,21 @@ def sweep_cmd(
     telemetry: bool = typer.Option(True, help="measure steady-state throughput + peak VRAM"),
     resume: bool = typer.Option(True, help="skip cells already completed under this sweep id"),
     offline: bool = typer.Option(False, help="skip availability probes (assume sources exist)"),
+    rag_grid: Optional[str] = typer.Option(
+        None,
+        "--rag-grid",
+        help="opt-in retrieval grid, e.g. 'top_k=3,5,8' -> one cell per (model, top_k); "
+        "default keeps the manifest's single config",
+    ),
 ) -> None:
     """Run one isolated cell per runnable model (process-per-cell, VRAM gate, thermal cooldown)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import resolve_all
     from llb.executor.isolation import run_sweep
 
+    grid = _parse_rag_grid(rag_grid)
+    if grid != [None]:
+        typer.echo(f"[sweep] rag-grid top_k={[k for k in grid]}")
     models = load_models(manifest)
     gpus = detect_gpus()
     resolved = resolve_all(
@@ -328,7 +377,7 @@ def sweep_cmd(
             continue
         overrides = _sweep_cell_overrides(r, telemetry, max_model_len)
         if overrides is not None:
-            cells.append(base.with_overrides(**overrides))
+            cells.extend(_grid_cells(base, overrides, grid))
 
     if not cells:
         typer.echo("[sweep] no runnable models resolved; nothing to do")

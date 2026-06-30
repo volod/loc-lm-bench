@@ -60,6 +60,7 @@ QS_PREP_SERVING_TARGETS="${QUICKSTART_PREP_SERVING_TARGETS:-1}"
 QS_RUN_SWEEP="${QUICKSTART_RUN_SWEEP:-1}"
 QS_RUN_PLATFORM_MATRIX="${QUICKSTART_RUN_PLATFORM_MATRIX:-1}"
 QS_RUN_SECURITY="${QUICKSTART_RUN_SECURITY:-1}"
+QS_RECOMMEND_MIN_CASES="${QUICKSTART_RECOMMEND_MIN_CASES:-1}"
 QS_PROMPT_DIR="$(resolve_path "${QUICKSTART_PROMPT_DIR:-$QS_A_DATA/prompt-system/quickstart}")"
 QS_PROMPT_ID="${QUICKSTART_PROMPT_ID:-}"
 QS_GPU_GB="${QUICKSTART_GPU_GB:-}"
@@ -197,7 +198,7 @@ track_a_eval() {
     result "sweep cells: $(rel_path "$QS_A_DATA/sweep/$QS_A_SWEEP_ID/cells")"
   fi
 
-  heading "2/2" "run inference-backend platform matrix"
+  heading "2/3" "run inference-backend platform matrix"
   if [ "$QS_RUN_PLATFORM_MATRIX" = "0" ]; then
     result "skipped platform-matrix because QUICKSTART_RUN_PLATFORM_MATRIX=0"
   else
@@ -205,6 +206,12 @@ track_a_eval() {
       PLATFORM_MATRIX_GOLDSET="$QS_A_GOLDSET"
     result "backend comparison runs: $(rel_path "$QS_A_DATA/run-eval")"
   fi
+
+  heading "3/3" "summarize host-adaptive recommendation + comparison chart"
+  make_with_data_dir "$QS_A_DATA" recommend RECOMMEND_MIN_CASES="$QS_RECOMMEND_MIN_CASES" || \
+    result "recommend skipped (no comparable run bundles yet)"
+  result "recommendation summary: $(rel_path "$QS_A_DATA/recommend/summary.md")"
+  result "comparison chart: $(rel_path "$QS_A_DATA/recommend/comparison.png")"
 }
 
 track_a_security() {

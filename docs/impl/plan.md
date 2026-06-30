@@ -7,10 +7,10 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-No forward tasks are currently queued. The committed-goldset leaderboard family defaults
-(MamayLM, Lapa, Gemma 4, Qwen 3.6, Mistral) and the model-prep / planner / resolver paths that
-serve them are described in [`current.md`](current.md) and the topics under [`current/`](current/).
-Add the next concrete unit of work below, following the format in **Adding Future Tasks**.
+None open. The `recommend-comparable-cohort` (dominant `(split, n_cases)` cohort) and
+`sweep-rag-config-axis` (opt-in `--rag-grid top_k=...`) tasks have shipped; their behavior now lives
+in [`rigor-board-judge.md`](current/rigor-board-judge.md#recommendation-summary) and
+[`rag-core.md`](current/rag-core.md#sweep-rag-config-grid). Add the next item per the rules below.
 
 ## Adding Future Tasks
 
