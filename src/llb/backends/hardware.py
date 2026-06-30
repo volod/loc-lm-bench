@@ -109,3 +109,22 @@ def detect_ram_mb() -> int:
         return parse_meminfo(Path("/proc/meminfo").read_text(encoding="utf-8"))
     except OSError:
         return 0
+
+
+def disk_free_mb(path: Path) -> int:
+    """Free space (MB) on the filesystem that holds `path`.
+
+    Walks up to the nearest EXISTING ancestor so the check works before a cache directory
+    has been created (a model store is created on first download). Returns 0 if it cannot be
+    read -- callers treat 0 as "unknown", never as "no space", so a missing GPU/host probe
+    never blocks a prepare that would otherwise succeed.
+    """
+    probe = path
+    while not probe.exists():
+        if probe.parent == probe:
+            return 0
+        probe = probe.parent
+    try:
+        return shutil.disk_usage(probe).free // (1024 * 1024)
+    except OSError:
+        return 0

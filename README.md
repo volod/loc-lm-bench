@@ -77,7 +77,9 @@ make validate-retrieval
 
 # Purpose: resolve and prepare candidate model families for this host.
 # Default input: samples/models_uk.yaml.
-# Output/result: host fit table and pulled/cached runnable candidates.
+# Output/result: host fit table and pulled/cached runnable candidates. prep-models reuses any
+# artifact already in its backend store and refuses a download up front when the cache filesystem
+# lacks room for it (no failing an hour into a multi-GiB pull); --dry-run previews the disk plan.
 make list-models
 make prep-models
 
@@ -120,9 +122,10 @@ make mlflow
 ```
 
 The default candidate-family intent is to compare the largest runnable MamayLM, Lapa, Gemma 4,
-Qwen 3.6, and Mistral variants for the detected 12/16/24/32 GiB CUDA tier. The current candidate
-and serving manifests cover MamayLM, Lapa, Gemma 4, and Qwen 3.6; Mistral is tracked as an explicit
-manifest gap before that family can enter the default sweep.
+Qwen 3.6, and Mistral variants for the detected 12/16/24/32 GiB CUDA tier. The candidate and
+serving manifests now cover all five families: the Mistral default is Mistral Small 3.1 24B
+(Apache-2.0, ungated), served via vLLM FP8 on the 32 GiB tier, vLLM w4a16 on the 24 GiB tier, and
+the curated `mistral-small3.1:24b` GGUF on Ollama (CPU offload) on the 12/16 GiB tiers.
 
 ### PDF Corpus To Goldset And Graph Quickstart
 

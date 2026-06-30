@@ -96,6 +96,39 @@ models:
         bpw: 3.5
         min_vram_gb: 8
 
+  - name: mistral-small-3.1-24b
+    backend: vllm
+    source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+    min_vram_gb: 20
+    params_b: 24          # 23.6B dense; rounded up so the quantized weight estimate stays honest
+    quant: w4a16
+    n_layers: 40
+    kv_dim: 1024          # 8 KV heads * 128 head_dim (full attention -- no sliding window)
+    max_context: 131072
+    vocab_size: 131072    # embedding-aware (M4.1): the 131k embedding + UNTIED lm_head stay bf16
+    hidden_size: 5120     # under w4a16, so a flat params_b x bpw under-counts the weights
+    tie_word_embeddings: false
+    notes: Mistral Small 3.1 (24B, Apache-2.0, multilingual); vLLM fp8/w4a16 on 32/24 GiB, q4 GGUF below
+    # Multi-quant vLLM (resolver-multi-quant-vllm): the resolver prices each vLLM quant and picks
+    # the highest-quality one that fits the host on GPU -- fp8 (~24 GiB) on a 32 GiB card, w4a16
+    # (~14 GiB) on a 24 GiB card -- then falls back to the curated GGUF on Ollama for 12/16 GiB.
+    # Quants are ranked by bits-per-weight; arch fields are shared from this parent entry. Use
+    # Ollama's CURATED `mistral-small3.1` tag (q4_k_m): the lmstudio/bartowski HF GGUF mirrors of
+    # this checkpoint crash the Ollama 0.20 llama.cpp runner on load, while the curated tag is
+    # tested against the runtime and serves the text path (we score text only).
+    sources:
+      vllm:
+        - source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
+          quant: fp8
+          min_vram_gb: 30
+        - source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+          quant: w4a16
+          min_vram_gb: 20
+      ollama:
+        source: mistral-small3.1:24b
+        quant: q4_k_m
+        min_vram_gb: 8
+
   - name: mamaylm-v2-12b
     backend: vllm
     source: INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0

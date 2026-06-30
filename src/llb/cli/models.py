@@ -3,7 +3,7 @@
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import typer
 
@@ -17,7 +17,32 @@ from llb.cli.helpers import (
     resolver_probes,
 )
 from llb.config import RunConfig
-from llb.contracts import PreparedModel, ResolvedModel
+from llb.contracts import ModelSpec, PreparedModel, ResolvedModel
+
+
+def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:
+    """list-models visibility: expand a multi-quant `sources.vllm` list into one plan row per quant.
+
+    So an operator sees the row the resolver would actually pick on a bigger card -- e.g. the fp8
+    Mistral quant on a 32 GiB host -- not just the parent quant the planner prices. Each variant
+    inherits the parent arch and overrides source/quant; single-source entries pass through. This is
+    display-only and does not affect `resolve-models` / `sweep`, which own backend selection.
+    """
+    from llb.backends.resolver import normalize_source_list
+
+    out: list[ModelSpec] = []
+    for spec in specs:
+        vllm = (spec.get("sources") or {}).get("vllm")
+        if not isinstance(vllm, list) or len(vllm) <= 1:
+            out.append(spec)
+            continue
+        for record in normalize_source_list(vllm):
+            merged = cast(ModelSpec, {**spec, "backend": "vllm", **record})
+            if record.get("source") != spec.get("source"):
+                quant = record.get("quant")
+                merged["name"] = f"{spec['name']}-{quant}" if quant else f"{spec['name']}-vllm"
+            out.append(merged)
+    return out
 
 
 @app.command("prep-models")
@@ -137,7 +162,7 @@ def list_models_cmd(
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
 
-    models = planning_models(manifest, trust_config=trust_config)
+    models = _expand_quant_variants(planning_models(manifest, trust_config=trust_config))
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()

@@ -42,6 +42,10 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
       request_timeout_s: 300
+    mistral:
+      backend: ollama
+      model: mistral-small3.1:24b
+      request_timeout_s: 300
     gemma-4-e4b-vllm:
       backend: vllm
       model: google/gemma-4-E4B-it-qat-w4a16-ct
@@ -65,6 +69,10 @@ tiers:
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    mistral:
+      backend: ollama
+      model: mistral-small3.1:24b
       request_timeout_s: 300
     gemma-4-12b-vllm:
       backend: vllm
@@ -92,6 +100,12 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
+    mistral:
+      backend: vllm
+      model: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+      gpu_memory_utilization: 0.90
+      max_model_len: 16384
+      limit_mm_per_prompt: '{"image": 0}'
 
   32:
     mamaylm:
@@ -116,3 +130,9 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
+    mistral:
+      backend: vllm
+      model: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
+      gpu_memory_utilization: 0.90
+      max_model_len: 8192
+      limit_mm_per_prompt: '{"image": 0}'

@@ -7,25 +7,10 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-### gpu-tier-mistral-default
-
-- User-visible outcome: complete the committed-goldset leaderboard family defaults by adding a
-  vetted Mistral variant beside the existing MamayLM, Lapa, Gemma 4, and Qwen 3.6 defaults for each
-  supported 12/16/24/32 GiB CUDA tier.
-- Scope boundary: update `samples/models_uk.yaml` and `samples/config-example/manifest.yaml`; reuse
-  `detect-gpu-vram`, `gen-serving-config`, `list-models`, `prep-models`, `sweep`,
-  `platform-matrix`, and `board`; do not add gated models without explicit license metadata and
-  operator-token guidance.
-- Data and artifact paths: keep generated serving scripts under
-  `$DATA_DIR/llb/serving/gpu-<tier>gb/`, model-prep caches in their backend-owned stores, and
-  leaderboard runs under `$DATA_DIR/run-eval/`.
-- Execution path: select one tier-appropriate Mistral source and backend, prefer local/offload GGUF
-  where vLLM cannot fit, add the source to the planner and serving manifests, then run the host fit
-  table and a small `sweep` on the committed fixture.
-- Acceptance gates: `make lint-md`, model-planner tests for the added sources, `make list-models`
-  on a representative 16 GiB host, and a documented reason for every family skipped on a tier.
-- Documentation target: update the README goldset quickstart, `docs/inference/config-example.md`,
-  and `docs/impl/current/platform-vector-matrix.md`.
+No forward tasks are currently queued. The committed-goldset leaderboard family defaults
+(MamayLM, Lapa, Gemma 4, Qwen 3.6, Mistral) and the model-prep / planner / resolver paths that
+serve them are described in [`current.md`](current.md) and the topics under [`current/`](current/).
+Add the next concrete unit of work below, following the format in **Adding Future Tasks**.
 
 ## Adding Future Tasks
 

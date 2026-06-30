@@ -297,6 +297,81 @@ def test_enrich_arch_override_replaces_curated(tmp_path, monkeypatch):
     assert out["n_layers"] == 48 and out["sliding_window"] == 1024
 
 
+# --- Mistral Small 3.1 24B family default (gpu-tier-mistral-default) ---------------------------
+
+# FP8 vLLM checkpoint: full attention (no sliding window), 131k vocab with an UNTIED lm_head that
+# stays bf16, so the embedding-aware estimate must exceed the flat params_b x bpw.
+MISTRAL_FP8 = {
+    "name": "mistral-small-3.1-24b-fp8",
+    "backend": "vllm",
+    "params_b": 24,
+    "quant": "fp8",
+    "n_layers": 40,
+    "kv_dim": 1024,
+    "max_context": 131072,
+    "vocab_size": 131072,
+    "hidden_size": 5120,
+    "tie_word_embeddings": False,
+}
+# The w4a16 vLLM checkpoint that fits GPU-resident on the 24 GiB tier (the fp8 ~24 GiB does not).
+MISTRAL_W4A16 = {
+    "name": "mistral-small-3.1-24b",
+    "backend": "vllm",
+    "params_b": 24,
+    "quant": "w4a16",
+    "n_layers": 40,
+    "kv_dim": 1024,
+    "max_context": 131072,
+    "vocab_size": 131072,
+    "hidden_size": 5120,
+    "tie_word_embeddings": False,
+}
+# The q4_k_m GGUF that Ollama offloads on smaller tiers (k-quant prices the embedding too).
+MISTRAL_GGUF = {
+    "name": "mistral-small-3.1-24b-gguf",
+    "backend": "ollama",
+    "params_b": 24,
+    "quant": "q4_k_m",
+    "n_layers": 40,
+    "kv_dim": 1024,
+    "max_context": 131072,
+}
+
+
+def test_mistral_fp8_untied_embedding_premium_over_flat():
+    # The untied 131k embedding stays bf16 under fp8, so the estimate must beat the flat product.
+    row = plan_model(MISTRAL_FP8, vram_mib=32607, ram_mib=128 * 1024)
+    flat = weights_mib(24, 8.0)
+    assert row["weights_mib"] > flat
+    assert 23.0 <= row["weights_mib"] / 1024 <= 24.5  # ~23.6 GiB priced weights
+
+
+def test_mistral_fp8_needs_32gb_for_vllm_gpu_fit():
+    # vLLM has no CPU offload, so the fp8 weights only hold a serving window on a 32 GiB card.
+    assert plan_model(MISTRAL_FP8, vram_mib=16380, ram_mib=128 * 1024)["ctx_gpu"] == 0
+    big = plan_model(MISTRAL_FP8, vram_mib=32607, ram_mib=128 * 1024)
+    assert big["ctx_gpu"] >= 2048  # room for a real serving context once the weights fit VRAM
+
+
+def test_mistral_gguf_offloads_on_16gb():
+    # The q4_k_m GGUF (no embedding premium) runs on a 16 GiB card via GPU+RAM offload.
+    row = plan_model(MISTRAL_GGUF, vram_mib=16380, ram_mib=128 * 1024)
+    assert row["verdict"] == VERDICT_OFFLOAD
+    assert row["ctx_max"] >= 2048
+    assert row["weights_mib"] / 1024 < MISTRAL_FP8["params_b"] * 8 / 8 / 1.5  # q4 < fp8 weights
+
+
+def test_mistral_w4a16_fits_gpu_resident_on_24gb():
+    # gpu-tier-24-mistral-vllm: the w4a16 quant prices < 24 GiB and holds a real serving window
+    # fully on a 24 GiB card (where the fp8 ~24 GiB weights leave no KV room).
+    row = plan_model(MISTRAL_W4A16, vram_mib=24576, ram_mib=128 * 1024)
+    assert row["weights_mib"] / 1024 < 24  # ~14.4 GiB priced weights
+    assert row["weights_mib"] < plan_model(MISTRAL_FP8, 24576, 128 * 1024)["weights_mib"]  # < fp8
+    assert row["ctx_gpu"] >= 2048  # a usable serving context fits VRAM at 24 GiB
+    # ...and it does NOT clear a 16 GiB card's GPU window, so the resolver keeps offload there.
+    assert plan_model(MISTRAL_W4A16, vram_mib=16380, ram_mib=128 * 1024)["ctx_gpu"] < 2048
+
+
 def test_plan_model_sliding_window_fits_longer_context():
     base = {
         "name": "gemma",
