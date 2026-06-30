@@ -17,7 +17,7 @@ from llb.cli.helpers import (
     resolver_probes,
 )
 from llb.config import RunConfig
-from llb.contracts import ResolvedModel
+from llb.contracts import PreparedModel, ResolvedModel
 
 
 @app.command("prep-models")
@@ -35,7 +35,7 @@ def prep_models_cmd(
 
     models = load_models(manifest)
 
-    def progress(row: dict[str, Any]) -> None:
+    def progress(row: PreparedModel) -> None:
         typer.echo(
             f"[prep-models] start    {row['backend']:<6} {row['name']:<22} "
             f"{row['source']}  -- {row['action']}: {row['reason']}"
@@ -82,7 +82,7 @@ def prep_serving_targets_cmd(
 
     models = load_serving_targets(tier_json)
 
-    def progress(row: dict[str, Any]) -> None:
+    def progress(row: PreparedModel) -> None:
         typer.echo(
             f"[prep-serving-targets] start    {row['backend']:<6} {row['name']:<22} "
             f"{row['source']}  -- {row['action']}: {row['reason']}"

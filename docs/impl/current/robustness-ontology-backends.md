@@ -22,6 +22,14 @@ The rationale is practical fit prediction. A quantized checkpoint can still carr
 high-precision embedding table, and vLLM startup failures are expensive compared with a conservative
 pre-flight estimate.
 
+## Model Preparation Contracts
+
+`src/llb/backends/prepare.py` expands `ModelSpec.sources` into backend-specific `PreparedModel`
+rows using the `SourceRecord` metadata from `src/llb/contracts.py`, matching resolver source
+normalization. `prep-models` and `prep-serving-targets` progress callbacks receive those typed
+rows before backend dispatch. `make ci` covers formatting, ruff, mypy, and non-slow pytest for this
+path.
+
 `src/llb/backends/hardware.py` detects CUDA hosts through `nvidia-smi`. Detection first tries the
 resolved executable from `PATH`, then falls back to common absolute locations such as
 `/usr/bin/nvidia-smi`, so planner commands still see the GPU when an execution environment has a

@@ -14,9 +14,7 @@ def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> 
     assert "make build-vllm" in reason
 
 
-def test_local_backend_ready_accepts_project_llamacpp_binary(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_local_backend_ready_accepts_project_llamacpp_binary(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(models.shutil, "which", lambda _name: None)
     binary = tmp_path / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
     binary.parent.mkdir(parents=True)

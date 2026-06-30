@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from llb.backends.hardware import Gpu, detect_gpus, max_vram_mb
 from llb import env
-from llb.contracts import ModelSpec, PreparationReport, PreparedModel
+from llb.contracts import ModelSpec, PreparationReport, PreparedModel, SourceRecord
 
 ACTION_PULL = "pull"  # ollama pull
 ACTION_CACHE = "cache"  # hf snapshot download for vLLM
@@ -158,7 +158,7 @@ def plan(
     return rows
 
 
-def _normalize_source_record(value: str | dict[str, object]) -> dict[str, object]:
+def _normalize_source_record(value: str | SourceRecord) -> dict[str, object]:
     if isinstance(value, str):
         return {"source": value}
     return {k: v for k, v in value.items() if v is not None}
