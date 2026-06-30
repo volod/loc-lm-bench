@@ -1,5 +1,6 @@
 """Model prep, planning, resolution, sweep, and tuning commands."""
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -33,12 +34,20 @@ def prep_models_cmd(
     from llb.backends.prepare import prepare_models
 
     models = load_models(manifest)
+
+    def progress(row: dict[str, Any]) -> None:
+        typer.echo(
+            f"[prep-models] start    {row['backend']:<6} {row['name']:<22} "
+            f"{row['source']}  -- {row['action']}: {row['reason']}"
+        )
+
     report = prepare_models(
         models,
         backend_filter=backend,
         force=force,
         dry_run=dry_run,
         cache_dir=cache_dir,
+        progress=progress,
     )
 
     if report["gpus"]:
@@ -57,7 +66,54 @@ def prep_models_cmd(
         )
     failed = [r for r in report["results"] if r["status"] == "failed"]
     if failed:
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
+
+
+@app.command("prep-serving-targets")
+def prep_serving_targets_cmd(
+    tier_json: Path = typer.Option(..., help="generated serving tier.json from gen-serving-config"),
+    backend: str = typer.Option("all", help="ollama | vllm | all"),
+    force: bool = typer.Option(False, help="prepare even if a target looks too big for VRAM"),
+    dry_run: bool = typer.Option(False, help="show the plan; pull/cache nothing"),
+    cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
+) -> None:
+    """Pull/cache the concrete models referenced by a generated CUDA-tier serving config."""
+    from llb.backends.prepare import load_serving_targets, prepare_models
+
+    models = load_serving_targets(tier_json)
+
+    def progress(row: dict[str, Any]) -> None:
+        typer.echo(
+            f"[prep-serving-targets] start    {row['backend']:<6} {row['name']:<22} "
+            f"{row['source']}  -- {row['action']}: {row['reason']}"
+        )
+
+    report = prepare_models(
+        models,
+        backend_filter=backend,
+        force=force,
+        dry_run=dry_run,
+        cache_dir=cache_dir,
+        progress=progress,
+    )
+
+    if report["gpus"]:
+        for g in report["gpus"]:
+            typer.echo(
+                f"[prep-serving-targets] GPU {g.index}: {g.name} "
+                f"({g.total_mb} MB total, {g.free_mb} MB free, driver {g.driver})"
+            )
+    else:
+        typer.echo("[prep-serving-targets] no GPU detected (Ollama runs on CPU; vLLM is skipped)")
+
+    for r in report["results"]:
+        typer.echo(
+            f"[prep-serving-targets] {r['status']:<8} {r['backend']:<6} {r['name']:<22} "
+            f"{r['source']}  -- {r['detail']}"
+        )
+    failed = [r for r in report["results"] if r["status"] == "failed"]
+    if failed:
+        raise SystemExit(1)
 
 
 @app.command("list-models")
@@ -198,6 +254,20 @@ def _sweep_cell_overrides(
     return overrides
 
 
+def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
+    """Return whether the local serving binary needed by a resolved backend is installed."""
+    if backend == "vllm":
+        if shutil.which("vllm"):
+            return True, ""
+        return False, "vllm executable not found (run make build-vllm)"
+    if backend == "llamacpp":
+        built = data_dir / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
+        if built.exists() or shutil.which("llama-server"):
+            return True, ""
+        return False, "llama-server not found (run make build-llamacpp)"
+    return True, ""
+
+
 @app.command("sweep")
 def sweep_cmd(
     manifest: Path = typer.Option(
@@ -226,6 +296,10 @@ def sweep_cmd(
     for r in resolved:
         if not r["chosen_backend"]:
             typer.echo(f"[sweep] skip {r['name']}: {r['note']}")
+            continue
+        ready, reason = _local_backend_ready(r["chosen_backend"], base.data_dir)
+        if not ready:
+            typer.echo(f"[sweep] skip {r['name']}: {reason}")
             continue
         overrides = _sweep_cell_overrides(r, telemetry, max_model_len)
         if overrides is not None:

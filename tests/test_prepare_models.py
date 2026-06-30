@@ -20,6 +20,39 @@ def test_load_manifest_non_mapping_entry_raises(tmp_path):
         prepare.load_manifest(bad)
 
 
+def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
+    tier_json = tmp_path / "tier.json"
+    tier_json.write_text(
+        """{
+  "targets": [
+    {"target": "mamaylm", "backend": "ollama", "model": "hf.co/org/mamay:Q4_K_M"},
+    {"target": "gemma-4-vllm", "backend": "vllm", "model": "org/gemma"}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    models = prepare.load_serving_targets(tier_json)
+
+    assert models == [
+        {
+            "name": "serving-mamaylm",
+            "backend": "ollama",
+            "source": "hf.co/org/mamay:Q4_K_M",
+            "min_vram_gb": 0,
+            "notes": "generated serving-tier target",
+        },
+        {
+            "name": "serving-gemma-4-vllm",
+            "backend": "vllm",
+            "source": "org/gemma",
+            "min_vram_gb": 0,
+            "notes": "generated serving-tier target",
+        },
+    ]
+
+
 def test_acceptance_url_explicit_derived_and_none():
     assert prepare.acceptance_url({"license_url": "https://hf.co/x"}) == "https://hf.co/x"
     assert (
@@ -114,6 +147,31 @@ def test_plan_filters_by_backend():
     ]
     rows = prepare.plan(models, max_mb=16000, has_gpu=True, backend_filter="vllm", force=False)
     assert [r["name"] for r in rows] == ["b"]
+
+
+def test_plan_expands_per_backend_sources():
+    models = [
+        {
+            "name": "mamay",
+            "backend": "vllm",
+            "source": "org/mamay-bf16",
+            "min_vram_gb": 26,
+            "sources": {
+                "ollama": {
+                    "source": "hf.co/org/mamay-gguf:Q4_K_M",
+                    "quant": "q4_k_m",
+                    "min_vram_gb": 8,
+                }
+            },
+        }
+    ]
+
+    rows = prepare.plan(models, max_mb=16000, has_gpu=True, backend_filter="all", force=False)
+
+    by_name = {r["name"]: r for r in rows}
+    assert by_name["mamay"]["action"] == prepare.ACTION_SKIP
+    assert by_name["mamay-ollama"]["action"] == prepare.ACTION_PULL
+    assert by_name["mamay-ollama"]["source"] == "hf.co/org/mamay-gguf:Q4_K_M"
 
 
 def test_prepare_models_dispatches_and_skips():

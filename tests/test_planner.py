@@ -54,6 +54,7 @@ def test_resolve_bpw_table_and_explicit():
     assert resolve_bpw({"quant": "Q4_K_M"}) == 4.5
     assert resolve_bpw({"quant": "fp8"}) == 8.0  # served formats
     assert resolve_bpw({"quant": "w4a16"}) == 4.5  # int4 for vLLM
+    assert resolve_bpw({"quant": "iq3"}) == 3.5
     assert resolve_bpw({"bpw": 5.0}) == 5.0
     assert resolve_bpw({"quant": "nonsense"}) is None
 

@@ -37,6 +37,37 @@ make ci
 `.env.example`. GitHub CI uses the lighter dev dependency set and does not require GPU services.
 `scripts/shared/common.sh` resolves `UV_LINK_MODE` adaptively: when uv's cache and this checkout
 are on different devices it exports `copy`, otherwise it leaves uv's default link mode in place.
+The README Quick Start keeps each Make wrapper annotated with command purpose, default inputs,
+outputs or artifacts, and the expected result. Descriptive quickstart wrappers provide both
+all-in-one and grouped execution:
+
+- `make quickstart-goldset`: committed-goldset leaderboard flow; grouped targets are
+  `quickstart-goldset-setup`, `quickstart-goldset-rag`, `quickstart-goldset-models`,
+  `quickstart-goldset-eval`, `quickstart-goldset-security`, and `quickstart-goldset-prompt`.
+- `make quickstart-pdf-corpus`: PDF corpus conversion, RAG indexing, draft goldset, graph, and
+  validation up to the human verification gate; grouped targets are
+  `quickstart-pdf-corpus-convert`, `quickstart-pdf-corpus-index`,
+  `quickstart-pdf-corpus-draft`, `quickstart-pdf-corpus-graph`,
+  `quickstart-pdf-corpus-validate`, `quickstart-pdf-corpus-review`,
+  `quickstart-pdf-corpus-accept`, and `quickstart-pdf-corpus-score`.
+
+`scripts/quickstart.sh` owns the grouped orchestration and writes timestamped logs under
+`$DATA_DIR/llb/logs/quickstart/` with step headings, called commands, metrics emitted by each tool,
+and `[result]` artifact summaries.
+The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
+only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. It also
+defaults the wrapper uv cache to `$DATA_DIR/uv-cache`, skips apt provisioning unless
+`QUICKSTART_SKIP_APT=0`, and re-exports the Make-level `DATA_DIR` after `.env` is loaded so
+wrapper artifacts stay under the requested quickstart root.
+
+Latest validated goldset quickstart evidence on the 16 GiB RTX 4060 Ti host:
+`$DATA_DIR/llb/logs/quickstart/quickstart-goldset-20260630-142055.log`. The run detected
+`gpu_tier=16`, built 311 FAISS chunks, passed retrieval with `recall@10=0.980` and `mrr=0.847`,
+prepared MamayLM, Lapa, Gemma 4, and Qwen 3.6 serving targets from the generated tier config,
+resumed four completed default-family sweep cells (Qwen 3.6, MamayLM 12B, MamayLM 27B, and Lapa),
+ran one platform-matrix Ollama row for `gemma4:e4b` with quality `0.420` and `61.37` tok/s,
+skipped missing vLLM and llama.cpp serving binaries with actionable log lines, ran
+`bench-security` on MamayLM 27B, and created 18 prompt-system candidates.
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.
@@ -51,9 +82,10 @@ Generated artifacts must stay under `DATA_DIR`.
 | RAG retrieval | `build-index`, `validate-retrieval`, `compare-retrieval`, `compare-vector-stores` |
 | RAG scoring | `run-eval`, `sweep`, `tune`, `pipeline`, `board` |
 | Backends | `prep-models`, `list-models`, `resolve-models`, `build-vllm`, `build-llamacpp` |
-| Category suites | `bench-*`, `bench-composite`, `composite-headline` |
+| Category suites | `bench-security`, `bench-*`, `bench-composite`, `composite-headline` |
 | Prompt systems | `prompt-system-prepare`, `prompt-system-review`, `prompt-system-compare` |
 | Platform matrix | `platform-matrix`, `detect-gpu-vram`, `gen-serving-config` |
+| Quickstart flows | `quickstart-goldset`, `quickstart-pdf-corpus` |
 
 The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cli/`.
 

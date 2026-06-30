@@ -85,13 +85,13 @@ make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<out-dir> PDF_MIN_CHARS=500 P
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
-The make alias defaults `PDF_DIR` to `$DATA_DIR/_doc`. When `out-dir` is omitted, the default is
-`<pdf-dir>/_md`, for example `.data/_doc/_md`. Each successful document gets a
-`pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF diagnostics, page numbers,
-generated-corpus character spans, and page-local block spans when the parser exposes them. The same
-directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`; the quality report
-records parser attempts, diagnostics, page coverage, citation coverage, structure markers, and the
-selection score.
+The make alias defaults `PDF_DIR` to `$DATA_DIR/quickstart-pdf-corpus`. When `out-dir` is omitted,
+the default is `<pdf-dir>/_md`, for example `.data/quickstart-pdf-corpus/_md`. Each successful
+document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF diagnostics, page
+numbers, generated-corpus character spans, and page-local block spans when the parser exposes them.
+The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`; the
+quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
+markers, and the selection score.
 
 Ontology draft bundles preserve that PDF evidence. When a source document has a matching
 `*.citations.json` sidecar, `prepare-goldset-draft` copies it into the bundle `corpus/` directory
@@ -106,15 +106,24 @@ and writes these review artifacts beside `goldset.jsonl`:
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
 
-The local `$DATA_DIR/_doc` corpus run produced 19 markdown files, 19 citation sidecars, and zero
-skips under `.data/_doc/_md`. Sixteen born-digital PDFs used PyMuPDF4LLM. The three PDFs that had
-zero embedded text were recovered by Docling OCR:
+The local `$DATA_DIR/quickstart-pdf-corpus` corpus run produced 19 markdown files, 19 citation
+sidecars, and zero skips under `.data/quickstart-pdf-corpus-md`. Sixteen born-digital PDFs used
+PyMuPDF4LLM. The three PDFs that had zero embedded text were recovered by Docling OCR:
 
 | Source PDF | Pages | OCR chars | Citation pages |
 | --- | ---: | ---: | ---: |
 | `Doktryna_MPZ_OS.pdf` | 24 | 50,548 | 24 |
 | `Доктрина БПЛА.pdf` | 61 | 120,556 | 60 |
 | `Настанова з бойової підготовки Mastanova_z_b_pidotovky.PDF` | 59 | 136,351 | 59 |
+
+The PDF quickstart validation flow is documented in
+[`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). The source PDFs are
+under `.data/quickstart-pdf-corpus/`, the full converted markdown corpus is under
+`.data/quickstart-pdf-corpus-md/`, and the reviewable Gemma 4 draft bundle is under
+`.data/quickstart-pdf-corpus-draft/`. The draft bundle contains 7 `verified=false` items and a
+4-row `verify_sample.csv`; model scoring is intentionally gated on `verify-review` and
+`verify-accept`. The grouped quickstart wrapper is `make quickstart-pdf-corpus`; it logs conversion,
+indexing, drafting, graph build, and validation steps under `$DATA_DIR/llb/logs/quickstart/`.
 
 ## Verification Gate
 

@@ -69,12 +69,19 @@ The runner separates model prompting, objective scoring, gated refusal-quality j
 config assembly, judge-status assembly, and artifact persistence into named helper phases.
 
 ```bash
+make bench-security MODEL=<model> BACKEND=<backend>
 llb bench-security --cases samples/security_cases_uk.json --model <model>
 llb adapt-security-set --source advbench --rows-file <local-export> --out <cases.json>
 llb plant-security-cases --corpus-root <corpus> --out <cases.json>
 ```
 
 Adapted or planted case sets remain unverified until sampled and accepted.
+The goldset quickstart runs security as its own tier through `make quickstart-goldset-security`.
+The 16 GiB RTX 4060 Ti validation run wrote
+`.data/quickstart-leaderboard/security/20260630T112631.910536Z-c721b2c83125/manifest.json` for
+`hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M` on Ollama: ASR `1.000`,
+defense rate `0.000`, refusal appropriateness `0.583`, and verified-data metadata pointing at
+`samples/verification/composite_samples/security/sample_manifest.json`.
 
 ## Tooling
 

@@ -39,8 +39,13 @@ llb sweep --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl --swee
 llb sweep --sweep-id run1
 ```
 
+The `run1` value is a user-chosen sweep name; it writes under `$DATA_DIR/sweep/run1/`.
 Cells publish stable markers under `$DATA_DIR/sweep/<id>/cells/`. Marker keys ignore the display
 run name and keep reproducibility-relevant config fields.
+After backend resolution, the sweep command also checks local serving prerequisites before creating
+cells: vLLM cells require the `vllm` executable, and llama.cpp cells require a project-managed or
+PATH-visible `llama-server`. Missing binaries are reported as skips instead of failed benchmark
+cells, while real cell execution errors are still recorded and counted as failures.
 
 ## Two-Stage Tuning
 

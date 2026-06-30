@@ -22,10 +22,17 @@ PLATFORM_MATRIX_LLAMACPP_MODEL
 PLATFORM_MATRIX_MAX_MODEL_LEN
 PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION
 PLATFORM_MATRIX_LIMIT
+PLATFORM_MATRIX_BACKENDS
+PLATFORM_MATRIX_STRICT
 ```
 
 The matrix uses `run-eval --telemetry`, so each row records objective quality, reliability,
 tokens/sec, VRAM, load time, power, tokens per watt, and quality per watt.
+By default the Make target runs the requested backend rows that can actually start on the host:
+vLLM requires the `vllm` executable, and llama.cpp requires either
+`$DATA_DIR/llb/llamacpp/build/bin/llama-server` or `llama-server` on `PATH`. Missing optional
+backend binaries are logged as skips; set `PLATFORM_MATRIX_STRICT=1` to make those skips or row
+failures fail the target.
 
 The current default common base for a 16 GB CUDA host is Gemma 4 E4B IT:
 
@@ -35,6 +42,13 @@ The current default common base for a 16 GB CUDA host is Gemma 4 E4B IT:
 
 If a requested larger base has no matching artifact for one backend, prefer an actually comparable
 common base over mixing unrelated checkpoints.
+
+Quickstart validation on the 16 GiB RTX 4060 Ti host used
+`.data/quickstart-leaderboard/run-eval/20260630T053945.651376Z-5544ffad36c2/manifest.json`:
+Ollama `gemma4:e4b`, 20 final cases, objective `0.420`, reliability `0.750`, `60.04` tok/s,
+peak VRAM `13717` MB, `120.03` W mean power, `0.5002` tokens/W, and retrieval
+`recall@5=0.900`, `mrr=0.7875`. vLLM and llama.cpp rows were skipped because their serving
+executables were not installed.
 
 ## Power Metrics
 
@@ -64,8 +78,12 @@ llb gen-serving-config --gpu-gb 24
 llb gen-serving-config --gpu-gb 32
 ```
 
-The generated directory contains `tier.json`, serve scripts, and `run-eval` YAML/scripts. This path
-lets another physical GPU host contribute comparable manifest rows without hardcoding host paths.
+The generated directory contains `tier.json`, serve scripts, and `run-eval` YAML/scripts. Primary
+tier targets are MamayLM, Lapa, Gemma 4, and Qwen3.6; extra tier entries such as smaller vLLM
+Gemma variants are emitted after those primary targets. This path lets another physical GPU host
+contribute comparable manifest rows without hardcoding host paths.
+Target ids are family-level keys; for example `gemma-4` generates `serve_gemma_4.sh` while the
+tier manifest selects the concrete largest model variant that fits the host.
 
 ## llama.cpp Binary Lookup
 

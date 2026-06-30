@@ -15,7 +15,7 @@ from llb.paths import PROJECT_ROOT, resolve_data_dir
 _LOG = logging.getLogger(__name__)
 
 SUPPORTED_TIERS_GB = (12, 16, 24, 32)
-PRIMARY_TARGETS = ("mamaylm", "gemma-4-31b", "qwen3.6")
+PRIMARY_TARGETS = ("mamaylm", "lapa", "gemma-4", "qwen3.6")
 DEFAULT_MANIFEST = PROJECT_ROOT / "samples" / "config-example" / "manifest.yaml"
 TEMPLATE_DIR = PROJECT_ROOT / "samples" / "config-example" / "templates"
 

@@ -44,18 +44,6 @@
 #     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
 
 models:
-  # --- Prebuilt path (Ollama: uses the GPU, no source build). The 3B is the M1 smoke target. ---
-  - name: llama3.2-3b
-    backend: ollama
-    source: llama3.2:3b
-    min_vram_gb: 4
-    params_b: 3.2
-    quant: q4_k_m
-    n_layers: 28
-    kv_dim: 1024        # 8 KV heads * 128 head_dim
-    max_context: 131072
-    notes: small multilingual baseline; the Milestone 1 smoke target (prebuilt Ollama)
-
   # --- Gemma 4 int4 (w4a16) via vLLM -- the candidates that FIT a 16 GB card. Gated. ---
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
@@ -100,7 +88,13 @@ models:
     n_layers: 40
     kv_dim: 512           # 2 KV heads * 256 head_dim
     max_context: 262144
-    notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; needs a bigger GPU than 16 GB
+    notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; 16 GB uses the IQ3 Ollama fallback
+    sources:
+      ollama:
+        source: batiai/qwen3.6-35b:iq3
+        quant: iq3
+        bpw: 3.5
+        min_vram_gb: 8
 
   - name: mamaylm-v2-12b
     backend: vllm
@@ -133,6 +127,11 @@ models:
     hidden_size: 5376
     tie_word_embeddings: true
     notes: Ukrainian-specialized 27B FP8; also a local-judge candidate (Premise 2); bigger GPU
+    sources:
+      ollama:
+        source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: lapa-v0.1.2-instruct
     backend: vllm

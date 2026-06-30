@@ -53,6 +53,9 @@ per-item review -> accepted-ledger flip, for real-corpus and synthetic bundles.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
 - [Run RAG core](guides/run-rag-core.md) -- build-index -> run-eval.
+- [Quickstart PDF corpus](guides/quickstart-pdf-corpus.md) -- run the
+  README quickstart shape against `.data/quickstart-pdf-corpus`, with OCR, corpus-specific RAG
+  artifacts, graph artifacts, and the human-verification handoff before scoring.
 - [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
   compare metrics, and inspect canonical case artifacts.
 - [vLLM backend + telemetry](guides/vllm-backend.md) -- backend telemetry: build-vllm -> run-eval on
