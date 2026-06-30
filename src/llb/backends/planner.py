@@ -85,6 +85,19 @@ VERDICT_NO = "no"  # does not fit even in VRAM + RAM
 VERDICT_UNKNOWN = "unknown"  # missing the spec fields needed to plan
 
 
+HEADERS = [
+    "model",
+    "backend",
+    "params",
+    "quant",
+    "wt_GB",
+    "ctx_gpu",
+    "ctx_max",
+    "gpu/total",
+    "verdict",
+]
+
+
 def resolve_bpw(spec: ModelSpec) -> float | None:
     if spec.get("bpw") is not None:
         return float(spec["bpw"])
@@ -421,45 +434,35 @@ def _gb(mib: float | None) -> str:
     return "-" if mib is None else f"{mib / 1024:.1f}"
 
 
-def format_plan(rows: list[ModelPlanRow], vram_mib: int, ram_mib: int) -> str:
-    """ASCII table of the plan."""
-    headers = [
-        "model",
-        "backend",
-        "params",
-        "quant",
-        "wt_GB",
-        "ctx_gpu",
-        "ctx_max",
-        "gpu/total",
-        "verdict",
+def _fmt(row: ModelPlanRow) -> list[str]:
+    n_layers = row["n_layers"]
+    split = "-" if not n_layers else f"{row['gpu_layers']}/{n_layers}"
+    return [
+        row["name"],
+        row["backend"],
+        "-" if row["params_b"] is None else f"{row['params_b']}B",
+        row["quant"] or "-",
+        _gb(row["weights_mib"]),
+        str(row["ctx_gpu"]) if row["ctx_gpu"] else "-",
+        str(row["ctx_max"]) if row["ctx_max"] else "-",
+        split,
+        row["verdict"],
     ]
 
-    def fmt(row: ModelPlanRow) -> list[str]:
-        n_layers = row["n_layers"]
-        split = "-" if not n_layers else f"{row['gpu_layers']}/{n_layers}"
-        return [
-            row["name"],
-            row["backend"],
-            "-" if row["params_b"] is None else f"{row['params_b']}B",
-            row["quant"] or "-",
-            _gb(row["weights_mib"]),
-            str(row["ctx_gpu"]) if row["ctx_gpu"] else "-",
-            str(row["ctx_max"]) if row["ctx_max"] else "-",
-            split,
-            row["verdict"],
-        ]
 
-    table = [fmt(r) for r in rows]
+def format_plan(rows: list[ModelPlanRow], vram_mib: int, ram_mib: int) -> str:
+    """ASCII table of the plan."""
+
+    table = [_fmt(r) for r in rows]
     widths = [
-        max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
+        max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(HEADERS)
     ]
     out = [
         f"host budget: VRAM {vram_mib} MiB + RAM {ram_mib} MiB "
         f"(usable after reserves; weights + KV must fit the combined budget)",
-        "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
-        "  ".join("-" * widths[i] for i in range(len(headers))),
+        "  ".join(h.ljust(widths[i]) for i, h in enumerate(HEADERS)),
+        "  ".join("-" * widths[i] for i in range(len(HEADERS))),
     ]
     for r in table:
-        out.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))))
+        out.append("  ".join(r[i].ljust(widths[i]) for i in range(len(HEADERS))))
     return "\n".join(out)

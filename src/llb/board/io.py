@@ -28,30 +28,41 @@ def read_case_splits(run_dir: Path) -> set[str]:
     return set()
 
 
-def read_case_series(run_dir: Path, column: str) -> list[float]:
-    """Per-case values of one score column, preferring JSONL with Parquet fallback."""
+def _check_jsonl(run_dir: Path, column: str) -> list[float]:
     jsonl = run_dir / "scores.jsonl"
+    out: list[float] = []
     if jsonl.exists():
-        out: list[float] = []
         for line in jsonl.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             value = json.loads(line).get(column)
             if value is not None:
                 out.append(float(value))
-        return out
+    return out
+
+
+def _check_parquet(run_dir: Path, column: str) -> list[float]:
     parquet = run_dir / "scores.parquet"
+    out: list[float] = []
     if parquet.exists():
         try:
             import pyarrow.parquet as pq
 
             table = pq.read_table(parquet)
-            if column not in table.column_names:
-                return []
-            return [float(v) for v in table.column(column).to_pylist() if v is not None]
+            if column in table.column_names:
+                out = [float(v) for v in table.column(column).to_pylist() if v is not None]
         except Exception:  # pragma: no cover - optional dep / schema drift
-            return []
-    return []
+            pass
+    return out
+
+
+def read_case_series(run_dir: Path, column: str) -> list[float]:
+    """Per-case values of one score column, preferring JSONL with Parquet fallback."""
+    out = _check_jsonl(run_dir, column)
+    if out:
+        return out
+
+    return _check_parquet(run_dir, column)
 
 
 def read_case_objectives(run_dir: Path) -> list[float]:

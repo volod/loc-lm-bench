@@ -131,6 +131,22 @@ def _row(
     }
 
 
+def _table_cell(row: LeaderboardRow, key: str) -> str:
+    mapping = {
+        "rank": "-" if row["rank"] is None else str(row["rank"]),
+        "model": row["model"],
+        "backend": row["backend"],
+        "quality": f"{row['quality']:.3f}",
+        "objective": f"{row['objective']:.3f}",
+        "judge": "-" if row.get("judge") is None else f"{row['judge']:.3f}",
+        "reliab": f"{row['reliability']:.3f}",
+        "tok/s": f"{row['tokens_per_s']:.1f}",
+        "vram_mb": "-" if row["peak_vram_mb"] is None else f"{row['peak_vram_mb']:.0f}",
+        "feasible": "yes" if row["feasible"] else "NO",
+    }
+    return mapping[key]
+
+
 def format_table(rows: list[LeaderboardRow]) -> str:
     """Render ranked rows as an ASCII table (judge column omitted when always demoted)."""
     show_judge = any(row.get("judge") is not None for row in rows)
@@ -139,22 +155,8 @@ def format_table(rows: list[LeaderboardRow]) -> str:
         headers.append("judge")
     headers += ["reliab", "tok/s", "vram_mb", "feasible"]
 
-    def cell(row: LeaderboardRow, key: str) -> str:
-        mapping = {
-            "rank": "-" if row["rank"] is None else str(row["rank"]),
-            "model": row["model"],
-            "backend": row["backend"],
-            "quality": f"{row['quality']:.3f}",
-            "objective": f"{row['objective']:.3f}",
-            "judge": "-" if row.get("judge") is None else f"{row['judge']:.3f}",
-            "reliab": f"{row['reliability']:.3f}",
-            "tok/s": f"{row['tokens_per_s']:.1f}",
-            "vram_mb": "-" if row["peak_vram_mb"] is None else f"{row['peak_vram_mb']:.0f}",
-            "feasible": "yes" if row["feasible"] else "NO",
-        }
-        return mapping[key]
+    table = [[_table_cell(row, h) for h in headers] for row in rows]
 
-    table = [[cell(row, h) for h in headers] for row in rows]
     widths = [
         max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
     ]
@@ -396,28 +398,29 @@ def ranking_policy_note(
     return f"policy: average rank over [{', '.join(names)}]; {judge}"
 
 
+def _board_cell(row: BoardRow, key: str) -> str:
+    ci = row.get("quality_ci")
+    flag = "~" if row["unresolved"] else ""
+    mapping = {
+        "rank": "-" if row["rank"] is None else str(row["rank"]),
+        "model": row["model"],
+        "backend": row["backend"],
+        "avg_rank": "-" if row["avg_rank"] == float("inf") else f"{row['avg_rank']:.2f}",
+        "quality": f"{row['quality']:.3f}{flag}",
+        "ci": "-" if ci is None else f"[{ci[0]:.2f},{ci[1]:.2f}]",
+        "tok/s": f"{row['tokens_per_s']:.1f}",
+        "vram_mb": "-" if row["peak_vram_mb"] is None else f"{row['peak_vram_mb']:.0f}",
+        "P": "*" if row["pareto"] else "",
+    }
+    return mapping[key]
+
+
 def format_board(rows: list[BoardRow], policy: str | None = None) -> str:
     """ASCII board: rank, avg-rank, quality (with CI + '~' for unresolved), Pareto star.
     Pass `policy` (see `ranking_policy_note`) to print the ranking method above the table."""
     headers = ["rank", "model", "backend", "avg_rank", "quality", "ci", "tok/s", "vram_mb", "P"]
 
-    def cell(row: BoardRow, key: str) -> str:
-        ci = row.get("quality_ci")
-        flag = "~" if row["unresolved"] else ""
-        mapping = {
-            "rank": "-" if row["rank"] is None else str(row["rank"]),
-            "model": row["model"],
-            "backend": row["backend"],
-            "avg_rank": "-" if row["avg_rank"] == float("inf") else f"{row['avg_rank']:.2f}",
-            "quality": f"{row['quality']:.3f}{flag}",
-            "ci": "-" if ci is None else f"[{ci[0]:.2f},{ci[1]:.2f}]",
-            "tok/s": f"{row['tokens_per_s']:.1f}",
-            "vram_mb": "-" if row["peak_vram_mb"] is None else f"{row['peak_vram_mb']:.0f}",
-            "P": "*" if row["pareto"] else "",
-        }
-        return mapping[key]
-
-    table = [[cell(row, h) for h in headers] for row in rows]
+    table = [[_board_cell(row, h) for h in headers] for row in rows]
     widths = [
         max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
     ]

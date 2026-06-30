@@ -164,6 +164,21 @@ def _normalize_source_record(value: str | SourceRecord) -> dict[str, object]:
     return {k: v for k, v in value.items() if v is not None}
 
 
+def _expand_model_spec(
+    records: dict[str, dict[str, object]], model: ModelSpec, expanded: list[ModelSpec]
+) -> None:
+    for backend, record in records.items():
+        if backend not in SUPPORTED_BACKENDS:
+            continue
+        source = record.get("source")
+        if not isinstance(source, str) or not source:
+            continue
+        row = {**model, **record, "backend": backend, "source": source}
+        if backend != model["backend"] or source != model["source"]:
+            row["name"] = f"{model['name']}-{backend}"
+        expanded.append(cast(ModelSpec, row))
+
+
 def _expand_prepare_sources(models: list[ModelSpec]) -> list[ModelSpec]:
     """Expand a logical model into concrete backend artifacts that can be prepared.
 
@@ -179,16 +194,8 @@ def _expand_prepare_sources(models: list[ModelSpec]) -> list[ModelSpec]:
         }
         records.setdefault(model["backend"], {"source": model["source"]})
 
-        for backend, record in records.items():
-            if backend not in SUPPORTED_BACKENDS:
-                continue
-            source = record.get("source")
-            if not isinstance(source, str) or not source:
-                continue
-            row = {**model, **record, "backend": backend, "source": source}
-            if backend != model["backend"] or source != model["source"]:
-                row["name"] = f"{model['name']}-{backend}"
-            expanded.append(cast(ModelSpec, row))
+        _expand_model_spec(records, model, expanded)
+
     return expanded
 
 
