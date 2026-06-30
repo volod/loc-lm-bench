@@ -125,42 +125,48 @@ def parse_extraction(doc_id: str, text: str, payload: Any) -> DocExtraction:
     )
 
 
+def _dedup(getter: Any, key: Any, parts: list[Any]) -> list[Any]:
+    out: list[Any] = []
+    seen: set[Any] = set()
+    for part in parts:
+        for item in getter(part):
+            marker = key(item)
+            if marker not in seen:
+                seen.add(marker)
+                out.append(item)
+    return out
+
+
+def _merge_entities(entities: dict[tuple[str, str], Entity], part: DocExtraction) -> None:
+    for entity in part.entities:
+        key = (entity.name, entity.type)
+        if key not in entities:
+            entities[key] = Entity(name=entity.name, type=entity.type)
+        merged = entities[key]
+        seen_aliases = set(merged.aliases)
+        merged.aliases.extend(a for a in entity.aliases if a not in seen_aliases)
+        seen_spans = {(m.char_start, m.char_end) for m in merged.mentions}
+        merged.mentions.extend(
+            m for m in entity.mentions if (m.char_start, m.char_end) not in seen_spans
+        )
+
+
 def merge_extractions(doc_id: str, parts: list[DocExtraction]) -> DocExtraction:
     """Merge per-window extractions for one document (dedup entities by (name,type), merging their
     mentions + aliases; events/claims/facts deduped by their grounded evidence span + payload)."""
     entities: dict[tuple[str, str], Entity] = {}
     for part in parts:
-        for entity in part.entities:
-            key = (entity.name, entity.type)
-            if key not in entities:
-                entities[key] = Entity(name=entity.name, type=entity.type)
-            merged = entities[key]
-            seen_aliases = set(merged.aliases)
-            merged.aliases.extend(a for a in entity.aliases if a not in seen_aliases)
-            seen_spans = {(m.char_start, m.char_end) for m in merged.mentions}
-            merged.mentions.extend(
-                m for m in entity.mentions if (m.char_start, m.char_end) not in seen_spans
-            )
-
-    def _dedup(getter: Any, key: Any) -> list[Any]:
-        out: list[Any] = []
-        seen: set[Any] = set()
-        for part in parts:
-            for item in getter(part):
-                marker = key(item)
-                if marker not in seen:
-                    seen.add(marker)
-                    out.append(item)
-        return out
+        _merge_entities(entities, part)
 
     return DocExtraction(
         doc_id=doc_id,
         entities=list(entities.values()),
-        events=_dedup(lambda p: p.events, lambda e: (e.description, e.evidence.char_start)),
-        claims=_dedup(lambda p: p.claims, lambda c: (c.text, c.evidence.char_start)),
+        events=_dedup(lambda p: p.events, lambda e: (e.description, e.evidence.char_start), parts),
+        claims=_dedup(lambda p: p.claims, lambda c: (c.text, c.evidence.char_start), parts),
         facts=_dedup(
             lambda p: p.facts,
             lambda f: (f.subject, f.relation, f.object, f.evidence.char_start),
+            parts,
         ),
     )
 

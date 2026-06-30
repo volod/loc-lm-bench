@@ -32,7 +32,7 @@ def test_manifest_has_supported_tiers() -> None:
     for tier in (12, 16, 24, 32):
         assert tier in manifest["tiers"] or str(tier) in manifest["tiers"]
         entries = manifest["tiers"].get(tier) or manifest["tiers"].get(str(tier))
-        for target in ("mamaylm", "gemma-4-31b", "qwen3.6"):
+        for target in ("mamaylm", "lapa", "gemma-4", "qwen3.6", "mistral"):
             assert target in entries
 
 
@@ -46,12 +46,22 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     assert (out / "run_eval_mamaylm.sh").exists()
     cfg = (out / "run_eval_mamaylm.yaml").read_text(encoding="utf-8")
     assert "backend: ollama" in cfg
+    lapa = (out / "run_eval_lapa.yaml").read_text(encoding="utf-8")
+    assert "hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M" in lapa
+    assert "backend: ollama" in lapa
     assert (out / "serve_gemma_4_12b_vllm.sh").exists()
     vllm_cfg = (out / "run_eval_gemma_4_12b_vllm.yaml").read_text(encoding="utf-8")
     assert "gpu_memory_utilization: 0.85" in vllm_cfg
     assert "max_model_len: 8192" in vllm_cfg
-    serve = (out / "serve_gemma_4_31b.sh").read_text(encoding="utf-8")
+    serve = (out / "serve_gemma_4.sh").read_text(encoding="utf-8")
     assert "ollama pull" in serve
+    gemma = (out / "run_eval_gemma_4.yaml").read_text(encoding="utf-8")
+    assert "model: gemma4:31b" in gemma
+    # Mistral is a primary family target: Ollama curated q4_k_m tag (offload) on the 16 GiB tier.
+    mistral = (out / "run_eval_mistral.yaml").read_text(encoding="utf-8")
+    assert "backend: ollama" in mistral
+    assert "model: mistral-small3.1:24b" in mistral
+    assert (out / "serve_mistral.sh").exists()
 
 
 def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:
@@ -63,8 +73,31 @@ def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:
     serve = (out / "serve_mamaylm.sh").read_text(encoding="utf-8")
     assert "vllm serve" in serve
     assert "--max-model-len 8192" in serve
+    lapa = (out / "run_eval_lapa.yaml").read_text(encoding="utf-8")
+    assert "backend: vllm" in lapa
+    assert "lapa-llm/lapa-v0.1.2-instruct" in lapa
+    # Mistral serves via vLLM FP8 on the 32 GiB tier (w4a16 on 24 GiB, Ollama GGUF on 12/16 GiB).
+    mistral = (out / "run_eval_mistral.yaml").read_text(encoding="utf-8")
+    assert "backend: vllm" in mistral
+    assert "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic" in mistral
+    assert "max_model_len: 8192" in mistral
+    serve_mistral = (out / "serve_mistral.sh").read_text(encoding="utf-8")
+    assert "vllm serve" in serve_mistral
+    assert "--quantization" not in serve_mistral  # fp8 compressed-tensors is auto-detected
     rel = out / "run_eval_mamaylm.sh"
     assert "../../../.." in rel.read_text(encoding="utf-8")
+
+
+def test_generate_serving_configs_mistral_24_is_vllm_w4a16(tmp_path: Path) -> None:
+    # gpu-tier-24-mistral-vllm: the 24 GiB tier serves the w4a16 quant GPU-resident via vLLM.
+    out = generate_serving_configs(gpu_gb=24, output_root=tmp_path / "gpu-24gb")
+    mistral = (out / "run_eval_mistral.yaml").read_text(encoding="utf-8")
+    assert "backend: vllm" in mistral
+    assert "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16" in mistral
+    assert "max_model_len: 16384" in mistral
+    serve = (out / "serve_mistral.sh").read_text(encoding="utf-8")
+    assert "vllm serve" in serve
+    assert "--quantization" not in serve  # compressed-tensors w4a16 is auto-detected
 
 
 def test_templates_live_under_samples() -> None:

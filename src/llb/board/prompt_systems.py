@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from llb.contracts import BoardRow
 from llb.scoring.aggregate import ModelResult, format_board, rank_board, ranking_policy_note
@@ -84,12 +85,29 @@ def prompt_system_comparison(
     return rows, table, [r.prompt_system for r in ordered]
 
 
-def load_rag_prompt_system_records(data_dir: Path | str) -> list[RagPromptSystemRunRecord]:
-    """Load final-split `run-eval` bundles tagged with prompt-system provenance."""
-    root = Path(data_dir) / "run-eval"
-    best: dict[tuple[str, str], RagPromptSystemRunRecord] = {}
-    if not root.exists():
-        return []
+def _add_best_rag_prompt_system_record(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    best: dict[tuple[str, str], RagPromptSystemRunRecord],
+    prompt_system: str,
+) -> None:
+    record = record_from_manifest(manifest, manifest_path.parent)
+    if record is None:
+        return
+    key = (record.result.model, str(prompt_system))
+    current = best.get(key)
+    if current is None or record.result.objective_score > current.result.objective_score:
+        best[key] = RagPromptSystemRunRecord(
+            model=record.result.model,
+            prompt_system=str(prompt_system),
+            result=record.result,
+            run_dir=record.run_dir,
+        )
+
+
+def _add_best_rag_prompt_system(
+    best: dict[tuple[str, str], RagPromptSystemRunRecord], root: Path
+) -> None:
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
@@ -103,18 +121,19 @@ def load_rag_prompt_system_records(data_dir: Path | str) -> list[RagPromptSystem
         prompt_system = provenance.get("prompt_system_id")
         if not prompt_system:
             continue
-        record = record_from_manifest(manifest, manifest_path.parent)
-        if record is None:
-            continue
-        key = (record.result.model, str(prompt_system))
-        current = best.get(key)
-        if current is None or record.result.objective_score > current.result.objective_score:
-            best[key] = RagPromptSystemRunRecord(
-                model=record.result.model,
-                prompt_system=str(prompt_system),
-                result=record.result,
-                run_dir=record.run_dir,
-            )
+
+        _add_best_rag_prompt_system_record(manifest, manifest_path, best, prompt_system)
+
+
+def load_rag_prompt_system_records(data_dir: Path | str) -> list[RagPromptSystemRunRecord]:
+    """Load final-split `run-eval` bundles tagged with prompt-system provenance."""
+    root = Path(data_dir) / "run-eval"
+    best: dict[tuple[str, str], RagPromptSystemRunRecord] = {}
+    if not root.exists():
+        return []
+
+    _add_best_rag_prompt_system(best, root)
+
     return list(best.values())
 
 

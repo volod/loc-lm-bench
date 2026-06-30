@@ -44,18 +44,6 @@
 #     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
 
 models:
-  # --- Prebuilt path (Ollama: uses the GPU, no source build). The 3B is the M1 smoke target. ---
-  - name: llama3.2-3b
-    backend: ollama
-    source: llama3.2:3b
-    min_vram_gb: 4
-    params_b: 3.2
-    quant: q4_k_m
-    n_layers: 28
-    kv_dim: 1024        # 8 KV heads * 128 head_dim
-    max_context: 131072
-    notes: small multilingual baseline; the Milestone 1 smoke target (prebuilt Ollama)
-
   # --- Gemma 4 int4 (w4a16) via vLLM -- the candidates that FIT a 16 GB card. Gated. ---
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
@@ -100,7 +88,46 @@ models:
     n_layers: 40
     kv_dim: 512           # 2 KV heads * 256 head_dim
     max_context: 262144
-    notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; needs a bigger GPU than 16 GB
+    notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; 16 GB uses the IQ3 Ollama fallback
+    sources:
+      ollama:
+        source: batiai/qwen3.6-35b:iq3
+        quant: iq3
+        bpw: 3.5
+        min_vram_gb: 8
+
+  - name: mistral-small-3.1-24b
+    backend: vllm
+    source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+    min_vram_gb: 20
+    params_b: 24          # 23.6B dense; rounded up so the quantized weight estimate stays honest
+    quant: w4a16
+    n_layers: 40
+    kv_dim: 1024          # 8 KV heads * 128 head_dim (full attention -- no sliding window)
+    max_context: 131072
+    vocab_size: 131072    # embedding-aware (M4.1): the 131k embedding + UNTIED lm_head stay bf16
+    hidden_size: 5120     # under w4a16, so a flat params_b x bpw under-counts the weights
+    tie_word_embeddings: false
+    notes: Mistral Small 3.1 (24B, Apache-2.0, multilingual); vLLM fp8/w4a16 on 32/24 GiB, q4 GGUF below
+    # Multi-quant vLLM (resolver-multi-quant-vllm): the resolver prices each vLLM quant and picks
+    # the highest-quality one that fits the host on GPU -- fp8 (~24 GiB) on a 32 GiB card, w4a16
+    # (~14 GiB) on a 24 GiB card -- then falls back to the curated GGUF on Ollama for 12/16 GiB.
+    # Quants are ranked by bits-per-weight; arch fields are shared from this parent entry. Use
+    # Ollama's CURATED `mistral-small3.1` tag (q4_k_m): the lmstudio/bartowski HF GGUF mirrors of
+    # this checkpoint crash the Ollama 0.20 llama.cpp runner on load, while the curated tag is
+    # tested against the runtime and serves the text path (we score text only).
+    sources:
+      vllm:
+        - source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
+          quant: fp8
+          min_vram_gb: 30
+        - source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+          quant: w4a16
+          min_vram_gb: 20
+      ollama:
+        source: mistral-small3.1:24b
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: mamaylm-v2-12b
     backend: vllm
@@ -133,6 +160,11 @@ models:
     hidden_size: 5376
     tie_word_embeddings: true
     notes: Ukrainian-specialized 27B FP8; also a local-judge candidate (Premise 2); bigger GPU
+    sources:
+      ollama:
+        source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: lapa-v0.1.2-instruct
     backend: vllm

@@ -22,6 +22,14 @@ The rationale is practical fit prediction. A quantized checkpoint can still carr
 high-precision embedding table, and vLLM startup failures are expensive compared with a conservative
 pre-flight estimate.
 
+## Model Preparation Contracts
+
+`src/llb/backends/prepare.py` expands `ModelSpec.sources` into backend-specific `PreparedModel`
+rows using the `SourceRecord` metadata from `src/llb/contracts.py`, matching resolver source
+normalization. `prep-models` and `prep-serving-targets` progress callbacks receive those typed
+rows before backend dispatch. `make ci` covers formatting, ruff, mypy, and non-slow pytest for this
+path.
+
 `src/llb/backends/hardware.py` detects CUDA hosts through `nvidia-smi`. Detection first tries the
 resolved executable from `PATH`, then falls back to common absolute locations such as
 `/usr/bin/nvidia-smi`, so planner commands still see the GPU when an execution environment has a
@@ -95,8 +103,12 @@ Pipeline stages:
    the bundle.
 
 ```bash
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO_THINK=1
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> \
+  DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_VERIFY_N=30
 llb prepare-goldset-draft --corpus-root <dir> --model <local-model> \
-  --max-tokens 2048 --temperature 0 --timeout 300 --no-think
+  --max-tokens 2048 --temperature 0 --timeout 300 --no-think \
+  --doc-limit 1 --extract-max-chars 12000 --verification-sample-size 30
 llb prepare-goldset-draft --corpus-root <dir> --model <model> --extractor spacy
 ```
 
@@ -108,7 +120,17 @@ corpus/
 ontology.json
 extraction.jsonl
 provenance.json
+pdf_ontology_report.json
+prompt_dictionary_candidates.jsonl
+needle_items.jsonl
 ```
+
+For PDF-derived corpora, `pipeline.py` copies matching PDF citation sidecars into the bundle and
+`artifacts.py` writes the calibration report, source-backed prompt dictionary candidates, and
+citation-valid needle items. The report records the bounded-probe settings (`doc_limit`,
+`extract_max_chars`, `max_items`, seed), elapsed time, parse rate, page-span coverage, grounded
+fact count, dictionary-term yield, and simple gates for nonzero facts, dictionary candidates, and
+needle items.
 
 Every emitted gold item remains `verified=false`. The bundle must pass cross-check and human
 verification before it can score real models.
@@ -126,3 +148,8 @@ being silently truncated by endpoint context limits.
 For long local PDF corpora, extraction logs document and window progress. Ollama reasoning models
 should use `--no-think`; the command routes through Ollama native `/api/chat` so `think=false` is
 honored and JSON extraction is not spent on hidden reasoning.
+
+The one-document probe path is the default safety valve before a multi-hour full PDF run:
+`DRAFT_DOC_LIMIT=1` bounds documents and `DRAFT_EXTRACT_MAX_CHARS=<n>` bounds each extraction
+window. Increase those only after `pdf_ontology_report.json` shows nonzero grounded facts and
+usable citation coverage.

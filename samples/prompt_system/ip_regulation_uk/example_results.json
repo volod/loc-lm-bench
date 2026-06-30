@@ -2,9 +2,9 @@
   "model": "gemma4:e4b",
   "backend": "ollama",
   "goldset": "samples/goldsets/ip_regulation_uk/goldset.jsonl",
-  "data_dir": ".data/m7_3r_ip_example",
+  "data_dir": ".data/m7-3r-ip-example",
   "retrieval_check": {
-    "command": "env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main validate-retrieval --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --k 5",
+    "command": "env DATA_DIR=.data/m7-3r-ip-example .venv/bin/python -m llb.main validate-retrieval --goldset samples/goldsets/ip_regulation_uk/goldset.jsonl --k 5",
     "n": 8,
     "recall_at_5": 1.0,
     "mrr": 1.0
@@ -16,7 +16,7 @@
       "objective": 0.7090950263504611,
       "reliability": 1.0,
       "tokens_per_s": 31.326704949988354,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100650.902571Z-17567de7435e"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100650.902571Z-17567de7435e"
     },
     {
       "label": "default-size5-graph-inline",
@@ -24,7 +24,7 @@
       "objective": 0.7090950263504611,
       "reliability": 1.0,
       "tokens_per_s": 35.21420632294198,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100714.205481Z-120133020690"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100714.205481Z-120133020690"
     },
     {
       "label": "default-size10-full-graph-inline",
@@ -32,7 +32,7 @@
       "objective": 0.7090950263504611,
       "reliability": 1.0,
       "tokens_per_s": 34.06700579376931,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100731.607865Z-62e522c49eca"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100731.607865Z-62e522c49eca"
     },
     {
       "label": "default-size10-full-graph-appendix",
@@ -40,7 +40,7 @@
       "objective": 0.7090950263504611,
       "reliability": 1.0,
       "tokens_per_s": 35.091190737069184,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100748.904412Z-0bbce01c6191"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100748.904412Z-0bbce01c6191"
     },
     {
       "label": "tuned-short-exact-phrase",
@@ -48,7 +48,7 @@
       "objective": 0.7782469727702994,
       "reliability": 1.0,
       "tokens_per_s": 25.13698121748959,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100917.272745Z-39646a6c816f"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100917.272745Z-39646a6c816f"
     },
     {
       "label": "tuned-full-graph-inline",
@@ -56,7 +56,7 @@
       "objective": 0.6828981355609971,
       "reliability": 1.0,
       "tokens_per_s": 27.808261490951367,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100933.902140Z-d93999c457c2"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100933.902140Z-d93999c457c2"
     }
   ],
   "final_runs": [
@@ -66,7 +66,7 @@
       "objective": 0.6867892764119179,
       "reliability": 1.0,
       "tokens_per_s": 45.32324748749819,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T100957.813513Z-a5f57cee7cd2"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T100957.813513Z-a5f57cee7cd2"
     },
     {
       "label": "tuned-short-exact-phrase",
@@ -74,7 +74,7 @@
       "objective": 0.5782284382284382,
       "reliability": 1.0,
       "tokens_per_s": 36.844125060090676,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T101031.345155Z-d9172bc05e2d"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T101031.345155Z-d9172bc05e2d"
     },
     {
       "label": "default-size5-graph-inline",
@@ -82,11 +82,11 @@
       "objective": 0.48700778388278393,
       "reliability": 1.0,
       "tokens_per_s": 48.99838352188139,
-      "run": ".data/m7_3r_ip_example/run-eval/20260627T101105.512965Z-8f9b7eeb43b7"
+      "run": ".data/m7-3r-ip-example/run-eval/20260627T101105.512965Z-8f9b7eeb43b7"
     }
   ],
   "rag_prompt_system_compare": {
-    "command": "env DATA_DIR=.data/m7_3r_ip_example .venv/bin/python -m llb.main prompt-system-compare --lane rag --model gemma4:e4b",
+    "command": "env DATA_DIR=.data/m7-3r-ip-example .venv/bin/python -m llb.main prompt-system-compare --lane rag --model gemma4:e4b",
     "ranking": [
       {"rank": 1, "prompt_system": "14d263ea6a40", "objective": 0.5782284382284382},
       {"rank": 2, "prompt_system": "0a68e417ea71", "objective": 0.48700778388278393}

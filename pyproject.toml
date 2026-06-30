@@ -36,6 +36,7 @@ rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
 track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
 board = ["streamlit>=1.36"]
+viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
 prep = ["litellm>=1.40"]
 telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
 goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
@@ -80,6 +81,10 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Keep tool caches out of the project root, under the single $DATA_DIR temp tree (default .data/).
+# `make` exports RUFF_CACHE_DIR=$DATA_DIR/cache/ruff so a custom DATA_DIR is followed; this static
+# default covers a bare `ruff` run with the default DATA_DIR.
+cache-dir = ".data/cache/ruff"
 
 [tool.pymarkdown]
 # Enable GFM tables so the line-length rule (MD013) recognizes table rows as table tokens; without
@@ -102,6 +107,7 @@ plugins.MD026.enabled = false  # trailing punctuation in headings (sentence-styl
 [tool.mypy]
 python_version = "3.13"
 files = ["src/llb"]
+cache_dir = ".data/cache/mypy"  # keep .mypy_cache out of the root (MYPY_CACHE_DIR overrides via make)
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_untyped_defs = true
@@ -114,6 +120,7 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+cache_dir = ".data/cache/pytest"  # keep .pytest_cache out of the root (make passes -o for custom DATA_DIR)
 # DeepEval ships optional pytest integration and rerun plugins as runtime dependencies. The
 # benchmark invokes metrics explicitly, so disable those global plugins in this test suite.
 addopts = "-q -p no:deepeval -p no:rerunfailures"
@@ -124,8 +131,4 @@ addopts = "-q -p no:deepeval -p no:rerunfailures"
 # embedder/model loads, deepeval, subprocess builds) -- not merely a first-import artifact.
 markers = [
   "slow: long-running test, excluded from the lightweight `make ci` suite (run via `make test`)",
-]
-filterwarnings = [
-  # Emitted at interpreter shutdown by SciPy's bundled SWIG extension on Python 3.11.
-  "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",
 ]

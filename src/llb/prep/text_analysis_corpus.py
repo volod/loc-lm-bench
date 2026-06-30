@@ -193,6 +193,76 @@ def plant_labels(
     return records
 
 
+def _make_corpus_dir(
+    corpus_dir: Path | None,
+    docs: dict[str, str],
+    records: list[PlantedLabelRecord],
+    complete: LLMComplete,
+    prompt_builder: DocPromptBuilder,
+    topics: list[str],
+    n_per_kind: int,
+    kinds: tuple[str, ...],
+) -> None:
+    for i, topic in enumerate(topics):
+        doc_id = f"synth-{i:03d}"
+        raw = complete(prompt_builder(topic, n_per_kind, kinds))
+        try:
+            payload = parse_json_block(raw)
+        except json.JSONDecodeError:
+            _LOG.warning("[prepare-ta] unparseable completion for topic %r; skipping", topic)
+            return
+        if not isinstance(payload, dict):
+            _LOG.warning("[prepare-ta] expected a JSON object for topic %r; skipping", topic)
+            return
+        document = str(payload.get("document", "")).strip()
+        if not document:
+            return
+        docs[doc_id] = document
+        raw_labels = [entry for entry in payload.get("labels", []) if isinstance(entry, dict)]
+        records += plant_labels(doc_id, document, raw_labels)
+        if corpus_dir is not None:
+            corpus_dir.mkdir(parents=True, exist_ok=True)
+            (corpus_dir / f"{doc_id}.md").write_text(document, encoding="utf-8")
+
+
+def _write_provenance(
+    out_dir: Path | None,
+    docs: dict[str, str],
+    records: list[PlantedLabelRecord],
+    planter_model: str,
+    judge_model: str,
+    kinds: tuple[str, ...],
+    log: ProvenanceLog,
+    provenance_kind: str,
+) -> None:
+    if out_dir is None:
+        return
+    labels_path = out_dir / "text_analysis_labels.jsonl"
+    labels_path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+    (out_dir / "provenance.json").write_text(
+        json.dumps(
+            {
+                "kind": provenance_kind,
+                "synthetic": True,
+                "planter_model": planter_model,
+                "judge_model": judge_model,
+                "kinds": list(kinds),
+                "n_docs": len(docs),
+                "n_labels": len(records),
+                "labels_by_kind": _count_by_kind(records),
+                "corpus_root": "corpus",
+                "cost": log.summary(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    _LOG.info("[prepare-ta] %d docs, %d planted labels -> %s", len(docs), len(records), out_dir)
+
+
 def prepare_text_analysis_corpus(
     topics: list[str],
     *,
@@ -229,52 +299,12 @@ def prepare_text_analysis_corpus(
 
     docs: dict[str, str] = {}
     records: list[PlantedLabelRecord] = []
-    for i, topic in enumerate(topics):
-        doc_id = f"synth-{i:03d}"
-        raw = complete(prompt_builder(topic, n_per_kind, kinds))
-        try:
-            payload = parse_json_block(raw)
-        except json.JSONDecodeError:
-            _LOG.warning("[prepare-ta] unparseable completion for topic %r; skipping", topic)
-            continue
-        if not isinstance(payload, dict):
-            _LOG.warning("[prepare-ta] expected a JSON object for topic %r; skipping", topic)
-            continue
-        document = str(payload.get("document", "")).strip()
-        if not document:
-            continue
-        docs[doc_id] = document
-        raw_labels = [entry for entry in payload.get("labels", []) if isinstance(entry, dict)]
-        records += plant_labels(doc_id, document, raw_labels)
-        if corpus_dir is not None:
-            corpus_dir.mkdir(parents=True, exist_ok=True)
-            (corpus_dir / f"{doc_id}.md").write_text(document, encoding="utf-8")
+    _make_corpus_dir(corpus_dir, docs, records, complete, prompt_builder, topics, n_per_kind, kinds)
 
-    if out_dir is not None:
-        labels_path = out_dir / "text_analysis_labels.jsonl"
-        labels_path.write_text(
-            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
-        )
-        (out_dir / "provenance.json").write_text(
-            json.dumps(
-                {
-                    "kind": provenance_kind,
-                    "synthetic": True,
-                    "planter_model": planter_model,
-                    "judge_model": judge_model,
-                    "kinds": list(kinds),
-                    "n_docs": len(docs),
-                    "n_labels": len(records),
-                    "labels_by_kind": _count_by_kind(records),
-                    "corpus_root": "corpus",
-                    "cost": log.summary(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        _LOG.info("[prepare-ta] %d docs, %d planted labels -> %s", len(docs), len(records), out_dir)
+    _write_provenance(
+        out_dir, docs, records, planter_model, judge_model, kinds, log, provenance_kind
+    )
+
     return docs, records
 
 

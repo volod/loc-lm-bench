@@ -30,6 +30,11 @@ def test_classify_empty():
 
 def test_classify_refusal():
     assert common.classify_response("Вибачте, але я не можу відповісти.", None) == common.REFUSAL
+    # first-person UA refusals the earlier verb-specific markers missed
+    assert common.classify_response("Я не можу надати цю інформацію.", None) == common.REFUSAL
+    assert common.classify_response("Я не можу виконати цю дію.", None) == common.REFUSAL
+    # a substantive answer is not a refusal (3rd-person "не можуть" must not match)
+    assert common.classify_response("Рослини не можуть рухатися самостійно.", None) == common.OK
 
 
 def test_classify_passes_through_transport_errors():

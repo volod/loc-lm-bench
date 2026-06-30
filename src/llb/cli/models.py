@@ -1,8 +1,9 @@
 """Model prep, planning, resolution, sweep, and tuning commands."""
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import typer
 
@@ -16,7 +17,32 @@ from llb.cli.helpers import (
     resolver_probes,
 )
 from llb.config import RunConfig
-from llb.contracts import ResolvedModel
+from llb.contracts import ModelSpec, PreparedModel, ResolvedModel
+
+
+def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:
+    """list-models visibility: expand a multi-quant `sources.vllm` list into one plan row per quant.
+
+    So an operator sees the row the resolver would actually pick on a bigger card -- e.g. the fp8
+    Mistral quant on a 32 GiB host -- not just the parent quant the planner prices. Each variant
+    inherits the parent arch and overrides source/quant; single-source entries pass through. This is
+    display-only and does not affect `resolve-models` / `sweep`, which own backend selection.
+    """
+    from llb.backends.resolver import normalize_source_list
+
+    out: list[ModelSpec] = []
+    for spec in specs:
+        vllm = (spec.get("sources") or {}).get("vllm")
+        if not isinstance(vllm, list) or len(vllm) <= 1:
+            out.append(spec)
+            continue
+        for record in normalize_source_list(vllm):
+            merged = cast(ModelSpec, {**spec, "backend": "vllm", **record})
+            if record.get("source") != spec.get("source"):
+                quant = record.get("quant")
+                merged["name"] = f"{spec['name']}-{quant}" if quant else f"{spec['name']}-vllm"
+            out.append(merged)
+    return out
 
 
 @app.command("prep-models")
@@ -33,12 +59,20 @@ def prep_models_cmd(
     from llb.backends.prepare import prepare_models
 
     models = load_models(manifest)
+
+    def progress(row: PreparedModel) -> None:
+        typer.echo(
+            f"[prep-models] start    {row['backend']:<6} {row['name']:<22} "
+            f"{row['source']}  -- {row['action']}: {row['reason']}"
+        )
+
     report = prepare_models(
         models,
         backend_filter=backend,
         force=force,
         dry_run=dry_run,
         cache_dir=cache_dir,
+        progress=progress,
     )
 
     if report["gpus"]:
@@ -57,7 +91,54 @@ def prep_models_cmd(
         )
     failed = [r for r in report["results"] if r["status"] == "failed"]
     if failed:
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
+
+
+@app.command("prep-serving-targets")
+def prep_serving_targets_cmd(
+    tier_json: Path = typer.Option(..., help="generated serving tier.json from gen-serving-config"),
+    backend: str = typer.Option("all", help="ollama | vllm | all"),
+    force: bool = typer.Option(False, help="prepare even if a target looks too big for VRAM"),
+    dry_run: bool = typer.Option(False, help="show the plan; pull/cache nothing"),
+    cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
+) -> None:
+    """Pull/cache the concrete models referenced by a generated CUDA-tier serving config."""
+    from llb.backends.prepare import load_serving_targets, prepare_models
+
+    models = load_serving_targets(tier_json)
+
+    def progress(row: PreparedModel) -> None:
+        typer.echo(
+            f"[prep-serving-targets] start    {row['backend']:<6} {row['name']:<22} "
+            f"{row['source']}  -- {row['action']}: {row['reason']}"
+        )
+
+    report = prepare_models(
+        models,
+        backend_filter=backend,
+        force=force,
+        dry_run=dry_run,
+        cache_dir=cache_dir,
+        progress=progress,
+    )
+
+    if report["gpus"]:
+        for g in report["gpus"]:
+            typer.echo(
+                f"[prep-serving-targets] GPU {g.index}: {g.name} "
+                f"({g.total_mb} MB total, {g.free_mb} MB free, driver {g.driver})"
+            )
+    else:
+        typer.echo("[prep-serving-targets] no GPU detected (Ollama runs on CPU; vLLM is skipped)")
+
+    for r in report["results"]:
+        typer.echo(
+            f"[prep-serving-targets] {r['status']:<8} {r['backend']:<6} {r['name']:<22} "
+            f"{r['source']}  -- {r['detail']}"
+        )
+    failed = [r for r in report["results"] if r["status"] == "failed"]
+    if failed:
+        raise SystemExit(1)
 
 
 @app.command("list-models")
@@ -81,7 +162,7 @@ def list_models_cmd(
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.planner import VERDICT_NO, format_plan, plan_models
 
-    models = planning_models(manifest, trust_config=trust_config)
+    models = _expand_quant_variants(planning_models(manifest, trust_config=trust_config))
     gpus = detect_gpus()
     vram_mib = max_vram_mb(gpus)
     ram_mib = detect_ram_mb()
@@ -198,6 +279,60 @@ def _sweep_cell_overrides(
     return overrides
 
 
+def _parse_rag_grid(spec: str | None) -> list[int | None]:
+    """Parse an opt-in RAG-config grid like `top_k=3,5,8` into a list of `top_k` overrides.
+
+    Returns `[None]` (keep the manifest's single config) when no grid is given, so the default
+    sweep is unchanged. Only the query-time `top_k` is supported: it changes retrieval depth
+    against the SAME index, so the grid needs no re-index. Index-time knobs (chunk_size/overlap)
+    are out of scope.
+    """
+    if not spec:
+        return [None]
+    key, sep, raw = spec.partition("=")
+    if key.strip() != "top_k" or not sep or not raw.strip():
+        raise typer.BadParameter("--rag-grid must look like 'top_k=3,5,8'")
+    try:
+        values = [int(v) for v in raw.split(",") if v.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter(f"--rag-grid top_k values must be integers: {raw!r}") from exc
+    if not values or any(v < 1 for v in values):
+        raise typer.BadParameter("--rag-grid top_k values must be positive integers")
+    return list(dict.fromkeys(values))  # de-dupe, preserve order
+
+
+def _grid_cells(
+    base: RunConfig, overrides: dict[str, Any], rag_grid: list[int | None]
+) -> list[RunConfig]:
+    """One revalidated RunConfig per grid point for a resolved model (a single cell when no grid).
+
+    `top_k` is part of the cell fingerprint, so distinct grid points get distinct resume keys; the
+    `-k<top_k>` run-name suffix only makes the sweep log readable.
+    """
+    cells: list[RunConfig] = []
+    for top_k in rag_grid:
+        cell = dict(overrides)
+        if top_k is not None:
+            cell["top_k"] = top_k
+            cell["run_name"] = f"{overrides['run_name']}-k{top_k}"
+        cells.append(base.with_overrides(**cell))
+    return cells
+
+
+def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
+    """Return whether the local serving binary needed by a resolved backend is installed."""
+    if backend == "vllm":
+        if shutil.which("vllm"):
+            return True, ""
+        return False, "vllm executable not found (run make build-vllm)"
+    if backend == "llamacpp":
+        built = data_dir / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
+        if built.exists() or shutil.which("llama-server"):
+            return True, ""
+        return False, "llama-server not found (run make build-llamacpp)"
+    return True, ""
+
+
 @app.command("sweep")
 def sweep_cmd(
     manifest: Path = typer.Option(
@@ -210,12 +345,21 @@ def sweep_cmd(
     telemetry: bool = typer.Option(True, help="measure steady-state throughput + peak VRAM"),
     resume: bool = typer.Option(True, help="skip cells already completed under this sweep id"),
     offline: bool = typer.Option(False, help="skip availability probes (assume sources exist)"),
+    rag_grid: Optional[str] = typer.Option(
+        None,
+        "--rag-grid",
+        help="opt-in retrieval grid, e.g. 'top_k=3,5,8' -> one cell per (model, top_k); "
+        "default keeps the manifest's single config",
+    ),
 ) -> None:
     """Run one isolated cell per runnable model (process-per-cell, VRAM gate, thermal cooldown)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import resolve_all
     from llb.executor.isolation import run_sweep
 
+    grid = _parse_rag_grid(rag_grid)
+    if grid != [None]:
+        typer.echo(f"[sweep] rag-grid top_k={[k for k in grid]}")
     models = load_models(manifest)
     gpus = detect_gpus()
     resolved = resolve_all(
@@ -227,9 +371,13 @@ def sweep_cmd(
         if not r["chosen_backend"]:
             typer.echo(f"[sweep] skip {r['name']}: {r['note']}")
             continue
+        ready, reason = _local_backend_ready(r["chosen_backend"], base.data_dir)
+        if not ready:
+            typer.echo(f"[sweep] skip {r['name']}: {reason}")
+            continue
         overrides = _sweep_cell_overrides(r, telemetry, max_model_len)
         if overrides is not None:
-            cells.append(base.with_overrides(**overrides))
+            cells.extend(_grid_cells(base, overrides, grid))
 
     if not cells:
         typer.echo("[sweep] no runnable models resolved; nothing to do")

@@ -183,6 +183,76 @@ def test_resolve_all_and_format():
     assert "chosen" in table.splitlines()[0]
 
 
+def test_mistral_w4a16_resolves_vllm_on_24gb_and_gguf_below():
+    # gpu-tier-24-mistral-vllm: the w4a16 vLLM source holds GPU-resident on a 24 GiB card, so the
+    # resolver picks vLLM there; on a 16 GiB card it falls back to the curated Ollama GGUF.
+    mistral: ModelSpec = {
+        "name": "mistral-small-3.1-24b",
+        "backend": "vllm",
+        "source": "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16",
+        "params_b": 24,
+        "quant": "w4a16",
+        "n_layers": 40,
+        "kv_dim": 1024,
+        "max_context": 131072,
+        "vocab_size": 131072,
+        "hidden_size": 5120,
+        "tie_word_embeddings": False,
+        "sources": {"ollama": {"source": "mistral-small3.1:24b", "quant": "q4_k_m"}},
+    }
+    at_24 = resolve(mistral, 24576, 128 * 1024, probes=ALL_AVAILABLE)
+    assert at_24["chosen_backend"] == "vllm" and at_24["verdict"] == "gpu"
+    at_16 = resolve(mistral, 16380, 128 * 1024, probes=ALL_AVAILABLE)
+    assert at_16["chosen_backend"] == "ollama" and at_16["chosen_source"] == "mistral-small3.1:24b"
+
+
+# --- resolver-multi-quant-vllm: several vLLM quants of one model, best GPU fit wins ---------------
+
+MISTRAL_MULTI: ModelSpec = {
+    "name": "mistral-small-3.1-24b",
+    "backend": "vllm",
+    "source": "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16",
+    "params_b": 24,
+    "quant": "w4a16",
+    "n_layers": 40,
+    "kv_dim": 1024,
+    "max_context": 131072,
+    "vocab_size": 131072,
+    "hidden_size": 5120,
+    "tie_word_embeddings": False,
+    "sources": {
+        "vllm": [
+            {"source": "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic", "quant": "fp8"},
+            {
+                "source": "RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16",
+                "quant": "w4a16",
+            },
+        ],
+        "ollama": {"source": "mistral-small3.1:24b", "quant": "q4_k_m"},
+    },
+}
+
+
+def test_candidate_sources_ranks_vllm_quants_by_quality():
+    # The vLLM quants are ordered highest-bpw first, then the lower-priority backends follow.
+    order = [(b, rec.get("quant")) for b, rec in candidate_sources(MISTRAL_MULTI)]
+    assert order == [("vllm", "fp8"), ("vllm", "w4a16"), ("ollama", "q4_k_m")]
+
+
+def test_multi_quant_vllm_picks_best_fit_per_host():
+    # resolver-multi-quant-vllm acceptance: highest-quality quant that fits GPU wins per tier --
+    # GGUF on 16 GiB, w4a16 on 24 GiB, fp8 on 32 GiB -- so the sweep path now agrees with the
+    # 32 GiB serving config (fp8) instead of resolving the smaller w4a16 everywhere.
+    at_16 = resolve(MISTRAL_MULTI, 16380, 128 * 1024, probes=ALL_AVAILABLE)
+    assert at_16["chosen_backend"] == "ollama" and at_16["chosen_source"] == "mistral-small3.1:24b"
+    at_24 = resolve(MISTRAL_MULTI, 24576, 128 * 1024, probes=ALL_AVAILABLE)
+    assert at_24["chosen_backend"] == "vllm" and at_24["verdict"] == "gpu"
+    assert at_24["chosen_source"].endswith("quantized.w4a16")
+    at_32 = resolve(MISTRAL_MULTI, 32607, 128 * 1024, probes=ALL_AVAILABLE)
+    assert at_32["chosen_backend"] == "vllm" and at_32["verdict"] == "gpu"
+    assert at_32["chosen_source"].endswith("FP8-dynamic")
+
+
 def test_ollama_probe_matches_bare_and_tagged(monkeypatch):
     body = '{"models": [{"name": "llama3.2:3b"}]}'
 

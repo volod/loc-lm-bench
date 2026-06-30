@@ -1,8 +1,9 @@
 # Inference config examples
 
-Serving settings for MamayLM, Gemma 4 31B, and Qwen3.6 on **12 / 16 / 24 / 32 GiB**
-GPU tiers. Configurations maximize model size and explicit context on GPU, not
-throughput. loc-lm-bench scores **text only**.
+Serving settings for MamayLM, Lapa, Gemma 4, Qwen3.6, and Mistral on **12 / 16 / 24 / 32 GiB**
+GPU tiers. Primary target ids are model families; each tier selects the largest concrete model
+variant that fits. Configurations maximize model size and explicit context on GPU, not throughput.
+loc-lm-bench scores **text only**.
 
 ## Generate configs for your machine
 
@@ -35,7 +36,8 @@ Output directory (example for 16 GiB):
 .data/llb/serving/gpu-16gb/
   tier.json                  # index of generated files + models
   serve_mamaylm.sh           # start serving (ollama or vllm)
-  serve_gemma-4-31b.sh
+  serve_lapa.sh
+  serve_gemma_4.sh
   serve_qwen3.6.sh
   run_eval_<target>.yaml     # llb RunConfig
   run_eval_<target>.sh       # llb run-eval --config ... --telemetry
@@ -73,20 +75,29 @@ another tier.
 | HF repo | Chat variant | License |
 | ------- | ------------ | ------- |
 | [MamayLM 27B FP8][mamay-fp8] | instruct | Gemma Terms |
+| [Lapa v0.1.2 Instruct][lapa] | instruct | Gemma Terms |
 | [google/gemma-4-31B][gemma-31b] | **`gemma-4-31B-it`** | Apache 2.0 |
 | [Qwen3.6 35B-A3B][qwen36] | same repo | Apache 2.0 |
+| [Mistral Small 3.1 24B][mistral] | instruct (w4a16 / FP8 / GGUF) | Apache 2.0 |
 
 [mamay-fp8]: https://huggingface.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic
+[lapa]: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
 [gemma-31b]: https://huggingface.co/google/gemma-4-31B
 [qwen36]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
+[mistral]: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
 
 ### Traps
 
 - **MamayLM FP8:** never pass `--quantization fp8` to vLLM (checkpoint is pre-quantized).
-- **Gemma 4 31B:** serve **`gemma-4-31B-it`**, not the base checkpoint.
+- **Gemma 4:** the family target serves the largest tier fit; when the tier picks 31B, serve
+  **`gemma-4-31B-it`**, not the base checkpoint.
 - **Qwen3.6 MoE:** vLLM loads all expert weights (~35B stored); Ollama GGUF on smaller GPUs.
 - **Thinking mode:** Qwen3.6 defaults to thinking output; generated run configs use
   `temperature: 0.0` for reproducible scoring.
+- **Mistral quants:** both the 24 GiB `RedHatAI/...quantized.w4a16` and the 32 GiB
+  `RedHatAI/...FP8-dynamic` checkpoints are compressed-tensors; vLLM auto-detects the quant, so
+  never pass `--quantization`. Mistral Small 3.1 is multimodal, so the generated serve script keeps
+  the text-only `--limit-mm-per-prompt '{"image": 0}'`.
 
 ---
 
@@ -95,14 +106,17 @@ another tier.
 Largest backend + model per target. Details and vLLM knobs:
 [samples/config-example/manifest.yaml](../../samples/config-example/manifest.yaml).
 
-| Tier | MamayLM | Gemma 4 31B-it | Qwen3.6 35B-A3B | Extra vLLM on tier |
-| ---- | ------- | -------------- | --------------- | ------------------ |
-| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_0 GGUF | Ollama `iq3` | E4B w4a16 (util 0.80, ctx 8192) |
-| 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_0 GGUF | Ollama `iq3` | 12B w4a16 (util 0.85, ctx 8192) |
-| 24 GiB | Ollama Q4_K_M GGUF | vLLM w4a16 (0.90, 16384) | Ollama `iq4` | -- |
-| 32 GiB | vLLM FP8 (0.90, 8192) | vLLM w4a16 (0.90, 16384) | Ollama `iq4` | -- |
+| Tier | MamayLM | Lapa | Gemma 4 family target | Qwen3.6 35B-A3B | Mistral Small 3.1 24B | Extra vLLM on tier |
+| ---- | ------- | ---- | -------------- | --------------- | --------------------- | ------------------ |
+| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | E4B w4a16 (util 0.80, ctx 8192) |
+| 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.85, ctx 8192) |
+| 24 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM w4a16 (0.90, 16384) | -- |
+| 32 GiB | vLLM FP8 (0.90, 8192) | vLLM bf16 (0.90, 8192) | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM FP8 (0.90, 8192) | -- |
 
 Qwen3.6 FP8 (~33 GiB weights) does not fit any tier through vLLM; use Ollama or 48 GiB+ GPU.
+Mistral Small 3.1 24B serves vLLM on the 24 and 32 GiB tiers and Ollama (CPU offload) on 12/16 GiB.
+The 24 GiB tier uses the w4a16 quant (~14 GiB weights, GPU-resident with KV room); the 32 GiB tier
+upgrades to the higher-quality FP8 (~24 GiB weights), which leaves no KV room on a 24 GiB card.
 
 ---
 
@@ -133,7 +147,7 @@ manifest (never `auto` in generated configs).
 | Backend | Weights | When used on a tier |
 | ------- | ------- | ------------------- |
 | vLLM | GPU only | Largest quant that fits VRAM (24G+ Gemma, 32G MamayLM) |
-| Ollama | GPU + RAM offload | Full-size targets on 12-16 GiB; Qwen3.6 on all tiers |
+| Ollama | GPU + RAM offload | Full-size targets on 12-24 GiB; Qwen3.6 on all tiers |
 
 ---
 
@@ -173,7 +187,8 @@ w4a16 at util **0.80**, ctx **8192**
 ### 32 GiB GPU / 64 GiB RAM (HP Z2 Tower)
 
 RTX 5090, 32607 MiB, sm 120. **vLLM** for MamayLM 27B FP8 and Gemma 4 31B w4a16;
-**Ollama `iq4`** for Qwen3.6 (same class as installed `qwen3:30b` at 18 GiB).
+**vLLM** for Lapa v0.1.2 Instruct; **Ollama `iq4`** for Qwen3.6 (same class as installed
+`qwen3:30b` at 18 GiB).
 
 ---
 

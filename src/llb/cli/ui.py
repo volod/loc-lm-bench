@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -37,6 +38,84 @@ def board_cmd(
         str(port),
     ]
     raise typer.Exit(subprocess.call(cmd))
+
+
+@app.command("recommend")
+def recommend_cmd(
+    run_root: Optional[Path] = typer.Option(
+        None, help="run-eval bundle root (default: $DATA_DIR/run-eval)"
+    ),
+    out: Optional[Path] = typer.Option(
+        None, help="Markdown summary path (default: $DATA_DIR/recommend/summary.md)"
+    ),
+    chart: Optional[Path] = typer.Option(
+        None, help="comparison chart PNG path (default: $DATA_DIR/recommend/comparison.png)"
+    ),
+    min_cases: int = typer.Option(
+        1, help="drop bundles with fewer scored cases (filters partial/smoke runs)"
+    ),
+    gpu_gb: Optional[int] = typer.Option(
+        None, help="host GPU tier override (12/16/24/32); default detects the host"
+    ),
+    min_tokens_per_s: float = typer.Option(
+        0.0,
+        "--min-tokens-per-s",
+        help="good-enough-performance floor (tok/s) the host pick must clear on top of VRAM fit; "
+        "0 = off",
+    ),
+    no_chart: bool = typer.Option(False, "--no-chart", help="skip rendering the comparison chart"),
+) -> None:
+    """Summarize a sweep into operator picks: best RAG accuracy, best efficiency, best for this host.
+
+    Reads the final-split run bundles, ranks them, and writes a host-adaptive Markdown summary plus a
+    model-comparison chart (needs the [viz] extra). The recommended-for-host pick is the
+    highest-accuracy model that is Pareto-optimal and fits the GPU tier's VRAM budget with headroom.
+    """
+    from llb.board.recommend import (
+        HostInfo,
+        build_recommendation,
+        format_summary_md,
+        load_run_summaries,
+    )
+    from llb.inference.generate import resolve_tier
+    from llb.paths import resolve_data_dir
+
+    data_dir = resolve_data_dir()
+    run_root = run_root or (data_dir / "run-eval")
+    out = out or (data_dir / "recommend" / "summary.md")
+    chart = chart or (data_dir / "recommend" / "comparison.png")
+
+    summaries = load_run_summaries(run_root, min_cases=min_cases)
+    if not summaries:
+        typer.echo(
+            f"[recommend] no final-split run bundles (>= {min_cases} cases) under {run_root}; "
+            "run a sweep first",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    tier = resolve_tier(gpu_gb)
+    # VRAM budget for the fit check: the measured card when detected, else the nominal tier size.
+    # An explicit --gpu-gb override simulates that tier's budget, so the same bundles can be
+    # re-recommended for a bigger/smaller CUDA host (e.g. would a 24 GiB box pick the 27B?).
+    budget_mb = gpu_gb * 1024 if gpu_gb is not None else (tier.total_mb or tier.tier_gb * 1024)
+    host = HostInfo(tier.tier_gb, budget_mb, tier.gpu_name, tier.detected)
+    rec = build_recommendation(summaries, host, min_tokens_per_s=min_tokens_per_s)
+    summary_md = format_summary_md(rec)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(summary_md + "\n", encoding="utf-8")
+    typer.echo(summary_md)
+    typer.echo(f"\n[recommend] summary -> {out}")
+
+    if not no_chart:
+        from llb.board.charts import render_comparison_chart
+
+        rendered = render_comparison_chart(rec, chart)
+        if rendered is not None:
+            typer.echo(f"[recommend] comparison chart -> {rendered}")
+        else:
+            typer.echo("[recommend] chart skipped (install the [viz] extra for matplotlib)")
 
 
 @app.command("mlflow-ui")

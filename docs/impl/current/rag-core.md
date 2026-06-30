@@ -42,6 +42,12 @@ make run-eval MODEL=llama3.2:3b BACKEND=ollama LIMIT=20
 
 The Makefile defaults `GOLDSET` and `CORPUS` to the committed fixture so smoke runs do not require
 network access or data regeneration.
+For the local PDF-corpus Gemma 4 quickstart, see
+[`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). That flow builds
+`.data/quickstart-pdf-corpus-rag/llb/rag/` from 19 converted PDFs: 12,745 recursive FAISS chunks,
+768-dimensional E5 embeddings, and a born-digital draft retrieval check of `recall@10=1.000`,
+`MRR=0.732` over 7 unverified review items. The matching GraphRAG store lives under
+`.data/quickstart-pdf-corpus-graph/llb/graph/` with 11 nodes, 2 edges, and 9 communities.
 
 ## Retrieval Store
 
@@ -128,3 +134,19 @@ Isolation and GPU safety live outside the scoring path:
 - `src/llb/executor/vram.py`: basic reclaim checks;
 - `src/llb/executor/contention.py`: pre-launch vLLM contention guard;
 - `src/llb/executor/isolation.py`: process-per-cell sweep and cooldown primitive.
+
+## Sweep RAG-config grid
+
+`llb sweep` runs one isolated cell per runnable model. By default every cell reuses the manifest's
+single retrieval config, so the sweep answers "which model" but not "which RAG config". The opt-in
+`--rag-grid top_k=3,5,8` (Make: `SWEEP_RAG_GRID=top_k=3,5,8`) expands each model into one cell per
+`top_k`, so the sweep answers "which `(model, top_k)`" for THIS host. Only the query-time `top_k` is
+gridded -- it changes retrieval depth against the SAME index, so no re-index is needed; `top_k` is
+part of the cell fingerprint, so each grid point gets its own resume key, and `recommend`'s
+best-per-model dedup then represents each model by its highest-scoring `top_k`. Index-time knobs
+(`chunk_size`/`chunk_overlap`) are out of scope because they need rebuilt indexes.
+
+```bash
+make sweep SWEEP_ID=grid SWEEP_RAG_GRID=top_k=3,5,8   # 5 models x 3 top_k -> 15 cells
+make recommend                                        # ranks each model at its best top_k
+```

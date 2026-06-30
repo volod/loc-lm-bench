@@ -1,6 +1,7 @@
 # Serving tier manifest -- source of truth for `llb gen-serving-config`.
-# Tiers: 12 | 16 | 24 | 32 (GPU VRAM GiB). Each target picks the largest model variant
-# that fits on that tier (see docs/inference/config-example.md for rationale).
+# Tiers: 12 | 16 | 24 | 32 (GPU VRAM GiB). Primary target ids are model families;
+# each model field picks the largest concrete variant that fits on that tier
+# (see docs/inference/config-example.md for rationale).
 
 supported_tiers: [12, 16, 24, 32]
 
@@ -29,13 +30,21 @@ tiers:
       backend: ollama
       model: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
       request_timeout_s: 300
-    gemma-4-31b:
+    lapa:
       backend: ollama
-      model: hf.co/google/gemma-4-31B-it-qat-q4_0-gguf:q4_0-it
+      model: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
+      request_timeout_s: 300
+    gemma-4:
+      backend: ollama
+      model: gemma4:31b
       request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    mistral:
+      backend: ollama
+      model: mistral-small3.1:24b
       request_timeout_s: 300
     gemma-4-e4b-vllm:
       backend: vllm
@@ -49,13 +58,21 @@ tiers:
       backend: ollama
       model: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
       request_timeout_s: 300
-    gemma-4-31b:
+    lapa:
       backend: ollama
-      model: hf.co/google/gemma-4-31B-it-qat-q4_0-gguf:q4_0-it
+      model: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
+      request_timeout_s: 300
+    gemma-4:
+      backend: ollama
+      model: gemma4:31b
       request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    mistral:
+      backend: ollama
+      model: mistral-small3.1:24b
       request_timeout_s: 300
     gemma-4-12b-vllm:
       backend: vllm
@@ -69,7 +86,11 @@ tiers:
       backend: ollama
       model: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
       request_timeout_s: 300
-    gemma-4-31b:
+    lapa:
+      backend: ollama
+      model: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
+      request_timeout_s: 300
+    gemma-4:
       backend: vllm
       model: google/gemma-4-31B-it-qat-w4a16-ct
       gpu_memory_utilization: 0.90
@@ -79,6 +100,12 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
+    mistral:
+      backend: vllm
+      model: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
+      gpu_memory_utilization: 0.90
+      max_model_len: 16384
+      limit_mm_per_prompt: '{"image": 0}'
 
   32:
     mamaylm:
@@ -87,7 +114,13 @@ tiers:
       gpu_memory_utilization: 0.90
       max_model_len: 8192
       limit_mm_per_prompt: '{"image": 0}'
-    gemma-4-31b:
+    lapa:
+      backend: vllm
+      model: lapa-llm/lapa-v0.1.2-instruct
+      gpu_memory_utilization: 0.90
+      max_model_len: 8192
+      limit_mm_per_prompt: '{"image": 0, "audio": 0}'
+    gemma-4:
       backend: vllm
       model: google/gemma-4-31B-it-qat-w4a16-ct
       gpu_memory_utilization: 0.90
@@ -97,3 +130,9 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
+    mistral:
+      backend: vllm
+      model: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
+      gpu_memory_utilization: 0.90
+      max_model_len: 8192
+      limit_mm_per_prompt: '{"image": 0}'

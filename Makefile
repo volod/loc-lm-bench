@@ -6,12 +6,23 @@ PY := $(VENV)/bin/python
 PYTHON_VERSION := 3.13
 DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_load_env; printf "%s" "$$DATA_DIR"')
 
+# Tool caches live under one $DATA_DIR/cache/<tool> tree (not the project root), so the root stays
+# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars override
+# the static pyproject defaults, so the caches follow a custom DATA_DIR. deepeval reads
+# DEEPEVAL_CACHE_FOLDER (its `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
+LLB_CACHE_DIR := $(DATA_DIR)/cache
+export RUFF_CACHE_DIR := $(LLB_CACHE_DIR)/ruff
+export MYPY_CACHE_DIR := $(LLB_CACHE_DIR)/mypy
+export DEEPEVAL_CACHE_FOLDER := $(LLB_CACHE_DIR)/deepeval
+export DEEPEVAL_RESULTS_FOLDER := $(LLB_CACHE_DIR)/deepeval/results
+PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
+
 # Extras installed by `make venv` -- the standard local workflow groups, so a fresh checkout can
 # run the normal test/eval/vector-store commands without a follow-up `uv pip install`.
 # vLLM/torch/flash-attn are deliberately NOT here: they are hardware-matched and built separately
 # (AGENTS.md). CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,prep,telemetry,goldset,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,dev
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -19,25 +30,40 @@ GOLDSET ?= $(PUBLISHED_GOLDSET_ROOT)/goldset.jsonl
 CORPUS ?= $(PUBLISHED_GOLDSET_ROOT)/corpus
 SQUAD_JSON ?= samples/squad_uk_fixture.json
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
-PDF_DIR ?= $(DATA_DIR)/_doc
+PDF_DIR ?= $(DATA_DIR)/quickstart-pdf-corpus
 PDF_OUT_DIR ?=
 PDF_MIN_CHARS ?=
 PDF_PARSER ?= auto
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
-DRAFT_MODEL ?= llama3.2:3b
+DRAFT_MODEL ?= gemma4:e4b
 DRAFT_ENDPOINT ?= local
 DRAFT_MAX_ITEMS ?= 60
+DRAFT_CORPUS ?= $(CORPUS)
+DRAFT_DOC_LIMIT ?=
+DRAFT_EXTRACT_MAX_CHARS ?=
+DRAFT_EXTRACT_CHUNK_OVERLAP ?=
+DRAFT_MAX_TOKENS ?= 4096
+DRAFT_TEMPERATURE ?= 0
+DRAFT_TIMEOUT ?= 300
+DRAFT_NO_THINK ?= 0
+DRAFT_EXTRACTOR ?= llm
+DRAFT_OUT_DIR ?=
+DRAFT_VERIFY_N ?= 0
 
-# RAG/vLLM eval knobs (override on the command line).
-MODEL ?= llama3.2:3b
+# RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
+# and should be used for connectivity checks only, not leaderboard or extended tests.
+SMOKE_MODEL ?= llama3.2:3b
+MODEL ?= $(SMOKE_MODEL)
 BACKEND ?= ollama
 SPLIT ?= final
 LIMIT ?= 20
 RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
+SERVING_TIER_JSON ?=
+LLB_OLLAMA_PULL_TIMEOUT_S ?= 1800
 PROMPT_SYSTEM_CORPUS ?= $(CORPUS)
 PROMPT_SYSTEM_OUT_DIR ?=
 PROMPT_SYSTEM_RUN_DIR ?= $(PROMPT_SYSTEM_OUT_DIR)
@@ -67,9 +93,13 @@ MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5000
 BOARD_HOST ?= 127.0.0.1
 BOARD_PORT ?= 8501
+RECOMMEND_MIN_CASES ?= 1
+RECOMMEND_GPU_GB ?=
+RECOMMEND_MIN_TOK_S ?=
 SWEEP_ID ?= run1
 SWEEP_MAX_MODEL_LEN ?= 8192
 SWEEP_OFFLINE ?=
+SWEEP_RAG_GRID ?=
 PIPELINE_TOP_N ?= 2
 PIPELINE_TRIALS ?= 20
 PIPELINE_OFFLINE ?=
@@ -128,6 +158,13 @@ COMPOSITE_AGENTIC_VERIFICATION_REF ?= $(if $(COMPOSITE_VERIFICATION_REF),$(COMPO
 COMPOSITE_TOOLING_VERIFICATION_REF ?= $(if $(COMPOSITE_VERIFICATION_REF),$(COMPOSITE_VERIFICATION_REF),$(COMPOSITE_SAMPLE_VERIFICATION_ROOT)/tooling/sample_manifest.json)
 COMPOSITE_BASE_URL ?=
 COMPOSITE_REAL_CORPUS ?=
+SECURITY_CASES ?= $(COMPOSITE_SECURITY_CASES)
+SECURITY_VERIFICATION_REF ?= $(COMPOSITE_SECURITY_VERIFICATION_REF)
+SECURITY_DATA_VERIFIED ?= 1
+SECURITY_MODEL ?= hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
+SECURITY_BACKEND ?= ollama
+SECURITY_BASE_URL ?=
+SECURITY_MAX_MODEL_LEN ?=
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
@@ -145,13 +182,116 @@ PLATFORM_MATRIX_OLLAMA_MODEL ?= gemma4:e4b
 PLATFORM_MATRIX_VLLM_MODEL ?= google/gemma-4-E4B-it-qat-w4a16-ct
 PLATFORM_MATRIX_LLAMACPP_MODEL ?= hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:q4_0-it
 PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS ?= -1
+PLATFORM_MATRIX_BACKENDS ?= ollama vllm llamacpp
+PLATFORM_MATRIX_STRICT ?= 0
+
+# README quickstart orchestration knobs. The public interface is the quickstart-* make targets;
+# scripts/quickstart.sh owns consistent logging and step summaries for all grouped commands.
+QUICKSTART_ROOT ?= $(DATA_DIR)
+QUICKSTART_LOG_DIR ?= $(DATA_DIR)/llb/logs/quickstart
+QUICKSTART_UV_CACHE_DIR ?= $(QUICKSTART_ROOT)/uv-cache
+QUICKSTART_A_DATA_DIR ?= $(QUICKSTART_ROOT)/quickstart-leaderboard
+QUICKSTART_A_GOLDSET ?= $(GOLDSET)
+QUICKSTART_A_CORPUS ?= $(CORPUS)
+QUICKSTART_A_SWEEP_ID ?= qs-committed
+QUICKSTART_SKIP_APT ?= 1
+QUICKSTART_SETUP_VENV ?= auto
+QUICKSTART_PREP_MODELS ?= 1
+QUICKSTART_PREP_SERVING_TARGETS ?= 1
+QUICKSTART_RUN_SWEEP ?= 1
+QUICKSTART_RUN_PLATFORM_MATRIX ?= 1
+QUICKSTART_RUN_SECURITY ?= 1
+QUICKSTART_GPU_GB ?=
+QUICKSTART_PROMPT_DIR ?= $(QUICKSTART_A_DATA_DIR)/prompt-system/quickstart
+QUICKSTART_PROMPT_ID ?=
+QUICKSTART_SECURITY_MODEL ?= $(SECURITY_MODEL)
+QUICKSTART_SECURITY_BACKEND ?= $(SECURITY_BACKEND)
+QUICKSTART_SECURITY_CASES ?= $(SECURITY_CASES)
+QUICKSTART_SECURITY_VERIFICATION_REF ?= $(SECURITY_VERIFICATION_REF)
+QUICKSTART_PDF_SOURCE ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus
+QUICKSTART_PDF_MD ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-md
+QUICKSTART_PDF_RAG_DATA ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-rag
+QUICKSTART_PDF_DRAFT_MD ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-draft-md
+QUICKSTART_PDF_DRAFT ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-draft
+QUICKSTART_PDF_GRAPH_DATA ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-graph
+QUICKSTART_PDF_LEADERBOARD_DATA ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-leaderboard
+QUICKSTART_PDF_ACCEPTED ?= $(QUICKSTART_PDF_DRAFT)/accepted
+QUICKSTART_PDF_DRAFT_DOCS ?= pdf-d2e2499d3d06 pdf-b117ebb25eb7
+QUICKSTART_DRAFT_MODEL ?= gemma4:e4b
+QUICKSTART_DRAFT_MAX_ITEMS ?= 8
+QUICKSTART_DRAFT_VERIFY_N ?= 4
+QUICKSTART_DRAFT_TIMEOUT ?= 600
+QUICKSTART_PDF_MIN_CHARS ?= 500
+QUICKSTART_PDF_PARSER ?= auto
+export QUICKSTART_ROOT QUICKSTART_LOG_DIR QUICKSTART_UV_CACHE_DIR QUICKSTART_A_DATA_DIR QUICKSTART_A_GOLDSET
+export QUICKSTART_A_CORPUS QUICKSTART_A_SWEEP_ID QUICKSTART_SKIP_APT QUICKSTART_SETUP_VENV
+export QUICKSTART_PREP_MODELS QUICKSTART_PREP_SERVING_TARGETS QUICKSTART_RUN_SWEEP
+export QUICKSTART_RUN_PLATFORM_MATRIX QUICKSTART_RUN_SECURITY QUICKSTART_GPU_GB
+export QUICKSTART_PROMPT_DIR QUICKSTART_PROMPT_ID QUICKSTART_SECURITY_MODEL
+export QUICKSTART_SECURITY_BACKEND QUICKSTART_SECURITY_CASES QUICKSTART_SECURITY_VERIFICATION_REF
+export QUICKSTART_PDF_SOURCE QUICKSTART_PDF_MD QUICKSTART_PDF_RAG_DATA
+export QUICKSTART_PDF_DRAFT_MD QUICKSTART_PDF_DRAFT QUICKSTART_PDF_GRAPH_DATA
+export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_ACCEPTED QUICKSTART_PDF_DRAFT_DOCS
+export QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
+export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_PDF_MIN_CHARS QUICKSTART_PDF_PARSER
+export MODELS_MANIFEST RAG_K SPLIT HF_HUB_OFFLINE SECURITY_CASES SECURITY_VERIFICATION_REF
+export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL SECURITY_MAX_MODEL_LEN
+export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board prompt-system-prepare prompt-system-review prompt-system-compare bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
+		awk 'BEGIN{FS=":.*?## "}{printf "  %-34s %s\n", $$1, $$2}'
+
+quickstart-goldset: ## Quickstart all-in-one: committed goldset -> RAG -> model prep -> sweep -> backend matrix -> security -> prompts
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset
+
+quickstart-goldset-setup: ## Quickstart group: venv, CUDA tier detection, serving config generation
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-setup
+
+quickstart-goldset-rag: ## Quickstart group: build and validate committed-goldset RAG index
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-rag
+
+quickstart-goldset-models: ## Quickstart group: list and prepare model candidates
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-models
+
+quickstart-goldset-eval: ## Quickstart group: model-family sweep and backend platform matrix
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-eval
+
+quickstart-goldset-security: ## Quickstart group: run model security tests as a separate benchmark tier
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-security
+
+quickstart-goldset-prompt: ## Quickstart group: prompt candidates; set QUICKSTART_PROMPT_ID=<id> to pin and score
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-prompt
+
+quickstart-pdf-corpus: ## Quickstart all-in-one: PDF corpus -> markdown -> RAG -> draft goldset -> graph -> validation
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus
+
+quickstart-pdf-corpus-convert: ## Quickstart group: convert QUICKSTART_PDF_SOURCE PDFs to markdown/citations
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-convert
+
+quickstart-pdf-corpus-index: ## Quickstart group: build full PDF-corpus RAG index
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-index
+
+quickstart-pdf-corpus-draft: ## Quickstart group: stage draft corpus and draft unverified goldset/ontology
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-draft
+
+quickstart-pdf-corpus-graph: ## Quickstart group: build graph artifacts from the draft bundle
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-graph
+
+quickstart-pdf-corpus-validate: ## Quickstart group: validate draft structure and retrieval metrics
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-validate
+
+quickstart-pdf-corpus-review: ## Quickstart human gate: review verify_sample.csv interactively
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-review
+
+quickstart-pdf-corpus-accept: ## Quickstart human gate: emit accepted ledger after review
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-accept
+
+quickstart-pdf-corpus-score: ## Quickstart continuation: score accepted PDF corpus/goldset
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-score
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -194,6 +334,13 @@ board: ## Serve the Streamlit leaderboard (BOARD_HOST=127.0.0.1 BOARD_PORT=8501)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main board --host "$(BOARD_HOST)" --port "$(BOARD_PORT)"
 
+recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_CASES= RECOMMEND_GPU_GB= RECOMMEND_MIN_TOK_S=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main recommend --min-cases "$(RECOMMEND_MIN_CASES)" \
+		$(if $(RECOMMEND_GPU_GB),--gpu-gb $(RECOMMEND_GPU_GB),) \
+		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),)
+
 venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
@@ -223,12 +370,12 @@ MD_PATHS ?= README.md AGENTS.md CLAUDE.md GEMINI.md docs
 
 test: ## FULL local precommit flow: pytest (incl. slow) + markdown lint (NOT run in GitHub CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m pytest
+	$(PY) -m pytest $(PYTEST_CACHE_OPT)
 	$(MAKE) lint-md
 
 test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m pytest $(NOT_SLOW)
+	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
 
 format: ## Format Python sources and tests with Ruff
 	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
@@ -239,7 +386,7 @@ ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitH
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
-	$(PY) -m pytest $(NOT_SLOW)
+	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
 
 # Fix findings BY HAND. Do NOT run `pymarkdown fix` -- it corrupts prose on this version (AGENTS.md).
 lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)
@@ -250,7 +397,7 @@ gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh"
 
-pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/_doc; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto)
+pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickstart-pdf-corpus; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(); \
 	if [ -n "$(PDF_OUT_DIR)" ]; then args+=("$(PDF_OUT_DIR)"); fi; \
@@ -316,19 +463,39 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 	@echo "[ingest-uk-squad] mode=$(GOLDSET_MODE)"; \
 	case "$(GOLDSET_MODE)" in \
 	  development) \
-	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	    $(PY) -m llb.prep.ingest_squad --pinned-development-source \
 	      --max-items $(GOLDSET_N) \
 	      --out-name goldset_uk_development.jsonl ;; \
 	  skeleton) \
 	    $(PY) -m llb.prep.goldset_skeleton ;; \
 	  draft) \
-	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
-	    $(PY) -m llb.main prepare-goldset-draft --corpus-root "$(CORPUS)" \
-	      --model "$(DRAFT_MODEL)" --endpoint "$(DRAFT_ENDPOINT)" --max-items $(DRAFT_MAX_ITEMS) ;; \
+	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	    $(MAKE) --no-print-directory prepare-goldset-draft DRAFT_CORPUS="$(CORPUS)" ;; \
 	  *) \
 	    echo "ERROR: GOLDSET_MODE must be development, skeleton, or draft" >&2; exit 2 ;; \
 	esac
+
+prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 for PDF probe
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	args=( \
+	  --corpus-root "$(DRAFT_CORPUS)" \
+	  --model "$(DRAFT_MODEL)" \
+	  --endpoint "$(DRAFT_ENDPOINT)" \
+	  --max-items "$(DRAFT_MAX_ITEMS)" \
+	  --extractor "$(DRAFT_EXTRACTOR)" \
+	  --max-tokens "$(DRAFT_MAX_TOKENS)" \
+	  --temperature "$(DRAFT_TEMPERATURE)" \
+	  --timeout "$(DRAFT_TIMEOUT)" \
+	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
+	); \
+	if [ -n "$(DRAFT_DOC_LIMIT)" ]; then args+=(--doc-limit "$(DRAFT_DOC_LIMIT)"); fi; \
+	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
+	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
+	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
+	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
+	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -354,7 +521,7 @@ compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' 
 
 run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
@@ -362,23 +529,24 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PRO
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET=)
+sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_RAG_GRID=top_k=3,5,8)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main sweep --manifest "$(MODELS_MANIFEST)" --split "$(SPLIT)" \
 		--goldset "$(GOLDSET)" --sweep-id "$(SWEEP_ID)" \
-		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,)
+		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,) \
+		$(if $(SWEEP_RAG_GRID),--rag-grid "$(SWEEP_RAG_GRID)",)
 
 pipeline: ## Select public-screen finalists, tune, and print the final board
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main pipeline --manifest "$(MODELS_MANIFEST)" --goldset "$(GOLDSET)" \
 		--top-n "$(PIPELINE_TOP_N)" --trials "$(PIPELINE_TRIALS)" \
 		$(if $(PIPELINE_OFFLINE),--offline,)
 
 prompt-system-prepare: ## Generate reviewable RAG prompt-system candidates
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main prompt-system-prepare --corpus-root "$(PROMPT_SYSTEM_CORPUS)" \
 		--context-window "$(PROMPT_SYSTEM_CONTEXT_WINDOW)" \
 		--chunk-tokens "$(PROMPT_SYSTEM_CHUNK_TOKENS)" \
@@ -398,14 +566,25 @@ prompt-system-review: ## Review prompt-system candidates (PROMPT_SYSTEM_RUN_DIR=
 
 prompt-system-compare: ## Rank one model across prompt-system-tagged runs
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main prompt-system-compare --model "$(MODEL)" \
 		--lane "$(PROMPT_SYSTEM_LANE)" \
 		$(if $(PROMPT_SYSTEM_HARNESS),--harness "$(PROMPT_SYSTEM_HARNESS)",)
 
+bench-security: ## Security benchmark: ASR/defense/refusal metrics for SECURITY_MODEL/SECURITY_BACKEND
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-security --cases "$(SECURITY_CASES)" \
+		--model "$(SECURITY_MODEL)" --backend "$(SECURITY_BACKEND)" \
+		$(if $(SECURITY_BASE_URL),--base-url "$(SECURITY_BASE_URL)",) \
+		$(if $(SECURITY_MAX_MODEL_LEN),--max-model-len "$(SECURITY_MAX_MODEL_LEN)",) \
+		$(if $(filter 1 true yes,$(SECURITY_DATA_VERIFIED)),--data-verified,) \
+		$(if $(SECURITY_VERIFICATION_REF),--verification-ref "$(SECURITY_VERIFICATION_REF)",) \
+		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),)
+
 bench-agentic: ## Run one agentic harness cell (AGENTIC_HARNESS=loop|langgraph|crewai)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic --tasks "$(AGENTIC_TASKS)" \
 		--model "$(MODEL)" --backend "$(BACKEND)" --max-steps "$(AGENTIC_MAX_STEPS)" \
 		--harness "$(AGENTIC_HARNESS)" \
@@ -417,7 +596,7 @@ agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compar
 	@for harness in $(AGENTIC_HARNESSES); do \
 		$(MAKE) --no-print-directory bench-agentic AGENTIC_HARNESS="$$harness" || exit 1; \
 	done
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
 
 composite-headline: ## Run the verified category suite for MODEL, then require a clean bench-composite preflight
@@ -429,7 +608,7 @@ composite-headline: ## Run the verified category suite for MODEL, then require a
 	@test -n "$(COMPOSITE_SECURITY_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_SECURITY_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
 	@test -n "$(COMPOSITE_AGENTIC_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_AGENTIC_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
 	@test -n "$(COMPOSITE_TOOLING_VERIFICATION_REF)" || { echo "ERROR: set COMPOSITE_TOOLING_VERIFICATION_REF or COMPOSITE_VERIFICATION_REF"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-text-analysis --bundle "$(COMPOSITE_TEXT_ANALYSIS_BUNDLE)" \
 		--model "$(MODEL)" --backend "$(BACKEND)" \
 		$(if $(COMPOSITE_BASE_URL),--base-url "$(COMPOSITE_BASE_URL)",) \
@@ -463,19 +642,45 @@ composite-headline: ## Run the verified category suite for MODEL, then require a
 
 platform-matrix: ## Run same logical model base across Ollama, vLLM, and llama.cpp with telemetry
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(MAKE) --no-print-directory build-index
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
-	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_OLLAMA_MODEL)" --backend ollama \
-		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
-		--telemetry && \
-	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_VLLM_MODEL)" --backend vllm \
-		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
-		--telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
-		--gpu-memory-utilization "$(PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION)" --evict && \
-	$(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_LLAMACPP_MODEL)" --backend llamacpp \
-		--goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
-		--telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
-		--gpu-layers "$(PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS)"
+	HF_HUB_OFFLINE="$(HF_HUB_OFFLINE)" $(MAKE) --no-print-directory build-index
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	wants_backend() { case " $(PLATFORM_MATRIX_BACKENDS) " in *" $$1 "*) return 0 ;; *) return 1 ;; esac; }; \
+	record_failure() { failed=1; echo "[platform-matrix] failed $$1 (continuing; set PLATFORM_MATRIX_STRICT=1 to fail fast)"; }; \
+	ran=0; failed=0; \
+	if wants_backend ollama; then \
+	  echo "[platform-matrix] run ollama model=$(PLATFORM_MATRIX_OLLAMA_MODEL)"; \
+	  if $(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_OLLAMA_MODEL)" --backend ollama \
+	    --goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
+	    --telemetry; then ran=$$((ran + 1)); else record_failure ollama; fi; \
+	fi; \
+	if wants_backend vllm; then \
+	  if command -v vllm >/dev/null 2>&1; then \
+	    echo "[platform-matrix] run vllm model=$(PLATFORM_MATRIX_VLLM_MODEL)"; \
+	    if $(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_VLLM_MODEL)" --backend vllm \
+	      --goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
+	      --telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
+	      --gpu-memory-utilization "$(PLATFORM_MATRIX_GPU_MEMORY_UTILIZATION)" --evict; then ran=$$((ran + 1)); else record_failure vllm; fi; \
+	  else \
+	    echo "[platform-matrix] skipped vllm: vllm executable not found (run make build-vllm)"; \
+	    [ "$(PLATFORM_MATRIX_STRICT)" = "1" ] && failed=1; \
+	  fi; \
+	fi; \
+	if wants_backend llamacpp; then \
+	  llama_bin="$$DATA_DIR/llb/llamacpp/build/bin/llama-server"; \
+	  if [ -x "$$llama_bin" ] || command -v llama-server >/dev/null 2>&1; then \
+	    echo "[platform-matrix] run llamacpp model=$(PLATFORM_MATRIX_LLAMACPP_MODEL)"; \
+	    if $(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_LLAMACPP_MODEL)" --backend llamacpp \
+	      --goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \
+	      --telemetry --max-model-len "$(PLATFORM_MATRIX_MAX_MODEL_LEN)" \
+	      --gpu-layers "$(PLATFORM_MATRIX_LLAMACPP_GPU_LAYERS)"; then ran=$$((ran + 1)); else record_failure llamacpp; fi; \
+	  else \
+	    echo "[platform-matrix] skipped llamacpp: llama-server not found (run make build-llamacpp)"; \
+	    [ "$(PLATFORM_MATRIX_STRICT)" = "1" ] && failed=1; \
+	  fi; \
+	fi; \
+	if [ "$$ran" -eq 0 ]; then echo "ERROR: platform-matrix produced no successful backend rows" >&2; exit 1; fi; \
+	if [ "$(PLATFORM_MATRIX_STRICT)" = "1" ] && [ "$$failed" -ne 0 ]; then exit 1; fi; \
+	echo "[platform-matrix] successful backend rows: $$ran"
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
@@ -485,8 +690,14 @@ build-llamacpp: ## Build CUDA llama-server for the llama.cpp launcher; CUDA_ARCH
 
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main prep-models --manifest "$(MODELS_MANIFEST)" --backend "$(PREP_BACKEND)"
+
+prep-serving-targets: ## Pull/cache models referenced by generated serving tier.json (SERVING_TIER_JSON=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(SERVING_TIER_JSON)" || { echo "ERROR: set SERVING_TIER_JSON=<llb/serving/gpu-*/tier.json>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main prep-serving-targets --tier-json "$(SERVING_TIER_JSON)" --backend "$(PREP_BACKEND)"
 
 list-models: ## List which candidate models can run here (GPU+RAM, KV-cache-aware); CONTEXT= to target a context
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

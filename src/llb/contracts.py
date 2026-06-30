@@ -411,8 +411,10 @@ class ModelSpec(TypedDict):
     hi_precision_params_b: NotRequired[float]
     # Optional cross-backend serving options for the AvailabilityResolver (backend resolver): a map of
     # backend -> source string OR a per-source record carrying its own quant/arch overrides,
-    # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata).
-    sources: NotRequired[dict[str, "str | SourceRecord"]]
+    # so the planner prices the actual artifact (e.g. a q4 GGUF, not the vLLM bf16 metadata). A
+    # backend may map to a LIST of records to declare several quants of one model (e.g. vLLM fp8 +
+    # w4a16); the resolver picks the highest-quality quant that fits the host on GPU.
+    sources: NotRequired[dict[str, "str | SourceRecord | list[str | SourceRecord]"]]
 
 
 class SourceRecord(TypedDict):

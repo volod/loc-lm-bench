@@ -34,6 +34,10 @@ JUDGE_MODEL = "JUDGE_MODEL"
 DEEPEVAL_JUDGE_BASE_URL = "DEEPEVAL_JUDGE_BASE_URL"
 DEEPEVAL_JUDGE_API_KEY = "DEEPEVAL_JUDGE_API_KEY"
 DEEPEVAL_TELEMETRY_OPT_OUT = "DEEPEVAL_TELEMETRY_OPT_OUT"
+# Relocate DeepEval's `.deepeval` keystore + results out of the project root, under $DATA_DIR/cache.
+# DeepEval reads these env names directly (constants.HIDDEN_DIR / settings.DEEPEVAL_RESULTS_FOLDER).
+DEEPEVAL_CACHE_FOLDER = "DEEPEVAL_CACHE_FOLDER"
+DEEPEVAL_RESULTS_FOLDER = "DEEPEVAL_RESULTS_FOLDER"
 
 # Frontier LLM prep (litellm reads standard provider key names)
 OPENAI_API_KEY = "OPENAI_API_KEY"

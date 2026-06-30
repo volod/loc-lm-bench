@@ -6,12 +6,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=shared/common.sh
 . "$SCRIPT_DIR/shared/common.sh"
 
+llb_load_env  # resolve + export DATA_DIR (default $PROJECT_ROOT/.data)
+
 TOP_K="${1:-10}"
 RADON="${PROJECT_ROOT}/.venv/bin/radon"
 COMPLEXIPY="${PROJECT_ROOT}/.venv/bin/complexipy"
 PYMARKDOWN="${PROJECT_ROOT}/.venv/bin/pymarkdown"
 PYTHON="${PROJECT_ROOT}/.venv/bin/python"
 COGNITIVE_MAX="${COGNITIVE_MAX:-15}"
+# complexipy has no cache-dir flag -- it writes .complexipy_cache in its CWD. Run it from the shared
+# $DATA_DIR cache tree (against absolute src/tests) so nothing lands in the project root.
+COMPLEXIPY_CACHE_DIR="${DATA_DIR}/cache/complexipy"
+mkdir -p "$COMPLEXIPY_CACHE_DIR"
 
 ROOT_MARKDOWN=(README.md AGENTS.md CLAUDE.md GEMINI.md)
 LLB_PRINTED_BLOCK=0
@@ -169,5 +175,5 @@ llb_report_if_output "maintainability index grade C only (repo root; hidden dirs
   bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$RADON"
 
 llb_report_if_output "cognitive complexity above ${COGNITIVE_MAX} (src tests only)" \
-  bash -c 'cd "$1" && "$2" src tests --max-complexity-allowed "$3" --failed --ignore-complexity --color no --plain --sort desc' \
-  _ "$PROJECT_ROOT" "$COMPLEXIPY" "$COGNITIVE_MAX"
+  bash -c 'cd "$4" && "$2" "$1/src" "$1/tests" --max-complexity-allowed "$3" --failed --ignore-complexity --color no --plain --sort desc' \
+  _ "$PROJECT_ROOT" "$COMPLEXIPY" "$COGNITIVE_MAX" "$COMPLEXIPY_CACHE_DIR"

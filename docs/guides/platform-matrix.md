@@ -16,9 +16,14 @@ Run the full chain:
 
 The target does:
 1. rebuild the committed FAISS RAG index;
-2. run Ollama with telemetry;
-3. evict resident Ollama models and run vLLM with telemetry;
-4. run llama.cpp with telemetry through the project-managed `llama-server` binary.
+2. run each requested backend row with telemetry when its serving binary is available;
+3. skip missing vLLM or llama.cpp executables with an explicit log line;
+4. fail only when no backend row succeeds, unless `PLATFORM_MATRIX_STRICT=1` is set.
+
+Install optional serving backends before requiring a full three-row comparison:
+
+    make build-vllm
+    make build-llamacpp
 
 Override the defaults for another common base:
 
@@ -28,6 +33,11 @@ Override the defaults for another common base:
       PLATFORM_MATRIX_LLAMACPP_MODEL=<hf.co-gguf-source> \
       PLATFORM_MATRIX_MAX_MODEL_LEN=8192 \
       PLATFORM_MATRIX_LIMIT=20
+
+Limit or harden the matrix:
+
+    make platform-matrix PLATFORM_MATRIX_BACKENDS="ollama"
+    make platform-matrix PLATFORM_MATRIX_STRICT=1
 
 For a larger Gemma 4 common base, use the 12B artifacts:
 
