@@ -44,8 +44,9 @@ all-in-one and grouped execution:
 - `make quickstart-goldset`: committed-goldset leaderboard flow; grouped targets are
   `quickstart-goldset-setup`, `quickstart-goldset-rag`, `quickstart-goldset-models`,
   `quickstart-goldset-eval`, `quickstart-goldset-security`, and `quickstart-goldset-prompt`.
-- `make quickstart-pdf-corpus`: PDF corpus conversion, RAG indexing, draft goldset, graph, and
-  validation up to the human verification gate; grouped targets are
+- `make quickstart-pdf-corpus`: PDF corpus conversion, RAG indexing, interactive local/frontier
+  drafter selection, full-corpus draft goldset/ontology, graph, and validation up to the human
+  verification gate; grouped targets are
   `quickstart-pdf-corpus-convert`, `quickstart-pdf-corpus-index`,
   `quickstart-pdf-corpus-draft`, `quickstart-pdf-corpus-graph`,
   `quickstart-pdf-corpus-validate`, `quickstart-pdf-corpus-review`,
@@ -55,10 +56,14 @@ all-in-one and grouped execution:
 `$DATA_DIR/llb/logs/quickstart/` with step headings, called commands, metrics emitted by each tool,
 and `[result]` artifact summaries.
 The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
-only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. It also
-defaults the wrapper uv cache to `$DATA_DIR/uv-cache`, skips apt provisioning unless
-`QUICKSTART_SKIP_APT=0`, and re-exports the Make-level `DATA_DIR` after `.env` is loaded so
-wrapper artifacts stay under the requested quickstart root.
+only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. The grouped
+wrappers default the uv cache to `$DATA_DIR/uv-cache`, skip apt provisioning unless
+`QUICKSTART_SKIP_APT=0`, and re-export the Make-level `DATA_DIR` after `.env` is loaded so wrapper
+artifacts stay under the requested quickstart root.
+The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto`; it can
+use existing `llb recommend` benchmark JSON, run the committed-goldset benchmark, accept a manually
+entered local model, or opt into a `frontier` `litellm` route before it estimates and confirms the
+full draft runtime.
 
 Latest validated goldset quickstart evidence on the 16 GiB RTX 4060 Ti host:
 `$DATA_DIR/llb/logs/quickstart/quickstart-goldset-20260630-142055.log`. The run detected

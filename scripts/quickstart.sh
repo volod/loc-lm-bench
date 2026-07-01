@@ -42,6 +42,272 @@ result() {
   printf '[result] %s\n' "$1"
 }
 
+is_yes_value() {
+  case "${1,,}" in
+    1|true|yes|y) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_interactive() {
+  [ -t 0 ] && [ -t 1 ]
+}
+
+prompt_yes_no() {
+  local question="$1"
+  local default="${2:-no}"
+  local suffix answer
+  if is_yes_value "$QS_ASSUME_YES"; then
+    printf '[prompt] %s yes (QUICKSTART_ASSUME_YES=1)\n' "$question"
+    return 0
+  fi
+  if ! is_interactive; then
+    if [ "$default" = "yes" ]; then
+      printf '[prompt] %s yes (non-interactive default)\n' "$question"
+      return 0
+    fi
+    echo "ERROR: this step needs confirmation: $question" >&2
+    echo "Set QUICKSTART_ASSUME_YES=1 or provide QUICKSTART_DRAFT_MODEL explicitly." >&2
+    exit 2
+  fi
+  if [ "$default" = "yes" ]; then
+    suffix="[Y/n]"
+  else
+    suffix="[y/N]"
+  fi
+  read -r -p "$question $suffix " answer
+  answer="${answer:-$default}"
+  is_yes_value "$answer"
+}
+
+prompt_value() {
+  local question="$1"
+  local answer
+  if ! is_interactive; then
+    echo "ERROR: cannot prompt in non-interactive mode: $question" >&2
+    exit 2
+  fi
+  read -r -p "$question " answer
+  printf '%s' "$answer"
+}
+
+quickstart_py() {
+  test -x "$PROJECT_ROOT/.venv/bin/python" || {
+    echo "ERROR: .venv missing -- run make venv first" >&2
+    exit 1
+  }
+  "$PROJECT_ROOT/.venv/bin/python" -m llb.quickstart.model_choice "$@"
+}
+
+list_local_models() {
+  if command -v ollama >/dev/null 2>&1; then
+    ollama list | sed 's/^/[ollama] /'
+  else
+    result "ollama command not found; enter the local endpoint model id manually"
+  fi
+}
+
+pdf_bench_json() {
+  printf '%s/recommend/pdf_model_choice.json' "$QS_PDF_MODEL_BENCH_DATA"
+}
+
+pdf_bench_has_runs() {
+  find "$QS_PDF_MODEL_BENCH_DATA/run-eval" -mindepth 2 -maxdepth 2 -name manifest.json -print -quit \
+    2>/dev/null | grep -q .
+}
+
+write_pdf_bench_recommendation() {
+  local json
+  json="$(pdf_bench_json)"
+  make_with_data_dir "$QS_PDF_MODEL_BENCH_DATA" recommend \
+    RECOMMEND_MIN_CASES="$QS_RECOMMEND_MIN_CASES" \
+    RECOMMEND_JSON_OUT="$json" \
+    RECOMMEND_NO_CHART=1
+  result "model recommendation JSON: $(rel_path "$json")"
+}
+
+run_pdf_model_benchmark() {
+  heading "model" "benchmark local candidates for this host"
+  result "benchmark data dir: $(rel_path "$QS_PDF_MODEL_BENCH_DATA")"
+  if ! prompt_yes_no "The local model benchmark can take roughly 1-4 hours. Proceed?" "no"; then
+    echo "ERROR: model benchmark was not approved" >&2
+    echo "Provide QUICKSTART_DRAFT_MODEL=<local-model-id> or rerun with QUICKSTART_MODEL_SELECTION=choose." >&2
+    exit 2
+  fi
+  track_a_setup
+  track_a_rag
+  track_a_models
+  track_a_eval
+}
+
+select_model_from_benchmark_json() {
+  local json choice count model
+  json="$(pdf_bench_json)"
+  quickstart_py table "$json"
+  case "$QS_MODEL_SELECTION" in
+    auto|benchmark)
+      model="$(quickstart_py selection "$json" recommended_for_host)"
+      if prompt_yes_no "Use recommended local drafter model '$model'?" "yes"; then
+        QS_DRAFT_MODEL="$model"
+        QS_DRAFT_ENDPOINT="local"
+        return 0
+      fi
+      ;;
+  esac
+  count="$(quickstart_py count "$json")"
+  choice="$(prompt_value "Select a model number from 1-$count, or enter a model id:")"
+  case "$choice" in
+    '' ) echo "ERROR: empty model choice" >&2; exit 2 ;;
+    *[!0-9]* ) QS_DRAFT_MODEL="$choice" ;;
+    * )
+      QS_DRAFT_MODEL="$(quickstart_py candidate "$json" "$choice")"
+      ;;
+  esac
+  QS_DRAFT_ENDPOINT="local"
+}
+
+select_manual_local_model() {
+  list_local_models
+  QS_DRAFT_MODEL="$(prompt_value "Enter local model id for ontology drafting:")"
+  test -n "$QS_DRAFT_MODEL" || { echo "ERROR: empty model id" >&2; exit 2; }
+  QS_DRAFT_ENDPOINT="local"
+}
+
+select_frontier_model() {
+  result "frontier mode sends corpus text to the configured provider through litellm"
+  result "set the matching provider API key in the environment before drafting"
+  QS_DRAFT_MODEL="$(prompt_value "Enter litellm model id for frontier drafting:")"
+  test -n "$QS_DRAFT_MODEL" || { echo "ERROR: empty frontier model id" >&2; exit 2; }
+  QS_DRAFT_ENDPOINT="frontier"
+}
+
+select_pdf_draft_model() {
+  if [ "$QS_DRAFT_MODEL" != "auto" ]; then
+    result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT)"
+    return 0
+  fi
+  if [ "$QS_DRAFT_ENDPOINT" = "frontier" ]; then
+    select_frontier_model
+    return 0
+  fi
+
+  case "$QS_MODEL_SELECTION" in
+    auto)
+      if pdf_bench_has_runs; then
+        write_pdf_bench_recommendation
+        select_model_from_benchmark_json
+        return 0
+      fi
+      if ! is_interactive && ! is_yes_value "$QS_ASSUME_YES"; then
+        echo "ERROR: no model benchmark found at $(rel_path "$QS_PDF_MODEL_BENCH_DATA/run-eval")" >&2
+        echo "Run one of:" >&2
+        echo "  make quickstart-goldset QUICKSTART_RUN_SECURITY=0" >&2
+        echo "  QUICKSTART_DRAFT_MODEL=<local-model-id> make quickstart-pdf-corpus" >&2
+        exit 2
+      fi
+      ;;
+    benchmark)
+      run_pdf_model_benchmark
+      write_pdf_bench_recommendation
+      select_model_from_benchmark_json
+      return 0
+      ;;
+    choose)
+      select_manual_local_model
+      return 0
+      ;;
+    external|frontier)
+      select_frontier_model
+      return 0
+      ;;
+    *)
+      echo "ERROR: QUICKSTART_MODEL_SELECTION must be auto, benchmark, choose, or frontier" >&2
+      exit 2
+      ;;
+  esac
+
+  printf '[prompt] No benchmark summary found. Choose model-selection mode:\n'
+  printf '  1) run local benchmark now (recommended)\n'
+  printf '  2) select a local model manually\n'
+  printf '  3) use a frontier model through litellm\n'
+  local choice
+  choice="$(prompt_value "Enter 1, 2, or 3:")"
+  case "$choice" in
+    1|"")
+      run_pdf_model_benchmark
+      write_pdf_bench_recommendation
+      select_model_from_benchmark_json
+      ;;
+    2) select_manual_local_model ;;
+    3) select_frontier_model ;;
+    *) echo "ERROR: unsupported model-selection choice: $choice" >&2; exit 2 ;;
+  esac
+}
+
+pdf_draft_doc_ids() {
+  if [ "$QS_PDF_DRAFT_DOCS" = "all" ]; then
+    find "$QS_PDF_MD" -maxdepth 1 -type f -name '*.md' -printf '%f\n' \
+      | sed 's/\.md$//' \
+      | sort
+  else
+    printf '%s\n' $QS_PDF_DRAFT_DOCS
+  fi
+}
+
+stage_pdf_draft_corpus() {
+  if [ "$QS_PDF_DRAFT_MD" = "$QS_PDF_MD" ]; then
+    echo "ERROR: QUICKSTART_PDF_DRAFT_MD must differ from QUICKSTART_PDF_MD" >&2
+    exit 2
+  fi
+  rm -rf "$QS_PDF_DRAFT_MD"
+  mkdir -p "$QS_PDF_DRAFT_MD"
+  local doc n=0
+  while IFS= read -r doc; do
+    test -n "$doc" || continue
+    test -f "$QS_PDF_MD/$doc.md" || { echo "ERROR: missing $QS_PDF_MD/$doc.md" >&2; exit 1; }
+    test -f "$QS_PDF_MD/$doc.citations.json" || {
+      echo "ERROR: missing $QS_PDF_MD/$doc.citations.json" >&2
+      exit 1
+    }
+    cp -R "$QS_PDF_MD/$doc.md" "$QS_PDF_MD/$doc.citations.json" "$QS_PDF_DRAFT_MD/"
+    n=$((n + 1))
+    printf '[draft-corpus] staged %s\n' "$doc"
+  done < <(pdf_draft_doc_ids)
+  if [ "$n" -eq 0 ]; then
+    echo "ERROR: no markdown documents found under $(rel_path "$QS_PDF_MD")" >&2
+    exit 1
+  fi
+  result "draft input corpus: $(rel_path "$QS_PDF_DRAFT_MD") ($n docs)"
+}
+
+pdf_draft_stats() {
+  local docs chars chunk windows calls tok_s
+  docs="$(find "$QS_PDF_DRAFT_MD" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')"
+  chars="$(find "$QS_PDF_DRAFT_MD" -maxdepth 1 -type f -name '*.md' -print0 \
+    | xargs -0 wc -c 2>/dev/null \
+    | awk 'END {print $1 + 0}')"
+  chunk="${QS_DRAFT_EXTRACT_MAX_CHARS:-12000}"
+  windows=$(( (chars + chunk - 1) / chunk ))
+  calls=$(( windows + QS_DRAFT_MAX_ITEMS ))
+  tok_s=0
+  if [ -f "$(pdf_bench_json)" ] && [ "$QS_DRAFT_ENDPOINT" = "local" ]; then
+    tok_s="$(quickstart_py speed "$(pdf_bench_json)" "$QS_DRAFT_MODEL")"
+  fi
+  if [ "${tok_s%.*}" = "0" ]; then
+    case "$QS_DRAFT_MODEL" in
+      *12B*|*12b*) tok_s=24 ;;
+      *27B*|*27b*|*31b*|*35b*) tok_s=8 ;;
+      *24b*|*26b*) tok_s=12 ;;
+      *) tok_s=16 ;;
+    esac
+  fi
+  local seconds hours
+  seconds="$(awk -v calls="$calls" -v tok="$tok_s" 'BEGIN {printf "%.0f", calls * 500 / tok * 2}')"
+  hours="$(awk -v sec="$seconds" 'BEGIN {printf "%.1f", sec / 3600}')"
+  printf '%s docs, %s chars, about %s extraction windows + %s draft calls, %s hours' \
+    "$docs" "$chars" "$windows" "$QS_DRAFT_MAX_ITEMS" "$hours"
+}
+
 QS_ROOT="$(resolve_path "${QUICKSTART_ROOT:-$DATA_DIR}")"
 QS_LOG_DIR="$(resolve_path "${QUICKSTART_LOG_DIR:-$DATA_DIR/llb/logs/quickstart}")"
 QS_UV_CACHE_DIR="$(resolve_path "${QUICKSTART_UV_CACHE_DIR:-$QS_ROOT/uv-cache}")"
@@ -79,12 +345,21 @@ QS_PDF_DRAFT_MD="$(resolve_path "${QUICKSTART_PDF_DRAFT_MD:-$QS_ROOT/quickstart-
 QS_PDF_DRAFT="$(resolve_path "${QUICKSTART_PDF_DRAFT:-$QS_ROOT/quickstart-pdf-corpus-draft}")"
 QS_PDF_GRAPH_DATA="$(resolve_path "${QUICKSTART_PDF_GRAPH_DATA:-$QS_ROOT/quickstart-pdf-corpus-graph}")"
 QS_PDF_LEADERBOARD_DATA="$(resolve_path "${QUICKSTART_PDF_LEADERBOARD_DATA:-$QS_ROOT/quickstart-pdf-corpus-leaderboard}")"
+QS_PDF_MODEL_BENCH_DATA="$(resolve_path "${QUICKSTART_PDF_MODEL_BENCH_DATA:-$QS_A_DATA}")"
 QS_PDF_ACCEPTED="$(resolve_path "${QUICKSTART_PDF_ACCEPTED:-$QS_PDF_DRAFT/accepted}")"
-QS_PDF_DRAFT_DOCS="${QUICKSTART_PDF_DRAFT_DOCS:-pdf-d2e2499d3d06 pdf-b117ebb25eb7}"
-QS_DRAFT_MODEL="${QUICKSTART_DRAFT_MODEL:-gemma4:e4b}"
-QS_DRAFT_MAX_ITEMS="${QUICKSTART_DRAFT_MAX_ITEMS:-8}"
-QS_DRAFT_VERIFY_N="${QUICKSTART_DRAFT_VERIFY_N:-4}"
-QS_DRAFT_TIMEOUT="${QUICKSTART_DRAFT_TIMEOUT:-600}"
+QS_PDF_DRAFT_DOCS="${QUICKSTART_PDF_DRAFT_DOCS:-all}"
+QS_DRAFT_MODEL="${QUICKSTART_DRAFT_MODEL:-auto}"
+QS_DRAFT_ENDPOINT="${QUICKSTART_DRAFT_ENDPOINT:-local}"
+QS_DRAFT_BASE_URL="${QUICKSTART_DRAFT_BASE_URL:-}"
+QS_DRAFT_MAX_ITEMS="${QUICKSTART_DRAFT_MAX_ITEMS:-180}"
+QS_DRAFT_VERIFY_N="${QUICKSTART_DRAFT_VERIFY_N:-40}"
+QS_DRAFT_TIMEOUT="${QUICKSTART_DRAFT_TIMEOUT:-900}"
+QS_DRAFT_MAX_TOKENS="${QUICKSTART_DRAFT_MAX_TOKENS:-4096}"
+QS_DRAFT_TEMPERATURE="${QUICKSTART_DRAFT_TEMPERATURE:-0}"
+QS_DRAFT_EXTRACT_MAX_CHARS="${QUICKSTART_DRAFT_EXTRACT_MAX_CHARS:-}"
+QS_DRAFT_EXTRACT_CHUNK_OVERLAP="${QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP:-}"
+QS_MODEL_SELECTION="${QUICKSTART_MODEL_SELECTION:-auto}"
+QS_ASSUME_YES="${QUICKSTART_ASSUME_YES:-0}"
 QS_PDF_MIN_CHARS="${QUICKSTART_PDF_MIN_CHARS:-500}"
 QS_PDF_PARSER="${QUICKSTART_PDF_PARSER:-auto}"
 
@@ -273,7 +548,7 @@ track_a_all() {
 track_b_convert() {
   heading "1/2" "prepare PDF/OCR environment"
   result "uv cache: $(rel_path "$UV_CACHE_DIR")"
-  make_cmd venv EXTRAS=pdf-quality
+  make_cmd venv SKIP_APT="$QS_SKIP_APT" EXTRAS=pdf-quality
 
   heading "2/2" "convert PDFs to markdown with citation sidecars"
   make_with_data_dir "$DATA_DIR" pdf-to-markdown \
@@ -292,26 +567,36 @@ track_b_index() {
 }
 
 track_b_draft() {
-  heading "1/2" "stage bounded draft corpus"
-  mkdir -p "$QS_PDF_DRAFT_MD"
-  local doc
-  for doc in $QS_PDF_DRAFT_DOCS; do
-    test -f "$QS_PDF_MD/$doc.md" || { echo "ERROR: missing $QS_PDF_MD/$doc.md" >&2; exit 1; }
-    test -f "$QS_PDF_MD/$doc.citations.json" || {
-      echo "ERROR: missing $QS_PDF_MD/$doc.citations.json" >&2
-      exit 1
-    }
-    cp -R "$QS_PDF_MD/$doc.md" "$QS_PDF_MD/$doc.citations.json" "$QS_PDF_DRAFT_MD/"
-    printf '[draft-corpus] staged %s\n' "$doc"
-  done
-  result "draft input corpus: $(rel_path "$QS_PDF_DRAFT_MD")"
+  heading "1/4" "select draft model"
+  select_pdf_draft_model
+  result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT)"
 
-  heading "2/2" "draft unverified goldset and ontology"
+  heading "2/4" "stage full draft corpus"
+  stage_pdf_draft_corpus
+
+  heading "3/4" "confirm full ontology and goldset draft"
+  local stats
+  stats="$(pdf_draft_stats)"
+  result "estimated draft workload: $stats"
+  result "draft outputs include goldset.jsonl, needle_items.jsonl, ontology.json, extraction.jsonl, pdf_ontology_report.json, prompt_dictionary_candidates.jsonl"
+  if ! prompt_yes_no "The next draft step is expected to take about ${stats##*, }. Proceed?" "no"; then
+    echo "ERROR: full PDF draft was not approved" >&2
+    echo "Rerun with QUICKSTART_ASSUME_YES=1 or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." >&2
+    exit 2
+  fi
+
+  heading "4/4" "draft unverified goldset and ontology"
   make_cmd prepare-goldset-draft \
     DRAFT_CORPUS="$QS_PDF_DRAFT_MD" \
     DRAFT_MODEL="$QS_DRAFT_MODEL" \
+    DRAFT_ENDPOINT="$QS_DRAFT_ENDPOINT" \
+    DRAFT_BASE_URL="$QS_DRAFT_BASE_URL" \
     DRAFT_MAX_ITEMS="$QS_DRAFT_MAX_ITEMS" \
     DRAFT_VERIFY_N="$QS_DRAFT_VERIFY_N" \
+    DRAFT_MAX_TOKENS="$QS_DRAFT_MAX_TOKENS" \
+    DRAFT_TEMPERATURE="$QS_DRAFT_TEMPERATURE" \
+    DRAFT_EXTRACT_MAX_CHARS="$QS_DRAFT_EXTRACT_MAX_CHARS" \
+    DRAFT_EXTRACT_CHUNK_OVERLAP="$QS_DRAFT_EXTRACT_CHUNK_OVERLAP" \
     DRAFT_NO_THINK=1 \
     DRAFT_OUT_DIR="$QS_PDF_DRAFT" \
     DRAFT_TIMEOUT="$QS_DRAFT_TIMEOUT"
@@ -398,7 +683,7 @@ Targets:
   pdf-corpus               PDF corpus conversion + index + draft + graph + validation
   pdf-corpus-convert       PDF to markdown conversion
   pdf-corpus-index         build full PDF-corpus RAG index
-  pdf-corpus-draft         prepare bounded draft corpus and unverified goldset
+  pdf-corpus-draft         select drafter, prepare full draft corpus, and draft unverified goldset
   pdf-corpus-graph         build graph artifacts from the draft bundle
   pdf-corpus-validate      validate draft structure and retrieval
   pdf-corpus-review        interactive human review of verify_sample.csv

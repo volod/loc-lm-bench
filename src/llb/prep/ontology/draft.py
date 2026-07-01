@@ -31,6 +31,10 @@ def _focus_line(seed: DraftSeed) -> str:
         return f"Сфокусуйся на факті: {f.subject} | {f.relation} | {f.object}."
     if seed.entity is not None:
         return f"Сфокусуйся на сутності: {seed.entity.name} (тип {seed.entity.type})."
+    if seed.claim is not None:
+        return f"Сфокусуйся на твердженні: {seed.claim.text}."
+    if seed.event is not None:
+        return f"Сфокусуйся на події: {seed.event.description}."
     return "Сфокусуйся на наведеному фрагменті."
 
 

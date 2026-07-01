@@ -6,14 +6,17 @@ adapter, and the end-to-end bundle are all exercised deterministically.
 """
 
 import json
+import logging
+from pathlib import Path
 
 import pytest
 
 from llb.backends.base import ChatResult
-from llb.goldset.schema import SourceSpan, load_goldset
+from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
 from llb.prep.frontier import ProvenanceLog
 from llb.prep.ontology import endpoint as ep
+from llb.prep.ontology.artifacts import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,
@@ -21,7 +24,7 @@ from llb.prep.ontology.constants import (
     PROVENANCE_KIND,
 )
 from llb.prep.ontology.coverage import build_seeds, classify_difficulty, sample_seeds
-from llb.prep.ontology.draft import context_window, draft_for_seed
+from llb.prep.ontology.draft import context_window, draft_for_seed, draft_prompt
 from llb.prep.ontology.endpoint import EndpointConfig, build_complete
 from llb.prep.ontology.extract import LLMExtractionAdapter, parse_extraction
 from llb.prep.ontology.induce import induce_ontology
@@ -31,7 +34,15 @@ from llb.prep.ontology.inventory import (
     segment_sections,
     sha256_text,
 )
-from llb.prep.ontology.models import DocRecord, DraftSeed, SROFact
+from llb.prep.ontology.models import (
+    Claim,
+    DocExtraction,
+    DocRecord,
+    DraftSeed,
+    Entity,
+    OntologyCandidate,
+    SROFact,
+)
 from llb.prep.ontology.pipeline import draft_goldset
 from llb.prep.ontology.refine import is_circular, refine_drafts
 
@@ -262,8 +273,46 @@ def test_build_seeds_tags_section_and_difficulty():
     seeds = build_seeds(docs, [extraction])
     fact_seed = next(s for s in seeds if s.kind == "fact")
     assert fact_seed.strata["section"] == "Київ"
+    assert fact_seed.strata["doc"] == "a.md"
     assert fact_seed.strata["relation"] == "столиця"
     assert fact_seed.difficulty == "hard"  # rare relation (count 1)
+
+
+def test_build_seeds_includes_claims_and_events():
+    docs = [
+        DocRecord(
+            doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1), sections=segment_sections(DOC1)
+        ),
+        DocRecord(
+            doc_id="b.md", text=DOC2, sha256="y", n_chars=len(DOC2), sections=segment_sections(DOC2)
+        ),
+    ]
+    extraction_a = parse_extraction(
+        "a.md",
+        DOC1,
+        {"claims": [{"text": "Київ є столицею", "evidence": "Київ є столицею України"}]},
+    )
+    extraction_b = parse_extraction(
+        "b.md",
+        DOC2,
+        {
+            "events": [
+                {"description": "заснування міста", "evidence": "Місто засноване у 1256 році"}
+            ]
+        },
+    )
+
+    seeds = build_seeds(docs, [extraction_a, extraction_b])
+    claim_seed = next(s for s in seeds if s.kind == "claim")
+    event_seed = next(s for s in seeds if s.kind == "event")
+
+    assert claim_seed.claim is not None and claim_seed.strata["doc"] == "a.md"
+    # the claim's distinguishing coverage bucket is the claim text (not the section, which the
+    # base strata already covers), so distinct claims in one section each get sampled
+    assert claim_seed.strata["claim"] == "Київ є столицею"
+    assert event_seed.event is not None and event_seed.strata["event"] == "заснування міста"
+    assert "Сфокусуйся на твердженні:" in draft_prompt(claim_seed, DOC1)
+    assert "Сфокусуйся на події:" in draft_prompt(event_seed, DOC2)
 
 
 # --- stage 5: drafting -----------------------------------------------------------------------
@@ -525,11 +574,20 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     assert set(prov["prompts"]) == {"extraction", "draft"}
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
+    assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
     report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
     assert report["grounded_facts"] == 4
+    assert report["grounded_claims"] == 1 and report["grounded_events"] == 1
     assert report["dictionary_term_yield"] > 0
     assert (out / PROMPT_DICTIONARY_FILENAME).is_file()
     assert (out / NEEDLE_GOLDSET_FILENAME).is_file()
+    # non-PDF corpus: grounded extractions + a non-empty gold set pass; the citation-needle gate is
+    # not applicable (no page sidecars) and does not block.
+    gates = report["gates"]
+    assert gates["nonzero_grounded_extractions"] is True
+    assert gates["nonzero_draft_items"] is True
+    assert gates["pdf_citation_gate_applicable"] is False
+    assert gates["passed"] is True
 
 
 def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
@@ -618,12 +676,95 @@ def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
     assert report["item_page_span_citation_coverage"]["coverage"] == 1.0
     needles = load_goldset(out / NEEDLE_GOLDSET_FILENAME)
     assert len(needles) == report["citation_valid_needle_items"] >= 1
+    # PDF corpus: the citation-needle gate is applicable and, with valid needles, the roll-up passes
+    assert report["gates"]["pdf_citation_gate_applicable"] is True
+    assert report["gates"]["has_citation_valid_needles"] is True
+    assert report["gates"]["passed"] is True
     dictionary = [
         json.loads(line)
         for line in (out / PROMPT_DICTIONARY_FILENAME).read_text(encoding="utf-8").splitlines()
     ]
     entity = next(row for row in dictionary if row["term"] == "Київська міська рада")
     assert entity["examples"][0]["pdf_pages"][0]["source"] == "source.pdf"
+
+
+def _grounded_span(doc_id: str, text: str, quote: str) -> SourceSpan:
+    start = text.index(quote)
+    return SourceSpan(doc_id=doc_id, char_start=start, char_end=start + len(quote), text=quote)
+
+
+def test_calibration_gates_pass_without_sro_facts(tmp_path):
+    # a corpus rich in entities/claims but with ZERO SRO facts still yields a usable gold set: the
+    # roll-up passes on grounded extractions + a non-empty gold set, and does NOT require facts.
+    out = tmp_path / "bundle"
+    out.mkdir()
+    span = _grounded_span("a.md", DOC1, "Київ")
+    docs = [DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))]
+    extraction = DocExtraction(
+        doc_id="a.md",
+        entities=[Entity(name="Київ", type="LOC", mentions=[span])],
+        claims=[Claim(text="Київ є столицею", evidence=span)],
+    )
+    item = GoldItem(
+        id="q1",
+        question="Що згадано у документі?",
+        reference_answer="Київ",
+        source_doc_id="a.md",
+        source_spans=[span],
+        provenance=PROVENANCE_KIND,
+        split="final",
+    )
+    report = write_calibration_artifacts(
+        out, docs, [extraction], OntologyCandidate(), [item], elapsed_s=0.0, settings={}
+    )
+    gates = report["gates"]
+    assert gates["nonzero_grounded_facts"] is False  # no SRO facts...
+    assert gates["nonzero_grounded_extractions"] is True  # ...but entities + claims are grounded
+    assert gates["nonzero_draft_items"] is True
+    assert gates["pdf_citation_gate_applicable"] is False
+    assert gates["passed"] is True
+
+
+def test_calibration_gates_fail_on_empty_draft(tmp_path):
+    # no grounded evidence and no drafted items -> the roll-up fails so the operator does not accept
+    out = tmp_path / "bundle"
+    out.mkdir()
+    docs = [DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))]
+    report = write_calibration_artifacts(
+        out,
+        docs,
+        [DocExtraction(doc_id="a.md")],
+        OntologyCandidate(),
+        [],
+        elapsed_s=0.0,
+        settings={},
+    )
+    gates = report["gates"]
+    assert gates["nonzero_grounded_extractions"] is False
+    assert gates["nonzero_draft_items"] is False
+    assert gates["passed"] is False
+
+
+def test_pipeline_warns_and_names_the_blocking_gate(caplog):
+    # the pipeline acts on the roll-up: a failing required gate is a WARNING that names it, so a
+    # PDF run with no citation-valid needle is flagged (informational gates never appear here)
+    from llb.prep.ontology.pipeline import _log_calibration_gates
+
+    report = {
+        "gates": {
+            "nonzero_grounded_extractions": True,
+            "nonzero_grounded_facts": False,  # informational: must NOT be named as a blocker
+            "nonzero_draft_items": True,
+            "has_citation_valid_needles": False,
+            "pdf_citation_gate_applicable": True,
+            "passed": False,
+        }
+    }
+    with caplog.at_level(logging.WARNING):
+        _log_calibration_gates(report, Path("/tmp/bundle"))
+    assert "NOT passed" in caplog.text
+    assert "has_citation_valid_needles" in caplog.text
+    assert "nonzero_grounded_facts" not in caplog.text
 
 
 def test_full_flow_does_not_write_when_write_false(tmp_path):

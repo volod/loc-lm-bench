@@ -28,7 +28,11 @@ from llb.goldset.schema import GoldItem, Split, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.paths import resolve_data_dir
 from llb.prep.frontier import LLMComplete, ProvenanceLog
-from llb.prep.ontology.artifacts import copy_pdf_citation_sidecars, write_calibration_artifacts
+from llb.prep.ontology.artifacts import (
+    copy_pdf_citation_sidecars,
+    required_gate_names,
+    write_calibration_artifacts,
+)
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     DEFAULT_MAX_ITEMS,
@@ -38,6 +42,7 @@ from llb.prep.ontology.constants import (
     GOLDSET_FILENAME,
     METHOD_DIR,
     ONTOLOGY_FILENAME,
+    PDF_ONTOLOGY_REPORT_FILENAME,
     PROVENANCE_FILENAME,
     PROVENANCE_KIND,
 )
@@ -133,6 +138,8 @@ def _provenance(
         "stages": {
             "documents": len(result.docs),
             "entities": sum(len(e.entities) for e in result.extractions),
+            "events": sum(len(e.events) for e in result.extractions),
+            "claims": sum(len(e.claims) for e in result.extractions),
             "facts": sum(len(e.facts) for e in result.extractions),
             "ontology_entity_types": len(result.ontology.entity_types),
             "ontology_relation_types": len(result.ontology.relation_types),
@@ -175,6 +182,30 @@ def _write_bundle(
         "[ontology] wrote %d drafts (verified=false) + provenance -> %s",
         len(result.items),
         out_dir,
+    )
+    _log_calibration_gates(result.calibration_report, out_dir)
+
+
+def _log_calibration_gates(report: dict[str, object] | None, out_dir: Path) -> None:
+    """Surface the calibration roll-up so `prepare-goldset-draft` (and the quickstart wrapper) act
+    on the gate, not just record it. A failing gate is a WARNING, never fatal: the bundle is always
+    written for inspection, and the human verification gate remains the real block on scoring."""
+    gates = report.get("gates") if isinstance(report, dict) else None
+    if not isinstance(gates, dict):
+        return
+    if gates.get("passed"):
+        _LOG.info(
+            "[ontology] calibration gates passed -> %s", out_dir / PDF_ONTOLOGY_REPORT_FILENAME
+        )
+        return
+    # name only the REQUIRED gates that blocked the roll-up (informational gates like
+    # nonzero_grounded_facts, and the needle gate on a non-PDF corpus, never appear here)
+    required = required_gate_names(bool(gates.get("pdf_citation_gate_applicable")))
+    failed = [name for name in required if not gates.get(name)]
+    _LOG.warning(
+        "[ontology] calibration gates NOT passed (%s); inspect %s before accepting this bundle",
+        ", ".join(failed) or "see report",
+        out_dir / PDF_ONTOLOGY_REPORT_FILENAME,
     )
 
 

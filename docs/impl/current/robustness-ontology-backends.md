@@ -129,8 +129,15 @@ For PDF-derived corpora, `pipeline.py` copies matching PDF citation sidecars int
 `artifacts.py` writes the calibration report, source-backed prompt dictionary candidates, and
 citation-valid needle items. The report records the bounded-probe settings (`doc_limit`,
 `extract_max_chars`, `max_items`, seed), elapsed time, parse rate, page-span coverage, grounded
-fact count, dictionary-term yield, and simple gates for nonzero facts, dictionary candidates, and
-needle items.
+entity/event/claim/fact counts, dictionary-term yield, and quality gates. The gates broadened past
+"nonzero SRO facts": grounding counts if the extraction produced evidence of ANY kind
+(`nonzero_grounded_extractions`), the gold set must be non-empty (`nonzero_draft_items`), and for
+PDF corpora at least one citation-valid needle must exist (`has_citation_valid_needles`, marked
+applicable by `pdf_citation_gate_applicable`). A single `passed` roll-up ANDs the required gates
+(the needle gate only when page sidecars exist); `nonzero_grounded_facts` stays informational since
+SRO relations power the GraphRAG store but no longer solely block a fact-sparse corpus. The
+pipeline logs the roll-up (WARNING when it fails), and a failing gate is never fatal -- the bundle
+is always written for inspection and the human verification gate remains the real block on scoring.
 
 Every emitted gold item remains `verified=false`. The bundle must pass cross-check and human
 verification before it can score real models.
@@ -151,5 +158,5 @@ honored and JSON extraction is not spent on hidden reasoning.
 
 The one-document probe path is the default safety valve before a multi-hour full PDF run:
 `DRAFT_DOC_LIMIT=1` bounds documents and `DRAFT_EXTRACT_MAX_CHARS=<n>` bounds each extraction
-window. Increase those only after `pdf_ontology_report.json` shows nonzero grounded facts and
-usable citation coverage.
+window. Increase those only after `pdf_ontology_report.json` shows `gates.passed` (grounded
+extractions, a non-empty gold set, and citation-valid needles) and usable citation coverage.

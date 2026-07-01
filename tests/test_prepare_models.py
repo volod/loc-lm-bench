@@ -26,7 +26,11 @@ def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
     tier_json.write_text(
         """{
   "targets": [
-    {"target": "mamaylm", "backend": "ollama", "model": "hf.co/org/mamay:Q4_K_M"},
+    {
+      "target": "mamaylm",
+      "backend": "ollama",
+      "model": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M"
+    },
     {"target": "gemma-4-vllm", "backend": "vllm", "model": "org/gemma"}
   ]
 }
@@ -40,7 +44,7 @@ def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
         {
             "name": "serving-mamaylm",
             "backend": "ollama",
-            "source": "hf.co/org/mamay:Q4_K_M",
+            "source": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M",
             "min_vram_gb": 0,
             "notes": "generated serving-tier target",
         },
@@ -153,13 +157,13 @@ def test_plan_filters_by_backend():
 def test_plan_expands_per_backend_sources():
     models = [
         {
-            "name": "mamay",
+            "name": "mamaylm-v2-12b",
             "backend": "vllm",
-            "source": "org/mamay-bf16",
+            "source": "INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0",
             "min_vram_gb": 26,
             "sources": {
                 "ollama": {
-                    "source": "hf.co/org/mamay-gguf:Q4_K_M",
+                    "source": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M",
                     "quant": "q4_k_m",
                     "min_vram_gb": 8,
                 }
@@ -170,9 +174,12 @@ def test_plan_expands_per_backend_sources():
     rows = prepare.plan(models, max_mb=16000, has_gpu=True, backend_filter="all", force=False)
 
     by_name = {r["name"]: r for r in rows}
-    assert by_name["mamay"]["action"] == prepare.ACTION_SKIP
-    assert by_name["mamay-ollama"]["action"] == prepare.ACTION_PULL
-    assert by_name["mamay-ollama"]["source"] == "hf.co/org/mamay-gguf:Q4_K_M"
+    assert by_name["mamaylm-v2-12b"]["action"] == prepare.ACTION_SKIP
+    assert by_name["mamaylm-v2-12b-ollama"]["action"] == prepare.ACTION_PULL
+    assert (
+        by_name["mamaylm-v2-12b-ollama"]["source"]
+        == "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M"
+    )
 
 
 def test_plan_expands_multi_quant_vllm_list():

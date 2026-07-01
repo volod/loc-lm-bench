@@ -1,5 +1,6 @@
 """Streamlit board and MLflow UI commands."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,7 @@ def recommend_cmd(
     chart: Optional[Path] = typer.Option(
         None, help="comparison chart PNG path (default: $DATA_DIR/recommend/comparison.png)"
     ),
+    json_out: Optional[Path] = typer.Option(None, help="machine-readable recommendation JSON path"),
     min_cases: int = typer.Option(
         1, help="drop bundles with fewer scored cases (filters partial/smoke runs)"
     ),
@@ -78,6 +80,7 @@ def recommend_cmd(
         format_summary_md,
         load_config_cells,
         load_run_summaries,
+        recommendation_payload,
     )
     from llb.inference.generate import resolve_tier
     from llb.paths import resolve_data_dir
@@ -112,6 +115,14 @@ def recommend_cmd(
     out.write_text(full_md + "\n", encoding="utf-8")
     typer.echo(full_md)
     typer.echo(f"\n[recommend] summary -> {out}")
+
+    if json_out is not None:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(
+            json.dumps(recommendation_payload(rec), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        typer.echo(f"[recommend] json -> {json_out}")
 
     if not no_chart:
         from llb.board.charts import render_comparison_chart

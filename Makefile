@@ -39,6 +39,7 @@ GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
 DRAFT_MODEL ?= gemma4:e4b
 DRAFT_ENDPOINT ?= local
+DRAFT_BASE_URL ?=
 DRAFT_MAX_ITEMS ?= 60
 DRAFT_CORPUS ?= $(CORPUS)
 DRAFT_DOC_LIMIT ?=
@@ -96,6 +97,8 @@ BOARD_PORT ?= 8501
 RECOMMEND_MIN_CASES ?= 1
 RECOMMEND_GPU_GB ?=
 RECOMMEND_MIN_TOK_S ?=
+RECOMMEND_JSON_OUT ?=
+RECOMMEND_NO_CHART ?=
 SWEEP_ID ?= run1
 SWEEP_MAX_MODEL_LEN ?= 8192
 SWEEP_OFFLINE ?=
@@ -204,6 +207,7 @@ QUICKSTART_PREP_SERVING_TARGETS ?= 1
 QUICKSTART_RUN_SWEEP ?= 1
 QUICKSTART_RUN_PLATFORM_MATRIX ?= 1
 QUICKSTART_RUN_SECURITY ?= 1
+QUICKSTART_RECOMMEND_MIN_CASES ?= $(RECOMMEND_MIN_CASES)
 QUICKSTART_GPU_GB ?=
 QUICKSTART_PROMPT_DIR ?= $(QUICKSTART_A_DATA_DIR)/prompt-system/quickstart
 QUICKSTART_PROMPT_ID ?=
@@ -218,25 +222,39 @@ QUICKSTART_PDF_DRAFT_MD ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-draft-md
 QUICKSTART_PDF_DRAFT ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-draft
 QUICKSTART_PDF_GRAPH_DATA ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-graph
 QUICKSTART_PDF_LEADERBOARD_DATA ?= $(QUICKSTART_ROOT)/quickstart-pdf-corpus-leaderboard
+QUICKSTART_PDF_MODEL_BENCH_DATA ?= $(QUICKSTART_A_DATA_DIR)
 QUICKSTART_PDF_ACCEPTED ?= $(QUICKSTART_PDF_DRAFT)/accepted
-QUICKSTART_PDF_DRAFT_DOCS ?= pdf-d2e2499d3d06 pdf-b117ebb25eb7
-QUICKSTART_DRAFT_MODEL ?= gemma4:e4b
-QUICKSTART_DRAFT_MAX_ITEMS ?= 8
-QUICKSTART_DRAFT_VERIFY_N ?= 4
-QUICKSTART_DRAFT_TIMEOUT ?= 600
+QUICKSTART_PDF_DRAFT_DOCS ?= all
+QUICKSTART_DRAFT_MODEL ?= auto
+QUICKSTART_DRAFT_ENDPOINT ?= local
+QUICKSTART_DRAFT_BASE_URL ?=
+QUICKSTART_DRAFT_MAX_ITEMS ?= 180
+QUICKSTART_DRAFT_VERIFY_N ?= 40
+QUICKSTART_DRAFT_TIMEOUT ?= 900
+QUICKSTART_DRAFT_MAX_TOKENS ?= 4096
+QUICKSTART_DRAFT_TEMPERATURE ?= 0
+QUICKSTART_DRAFT_EXTRACT_MAX_CHARS ?=
+QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP ?=
+QUICKSTART_MODEL_SELECTION ?= auto
+QUICKSTART_ASSUME_YES ?= 0
 QUICKSTART_PDF_MIN_CHARS ?= 500
 QUICKSTART_PDF_PARSER ?= auto
 export QUICKSTART_ROOT QUICKSTART_LOG_DIR QUICKSTART_UV_CACHE_DIR QUICKSTART_A_DATA_DIR QUICKSTART_A_GOLDSET
 export QUICKSTART_A_CORPUS QUICKSTART_A_SWEEP_ID QUICKSTART_SKIP_APT QUICKSTART_SETUP_VENV
 export QUICKSTART_PREP_MODELS QUICKSTART_PREP_SERVING_TARGETS QUICKSTART_RUN_SWEEP
-export QUICKSTART_RUN_PLATFORM_MATRIX QUICKSTART_RUN_SECURITY QUICKSTART_GPU_GB
+export QUICKSTART_RUN_PLATFORM_MATRIX QUICKSTART_RUN_SECURITY QUICKSTART_RECOMMEND_MIN_CASES
+export QUICKSTART_GPU_GB
 export QUICKSTART_PROMPT_DIR QUICKSTART_PROMPT_ID QUICKSTART_SECURITY_MODEL
 export QUICKSTART_SECURITY_BACKEND QUICKSTART_SECURITY_CASES QUICKSTART_SECURITY_VERIFICATION_REF
 export QUICKSTART_PDF_SOURCE QUICKSTART_PDF_MD QUICKSTART_PDF_RAG_DATA
 export QUICKSTART_PDF_DRAFT_MD QUICKSTART_PDF_DRAFT QUICKSTART_PDF_GRAPH_DATA
-export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_ACCEPTED QUICKSTART_PDF_DRAFT_DOCS
-export QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
-export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_PDF_MIN_CHARS QUICKSTART_PDF_PARSER
+export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_MODEL_BENCH_DATA QUICKSTART_PDF_ACCEPTED
+export QUICKSTART_PDF_DRAFT_DOCS QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_ENDPOINT
+export QUICKSTART_DRAFT_BASE_URL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
+export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_DRAFT_MAX_TOKENS QUICKSTART_DRAFT_TEMPERATURE
+export QUICKSTART_DRAFT_EXTRACT_MAX_CHARS QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP
+export QUICKSTART_MODEL_SELECTION QUICKSTART_ASSUME_YES QUICKSTART_PDF_MIN_CHARS
+export QUICKSTART_PDF_PARSER
 export MODELS_MANIFEST RAG_K SPLIT HF_HUB_OFFLINE SECURITY_CASES SECURITY_VERIFICATION_REF
 export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL SECURITY_MAX_MODEL_LEN
 export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
@@ -269,7 +287,7 @@ quickstart-goldset-security: ## Quickstart group: run model security tests as a 
 quickstart-goldset-prompt: ## Quickstart group: prompt candidates; set QUICKSTART_PROMPT_ID=<id> to pin and score
 	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" goldset-prompt
 
-quickstart-pdf-corpus: ## Quickstart all-in-one: PDF corpus -> markdown -> RAG -> draft goldset -> graph -> validation
+quickstart-pdf-corpus: ## Quickstart all-in-one: PDF corpus -> RAG -> full goldset/ontology draft -> graph -> validation
 	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus
 
 quickstart-pdf-corpus-convert: ## Quickstart group: convert QUICKSTART_PDF_SOURCE PDFs to markdown/citations
@@ -278,7 +296,7 @@ quickstart-pdf-corpus-convert: ## Quickstart group: convert QUICKSTART_PDF_SOURC
 quickstart-pdf-corpus-index: ## Quickstart group: build full PDF-corpus RAG index
 	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-index
 
-quickstart-pdf-corpus-draft: ## Quickstart group: stage draft corpus and draft unverified goldset/ontology
+quickstart-pdf-corpus-draft: ## Quickstart group: select drafter and draft full unverified PDF goldset/ontology
 	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-draft
 
 quickstart-pdf-corpus-graph: ## Quickstart group: build graph artifacts from the draft bundle
@@ -342,7 +360,9 @@ recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main recommend --min-cases "$(RECOMMEND_MIN_CASES)" \
 		$(if $(RECOMMEND_GPU_GB),--gpu-gb $(RECOMMEND_GPU_GB),) \
-		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),)
+		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),) \
+		$(if $(RECOMMEND_JSON_OUT),--json-out "$(RECOMMEND_JSON_OUT)",) \
+		$(if $(filter 1 true yes,$(RECOMMEND_NO_CHART)),--no-chart,)
 
 venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
@@ -493,6 +513,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --timeout "$(DRAFT_TIMEOUT)" \
 	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
 	); \
+	if [ -n "$(DRAFT_BASE_URL)" ]; then args+=(--base-url "$(DRAFT_BASE_URL)"); fi; \
 	if [ -n "$(DRAFT_DOC_LIMIT)" ]; then args+=(--doc-limit "$(DRAFT_DOC_LIMIT)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \

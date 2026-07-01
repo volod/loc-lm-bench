@@ -417,6 +417,48 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join([head, sep, *body])
 
 
+def recommendation_payload(rec: Recommendation) -> JsonObject:
+    """Machine-readable form of the recommendation summary for orchestration scripts."""
+    by_model = {s.model: s for s in rec.summaries}
+
+    def item(summary: RunSummary | None) -> JsonObject | None:
+        if summary is None:
+            return None
+        config = summary.record.config if isinstance(summary.record.config, dict) else {}
+        return {
+            "model": summary.model,
+            "label": _short(summary.model),
+            "backend": summary.result.backend,
+            "objective": summary.result.objective_score,
+            "reliability": summary.result.reliability,
+            "tokens_per_s": summary.result.tokens_per_s,
+            "peak_vram_mb": summary.result.peak_vram_mb,
+            "quality_per_watt": summary.quality_per_watt,
+            "n_cases": summary.result.n_cases,
+            "top_k": config.get("top_k"),
+            "recall_at_k": summary.recall_at_k,
+            "mrr": summary.mrr,
+        }
+
+    candidates = [item(by_model[row["model"]]) for row in rec.ranked]
+    return {
+        "host": {
+            "tier_gb": rec.host.tier_gb,
+            "total_mb": rec.host.total_mb,
+            "gpu_name": rec.host.gpu_name,
+            "detected": rec.host.detected,
+        },
+        "selection": {
+            "recommended_for_host": item(rec.recommended_for_host),
+            "best_quality": item(rec.best_quality),
+            "best_efficiency": item(rec.best_efficiency),
+            "fastest": item(rec.fastest),
+        },
+        "rag_config": rec.rag_config,
+        "candidates": [candidate for candidate in candidates if candidate is not None],
+    }
+
+
 def format_config_detail_md(cells: list[RunSummary]) -> str:
     """Render the detailed (model x config) proof: one row per (model, top_k) cell of the ranked
     cohort, grouped by model with each model's best config marked. '' when there are no cells.

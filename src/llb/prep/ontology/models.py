@@ -88,17 +88,19 @@ class OntologyCandidate(BaseModel):
 
 
 class DraftSeed(BaseModel):
-    """Stage 4: a stratified target for one drafted QA item (a fact or an entity-in-section).
+    """Stage 4: a stratified target for one drafted QA item.
 
     `strata` records which coverage buckets the seed fills; `evidence` is the span the drafter
-    must keep the answer inside; `fact`/`entity` carry the focus payload (exactly one is set).
+    must keep the answer inside; exactly one focus payload is set.
     """
 
     doc_id: str
-    kind: str  # "fact" | "entity"
+    kind: str  # "fact" | "entity" | "claim" | "event"
     section_title: str
     difficulty: str  # "easy" | "medium" | "hard"
     strata: dict[str, str] = Field(default_factory=dict)
     evidence: SourceSpan
     fact: SROFact | None = None
     entity: Entity | None = None
+    claim: Claim | None = None
+    event: Event | None = None
