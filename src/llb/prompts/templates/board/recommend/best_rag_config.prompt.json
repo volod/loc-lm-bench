@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.best_rag_config",
+  "kind": "text",
+  "template": "best_rag_config.txt"
+}

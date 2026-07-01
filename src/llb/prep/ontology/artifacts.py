@@ -249,6 +249,51 @@ def _write_jsonl(rows: list[dict[str, object]], path: Path) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+# The gates whose AND is the `passed` roll-up. Every corpus needs grounded evidence of ANY kind
+# and a non-empty gold set; PDF-derived corpora additionally need a citation-valid needle item.
+_CORPUS_REQUIRED_GATES = ("nonzero_grounded_extractions", "nonzero_draft_items")
+_PDF_REQUIRED_GATE = "has_citation_valid_needles"
+
+
+def required_gate_names(has_pdf_sidecars: bool) -> list[str]:
+    """The single source of truth for which gates block the `passed` roll-up (see `_gates`)."""
+    names = list(_CORPUS_REQUIRED_GATES)
+    if has_pdf_sidecars:
+        names.append(_PDF_REQUIRED_GATE)
+    return names
+
+
+def _gates(
+    *,
+    grounded_total: int,
+    grounded_facts: int,
+    n_items: int,
+    has_dictionary: bool,
+    n_needles: int,
+    has_pdf_sidecars: bool,
+) -> dict[str, bool]:
+    """Quality gates for a drafted bundle, plus a single PDF-aware `passed` roll-up.
+
+    `passed` is the operator/orchestration signal for "this draft is worth reviewing". It requires
+    grounded evidence of ANY kind (entity/event/claim/fact -- a corpus rich in entities/claims but
+    sparse in SRO relations is still valid) AND a non-empty gold set. For PDF-derived corpora it
+    additionally requires at least one citation-valid needle item, since the needle-in-haystack set
+    is the point of a PDF run; a plain-text corpus has no page sidecars to validate against, so that
+    gate is not applicable and does not block. `nonzero_grounded_facts` stays as an informational
+    signal (SRO relations power the GraphRAG store) but is no longer the sole blocker.
+    """
+    gates = {
+        "nonzero_grounded_extractions": grounded_total > 0,
+        "nonzero_grounded_facts": grounded_facts > 0,
+        "nonzero_draft_items": n_items > 0,
+        "has_prompt_dictionary_candidates": has_dictionary,
+        "has_citation_valid_needles": n_needles > 0,
+        "pdf_citation_gate_applicable": has_pdf_sidecars,
+    }
+    gates["passed"] = all(gates[name] for name in required_gate_names(has_pdf_sidecars))
+    return gates
+
+
 def write_calibration_artifacts(
     out_dir: Path | str,
     docs: list[DocRecord],
@@ -272,13 +317,18 @@ def write_calibration_artifacts(
     nonempty_docs = sum(
         1
         for extraction in extractions
-        if extraction.entities or extraction.facts or extraction.claims
+        if extraction.entities or extraction.facts or extraction.claims or extraction.events
     )
     evidence_spans = _evidence_spans(extractions)
     item_spans = [span for item in items for span in item.source_spans]
     facts_by_doc: dict[str, int] = defaultdict(int)
     for extraction in extractions:
         facts_by_doc[extraction.doc_id] += len(extraction.facts)
+
+    grounded_entities = sum(len(extraction.entities) for extraction in extractions)
+    grounded_events = sum(len(extraction.events) for extraction in extractions)
+    grounded_facts = sum(len(extraction.facts) for extraction in extractions)
+    grounded_claims = sum(len(extraction.claims) for extraction in extractions)
 
     report: dict[str, object] = {
         "kind": "pdf-ontology-calibration",
@@ -287,9 +337,10 @@ def write_calibration_artifacts(
         "documents": len(docs),
         "documents_with_nonempty_extraction": nonempty_docs,
         "parse_rate": _ratio(nonempty_docs, len(docs)),
-        "grounded_entities": sum(len(extraction.entities) for extraction in extractions),
-        "grounded_facts": sum(len(extraction.facts) for extraction in extractions),
-        "grounded_claims": sum(len(extraction.claims) for extraction in extractions),
+        "grounded_entities": grounded_entities,
+        "grounded_events": grounded_events,
+        "grounded_facts": grounded_facts,
+        "grounded_claims": grounded_claims,
         "ontology_entity_types": len(ontology.entity_types),
         "ontology_relation_types": len(ontology.relation_types),
         "draft_items": len(items),
@@ -303,11 +354,14 @@ def write_calibration_artifacts(
             "prompt_dictionary_candidates": PROMPT_DICTIONARY_FILENAME,
             "needle_items": NEEDLE_GOLDSET_FILENAME,
         },
-        "gates": {
-            "nonzero_grounded_facts": bool(sum(len(e.facts) for e in extractions) > 0),
-            "has_prompt_dictionary_candidates": bool(dictionary),
-            "has_citation_valid_needles": bool(needles),
-        },
+        "gates": _gates(
+            grounded_total=grounded_entities + grounded_events + grounded_facts + grounded_claims,
+            grounded_facts=grounded_facts,
+            n_items=len(items),
+            has_dictionary=bool(dictionary),
+            n_needles=len(needles),
+            has_pdf_sidecars=bool(citation_index),
+        ),
     }
     (root / PDF_ONTOLOGY_REPORT_FILENAME).write_text(
         json.dumps(report, ensure_ascii=False, indent=2),

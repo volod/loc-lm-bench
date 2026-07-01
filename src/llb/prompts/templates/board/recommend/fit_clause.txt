@@ -1,0 +1,1 @@
+fits the {{ tier_gb }} GiB VRAM budget with headroom

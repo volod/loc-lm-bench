@@ -7,10 +7,7 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-None open. The `recommend-comparable-cohort` (dominant `(split, n_cases)` cohort) and
-`sweep-rag-config-axis` (opt-in `--rag-grid top_k=...`) tasks have shipped; their behavior now lives
-in [`rigor-board-judge.md`](current/rigor-board-judge.md#recommendation-summary) and
-[`rag-core.md`](current/rag-core.md#sweep-rag-config-grid). Add the next item per the rules below.
+None open. Add the next item per the rules below.
 
 ## Adding Future Tasks
 

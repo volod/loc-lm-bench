@@ -1,0 +1,1 @@
+ and clears the {{ floor }} tok/s performance floor

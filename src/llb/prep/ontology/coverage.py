@@ -1,10 +1,10 @@
-"""Stage 4 -- sample seeds with coverage across entity types, relations, sections, difficulty.
+"""Stage 4 -- sample seeds with coverage across document, semantic type, section, difficulty.
 
-Each extracted fact (and each entity) becomes a candidate `DraftSeed` tagged with the coverage
-buckets it fills. Selection is a deterministic, seeded greedy: shuffle once, then take seeds
-that introduce a not-yet-covered bucket first (so the drafted set spans relations / entity
-types / sections / difficulty), then fill any remaining budget in shuffled order. Deterministic
-for a given (extractions, seed, max_items).
+Each extracted fact, entity, claim, and event becomes a candidate `DraftSeed` tagged with the
+coverage buckets it fills. Selection is a deterministic, seeded greedy: shuffle once, then take
+seeds that introduce a not-yet-covered bucket first (so the drafted set spans documents,
+relations / entity types / claims / events, sections, and difficulty), then fill any remaining
+budget in shuffled order. Deterministic for a given (extractions, seed, max_items).
 """
 
 import logging
@@ -32,8 +32,17 @@ def classify_difficulty(evidence_len: int, *, rare: bool) -> str:
     return "medium"
 
 
+def _base_strata(doc_id: str, section: str, difficulty: str) -> dict[str, str]:
+    """Coverage buckets shared by every seed kind."""
+    return {
+        "doc": doc_id,
+        "section": section,
+        "difficulty": difficulty,
+    }
+
+
 def build_seeds(docs: list[DocRecord], extractions: list[DocExtraction]) -> list[DraftSeed]:
-    """Build the candidate seed pool (facts + entities), each tagged with its coverage strata."""
+    """Build the candidate seed pool, each item tagged with its coverage strata."""
     by_id = {doc.doc_id: doc for doc in docs}
     relation_counts: dict[str, int] = defaultdict(int)
     for extraction in extractions:
@@ -56,9 +65,8 @@ def build_seeds(docs: list[DocRecord], extractions: list[DocExtraction]) -> list
                     section_title=section,
                     difficulty=difficulty,
                     strata={
+                        **_base_strata(doc.doc_id, section, difficulty),
                         "relation": fact.relation,
-                        "section": section,
-                        "difficulty": difficulty,
                     },
                     evidence=fact.evidence,
                     fact=fact,
@@ -75,12 +83,45 @@ def build_seeds(docs: list[DocRecord], extractions: list[DocExtraction]) -> list
                     section_title=section,
                     difficulty=difficulty,
                     strata={
+                        **_base_strata(doc.doc_id, section, difficulty),
                         "entity_type": entity.type,
-                        "section": section,
-                        "difficulty": difficulty,
                     },
                     evidence=mention,
                     entity=entity,
+                )
+            )
+        for claim in extraction.claims:
+            section = section_at(doc.sections, claim.evidence.char_start)
+            difficulty = classify_difficulty(len(claim.evidence.text), rare=False)
+            seeds.append(
+                DraftSeed(
+                    doc_id=doc.doc_id,
+                    kind="claim",
+                    section_title=section,
+                    difficulty=difficulty,
+                    strata={
+                        **_base_strata(doc.doc_id, section, difficulty),
+                        "claim": claim.text,
+                    },
+                    evidence=claim.evidence,
+                    claim=claim,
+                )
+            )
+        for event in extraction.events:
+            section = section_at(doc.sections, event.evidence.char_start)
+            difficulty = classify_difficulty(len(event.evidence.text), rare=False)
+            seeds.append(
+                DraftSeed(
+                    doc_id=doc.doc_id,
+                    kind="event",
+                    section_title=section,
+                    difficulty=difficulty,
+                    strata={
+                        **_base_strata(doc.doc_id, section, difficulty),
+                        "event": event.description,
+                    },
+                    evidence=event.evidence,
+                    event=event,
                 )
             )
     return seeds

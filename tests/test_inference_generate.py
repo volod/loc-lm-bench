@@ -46,6 +46,7 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     assert (out / "run_eval_mamaylm.sh").exists()
     cfg = (out / "run_eval_mamaylm.yaml").read_text(encoding="utf-8")
     assert "backend: ollama" in cfg
+    assert "MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M" in cfg
     lapa = (out / "run_eval_lapa.yaml").read_text(encoding="utf-8")
     assert "hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M" in lapa
     assert "backend: ollama" in lapa
@@ -68,6 +69,7 @@ def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:
     out = generate_serving_configs(gpu_gb=32, output_root=tmp_path / "gpu-32gb")
     mamaylm = (out / "run_eval_mamaylm.yaml").read_text(encoding="utf-8")
     assert "backend: vllm" in mamaylm
+    assert "INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic" in mamaylm
     assert "gpu_memory_utilization: 0.9" in mamaylm
     assert "max_model_len: 8192" in mamaylm
     serve = (out / "serve_mamaylm.sh").read_text(encoding="utf-8")

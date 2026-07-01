@@ -1,0 +1,1 @@
+{{ gpu_name }} -- {{ tier_gb }} GiB tier ({{ total_mb }} MiB)

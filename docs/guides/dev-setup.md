@@ -109,10 +109,11 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 
 `make venv` includes the Chroma and Qdrant vector-store extras so the full local suite runs their
 live adapter checks without skips. GitHub CI installs only `.[dev]` (it never runs `make venv`), so
-the lint+test job stays light and never pulls the heavy/eval deps. vLLM / torch / flash-attn are
-hardware-matched (host CUDA/GPU) and installed via a separate path per [AGENTS.md](../../AGENTS.md),
-never as plain deps. CrewAI remains a dedicated environment because its pins conflict with the
-dev/RAG/vector lanes.
+the lint+test job stays light and never pulls the heavy/eval deps. On CUDA hosts, `make venv`
+also runs the repo-managed vLLM binary-wheel installer (`VENV_INSTALL_VLLM=auto`); use
+`VENV_INSTALL_VLLM=0 make venv` for a lean environment. vLLM / torch / flash-attn remain
+hardware-matched and are installed through `scripts/build_vllm.sh`, not as plain pyproject deps.
+CrewAI remains a dedicated environment because its pins conflict with the dev/RAG/vector lanes.
 
 `pdf-quality` is opt-in because OCR/layout packages are large. `make apt-deps` installs the system
 helpers used by that path: `poppler-utils`, `libmagic-dev`, `tesseract-ocr`, `tesseract-ocr-eng`,

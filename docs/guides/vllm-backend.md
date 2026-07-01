@@ -8,6 +8,11 @@ mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
 
 ## 1. Install vLLM (once, GPU host)
 
+    make venv # installs prebuilt vLLM wheels automatically on CUDA hosts
+
+Use `VENV_INSTALL_VLLM=0 make venv` for a lean environment without vLLM. To reinstall vLLM directly
+or override the registry version, use the lower-level target:
+
     make build-vllm # binary-only install through uv's shared cache
 
 The default path runs `uv pip install --only-binary :all:`. vLLM and all dependencies stay

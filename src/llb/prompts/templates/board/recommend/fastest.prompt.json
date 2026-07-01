@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.fastest",
+  "kind": "text",
+  "template": "fastest.txt"
+}

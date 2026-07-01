@@ -8,11 +8,17 @@ from llb.board.recommend import (
     HostInfo,
     RunSummary,
     build_recommendation,
+    format_config_detail_md,
     format_summary_md,
+    load_config_cells,
     load_run_summaries,
+    recommendation_payload,
 )
 from llb.board.runs import RunRecord
 from llb.scoring.aggregate import ModelResult
+
+MAMAYLM_V2_27B = "mamaylm-v2-27b"
+MAMAYLM_V2_12B = "mamaylm-v2-12b"
 
 
 def _summary(model, obj, tok_s, vram, qpw, *, reliability=1.0, n=82, backend="ollama"):
@@ -43,9 +49,9 @@ def _summary(model, obj, tok_s, vram, qpw, *, reliability=1.0, n=82, backend="ol
 
 # A 5-model cohort mirroring the real 16 GiB committed-goldset sweep.
 COHORT = [
-    _summary("mamaylm-27b", 0.546, 8.0, 16170, 0.053),
+    _summary(MAMAYLM_V2_27B, 0.546, 8.0, 16170, 0.053),
     _summary("lapa", 0.505, 29.2, 9454, 0.115),
-    _summary("mamaylm-12b", 0.500, 30.1, 9342, 0.115),
+    _summary(MAMAYLM_V2_12B, 0.500, 30.1, 9342, 0.115),
     _summary("qwen3.6", 0.471, 24.7, 15505, 0.216, reliability=0.951),
     _summary("mistral", 0.399, 12.9, 15907, 0.048),
 ]
@@ -53,9 +59,9 @@ COHORT = [
 
 def test_recommendation_picks_quality_efficiency_and_speed():
     rec = build_recommendation(COHORT, HostInfo(16, 16380, "RTX 4060 Ti", True))
-    assert rec.best_quality.model == "mamaylm-27b"  # highest objective
+    assert rec.best_quality.model == MAMAYLM_V2_27B  # highest objective
     assert rec.best_efficiency.model == "qwen3.6"  # highest quality/W
-    assert rec.fastest.model == "mamaylm-12b"  # highest tok/s
+    assert rec.fastest.model == MAMAYLM_V2_12B  # highest tok/s
     assert rec.recall_at_k == 0.95 and rec.top_k == 5
 
 
@@ -65,10 +71,10 @@ def test_recommended_for_host_is_vram_adaptive():
     assert at_16.recommended_for_host.model == "lapa"
     # 24 GiB budget: the 27B now fits with headroom and wins on accuracy.
     at_24 = build_recommendation(COHORT, HostInfo(24, 24 * 1024, "g", True))
-    assert at_24.recommended_for_host.model == "mamaylm-27b"
+    assert at_24.recommended_for_host.model == MAMAYLM_V2_27B
     # unknown VRAM (total 0) cannot filter -> falls back to the top-accuracy Pareto model.
     at_unknown = build_recommendation(COHORT, HostInfo(16, 0, "", False))
-    assert at_unknown.recommended_for_host.model == "mamaylm-27b"
+    assert at_unknown.recommended_for_host.model == MAMAYLM_V2_27B
 
 
 def test_recommended_for_host_respects_performance_floor():
@@ -98,12 +104,24 @@ def test_format_summary_md_has_sections_and_picks():
     md = format_summary_md(build_recommendation(COHORT, HostInfo(16, 16380, "RTX 4060 Ti", True)))
     assert "# loc-lm-bench recommendation summary" in md
     assert "Recommended for this host: **lapa**" in md
-    assert "Best RAG accuracy: **mamaylm-27b**" in md
+    assert f"Best RAG accuracy: **{MAMAYLM_V2_27B}**" in md
     assert "recall@5" in md and "chunk_size=800" in md
     assert "| model | backend | objective |" in md  # comparison table
     assert "(final split, 82 cases)" in md  # uniform cohort -> single count
     assert "Excluded (off-cohort" not in md  # nothing excluded when all runs share the cohort
     assert "best RAG top_k 5" in md  # host pick surfaces its retrieval depth (RAG-grid use case)
+
+
+def test_recommendation_payload_keeps_exact_model_ids_and_metrics():
+    rec = build_recommendation(COHORT, HostInfo(16, 16380, "RTX 4060 Ti", True))
+    payload = recommendation_payload(rec)
+
+    recommended = payload["selection"]["recommended_for_host"]
+    assert recommended["model"] == "lapa"
+    assert recommended["tokens_per_s"] == 29.2
+    assert payload["selection"]["best_quality"]["model"] == MAMAYLM_V2_27B
+    assert payload["candidates"][0]["model"] == MAMAYLM_V2_27B
+    assert payload["candidates"][0]["top_k"] == 5
 
 
 def test_recommendation_ranks_only_dominant_cohort():
@@ -113,7 +131,7 @@ def test_recommendation_ranks_only_dominant_cohort():
     rec = build_recommendation(mixed, HostInfo(16, 16380, "g", True))
     assert [s.result.n_cases for s in rec.summaries] == [82] * 5  # only the cohort is ranked
     assert {s.model for s in rec.excluded} == {"gemma-e4b"}
-    assert rec.fastest.model == "mamaylm-12b"  # 30.1 tok/s, not the excluded 60.1 row
+    assert rec.fastest.model == MAMAYLM_V2_12B  # 30.1 tok/s, not the excluded 60.1 row
     md = format_summary_md(rec)
     assert "(final split, 82 cases)" in md
     assert "Excluded (off-cohort, not ranked): gemma-e4b n=20" in md
@@ -199,6 +217,86 @@ def test_load_run_summaries_keeps_best_top_k_per_model(tmp_path):
     kept = load_run_summaries(tmp_path)
     assert len(kept) == 1
     assert kept[0].record.config["top_k"] == 8 and kept[0].result.objective_score == 0.55
+
+
+def _cell(model, top_k, obj, tok_s=10.0, vram=9000, recall=0.9, n=82):
+    result = ModelResult(
+        model=model,
+        backend="ollama",
+        objective_score=obj,
+        n_cases=n,
+        reliability=1.0,
+        tokens_per_s=tok_s,
+        peak_vram_mb=vram,
+        case_objectives=[obj] * n,
+    )
+    config = {
+        "strategy": "recursive",
+        "chunk_size": 800,
+        "chunk_overlap": 120,
+        "top_k": top_k,
+        "retrieval_mode": "flat",
+        "model": model,
+        "backend": "ollama",
+    }
+    record = RunRecord(
+        result=result, config=config, run_dir=f"/runs/{model}-{top_k}", created_at="", split="final"
+    )
+    return RunSummary(
+        record, quality_per_watt=0.1, mean_power_w=100.0, recall_at_k=recall, mrr=0.83
+    )
+
+
+def test_format_config_detail_groups_by_model_and_marks_best():
+    # A swept at three depths, B at one. The per-config table shows every (model, top_k) cell and
+    # marks each model's best config; with a real grid present the single-config note is absent.
+    cells = [_cell("A", 3, 0.40), _cell("A", 8, 0.55), _cell("A", 5, 0.50), _cell("B", 5, 0.45)]
+    md = format_config_detail_md(cells)
+    assert "## RAG configuration detail (model x config)" in md
+    assert "| model | top_k | best | objective | tok/s | peak VRAM | recall |" in md
+    assert "| A | 8 | * |" in md  # A's best config is top_k 8 (0.55)
+    assert "| A | 3 |  |" in md and "| A | 5 |  |" in md  # non-best cells listed, unmarked
+    assert "Single configuration per model" not in md
+
+
+def test_format_config_detail_notes_when_no_grid_swept():
+    md = format_config_detail_md([_cell("A", 5, 0.5), _cell("B", 5, 0.4)])
+    assert "Single configuration per model" in md
+    assert 'SWEEP_RAG_GRID="top_k=3,5,8"' in md  # guides the operator to run the grid
+
+
+def test_format_config_detail_empty_when_no_cells():
+    assert format_config_detail_md([]) == ""
+
+
+def test_load_config_cells_keeps_each_top_k_but_dedups_reruns(tmp_path):
+    # A RAG grid: the same model at top_k 3 and 8 is TWO cells (not collapsed to best-per-model);
+    # a re-run of the SAME cell keeps only its best objective.
+    def write_bundle(name, top_k, obj):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "split": "final",
+                    "n_cases": 82,
+                    "config": {"model": "modelA", "backend": "ollama", "top_k": top_k},
+                    "metrics": {"objective_score": obj, "reliability": 1.0, "tokens_per_s": 10.0},
+                    "telemetry": {"peak_vram_mb": 9000},
+                    "retrieval": {"recall": 0.9, "mrr": 0.8},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_bundle("k3", 3, 0.40)
+    write_bundle("k8-a", 8, 0.50)
+    write_bundle("k8-b", 8, 0.55)  # re-run of the top_k=8 cell, higher objective
+
+    cells = load_config_cells(tmp_path)
+    by_top_k = {c.record.config["top_k"]: c for c in cells}
+    assert set(by_top_k) == {3, 8}  # both depths kept as distinct cells
+    assert by_top_k[8].result.objective_score == 0.55  # best re-run of the top_k=8 cell
 
 
 def test_render_comparison_chart_writes_png(tmp_path):

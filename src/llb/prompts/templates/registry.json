@@ -71,6 +71,30 @@
         }
       }
     },
+    "bench.security.jailbreak_dan": {
+      "kind": "text",
+      "descriptor": "bench/security/jailbreak_dan.prompt.json",
+      "template": {
+        "path": "bench/security/jailbreak_dan.txt",
+        "sha256": "adc5ed79d83f6017a51b72062c41d9ea683fad5892c1bca5d0fd734375088cda"
+      }
+    },
+    "bench.security.jailbreak_lang_switch": {
+      "kind": "text",
+      "descriptor": "bench/security/jailbreak_lang_switch.prompt.json",
+      "template": {
+        "path": "bench/security/jailbreak_lang_switch.txt",
+        "sha256": "ed2d6dbb85c9847ccde37e0bec780f44b9094647191bc74dc3a5e70b8e585b0b"
+      }
+    },
+    "bench.security.jailbreak_roleplay": {
+      "kind": "text",
+      "descriptor": "bench/security/jailbreak_roleplay.prompt.json",
+      "template": {
+        "path": "bench/security/jailbreak_roleplay.txt",
+        "sha256": "999c1094299201abbc4ba0325d5052f2cb4e08fccb69173930be40dff18041f2"
+      }
+    },
     "bench.security.rag_injection": {
       "kind": "text",
       "descriptor": "bench/security/rag_injection.prompt.json",
@@ -93,6 +117,14 @@
       "template": {
         "path": "bench/security/refusal_question.txt",
         "sha256": "346cb0fcc4151e17442aba23348724e1946057aeefc227db0bf27490ed252cf8"
+      }
+    },
+    "bench.security.ua_frame": {
+      "kind": "text",
+      "descriptor": "bench/security/ua_frame.prompt.json",
+      "template": {
+        "path": "bench/security/ua_frame.txt",
+        "sha256": "e8e9453337099d3feb3afceff9ddfdcd696b0da7111aa8d92fc44a98fb8ae466"
       }
     },
     "bench.structured.structured": {
@@ -201,6 +233,158 @@
       "template": {
         "path": "bench/tooling/text_tool_prompt.txt",
         "sha256": "5c55b6a83297585d1ea091109df5335f829431a7f70725efd8ebe4fa1f1516af"
+      }
+    },
+    "board.recommend.best_accuracy": {
+      "kind": "text",
+      "descriptor": "board/recommend/best_accuracy.prompt.json",
+      "template": {
+        "path": "board/recommend/best_accuracy.txt",
+        "sha256": "36486f234301d32e4c94342d4ae52268a3d09db3c2448798d05d46728a8126c0"
+      }
+    },
+    "board.recommend.best_efficiency": {
+      "kind": "text",
+      "descriptor": "board/recommend/best_efficiency.prompt.json",
+      "template": {
+        "path": "board/recommend/best_efficiency.txt",
+        "sha256": "4f44ec68c9f781b80d1e0c1847da4feb5afb34c53316a89cd4236d0fdbe319a0"
+      }
+    },
+    "board.recommend.best_efficiency_note": {
+      "kind": "text",
+      "descriptor": "board/recommend/best_efficiency_note.prompt.json",
+      "template": {
+        "path": "board/recommend/best_efficiency_note.txt",
+        "sha256": "88852ff51a1b7a845cea83d6e21c4faa517f85d035c8b6010e65c793e12c1380"
+      }
+    },
+    "board.recommend.best_rag_config": {
+      "kind": "text",
+      "descriptor": "board/recommend/best_rag_config.prompt.json",
+      "template": {
+        "path": "board/recommend/best_rag_config.txt",
+        "sha256": "620aa637c326470b62c63f9b786d1cbbc1735a8f3b81bf86d7d8b59912594d60"
+      }
+    },
+    "board.recommend.config_detail_heading": {
+      "kind": "text",
+      "descriptor": "board/recommend/config_detail_heading.prompt.json",
+      "template": {
+        "path": "board/recommend/config_detail_heading.txt",
+        "sha256": "b7e9ae7357c7546bfde23dc9d17491c8ec8239b2bbf07ecbaa2c0290aad6d47f"
+      }
+    },
+    "board.recommend.config_detail_intro": {
+      "kind": "text",
+      "descriptor": "board/recommend/config_detail_intro.prompt.json",
+      "template": {
+        "path": "board/recommend/config_detail_intro.txt",
+        "sha256": "6311e302e20a1caf770e0bc163e327d807cd0078db5172f097c675de1830488c"
+      }
+    },
+    "board.recommend.config_detail_single": {
+      "kind": "text",
+      "descriptor": "board/recommend/config_detail_single.prompt.json",
+      "template": {
+        "path": "board/recommend/config_detail_single.txt",
+        "sha256": "f478eae5f5ced5d5ddd0ee237c334d13fa1d060a5e39ab319b73ddaf852fe6a0"
+      }
+    },
+    "board.recommend.excluded": {
+      "kind": "text",
+      "descriptor": "board/recommend/excluded.prompt.json",
+      "template": {
+        "path": "board/recommend/excluded.txt",
+        "sha256": "3c8511f909cb77fe5b9d1d44e74c86d5a5408aedd494ca620050e5a51f30c2bb"
+      }
+    },
+    "board.recommend.fastest": {
+      "kind": "text",
+      "descriptor": "board/recommend/fastest.prompt.json",
+      "template": {
+        "path": "board/recommend/fastest.txt",
+        "sha256": "d2dd591a24d20ba440dfe94c7a5b088dbc2f6f510328386e50a0e3037ad2e4d2"
+      }
+    },
+    "board.recommend.fit_clause": {
+      "kind": "text",
+      "descriptor": "board/recommend/fit_clause.prompt.json",
+      "template": {
+        "path": "board/recommend/fit_clause.txt",
+        "sha256": "c0ba059821e9e94ad743afbf9efc4c1ccd98bef4cceffbae87fa0de164e350d1"
+      }
+    },
+    "board.recommend.fit_clause_floor": {
+      "kind": "text",
+      "descriptor": "board/recommend/fit_clause_floor.prompt.json",
+      "template": {
+        "path": "board/recommend/fit_clause_floor.txt",
+        "sha256": "b8b03433ca6b0594b3e6b5fbba21bb769965e61f006985324c0310aab4dbb5da"
+      }
+    },
+    "board.recommend.host_detected": {
+      "kind": "text",
+      "descriptor": "board/recommend/host_detected.prompt.json",
+      "template": {
+        "path": "board/recommend/host_detected.txt",
+        "sha256": "ef2e289ed03f2517861b004038294b635751e7d3b3d8787e5bb3281b3384bf38"
+      }
+    },
+    "board.recommend.host_planning": {
+      "kind": "text",
+      "descriptor": "board/recommend/host_planning.prompt.json",
+      "template": {
+        "path": "board/recommend/host_planning.txt",
+        "sha256": "b9986611025806f9d5d95926d70f20425a8e6aba4d0cb8c3802cd0099901f3df"
+      }
+    },
+    "board.recommend.models_compared": {
+      "kind": "text",
+      "descriptor": "board/recommend/models_compared.prompt.json",
+      "template": {
+        "path": "board/recommend/models_compared.txt",
+        "sha256": "a2c0ac80a2c174b609b8df8b4a27061280a464864c61d5e33449d90ccc5bf9e0"
+      }
+    },
+    "board.recommend.policy_axis": {
+      "kind": "text",
+      "descriptor": "board/recommend/policy_axis.prompt.json",
+      "template": {
+        "path": "board/recommend/policy_axis.txt",
+        "sha256": "0139cb7dbeec08b7fe4b8227e163c5c575e28c0243f8890d3c2f05403b41d5a1"
+      }
+    },
+    "board.recommend.recommended": {
+      "kind": "text",
+      "descriptor": "board/recommend/recommended.prompt.json",
+      "template": {
+        "path": "board/recommend/recommended.txt",
+        "sha256": "645df57f2e6099dce3c489b6871396a66b0867ea51418a602f8815d272fb7d2a"
+      }
+    },
+    "board.recommend.retrieval_health": {
+      "kind": "text",
+      "descriptor": "board/recommend/retrieval_health.prompt.json",
+      "template": {
+        "path": "board/recommend/retrieval_health.txt",
+        "sha256": "0745a31d079561fd9cf17a25648dbc48e31d70143760866c51299c9a95653378"
+      }
+    },
+    "board.recommend.too_slow": {
+      "kind": "text",
+      "descriptor": "board/recommend/too_slow.prompt.json",
+      "template": {
+        "path": "board/recommend/too_slow.txt",
+        "sha256": "ff4fb610bd797daaa6f4ca03137be5d4b164f597e44fb5fb0303a3d9f922a425"
+      }
+    },
+    "board.recommend.top_k_note": {
+      "kind": "text",
+      "descriptor": "board/recommend/top_k_note.prompt.json",
+      "template": {
+        "path": "board/recommend/top_k_note.txt",
+        "sha256": "6f3b8a71eaa069b62e9528eaa6c3973a284e506cac90bed40d6bd7f688a465fd"
       }
     },
     "eval.map_reduce.map_chat": {

@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.config_detail_intro",
+  "kind": "text",
+  "template": "config_detail_intro.txt"
+}

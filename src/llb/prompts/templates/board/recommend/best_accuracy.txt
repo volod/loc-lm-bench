@@ -1,0 +1,1 @@
+- Best RAG accuracy: **{{ model }}** (objective {{ objective }}, quality/W {{ quality_per_watt }}).

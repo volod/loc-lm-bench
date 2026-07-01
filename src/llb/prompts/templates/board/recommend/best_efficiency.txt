@@ -1,0 +1,1 @@
+- Best efficiency (quality per watt): **{{ model }}** (quality/W {{ quality_per_watt }}).{{ note }}

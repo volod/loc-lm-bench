@@ -50,9 +50,12 @@ The granular commands below are the same operations without the wrapper orchestr
 
 ```sh
 # Purpose: create or update the local Python environment.
-# Default input: pyproject.toml extras from EXTRAS; seeds .env from .env.example if missing.
-# Output/result: .venv is ready for CLI, RAG, tracking, board, prep, and test commands.
+# Default input: pyproject.toml extras from EXTRAS, plus prebuilt vLLM wheels on CUDA hosts.
+# Output/result: .venv is ready for CLI, RAG, tracking, board, prep, vLLM, and test commands.
 make venv
+
+# Optional lean environment when vLLM is not needed.
+VENV_INSTALL_VLLM=0 make venv
 
 # Purpose: isolate all quickstart leaderboard artifacts.
 # Default input: none.
@@ -145,7 +148,9 @@ The all-in-one PDF corpus target intentionally stops before model scoring becaus
 
 ```sh
 # Purpose: run PDF corpus prep end to end up to the verification gate.
-# Default input: .data/quickstart-pdf-corpus PDFs, local Gemma 4 drafter, two-document smoke subset.
+# Default input: .data/quickstart-pdf-corpus PDFs and all converted markdown documents.
+# Model selection: QUICKSTART_DRAFT_MODEL=auto prompts to use benchmark evidence, run the local
+# benchmark, select a local model, or opt into a frontier litellm route.
 # Output/result: converted markdown, full RAG index, draft goldset, ontology, graph, validation
 # metrics, and a debug log under $DATA_DIR/llb/logs/quickstart/.
 make quickstart-pdf-corpus
@@ -165,6 +170,22 @@ make quickstart-pdf-corpus-validate
 make quickstart-pdf-corpus-review
 make quickstart-pdf-corpus-accept
 make quickstart-pdf-corpus-score
+```
+
+Common model-selection overrides:
+
+```sh
+# Use benchmark evidence from the committed-goldset quickstart, then draft the full PDF corpus.
+QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus
+
+# Pin a known local model and skip the model-selection prompt.
+QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
+  make quickstart-pdf-corpus
+
+# Opt into an external provider through litellm. This sends corpus text off-box and needs
+# the provider API key in the environment.
+QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
+  make quickstart-pdf-corpus
 ```
 
 The granular commands below are the same operations without the wrapper orchestration:
@@ -195,23 +216,26 @@ make pdf-to-markdown PDF_DIR=$PDF_SOURCE PDF_OUT_DIR=$PDF_MD PDF_PARSER=auto
 # Output/result: FAISS RAG store under $PDF_RAG_DATA/llb/rag/.
 env DATA_DIR=$PDF_RAG_DATA make build-index CORPUS=$PDF_MD
 
-# Purpose: create a bounded corpus subset for fast draft review.
-# Default input: selected converted markdown/citation files.
+# Purpose: stage the full converted corpus for drafting.
+# Default input: every converted markdown/citation sidecar under $PDF_MD.
 # Output/result: draft input corpus under $PDF_DRAFT_MD.
+rm -rf $PDF_DRAFT_MD
 mkdir -p $PDF_DRAFT_MD
-cp -R \
-  $PDF_MD/pdf-d2e2499d3d06.md \
-  $PDF_MD/pdf-d2e2499d3d06.citations.json \
-  $PDF_MD/pdf-b117ebb25eb7.md \
-  $PDF_MD/pdf-b117ebb25eb7.citations.json \
-  $PDF_DRAFT_MD/
+cp -R $PDF_MD/*.md $PDF_MD/*.citations.json $PDF_DRAFT_MD/
 
-# Purpose: draft unverified gold items and ontology from the corpus.
-# Default input: local Ollama Gemma 4 endpoint, DRAFT_MAX_ITEMS=8 in this example.
+# Purpose: draft unverified gold items, needle items, and ontology from the full corpus.
+# Default input: selected local or frontier drafter; this example pins the recommended local model.
 # Output/result: goldset.jsonl, ontology.json, extraction.jsonl, provenance, and verify_sample.csv.
-make prepare-goldset-draft DRAFT_CORPUS=$PDF_DRAFT_MD DRAFT_MODEL=gemma4:e4b \
-  DRAFT_MAX_ITEMS=8 DRAFT_VERIFY_N=4 DRAFT_NO_THINK=1 DRAFT_OUT_DIR=$PDF_DRAFT \
-  DRAFT_TIMEOUT=600
+make prepare-goldset-draft DRAFT_CORPUS=$PDF_DRAFT_MD \
+  DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
+  DRAFT_ENDPOINT=local DRAFT_MAX_ITEMS=180 DRAFT_VERIFY_N=40 DRAFT_NO_THINK=1 \
+  DRAFT_OUT_DIR=$PDF_DRAFT DRAFT_TIMEOUT=900
+
+# Optional bounded probe for debugging only.
+QUICKSTART_PDF_DRAFT_DOCS="pdf-d2e2499d3d06 pdf-b117ebb25eb7" \
+  QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
+  QUICKSTART_DRAFT_MAX_ITEMS=8 QUICKSTART_DRAFT_VERIFY_N=4 \
+  make quickstart-pdf-corpus-draft
 
 # Purpose: build a knowledge graph from the draft bundle's ontology extraction.
 # Default input: BUNDLE=$PDF_DRAFT.
@@ -235,6 +259,18 @@ make verify-accept BUNDLE=$PDF_DRAFT VERIFY_WS=$PDF_DRAFT/verify_sample.csv
 After `verify-accept` emits `$PDF_DRAFT/accepted/`, run `make quickstart-pdf-corpus-score` or
 rerun the granular goldset scoring commands with
 `GOLDSET=$PDF_DRAFT/accepted/goldset.jsonl` and `CORPUS=$PDF_DRAFT/accepted/corpus`.
+To run the full goldset leaderboard quickstart against the accepted PDF-derived set, point the
+Track A wrapper at that accepted ledger:
+
+```sh
+make quickstart-goldset \
+  QUICKSTART_A_GOLDSET=$PDF_DRAFT/accepted/goldset.jsonl \
+  QUICKSTART_A_CORPUS=$PDF_DRAFT/accepted/corpus \
+  QUICKSTART_A_DATA_DIR=.data/quickstart-pdf-corpus-leaderboard \
+  QUICKSTART_A_SWEEP_ID=quickstart-pdf-corpus \
+  QUICKSTART_RECOMMEND_MIN_CASES=1
+```
+
 For an existing text or markdown corpus, set `PDF_MD=<existing-corpus-dir>` and start at
 `make build-index`; keep the same draft, graph, verification, and post-acceptance steps.
 

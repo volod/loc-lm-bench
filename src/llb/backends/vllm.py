@@ -12,7 +12,9 @@ unit-testable by injecting the process factory + HTTP probe (no vLLM/CUDA needed
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -45,6 +47,7 @@ class _HttpGetter(Protocol):
 def build_vllm_command(
     model: str,
     *,
+    executable: str = "vllm",
     port: int = 8000,
     gpu_memory_utilization: float = 0.85,
     max_model_len: int | None = None,
@@ -56,7 +59,7 @@ def build_vllm_command(
     """The `vllm serve ...` argv. `gpu_memory_utilization` is recorded so peak VRAM is
     comparable across runs (vLLM pre-reserves a KV-cache fraction)."""
     cmd = [
-        "vllm",
+        executable,
         "serve",
         model,
         "--port",
@@ -75,6 +78,14 @@ def build_vllm_command(
     if extra_args:
         cmd += list(extra_args)
     return cmd
+
+
+def vllm_executable() -> str | None:
+    """Resolve the vLLM CLI installed in the active venv, then fall back to PATH."""
+    venv_cli = Path(sys.executable).with_name("vllm")
+    if venv_cli.exists():
+        return str(venv_cli)
+    return shutil.which("vllm")
 
 
 def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
@@ -176,6 +187,7 @@ class VllmLauncher(BackendLauncher):
     def command(self) -> list[str]:
         return build_vllm_command(
             self.model,
+            executable=vllm_executable() or "vllm",
             port=self.port,
             gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,

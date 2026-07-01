@@ -1,0 +1,1 @@
+- recall@{{ top_k }}: {{ recall }}, MRR: {{ mrr }} (shared FAISS index; retrieval is not the bottleneck when this is high).

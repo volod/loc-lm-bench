@@ -84,6 +84,10 @@ vLLM Gemma variants are emitted after those primary targets. This path lets anot
 host contribute comparable manifest rows without hardcoding host paths.
 Target ids are family-level keys; for example `gemma-4` generates `serve_gemma_4.sh` while the
 tier manifest selects the concrete largest model variant that fits the host.
+Concrete MamayLM references use v2.0 source names and labels: generated configs select the 16 GiB
+Ollama GGUF or 32 GiB vLLM FP8 v2.0 source, prepare-model fixtures use the INSAIT v2.0 source names,
+and recommendation fixtures use `mamaylm-v2-*` labels. The family key `mamaylm` remains only the
+stable target id and file stem.
 
 The Mistral family default is Mistral Small 3.1 24B (Apache-2.0, ungated, multilingual), served per
 tier by the quant that fits GPU-resident: vLLM FP8

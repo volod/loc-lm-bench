@@ -102,32 +102,34 @@ export HF_HUB_OFFLINE=1
 
 ## Draft A Reviewable Gold Set
 
-The full PDF corpus is large. For a fast smoke review bundle, copy two small born-digital converted
-documents into a bounded draft corpus. These file names come from the local
-`.data/quickstart-pdf-corpus-md` conversion above; replace them with other converted files when
-drafting another subset.
+The wrapper draft target is the normal path. It stages all converted markdown documents, selects a
+drafter, estimates the full draft duration, asks for confirmation, and writes the review bundle.
+When `QUICKSTART_DRAFT_MODEL=auto`, the model-selection step uses existing benchmark evidence when
+available; otherwise it prompts to run the local committed-goldset benchmark, select a local model
+manually, or opt into a frontier `litellm` route.
 
 ```sh
-mkdir -p $PDF_DRAFT_MD
-cp -R \
-  $PDF_MD/pdf-d2e2499d3d06.md \
-  $PDF_MD/pdf-d2e2499d3d06.citations.json \
-  $PDF_MD/pdf-b117ebb25eb7.md \
-  $PDF_MD/pdf-b117ebb25eb7.citations.json \
-  $PDF_DRAFT_MD/
+make quickstart-pdf-corpus-draft
 ```
 
-Draft with the local Ollama Gemma 4 model:
+To force a benchmark before drafting:
 
 ```sh
-make prepare-goldset-draft \
-  DRAFT_CORPUS=$PDF_DRAFT_MD \
-  DRAFT_MODEL=gemma4:e4b \
-  DRAFT_MAX_ITEMS=8 \
-  DRAFT_VERIFY_N=4 \
-  DRAFT_NO_THINK=1 \
-  DRAFT_OUT_DIR=$PDF_DRAFT \
-  DRAFT_TIMEOUT=600
+QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus-draft
+```
+
+To pin a local model and skip the model-selection prompt:
+
+```sh
+QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
+  make quickstart-pdf-corpus-draft
+```
+
+To opt into an external provider, set the provider API key expected by `litellm`, then run:
+
+```sh
+QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
+  make quickstart-pdf-corpus-draft
 ```
 
 Expected artifacts:
@@ -142,11 +144,24 @@ Expected artifacts:
 - `$PDF_DRAFT/prompt_dictionary_candidates.jsonl`
 - `$PDF_DRAFT/needle_items.jsonl`
 
-Validated result:
+Default full-draft knobs:
 
-- 7 drafted items.
-- 4 sampled rows in `verify_sample.csv`.
-- All drafted items remain `verified=false`.
+- `QUICKSTART_PDF_DRAFT_DOCS=all`
+- `QUICKSTART_DRAFT_MODEL=auto`
+- `QUICKSTART_DRAFT_MAX_ITEMS=180`
+- `QUICKSTART_DRAFT_VERIFY_N=40`
+- `QUICKSTART_DRAFT_TIMEOUT=900`
+
+Optional bounded probe for debugging only:
+
+```sh
+QUICKSTART_PDF_DRAFT_DOCS="pdf-d2e2499d3d06 pdf-b117ebb25eb7" \
+  QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
+  QUICKSTART_DRAFT_MAX_ITEMS=8 QUICKSTART_DRAFT_VERIFY_N=4 \
+  make quickstart-pdf-corpus-draft
+```
+
+All drafted items remain `verified=false` until the human gate accepts them.
 
 ## Build The Knowledge Graph
 
@@ -156,12 +171,10 @@ Build a GraphRAG store from the draft bundle's ontology extraction:
 env DATA_DIR=$PDF_GRAPH_DATA make build-graph BUNDLE=$PDF_DRAFT
 ```
 
-Validated result:
+Expected result:
 
 - Graph store: `$PDF_GRAPH_DATA/llb/graph/`
-- Nodes: 11
-- Edges: 2
-- Communities: 9
+- Nodes, edges, communities, and metadata derived from the full draft extraction.
 
 ## Validate Retrieval
 
@@ -181,11 +194,8 @@ env DATA_DIR=$PDF_RAG_DATA HF_HUB_OFFLINE=1 make validate-retrieval \
   RAG_K=10
 ```
 
-Validated result:
-
-```text
-[validate-retrieval] n=7 recall@10=1.000 mrr=0.732 -> PASS
-```
+The validation output prints the drafted item count, recall@10, and MRR for the current full
+draft bundle.
 
 ## Human Verification Gate
 
@@ -215,11 +225,18 @@ Only after the accepted ledger exists:
 ```sh
 export PDF_ACCEPTED=$PDF_DRAFT/accepted
 
+make quickstart-goldset \
+  QUICKSTART_A_GOLDSET=$PDF_ACCEPTED/goldset.jsonl \
+  QUICKSTART_A_CORPUS=$PDF_ACCEPTED/corpus \
+  QUICKSTART_A_DATA_DIR=.data/quickstart-pdf-corpus-leaderboard \
+  QUICKSTART_A_SWEEP_ID=quickstart-pdf-corpus \
+  QUICKSTART_RECOMMEND_MIN_CASES=1
+
 make demo-eval \
   DATA_DIR=.data/quickstart-pdf-corpus-leaderboard \
   ALL_GOLDSET=$PDF_ACCEPTED/goldset.jsonl \
   ALL_CORPUS=$PDF_ACCEPTED/corpus \
-  MODEL=gemma4:e4b \
+  MODEL=<selected-local-model> \
   BACKEND=ollama \
   LIMIT=2
 ```
@@ -230,7 +247,7 @@ For a direct single-model run:
 env DATA_DIR=.data/quickstart-pdf-corpus-leaderboard make build-index \
   CORPUS=$PDF_ACCEPTED/corpus
 env DATA_DIR=.data/quickstart-pdf-corpus-leaderboard HF_HUB_OFFLINE=1 make run-eval \
-  MODEL=gemma4:e4b \
+  MODEL=<selected-local-model> \
   BACKEND=ollama \
   GOLDSET=$PDF_ACCEPTED/goldset.jsonl \
   LIMIT=2

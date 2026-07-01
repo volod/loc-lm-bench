@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.recommended",
+  "kind": "text",
+  "template": "recommended.txt"
+}

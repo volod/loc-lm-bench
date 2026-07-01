@@ -97,8 +97,10 @@ Ontology draft bundles preserve that PDF evidence. When a source document has a 
 `*.citations.json` sidecar, `prepare-goldset-draft` copies it into the bundle `corpus/` directory
 and writes these review artifacts beside `goldset.jsonl`:
 
-- `pdf_ontology_report.json`: parse rate, elapsed seconds, grounded entity/fact/claim counts,
-  page-span citation coverage, citation-valid needle count, and dictionary-term yield.
+- `pdf_ontology_report.json`: parse rate, elapsed seconds, grounded entity/event/claim/fact counts,
+  page-span citation coverage, citation-valid needle count, dictionary-term yield, and quality gates
+  with a `passed` roll-up (grounded extractions of any kind + a non-empty gold set, plus a
+  citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
   spans and PDF page references when sidecars exist.
 - `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars.
@@ -106,24 +108,40 @@ and writes these review artifacts beside `goldset.jsonl`:
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
 
+The ontology-assisted seed sampler uses entities, subject-relation-object facts, grounded claims,
+and grounded events as draft targets. Seeds carry document, section, difficulty, and semantic-type
+coverage strata, so a full-corpus draft can spread questions across manuals, dictionaries, and
+after-action-style documents even when a document has few SRO facts.
+
 The local `$DATA_DIR/quickstart-pdf-corpus` corpus run produced 19 markdown files, 19 citation
 sidecars, and zero skips under `.data/quickstart-pdf-corpus-md`. Sixteen born-digital PDFs used
 PyMuPDF4LLM. The three PDFs that had zero embedded text were recovered by Docling OCR:
 
-| Source PDF | Pages | OCR chars | Citation pages |
+| Doc id | Pages | OCR chars | Citation pages |
 | --- | ---: | ---: | ---: |
-| `Doktryna_MPZ_OS.pdf` | 24 | 50,548 | 24 |
-| `Доктрина БПЛА.pdf` | 61 | 120,556 | 60 |
-| `Настанова з бойової підготовки Mastanova_z_b_pidotovky.PDF` | 59 | 136,351 | 59 |
+| `pdf-3c3a452a8e9c.md` | 24 | 4,641 | 24 |
+| `pdf-3bc34dd5f5c2.md` | 61 | 14,670 | 55 |
+| `pdf-3db280e14095.md` | 59 | 11,296 | 58 |
 
 The PDF quickstart validation flow is documented in
 [`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). The source PDFs are
 under `.data/quickstart-pdf-corpus/`, the full converted markdown corpus is under
-`.data/quickstart-pdf-corpus-md/`, and the reviewable Gemma 4 draft bundle is under
-`.data/quickstart-pdf-corpus-draft/`. The draft bundle contains 7 `verified=false` items and a
-4-row `verify_sample.csv`; model scoring is intentionally gated on `verify-review` and
-`verify-accept`. The grouped quickstart wrapper is `make quickstart-pdf-corpus`; it logs conversion,
-indexing, drafting, graph build, and validation steps under `$DATA_DIR/llb/logs/quickstart/`.
+`.data/quickstart-pdf-corpus-md/`, and the reviewable draft bundle is under
+`.data/quickstart-pdf-corpus-draft/`. The grouped quickstart wrapper is
+`make quickstart-pdf-corpus`; it logs conversion, indexing, drafting, graph build, and validation
+steps under `$DATA_DIR/llb/logs/quickstart/`. The PDF wrapper passes `QUICKSTART_SKIP_APT` through to
+the `pdf-quality` venv step, so hosts that cannot use apt can run with the default
+`QUICKSTART_SKIP_APT=1` when the required OCR binaries are already available or the corpus is mostly
+born-digital.
+
+`quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
+`QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
+`QUICKSTART_DRAFT_MAX_ITEMS=180`, and `QUICKSTART_DRAFT_VERIFY_N=40`. With the auto model setting it
+prints ranked local candidates from `llb recommend` JSON when benchmark artifacts exist; otherwise
+it prompts the operator to run the local committed-goldset benchmark, choose an Ollama model
+manually, or opt into a frontier `litellm` model. The draft step prints an estimated hour count and
+requires confirmation before the full ontology/goldset generation starts. Model scoring remains
+gated on `verify-review` and `verify-accept`.
 
 ## Verification Gate
 

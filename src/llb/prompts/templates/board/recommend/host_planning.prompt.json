@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.host_planning",
+  "kind": "text",
+  "template": "host_planning.txt"
+}

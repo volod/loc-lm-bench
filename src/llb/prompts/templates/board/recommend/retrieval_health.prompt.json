@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.retrieval_health",
+  "kind": "text",
+  "template": "retrieval_health.txt"
+}
