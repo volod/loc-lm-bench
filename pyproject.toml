@@ -45,8 +45,8 @@ mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (tooling b
 # not listed here because it pulls a hardware-matched torch stack; install `marker-pdf` in the
 # dedicated CUDA transform environment when benchmarking it.
 pdf-quality = ["docling[rapidocr]>=2.0", "markitdown[pdf]>=0.1", "unstructured[pdf]>=0.18"]
-# NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU) and installed via a
-# separate build path per AGENTS.md, never as plain deps here.
+# NOTE: vLLM / torch / flash-attn are hardware-matched (host CUDA/GPU). `make venv`
+# invokes scripts/build_vllm.sh on CUDA hosts, but they stay out of plain extras here.
 dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.6", "radon>=6.0", "complexipy>=5.0", "pymarkdownlnt>=0.9.32"]
 
 [tool.uv]

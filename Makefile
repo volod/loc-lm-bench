@@ -19,10 +19,12 @@ PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
 
 # Extras installed by `make venv` -- the standard local workflow groups, so a fresh checkout can
 # run the normal test/eval/vector-store commands without a follow-up `uv pip install`.
-# vLLM/torch/flash-attn are deliberately NOT here: they are hardware-matched and built separately
-# (AGENTS.md). CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
+# vLLM/torch/flash-attn are deliberately NOT in pyproject extras: they are hardware-matched
+# (AGENTS.md) and installed by scripts/build_vllm.sh after the editable install on CUDA hosts.
+# CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
 EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,dev
+VENV_INSTALL_VLLM ?= auto
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1
@@ -364,7 +366,7 @@ recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_
 		$(if $(RECOMMEND_JSON_OUT),--json-out "$(RECOMMEND_JSON_OUT)",) \
 		$(if $(filter 1 true yes,$(RECOMMEND_NO_CHART)),--no-chart,)
 
-venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent; RECREATE_VENV=1 to rebuild, EXTRAS= to trim, SKIP_APT=1 to skip apt
+venv: ## Create/update .venv + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 to skip
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
 	@case ",$(EXTRAS)," in *,dev,*|*,dev) SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" dev ;; esac
@@ -376,7 +378,18 @@ venv: ## Create/update .venv (py3.13) + apt deps + all extras + .env. Idempotent
 	fi
 	@UV_LINK_MODE="$(UV_LINK_MODE)" bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_export_uv_link_mode; echo "[venv] uv link mode: $${UV_LINK_MODE:-default (cache + checkout share a device)}"; uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"'
 	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS))"
-	@echo "[venv] note: vLLM/torch/flash-attn are hardware-matched and installed separately."
+	@case "$(VENV_INSTALL_VLLM)" in \
+	  0|false|no) echo "[venv] vLLM install skipped (VENV_INSTALL_VLLM=$(VENV_INSTALL_VLLM))" ;; \
+	  1|true|yes) echo "[venv] installing vLLM binary wheels (forced)"; bash "$(PROJECT_ROOT)/scripts/build_vllm.sh" ;; \
+	  auto) \
+	    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then \
+	      echo "[venv] CUDA host detected; installing vLLM binary wheels"; \
+	      bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"; \
+	    else \
+	      echo "[venv] vLLM install skipped (no CUDA GPU detected; set VENV_INSTALL_VLLM=1 to force)"; \
+	    fi ;; \
+	  *) echo "ERROR: VENV_INSTALL_VLLM must be auto, 1, or 0 (got $(VENV_INSTALL_VLLM))" >&2; exit 2 ;; \
+	esac
 	@bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_ensure_env || true'
 
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
@@ -678,7 +691,7 @@ platform-matrix: ## Run same logical model base across Ollama, vLLM, and llama.c
 	    --telemetry; then ran=$$((ran + 1)); else record_failure ollama; fi; \
 	fi; \
 	if wants_backend vllm; then \
-	  if command -v vllm >/dev/null 2>&1; then \
+	  if [ -x "$(VENV)/bin/vllm" ] || command -v vllm >/dev/null 2>&1; then \
 	    echo "[platform-matrix] run vllm model=$(PLATFORM_MATRIX_VLLM_MODEL)"; \
 	    if $(PY) -m llb.main run-eval --model "$(PLATFORM_MATRIX_VLLM_MODEL)" --backend vllm \
 	      --goldset "$(PLATFORM_MATRIX_GOLDSET)" --split "$(PLATFORM_MATRIX_SPLIT)" --limit "$(PLATFORM_MATRIX_LIMIT)" \

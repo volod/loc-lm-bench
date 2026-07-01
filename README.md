@@ -50,9 +50,12 @@ The granular commands below are the same operations without the wrapper orchestr
 
 ```sh
 # Purpose: create or update the local Python environment.
-# Default input: pyproject.toml extras from EXTRAS; seeds .env from .env.example if missing.
-# Output/result: .venv is ready for CLI, RAG, tracking, board, prep, and test commands.
+# Default input: pyproject.toml extras from EXTRAS, plus prebuilt vLLM wheels on CUDA hosts.
+# Output/result: .venv is ready for CLI, RAG, tracking, board, prep, vLLM, and test commands.
 make venv
+
+# Optional lean environment when vLLM is not needed.
+VENV_INSTALL_VLLM=0 make venv
 
 # Purpose: isolate all quickstart leaderboard artifacts.
 # Default input: none.

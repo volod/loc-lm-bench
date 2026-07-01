@@ -322,7 +322,9 @@ def _grid_cells(
 def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
     """Return whether the local serving binary needed by a resolved backend is installed."""
     if backend == "vllm":
-        if shutil.which("vllm"):
+        from llb.backends.vllm import vllm_executable
+
+        if vllm_executable():
             return True, ""
         return False, "vllm executable not found (run make build-vllm)"
     if backend == "llamacpp":

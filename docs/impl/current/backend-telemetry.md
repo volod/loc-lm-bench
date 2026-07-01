@@ -24,11 +24,14 @@ often happen before a JSON API is available.
 ## Build Rules
 
 `scripts/build_vllm.sh` is the shell entry point. It sources `scripts/shared/common.sh` and uses the
-canonical `max_jobs()` helper for source builds. Ordinary installs use `uv` and the shared package
-cache. Only wheels intentionally built from a clean local checkout are exported under
-`$DATA_DIR/wheels/<package>_<abi-key>_git<revision>/`.
+canonical `max_jobs()` helper for source builds. `make venv` calls this helper automatically on CUDA
+hosts (`VENV_INSTALL_VLLM=auto`) after the editable install; set `VENV_INSTALL_VLLM=0` for a lean
+environment or `VENV_INSTALL_VLLM=1` to force the vLLM install. Ordinary installs use `uv` and the
+shared package cache with binary wheels only. Only wheels intentionally built from a clean local
+checkout are exported under `$DATA_DIR/wheels/<package>_<abi-key>_git<revision>/`.
 
 ```bash
+make venv
 make build-vllm
 VLLM_SOURCE_DIR=../vllm make build-vllm
 make prep-models PREP_BACKEND=vllm

@@ -56,10 +56,12 @@ all-in-one and grouped execution:
 `$DATA_DIR/llb/logs/quickstart/` with step headings, called commands, metrics emitted by each tool,
 and `[result]` artifact summaries.
 The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
-only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. The grouped
-wrappers default the uv cache to `$DATA_DIR/uv-cache`, skip apt provisioning unless
-`QUICKSTART_SKIP_APT=0`, and re-export the Make-level `DATA_DIR` after `.env` is loaded so wrapper
-artifacts stay under the requested quickstart root.
+only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. On CUDA hosts,
+`make venv` installs vLLM binary wheels through `scripts/build_vllm.sh` by default
+(`VENV_INSTALL_VLLM=auto`; set `0` to skip). The grouped wrappers default the uv cache to
+`$DATA_DIR/uv-cache`, skip apt provisioning unless `QUICKSTART_SKIP_APT=0`, and re-export the
+Make-level `DATA_DIR` after `.env` is loaded so wrapper artifacts stay under the requested
+quickstart root.
 The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto`; it can
 use existing `llb recommend` benchmark JSON, run the committed-goldset benchmark, accept a manually
 entered local model, or opt into a `frontier` `litellm` route before it estimates and confirms the
