@@ -1,0 +1,1 @@
+- Recommended for this host: **{{ model }}** ({{ backend }}) -- highest-accuracy model that is Pareto-optimal and {{ fit_clause }} (objective {{ objective }}, {{ tokens_per_s }} tok/s, peak VRAM {{ vram }}{{ top_k_note }}).

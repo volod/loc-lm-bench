@@ -14,6 +14,7 @@ from pathlib import Path
 
 from llb.board.runs import RunRecord, best_per_model, load_run_records
 from llb.contracts import BoardRow, JsonObject
+from llb.prompts import render_text
 from llb.scoring.aggregate import (
     ModelResult,
     pareto_front,
@@ -26,6 +27,12 @@ _LOG = logging.getLogger(__name__)
 # Keep some VRAM headroom so the "recommended for this host" pick is not a card pinned at 100%.
 SAFE_VRAM_FRACTION = 0.92
 RAG_CONFIG_KEYS = ("strategy", "chunk_size", "chunk_overlap", "top_k", "retrieval_mode")
+
+
+def _t(name: str, **values: object) -> str:
+    """Render a `board.recommend.<name>` text template. The report prose lives in prompt templates
+    (`prompts/templates/board/recommend/`) so the wording is reviewable in files, not inline here."""
+    return render_text(f"board.recommend.{name}", values)
 
 
 @dataclass
@@ -101,6 +108,12 @@ def _as_float(value: object) -> float | None:
         return None
 
 
+def _to_summary(record: RunRecord) -> RunSummary:
+    """Enrich a run record with the host-efficiency + retrieval fields the board omits."""
+    qpw, power, recall, mrr = _manifest_extras(Path(record.run_dir))
+    return RunSummary(record, qpw, power, recall, mrr)
+
+
 def load_run_summaries(run_root: Path | str, *, min_cases: int = 1) -> list[RunSummary]:
     """Best final-split run per model, enriched with host-efficiency + retrieval fields.
 
@@ -110,11 +123,29 @@ def load_run_summaries(run_root: Path | str, *, min_cases: int = 1) -> list[RunS
     the board's, reused verbatim.
     """
     records = [r for r in load_run_records(run_root) if r.result.n_cases >= min_cases]
-    summaries: list[RunSummary] = []
-    for record in best_per_model(records):
-        qpw, power, recall, mrr = _manifest_extras(Path(record.run_dir))
-        summaries.append(RunSummary(record, qpw, power, recall, mrr))
-    return summaries
+    return [_to_summary(record) for record in best_per_model(records)]
+
+
+def _cell_key(record: RunRecord) -> tuple[str, tuple[tuple[str, object], ...]]:
+    """A (model, RAG-config) fingerprint: two runs share a cell iff model AND every RAG knob match.
+    top_k is in the fingerprint, so grid points at different depths are DISTINCT cells (not merged)."""
+    config = record.config if isinstance(record.config, dict) else {}
+    return record.result.model, tuple((key, config.get(key)) for key in RAG_CONFIG_KEYS)
+
+
+def load_config_cells(run_root: Path | str, *, min_cases: int = 1) -> list[RunSummary]:
+    """Every final-split (model, RAG-config) cell -- the per-configuration evidence a RAG grid sweep
+    produces. Unlike `load_run_summaries` this does NOT collapse to best-per-model: it keeps one row
+    per (model, top_k) cell (best re-run of that exact cell), so a model swept at several retrieval
+    depths shows all of them for the model x config comparison."""
+    records = [r for r in load_run_records(run_root) if r.result.n_cases >= min_cases]
+    best: dict[tuple[str, tuple[tuple[str, object], ...]], RunRecord] = {}
+    for record in records:
+        key = _cell_key(record)
+        current = best.get(key)
+        if current is None or record.result.objective_score > current.result.objective_score:
+            best[key] = record
+    return [_to_summary(record) for record in best.values()]
 
 
 def select_cohort(
@@ -224,7 +255,7 @@ def _top_k_note(summary: RunSummary) -> str:
     sweep, this is the best top_k for that model); empty when the config has no top_k recorded."""
     config = summary.record.config
     top_k = config.get("top_k") if isinstance(config, dict) else None
-    return f", best RAG top_k {top_k}" if top_k is not None else ""
+    return _t("top_k_note", top_k=top_k) if top_k is not None else ""
 
 
 def _excluded_line(excluded: list[RunSummary]) -> str:
@@ -235,10 +266,7 @@ def _excluded_line(excluded: list[RunSummary]) -> str:
         f"{_short(s.model)} n={s.result.n_cases}"
         for s in sorted(excluded, key=lambda s: s.result.n_cases, reverse=True)
     )
-    return (
-        f"Excluded (off-cohort, not ranked): {listed} "
-        "-- different split/case count; raise --min-cases or re-run them at the cohort's case count."
-    )
+    return _t("excluded", listed=listed)
 
 
 def _too_slow_note(rec: "Recommendation") -> str:
@@ -262,7 +290,7 @@ def _too_slow_note(rec: "Recommendation") -> str:
         f"{_short(s.model)} ({s.result.objective_score:.3f} obj, {s.result.tokens_per_s:.1f} tok/s)"
         for s in sorted(slower, key=lambda s: s.result.objective_score, reverse=True)
     )
-    return f"- Higher accuracy but below the {floor:.0f} tok/s floor (traded away for speed): {listed}."
+    return _t("too_slow", floor=f"{floor:.0f}", listed=listed)
 
 
 def _qpw(summary: RunSummary | None) -> str:
@@ -272,12 +300,21 @@ def _qpw(summary: RunSummary | None) -> str:
 
 
 def format_summary_md(rec: Recommendation) -> str:
-    """Render the recommendation as a Markdown report (host-adaptive, plain-language picks)."""
+    """Render the recommendation as a Markdown report (host-adaptive, plain-language picks).
+
+    All report prose is sourced from `board.recommend.*` templates; this function only computes the
+    values and assembles the line list (headers and the comparison table are pure markdown).
+    """
     host = rec.host
     host_line = (
-        f"{host.gpu_name or 'GPU'} -- {host.tier_gb} GiB tier ({host.total_mb} MiB)"
+        _t(
+            "host_detected",
+            gpu_name=host.gpu_name or "GPU",
+            tier_gb=host.tier_gb,
+            total_mb=host.total_mb,
+        )
         if host.detected
-        else f"{host.tier_gb} GiB tier (no GPU detected; planning budget only)"
+        else _t("host_planning", tier_gb=host.tier_gb)
     )
     bq, be, fast, rec_host = (
         rec.best_quality,
@@ -285,8 +322,6 @@ def format_summary_md(rec: Recommendation) -> str:
         rec.fastest,
         rec.recommended_for_host,
     )
-    eff_model = _short(be.model) if be else "n/a"
-    eff_note = "" if be is None else " -- best accuracy you can buy per watt on this host."
     recall_str = f"{rec.recall_at_k:.3f}" if rec.recall_at_k is not None else "n/a"
     mrr_str = f"{rec.mrr:.3f}" if rec.mrr is not None else "n/a"
     config_str = ", ".join(
@@ -296,44 +331,55 @@ def format_summary_md(rec: Recommendation) -> str:
     n_cases = rec.summaries[0].result.n_cases
     excluded_line = _excluded_line(rec.excluded)
     floor = rec.min_tokens_per_s
-    fit_clause = f"fits the {host.tier_gb} GiB VRAM budget with headroom"
+    fit_clause = _t("fit_clause", tier_gb=host.tier_gb)
     if floor > 0:
-        fit_clause += f" and clears the {floor:.0f} tok/s performance floor"
+        fit_clause += _t("fit_clause_floor", floor=f"{floor:.0f}")
     too_slow_line = _too_slow_note(rec)
     lines = [
         "# loc-lm-bench recommendation summary",
         "",
         f"Host: {host_line}",
-        f"Models compared: {len(rec.summaries)} (final split, {n_cases} cases)",
+        _t("models_compared", n_models=len(rec.summaries), n_cases=n_cases),
         *([excluded_line] if excluded_line else []),
         "",
         "## Recommendations",
         "",
-        f"- Recommended for this host: **{_short(rec_host.model)}** "
-        f"({rec_host.result.backend}) -- highest-accuracy model that is Pareto-optimal and "
-        f"{fit_clause} "
-        f"(objective {rec_host.result.objective_score:.3f}, "
-        f"{rec_host.result.tokens_per_s:.1f} tok/s, "
-        f"peak VRAM {_vram(rec_host)}{_top_k_note(rec_host)}).",
+        _t(
+            "recommended",
+            model=_short(rec_host.model),
+            backend=rec_host.result.backend,
+            fit_clause=fit_clause,
+            objective=f"{rec_host.result.objective_score:.3f}",
+            tokens_per_s=f"{rec_host.result.tokens_per_s:.1f}",
+            vram=_vram(rec_host),
+            top_k_note=_top_k_note(rec_host),
+        ),
         *([too_slow_line] if too_slow_line else []),
-        f"- Best RAG accuracy: **{_short(bq.model)}** "
-        f"(objective {bq.result.objective_score:.3f}, quality/W {_qpw(bq)}).",
-        f"- Best efficiency (quality per watt): **{eff_model}** (quality/W {_qpw(be)}).{eff_note}",
-        f"- Fastest: **{_short(fast.model)}** ({fast.result.tokens_per_s:.1f} tok/s).",
+        _t(
+            "best_accuracy",
+            model=_short(bq.model),
+            objective=f"{bq.result.objective_score:.3f}",
+            quality_per_watt=_qpw(bq),
+        ),
+        _t(
+            "best_efficiency",
+            model=_short(be.model) if be else "n/a",
+            quality_per_watt=_qpw(be),
+            note="" if be is None else _t("best_efficiency_note"),
+        ),
+        _t("fastest", model=_short(fast.model), tokens_per_s=f"{fast.result.tokens_per_s:.1f}"),
         "",
         "## Retrieval (RAG) health",
         "",
-        f"- recall@{rec.top_k or '?'}: {recall_str}, MRR: {mrr_str} "
-        "(shared FAISS index; retrieval is not the bottleneck when this is high).",
-        f"- Best RAG config (from the top run): {config_str}",
+        _t("retrieval_health", top_k=rec.top_k or "?", recall=recall_str, mrr=mrr_str),
+        _t("best_rag_config", config=config_str),
         "",
         "## Model comparison",
         "",
         _comparison_table(rec),
         "",
         rec.policy,
-        "Quality is the ranking axis; efficiency (quality/W) is the host-cost axis. A model can win "
-        "accuracy yet lose on this host if it is slow or VRAM-bound.",
+        _t("policy_axis"),
     ]
     return "\n".join(lines)
 
@@ -361,7 +407,54 @@ def _comparison_table(rec: Recommendation) -> str:
                 str(row["n_cases"]),
             ]
         )
+    return _md_table(headers, rows)
+
+
+def _md_table(headers: list[str], rows: list[list[str]]) -> str:
     head = "| " + " | ".join(headers) + " |"
     sep = "| " + " | ".join("---" for _ in headers) + " |"
     body = ["| " + " | ".join(r) + " |" for r in rows]
     return "\n".join([head, sep, *body])
+
+
+def format_config_detail_md(cells: list[RunSummary]) -> str:
+    """Render the detailed (model x config) proof: one row per (model, top_k) cell of the ranked
+    cohort, grouped by model with each model's best config marked. '' when there are no cells.
+
+    This is the evidence behind the headline picks -- it shows how each model's accuracy and speed
+    move with retrieval depth, so the winning configuration is demonstrated, not assumed. When no
+    model was swept at more than one config it appends a note pointing at the RAG grid.
+    """
+    if not cells:
+        return ""
+    cohort, _ = select_cohort(cells)
+    by_model: dict[str, list[RunSummary]] = {}
+    for cell in cohort:
+        by_model.setdefault(cell.model, []).append(cell)
+    ordered = sorted(
+        by_model,
+        key=lambda m: max(c.result.objective_score for c in by_model[m]),
+        reverse=True,
+    )
+    rows: list[list[str]] = []
+    for model in ordered:
+        group = sorted(by_model[model], key=lambda c: c.result.objective_score, reverse=True)
+        for rank, cell in enumerate(group):
+            config = cell.record.config if isinstance(cell.record.config, dict) else {}
+            recall = cell.recall_at_k
+            rows.append(
+                [
+                    _short(model),
+                    str(config.get("top_k", "?")),
+                    "*" if rank == 0 else "",
+                    f"{cell.result.objective_score:.3f}",
+                    f"{cell.result.tokens_per_s:.1f}",
+                    _vram(cell),
+                    f"{recall:.3f}" if recall is not None else "n/a",
+                ]
+            )
+    table = _md_table(["model", "top_k", "best", "objective", "tok/s", "peak VRAM", "recall"], rows)
+    lines = [_t("config_detail_heading"), "", _t("config_detail_intro"), "", table]
+    if max(len(group) for group in by_model.values()) == 1:
+        lines += ["", _t("config_detail_single")]
+    return "\n".join(lines)

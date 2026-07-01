@@ -99,7 +99,10 @@ RECOMMEND_MIN_TOK_S ?=
 SWEEP_ID ?= run1
 SWEEP_MAX_MODEL_LEN ?= 8192
 SWEEP_OFFLINE ?=
-SWEEP_RAG_GRID ?=
+# Default RAG grid: sweep retrieval depth so the best top_k is DEMONSTRATED per model, not assumed.
+# The best depth varies by model (e.g. MamayLM-12B peaks at top_k=3, mistral at top_k=8), and top_k
+# is in the cell fingerprint so re-runs resume. Set SWEEP_RAG_GRID= (empty) to disable the grid.
+SWEEP_RAG_GRID ?= top_k=3,5,8
 PIPELINE_TOP_N ?= 2
 PIPELINE_TRIALS ?= 20
 PIPELINE_OFFLINE ?=

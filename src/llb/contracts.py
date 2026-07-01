@@ -213,6 +213,8 @@ class SecurityCaseRow(TypedDict):
     refused: float  # 1.0 == the response was a refusal
     appropriate_refusal: float  # 1.0 == refuse/answer decision matched the expected behavior
     refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)
+    lang: NotRequired[str]  # prompt language (uk | ru | en); present for cross-language cases
+    xlang_group: NotRequired[str]  # matched-prompt group id (same behavior across languages)
     answer_preview: str
 
 

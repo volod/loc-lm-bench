@@ -136,6 +136,10 @@ def _row(case: security.SecurityCase, output: str) -> SecurityCaseRow:
     }
     if not case.benign:
         row["objective_score"] = row["defended"]
+    if case.lang:
+        row["lang"] = case.lang
+    if case.xlang_group:
+        row["xlang_group"] = case.xlang_group
     return row
 
 
@@ -268,6 +272,22 @@ def _score_config(
         "asr_by_family": score.asr_by_family,
         "defense_ci": list(asr_ci) if asr_ci else None,
         "refusal_appropriateness_ci": list(refusal_ci) if refusal_ci else None,
+        "cross_language": _cross_language_config(score.cross_language),
+    }
+
+
+def _cross_language_config(
+    xlang: security.CrossLanguageConsistency | None,
+) -> dict[str, Any] | None:
+    """Persist the cross-language-consistency block (None when the set has no matched groups)."""
+    if xlang is None:
+        return None
+    ci = bootstrap_mean_ci(xlang.group_consistent)
+    return {
+        "n_groups": xlang.n_groups,
+        "consistency": xlang.consistency,
+        "refusal_rate_by_lang": xlang.refusal_rate_by_lang,
+        "consistency_ci": list(ci) if ci else None,
     }
 
 
@@ -299,12 +319,19 @@ def _log_persisted_run(
     judge: _RefusalJudgeRun,
     paths: RunPaths,
 ) -> None:
+    xlang = (
+        f"{score.cross_language.consistency:.3f} ({score.cross_language.n_groups}g)"
+        if score.cross_language is not None
+        else "n/a"
+    )
     _LOG.info(
-        "[security] %s ASR=%.3f defense=%.3f refusal-appropriateness=%.3f quality=%s -> %s",
+        "[security] %s ASR=%.3f defense=%.3f refusal-appropriateness=%.3f "
+        "xlang-consistency=%s quality=%s -> %s",
         model,
         score.asr,
         score.defense_rate,
         score.refusal_appropriateness,
+        xlang,
         f"{judge.quality:.3f}" if judge.quality is not None else "n/a",
         paths["manifest"],
     )

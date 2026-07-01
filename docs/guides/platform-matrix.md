@@ -59,6 +59,17 @@ compare rows produced with different gold sets, splits, limits, retrieval config
 
 `quality_per_watt = objective_score * tokens_per_s / mean_power_w`.
 
+## Estimating Run Time
+
+Do not size a sweep or matrix run from model parameter count. Decode speed is set by architecture,
+not nominal size: a mixture-of-experts model (e.g. `qwen3.6-35b-a3b`, ~3B active of 35B) can be
+faster than a dense 12B, attention layout (GQA/MQA vs full MHA) and quantization move tok/s
+severalfold, and on a 16 GiB card VRAM-fit vs CPU-offload is usually the biggest factor. Use the
+measured `tokens_per_s` from a prior manifest and `load_time + n_cases * out_tokens / tokens_per_s`;
+`list-models` shows the `gpu/total` layer split (an `offload` verdict predicts slow decode). See
+[Backend Telemetry -> Run-Time Estimation](../impl/current/backend-telemetry.md#run-time-estimation)
+and the [LLM architecture gallery](https://sebastianraschka.com/llm-architecture-gallery/).
+
 ## GPU-Class Extension
 
 The GPU-class matrix is an operator-run extension path, not a finite plan item. Each physical host

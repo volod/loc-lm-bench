@@ -1,0 +1,1 @@
+- Fastest: **{{ model }}** ({{ tokens_per_s }} tok/s).

@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.best_efficiency",
+  "kind": "text",
+  "template": "best_efficiency.txt"
+}

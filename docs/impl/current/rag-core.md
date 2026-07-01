@@ -137,16 +137,21 @@ Isolation and GPU safety live outside the scoring path:
 
 ## Sweep RAG-config grid
 
-`llb sweep` runs one isolated cell per runnable model. By default every cell reuses the manifest's
-single retrieval config, so the sweep answers "which model" but not "which RAG config". The opt-in
-`--rag-grid top_k=3,5,8` (Make: `SWEEP_RAG_GRID=top_k=3,5,8`) expands each model into one cell per
-`top_k`, so the sweep answers "which `(model, top_k)`" for THIS host. Only the query-time `top_k` is
-gridded -- it changes retrieval depth against the SAME index, so no re-index is needed; `top_k` is
-part of the cell fingerprint, so each grid point gets its own resume key, and `recommend`'s
-best-per-model dedup then represents each model by its highest-scoring `top_k`. Index-time knobs
-(`chunk_size`/`chunk_overlap`) are out of scope because they need rebuilt indexes.
+`llb sweep` runs one isolated cell per runnable model. The `--rag-grid top_k=3,5,8` flag (Make:
+`SWEEP_RAG_GRID`, **defaulting to `top_k=3,5,8`**) expands each model into one cell per `top_k`, so
+the sweep answers "which `(model, top_k)`" for THIS host, not just "which model". This is the
+default because the best depth VARIES by model -- on the 16 GiB committed goldset MamayLM-12B peaks
+at `top_k=3` (0.541, well above its 0.501 at `top_k=5`) while Mistral peaks at `top_k=8`, and
+gridding flipped the host recommendation from Lapa to MamayLM-12B@top_k=3. Only the query-time
+`top_k` is gridded -- it changes retrieval depth against the SAME index, so no re-index is needed;
+`top_k` is part of the cell fingerprint, so each grid point gets its own resume key (existing cells
+resume, not re-run), and `recommend`'s best-per-model dedup then represents each model by its
+highest-scoring `top_k`. Index-time knobs (`chunk_size`/`chunk_overlap`) are out of scope because
+they need rebuilt indexes. Set `SWEEP_RAG_GRID=` (empty) to disable the grid and run one cell per
+model at the manifest's single config.
 
 ```bash
-make sweep SWEEP_ID=grid SWEEP_RAG_GRID=top_k=3,5,8   # 5 models x 3 top_k -> 15 cells
+make sweep SWEEP_ID=grid                              # default grid: 5 models x 3 top_k -> 15 cells
+make sweep SWEEP_ID=one SWEEP_RAG_GRID=               # disable: one cell per model
 make recommend                                        # ranks each model at its best top_k
 ```

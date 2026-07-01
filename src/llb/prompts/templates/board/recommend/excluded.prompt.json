@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.excluded",
+  "kind": "text",
+  "template": "excluded.txt"
+}

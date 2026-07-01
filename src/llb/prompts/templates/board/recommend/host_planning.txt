@@ -1,0 +1,1 @@
+{{ tier_gb }} GiB tier (no GPU detected; planning budget only)

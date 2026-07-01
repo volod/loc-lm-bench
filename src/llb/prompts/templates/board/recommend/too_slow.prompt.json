@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.too_slow",
+  "kind": "text",
+  "template": "too_slow.txt"
+}

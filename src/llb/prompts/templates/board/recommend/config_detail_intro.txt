@@ -1,0 +1,1 @@
+Every final-split configuration cell, grouped by model (best config per model marked *). This is the per-configuration evidence behind the picks above: it shows how each model's accuracy and speed move with retrieval depth (top_k), so the winning config is not assumed but shown.

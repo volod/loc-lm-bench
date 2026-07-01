@@ -74,7 +74,9 @@ def recommend_cmd(
     from llb.board.recommend import (
         HostInfo,
         build_recommendation,
+        format_config_detail_md,
         format_summary_md,
+        load_config_cells,
         load_run_summaries,
     )
     from llb.inference.generate import resolve_tier
@@ -102,10 +104,13 @@ def recommend_cmd(
     host = HostInfo(tier.tier_gb, budget_mb, tier.gpu_name, tier.detected)
     rec = build_recommendation(summaries, host, min_tokens_per_s=min_tokens_per_s)
     summary_md = format_summary_md(rec)
+    # The per-configuration (model x top_k) proof: every config cell, not just best-per-model.
+    detail_md = format_config_detail_md(load_config_cells(run_root, min_cases=min_cases))
+    full_md = summary_md + ("\n\n" + detail_md if detail_md else "")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(summary_md + "\n", encoding="utf-8")
-    typer.echo(summary_md)
+    out.write_text(full_md + "\n", encoding="utf-8")
+    typer.echo(full_md)
     typer.echo(f"\n[recommend] summary -> {out}")
 
     if not no_chart:

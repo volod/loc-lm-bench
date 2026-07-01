@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.best_accuracy",
+  "kind": "text",
+  "template": "best_accuracy.txt"
+}

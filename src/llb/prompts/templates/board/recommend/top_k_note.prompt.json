@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.top_k_note",
+  "kind": "text",
+  "template": "top_k_note.txt"
+}

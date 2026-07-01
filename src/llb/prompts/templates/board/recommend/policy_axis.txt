@@ -1,0 +1,1 @@
+Quality is the ranking axis; efficiency (quality/W) is the host-cost axis. A model can win accuracy yet lose on this host if it is slow or VRAM-bound.
