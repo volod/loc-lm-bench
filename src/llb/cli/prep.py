@@ -444,6 +444,18 @@ def prepare_goldset_draft_cmd(
         min=0,
         help="also write verify_sample.csv for human review (0 leaves review to make verify-sample)",
     ),
+    retrieval_index_dir: Optional[Path] = typer.Option(
+        None,
+        help="full-corpus RAG index dir; when set, annotate citation-valid needles with retrieval_rank",
+    ),
+    retrieval_k: int = typer.Option(
+        10, min=1, help="top-k cutoff for --retrieval-index-dir needle-rank annotation"
+    ),
+    drop_nonretrievable_needles: bool = typer.Option(
+        False,
+        "--drop-nonretrievable-needles",
+        help="write only needles whose gold span is found within --retrieval-k",
+    ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
     from llb.prep.ontology import EndpointConfig, draft_goldset
@@ -468,6 +480,15 @@ def prepare_goldset_draft_cmd(
         from llb.prep.ontology.spacy_adapter import SpacyExtractionAdapter
 
         adapter = SpacyExtractionAdapter(model=spacy_model)
+    if drop_nonretrievable_needles and retrieval_index_dir is None:
+        typer.echo(
+            "[error] --drop-nonretrievable-needles requires --retrieval-index-dir",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
+        typer.echo(f"[error] retrieval index dir not found: {retrieval_index_dir}", err=True)
+        raise typer.Exit(code=2)
     result = draft_goldset(
         corpus_root,
         cfg,
@@ -478,6 +499,9 @@ def prepare_goldset_draft_cmd(
         doc_limit=doc_limit,
         extract_max_chars=extract_max_chars,
         extract_chunk_overlap=extract_chunk_overlap,
+        retrieval_index_dir=retrieval_index_dir,
+        retrieval_k=retrieval_k,
+        drop_nonretrievable_needles=drop_nonretrievable_needles,
     )
     if verification_sample_size:
         from llb.goldset.verify import build_sample_worksheet

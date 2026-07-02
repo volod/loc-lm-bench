@@ -7,32 +7,6 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-### needle-uniqueness-filter
-
-- User-visible outcome: drafted needle items that are RETRIEVABLE in the full-corpus haystack, not
-  just span-grounded. On the 4-document quick draft, recall@10 against the 19-document index was
-  0.729: the misses are questions phrased broadly enough (for example "Де застосовується
-  After-Action Review?") that spans from other doctrine documents outrank the gold span. A needle
-  that cannot be retrieved does not measure generation quality.
-- Scope boundary: add a post-draft retrieval-uniqueness check that queries the FULL corpus index
-  with each drafted question and flags (or, behind an opt-in, drops) items whose gold span is not
-  in the top-k. Prefer flagging a `retrieval_rank` field on `needle_items.jsonl` rows plus a
-  report metric over silent dropping, so the human review sees both. A second lever is prompt-side:
-  extend `prep.ontology.draft` to require document-anchored phrasing (name the manual or context in
-  the question). Reuse `llb.rag` retrieval and the existing `validate-retrieval` machinery; out of
-  scope: re-ranking or changing the embedder.
-- Data and artifact paths: draft bundle under `QUICKSTART_PDF_DRAFT`
-  (`.data/quickstart-pdf-corpus-draft/`); full index under
-  `.data/quickstart-pdf-corpus-rag/llb/rag/`; new fields land in `needle_items.jsonl` and
-  `pdf_ontology_report.json`.
-- Execution path: `make quickstart-pdf-corpus-draft` then `make quickstart-pdf-corpus-validate`;
-  the 4-document quick-run recipe in `docs/impl/current/data-prep.md` reproduces the baseline in
-  about 25 minutes.
-- Acceptance gates: unit tests over a fake store for the rank annotation; on the quick-run bundle,
-  the flagged subset's recall@10 is 1.0 by construction and the report shows the unique-needle
-  fraction; `make ci` green.
-- Documentation target: `docs/impl/current/data-prep.md` and `docs/impl/current/rag-core.md`.
-
 ### ontology-extract-parallel (optional, performance)
 
 - User-visible outcome: a full-corpus PDF draft finishes in a fraction of the current wall time by

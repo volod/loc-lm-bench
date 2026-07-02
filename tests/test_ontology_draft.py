@@ -43,11 +43,20 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
     SROFact,
 )
+from llb.prep.ontology.needles import annotate_needle_retrieval
 from llb.prep.ontology.pipeline import draft_goldset
 from llb.prep.ontology.refine import is_circular, refine_drafts
 
 DOC1 = "# Київ\n\nКиїв є столицею України. Місто розташоване на річці Дніпро.\n"
 DOC2 = "# Львів\n\nЛьвів є культурним центром заходу. Місто засноване у 1256 році.\n"
+
+
+class FakeNeedleRetriever:
+    def __init__(self, hits_by_question: dict[str, list[dict[str, object]]]):
+        self.hits_by_question = hits_by_question
+
+    def retrieve(self, question: str, k: int) -> list[dict[str, object]]:
+        return self.hits_by_question.get(question, [])[:k]
 
 
 # --- stage 1: inventory ----------------------------------------------------------------------
@@ -747,6 +756,130 @@ def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
 def _grounded_span(doc_id: str, text: str, quote: str) -> SourceSpan:
     start = text.index(quote)
     return SourceSpan(doc_id=doc_id, char_start=start, char_end=start + len(quote), text=quote)
+
+
+def _needle_item(item_id: str, question: str, doc_id: str, text: str, quote: str) -> GoldItem:
+    span = _grounded_span(doc_id, text, quote)
+    return GoldItem(
+        id=item_id,
+        question=question,
+        reference_answer=quote,
+        source_doc_id=doc_id,
+        source_spans=[span],
+        provenance=PROVENANCE_KIND,
+        split="final",
+    )
+
+
+def test_annotate_needle_retrieval_flags_rank_and_misses():
+    hit_item = _needle_item("q1", "Де згадано Київ?", "a.md", DOC1, "Київ")
+    miss_item = _needle_item("q2", "Де згадано Львів?", "b.md", DOC2, "Львів")
+    retriever = FakeNeedleRetriever(
+        {
+            hit_item.question: [
+                {"doc_id": "other.md", "char_start": 0, "char_end": 5, "text": "other"},
+                {"doc_id": "a.md", "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ],
+            miss_item.question: [
+                {"doc_id": "other.md", "char_start": 0, "char_end": 5, "text": "other"},
+            ],
+        }
+    )
+
+    rows, report = annotate_needle_retrieval(
+        [hit_item, miss_item], retriever, k=2, drop_nonretrievable=False
+    )
+
+    assert [row["retrieval_rank"] for row in rows] == [2, None]
+    assert all(row["retrieval_k"] == 2 for row in rows)
+    assert report["retrievable_items"] == 1
+    assert report["missed_items"] == 1
+    assert report["retrievable_fraction"] == 0.5
+    assert report["missed_ids"] == ["q2"]
+
+
+def test_annotate_needle_retrieval_can_drop_misses():
+    hit_item = _needle_item("q1", "Де згадано Київ?", "a.md", DOC1, "Київ")
+    miss_item = _needle_item("q2", "Де згадано Львів?", "b.md", DOC2, "Львів")
+    retriever = FakeNeedleRetriever(
+        {
+            hit_item.question: [
+                {"doc_id": "a.md", "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ]
+        }
+    )
+
+    rows, report = annotate_needle_retrieval(
+        [hit_item, miss_item], retriever, k=1, drop_nonretrievable=True
+    )
+
+    assert [row["id"] for row in rows] == ["q1"]
+    assert report["dropped_items"] == 1
+
+
+def test_calibration_artifacts_write_retrieval_ranked_needles(tmp_path):
+    out = tmp_path / "bundle"
+    corpus = out / "corpus"
+    corpus.mkdir(parents=True)
+    doc_id = "a.md"
+    corpus_text = DOC1
+    (corpus / doc_id).write_text(corpus_text, encoding="utf-8")
+    citation = {
+        "kind": "pdf-citations",
+        "source": "source.pdf",
+        "doc_id": doc_id,
+        "parser": "test",
+        "pages": [
+            {
+                "page": 1,
+                "text_start": 0,
+                "text_end": len(corpus_text),
+                "parser": "test",
+                "blocks": [],
+            }
+        ],
+    }
+    (corpus / "a.citations.json").write_text(
+        json.dumps(citation, ensure_ascii=False), encoding="utf-8"
+    )
+    item = _needle_item("q1", "Де згадано Київ?", doc_id, corpus_text, "Київ")
+    span = item.source_spans[0]
+    extraction = DocExtraction(
+        doc_id=doc_id,
+        entities=[Entity(name="Київ", type="LOC", mentions=[span])],
+    )
+    retriever = FakeNeedleRetriever(
+        {
+            item.question: [
+                {"doc_id": doc_id, "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ]
+        }
+    )
+
+    report = write_calibration_artifacts(
+        out,
+        [DocRecord(doc_id=doc_id, text=corpus_text, sha256="x", n_chars=len(corpus_text))],
+        [extraction],
+        OntologyCandidate(),
+        [item],
+        elapsed_s=0.0,
+        settings={},
+        retrieval_store=retriever,
+        retrieval_k=3,
+    )
+
+    raw_rows = [
+        json.loads(line)
+        for line in (out / NEEDLE_GOLDSET_FILENAME).read_text(encoding="utf-8").splitlines()
+    ]
+    assert raw_rows[0]["retrieval_rank"] == 1
+    assert raw_rows[0]["retrieval_k"] == 3
+    assert load_goldset(out / NEEDLE_GOLDSET_FILENAME)[0].id == "q1"
+    assert report["citation_valid_needle_items"] == 1
+    assert report["needle_items_written"] == 1
+    assert report["retrieval_unique_needle_items"] == 1
+    assert report["retrieval_unique_needle_fraction"] == 1.0
+    assert report["gates"]["has_retrieval_unique_needles"] is True
 
 
 def test_calibration_gates_pass_without_sro_facts(tmp_path):

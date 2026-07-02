@@ -56,6 +56,9 @@ DRAFT_NUM_CTX ?=
 DRAFT_EXTRACTOR ?= llm
 DRAFT_OUT_DIR ?=
 DRAFT_VERIFY_N ?= 0
+DRAFT_RETRIEVAL_INDEX_DIR ?=
+DRAFT_RETRIEVAL_K ?= $(RAG_K)
+DRAFT_DROP_NONRETRIEVABLE_NEEDLES ?= 0
 
 # RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
 # and should be used for connectivity checks only, not leaderboard or extended tests.
@@ -540,6 +543,8 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
 	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
+	if [ -n "$(DRAFT_RETRIEVAL_INDEX_DIR)" ]; then args+=(--retrieval-index-dir "$(DRAFT_RETRIEVAL_INDEX_DIR)" --retrieval-k "$(DRAFT_RETRIEVAL_K)"); fi; \
+	if [ "$(DRAFT_DROP_NONRETRIEVABLE_NEEDLES)" = "1" ]; then args+=(--drop-nonretrievable-needles); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"

@@ -49,8 +49,10 @@ and 768-dimensional E5 embeddings (2026-07-02 build). A 4-document quick draft
 (`QUICKSTART_PDF_DRAFT_DOCS=<4 ids>`, 70 unverified items, all citation-valid) scored
 `recall@10=0.729`, `MRR=0.531` against that full-corpus index -- a true needle-in-haystack check;
 the misses are questions phrased broadly enough that spans from OTHER doctrine documents outrank
-the gold span, which motivates the `needle-uniqueness-filter` forward task in
-[`plan.md`](../plan.md). The matching GraphRAG store lives under
+the gold span. The PDF draft path now annotates `needle_items.jsonl` with `retrieval_rank` from the
+full-corpus store; rows with a non-null rank are the retrieval-unique subset at the configured
+top-k, and `pdf_ontology_report.json` records the unique-needle fraction. The matching GraphRAG
+store lives under
 `.data/quickstart-pdf-corpus-graph/llb/graph/` with 290 nodes, 159 edges, and 139 communities
 from the same 4-document draft bundle.
 

@@ -105,15 +105,27 @@ Ontology draft bundles preserve that PDF evidence. When a source document has a 
 and writes these review artifacts beside `goldset.jsonl`:
 
 - `pdf_ontology_report.json`: parse rate, elapsed seconds, grounded entity/event/claim/fact counts,
-  page-span citation coverage, citation-valid needle count, dictionary-term yield, and quality gates
-  with a `passed` roll-up (grounded extractions of any kind + a non-empty gold set, plus a
-  citation-valid needle for PDF corpora).
+  page-span citation coverage, citation-valid needle count, dictionary-term yield, needle-retrieval
+  metrics when enabled, and quality gates with a `passed` roll-up (grounded extractions of any kind
+  + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
   spans and PDF page references when sidecars exist.
-- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars.
+- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. When
+  `prepare-goldset-draft --retrieval-index-dir <full-rag-index>` is set, each row also carries
+  `retrieval_rank` and `retrieval_k`; `retrieval_rank: null` marks a citation-valid needle whose
+  gold span was not retrieved from the full corpus within top-k.
 
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
+
+The retrieval-uniqueness check is opt-in for generic drafts and enabled by the PDF quickstart after
+the full-corpus RAG store exists. Use `DRAFT_RETRIEVAL_INDEX_DIR=<data>/llb/rag` and
+`DRAFT_RETRIEVAL_K=<k>` with `make prepare-goldset-draft`; add
+`DRAFT_DROP_NONRETRIEVABLE_NEEDLES=1` only when the review artifact should omit misses instead of
+flagging them. The report records `needle_retrieval`, `retrieval_unique_needle_items`,
+`retrieval_unique_needle_fraction`, and `needle_items_written`. `has_retrieval_unique_needles` is
+informational in `gates`; the existing `passed` roll-up still gates on citation-valid needles so
+operators can inspect broad-but-grounded misses.
 
 The ontology-assisted seed sampler uses entities, subject-relation-object facts, grounded claims,
 and grounded events as draft targets. Seeds carry document, section, difficulty, and semantic-type
@@ -153,8 +165,9 @@ endpoint (the only layer honoring `think=false` and `num_ctx`), so
 and otherwise falls back to the highest-ranked Ollama candidate -- a vLLM-only HF id (for example
 `google/gemma-4-E4B-it-qat-w4a16-ct`) is never handed to Ollama. The draft step prints an estimated
 hour count (character-based, `wc -m`, since Cyrillic UTF-8 bytes would double it) and requires
-confirmation before the full ontology/goldset generation starts. Model scoring remains gated on
-`verify-review` and `verify-accept`.
+confirmation before the full ontology/goldset generation starts. It passes the full PDF RAG store
+at `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring
+remains gated on `verify-review` and `verify-accept`.
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid
