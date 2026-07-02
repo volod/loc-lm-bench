@@ -66,6 +66,15 @@ Validated (real-model validation, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-
 scored 0.801 objective at **63.8 tok/s**, peak VRAM **15.7 GB** (gpu-mem-util 0.80),
 cold load **112 s**, served ctx 8192.
 
+The same launcher can serve ontology-assisted PDF drafting:
+
+    make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<hf-vllm-model> \
+      DRAFT_BACKEND=vllm DRAFT_NO_THINK=1 DRAFT_NUM_CTX=16384
+
+When `DRAFT_BASE_URL` is unset, the draft command starts and stops `vllm serve`; when it is set,
+the command uses the existing OpenAI-compatible endpoint. `DRAFT_NO_THINK=1` sends vLLM
+`chat_template_kwargs.enable_thinking=false` through the request `extra_body` for reasoning models.
+
 ## Gotchas (from the real-model validation run)
 
 - **flashinfer sampler is defaulted off.** vLLM JIT-compiles a flashinfer sampling kernel at

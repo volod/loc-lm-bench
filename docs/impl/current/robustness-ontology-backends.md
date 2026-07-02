@@ -104,11 +104,15 @@ Pipeline stages:
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO_THINK=1
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<hf-vllm-model> \
+  DRAFT_BACKEND=vllm DRAFT_NO_THINK=1 DRAFT_NUM_CTX=16384
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> \
   DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_CONCURRENCY=2 DRAFT_VERIFY_N=30
 llb prepare-goldset-draft --corpus-root <dir> --model <local-model> \
   --max-tokens 2048 --temperature 0 --timeout 300 --no-think \
   --doc-limit 1 --extract-max-chars 12000 --concurrency 2 --verification-sample-size 30
+llb prepare-goldset-draft --corpus-root <dir> --model <hf-vllm-model> \
+  --backend vllm --no-think --num-ctx 16384 --doc-limit 1
 llb prepare-goldset-draft --corpus-root <dir> --model <model> --extractor spacy
 ```
 
@@ -178,6 +182,27 @@ probe before accepting a real PDF bundle.
 
 Ollama reasoning models should use `--no-think`; the command routes through Ollama native
 `/api/chat` so `think=false` is honored and JSON extraction is not spent on hidden reasoning.
+
+vLLM-backed drafting is still `--endpoint local` (no egress), but sets `--backend vllm`. If
+`--base-url` is omitted, `src/llb/cli/prep.py` starts `VllmLauncher` from
+`src/llb/backends/vllm.py`, waits for `/v1/models`, writes vLLM logs under the draft bundle's
+`vllm/` directory, and points the endpoint at `http://localhost:<port>/v1`. If `--base-url` is set,
+the command uses that already-running OpenAI-compatible server. `--num-ctx` maps to vLLM
+`--max-model-len` only when the command launches the server; use `--vllm-max-model-len` to override
+that explicitly. Bundle provenance records `endpoint.backend=vllm` and the served `base_url`.
+`--no-think` sends vLLM request extras through the existing OpenAI client: `chat_template_kwargs`
+with `enable_thinking=false`, plus `include_reasoning=false` and `reasoning_effort=none`, so
+reasoning-model output budget is available for JSON.
+
+Passing vLLM probe evidence on the local 16 GB RTX 4060 Ti host used
+`google/gemma-4-E4B-it-qat-w4a16-ct`, `DRAFT_BACKEND=vllm`, `DRAFT_NO_THINK=1`,
+`DRAFT_NUM_CTX=4096`, a one-document probe corpus at `.data/vllm-draft-probe-corpus`, and output
+bundle `.data/prepare-goldset/vllm-draft-probe`. The run launched vLLM, served
+`http://localhost:8000/v1`, wrote `.data/prepare-goldset/vllm-draft-probe/vllm/vllm-8000.log`,
+and stopped the server. `pdf_ontology_report.json` recorded `elapsed_s=17.737`, `parse_rate=1.0`,
+6 grounded entities, 3 grounded facts, 1 claim, 2 events, 2 kept draft items, and `gates.passed=true`.
+`provenance.json` records `endpoint.backend=vllm`, `endpoint.base_url=http://localhost:8000/v1`,
+`endpoint.think=false`, 3 local calls, and zero egress/cost.
 
 `--num-ctx` (make: `DRAFT_NUM_CTX`) right-sizes the Ollama context window for drafting through the
 same native endpoint. Without it, Ollama loads the model with its modelfile context (often 128k+),

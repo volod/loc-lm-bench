@@ -482,7 +482,12 @@ def test_endpoint_config_validates_kind_model_and_egress():
         EndpointConfig(kind="cloud", model="m")
     with pytest.raises(ValueError, match="model must be set"):
         EndpointConfig(kind="local", model="")
+    with pytest.raises(ValueError, match="local backend"):
+        EndpointConfig(kind="local", model="m", backend="bad")
+    with pytest.raises(ValueError, match="local backend can only"):
+        EndpointConfig(kind="frontier", model="gpt", backend="vllm")
     assert EndpointConfig(kind="local", model="m").egress is False
+    assert EndpointConfig(kind="local", model="m").provenance()["backend"] == "ollama"
     frontier = EndpointConfig(kind="frontier", model="gpt")
     assert frontier.egress is True and frontier.provenance()["egress"] is True
 
@@ -538,6 +543,47 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
     assert captured["url"].endswith("/api/chat")
     assert captured["think"] is False and captured["num_predict"] == 4096
     assert log.summary()["total_prompt_tokens"] == 7
+
+
+def test_vllm_think_disabled_uses_openai_extra_body(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
+    captured: dict[str, object] = {}
+
+    def fake_chat_once(client, model, messages, **kwargs):
+        captured["client"] = client
+        captured["extra_body"] = kwargs.get("extra_body")
+
+        class _Result:
+            text = "OK"
+            prompt_tokens = 11
+            completion_tokens = 4
+            error = None
+
+        return _Result()
+
+    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
+    cfg = EndpointConfig(
+        kind="local",
+        backend="vllm",
+        model="hf/reasoning-model",
+        base_url="http://localhost:8000/v1",
+        think=False,
+    )
+    assert cfg.provenance()["backend"] == "vllm"
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    extra_body = captured["extra_body"]
+    assert isinstance(extra_body, dict)
+    assert extra_body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert extra_body["include_reasoning"] is False
+    assert extra_body["reasoning_effort"] == "none"
+    assert captured["client"] is sentinel
+
+
+def test_vllm_host_for_port_rewrites_default_host():
+    from llb.cli.prep import _vllm_host_for_port
+
+    assert _vllm_host_for_port("http://localhost:8000", 8010) == "http://localhost:8010"
 
 
 def test_num_ctx_routes_through_native_endpoint_and_bounds_context(monkeypatch):

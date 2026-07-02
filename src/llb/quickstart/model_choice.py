@@ -85,29 +85,33 @@ def print_selection(path: Path, key: str) -> None:
     print(item["model"])
 
 
-# The quickstart drafter always speaks to a local Ollama endpoint (the native /api/chat layer is
-# the only one that honors `think=false` for reasoning models), so auto-selection must never hand
-# it a model only servable by another backend (e.g. a vLLM-only HF id).
-DRAFTER_BACKENDS = ("ollama",)
+# The PDF quickstart drafter can use local Ollama or a locally launched vLLM server. The shell
+# wrapper passes the subset actually available on the host; this default is for direct CLI use.
+DRAFTER_BACKENDS = ("ollama", "vllm")
 
 
-def print_drafter(path: Path, backends: list[str] | None = None) -> None:
-    """Print the best benchmark candidate the local draft endpoint can actually serve.
+def _select_drafter(data: dict[str, Any], backends: list[str] | None = None) -> dict[str, Any]:
+    """Return the best benchmark candidate the local draft endpoint can actually serve.
 
     Prefers `recommended_for_host` when its backend qualifies; otherwise falls back to the
     highest-ranked candidate with an allowed backend. Exits nonzero when none qualifies.
     """
     allowed = set(backends or DRAFTER_BACKENDS)
-    data = _load(path)
     recommended = _selection_item(data, "recommended_for_host")
     if recommended and recommended.get("backend") in allowed and recommended.get("model"):
-        print(recommended["model"])
-        return
+        return recommended
     for item in _candidates(data):
         if item.get("backend") in allowed and item.get("model"):
-            print(item["model"])
-            return
+            return item
     raise SystemExit(f"no ranked candidate with backend in {sorted(allowed)}")
+
+
+def print_drafter(path: Path, backends: list[str] | None = None) -> None:
+    print(_select_drafter(_load(path), backends)["model"])
+
+
+def print_drafter_backend(path: Path, backends: list[str] | None = None) -> None:
+    print(_select_drafter(_load(path), backends)["backend"])
 
 
 def print_candidate(path: Path, index: int) -> None:
@@ -118,6 +122,16 @@ def print_candidate(path: Path, index: int) -> None:
     if not model:
         raise SystemExit(f"candidate has no model: {index}")
     print(model)
+
+
+def print_candidate_backend(path: Path, index: int) -> None:
+    candidates = _candidates(_load(path))
+    if index < 1 or index > len(candidates):
+        raise SystemExit(f"candidate index out of range: {index}")
+    backend = candidates[index - 1].get("backend")
+    if not backend:
+        raise SystemExit(f"candidate has no backend: {index}")
+    print(backend)
 
 
 def print_speed(path: Path, model: str) -> None:
@@ -151,9 +165,17 @@ def main(argv: list[str] | None = None) -> None:
     drafter.add_argument("json", type=Path)
     drafter.add_argument("backends", nargs="*", default=list(DRAFTER_BACKENDS))
 
+    drafter_backend = sub.add_parser("drafter-backend")
+    drafter_backend.add_argument("json", type=Path)
+    drafter_backend.add_argument("backends", nargs="*", default=list(DRAFTER_BACKENDS))
+
     candidate = sub.add_parser("candidate")
     candidate.add_argument("json", type=Path)
     candidate.add_argument("index", type=int)
+
+    candidate_backend = sub.add_parser("candidate-backend")
+    candidate_backend.add_argument("json", type=Path)
+    candidate_backend.add_argument("index", type=int)
 
     speed = sub.add_parser("speed")
     speed.add_argument("json", type=Path)
@@ -169,8 +191,12 @@ def main(argv: list[str] | None = None) -> None:
         print_selection(args.json, args.key)
     elif args.command == "drafter":
         print_drafter(args.json, args.backends or None)
+    elif args.command == "drafter-backend":
+        print_drafter_backend(args.json, args.backends or None)
     elif args.command == "candidate":
         print_candidate(args.json, args.index)
+    elif args.command == "candidate-backend":
+        print_candidate_backend(args.json, args.index)
     elif args.command == "speed":
         print_speed(args.json, args.model)
     elif args.command == "count":

@@ -158,16 +158,24 @@ born-digital.
 `QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
 `QUICKSTART_DRAFT_NUM_CTX=16384`. With the auto model setting it prints ranked local candidates
 from `llb recommend` JSON when benchmark artifacts exist; otherwise it prompts the operator to run
-the local committed-goldset benchmark, choose an Ollama model manually, or opt into a frontier
-`litellm` model. Auto-selection is backend-aware: drafting always talks to the local Ollama native
-endpoint (the only layer honoring `think=false` and `num_ctx`), so
-`llb.quickstart.model_choice drafter` picks `recommended_for_host` only when it is Ollama-served
-and otherwise falls back to the highest-ranked Ollama candidate -- a vLLM-only HF id (for example
-`google/gemma-4-E4B-it-qat-w4a16-ct`) is never handed to Ollama. The draft step prints an estimated
-hour count (character-based, `wc -m`, since Cyrillic UTF-8 bytes would double it) and requires
-confirmation before the full ontology/goldset generation starts. It passes the full PDF RAG store
-at `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring
-remains gated on `verify-review` and `verify-accept`.
+the local committed-goldset benchmark, choose a local model manually, or opt into a frontier
+`litellm` model. Auto-selection is backend-aware: `llb.quickstart.model_choice drafter` accepts
+Ollama and vLLM candidates, and `scripts/quickstart.sh` passes only the local backends available on
+the host. A vLLM pick sets `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts
+`VllmLauncher`, points the local draft endpoint at `http://localhost:<port>/v1`, and records
+`endpoint.backend` plus `endpoint.base_url` in provenance. `--no-think` still works for reasoning
+models: Ollama uses native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible
+`extra_body` (`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
+`reasoning_effort=none`). The draft step prints an estimated hour count (character-based, `wc -m`,
+since Cyrillic UTF-8 bytes would double it) and requires confirmation before the full
+ontology/goldset generation starts. It passes the full PDF RAG store at
+`$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
+gated on `verify-review` and `verify-accept`.
+
+The local recommendation JSON at `.data/quickstart-leaderboard/recommend/pdf_model_choice.json`
+ranks `google/gemma-4-E4B-it-qat-w4a16-ct` as `recommended_for_host` on the 16 GB host with backend
+`vllm`; the selector now returns both model and backend so the PDF draft step launches the matching
+server instead of falling back to an Ollama-only candidate.
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid

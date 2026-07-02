@@ -71,14 +71,14 @@ def test_speed_is_zero_for_unknown_model(recommend_json, capsys):
 def test_drafter_prefers_host_recommendation_when_ollama(recommend_json, capsys):
     # the whole COHORT is ollama-backed, so the drafter matches recommended_for_host
     model_choice.print_drafter(recommend_json)
+    model_choice.print_drafter_backend(recommend_json)
     model_choice.print_selection(recommend_json, "recommended_for_host")
-    drafter, recommended = capsys.readouterr().out.splitlines()
+    drafter, backend, recommended = capsys.readouterr().out.splitlines()
     assert drafter == recommended
+    assert backend == "ollama"
 
 
-def test_drafter_skips_backends_the_draft_endpoint_cannot_serve(tmp_path, capsys):
-    # recommended_for_host lands on a vLLM-only model; the drafter must fall back to the
-    # highest-ranked ollama candidate instead of handing Ollama an unservable HF id.
+def test_drafter_accepts_vllm_candidate_when_backend_qualifies(tmp_path, capsys):
     cohort = [
         _summary("vllm-fast-e4b", 0.60, 58.9, 14782, 0.237, backend="vllm"),
         _summary("ollama-best", 0.44, 22.9, 15868, 0.179),
@@ -86,11 +86,28 @@ def test_drafter_skips_backends_the_draft_endpoint_cannot_serve(tmp_path, capsys
     ]
     path = _write_recommendation(tmp_path, cohort)
     model_choice.print_drafter(path)
-    assert capsys.readouterr().out.strip() == "ollama-best"
+    model_choice.print_drafter_backend(path)
+    assert capsys.readouterr().out.splitlines() == ["vllm-fast-e4b", "vllm"]
+
+
+def test_drafter_can_still_be_restricted_to_ollama(tmp_path, capsys):
+    cohort = [
+        _summary("vllm-fast-e4b", 0.60, 58.9, 14782, 0.237, backend="vllm"),
+        _summary("ollama-best", 0.44, 22.9, 15868, 0.179),
+    ]
+    path = _write_recommendation(tmp_path, cohort)
+    model_choice.print_drafter(path, ["ollama"])
+    model_choice.print_drafter_backend(path, ["ollama"])
+    assert capsys.readouterr().out.splitlines() == ["ollama-best", "ollama"]
+
+
+def test_candidate_backend_reports_selected_backend(recommend_json, capsys):
+    model_choice.print_candidate_backend(recommend_json, 1)
+    assert capsys.readouterr().out.strip() == "ollama"
 
 
 def test_drafter_fails_loudly_when_no_backend_qualifies(tmp_path):
     cohort = [_summary("vllm-only", 0.60, 58.9, 14782, 0.237, backend="vllm")]
     path = _write_recommendation(tmp_path, cohort)
     with pytest.raises(SystemExit):
-        model_choice.print_drafter(path)
+        model_choice.print_drafter(path, ["ollama"])

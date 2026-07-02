@@ -7,27 +7,6 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-### draft-vllm-endpoint (optional, performance)
-
-- User-visible outcome: quickstart PDF drafting can use a vLLM-served candidate (the fastest
-  ranked model on 16 GB hosts serves ~2.5x more tok/s than the best Ollama candidate), instead of
-  being restricted to Ollama-served models.
-- Scope boundary: reuse the existing vLLM server lifecycle in `src/llb/backends/vllm.py` to start
-  the target and point `prepare-goldset-draft --base-url` at it; extend drafter selection
-  (`llb.quickstart.model_choice drafter`) to accept vLLM-backed candidates once serving works. The
-  blocker to solve first: reasoning-model output control -- the draft endpoint disables hidden
-  thinking via Ollama-native `think=false`, and vLLM needs an equivalent (for example
-  `chat_template_kwargs`) or JSON output collapses for reasoning models.
-- Data and artifact paths: unchanged draft bundle layout; provenance records the endpoint base URL
-  and backend.
-- Execution path: `make quickstart-pdf-corpus-draft` on a CUDA host with a vLLM-ranked
-  recommendation JSON present.
-- Acceptance gates: a one-document probe bundle passes calibration gates with a vLLM-served
-  reasoning model; drafter auto-selection covered by unit tests for both backends; `make ci`
-  green.
-- Documentation target: `docs/impl/current/data-prep.md` (drafter selection) and
-  `docs/impl/current/robustness-ontology-backends.md` (endpoint).
-
 ## Adding Future Tasks
 
 Add a task only when there is concrete forward work with enough detail for an engineer or an

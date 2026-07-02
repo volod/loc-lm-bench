@@ -107,6 +107,13 @@ list_local_models() {
   fi
 }
 
+draft_backend_args() {
+  printf '%s\n' ollama
+  if [ -x "$PROJECT_ROOT/.venv/bin/vllm" ] || command -v vllm >/dev/null 2>&1; then
+    printf '%s\n' vllm
+  fi
+}
+
 pdf_bench_json() {
   printf '%s/recommend/pdf_model_choice.json' "$QS_PDF_MODEL_BENCH_DATA"
 }
@@ -141,17 +148,21 @@ run_pdf_model_benchmark() {
 }
 
 select_model_from_benchmark_json() {
-  local json choice count model
+  local json choice count model backend
+  local -a drafter_backends
   json="$(pdf_bench_json)"
   quickstart_py table "$json"
   case "$QS_MODEL_SELECTION" in
     auto|benchmark)
-      # drafter (not recommended_for_host): drafting runs against the local Ollama endpoint,
-      # so the pick is restricted to candidates that backend can serve.
-      model="$(quickstart_py drafter "$json")"
-      if prompt_yes_no "Use recommended local drafter model '$model'?" "yes"; then
+      # drafter (not necessarily recommended_for_host): restrict the pick to local backends this
+      # host can serve for the PDF draft endpoint.
+      mapfile -t drafter_backends < <(draft_backend_args)
+      model="$(quickstart_py drafter "$json" "${drafter_backends[@]}")"
+      backend="$(quickstart_py drafter-backend "$json" "${drafter_backends[@]}")"
+      if prompt_yes_no "Use recommended local drafter model '$model' (backend=$backend)?" "yes"; then
         QS_DRAFT_MODEL="$model"
         QS_DRAFT_ENDPOINT="local"
+        QS_DRAFT_BACKEND="$backend"
         return 0
       fi
       ;;
@@ -163,6 +174,7 @@ select_model_from_benchmark_json() {
     *[!0-9]* ) QS_DRAFT_MODEL="$choice" ;;
     * )
       QS_DRAFT_MODEL="$(quickstart_py candidate "$json" "$choice")"
+      QS_DRAFT_BACKEND="$(quickstart_py candidate-backend "$json" "$choice")"
       ;;
   esac
   QS_DRAFT_ENDPOINT="local"
@@ -185,7 +197,7 @@ select_frontier_model() {
 
 select_pdf_draft_model() {
   if [ "$QS_DRAFT_MODEL" != "auto" ]; then
-    result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT)"
+    result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
     return 0
   fi
   if [ "$QS_DRAFT_ENDPOINT" = "frontier" ]; then
@@ -355,6 +367,7 @@ QS_PDF_ACCEPTED="$(resolve_path "${QUICKSTART_PDF_ACCEPTED:-$QS_PDF_DRAFT/accept
 QS_PDF_DRAFT_DOCS="${QUICKSTART_PDF_DRAFT_DOCS:-all}"
 QS_DRAFT_MODEL="${QUICKSTART_DRAFT_MODEL:-auto}"
 QS_DRAFT_ENDPOINT="${QUICKSTART_DRAFT_ENDPOINT:-local}"
+QS_DRAFT_BACKEND="${QUICKSTART_DRAFT_BACKEND:-ollama}"
 QS_DRAFT_BASE_URL="${QUICKSTART_DRAFT_BASE_URL:-}"
 QS_DRAFT_MAX_ITEMS="${QUICKSTART_DRAFT_MAX_ITEMS:-180}"
 QS_DRAFT_VERIFY_N="${QUICKSTART_DRAFT_VERIFY_N:-40}"
@@ -362,6 +375,12 @@ QS_DRAFT_TIMEOUT="${QUICKSTART_DRAFT_TIMEOUT:-900}"
 QS_DRAFT_MAX_TOKENS="${QUICKSTART_DRAFT_MAX_TOKENS:-4096}"
 QS_DRAFT_TEMPERATURE="${QUICKSTART_DRAFT_TEMPERATURE:-0}"
 QS_DRAFT_NUM_CTX="${QUICKSTART_DRAFT_NUM_CTX:-16384}"
+QS_DRAFT_VLLM_PORT="${QUICKSTART_DRAFT_VLLM_PORT:-8000}"
+QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION="${QUICKSTART_DRAFT_VLLM_GPU_MEMORY_UTILIZATION:-0.85}"
+QS_DRAFT_VLLM_MAX_MODEL_LEN="${QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN:-}"
+QS_DRAFT_VLLM_DTYPE="${QUICKSTART_DRAFT_VLLM_DTYPE:-auto}"
+QS_DRAFT_VLLM_QUANTIZATION="${QUICKSTART_DRAFT_VLLM_QUANTIZATION:-}"
+QS_DRAFT_VLLM_STARTUP_TIMEOUT="${QUICKSTART_DRAFT_VLLM_STARTUP_TIMEOUT:-600}"
 QS_DRAFT_EXTRACT_MAX_CHARS="${QUICKSTART_DRAFT_EXTRACT_MAX_CHARS:-}"
 QS_DRAFT_EXTRACT_CHUNK_OVERLAP="${QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP:-}"
 QS_DRAFT_CONCURRENCY="${QUICKSTART_DRAFT_CONCURRENCY:-}"
@@ -595,7 +614,7 @@ track_b_index() {
 track_b_draft() {
   heading "1/4" "select draft model"
   select_pdf_draft_model
-  result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT)"
+  result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
 
   heading "2/4" "stage full draft corpus"
   stage_pdf_draft_corpus
@@ -616,6 +635,7 @@ track_b_draft() {
     DRAFT_CORPUS="$QS_PDF_DRAFT_MD" \
     DRAFT_MODEL="$QS_DRAFT_MODEL" \
     DRAFT_ENDPOINT="$QS_DRAFT_ENDPOINT" \
+    DRAFT_BACKEND="$QS_DRAFT_BACKEND" \
     DRAFT_BASE_URL="$QS_DRAFT_BASE_URL" \
     DRAFT_MAX_ITEMS="$QS_DRAFT_MAX_ITEMS" \
     DRAFT_VERIFY_N="$QS_DRAFT_VERIFY_N" \
@@ -626,6 +646,12 @@ track_b_draft() {
     DRAFT_CONCURRENCY="$QS_DRAFT_CONCURRENCY" \
     DRAFT_NO_THINK=1 \
     DRAFT_NUM_CTX="$QS_DRAFT_NUM_CTX" \
+    DRAFT_VLLM_PORT="$QS_DRAFT_VLLM_PORT" \
+    DRAFT_VLLM_GPU_MEMORY_UTILIZATION="$QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION" \
+    DRAFT_VLLM_MAX_MODEL_LEN="$QS_DRAFT_VLLM_MAX_MODEL_LEN" \
+    DRAFT_VLLM_DTYPE="$QS_DRAFT_VLLM_DTYPE" \
+    DRAFT_VLLM_QUANTIZATION="$QS_DRAFT_VLLM_QUANTIZATION" \
+    DRAFT_VLLM_STARTUP_TIMEOUT="$QS_DRAFT_VLLM_STARTUP_TIMEOUT" \
     DRAFT_RETRIEVAL_INDEX_DIR="$QS_PDF_RAG_DATA/llb/rag" \
     DRAFT_RETRIEVAL_K="$QS_RAG_K" \
     DRAFT_OUT_DIR="$QS_PDF_DRAFT" \
