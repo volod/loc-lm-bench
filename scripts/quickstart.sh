@@ -146,7 +146,9 @@ select_model_from_benchmark_json() {
   quickstart_py table "$json"
   case "$QS_MODEL_SELECTION" in
     auto|benchmark)
-      model="$(quickstart_py selection "$json" recommended_for_host)"
+      # drafter (not recommended_for_host): drafting runs against the local Ollama endpoint,
+      # so the pick is restricted to candidates that backend can serve.
+      model="$(quickstart_py drafter "$json")"
       if prompt_yes_no "Use recommended local drafter model '$model'?" "yes"; then
         QS_DRAFT_MODEL="$model"
         QS_DRAFT_ENDPOINT="local"
@@ -283,8 +285,10 @@ stage_pdf_draft_corpus() {
 pdf_draft_stats() {
   local docs chars chunk windows calls tok_s
   docs="$(find "$QS_PDF_DRAFT_MD" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')"
+  # wc -m (characters), not -c (bytes): Cyrillic UTF-8 is ~2 bytes/char, and the extractor
+  # windows by CHARACTERS, so byte counts would overestimate the workload ~2x.
   chars="$(find "$QS_PDF_DRAFT_MD" -maxdepth 1 -type f -name '*.md' -print0 \
-    | xargs -0 wc -c 2>/dev/null \
+    | xargs -0 wc -m 2>/dev/null \
     | awk 'END {print $1 + 0}')"
   chunk="${QS_DRAFT_EXTRACT_MAX_CHARS:-12000}"
   windows=$(( (chars + chunk - 1) / chunk ))
@@ -357,6 +361,7 @@ QS_DRAFT_VERIFY_N="${QUICKSTART_DRAFT_VERIFY_N:-40}"
 QS_DRAFT_TIMEOUT="${QUICKSTART_DRAFT_TIMEOUT:-900}"
 QS_DRAFT_MAX_TOKENS="${QUICKSTART_DRAFT_MAX_TOKENS:-4096}"
 QS_DRAFT_TEMPERATURE="${QUICKSTART_DRAFT_TEMPERATURE:-0}"
+QS_DRAFT_NUM_CTX="${QUICKSTART_DRAFT_NUM_CTX:-16384}"
 QS_DRAFT_EXTRACT_MAX_CHARS="${QUICKSTART_DRAFT_EXTRACT_MAX_CHARS:-}"
 QS_DRAFT_EXTRACT_CHUNK_OVERLAP="${QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP:-}"
 QS_MODEL_SELECTION="${QUICKSTART_MODEL_SELECTION:-auto}"
@@ -618,6 +623,7 @@ track_b_draft() {
     DRAFT_EXTRACT_MAX_CHARS="$QS_DRAFT_EXTRACT_MAX_CHARS" \
     DRAFT_EXTRACT_CHUNK_OVERLAP="$QS_DRAFT_EXTRACT_CHUNK_OVERLAP" \
     DRAFT_NO_THINK=1 \
+    DRAFT_NUM_CTX="$QS_DRAFT_NUM_CTX" \
     DRAFT_OUT_DIR="$QS_PDF_DRAFT" \
     DRAFT_TIMEOUT="$QS_DRAFT_TIMEOUT"
   result "draft bundle: $(rel_path "$QS_PDF_DRAFT")"

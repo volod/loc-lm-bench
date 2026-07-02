@@ -156,6 +156,16 @@ For long local PDF corpora, extraction logs document and window progress. Ollama
 should use `--no-think`; the command routes through Ollama native `/api/chat` so `think=false` is
 honored and JSON extraction is not spent on hidden reasoning.
 
+`--num-ctx` (make: `DRAFT_NUM_CTX`) right-sizes the Ollama context window for drafting through the
+same native endpoint. Without it, Ollama loads the model with its modelfile context (often 128k+),
+which forces CPU offload on VRAM-bound hosts even though drafting prompts are bounded by
+`extract_max_chars`. Measured on the 16 GB RTX 4060 Ti host with `batiai/qwen3.6-35b:iq3`:
+the default context loaded 19 percent CPU / 81 percent GPU at about 120 s per extraction window;
+`--num-ctx 16384` loaded 4 percent CPU / 96 percent GPU at about 43 s per window. Keep headroom
+over `extract_max_chars` plus the completion budget -- Ollama silently truncates prompts longer
+than `num_ctx`. The quickstart PDF flow passes `QUICKSTART_DRAFT_NUM_CTX` (default 16384). The
+chosen value lands in bundle provenance (`endpoint.num_ctx`).
+
 The one-document probe path is the default safety valve before a multi-hour full PDF run:
 `DRAFT_DOC_LIMIT=1` bounds documents and `DRAFT_EXTRACT_MAX_CHARS=<n>` bounds each extraction
 window. Increase those only after `pdf_ontology_report.json` shows `gates.passed` (grounded

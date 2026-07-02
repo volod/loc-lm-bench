@@ -461,6 +461,62 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
     assert log.summary()["total_prompt_tokens"] == 7
 
 
+def test_num_ctx_routes_through_native_endpoint_and_bounds_context(monkeypatch):
+    # num_ctx (like think) exists only on Ollama's native /api/chat; a num_ctx-set config must
+    # right-size the loaded context instead of inheriting the modelfile default (CPU offload).
+    monkeypatch.setattr(
+        ep,
+        "make_client",
+        lambda *a, **k: pytest.fail("must not use the /v1 client when num_ctx set"),
+    )
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": "OK"}, "prompt_eval_count": 5, "eval_count": 2}
+
+    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
+        captured["url"] = url
+        captured["options"] = json["options"]
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    cfg = EndpointConfig(kind="local", model="qwen3.6:35b", num_ctx=16384)
+    assert cfg.provenance()["num_ctx"] == 16384
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    assert captured["url"].endswith("/api/chat")
+    options = captured["options"]
+    assert isinstance(options, dict) and options["num_ctx"] == 16384
+
+
+def test_default_config_keeps_endpoint_context_untouched(monkeypatch):
+    # without think/num_ctx the /v1 OpenAI-compatible path stays in use and no num_ctx is sent
+    sentinel = object()
+    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
+    seen: dict[str, object] = {}
+
+    def fake_chat_once(client, model, messages, **kwargs):
+        seen["client"] = client
+
+        class _Result:
+            text = "OK"
+            prompt_tokens = 1
+            completion_tokens = 1
+            error = None
+
+        return _Result()
+
+    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
+    cfg = EndpointConfig(kind="local", model="any:model")
+    assert "num_ctx" not in cfg.provenance()
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    assert seen["client"] is sentinel
+
+
 # --- stage 7: full flow over a fake local endpoint -------------------------------------------
 
 

@@ -36,6 +36,7 @@ PDF_DIR ?= $(DATA_DIR)/quickstart-pdf-corpus
 PDF_OUT_DIR ?=
 PDF_MIN_CHARS ?=
 PDF_PARSER ?= auto
+PDF_REFRESH ?=
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
@@ -51,6 +52,7 @@ DRAFT_MAX_TOKENS ?= 4096
 DRAFT_TEMPERATURE ?= 0
 DRAFT_TIMEOUT ?= 300
 DRAFT_NO_THINK ?= 0
+DRAFT_NUM_CTX ?=
 DRAFT_EXTRACTOR ?= llm
 DRAFT_OUT_DIR ?=
 DRAFT_VERIFY_N ?= 0
@@ -237,6 +239,9 @@ QUICKSTART_DRAFT_VERIFY_N ?= 40
 QUICKSTART_DRAFT_TIMEOUT ?= 900
 QUICKSTART_DRAFT_MAX_TOKENS ?= 4096
 QUICKSTART_DRAFT_TEMPERATURE ?= 0
+# Right-sized Ollama context for drafting: extraction windows are bounded (12k chars), so the
+# modelfile default (often 128k+) only wastes VRAM and forces CPU offload on 16 GB hosts.
+QUICKSTART_DRAFT_NUM_CTX ?= 16384
 QUICKSTART_DRAFT_EXTRACT_MAX_CHARS ?=
 QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP ?=
 QUICKSTART_MODEL_SELECTION ?= auto
@@ -256,6 +261,7 @@ export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_MODEL_BENCH_DATA QUICKSTAR
 export QUICKSTART_PDF_DRAFT_DOCS QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_ENDPOINT
 export QUICKSTART_DRAFT_BASE_URL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
 export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_DRAFT_MAX_TOKENS QUICKSTART_DRAFT_TEMPERATURE
+export QUICKSTART_DRAFT_NUM_CTX
 export QUICKSTART_DRAFT_EXTRACT_MAX_CHARS QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP
 export QUICKSTART_MODEL_SELECTION QUICKSTART_ASSUME_YES QUICKSTART_PDF_MIN_CHARS
 export QUICKSTART_PDF_PARSER
@@ -435,12 +441,13 @@ gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh"
 
-pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickstart-pdf-corpus; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto)
+pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickstart-pdf-corpus; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto, PDF_REFRESH=1 reconverts unchanged PDFs)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(); \
 	if [ -n "$(PDF_OUT_DIR)" ]; then args+=("$(PDF_OUT_DIR)"); fi; \
 	if [ -n "$(PDF_MIN_CHARS)" ]; then args+=(--min-chars "$(PDF_MIN_CHARS)"); fi; \
 	if [ -n "$(PDF_PARSER)" ]; then args+=(--parser "$(PDF_PARSER)"); fi; \
+	if [ -n "$(PDF_REFRESH)" ]; then args+=(--refresh); fi; \
 	$(PY) -m llb.main pdf-to-markdown "$(PDF_DIR)" "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
@@ -534,6 +541,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
 	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
+	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)

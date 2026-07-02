@@ -13,12 +13,19 @@ import pytest
 
 from llb.board.recommend import HostInfo, build_recommendation, recommendation_payload
 from llb.quickstart import model_choice
-from tests.test_recommend import COHORT, MAMAYLM_V2_12B, MAMAYLM_V2_27B
+from tests.test_recommend import COHORT, MAMAYLM_V2_12B, MAMAYLM_V2_27B, _summary
 
 
 @pytest.fixture
 def recommend_json(tmp_path: Path) -> Path:
     rec = build_recommendation(COHORT, HostInfo(16, 16380, "RTX 4060 Ti", True))
+    path = tmp_path / "pdf_model_choice.json"
+    path.write_text(json.dumps(recommendation_payload(rec)), encoding="utf-8")
+    return path
+
+
+def _write_recommendation(tmp_path: Path, cohort) -> Path:
+    rec = build_recommendation(cohort, HostInfo(16, 16380, "RTX 4060 Ti", True))
     path = tmp_path / "pdf_model_choice.json"
     path.write_text(json.dumps(recommendation_payload(rec)), encoding="utf-8")
     return path
@@ -59,3 +66,31 @@ def test_out_of_range_and_missing_selection_fail_loudly(recommend_json):
 def test_speed_is_zero_for_unknown_model(recommend_json, capsys):
     model_choice.print_speed(recommend_json, "not-a-model")
     assert capsys.readouterr().out.strip() == "0"
+
+
+def test_drafter_prefers_host_recommendation_when_ollama(recommend_json, capsys):
+    # the whole COHORT is ollama-backed, so the drafter matches recommended_for_host
+    model_choice.print_drafter(recommend_json)
+    model_choice.print_selection(recommend_json, "recommended_for_host")
+    drafter, recommended = capsys.readouterr().out.splitlines()
+    assert drafter == recommended
+
+
+def test_drafter_skips_backends_the_draft_endpoint_cannot_serve(tmp_path, capsys):
+    # recommended_for_host lands on a vLLM-only model; the drafter must fall back to the
+    # highest-ranked ollama candidate instead of handing Ollama an unservable HF id.
+    cohort = [
+        _summary("vllm-fast-e4b", 0.60, 58.9, 14782, 0.237, backend="vllm"),
+        _summary("ollama-best", 0.44, 22.9, 15868, 0.179),
+        _summary("ollama-slower", 0.31, 26.8, 15167, 0.078),
+    ]
+    path = _write_recommendation(tmp_path, cohort)
+    model_choice.print_drafter(path)
+    assert capsys.readouterr().out.strip() == "ollama-best"
+
+
+def test_drafter_fails_loudly_when_no_backend_qualifies(tmp_path):
+    cohort = [_summary("vllm-only", 0.60, 58.9, 14782, 0.237, backend="vllm")]
+    path = _write_recommendation(tmp_path, cohort)
+    with pytest.raises(SystemExit):
+        model_choice.print_drafter(path)

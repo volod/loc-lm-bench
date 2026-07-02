@@ -85,6 +85,31 @@ def print_selection(path: Path, key: str) -> None:
     print(item["model"])
 
 
+# The quickstart drafter always speaks to a local Ollama endpoint (the native /api/chat layer is
+# the only one that honors `think=false` for reasoning models), so auto-selection must never hand
+# it a model only servable by another backend (e.g. a vLLM-only HF id).
+DRAFTER_BACKENDS = ("ollama",)
+
+
+def print_drafter(path: Path, backends: list[str] | None = None) -> None:
+    """Print the best benchmark candidate the local draft endpoint can actually serve.
+
+    Prefers `recommended_for_host` when its backend qualifies; otherwise falls back to the
+    highest-ranked candidate with an allowed backend. Exits nonzero when none qualifies.
+    """
+    allowed = set(backends or DRAFTER_BACKENDS)
+    data = _load(path)
+    recommended = _selection_item(data, "recommended_for_host")
+    if recommended and recommended.get("backend") in allowed and recommended.get("model"):
+        print(recommended["model"])
+        return
+    for item in _candidates(data):
+        if item.get("backend") in allowed and item.get("model"):
+            print(item["model"])
+            return
+    raise SystemExit(f"no ranked candidate with backend in {sorted(allowed)}")
+
+
 def print_candidate(path: Path, index: int) -> None:
     candidates = _candidates(_load(path))
     if index < 1 or index > len(candidates):
@@ -122,6 +147,10 @@ def main(argv: list[str] | None = None) -> None:
     selection.add_argument("json", type=Path)
     selection.add_argument("key")
 
+    drafter = sub.add_parser("drafter")
+    drafter.add_argument("json", type=Path)
+    drafter.add_argument("backends", nargs="*", default=list(DRAFTER_BACKENDS))
+
     candidate = sub.add_parser("candidate")
     candidate.add_argument("json", type=Path)
     candidate.add_argument("index", type=int)
@@ -138,6 +167,8 @@ def main(argv: list[str] | None = None) -> None:
         print_table(args.json)
     elif args.command == "selection":
         print_selection(args.json, args.key)
+    elif args.command == "drafter":
+        print_drafter(args.json, args.backends or None)
     elif args.command == "candidate":
         print_candidate(args.json, args.index)
     elif args.command == "speed":

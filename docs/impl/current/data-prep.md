@@ -79,9 +79,16 @@ available as explicit `PDF_PARSER=<tool>` probes, but they are not default full-
 The converter writes stable ASCII `pdf-<digest>.md` ids, preserves the source PDF path in a manifest,
 and skips PDFs only when the selected parser output stays below `--min-chars`.
 
+Conversion is incremental: each manifest item records `source_sha256`, and a rerun reuses the
+existing `.md` plus citation sidecar when the source fingerprint, requested parser, and min-chars
+still match and the outputs exist (`reused: true` in the manifest; `[pdf-corpus] reuse ...` in the
+log). `--refresh` (make: `PDF_REFRESH=1`) forces a full reconversion. This makes quickstart reruns
+skip the docling/OCR pass entirely for an unchanged corpus.
+
 ```bash
 make pdf-to-markdown
 make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<out-dir> PDF_MIN_CHARS=500 PDF_PARSER=auto
+make pdf-to-markdown PDF_REFRESH=1
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
@@ -136,12 +143,35 @@ born-digital.
 
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
-`QUICKSTART_DRAFT_MAX_ITEMS=180`, and `QUICKSTART_DRAFT_VERIFY_N=40`. With the auto model setting it
-prints ranked local candidates from `llb recommend` JSON when benchmark artifacts exist; otherwise
-it prompts the operator to run the local committed-goldset benchmark, choose an Ollama model
-manually, or opt into a frontier `litellm` model. The draft step prints an estimated hour count and
-requires confirmation before the full ontology/goldset generation starts. Model scoring remains
-gated on `verify-review` and `verify-accept`.
+`QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
+`QUICKSTART_DRAFT_NUM_CTX=16384`. With the auto model setting it prints ranked local candidates
+from `llb recommend` JSON when benchmark artifacts exist; otherwise it prompts the operator to run
+the local committed-goldset benchmark, choose an Ollama model manually, or opt into a frontier
+`litellm` model. Auto-selection is backend-aware: drafting always talks to the local Ollama native
+endpoint (the only layer honoring `think=false` and `num_ctx`), so
+`llb.quickstart.model_choice drafter` picks `recommended_for_host` only when it is Ollama-served
+and otherwise falls back to the highest-ranked Ollama candidate -- a vLLM-only HF id (for example
+`google/gemma-4-E4B-it-qat-w4a16-ct`) is never handed to Ollama. The draft step prints an estimated
+hour count (character-based, `wc -m`, since Cyrillic UTF-8 bytes would double it) and requires
+confirmation before the full ontology/goldset generation starts. Model scoring remains gated on
+`verify-review` and `verify-accept`.
+
+The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
+in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid
+`needle_items.jsonl` subset) stays in the draft bundle at `verified=false`. To enlarge the
+verified ledger later, re-draw a bigger worksheet with `make verify-sample VERIFY_N=<n>` and review
+it -- no re-draft needed.
+
+Measured on 2026-07-02 (16 GB RTX 4060 Ti host, drafter `batiai/qwen3.6-35b:iq3` via Ollama with
+`num_ctx=16384`): a bounded 4-document quick run
+(`QUICKSTART_PDF_DRAFT_DOCS="pdf-2ff96d2db393 pdf-3c3a452a8e9c pdf-b117ebb25eb7 pdf-d2e2499d3d06"
+QUICKSTART_DRAFT_MAX_ITEMS=80 QUICKSTART_DRAFT_VERIFY_N=20`) drafted 274k chars in 24 minutes:
+26 extraction windows at ~48 s each, 80 draft calls at ~3.2 s each, 100 percent extraction parse
+rate, 132 entities / 159 facts / 86 claims / 75 events grounded, a 452-seed pool, 70 of 80 drafts
+kept (2 circular, 3 duplicate, 5 ungroundable), all 70 citation-valid needles, gates passed. The
+full 19-document corpus is 8.0M chars (668 windows), so a `QUICKSTART_DRAFT_MAX_ITEMS=400` full
+draft projects to roughly 9-10 hours on this host and about 350 kept items from a roughly
+2,000-seed pool.
 
 ## Verification Gate
 

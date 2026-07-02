@@ -44,10 +44,15 @@ The Makefile defaults `GOLDSET` and `CORPUS` to the committed fixture so smoke r
 network access or data regeneration.
 For the local PDF-corpus Gemma 4 quickstart, see
 [`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). That flow builds
-`.data/quickstart-pdf-corpus-rag/llb/rag/` from 19 converted PDFs: 12,745 recursive FAISS chunks,
-768-dimensional E5 embeddings, and a born-digital draft retrieval check of `recall@10=1.000`,
-`MRR=0.732` over 7 unverified review items. The matching GraphRAG store lives under
-`.data/quickstart-pdf-corpus-graph/llb/graph/` with 11 nodes, 2 edges, and 9 communities.
+`.data/quickstart-pdf-corpus-rag/llb/rag/` from 19 converted PDFs: 13,211 recursive FAISS chunks
+and 768-dimensional E5 embeddings (2026-07-02 build). A 4-document quick draft
+(`QUICKSTART_PDF_DRAFT_DOCS=<4 ids>`, 70 unverified items, all citation-valid) scored
+`recall@10=0.729`, `MRR=0.531` against that full-corpus index -- a true needle-in-haystack check;
+the misses are questions phrased broadly enough that spans from OTHER doctrine documents outrank
+the gold span, which motivates the `needle-uniqueness-filter` forward task in
+[`plan.md`](../plan.md). The matching GraphRAG store lives under
+`.data/quickstart-pdf-corpus-graph/llb/graph/` with 290 nodes, 159 edges, and 139 communities
+from the same 4-document draft bundle.
 
 ## Retrieval Store
 

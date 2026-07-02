@@ -21,9 +21,14 @@ def ingest_pdf_corpus_cmd(
         "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to ingest"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="reconvert every PDF even when the source is unchanged"
+    ),
 ) -> None:
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
-    _run_pdf_markdown_ingest("ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit)
+    _run_pdf_markdown_ingest(
+        "ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit, refresh
+    )
 
 
 @app.command("pdf-to-markdown")
@@ -39,9 +44,14 @@ def pdf_to_markdown_cmd(
         "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to convert"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="reconvert every PDF even when the source is unchanged"
+    ),
 ) -> None:
     """Convert local PDFs into markdown files plus quality/citation sidecars."""
-    _run_pdf_markdown_ingest("pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit)
+    _run_pdf_markdown_ingest(
+        "pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit, refresh
+    )
 
 
 def _run_pdf_markdown_ingest(
@@ -51,6 +61,7 @@ def _run_pdf_markdown_ingest(
     min_chars: int,
     parser: str,
     limit: Optional[int],
+    refresh: bool = False,
 ) -> None:
     from llb.prep.pdf_corpus import ingest_pdf_corpus
 
@@ -61,13 +72,16 @@ def _run_pdf_markdown_ingest(
             min_chars=min_chars,
             parser=parser,
             limit=limit,
+            refresh=refresh,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
+    n_reused = sum(1 for item in result.items if item.reused)
+    reused_note = f", {n_reused} reused unchanged" if n_reused else ""
     typer.echo(
         f"[{command}] {result.n_docs}/{len(result.items)} PDFs extracted "
-        f"({result.n_skipped} skipped) -> {result.out_dir}"
+        f"({result.n_skipped} skipped{reused_note}) -> {result.out_dir}"
     )
 
 
@@ -416,6 +430,12 @@ def prepare_goldset_draft_cmd(
         "--no-think",
         help="disable Ollama native reasoning mode for local JSON-producing models",
     ),
+    num_ctx: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="right-size the Ollama context window (native endpoint); avoids CPU offload from "
+        "the modelfile default on VRAM-bound hosts -- keep headroom over extract-max-chars",
+    ),
     out_dir: Optional[Path] = typer.Option(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
     ),
@@ -438,6 +458,7 @@ def prepare_goldset_draft_cmd(
             temperature=temperature,
             timeout=timeout,
             think=False if no_think else None,
+            num_ctx=num_ctx,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

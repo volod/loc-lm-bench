@@ -45,6 +45,12 @@ class EndpointConfig:
     # before any JSON, so structured extraction comes back empty. `think=False` disables it (Ollama
     # `think`); None leaves the endpoint's own default. Pair with a larger `max_tokens`.
     think: bool | None = None
+    # Ollama loads a model with its modelfile context length (often 128k+), which can force CPU
+    # offload on VRAM-bound hosts even though drafting prompts are bounded and small. `num_ctx`
+    # right-sizes the context (native /api/chat only); None keeps the endpoint default. Prompts
+    # longer than `num_ctx` would be silently truncated by Ollama, so keep headroom over
+    # `extract_max_chars` + completion budget.
+    num_ctx: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in ENDPOINT_KINDS:
@@ -63,14 +69,17 @@ class EndpointConfig:
             rec["base_url"] = self.base_url
         if self.think is not None:
             rec["think"] = self.think
+        if self.num_ctx is not None:
+            rec["num_ctx"] = self.num_ctx
         return rec
 
 
 def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
     # Disabling a reasoning model's thinking is honored only by Ollama's NATIVE /api/chat `think`
     # field -- the OpenAI-compatible /v1 layer ignores it and the model burns the whole token budget
-    # on hidden reasoning, returning empty structured output. So route the think-set case there.
-    if cfg.think is not None:
+    # on hidden reasoning, returning empty structured output. The same holds for `num_ctx`
+    # right-sizing. So route either case there.
+    if cfg.think is not None or cfg.num_ctx is not None:
         return _ollama_native_complete(cfg, log)
 
     client = make_client(cfg.base_url, api_key=cfg.api_key)
@@ -108,12 +117,15 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
     url = _native_chat_url(cfg.base_url)
 
     def complete(prompt: str) -> str:
+        options: dict[str, object] = {"temperature": cfg.temperature, "num_predict": cfg.max_tokens}
+        if cfg.num_ctx is not None:
+            options["num_ctx"] = cfg.num_ctx
         payload = {
             "model": cfg.model,
             "think": cfg.think,
             "stream": False,
             "messages": [{"role": "user", "content": prompt}],
-            "options": {"temperature": cfg.temperature, "num_predict": cfg.max_tokens},
+            "options": options,
         }
         try:
             resp = httpx.post(url, json=payload, timeout=cfg.timeout)
