@@ -108,7 +108,7 @@ Largest backend + model per target. Details and vLLM knobs:
 
 | Tier | MamayLM | Lapa | Gemma 4 family target | Qwen3.6 35B-A3B | Mistral Small 3.1 24B | Extra vLLM on tier |
 | ---- | ------- | ---- | -------------- | --------------- | --------------------- | ------------------ |
-| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | E4B w4a16 (util 0.80, ctx 8192) |
+| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.90, ctx 1024) |
 | 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.85, ctx 8192) |
 | 24 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM w4a16 (0.90, 16384) | -- |
 | 32 GiB | vLLM FP8 (0.90, 8192) | vLLM bf16 (0.90, 8192) | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM FP8 (0.90, 8192) | -- |
@@ -129,7 +129,7 @@ vLLM keeps **weights on GPU** (no CPU offload). One pool sized by
 
 | GPU VRAM | Typical `gpu_memory_utilization` |
 | -------- | ------------------------------- |
-| 12 GiB | 0.80 |
+| 12 GiB | 0.80-0.90 |
 | 16 GiB | 0.80-0.85 |
 | 24 GiB | 0.88-0.90 |
 | 32 GiB | 0.90-0.92 |
@@ -183,6 +183,14 @@ RTX 4060 Ti, 16380 MiB, sm 89. Full-size target repos need **Ollama**; largest v
 quant on this tier is Gemma 4 12B w4a16 (manifest extra entry). real-model validation validated E4B
 w4a16 at util **0.80**, ctx **8192**
 ([run_config_vllm_uk.yaml](../../samples/run_config_vllm_uk.yaml)).
+
+### 12 GiB GPU / 64 GiB RAM (RTX PRO 3000 Blackwell laptop)
+
+RTX PRO 3000 Blackwell laptop GPU, 12227 MiB, driver 610.43.02. The generated extra vLLM
+target is Gemma 4 12B w4a16 at util **0.90**, ctx **1024**; a one-case
+`run-eval --backend vllm --max-model-len 1024 --gpu-memory-utilization 0.90 --evict`
+passed with `LLB_EMBED_DEVICE=cpu`. E4B w4a16 is not a valid 12 GiB vLLM target on this
+host because weights plus vLLM serving overhead exceed available VRAM before KV cache.
 
 ### 32 GiB GPU / 64 GiB RAM (HP Z2 Tower)
 

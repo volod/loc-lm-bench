@@ -36,11 +36,32 @@ BACKEND_PRIORITY = ("vllm", "ollama", "llamacpp")
 # fit at the host's MAX context would reject vLLM for any model that needs even one layer
 # offloaded at the long end (e.g. gemma-4-E4B at 131072) yet serves fine at a normal context.
 MIN_SERVING_CTX = 2048
+VLLM_RESOLUTION_GPU_MEMORY_UTILIZATION = 0.85
 
 # Probes: source -> availability signal. Defaults hit HF Hub / Ollama; all injectable.
 HfRepoProbe = Callable[[str], bool]  # repo id -> exists
 GgufProbe = Callable[[str], bool]  # repo id -> has at least one *.gguf file
 OllamaProbe = Callable[[str], bool]  # tag -> pulled locally or in the Ollama library
+
+
+def _plan_kwargs_for_backend(backend: str, plan_kwargs: dict[str, object]) -> dict[str, object]:
+    """Backend-specific planner knobs used only for availability resolution."""
+    if backend != "vllm":
+        return plan_kwargs
+    from llb.executor.contention import DEFAULT_VLLM_OVERHEAD_MB
+
+    return {
+        "vram_reserve": 0,
+        "overhead_mib": DEFAULT_VLLM_OVERHEAD_MB,
+        **plan_kwargs,
+    }
+
+
+def _plan_vram_for_backend(backend: str, vram_mib: int) -> int:
+    """Effective backend allocation budget for availability resolution."""
+    if backend != "vllm":
+        return vram_mib
+    return int(vram_mib * VLLM_RESOLUTION_GPU_MEMORY_UTILIZATION)
 
 
 def backend_can_run(backend: str, verdict: str) -> bool:
@@ -166,12 +187,13 @@ def resolve(
     for backend, overrides in candidate_sources(spec):
         source = overrides["source"]
         available = _probe_available(backend, source, probes)
+        backend_plan_kwargs = _plan_kwargs_for_backend(backend, dict(plan_kwargs))
         row = planner.plan_model(
             _priced_spec(spec, backend, overrides),
-            vram_mib,
+            _plan_vram_for_backend(backend, vram_mib),
             ram_mib,
             target_ctx=target_ctx,
-            **plan_kwargs,  # type: ignore[arg-type]
+            **backend_plan_kwargs,  # type: ignore[arg-type]
         )
         verdict = row["verdict"]
         fits = backend_fits(backend, row, min_serving_ctx)

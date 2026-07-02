@@ -89,6 +89,16 @@ Ollama GGUF or 32 GiB vLLM FP8 v2.0 source, prepare-model fixtures use the INSAI
 and recommendation fixtures use `mamaylm-v2-*` labels. The family key `mamaylm` remains only the
 stable target id and file stem.
 
+On a 12 GiB RTX PRO 3000 Blackwell laptop GPU (12227 MiB, driver 610.43.02), the quickstart setup
+generates and selects `$DATA_DIR/llb/serving/gpu-12gb/tier.json` even when stale tier directories
+exist from earlier runs. The 12 GiB extra vLLM target is `gemma-4-12b-vllm`:
+`google/gemma-4-12B-it-qat-w4a16-ct`, `gpu_memory_utilization=0.90`, `max_model_len=1024`.
+That short-context cell passed a one-case `run-eval` smoke with `LLB_EMBED_DEVICE=cpu`; the previous
+E4B w4a16 target is rejected on this host because weights plus vLLM serving overhead exceed
+available VRAM before KV cache. The resolver also prices vLLM candidates with the same serving
+overhead used by the pre-launch contention guard and the default vLLM memory fraction, so sweeps do
+not select vLLM rows that will be aborted immediately by the guard or by KV-cache allocation.
+
 The Mistral family default is Mistral Small 3.1 24B (Apache-2.0, ungated, multilingual), served per
 tier by the quant that fits GPU-resident: vLLM FP8
 (`RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic`, ~24 GiB weights) on the 32 GiB tier,
