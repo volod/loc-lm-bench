@@ -104,6 +104,7 @@ RECOMMEND_NO_CHART ?=
 SWEEP_ID ?= run1
 SWEEP_MAX_MODEL_LEN ?= 8192
 SWEEP_OFFLINE ?=
+SWEEP_LIMIT ?=
 # Default RAG grid: sweep retrieval depth so the best top_k is DEMONSTRATED per model, not assumed.
 # The best depth varies by model (e.g. MamayLM-12B peaks at top_k=3, mistral at top_k=8), and top_k
 # is in the cell fingerprint so re-runs resume. Set SWEEP_RAG_GRID= (empty) to disable the grid.
@@ -210,6 +211,7 @@ QUICKSTART_RUN_SWEEP ?= 1
 QUICKSTART_RUN_PLATFORM_MATRIX ?= 1
 QUICKSTART_RUN_SECURITY ?= 1
 QUICKSTART_RECOMMEND_MIN_CASES ?= $(RECOMMEND_MIN_CASES)
+QUICKSTART_SWEEP_LIMIT ?= $(LIMIT)
 QUICKSTART_GPU_GB ?=
 QUICKSTART_PROMPT_DIR ?= $(QUICKSTART_A_DATA_DIR)/prompt-system/quickstart
 QUICKSTART_PROMPT_ID ?=
@@ -245,7 +247,7 @@ export QUICKSTART_ROOT QUICKSTART_LOG_DIR QUICKSTART_UV_CACHE_DIR QUICKSTART_A_D
 export QUICKSTART_A_CORPUS QUICKSTART_A_SWEEP_ID QUICKSTART_SKIP_APT QUICKSTART_SETUP_VENV
 export QUICKSTART_PREP_MODELS QUICKSTART_PREP_SERVING_TARGETS QUICKSTART_RUN_SWEEP
 export QUICKSTART_RUN_PLATFORM_MATRIX QUICKSTART_RUN_SECURITY QUICKSTART_RECOMMEND_MIN_CASES
-export QUICKSTART_GPU_GB
+export QUICKSTART_SWEEP_LIMIT QUICKSTART_GPU_GB
 export QUICKSTART_PROMPT_DIR QUICKSTART_PROMPT_ID QUICKSTART_SECURITY_MODEL
 export QUICKSTART_SECURITY_BACKEND QUICKSTART_SECURITY_CASES QUICKSTART_SECURITY_VERIFICATION_REF
 export QUICKSTART_PDF_SOURCE QUICKSTART_PDF_MD QUICKSTART_PDF_RAG_DATA
@@ -566,12 +568,13 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PRO
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-sweep: ## Run the isolated candidate sweep (SWEEP_ID=run1 MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_RAG_GRID=top_k=3,5,8)
+sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main sweep --manifest "$(MODELS_MANIFEST)" --split "$(SPLIT)" \
 		--goldset "$(GOLDSET)" --sweep-id "$(SWEEP_ID)" \
 		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,) \
+		$(if $(SWEEP_LIMIT),--limit "$(SWEEP_LIMIT)",) \
 		$(if $(SWEEP_RAG_GRID),--rag-grid "$(SWEEP_RAG_GRID)",)
 
 pipeline: ## Select public-screen finalists, tune, and print the final board

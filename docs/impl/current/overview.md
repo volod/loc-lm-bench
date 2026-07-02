@@ -61,7 +61,9 @@ only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is
 (`VENV_INSTALL_VLLM=auto`; set `0` to skip). The grouped wrappers default the uv cache to
 `$DATA_DIR/uv-cache`, skip apt provisioning unless `QUICKSTART_SKIP_APT=0`, and re-export the
 Make-level `DATA_DIR` after `.env` is loaded so wrapper artifacts stay under the requested
-quickstart root.
+quickstart root. The goldset quickstart passes `QUICKSTART_SWEEP_LIMIT` to each sweep cell
+(defaulting to the Make `LIMIT`, currently 20) so the all-in-one path is bounded on offload-heavy
+hosts; set `QUICKSTART_SWEEP_LIMIT=` to run every item in each cell.
 The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto`; it can
 use existing `llb recommend` benchmark JSON, run the committed-goldset benchmark, accept a manually
 entered local model, or opt into a `frontier` `litellm` route before it estimates and confirms the
@@ -75,6 +77,14 @@ resumed four completed default-family sweep cells (Qwen 3.6, MamayLM 12B, MamayL
 ran one platform-matrix Ollama row for `gemma4:e4b` with quality `0.420` and `61.37` tok/s,
 skipped missing vLLM and llama.cpp serving binaries with actionable log lines, ran
 `bench-security` on MamayLM 27B, and created 18 prompt-system candidates.
+
+Latest 12 GiB CUDA-host quickstart evidence on the RTX PRO 3000 Blackwell laptop: the setup wrapper
+detected `gpu_tier=12` and selected `.data/quickstart-leaderboard/llb/serving/gpu-12gb/tier.json`
+despite a stale `gpu-16gb` directory. `make build-vllm` installed/reused vLLM 0.24.0 and recorded
+the native sampler fallback for driver 610.43.02. A one-case vLLM smoke for
+`google/gemma-4-12B-it-qat-w4a16-ct` passed at `max_model_len=1024`,
+`gpu_memory_utilization=0.90`, and `LLB_EMBED_DEVICE=cpu`; E4B w4a16 was rejected by the VRAM
+guard on the same host.
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.

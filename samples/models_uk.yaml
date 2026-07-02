@@ -48,7 +48,7 @@ models:
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
     source: google/gemma-4-E4B-it-qat-w4a16-ct
-    min_vram_gb: 11    # MEASURED floor: weights load 9.8 GiB; the planner now estimates ~9.8
+    min_vram_gb: 13    # weights load ~9.8 GiB; vLLM serving overhead makes this a 16 GiB target
     params_b: 8
     quant: w4a16
     n_layers: 42
@@ -62,7 +62,7 @@ models:
     # M2.4 validated on the RTX 4060 Ti (vLLM 0.23.0, flashinfer sampler off): weights 9.8 GiB,
     # ~64 tok/s steady, peak VRAM 15.7 GB at gpu-memory-utilization 0.80, served ctx 8192,
     # cold load ~112 s, tokenizer ~0.33 tok/UA-char. The M2 reference real-backend run.
-    notes: Gemma 4 ~8B int4 (w4a16, for vLLM); the M2.4 reference run -- fits 16 GB
+    notes: Gemma 4 ~8B int4 (w4a16, for vLLM); the M2.4 reference run -- fits 16 GB, not 12 GB
 
   - name: gemma-4-12b-it-w4a16
     backend: vllm
@@ -76,7 +76,7 @@ models:
     vocab_size: 262144  # embedding-aware (M4.1): the 256k embedding stays bf16 under w4a16
     hidden_size: 3840
     tie_word_embeddings: true
-    notes: Gemma 4 12B int4; the primary 16 GB vLLM fit (sliding-window, so KV is small)
+    notes: Gemma 4 12B int4; 12 GB works only at short vLLM context, 16 GB supports 8192
 
   # --- Larger current-gen candidates: offload or a bigger GPU on 16 GB (flagged by list-models). ---
   - name: qwen3.6-35b-a3b-fp8

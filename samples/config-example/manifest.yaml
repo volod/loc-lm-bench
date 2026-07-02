@@ -46,11 +46,11 @@ tiers:
       backend: ollama
       model: mistral-small3.1:24b
       request_timeout_s: 300
-    gemma-4-e4b-vllm:
+    gemma-4-12b-vllm:
       backend: vllm
-      model: google/gemma-4-E4B-it-qat-w4a16-ct
-      gpu_memory_utilization: 0.80
-      max_model_len: 8192
+      model: google/gemma-4-12B-it-qat-w4a16-ct
+      gpu_memory_utilization: 0.90
+      max_model_len: 1024
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
 
   16:

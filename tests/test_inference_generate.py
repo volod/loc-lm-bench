@@ -36,6 +36,21 @@ def test_manifest_has_supported_tiers() -> None:
             assert target in entries
 
 
+def test_generate_serving_configs_for_tier_12_uses_validated_short_context_12b(
+    tmp_path: Path,
+) -> None:
+    out = generate_serving_configs(gpu_gb=12, output_root=tmp_path / "gpu-12gb")
+    tier = yaml.safe_load((out / "tier.json").read_text(encoding="utf-8"))
+    targets = {item["target"]: item for item in tier["targets"]}
+
+    assert "gemma-4-12b-vllm" in targets
+    assert "gemma-4-e4b-vllm" not in targets
+    cfg = (out / "run_eval_gemma_4_12b_vllm.yaml").read_text(encoding="utf-8")
+    assert "model: google/gemma-4-12B-it-qat-w4a16-ct" in cfg
+    assert "gpu_memory_utilization: 0.9" in cfg
+    assert "max_model_len: 1024" in cfg
+
+
 def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     out = generate_serving_configs(gpu_gb=16, output_root=tmp_path / "gpu-16gb")
     assert out.is_dir()

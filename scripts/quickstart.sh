@@ -327,6 +327,7 @@ QS_RUN_SWEEP="${QUICKSTART_RUN_SWEEP:-1}"
 QS_RUN_PLATFORM_MATRIX="${QUICKSTART_RUN_PLATFORM_MATRIX:-1}"
 QS_RUN_SECURITY="${QUICKSTART_RUN_SECURITY:-1}"
 QS_RECOMMEND_MIN_CASES="${QUICKSTART_RECOMMEND_MIN_CASES:-1}"
+QS_SWEEP_LIMIT="${QUICKSTART_SWEEP_LIMIT:-}"
 QS_PROMPT_DIR="$(resolve_path "${QUICKSTART_PROMPT_DIR:-$QS_A_DATA/prompt-system/quickstart}")"
 QS_PROMPT_ID="${QUICKSTART_PROMPT_ID:-}"
 QS_GPU_GB="${QUICKSTART_GPU_GB:-}"
@@ -373,6 +374,24 @@ summarize_serving_configs() {
 }
 
 latest_serving_tier_json() {
+  local tier expected line
+  tier="$QS_GPU_GB"
+  if [ -z "$tier" ] && [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    line="$("$PROJECT_ROOT/.venv/bin/python" -m llb.main detect-gpu-vram 2>/dev/null || true)"
+    case "$line" in
+      gpu_tier=*)
+        tier="${line#gpu_tier=}"
+        tier="${tier%% *}"
+        ;;
+    esac
+  fi
+  if [ -n "$tier" ]; then
+    expected="$QS_A_DATA/llb/serving/gpu-${tier}gb/tier.json"
+    if [ -f "$expected" ]; then
+      printf '%s\n' "$expected"
+      return 0
+    fi
+  fi
   find "$QS_A_DATA/llb/serving" -maxdepth 2 -name tier.json -print 2>/dev/null | sort | tail -n 1 || true
 }
 
@@ -469,7 +488,8 @@ track_a_eval() {
       SWEEP_ID="$QS_A_SWEEP_ID" \
       MODELS_MANIFEST="$QS_MODELS_MANIFEST" \
       GOLDSET="$QS_A_GOLDSET" \
-      SPLIT="$QS_SPLIT"
+      SPLIT="$QS_SPLIT" \
+      SWEEP_LIMIT="$QS_SWEEP_LIMIT"
     result "sweep cells: $(rel_path "$QS_A_DATA/sweep/$QS_A_SWEEP_ID/cells")"
   fi
 

@@ -96,6 +96,49 @@ def test_resolve_prefers_vllm_when_it_fits_vram():
     assert all(c["available"] for c in out["candidates"])
 
 
+def test_vllm_resolution_accounts_for_serving_overhead_on_12gb():
+    gemma_e4b: ModelSpec = {
+        "name": "gemma-4-e4b-it-w4a16",
+        "backend": "vllm",
+        "source": "google/gemma-4-E4B-it-qat-w4a16-ct",
+        "params_b": 8,
+        "quant": "w4a16",
+        "n_layers": 42,
+        "kv_dim": 512,
+        "max_context": 131072,
+        "hi_precision_params_b": 4.2,
+    }
+
+    out = resolve(gemma_e4b, 12227, HOST_RAM, probes=ALL_AVAILABLE)
+
+    vllm = next(c for c in out["candidates"] if c["backend"] == "vllm")
+    assert out["chosen_backend"] is None
+    assert vllm["runnable"] is False
+    assert "vLLM has no CPU offload" in vllm["reason"]
+
+
+def test_vllm_resolution_accounts_for_default_memory_fraction_on_12gb():
+    gemma_12b: ModelSpec = {
+        "name": "gemma-4-12b-it-w4a16",
+        "backend": "vllm",
+        "source": "google/gemma-4-12B-it-qat-w4a16-ct",
+        "params_b": 12,
+        "quant": "w4a16",
+        "n_layers": 48,
+        "kv_dim": 2048,
+        "max_context": 262144,
+        "vocab_size": 262144,
+        "hidden_size": 3840,
+        "tie_word_embeddings": True,
+    }
+
+    out = resolve(gemma_12b, 12227, HOST_RAM, probes=ALL_AVAILABLE)
+
+    vllm = next(c for c in out["candidates"] if c["backend"] == "vllm")
+    assert out["chosen_backend"] is None
+    assert vllm["runnable"] is False
+
+
 def test_resolve_falls_back_to_ollama_when_vllm_would_offload():
     out = resolve(BIG, HOST_VRAM, HOST_RAM, probes=ALL_AVAILABLE)
     # vLLM cannot offload to CPU, so the offload-verdict model resolves to Ollama.

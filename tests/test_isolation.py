@@ -93,6 +93,31 @@ def test_run_sweep_runs_each_cell_and_writes_markers(tmp_path):
     assert len(markers) == 2
 
 
+def test_subprocess_cell_runner_passes_limit_and_telemetry(tmp_path, monkeypatch):
+    import llb.executor.isolation as iso
+
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(cmd)
+        (tmp_path / "run-eval" / "new-run").mkdir(parents=True)
+        return Result()
+
+    monkeypatch.setattr(iso.subprocess, "run", fake_run)
+    runner = iso._subprocess_cell_runner(tmp_path, "s1", telemetry=True, limit=7)
+
+    run_dir = runner(cfg(tmp_path, model="a:1"), "final")
+
+    assert run_dir.endswith("new-run")
+    assert "--limit" in calls[0] and "7" in calls[0]
+    assert "--telemetry" in calls[0]
+
+
 def test_run_sweep_persists_thermal_flag_into_run_bundle(tmp_path):
     import json
 

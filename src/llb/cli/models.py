@@ -345,6 +345,7 @@ def sweep_cmd(
     sweep_id: Optional[str] = typer.Option(None, help="resume id (default: a UTC timestamp)"),
     max_model_len: int = typer.Option(8192, help="vLLM context cap per cell (KV cache fit)"),
     telemetry: bool = typer.Option(True, help="measure steady-state throughput + peak VRAM"),
+    limit: Optional[int] = typer.Option(None, help="cap eval items per sweep cell"),
     resume: bool = typer.Option(True, help="skip cells already completed under this sweep id"),
     offline: bool = typer.Option(False, help="skip availability probes (assume sources exist)"),
     rag_grid: Optional[str] = typer.Option(
@@ -394,6 +395,7 @@ def sweep_cmd(
         split=split,
         data_dir=base.data_dir,
         telemetry=telemetry,
+        limit=limit,
         resume=resume,
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,

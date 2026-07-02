@@ -264,7 +264,9 @@ def cool_down(
     return {"waited_s": round(clock() - start, 1), "final_temp_c": temp, "capped": False}
 
 
-def _subprocess_cell_runner(data_dir: Path, sweep_id: str, telemetry: bool) -> CellRunner:
+def _subprocess_cell_runner(
+    data_dir: Path, sweep_id: str, telemetry: bool, limit: int | None = None
+) -> CellRunner:
     """Default cell runner: run `run-eval` as its own process and return its published run dir."""
     run_eval_root = data_dir / "run-eval"
     cfg_dir = data_dir / SWEEP_METHOD / sweep_id / "configs"
@@ -284,6 +286,8 @@ def _subprocess_cell_runner(data_dir: Path, sweep_id: str, telemetry: bool) -> C
             "--split",
             split,
         ]
+        if limit is not None:
+            cmd += ["--limit", str(limit)]
         if telemetry:
             cmd.append("--telemetry")
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -304,6 +308,7 @@ def run_sweep(
     split: str = "final",
     data_dir: Path | None = None,
     telemetry: bool = False,
+    limit: int | None = None,
     resume: bool = True,
     vram_tolerance_mb: int = DEFAULT_TOLERANCE_MB,
     cooldown_temp_c: int = DEFAULT_COOLDOWN_TEMP_C,
@@ -326,7 +331,7 @@ def run_sweep(
     base_dir = data_dir or configs[0].data_dir
     cells_dir = base_dir / SWEEP_METHOD / sweep_id / "cells"
     cells_dir.mkdir(parents=True, exist_ok=True)
-    runner = cell_runner or _subprocess_cell_runner(base_dir, sweep_id, telemetry)
+    runner = cell_runner or _subprocess_cell_runner(base_dir, sweep_id, telemetry, limit)
     sampler = gpu_sampler or sample_gpu
 
     results: list[CellResult] = []
