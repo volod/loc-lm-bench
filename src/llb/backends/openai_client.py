@@ -31,8 +31,8 @@ def chat_once(
 ) -> ChatResult:
     """One chat completion. Maps timeouts/transport errors to ChatResult.error.
 
-    `extra_body` forwards backend-specific fields (e.g. Ollama's `think` to disable a reasoning
-    model's hidden thinking) that the OpenAI schema does not model.
+    `extra_body` forwards backend-specific fields (for example vLLM `chat_template_kwargs`
+    reasoning controls) that the OpenAI schema does not model.
     """
     start = time.monotonic()
     try:

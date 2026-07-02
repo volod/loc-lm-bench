@@ -79,9 +79,16 @@ available as explicit `PDF_PARSER=<tool>` probes, but they are not default full-
 The converter writes stable ASCII `pdf-<digest>.md` ids, preserves the source PDF path in a manifest,
 and skips PDFs only when the selected parser output stays below `--min-chars`.
 
+Conversion is incremental: each manifest item records `source_sha256`, and a rerun reuses the
+existing `.md` plus citation sidecar when the source fingerprint, requested parser, and min-chars
+still match and the outputs exist (`reused: true` in the manifest; `[pdf-corpus] reuse ...` in the
+log). `--refresh` (make: `PDF_REFRESH=1`) forces a full reconversion. This makes quickstart reruns
+skip the docling/OCR pass entirely for an unchanged corpus.
+
 ```bash
 make pdf-to-markdown
 make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<out-dir> PDF_MIN_CHARS=500 PDF_PARSER=auto
+make pdf-to-markdown PDF_REFRESH=1
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
@@ -98,15 +105,27 @@ Ontology draft bundles preserve that PDF evidence. When a source document has a 
 and writes these review artifacts beside `goldset.jsonl`:
 
 - `pdf_ontology_report.json`: parse rate, elapsed seconds, grounded entity/event/claim/fact counts,
-  page-span citation coverage, citation-valid needle count, dictionary-term yield, and quality gates
-  with a `passed` roll-up (grounded extractions of any kind + a non-empty gold set, plus a
-  citation-valid needle for PDF corpora).
+  page-span citation coverage, citation-valid needle count, dictionary-term yield, needle-retrieval
+  metrics when enabled, and quality gates with a `passed` roll-up (grounded extractions of any kind
+  + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
   spans and PDF page references when sidecars exist.
-- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars.
+- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. When
+  `prepare-goldset-draft --retrieval-index-dir <full-rag-index>` is set, each row also carries
+  `retrieval_rank` and `retrieval_k`; `retrieval_rank: null` marks a citation-valid needle whose
+  gold span was not retrieved from the full corpus within top-k.
 
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
+
+The retrieval-uniqueness check is opt-in for generic drafts and enabled by the PDF quickstart after
+the full-corpus RAG store exists. Use `DRAFT_RETRIEVAL_INDEX_DIR=<data>/llb/rag` and
+`DRAFT_RETRIEVAL_K=<k>` with `make prepare-goldset-draft`; add
+`DRAFT_DROP_NONRETRIEVABLE_NEEDLES=1` only when the review artifact should omit misses instead of
+flagging them. The report records `needle_retrieval`, `retrieval_unique_needle_items`,
+`retrieval_unique_needle_fraction`, and `needle_items_written`. `has_retrieval_unique_needles` is
+informational in `gates`; the existing `passed` roll-up still gates on citation-valid needles so
+operators can inspect broad-but-grounded misses.
 
 The ontology-assisted seed sampler uses entities, subject-relation-object facts, grounded claims,
 and grounded events as draft targets. Seeds carry document, section, difficulty, and semantic-type
@@ -136,12 +155,44 @@ born-digital.
 
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
-`QUICKSTART_DRAFT_MAX_ITEMS=180`, and `QUICKSTART_DRAFT_VERIFY_N=40`. With the auto model setting it
-prints ranked local candidates from `llb recommend` JSON when benchmark artifacts exist; otherwise
-it prompts the operator to run the local committed-goldset benchmark, choose an Ollama model
-manually, or opt into a frontier `litellm` model. The draft step prints an estimated hour count and
-requires confirmation before the full ontology/goldset generation starts. Model scoring remains
+`QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
+`QUICKSTART_DRAFT_NUM_CTX=16384`. With the auto model setting it prints ranked local candidates
+from `llb recommend` JSON when benchmark artifacts exist; otherwise it prompts the operator to run
+the local committed-goldset benchmark, choose a local model manually, or opt into a frontier
+`litellm` model. Auto-selection is backend-aware: `llb.quickstart.model_choice drafter` accepts
+Ollama and vLLM candidates, and `scripts/quickstart.sh` passes only the local backends available on
+the host. A vLLM pick sets `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts
+`VllmLauncher`, points the local draft endpoint at `http://localhost:<port>/v1`, and records
+`endpoint.backend` plus `endpoint.base_url` in provenance. `--no-think` still works for reasoning
+models: Ollama uses native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible
+`extra_body` (`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
+`reasoning_effort=none`). The draft step prints an estimated hour count (character-based, `wc -m`,
+since Cyrillic UTF-8 bytes would double it) and requires confirmation before the full
+ontology/goldset generation starts. It passes the full PDF RAG store at
+`$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
 gated on `verify-review` and `verify-accept`.
+
+The local recommendation JSON at `.data/quickstart-leaderboard/recommend/pdf_model_choice.json`
+ranks `google/gemma-4-E4B-it-qat-w4a16-ct` as `recommended_for_host` on the 16 GB host with backend
+`vllm`; the selector now returns both model and backend so the PDF draft step launches the matching
+server instead of falling back to an Ollama-only candidate.
+
+The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
+in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid
+`needle_items.jsonl` subset) stays in the draft bundle at `verified=false`. To enlarge the
+verified ledger later, re-draw a bigger worksheet with `make verify-sample VERIFY_N=<n>` and review
+it -- no re-draft needed.
+
+Measured on 2026-07-02 (16 GB RTX 4060 Ti host, drafter `batiai/qwen3.6-35b:iq3` via Ollama with
+`num_ctx=16384`): a bounded 4-document quick run
+(`QUICKSTART_PDF_DRAFT_DOCS="pdf-2ff96d2db393 pdf-3c3a452a8e9c pdf-b117ebb25eb7 pdf-d2e2499d3d06"
+QUICKSTART_DRAFT_MAX_ITEMS=80 QUICKSTART_DRAFT_VERIFY_N=20`) drafted 274k chars in 24 minutes:
+26 extraction windows at ~48 s each, 80 draft calls at ~3.2 s each, 100 percent extraction parse
+rate, 132 entities / 159 facts / 86 claims / 75 events grounded, a 452-seed pool, 70 of 80 drafts
+kept (2 circular, 3 duplicate, 5 ungroundable), all 70 citation-valid needles, gates passed. The
+full 19-document corpus is 8.0M chars (668 windows), so a `QUICKSTART_DRAFT_MAX_ITEMS=400` full
+draft projects to roughly 9-10 hours on this host and about 350 kept items from a roughly
+2,000-seed pool.
 
 ## Verification Gate
 

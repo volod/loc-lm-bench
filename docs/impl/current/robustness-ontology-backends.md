@@ -104,11 +104,15 @@ Pipeline stages:
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO_THINK=1
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<hf-vllm-model> \
+  DRAFT_BACKEND=vllm DRAFT_NO_THINK=1 DRAFT_NUM_CTX=16384
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> \
-  DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_VERIFY_N=30
+  DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_CONCURRENCY=2 DRAFT_VERIFY_N=30
 llb prepare-goldset-draft --corpus-root <dir> --model <local-model> \
   --max-tokens 2048 --temperature 0 --timeout 300 --no-think \
-  --doc-limit 1 --extract-max-chars 12000 --verification-sample-size 30
+  --doc-limit 1 --extract-max-chars 12000 --concurrency 2 --verification-sample-size 30
+llb prepare-goldset-draft --corpus-root <dir> --model <hf-vllm-model> \
+  --backend vllm --no-think --num-ctx 16384 --doc-limit 1
 llb prepare-goldset-draft --corpus-root <dir> --model <model> --extractor spacy
 ```
 
@@ -128,8 +132,9 @@ needle_items.jsonl
 For PDF-derived corpora, `pipeline.py` copies matching PDF citation sidecars into the bundle and
 `artifacts.py` writes the calibration report, source-backed prompt dictionary candidates, and
 citation-valid needle items. The report records the bounded-probe settings (`doc_limit`,
-`extract_max_chars`, `max_items`, seed), elapsed time, parse rate, page-span coverage, grounded
-entity/event/claim/fact counts, dictionary-term yield, and quality gates. The gates broadened past
+`extract_max_chars`, `extract_concurrency`, `max_items`, seed), elapsed time, parse rate, page-span
+coverage, grounded entity/event/claim/fact counts, dictionary-term yield, and quality gates. The
+gates broadened past
 "nonzero SRO facts": grounding counts if the extraction produced evidence of ANY kind
 (`nonzero_grounded_extractions`), the gold set must be non-empty (`nonzero_draft_items`), and for
 PDF corpora at least one citation-valid needle must exist (`has_citation_valid_needles`, marked
@@ -152,9 +157,62 @@ closed vocabulary as LLM extraction.
 facts while grounding offsets against the full original document. This keeps later sections from
 being silently truncated by endpoint context limits.
 
-For long local PDF corpora, extraction logs document and window progress. Ollama reasoning models
-should use `--no-think`; the command routes through Ollama native `/api/chat` so `think=false` is
-honored and JSON extraction is not spent on hidden reasoning.
+For long local PDF corpora, extraction logs document and window progress. LLM window extraction can
+run concurrently within one document: use `DRAFT_CONCURRENCY=<n>` with
+`make prepare-goldset-draft`, `QUICKSTART_DRAFT_CONCURRENCY=<n>` with the PDF quickstart, or
+`llb prepare-goldset-draft --concurrency <n>` / `--extract-concurrency <n>`. The default is `1`,
+which preserves the prior sequential behavior. Parallel extraction uses one bounded worker pool per
+document and stores completed windows back into their original indexes before merge, so grounding
+and deduplication stay deterministic. Bundle provenance and `pdf_ontology_report.json` record the
+effective `extract_concurrency` setting.
+
+Server-side parallelism is still the local server's job. For Ollama, size `DRAFT_CONCURRENCY` to the
+available `OLLAMA_NUM_PARALLEL` slots so calls share one loaded model instead of starting a second
+model instance. Use the one-document probe twice, first with `DRAFT_CONCURRENCY=1` and then with the
+target concurrency, and compare `elapsed_s`, parse rate, and calibration gates before running the
+full PDF draft.
+
+Smoke probe evidence on the local 16 GB Ollama host used `llama3.2:3b`, one PDF-derived document,
+`DRAFT_EXTRACT_MAX_CHARS=60000`, and two extraction windows. Sequential extraction
+(`DRAFT_CONCURRENCY=1`) wrote `.data/prepare-goldset/parallel-probe-c1` with `elapsed_s=17.937`;
+parallel extraction (`DRAFT_CONCURRENCY=2`) wrote `.data/prepare-goldset/parallel-probe-c2` with
+`elapsed_s=14.559` for the same 32,074 prompt tokens. This is speed-only evidence: the small smoke
+model returned no grounded JSON (`parse_rate=0.0`, gates failed), so use the production drafter
+probe before accepting a real PDF bundle.
+
+Ollama reasoning models should use `--no-think`; the command routes through Ollama native
+`/api/chat` so `think=false` is honored and JSON extraction is not spent on hidden reasoning.
+
+vLLM-backed drafting is still `--endpoint local` (no egress), but sets `--backend vllm`. If
+`--base-url` is omitted, `src/llb/cli/prep.py` starts `VllmLauncher` from
+`src/llb/backends/vllm.py`, waits for `/v1/models`, writes vLLM logs under the draft bundle's
+`vllm/` directory, and points the endpoint at `http://localhost:<port>/v1`. If `--base-url` is set,
+the command uses that already-running OpenAI-compatible server. `--num-ctx` maps to vLLM
+`--max-model-len` only when the command launches the server; use `--vllm-max-model-len` to override
+that explicitly. Bundle provenance records `endpoint.backend=vllm` and the served `base_url`.
+`--no-think` sends vLLM request extras through the existing OpenAI client: `chat_template_kwargs`
+with `enable_thinking=false`, plus `include_reasoning=false` and `reasoning_effort=none`, so
+reasoning-model output budget is available for JSON.
+
+Passing vLLM probe evidence on the local 16 GB RTX 4060 Ti host used
+`google/gemma-4-E4B-it-qat-w4a16-ct`, `DRAFT_BACKEND=vllm`, `DRAFT_NO_THINK=1`,
+`DRAFT_NUM_CTX=4096`, a one-document probe corpus at `.data/vllm-draft-probe-corpus`, and output
+bundle `.data/prepare-goldset/vllm-draft-probe`. The run launched vLLM, served
+`http://localhost:8000/v1`, wrote `.data/prepare-goldset/vllm-draft-probe/vllm/vllm-8000.log`,
+and stopped the server. `pdf_ontology_report.json` recorded `elapsed_s=17.737`, `parse_rate=1.0`,
+6 grounded entities, 3 grounded facts, 1 claim, 2 events, 2 kept draft items, and `gates.passed=true`.
+`provenance.json` records `endpoint.backend=vllm`, `endpoint.base_url=http://localhost:8000/v1`,
+`endpoint.think=false`, 3 local calls, and zero egress/cost.
+
+`--num-ctx` (make: `DRAFT_NUM_CTX`) right-sizes the Ollama context window for drafting through the
+same native endpoint. Without it, Ollama loads the model with its modelfile context (often 128k+),
+which forces CPU offload on VRAM-bound hosts even though drafting prompts are bounded by
+`extract_max_chars`. Measured on the 16 GB RTX 4060 Ti host with `batiai/qwen3.6-35b:iq3`:
+the default context loaded 19 percent CPU / 81 percent GPU at about 120 s per extraction window;
+`--num-ctx 16384` loaded 4 percent CPU / 96 percent GPU at about 43 s per window. Keep headroom
+over `extract_max_chars` plus the completion budget -- Ollama silently truncates prompts longer
+than `num_ctx`. The quickstart PDF flow passes `QUICKSTART_DRAFT_NUM_CTX` (default 16384). The
+chosen value lands in bundle provenance (`endpoint.num_ctx`).
 
 The one-document probe path is the default safety valve before a multi-hour full PDF run:
 `DRAFT_DOC_LIMIT=1` bounds documents and `DRAFT_EXTRACT_MAX_CHARS=<n>` bounds each extraction

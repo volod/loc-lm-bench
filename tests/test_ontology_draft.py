@@ -7,6 +7,8 @@ adapter, and the end-to-end bundle are all exercised deterministically.
 
 import json
 import logging
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -43,11 +45,20 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
     SROFact,
 )
+from llb.prep.ontology.needles import annotate_needle_retrieval
 from llb.prep.ontology.pipeline import draft_goldset
 from llb.prep.ontology.refine import is_circular, refine_drafts
 
 DOC1 = "# Київ\n\nКиїв є столицею України. Місто розташоване на річці Дніпро.\n"
 DOC2 = "# Львів\n\nЛьвів є культурним центром заходу. Місто засноване у 1256 році.\n"
+
+
+class FakeNeedleRetriever:
+    def __init__(self, hits_by_question: dict[str, list[dict[str, object]]]):
+        self.hits_by_question = hits_by_question
+
+    def retrieve(self, question: str, k: int) -> list[dict[str, object]]:
+        return self.hits_by_question.get(question, [])[:k]
 
 
 # --- stage 1: inventory ----------------------------------------------------------------------
@@ -160,6 +171,74 @@ def test_llm_extraction_adapter_swallows_endpoint_error():
         DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))
     )
     assert extraction.facts == [] and extraction.entities == []
+
+
+def test_llm_extraction_adapter_rejects_invalid_concurrency():
+    with pytest.raises(ValueError, match="concurrency"):
+        LLMExtractionAdapter(complete=lambda _p: "{}", concurrency=0)
+
+
+def test_llm_extraction_adapter_parallel_windows_match_sequential_order():
+    markers = ("Alpha", "Beta", "Gamma", "Delta")
+    blocks = [
+        "Alpha fact about transit.",
+        "Beta fact about energy.",
+        "Gamma fact about water.",
+        "Delta fact about culture.",
+    ]
+    block_size = max(len(block) for block in blocks)
+    doc_text = "".join(block.ljust(block_size) for block in blocks).rstrip()
+    doc = DocRecord(doc_id="parallel.md", text=doc_text, sha256="x", n_chars=len(doc_text))
+
+    def payload_for(prompt: str) -> str:
+        facts = [
+            {
+                "subject": marker,
+                "relation": "mentions",
+                "object": "fact",
+                "evidence": f"{marker} fact",
+            }
+            for marker in markers
+            if marker in prompt
+        ]
+        entities = [
+            {"name": marker, "type": "MISC", "mentions": [marker]}
+            for marker in markers
+            if marker in prompt
+        ]
+        return json.dumps({"entities": entities, "facts": facts})
+
+    sequential = LLMExtractionAdapter(
+        complete=payload_for, max_chars=block_size, chunk_overlap=0, concurrency=1
+    ).extract(doc)
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    delays = {"Alpha": 0.04, "Beta": 0.03, "Gamma": 0.02, "Delta": 0.01}
+
+    def delayed_payload(prompt: str) -> str:
+        nonlocal active, max_active
+        marker_delay = next((delay for marker, delay in delays.items() if marker in prompt), 0.0)
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(marker_delay)
+            return payload_for(prompt)
+        finally:
+            with lock:
+                active -= 1
+
+    parallel = LLMExtractionAdapter(
+        complete=delayed_payload,
+        max_chars=block_size,
+        chunk_overlap=0,
+        concurrency=len(markers),
+    ).extract(doc)
+
+    assert max_active > 1
+    assert parallel.model_dump() == sequential.model_dump()
 
 
 # --- stage 3: ontology induction -------------------------------------------------------------
@@ -403,7 +482,12 @@ def test_endpoint_config_validates_kind_model_and_egress():
         EndpointConfig(kind="cloud", model="m")
     with pytest.raises(ValueError, match="model must be set"):
         EndpointConfig(kind="local", model="")
+    with pytest.raises(ValueError, match="local backend"):
+        EndpointConfig(kind="local", model="m", backend="bad")
+    with pytest.raises(ValueError, match="local backend can only"):
+        EndpointConfig(kind="frontier", model="gpt", backend="vllm")
     assert EndpointConfig(kind="local", model="m").egress is False
+    assert EndpointConfig(kind="local", model="m").provenance()["backend"] == "ollama"
     frontier = EndpointConfig(kind="frontier", model="gpt")
     assert frontier.egress is True and frontier.provenance()["egress"] is True
 
@@ -459,6 +543,103 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
     assert captured["url"].endswith("/api/chat")
     assert captured["think"] is False and captured["num_predict"] == 4096
     assert log.summary()["total_prompt_tokens"] == 7
+
+
+def test_vllm_think_disabled_uses_openai_extra_body(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
+    captured: dict[str, object] = {}
+
+    def fake_chat_once(client, model, messages, **kwargs):
+        captured["client"] = client
+        captured["extra_body"] = kwargs.get("extra_body")
+
+        class _Result:
+            text = "OK"
+            prompt_tokens = 11
+            completion_tokens = 4
+            error = None
+
+        return _Result()
+
+    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
+    cfg = EndpointConfig(
+        kind="local",
+        backend="vllm",
+        model="hf/reasoning-model",
+        base_url="http://localhost:8000/v1",
+        think=False,
+    )
+    assert cfg.provenance()["backend"] == "vllm"
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    extra_body = captured["extra_body"]
+    assert isinstance(extra_body, dict)
+    assert extra_body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert extra_body["include_reasoning"] is False
+    assert extra_body["reasoning_effort"] == "none"
+    assert captured["client"] is sentinel
+
+
+def test_vllm_host_for_port_rewrites_default_host():
+    from llb.cli.prep import _vllm_host_for_port
+
+    assert _vllm_host_for_port("http://localhost:8000", 8010) == "http://localhost:8010"
+
+
+def test_num_ctx_routes_through_native_endpoint_and_bounds_context(monkeypatch):
+    # num_ctx (like think) exists only on Ollama's native /api/chat; a num_ctx-set config must
+    # right-size the loaded context instead of inheriting the modelfile default (CPU offload).
+    monkeypatch.setattr(
+        ep,
+        "make_client",
+        lambda *a, **k: pytest.fail("must not use the /v1 client when num_ctx set"),
+    )
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": "OK"}, "prompt_eval_count": 5, "eval_count": 2}
+
+    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
+        captured["url"] = url
+        captured["options"] = json["options"]
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    cfg = EndpointConfig(kind="local", model="qwen3.6:35b", num_ctx=16384)
+    assert cfg.provenance()["num_ctx"] == 16384
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    assert captured["url"].endswith("/api/chat")
+    options = captured["options"]
+    assert isinstance(options, dict) and options["num_ctx"] == 16384
+
+
+def test_default_config_keeps_endpoint_context_untouched(monkeypatch):
+    # without think/num_ctx the /v1 OpenAI-compatible path stays in use and no num_ctx is sent
+    sentinel = object()
+    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
+    seen: dict[str, object] = {}
+
+    def fake_chat_once(client, model, messages, **kwargs):
+        seen["client"] = client
+
+        class _Result:
+            text = "OK"
+            prompt_tokens = 1
+            completion_tokens = 1
+            error = None
+
+        return _Result()
+
+    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
+    cfg = EndpointConfig(kind="local", model="any:model")
+    assert "num_ctx" not in cfg.provenance()
+    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
+    assert seen["client"] is sentinel
 
 
 # --- stage 7: full flow over a fake local endpoint -------------------------------------------
@@ -550,6 +731,7 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
         complete=fake_endpoint,
         max_items=20,
         out_dir=out,
+        extract_concurrency=2,
     )
 
     # items: unverified, ontology-drafted, grounded, split-assigned
@@ -572,6 +754,7 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
     assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
     assert set(prov["prompts"]) == {"extraction", "draft"}
+    assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
     assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
@@ -691,6 +874,130 @@ def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
 def _grounded_span(doc_id: str, text: str, quote: str) -> SourceSpan:
     start = text.index(quote)
     return SourceSpan(doc_id=doc_id, char_start=start, char_end=start + len(quote), text=quote)
+
+
+def _needle_item(item_id: str, question: str, doc_id: str, text: str, quote: str) -> GoldItem:
+    span = _grounded_span(doc_id, text, quote)
+    return GoldItem(
+        id=item_id,
+        question=question,
+        reference_answer=quote,
+        source_doc_id=doc_id,
+        source_spans=[span],
+        provenance=PROVENANCE_KIND,
+        split="final",
+    )
+
+
+def test_annotate_needle_retrieval_flags_rank_and_misses():
+    hit_item = _needle_item("q1", "Де згадано Київ?", "a.md", DOC1, "Київ")
+    miss_item = _needle_item("q2", "Де згадано Львів?", "b.md", DOC2, "Львів")
+    retriever = FakeNeedleRetriever(
+        {
+            hit_item.question: [
+                {"doc_id": "other.md", "char_start": 0, "char_end": 5, "text": "other"},
+                {"doc_id": "a.md", "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ],
+            miss_item.question: [
+                {"doc_id": "other.md", "char_start": 0, "char_end": 5, "text": "other"},
+            ],
+        }
+    )
+
+    rows, report = annotate_needle_retrieval(
+        [hit_item, miss_item], retriever, k=2, drop_nonretrievable=False
+    )
+
+    assert [row["retrieval_rank"] for row in rows] == [2, None]
+    assert all(row["retrieval_k"] == 2 for row in rows)
+    assert report["retrievable_items"] == 1
+    assert report["missed_items"] == 1
+    assert report["retrievable_fraction"] == 0.5
+    assert report["missed_ids"] == ["q2"]
+
+
+def test_annotate_needle_retrieval_can_drop_misses():
+    hit_item = _needle_item("q1", "Де згадано Київ?", "a.md", DOC1, "Київ")
+    miss_item = _needle_item("q2", "Де згадано Львів?", "b.md", DOC2, "Львів")
+    retriever = FakeNeedleRetriever(
+        {
+            hit_item.question: [
+                {"doc_id": "a.md", "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ]
+        }
+    )
+
+    rows, report = annotate_needle_retrieval(
+        [hit_item, miss_item], retriever, k=1, drop_nonretrievable=True
+    )
+
+    assert [row["id"] for row in rows] == ["q1"]
+    assert report["dropped_items"] == 1
+
+
+def test_calibration_artifacts_write_retrieval_ranked_needles(tmp_path):
+    out = tmp_path / "bundle"
+    corpus = out / "corpus"
+    corpus.mkdir(parents=True)
+    doc_id = "a.md"
+    corpus_text = DOC1
+    (corpus / doc_id).write_text(corpus_text, encoding="utf-8")
+    citation = {
+        "kind": "pdf-citations",
+        "source": "source.pdf",
+        "doc_id": doc_id,
+        "parser": "test",
+        "pages": [
+            {
+                "page": 1,
+                "text_start": 0,
+                "text_end": len(corpus_text),
+                "parser": "test",
+                "blocks": [],
+            }
+        ],
+    }
+    (corpus / "a.citations.json").write_text(
+        json.dumps(citation, ensure_ascii=False), encoding="utf-8"
+    )
+    item = _needle_item("q1", "Де згадано Київ?", doc_id, corpus_text, "Київ")
+    span = item.source_spans[0]
+    extraction = DocExtraction(
+        doc_id=doc_id,
+        entities=[Entity(name="Київ", type="LOC", mentions=[span])],
+    )
+    retriever = FakeNeedleRetriever(
+        {
+            item.question: [
+                {"doc_id": doc_id, "char_start": 0, "char_end": 6, "text": "# Київ"},
+            ]
+        }
+    )
+
+    report = write_calibration_artifacts(
+        out,
+        [DocRecord(doc_id=doc_id, text=corpus_text, sha256="x", n_chars=len(corpus_text))],
+        [extraction],
+        OntologyCandidate(),
+        [item],
+        elapsed_s=0.0,
+        settings={},
+        retrieval_store=retriever,
+        retrieval_k=3,
+    )
+
+    raw_rows = [
+        json.loads(line)
+        for line in (out / NEEDLE_GOLDSET_FILENAME).read_text(encoding="utf-8").splitlines()
+    ]
+    assert raw_rows[0]["retrieval_rank"] == 1
+    assert raw_rows[0]["retrieval_k"] == 3
+    assert load_goldset(out / NEEDLE_GOLDSET_FILENAME)[0].id == "q1"
+    assert report["citation_valid_needle_items"] == 1
+    assert report["needle_items_written"] == 1
+    assert report["retrieval_unique_needle_items"] == 1
+    assert report["retrieval_unique_needle_fraction"] == 1.0
+    assert report["gates"]["has_retrieval_unique_needles"] is True
 
 
 def test_calibration_gates_pass_without_sro_facts(tmp_path):

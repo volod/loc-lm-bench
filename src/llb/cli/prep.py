@@ -2,10 +2,12 @@
 
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import typer
 
 from llb.cli.app import app
+from llb.prep.ontology.constants import EXTRACT_CONCURRENCY
 
 
 @app.command("ingest-pdf-corpus")
@@ -21,9 +23,14 @@ def ingest_pdf_corpus_cmd(
         "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to ingest"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="reconvert every PDF even when the source is unchanged"
+    ),
 ) -> None:
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
-    _run_pdf_markdown_ingest("ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit)
+    _run_pdf_markdown_ingest(
+        "ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit, refresh
+    )
 
 
 @app.command("pdf-to-markdown")
@@ -39,9 +46,14 @@ def pdf_to_markdown_cmd(
         "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of PDFs to convert"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="reconvert every PDF even when the source is unchanged"
+    ),
 ) -> None:
     """Convert local PDFs into markdown files plus quality/citation sidecars."""
-    _run_pdf_markdown_ingest("pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit)
+    _run_pdf_markdown_ingest(
+        "pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit, refresh
+    )
 
 
 def _run_pdf_markdown_ingest(
@@ -51,6 +63,7 @@ def _run_pdf_markdown_ingest(
     min_chars: int,
     parser: str,
     limit: Optional[int],
+    refresh: bool = False,
 ) -> None:
     from llb.prep.pdf_corpus import ingest_pdf_corpus
 
@@ -61,13 +74,16 @@ def _run_pdf_markdown_ingest(
             min_chars=min_chars,
             parser=parser,
             limit=limit,
+            refresh=refresh,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
+    n_reused = sum(1 for item in result.items if item.reused)
+    reused_note = f", {n_reused} reused unchanged" if n_reused else ""
     typer.echo(
         f"[{command}] {result.n_docs}/{len(result.items)} PDFs extracted "
-        f"({result.n_skipped} skipped) -> {result.out_dir}"
+        f"({result.n_skipped} skipped{reused_note}) -> {result.out_dir}"
     )
 
 
@@ -380,6 +396,10 @@ def prepare_goldset_draft_cmd(
     endpoint: str = typer.Option(
         "local", help="local (OpenAI-compatible, no egress) | frontier (litellm, opt-in egress)"
     ),
+    backend: str = typer.Option(
+        "ollama",
+        help="local serving backend for --endpoint local: ollama | vllm | openai",
+    ),
     base_url: Optional[str] = typer.Option(
         None, help="local endpoint base URL (default: Ollama OpenAI-compatible /v1)"
     ),
@@ -405,6 +425,13 @@ def prepare_goldset_draft_cmd(
     extract_chunk_overlap: Optional[int] = typer.Option(
         None, min=0, help="overlap between extraction windows when a document is split"
     ),
+    concurrency: int = typer.Option(
+        EXTRACT_CONCURRENCY,
+        "--concurrency",
+        "--extract-concurrency",
+        min=1,
+        help="LLM extraction windows to run concurrently per document; merge order stays deterministic",
+    ),
     temperature: float = typer.Option(
         0.0, min=0.0, help="per-call generation temperature for ontology drafting"
     ),
@@ -414,7 +441,41 @@ def prepare_goldset_draft_cmd(
     no_think: bool = typer.Option(
         False,
         "--no-think",
-        help="disable Ollama native reasoning mode for local JSON-producing models",
+        help="disable hidden reasoning for local JSON-producing models (Ollama native or vLLM extra_body)",
+    ),
+    num_ctx: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="right-size the Ollama context window (native endpoint); avoids CPU offload from "
+        "the modelfile default on VRAM-bound hosts -- keep headroom over extract-max-chars",
+    ),
+    vllm_port: int = typer.Option(
+        8000,
+        min=1,
+        max=65535,
+        help="port for a vLLM server launched by this command when --backend vllm and --base-url is unset",
+    ),
+    vllm_gpu_memory_utilization: float = typer.Option(
+        0.85,
+        min=0.01,
+        max=1.0,
+        help="vLLM --gpu-memory-utilization when this command launches the server",
+    ),
+    vllm_max_model_len: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="vLLM --max-model-len when this command launches the server; defaults to --num-ctx when set",
+    ),
+    vllm_dtype: str = typer.Option(
+        "auto", help="vLLM --dtype when this command launches the server"
+    ),
+    vllm_quantization: Optional[str] = typer.Option(
+        None, help="vLLM --quantization when this command launches the server"
+    ),
+    vllm_startup_timeout: float = typer.Option(
+        600.0,
+        min=1.0,
+        help="seconds to wait for a vLLM server launched by this command to become ready",
     ),
     out_dir: Optional[Path] = typer.Option(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
@@ -424,40 +485,105 @@ def prepare_goldset_draft_cmd(
         min=0,
         help="also write verify_sample.csv for human review (0 leaves review to make verify-sample)",
     ),
+    retrieval_index_dir: Optional[Path] = typer.Option(
+        None,
+        help="full-corpus RAG index dir; when set, annotate citation-valid needles with retrieval_rank",
+    ),
+    retrieval_k: int = typer.Option(
+        10, min=1, help="top-k cutoff for --retrieval-index-dir needle-rank annotation"
+    ),
+    drop_nonretrievable_needles: bool = typer.Option(
+        False,
+        "--drop-nonretrievable-needles",
+        help="write only needles whose gold span is found within --retrieval-k",
+    ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
-    from llb.prep.ontology import EndpointConfig, draft_goldset
-    from llb.prep.ontology.endpoint import DEFAULT_LOCAL_BASE_URL
+    from llb.config import DEFAULT_VLLM_HOST
+    from llb.prep.ontology import EndpointConfig, default_out_dir, draft_goldset
+    from llb.prep.ontology.endpoint import (
+        DEFAULT_LOCAL_BASE_URL,
+        ENDPOINT_LOCAL,
+        LOCAL_BACKEND_VLLM,
+    )
 
-    try:
-        cfg = EndpointConfig(
-            kind=endpoint,
-            model=model,
-            base_url=base_url or DEFAULT_LOCAL_BASE_URL,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout,
-            think=False if no_think else None,
-        )
-    except ValueError as exc:
-        typer.echo(f"[error] {exc}", err=True)
-        raise typer.Exit(code=2)
     adapter = None
     if extractor == "spacy":
         from llb.prep.ontology.spacy_adapter import SpacyExtractionAdapter
 
         adapter = SpacyExtractionAdapter(model=spacy_model)
-    result = draft_goldset(
-        corpus_root,
-        cfg,
-        extraction_adapter=adapter,
-        max_items=max_items,
-        seed=seed,
-        out_dir=out_dir,
-        doc_limit=doc_limit,
-        extract_max_chars=extract_max_chars,
-        extract_chunk_overlap=extract_chunk_overlap,
-    )
+    if drop_nonretrievable_needles and retrieval_index_dir is None:
+        typer.echo(
+            "[error] --drop-nonretrievable-needles requires --retrieval-index-dir",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
+        typer.echo(f"[error] retrieval index dir not found: {retrieval_index_dir}", err=True)
+        raise typer.Exit(code=2)
+
+    resolved_out_dir = out_dir
+    base_url_value = base_url or DEFAULT_LOCAL_BASE_URL
+    launched_vllm = None
+    if endpoint == ENDPOINT_LOCAL and backend == LOCAL_BACKEND_VLLM and base_url is None:
+        from llb.backends.vllm import VllmLauncher
+
+        resolved_out_dir = resolved_out_dir or default_out_dir()
+        host = _vllm_host_for_port(DEFAULT_VLLM_HOST, vllm_port)
+        launched_vllm = VllmLauncher(
+            model,
+            host=host,
+            port=vllm_port,
+            gpu_memory_utilization=vllm_gpu_memory_utilization,
+            max_model_len=vllm_max_model_len or num_ctx,
+            dtype=vllm_dtype,
+            quantization=vllm_quantization,
+            startup_timeout=vllm_startup_timeout,
+            log_dir=resolved_out_dir / "vllm",
+        )
+        typer.echo(
+            f"[prepare-goldset-draft] starting vLLM model={model} host={host} port={vllm_port}"
+        )
+        launched_vllm.start()
+        base_url_value = f"{host}/v1"
+
+    endpoint_num_ctx = None if backend == LOCAL_BACKEND_VLLM else num_ctx
+    try:
+        cfg = EndpointConfig(
+            kind=endpoint,
+            model=model,
+            backend=backend,
+            base_url=base_url_value,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            think=False if no_think else None,
+            num_ctx=endpoint_num_ctx,
+        )
+    except ValueError as exc:
+        if launched_vllm is not None:
+            launched_vllm.stop()
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    try:
+        result = draft_goldset(
+            corpus_root,
+            cfg,
+            extraction_adapter=adapter,
+            max_items=max_items,
+            seed=seed,
+            out_dir=resolved_out_dir,
+            doc_limit=doc_limit,
+            extract_max_chars=extract_max_chars,
+            extract_chunk_overlap=extract_chunk_overlap,
+            extract_concurrency=concurrency,
+            retrieval_index_dir=retrieval_index_dir,
+            retrieval_k=retrieval_k,
+            drop_nonretrievable_needles=drop_nonretrievable_needles,
+        )
+    finally:
+        if launched_vllm is not None:
+            launched_vllm.stop()
     if verification_sample_size:
         from llb.goldset.verify import build_sample_worksheet
 
@@ -472,3 +598,10 @@ def prepare_goldset_draft_cmd(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
         f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
     )
+
+
+def _vllm_host_for_port(default_host: str, port: int) -> str:
+    parsed = urlsplit(default_host)
+    scheme = parsed.scheme or "http"
+    hostname = parsed.hostname or "localhost"
+    return f"{scheme}://{hostname}:{port}"

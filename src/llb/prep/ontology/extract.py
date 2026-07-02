@@ -12,11 +12,16 @@ Every extracted artifact must quote EXACT evidence; each quote is grounded back 
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from llb.prep.frontier import LLMComplete, parse_json_block
-from llb.prep.ontology.constants import EXTRACT_CHUNK_OVERLAP, EXTRACT_MAX_CHARS
+from llb.prep.ontology.constants import (
+    EXTRACT_CHUNK_OVERLAP,
+    EXTRACT_CONCURRENCY,
+    EXTRACT_MAX_CHARS,
+)
 from llb.prep.ontology.entity_types import entity_types_prompt_block, normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
 from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Event, SROFact
@@ -188,6 +193,11 @@ class LLMExtractionAdapter:
     complete: LLMComplete
     max_chars: int = EXTRACT_MAX_CHARS
     chunk_overlap: int = EXTRACT_CHUNK_OVERLAP
+    concurrency: int = EXTRACT_CONCURRENCY
+
+    def __post_init__(self) -> None:
+        if self.concurrency < 1:
+            raise ValueError("concurrency must be >= 1")
 
     def _extract_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction:
         try:
@@ -207,11 +217,31 @@ class LLMExtractionAdapter:
         from llb.eval.map_reduce import split_document
 
         windows = split_document(doc.text, self.max_chars, self.chunk_overlap)
-        parts = []
-        for index, window in enumerate(windows, start=1):
-            _log_window_progress(doc.doc_id, index, len(windows))
-            parts.append(self._extract_window(doc.doc_id, doc.text, window))
-        return merge_extractions(doc.doc_id, parts)
+        if self.concurrency == 1 or len(windows) <= 1:
+            sequential_parts = []
+            for index, window in enumerate(windows, start=1):
+                _log_window_progress(doc.doc_id, index, len(windows))
+                sequential_parts.append(self._extract_window(doc.doc_id, doc.text, window))
+            return merge_extractions(doc.doc_id, sequential_parts)
+
+        worker_count = min(self.concurrency, len(windows))
+        _LOG.info(
+            "[ontology] extracting %s with %d windows at concurrency %d",
+            doc.doc_id,
+            len(windows),
+            worker_count,
+        )
+        parallel_parts: list[DocExtraction | None] = [None] * len(windows)
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_index = {}
+            for index, window in enumerate(windows, start=1):
+                _log_window_progress(doc.doc_id, index, len(windows))
+                future = executor.submit(self._extract_window, doc.doc_id, doc.text, window)
+                future_to_index[future] = index - 1
+            for future in as_completed(future_to_index):
+                parallel_parts[future_to_index[future]] = future.result()
+        ordered_parts = [part for part in parallel_parts if part is not None]
+        return merge_extractions(doc.doc_id, ordered_parts)
 
 
 def extract_corpus(docs: list[DocRecord], adapter: ExtractionAdapter) -> list[DocExtraction]:

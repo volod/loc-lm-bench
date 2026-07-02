@@ -37,6 +37,7 @@ from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     DEFAULT_MAX_ITEMS,
     EXTRACT_CHUNK_OVERLAP,
+    EXTRACT_CONCURRENCY,
     EXTRACT_MAX_CHARS,
     EXTRACTION_FILENAME,
     GOLDSET_FILENAME,
@@ -63,6 +64,7 @@ from llb.prep.ontology.models import (
     DraftSeed,
     OntologyCandidate,
 )
+from llb.prep.ontology.needles import NeedleRetriever
 from llb.prep.ontology.refine import refine_drafts
 
 _LOG = logging.getLogger(__name__)
@@ -152,8 +154,23 @@ def _provenance(
     }
 
 
+def _load_retrieval_store(index_dir: Path | str | None) -> NeedleRetriever | None:
+    if index_dir is None:
+        return None
+    from llb.rag.store import RagStore
+
+    return RagStore.load(index_dir)
+
+
 def _write_bundle(
-    result: PipelineResult, endpoint: EndpointConfig, seed: int, settings: dict[str, object]
+    result: PipelineResult,
+    endpoint: EndpointConfig,
+    seed: int,
+    settings: dict[str, object],
+    *,
+    retrieval_store: NeedleRetriever | None = None,
+    retrieval_k: int = 10,
+    drop_nonretrievable_needles: bool = False,
 ) -> None:
     out_dir = result.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -177,6 +194,9 @@ def _write_bundle(
         result.items,
         elapsed_s=result.elapsed_s,
         settings=settings,
+        retrieval_store=retrieval_store,
+        retrieval_k=retrieval_k,
+        drop_nonretrievable_needles=drop_nonretrievable_needles,
     )
     _LOG.info(
         "[ontology] wrote %d drafts (verified=false) + provenance -> %s",
@@ -221,12 +241,21 @@ def draft_goldset(
     doc_limit: int | None = None,
     extract_max_chars: int | None = None,
     extract_chunk_overlap: int | None = None,
+    extract_concurrency: int | None = None,
+    retrieval_index_dir: Path | str | None = None,
+    retrieval_k: int = 10,
+    drop_nonretrievable_needles: bool = False,
     write: bool = True,
 ) -> PipelineResult:
     """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result."""
     started = perf_counter()
     if doc_limit is not None and doc_limit < 1:
         raise ValueError("doc_limit must be >= 1 when set")
+    if extract_concurrency is not None and extract_concurrency < 1:
+        raise ValueError("extract_concurrency must be >= 1 when set")
+    if retrieval_k < 1:
+        raise ValueError("retrieval_k must be >= 1")
+    retrieval_store = _load_retrieval_store(retrieval_index_dir) if write else None
     log = ProvenanceLog()
     complete = complete if complete is not None else build_complete(endpoint, log)
     adapter = extraction_adapter or LLMExtractionAdapter(
@@ -234,6 +263,9 @@ def draft_goldset(
         max_chars=extract_max_chars if extract_max_chars is not None else EXTRACT_MAX_CHARS,
         chunk_overlap=(
             extract_chunk_overlap if extract_chunk_overlap is not None else EXTRACT_CHUNK_OVERLAP
+        ),
+        concurrency=(
+            extract_concurrency if extract_concurrency is not None else EXTRACT_CONCURRENCY
         ),
     )
 
@@ -273,7 +305,23 @@ def draft_goldset(
         "extract_chunk_overlap": extract_chunk_overlap
         if extract_chunk_overlap is not None
         else EXTRACT_CHUNK_OVERLAP,
+        "extract_concurrency": extract_concurrency
+        if extract_concurrency is not None
+        else EXTRACT_CONCURRENCY,
+        "needle_retrieval_index_dir": str(retrieval_index_dir)
+        if retrieval_index_dir is not None
+        else None,
+        "needle_retrieval_k": retrieval_k,
+        "drop_nonretrievable_needles": drop_nonretrievable_needles,
     }
     if write:
-        _write_bundle(result, endpoint, seed, settings)
+        _write_bundle(
+            result,
+            endpoint,
+            seed,
+            settings,
+            retrieval_store=retrieval_store,
+            retrieval_k=retrieval_k,
+            drop_nonretrievable_needles=drop_nonretrievable_needles,
+        )
     return result

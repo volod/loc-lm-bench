@@ -604,7 +604,7 @@
       "descriptor": "prep/ontology/draft.prompt.json",
       "template": {
         "path": "prep/ontology/draft.txt",
-        "sha256": "226436707fea5b8bf6ad927ed77d7ae9a290d57bde41d2da81775e4e91155fd2"
+        "sha256": "0ccc3afdff3cb57a65425b73a2b16d975e32d895a995110cf8d7bc6a4c042a0a"
       }
     },
     "prep.ontology.extraction": {

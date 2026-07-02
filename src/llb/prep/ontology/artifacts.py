@@ -10,9 +10,9 @@ import json
 import shutil
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
+from llb.goldset.schema import GoldItem, SourceSpan
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     NEEDLE_GOLDSET_FILENAME,
@@ -21,6 +21,7 @@ from llb.prep.ontology.constants import (
     PROMPT_DICTIONARY_MAX_EXAMPLES,
 )
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
+from llb.prep.ontology.needles import NeedleRetriever, annotate_needle_retrieval
 from llb.prep.pdf_corpus import PDF_CITATION_SUFFIX, PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY
 
 _CITATION_META_FILES = (PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY)
@@ -249,6 +250,23 @@ def _write_jsonl(rows: list[dict[str, object]], path: Path) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _needle_rows_and_report(
+    needles: list[GoldItem],
+    *,
+    retrieval_store: NeedleRetriever | None,
+    retrieval_k: int,
+    drop_nonretrievable_needles: bool,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if retrieval_store is None:
+        return [cast(dict[str, object], item.model_dump()) for item in needles], {"enabled": False}
+    return annotate_needle_retrieval(
+        needles,
+        retrieval_store,
+        k=retrieval_k,
+        drop_nonretrievable=drop_nonretrievable_needles,
+    )
+
+
 # The gates whose AND is the `passed` roll-up. Every corpus needs grounded evidence of ANY kind
 # and a non-empty gold set; PDF-derived corpora additionally need a citation-valid needle item.
 _CORPUS_REQUIRED_GATES = ("nonzero_grounded_extractions", "nonzero_draft_items")
@@ -303,6 +321,9 @@ def write_calibration_artifacts(
     *,
     elapsed_s: float,
     settings: dict[str, object],
+    retrieval_store: NeedleRetriever | None = None,
+    retrieval_k: int = 10,
+    drop_nonretrievable_needles: bool = False,
 ) -> dict[str, object]:
     """Write PDF calibration/report artifacts into an ontology draft bundle."""
     root = Path(out_dir)
@@ -310,9 +331,15 @@ def write_calibration_artifacts(
     citation_index = load_pdf_citation_index(corpus_root)
     dictionary = build_prompt_dictionary_candidates(extractions, citation_index)
     needles = citation_valid_items(items, citation_index)
+    needle_rows, needle_retrieval = _needle_rows_and_report(
+        needles,
+        retrieval_store=retrieval_store,
+        retrieval_k=retrieval_k,
+        drop_nonretrievable_needles=drop_nonretrievable_needles,
+    )
 
     _write_jsonl(dictionary, root / PROMPT_DICTIONARY_FILENAME)
-    dump_goldset(needles, root / NEEDLE_GOLDSET_FILENAME)
+    _write_jsonl(needle_rows, root / NEEDLE_GOLDSET_FILENAME)
 
     nonempty_docs = sum(
         1
@@ -329,6 +356,20 @@ def write_calibration_artifacts(
     grounded_events = sum(len(extraction.events) for extraction in extractions)
     grounded_facts = sum(len(extraction.facts) for extraction in extractions)
     grounded_claims = sum(len(extraction.claims) for extraction in extractions)
+
+    gates = _gates(
+        grounded_total=grounded_entities + grounded_events + grounded_facts + grounded_claims,
+        grounded_facts=grounded_facts,
+        n_items=len(items),
+        has_dictionary=bool(dictionary),
+        n_needles=len(needles),
+        has_pdf_sidecars=bool(citation_index),
+    )
+    if needle_retrieval.get("enabled"):
+        retrievable_items = needle_retrieval.get("retrievable_items")
+        gates["has_retrieval_unique_needles"] = (
+            retrievable_items > 0 if isinstance(retrievable_items, int) else False
+        )
 
     report: dict[str, object] = {
         "kind": "pdf-ontology-calibration",
@@ -348,20 +389,17 @@ def write_calibration_artifacts(
         "page_span_citation_coverage": _span_coverage(evidence_spans, citation_index),
         "item_page_span_citation_coverage": _span_coverage(item_spans, citation_index),
         "citation_valid_needle_items": len(needles),
+        "needle_items_written": len(needle_rows),
+        "needle_retrieval": needle_retrieval,
+        "retrieval_unique_needle_items": needle_retrieval.get("retrievable_items"),
+        "retrieval_unique_needle_fraction": needle_retrieval.get("retrievable_fraction"),
         "dictionary_term_yield": len(dictionary),
         "facts_by_doc": dict(sorted(facts_by_doc.items())),
         "artifacts": {
             "prompt_dictionary_candidates": PROMPT_DICTIONARY_FILENAME,
             "needle_items": NEEDLE_GOLDSET_FILENAME,
         },
-        "gates": _gates(
-            grounded_total=grounded_entities + grounded_events + grounded_facts + grounded_claims,
-            grounded_facts=grounded_facts,
-            n_items=len(items),
-            has_dictionary=bool(dictionary),
-            n_needles=len(needles),
-            has_pdf_sidecars=bool(citation_index),
-        ),
+        "gates": gates,
     }
     (root / PDF_ONTOLOGY_REPORT_FILENAME).write_text(
         json.dumps(report, ensure_ascii=False, indent=2),

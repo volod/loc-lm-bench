@@ -26,6 +26,10 @@ _LOG = logging.getLogger(__name__)
 ENDPOINT_LOCAL = "local"
 ENDPOINT_FRONTIER = "frontier"
 ENDPOINT_KINDS = (ENDPOINT_LOCAL, ENDPOINT_FRONTIER)
+LOCAL_BACKEND_OLLAMA = "ollama"
+LOCAL_BACKEND_VLLM = "vllm"
+LOCAL_BACKEND_OPENAI = "openai"
+LOCAL_BACKENDS = (LOCAL_BACKEND_OLLAMA, LOCAL_BACKEND_VLLM, LOCAL_BACKEND_OPENAI)
 
 DEFAULT_LOCAL_BASE_URL = f"{DEFAULT_OLLAMA_HOST}/v1"
 
@@ -36,6 +40,7 @@ class EndpointConfig:
 
     kind: str = ENDPOINT_LOCAL
     model: str = ""
+    backend: str = LOCAL_BACKEND_OLLAMA
     base_url: str = DEFAULT_LOCAL_BASE_URL  # local only
     api_key: str = "not-needed"  # local only
     temperature: float = 0.2
@@ -45,12 +50,22 @@ class EndpointConfig:
     # before any JSON, so structured extraction comes back empty. `think=False` disables it (Ollama
     # `think`); None leaves the endpoint's own default. Pair with a larger `max_tokens`.
     think: bool | None = None
+    # Ollama loads a model with its modelfile context length (often 128k+), which can force CPU
+    # offload on VRAM-bound hosts even though drafting prompts are bounded and small. `num_ctx`
+    # right-sizes the context (native /api/chat only); None keeps the endpoint default. Prompts
+    # longer than `num_ctx` would be silently truncated by Ollama, so keep headroom over
+    # `extract_max_chars` + completion budget.
+    num_ctx: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in ENDPOINT_KINDS:
             raise ValueError(f"endpoint kind must be one of {ENDPOINT_KINDS}, got {self.kind!r}")
         if not self.model:
             raise ValueError("endpoint model must be set")
+        if self.backend not in LOCAL_BACKENDS:
+            raise ValueError(f"local backend must be one of {LOCAL_BACKENDS}, got {self.backend!r}")
+        if self.kind != ENDPOINT_LOCAL and self.backend != LOCAL_BACKEND_OLLAMA:
+            raise ValueError("local backend can only be set when endpoint kind is local")
 
     @property
     def egress(self) -> bool:
@@ -60,19 +75,18 @@ class EndpointConfig:
     def provenance(self) -> dict[str, object]:
         rec: dict[str, object] = {"kind": self.kind, "model": self.model, "egress": self.egress}
         if self.kind == ENDPOINT_LOCAL:
+            rec["backend"] = self.backend
             rec["base_url"] = self.base_url
         if self.think is not None:
             rec["think"] = self.think
+        if self.num_ctx is not None:
+            rec["num_ctx"] = self.num_ctx
         return rec
 
 
-def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
-    # Disabling a reasoning model's thinking is honored only by Ollama's NATIVE /api/chat `think`
-    # field -- the OpenAI-compatible /v1 layer ignores it and the model burns the whole token budget
-    # on hidden reasoning, returning empty structured output. So route the think-set case there.
-    if cfg.think is not None:
-        return _ollama_native_complete(cfg, log)
-
+def _openai_compatible_complete(
+    cfg: EndpointConfig, log: ProvenanceLog, *, extra_body: dict[str, object] | None = None
+) -> LLMComplete:
     client = make_client(cfg.base_url, api_key=cfg.api_key)
 
     def complete(prompt: str) -> str:
@@ -84,6 +98,7 @@ def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
             max_tokens=cfg.max_tokens,
             temperature=cfg.temperature,
             timeout=cfg.timeout,
+            extra_body=extra_body,
         )
         log.record(cfg.model, result.prompt_tokens, result.completion_tokens, 0.0)
         if result.error:
@@ -91,6 +106,40 @@ def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
         return result.text
 
     return complete
+
+
+def _vllm_extra_body(cfg: EndpointConfig) -> dict[str, object] | None:
+    """vLLM request extras for reasoning-output control.
+
+    vLLM exposes `chat_template_kwargs` through the OpenAI-compatible endpoint. Qwen-style
+    reasoning templates use `enable_thinking`; vLLM's own request schema also accepts
+    `include_reasoning` and `reasoning_effort`, so the response budget is spent on JSON instead
+    of hidden reasoning when `--no-think` maps to `think=False`.
+    """
+    if cfg.think is None:
+        return None
+    body: dict[str, object] = {
+        "chat_template_kwargs": {"enable_thinking": cfg.think},
+    }
+    if cfg.think is False:
+        body["include_reasoning"] = False
+        body["reasoning_effort"] = "none"
+    return body
+
+
+def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
+    if cfg.backend == LOCAL_BACKEND_VLLM:
+        return _openai_compatible_complete(cfg, log, extra_body=_vllm_extra_body(cfg))
+
+    # Disabling a reasoning model's thinking is honored only by Ollama's NATIVE /api/chat `think`
+    # field -- the OpenAI-compatible /v1 layer ignores it and the model burns the whole token budget
+    # on hidden reasoning, returning empty structured output. The same holds for `num_ctx`
+    # right-sizing. So route either case there.
+    if cfg.backend == LOCAL_BACKEND_OLLAMA and (cfg.think is not None or cfg.num_ctx is not None):
+        return _ollama_native_complete(cfg, log)
+    if cfg.think is not None or cfg.num_ctx is not None:
+        raise ValueError(f"backend {cfg.backend!r} does not support think/num_ctx controls")
+    return _openai_compatible_complete(cfg, log)
 
 
 def _native_chat_url(base_url: str) -> str:
@@ -108,12 +157,15 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
     url = _native_chat_url(cfg.base_url)
 
     def complete(prompt: str) -> str:
+        options: dict[str, object] = {"temperature": cfg.temperature, "num_predict": cfg.max_tokens}
+        if cfg.num_ctx is not None:
+            options["num_ctx"] = cfg.num_ctx
         payload = {
             "model": cfg.model,
             "think": cfg.think,
             "stream": False,
             "messages": [{"role": "user", "content": prompt}],
-            "options": {"temperature": cfg.temperature, "num_predict": cfg.max_tokens},
+            "options": options,
         }
         try:
             resp = httpx.post(url, json=payload, timeout=cfg.timeout)
@@ -138,5 +190,10 @@ def build_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
     if cfg.kind == ENDPOINT_FRONTIER:
         _LOG.info("[ontology] endpoint=frontier model=%s (CORPUS EGRESS)", cfg.model)
         return litellm_complete(cfg.model, temperature=cfg.temperature, log=log)
-    _LOG.info("[ontology] endpoint=local model=%s base_url=%s", cfg.model, cfg.base_url)
+    _LOG.info(
+        "[ontology] endpoint=local backend=%s model=%s base_url=%s",
+        cfg.backend,
+        cfg.model,
+        cfg.base_url,
+    )
     return _local_complete(cfg, log)

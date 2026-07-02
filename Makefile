@@ -36,24 +36,37 @@ PDF_DIR ?= $(DATA_DIR)/quickstart-pdf-corpus
 PDF_OUT_DIR ?=
 PDF_MIN_CHARS ?=
 PDF_PARSER ?= auto
+PDF_REFRESH ?=
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
 DRAFT_MODEL ?= gemma4:e4b
 DRAFT_ENDPOINT ?= local
+DRAFT_BACKEND ?= ollama
 DRAFT_BASE_URL ?=
 DRAFT_MAX_ITEMS ?= 60
 DRAFT_CORPUS ?= $(CORPUS)
 DRAFT_DOC_LIMIT ?=
 DRAFT_EXTRACT_MAX_CHARS ?=
 DRAFT_EXTRACT_CHUNK_OVERLAP ?=
+DRAFT_CONCURRENCY ?=
 DRAFT_MAX_TOKENS ?= 4096
 DRAFT_TEMPERATURE ?= 0
 DRAFT_TIMEOUT ?= 300
 DRAFT_NO_THINK ?= 0
+DRAFT_NUM_CTX ?=
+DRAFT_VLLM_PORT ?= 8000
+DRAFT_VLLM_GPU_MEMORY_UTILIZATION ?= 0.85
+DRAFT_VLLM_MAX_MODEL_LEN ?=
+DRAFT_VLLM_DTYPE ?= auto
+DRAFT_VLLM_QUANTIZATION ?=
+DRAFT_VLLM_STARTUP_TIMEOUT ?= 600
 DRAFT_EXTRACTOR ?= llm
 DRAFT_OUT_DIR ?=
 DRAFT_VERIFY_N ?= 0
+DRAFT_RETRIEVAL_INDEX_DIR ?=
+DRAFT_RETRIEVAL_K ?= $(RAG_K)
+DRAFT_DROP_NONRETRIEVABLE_NEEDLES ?= 0
 
 # RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
 # and should be used for connectivity checks only, not leaderboard or extended tests.
@@ -231,14 +244,25 @@ QUICKSTART_PDF_ACCEPTED ?= $(QUICKSTART_PDF_DRAFT)/accepted
 QUICKSTART_PDF_DRAFT_DOCS ?= all
 QUICKSTART_DRAFT_MODEL ?= auto
 QUICKSTART_DRAFT_ENDPOINT ?= local
+QUICKSTART_DRAFT_BACKEND ?= ollama
 QUICKSTART_DRAFT_BASE_URL ?=
 QUICKSTART_DRAFT_MAX_ITEMS ?= 180
 QUICKSTART_DRAFT_VERIFY_N ?= 40
 QUICKSTART_DRAFT_TIMEOUT ?= 900
 QUICKSTART_DRAFT_MAX_TOKENS ?= 4096
 QUICKSTART_DRAFT_TEMPERATURE ?= 0
+# Right-sized Ollama context for drafting: extraction windows are bounded (12k chars), so the
+# modelfile default (often 128k+) only wastes VRAM and forces CPU offload on 16 GB hosts.
+QUICKSTART_DRAFT_NUM_CTX ?= 16384
+QUICKSTART_DRAFT_VLLM_PORT ?= 8000
+QUICKSTART_DRAFT_VLLM_GPU_MEMORY_UTILIZATION ?= 0.85
+QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN ?=
+QUICKSTART_DRAFT_VLLM_DTYPE ?= auto
+QUICKSTART_DRAFT_VLLM_QUANTIZATION ?=
+QUICKSTART_DRAFT_VLLM_STARTUP_TIMEOUT ?= 600
 QUICKSTART_DRAFT_EXTRACT_MAX_CHARS ?=
 QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP ?=
+QUICKSTART_DRAFT_CONCURRENCY ?=
 QUICKSTART_MODEL_SELECTION ?= auto
 QUICKSTART_ASSUME_YES ?= 0
 QUICKSTART_PDF_MIN_CHARS ?= 500
@@ -254,9 +278,14 @@ export QUICKSTART_PDF_SOURCE QUICKSTART_PDF_MD QUICKSTART_PDF_RAG_DATA
 export QUICKSTART_PDF_DRAFT_MD QUICKSTART_PDF_DRAFT QUICKSTART_PDF_GRAPH_DATA
 export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_MODEL_BENCH_DATA QUICKSTART_PDF_ACCEPTED
 export QUICKSTART_PDF_DRAFT_DOCS QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_ENDPOINT
-export QUICKSTART_DRAFT_BASE_URL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
+export QUICKSTART_DRAFT_BACKEND QUICKSTART_DRAFT_BASE_URL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
 export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_DRAFT_MAX_TOKENS QUICKSTART_DRAFT_TEMPERATURE
+export QUICKSTART_DRAFT_NUM_CTX
+export QUICKSTART_DRAFT_VLLM_PORT QUICKSTART_DRAFT_VLLM_GPU_MEMORY_UTILIZATION
+export QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN QUICKSTART_DRAFT_VLLM_DTYPE
+export QUICKSTART_DRAFT_VLLM_QUANTIZATION QUICKSTART_DRAFT_VLLM_STARTUP_TIMEOUT
 export QUICKSTART_DRAFT_EXTRACT_MAX_CHARS QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP
+export QUICKSTART_DRAFT_CONCURRENCY
 export QUICKSTART_MODEL_SELECTION QUICKSTART_ASSUME_YES QUICKSTART_PDF_MIN_CHARS
 export QUICKSTART_PDF_PARSER
 export MODELS_MANIFEST RAG_K SPLIT HF_HUB_OFFLINE SECURITY_CASES SECURITY_VERIFICATION_REF
@@ -435,12 +464,13 @@ gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	bash "$(PROJECT_ROOT)/scripts/gen_rag_items.sh"
 
-pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickstart-pdf-corpus; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto)
+pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickstart-pdf-corpus; PDF_OUT_DIR=, PDF_MIN_CHARS=, PDF_PARSER=auto, PDF_REFRESH=1 reconverts unchanged PDFs)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(); \
 	if [ -n "$(PDF_OUT_DIR)" ]; then args+=("$(PDF_OUT_DIR)"); fi; \
 	if [ -n "$(PDF_MIN_CHARS)" ]; then args+=(--min-chars "$(PDF_MIN_CHARS)"); fi; \
 	if [ -n "$(PDF_PARSER)" ]; then args+=(--parser "$(PDF_PARSER)"); fi; \
+	if [ -n "$(PDF_REFRESH)" ]; then args+=(--refresh); fi; \
 	$(PY) -m llb.main pdf-to-markdown "$(PDF_DIR)" "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
@@ -521,6 +551,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --corpus-root "$(DRAFT_CORPUS)" \
 	  --model "$(DRAFT_MODEL)" \
 	  --endpoint "$(DRAFT_ENDPOINT)" \
+	  --backend "$(DRAFT_BACKEND)" \
 	  --max-items "$(DRAFT_MAX_ITEMS)" \
 	  --extractor "$(DRAFT_EXTRACTOR)" \
 	  --max-tokens "$(DRAFT_MAX_TOKENS)" \
@@ -529,11 +560,21 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
 	); \
 	if [ -n "$(DRAFT_BASE_URL)" ]; then args+=(--base-url "$(DRAFT_BASE_URL)"); fi; \
+	if [ -n "$(DRAFT_VLLM_PORT)" ]; then args+=(--vllm-port "$(DRAFT_VLLM_PORT)"); fi; \
+	if [ -n "$(DRAFT_VLLM_GPU_MEMORY_UTILIZATION)" ]; then args+=(--vllm-gpu-memory-utilization "$(DRAFT_VLLM_GPU_MEMORY_UTILIZATION)"); fi; \
+	if [ -n "$(DRAFT_VLLM_MAX_MODEL_LEN)" ]; then args+=(--vllm-max-model-len "$(DRAFT_VLLM_MAX_MODEL_LEN)"); fi; \
+	if [ -n "$(DRAFT_VLLM_DTYPE)" ]; then args+=(--vllm-dtype "$(DRAFT_VLLM_DTYPE)"); fi; \
+	if [ -n "$(DRAFT_VLLM_QUANTIZATION)" ]; then args+=(--vllm-quantization "$(DRAFT_VLLM_QUANTIZATION)"); fi; \
+	if [ -n "$(DRAFT_VLLM_STARTUP_TIMEOUT)" ]; then args+=(--vllm-startup-timeout "$(DRAFT_VLLM_STARTUP_TIMEOUT)"); fi; \
 	if [ -n "$(DRAFT_DOC_LIMIT)" ]; then args+=(--doc-limit "$(DRAFT_DOC_LIMIT)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
+	if [ -n "$(DRAFT_CONCURRENCY)" ]; then args+=(--concurrency "$(DRAFT_CONCURRENCY)"); fi; \
 	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
+	if [ -n "$(DRAFT_RETRIEVAL_INDEX_DIR)" ]; then args+=(--retrieval-index-dir "$(DRAFT_RETRIEVAL_INDEX_DIR)" --retrieval-k "$(DRAFT_RETRIEVAL_K)"); fi; \
+	if [ "$(DRAFT_DROP_NONRETRIEVABLE_NEEDLES)" = "1" ]; then args+=(--drop-nonretrievable-needles); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
+	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)

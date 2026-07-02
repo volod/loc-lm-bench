@@ -36,7 +36,11 @@ def test_grid_cells_expands_top_k() -> None:
 
 
 def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(models.shutil, "which", lambda _name: None)
+    # patch the resolver itself: it prefers the venv-local `vllm` CLI over PATH, so patching
+    # shutil.which alone still finds the real binary on CUDA hosts
+    import llb.backends.vllm as vllm_backend
+
+    monkeypatch.setattr(vllm_backend, "vllm_executable", lambda: None)
 
     ready, reason = models._local_backend_ready("vllm", tmp_path)
 

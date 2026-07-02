@@ -125,6 +125,21 @@ QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q
   make quickstart-pdf-corpus-draft
 ```
 
+To pin or auto-select a vLLM-served local model, ensure `make build-vllm` has installed the vLLM
+CLI, then set the draft backend:
+
+```sh
+QUICKSTART_DRAFT_BACKEND=vllm \
+  QUICKSTART_DRAFT_MODEL=google/gemma-4-E4B-it-qat-w4a16-ct \
+  QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN=16384 \
+  make quickstart-pdf-corpus-draft
+```
+
+With `QUICKSTART_DRAFT_MODEL=auto`, the selector can choose a vLLM-ranked recommendation when the
+vLLM CLI is available. If `QUICKSTART_DRAFT_BASE_URL` is unset, the draft command starts and stops
+`vllm serve` itself; set `QUICKSTART_DRAFT_BASE_URL=http://host:port/v1` to use an already-running
+server.
+
 To opt into an external provider, set the provider API key expected by `litellm`, then run:
 
 ```sh
@@ -148,6 +163,7 @@ Default full-draft knobs:
 
 - `QUICKSTART_PDF_DRAFT_DOCS=all`
 - `QUICKSTART_DRAFT_MODEL=auto`
+- `QUICKSTART_DRAFT_BACKEND=ollama`
 - `QUICKSTART_DRAFT_MAX_ITEMS=180`
 - `QUICKSTART_DRAFT_VERIFY_N=40`
 - `QUICKSTART_DRAFT_TIMEOUT=900`
