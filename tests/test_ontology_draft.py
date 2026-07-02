@@ -7,6 +7,8 @@ adapter, and the end-to-end bundle are all exercised deterministically.
 
 import json
 import logging
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -169,6 +171,74 @@ def test_llm_extraction_adapter_swallows_endpoint_error():
         DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))
     )
     assert extraction.facts == [] and extraction.entities == []
+
+
+def test_llm_extraction_adapter_rejects_invalid_concurrency():
+    with pytest.raises(ValueError, match="concurrency"):
+        LLMExtractionAdapter(complete=lambda _p: "{}", concurrency=0)
+
+
+def test_llm_extraction_adapter_parallel_windows_match_sequential_order():
+    markers = ("Alpha", "Beta", "Gamma", "Delta")
+    blocks = [
+        "Alpha fact about transit.",
+        "Beta fact about energy.",
+        "Gamma fact about water.",
+        "Delta fact about culture.",
+    ]
+    block_size = max(len(block) for block in blocks)
+    doc_text = "".join(block.ljust(block_size) for block in blocks).rstrip()
+    doc = DocRecord(doc_id="parallel.md", text=doc_text, sha256="x", n_chars=len(doc_text))
+
+    def payload_for(prompt: str) -> str:
+        facts = [
+            {
+                "subject": marker,
+                "relation": "mentions",
+                "object": "fact",
+                "evidence": f"{marker} fact",
+            }
+            for marker in markers
+            if marker in prompt
+        ]
+        entities = [
+            {"name": marker, "type": "MISC", "mentions": [marker]}
+            for marker in markers
+            if marker in prompt
+        ]
+        return json.dumps({"entities": entities, "facts": facts})
+
+    sequential = LLMExtractionAdapter(
+        complete=payload_for, max_chars=block_size, chunk_overlap=0, concurrency=1
+    ).extract(doc)
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    delays = {"Alpha": 0.04, "Beta": 0.03, "Gamma": 0.02, "Delta": 0.01}
+
+    def delayed_payload(prompt: str) -> str:
+        nonlocal active, max_active
+        marker_delay = next((delay for marker, delay in delays.items() if marker in prompt), 0.0)
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(marker_delay)
+            return payload_for(prompt)
+        finally:
+            with lock:
+                active -= 1
+
+    parallel = LLMExtractionAdapter(
+        complete=delayed_payload,
+        max_chars=block_size,
+        chunk_overlap=0,
+        concurrency=len(markers),
+    ).extract(doc)
+
+    assert max_active > 1
+    assert parallel.model_dump() == sequential.model_dump()
 
 
 # --- stage 3: ontology induction -------------------------------------------------------------
@@ -615,6 +685,7 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
         complete=fake_endpoint,
         max_items=20,
         out_dir=out,
+        extract_concurrency=2,
     )
 
     # items: unverified, ontology-drafted, grounded, split-assigned
@@ -637,6 +708,7 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
     assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
     assert set(prov["prompts"]) == {"extraction", "draft"}
+    assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
     assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted

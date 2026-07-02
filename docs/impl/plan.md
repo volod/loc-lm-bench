@@ -7,25 +7,6 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-### ontology-extract-parallel (optional, performance)
-
-- User-visible outcome: a full-corpus PDF draft finishes in a fraction of the current wall time by
-  running extraction windows concurrently instead of strictly sequentially.
-- Scope boundary: bound concurrency inside `LLMExtractionAdapter.extract`
-  (`src/llb/prep/ontology/extract.py`) with a small worker pool over windows; keep merging and
-  grounding deterministic (merge in window order). Server-side parallelism relies on Ollama
-  `OLLAMA_NUM_PARALLEL` slots sharing one loaded model; do not add a second model instance. Out of
-  scope: parallel drafting of seeds (short calls, little to gain) and any queueing service.
-- Data and artifact paths: same draft bundle under `$DATA_DIR/prepare-goldset/<timestamp>/` or
-  `QUICKSTART_PDF_DRAFT`; provenance should record the concurrency setting.
-- Execution path: `make prepare-goldset-draft ... DRAFT_CONCURRENCY=<n>`; verify against a
-  one-document probe first (see `docs/impl/current/robustness-ontology-backends.md` for the probe
-  path and the measured per-window baselines to beat).
-- Acceptance gates: identical extraction results at concurrency 1 vs N on the fake-endpoint unit
-  tests; a measured probe showing aggregate window throughput improves on one GPU without
-  raising the per-call timeout; `make ci` green.
-- Documentation target: `docs/impl/current/robustness-ontology-backends.md`.
-
 ### draft-vllm-endpoint (optional, performance)
 
 - User-visible outcome: quickstart PDF drafting can use a vLLM-served candidate (the fastest

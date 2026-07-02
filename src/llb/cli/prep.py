@@ -6,6 +6,7 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
+from llb.prep.ontology.constants import EXTRACT_CONCURRENCY
 
 
 @app.command("ingest-pdf-corpus")
@@ -419,6 +420,13 @@ def prepare_goldset_draft_cmd(
     extract_chunk_overlap: Optional[int] = typer.Option(
         None, min=0, help="overlap between extraction windows when a document is split"
     ),
+    concurrency: int = typer.Option(
+        EXTRACT_CONCURRENCY,
+        "--concurrency",
+        "--extract-concurrency",
+        min=1,
+        help="LLM extraction windows to run concurrently per document; merge order stays deterministic",
+    ),
     temperature: float = typer.Option(
         0.0, min=0.0, help="per-call generation temperature for ontology drafting"
     ),
@@ -499,6 +507,7 @@ def prepare_goldset_draft_cmd(
         doc_limit=doc_limit,
         extract_max_chars=extract_max_chars,
         extract_chunk_overlap=extract_chunk_overlap,
+        extract_concurrency=concurrency,
         retrieval_index_dir=retrieval_index_dir,
         retrieval_k=retrieval_k,
         drop_nonretrievable_needles=drop_nonretrievable_needles,

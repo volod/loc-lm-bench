@@ -16,6 +16,8 @@ SUPPORTED_SUFFIXES = (".txt", ".md")
 # still index the full original text (grounding runs against the full doc).
 EXTRACT_MAX_CHARS = 12000
 EXTRACT_CHUNK_OVERLAP = 600  # overlap between extraction windows so a span on a seam survives
+# Extraction windows per document; 1 preserves deterministic sequential calls.
+EXTRACT_CONCURRENCY = 1
 
 # --- stage 3: ontology induction -------------------------------------------------------------
 # A "constrained" candidate: keep only the most-supported types, and drop hapax types.

@@ -37,6 +37,7 @@ from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     DEFAULT_MAX_ITEMS,
     EXTRACT_CHUNK_OVERLAP,
+    EXTRACT_CONCURRENCY,
     EXTRACT_MAX_CHARS,
     EXTRACTION_FILENAME,
     GOLDSET_FILENAME,
@@ -240,6 +241,7 @@ def draft_goldset(
     doc_limit: int | None = None,
     extract_max_chars: int | None = None,
     extract_chunk_overlap: int | None = None,
+    extract_concurrency: int | None = None,
     retrieval_index_dir: Path | str | None = None,
     retrieval_k: int = 10,
     drop_nonretrievable_needles: bool = False,
@@ -249,6 +251,8 @@ def draft_goldset(
     started = perf_counter()
     if doc_limit is not None and doc_limit < 1:
         raise ValueError("doc_limit must be >= 1 when set")
+    if extract_concurrency is not None and extract_concurrency < 1:
+        raise ValueError("extract_concurrency must be >= 1 when set")
     if retrieval_k < 1:
         raise ValueError("retrieval_k must be >= 1")
     retrieval_store = _load_retrieval_store(retrieval_index_dir) if write else None
@@ -259,6 +263,9 @@ def draft_goldset(
         max_chars=extract_max_chars if extract_max_chars is not None else EXTRACT_MAX_CHARS,
         chunk_overlap=(
             extract_chunk_overlap if extract_chunk_overlap is not None else EXTRACT_CHUNK_OVERLAP
+        ),
+        concurrency=(
+            extract_concurrency if extract_concurrency is not None else EXTRACT_CONCURRENCY
         ),
     )
 
@@ -298,6 +305,9 @@ def draft_goldset(
         "extract_chunk_overlap": extract_chunk_overlap
         if extract_chunk_overlap is not None
         else EXTRACT_CHUNK_OVERLAP,
+        "extract_concurrency": extract_concurrency
+        if extract_concurrency is not None
+        else EXTRACT_CONCURRENCY,
         "needle_retrieval_index_dir": str(retrieval_index_dir)
         if retrieval_index_dir is not None
         else None,
