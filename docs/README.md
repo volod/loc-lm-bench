@@ -52,6 +52,10 @@ per-item review -> accepted-ledger flip, for real-corpus and synthetic bundles.
   GPU-class extension commands.
 - [Gold set from scratch](guides/goldset-from-scratch.md) -- published fixture, development
   imports, manual skeleton, and review rules.
+- [Test artifacts with AI provider services](guides/external-ai-service-artifacts.md) -- open-data
+  drafting of goldsets, security cases, and chains with Claude Projects / NotebookLM / ChatGPT
+  Projects, plus the [draft contract](design/external-draft-contract.md) and
+  [prompt pack](guides/external-service-prompts/README.md); restricted data stays local.
 - [Run RAG core](guides/run-rag-core.md) -- build-index -> run-eval.
 - [Quickstart PDF corpus](guides/quickstart-pdf-corpus.md) -- run the
   README quickstart shape against `.data/quickstart-pdf-corpus`, with OCR, corpus-specific RAG

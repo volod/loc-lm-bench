@@ -13,7 +13,9 @@ Ukrainian draft lane beside it (3), raise reviewer throughput for the larger dra
 long eval campaigns durable (5), derive corpus-specific security probes (6), explain wrong
 answers and fold them into recommendations (7), then add chain-of-questions data and the
 context-policy comparison that consumes it (8-9). Tasks 3 and 4 can proceed in parallel with 2;
-task 6 needs only the ontology artifacts from 1; task 9 depends on 8.
+task 6 needs only the ontology artifacts from 1; task 9 depends on 8. Task 10 makes the
+external-service draft lane (open data only) importable; it stands beside 3 as the other
+non-default drafting source and shares the question-type labels from 2.
 
 ### 1. corpus-any-autopipeline
 
@@ -281,6 +283,53 @@ task 6 needs only the ontology artifacts from 1; task 9 depends on 8.
   digest; verified-data stamping matches the category suite rules; `make ci` green.
 - Documentation target: [extended workflows](current/extended-workflows.md);
   [`docs/guides/prompt-system-rag.md`](../guides/prompt-system-rag.md).
+
+### 10. external-draft-import
+
+- User-visible outcome: an operator who drafted test data with an external AI provider service
+  (Claude Projects, NotebookLM, ChatGPT Projects) on **open** corpus data imports it into a
+  standard draft bundle with one command that re-grounds every quote against the local corpus,
+  computes exact `source_spans`, carries `question_type`/`difficulty` labels, records the
+  external service and model in provenance, and enforces the data-classification sidecar -- so
+  externally drafted goldsets flow through the same cross-check + human verification gate as
+  local drafts. Today the only supported external path is the SQuAD-shaped `make ingest-squad`,
+  which stamps `provenance: public-reused`, discards question-type labels, hashes each context
+  into its own corpus doc (losing full-document needle realism), and cannot read the grounded
+  JSONL or the required provenance sidecar. The manual workflow, artifact shapes, and prompts
+  already exist in
+  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md),
+  [`docs/design/external-draft-contract.md`](../design/external-draft-contract.md), and
+  [`docs/guides/external-service-prompts/`](../guides/external-service-prompts/README.md); this
+  task makes the grounded-JSONL lane (contract Artifact B) executable.
+- Scope boundary: in scope -- `llb import-external-draft --artifact <file> --corpus-root <dir>
+  --sidecar <external_provenance.json>` reading contract Artifact B rows (`quote` +
+  `source_doc_id`), re-grounding each `quote` as an exact substring of the named corpus doc
+  (drop + report non-verbatim rows exactly as the frontier drafter does in
+  `src/llb/prep/frontier.py`), emitting a canonical draft bundle
+  (`goldset.jsonl` with `provenance: frontier-drafted`, `verified: false`, exact `source_spans`;
+  verbatim `corpus/`; `provenance.json` carrying the external service, model, export date, and
+  `data_classification`); a hard refusal when the sidecar is absent or
+  `data_classification != "open"`; `question_type`/`difficulty` recorded in item provenance
+  without changing the `GoldItem` schema (shared with `draft-yield-quality-max`). Out of scope --
+  network calls to any provider (the operator exports by hand), the chain artifact (belongs to
+  `chain-goldset-generation`), changing the security-case loader, making external drafting a
+  default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/ingest_squad.py` bundle
+  writing, and `src/llb/goldset/validate.py`.
+- Data and artifact paths: input under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`
+  (artifact files + `external_provenance.json`); output a standard bundle under
+  `$DATA_DIR/prepare-goldset/<timestamp>/`; a small committed fixture under
+  `samples/external-drafts/` (one open-data artifact + sidecar) for tests.
+- Execution path: `llb import-external-draft --artifact <file> --corpus-root <dir> --sidecar
+  <sidecar>`; `make import-external-draft ARTIFACT=<file> CORPUS=<dir> SIDECAR=<sidecar>`; then
+  the existing `validate-goldset` -> `cross-check-goldset` -> `verify-*` chain. Unit tests use
+  the committed fixture; no network.
+- Acceptance gates: `make ci` green; a row whose `quote` is not a verbatim substring is dropped
+  and counted, never mis-grounded; a missing or non-open sidecar aborts with a clear message and
+  writes no bundle; the emitted bundle passes `make validate-goldset`; provenance records the
+  service, model, and classification; `question_type`/`difficulty` survive into item provenance.
+- Documentation target: [data prep](current/data-prep.md) external-draft lane;
+  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md)
+  (flip Artifact B from "target shape" to "works today").
 
 ## Adding Future Tasks
 

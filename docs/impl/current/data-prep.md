@@ -70,6 +70,15 @@ certifying changed content.
 `src/llb/prep/goldset_skeleton.py` writes an editable from-scratch SQuAD template under
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
+For **open** corpora, drafts can also be authored with an external AI provider service (Claude
+Projects, NotebookLM, ChatGPT Projects) and imported through `make ingest-squad`. Restricted or
+private corpora stay on the local ontology pipeline -- egress is never the default. The workflow,
+copy-paste prompts, and the exact artifact shapes (goldset, security cases, chains) are in
+[`docs/guides/external-ai-service-artifacts.md`](../../guides/external-ai-service-artifacts.md),
+[`docs/guides/external-service-prompts/`](../../guides/external-service-prompts/README.md), and
+the [external-service draft contract](../../design/external-draft-contract.md). The grounded-JSONL
+import lane is forward work (`external-draft-import` in [`plan.md`](../plan.md)).
+
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system
 packages, and GraphRAG. The default `PDF_PARSER=auto` path uses PyMuPDF4LLM with OCR disabled for
