@@ -60,6 +60,8 @@ per-item review -> accepted-ledger flip, for real-corpus and synthetic bundles.
 - [Quickstart PDF corpus](guides/quickstart-pdf-corpus.md) -- run the
   README quickstart shape against `.data/quickstart-pdf-corpus`, with OCR, corpus-specific RAG
   artifacts, graph artifacts, and the human-verification handoff before scoring.
+- [Quickstart any corpus](guides/quickstart-any-corpus.md) -- the same flow over a mixed
+  `txt`/`md`/`pdf` directory via `ingest-corpus`, with incremental reuse and resumable drafting.
 - [Analyze runs with MLflow](guides/mlflow-analysis.md) - select the project experiment,
   compare metrics, and inspect canonical case artifacts.
 - [vLLM backend + telemetry](guides/vllm-backend.md) -- backend telemetry: build-vllm -> run-eval on

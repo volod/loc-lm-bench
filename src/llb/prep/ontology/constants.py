@@ -55,5 +55,12 @@ PDF_ONTOLOGY_REPORT_FILENAME = "pdf_ontology_report.json"
 PROMPT_DICTIONARY_FILENAME = "prompt_dictionary_candidates.jsonl"
 NEEDLE_GOLDSET_FILENAME = "needle_items.jsonl"
 PROMPT_DICTIONARY_MAX_EXAMPLES = 5
+# Per-document, per-window extraction journal + its settings sidecar. The journal lets an
+# interrupted multi-hour draft resume the extraction stage instead of re-spending model calls;
+# the meta sidecar pins the determinism-critical settings so `--resume` reproduces the same
+# windows, seeds, and kept items.
+EXTRACTION_JOURNAL_FILENAME = "extraction_journal.jsonl"
+EXTRACTION_JOURNAL_META_FILENAME = "extraction_journal.meta.json"
+EXTRACTION_JOURNAL_META_KIND = "extraction-journal-meta"
 
 PROVENANCE_KIND: Provenance = "ontology-drafted"

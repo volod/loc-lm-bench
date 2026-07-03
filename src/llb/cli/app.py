@@ -7,8 +7,9 @@ Commands by area:
   resolve-models                                     backend resolver pick the backend that can serve a model
   sweep                                              hard-isolation cell-per-model sweep (resume)
   tune                                               two-stage Optuna (tuning -> final)
+  ingest-corpus / ingest-pdf-corpus                  mixed txt/md/pdf -> canonical .md/.txt corpus
   prepare-goldset / prepare-synthetic-corpus         frontier data-prep (litellm)
-  prepare-goldset-draft                              ontology-assisted draft (local/frontier)
+  prepare-goldset-draft                              ontology-assisted draft (local/frontier; --resume)
   judge-experiment                                   local judge calibration DeepEval UA smoke artifact
   screen-public                                      Tier-1 public lm-eval-harness-uk screen
   board / mlflow-ui                                  Streamlit leaderboard / MLflow UI

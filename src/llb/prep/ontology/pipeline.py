@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import cast
+from typing import Any, cast
 
 from llb.goldset.schema import GoldItem, Split, dump_goldset
 from llb.goldset.splits import assign_splits
@@ -40,6 +40,9 @@ from llb.prep.ontology.constants import (
     EXTRACT_CONCURRENCY,
     EXTRACT_MAX_CHARS,
     EXTRACTION_FILENAME,
+    EXTRACTION_JOURNAL_FILENAME,
+    EXTRACTION_JOURNAL_META_FILENAME,
+    EXTRACTION_JOURNAL_META_KIND,
     GOLDSET_FILENAME,
     METHOD_DIR,
     ONTOLOGY_FILENAME,
@@ -58,6 +61,7 @@ from llb.prep.ontology.extract import (
 )
 from llb.prep.ontology.induce import induce_ontology, ontology_constraints
 from llb.prep.ontology.inventory import inventory_corpus
+from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.models import (
     DocExtraction,
     DocRecord,
@@ -93,6 +97,40 @@ def _timestamp() -> str:
 
 def default_out_dir() -> Path:
     return resolve_data_dir() / METHOD_DIR / _timestamp()
+
+
+def _journal_meta_path(out_dir: Path) -> Path:
+    return out_dir / EXTRACTION_JOURNAL_META_FILENAME
+
+
+def _write_journal_meta(out_dir: Path, pinned: dict[str, object], endpoint: EndpointConfig) -> None:
+    """Record the determinism-critical settings + endpoint identity so a resume reproduces the run.
+
+    Written once at the start of a fresh run (before any model call) so the sidecar survives a kill
+    at any point during extraction.
+    """
+    payload = {
+        "kind": EXTRACTION_JOURNAL_META_KIND,
+        "endpoint": endpoint.provenance(),
+        **pinned,
+    }
+    _journal_meta_path(out_dir).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_journal_meta(out_dir: Path | str) -> dict[str, object]:
+    """Read the journal meta sidecar for `--resume`. Raises a clear error when it is absent."""
+    path = _journal_meta_path(Path(out_dir))
+    if not path.is_file():
+        raise ValueError(
+            f"cannot resume: no {EXTRACTION_JOURNAL_META_FILENAME} in {out_dir} "
+            "(a resumable draft writes it at the start of extraction)"
+        )
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(meta, dict):
+        raise ValueError(f"malformed journal meta: {path}")
+    return meta
 
 
 def _prompt_fingerprints() -> dict[str, str]:
@@ -246,30 +284,86 @@ def draft_goldset(
     retrieval_k: int = 10,
     drop_nonretrievable_needles: bool = False,
     write: bool = True,
+    resume: bool = False,
 ) -> PipelineResult:
-    """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result."""
+    """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result.
+
+    `resume=True` re-enters an existing bundle: it reads the pinned settings from the journal meta,
+    reuses journaled extraction windows instead of re-calling the model, and replays the
+    deterministic seed/draft/emit stages -- producing the same bundle as an uninterrupted run.
+    """
     started = perf_counter()
+    resolved_out = Path(out_dir) if out_dir is not None else default_out_dir()
+    if resume:
+        if not write:
+            raise ValueError("resume requires write=True (it re-enters an existing bundle)")
+        meta = cast(dict[str, Any], load_journal_meta(resolved_out))
+        corpus_root = str(meta.get("corpus_root", corpus_root))
+        seed = int(meta.get("seed", seed))
+        max_items = int(meta.get("max_items", max_items))
+        meta_doc_limit = meta.get("doc_limit", doc_limit)
+        doc_limit = int(meta_doc_limit) if meta_doc_limit is not None else None
+        extract_max_chars = meta.get("extract_max_chars", extract_max_chars)
+        extract_chunk_overlap = meta.get("extract_chunk_overlap", extract_chunk_overlap)
+        extract_concurrency = meta.get("extract_concurrency", extract_concurrency)
+        meta_index_dir = meta.get("retrieval_index_dir")
+        retrieval_index_dir = meta_index_dir if meta_index_dir is not None else retrieval_index_dir
+        retrieval_k = int(meta.get("retrieval_k", retrieval_k))
+        drop_nonretrievable_needles = bool(
+            meta.get("drop_nonretrievable_needles", drop_nonretrievable_needles)
+        )
     if doc_limit is not None and doc_limit < 1:
         raise ValueError("doc_limit must be >= 1 when set")
     if extract_concurrency is not None and extract_concurrency < 1:
         raise ValueError("extract_concurrency must be >= 1 when set")
     if retrieval_k < 1:
         raise ValueError("retrieval_k must be >= 1")
+
+    resolved_max_chars = extract_max_chars if extract_max_chars is not None else EXTRACT_MAX_CHARS
+    resolved_overlap = (
+        extract_chunk_overlap if extract_chunk_overlap is not None else EXTRACT_CHUNK_OVERLAP
+    )
+    resolved_concurrency = (
+        extract_concurrency if extract_concurrency is not None else EXTRACT_CONCURRENCY
+    )
+
+    resolved_corpus_root = Path(corpus_root)
+    journal: ExtractionJournal | None = None
+    if write:
+        resolved_out.mkdir(parents=True, exist_ok=True)
+        if not resume:
+            _write_journal_meta(
+                resolved_out,
+                {
+                    "corpus_root": str(resolved_corpus_root),
+                    "seed": seed,
+                    "max_items": max_items,
+                    "doc_limit": doc_limit,
+                    "extract_max_chars": resolved_max_chars,
+                    "extract_chunk_overlap": resolved_overlap,
+                    "extract_concurrency": resolved_concurrency,
+                    "retrieval_index_dir": str(retrieval_index_dir)
+                    if retrieval_index_dir is not None
+                    else None,
+                    "retrieval_k": retrieval_k,
+                    "drop_nonretrievable_needles": drop_nonretrievable_needles,
+                },
+                endpoint,
+            )
+        journal = ExtractionJournal(resolved_out / EXTRACTION_JOURNAL_FILENAME)
+        journal.load()
+
     retrieval_store = _load_retrieval_store(retrieval_index_dir) if write else None
     log = ProvenanceLog()
     complete = complete if complete is not None else build_complete(endpoint, log)
     adapter = extraction_adapter or LLMExtractionAdapter(
         complete,
-        max_chars=extract_max_chars if extract_max_chars is not None else EXTRACT_MAX_CHARS,
-        chunk_overlap=(
-            extract_chunk_overlap if extract_chunk_overlap is not None else EXTRACT_CHUNK_OVERLAP
-        ),
-        concurrency=(
-            extract_concurrency if extract_concurrency is not None else EXTRACT_CONCURRENCY
-        ),
+        max_chars=resolved_max_chars,
+        chunk_overlap=resolved_overlap,
+        concurrency=resolved_concurrency,
+        journal=journal,
     )
 
-    resolved_corpus_root = Path(corpus_root)
     docs = inventory_corpus(resolved_corpus_root)
     if doc_limit is not None:
         docs = docs[:doc_limit]
@@ -283,7 +377,6 @@ def draft_goldset(
     for it in items:
         it.split = cast(Split, splits[it.id])
 
-    resolved_out = Path(out_dir) if out_dir is not None else default_out_dir()
     result = PipelineResult(
         out_dir=resolved_out,
         docs=docs,
@@ -299,20 +392,15 @@ def draft_goldset(
         "max_items": max_items,
         "seed": seed,
         "doc_limit": doc_limit,
-        "extract_max_chars": extract_max_chars
-        if extract_max_chars is not None
-        else EXTRACT_MAX_CHARS,
-        "extract_chunk_overlap": extract_chunk_overlap
-        if extract_chunk_overlap is not None
-        else EXTRACT_CHUNK_OVERLAP,
-        "extract_concurrency": extract_concurrency
-        if extract_concurrency is not None
-        else EXTRACT_CONCURRENCY,
+        "extract_max_chars": resolved_max_chars,
+        "extract_chunk_overlap": resolved_overlap,
+        "extract_concurrency": resolved_concurrency,
         "needle_retrieval_index_dir": str(retrieval_index_dir)
         if retrieval_index_dir is not None
         else None,
         "needle_retrieval_k": retrieval_k,
         "drop_nonretrievable_needles": drop_nonretrievable_needles,
+        "resumed": resume,
     }
     if write:
         _write_bundle(

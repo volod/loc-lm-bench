@@ -109,6 +109,31 @@ The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_qual
 quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
 markers, and the selection score.
 
+### Mixed txt/md/pdf ingestion
+
+`make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the
+canonical corpus in a single command (`src/llb/prep/corpus_ingest.py`). PDFs route through the
+`ingest_pdf_corpus` converter above (same `pdf-<digest>.md` ids and citation sidecars); `.md`/`.txt`
+files pass through verbatim under their relative path so offsets stay exact. Both lanes share the
+PDF manifest contract: a per-source `source_sha256`, incremental reuse when the source is unchanged
+(`reused: true`), and skip diagnostics for short/failed documents. A unified `corpus_manifest.json`
+records every source with its `kind` (`pdf`|`text`), status, and reuse flag, so a rerun over an
+unchanged mixed corpus reports `reused: true` for every document. The staged corpus walk excludes
+the output subtree, so the default `<root>/_md` output is never re-ingested as new input.
+
+```bash
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_REFRESH=1
+llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto
+```
+
+`make quickstart-corpus CORPUS_SRC=<dir>` (script target `corpus`) generalizes the PDF quickstart
+stages to a mixed corpus: `ingest-corpus` -> full-corpus index -> ontology draft -> graph ->
+validate, logging each stage under `$DATA_DIR/llb/logs/quickstart/`. It reuses the PDF quickstart's
+model selection, workload estimate, and confirmation gate, and drafts directly over the converted
+corpus (passthrough text has no citation sidecar, so no per-doc staging step is needed). The mixed
+fixture `samples/corpus/` (`.md` + `.txt`) backs the ingestion unit tests.
+
 Ontology draft bundles preserve that PDF evidence. When a source document has a matching
 `*.citations.json` sidecar, `prepare-goldset-draft` copies it into the bundle `corpus/` directory
 and writes these review artifacts beside `goldset.jsonl`:
@@ -202,6 +227,25 @@ kept (2 circular, 3 duplicate, 5 ungroundable), all 70 citation-valid needles, g
 full 19-document corpus is 8.0M chars (668 windows), so a `QUICKSTART_DRAFT_MAX_ITEMS=400` full
 draft projects to roughly 9-10 hours on this host and about 350 kept items from a roughly
 2,000-seed pool.
+
+### Resumable extraction (interrupt-safe drafting)
+
+Because a full-corpus draft is a multi-hour extraction stage, the bundle carries a per-document,
+per-window extraction journal (`src/llb/prep/ontology/journal.py`). Each completed window appends
+one line to `extraction_journal.jsonl` (keyed by `(doc_id, window_index)`, deterministic from
+`split_document`); a settings sidecar `extraction_journal.meta.json` is written at the start of
+extraction and pins the determinism-critical settings (corpus, seed, `max_items`, window size and
+overlap, retrieval options) plus the endpoint identity.
+
+`llb prepare-goldset-draft --resume <bundle>` (make: `DRAFT_RESUME=<bundle>`;
+`make quickstart-corpus QUICKSTART_CORPUS_RESUME=<bundle>`) re-enters an interrupted bundle: it
+reads the meta, reuses journaled windows instead of re-calling the model, re-extracts only the
+missing windows, and replays the deterministic seed/draft/emit stages. The result is byte-identical
+to an uninterrupted run (same seeds, same kept items). A window whose model call errored is
+journaled as an empty extraction (done-as-empty, matching the non-resumed run); only a hard process
+kill leaves a window un-journaled so resume re-runs it. A missing meta aborts the resume with a
+clear message. Transient per-case retry inside a single run is separate durability work
+(`durable-eval-runner` in [`plan.md`](../plan.md)).
 
 ## Verification Gate
 
