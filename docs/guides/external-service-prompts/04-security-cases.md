@@ -10,6 +10,14 @@ Seed from the `sensitive_topics` fields of `01`'s inventory. This prompt drafts 
 marker-injection attacks (`prompt_injection` / `rag_injection` use planted nonce tokens and are
 authored locally, not by an external model).
 
+Multi-service exports merge with
+`make curate-drafts CURATE_KIND=security CURATE_INPUTS="<f1> <f2>" CURATE_OUT=<merged.json>
+CURATE_CORPUS=<staged-corpus>`: schema-invalid cases (unknown families, benign controls marked
+`expect_refusal`, leak probes without markers) are dropped with reasons, `grounding_hint` quotes
+are re-grounded to exact corpus text, near-duplicate prompts across services are removed WITHOUT
+touching bias pairs or cross-language groups (intentional twins), and a bias pair that loses one
+variant is dropped whole so decision-consistency scoring always sees complete pairs.
+
 ---
 
 ```text

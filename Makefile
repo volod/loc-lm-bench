@@ -31,6 +31,13 @@ PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v
 GOLDSET ?= $(PUBLISHED_GOLDSET_ROOT)/goldset.jsonl
 CORPUS ?= $(PUBLISHED_GOLDSET_ROOT)/corpus
 SQUAD_JSON ?= samples/squad_uk_fixture.json
+# curate-drafts: merge/dedup/filter externally drafted artifacts before import.
+CURATE_KIND ?= squad
+CURATE_INPUTS ?=
+CURATE_OUT ?=
+CURATE_CORPUS ?=
+CURATE_DEDUP_AGAINST ?=
+CURATE_SEMANTIC ?= 1
 CORPUS_DIR ?= $(PROJECT_ROOT)/samples/corpus
 PDF_DIR ?= $(DATA_DIR)/quickstart-pdf-corpus
 PDF_OUT_DIR ?=
@@ -319,7 +326,7 @@ export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL 
 export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score quickstart-corpus quickstart-corpus-convert quickstart-corpus-index quickstart-corpus-draft quickstart-corpus-graph quickstart-corpus-validate ingest-corpus
+.PHONY: curate-drafts help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score quickstart-corpus quickstart-corpus-convert quickstart-corpus-index quickstart-corpus-draft quickstart-corpus-graph quickstart-corpus-validate ingest-corpus
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -531,6 +538,15 @@ validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed 
 ingest-squad: ## Ingest local SQuAD QA; matching reviewed ids are verified (SQUAD_JSON=path)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.prep.ingest_squad --squad-json "$(SQUAD_JSON)"
+
+curate-drafts: ## Merge/dedup/filter external drafts; CURATE_KIND= CURATE_INPUTS="a b" CURATE_OUT= CURATE_CORPUS= CURATE_DEDUP_AGAINST= CURATE_SEMANTIC=0|1
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(CURATE_INPUTS)" || { echo "ERROR: set CURATE_INPUTS=\"<file> [<file> ...]\""; exit 1; }
+	@test -n "$(CURATE_OUT)" || { echo "ERROR: set CURATE_OUT=<merged-artifact-path>"; exit 1; }
+	$(PY) -m llb.main curate-drafts $(CURATE_INPUTS) --kind "$(CURATE_KIND)" --out "$(CURATE_OUT)" \
+		$(if $(CURATE_CORPUS),--corpus-root "$(CURATE_CORPUS)",) \
+		$(foreach b,$(CURATE_DEDUP_AGAINST),--dedup-against "$(b)") \
+		$(if $(filter 0,$(CURATE_SEMANTIC)),--no-semantic-dedup,)
 
 calibration-worksheet: ## Emit a blank judge-calibration worksheet from GOLDSET
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

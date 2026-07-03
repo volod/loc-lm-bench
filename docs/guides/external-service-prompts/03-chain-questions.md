@@ -7,6 +7,12 @@ material only -- do not feed it into scoring.
 
 Best seeds: the `cross_document` section and multi-relation entities from `01`'s inventory.
 
+Multi-service exports still merge cleanly today:
+`make curate-drafts CURATE_KIND=chains CURATE_INPUTS="<f1> <f2>" CURATE_OUT=<merged.jsonl>
+CURATE_CORPUS=<staged-corpus>` validates step structure, re-grounds step quotes to exact corpus
+text, drops chains whose final answer is already findable from the step-1 passage, and
+deduplicates chains that walk the same question sequence.
+
 ---
 
 ```text

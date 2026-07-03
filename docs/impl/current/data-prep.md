@@ -71,13 +71,43 @@ certifying changed content.
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
 For **open** corpora, drafts can also be authored with an external AI provider service (Claude
-Projects, NotebookLM, ChatGPT Projects) and imported through `make ingest-squad`. Restricted or
-private corpora stay on the local ontology pipeline -- egress is never the default. The workflow,
-copy-paste prompts, and the exact artifact shapes (goldset, security cases, chains) are in
+Projects, Gemini/NotebookLM, ChatGPT Projects) and imported through `make ingest-squad`.
+Restricted or private corpora stay on the local ontology pipeline -- egress is never the default.
+The workflow, per-service setup, copy-paste prompts, and the exact artifact shapes (goldset,
+security cases, chains) are in
 [`docs/guides/external-ai-service-artifacts.md`](../../guides/external-ai-service-artifacts.md),
 [`docs/guides/external-service-prompts/`](../../guides/external-service-prompts/README.md), and
 the [external-service draft contract](../../design/external-draft-contract.md). The grounded-JSONL
 import lane is forward work (`external-draft-import` in [`plan.md`](../plan.md)).
+
+### External-draft curation (merge / dedup / filter)
+
+`make curate-drafts` / `llb curate-drafts` (`src/llb/prep/curation/`) turns the pile of
+per-service, per-batch external exports into ONE importable artifact per kind -- the mechanism
+behind multi-service best-of-N drafting (run the same prompts in Claude and Gemini, merge the
+union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `security` (Artifact C ->
+`make bench-security`), `chains` (Artifact D, review-only), `inventory` (merged coverage plan for
+the drafting prompts). Behavior:
+
+- lenient loading: whole JSON files, raw replies with fenced code blocks, or JSONL;
+- verbatim repair via `frontier.ground_span`: near-verbatim answers/contexts/grounding quotes are
+  re-snapped to exact corpus text when `CURATE_CORPUS=<staged-dir>` is set, and a wrong SQuAD
+  `title` is corrected to the document where the context was found;
+- invalid filters: answers not in context, contexts not in corpus, schema-invalid security cases
+  (closed families via `SecurityCase.from_record`, benign-vs-expect_refusal conflicts, leak
+  probes without markers), structurally broken chains (step counts, missing quotes, reused
+  passages);
+- flabby filters: circular questions (reuses `ontology.refine.is_circular`), vague stubs,
+  document-structure references ("у цьому документі"), whole-paragraph answer spans, chains whose
+  final answer is findable from the step-1 passage;
+- dedup: exact normalized-question dedup, then greedy pinned-E5 near-dup (threshold 0.9, same
+  meaning as ontology drafting dedup) with bias pairs / cross-language groups protected as
+  intentional twins and orphaned bias-pair variants dropped whole;
+  `CURATE_DEDUP_AGAINST=<bundle>` suppresses re-drafts of prior accepted bundles' questions;
+- id collision rewrite across services and a `*.curation_report.json` sidecar with per-source,
+  per-reason counts.
+
+Unit coverage: `tests/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
 
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system

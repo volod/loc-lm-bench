@@ -42,6 +42,11 @@ services only *prepare draft test data*; they never retrieve, answer, judge, or 
    text the RAG index will contain.
 5. One artifact bundle per service session, stored under
    `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/` with the sidecar of section 6.
+6. **Curate before importing.** Multi-service / multi-batch exports of one artifact kind are
+   merged, verbatim-repaired, filtered, and deduplicated into one file by
+   `make curate-drafts` (`llb curate-drafts`; kinds `squad` / `security` / `chains` /
+   `inventory`) -- see the workflow manual section 5.0. Import commands then receive the single
+   curated file, and the `*.curation_report.json` sidecar documents what was dropped and why.
 
 ## 3. Artifact A -- goldset draft, SQuAD-format JSON (works today)
 
@@ -160,7 +165,7 @@ Placed beside every exported artifact file. Without it the bundle is not importa
 
 ```json
 {
-  "service": "claude-projects | notebooklm | chatgpt-projects",
+  "service": "claude-projects | notebooklm | gemini-gem | chatgpt-projects | <other-slug>",
   "service_url": "https://claude.ai/projects/...",
   "service_model": "<model name as displayed by the service, with date>",
   "export_date": "2026-07-03",
