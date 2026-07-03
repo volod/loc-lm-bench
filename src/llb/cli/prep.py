@@ -1,13 +1,13 @@
 """Gold-set and corpus preparation commands."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 from urllib.parse import urlsplit
 
 import typer
 
 from llb.cli.app import app
-from llb.prep.ontology.constants import EXTRACT_CONCURRENCY
+from llb.prep.ontology.constants import DEFAULT_MULTI_HOP_MAX_PATHS, EXTRACT_CONCURRENCY
 
 
 @app.command("ingest-pdf-corpus")
@@ -30,6 +30,37 @@ def ingest_pdf_corpus_cmd(
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
     _run_pdf_markdown_ingest(
         "ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit, refresh
+    )
+
+
+@app.command("ingest-corpus")
+def ingest_corpus_cmd(
+    root: Path = typer.Option(..., help="directory of mixed .txt/.md/.pdf source documents"),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="output corpus dir of .md/.txt files (default: <root>/_md)"
+    ),
+    min_chars: int = typer.Option(
+        500, min=1, help="skip documents whose text is shorter than this"
+    ),
+    parser: str = typer.Option(
+        "auto", help="PDF parser: auto | pymupdf4llm | docling | marker | unstructured | markitdown"
+    ),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="reconvert/re-copy every source even when it is unchanged"
+    ),
+) -> None:
+    """Ingest a mixed txt/md/pdf directory into one canonical corpus (PDFs converted, text passed through)."""
+    from llb.prep.corpus_ingest import ingest_corpus
+
+    try:
+        result = ingest_corpus(root, out_dir, min_chars=min_chars, parser=parser, refresh=refresh)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    reused_note = f", {result.n_reused} reused unchanged" if result.n_reused else ""
+    typer.echo(
+        f"[ingest-corpus] {result.n_docs}/{len(result.items)} documents ingested "
+        f"({result.n_skipped} skipped{reused_note}) -> {result.out_dir}"
     )
 
 
@@ -389,9 +420,16 @@ def adapt_bfcl_cmd(
 
 @app.command("prepare-goldset-draft")
 def prepare_goldset_draft_cmd(
-    corpus_root: Path = typer.Option(..., help="directory of .md/.txt source docs"),
-    model: str = typer.Option(
-        ..., help="model id (local endpoint tag, or litellm route for frontier)"
+    corpus_root: Optional[Path] = typer.Option(
+        None, help="directory of .md/.txt source docs (read from the bundle meta with --resume)"
+    ),
+    model: Optional[str] = typer.Option(
+        None, help="model id (local endpoint tag, or litellm route for frontier)"
+    ),
+    resume: Optional[Path] = typer.Option(
+        None,
+        help="resume an interrupted draft bundle: reuse journaled extraction windows and replay "
+        "the deterministic seed/draft stages (reads settings from the bundle's journal meta)",
     ),
     endpoint: str = typer.Option(
         "local", help="local (OpenAI-compatible, no egress) | frontier (litellm, opt-in egress)"
@@ -497,15 +535,69 @@ def prepare_goldset_draft_cmd(
         "--drop-nonretrievable-needles",
         help="write only needles whose gold span is found within --retrieval-k",
     ),
+    coverage_target: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="yield-max: draft up to N seeds per stratum bucket instead of the flat --max-items cap",
+    ),
+    multi_hop: bool = typer.Option(
+        False,
+        "--multi-hop",
+        help="yield-max: also draft multi-span chain questions walked from the knowledge graph",
+    ),
+    multi_hop_max_paths: int = typer.Option(
+        DEFAULT_MULTI_HOP_MAX_PATHS,
+        min=1,
+        help="cap on 2-hop graph paths drafted when --multi-hop is set",
+    ),
+    dedup_against: Optional[str] = typer.Option(
+        None,
+        help="yield-max: comma-separated prior bundle dirs; drop pinned-E5 near-duplicate questions",
+    ),
+    graph_dir: Optional[Path] = typer.Option(
+        None,
+        help="persisted graph store dir for --multi-hop paths (default: build the graph in-run)",
+    ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
     from llb.config import DEFAULT_VLLM_HOST
-    from llb.prep.ontology import EndpointConfig, default_out_dir, draft_goldset
+    from llb.prep.ontology import (
+        EndpointConfig,
+        default_out_dir,
+        draft_goldset,
+        load_journal_meta,
+    )
     from llb.prep.ontology.endpoint import (
         DEFAULT_LOCAL_BASE_URL,
         ENDPOINT_LOCAL,
         LOCAL_BACKEND_VLLM,
     )
+
+    resuming = resume is not None
+    if resume is not None:
+        try:
+            meta = load_journal_meta(resume)
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2)
+        ep_meta = cast(dict[str, Any], meta.get("endpoint") or {})
+        # The bundle's journal meta is authoritative for the corpus and endpoint identity; the
+        # extraction/seed/retrieval settings are re-read inside draft_goldset(resume=True). The
+        # base URL is intentionally NOT restored so a vLLM resume relaunches a fresh server.
+        if corpus_root is None:
+            corpus_root = Path(str(meta.get("corpus_root")))
+        if model is None:
+            model = str(ep_meta.get("model") or "")
+        endpoint = str(ep_meta.get("kind") or endpoint)
+        backend = str(ep_meta.get("backend") or backend)
+        if out_dir is None:
+            out_dir = resume
+    if corpus_root is None or not model:
+        typer.echo(
+            "[error] provide --corpus-root and --model, or --resume <bundle>",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     adapter = None
     if extractor == "spacy":
@@ -521,6 +613,14 @@ def prepare_goldset_draft_cmd(
     if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
         typer.echo(f"[error] retrieval index dir not found: {retrieval_index_dir}", err=True)
         raise typer.Exit(code=2)
+    if graph_dir is not None and not graph_dir.is_dir():
+        typer.echo(f"[error] graph store dir not found: {graph_dir}", err=True)
+        raise typer.Exit(code=2)
+    dedup_against_dirs: Optional[list[Path | str]] = (
+        [Path(part.strip()) for part in dedup_against.split(",") if part.strip()]
+        if dedup_against
+        else None
+    )
 
     resolved_out_dir = out_dir
     base_url_value = base_url or DEFAULT_LOCAL_BASE_URL
@@ -580,6 +680,12 @@ def prepare_goldset_draft_cmd(
             retrieval_index_dir=retrieval_index_dir,
             retrieval_k=retrieval_k,
             drop_nonretrievable_needles=drop_nonretrievable_needles,
+            coverage_target=coverage_target,
+            multi_hop=multi_hop,
+            multi_hop_max_paths=multi_hop_max_paths,
+            dedup_against=dedup_against_dirs,
+            graph_dir=graph_dir,
+            resume=resuming,
         )
     finally:
         if launched_vllm is not None:

@@ -73,6 +73,7 @@ def draft_for_seed(
         _LOG.warning("[ontology] draft for %s is not a JSON object; skipping", seed.doc_id)
         return None
     payload["doc_id"] = seed.doc_id
+    payload["difficulty"] = seed.difficulty  # carried onto the item label (yield-max)
     return payload
 
 

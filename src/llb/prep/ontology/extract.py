@@ -24,6 +24,7 @@ from llb.prep.ontology.constants import (
 )
 from llb.prep.ontology.entity_types import entity_types_prompt_block, normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
+from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.models import Claim, DocExtraction, DocRecord, Entity, Event, SROFact
 from llb.prompts import render_text
 
@@ -188,18 +189,24 @@ class LLMExtractionAdapter:
     """Default extractor via the injectable `complete`. A document longer than `max_chars` is
     CHUNKED into overlapping windows (verified-data hardening) -- one extraction call per window, merged -- instead of
     one truncated call, so a long doc's later content is no longer dropped. Offsets stay exact:
-    grounding always runs against the FULL original text."""
+    grounding always runs against the FULL original text.
+
+    An optional `journal` makes the stage resumable: a completed window is recorded and, on a later
+    run over the same bundle, reused instead of re-calling the model. Window identity is the
+    deterministic `split_document` index, so a journaled window is valid as long as the extraction
+    settings are unchanged (the pipeline pins them in the journal meta)."""
 
     complete: LLMComplete
     max_chars: int = EXTRACT_MAX_CHARS
     chunk_overlap: int = EXTRACT_CHUNK_OVERLAP
     concurrency: int = EXTRACT_CONCURRENCY
+    journal: ExtractionJournal | None = None
 
     def __post_init__(self) -> None:
         if self.concurrency < 1:
             raise ValueError("concurrency must be >= 1")
 
-    def _extract_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction:
+    def _call_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction:
         try:
             payload = parse_json_block(self.complete(extraction_prompt(doc_id, window_text)))
         except json.JSONDecodeError:
@@ -211,32 +218,49 @@ class LLMExtractionAdapter:
         # ground against the FULL original text so offsets are exact even for a windowed call
         return parse_extraction(doc_id, full_text, payload)
 
+    def _extract_window(
+        self, doc_id: str, full_text: str, window_text: str, window_index: int, window_total: int
+    ) -> DocExtraction:
+        if self.journal is not None:
+            cached = self.journal.get(doc_id, window_index)
+            if cached is not None:
+                return cached
+        extraction = self._call_window(doc_id, full_text, window_text)
+        if self.journal is not None:
+            self.journal.record(doc_id, window_index, window_total, extraction)
+        return extraction
+
     def extract(self, doc: DocRecord) -> DocExtraction:
         if len(doc.text) <= self.max_chars:
-            return self._extract_window(doc.doc_id, doc.text, doc.text)
+            return self._extract_window(doc.doc_id, doc.text, doc.text, 1, 1)
         from llb.eval.map_reduce import split_document
 
         windows = split_document(doc.text, self.max_chars, self.chunk_overlap)
-        if self.concurrency == 1 or len(windows) <= 1:
+        total = len(windows)
+        if self.concurrency == 1 or total <= 1:
             sequential_parts = []
             for index, window in enumerate(windows, start=1):
-                _log_window_progress(doc.doc_id, index, len(windows))
-                sequential_parts.append(self._extract_window(doc.doc_id, doc.text, window))
+                _log_window_progress(doc.doc_id, index, total)
+                sequential_parts.append(
+                    self._extract_window(doc.doc_id, doc.text, window, index, total)
+                )
             return merge_extractions(doc.doc_id, sequential_parts)
 
-        worker_count = min(self.concurrency, len(windows))
+        worker_count = min(self.concurrency, total)
         _LOG.info(
             "[ontology] extracting %s with %d windows at concurrency %d",
             doc.doc_id,
-            len(windows),
+            total,
             worker_count,
         )
-        parallel_parts: list[DocExtraction | None] = [None] * len(windows)
+        parallel_parts: list[DocExtraction | None] = [None] * total
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             future_to_index = {}
             for index, window in enumerate(windows, start=1):
-                _log_window_progress(doc.doc_id, index, len(windows))
-                future = executor.submit(self._extract_window, doc.doc_id, doc.text, window)
+                _log_window_progress(doc.doc_id, index, total)
+                future = executor.submit(
+                    self._extract_window, doc.doc_id, doc.text, window, index, total
+                )
                 future_to_index[future] = index - 1
             for future in as_completed(future_to_index):
                 parallel_parts[future_to_index[future]] = future.result()

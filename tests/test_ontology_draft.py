@@ -753,7 +753,7 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
     assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
     assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
-    assert set(prov["prompts"]) == {"extraction", "draft"}
+    assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
     assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)

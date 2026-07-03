@@ -96,11 +96,15 @@ Pipeline stages:
    grounded evidence spans.
 3. `entity_types.py`: normalize to the closed 13-type vocabulary used by the graph schema.
 4. `induce.py`: aggregate extracted types and relations into an ontology candidate.
-5. `coverage.py`: select coverage-first seeds across entity, relation, section, and difficulty
-   strata.
-6. `draft.py`: ask for Ukrainian questions and answers around bounded evidence windows.
-7. `refine.py` and `pipeline.py`: re-ground, reject circular items, deduplicate, split, and emit
-   the bundle.
+5. `coverage.py`: select seeds across entity, relation, section, and difficulty strata --
+   coverage-first up to the flat `max_items` cap, or (yield-max) up to a per-stratum
+   `coverage_target`; `coverage_report` emits the "seeds remaining vs drafted" exhaustion matrix.
+6. `draft.py`: ask for Ukrainian questions and answers around bounded evidence windows;
+   `graph_paths.py` + `multi_hop.py` (yield-max) walk 2-hop graph chains and draft multi-span
+   multi-hop questions.
+7. `refine.py` and `pipeline.py`: re-ground, reject circular items, deduplicate, tag each item with
+   a `question_type`/`difficulty` label (`question_types.py`), optionally drop near-duplicates of
+   prior bundles (`dedup.py`), split, and emit the bundle.
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO_THINK=1
@@ -146,6 +150,50 @@ is always written for inspection and the human verification gate remains the rea
 
 Every emitted gold item remains `verified=false`. The bundle must pass cross-check and human
 verification before it can score real models.
+
+### Yield-Max Drafting
+
+Three opt-in knobs maximize meaningful questions from a corpus instead of stopping at a flat item
+cap. They compose (a run can set all three) and all stay deterministic and resumable (the journal
+meta pins them).
+
+- **Coverage-target sampling** (`--coverage-target N`, `DRAFT_COVERAGE_TARGET=N`). `select_seeds`
+  drafts up to `N` seeds per stratum bucket (relation / entity type / section / semantic kind)
+  rather than stopping at `--max-items`; `--max-items` remains a safety ceiling.
+  `coverage.coverage_report` writes a `coverage_matrix` into `pdf_ontology_report.json` recording,
+  per stratum dimension, how many buckets exist, how many were drafted (and reached the target), and
+  how many candidate seeds remain -- so an operator sees whether a draft exhausted the corpus's
+  breadth or was cut short.
+- **Multi-hop chain questions** (`--multi-hop`, `DRAFT_MULTI_HOP=1`). `graph_paths.walk_two_hop_paths`
+  walks directed `A -r1-> B -r2-> C` chains over the knowledge graph (built in-run by reusing the
+  extraction, or loaded from a persisted store via `--graph-dir`/`DRAFT_GRAPH_DIR`).
+  `multi_hop.build_multi_hop_items` grounds each chain in the two hops' exact evidence spans, so a
+  multi-hop item carries at least two grounded spans across sections or documents and passes
+  span-exact validation by construction. `--multi-hop-max-paths` caps the walk (default 40). Every
+  multi-hop item is labeled `multi-hop` / hard.
+- **Near-duplicate suppression** (`--dedup-against <bundle[,bundle]>`, `DRAFT_DEDUP_AGAINST=`).
+  `dedup.NearDuplicateFilter` drops a drafted question whose pinned-E5 (`multilingual-e5-base`,
+  the RAG store's embedder) cosine similarity to any prior-bundle question is `>= 0.9`, so a
+  coverage-target rerun does not re-draft paraphrases a reviewer already saw. The embedder is
+  injectable, so the filter is unit-tested with a fake embedder. `pdf_ontology_report.json` gains a
+  `dedup` block (threshold, prior question count, dropped ids); `provenance.json` records the prior
+  bundles.
+
+Every drafted item is tagged with a closed **question type** (factoid, definition, procedural,
+numeric, comparative, multi-hop) and a **difficulty** label, recorded in item provenance and on the
+`needle_items.jsonl` rows (not the `GoldItem` schema). `pdf_ontology_report.json` records the
+`question_type_distribution`, `difficulty_distribution`, and -- when a retrieval index is supplied --
+the retrieval-unique needle fraction per question type
+(`retrieval_unique_needle_fraction_by_question_type`), so reviewers and the miss analyzer can filter
+and compare by question type.
+
+```bash
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \
+  DRAFT_COVERAGE_TARGET=6 DRAFT_MULTI_HOP=1 DRAFT_DEDUP_AGAINST=<prior-bundle>
+llb prepare-goldset-draft --corpus-root <dir> --model <model> \
+  --coverage-target 6 --multi-hop --multi-hop-max-paths 40 \
+  --dedup-against <prior-bundle>,<other-bundle> --graph-dir <graph-store>
+```
 
 ## spaCy Adapter And Long Documents
 

@@ -7,201 +7,58 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-The tasks below form the corpus-to-recommendation spine, ordered by development sequence:
-first make any-corpus goldset production automatic and high-yield (1-2), open the external
-Ukrainian draft lane beside it (3), raise reviewer throughput for the larger drafts (4), make
-long eval campaigns durable (5), derive corpus-specific security probes (6), explain wrong
-answers and fold them into recommendations (7), then add chain-of-questions data and the
-context-policy comparison that consumes it (8-9). Tasks 3 and 4 can proceed in parallel with 2;
-task 6 needs only the ontology artifacts from 1; task 9 depends on 8.
+The any-corpus autopipeline that turns a mixed `txt`/`md`/`pdf` directory into a validated RAG
+index plus a resumable, unverified draft bundle is now shipped (`llb ingest-corpus`,
+`make quickstart-corpus`, `prepare-goldset-draft --resume`; see [data prep](current/data-prep.md)).
+The tasks below build the rest of the corpus-to-recommendation spine on that foundation.
 
-### 1. corpus-any-autopipeline
+The forward work is split into two sections by **who must act to complete it**:
 
-- User-visible outcome: one command turns any mixed `txt`/`md`/`pdf` directory into a validated
-  RAG index plus an unverified needle-in-haystack draft bundle, and an interrupted multi-hour
-  draft resumes instead of restarting. The grouped quickstart currently covers PDF directories
-  only and ontology inventory reads only `.md`/`.txt` (see [data prep](current/data-prep.md)),
-  so mixed corpora need manual staging and a killed draft loses every finished extraction
-  window.
-- Scope boundary: in scope -- a unified `llb ingest-corpus` that routes PDFs through the
-  existing `llb ingest-pdf-corpus` converter and passes `.md`/`.txt` through with the same
-  manifest shape (`source_sha256`, incremental reuse, skip diagnostics); a
-  `make quickstart-corpus` wrapper generalizing the PDF quickstart stages
-  (convert -> index -> draft -> graph -> validate) to the mixed corpus; a per-document,
-  per-window extraction journal inside the draft bundle plus
-  `llb prepare-goldset-draft --resume <bundle>` that skips journaled windows and re-enters the
-  seed/draft stages deterministically. Out of scope -- new document formats (docx, html), new
-  chunking strategies, changes to the verification gate. Reuse `src/llb/prep/pdf_corpus.py`,
-  `src/llb/prep/ontology/inventory.py`, `src/llb/prep/ontology/pipeline.py`, and
-  `scripts/quickstart.sh` stage layout.
-- Data and artifact paths: staged corpus under `<src>/_md` (PDF default today) or
-  `--out-dir`; draft bundles under `$DATA_DIR/prepare-goldset/<timestamp>/` with a new
-  `extraction_journal.jsonl`; quickstart logs under `$DATA_DIR/llb/logs/quickstart/`; a small
-  mixed-format fixture under `samples/corpus/` for tests.
-- Execution path: `llb ingest-corpus --root <dir> --out-dir <dir>`;
-  `make quickstart-corpus CORPUS_SRC=<dir>`;
-  `llb prepare-goldset-draft --resume <bundle>` after an interruption. Full-corpus drafting
-  stays a manual heavy step outside quick CI; unit tests use the fixture corpus with a fake
-  endpoint.
-- Acceptance gates: `make ci` green; rerun over an unchanged mixed corpus reports `reused: true`
-  for every document; a draft killed mid-extraction and resumed produces the same bundle
-  contents as an uninterrupted run (same seeds, same kept items) on the fixture corpus;
-  `make validate-goldset` passes against the produced bundle.
-- Documentation target: [data prep](current/data-prep.md); generalize
-  [`docs/guides/quickstart-pdf-corpus.md`](../guides/quickstart-pdf-corpus.md) or add
-  `docs/guides/quickstart-any-corpus.md`.
+- **[Agent Implementation Tasks](#agent-implementation-tasks)** land to `make ci` green with
+  committed fixtures, injected fakes, and deterministic harnesses. A few carry a heavy real-model
+  run for durable evidence; those runs are deterministic and execute on the CUDA host without any
+  human judgment, so they stay in this section.
+- **[Human-Assisted Tasks](#human-assisted-tasks)** cannot reach their stated acceptance without a
+  human in the loop: the deliverable *is* human judgment (verification-gate reviews, drafting
+  oversight, measured reviewer throughput) or requires a human authorization (egress consent +
+  API spend). An agent can still build the supporting code and unit tests; the marked **human
+  step** is what gates completion.
 
-### 2. draft-yield-quality-max
+Task numbers are stable ids and never change; every task carries an explicit `Dependencies` line,
+and the recommended build order within each section follows those lines. Two dependencies cross the
+section boundary and are called out because they are **blocked by human work**:
 
-- User-visible outcome: draft bundles maximize meaningful, knowledge-based questions from the
-  corpus instead of stopping at a flat item cap: coverage-target drafting across entity,
-  relation, section, and semantic-type strata with an exhaustion report; multi-hop questions
-  drafted from knowledge-graph paths; near-duplicate suppression against earlier bundles; and
-  per-item question-type plus difficulty labels reviewers and analyzers can filter on.
-- Scope boundary: in scope -- extend `src/llb/prep/ontology/coverage.py` with per-stratum
-  coverage targets and a "seeds remaining vs drafted" report; a graph-path seed source that
-  walks 2-hop subject-relation-object chains from the GraphRAG store
-  (see [GraphRAG](current/graphrag-backend.md)) and drafts questions grounded in multi-span
-  evidence across sections or documents; an embedding-cosine near-duplicate filter (pinned E5)
-  against one or more prior bundles; a closed question-type taxonomy (factoid, definition,
-  procedural, numeric, comparative, multi-hop) recorded in item provenance without breaking the
-  `GoldItem` schema. Out of scope -- changing the human verification gate, new extraction
-  backends, judge changes. Reuse `src/llb/prep/ontology/{draft,refine,needles}.py` and
-  `src/llb/graph/`.
-- Data and artifact paths: `pdf_ontology_report.json` gains a coverage matrix and dedup counts;
-  `needle_items.jsonl` rows gain `question_type` and `difficulty`; graph input from
-  `$DATA_DIR/llb/graph/` or the bundle's own extraction.
-- Execution path:
-  `make prepare-goldset-draft DRAFT_COVERAGE_TARGET=<n-per-stratum> DRAFT_MULTI_HOP=1
-  DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`; heavy full-corpus drafts stay manual; unit tests
-  cover seed exhaustion, path walking, and dedup with fixtures.
-- Acceptance gates: on the local quickstart PDF corpus, a coverage-target draft keeps more
-  citation-valid needles than the current 180-cap default at an equal-or-better accept rate on
-  a `make verify-sample VERIFY_N=40` review; multi-hop items carry >= 2 grounded spans and pass
-  span-exact validation; injected paraphrase duplicates are removed in unit tests;
-  retrieval-unique needle fraction is reported per question type.
-- Documentation target: [data prep](current/data-prep.md) and
-  [robust backends and ontology drafting](current/robustness-ontology-backends.md).
+- **Agent task 8 (`context-policy-bench`) is BLOCKED BY human task 7 (`chain-goldset-generation`).**
+  Task 8 scores a *verified* chain fixture, and only the human review gate in task 7 can produce
+  one. Task 8's code (context-assembly + fake-endpoint tests) can be written earlier, but its
+  acceptance run cannot pass until task 7's human-accepted chains exist.
+- **Agent task 11 (`verification-gate-adjudication`) depends on the CODE of human task 3
+  (`verify-cli-throughput`).** Both extend `src/llb/goldset/verify.py` and `verify_session.py`;
+  land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
+  **not** block task 11 -- only the shared code surface does.
 
-### 3. frontier-ua-draft-lane
+The retrieval-quality cluster (12-16) gives the query-and-rerank side the same tune-and-demonstrate
+discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
+`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Every knob these tasks add must land
+in `compare-retrieval`, the sweep grid, or the tuner search space so task 6's miss analysis can cite
+it as evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
+fuses, so it pays off most after 12); 14, 15, and 16 stand alone.
 
-- User-visible outcome: for the best Ukrainian question quality and completeness, an operator
-  can opt a draft run into a best-of-breed external API (litellm-routed) for extraction,
-  drafting, or both, with an explicit consent gate, a hard budget cap, per-call cost telemetry
-  in provenance, and a side-by-side local-vs-frontier yield and quality report over the same
-  seeds. Frontier cross-check exists (`make cross-check-goldset CROSS_CHECK_MODEL=`); the draft
-  lane does not.
-- Scope boundary: in scope -- a frontier endpoint option for the ontology pipeline reusing the
-  litellm conventions in `src/llb/prep/frontier.py` behind the same endpoint seam as Ollama and
-  vLLM drafting (`src/llb/prep/ontology/endpoint.py`); `--max-usd` and `--max-calls` guards
-  that abort cleanly and record the reason; an interactive egress consent prompt naming the
-  corpus and destination (policy stays as recorded in
-  [product decisions](current/scope-boundaries.md)); a `llb draft-compare` command that drafts
-  the same bounded seed subset locally and via frontier and reports kept-yield, gate results,
-  and verify-sample accept rate. Out of scope -- making frontier the default, egress for
-  scoring or judging, retries of the egress policy discussion.
-- Data and artifact paths: `provenance.json` gains `endpoint.cost_usd`, call counts, and
-  latency; comparison reports under `$DATA_DIR/draft-compare/<timestamp>/`.
-- Execution path:
-  `make prepare-goldset-draft DRAFT_ENDPOINT=frontier DRAFT_FRONTIER_MODEL=<litellm-id>
-  DRAFT_MAX_USD=<n>`; `llb draft-compare --corpus-root <dir> --seeds <n> --frontier-model <id>
-  --local-model <model>`; unit tests use an injected fake litellm completer.
-- Acceptance gates: no network call happens without the flag plus consent (unit-tested via the
-  injected completer); the budget guard aborts mid-draft and the bundle remains inspectable
-  with the abort recorded; a 2-document probe against a real frontier model passes bundle gates
-  with parse rate at least matching the local drafter; the comparison report ranks both lanes
-  on kept-yield and accept rate.
-- Documentation target: [data prep](current/data-prep.md) frontier lane notes;
-  [`docs/guides/goldset-from-scratch.md`](../guides/goldset-from-scratch.md).
+## Agent Implementation Tasks
 
-### 4. verify-cli-throughput
+These land to `make ci` green with fixtures, fakes, and deterministic harnesses. Recommended
+sequence: 6 first (its probe mode reuses the shipped durable-eval-runner), the independent lot
+(9, 10, 12, 14, 15, 16) in any order, 13 after 12, 11 after task 3's code, and 8 last (blocked by
+human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal + `--resume` +
+bounded backend relaunch + `manifest.durability` counters) is now shipped; see
+[RAG core](current/rag-core.md) durability section.
 
-- User-visible outcome: a human reviewer clears materially more items per hour in the terminal
-  review session: a confidence-ordered queue (cross-check verdict and `retrieval_rank` decide
-  order), on-card evidence with PDF page citations, accept-with-edit that re-grounds an edited
-  answer span immediately, additive sample enlargement that never re-shows decided rows,
-  session stats with an items-per-hour ETA, and coded rejection reasons exported for draft
-  feedback.
-- Scope boundary: in scope -- extend `src/llb/goldset/verify.py` and
-  `src/llb/goldset/verify_session.py`; keep the worksheet CSV shape backward compatible (new
-  optional columns only); a `verify-sample` merge mode that draws additional stratified rows
-  while carrying prior decisions forward; a rejection-reason summary artifact the drafting
-  pipeline can read to tighten prompts. Out of scope -- a web UI, multi-annotator merging,
-  changes to acceptance arithmetic.
-- Data and artifact paths: worksheets under the draft bundle as today; a
-  `rejection_reasons.json` summary beside the accepted ledger.
-- Execution path: `make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_MERGE=1`;
-  `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`; unit tests for merge
-  idempotence, ordering, and re-grounding of edited spans.
-- Acceptance gates: `make ci` green including session golden-path tests; merging a larger
-  sample adds only new rows and preserves every decided row byte-for-byte; an edited answer
-  that no longer matches its span is blocked until re-grounded; manual evidence -- one recorded
-  40-item review pass on the quickstart draft with the measured items-per-hour noted in the
-  current docs.
-- Documentation target: [data prep](current/data-prep.md) verification gate;
-  [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)
-  and [`docs/guides/verification-tooling.md`](../guides/verification-tooling.md).
+### 6. miss-analysis-recommendations
 
-### 5. durable-eval-runner
-
-- User-visible outcome: `llb run-eval` (and by reuse the category benches) survives endpoint
-  flaps, backend crashes, and host restarts: transient per-case failures retry with capped
-  backoff, completed cases journal as they finish, `--resume <run-dir>` continues a partial run
-  instead of re-spending model calls, and a crashed launcher-owned backend relaunches a bounded
-  number of times. The client and runner seams currently have no retry or per-case checkpoint
-  (`src/llb/backends/openai_client.py`, `src/llb/executor/runner.py`); only sweeps resume, at
-  whole-cell granularity.
-- Scope boundary: in scope -- a retry policy keyed to the typed failure taxonomy (retry
-  `timeout` and `backend_error`; never retry `refusal`, `malformed`, or scored answers); an
-  append-only `cases.progress.jsonl` journal inside the staged hidden run directory; resume
-  keyed to the config fingerprint plus goldset digest, refusing a mismatched resume; backend
-  relaunch through the existing `BackendLauncher` seam with attempts recorded; retry, resume,
-  and relaunch counters in the manifest. The atomic staged-rename finalize stays the
-  transaction boundary. Out of scope -- distributed execution, a database, changing scoring.
-- Data and artifact paths: `$DATA_DIR/run-eval/<timestamp>-<run-id>/` layout unchanged; the
-  journal lives only in the staging directory and is dropped from the finalized bundle.
-- Execution path: `llb run-eval --resume <run-dir>`, `make run-eval RESUME=<run-dir>`, knobs
-  `--max-case-retries` and `--retry-backoff-s`; unit tests drive a fake endpoint that fails
-  transiently n times then succeeds, and a kill-then-resume harness over the committed fixture.
-- Acceptance gates: `make ci` green; a run interrupted mid-way and resumed yields
-  byte-identical `scores.jsonl` ordering-independent content versus an uninterrupted run on the
-  committed fixture with a deterministic fake endpoint; retries never double-score a case
-  (idempotent case keys); manifest records the durability counters; sweep cells inherit the
-  behavior without marker-key changes.
-- Documentation target: [RAG core](current/rag-core.md) executor and persistence sections.
-
-### 6. security-corpus-probes
-
-- User-visible outcome: the security tier gains corpus-specific cases derived from the target
-  corpus itself: prohibited-topic denial-guard probes built from the corpus ontology's
-  sensitive topics and entities, benign near-boundary controls that catch over-refusal on
-  legitimate corpus questions, and matched-pair bias probes (entity or group swapped, behavior
-  fixed) scored for decision consistency -- all flowing through the existing detectors,
-  cross-language grouping, and the human verification gate before any headline use.
-- Scope boundary: in scope -- `llb derive-security-cases --bundle <draft-bundle>` reading
-  `ontology.json` and `extraction.jsonl`, generating cases locally through the same drafter
-  endpoint seam; emitted cases reuse the committed case schema (`lang`, `attrs.vector`,
-  `xlang_group`) so `bench-security`, `cross_language_consistency`, and refusal-appropriateness
-  work unchanged (see [category suite](current/category-benchmark-suite.md) and the Ukrainian
-  security adaptation in [evaluation rigor](current/rigor-board-judge.md)); a bias-pair
-  consistency metric alongside ASR reusing the matched-group machinery. Out of scope -- new
-  detector kinds, safety classifiers, ranking unverified case sets.
-- Data and artifact paths: derived cases under `$DATA_DIR/security-derive/<timestamp>/cases.json`
-  with per-case grounding spans back to the corpus; a small derived-and-verified sample
-  committed under `samples/` for regression.
-- Execution path: `llb derive-security-cases --bundle <draft> --out <cases.json>`;
-  `make bench-security SECURITY_CASES=<cases.json> MODEL=<m> BACKEND=<b>`; verification through
-  the existing `verify-sample`/`verify-review`/`verify-accept` path.
-- Acceptance gates: every generated probe cites a corpus topic or entity with an exact span
-  (unit-tested); benign controls feed refusal-appropriateness only, never ASR; a full
-  `bench-security` run over derived quickstart-corpus cases reports per-family ASR plus
-  bias-pair consistency with bootstrap CIs; unverified derived sets are rejected from
-  composite/headline paths.
-- Documentation target: [category suite](current/category-benchmark-suite.md) security section;
-  [`docs/guides/learning-path-security.md`](../guides/learning-path-security.md).
-
-### 7. miss-analysis-recommendations
-
+- Dependencies: none. The probe mode reuses the shipped durable-eval-runner's `--resume`
+  (`llb run-eval --resume`; see [RAG core](current/rag-core.md) durability section) so a probe
+  campaign survives a flap. Soft-consumes the extra per-case signals from tasks 12-16 when present
+  (richer recommendations), but is not blocked by them -- it ships with the existing knobs.
 - User-visible outcome: after any run or sweep, one command explains the wrong answers: each
   miss classified as retrieval miss (gold span absent from context), generation miss (evidence
   present, answer wrong), refusal, format/scoring artifact, or judge disagreement; misses
@@ -223,36 +80,17 @@ task 6 needs only the ontology artifacts from 1; task 9 depends on 8.
 - Acceptance gates: the classifier separates retrieval misses from generation misses using span
   overlap on the synthetic bundle with zero cross-class leakage; on the committed-fixture
   sweep, every recommendation line names its numeric evidence; the probe mode is resumable via
-  the task-5 runner; `make ci` green.
+  the `durable-eval-runner`; `make ci` green.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) recommendation
   section; [`docs/guides/mlflow-analysis.md`](../guides/mlflow-analysis.md).
 
-### 8. chain-goldset-generation
+### 8. context-policy-bench
 
-- User-visible outcome: the draft pipeline also emits chain-of-questions test sets: ordered 2-4
-  step sequences in which each step supplies more specific context for the topic (topic
-  overview -> narrowing detail -> exact fact), every step carrying its own reference answer and
-  exact source spans, validated and human-verified with the same discipline as flat items.
-- Scope boundary: in scope -- a `ChainItem` schema in `src/llb/goldset/chains.py` whose steps
-  embed `GoldItem`-compatible question/answer/span fields plus a chain id, step order, and a
-  dependency note describing what the previous step establishes; chain drafting seeded from
-  knowledge-graph paths and heading hierarchies (reuses the task-2 graph-path walker);
-  span-exact validation via an extended `validate-goldset`; verify-session support rendering a
-  chain as one card with per-step checks. Out of scope -- the scoring runner (task 9),
-  multi-annotator flows.
-- Data and artifact paths: draft bundles gain `chains.jsonl`; a committed fixture
-  `samples/goldsets/<name>/chains.jsonl` with verified chains for smoke tests.
-- Execution path: `make prepare-goldset-draft DRAFT_CHAINS=1`;
-  `llb validate-goldset --chains <chains.jsonl> --corpus <dir>`; chains flow through
-  `verify-sample`/`verify-review`/`verify-accept` unchanged at the command level.
-- Acceptance gates: every step of every chain passes span-exact validation; steps within a
-  chain reference distinct spans and the final step's answer is not answerable from step-1
-  context alone (checked by the retrieval-uniqueness filter applied per step); at least 10
-  chains reviewed and accepted into the committed fixture; `make ci` green.
-- Documentation target: [data prep](current/data-prep.md).
-
-### 9. context-policy-bench
-
+- Dependencies: **BLOCKED BY human task 7 (`chain-goldset-generation`)** -- the acceptance run
+  needs the verified `chains.jsonl` committed fixture that only task 7's human review gate can
+  emit. The code (multi-hop substrate reuse, prompt-system role packages, context-assembly unit
+  tests over a fake endpoint) can be built ahead of task 7; it just cannot pass its acceptance run
+  until the verified chains exist.
 - User-visible outcome: for one model and a verified chain set, a ranked comparison of
   context-management policies -- fresh retrieval per step, accumulated full history, summarized
   history, and staged role/system-prompt sequences (for example librarian -> analyst ->
@@ -282,14 +120,481 @@ task 6 needs only the ontology artifacts from 1; task 9 depends on 8.
 - Documentation target: [extended workflows](current/extended-workflows.md);
   [`docs/guides/prompt-system-rag.md`](../guides/prompt-system-rag.md).
 
+### 9. external-draft-import
+
+- Dependencies: none (committed open-data fixture + sidecar, no network). Stands beside human
+  task 2 as the other non-default drafting source; shares the shipped question-type labels
+  (`src/llb/prep/ontology/question_types.py`).
+- User-visible outcome: an operator who drafted test data with an external AI provider service
+  (Claude Projects, NotebookLM, ChatGPT Projects) on **open** corpus data imports it into a
+  standard draft bundle with one command that re-grounds every quote against the local corpus,
+  computes exact `source_spans`, carries `question_type`/`difficulty` labels, records the
+  external service and model in provenance, and enforces the data-classification sidecar -- so
+  externally drafted goldsets flow through the same cross-check + human verification gate as
+  local drafts. Today the only supported external path is the SQuAD-shaped `make ingest-squad`,
+  which stamps `provenance: public-reused`, discards question-type labels, hashes each context
+  into its own corpus doc (losing full-document needle realism), and cannot read the grounded
+  JSONL or the required provenance sidecar. The manual workflow, artifact shapes, and prompts
+  already exist in
+  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md),
+  [`docs/design/external-draft-contract.md`](../design/external-draft-contract.md), and
+  [`docs/guides/external-service-prompts/`](../guides/external-service-prompts/README.md); this
+  task makes the grounded-JSONL lane (contract Artifact B) executable.
+- Scope boundary: in scope -- `llb import-external-draft --artifact <file> --corpus-root <dir>
+  --sidecar <external_provenance.json>` reading contract Artifact B rows (`quote` +
+  `source_doc_id`), re-grounding each `quote` as an exact substring of the named corpus doc
+  (drop + report non-verbatim rows exactly as the frontier drafter does in
+  `src/llb/prep/frontier.py`), emitting a canonical draft bundle
+  (`goldset.jsonl` with `provenance: frontier-drafted`, `verified: false`, exact `source_spans`;
+  verbatim `corpus/`; `provenance.json` carrying the external service, model, export date, and
+  `data_classification`); a hard refusal when the sidecar is absent or
+  `data_classification != "open"`; `question_type`/`difficulty` recorded in item provenance
+  without changing the `GoldItem` schema (shipped labeling in
+  `src/llb/prep/ontology/question_types.py`). Out of scope --
+  network calls to any provider (the operator exports by hand), the chain artifact (belongs to
+  `chain-goldset-generation`), changing the security-case loader, making external drafting a
+  default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/ingest_squad.py` bundle
+  writing, and `src/llb/goldset/validate.py`.
+- Data and artifact paths: input under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`
+  (artifact files + `external_provenance.json`); output a standard bundle under
+  `$DATA_DIR/prepare-goldset/<timestamp>/`; a small committed fixture under
+  `samples/external-drafts/` (one open-data artifact + sidecar) for tests.
+- Execution path: `llb import-external-draft --artifact <file> --corpus-root <dir> --sidecar
+  <sidecar>`; `make import-external-draft ARTIFACT=<file> CORPUS=<dir> SIDECAR=<sidecar>`; then
+  the existing `validate-goldset` -> `cross-check-goldset` -> `verify-*` chain. Unit tests use
+  the committed fixture; no network.
+- Acceptance gates: `make ci` green; a row whose `quote` is not a verbatim substring is dropped
+  and counted, never mis-grounded; a missing or non-open sidecar aborts with a clear message and
+  writes no bundle; the emitted bundle passes `make validate-goldset`; provenance records the
+  service, model, and classification; `question_type`/`difficulty` survive into item provenance.
+- Documentation target: [data prep](current/data-prep.md) external-draft lane;
+  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md)
+  (flip Artifact B from "target shape" to "works today").
+
+### 10. corpus-chunking-strategies
+
+- Dependencies: none. Picks up the "new chunking strategies" item the shipped autopipeline held
+  out of scope; independent of the rest.
+- User-visible outcome: the RAG store gains chunking strategies suited to mixed real-world corpora
+  and demonstrated (not assumed) to help retrieval: a PDF page/citation-aware strategy that keeps
+  chunk boundaries on page-sidecar spans, a heading-hierarchy (layout-aware) strategy that carries
+  the full breadcrumb, and a late-chunking / propositional strategy -- each selectable as a
+  `--strategy` value, offset-exact, and ranked against the existing strategies on the same gold set.
+  This is the "new chunking strategies" item the shipped any-corpus autopipeline held out of scope
+  (see [data prep](current/data-prep.md)); the current set is
+  `fixed | sentence | recursive | markdown | semantic` (`src/llb/rag/chunking.py`).
+- Scope boundary: in scope -- extend `STRATEGIES` in `src/llb/rag/chunking.py` with the new
+  strategies, each returning `(start, end, metadata)` spans anchored to `doc_id` + character offsets
+  so `validate-goldset` and source-span scoring keep working; the page-aware strategy reads the
+  `pdf-<digest>.citations.json` sidecars produced by the PDF/`ingest-corpus` lanes; a
+  `compare-retrieval` row per new strategy so the best chunker is DEMONSTRATED per corpus; the RAG
+  build grid gains the strategies behind a flag. Out of scope -- new embedding models, changing the
+  source-span gold contract, changing the retrieval scorer. Reuse `src/llb/rag/chunking.py`,
+  `src/llb/rag/compare.py`, and the citation sidecars.
+- Data and artifact paths: FAISS stores per strategy under `$DATA_DIR/llb/rag/<strategy>/`; a
+  `compare-retrieval` report gains the new strategy rows; a small page-sidecar fixture under
+  `samples/` for the page-aware chunker unit tests.
+- Execution path: `make build-index CHUNK_STRATEGY=<name>`;
+  `python -m llb.rag.chunking --corpus-root <dir> --strategy <name> --size <n> --overlap <n>`;
+  `make compare-retrieval`; unit tests assert offset-exactness and page-boundary alignment on the
+  fixture.
+- Acceptance gates: `make ci` green; every new strategy's chunks resolve to their exact source text
+  (offset round-trip test); the page-aware strategy never splits across a page-sidecar boundary on
+  the fixture; a `compare-retrieval` run ranks the new strategies against `markdown`/`semantic` on
+  the committed gold set with recall@k and MRR.
+- Documentation target: [RAG core](current/rag-core.md) chunking section;
+  [`docs/guides/run-rag-core.md`](../guides/run-rag-core.md).
+
+### 11. verification-gate-adjudication
+
+- Dependencies: land after **task 3's `verify.py`/`verify_session.py` code** (both tasks extend the
+  same modules; sequencing avoids a merge conflict). Task 3's human throughput evidence does not
+  block this task. Otherwise independent -- all acceptance gates use synthetic reviewed fixtures.
+- User-visible outcome: the human verification gate supports more than one annotator and richer
+  acceptance rules: a stratified sample can be assigned to N reviewers, inter-annotator agreement
+  (Cohen's/Fleiss' kappa) is reported, disagreements route to an adjudication pass, and acceptance
+  arithmetic becomes configurable (per-stratum thresholds and confidence-weighted acceptance) rather
+  than a single global tolerance. This is the "changes to the verification gate" item the shipped
+  any-corpus autopipeline held out of scope (see [data prep](current/data-prep.md)), plus the
+  multi-annotator / acceptance-arithmetic carve-outs of
+  [`verify-cli-throughput`](#3-verify-cli-throughput).
+- Scope boundary: in scope -- extend `src/llb/goldset/verify.py` (stratification, sampling,
+  acceptance arithmetic, ledger emission) and `src/llb/goldset/verify_session.py` with a reviewer
+  id on worksheet rows, an agreement report, an adjudication worksheet drawn from disagreements, and
+  per-stratum / confidence-weighted acceptance thresholds; keep the accepted-ledger-through-adoption
+  invariant (never hand-edit `verified`) and the CSV worksheet backward compatible (new optional
+  columns only). Out of scope -- a web UI, changing the `GoldItem` schema, judge calibration.
+  Reuse the existing `verify-sample`/`verify-review`/`verify-accept` command surface and the
+  stratified sampler.
+- Data and artifact paths: multi-reviewer worksheets and an `agreement.json` report beside the draft
+  bundle's worksheets; an `adjudication.csv` worksheet; the accepted ledger under `accepted/` as
+  today.
+- Execution path: `make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_ANNOTATORS=<k>`;
+  `make verify-review VERIFY_WS=<per-reviewer-ws>`;
+  `make verify-adjudicate BUNDLE=<draft>`;
+  `make verify-accept BUNDLE=<draft> VERIFY_ACCEPT_POLICY=<per-stratum|weighted>`; unit tests for
+  agreement math, adjudication draw, and each acceptance policy.
+- Acceptance gates: `make ci` green; agreement statistics match a hand-computed fixture; adjudication
+  draws exactly the disagreement rows and carries prior decisions forward; each acceptance policy is
+  unit-tested against a synthetic reviewed sample; a reused id can still never certify changed
+  content (adoption-through-ledger test preserved).
+- Documentation target: [data prep](current/data-prep.md) verification gate;
+  [`docs/guides/verification-tooling.md`](../guides/verification-tooling.md) and
+  [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
+
+### 12. hybrid-retrieval-uk
+
+- Dependencies: none. Base of the retrieval cluster -- task 13 reranks the pool this task fuses,
+  and its fusion knobs feed task 6 recommendations.
+- User-visible outcome: retrieval gains a hybrid mode -- dense E5 plus lexical BM25 fused with
+  reciprocal-rank fusion -- so exact surnames, article/law numbers, codes, abbreviations, and mixed
+  Ukrainian-English terminology stop losing to semantic-only search; `compare-retrieval`
+  demonstrates (not assumes) per corpus whether hybrid beats dense-only, and the sweep/tuner can
+  grid the fusion knobs. For Ukrainian corporate corpora hybrid is the expected production shape;
+  today every store is dense-only cosine (`src/llb/rag/store.py`, `src/llb/rag/vector_index.py`).
+- Scope boundary: in scope -- a lexical index built beside the vector index at `build-index` time
+  (pure-Python BM25, in-repo or `rank-bm25` behind the same optional-extra pattern as `[rag]`)
+  over the same offset-exact chunks; Ukrainian-aware token normalization on the lexical side only
+  (casefold, apostrophe-variant unification U+2019/U+02BC/`'`, punctuation strip), with opt-in
+  lemmatization via `pymorphy3` + `pymorphy3-dicts-uk`; RRF fusion inside `RagStore.retrieve`
+  driven by `fusion_candidates` and `fusion_weight` in `RunConfig`, so every dense `VectorIndex`
+  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a `compare-retrieval` row
+  (hybrid vs dense) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
+  features of any vector DB (fusion stays local and backend-neutral), new embedding models
+  (task 14), query rewriting (task 15), metadata-filtered retrieval. Reuse `src/llb/rag/store.py`,
+  `src/llb/rag/compare.py`, and `src/llb/optimize/tuner.py:suggest_overrides`.
+- Data and artifact paths: the lexical index persists beside the FAISS artifacts in the store
+  directory (`$DATA_DIR/llb/rag/`) and joins the store fingerprint; hybrid rows in the existing
+  compare-retrieval report; a small exact-term goldset subset (codes, surnames, numbers) recorded
+  under `samples/` for the lexical-win regression.
+- Execution path: `make build-index RETRIEVAL_MODE=hybrid` /
+  `llb build-index --retrieval-mode hybrid`; `llb run-eval --retrieval-mode hybrid
+  --fusion-weight <w>`; `make compare-retrieval` gains the hybrid row;
+  `llb sweep --rag-grid fusion_weight=...`; unit tests cover tokenizer normalization, BM25
+  determinism, and RRF ordering against a fake dense index.
+- Acceptance gates: `make ci` green; on the committed goldset hybrid `recall@10` is
+  equal-or-better than the dense baseline and strictly better on the exact-term subset; chunk
+  offsets stay exact end-to-end; a store built without the lexical index refuses
+  `--retrieval-mode hybrid` with a clear message; sweep cells fingerprint the fusion knobs so grid
+  points resume independently.
+- Documentation target: [RAG core](current/rag-core.md) retrieval store and sweep sections;
+  [`docs/guides/run-rag-core.md`](../guides/run-rag-core.md).
+
+### 13. rerank-context-order
+
+- Dependencies: soft-follows task 12 (it reranks the fused candidate pool and is most valuable
+  after hybrid; it also works over dense-only retrieval). Its reranker/order knobs feed task 6
+  recommendations. The heavy real-reranker validation run executes on the CUDA host, no human
+  judgment.
+- User-visible outcome: a mechanism to tune what happens between retrieval and generation: an
+  optional local cross-encoder reranker (retrieve `rerank_candidates`, rerank, keep `top_k`)
+  measured for top-k precision gain against its own latency cost; a context-order policy
+  (`rank | reverse_rank`, best-first vs best-last) applied when kept chunks are laid into the
+  prompt; and `llb probe-context-position` -- a lost-in-the-middle probe that places the gold
+  chunk at head/middle/tail among real distractors at fixed k and reports per-model position
+  sensitivity -- ending in a per-model ordering recommendation.
+- Scope boundary: in scope -- a reranker seam `src/llb/rag/rerank.py` (default candidate
+  `BAAI/bge-reranker-v2-m3`, multilingual) behind `RunConfig` fields, off by default, fed by any
+  retrieval backend including hybrid; the ordering policy applied at `format_context`
+  (`src/llb/eval/common.py`) and recorded in the manifest; per-stage latency (retrieve vs rerank
+  vs generate) in run telemetry; pre/post-rerank `recall@k`/MRR through the existing
+  `evaluate_retrieval`; tuner/sweep axes for reranker on/off and candidate depth. Out of scope --
+  API rerankers (egress policy), training or fine-tuning rerankers, chain-level context policies
+  (task 8 owns multi-step chains; this task owns single-turn chunk ordering), changing the
+  retrieval-metrics contract.
+- Data and artifact paths: probe reports under
+  `$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; the manifest gains reranker
+  model, candidate depth, ordering policy, and per-stage latency fields.
+- Execution path: `llb run-eval --reranker <hf-id> --rerank-candidates 30 --context-order rank`;
+  `make compare-retrieval RERANKER=<hf-id>`;
+  `llb probe-context-position --model <m> --backend <b> --k <k>`; unit tests drive an injected
+  fake cross-encoder asserting candidate flow, the kept set, and exact context ordering per
+  policy.
+- Acceptance gates: `make ci` green with the fake cross-encoder; a real `bge-reranker-v2-m3` run
+  over the committed goldset reports post-rerank MRR uplift-or-tie plus measured reranker latency
+  (heavy, on the CUDA host, outside quick CI); the position probe emits per-position accuracy with
+  bootstrap CIs and names the recommended ordering for the probed model; every knob lands in the
+  manifest/fingerprint so sweeps and task 6's miss analysis can recommend "enable reranker" with
+  numeric evidence.
+- Documentation target: [RAG core](current/rag-core.md);
+  [evaluation rigor](current/rigor-board-judge.md) for the position probe.
+
+### 14. embedding-bakeoff-uk
+
+- Dependencies: none. Heavy store builds run on the CUDA host (deterministic, no human judgment).
+  Its recommended-embedder result feeds task 6.
+- User-visible outcome: an evidence-backed answer to "which embedder for Ukrainian?":
+  `llb compare-embeddings` builds one store per candidate embedding model over the same corpus and
+  chunking and ranks candidates on `recall@k`/MRR plus embed throughput, index size, and device
+  fit, ending in a written recommendation the operator applies via the existing
+  `RunConfig.embedding_model`. Default candidates: `intfloat/multilingual-e5-base` (current
+  default), `intfloat/multilingual-e5-large`, `BAAI/bge-m3` (dense lane), and
+  `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
+- Scope boundary: in scope -- per-family query/passage conventions in `Embedder`
+  (`src/llb/rag/embedding.py` already handles E5 prefixes; add the BGE and mpnet conventions);
+  store fingerprints carrying the embedding model so a mismatched store/run refuses; a comparison
+  report reusing `evaluate_retrieval` over the committed goldset. The drafting-side pinned-E5
+  seams (ontology dedup, semantic scoring, retrieval-uniqueness annotation) stay pinned for
+  reproducibility and are explicitly not switched by this task. Out of scope -- BGE-M3
+  sparse/multi-vector output (the lexical lane belongs to task 12), API embeddings (egress
+  policy), embedder fine-tuning.
+- Data and artifact paths: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one store per
+  candidate under `$DATA_DIR/compare-embeddings/<timestamp>/stores/<model-slug>/`; the report is
+  the durable evidence recorded in current docs.
+- Execution path: `make compare-embeddings` /
+  `llb compare-embeddings --corpus <dir> --goldset <jsonl> --models <id,id,...>` (heavy store
+  builds stay outside quick CI); `make build-index EMBEDDING_MODEL=<winner>` then a normal
+  `run-eval`; unit tests with a fake embedder assert store isolation, fingerprint refusal, and
+  report shape.
+- Acceptance gates: `make ci` green; the report ranks all four candidates on the committed fixture
+  with recall@10, MRR, embed time, and dimension/size; an eval run against a non-default-embedder
+  store completes with the embedder recorded in the manifest, and a store/query embedder mismatch
+  aborts with a clear message; current docs record the winner for the 16 GB host.
+- Documentation target: [RAG core](current/rag-core.md) retrieval store;
+  [platform matrix](current/platform-vector-matrix.md).
+
+### 15. uk-query-processing
+
+- Dependencies: none (the glossary derives from a shipped `prompt_dictionary_candidates.jsonl`
+  draft artifact). Its A/B deltas feed task 6.
+- User-visible outcome: an opt-in query lane between the user question and retrieval that
+  measurably helps Ukrainian queries: deterministic normalization (matching-side casefold,
+  apostrophe-variant unification, a small transliteration table for Latin-typed Ukrainian terms),
+  alias/glossary expansion sourced from the shipped `prompt_dictionary_candidates.jsonl` draft
+  artifact, and an optional logged local-LLM query rewrite -- with an A/B report proving each
+  step's retrieval delta before anyone turns it on by default.
+- Scope boundary: in scope -- `src/llb/rag/query_prep.py` as a pure, unit-testable pipeline of
+  named steps; a glossary builder that turns a draft bundle's dictionary candidates into alias
+  expansions; the LLM rewrite through the existing endpoint seam, off by default, recording both
+  original and rewritten query per case; an A/B mode in `validate-retrieval`/`compare-retrieval`
+  reporting per-step `recall@k`/MRR deltas. Out of scope -- mutating corpus or chunk text
+  (original word forms stay untouched; index-side token normalization belongs to task 12),
+  multi-turn conversational rewriting (task 8), spelling-correction models.
+- Data and artifact paths: a `query_glossary.json` artifact derived from a draft bundle and
+  referenced by path in `RunConfig`; A/B rows in the compare/validate reports; original and
+  processed query per case in run bundles.
+- Execution path: `llb run-eval --query-prep normalize,glossary`;
+  `llb validate-retrieval --query-prep <steps> --query-prep-ab`;
+  `llb build-query-glossary --bundle <draft> --out <json>`; unit tests: apostrophe unification,
+  transliteration-table round-trips, deterministic alias expansion, and exact no-op when the lane
+  is off.
+- Acceptance gates: `make ci` green; the A/B report on the committed goldset attributes a
+  per-step delta (positive, zero, or negative -- the mechanism reports it honestly); the raw query
+  is always preserved in logs; the LLM-rewrite step never runs without its explicit flag; current
+  docs record the measured deltas for the fixture.
+- Documentation target: [RAG core](current/rag-core.md); [data prep](current/data-prep.md) for the
+  glossary artifact provenance.
+
+### 16. groundedness-citation-metrics
+
+- Dependencies: none. Enriches the per-case signals tasks 6 and 8 consume. The one manual
+  groundedness/abstention run executes on the CUDA host (deterministic, no human judgment).
+- User-visible outcome: answer-side RAG quality beyond reference-answer overlap: a cited-answer
+  mode whose prompt requires `[i]` chunk citations for factual claims, scored for citation
+  validity (the cited chunk actually contains the supporting span) and hallucinated-citation rate;
+  a deterministic groundedness signal (fraction of answer content supported by the retrieved
+  context via span/overlap matching, with the calibration-gated judge as an optional secondary);
+  and insufficient-context probes -- gold questions re-run with their gold evidence excluded from
+  retrieval -- where correct behavior is explicit abstention, scored as abstention accuracy. All
+  three become additive columns in run bundles, the board, and `recommend`.
+- Scope boundary: in scope -- `src/llb/scoring/groundedness.py`; an `eval.rag.cited_answer`
+  template in the prompt registry (`src/llb/prompts/registry.py`) reusing the numbered-chunk
+  format `format_context` already emits; probe construction by excluding gold-span chunks at
+  retrieval time for a sampled subset; abstention detection reusing the refusal /
+  insufficient-data markers from the shared taxonomy while keeping "correct abstention on a
+  probe" distinct from "refusal on a scoreable case". Out of scope -- a RAGAS dependency,
+  frontier judges (egress policy), changing the headline objective (new metrics stay separate
+  columns until a ranking policy explicitly adopts them), chain scoring (task 8).
+- Data and artifact paths: additive per-case fields in `scores.jsonl`/`scores.parquet` (citation
+  validity, groundedness fraction, probe flag, abstention outcome); aggregate columns in board
+  and `recommend` summaries when present.
+- Execution path: `llb run-eval --cited-answers --score-groundedness`;
+  `llb run-eval --insufficient-context-probes <n>`; unit tests over synthetic contexts/answers
+  covering fully-supported, partially-supported, unsupported-claim, invalid-citation, and
+  correct-abstention cases.
+- Acceptance gates: `make ci` green; the deterministic scorer separates fully-supported from
+  injected-unsupported answers on the synthetic fixture with zero cross-class leakage; a citation
+  pointing at a chunk that lacks the claimed span is always flagged; probe cases never enter plain
+  correctness aggregates; one manual run on the committed goldset records per-model groundedness
+  and abstention accuracy in current docs.
+- Documentation target: [RAG core](current/rag-core.md) scoring;
+  [evaluation rigor](current/rigor-board-judge.md).
+
+## Human-Assisted Tasks
+
+Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
+completion. Tasks 3 and 7 also gate agent work: land task 3's code before agent task 11, and
+finish task 7's human review before agent task 8's acceptance run.
+
+### 1. draft-yield-quality-max -- residual empirical acceptance
+
+- Dependencies: none (uses the shipped drafting knobs). Human step: the acceptance evidence below
+  needs a local drafter model and a human reviewer and cannot run in CI; the optional multi-hop
+  hardening is agent-buildable and unit-tested.
+- Context: coverage-target sampling (`--coverage-target`), 2-hop graph-path multi-hop drafting
+  (`--multi-hop`), pinned-E5 prior-bundle near-duplicate suppression (`--dedup-against`), and the
+  closed question-type + difficulty labels are implementable and unit-covered (module map, report
+  fields, and command reference in
+  [robust backends and ontology drafting](current/robustness-ontology-backends.md) and
+  [data prep](current/data-prep.md)). What remains is the heavy manual acceptance evidence and one
+  optional quality hardening, both needing a local drafter model and human review (out of CI):
+- Acceptance evidence (human to-do): on the local quickstart PDF corpus, draft once with
+  `DRAFT_COVERAGE_TARGET=<n>` and once with the 180-cap default over the same corpus/model, run a
+  `make verify-sample VERIFY_N=40` review of each, and record in [data prep](current/data-prep.md)
+  whether the coverage-target bundle keeps more citation-valid needles at an equal-or-better accept
+  rate, with the retrieval-unique needle fraction per question type. This is the "keeps more needles
+  at equal-or-better accept rate" gate that cannot run in CI.
+- Optional quality hardening (agent-buildable): multi-hop items ground the two hop-evidence spans
+  but leave the reference answer free-text. Require the multi-hop reference answer to be (or
+  contain) the verbatim bridge/end-entity span so the answer itself is span-checkable, and extend
+  the multi-hop unit tests to assert it -- a free-text answer can drift from the chain even when the
+  evidence spans hold.
+- Documentation target: [data prep](current/data-prep.md) and
+  [robust backends and ontology drafting](current/robustness-ontology-backends.md).
+
+### 2. frontier-ua-draft-lane
+
+- Dependencies: none (code reuses `src/llb/prep/frontier.py`). Human step: the real-frontier
+  2-document probe requires **human egress consent and API spend** under the recorded egress policy;
+  the code and all fake-completer tests are agent-buildable without any network call.
+- User-visible outcome: for the best Ukrainian question quality and completeness, an operator
+  can opt a draft run into a best-of-breed external API (litellm-routed) for extraction,
+  drafting, or both, with an explicit consent gate, a hard budget cap, per-call cost telemetry
+  in provenance, and a side-by-side local-vs-frontier yield and quality report over the same
+  seeds. Frontier cross-check exists (`make cross-check-goldset CROSS_CHECK_MODEL=`); the draft
+  lane does not.
+- Scope boundary: in scope -- a frontier endpoint option for the ontology pipeline reusing the
+  litellm conventions in `src/llb/prep/frontier.py` behind the same endpoint seam as Ollama and
+  vLLM drafting (`src/llb/prep/ontology/endpoint.py`); `--max-usd` and `--max-calls` guards
+  that abort cleanly and record the reason; an interactive egress consent prompt naming the
+  corpus and destination (policy stays as recorded in
+  [product decisions](current/scope-boundaries.md)); a `llb draft-compare` command that drafts
+  the same bounded seed subset locally and via frontier and reports kept-yield, gate results,
+  and verify-sample accept rate. Out of scope -- making frontier the default, egress for
+  scoring or judging, retries of the egress policy discussion.
+- Data and artifact paths: `provenance.json` gains `endpoint.cost_usd`, call counts, and
+  latency; comparison reports under `$DATA_DIR/draft-compare/<timestamp>/`.
+- Execution path:
+  `make prepare-goldset-draft DRAFT_ENDPOINT=frontier DRAFT_FRONTIER_MODEL=<litellm-id>
+  DRAFT_MAX_USD=<n>`; `llb draft-compare --corpus-root <dir> --seeds <n> --frontier-model <id>
+  --local-model <model>`; unit tests use an injected fake litellm completer.
+- Acceptance gates: no network call happens without the flag plus consent (unit-tested via the
+  injected completer); the budget guard aborts mid-draft and the bundle remains inspectable
+  with the abort recorded; a 2-document probe against a real frontier model passes bundle gates
+  with parse rate at least matching the local drafter; the comparison report ranks both lanes
+  on kept-yield and accept rate.
+- Documentation target: [data prep](current/data-prep.md) frontier lane notes;
+  [`docs/guides/goldset-from-scratch.md`](../guides/goldset-from-scratch.md).
+
+### 3. verify-cli-throughput
+
+- Dependencies: none. **Blocks agent task 11** (that task extends the same
+  `verify.py`/`verify_session.py` surface -- land this task's code first). Human step: the
+  "materially more items per hour" outcome needs a recorded human 40-item review pass with measured
+  throughput; the CLI code and unit tests are agent-buildable.
+- User-visible outcome: a human reviewer clears materially more items per hour in the terminal
+  review session: a confidence-ordered queue (cross-check verdict and `retrieval_rank` decide
+  order), on-card evidence with PDF page citations, accept-with-edit that re-grounds an edited
+  answer span immediately, additive sample enlargement that never re-shows decided rows,
+  session stats with an items-per-hour ETA, and coded rejection reasons exported for draft
+  feedback.
+- Scope boundary: in scope -- extend `src/llb/goldset/verify.py` and
+  `src/llb/goldset/verify_session.py`; keep the worksheet CSV shape backward compatible (new
+  optional columns only); a `verify-sample` merge mode that draws additional stratified rows
+  while carrying prior decisions forward; a rejection-reason summary artifact the drafting
+  pipeline can read to tighten prompts. Out of scope -- a web UI, multi-annotator merging,
+  changes to acceptance arithmetic.
+- Data and artifact paths: worksheets under the draft bundle as today; a
+  `rejection_reasons.json` summary beside the accepted ledger.
+- Execution path: `make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_MERGE=1`;
+  `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`; unit tests for merge
+  idempotence, ordering, and re-grounding of edited spans.
+- Acceptance gates: `make ci` green including session golden-path tests; merging a larger
+  sample adds only new rows and preserves every decided row byte-for-byte; an edited answer
+  that no longer matches its span is blocked until re-grounded; manual evidence -- one recorded
+  40-item review pass on the quickstart draft with the measured items-per-hour noted in the
+  current docs.
+- Documentation target: [data prep](current/data-prep.md) verification gate;
+  [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)
+  and [`docs/guides/verification-tooling.md`](../guides/verification-tooling.md).
+
+### 5. security-corpus-probes
+
+- Dependencies: the shipped ontology artifacts (`ontology.json`, `extraction.jsonl`) from a
+  local-drafter bundle. Human step: derived security cases must clear the human
+  `verify-sample`/`verify-review`/`verify-accept` gate before any headline/composite use; the
+  generator and unit tests are agent-buildable.
+- User-visible outcome: the security tier gains corpus-specific cases derived from the target
+  corpus itself: prohibited-topic denial-guard probes built from the corpus ontology's
+  sensitive topics and entities, benign near-boundary controls that catch over-refusal on
+  legitimate corpus questions, and matched-pair bias probes (entity or group swapped, behavior
+  fixed) scored for decision consistency -- all flowing through the existing detectors,
+  cross-language grouping, and the human verification gate before any headline use.
+- Scope boundary: in scope -- `llb derive-security-cases --bundle <draft-bundle>` reading
+  `ontology.json` and `extraction.jsonl`, generating cases locally through the same drafter
+  endpoint seam; emitted cases reuse the committed case schema (`lang`, `attrs.vector`,
+  `xlang_group`) so `bench-security`, `cross_language_consistency`, and refusal-appropriateness
+  work unchanged (see [category suite](current/category-benchmark-suite.md) and the Ukrainian
+  security adaptation in [evaluation rigor](current/rigor-board-judge.md)); a bias-pair
+  consistency metric alongside ASR reusing the matched-group machinery. Out of scope -- new
+  detector kinds, safety classifiers, ranking unverified case sets.
+- Data and artifact paths: derived cases under `$DATA_DIR/security-derive/<timestamp>/cases.json`
+  with per-case grounding spans back to the corpus; a small derived-and-verified sample
+  committed under `samples/` for regression.
+- Execution path: `llb derive-security-cases --bundle <draft> --out <cases.json>`;
+  `make bench-security SECURITY_CASES=<cases.json> MODEL=<m> BACKEND=<b>`; verification through
+  the existing `verify-sample`/`verify-review`/`verify-accept` path.
+- Acceptance gates: every generated probe cites a corpus topic or entity with an exact span
+  (unit-tested); benign controls feed refusal-appropriateness only, never ASR; a full
+  `bench-security` run over derived quickstart-corpus cases reports per-family ASR plus
+  bias-pair consistency with bootstrap CIs; unverified derived sets are rejected from
+  composite/headline paths.
+- Documentation target: [category suite](current/category-benchmark-suite.md) security section;
+  [`docs/guides/learning-path-security.md`](../guides/learning-path-security.md).
+
+### 7. chain-goldset-generation
+
+- Dependencies: none (reuses the shipped graph-path walker `src/llb/prep/ontology/graph_paths.py`).
+  **Blocks agent task 8** (`context-policy-bench` scores this task's verified chain fixture). Human
+  step: >= 10 chains must be human-reviewed and accepted into the committed fixture; the schema,
+  drafting, and validation code are agent-buildable.
+- User-visible outcome: the draft pipeline also emits chain-of-questions test sets: ordered 2-4
+  step sequences in which each step supplies more specific context for the topic (topic
+  overview -> narrowing detail -> exact fact), every step carrying its own reference answer and
+  exact source spans, validated and human-verified with the same discipline as flat items.
+- Scope boundary: in scope -- a `ChainItem` schema in `src/llb/goldset/chains.py` whose steps
+  embed `GoldItem`-compatible question/answer/span fields plus a chain id, step order, and a
+  dependency note describing what the previous step establishes; chain drafting seeded from
+  knowledge-graph paths and heading hierarchies (reuses the shipped graph-path walker
+  `src/llb/prep/ontology/graph_paths.py`);
+  span-exact validation via an extended `validate-goldset`; verify-session support rendering a
+  chain as one card with per-step checks. Out of scope -- the scoring runner
+  (`context-policy-bench`), multi-annotator flows.
+- Data and artifact paths: draft bundles gain `chains.jsonl`; a committed fixture
+  `samples/goldsets/<name>/chains.jsonl` with verified chains for smoke tests.
+- Execution path: `make prepare-goldset-draft DRAFT_CHAINS=1`;
+  `llb validate-goldset --chains <chains.jsonl> --corpus <dir>`; chains flow through
+  `verify-sample`/`verify-review`/`verify-accept` unchanged at the command level.
+- Acceptance gates: every step of every chain passes span-exact validation; steps within a
+  chain reference distinct spans and the final step's answer is not answerable from step-1
+  context alone (checked by the retrieval-uniqueness filter applied per step); at least 10
+  chains reviewed and accepted into the committed fixture; `make ci` green.
+- Documentation target: [data prep](current/data-prep.md).
+
 ## Adding Future Tasks
 
 Add a task only when there is concrete forward work with enough detail for an engineer or an
 agent to execute without guessing. Use a stable descriptive id such as `platform-matrix-power`
-or `prompt-system-tuning`; keep the id only while work remains under it.
+or `prompt-system-tuning`; keep the id only while work remains under it. Place it under
+**Agent Implementation Tasks** if it can land to `make ci` green with fixtures/fakes (heavy
+deterministic runs on the CUDA host are fine), or under **Human-Assisted Tasks** if a human
+review/judgment or authorization gates completion; either way give it a `Dependencies` line and
+mark any cross-section block explicitly.
 
 Each task entry must include:
 
+- Dependencies: prerequisite tasks (by number/id), any cross-section block, and -- for
+  human-assisted tasks -- the specific human step that gates completion.
 - User-visible outcome: what new capability or decision the work should create.
 - Scope boundary: what is in scope, what is explicitly out of scope, and which existing modules or
   commands should be reused.

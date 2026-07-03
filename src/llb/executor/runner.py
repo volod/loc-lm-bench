@@ -12,6 +12,7 @@ LangGraph app.
 
 import logging
 import shutil
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
@@ -34,7 +35,8 @@ from llb.contracts import (
 )
 from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
-from llb.executor.cases import CaseBatch, execute_cases, spans_as_dicts
+from llb.executor import durability
+from llb.executor.cases import CaseBatch, spans_as_dicts
 from llb.executor.reporting import emit_summary
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.rag import retrieval
@@ -452,11 +454,22 @@ def run_eval(
     evict: bool = False,
     wait: bool = False,
     emit: bool = True,
+    resume: Path | str | None = None,
+    max_case_retries: int = 2,
+    retry_backoff_s: float = 1.0,
+    max_backend_relaunches: int = 1,
+    sleep: Callable[[float], None] | None = None,
 ) -> EvalResult:
     """Run the skeleton and return {rows, metrics, paths, table}.
 
     `worksheet` (a path) emits a judge-calibration worksheet pre-filled with this run's
     model answers (the human only adds ratings); pair it with `split="calibration"`.
+
+    The run is durable (the durable-eval-runner): completed cases journal to
+    `cases.progress.jsonl` in the staging dir, transient per-case transport failures retry
+    (`max_case_retries` / `retry_backoff_s`), and a crashed launcher-owned backend relaunches up to
+    `max_backend_relaunches` times. `resume=<run-dir>` continues an interrupted run from its journal
+    instead of re-spending model calls; the config fingerprint and goldset digest must match.
     """
     items = _select_eval_items(config, items, split, limit)
     if not items:
@@ -466,41 +479,96 @@ def run_eval(
             "verified=false pending human review)"
         )
 
-    run_id = uuid.uuid4().hex[:12]
-    run_timestamp = _run_timestamp(run_id)
-    run_dir = config.run_dir(run_timestamp)
-    staging_dir = config.run_staging_dir(run_timestamp)
-    launcher, runner_fn, store, contention = _resolve_eval_runner(
-        config,
-        store=store,
-        launcher=launcher,
-        runner_fn=runner_fn,
-        prompt_package=prompt_package,
-        staging_dir=staging_dir,
-        evict=evict,
-        wait=wait,
-    )
-    embedder = store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
+    config_payload = config.fingerprint()
+    if prompt_system_provenance is not None:
+        config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
 
+    if resume is not None:
+        run_timestamp, run_id, run_dir, staging_dir = durability.resume_target(
+            config.run_dir, config.run_staging_dir, resume
+        )
+        if run_dir.exists():
+            raise SystemExit(f"[run-eval] {run_dir} is already finalized; nothing to resume")
+        if not staging_dir.exists():
+            raise SystemExit(f"[run-eval] no interrupted run to resume at {staging_dir}")
+        durability.verify_resume_meta(
+            staging_dir, config_fingerprint=config_payload, items=items, split=split
+        )
+    else:
+        run_id = uuid.uuid4().hex[:12]
+        run_timestamp = _run_timestamp(run_id)
+        run_dir = config.run_dir(run_timestamp)
+        staging_dir = config.run_staging_dir(run_timestamp)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        durability.write_journal_meta(
+            staging_dir,
+            config_fingerprint=config_payload,
+            items=items,
+            run_id=run_id,
+            split=split,
+        )
+
+    active_launcher: BackendLauncher | None = None
+    counters = durability.DurabilityCounters()
     try:
-        with launcher:
-            batch = execute_cases(items, runner_fn, embedder)
-            telemetry_report = _collect_optional_telemetry(config, launcher)
+        active_launcher, runner_fn, store, contention = _resolve_eval_runner(
+            config,
+            store=store,
+            launcher=launcher,
+            runner_fn=runner_fn,
+            prompt_package=prompt_package,
+            staging_dir=staging_dir,
+            evict=evict,
+            wait=wait,
+        )
+        embedder = (
+            store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
+        )
+        policy = durability.RetryPolicy(
+            max_case_retries=max_case_retries,
+            retry_backoff_s=retry_backoff_s,
+            max_backend_relaunches=max_backend_relaunches,
+        )
+        with active_launcher as backend:
+
+            def relaunch() -> None:
+                backend.stop()
+                backend.start()
+
+            batch, counters = durability.execute_cases_durable(
+                items,
+                runner_fn,
+                embedder,
+                journal=durability.CaseJournal(durability.journal_path(staging_dir)),
+                policy=policy,
+                relaunch=relaunch,
+                sleep=sleep if sleep is not None else time.sleep,
+                counters=counters,
+            )
+            telemetry_report = _collect_optional_telemetry(config, backend)
+    except KeyboardInterrupt:
+        if active_launcher is not None:
+            _preserve_backend_log(active_launcher, config)
+        _LOG.warning(
+            "[run-eval] interrupted; staging preserved -- resume with --resume %s", run_dir
+        )
+        raise
     except BaseException:
-        _preserve_backend_log(launcher, config)
-        shutil.rmtree(staging_dir, ignore_errors=True)
+        if active_launcher is not None:
+            _preserve_backend_log(active_launcher, config)
+        if resume is None:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        else:
+            _LOG.warning("[run-eval] resume failed; staging kept for another --resume %s", run_dir)
         raise
 
     backend_telemetry: BackendMetadata = (
-        launcher.telemetry() if hasattr(launcher, "telemetry") else {}
+        active_launcher.telemetry() if hasattr(active_launcher, "telemetry") else {}
     )
     effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
     judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
-    config_payload = config.fingerprint()
-    if prompt_system_provenance is not None:
-        config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
 
     manifest = RunManifest(
         run_id=run_id,
@@ -512,11 +580,13 @@ def run_eval(
         judge=_build_judge_metadata(config, judge_rho),
         telemetry=telemetry_report,
         contention=contention,
+        durability=counters.as_status(),
         prompt_system_provenance=dict(prompt_system_provenance)
         if prompt_system_provenance is not None
         else None,
         n_cases=len(batch.rows),
     )
+    durability.drop_journal(staging_dir)
     paths = persist_run(
         manifest,
         batch.rows,

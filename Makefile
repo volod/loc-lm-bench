@@ -37,6 +37,12 @@ PDF_OUT_DIR ?=
 PDF_MIN_CHARS ?=
 PDF_PARSER ?= auto
 PDF_REFRESH ?=
+# Unified mixed txt/md/pdf ingest (llb ingest-corpus).
+CORPUS_ROOT ?= $(CORPUS_DIR)
+CORPUS_OUT_DIR ?=
+CORPUS_MIN_CHARS ?= 500
+CORPUS_PARSER ?= auto
+CORPUS_REFRESH ?=
 GOLDSET_N ?= 250
 GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
@@ -63,10 +69,17 @@ DRAFT_VLLM_QUANTIZATION ?=
 DRAFT_VLLM_STARTUP_TIMEOUT ?= 600
 DRAFT_EXTRACTOR ?= llm
 DRAFT_OUT_DIR ?=
+DRAFT_RESUME ?=
 DRAFT_VERIFY_N ?= 0
 DRAFT_RETRIEVAL_INDEX_DIR ?=
 DRAFT_RETRIEVAL_K ?= $(RAG_K)
 DRAFT_DROP_NONRETRIEVABLE_NEEDLES ?= 0
+# yield-max knobs: per-stratum coverage target, multi-hop chain drafting, prior-bundle dedup.
+DRAFT_COVERAGE_TARGET ?=
+DRAFT_MULTI_HOP ?= 0
+DRAFT_MULTI_HOP_MAX_PATHS ?=
+DRAFT_DEDUP_AGAINST ?=
+DRAFT_GRAPH_DIR ?=
 
 # RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
 # and should be used for connectivity checks only, not leaderboard or extended tests.
@@ -75,6 +88,7 @@ MODEL ?= $(SMOKE_MODEL)
 BACKEND ?= ollama
 SPLIT ?= final
 LIMIT ?= 20
+RESUME ?=
 RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
@@ -267,6 +281,15 @@ QUICKSTART_MODEL_SELECTION ?= auto
 QUICKSTART_ASSUME_YES ?= 0
 QUICKSTART_PDF_MIN_CHARS ?= 500
 QUICKSTART_PDF_PARSER ?= auto
+# Mixed-corpus quickstart (txt/md/pdf via ingest-corpus). Shares the draft/model knobs above.
+QUICKSTART_CORPUS_SRC ?= $(QUICKSTART_ROOT)/quickstart-corpus
+QUICKSTART_CORPUS_MD ?= $(QUICKSTART_ROOT)/quickstart-corpus-md
+QUICKSTART_CORPUS_RAG_DATA ?= $(QUICKSTART_ROOT)/quickstart-corpus-rag
+QUICKSTART_CORPUS_DRAFT ?= $(QUICKSTART_ROOT)/quickstart-corpus-draft
+QUICKSTART_CORPUS_GRAPH_DATA ?= $(QUICKSTART_ROOT)/quickstart-corpus-graph
+QUICKSTART_CORPUS_MIN_CHARS ?= 500
+QUICKSTART_CORPUS_PARSER ?= auto
+QUICKSTART_CORPUS_RESUME ?=
 export QUICKSTART_ROOT QUICKSTART_LOG_DIR QUICKSTART_UV_CACHE_DIR QUICKSTART_A_DATA_DIR QUICKSTART_A_GOLDSET
 export QUICKSTART_A_CORPUS QUICKSTART_A_SWEEP_ID QUICKSTART_SKIP_APT QUICKSTART_SETUP_VENV
 export QUICKSTART_PREP_MODELS QUICKSTART_PREP_SERVING_TARGETS QUICKSTART_RUN_SWEEP
@@ -288,12 +311,15 @@ export QUICKSTART_DRAFT_EXTRACT_MAX_CHARS QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP
 export QUICKSTART_DRAFT_CONCURRENCY
 export QUICKSTART_MODEL_SELECTION QUICKSTART_ASSUME_YES QUICKSTART_PDF_MIN_CHARS
 export QUICKSTART_PDF_PARSER
+export QUICKSTART_CORPUS_SRC QUICKSTART_CORPUS_MD QUICKSTART_CORPUS_RAG_DATA
+export QUICKSTART_CORPUS_DRAFT QUICKSTART_CORPUS_GRAPH_DATA QUICKSTART_CORPUS_MIN_CHARS
+export QUICKSTART_CORPUS_PARSER QUICKSTART_CORPUS_RESUME
 export MODELS_MANIFEST RAG_K SPLIT HF_HUB_OFFLINE SECURITY_CASES SECURITY_VERIFICATION_REF
 export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL SECURITY_MAX_MODEL_LEN
 export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
 
 .DEFAULT_GOAL := help
-.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score
+.PHONY: help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score quickstart-corpus quickstart-corpus-convert quickstart-corpus-index quickstart-corpus-draft quickstart-corpus-graph quickstart-corpus-validate ingest-corpus
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -346,6 +372,24 @@ quickstart-pdf-corpus-accept: ## Quickstart human gate: emit accepted ledger aft
 
 quickstart-pdf-corpus-score: ## Quickstart continuation: score accepted PDF corpus/goldset
 	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" pdf-corpus-score
+
+quickstart-corpus: ## Quickstart all-in-one: mixed txt/md/pdf corpus -> RAG -> full goldset/ontology draft -> graph -> validation (QUICKSTART_CORPUS_SRC=)
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus
+
+quickstart-corpus-convert: ## Quickstart group: ingest QUICKSTART_CORPUS_SRC (txt/md/pdf) into one corpus
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus-convert
+
+quickstart-corpus-index: ## Quickstart group: build full mixed-corpus RAG index
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus-index
+
+quickstart-corpus-draft: ## Quickstart group: select drafter and draft full unverified goldset/ontology (QUICKSTART_CORPUS_RESUME=<bundle> resumes)
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus-draft
+
+quickstart-corpus-graph: ## Quickstart group: build graph artifacts from the mixed-corpus draft bundle
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus-graph
+
+quickstart-corpus-validate: ## Quickstart group: validate mixed-corpus draft structure and retrieval
+	@bash "$(PROJECT_ROOT)/scripts/quickstart.sh" corpus-validate
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -473,6 +517,13 @@ pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickst
 	if [ -n "$(PDF_REFRESH)" ]; then args+=(--refresh); fi; \
 	$(PY) -m llb.main pdf-to-markdown "$(PDF_DIR)" "$${args[@]}"
 
+ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus (CORPUS_OUT_DIR=, CORPUS_MIN_CHARS=, CORPUS_PARSER=auto, CORPUS_REFRESH=1)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(--root "$(CORPUS_ROOT)" --min-chars "$(CORPUS_MIN_CHARS)" --parser "$(CORPUS_PARSER)"); \
+	if [ -n "$(CORPUS_OUT_DIR)" ]; then args+=(--out-dir "$(CORPUS_OUT_DIR)"); fi; \
+	if [ -n "$(CORPUS_REFRESH)" ]; then args+=(--refresh); fi; \
+	$(PY) -m llb.main ingest-corpus "$${args[@]}"
+
 validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.goldset.validate --goldset "$(GOLDSET)" --corpus-root "$(CORPUS)"
@@ -571,8 +622,14 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
 	if [ -n "$(DRAFT_CONCURRENCY)" ]; then args+=(--concurrency "$(DRAFT_CONCURRENCY)"); fi; \
 	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
+	if [ -n "$(DRAFT_RESUME)" ]; then args+=(--resume "$(DRAFT_RESUME)"); fi; \
 	if [ -n "$(DRAFT_RETRIEVAL_INDEX_DIR)" ]; then args+=(--retrieval-index-dir "$(DRAFT_RETRIEVAL_INDEX_DIR)" --retrieval-k "$(DRAFT_RETRIEVAL_K)"); fi; \
 	if [ "$(DRAFT_DROP_NONRETRIEVABLE_NEEDLES)" = "1" ]; then args+=(--drop-nonretrievable-needles); fi; \
+	if [ -n "$(DRAFT_COVERAGE_TARGET)" ]; then args+=(--coverage-target "$(DRAFT_COVERAGE_TARGET)"); fi; \
+	if [ "$(DRAFT_MULTI_HOP)" = "1" ]; then args+=(--multi-hop); fi; \
+	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
+	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
+	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
@@ -599,12 +656,13 @@ compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE=
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
+		$(if $(RESUME),--resume "$(RESUME)",) \
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))

@@ -26,7 +26,12 @@ from llb.prep.ontology.models import (
     Section,
     SROFact,
 )
-from llb.prep.ontology.pipeline import PipelineResult, default_out_dir, draft_goldset
+from llb.prep.ontology.pipeline import (
+    PipelineResult,
+    default_out_dir,
+    draft_goldset,
+    load_journal_meta,
+)
 
 __all__ = [
     "ENDPOINT_FRONTIER",
@@ -48,4 +53,5 @@ __all__ = [
     "PipelineResult",
     "default_out_dir",
     "draft_goldset",
+    "load_journal_meta",
 ]

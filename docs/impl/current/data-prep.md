@@ -70,6 +70,15 @@ certifying changed content.
 `src/llb/prep/goldset_skeleton.py` writes an editable from-scratch SQuAD template under
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
+For **open** corpora, drafts can also be authored with an external AI provider service (Claude
+Projects, NotebookLM, ChatGPT Projects) and imported through `make ingest-squad`. Restricted or
+private corpora stay on the local ontology pipeline -- egress is never the default. The workflow,
+copy-paste prompts, and the exact artifact shapes (goldset, security cases, chains) are in
+[`docs/guides/external-ai-service-artifacts.md`](../../guides/external-ai-service-artifacts.md),
+[`docs/guides/external-service-prompts/`](../../guides/external-service-prompts/README.md), and
+the [external-service draft contract](../../design/external-draft-contract.md). The grounded-JSONL
+import lane is forward work (`external-draft-import` in [`plan.md`](../plan.md)).
+
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system
 packages, and GraphRAG. The default `PDF_PARSER=auto` path uses PyMuPDF4LLM with OCR disabled for
@@ -100,6 +109,31 @@ The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_qual
 quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
 markers, and the selection score.
 
+### Mixed txt/md/pdf ingestion
+
+`make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the
+canonical corpus in a single command (`src/llb/prep/corpus_ingest.py`). PDFs route through the
+`ingest_pdf_corpus` converter above (same `pdf-<digest>.md` ids and citation sidecars); `.md`/`.txt`
+files pass through verbatim under their relative path so offsets stay exact. Both lanes share the
+PDF manifest contract: a per-source `source_sha256`, incremental reuse when the source is unchanged
+(`reused: true`), and skip diagnostics for short/failed documents. A unified `corpus_manifest.json`
+records every source with its `kind` (`pdf`|`text`), status, and reuse flag, so a rerun over an
+unchanged mixed corpus reports `reused: true` for every document. The staged corpus walk excludes
+the output subtree, so the default `<root>/_md` output is never re-ingested as new input.
+
+```bash
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_REFRESH=1
+llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto
+```
+
+`make quickstart-corpus CORPUS_SRC=<dir>` (script target `corpus`) generalizes the PDF quickstart
+stages to a mixed corpus: `ingest-corpus` -> full-corpus index -> ontology draft -> graph ->
+validate, logging each stage under `$DATA_DIR/llb/logs/quickstart/`. It reuses the PDF quickstart's
+model selection, workload estimate, and confirmation gate, and drafts directly over the converted
+corpus (passthrough text has no citation sidecar, so no per-doc staging step is needed). The mixed
+fixture `samples/corpus/` (`.md` + `.txt`) backs the ingestion unit tests.
+
 Ontology draft bundles preserve that PDF evidence. When a source document has a matching
 `*.citations.json` sidecar, `prepare-goldset-draft` copies it into the bundle `corpus/` directory
 and writes these review artifacts beside `goldset.jsonl`:
@@ -110,10 +144,13 @@ and writes these review artifacts beside `goldset.jsonl`:
   + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
   spans and PDF page references when sidecars exist.
-- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. When
+- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. Each
+  row carries its `question_type` (closed taxonomy: factoid, definition, procedural, numeric,
+  comparative, multi-hop) and `difficulty` label. When
   `prepare-goldset-draft --retrieval-index-dir <full-rag-index>` is set, each row also carries
   `retrieval_rank` and `retrieval_k`; `retrieval_rank: null` marks a citation-valid needle whose
-  gold span was not retrieved from the full corpus within top-k.
+  gold span was not retrieved from the full corpus within top-k, and the report adds
+  `retrieval_unique_needle_fraction_by_question_type`.
 
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
@@ -131,6 +168,15 @@ The ontology-assisted seed sampler uses entities, subject-relation-object facts,
 and grounded events as draft targets. Seeds carry document, section, difficulty, and semantic-type
 coverage strata, so a full-corpus draft can spread questions across manuals, dictionaries, and
 after-action-style documents even when a document has few SRO facts.
+
+Three opt-in yield-max knobs raise the meaningful-question yield of a draft: `DRAFT_COVERAGE_TARGET=N`
+drafts up to N seeds per stratum bucket (with a `coverage_matrix` exhaustion report) instead of a
+flat `DRAFT_MAX_ITEMS` cap; `DRAFT_MULTI_HOP=1` adds multi-span chain questions walked from 2-hop
+knowledge-graph paths (each carrying >= 2 grounded spans); and `DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`
+drops questions that are pinned-E5 near-duplicates of prior bundles. Every drafted item is tagged
+with a `question_type` and `difficulty` label reviewers and the miss analyzer can filter on. See
+[robust backends and ontology drafting](robustness-ontology-backends.md) for the module map, report
+fields, and command reference.
 
 The local `$DATA_DIR/quickstart-pdf-corpus` corpus run produced 19 markdown files, 19 citation
 sidecars, and zero skips under `.data/quickstart-pdf-corpus-md`. Sixteen born-digital PDFs used
@@ -193,6 +239,25 @@ kept (2 circular, 3 duplicate, 5 ungroundable), all 70 citation-valid needles, g
 full 19-document corpus is 8.0M chars (668 windows), so a `QUICKSTART_DRAFT_MAX_ITEMS=400` full
 draft projects to roughly 9-10 hours on this host and about 350 kept items from a roughly
 2,000-seed pool.
+
+### Resumable extraction (interrupt-safe drafting)
+
+Because a full-corpus draft is a multi-hour extraction stage, the bundle carries a per-document,
+per-window extraction journal (`src/llb/prep/ontology/journal.py`). Each completed window appends
+one line to `extraction_journal.jsonl` (keyed by `(doc_id, window_index)`, deterministic from
+`split_document`); a settings sidecar `extraction_journal.meta.json` is written at the start of
+extraction and pins the determinism-critical settings (corpus, seed, `max_items`, window size and
+overlap, retrieval options) plus the endpoint identity.
+
+`llb prepare-goldset-draft --resume <bundle>` (make: `DRAFT_RESUME=<bundle>`;
+`make quickstart-corpus QUICKSTART_CORPUS_RESUME=<bundle>`) re-enters an interrupted bundle: it
+reads the meta, reuses journaled windows instead of re-calling the model, re-extracts only the
+missing windows, and replays the deterministic seed/draft/emit stages. The result is byte-identical
+to an uninterrupted run (same seeds, same kept items). A window whose model call errored is
+journaled as an empty extraction (done-as-empty, matching the non-resumed run); only a hard process
+kill leaves a window un-journaled so resume re-runs it. A missing meta aborts the resume with a
+clear message. Transient per-case retry inside a single run is separate durability work
+(`durable-eval-runner` in [`plan.md`](../plan.md)).
 
 ## Verification Gate
 

@@ -367,6 +367,19 @@ class RunPaths(TypedDict):
     worksheet: NotRequired[str]
 
 
+class DurabilityStatus(TypedDict):
+    """Fault-recovery counters for one run (the durable-eval-runner).
+
+    `case_retries` counts transient per-case re-attempts (timeout / backend_error) in THIS run;
+    `backend_relaunches` counts launcher-owned backend restarts; `resumed_cases` counts cases
+    reused from the `cases.progress.jsonl` journal instead of re-executed on `--resume`.
+    """
+
+    case_retries: int
+    backend_relaunches: int
+    resumed_cases: int
+
+
 class ValidationReport(TypedDict):
     n: int
     splits: dict[str, int]

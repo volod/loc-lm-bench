@@ -1,0 +1,5 @@
+{
+  "id": "prep.ontology.multi_hop",
+  "kind": "text",
+  "template": "multi_hop.txt"
+}
