@@ -39,6 +39,47 @@ DEFAULT_MAX_ITEMS = 60  # upper bound on drafted QA items per run
 DIFFICULTY_EASY_MAX_CHARS = 80
 DIFFICULTY_HARD_MIN_CHARS = 200
 RARE_RELATION_MAX_COUNT = 1  # a relation seen this many times or fewer is "rare" -> harder
+# Coverage-target drafting (yield-max): instead of a flat item cap, draft up to this many seeds
+# per stratum bucket (relation / entity_type / section / semantic kind). When unset, the flat
+# `max_items` cap applies. `max_items` still bounds the total as a safety ceiling.
+DEFAULT_COVERAGE_TARGET = None  # per-stratum-bucket target; None -> flat-cap mode
+
+# --- question-type + difficulty labels (yield-max) -------------------------------------------
+# Closed question-type taxonomy recorded per item (in item provenance / needle rows, NOT the
+# GoldItem schema). Reviewers and analyzers filter drafts on these labels.
+QUESTION_TYPE_FACTOID = "factoid"
+QUESTION_TYPE_DEFINITION = "definition"
+QUESTION_TYPE_PROCEDURAL = "procedural"
+QUESTION_TYPE_NUMERIC = "numeric"
+QUESTION_TYPE_COMPARATIVE = "comparative"
+QUESTION_TYPE_MULTI_HOP = "multi-hop"
+QUESTION_TYPES = (
+    QUESTION_TYPE_FACTOID,
+    QUESTION_TYPE_DEFINITION,
+    QUESTION_TYPE_PROCEDURAL,
+    QUESTION_TYPE_NUMERIC,
+    QUESTION_TYPE_COMPARATIVE,
+    QUESTION_TYPE_MULTI_HOP,
+)
+DEFAULT_QUESTION_TYPE = QUESTION_TYPE_FACTOID
+
+# --- multi-hop graph-path seeds (yield-max) --------------------------------------------------
+# A 2-hop chain A -r1-> B -r2-> C drafted from the knowledge graph, grounded in the two edges'
+# evidence spans (multi-span, cross-section/document). Bounded so a large graph does not explode
+# the draft set; deterministic ordering keeps a resume reproducible.
+MULTI_HOP_DEPTH = 2
+DEFAULT_MULTI_HOP_MAX_PATHS = 40
+MULTI_HOP_DIFFICULTY = "hard"  # a chain question is inherently harder than a single-span factoid
+MULTI_HOP_MIN_SPANS = 2  # a multi-hop item must carry at least this many grounded spans
+
+# --- near-duplicate suppression against prior bundles (yield-max) -----------------------------
+# Drop a drafted question whose pinned-E5 cosine similarity to ANY prior-bundle question exceeds
+# this threshold, so a coverage-target rerun does not re-draft paraphrases already reviewed.
+NEAR_DUP_COSINE_THRESHOLD = 0.9
+
+# --- item id namespaces ----------------------------------------------------------------------
+ONTOLOGY_ID_PREFIX = "onto"  # flat single-span ontology-drafted items
+MULTI_HOP_ID_PREFIX = "mhop"  # multi-hop chain items
 
 # --- stage 5: drafting -----------------------------------------------------------------------
 # Window of context (chars on each side of the evidence span) handed to the drafter.

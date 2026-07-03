@@ -15,12 +15,13 @@ from typing import Any, cast
 from llb.goldset.schema import GoldItem, SourceSpan
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
+    DEFAULT_QUESTION_TYPE,
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,
     PROMPT_DICTIONARY_FILENAME,
     PROMPT_DICTIONARY_MAX_EXAMPLES,
 )
-from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
+from llb.prep.ontology.models import DocExtraction, DocRecord, ItemLabels, OntologyCandidate
 from llb.prep.ontology.needles import NeedleRetriever, annotate_needle_retrieval
 from llb.prep.pdf_corpus import PDF_CITATION_SUFFIX, PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY
 
@@ -250,21 +251,73 @@ def _write_jsonl(rows: list[dict[str, object]], path: Path) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _attach_labels(
+    rows: list[dict[str, object]], item_labels: dict[str, ItemLabels] | None
+) -> None:
+    """Add `question_type` / `difficulty` to each needle row from its item label (yield-max)."""
+    if not item_labels:
+        return
+    for row in rows:
+        label = item_labels.get(str(row.get("id")))
+        if label is not None:
+            row["question_type"] = label.question_type
+            row["difficulty"] = label.difficulty
+
+
 def _needle_rows_and_report(
     needles: list[GoldItem],
     *,
     retrieval_store: NeedleRetriever | None,
     retrieval_k: int,
     drop_nonretrievable_needles: bool,
+    item_labels: dict[str, ItemLabels] | None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if retrieval_store is None:
-        return [cast(dict[str, object], item.model_dump()) for item in needles], {"enabled": False}
-    return annotate_needle_retrieval(
-        needles,
-        retrieval_store,
-        k=retrieval_k,
-        drop_nonretrievable=drop_nonretrievable_needles,
-    )
+        rows = [cast(dict[str, object], item.model_dump()) for item in needles]
+        report: dict[str, object] = {"enabled": False}
+    else:
+        rows, report = annotate_needle_retrieval(
+            needles,
+            retrieval_store,
+            k=retrieval_k,
+            drop_nonretrievable=drop_nonretrievable_needles,
+        )
+    _attach_labels(rows, item_labels)
+    return rows, report
+
+
+def _label_distributions(
+    items: list[GoldItem], item_labels: dict[str, ItemLabels] | None
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Count drafted items per question type and per difficulty from the item labels."""
+    by_type: dict[str, int] = defaultdict(int)
+    by_difficulty: dict[str, int] = defaultdict(int)
+    labels = item_labels or {}
+    for item in items:
+        label = labels.get(item.id)
+        by_type[label.question_type if label else DEFAULT_QUESTION_TYPE] += 1
+        by_difficulty[label.difficulty if label else "medium"] += 1
+    return dict(sorted(by_type.items())), dict(sorted(by_difficulty.items()))
+
+
+def _retrieval_fraction_by_type(
+    needle_rows: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Per-question-type retrieval-unique needle fraction (rank found within top-k)."""
+    groups: dict[str, dict[str, int]] = defaultdict(lambda: {"needles": 0, "retrievable": 0})
+    for row in needle_rows:
+        qtype = str(row.get("question_type") or DEFAULT_QUESTION_TYPE)
+        groups[qtype]["needles"] += 1
+        if row.get("retrieval_rank") is not None:
+            groups[qtype]["retrievable"] += 1
+    return {
+        qtype: {
+            "needles": g["needles"],
+            "retrievable": g["retrievable"],
+            "retrievable_fraction": _ratio(g["retrievable"], g["needles"]),
+        }
+        for qtype, g in sorted(groups.items())
+    }
 
 
 # The gates whose AND is the `passed` roll-up. Every corpus needs grounded evidence of ANY kind
@@ -324,6 +377,9 @@ def write_calibration_artifacts(
     retrieval_store: NeedleRetriever | None = None,
     retrieval_k: int = 10,
     drop_nonretrievable_needles: bool = False,
+    item_labels: dict[str, ItemLabels] | None = None,
+    coverage_matrix: dict[str, object] | None = None,
+    dedup_report: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Write PDF calibration/report artifacts into an ontology draft bundle."""
     root = Path(out_dir)
@@ -336,7 +392,9 @@ def write_calibration_artifacts(
         retrieval_store=retrieval_store,
         retrieval_k=retrieval_k,
         drop_nonretrievable_needles=drop_nonretrievable_needles,
+        item_labels=item_labels,
     )
+    question_type_distribution, difficulty_distribution = _label_distributions(items, item_labels)
 
     _write_jsonl(dictionary, root / PROMPT_DICTIONARY_FILENAME)
     _write_jsonl(needle_rows, root / NEEDLE_GOLDSET_FILENAME)
@@ -394,6 +452,8 @@ def write_calibration_artifacts(
         "retrieval_unique_needle_items": needle_retrieval.get("retrievable_items"),
         "retrieval_unique_needle_fraction": needle_retrieval.get("retrievable_fraction"),
         "dictionary_term_yield": len(dictionary),
+        "question_type_distribution": question_type_distribution,
+        "difficulty_distribution": difficulty_distribution,
         "facts_by_doc": dict(sorted(facts_by_doc.items())),
         "artifacts": {
             "prompt_dictionary_candidates": PROMPT_DICTIONARY_FILENAME,
@@ -401,6 +461,14 @@ def write_calibration_artifacts(
         },
         "gates": gates,
     }
+    if coverage_matrix is not None:
+        report["coverage_matrix"] = coverage_matrix
+    if dedup_report is not None:
+        report["dedup"] = dedup_report
+    if needle_retrieval.get("enabled"):
+        report["retrieval_unique_needle_fraction_by_question_type"] = _retrieval_fraction_by_type(
+            needle_rows
+        )
     (root / PDF_ONTOLOGY_REPORT_FILENAME).write_text(
         json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",

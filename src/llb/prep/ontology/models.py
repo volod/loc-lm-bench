@@ -104,3 +104,34 @@ class DraftSeed(BaseModel):
     entity: Entity | None = None
     claim: Claim | None = None
     event: Event | None = None
+
+
+class MultiHopStep(BaseModel):
+    """One hop of a multi-hop chain: an SRO fact with its exact evidence span + containing section."""
+
+    subject: str
+    relation: str
+    object: str
+    section_title: str
+    evidence: SourceSpan
+
+
+class MultiHopSeed(BaseModel):
+    """A 2-hop `A -r1-> B -r2-> C` chain walked from the knowledge graph.
+
+    Each step keeps its exact evidence span, so the drafted question is grounded in multi-span
+    evidence (>= 2 spans across sections or documents). `bridge` is the middle entity B that links
+    the two hops; a question that can be answered from one hop alone is not a valid multi-hop item.
+    """
+
+    steps: list[MultiHopStep]
+    bridge: str
+    start: str
+    end: str
+
+
+class ItemLabels(BaseModel):
+    """Per-item review labels recorded beside a drafted item (not part of the GoldItem schema)."""
+
+    question_type: str
+    difficulty: str

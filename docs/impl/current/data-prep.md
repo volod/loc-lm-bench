@@ -144,10 +144,13 @@ and writes these review artifacts beside `goldset.jsonl`:
   + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
   spans and PDF page references when sidecars exist.
-- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. When
+- `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. Each
+  row carries its `question_type` (closed taxonomy: factoid, definition, procedural, numeric,
+  comparative, multi-hop) and `difficulty` label. When
   `prepare-goldset-draft --retrieval-index-dir <full-rag-index>` is set, each row also carries
   `retrieval_rank` and `retrieval_k`; `retrieval_rank: null` marks a citation-valid needle whose
-  gold span was not retrieved from the full corpus within top-k.
+  gold span was not retrieved from the full corpus within top-k, and the report adds
+  `retrieval_unique_needle_fraction_by_question_type`.
 
 The artifacts are diagnostics for review and construction. Drafted rows still remain
 `verified=false` until the human verification gate emits an accepted ledger.
@@ -165,6 +168,15 @@ The ontology-assisted seed sampler uses entities, subject-relation-object facts,
 and grounded events as draft targets. Seeds carry document, section, difficulty, and semantic-type
 coverage strata, so a full-corpus draft can spread questions across manuals, dictionaries, and
 after-action-style documents even when a document has few SRO facts.
+
+Three opt-in yield-max knobs raise the meaningful-question yield of a draft: `DRAFT_COVERAGE_TARGET=N`
+drafts up to N seeds per stratum bucket (with a `coverage_matrix` exhaustion report) instead of a
+flat `DRAFT_MAX_ITEMS` cap; `DRAFT_MULTI_HOP=1` adds multi-span chain questions walked from 2-hop
+knowledge-graph paths (each carrying >= 2 grounded spans); and `DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`
+drops questions that are pinned-E5 near-duplicates of prior bundles. Every drafted item is tagged
+with a `question_type` and `difficulty` label reviewers and the miss analyzer can filter on. See
+[robust backends and ontology drafting](robustness-ontology-backends.md) for the module map, report
+fields, and command reference.
 
 The local `$DATA_DIR/quickstart-pdf-corpus` corpus run produced 19 markdown files, 19 citation
 sidecars, and zero skips under `.data/quickstart-pdf-corpus-md`. Sixteen born-digital PDFs used

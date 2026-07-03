@@ -615,6 +615,14 @@
         "sha256": "6757dc9381c4a46899f8d1074b2eae0241b28b0c46f47cb28e84545cb81a1d1e"
       }
     },
+    "prep.ontology.multi_hop": {
+      "kind": "text",
+      "descriptor": "prep/ontology/multi_hop.prompt.json",
+      "template": {
+        "path": "prep/ontology/multi_hop.txt",
+        "sha256": "f4f4551ccc1b6ba35805108e3abe3adda0bde57e9e5ee734684b670ffb300c02"
+      }
+    },
     "prep.text_analysis_corpus.doc": {
       "kind": "text",
       "descriptor": "prep/text_analysis_corpus/doc.prompt.json",

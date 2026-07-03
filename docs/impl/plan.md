@@ -11,47 +11,40 @@ The any-corpus autopipeline that turns a mixed `txt`/`md`/`pdf` directory into a
 index plus a resumable, unverified draft bundle is now shipped (`llb ingest-corpus`,
 `make quickstart-corpus`, `prepare-goldset-draft --resume`; see
 [data prep](current/data-prep.md)). The tasks below build the rest of the corpus-to-recommendation
-spine on that foundation, ordered by development sequence: first maximize draft yield and quality
-(1), open the external Ukrainian draft lane beside it (2), raise reviewer throughput for the larger
-drafts (3), make long eval campaigns durable (4), derive corpus-specific security probes (5),
-explain wrong answers and fold them into recommendations (6), then add chain-of-questions data and
+spine on that foundation, ordered by development sequence: close out the draft yield/quality
+acceptance evidence (1), open the external Ukrainian draft lane beside it (2), raise reviewer
+throughput for the larger drafts (3), make long eval campaigns durable (4), derive corpus-specific
+security probes (5), explain wrong answers and fold them into recommendations (6), then add
+chain-of-questions data and
 the context-policy comparison that consumes it (7-8). Tasks 2 and 3 can proceed in parallel with 1;
 task 5 needs only the shipped ontology artifacts; task 8 depends on 7. Task 9 makes the
 external-service draft lane (open data only) importable; it stands beside 2 as the other
-non-default drafting source and shares the question-type labels from 1. Tasks 10 (new chunking
+non-default drafting source and shares the shipped question-type labels
+(`src/llb/prep/ontology/question_types.py`). Tasks 10 (new chunking
 strategies) and 11 (multi-annotator verification gate + acceptance arithmetic) pick up the two
 items the shipped autopipeline explicitly held out of scope; they are independent of the 1-8 spine
 and can be scheduled on their own.
 
-### 1. draft-yield-quality-max
+### 1. draft-yield-quality-max -- residual empirical acceptance
 
-- User-visible outcome: draft bundles maximize meaningful, knowledge-based questions from the
-  corpus instead of stopping at a flat item cap: coverage-target drafting across entity,
-  relation, section, and semantic-type strata with an exhaustion report; multi-hop questions
-  drafted from knowledge-graph paths; near-duplicate suppression against earlier bundles; and
-  per-item question-type plus difficulty labels reviewers and analyzers can filter on.
-- Scope boundary: in scope -- extend `src/llb/prep/ontology/coverage.py` with per-stratum
-  coverage targets and a "seeds remaining vs drafted" report; a graph-path seed source that
-  walks 2-hop subject-relation-object chains from the GraphRAG store
-  (see [GraphRAG](current/graphrag-backend.md)) and drafts questions grounded in multi-span
-  evidence across sections or documents; an embedding-cosine near-duplicate filter (pinned E5)
-  against one or more prior bundles; a closed question-type taxonomy (factoid, definition,
-  procedural, numeric, comparative, multi-hop) recorded in item provenance without breaking the
-  `GoldItem` schema. Out of scope -- changing the human verification gate, new extraction
-  backends, judge changes. Reuse `src/llb/prep/ontology/{draft,refine,needles}.py` and
-  `src/llb/graph/`.
-- Data and artifact paths: `pdf_ontology_report.json` gains a coverage matrix and dedup counts;
-  `needle_items.jsonl` rows gain `question_type` and `difficulty`; graph input from
-  `$DATA_DIR/llb/graph/` or the bundle's own extraction.
-- Execution path:
-  `make prepare-goldset-draft DRAFT_COVERAGE_TARGET=<n-per-stratum> DRAFT_MULTI_HOP=1
-  DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`; heavy full-corpus drafts stay manual; unit tests
-  cover seed exhaustion, path walking, and dedup with fixtures.
-- Acceptance gates: on the local quickstart PDF corpus, a coverage-target draft keeps more
-  citation-valid needles than the current 180-cap default at an equal-or-better accept rate on
-  a `make verify-sample VERIFY_N=40` review; multi-hop items carry >= 2 grounded spans and pass
-  span-exact validation; injected paraphrase duplicates are removed in unit tests;
-  retrieval-unique needle fraction is reported per question type.
+Coverage-target sampling (`--coverage-target`), 2-hop graph-path multi-hop drafting (`--multi-hop`),
+pinned-E5 prior-bundle near-duplicate suppression (`--dedup-against`), and the closed
+question-type + difficulty labels are implementable and unit-covered (module map, report fields, and
+command reference in
+[robust backends and ontology drafting](current/robustness-ontology-backends.md) and
+[data prep](current/data-prep.md)). What remains is the heavy manual acceptance evidence and one
+optional quality hardening, both needing a local drafter model and human review (out of CI):
+
+- Acceptance evidence (human to-do): on the local quickstart PDF corpus, draft once with
+  `DRAFT_COVERAGE_TARGET=<n>` and once with the 180-cap default over the same corpus/model, run a
+  `make verify-sample VERIFY_N=40` review of each, and record in [data prep](current/data-prep.md)
+  whether the coverage-target bundle keeps more citation-valid needles at an equal-or-better accept
+  rate, with the retrieval-unique needle fraction per question type. This is the "keeps more needles
+  at equal-or-better accept rate" gate that cannot run in CI.
+- Optional quality hardening: multi-hop items ground the two hop-evidence spans but leave the
+  reference answer free-text. Require the multi-hop reference answer to be (or contain) the verbatim
+  bridge/end-entity span so the answer itself is span-checkable, and extend the multi-hop unit tests
+  to assert it -- a free-text answer can drift from the chain even when the evidence spans hold.
 - Documentation target: [data prep](current/data-prep.md) and
   [robust backends and ontology drafting](current/robustness-ontology-backends.md).
 
@@ -208,8 +201,8 @@ and can be scheduled on their own.
 - Scope boundary: in scope -- a `ChainItem` schema in `src/llb/goldset/chains.py` whose steps
   embed `GoldItem`-compatible question/answer/span fields plus a chain id, step order, and a
   dependency note describing what the previous step establishes; chain drafting seeded from
-  knowledge-graph paths and heading hierarchies (reuses the `draft-yield-quality-max` graph-path
-  walker);
+  knowledge-graph paths and heading hierarchies (reuses the shipped graph-path walker
+  `src/llb/prep/ontology/graph_paths.py`);
   span-exact validation via an extended `validate-goldset`; verify-session support rendering a
   chain as one card with per-step checks. Out of scope -- the scoring runner
   (`context-policy-bench`), multi-annotator flows.
@@ -281,7 +274,8 @@ and can be scheduled on their own.
   verbatim `corpus/`; `provenance.json` carrying the external service, model, export date, and
   `data_classification`); a hard refusal when the sidecar is absent or
   `data_classification != "open"`; `question_type`/`difficulty` recorded in item provenance
-  without changing the `GoldItem` schema (shared with `draft-yield-quality-max`). Out of scope --
+  without changing the `GoldItem` schema (shipped labeling in
+  `src/llb/prep/ontology/question_types.py`). Out of scope --
   network calls to any provider (the operator exports by hand), the chain artifact (belongs to
   `chain-goldset-generation`), changing the security-case loader, making external drafting a
   default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/ingest_squad.py` bundle

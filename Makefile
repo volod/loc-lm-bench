@@ -74,6 +74,12 @@ DRAFT_VERIFY_N ?= 0
 DRAFT_RETRIEVAL_INDEX_DIR ?=
 DRAFT_RETRIEVAL_K ?= $(RAG_K)
 DRAFT_DROP_NONRETRIEVABLE_NEEDLES ?= 0
+# yield-max knobs: per-stratum coverage target, multi-hop chain drafting, prior-bundle dedup.
+DRAFT_COVERAGE_TARGET ?=
+DRAFT_MULTI_HOP ?= 0
+DRAFT_MULTI_HOP_MAX_PATHS ?=
+DRAFT_DEDUP_AGAINST ?=
+DRAFT_GRAPH_DIR ?=
 
 # RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
 # and should be used for connectivity checks only, not leaderboard or extended tests.
@@ -618,6 +624,11 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_RESUME)" ]; then args+=(--resume "$(DRAFT_RESUME)"); fi; \
 	if [ -n "$(DRAFT_RETRIEVAL_INDEX_DIR)" ]; then args+=(--retrieval-index-dir "$(DRAFT_RETRIEVAL_INDEX_DIR)" --retrieval-k "$(DRAFT_RETRIEVAL_K)"); fi; \
 	if [ "$(DRAFT_DROP_NONRETRIEVABLE_NEEDLES)" = "1" ]; then args+=(--drop-nonretrievable-needles); fi; \
+	if [ -n "$(DRAFT_COVERAGE_TARGET)" ]; then args+=(--coverage-target "$(DRAFT_COVERAGE_TARGET)"); fi; \
+	if [ "$(DRAFT_MULTI_HOP)" = "1" ]; then args+=(--multi-hop); fi; \
+	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
+	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
+	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
