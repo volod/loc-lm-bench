@@ -29,6 +29,7 @@ llb run-eval --model llama3.2:3b --backend ollama
 llb run-eval --config samples/run_config_uk.yaml
 llb run-eval --split calibration --worksheet calibration.csv
 llb run-eval --score-semantic
+llb run-eval --resume .data/run-eval/<timestamp>-<run-id>   # continue an interrupted run
 ```
 
 Make targets wrap the common path:
@@ -141,6 +142,40 @@ Isolation and GPU safety live outside the scoring path:
 - `src/llb/executor/vram.py`: basic reclaim checks;
 - `src/llb/executor/contention.py`: pre-launch vLLM contention guard;
 - `src/llb/executor/isolation.py`: process-per-cell sweep and cooldown primitive.
+
+## Durability
+
+`src/llb/executor/durability.py` makes a run survive endpoint flaps, a launcher-owned backend
+crash, and host restarts, so a long campaign does not lose hours of model calls to one blip. Three
+recovery layers wrap the per-case loop:
+
+- **Per-case retry.** A transient transport failure -- the typed status `timeout` or
+  `backend_error` -- retries with capped exponential backoff (`--max-case-retries`,
+  `--retry-backoff-s`). A scored answer or any non-transport terminal status (`ok`, `empty`,
+  `malformed`, `refusal`, `retrieval_miss`) is a real outcome and is never retried.
+- **Journal + resume.** Each completed case appends its terminal state to an append-only
+  `cases.progress.jsonl` (keyed by `item_id`) in the staging dir, beside a
+  `cases.progress.meta.json` sidecar that pins the config-fingerprint and goldset digests.
+  `llb run-eval --resume <run-dir>` (Make: `RESUME=<run-dir>`) reuses the journaled cases instead
+  of re-spending their model calls and runs only the remainder; a resume whose config, goldset, or
+  split no longer matches the sidecar is refused. Everything downstream of the raw terminal state
+  (scoring, retrieval pairs, judge records) is recomputed deterministically, so a resumed run's
+  per-case scores are identical to an uninterrupted one -- verified across a real two-process kill
+  (`os._exit` mid-run, fresh process resumes) as well as the committed-fixture unit harness.
+- **Backend relaunch.** When a case exhausts its per-case retries still in a transport failure and
+  the launcher owns a serving process, the backend is relaunched through the existing
+  `BackendLauncher.stop()/start()` seam a bounded number of times and the case gets another round.
+
+A case that reaches a terminal state -- including a terminal transport failure after exhausting
+retries and relaunches -- is journaled (done-as-is); only a hard kill mid-case leaves a case
+un-journaled, so resume re-runs exactly that one. The atomic staged-rename stays the transaction
+boundary: the journal and its sidecar are dropped from the staging dir just before finalize, so the
+published bundle never carries them. On a graceful interrupt (`KeyboardInterrupt`) or an abrupt
+kill the staging dir is preserved for `--resume`; on a genuine error a fresh run's staging is
+cleaned up (a resume attempt keeps its staging for another try). Retry, relaunch, and resumed-case
+counters are recorded in `manifest.durability`. Sweep cells inherit all of this unchanged because
+each cell shells out to `run-eval` (the hidden `.`-prefixed staging dir does not collide with the
+sweep's cell-directory diff).
 
 ## Sweep RAG-config grid
 

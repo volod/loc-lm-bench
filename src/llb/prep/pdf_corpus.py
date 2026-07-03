@@ -8,6 +8,7 @@ span validation; original PDFs are recorded only as provenance in the manifest.
 
 import hashlib
 import html
+import importlib
 import json
 import logging
 import re
@@ -492,8 +493,10 @@ def _docling_export_markdown(document: Any, page_number: int | None = None) -> s
 def _extract_with_marker(pdf_path: Path) -> PdfExtraction:
     """Extract with Marker when its optional package and API are installed."""
     try:
-        from marker.converters.pdf import PdfConverter
-        from marker.models import create_model_dict
+        pdf_module = importlib.import_module("marker.converters.pdf")
+        models_module = importlib.import_module("marker.models")
+        PdfConverter = pdf_module.PdfConverter
+        create_model_dict = models_module.create_model_dict
     except ImportError as exc:
         raise RuntimeError("missing marker dependency") from exc
     try:

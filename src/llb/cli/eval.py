@@ -84,6 +84,17 @@ def run_eval_cmd(
     wait: bool = typer.Option(
         False, help="vLLM contention guard: wait for VRAM to free instead of derating immediately"
     ),
+    resume: Optional[Path] = typer.Option(
+        None,
+        help="resume an interrupted run from its journal (pass the run dir); config + goldset "
+        "must match the interrupted run",
+    ),
+    max_case_retries: int = typer.Option(
+        2, help="transient per-case retries (timeout / backend_error) before giving up on a case"
+    ),
+    retry_backoff_s: float = typer.Option(
+        1.0, help="base seconds for the capped exponential per-case retry backoff"
+    ),
 ) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
     from llb.executor.runner import run_eval
@@ -119,6 +130,9 @@ def run_eval_cmd(
         worksheet=worksheet,
         evict=evict,
         wait=wait,
+        resume=resume,
+        max_case_retries=max_case_retries,
+        retry_backoff_s=retry_backoff_s,
         prompt_package=selected_prompt.package if selected_prompt is not None else None,
         prompt_system_provenance=(
             selected_prompt.provenance if selected_prompt is not None else None

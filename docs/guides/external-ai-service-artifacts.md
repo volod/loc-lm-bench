@@ -106,7 +106,7 @@ Service notes:
 Beside the exported files, write `external_provenance.json` (contract section 6):
 
 ```bash
-$EDITOR "$DATA_DIR/external-drafts/claude-20260703/external_provenance.json"
+nano "$DATA_DIR/external-drafts/claude-20260703/external_provenance.json"
 ```
 
 Record service, model, date, operator, the doc ids you uploaded, the manifest sha256, and

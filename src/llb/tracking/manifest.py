@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from llb.contracts import (
     ContentionReport,
+    DurabilityStatus,
     JsonObject,
     JudgeStatus,
     RetrievalMetrics,
@@ -63,6 +64,7 @@ class RunManifest(BaseModel):
     judge: JudgeStatus | None = None
     telemetry: TelemetryReport | None = None
     contention: ContentionReport | None = None
+    durability: DurabilityStatus | None = None
     prompt_system_provenance: JsonObject | None = None
     n_cases: int = 0
 

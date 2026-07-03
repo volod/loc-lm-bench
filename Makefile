@@ -88,6 +88,7 @@ MODEL ?= $(SMOKE_MODEL)
 BACKEND ?= ollama
 SPLIT ?= final
 LIMIT ?= 20
+RESUME ?=
 RAG_K ?= 10
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
@@ -655,12 +656,13 @@ compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' 
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE=
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
+		$(if $(RESUME),--resume "$(RESUME)",) \
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
