@@ -124,6 +124,14 @@ cache_dir = ".data/cache/pytest"  # keep .pytest_cache out of the root (make pas
 # DeepEval ships optional pytest integration and rerun plugins as runtime dependencies. The
 # benchmark invokes metrics explicitly, so disable those global plugins in this test suite.
 addopts = "-q -p no:deepeval -p no:rerunfailures"
+# `sentencepiece` (pulled in transitively by transformers/sentence-transformers) ships a
+# SWIG-generated C-extension whose helper types lack `__module__`, so CPython 3.13 emits
+# "builtin type <Swig...> has no __module__ attribute" DeprecationWarnings at import and at
+# interpreter shutdown. It is upstream SWIG code we cannot patch; ignore only that exact message
+# so the suite stays warning-clean without masking our own deprecations.
+filterwarnings = [
+  "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
 # Two test groups (see Makefile `test` vs `ci`):
 #   default / `make test`  -- the FULL suite, run locally; includes `slow` tests.
 #   `make ci`              -- the lightweight suite (`-m "not slow"`); GitHub CI stays fast.
