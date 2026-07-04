@@ -326,7 +326,7 @@ export SECURITY_DATA_VERIFIED SECURITY_MODEL SECURITY_BACKEND SECURITY_BASE_URL 
 export SERVING_TIER_JSON LLB_OLLAMA_PULL_TIMEOUT_S
 
 .DEFAULT_GOAL := help
-.PHONY: curate-drafts help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval compare-embeddings run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score quickstart-corpus quickstart-corpus-convert quickstart-corpus-index quickstart-corpus-draft quickstart-corpus-graph quickstart-corpus-validate ingest-corpus
+.PHONY: curate-drafts import-external-draft help venv apt-deps test test-fast format ci gen-rag-items pdf-to-markdown validate-goldset ingest-squad ingest-uk-squad prepare-goldset-draft build-rag-store calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset verify-sample verify-review verify-accept judge-experiment build-index validate-retrieval compare-retrieval compare-embeddings run-eval sweep pipeline board recommend prompt-system-prepare prompt-system-review prompt-system-compare bench-security bench-agentic agentic-harness-compare composite-headline platform-matrix prep-models prep-serving-targets list-models build-vllm demo-eval mlflow detect-gpu-vram gen-serving-config quickstart-goldset quickstart-goldset-setup quickstart-goldset-rag quickstart-goldset-models quickstart-goldset-eval quickstart-goldset-security quickstart-goldset-prompt quickstart-pdf-corpus quickstart-pdf-corpus-convert quickstart-pdf-corpus-index quickstart-pdf-corpus-draft quickstart-pdf-corpus-graph quickstart-pdf-corpus-validate quickstart-pdf-corpus-review quickstart-pdf-corpus-accept quickstart-pdf-corpus-score quickstart-corpus quickstart-corpus-convert quickstart-corpus-index quickstart-corpus-draft quickstart-corpus-graph quickstart-corpus-validate ingest-corpus
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -547,6 +547,14 @@ curate-drafts: ## Merge/dedup/filter external drafts; CURATE_KIND= CURATE_INPUTS
 		$(if $(CURATE_CORPUS),--corpus-root "$(CURATE_CORPUS)",) \
 		$(foreach b,$(CURATE_DEDUP_AGAINST),--dedup-against "$(b)") \
 		$(if $(filter 0,$(CURATE_SEMANTIC)),--no-semantic-dedup,)
+
+import-external-draft: ## Import an external-service grounded goldset (Artifact B); ARTIFACT= CORPUS= SIDECAR= [OUT_DIR=]
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ARTIFACT)" || { echo "ERROR: set ARTIFACT=<grounded-jsonl export>"; exit 1; }
+	@test -n "$(CORPUS)" || { echo "ERROR: set CORPUS=<local corpus dir the quotes ground against>"; exit 1; }
+	@test -n "$(SIDECAR)" || { echo "ERROR: set SIDECAR=<external_provenance.json (data_classification: open)>"; exit 1; }
+	$(PY) -m llb.main import-external-draft --artifact "$(ARTIFACT)" --corpus-root "$(CORPUS)" \
+		--sidecar "$(SIDECAR)" $(if $(OUT_DIR),--out-dir "$(OUT_DIR)",)
 
 calibration-worksheet: ## Emit a blank judge-calibration worksheet from GOLDSET
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

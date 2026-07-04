@@ -718,7 +718,9 @@ def curate_drafts_cmd(
     inputs: list[Path] = typer.Argument(
         ..., help="exported artifact files to merge (raw JSON, fenced blocks, or JSONL)"
     ),
-    kind: str = typer.Option(..., help="artifact kind: squad | security | chains | inventory"),
+    kind: str = typer.Option(
+        ..., help="artifact kind: squad | grounded | security | chains | inventory"
+    ),
     out: Path = typer.Option(..., help="merged curated artifact output path"),
     corpus_root: Optional[Path] = typer.Option(
         None,
@@ -774,3 +776,46 @@ def curate_drafts_cmd(
         f"repaired={counts['repaired']}) -> {out}\n"
         f"[curate] report -> {report_path}"
     )
+
+
+@app.command("import-external-draft")
+def import_external_draft_cmd(
+    artifact: Path = typer.Option(
+        ..., help="grounded-JSONL Artifact B export (curated or raw; quote + source_doc_id rows)"
+    ),
+    corpus_root: Path = typer.Option(
+        ..., help="local corpus dir (.md/.txt) each quote is re-grounded against"
+    ),
+    sidecar: Path = typer.Option(
+        ...,
+        help="external_provenance.json data-classification sidecar (must declare open); "
+        "a missing or non-open sidecar aborts before writing any bundle",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
+    ),
+    seed: int = typer.Option(13, help="deterministic split-assignment seed"),
+) -> None:
+    """Import an external-service grounded goldset (Artifact B) into a canonical draft bundle.
+
+    Re-grounds every quote against the local corpus, drops + counts non-verbatim rows, computes
+    exact source_spans, stamps provenance=frontier-drafted / verified=false, records the external
+    service/model/classification, and carries question_type/difficulty in item provenance. Route the
+    emitted bundle through the usual validate-goldset -> cross-check-goldset -> verify-* chain.
+    """
+    from llb.prep.external_draft import import_external_draft
+    from llb.prep.ontology.pipeline import default_out_dir
+
+    resolved_out_dir = out_dir or default_out_dir()
+    result = import_external_draft(artifact, corpus_root, sidecar, resolved_out_dir, seed=seed)
+    counts = result.report.to_dict()["counts"]
+    typer.echo(
+        f"[import-external-draft] imported {result.report.kept}/{result.report.loaded} items "
+        f"(verified=false; dropped={counts['dropped']} repaired={counts['repaired']}) "
+        f"-> {result.out_dir}"
+    )
+    if result.validation["errors"]:
+        for err in result.validation["errors"][:20]:
+            typer.echo(f"[import-external-draft] VALIDATION ERROR: {err}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"[import-external-draft] validation PASS (splits={result.validation['splits']})")

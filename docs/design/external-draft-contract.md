@@ -1,8 +1,8 @@
 # External-Service Draft Contract
 
-Status: **ACTIVE data contract** (documentation artifact, 2026-07-03). Executable enforcement of
-the import lane is forward work (`external-draft-import` in [`../impl/plan.md`](../impl/plan.md));
-everything marked "works today" imports through existing commands.
+Status: **ACTIVE data contract** (documentation artifact, 2026-07-03). Every artifact kind now
+imports through an existing command -- Artifact B's grounded-JSONL lane (`llb import-external-draft`)
+is shipped; see [data prep](../impl/current/data-prep.md) grounded-JSONL import.
 
 This contract defines the exact shapes an operator must obtain when drafting benchmark artifacts
 **outside** this repository with an AI provider service (claude.ai Projects, NotebookLM /
@@ -44,7 +44,7 @@ services only *prepare draft test data*; they never retrieve, answer, judge, or 
    `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/` with the sidecar of section 6.
 6. **Curate before importing.** Multi-service / multi-batch exports of one artifact kind are
    merged, verbatim-repaired, filtered, and deduplicated into one file by
-   `make curate-drafts` (`llb curate-drafts`; kinds `squad` / `security` / `chains` /
+   `make curate-drafts` (`llb curate-drafts`; kinds `squad` / `grounded` / `security` / `chains` /
    `inventory`) -- see the workflow manual section 5.0. Import commands then receive the single
    curated file, and the `*.curation_report.json` sidecar documents what was dropped and why.
 
@@ -88,10 +88,10 @@ Field rules:
 - Known gap: the runtime importer stamps `provenance: "public-reused"`; until
   `external-draft-import` lands, the sidecar (section 6) is the authoritative origin record.
 
-## 4. Artifact B -- corpus-grounded goldset JSONL (target shape; needs the import task)
+## 4. Artifact B -- corpus-grounded goldset JSONL (works today)
 
-For needle-in-haystack realism over the *full* original documents, the target shape is the
-canonical `GoldItem` (see `src/llb/goldset/schema.py`) with quotes instead of offsets:
+For needle-in-haystack realism over the *full* original documents, use one grounded row per line
+(`quote` instead of offsets):
 
 ```json
 {"id": "ext-claude-20260703-0001", "lang": "uk",
@@ -102,10 +102,21 @@ canonical `GoldItem` (see `src/llb/goldset/schema.py`) with quotes instead of of
  "question_type": "factoid", "difficulty": "medium"}
 ```
 
-`llb import-external-draft` (forward task) will re-ground `quote` against
-`<corpus-root>/<source_doc_id>`, compute `source_spans`, stamp `provenance: "frontier-drafted"`
-and `verified: false`, and emit a standard draft bundle. Until it lands, route external drafts
-through Artifact A.
+Import: `make import-external-draft ARTIFACT=<file> CORPUS=<corpus-root> SIDECAR=<sidecar>` (or
+`llb import-external-draft`). It re-grounds `quote` against `<corpus-root>/<source_doc_id>` (exact,
+then casefold/whitespace-normalized-but-exact), drops + counts any non-verbatim row, computes exact
+`source_spans`, stamps `provenance: "frontier-drafted"` / `verified: false`, records the external
+service/model/classification in `provenance.json`, and carries `question_type`/`difficulty` in
+`item_provenance.jsonl` (not the `GoldItem` schema). The sidecar of section 6 is enforced first: a
+missing or non-open sidecar aborts before any bundle is written. Merge multi-service exports with
+`llb curate-drafts --kind grounded` before importing. Field rules:
+
+- `source_doc_id`: the staged corpus doc id the quote came from; a row naming a doc absent from
+  `--corpus-root` is dropped and reported.
+- `quote`: an exact substring of that doc (near-verbatim is re-snapped; non-verbatim is dropped).
+- `reference_answer`: the verbatim answer shown to reviewers; defaults to the grounded quote.
+- `question_type` / `difficulty`: optional; honored when in the closed taxonomy, else classified
+  locally. See [data prep](../impl/current/data-prep.md) grounded-JSONL import for the full behavior.
 
 ## 5. Artifact C -- security cases JSON (works today)
 
@@ -205,6 +216,6 @@ cite distinct spans, and the final step must not be answerable from step-1 conte
 | Artifact | Import / run | Structural gate | Human gate |
 | --- | --- | --- | --- |
 | A. SQuAD draft | `make ingest-squad SQUAD_JSON=` | `make validate-goldset GOLDSET= CORPUS=` | cross-check + `verify-*` |
-| B. Grounded JSONL | `llb import-external-draft` (forward) | span re-grounding at import | cross-check + `verify-*` |
+| B. Grounded JSONL | `make import-external-draft ARTIFACT= CORPUS= SIDECAR=` | span re-grounding + sidecar gate at import | cross-check + `verify-*` |
 | C. Security cases | `make bench-security SECURITY_CASES=` | schema check at load (closed families) | `verify-*` before headline |
 | D. Chains | blocked on `chain-goldset-generation` | extended `validate-goldset --chains` (forward) | chain verify cards (forward) |

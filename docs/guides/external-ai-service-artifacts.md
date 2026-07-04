@@ -58,6 +58,7 @@ are in [`external-service-prompts/`](external-service-prompts/README.md).
 | --- | --- | --- | --- | --- |
 | Ontology / topic inventory | `01` | `make curate-drafts CURATE_KIND=inventory` | steers `02`-`04` (not scored) | works today |
 | Goldset draft (SQuAD JSON) | `02` | `make curate-drafts CURATE_KIND=squad` | `make ingest-squad SQUAD_JSON=` | works today |
+| Goldset draft (grounded JSONL) | `02` | `make curate-drafts CURATE_KIND=grounded` | `make import-external-draft ARTIFACT= CORPUS= SIDECAR=` | works today |
 | Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | blocked on `chain-goldset-generation` | review-only |
 | Security cases | `04` | `make curate-drafts CURATE_KIND=security` | `make bench-security SECURITY_CASES=` | works today |
 | Local run results | -- | -- | `make run-eval` / `make bench-security` | works today |
@@ -166,7 +167,7 @@ make curate-drafts CURATE_KIND=squad \
   CURATE_CORPUS=<staged-corpus-dir>
 ```
 
-What it does (kinds: `squad`, `security`, `chains`, `inventory`; command:
+What it does (kinds: `squad`, `grounded`, `security`, `chains`, `inventory`; command:
 `llb curate-drafts`):
 
 - **merges** raw exports -- whole JSON files, replies with fenced code blocks, or JSONL -- from
@@ -201,6 +202,27 @@ make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<corpus-dir>
 Import re-grounds each answer by substring search and **skips any answer that is not a verbatim
 substring** of its context -- your first quality signal. A high skip count means the model
 paraphrased; tighten the verbatim rule and redraft.
+
+### 5a-bis. Goldset (grounded JSONL, Artifact B) -- full-document needle realism
+
+When you want the needle scored against the FULL original document (not a context-sized SQuAD doc),
+draft Artifact B (one grounded row per line: `quote` + `source_doc_id`) and import it:
+
+```bash
+# merge multi-service exports first (optional):
+make curate-drafts CURATE_KIND=grounded CURATE_INPUTS="<claude-export> <gemini-export>" \
+  CURATE_CORPUS=<corpus-dir> CURATE_OUT=<merged>.jsonl
+# then import into a canonical draft bundle (the open-data sidecar is enforced first):
+make import-external-draft ARTIFACT=<merged>.jsonl CORPUS=<corpus-dir> \
+  SIDECAR="$DATA_DIR/external-drafts/claude-20260703/external_provenance.json"
+```
+
+The importer re-grounds each `quote` against `<corpus-dir>/<source_doc_id>`, **drops and counts any
+non-verbatim row**, computes exact `source_spans`, stamps `provenance: frontier-drafted` /
+`verified: false`, records the service/model/classification in `provenance.json`, and writes
+`question_type`/`difficulty` to `item_provenance.jsonl`. A **missing or non-open sidecar aborts
+before any bundle is written**. Then run the usual `make validate-goldset` ->
+`make cross-check-goldset` -> `verify-*` chain on the emitted bundle.
 
 ### 5b. Security cases (Artifact C)
 

@@ -66,11 +66,10 @@ prioritized Ukrainian-RAG-quality foundations are both shipped: the measured emb
 assumed default embedder with evidence, and the page/section join
 (`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file; tasks 10 and 12
 build on the latter's sidecar loader and fields, and 12/15 build on the measured embedder result.
-Recommended sequence: **9 first** -- the
-multi-service external drafting lane (per-service setup, prompts, and the `curate-drafts`
-merge/dedup/filter step; see [data prep](current/data-prep.md) external-draft curation) is fully
-documented and curated, and the grounded-JSONL import is its one missing executable piece for
-full-document needle realism. Then 6 (its probe mode reuses the shipped durable-eval-runner),
+The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
+merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
+realism (see [data prep](current/data-prep.md) grounded-JSONL import).
+Recommended sequence: **6 first** (its probe mode reuses the shipped durable-eval-runner), then
 the independent lot (10, 12, 15, 16) in any order, 13 after 12, 17's ACL-filter half after 12's
 metadata-filter seam (its governance fields stand alone), 11 after task 3's code, and 8 last
 (blocked by human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal +
@@ -148,65 +147,6 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   digest; verified-data stamping matches the category suite rules; `make ci` green.
 - Documentation target: [extended workflows](current/extended-workflows.md);
   [`docs/guides/prompt-system-rag.md`](../guides/prompt-system-rag.md).
-
-### 9. external-draft-import
-
-- Dependencies: none (committed open-data fixture + sidecar, no network). First in the agent
-  build order now that the prioritized UA-RAG embedder ranking and page/section join are shipped
-  -- the external multi-service drafting lane (per-service setup, prompt
-  pack, and the shipped `curate-drafts` merge/dedup/filter step; see
-  [data prep](current/data-prep.md) external-draft curation) is complete up to this import, and
-  the grounded-JSONL lane is what lifts external drafts from context-sized SQuAD docs to
-  full-document needle realism. Stands beside human task 2 as the other non-default drafting
-  source; shares the shipped question-type labels (`src/llb/prep/ontology/question_types.py`).
-- User-visible outcome: an operator who drafted test data with an external AI provider service
-  (Claude Projects, NotebookLM, ChatGPT Projects) on **open** corpus data imports it into a
-  standard draft bundle with one command that re-grounds every quote against the local corpus,
-  computes exact `source_spans`, carries `question_type`/`difficulty` labels, records the
-  external service and model in provenance, and enforces the data-classification sidecar -- so
-  externally drafted goldsets flow through the same cross-check + human verification gate as
-  local drafts. Today the only supported external path is the SQuAD-shaped `make ingest-squad`,
-  which stamps `provenance: public-reused`, discards question-type labels, hashes each context
-  into its own corpus doc (losing full-document needle realism), and cannot read the grounded
-  JSONL or the required provenance sidecar. The manual workflow, artifact shapes, and prompts
-  already exist in
-  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md),
-  [`docs/design/external-draft-contract.md`](../design/external-draft-contract.md), and
-  [`docs/guides/external-service-prompts/`](../guides/external-service-prompts/README.md); this
-  task makes the grounded-JSONL lane (contract Artifact B) executable.
-- Scope boundary: in scope -- `llb import-external-draft --artifact <file> --corpus-root <dir>
-  --sidecar <external_provenance.json>` reading contract Artifact B rows (`quote` +
-  `source_doc_id`), re-grounding each `quote` as an exact substring of the named corpus doc
-  (drop + report non-verbatim rows exactly as the frontier drafter does in
-  `src/llb/prep/frontier.py`), emitting a canonical draft bundle
-  (`goldset.jsonl` with `provenance: frontier-drafted`, `verified: false`, exact `source_spans`;
-  verbatim `corpus/`; `provenance.json` carrying the external service, model, export date, and
-  `data_classification`); a hard refusal when the sidecar is absent or
-  `data_classification != "open"`; `question_type`/`difficulty` recorded in item provenance
-  without changing the `GoldItem` schema (shipped labeling in
-  `src/llb/prep/ontology/question_types.py`); a `grounded` kind in `llb curate-drafts` so
-  multi-service Artifact B exports merge/dedup/filter through the same curation step the other
-  artifact kinds already have. Out of scope --
-  network calls to any provider (the operator exports by hand), the chain artifact (belongs to
-  `chain-goldset-generation`), changing the security-case loader, making external drafting a
-  default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/curation/` (lenient
-  loading, quote repair, dedup engine, report), `src/llb/prep/ingest_squad.py` bundle
-  writing, and `src/llb/goldset/validate.py`.
-- Data and artifact paths: input under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`
-  (artifact files + `external_provenance.json`); output a standard bundle under
-  `$DATA_DIR/prepare-goldset/<timestamp>/`; a small committed fixture under
-  `samples/external-drafts/` (one open-data artifact + sidecar) for tests.
-- Execution path: `llb import-external-draft --artifact <file> --corpus-root <dir> --sidecar
-  <sidecar>`; `make import-external-draft ARTIFACT=<file> CORPUS=<dir> SIDECAR=<sidecar>`; then
-  the existing `validate-goldset` -> `cross-check-goldset` -> `verify-*` chain. Unit tests use
-  the committed fixture; no network.
-- Acceptance gates: `make ci` green; a row whose `quote` is not a verbatim substring is dropped
-  and counted, never mis-grounded; a missing or non-open sidecar aborts with a clear message and
-  writes no bundle; the emitted bundle passes `make validate-goldset`; provenance records the
-  service, model, and classification; `question_type`/`difficulty` survive into item provenance.
-- Documentation target: [data prep](current/data-prep.md) external-draft lane;
-  [`docs/guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md)
-  (flip Artifact B from "target shape" to "works today").
 
 ### 10. corpus-chunking-strategies
 
@@ -516,6 +456,32 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   on the full corpus; current docs record the discriminated winner and its index size / device fit.
 - Documentation target: [RAG core](current/rag-core.md) Embedder Conventions And Bake-off;
   [platform matrix](current/platform-vector-matrix.md).
+
+### external-import-needle-parity (optional)
+
+- Dependencies: the shipped grounded-JSONL import (see [data prep](current/data-prep.md)
+  grounded-JSONL import) and the shipped `prepare-goldset-draft --retrieval-index-dir` needle-rank
+  annotation. Agent-buildable with the committed `samples/external-drafts` fixture; no network.
+- Why this is forward work: `import-external-draft` records each item's `question_type`/`difficulty`
+  in `item_provenance.jsonl`, but -- unlike the local ontology lane -- it does NOT annotate imported
+  items with `retrieval_rank` against a full-corpus index, so a reviewer verifying an externally
+  imported bundle loses the confidence-ordering + retrieval-uniqueness signal local drafts carry.
+- User-visible outcome: an optional `--retrieval-index-dir`/`--retrieval-k` on
+  `import-external-draft` (and `--drop-nonretrievable-needles`) that annotates each imported item
+  with its gold-span retrieval rank, so external and local drafts reach the verify gate with the
+  same per-item signal.
+- Scope boundary: in scope -- reuse the shipped needle-rank annotator
+  (`src/llb/prep/ontology/needles.py`) over the imported items and record the rank in item
+  provenance; a verify-worksheet column when present. Out of scope -- changing the `GoldItem`
+  schema, building the index (the operator points at an existing one).
+- Data and artifact paths: `retrieval_rank` added to `item_provenance.jsonl`; no bundle-shape
+  change otherwise.
+- Execution path: `make import-external-draft ARTIFACT= CORPUS= SIDECAR= RETRIEVAL_INDEX_DIR=`;
+  unit tests over the committed fixture + a fake retriever.
+- Acceptance gates: `make ci` green; imported items carry `retrieval_rank` when an index is given
+  and the lane is an exact no-op when it is not; a non-retrievable item is dropped only under the
+  explicit flag.
+- Documentation target: [data prep](current/data-prep.md) grounded-JSONL import.
 
 ## Human-Assisted Tasks
 

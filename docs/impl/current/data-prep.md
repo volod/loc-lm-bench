@@ -71,23 +71,58 @@ certifying changed content.
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
 For **open** corpora, drafts can also be authored with an external AI provider service (Claude
-Projects, Gemini/NotebookLM, ChatGPT Projects) and imported through `make ingest-squad`.
-Restricted or private corpora stay on the local ontology pipeline -- egress is never the default.
-The workflow, per-service setup, copy-paste prompts, and the exact artifact shapes (goldset,
-security cases, chains) are in
+Projects, Gemini/NotebookLM, ChatGPT Projects) and imported either as SQuAD-shaped context docs
+(`make ingest-squad`, Artifact A) or, for full-document needle realism, as corpus-grounded JSONL
+(`make import-external-draft`, Artifact B). Restricted or private corpora stay on the local ontology
+pipeline -- egress is never the default. The workflow, per-service setup, copy-paste prompts, and the
+exact artifact shapes are in
 [`docs/guides/external-ai-service-artifacts.md`](../../guides/external-ai-service-artifacts.md),
 [`docs/guides/external-service-prompts/`](../../guides/external-service-prompts/README.md), and
-the [external-service draft contract](../../design/external-draft-contract.md). The grounded-JSONL
-import lane is forward work (`external-draft-import` in [`plan.md`](../plan.md)).
+the [external-service draft contract](../../design/external-draft-contract.md).
+
+### Grounded-JSONL import (Artifact B -> draft bundle)
+
+`make import-external-draft` / `llb import-external-draft` (`src/llb/prep/external_draft.py`) turns a
+grounded-JSONL export (contract Artifact B: `quote` + `source_doc_id` rows) into a canonical draft
+bundle for the usual `validate-goldset` -> `cross-check-goldset` -> `verify-*` chain. Unlike
+`ingest-squad` -- which stamps `provenance: public-reused`, hashes each context into its own doc
+(losing full-document needle realism), and cannot read grounded JSONL -- the import re-grounds
+against the FULL original corpus doc:
+
+- egress gate FIRST: the required `external_provenance.json` sidecar must be present and declare
+  `data_classification: "open"`; a missing or non-open sidecar aborts before any bundle is written
+  (uploading a corpus to a provider publishes it -- restricted data never leaves the box);
+- re-grounding: each `quote` is located in `<corpus-root>/<source_doc_id>` via
+  `frontier.ground_span` (exact, then casefold/whitespace-normalized-but-exact); a non-verbatim row
+  is dropped and counted, never mis-grounded, and a near-verbatim quote is re-snapped to the exact
+  corpus text with exact `source_spans` computed from the match;
+- canonical bundle: `goldset.jsonl` (`provenance: frontier-drafted`, `verified: false`), a
+  byte-identical verbatim `corpus/` copy of the referenced docs, `provenance.json` recording the
+  external service / model / export date / `data_classification`, and `item_provenance.jsonl`
+  carrying each item's `question_type`/`difficulty` (honored from the row when valid, else
+  classified via `ontology.question_types`) WITHOUT changing the `GoldItem` schema;
+- multi-service merge: `llb curate-drafts --kind grounded` merges/dedups/filters many Artifact B
+  exports (re-grounding quotes, dropping non-verbatim/flabby rows, unique-id rewrite) into ONE JSONL
+  before import, exactly like the other curation kinds.
+
+Committed fixture + unit coverage (no network): `samples/external-drafts/claude-projects-open/`
+(one open-data artifact + sidecar), `tests/test_external_draft.py`, and the grounded cases in
+`tests/test_curate_drafts.py`.
+
+```bash
+llb curate-drafts <svc-a>.jsonl <svc-b>.jsonl --kind grounded \
+  --corpus-root <corpus> --out grounded.jsonl
+make import-external-draft ARTIFACT=grounded.jsonl CORPUS=<corpus> SIDECAR=<external_provenance.json>
+```
 
 ### External-draft curation (merge / dedup / filter)
 
 `make curate-drafts` / `llb curate-drafts` (`src/llb/prep/curation/`) turns the pile of
 per-service, per-batch external exports into ONE importable artifact per kind -- the mechanism
 behind multi-service best-of-N drafting (run the same prompts in Claude and Gemini, merge the
-union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `security` (Artifact C ->
-`make bench-security`), `chains` (Artifact D, review-only), `inventory` (merged coverage plan for
-the drafting prompts). Behavior:
+union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact B ->
+`make import-external-draft`), `security` (Artifact C -> `make bench-security`), `chains`
+(Artifact D, review-only), `inventory` (merged coverage plan for the drafting prompts). Behavior:
 
 - lenient loading: whole JSON files, raw replies with fenced code blocks, or JSONL;
 - verbatim repair via `frontier.ground_span`: near-verbatim answers/contexts/grounding quotes are
