@@ -101,6 +101,66 @@ Retrieval modes:
 - `flat`: index generation chunks directly;
 - `parent_child`: index smaller child chunks and return deduplicated larger parent chunks.
 
+## Embedder Conventions And Bake-off
+
+Per-family query/passage conventions (`src/llb/rag/embedding.py`): a retrieval-tuned encoder scored
+with the wrong instruction silently loses recall, so `Embedder` applies each model FAMILY's
+convention (`embedding_family` resolves it, `apply_query_convention` / `apply_passage_convention`
+are pure + unit-tested):
+
+- `e5` (`intfloat/multilingual-e5-*`): `query:` / `passage:` prefixes (each with a trailing space);
+- `bge-m3` (`BAAI/bge-m3`): NO instruction on either side (FlagEmbedding retrieval default);
+- `bge` (other BGE retrieval lines, e.g. `bge-large-en-v1.5`): a query-only instruction;
+- `plain` (paraphrase/STS models like `lang-uk/ukr-paraphrase-multilingual-mpnet-base`): symmetric,
+  no prefix.
+
+`llb compare-embeddings` (`src/llb/rag/embedding_bakeoff.py`; `make compare-embeddings`) answers
+"which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
+over the SAME corpus + chunking (each under its own family convention), scores recall@k / MRR by the
+model-independent source-span metric (reusing `evaluate_retrieval`), and reports embed throughput,
+index size, dimension, and device -- ending in a written recommendation the operator applies via
+`build-index --embedding-model <winner>` + `RunConfig.embedding_model`. Artifacts:
+`$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one saved store per candidate under
+`stores/<model-slug>/`. Default local candidates: `intfloat/multilingual-e5-base` (current default),
+`intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
+The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
+are fake-store unit-tested (`tests/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
+
+Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
+with, and `_load_store` refuses a run whose `config.embedding_model` differs
+(`store_embedder_mismatch` in `src/llb/rag/store.py`), because a store is embedded and queried by
+one encoder -- a mismatch would silently score the wrong model. A non-default-embedder store runs
+normally with the embedder recorded in the manifest fingerprint.
+
+Opt-in API row (open corpora only): `--api-model cohere/embed-multilingual-v3.0`
+(`src/llb/rag/api_embedder.py`) embeds the corpus through a hosted API -- full egress, so it is
+bake-off EVIDENCE ONLY (never usable as `RunConfig.embedding_model` for a scored run), refused
+unless `--data-classification open`, gated on an interactive consent prompt naming the corpus, and
+capped by `--max-usd` (`record_embed_cost` aborts when the running cost crosses the cap). Cohere's
+`input_type` (`search_query` / `search_document`) maps onto the query/passage seam. litellm is
+lazily imported and the embed callable is injectable, so the consent gate + budget arithmetic are
+unit-tested with a fake client, no network in CI. The drafting-side pinned-E5 seams (ontology dedup,
+semantic scoring, retrieval-uniqueness annotation) are deliberately NOT switched by this task.
+
+Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): the four local
+candidates over the committed `samples/goldsets/ip_regulation_uk` fixture (8 items, 10 chunks,
+`k=10`):
+
+| model | recall@10 | MRR | dim |
+| --- | ---: | ---: | ---: |
+| `intfloat/multilingual-e5-base` | 1.000 | 1.000 | 768 |
+| `intfloat/multilingual-e5-large` | 1.000 | 1.000 | 1024 |
+| `BAAI/bge-m3` | 1.000 | 1.000 | 1024 |
+| `lang-uk/ukr-paraphrase-multilingual-mpnet-base` | 1.000 | 0.917 | 768 |
+
+Winner for the 16 GB host: `intfloat/multilingual-e5-base` (the current default) -- the three
+retrieval-tuned encoders all saturate recall@10 and MRR on this tiny fixture, so the paraphrase/STS
+`lang-uk` model is the only one that drops MRR (0.917), confirming the hypothesis that a paraphrase
+objective can lose to retrieval-tuned encoders; among the tied three, e5-base wins the throughput
+tie-break at the smallest index. Caveat: recall saturates on a 10-chunk fixture and the reported
+`chunks/s` is load-dominated (cold SentenceTransformer load over 10 chunks), so re-run the bake-off
+on a real full corpus to separate steady-state throughput and to let recall@k discriminate.
+
 ## Retrieval Metrics
 
 `src/llb/rag/retrieval.py` computes recall@k and MRR by source-span overlap. The common gate is

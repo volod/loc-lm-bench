@@ -39,15 +39,17 @@ section boundary and are called out because they are **blocked by human work**:
 
 The retrieval-quality cluster (12-16) gives the query-and-rerank side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Together 12 + 14 + 15 cover the
-Ukrainian-language retrieval stack end to end: dense + BM25/sparse + metadata hybrid with
-inflection-aware lemmatization (12), a measured embedder ranking over BGE-M3 / multilingual-e5 /
-the lang-uk model with an opt-in Cohere API row for open corpora (14), and query-side
+`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Together 12 + 15 cover the
+Ukrainian-language retrieval stack: dense + BM25/sparse + metadata hybrid with
+inflection-aware lemmatization (12) and query-side
 normalization -- casefold, apostrophes, transliteration, typo tolerance, aliases/glossary --
-that never mutates the stored corpus text (15). Every knob these tasks add must land
+that never mutates the stored corpus text (15). The measured Ukrainian embedder ranking that
+underpins both (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the lang-uk model plus an
+opt-in Cohere API row for open corpora) is now shipped; see [RAG core](current/rag-core.md)
+retrieval store. Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so task 6's miss analysis can cite
 it as evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
-fuses, so it pays off most after 12); 14, 15, and 16 stand alone. Task 17 adds the governance
+fuses, so it pays off most after 12); 15 and 16 stand alone. Task 17 adds the governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
 [RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)). The
@@ -58,11 +60,13 @@ heading -- from chunk char offsets to the PDF citation sidecars -- is now shippe
 
 ## Agent Implementation Tasks
 
-These land to `make ci` green with fixtures, fakes, and deterministic harnesses. Recommended
-sequence: **14 first (PRIORITIZED for Ukrainian RAG quality)** -- it replaces the assumed default
-embedder with a measured Ukrainian ranking. (Task 18, its prioritized pair, is now shipped: every
-chunk carries a page/section link back to its origin file via `src/llb/rag/page_metadata.py`, and
-tasks 10 and 12 build on its sidecar loader and fields.) Then 9 -- the
+These land to `make ci` green with fixtures, fakes, and deterministic harnesses. The two
+prioritized Ukrainian-RAG-quality foundations are both shipped: the measured embedder ranking
+(`llb compare-embeddings`; see [RAG core](current/rag-core.md) retrieval store) that replaces the
+assumed default embedder with evidence, and the page/section join
+(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file; tasks 10 and 12
+build on the latter's sidecar loader and fields, and 12/15 build on the measured embedder result.
+Recommended sequence: **9 first** -- the
 multi-service external drafting lane (per-service setup, prompts, and the `curate-drafts`
 merge/dedup/filter step; see [data prep](current/data-prep.md) external-draft curation) is fully
 documented and curated, and the grounded-JSONL import is its one missing executable piece for
@@ -147,9 +151,9 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
 
 ### 9. external-draft-import
 
-- Dependencies: none (committed open-data fixture + sidecar, no network). Third in the agent
-  build order, after the prioritized UA-RAG embedder work (task 14; task 18 shipped) -- the
-  external multi-service drafting lane (per-service setup, prompt
+- Dependencies: none (committed open-data fixture + sidecar, no network). First in the agent
+  build order now that the prioritized UA-RAG embedder ranking and page/section join are shipped
+  -- the external multi-service drafting lane (per-service setup, prompt
   pack, and the shipped `curate-drafts` merge/dedup/filter step; see
   [data prep](current/data-prep.md) external-draft curation) is complete up to this import, and
   the grounded-JSONL lane is what lifts external drafts from context-sized SQuAD docs to
@@ -309,7 +313,9 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   recall headroom a document router would buy; a `compare-retrieval` row set (dense vs hybrid vs
   hybrid+lemmas) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
   features of any vector DB (fusion stays local and backend-neutral), new embedding models
-  (task 14), query rewriting and typo tolerance (task 15), a learned document router (the oracle
+  (the shipped `compare-embeddings` bake-off owns embedder selection; see
+  [RAG core](current/rag-core.md) retrieval store), query rewriting and typo tolerance (task 15),
+  a learned document router (the oracle
   row only measures the headroom). Reuse `src/llb/rag/store.py`,
   `src/llb/rag/compare.py`, and `src/llb/optimize/tuner.py:suggest_overrides`.
 - Data and artifact paths: the lexical index persists beside the FAISS artifacts in the store
@@ -369,52 +375,6 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   numeric evidence.
 - Documentation target: [RAG core](current/rag-core.md);
   [evaluation rigor](current/rigor-board-judge.md) for the position probe.
-
-### 14. embedding-bakeoff-uk
-
-- Dependencies: none. **PRIORITIZED for Ukrainian RAG quality** (see build order; task 18, its
-  prioritized pair, is shipped). Heavy store builds run on the CUDA host (deterministic, no human
-  judgment). Its recommended-embedder result feeds task 6.
-- User-visible outcome: an evidence-backed answer to "which embedder for Ukrainian?":
-  `llb compare-embeddings` builds one store per candidate embedding model over the same corpus and
-  chunking and ranks candidates on `recall@k`/MRR plus embed throughput, index size, and device
-  fit, ending in a written recommendation the operator applies via the existing
-  `RunConfig.embedding_model`. Default local candidates: `intfloat/multilingual-e5-base` (current
-  default), `intfloat/multilingual-e5-large`, `BAAI/bge-m3` (dense lane), and
-  `lang-uk/ukr-paraphrase-multilingual-mpnet-base` (a paraphrase/STS-tuned model that may lose to
-  retrieval-tuned E5/BGE -- exactly why the ranking must be measured, not assumed). For **open**
-  corpora an operator can additionally opt a Cohere multilingual row into the same report.
-- Scope boundary: in scope -- per-family query/passage conventions in `Embedder`
-  (`src/llb/rag/embedding.py` already handles E5 prefixes; add the BGE and mpnet conventions);
-  store fingerprints carrying the embedding model so a mismatched store/run refuses; a comparison
-  report reusing `evaluate_retrieval` over the committed goldset; an opt-in
-  `--api-model cohere/embed-multilingual-v3.0` lane behind the litellm conventions of
-  `src/llb/prep/frontier.py` -- embedding a corpus via API is full corpus egress, so the lane
-  requires the interactive consent prompt naming the corpus and destination, honors `--max-usd`,
-  maps `input_type` search_query/search_document to the query/passage seam, and is refused for
-  anything but explicitly open corpora (policy as recorded in
-  [product decisions](current/scope-boundaries.md)). The drafting-side pinned-E5
-  seams (ontology dedup, semantic scoring, retrieval-uniqueness annotation) stay pinned for
-  reproducibility and are explicitly not switched by this task. Out of scope -- BGE-M3
-  sparse/multi-vector output (the lexical lane belongs to task 12), making an API embedder the
-  default or usable as `RunConfig.embedding_model` for scored runs (the API row is bake-off
-  evidence only; scored retrieval stays local), embedder fine-tuning.
-- Data and artifact paths: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one store per
-  candidate under `$DATA_DIR/compare-embeddings/<timestamp>/stores/<model-slug>/`; the report is
-  the durable evidence recorded in current docs.
-- Execution path: `make compare-embeddings` /
-  `llb compare-embeddings --corpus <dir> --goldset <jsonl> --models <id,id,...>` (heavy store
-  builds stay outside quick CI); `make build-index EMBEDDING_MODEL=<winner>` then a normal
-  `run-eval`; unit tests with a fake embedder assert store isolation, fingerprint refusal, and
-  report shape.
-- Acceptance gates: `make ci` green; the report ranks all four local candidates on the committed
-  fixture with recall@10, MRR, embed time, and dimension/size; the Cohere row appears only after
-  explicit consent and never without it (unit-tested via an injected fake litellm client, no
-  network in CI); an eval run against a non-default-embedder
-  store completes with the embedder recorded in the manifest, and a store/query embedder mismatch
-  aborts with a clear message; current docs record the winner for the 16 GB host.
-- Documentation target: [RAG core](current/rag-core.md) retrieval store;
-  [platform matrix](current/platform-vector-matrix.md).
 
 ### 15. uk-query-processing
 
@@ -528,6 +488,34 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   manifest refuses with a rebuild message; stored chunk text and offsets stay byte-identical.
 - Documentation target: [data prep](current/data-prep.md) ingestion;
   [RAG core](current/rag-core.md) retrieval store.
+
+### embedding-bakeoff-full-corpus
+
+- Dependencies: the shipped `llb compare-embeddings` bake-off (see
+  [RAG core](current/rag-core.md) Embedder Conventions And Bake-off). Heavy store builds run on the
+  CUDA host (deterministic, no human judgment).
+- Why this is forward work: the committed durable evidence ranks the four local candidates on the
+  tiny `samples/goldsets/ip_regulation_uk` fixture (8 items / 10 chunks), where recall@10 SATURATES
+  (e5-base, e5-large, and bge-m3 all hit 1.000) so the winner is decided only by an MRR + throughput
+  tie-break, and the reported `chunks/s` is cold-load-dominated rather than steady-state. The
+  recommendation "e5-base for the 16 GB host" is therefore under-discriminated.
+- User-visible outcome: a bake-off report over a REAL full Ukrainian corpus (e.g. the quickstart PDF
+  corpus index) at a larger `k`, where recall@k actually separates the candidates and embed
+  throughput reflects steady state, yielding a confidently-ranked embedder recommendation the
+  operator can trust before pinning `RunConfig.embedding_model`.
+- Scope boundary: in scope -- run `make compare-embeddings` on a full-corpus goldset, record the
+  ranked table + winner in [RAG core](current/rag-core.md) and
+  [platform matrix](current/platform-vector-matrix.md), and note the per-candidate index size / VRAM
+  fit on the 16 GB host. Out of scope -- new bake-off code (the command is shipped), an API row
+  unless the corpus is explicitly open, changing the pinned drafting-side E5 seams.
+- Data and artifact paths: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus the per-model
+  stores; the durable table lands in current docs.
+- Execution path: `make compare-embeddings GOLDSET=<full-corpus goldset> RAG_K=20` on the CUDA host
+  (outside quick CI); then `make build-index EMBEDDING_MODEL=<winner>`.
+- Acceptance gates: the report ranks all four local candidates with a NON-saturated recall@k spread
+  on the full corpus; current docs record the discriminated winner and its index size / device fit.
+- Documentation target: [RAG core](current/rag-core.md) Embedder Conventions And Bake-off;
+  [platform matrix](current/platform-vector-matrix.md).
 
 ## Human-Assisted Tasks
 

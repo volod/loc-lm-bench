@@ -115,12 +115,21 @@ class RagStore:
         mode: str = "flat",
         child_size: int = 400,
         vector_store: str = RAG_BACKEND_FAISS,
+        embedder: Any = None,
     ) -> "RagStore":
+        """Chunk + embed a corpus into a retrievable store.
+
+        `embedder` injects an alternative encoder exposing `encode_passages`/`encode_queries`
+        (e.g. the `compare-embeddings` API lane's `ApiEmbedder`); its `model_name` overrides
+        `embedding_model` in the persisted meta so a store always records the encoder it was
+        built with. Defaults to the pinned local `Embedder(embedding_model)`.
+        """
         if mode not in ("flat", "parent_child"):
             raise ValueError(f"unknown retrieval mode: {mode}")
         if child_size <= 0:
             raise ValueError("child_size must be > 0")
-        embedder = Embedder(embedding_model)
+        embedder = embedder if embedder is not None else Embedder(embedding_model)
+        embedding_model = getattr(embedder, "model_name", embedding_model)
         sem = embedder if strategy == "semantic" else None
         units = chunk_corpus(Path(corpus_root), strategy, size, overlap, sem)
         if not units:
@@ -209,6 +218,17 @@ class RagStore:
         if meta.get("mode") == "parent_child":
             parents = _read_jsonl(index_dir / PARENTS_FILE)
         return cls(chunks, index, embedder, meta, parents=parents)
+
+
+def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | None:
+    """Return the store's built embedder id when it differs from `expected_model`, else None.
+
+    A store is embedded and queried by the SAME encoder (recorded in `store_meta.json`), so a
+    config that names a different `embedding_model` than the store on disk would silently score
+    the wrong encoder. Callers refuse the run with this signal (embedding bake-off fingerprint).
+    """
+    built = str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
+    return built if built != expected_model else None
 
 
 def _write_jsonl(rows: list[ChunkRecord], path: Path) -> None:
