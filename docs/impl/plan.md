@@ -47,7 +47,10 @@ normalization -- casefold, apostrophes, transliteration, typo tolerance, aliases
 that never mutates the stored corpus text (15). Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so task 6's miss analysis can cite
 it as evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
-fuses, so it pays off most after 12); 14, 15, and 16 stand alone.
+fuses, so it pays off most after 12); 14, 15, and 16 stand alone. Task 17 adds the governance
+remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
+the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
+[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)).
 
 ## Agent Implementation Tasks
 
@@ -57,7 +60,8 @@ setup, prompts, and the `curate-drafts` merge/dedup/filter step; see
 [data prep](current/data-prep.md) external-draft curation) is fully documented and curated, and
 the grounded-JSONL import is its one missing executable piece for full-document needle realism.
 Then 6 (its probe mode reuses the shipped durable-eval-runner), the independent lot
-(10, 12, 14, 15, 16) in any order, 13 after 12, 11 after task 3's code, and 8 last (blocked by
+(10, 12, 14, 15, 16) in any order, 13 after 12, 17's ACL-filter half after 12's metadata-filter
+seam (its governance fields stand alone), 11 after task 3's code, and 8 last (blocked by
 human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal + `--resume` +
 bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
@@ -76,7 +80,12 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   alternative model) that `llb recommend` folds into its summary.
 - Scope boundary: in scope -- `src/llb/board/miss_analysis.py` plus `llb analyze-misses`,
   consuming per-case `scores.jsonl`, retrieved spans, typed statuses, and judge diagnostics
-  from finalized run bundles; a bounded probe mode that re-runs only the miss subset at
+  from finalized run bundles; run bundles do not yet persist per-case retrieved spans
+  (`retrieval_pairs` stay in-process in `src/llb/executor/cases.py` and `scores.jsonl` carries
+  only `retrieval_hit`/`first_hit_rank`), so this task first adds an additive per-case
+  retrieved-spans record to the bundle -- the miss classifier's span overlap and the
+  observability-trace checklist item both need it; a bounded probe mode that re-runs only the
+  miss subset at
   alternative retrieval depths to confirm or reject the retrieval hypothesis; a misses section
   in the `recommend` summary sourced from prompt templates like the existing report prose. Out
   of scope -- automatic re-tuning (the Optuna tuner owns search), mutating run bundles.
@@ -467,6 +476,43 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   and abstention accuracy in current docs.
 - Documentation target: [RAG core](current/rag-core.md) scoring;
   [evaluation rigor](current/rigor-board-judge.md).
+
+### 17. corpus-governance-metadata
+
+- Dependencies: the ACL-filter half soft-follows task 12 (it applies through the same chunk-metadata
+  filter seam); the governance fields and reindex policy stand alone.
+- User-visible outcome: corpus ingestion and the RAG store gain governance metadata and a lifecycle
+  policy: every `corpus_manifest.json` entry and chunk record carries `language`,
+  `version`/`effective_date` when the source provides one, `ingestion_time`, `source_system`, and
+  an optional ACL label; retrieval can filter candidates by ACL label before anything reaches the
+  model; and `ingest-corpus`/`build-index` gain deletion propagation (a source removed from the
+  corpus root drops out of the next build and the manifest diff says so), stale-store detection
+  (store fingerprint vs corpus manifest), and a documented rollback unit (immutable store
+  directories).
+- Scope boundary: in scope -- additive optional governance fields on `corpus_manifest.json`,
+  `ChunkRecord.metadata`, and `store_meta.json` (passthrough text derives `language` from an
+  operator-supplied default or a cheap detector; PDF lanes inherit from the conversion manifest);
+  an ACL-filter argument through the task 12 metadata-filter seam with a refusal guarantee (a
+  query scoped to an ACL label never receives an out-of-scope chunk); stale/deleted-doc detection
+  comparing the store fingerprint against the corpus manifest with a clear rebuild message. Out of
+  scope -- runtime prompt-injection filtering and output PII filters (decision recorded in
+  [product decisions](current/scope-boundaries.md)), a permissions backend or user identity model
+  (the ACL label is a plain string tag; enforcement policy belongs to the embedding application),
+  mutating stored chunk text or offsets.
+- Data and artifact paths: governance fields inline in `corpus_manifest.json`, `chunks.jsonl`, and
+  `store_meta.json`; a small mixed-ACL, mixed-language fixture under `samples/` for the filter,
+  deletion, and staleness tests.
+- Execution path: `llb ingest-corpus --default-language uk --acl-label <tag>`;
+  `llb build-index` (staleness check against the corpus manifest);
+  `llb run-eval --acl <tag>` once the task 12 filter seam exists; unit tests cover field
+  propagation end-to-end, ACL filtering, deletion propagation, and the stale-store refusal.
+- Acceptance gates: `make ci` green; every chunk built from the fixture carries its governance
+  fields through retrieval into the returned chunk records; an ACL-scoped retrieval never returns
+  an out-of-scope chunk (unit-tested); removing a source document and re-ingesting drops its chunks
+  from the next build with the removal recorded in the manifest; a store older than its corpus
+  manifest refuses with a rebuild message; stored chunk text and offsets stay byte-identical.
+- Documentation target: [data prep](current/data-prep.md) ingestion;
+  [RAG core](current/rag-core.md) retrieval store.
 
 ## Human-Assisted Tasks
 

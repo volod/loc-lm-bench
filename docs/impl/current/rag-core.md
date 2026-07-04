@@ -69,6 +69,15 @@ from the same 4-document draft bundle.
 The default backend is FAISS. Chroma, Qdrant, and LanceDB use the same `VectorIndex` protocol in
 `src/llb/rag/vector_index.py`.
 
+Chunk-to-source linkage (audited 2026-07-04 against the Ukrainian-RAG production checklist): every
+chunk record in every strategy and both retrieval modes carries `doc_id`, a unique `chunk_id`, and
+exact `char_start`/`char_end` offsets, so any chunk resolves to its verbatim place in the source
+document. The `metadata` field carries section breadcrumbs only under the `markdown` strategy; the
+other strategies emit `{}`. PDF page numbers live in the `pdf-<digest>.citations.json` sidecars
+(page-to-corpus-span mapping) and are not joined onto chunks at build or retrieval time --
+page-aware chunking and the chunk-metadata filter seam are forward tasks 10 and 12 in
+[`plan.md`](../plan.md); governance fields (`language`, `date`/`version`, ACL) are forward task 17.
+
 Retrieval modes:
 
 - `flat`: index generation chunks directly;
@@ -81,6 +90,12 @@ Retrieval modes:
 
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
+
+All shipped stores retrieve dense-only (cosine over the pinned E5 embedding). Measured against the
+gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the real
+full-corpus PDF index (`recall@10=0.729`, see the quickstart note above), so dense-only has NOT
+been proven sufficient for a real Ukrainian corpus. Hybrid retrieval, reranking, and query
+processing are forward tasks 12/13/15 in [`plan.md`](../plan.md).
 
 ## Generation Graph
 
@@ -130,6 +145,12 @@ $DATA_DIR/run-eval/<timestamp>-<run-id>/
 Parquet is used when `pyarrow` is available; JSONL is the portable fallback. The bundle is staged
 in a hidden sibling directory and atomically renamed when canonical files are complete. MLflow
 mirroring runs after canonical persistence and is best-effort.
+
+Per-case rows record `retrieval_hit` and `first_hit_rank`, but the retrieved chunk records
+themselves are not persisted in the bundle -- `retrieval_pairs` stay in-process
+(`src/llb/executor/cases.py`) for aggregate retrieval metrics and judge records. Adding an
+additive per-case retrieved-spans record is part of forward task 6 (`miss-analysis-recommendations`
+in [`plan.md`](../plan.md)), which needs it for span-overlap miss classification.
 
 ## Executor
 
