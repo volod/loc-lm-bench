@@ -56,6 +56,17 @@ The maintained agentic harness axis is `loop`, `langgraph`, and `crewai`. Additi
 should not be added just to broaden a comparison table. Add a harness only when it changes a
 meaningful operational question and can share the same task set, world, scoring, and judge gates.
 
+## Security Guardrails Scope
+
+loc-lm-bench measures model security behavior (`bench-security`, corpus-derived probes); it is a
+benchmark, not a production RAG service. Runtime guardrails -- prompt-injection filtering of
+retrieved content, output PII/secret filters, and identity-backed authorization -- are out of
+scope and belong to the application embedding a recommended model. The benchmark-side remainder of
+permission-aware retrieval (per-chunk `language`/`date`/`version`/ACL metadata, an ACL filter at
+retrieval time, and a reindex/deletion/rollback policy) is forward task 17
+(`corpus-governance-metadata` in [`plan.md`](../plan.md)). This resolves the corresponding items of
+the Ukrainian-RAG minimum production checklist deliberately rather than silently.
+
 ## Public Leaderboard Scope
 
 loc-lm-bench is a local/private benchmark. It can consume public Ukrainian benchmark results as

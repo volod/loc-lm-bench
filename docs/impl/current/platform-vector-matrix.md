@@ -207,3 +207,25 @@ are separate.
 
 Use one isolated `DATA_DIR` per validation run when you need to keep persisted stores for multiple
 backends.
+
+## Embedding Bake-off
+
+`compare-vector-stores` fixes the embedder and varies the backend; `compare-embeddings` fixes the
+backend + chunking and varies the EMBEDDER, ranking candidates on recall@k / MRR plus embed
+throughput, index size, dimension, and device. See [RAG core](rag-core.md) (Embedder Conventions And
+Bake-off) for the module map, the per-family query/passage conventions, the store/query embedder
+fingerprint guard, and the opt-in Cohere API-row egress gate.
+
+```bash
+make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10
+llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 \
+  --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-large,BAAI/bge-m3
+make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply the winner
+```
+
+Recommended embedder for the 16 GB host (durable evidence 2026-07-04, four local candidates over
+`samples/goldsets/ip_regulation_uk`): `intfloat/multilingual-e5-base`, the current default -- the
+three retrieval-tuned encoders (e5-base, e5-large, bge-m3) all saturate recall@10 = MRR = 1.000 on
+the small fixture, while the paraphrase/STS `lang-uk` model alone drops MRR (0.917); e5-base wins the
+throughput/size tie-break. Re-run on a real full corpus to let recall@k discriminate (the fixture
+saturates). The full table lives in [RAG core](rag-core.md).

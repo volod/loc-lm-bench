@@ -27,7 +27,7 @@ make run-eval MODEL=llama3.2:3b LIMIT=20
 ```text
 $DATA_DIR/run-eval/<timestamp>-<run-id>/
   manifest.json
-  scores.parquet or scores.jsonl
+  scores.jsonl
 ```
 
 Each invocation gets a new directory.

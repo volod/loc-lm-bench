@@ -86,7 +86,7 @@ references, vague stubs), removes exact and near-duplicate questions across serv
 cosine, bias pairs and cross-language groups protected), and writes a
 `*.curation_report.json` with per-source and per-reason counts. `CURATE_DEDUP_AGAINST=<bundle>`
 also suppresses re-drafts of questions an earlier accepted bundle already covers. Kinds:
-`squad`, `security`, `chains`, `inventory`.
+`squad`, `grounded`, `security`, `chains`, `inventory`.
 
 ## Using the generated artifacts
 

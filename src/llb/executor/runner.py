@@ -410,9 +410,18 @@ def _load_store(config: RunConfig) -> Any:
             strategy=config.retrieval_strategy,
             khop_depth=config.graph_khop_depth,
         )
-    from llb.rag.store import RagStore
+    from llb.rag.store import RagStore, store_embedder_mismatch
 
-    return RagStore.load(config.index_dir())
+    store = RagStore.load(config.index_dir())
+    built = store_embedder_mismatch(store.meta, config.embedding_model)
+    if built is not None:
+        raise SystemExit(
+            f"[run-eval] embedder mismatch: the store at {config.index_dir()} was built with "
+            f"'{built}' but config.embedding_model is '{config.embedding_model}'. Rebuild the "
+            f"index (build-index --embedding-model {config.embedding_model}) or set the config to "
+            f"match; a store is embedded and queried by one encoder, so they must agree."
+        )
+    return store
 
 
 def _write_calibration_worksheet(

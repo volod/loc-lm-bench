@@ -1,0 +1,13 @@
+{
+  "service": "claude-projects",
+  "service_url": "https://claude.ai/projects/example-ip-regulation",
+  "service_model": "Claude Opus 4.8 (2026-07)",
+  "export_date": "2026-07-04",
+  "operator": "loc-lm-bench fixture",
+  "prompt_pack": "docs/guides/external-service-prompts @ 2026-07-04",
+  "data_classification": "open",
+  "corpus_docs": [
+    "ip_regulation_uk.md"
+  ],
+  "notes": "Committed open-data fixture for external-draft-import tests (Artifact B). Row 1 is whitespace-flattened to exercise re-grounding; rows 4-5 are intentionally droppable."
+}

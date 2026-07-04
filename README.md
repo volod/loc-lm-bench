@@ -23,11 +23,13 @@ important metrics from the underlying tools, and `[result]` lines with artifact 
 ```sh
 # Purpose: run the committed-goldset leaderboard flow end to end.
 # Default input: committed UA-SQuAD goldset/corpus, samples/models_uk.yaml, detected CUDA tier.
-# Output/result: RAG metrics, serving configs, model-prep output, sweep runs, platform-matrix runs,
-# security ASR/defense metrics, prompt candidates, and a debug log under
+# Output/result: RAG metrics, serving configs, model-prep output, sweep runs, platform-matrix
+# runs, security ASR/defense metrics, prompt candidates, and a debug log under
 # $DATA_DIR/llb/logs/quickstart/.
-# Note: goldset quickstart skips apt provisioning by default; set QUICKSTART_SKIP_APT=0 to include it.
-# Note: QUICKSTART_SETUP_VENV=auto reuses .venv when present; set QUICKSTART_SETUP_VENV=1 to sync.
+# Note: goldset quickstart skips apt provisioning by default;
+#       set QUICKSTART_SKIP_APT=0 to include it.
+# Note: QUICKSTART_SETUP_VENV=auto reuses .venv when present;
+#       set QUICKSTART_SETUP_VENV=1 to sync.
 # Note: wrapper dependency cache defaults to $DATA_DIR/uv-cache for self-contained artifacts.
 make quickstart-goldset
 
@@ -40,8 +42,10 @@ make quickstart-goldset-eval
 make quickstart-goldset-security
 
 # Purpose: prepare prompt candidates, then pin and score one reviewed prompt id.
-# Default input: committed fixture corpus; reviewer selects QUICKSTART_PROMPT_ID from the summary.
-# Output/result: prompt package and prompt-system comparison runs under quickstart leaderboard data.
+# Default input: committed fixture corpus; 
+#                reviewer selects QUICKSTART_PROMPT_ID from the summary.
+# Output/result: prompt package and prompt-system comparison runs under 
+#                quickstart leaderboard data.
 make quickstart-goldset-prompt
 make quickstart-goldset-prompt QUICKSTART_PROMPT_ID=<prompt-id>
 ```
@@ -66,10 +70,10 @@ The all-in-one PDF corpus target intentionally stops before model scoring becaus
 ```sh
 # Purpose: run PDF corpus prep end to end up to the verification gate.
 # Default input: .data/quickstart-pdf-corpus PDFs and all converted markdown documents.
-# Model selection: QUICKSTART_DRAFT_MODEL=auto prompts to use benchmark evidence, run the local
-# benchmark, select a local model, or opt into a frontier litellm route.
-# Output/result: converted markdown, full RAG index, draft goldset, ontology, graph, validation
-# metrics, and a debug log under $DATA_DIR/llb/logs/quickstart/.
+# Model selection: QUICKSTART_DRAFT_MODEL=auto prompts to use benchmark evidence,
+# run the local benchmark, select a local model, or opt into a frontier litellm route.
+# Output/result: converted markdown, full RAG index, draft goldset, ontology, graph,
+# validation metrics, and a debug log under $DATA_DIR/llb/logs/quickstart/.
 make quickstart-pdf-corpus
 
 # Purpose: run the same corpus flow in reviewable groups for experiments and debugging.
@@ -92,15 +96,16 @@ make quickstart-pdf-corpus-score
 Common model-selection overrides:
 
 ```sh
-# Use benchmark evidence from the committed-goldset quickstart, then draft the full PDF corpus.
+# Use benchmark evidence from the committed-goldset quickstart,
+# then draft the full PDF corpus.
 QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus
 
 # Pin a known local model and skip the model-selection prompt.
 QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
   make quickstart-pdf-corpus
 
-# Opt into an external provider through litellm. This sends corpus text off-box and needs
-# the provider API key in the environment.
+# Opt into an external provider through litellm. This sends corpus text
+# off-box and needs the provider API key in the environment.
 QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
   make quickstart-pdf-corpus
 ```

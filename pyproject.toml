@@ -15,6 +15,10 @@ dependencies = [
   "huggingface-hub>=0.24",
   "openai>=1.40",
   "pymupdf4llm",
+  # Recursive/markdown chunk boundaries are part of the index contract, so the splitter is a
+  # pinned base dependency (never optional): the boundaries must be identical in CI and on the
+  # CUDA host. Bump in lockstep with `_REQUIRED_TEXT_SPLITTERS` in llb/rag/chunking.py.
+  "langchain-text-splitters==1.1.2",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +27,6 @@ dependencies = [
 rag = [
   "faiss-cpu>=1.8",
   "sentence-transformers>=3.0",
-  "langchain-text-splitters>=0.2",
   "deepeval>=4.0.6,<5",
 ]
 eval = ["langgraph>=0.2"]
@@ -34,7 +37,7 @@ rag-chroma = ["chromadb==1.5.9"]
 rag-qdrant = ["qdrant-client==1.18.0"]
 rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
-track = ["mlflow>=2.15", "duckdb>=1.0", "pyarrow>=16.0", "optuna>=3.6"]
+track = ["mlflow>=2.15", "duckdb>=1.0", "optuna>=3.6"]  # pyarrow arrives transitively via mlflow
 board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
 prep = ["litellm>=1.40"]

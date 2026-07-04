@@ -226,10 +226,10 @@ curation, not coding. The door stays open to the full Approach B without a teard
 - Resumability: results persist per (model, case) to Parquet as they complete;
   `run-eval` is idempotent and resumable, skipping already-completed cells. Required
   for the "survives months unattended" goal and for OOM/timeout recovery mid-run.
-- Storage: the source of truth is an immutable per-run manifest (JSON/YAML) + Parquet
-  outputs written under `$DATA_DIR` FIRST. MLflow (local file/SQLite, no server) mirrors
+- Storage: the source of truth is an immutable per-run manifest (JSON) + JSONL score rows
+  written under `$DATA_DIR` FIRST. MLflow (local file/SQLite, no server) mirrors
   those for its UI; it is a convenience layer, not the canonical record. DuckDB optional
-  over the parquet for ad-hoc SQL. See "v1 Engineering Decisions".
+  over the JSONL for ad-hoc SQL. See "v1 Engineering Decisions".
 - Board: MLflow UI for deep run inspection/compare (free); a THIN Streamlit page for
   the composite ranking + best-config-per-model view only. See "v1 Engineering
   Decisions".
@@ -381,8 +381,8 @@ include the optimal per-machine configuration.
 - `VramNotReclaimed` aborts the suite loudly; no silent bias.
 - Eval-graph node failures (empty / malformed / refusal) are typed and scored as
   reliability failures, not crashes.
-- MLflow logging writes scores to a parquet fallback FIRST, then MLflow, so a store
-  error never loses a completed run.
+- MLflow logging writes scores to disk (JSONL, the single canonical format) FIRST, then
+  mirrors to MLflow, so a store error never loses a completed run.
 - The Optuna proxy subset is fixed and seeded across all trials and all models.
 - Corpus text is untrusted input to judge/RAG prompts: keep it in a delimited field. If
   the judge is an external API, corpus egress is a deliberate decision (Open Question 2).
@@ -462,7 +462,7 @@ objective ground truth.
 Engineering-readiness pass + a full Codex outside-voice. Build sequencing: WALKING
 SKELETON first (one Ollama model, fixed config, hand-built seed gold set, pinned
 embedding -> FAISS -> one LangGraph RAG graph -> reference answer-correctness + gated
-judge -> canonical manifest+parquet -> one ranked row), then layer prep utils,
+judge -> canonical manifest + JSONL scores -> one ranked row), then layer prep utils,
 multi-model, two-stage Optuna, vLLM/llama.cpp, thermal-gate hardening, Pareto board.
 
 Decisions ruled on (correctness fixes from Codex):
@@ -632,7 +632,7 @@ for when the framework grows:
   Haystack, CrewAI, AutoGen.
 - Security suite (deferred): prompt-injection, jailbreak, instruction-hierarchy,
   unsafe-content, tool-abuse, RAG-injection, data-exfiltration resistance.
-- Full per-run output set (target): run_manifest.yaml, scores.parquet,
+- Full per-run output set (target): run_manifest.yaml, scores.jsonl,
   telemetry.parquet, retrievals.parquet, responses.jsonl, leaderboard.sqlite,
   leaderboard.duckdb. Leaderboard tables: runs, metrics, models, hardware, backends,
   leaderboard_entries; indexed on model, backend, hardware_profile, timestamp, score.

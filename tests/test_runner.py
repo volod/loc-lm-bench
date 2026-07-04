@@ -129,7 +129,7 @@ def test_walking_skeleton_end_to_end(tmp_path):
     # retrieval: uk-1 hits, uk-2 misses -> recall 0.5
     assert result["retrieval"]["recall_at_k"] == 0.5
 
-    # canonical record on disk (scores.parquet with pyarrow, else scores.jsonl)
+    # canonical record on disk: scores.jsonl (single format, independent of installed extras)
     run_dir = cfg.run_dir(result["run_timestamp"])
     assert run_dir == Path(result["paths"]["manifest"]).parent
     assert (run_dir / "manifest.json").exists()
@@ -434,3 +434,24 @@ def test_failed_eval_removes_unpublished_staging_directory(tmp_path, monkeypatch
 
     assert not staging_dir.exists()
     assert not cfg.run_dir("fixed-run").exists()
+
+
+def test_load_store_refuses_embedder_mismatch(tmp_path, monkeypatch):
+    """A store built with a different embedder than config.embedding_model aborts with a clear msg."""
+
+    class _FakeStore:
+        meta = {"embedding_model": "BAAI/bge-m3"}
+
+    monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
+    cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
+    with pytest.raises(SystemExit, match="embedder mismatch"):
+        runner_module._load_store(cfg)
+
+
+def test_load_store_accepts_matching_embedder(tmp_path, monkeypatch):
+    class _FakeStore:
+        meta = {"embedding_model": "intfloat/multilingual-e5-base"}
+
+    monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
+    cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
+    assert isinstance(runner_module._load_store(cfg), _FakeStore)

@@ -2,10 +2,11 @@
 
 One entry point per external-draft contract artifact kind:
 
-- ``squad``     -- Artifact A goldset drafts -> one SQuAD JSON for `make ingest-squad`;
-- ``security``  -- Artifact C security cases -> one array for `make bench-security`;
-- ``chains``    -- Artifact D chain drafts   -> one JSONL (review-only until chains land);
-- ``inventory`` -- prompt-01 coverage plans  -> one merged inventory.json.
+- ``squad``     -- Artifact A goldset drafts   -> one SQuAD JSON for `make ingest-squad`;
+- ``grounded``  -- Artifact B grounded JSONL    -> one JSONL for `llb import-external-draft`;
+- ``security``  -- Artifact C security cases   -> one array for `make bench-security`;
+- ``chains``    -- Artifact D chain drafts     -> one JSONL (review-only until chains land);
+- ``inventory`` -- prompt-01 coverage plans    -> one merged inventory.json.
 
 `curate()` dispatches by kind and returns `(payload, CurationReport)`; the CLI command is
 `llb curate-drafts` (make: `curate-drafts`). See
@@ -27,17 +28,22 @@ from llb.prep.curation.common import (
     load_corpus_texts,
     resolve_embedder,
 )
+from llb.prep.curation.grounded import curate_grounded
 from llb.prep.curation.inventory import curate_inventory
 from llb.prep.curation.security import curate_security
 from llb.prep.curation.squad import curate_squad
 
-KINDS = ("squad", "security", "chains", "inventory")
+KINDS = ("squad", "grounded", "security", "chains", "inventory")
+# Kinds whose curated payload is JSON Lines (one row per line) rather than a single JSON document.
+JSONL_KINDS = ("chains", "grounded")
 
 __all__ = [
+    "JSONL_KINDS",
     "KINDS",
     "CurationReport",
     "curate",
     "curate_chains",
+    "curate_grounded",
     "curate_inventory",
     "curate_security",
     "curate_squad",
@@ -80,6 +86,14 @@ def curate(
             dedup_spans=dedup_spans,
             prior_questions=prior_questions,
         )
+    if kind == "grounded":
+        return curate_grounded(
+            inputs,
+            corpus_texts=corpus_texts,
+            embedder=embedder,
+            dedup_threshold=dedup_threshold,
+            prior_questions=prior_questions,
+        )
     if kind == "security":
         return curate_security(
             inputs,
@@ -102,9 +116,9 @@ def curate(
 
 
 def write_curated(kind: str, payload: Any, out: Path, report: CurationReport) -> Path:
-    """Write the curated artifact (JSONL for chains, JSON otherwise) + the report sidecar."""
+    """Write the curated artifact (JSONL for chains/grounded, JSON otherwise) + report sidecar."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    if kind == "chains":
+    if kind in JSONL_KINDS:
         content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in payload)
         out.write_text(content, encoding="utf-8")
     else:

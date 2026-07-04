@@ -151,8 +151,8 @@ adapted, or external data.
 5. If `bench-composite` reports a blocker, rerun only the missing or stale category command, then
    rerun `llb bench-composite` without diagnostic bypass flags.
 6. Publish through `llb board` only after the clean composite preflight exists.
-7. Archive the decision trail: every category `manifest.json`, every category `scores.jsonl` or
-   `scores.parquet`, each verification artifact referenced by `verification_ref`, and the
+7. Archive the decision trail: every category `manifest.json`, every category `scores.jsonl`,
+   each verification artifact referenced by `verification_ref`, and the
    `bench-composite` output.
 
 Diagnostic options:

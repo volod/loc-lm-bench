@@ -84,13 +84,9 @@ def _hit_store(q):
 
 
 def _read_scores(run_dir):
-    """Read persisted per-case scores back as a list of dicts (parquet or jsonl)."""
+    """Read persisted per-case scores back as a list of dicts from `scores.jsonl`."""
     jsonl = run_dir / "scores.jsonl"
-    if jsonl.exists():
-        return [json.loads(line) for line in jsonl.read_text(encoding="utf-8").splitlines()]
-    import pyarrow.parquet as pq
-
-    return pq.read_table(str(run_dir / "scores.parquet")).to_pylist()
+    return [json.loads(line) for line in jsonl.read_text(encoding="utf-8").splitlines()]
 
 
 # --- per-case retry -------------------------------------------------------------------------

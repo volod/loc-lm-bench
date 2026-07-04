@@ -53,6 +53,9 @@ class RagStoreMeta(TypedDict):
     backend: NotRequired[
         str
     ]  # platform matrix vector-store backend (faiss default; chroma/qdrant/lancedb)
+    page_annotation_coverage: NotRequired[
+        float
+    ]  # fraction of indexed chunks carrying source-PDF page provenance (chunk-page-metadata)
 
 
 class UsageRecord(TypedDict, total=False):
@@ -115,7 +118,7 @@ class SubtaskScore(TypedDict):
 
 class TextAnalysisCaseRow(TypedDict):
     """Per-document objective score for one text-analysis case (text analysis scored runner). Per-sub-task
-    F1s are carried as a JSON string (`subtask_f1_json`) so the parquet schema stays flat across
+    F1s are carried as a JSON string (`subtask_f1_json`) so the score-row schema stays flat across
     documents that plant different sub-task kinds."""
 
     item_id: str  # the synthetic doc id

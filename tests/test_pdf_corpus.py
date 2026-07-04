@@ -10,7 +10,6 @@ from llb.cli import app
 from llb.prep import pdf_corpus as pc
 
 from llb.prep.pdf_corpus import (
-    DEFAULT_MARKDOWN_DIRNAME,
     DOCLING_TOOL,
     PARSER_AUTO,
     PDF_CORPUS_MANIFEST,
@@ -20,7 +19,6 @@ from llb.prep.pdf_corpus import (
     PdfExtraction,
     PdfPageChunk,
     clean_pdf_text,
-    default_markdown_out_dir,
     doc_id_for_pdf,
     ingest_pdf_corpus,
     iter_pdf_files,
@@ -44,12 +42,6 @@ def test_iter_pdf_files_is_recursive_and_stable(tmp_path: Path) -> None:
 
 def test_clean_pdf_text_removes_form_feeds_and_extra_blank_lines() -> None:
     assert clean_pdf_text(" A  \n\n\n\x0c\n B \n") == "A\n\n B"
-
-
-def test_default_markdown_out_dir_is_md_subdirectory(tmp_path: Path) -> None:
-    assert (
-        default_markdown_out_dir(tmp_path / "_doc") == tmp_path / "_doc" / DEFAULT_MARKDOWN_DIRNAME
-    )
 
 
 def test_ingest_pdf_corpus_writes_docs_and_manifest(tmp_path: Path) -> None:

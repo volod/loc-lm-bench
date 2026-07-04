@@ -2,12 +2,28 @@
 
 import pytest
 
-from llb.rag.store import RagStore, _build_children, _children_to_parents
+from llb.config import DEFAULT_EMBEDDING_MODEL
+from llb.rag.store import (
+    RagStore,
+    _build_children,
+    _children_to_parents,
+    store_embedder_mismatch,
+)
 
 
 def test_build_rejects_unknown_retrieval_mode(tmp_path):
     with pytest.raises(ValueError, match="unknown retrieval mode"):
         RagStore.build(tmp_path, mode="typo")
+
+
+def test_store_embedder_mismatch_flags_a_different_encoder():
+    meta = {"embedding_model": "BAAI/bge-m3"}
+    assert store_embedder_mismatch(meta, "BAAI/bge-m3") is None  # store == config: fine
+    assert store_embedder_mismatch(meta, "intfloat/multilingual-e5-base") == "BAAI/bge-m3"
+
+
+def test_store_embedder_mismatch_defaults_to_the_pinned_model():
+    assert store_embedder_mismatch({}, DEFAULT_EMBEDDING_MODEL) is None
 
 
 def test_children_to_parents_dedups_and_preserves_rank():
