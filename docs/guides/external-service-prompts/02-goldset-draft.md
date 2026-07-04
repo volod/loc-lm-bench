@@ -1,12 +1,31 @@
 # 02 -- Goldset draft (SQuAD-format JSON, contract Artifact A)
 
-Run after `01-ontology-inventory.md`. Paste the inventory (or the relevant document's slice of
-it) into the placeholder. The output imports with `make ingest-squad SQUAD_JSON=<file>` and then
-flows through validation, cross-check, and the human verification gate; every item arrives
-`verified=false`.
+Run after `01-ontology-inventory.md`. Paste the (merged) inventory -- or the relevant document's
+slice of it -- into the placeholder. The output is curated
+(`make curate-drafts CURATE_KIND=squad`) and then imported with
+`make ingest-squad SQUAD_JSON=<merged>`; it flows through validation, cross-check, and the human
+verification gate, and every item arrives `verified=false`.
 
-Ask for one document per reply; say "continue" between batches. Concatenate batches locally by
-merging the `data` arrays.
+Ask for one document per reply; say "continue" between batches. Keep every reply as its own
+exported file -- curation merges batches and services, so there is no need to hand-edit JSON.
+
+Operator notes -- sizing `<N>` from the corpus statistics:
+
+- A practical needle density before questions start repeating facts is about ONE item per
+  2,000-4,000 characters of staged text, with a floor for small documents. Working defaults:
+
+  | Staged document size | Items to request |
+  | --- | --- |
+  | under 2k chars (a how-to note, a short dialog) | 3-5 |
+  | 2k-30k chars (an order, a short regulation) | 8-15 |
+  | 30k-150k chars (a manual chapter, a long act) | 20-40, in 2-3 batches |
+  | over 150k chars (a full system manual) | 40-80, batched section by section |
+
+- Over-requesting is safe when you curate afterwards: near-duplicates and weak items are dropped
+  by `curate-drafts`, so it is better to ask each service for the full per-document budget and
+  let the merge keep the union of the strongest items.
+- When drafting with several services, give each the same coverage plan and the same `<N>`;
+  their overlap is removed at curation and their disjoint finds add up.
 
 ---
 
@@ -16,7 +35,7 @@ Using the coverage plan below and the attached documents, draft needle-in-haysta
 COVERAGE PLAN:
 <paste inventory.json or its per-document slice here>
 
-For the document <exact file name>, produce <N, e.g. 20> items as ONE JSON object:
+For the document <exact file name>, produce <N> items as ONE JSON object:
 
 {
   "version": "1.0",
@@ -57,7 +76,8 @@ Item requirements:
    questions that quote so much of the context that retrieval becomes trivial; never leak the
    answer inside the question.
 6. Questions are natural questions a domain user would ask -- no "according to paragraph 3"
-   style references to document structure.
+   style references to document structure, and no "у цьому документі / in this document"
+   phrasing.
 
 After the JSON, on one line outside the code block, report: items produced, items dropped by
 self-check and why.

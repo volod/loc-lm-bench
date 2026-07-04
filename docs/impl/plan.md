@@ -39,7 +39,12 @@ section boundary and are called out because they are **blocked by human work**:
 
 The retrieval-quality cluster (12-16) gives the query-and-rerank side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Every knob these tasks add must land
+`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Together 12 + 14 + 15 cover the
+Ukrainian-language retrieval stack end to end: dense + BM25/sparse + metadata hybrid with
+inflection-aware lemmatization (12), a measured embedder ranking over BGE-M3 / multilingual-e5 /
+the lang-uk model with an opt-in Cohere API row for open corpora (14), and query-side
+normalization -- casefold, apostrophes, transliteration, typo tolerance, aliases/glossary --
+that never mutates the stored corpus text (15). Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so task 6's miss analysis can cite
 it as evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
 fuses, so it pays off most after 12); 14, 15, and 16 stand alone.
@@ -47,8 +52,12 @@ fuses, so it pays off most after 12); 14, 15, and 16 stand alone.
 ## Agent Implementation Tasks
 
 These land to `make ci` green with fixtures, fakes, and deterministic harnesses. Recommended
-sequence: 6 first (its probe mode reuses the shipped durable-eval-runner), the independent lot
-(9, 10, 12, 14, 15, 16) in any order, 13 after 12, 11 after task 3's code, and 8 last (blocked by
+sequence: **9 first (PRIORITIZED)** -- the multi-service external drafting lane (per-service
+setup, prompts, and the `curate-drafts` merge/dedup/filter step; see
+[data prep](current/data-prep.md) external-draft curation) is fully documented and curated, and
+the grounded-JSONL import is its one missing executable piece for full-document needle realism.
+Then 6 (its probe mode reuses the shipped durable-eval-runner), the independent lot
+(10, 12, 14, 15, 16) in any order, 13 after 12, 11 after task 3's code, and 8 last (blocked by
 human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal + `--resume` +
 bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
@@ -122,9 +131,13 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 ### 9. external-draft-import
 
-- Dependencies: none (committed open-data fixture + sidecar, no network). Stands beside human
-  task 2 as the other non-default drafting source; shares the shipped question-type labels
-  (`src/llb/prep/ontology/question_types.py`).
+- Dependencies: none (committed open-data fixture + sidecar, no network). **PRIORITIZED: first in
+  the agent build order** -- the external multi-service drafting lane (per-service setup, prompt
+  pack, and the shipped `curate-drafts` merge/dedup/filter step; see
+  [data prep](current/data-prep.md) external-draft curation) is complete up to this import, and
+  the grounded-JSONL lane is what lifts external drafts from context-sized SQuAD docs to
+  full-document needle realism. Stands beside human task 2 as the other non-default drafting
+  source; shares the shipped question-type labels (`src/llb/prep/ontology/question_types.py`).
 - User-visible outcome: an operator who drafted test data with an external AI provider service
   (Claude Projects, NotebookLM, ChatGPT Projects) on **open** corpus data imports it into a
   standard draft bundle with one command that re-grounds every quote against the local corpus,
@@ -150,10 +163,13 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   `data_classification`); a hard refusal when the sidecar is absent or
   `data_classification != "open"`; `question_type`/`difficulty` recorded in item provenance
   without changing the `GoldItem` schema (shipped labeling in
-  `src/llb/prep/ontology/question_types.py`). Out of scope --
+  `src/llb/prep/ontology/question_types.py`); a `grounded` kind in `llb curate-drafts` so
+  multi-service Artifact B exports merge/dedup/filter through the same curation step the other
+  artifact kinds already have. Out of scope --
   network calls to any provider (the operator exports by hand), the chain artifact (belongs to
   `chain-goldset-generation`), changing the security-case loader, making external drafting a
-  default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/ingest_squad.py` bundle
+  default. Reuse `src/llb/prep/frontier.py` re-grounding, `src/llb/prep/curation/` (lenient
+  loading, quote repair, dedup engine, report), `src/llb/prep/ingest_squad.py` bundle
   writing, and `src/llb/goldset/validate.py`.
 - Data and artifact paths: input under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`
   (artifact files + `external_provenance.json`); output a standard bundle under
@@ -246,22 +262,32 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 - Dependencies: none. Base of the retrieval cluster -- task 13 reranks the pool this task fuses,
   and its fusion knobs feed task 6 recommendations.
-- User-visible outcome: retrieval gains a hybrid mode -- dense E5 plus lexical BM25 fused with
-  reciprocal-rank fusion -- so exact surnames, article/law numbers, codes, abbreviations, and mixed
-  Ukrainian-English terminology stop losing to semantic-only search; `compare-retrieval`
-  demonstrates (not assumes) per corpus whether hybrid beats dense-only, and the sweep/tuner can
-  grid the fusion knobs. For Ukrainian corporate corpora hybrid is the expected production shape;
-  today every store is dense-only cosine (`src/llb/rag/store.py`, `src/llb/rag/vector_index.py`).
+- User-visible outcome: retrieval gains the full hybrid shape Ukrainian enterprise corpora need --
+  dense E5 plus lexical BM25 fused with reciprocal-rank fusion, plus a chunk-metadata filter seam
+  -- so exact surnames, article/law numbers, codes, abbreviations, and mixed Ukrainian-English
+  terminology stop losing to semantic-only search, and Ukrainian inflection (a genitive
+  "начальника служби" query vs the nominative corpus form) stops defeating the lexical side;
+  `compare-retrieval` demonstrates (not assumes) per corpus whether hybrid beats dense-only, what
+  lemmatization adds, and how much recall headroom perfect document routing would buy; the
+  sweep/tuner can grid the fusion knobs.
+  Today every store is dense-only cosine (`src/llb/rag/store.py`, `src/llb/rag/vector_index.py`).
 - Scope boundary: in scope -- a lexical index built beside the vector index at `build-index` time
   (pure-Python BM25, in-repo or `rank-bm25` behind the same optional-extra pattern as `[rag]`)
   over the same offset-exact chunks; Ukrainian-aware token normalization on the lexical side only
   (casefold, apostrophe-variant unification U+2019/U+02BC/`'`, punctuation strip), with opt-in
-  lemmatization via `pymorphy3` + `pymorphy3-dicts-uk`; RRF fusion inside `RagStore.retrieve`
+  lemmatization via `pymorphy3` + `pymorphy3-dicts-uk` (cases/inflection collapse to lemmas at
+  index and query time; the stored chunk text is never altered); RRF fusion inside
+  `RagStore.retrieve`
   driven by `fusion_candidates` and `fusion_weight` in `RunConfig`, so every dense `VectorIndex`
-  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a `compare-retrieval` row
-  (hybrid vs dense) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
+  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a metadata filter seam over the
+  fields chunks already carry (`doc_id`, markdown breadcrumb/section, PDF page range from the
+  citation sidecars) applied before fusion; an oracle-doc-filter diagnostic row in
+  `compare-retrieval` (candidates restricted to each gold item's `source_doc_id`) quantifying the
+  recall headroom a document router would buy; a `compare-retrieval` row set (dense vs hybrid vs
+  hybrid+lemmas) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
   features of any vector DB (fusion stays local and backend-neutral), new embedding models
-  (task 14), query rewriting (task 15), metadata-filtered retrieval. Reuse `src/llb/rag/store.py`,
+  (task 14), query rewriting and typo tolerance (task 15), a learned document router (the oracle
+  row only measures the headroom). Reuse `src/llb/rag/store.py`,
   `src/llb/rag/compare.py`, and `src/llb/optimize/tuner.py:suggest_overrides`.
 - Data and artifact paths: the lexical index persists beside the FAISS artifacts in the store
   directory (`$DATA_DIR/llb/rag/`) and joins the store fingerprint; hybrid rows in the existing
@@ -273,8 +299,10 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   `llb sweep --rag-grid fusion_weight=...`; unit tests cover tokenizer normalization, BM25
   determinism, and RRF ordering against a fake dense index.
 - Acceptance gates: `make ci` green; on the committed goldset hybrid `recall@10` is
-  equal-or-better than the dense baseline and strictly better on the exact-term subset; chunk
-  offsets stay exact end-to-end; a store built without the lexical index refuses
+  equal-or-better than the dense baseline and strictly better on the exact-term subset; the
+  report shows the lemmatization on/off delta and the oracle-doc-filter headroom row; chunk
+  offsets stay exact end-to-end and stored chunk text is byte-identical with lemmatization on; a
+  store built without the lexical index refuses
   `--retrieval-mode hybrid` with a clear message; sweep cells fingerprint the fusion knobs so grid
   points resume independently.
 - Documentation target: [RAG core](current/rag-core.md) retrieval store and sweep sections;
@@ -327,17 +355,26 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   `llb compare-embeddings` builds one store per candidate embedding model over the same corpus and
   chunking and ranks candidates on `recall@k`/MRR plus embed throughput, index size, and device
   fit, ending in a written recommendation the operator applies via the existing
-  `RunConfig.embedding_model`. Default candidates: `intfloat/multilingual-e5-base` (current
+  `RunConfig.embedding_model`. Default local candidates: `intfloat/multilingual-e5-base` (current
   default), `intfloat/multilingual-e5-large`, `BAAI/bge-m3` (dense lane), and
-  `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
+  `lang-uk/ukr-paraphrase-multilingual-mpnet-base` (a paraphrase/STS-tuned model that may lose to
+  retrieval-tuned E5/BGE -- exactly why the ranking must be measured, not assumed). For **open**
+  corpora an operator can additionally opt a Cohere multilingual row into the same report.
 - Scope boundary: in scope -- per-family query/passage conventions in `Embedder`
   (`src/llb/rag/embedding.py` already handles E5 prefixes; add the BGE and mpnet conventions);
   store fingerprints carrying the embedding model so a mismatched store/run refuses; a comparison
-  report reusing `evaluate_retrieval` over the committed goldset. The drafting-side pinned-E5
+  report reusing `evaluate_retrieval` over the committed goldset; an opt-in
+  `--api-model cohere/embed-multilingual-v3.0` lane behind the litellm conventions of
+  `src/llb/prep/frontier.py` -- embedding a corpus via API is full corpus egress, so the lane
+  requires the interactive consent prompt naming the corpus and destination, honors `--max-usd`,
+  maps `input_type` search_query/search_document to the query/passage seam, and is refused for
+  anything but explicitly open corpora (policy as recorded in
+  [product decisions](current/scope-boundaries.md)). The drafting-side pinned-E5
   seams (ontology dedup, semantic scoring, retrieval-uniqueness annotation) stay pinned for
   reproducibility and are explicitly not switched by this task. Out of scope -- BGE-M3
-  sparse/multi-vector output (the lexical lane belongs to task 12), API embeddings (egress
-  policy), embedder fine-tuning.
+  sparse/multi-vector output (the lexical lane belongs to task 12), making an API embedder the
+  default or usable as `RunConfig.embedding_model` for scored runs (the API row is bake-off
+  evidence only; scored retrieval stays local), embedder fine-tuning.
 - Data and artifact paths: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one store per
   candidate under `$DATA_DIR/compare-embeddings/<timestamp>/stores/<model-slug>/`; the report is
   the durable evidence recorded in current docs.
@@ -346,8 +383,10 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   builds stay outside quick CI); `make build-index EMBEDDING_MODEL=<winner>` then a normal
   `run-eval`; unit tests with a fake embedder assert store isolation, fingerprint refusal, and
   report shape.
-- Acceptance gates: `make ci` green; the report ranks all four candidates on the committed fixture
-  with recall@10, MRR, embed time, and dimension/size; an eval run against a non-default-embedder
+- Acceptance gates: `make ci` green; the report ranks all four local candidates on the committed
+  fixture with recall@10, MRR, embed time, and dimension/size; the Cohere row appears only after
+  explicit consent and never without it (unit-tested via an injected fake litellm client, no
+  network in CI); an eval run against a non-default-embedder
   store completes with the embedder recorded in the manifest, and a store/query embedder mismatch
   aborts with a clear message; current docs record the winner for the 16 GB host.
 - Documentation target: [RAG core](current/rag-core.md) retrieval store;
@@ -358,25 +397,34 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 - Dependencies: none (the glossary derives from a shipped `prompt_dictionary_candidates.jsonl`
   draft artifact). Its A/B deltas feed task 6.
 - User-visible outcome: an opt-in query lane between the user question and retrieval that
-  measurably helps Ukrainian queries: deterministic normalization (matching-side casefold,
-  apostrophe-variant unification, a small transliteration table for Latin-typed Ukrainian terms),
-  alias/glossary expansion sourced from the shipped `prompt_dictionary_candidates.jsonl` draft
+  measurably helps Ukrainian queries while never touching the stored corpus text: deterministic
+  normalization (matching-side casefold, apostrophe-variant unification, a small transliteration
+  table for Latin-typed Ukrainian terms), corpus-vocabulary typo tolerance, alias/glossary
+  expansion (including surzhyk and transliterated variants of domain terms) sourced from the
+  shipped `prompt_dictionary_candidates.jsonl` draft
   artifact, and an optional logged local-LLM query rewrite -- with an A/B report proving each
   step's retrieval delta before anyone turns it on by default.
 - Scope boundary: in scope -- `src/llb/rag/query_prep.py` as a pure, unit-testable pipeline of
-  named steps; a glossary builder that turns a draft bundle's dictionary candidates into alias
-  expansions; the LLM rewrite through the existing endpoint seam, off by default, recording both
+  named steps; a deterministic typo-tolerance step: build the token vocabulary from the indexed
+  corpus, correct a query token that is ABSENT from that vocabulary to its nearest in-vocabulary
+  token within Damerau-Levenshtein distance 1 (2 for tokens over 8 chars), never alter a token
+  the corpus already contains, and log every correction; a glossary builder that turns a draft
+  bundle's dictionary candidates into alias
+  expansions, with room for hand-added surzhyk/transliteration aliases in the same artifact;
+  the LLM rewrite through the existing endpoint seam, off by default, recording both
   original and rewritten query per case; an A/B mode in `validate-retrieval`/`compare-retrieval`
   reporting per-step `recall@k`/MRR deltas. Out of scope -- mutating corpus or chunk text
   (original word forms stay untouched; index-side token normalization belongs to task 12),
-  multi-turn conversational rewriting (task 8), spelling-correction models.
+  multi-turn conversational rewriting (task 8), learned/ML spell-correction models (the
+  edit-distance step is the deterministic ceiling this project needs).
 - Data and artifact paths: a `query_glossary.json` artifact derived from a draft bundle and
   referenced by path in `RunConfig`; A/B rows in the compare/validate reports; original and
   processed query per case in run bundles.
-- Execution path: `llb run-eval --query-prep normalize,glossary`;
+- Execution path: `llb run-eval --query-prep normalize,typos,glossary`;
   `llb validate-retrieval --query-prep <steps> --query-prep-ab`;
   `llb build-query-glossary --bundle <draft> --out <json>`; unit tests: apostrophe unification,
-  transliteration-table round-trips, deterministic alias expansion, and exact no-op when the lane
+  transliteration-table round-trips, typo correction that never touches in-vocabulary tokens,
+  deterministic alias expansion, and exact no-op when the lane
   is off.
 - Acceptance gates: `make ci` green; the A/B report on the committed goldset attributes a
   per-step delta (positive, zero, or negative -- the mechanism reports it honestly); the raw query

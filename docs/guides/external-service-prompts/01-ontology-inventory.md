@@ -10,6 +10,18 @@ The entity `type` vocabulary below is the project's closed 13-type set
 (`src/llb/prep/ontology/entity_types.py` / `docs/design/graph-ontology-schema.md`), so the
 inventory maps onto the local knowledge-graph tooling without renaming.
 
+Operator notes:
+
+- Real mixed corpora are heavily skewed: one system manual or legal act often carries most of
+  the characters while how-to notes are under a page. Paste the doc list WITH sizes and ask for
+  one document per reply; for a document over roughly 100k characters, ask for the inventory
+  "section by section" and merge the replies -- a single pass over a 300-page manual
+  under-reports its entities.
+- Run this prompt in EACH service you plan to draft with, then merge the inventories into one
+  wider plan: `make curate-drafts CURATE_KIND=inventory CURATE_INPUTS="<inv1> <inv2>"
+  CURATE_OUT=<merged.json> CURATE_CORPUS=<staged-corpus>` (merging also re-grounds quotes and
+  normalizes entity types into the closed set).
+
 ---
 
 ```text
@@ -47,9 +59,10 @@ any. Output one JSON object in a code block:
   ]
 }
 
-Rules: entities with fewer than 2 mentions may be omitted unless they anchor a relation or a
-numeric fact; every "quote" field is an exact substring of the named document; cap entities at
-25 and relations at 20 per document, choosing the most load-bearing ones. If the type does not
-fit the closed list, choose the closest one. Emit one document per reply if the corpus is
-large; I will say "continue".
+Rules: scale the inventory to the document -- a one-page note may have 2-5 entities, a large
+manual deserves up to 25 entities and 20 relations PER REPLY continued section by section;
+entities with fewer than 2 mentions may be omitted unless they anchor a relation or a numeric
+fact; every "quote" field is an exact substring of the named document; choose the most
+load-bearing entities and relations first. If the type does not fit the closed list, choose the
+closest one. Emit one document per reply if the corpus is large; I will say "continue".
 ```

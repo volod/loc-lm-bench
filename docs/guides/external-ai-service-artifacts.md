@@ -6,7 +6,12 @@ external AI provider services:
 
 - **Claude Projects** -- <https://claude.ai/projects>
 - **Google NotebookLM** -- <https://gemini.google.com/notebook> (a.k.a. notebooklm.google.com)
+- **Google Gemini (Gems)** -- <https://gemini.google.com> (a custom Gem holds the instructions)
 - **ChatGPT Projects** -- <https://chatgpt.com/projects>
+
+Any other assistant qualifies when it can hold project instructions, ground its answers in
+uploaded files, and return raw JSON -- the per-service setup steps are in the
+[prompt pack README](external-service-prompts/README.md#per-service-setup-one-time-per-corpus-project).
 
 These services support Ukrainian well and can lift the quality and completeness of draft test
 sets. This manual explains **when** you may use them, **exactly what** to produce, and **how** to
@@ -49,13 +54,13 @@ Every artifact below is defined precisely by the
 [external-service draft contract](../design/external-draft-contract.md). The copy-paste prompts
 are in [`external-service-prompts/`](external-service-prompts/README.md).
 
-| Artifact | Prompt | Import / run command | Status |
-| --- | --- | --- | --- |
-| Ontology / topic inventory | `01` | steers `02`-`04` (not scored) | works today |
-| Goldset draft (SQuAD JSON) | `02` | `make ingest-squad SQUAD_JSON=` | works today |
-| Chain-of-questions draft | `03` | blocked on `chain-goldset-generation` | review-only |
-| Security cases | `04` | `make bench-security SECURITY_CASES=` | works today |
-| Local run results | -- | `make run-eval` / `make bench-security` | works today |
+| Artifact | Prompt | Curate (merge/dedup/filter) | Import / run command | Status |
+| --- | --- | --- | --- | --- |
+| Ontology / topic inventory | `01` | `make curate-drafts CURATE_KIND=inventory` | steers `02`-`04` (not scored) | works today |
+| Goldset draft (SQuAD JSON) | `02` | `make curate-drafts CURATE_KIND=squad` | `make ingest-squad SQUAD_JSON=` | works today |
+| Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | blocked on `chain-goldset-generation` | review-only |
+| Security cases | `04` | `make curate-drafts CURATE_KIND=security` | `make bench-security SECURITY_CASES=` | works today |
+| Local run results | -- | -- | `make run-eval` / `make bench-security` | works today |
 
 Session outputs live under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`, each with an
 `external_provenance.json` sidecar (contract section 6). Nothing external ever sets
@@ -76,22 +81,56 @@ Note the produced `.md` file ids (`pdf-<digest>.md`) and keep `pdf_corpus_manife
 record the doc ids and the manifest sha256 in the sidecar. Upload the `.md`/`.txt` files to the
 service. For a large corpus, upload in themed groups so the model keeps every document in context.
 
+## 2a. Read the corpus statistics and size the drafting run
+
+Before opening the first chat, look at what the staging step produced -- the numbers decide how
+many items to request per document and where the coverage risk is:
+
+```bash
+ls <staged-dir>/*.md | wc -l                       # document count
+wc -m <staged-dir>/*.md | sort -n                  # characters per staged document
+python -m json.tool <staged-dir>/pdf_corpus_quality.json | head   # pages, image-only pages, skips
+```
+
+Real mixed corpora (regulations + system manuals + operational how-tos) follow a characteristic
+profile, measured on two real reference corpora from different domains (one asset-management,
+one HR/records; 5 and 8 documents, roughly 0.7M and 1.6M staged characters):
+
+- **Extreme size skew.** One or two documents -- a full system manual, a long legal act -- carry
+  40-93 percent of all characters; the median document is 100x smaller. A flat per-document item
+  quota either starves the big manual or pads the one-page notes with weak questions.
+- **A long tail of tiny documents.** How-to notes and support dialogs of 0.5-7k characters still
+  carry unique facts (they are often the only document answering an operational question), so
+  they deserve a small guaranteed budget rather than exclusion.
+- **A few image-only or scanned pages.** The quality report marks them; their OCR text is where
+  verbatim-quote drafting fails most, so spot-check quotes drafted from those documents.
+
+Size the per-document request `<N>` from characters (the same table as prompt `02`): about one
+item per 2-4k characters, floor 3-5 for tiny documents, batched section by section above ~150k
+characters. For the whole corpus this lands at roughly 200-600 requested items per 1M staged
+characters; request the full budget from EACH service you use -- overlap is removed at curation,
+and the merged union covers more of the inventory than any single service reaches.
+
 ## 3. Configure the project and run the prompts
 
-1. **Create a project** (Claude Projects / ChatGPT Projects) or a **notebook** (NotebookLM).
+1. **Create a project** (Claude Projects / ChatGPT Projects), a **notebook** (NotebookLM), or a
+   **custom Gem** (Gemini) -- the exact per-service steps are in the
+   [prompt pack README](external-service-prompts/README.md#per-service-setup-one-time-per-corpus-project).
 2. Paste [`00-project-instructions.md`](external-service-prompts/00-project-instructions.md) into
-   the project custom instructions (Claude/ChatGPT) or as the first message (NotebookLM), then
-   attach the staged corpus files.
-3. Run [`01-ontology-inventory.md`](external-service-prompts/01-ontology-inventory.md) once. Save
-   the JSON as `inventory.json`. This is your coverage plan -- the external analogue of the local
-   ontology extraction.
+   the service's instructions field (or as the first message where none exists), then attach the
+   staged corpus files and paste the doc-id list with sizes.
+3. Run [`01-ontology-inventory.md`](external-service-prompts/01-ontology-inventory.md) once per
+   service. Save the JSON as `inventory.json`. This is your coverage plan -- the external
+   analogue of the local ontology extraction. With several services, merge their inventories
+   into one wider plan: `make curate-drafts CURATE_KIND=inventory`.
 4. Run [`02`](external-service-prompts/02-goldset-draft.md),
    [`03`](external-service-prompts/03-chain-questions.md), and
-   [`04`](external-service-prompts/04-security-cases.md), feeding the inventory in as the coverage
-   plan. Ask for **batches of 10-20 items** and say "continue" until the plan is covered;
-   large single replies truncate and produce invalid JSON.
-5. Export each reply's code block to a file. Merge same-type batches locally (concatenate JSONL;
-   merge the `data` arrays for SQuAD JSON).
+   [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
+   the coverage plan. Ask for **batches of 10-20 items** and say "continue" until the plan is
+   covered; large single replies truncate and produce invalid JSON.
+5. Export each reply to its own file (the raw reply text with its fenced code block is fine).
+   Do NOT hand-merge batches -- `make curate-drafts` merges, repairs, filters, and deduplicates
+   them in section 5.
 
 Service notes:
 
@@ -112,7 +151,43 @@ nano "$DATA_DIR/external-drafts/claude-20260703/external_provenance.json"
 Record service, model, date, operator, the doc ids you uploaded, the manifest sha256, and
 `"data_classification": "open"`. **An artifact bundle without this sidecar must not be imported.**
 
-## 5. Validate and import each artifact locally
+## 5. Curate, validate, and import each artifact locally
+
+### 5.0 Curate the merged exports first (all artifact kinds)
+
+Curation turns the pile of per-service, per-batch exports into ONE importable file per artifact
+kind -- and it is where multi-service drafting pays off:
+
+```bash
+make curate-drafts CURATE_KIND=squad \
+  CURATE_INPUTS="$DATA_DIR/external-drafts/claude-<date>/goldset.json \
+                 $DATA_DIR/external-drafts/gemini-<date>/goldset.json" \
+  CURATE_OUT="$DATA_DIR/external-drafts/merged-<date>/goldset.json" \
+  CURATE_CORPUS=<staged-corpus-dir>
+```
+
+What it does (kinds: `squad`, `security`, `chains`, `inventory`; command:
+`llb curate-drafts`):
+
+- **merges** raw exports -- whole JSON files, replies with fenced code blocks, or JSONL -- from
+  any number of services and batches;
+- **repairs** near-verbatim quotes: an answer/context/grounding quote that differs from the
+  corpus only by whitespace or case is re-snapped to the exact corpus text (and a wrong `title`
+  is corrected to the document where the context was actually found);
+- **filters invalid rows** with per-reason counts: answers that are not substrings of their
+  context, contexts not found in the corpus, schema-invalid security cases, structurally broken
+  chains;
+- **filters flabby questions**: answer leaks (the question contains its answer), vague stubs,
+  "according to this document" phrasing, whole-paragraph answer spans;
+- **deduplicates** exact and near-duplicate questions across services (pinned-E5 cosine,
+  threshold 0.9 by default; bias pairs and cross-language security groups are protected as
+  intentional twins; `CURATE_DEDUP_AGAINST=<bundle>` also drops re-drafts of questions an
+  earlier accepted bundle already covers);
+- **writes a `*.curation_report.json`** beside the output with per-source and per-reason counts
+  -- your first quality signal per service (a high invalid count from one service means its
+  session drifted from the verbatim rule; tighten and redraft).
+
+Then proceed with the merged file:
 
 ### 5a. Goldset (SQuAD JSON, Artifact A)
 
@@ -173,6 +248,55 @@ make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-t
 
 Run artifacts land under `$DATA_DIR/run-eval/<timestamp>-<run-id>/`. These local results -- not
 anything produced inside the external service -- are the benchmark's output.
+
+## 7a. End-to-end example: benchmark a mixed PDF corpus with external drafting
+
+The full path for a typical open corpus of the profile in section 2a (a few regulations, one or
+two large system manuals, a tail of how-to notes). It is the same corpus-to-recommendation spine
+as `make quickstart-corpus`, with the local drafting stage swapped for the external lane:
+
+```bash
+# 1. Stage: PDFs (and any .md/.txt) -> canonical corpus + manifests
+make ingest-corpus CORPUS_ROOT=<pdf-dir> CORPUS_OUT_DIR=<staged-dir>
+
+# 2. Size the run from the stats (section 2a), then draft in 1+ external services
+#    (prompts 00-04 per service; export replies under $DATA_DIR/external-drafts/<service>-<date>/)
+
+# 3. Curate: merge services/batches, repair quotes, filter, dedup
+make curate-drafts CURATE_KIND=squad CURATE_INPUTS="<claude-export> <gemini-export>" \
+  CURATE_OUT="$DATA_DIR/external-drafts/merged-<date>/goldset.json" CURATE_CORPUS=<staged-dir>
+make curate-drafts CURATE_KIND=security CURATE_INPUTS="<exports...>" \
+  CURATE_OUT="$DATA_DIR/external-drafts/merged-<date>/security_cases.json" CURATE_CORPUS=<staged-dir>
+
+# 4. Import + structural validation
+make ingest-squad SQUAD_JSON="$DATA_DIR/external-drafts/merged-<date>/goldset.json"
+make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<canonical-corpus>
+
+# 5. Mechanical cross-check, then the human verification gate (required)
+make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
+make verify-sample  BUNDLE=<bundle> VERIFY_N=40
+make verify-review  VERIFY_WS=<bundle>/verify_sample.csv
+make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
+
+# 6. RAG index over the corpus + retrieval sanity gate (recall@10 >= 0.8)
+make build-index GOLDSET=<verified.jsonl> CORPUS=<corpus>
+make validate-retrieval
+
+# 7. Model benchmark: single run, or the sweep grid (models x top_k) + recommendation
+make run-eval MODEL=<local-tag> BACKEND=<ollama|vllm|llamacpp> GOLDSET=<verified.jsonl>
+make sweep SWEEP_ID=<corpus-name>          # one isolated cell per (model, top_k)
+make recommend                             # ranks models at their best top_k for THIS corpus
+
+# 8. Security tier over the verified corpus-specific cases
+make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-tag>
+```
+
+Yield expectations for planning (per 1M staged characters, using the section 2a sizing): request
+roughly 200-600 items per service; after curation (cross-service dedup + invalid/flabby drops)
+expect the merged kept set to be materially smaller than the sum of requests, and plan the human
+review sample (`VERIFY_N`) against the merged count, not the requested one. Retrieval quality is
+gated before any model ranking (step 6), so a corpus whose drafts cluster on one manual shows up
+as a recall problem before it can distort model scores.
 
 ## 8. What you may and may not send to a service
 
