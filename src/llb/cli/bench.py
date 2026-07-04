@@ -508,7 +508,7 @@ def serve_tools_mcp_cmd(
 
 @app.command("bench-reliability")
 def bench_reliability_cmd(
-    run_dir: Path = typer.Option(..., help="a run bundle dir (scores.parquet / scores.jsonl)"),
+    run_dir: Path = typer.Option(..., help="a run bundle dir (contains scores.jsonl)"),
 ) -> None:
     """Aggregate a run's typed failure taxonomy into a first-class reliability score."""
     from llb.scoring.reliability import read_case_statuses, reliability_report

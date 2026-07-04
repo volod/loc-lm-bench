@@ -129,7 +129,7 @@ def test_walking_skeleton_end_to_end(tmp_path):
     # retrieval: uk-1 hits, uk-2 misses -> recall 0.5
     assert result["retrieval"]["recall_at_k"] == 0.5
 
-    # canonical record on disk (scores.parquet with pyarrow, else scores.jsonl)
+    # canonical record on disk: scores.jsonl (single format, independent of installed extras)
     run_dir = cfg.run_dir(result["run_timestamp"])
     assert run_dir == Path(result["paths"]["manifest"]).parent
     assert (run_dir / "manifest.json").exists()

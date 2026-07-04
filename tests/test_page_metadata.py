@@ -142,11 +142,17 @@ def test_parent_child_propagation_annotates_children() -> None:
     children = _build_children(parents, "recursive", child_size=120, overlap=0, embedder=None)
     annotate_page_metadata(children, FIXTURE)
     assert children
-    assert all("pages" in c["metadata"] for c in children)
-    # Child page ranges are their own precise intersection, not blindly the parent's.
+    # Propagation actually happened: page fields reached the children.
+    assert any("pages" in c["metadata"] for c in children)
+    # Child page ranges are their own precise intersection, not blindly the parent's. A child
+    # whose span predates page 1 (e.g. a chunk that is only the "# Source PDF" preamble) correctly
+    # carries no `pages`, so assert page fields per-child rather than assuming every child is paged.
     for child in children:
         hit = intersect_pages(child["char_start"], child["char_end"], PAGE_SPANS)
-        assert child["metadata"]["pages"] == [hit[0], hit[-1]]
+        if hit:
+            assert child["metadata"]["pages"] == [hit[0], hit[-1]]
+        else:
+            assert "pages" not in child["metadata"]
 
 
 def test_retrieval_hits_expose_page_fields_flat() -> None:

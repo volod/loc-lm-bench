@@ -156,7 +156,6 @@ preserved on failure.
 ```text
 $DATA_DIR/run-eval/<timestamp>-<run-id>/
   manifest.json
-  scores.parquet
   scores.jsonl
 ```
 

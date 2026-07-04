@@ -7,16 +7,16 @@ That offset invariant is the constraint on which splitters we can reuse.
 Strategies:
   - fixed      pure-Python fixed character window with overlap (zero deps)
   - sentence   pure-Python: pack whole sentences up to ~size (never cut mid-sentence)
-  - recursive  langchain `RecursiveCharacterTextSplitter` (add_start_index -> exact offsets);
-               falls back to a pure-Python paragraph->sentence->char split if `[rag]` is absent
+  - recursive  langchain `RecursiveCharacterTextSplitter` (add_start_index -> exact offsets)
   - markdown   structure-aware: headers parsed from the SOURCE (offset-exact) + recursive
                sub-split of long sections; header breadcrumbs go into chunk `metadata`
   - semantic   native: embed sentences with the PINNED embedder, break at distance spikes
                (offset-exact; langchain's SemanticChunker does not preserve source offsets)
 
-`fixed` / `sentence` / `markdown` work without extra deps (markdown sub-splits via the pure
-recursive fallback when `[rag]` is absent); `recursive` prefers langchain-text-splitters and
-`semantic` needs the pinned embedder -- both from the `[rag]` extra, lazily imported.
+`recursive` (and the `markdown` sub-split) use `langchain-text-splitters`, pinned in the base
+dependencies so chunk boundaries are reproducible across environments; a missing or
+version-mismatched install fails loudly rather than silently rechunking. `semantic` needs the
+pinned embedder from the `[rag]` extra, lazily imported.
 
 CLI (also `make build-rag-store`):
     python -m llb.rag.chunking --corpus-root samples/corpus --out-dir .data/llb/rag \\
@@ -70,18 +70,6 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def paragraph_spans(text: str) -> list[tuple[int, int]]:
-    """(start, end) spans for paragraphs (runs separated by a blank line)."""
-    spans: list[tuple[int, int]] = []
-    for m in re.finditer(r"[^\n].*?(?=\n[ \t]*\n|\Z)", text, re.S):
-        start, end = m.start(), m.end()
-        while end > start and text[end - 1].isspace():
-            end -= 1
-        if end > start:
-            spans.append((start, end))
-    return spans
-
-
 def fixed_spans(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
     validate_chunking(size, overlap)
     step = size - overlap
@@ -118,43 +106,59 @@ def sentence_chunk_spans(text: str, size: int) -> list[tuple[int, int]]:
     return _pack(sentence_spans(text), size)
 
 
-def _recursive_fallback(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
-    """Pure-Python paragraph -> sentence -> char split (used when `[rag]` is absent)."""
-    out: list[tuple[int, int]] = []
-    for para_start, para_end in paragraph_spans(text):
-        if para_end - para_start <= size:
-            out.append((para_start, para_end))
-            continue
-        sub = text[para_start:para_end]
-        for rel_start, rel_end in _pack(sentence_spans(sub), size):
-            if rel_end - rel_start <= size:
-                out.append((para_start + rel_start, para_start + rel_end))
-            else:
-                seg = sub[rel_start:rel_end]
-                for fs, fe in fixed_spans(seg, size, overlap):
-                    out.append((para_start + rel_start + fs, para_start + rel_start + fe))
-    return out
+# Chunk boundaries are part of the index contract, so the recursive splitter is a pinned base
+# dependency (see `dependencies` in pyproject.toml). Keep this in lockstep with that pin -- a
+# missing or version-drifted install fails loudly here instead of silently rechunking.
+_REQUIRED_TEXT_SPLITTERS = "1.1.2"
+_recursive_splitter_cls: Any = None
 
 
-def _recursive_langchain(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
+def _require_recursive_splitter() -> Any:
+    """Return the pinned `RecursiveCharacterTextSplitter`, failing early on a bad install."""
+    global _recursive_splitter_cls
+    if _recursive_splitter_cls is not None:
+        return _recursive_splitter_cls
+    try:
+        from importlib.metadata import version
 
-    splitter = RecursiveCharacterTextSplitter(
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+    except ImportError as exc:  # a required base dependency is missing
+        raise RuntimeError(
+            "recursive/markdown chunking requires `langchain-text-splitters"
+            f"=={_REQUIRED_TEXT_SPLITTERS}` (a base dependency); reinstall with "
+            "`uv pip install -e .`."
+        ) from exc
+    found = version("langchain-text-splitters")
+    if found != _REQUIRED_TEXT_SPLITTERS:
+        raise RuntimeError(
+            f"langchain-text-splitters {found} is installed, but chunk boundaries are pinned to "
+            f"{_REQUIRED_TEXT_SPLITTERS}. Reinstall the pinned version so indexes stay reproducible."
+        )
+    _recursive_splitter_cls = RecursiveCharacterTextSplitter
+    return RecursiveCharacterTextSplitter
+
+
+def recursive_spans(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
+    """Offset-exact spans from the pinned langchain `RecursiveCharacterTextSplitter`.
+
+    Every span is verified to reproduce its exact source slice, so a splitter that ever emits a
+    non-slice chunk raises here rather than letting misaligned offsets reach the index.
+    """
+    splitter = _require_recursive_splitter()(
         chunk_size=size, chunk_overlap=overlap, add_start_index=True
     )
     spans: list[tuple[int, int]] = []
     for doc in splitter.create_documents([text]):
+        content = doc.page_content
         start = doc.metadata["start_index"]
-        spans.append((start, start + len(doc.page_content)))
+        end = start + len(content)
+        if text[start:end] != content:
+            raise ValueError(
+                "recursive splitter produced a chunk that is not an exact source slice; "
+                "refusing to index misaligned offsets."
+            )
+        spans.append((start, end))
     return spans
-
-
-def recursive_spans(text: str, size: int, overlap: int) -> list[tuple[int, int]]:
-    """langchain RecursiveCharacterTextSplitter when available, else the pure fallback."""
-    try:
-        return _recursive_langchain(text, size, overlap)
-    except ImportError:
-        return _recursive_fallback(text, size, overlap)
 
 
 _MD_HEADER = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.M)
@@ -174,7 +178,7 @@ def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, J
     Headers are parsed from the SOURCE so every span is an exact source substring. (langchain's
     MarkdownHeaderTextSplitter rejoins section content and loses offsets, which would break the
     source-span metric.) Sections longer than `size` are sub-split with `recursive_spans`
-    (langchain RecursiveCharacterTextSplitter when present, pure fallback otherwise).
+    (the pinned langchain RecursiveCharacterTextSplitter).
     """
     headers = [
         (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)

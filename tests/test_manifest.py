@@ -4,7 +4,7 @@ import pytest
 
 from llb.tracking import manifest as manifest_module
 from llb.tracking import mlflow as mlflow_module
-from llb.tracking.manifest import RunManifest, persist_run, write_scores
+from llb.tracking.manifest import RunManifest, persist_run
 from llb.tracking.server import build_mlflow_command
 
 
@@ -16,19 +16,6 @@ def make_manifest():
         metrics={"objective_score": 0.5, "reliability": 1.0, "tokens_per_s": 10.0},
         n_cases=2,
     )
-
-
-def test_write_scores_format_follows_pyarrow_availability(tmp_path):
-    # Parquet when pyarrow (the [track] extra) is present; JSONL fallback otherwise.
-    out = write_scores([{"item_id": "x", "score": 1.0}], tmp_path / "scores")
-    try:
-        import pyarrow  # noqa: F401
-
-        assert out.suffix == ".parquet"
-    except ImportError:
-        assert out.suffix == ".jsonl"
-        rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
-        assert rows == [{"item_id": "x", "score": 1.0}]
 
 
 def test_manifest_written_before_mirror(tmp_path):

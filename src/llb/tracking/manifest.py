@@ -3,8 +3,8 @@
 Correctness contract (design): the immutable manifest (JSON) and the per-case scores are
 written to `$DATA_DIR` FIRST; only then is MLflow mirrored, best-effort. So a store/MLflow
 error can never lose a completed run, and the canonical record never depends on MLflow
-being installed. Scores go to Parquet when `pyarrow` (the `[track]` extra) is present, and
-fall back to JSONL otherwise, so the base install still records everything.
+being installed. Scores are always JSONL -- a single, zero-dep format so a run bundle is
+identical across environments and never branches on which optional extras are installed.
 
 `persist_run` takes an injectable `mirror` callable, so "manifest-before-mirror" ordering
 and "mirror failure does not lose data" are both unit-testable without MLflow.
@@ -70,28 +70,16 @@ class RunManifest(BaseModel):
 
 
 def write_scores(rows: Sequence[Mapping[str, object]], path_no_ext: Path) -> Path:
-    """Write per-case scores. Parquet if pyarrow is available, else JSONL. Returns path."""
+    """Write per-case scores as JSONL (deterministic, zero-dep). Returns the path.
+
+    JSONL is the single canonical on-disk format so a run bundle is identical regardless of which
+    optional extras happen to be installed -- the artifact never branches on `[track]`/pyarrow.
+    """
     path_no_ext = Path(path_no_ext)
     path_no_ext.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError:
-        out = path_no_ext.with_suffix(".jsonl")
-        content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-        _atomic_write_text(out, content)
-        return out
-    out = path_no_ext.with_suffix(".parquet")
-    with tempfile.NamedTemporaryFile(
-        dir=out.parent, prefix=f".{out.name}.", suffix=".tmp", delete=False
-    ) as temp:
-        temp_path = Path(temp.name)
-    try:
-        pq.write_table(pa.Table.from_pylist([dict(row) for row in rows]), str(temp_path))
-        temp_path.replace(out)
-    except BaseException:
-        temp_path.unlink(missing_ok=True)
-        raise
+    out = path_no_ext.with_suffix(".jsonl")
+    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+    _atomic_write_text(out, content)
     return out
 
 

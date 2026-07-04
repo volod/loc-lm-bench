@@ -111,6 +111,12 @@ def annotate_page_metadata(records: list[ChunkRecord], corpus_root: Path | str) 
                 if source is not None:
                     meta["source_pdf"] = source
                 n_paged += 1
+            else:
+                # This record's own span intersects no page. Drop any page fields carried in
+                # from an inherited metadata dict (parent_child children start from the parent's
+                # metadata) so `pages` always reflects THIS record's span, never the parent's.
+                meta.pop("pages", None)
+                meta.pop("source_pdf", None)
 
         if not meta.get("headers"):
             if doc_id not in doc_texts:

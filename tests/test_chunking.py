@@ -81,19 +81,27 @@ def test_semantic_spans_single_sentence():
     assert semantic_spans(text, 1000, FakeEmbedder({}), threshold_pct=50) == sentence_spans(text)
 
 
-# --- langchain-backed strategies (skip when [rag] is absent, e.g. in CI) ---
+# --- recursive splitter: a pinned base dependency, so always present (no skip) ---
 
 
-def test_recursive_langchain_offsets_in_range():
-    pytest.importorskip("langchain_text_splitters")
-    from llb.rag.chunking import _recursive_langchain
-
+def test_recursive_spans_offsets_in_range():
     text = (
         "Абзац один тут.\n\nАбзац два значно довший і має більше слів для поділу на частини зараз."
     )
-    spans = _recursive_langchain(text, 40, 8)
+    spans = recursive_spans(text, 40, 8)
     assert spans and spans[0][0] == 0
     assert all(0 <= s < e <= len(text) and text[s:e] for s, e in spans)
+
+
+def test_recursive_spans_fails_loudly_on_version_drift(monkeypatch):
+    # The recursive splitter is version-pinned so chunk boundaries stay reproducible; an
+    # unexpected version must fail early instead of silently producing different chunks.
+    import llb.rag.chunking as ch
+
+    monkeypatch.setattr(ch, "_recursive_splitter_cls", None)
+    monkeypatch.setattr("importlib.metadata.version", lambda name: "0.0.0")
+    with pytest.raises(RuntimeError, match="pinned"):
+        ch.recursive_spans("Текст для поділу тут.", 40, 8)
 
 
 def test_markdown_spans_carry_headers_and_exact_offsets():

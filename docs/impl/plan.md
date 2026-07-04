@@ -477,7 +477,7 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   probe" distinct from "refusal on a scoreable case". Out of scope -- a RAGAS dependency,
   frontier judges (egress policy), changing the headline objective (new metrics stay separate
   columns until a ranking policy explicitly adopts them), chain scoring (task 8).
-- Data and artifact paths: additive per-case fields in `scores.jsonl`/`scores.parquet` (citation
+- Data and artifact paths: additive per-case fields in `scores.jsonl` (citation
   validity, groundedness fraction, probe flag, abstention outcome); aggregate columns in board
   and `recommend` summaries when present.
 - Execution path: `llb run-eval --cited-answers --score-groundedness`;

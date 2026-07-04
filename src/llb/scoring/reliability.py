@@ -42,20 +42,14 @@ def reliability_report(statuses: list[str]) -> ReliabilityReport:
 
 
 def read_case_statuses(run_dir: Path | str) -> list[str]:
-    """Extract the per-case `status` column from a run bundle (scores.parquet or scores.jsonl)."""
+    """Extract the per-case `status` column from a run bundle's `scores.jsonl`."""
     run_dir = Path(run_dir)
-    parquet = run_dir / "scores.parquet"
-    if parquet.exists():
-        import pyarrow.parquet as pq
-
-        table = pq.read_table(parquet, columns=["status"])
-        return [str(s) for s in table.column("status").to_pylist()]
     jsonl = run_dir / "scores.jsonl"
-    if jsonl.exists():
-        statuses: list[str] = []
-        for line in jsonl.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                statuses.append(str(json.loads(line).get("status", "")))
-        return statuses
-    raise FileNotFoundError(f"no scores.parquet or scores.jsonl under {run_dir}")
+    if not jsonl.exists():
+        raise FileNotFoundError(f"no scores.jsonl under {run_dir}")
+    statuses: list[str] = []
+    for line in jsonl.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            statuses.append(str(json.loads(line).get("status", "")))
+    return statuses

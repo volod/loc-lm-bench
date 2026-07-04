@@ -97,11 +97,11 @@ Open a run and select **Artifacts -> canonical**:
 
 - `manifest.json`: effective config, aggregate metrics, retrieval, judge state, telemetry,
   environment, and canonical run id.
-- `scores.parquet` or `scores.jsonl`: one row per case, including status, objective score,
+- `scores.jsonl`: one row per case, including status, objective score,
   retrieval hit/rank, latency, token count, and answer preview.
 - `vllm/`: backend logs when the run launched vLLM.
 
-MLflow does not replace the case table with aggregate charts. Download `scores.parquet` for
+MLflow does not replace the case table with aggregate charts. Download `scores.jsonl` for
 DuckDB, pandas, or notebook analysis when individual errors need inspection.
 
 ## Troubleshooting
