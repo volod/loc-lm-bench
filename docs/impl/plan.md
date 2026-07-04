@@ -50,20 +50,27 @@ it as evidence-backed. Within the cluster only 13 has an ordering preference (it
 fuses, so it pays off most after 12); 14, 15, and 16 stand alone. Task 17 adds the governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
-[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)).
+[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)). The
+strategy-independent page/section join that links every chunk back to its origin file, page, and
+heading -- from chunk char offsets to the PDF citation sidecars -- is now shipped
+(`src/llb/rag/page_metadata.py`; see [RAG core](current/rag-core.md) retrieval store); tasks 10 and
+12 reuse its sidecar loader and the `pages`/`source_pdf`/`headers` fields it attaches.
 
 ## Agent Implementation Tasks
 
 These land to `make ci` green with fixtures, fakes, and deterministic harnesses. Recommended
-sequence: **9 first (PRIORITIZED)** -- the multi-service external drafting lane (per-service
-setup, prompts, and the `curate-drafts` merge/dedup/filter step; see
-[data prep](current/data-prep.md) external-draft curation) is fully documented and curated, and
-the grounded-JSONL import is its one missing executable piece for full-document needle realism.
-Then 6 (its probe mode reuses the shipped durable-eval-runner), the independent lot
-(10, 12, 14, 15, 16) in any order, 13 after 12, 17's ACL-filter half after 12's metadata-filter
-seam (its governance fields stand alone), 11 after task 3's code, and 8 last (blocked by
-human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal + `--resume` +
-bounded backend relaunch + `manifest.durability` counters) is now shipped; see
+sequence: **14 first (PRIORITIZED for Ukrainian RAG quality)** -- it replaces the assumed default
+embedder with a measured Ukrainian ranking. (Task 18, its prioritized pair, is now shipped: every
+chunk carries a page/section link back to its origin file via `src/llb/rag/page_metadata.py`, and
+tasks 10 and 12 build on its sidecar loader and fields.) Then 9 -- the
+multi-service external drafting lane (per-service setup, prompts, and the `curate-drafts`
+merge/dedup/filter step; see [data prep](current/data-prep.md) external-draft curation) is fully
+documented and curated, and the grounded-JSONL import is its one missing executable piece for
+full-document needle realism. Then 6 (its probe mode reuses the shipped durable-eval-runner),
+the independent lot (10, 12, 15, 16) in any order, 13 after 12, 17's ACL-filter half after 12's
+metadata-filter seam (its governance fields stand alone), 11 after task 3's code, and 8 last
+(blocked by human task 7). The durable-eval-runner (retry + `cases.progress.jsonl` journal +
+`--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
 
 ### 6. miss-analysis-recommendations
@@ -140,8 +147,9 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 ### 9. external-draft-import
 
-- Dependencies: none (committed open-data fixture + sidecar, no network). **PRIORITIZED: first in
-  the agent build order** -- the external multi-service drafting lane (per-service setup, prompt
+- Dependencies: none (committed open-data fixture + sidecar, no network). Third in the agent
+  build order, after the prioritized UA-RAG embedder work (task 14; task 18 shipped) -- the
+  external multi-service drafting lane (per-service setup, prompt
   pack, and the shipped `curate-drafts` merge/dedup/filter step; see
   [data prep](current/data-prep.md) external-draft curation) is complete up to this import, and
   the grounded-JSONL lane is what lifts external drafts from context-sized SQuAD docs to
@@ -198,8 +206,10 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 ### 10. corpus-chunking-strategies
 
-- Dependencies: none. Picks up the "new chunking strategies" item the shipped autopipeline held
-  out of scope; independent of the rest.
+- Dependencies: soft-follows the shipped page-metadata join (`src/llb/rag/page_metadata.py`): the
+  page-aware strategy reuses its sidecar page-span loader; the boundary alignment and new
+  strategies are this task's own. Picks up the "new
+  chunking strategies" item the shipped autopipeline held out of scope; independent of the rest.
 - User-visible outcome: the RAG store gains chunking strategies suited to mixed real-world corpora
   and demonstrated (not assumed) to help retrieval: a PDF page/citation-aware strategy that keeps
   chunk boundaries on page-sidecar spans, a heading-hierarchy (layout-aware) strategy that carries
@@ -210,12 +220,14 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   `fixed | sentence | recursive | markdown | semantic` (`src/llb/rag/chunking.py`).
 - Scope boundary: in scope -- extend `STRATEGIES` in `src/llb/rag/chunking.py` with the new
   strategies, each returning `(start, end, metadata)` spans anchored to `doc_id` + character offsets
-  so `validate-goldset` and source-span scoring keep working; the page-aware strategy reads the
-  `pdf-<digest>.citations.json` sidecars produced by the PDF/`ingest-corpus` lanes; a
+  so `validate-goldset` and source-span scoring keep working; the page-aware strategy aligns chunk
+  boundaries on the page spans exposed by the shipped page-metadata sidecar loader
+  (`src/llb/rag/page_metadata.py`); a
   `compare-retrieval` row per new strategy so the best chunker is DEMONSTRATED per corpus; the RAG
   build grid gains the strategies behind a flag. Out of scope -- new embedding models, changing the
-  source-span gold contract, changing the retrieval scorer. Reuse `src/llb/rag/chunking.py`,
-  `src/llb/rag/compare.py`, and the citation sidecars.
+  source-span gold contract, changing the retrieval scorer, attaching page metadata to existing
+  strategies' chunks (the shipped page-metadata join owns that). Reuse `src/llb/rag/chunking.py`,
+  `src/llb/rag/compare.py`, and `src/llb/rag/page_metadata.py` (the shipped sidecar loader).
 - Data and artifact paths: FAISS stores per strategy under `$DATA_DIR/llb/rag/<strategy>/`; a
   `compare-retrieval` report gains the new strategy rows; a small page-sidecar fixture under
   `samples/` for the page-aware chunker unit tests.
@@ -269,8 +281,10 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 ### 12. hybrid-retrieval-uk
 
-- Dependencies: none. Base of the retrieval cluster -- task 13 reranks the pool this task fuses,
-  and its fusion knobs feed task 6 recommendations.
+- Dependencies: soft-follows the shipped page-metadata join (the metadata filter seam filters over
+  the page/section fields `src/llb/rag/page_metadata.py` attaches; the lexical/fusion half stands
+  alone). Base of the retrieval cluster --
+  task 13 reranks the pool this task fuses, and its fusion knobs feed task 6 recommendations.
 - User-visible outcome: retrieval gains the full hybrid shape Ukrainian enterprise corpora need --
   dense E5 plus lexical BM25 fused with reciprocal-rank fusion, plus a chunk-metadata filter seam
   -- so exact surnames, article/law numbers, codes, abbreviations, and mixed Ukrainian-English
@@ -288,9 +302,9 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
   index and query time; the stored chunk text is never altered); RRF fusion inside
   `RagStore.retrieve`
   driven by `fusion_candidates` and `fusion_weight` in `RunConfig`, so every dense `VectorIndex`
-  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a metadata filter seam over the
-  fields chunks already carry (`doc_id`, markdown breadcrumb/section, PDF page range from the
-  citation sidecars) applied before fusion; an oracle-doc-filter diagnostic row in
+  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a metadata filter seam over
+  `doc_id` plus the section breadcrumb and PDF page range the shipped page-metadata join attaches,
+  applied before fusion; an oracle-doc-filter diagnostic row in
   `compare-retrieval` (candidates restricted to each gold item's `source_doc_id`) quantifying the
   recall headroom a document router would buy; a `compare-retrieval` row set (dense vs hybrid vs
   hybrid+lemmas) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
@@ -358,8 +372,9 @@ bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 
 ### 14. embedding-bakeoff-uk
 
-- Dependencies: none. Heavy store builds run on the CUDA host (deterministic, no human judgment).
-  Its recommended-embedder result feeds task 6.
+- Dependencies: none. **PRIORITIZED for Ukrainian RAG quality** (see build order; task 18, its
+  prioritized pair, is shipped). Heavy store builds run on the CUDA host (deterministic, no human
+  judgment). Its recommended-embedder result feeds task 6.
 - User-visible outcome: an evidence-backed answer to "which embedder for Ukrainian?":
   `llb compare-embeddings` builds one store per candidate embedding model over the same corpus and
   chunking and ranks candidates on `recall@k`/MRR plus embed throughput, index size, and device

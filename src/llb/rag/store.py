@@ -18,6 +18,7 @@ from llb.config import DEFAULT_EMBEDDING_MODEL
 from llb.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
+from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
     VectorIndex,
@@ -134,6 +135,13 @@ class RagStore:
         else:
             indexed = units
 
+        # Attach page/section provenance from PDF citation sidecars (strategy-independent,
+        # additive metadata only). Coverage is measured over the INDEXED units; parents are
+        # annotated too so their metadata surfaces on parent_child retrieval hits.
+        page_coverage = annotate_page_metadata(indexed, corpus_root)
+        if parents is not None:
+            annotate_page_metadata(parents, corpus_root)
+
         vectors = embedder.encode_passages([c["text"] for c in indexed])
         index = build_vector_index(vector_store, vectors)
         meta: RagStoreMeta = {
@@ -147,6 +155,7 @@ class RagStore:
             "n_parents": len(parents) if parents else 0,
             "dim": int(vectors.shape[1]),
             "backend": vector_store,
+            "page_annotation_coverage": round(page_coverage, 4),
         }
         return cls(indexed, index, embedder, meta, parents=parents)
 

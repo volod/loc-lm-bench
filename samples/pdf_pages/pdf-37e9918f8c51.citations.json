@@ -1,0 +1,37 @@
+{
+  "kind": "pdf-citations",
+  "source": "regulation.pdf",
+  "doc_id": "pdf-37e9918f8c51.md",
+  "parser": "pymupdf4llm",
+  "diagnostics": {
+    "page_count": null,
+    "encrypted": null,
+    "needs_password": null,
+    "embedded_text_chars": null,
+    "image_pages": null,
+    "image_only_pages": null,
+    "error": null
+  },
+  "pages": [
+    {
+      "page": 1,
+      "char_start": 30,
+      "char_end": 288,
+      "text_start": 95,
+      "text_end": 286,
+      "n_chars": 191,
+      "parser": "pymupdf4llm",
+      "blocks": []
+    },
+    {
+      "page": 2,
+      "char_start": 288,
+      "char_end": 531,
+      "text_start": 353,
+      "text_end": 529,
+      "n_chars": 176,
+      "parser": "pymupdf4llm",
+      "blocks": []
+    }
+  ]
+}

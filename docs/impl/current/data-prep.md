@@ -139,6 +139,11 @@ The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_qual
 quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
 markers, and the selection score.
 
+At `build-index` time these sidecars are joined onto every chunk (`src/llb/rag/page_metadata.py`):
+a chunk whose char span intersects a page span gains `metadata.pages`/`metadata.source_pdf`, and
+`store_meta.json` records the resulting `page_annotation_coverage`. See the
+[RAG core](rag-core.md) retrieval-store section for the join and its guarantees.
+
 ### Mixed txt/md/pdf ingestion
 
 `make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the

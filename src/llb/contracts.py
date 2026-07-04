@@ -53,6 +53,9 @@ class RagStoreMeta(TypedDict):
     backend: NotRequired[
         str
     ]  # platform matrix vector-store backend (faiss default; chroma/qdrant/lancedb)
+    page_annotation_coverage: NotRequired[
+        float
+    ]  # fraction of indexed chunks carrying source-PDF page provenance (chunk-page-metadata)
 
 
 class UsageRecord(TypedDict, total=False):

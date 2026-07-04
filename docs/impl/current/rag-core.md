@@ -72,11 +72,29 @@ The default backend is FAISS. Chroma, Qdrant, and LanceDB use the same `VectorIn
 Chunk-to-source linkage (audited 2026-07-04 against the Ukrainian-RAG production checklist): every
 chunk record in every strategy and both retrieval modes carries `doc_id`, a unique `chunk_id`, and
 exact `char_start`/`char_end` offsets, so any chunk resolves to its verbatim place in the source
-document. The `metadata` field carries section breadcrumbs only under the `markdown` strategy; the
-other strategies emit `{}`. PDF page numbers live in the `pdf-<digest>.citations.json` sidecars
-(page-to-corpus-span mapping) and are not joined onto chunks at build or retrieval time --
-page-aware chunking and the chunk-metadata filter seam are forward tasks 10 and 12 in
-[`plan.md`](../plan.md); governance fields (`language`, `date`/`version`, ACL) are forward task 17.
+document.
+
+Page/section provenance (`src/llb/rag/page_metadata.py`, shipped): after chunking, `RagStore.build`
+joins each chunk's char span onto the `pdf-<digest>.citations.json` page-span sidecars that sit
+beside the corpus docs, adding `metadata.pages = [first, last]` (source-PDF page numbers) and
+`metadata.source_pdf` (the original PDF path) to every chunk whose span intersects a page, in every
+strategy and both retrieval modes. The same pass fills `metadata.headers` -- the breadcrumb of
+enclosing markdown headings located in the source -- for strategies other than `markdown` (which
+already emits it) and for any doc with headings; plain `.md`/`.txt` docs get header breadcrumbs but
+no page fields. The join is additive: chunk text, ids, and offsets are byte-identical before and
+after. `store_meta.json` records `page_annotation_coverage` (the fraction of indexed chunks that
+gained a `pages` field) and `build-index` logs it. In `parent_child` mode both the indexed children
+and their parents are annotated, so the fields surface on retrieval hits either way. Retrieved hits
+carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
+"file X, page N, section Y" without re-deriving the join. Page-aligned chunk *boundaries* and the
+metadata *filter* seam are forward tasks 10 and 12 in [`plan.md`](../plan.md); governance fields
+(`language`, `date`/`version`, ACL) are forward task 17.
+
+Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): a `markdown`/`flat`
+store over the quickstart HR PDF corpus (`.data/quickstart-pdf-corpus-hr/_md`, 8 converted docs)
+annotated all 2855 indexed chunks with page provenance -- `page_annotation_coverage = 1.0` in
+`store_meta.json` -- every chunk carrying `metadata.pages`, `metadata.source_pdf`, and its heading
+breadcrumb.
 
 Retrieval modes:
 

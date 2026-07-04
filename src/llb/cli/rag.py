@@ -67,10 +67,12 @@ def build_index(
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
+    coverage = store.meta.get("page_annotation_coverage", 0.0)
+    pages = f", {coverage:.0%} page-annotated" if coverage else ""
     typer.echo(
         f"[build-index] {store.meta['n_indexed']} indexed chunks{parents} "
         f"({cfg.strategy}/{cfg.retrieval_mode}, {vector_store}, dim {store.meta['dim']}) "
-        f"-> {cfg.index_dir()}"
+        f"-> {cfg.index_dir()}{pages}"
     )
 
 
