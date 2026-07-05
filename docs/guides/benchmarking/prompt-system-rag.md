@@ -7,6 +7,21 @@ The workflow uses the selected-pipeline caution from
 [arXiv:2406.18902](https://arxiv.org/abs/2406.18902): tune on one split, report on a held-out split,
 and keep the final decision separate from the selected prompt.
 
+## At a glance
+
+```text
+1. build + gate the index    build-index -> validate-retrieval   [gate: retrieval passes first]
+2. generate candidates       prompt-system-prepare               [reviewable prompt package]
+3. tune on the tuning split  run-eval --split tuning --prompt-system <id>
+4. pin the winner [HUMAN]    prompt-system-review --action pin --id <id>
+5. verify on the final split run-eval --split final [--prompt-system <id>]
+6. compare                   prompt-system-compare --lane rag --model <model>
+```
+
+The rule that gates everything: **never promote a prompt that only wins the tuning split**. The
+human actions are pinning the candidate (step 4) and reading the final-split comparison (step 6)
+-- the committed example below shows a prompt that won tuning and regressed on final.
+
 ## Inputs
 
 - Corpus: `samples/corpus/ip_regulation_uk.md`

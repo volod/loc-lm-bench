@@ -4,7 +4,17 @@ RAG core runs the loop on prebuilt Ollama. backend telemetry adds a **vLLM** lau
 HF weights behind the same OpenAI-compatible interface) plus a real telemetry hook. This is
 the heavy, GPU-host path. Prebuilt packages install through uv; an explicit local-checkout
 mode handles CUDA source builds. Model weights are multi-GB. Module detail is in
-[implementation/current.md](../impl/current.md).
+[implementation/current.md](../../impl/current.md).
+
+## At a glance
+
+    1. install vLLM        make venv  (CUDA hosts install prebuilt wheels automatically)
+    2. cache + verify      make prep-models PREP_BACKEND=vllm  [gate: id resolves, not gated]
+    3. run with telemetry  make run-eval BACKEND=vllm MODEL=<hf-id> TELEMETRY=1
+
+Before step 3, check the [Gotchas](#gotchas-from-the-real-model-validation-run): cap
+`max_model_len` so the KV cache fits, free VRAM of resident Ollama models, and leave the
+flashinfer sampler defaulted off on consumer GPUs.
 
 ## 1. Install vLLM (once, GPU host)
 

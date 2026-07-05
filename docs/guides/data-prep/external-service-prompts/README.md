@@ -5,11 +5,29 @@ Google Gemini / NotebookLM, ChatGPT Projects, or any assistant that grounds a ch
 files). The workflow manual is
 [`../external-ai-service-artifacts.md`](../external-ai-service-artifacts.md); the output shapes
 these prompts request are defined by the
-[external-service draft contract](../../design/external-draft-contract.md).
+[external-service draft contract](../../../design/external-draft-contract.md).
 
 **Open data only.** These prompts are used with corpora cleared for third-party processing.
 Restricted data goes through the local ontology pipeline with open-weights models instead
 (`make quickstart-corpus`, `make ingest-uk-squad GOLDSET_MODE=draft`).
+
+## Before you open any service (prerequisites)
+
+The per-service setup below assumes two local artifacts already exist. Do NOT create a project
+or upload anything until you have both -- this is the most common first-time mistake, and it
+surfaces only later as dropped rows at import:
+
+1. **The staged corpus files** (`.md`/`.txt`): produced by
+   `make pdf-to-markdown PDF_DIR=<dir>` or `make ingest-corpus CORPUS_ROOT=<dir>`. You upload
+   these STAGED files, never the original PDFs, so drafted quotes match the exact text the local
+   RAG index will contain.
+2. **The doc-id list with sizes** from the produced `corpus_manifest.json` /
+   `pdf_corpus_manifest.json`: pasted into the first chat so the model can name documents
+   exactly, and recorded (with the manifest sha256) in the `external_provenance.json` sidecar.
+
+If you are here without them, start from the workflow manual's
+[workflow at a glance](../external-ai-service-artifacts.md#workflow-at-a-glance) and complete
+its steps 1-2 first.
 
 | File | Purpose | Output |
 | --- | --- | --- |
@@ -21,9 +39,11 @@ Restricted data goes through the local ontology pipeline with open-weights model
 
 ## Per-service setup (one-time per corpus project)
 
-Any service qualifies when it can (a) hold your custom instructions, (b) ground its answers in
-uploaded files, and (c) return raw JSON in code blocks. Record the service slug you actually used
-in the `external_provenance.json` sidecar.
+This table assumes the [prerequisites above](#before-you-open-any-service-prerequisites) --
+staged `.md`/`.txt` files and the doc-id list -- already exist. Any service qualifies when it can
+(a) hold your custom instructions, (b) ground its answers in uploaded files, and (c) return raw
+JSON in code blocks. Record the service slug you actually used in the
+`external_provenance.json` sidecar.
 
 | Service | Where `00-project-instructions.md` goes | Corpus upload | Session notes |
 | --- | --- | --- | --- |
@@ -104,16 +124,16 @@ Step-by-step references:
 
 - [Creating test artifacts with AI provider services](../external-ai-service-artifacts.md) --
   the full workflow this pack belongs to, including corpus staging, sidecars, and import.
-- [External-service draft contract](../../design/external-draft-contract.md) -- exact shapes,
+- [External-service draft contract](../../../design/external-draft-contract.md) -- exact shapes,
   field rules, and per-artifact validation gates.
 - [Create a gold set from scratch](../goldset-from-scratch.md) -- the local drafting spine the
   imported goldset joins (validation, cross-check, splits).
-- [Verification tooling](../verification-tooling.md) and
-  [human-in-the-loop evaluation](../human-in-the-loop-evaluation.md) -- the review gate every
-  imported item must pass before it can score a model.
-- [Run the RAG core](../run-rag-core.md) -- index build, retrieval validation, and `run-eval`
+- [Verification tooling](../../human-tooling/verification-tooling.md) and
+  [human-in-the-loop evaluation](../../human-tooling/human-in-the-loop-evaluation.md) -- the
+  review gate every imported item must pass before it can score a model.
+- [Run the RAG core](../../benchmarking/run-rag-core.md) -- index build, retrieval validation, and `run-eval`
   over the verified goldset.
-- [Quickstart: any corpus](../quickstart-any-corpus.md) -- the end-to-end corpus-to-benchmark
+- [Quickstart: any corpus](../../quickstart/quickstart-any-corpus.md) -- the end-to-end corpus-to-benchmark
   pipeline the external lane plugs into.
-- [Security learning path](../learning-path-security.md) -- how security cases are scored and
-  reported.
+- [Security learning path](../../learning-path/learning-path-security.md) -- how security cases
+  are scored and reported.

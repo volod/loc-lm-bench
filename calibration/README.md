@@ -40,7 +40,7 @@ git add calibration/<name>.csv
 `item_id, split, provenance, question, reference_answer, model_answer, human_answer,
 human_rating, human_note, human_status, judge_rating`. The human owns `human_*`; `model_answer`
 and `judge_rating` come from `calibration-run`. See the
-[calibration-tooling guide](../docs/guides/calibration-tooling.md).
+[calibration-tooling guide](../docs/guides/human-tooling/calibration-tooling.md).
 
 ## Reusing on a fresh clone
 

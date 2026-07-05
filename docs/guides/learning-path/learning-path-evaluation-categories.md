@@ -9,9 +9,9 @@ It expands the forward-looking stage of the [main learning path](learning-path.m
 to the [LLM security learning path](learning-path-security.md), which is the deep dive for the
 security category. This guide teaches the *concepts* behind each category, names the *essential
 papers and manuals*, and points at *where each capability lives or attaches in the code*. The
-project's design rationale lives in the [design spec](../design/spec.md), what already exists in
-the [current state](../impl/current.md), and the sequenced roadmap in the
-[forward plan](../impl/plan.md).
+project's design rationale lives in the [design spec](../../design/spec.md), what already exists in
+the [current state](../../impl/current.md), and the sequenced roadmap in the
+[forward plan](../../impl/plan.md).
 
 ## Who this is for
 
@@ -48,8 +48,8 @@ design questions answer themselves once you know them:
    check against STRUCTURED ground-truth labels (planted by the synthetic-corpus generator, which
    is never also the judge). An LLM judge enters only for free-form quality, and only once
    it has been *calibrated against humans* (see the
-   [human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md)). Until then, objective
-   correctness ranks alone.
+   [human-in-the-loop evaluation manual](../human-tooling/human-in-the-loop-evaluation.md)).
+   Until then, objective correctness ranks alone.
 3. **The verified-data gate.** Every gold/eval item is AI-drafted, a *second* frontier model
    cross-checks it (grounding, non-circularity), and a human spot-verifies a stratified SAMPLE
    before any item is allowed to score a model. The cross-check is pipeline code; only the sample
@@ -128,7 +128,7 @@ objective floor.
   attributes (a trend's subject + direction, a contradiction's paired span ids).
 - Thresholds (named constants, no magic numbers): full-credit cosine `0.85`, partial-credit band
   `[0.70, 0.85)` worth `0.5`. These were reviewed and accepted; see the signed-off
-  [text-analysis scoring schema](../design/text-analysis-schema.md).
+  [text-analysis scoring schema](../../design/text-analysis-schema.md).
 
 ### How to understand it
 - A **sub-task is the unit of credit.** OBJECTIVE sub-tasks (fact / entity / topic / trend / risk /
@@ -159,7 +159,7 @@ objective floor.
 ### In this repo
 `src/llb/scoring/text_analysis.py` (the matcher), the `PlantedLabelRecord` / `SubtaskScore`
 contracts in `src/llb/contracts.py`, and the signed-off design at
-[`docs/design/text-analysis-schema.md`](../design/text-analysis-schema.md). The cosine similarity
+[`docs/design/text-analysis-schema.md`](../../design/text-analysis-schema.md). The cosine similarity
 is injected, so the engine is pure and unit-tested without the embedder.
 
 ---
@@ -406,7 +406,7 @@ These are *generalizations of existing seams*, not new science: per-source quant
 seam for multi-backend; the RAG-store interface (`rag/store.py`) is the seam for multi-vector-store;
 the KV-cache-aware planner generalizes to other GPU classes; and `run-eval --telemetry` records
 mean power plus quality-per-watt when `nvidia-smi` is reachable. Use the
-[platform matrix guide](platform-matrix.md) for the runnable backend/power flow.
+[platform matrix guide](../benchmarking/platform-matrix.md) for the runnable backend/power flow.
 
 ### Learn
 - Vector stores: [Chroma](https://docs.trychroma.com/),
@@ -514,7 +514,7 @@ learning path is done.
 - where a security tier slots in.
 - - **2. Orchestration** (Long-document + multi-hop section; HotpotQA + Lost-in-the-Middle): Read
 - `eval/{map_reduce,multi_hop}.py`; run their tests; trace one multi-hop controller decision.
-- - **3. Text-analysis scoring** (The [scoring schema](../design/text-analysis-schema.md) + worked
+- - **3. Text-analysis scoring** (The [scoring schema](../../design/text-analysis-schema.md) + worked
 - example): Run `pytest tests/test_text_analysis.py -q`; change the full-credit threshold and watch
 - credit move.
 - - **4. Security** (The [security learning path](learning-path-security.md), sessions 1-3): Sketch
@@ -533,8 +533,7 @@ learning path is done.
 
 By session 8 you can place any capability on the right tier, name its objective metric and its
 verified-data gate, and explain why graph retrieval preserves source spans. The deepest single
-source remains the [design spec](../design/spec.md); the [current
-implementation](../impl/current.md)
-maps each current module to its behavior; and the
-[human-in-the-loop evaluation manual](human-in-the-loop-evaluation.md) covers the human gates that
-make the judged metrics trustworthy across every category above.
+source remains the [design spec](../../design/spec.md); the
+[current implementation](../../impl/current.md) maps each current module to its behavior; and
+the [human-in-the-loop evaluation manual](../human-tooling/human-in-the-loop-evaluation.md)
+covers the human gates that make the judged metrics trustworthy across every category above.

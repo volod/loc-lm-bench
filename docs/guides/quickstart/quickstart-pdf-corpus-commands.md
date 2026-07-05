@@ -1,5 +1,10 @@
 # PDF Corpus To Goldset And Graph Quickstart Commands
 
+This is the command-chain layer of the PDF corpus track: the workflow at a glance, the wrapper
+targets, and the human-verification-gate context are in
+[Quickstart PDF corpus](quickstart-pdf-corpus.md) -- read its at-a-glance section first if this
+is your first run, because scoring is gated on a human-accepted ledger.
+
 The granular commands below are the same operations without the wrapper orchestration:
 
 ```sh

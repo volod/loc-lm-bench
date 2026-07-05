@@ -1,5 +1,11 @@
 # Goldset Leaderboard Quickstart Granular Commands
 
+This is the command-chain layer of the goldset leaderboard track: the wrapper form
+(`make quickstart-goldset`) and the track's purpose are in the
+[project README](../../../README.md#goldset-leaderboard-quickstart); per-stage depth lives in
+[Run RAG core](../benchmarking/run-rag-core.md), [platform matrix](../benchmarking/platform-matrix.md),
+and [MLflow analysis](../benchmarking/mlflow-analysis.md).
+
 The granular commands below are the same operations without the wrapper orchestration:
 
 ```sh

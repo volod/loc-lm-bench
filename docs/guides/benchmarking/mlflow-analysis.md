@@ -3,6 +3,18 @@
 MLflow is a review and comparison mirror. The canonical source of truth remains each
 immutable run directory under `$DATA_DIR/run-eval/<timestamp>-<run-id>/`.
 
+## At a glance
+
+    1. produce runs         make demo-eval (or any run-eval / sweep)
+    2. start the UI         make mlflow                 [syncs canonical runs, serves :5000]
+    3. select experiment    "loc-lm-bench", never "Default"
+    4. compare correctly    same gold set + config; reliability = 1; retrieval gate met
+    5. inspect cases        Artifacts -> canonical: manifest.json, scores.jsonl
+
+The judgment calls are in steps 4-5: filter to comparable runs before reading scores (see
+[Compare runs correctly](#compare-runs-correctly)), and never make private-corpus model claims
+from `make demo-eval` -- it scores the public development fixture.
+
 ## Start the UI
 
 Run at least one evaluation, then start the local UI:

@@ -176,7 +176,7 @@ RATINGS ?= $(CAL_WS)
 # draft dir (goldset.jsonl + corpus/) under $(DATA_DIR)/prepare-goldset/<ts>/; the sample worksheet
 # + accepted-ledger default beside it. CROSS_CHECK_MODEL is the SECOND-frontier verifier (must
 # differ from the drafter). VERIFY_N sizes the stratified sample; VERIFY_TOLERANCE is the accepted
-# reject rate. Full workflow: docs/guides/goldset-from-scratch.md.
+# reject rate. Full workflow: docs/guides/data-prep/goldset-from-scratch.md.
 BUNDLE ?=
 CROSS_CHECK_MODEL ?=
 VERIFY_WS ?= $(if $(BUNDLE),$(BUNDLE)/verify_sample.csv,)
@@ -427,7 +427,7 @@ demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> pre
 	  { echo "[demo-eval] OK -- full log: $$LOG"; \
 	    echo "[demo-eval] review experiment results: make mlflow"; \
 	    echo "[demo-eval] MLflow UI: http://$(MLFLOW_HOST):$(MLFLOW_PORT)"; \
-	    echo "[demo-eval] guide: docs/guides/mlflow-analysis.md"; } | tee -a "$$LOG"; \
+	    echo "[demo-eval] guide: docs/guides/benchmarking/mlflow-analysis.md"; } | tee -a "$$LOG"; \
 	else echo "[demo-eval] FAILED (exit $$rc) -- investigate the log: $$LOG" \
 	  | tee -a "$$LOG" >&2; exit "$$rc"; fi
 

@@ -2,7 +2,13 @@
 
 Runtime output lands under `$DATA_DIR` (default `.data/`, gitignored). The stable public
 development fixture is committed under `samples/goldsets/`. Module detail is in
-[implementation/current.md](../impl/current.md).
+[implementation/current.md](../../impl/current.md).
+
+This page is the command reference for the create stage: [gold set](#gold-set) modes,
+[RAG store chunking](#rag-store-chunking), and [judge calibration](#judge-calibration) entry
+points. The ordered end-to-end workflow with its quality gates is
+[create a gold set from scratch](goldset-from-scratch.md); external-service drafting for open
+data is [a separate manual](external-ai-service-artifacts.md).
 
 ## Gold set
 
@@ -24,6 +30,12 @@ A drafted set is `verified=false` and cannot score a model until it clears the d
 (`make verify-sample` / `verify-review` / `verify-accept`) and the ledger flip. The full ordered
 flow, with authoring + review rules, is the
 [create-a-gold-set workflow](goldset-from-scratch.md).
+
+Besides the local drafting modes above, an **open-data** corpus can also be drafted with external
+AI provider services (Claude Projects, NotebookLM, ChatGPT Projects) and imported back through
+the same curation and verification gates -- the workflow, its diagram, and the open-data rule are
+in [creating test artifacts with AI provider services](external-ai-service-artifacts.md).
+Restricted or private data stays on the local lane.
 
 Schema (one JSON object per line): `id, lang, question, reference_answer, source_doc_id,
 source_spans[{doc_id, char_start, char_end, text}], provenance, verified, split`. Labels are
@@ -56,4 +68,4 @@ extra) to also build a FAISS index per strategy.
 
 `make calibration-worksheet` emits a BLANK worksheet (rows only) when you want the structure
 without a run. Full walkthrough, the rater command reference, and the new-goldset /
-text-corpus-draft cases: the [calibration-tooling manual](calibration-tooling.md).
+text-corpus-draft cases: the [calibration-tooling manual](../human-tooling/calibration-tooling.md).

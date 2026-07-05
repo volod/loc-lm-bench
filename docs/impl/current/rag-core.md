@@ -44,7 +44,8 @@ make run-eval MODEL=llama3.2:3b BACKEND=ollama LIMIT=20
 The Makefile defaults `GOLDSET` and `CORPUS` to the committed fixture so smoke runs do not require
 network access or data regeneration.
 For the local PDF-corpus Gemma 4 quickstart, see
-[`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). That flow builds
+[`docs/guides/quickstart/quickstart-pdf-corpus.md`](../../guides/quickstart/quickstart-pdf-corpus.md).
+That flow builds
 `.data/quickstart-pdf-corpus-rag/llb/rag/` from 19 converted PDFs: 13,211 recursive FAISS chunks
 and 768-dimensional E5 embeddings (2026-07-02 build). A 4-document quick draft
 (`QUICKSTART_PDF_DRAFT_DOCS=<4 ids>`, 70 unverified items, all citation-valid) scored

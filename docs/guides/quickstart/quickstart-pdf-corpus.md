@@ -9,6 +9,24 @@ The PDF corpus is source material only. Model scoring commands such as `demo-eva
 `pipeline` require a `verified=true` gold set. The draft commands below produce review artifacts;
 continue to scoring only after `verify-review` and `verify-accept` emit an accepted ledger.
 
+## At a glance
+
+```text
+1. convert    make quickstart-pdf-corpus-convert    PDFs -> markdown + citation sidecars
+2. index      make quickstart-pdf-corpus-index      full-corpus FAISS store
+3. draft      make quickstart-pdf-corpus-draft      [HUMAN: confirm drafter + duration estimate]
+4. graph      make quickstart-pdf-corpus-graph      GraphRAG store from the draft extraction
+5. validate   make quickstart-pdf-corpus-validate   [gate: structure PASS + recall/MRR]
+   ---------- the pipeline STOPS here on purpose: drafted rows are verified=false ----------
+6. review     make quickstart-pdf-corpus-review     [HUMAN: verify the stratified sample]
+7. accept     make quickstart-pdf-corpus-accept     [gate: reject rate <= tolerance -> ledger]
+8. score      make quickstart-pdf-corpus-score      leaderboard over the accepted ledger only
+```
+
+`make quickstart-pdf-corpus` runs steps 1-5 in one command. Steps 6-7 are the human verification
+gate -- no model scoring happens before the accepted ledger exists. The sections below detail
+each step with its expected artifacts and the model-selection knobs for step 3.
+
 ## Wrapper Commands
 
 Use the wrapper targets for the normal quickstart. They write timestamped logs under

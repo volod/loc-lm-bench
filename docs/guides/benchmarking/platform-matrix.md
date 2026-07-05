@@ -3,6 +3,17 @@
 Use this guide to run platform comparisons: same logical model base across backend families,
 power-aware telemetry, and GPU-class extension configs.
 
+## At a glance
+
+    1. (optional) install extra backends   make build-vllm; make build-llamacpp
+    2. run the matrix                      make platform-matrix     [one row per backend]
+    3. read the rows                       objective score, tok/s, peak VRAM, power, quality/watt
+
+The comparability rule is the gate here: one split, one limit, one RAG index, one telemetry
+protocol for every backend row. Rows produced with different gold sets, retrieval configs, or
+context caps must not be compared. Missing vLLM/llama.cpp binaries are logged as skips unless
+`PLATFORM_MATRIX_STRICT=1`.
+
 ## Common-Base Backend Run
 
 Default common base for the 16 GB CUDA host:
@@ -67,7 +78,7 @@ faster than a dense 12B, attention layout (GQA/MQA vs full MHA) and quantization
 severalfold, and on a 16 GiB card VRAM-fit vs CPU-offload is usually the biggest factor. Use the
 measured `tokens_per_s` from a prior manifest and `load_time + n_cases * out_tokens / tokens_per_s`;
 `list-models` shows the `gpu/total` layer split (an `offload` verdict predicts slow decode). See
-[Backend Telemetry -> Run-Time Estimation](../impl/current/backend-telemetry.md#run-time-estimation)
+[Backend Telemetry -> Run-Time Estimation](../../impl/current/backend-telemetry.md#run-time-estimation)
 and the [LLM architecture gallery](https://sebastianraschka.com/llm-architecture-gallery/).
 
 ## GPU-Class Extension

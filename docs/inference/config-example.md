@@ -164,7 +164,7 @@ Environment: copy [`.env.example`](../../.env.example) to `.env` (or run `make v
 Variable names are defined in [`src/llb/env.py`](../../src/llb/env.py). Set `HF_TOKEN` for gated
 MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000, and keep
 `VLLM_USE_FLASHINFER_SAMPLER=0` on consumer GPUs (generated vLLM scripts read this). See
-[vLLM backend guide](../guides/vllm-backend.md).
+[vLLM backend guide](../guides/benchmarking/vllm-backend.md).
 
 ### Operational notes
 
@@ -203,5 +203,5 @@ RTX 5090, 32607 MiB, sm 120. **vLLM** for MamayLM 27B FP8 and Gemma 4 31B w4a16;
 ## Related
 
 - [samples/config-example/](../../samples/config-example/) -- manifest + templates
-- [vLLM backend guide](../guides/vllm-backend.md)
+- [vLLM backend guide](../guides/benchmarking/vllm-backend.md)
 - [samples/models_uk.yaml](../../samples/models_uk.yaml) -- planner registry

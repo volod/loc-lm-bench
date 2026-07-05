@@ -64,7 +64,7 @@ llb_warn_dpkg_state() {
   if [ "$broken" -gt 0 ]; then
     printf '[apt] WARN: dpkg reports %s unconfigured/broken package(s) on this host\n' "$broken" >&2
     printf '[apt] WARN: apt may fail while configuring unrelated kernel/NVIDIA packages\n' >&2
-    printf '[apt] WARN: fix with: sudo dpkg --configure -a (see docs/guides/dev-setup.md)\n' >&2
+    printf '[apt] WARN: fix with: sudo dpkg --configure -a (see docs/guides/development/dev-setup.md)\n' >&2
   fi
 }
 

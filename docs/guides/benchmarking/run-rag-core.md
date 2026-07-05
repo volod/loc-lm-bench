@@ -3,6 +3,19 @@
 This guide runs retrieve -> generate -> score for one local model and writes a reproducible run
 bundle. The default path uses the committed verified UA-SQuAD fixture and Ollama.
 
+## At a glance
+
+```text
+1. prerequisites   make venv; ollama serve; make prep-models     [one-time setup]
+2. build index     make build-index                              [chunks + FAISS store]
+3. gate retrieval  make validate-retrieval RAG_K=10              [gate: recall@10 >= 0.8]
+4. score a model   make run-eval MODEL=<tag> LIMIT=20            [writes the run bundle]
+```
+
+No step needs human review here -- the committed fixture is already verified. The one gate to
+respect is retrieval: if `validate-retrieval` fails the recall threshold, retrieval is the
+bottleneck and model scores are capped by it, not by the model.
+
 ## Prerequisites
 
 ```bash

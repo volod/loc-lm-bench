@@ -160,7 +160,7 @@ def run_real_crew(
     The crew's LLM is the candidate `complete` (wrapped as a `BaseLLM` subclass); the crew's tools
     execute against the SAME `world` through a recording executor, so the returned `CrewOutcome` is
     faithful no matter how CrewAI orchestrates the ReAct turns. This path is host-only and is not run
-    in CI -- the fake-crew tests cover the adaptation; see `docs/guides/crewai-harness.md` for the
+    in CI -- the fake-crew tests cover the adaptation; see `docs/guides/benchmarking/crewai-harness.md` for the
     validation how-to and the actor/model/document extension guide.
     """
     try:

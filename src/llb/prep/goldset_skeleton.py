@@ -42,7 +42,7 @@ INSTRUCTIONS = """Gold-set skeleton
 5. Import the edited file with `make ingest-squad SQUAD_JSON=<path>`.
 6. Review the canonical JSONL, then set verified=true only for accepted items.
 
-Full manual: docs/guides/goldset-from-scratch.md
+Full manual: docs/guides/data-prep/goldset-from-scratch.md
 """
 
 

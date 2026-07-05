@@ -3,9 +3,20 @@
 The agentic harness comparison agentic benchmark runs one model under a pluggable harness
 so the comparison axis is LangGraph vs CrewAI vs the pure loop, holding the task set,
 `ToolWorld`, objective scoring, and the gated judge fixed
-(see [`extended-workflows.md`](../impl/current/extended-workflows.md)).
+(see [`extended-workflows.md`](../../impl/current/extended-workflows.md)).
 CrewAI is an opt-in extra; this guide is the host-only validation how-to plus the actor
 / model / document extension guide.
+
+## At a glance
+
+    1. install the extra        uv pip install -e ".[crewai]"      [dedicated env: pins conflict]
+    2. scripted validation      the no-model snippet in section 2  [gate: tool call + answer OK]
+    3. real benchmark cell      llb bench-agentic --harness crewai --backend ollama --model <tag>
+    4. compare harnesses        bench-agentic for loop/langgraph/crewai -> bench-agentic-compare
+
+The gate to trust: a deterministic-success task must score identically across harnesses (same
+`n_tool_calls` / `n_steps` / env state) -- that is what proves the harness, not the model, is the
+only variable. Re-run the scripted validation after any CrewAI upgrade.
 
 ## 1. Install and pin
 

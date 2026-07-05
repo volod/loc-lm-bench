@@ -9,6 +9,20 @@ Like every draft flow, the output is source material only: drafted rows are `ver
 cannot score a model. Continue to scoring only after `verify-review` and `verify-accept` emit an
 accepted ledger (the PDF-corpus review/accept/score wrappers work on this bundle too).
 
+## At a glance
+
+```text
+1. ingest -> index -> draft -> graph -> validate    make quickstart-corpus CORPUS_SRC=<dir>
+   [HUMAN: confirm drafter + duration estimate; gate: structure PASS + recall/MRR]
+2. human verification gate [HUMAN]                  verify-review -> verify-accept
+   [gate: reject rate <= tolerance -> accepted ledger]
+3. score the accepted ledger                        the PDF-corpus score wrapper or run-eval
+```
+
+Step 1 is one command (or five stage commands below); like every draft flow it stops before
+scoring because drafted rows are `verified=false`. The human gate and scoring reuse the
+[PDF-corpus quickstart](quickstart-pdf-corpus.md) steps 6-8 on this bundle.
+
 ## One command
 
 ```sh
@@ -72,11 +86,12 @@ llb prepare-goldset-draft --resume <bundle>
 Resume reuses the completed extraction windows recorded in the bundle's `extraction_journal.jsonl`,
 re-extracts only the missing windows, and replays the deterministic seed/draft/emit stages, so the
 finished bundle matches an uninterrupted run. See
-[data prep](../impl/current/data-prep.md#resumable-extraction-interrupt-safe-drafting) for the
+[data prep](../../impl/current/data-prep.md#resumable-extraction-interrupt-safe-drafting) for the
 mechanics.
 
 ## See also
 
 - [Quickstart PDF Corpus](quickstart-pdf-corpus.md) -- the PDF-only track and shared draft knobs.
-- [Create a gold set (end-to-end)](goldset-from-scratch.md) -- the full create -> verify -> score spine.
-- [Data prep](../impl/current/data-prep.md) -- ingestion, drafting, and resume behavior in brief.
+- [Create a gold set (end-to-end)](../data-prep/goldset-from-scratch.md) -- the full
+  create, verify, and score spine.
+- [Data prep](../../impl/current/data-prep.md) -- ingestion, drafting, and resume behavior in brief.
