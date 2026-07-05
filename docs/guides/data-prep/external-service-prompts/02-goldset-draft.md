@@ -1,7 +1,9 @@
 # 02 -- Goldset draft (SQuAD-format JSON, contract Artifact A)
 
-Run after `01-ontology-inventory.md`. Paste the (merged) inventory -- or the relevant document's
-slice of it -- into the placeholder. The output is curated
+Run after `01-ontology-inventory.md`. Treat the curated inventory as a coverage map, not as text
+that must be pasted whole. For each drafting reply, paste only the slice for the exact document
+being drafted, or a compact section/topic slice of that document when the document inventory is
+large. The output is curated
 (`make curate-drafts CURATE_KIND=squad`) and then imported with
 `make ingest-squad SQUAD_JSON=<merged>`; it flows through validation, cross-check, and the human
 verification gate, and every item arrives `verified=false`.
@@ -27,13 +29,55 @@ Operator notes -- sizing `<N>` from the corpus statistics:
 - When drafting with several services, give each the same coverage plan and the same `<N>`;
   their overlap is removed at curation and their disjoint finds add up.
 
+Mapping `inventory.curated.json` to the `COVERAGE PLAN` placeholder:
+
+1. Pick the staged document id you are drafting, for example `pdf-6d8c2128b330.md`.
+2. Extract the matching document slice from the curated inventory. This keeps the selected
+   `documents[]` entry and only the `cross_document[]` links that mention the same doc:
+
+   ```bash
+   INV="$DATA_DIR/quickstart-pdf-corpus-md/api-provider-inventory.curated.json"
+   DOC="pdf-6d8c2128b330.md"
+   OUT="$DATA_DIR/quickstart-pdf-corpus-md/coverage-$DOC.json"
+
+   jq --arg doc "$DOC" \
+     '{documents: [.documents[] | select(.doc == $doc)],
+       cross_document: [.cross_document[] | select(.docs | index($doc))]}' \
+     "$INV" > "$OUT"
+   ```
+
+3. Paste `coverage-$DOC.json` into `COVERAGE PLAN` and set
+   `For the document <exact file name>` to the same staged doc id.
+4. If that slice is still too large for the chat, paste a compact slice and draft one section-like
+   batch at a time. Increase or move the slice windows when you say "continue" (`[0:40]`, then
+   `[40:80]`, and so on):
+
+   ```bash
+   jq --arg doc "$DOC" \
+     '{documents: [.documents[] | select(.doc == $doc) | {
+         doc,
+         topics: .topics[0:40],
+         entities: .entities[0:25],
+         relations: .relations[0:20],
+         numeric_facts: .numeric_facts[0:20],
+         sensitive_topics: .sensitive_topics[0:10]
+       }],
+       cross_document: [.cross_document[] | select(.docs | index($doc))][0:10]}' \
+     "$INV" > "${OUT}-0-40.json"
+   ```
+
+Do not paste the full corpus-level inventory for prompt 02 when it is large; the model should see
+the document it is drafting plus only enough inventory context to spread questions across that
+document.
+
 ---
 
 ```text
 Using the coverage plan below and the attached documents, draft needle-in-haystack QA items.
 
 COVERAGE PLAN:
-<paste inventory.json or its per-document slice here>
+<paste the curated-inventory slice for the exact document below; do not paste the full corpus
+inventory when it is too large>
 
 For the document <exact file name>, produce <N> items as ONE JSON object:
 

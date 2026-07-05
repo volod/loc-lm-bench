@@ -26,7 +26,9 @@ Operator notes:
 
 ```text
 Build a knowledge inventory of ALL attached documents. Work document by document; do not skip
-any. Output one JSON object in a code block:
+any. Use the exact staged document ids from the manifest's doc_id values for every "doc" field
+and every cross_document "docs" entry. Do not use original PDF file names, NotebookLM source
+titles, or display titles in those fields. Output one JSON object in a code block:
 
 {
   "documents": [
@@ -64,5 +66,7 @@ manual deserves up to 25 entities and 20 relations PER REPLY continued section b
 entities with fewer than 2 mentions may be omitted unless they anchor a relation or a numeric
 fact; every "quote" field is an exact substring of the named document; choose the most
 load-bearing entities and relations first. If the type does not fit the closed list, choose the
-closest one. Emit one document per reply if the corpus is large; I will say "continue".
+closest one. Emit one document per reply if the corpus is large; I will say "continue". Each
+continued reply must be a complete standalone JSON object with the same top-level keys
+("documents" and "cross_document") for the next batch only.
 ```
