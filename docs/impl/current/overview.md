@@ -64,10 +64,10 @@ Make-level `DATA_DIR` after `.env` is loaded so wrapper artifacts stay under the
 quickstart root. The goldset quickstart passes `QUICKSTART_SWEEP_LIMIT` to each sweep cell
 (defaulting to the Make `LIMIT`, currently 20) so the all-in-one path is bounded on offload-heavy
 hosts; set `QUICKSTART_SWEEP_LIMIT=` to run every item in each cell.
-The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto`; it can
-use existing `llb recommend` benchmark JSON, run the committed-goldset benchmark, accept a manually
-entered local model, or opt into a `frontier` `litellm` route before it estimates and confirms the
-full draft runtime.
+The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto` with
+`QUICKSTART_MODEL_SELECTION=gemma4`, which resolves the strongest Gemma 4 CUDA-tier target before
+it estimates and confirms the full draft runtime. Benchmark, manual local, and `frontier`
+`litellm` routes remain explicit overrides.
 
 Latest validated goldset quickstart evidence on the 16 GiB RTX 4060 Ti host:
 `$DATA_DIR/llb/logs/quickstart/quickstart-goldset-20260630-142055.log`. The run detected

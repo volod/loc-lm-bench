@@ -112,6 +112,14 @@ def _journal_meta_path(out_dir: Path) -> Path:
     return out_dir / EXTRACTION_JOURNAL_META_FILENAME
 
 
+def _clear_fresh_extraction_journal(out_dir: Path) -> None:
+    """Drop prior resumability state when the caller starts a fresh run in an existing bundle dir."""
+    for name in (EXTRACTION_JOURNAL_FILENAME, EXTRACTION_JOURNAL_META_FILENAME):
+        path = out_dir / name
+        if path.exists():
+            path.unlink()
+
+
 def _write_journal_meta(out_dir: Path, pinned: dict[str, object], endpoint: EndpointConfig) -> None:
     """Record the determinism-critical settings + endpoint identity so a resume reproduces the run.
 
@@ -464,6 +472,7 @@ def draft_goldset(
     if write:
         resolved_out.mkdir(parents=True, exist_ok=True)
         if not resume:
+            _clear_fresh_extraction_journal(resolved_out)
             _write_journal_meta(
                 resolved_out,
                 {

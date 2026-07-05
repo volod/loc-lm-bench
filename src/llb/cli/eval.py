@@ -214,6 +214,8 @@ def _run_screen_with_backend(
             port=cfg.vllm_port,
             gpu_memory_utilization=cfg.gpu_memory_utilization,
             max_model_len=cfg.max_model_len,
+            cpu_offload_gb=cfg.cpu_offload_gb,
+            kv_offloading_size_gb=cfg.kv_offloading_size_gb,
         )
         with launcher:
             return do_screen(f"{cfg.vllm_host.rstrip('/')}/v1")

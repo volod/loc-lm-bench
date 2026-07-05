@@ -56,6 +56,7 @@ is_interactive() {
 prompt_yes_no() {
   local question="$1"
   local default="${2:-no}"
+  local hint="${3:-Set QUICKSTART_ASSUME_YES=1 to approve this non-interactive confirmation.}"
   local suffix answer
   if is_yes_value "$QS_ASSUME_YES"; then
     printf '[prompt] %s yes (QUICKSTART_ASSUME_YES=1)\n' "$question"
@@ -67,7 +68,7 @@ prompt_yes_no() {
       return 0
     fi
     echo "ERROR: this step needs confirmation: $question" >&2
-    echo "Set QUICKSTART_ASSUME_YES=1 or provide QUICKSTART_DRAFT_MODEL explicitly." >&2
+    echo "$hint" >&2
     exit 2
   fi
   if [ "$default" = "yes" ]; then
@@ -97,6 +98,29 @@ quickstart_py() {
     exit 1
   }
   "$PROJECT_ROOT/.venv/bin/python" -m llb.quickstart.model_choice "$@"
+}
+
+host_gemma4_field() {
+  local field="$1"
+  if [ -n "$QS_GPU_GB" ]; then
+    quickstart_py host-gemma4 --gpu-gb "$QS_GPU_GB" "$field"
+  else
+    quickstart_py host-gemma4 "$field"
+  fi
+}
+
+resolve_quickstart_gpu_tier() {
+  local line tier
+  if [ -n "$QS_GPU_GB" ]; then
+    return 0
+  fi
+  line="$("$PROJECT_ROOT/.venv/bin/python" -m llb.main detect-gpu-vram 2>/dev/null || true)"
+  case "$line" in
+    gpu_tier=*)
+      tier="${line#gpu_tier=}"
+      QS_GPU_GB="${tier%% *}"
+      ;;
+  esac
 }
 
 list_local_models() {
@@ -136,7 +160,11 @@ write_pdf_bench_recommendation() {
 run_pdf_model_benchmark() {
   heading "model" "benchmark local candidates for this host"
   result "benchmark data dir: $(rel_path "$QS_PDF_MODEL_BENCH_DATA")"
-  if ! prompt_yes_no "The local model benchmark can take roughly 1-4 hours. Proceed?" "no"; then
+  if ! prompt_yes_no \
+    "The local model benchmark can take roughly 1-4 hours. Proceed?" \
+    "no" \
+    "Set QUICKSTART_ASSUME_YES=1 to run the benchmark unattended, or set QUICKSTART_MODEL_SELECTION=gemma4|choose." \
+  ; then
     echo "ERROR: model benchmark was not approved" >&2
     echo "Provide QUICKSTART_DRAFT_MODEL=<local-model-id> or rerun with QUICKSTART_MODEL_SELECTION=choose." >&2
     exit 2
@@ -195,6 +223,36 @@ select_frontier_model() {
   QS_DRAFT_ENDPOINT="frontier"
 }
 
+select_host_gemma4_model() {
+  local target tier util max_len cpu_offload_gb kv_offloading_size_gb
+  resolve_quickstart_gpu_tier
+  target="$(host_gemma4_field target)"
+  tier="$(host_gemma4_field tier-gb)"
+  QS_DRAFT_MODEL="$(host_gemma4_field model)"
+  QS_DRAFT_BACKEND="$(host_gemma4_field backend)"
+  QS_DRAFT_ENDPOINT="local"
+  result "host Gemma 4 target: $target (tier=${tier}gb)"
+  if [ "$QS_DRAFT_BACKEND" = "vllm" ]; then
+    util="$(host_gemma4_field gpu-memory-utilization)"
+    max_len="$(host_gemma4_field max-model-len)"
+    cpu_offload_gb="$(host_gemma4_field cpu-offload-gb)"
+    kv_offloading_size_gb="$(host_gemma4_field kv-offloading-size-gb)"
+    if [ -n "$util" ]; then
+      QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION="$util"
+    fi
+    if [ -n "$max_len" ] && [ -z "$QS_DRAFT_VLLM_MAX_MODEL_LEN" ]; then
+      QS_DRAFT_VLLM_MAX_MODEL_LEN="$max_len"
+    fi
+    if [ -n "$cpu_offload_gb" ] && [ -z "$QS_DRAFT_VLLM_CPU_OFFLOAD_GB" ]; then
+      QS_DRAFT_VLLM_CPU_OFFLOAD_GB="$cpu_offload_gb"
+    fi
+    if [ -n "$kv_offloading_size_gb" ] && [ -z "$QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB" ]; then
+      QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB="$kv_offloading_size_gb"
+    fi
+    result "host Gemma 4 vLLM settings: max_model_len=$QS_DRAFT_VLLM_MAX_MODEL_LEN gpu_memory_utilization=$QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION cpu_offload_gb=${QS_DRAFT_VLLM_CPU_OFFLOAD_GB:-0} kv_offloading_size_gb=${QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB:-0}"
+  fi
+}
+
 select_pdf_draft_model() {
   if [ "$QS_DRAFT_MODEL" != "auto" ]; then
     result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
@@ -206,19 +264,18 @@ select_pdf_draft_model() {
   fi
 
   case "$QS_MODEL_SELECTION" in
-    auto)
+    auto|gemma4)
+      select_host_gemma4_model
+      return 0
+      ;;
+    legacy-auto)
       if pdf_bench_has_runs; then
         write_pdf_bench_recommendation
         select_model_from_benchmark_json
         return 0
       fi
-      if ! is_interactive && ! is_yes_value "$QS_ASSUME_YES"; then
-        echo "ERROR: no model benchmark found at $(rel_path "$QS_PDF_MODEL_BENCH_DATA/run-eval")" >&2
-        echo "Run one of:" >&2
-        echo "  make quickstart-goldset QUICKSTART_RUN_SECURITY=0" >&2
-        echo "  QUICKSTART_DRAFT_MODEL=<local-model-id> make quickstart-pdf-corpus" >&2
-        exit 2
-      fi
+      select_host_gemma4_model
+      return 0
       ;;
     benchmark)
       run_pdf_model_benchmark
@@ -235,26 +292,9 @@ select_pdf_draft_model() {
       return 0
       ;;
     *)
-      echo "ERROR: QUICKSTART_MODEL_SELECTION must be auto, benchmark, choose, or frontier" >&2
+      echo "ERROR: QUICKSTART_MODEL_SELECTION must be gemma4, legacy-auto, benchmark, choose, or frontier" >&2
       exit 2
       ;;
-  esac
-
-  printf '[prompt] No benchmark summary found. Choose model-selection mode:\n'
-  printf '  1) run local benchmark now (recommended)\n'
-  printf '  2) select a local model manually\n'
-  printf '  3) use a frontier model through litellm\n'
-  local choice
-  choice="$(prompt_value "Enter 1, 2, or 3:")"
-  case "$choice" in
-    1|"")
-      run_pdf_model_benchmark
-      write_pdf_bench_recommendation
-      select_model_from_benchmark_json
-      ;;
-    2) select_manual_local_model ;;
-    3) select_frontier_model ;;
-    *) echo "ERROR: unsupported model-selection choice: $choice" >&2; exit 2 ;;
   esac
 }
 
@@ -378,13 +418,15 @@ QS_DRAFT_NUM_CTX="${QUICKSTART_DRAFT_NUM_CTX:-16384}"
 QS_DRAFT_VLLM_PORT="${QUICKSTART_DRAFT_VLLM_PORT:-8000}"
 QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION="${QUICKSTART_DRAFT_VLLM_GPU_MEMORY_UTILIZATION:-0.85}"
 QS_DRAFT_VLLM_MAX_MODEL_LEN="${QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN:-}"
+QS_DRAFT_VLLM_CPU_OFFLOAD_GB="${QUICKSTART_DRAFT_VLLM_CPU_OFFLOAD_GB:-}"
+QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB="${QUICKSTART_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB:-}"
 QS_DRAFT_VLLM_DTYPE="${QUICKSTART_DRAFT_VLLM_DTYPE:-auto}"
 QS_DRAFT_VLLM_QUANTIZATION="${QUICKSTART_DRAFT_VLLM_QUANTIZATION:-}"
 QS_DRAFT_VLLM_STARTUP_TIMEOUT="${QUICKSTART_DRAFT_VLLM_STARTUP_TIMEOUT:-600}"
 QS_DRAFT_EXTRACT_MAX_CHARS="${QUICKSTART_DRAFT_EXTRACT_MAX_CHARS:-}"
 QS_DRAFT_EXTRACT_CHUNK_OVERLAP="${QUICKSTART_DRAFT_EXTRACT_CHUNK_OVERLAP:-}"
 QS_DRAFT_CONCURRENCY="${QUICKSTART_DRAFT_CONCURRENCY:-}"
-QS_MODEL_SELECTION="${QUICKSTART_MODEL_SELECTION:-auto}"
+QS_MODEL_SELECTION="${QUICKSTART_MODEL_SELECTION:-gemma4}"
 QS_ASSUME_YES="${QUICKSTART_ASSUME_YES:-0}"
 QS_PDF_MIN_CHARS="${QUICKSTART_PDF_MIN_CHARS:-500}"
 QS_PDF_PARSER="${QUICKSTART_PDF_PARSER:-auto}"
@@ -633,7 +675,11 @@ track_b_draft() {
   stats="$(pdf_draft_stats)"
   result "estimated draft workload: $stats"
   result "draft outputs include goldset.jsonl, needle_items.jsonl, ontology.json, extraction.jsonl, pdf_ontology_report.json, prompt_dictionary_candidates.jsonl"
-  if ! prompt_yes_no "The next draft step is expected to take about ${stats##*, }. Proceed?" "no"; then
+  if ! prompt_yes_no \
+    "The next draft step is expected to take about ${stats##*, }. Proceed?" \
+    "no" \
+    "Rerun with QUICKSTART_ASSUME_YES=1 make quickstart-pdf-corpus, or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." \
+  ; then
     echo "ERROR: full PDF draft was not approved" >&2
     echo "Rerun with QUICKSTART_ASSUME_YES=1 or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." >&2
     exit 2
@@ -658,6 +704,8 @@ track_b_draft() {
     DRAFT_VLLM_PORT="$QS_DRAFT_VLLM_PORT" \
     DRAFT_VLLM_GPU_MEMORY_UTILIZATION="$QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION" \
     DRAFT_VLLM_MAX_MODEL_LEN="$QS_DRAFT_VLLM_MAX_MODEL_LEN" \
+    DRAFT_VLLM_CPU_OFFLOAD_GB="$QS_DRAFT_VLLM_CPU_OFFLOAD_GB" \
+    DRAFT_VLLM_KV_OFFLOADING_SIZE_GB="$QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB" \
     DRAFT_VLLM_DTYPE="$QS_DRAFT_VLLM_DTYPE" \
     DRAFT_VLLM_QUANTIZATION="$QS_DRAFT_VLLM_QUANTIZATION" \
     DRAFT_VLLM_STARTUP_TIMEOUT="$QS_DRAFT_VLLM_STARTUP_TIMEOUT" \
@@ -773,7 +821,11 @@ track_c_draft() {
   if [ -n "$QS_CORPUS_RESUME" ]; then
     result "resuming interrupted bundle: $(rel_path "$QS_CORPUS_RESUME")"
   fi
-  if ! prompt_yes_no "The next draft step is expected to take about ${stats##*, }. Proceed?" "no"; then
+  if ! prompt_yes_no \
+    "The next draft step is expected to take about ${stats##*, }. Proceed?" \
+    "no" \
+    "Rerun with QUICKSTART_ASSUME_YES=1 make quickstart-corpus, or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." \
+  ; then
     echo "ERROR: full corpus draft was not approved" >&2
     echo "Rerun with QUICKSTART_ASSUME_YES=1 or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." >&2
     exit 2
@@ -798,6 +850,8 @@ track_c_draft() {
     DRAFT_VLLM_PORT="$QS_DRAFT_VLLM_PORT" \
     DRAFT_VLLM_GPU_MEMORY_UTILIZATION="$QS_DRAFT_VLLM_GPU_MEMORY_UTILIZATION" \
     DRAFT_VLLM_MAX_MODEL_LEN="$QS_DRAFT_VLLM_MAX_MODEL_LEN" \
+    DRAFT_VLLM_CPU_OFFLOAD_GB="$QS_DRAFT_VLLM_CPU_OFFLOAD_GB" \
+    DRAFT_VLLM_KV_OFFLOADING_SIZE_GB="$QS_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB" \
     DRAFT_VLLM_DTYPE="$QS_DRAFT_VLLM_DTYPE" \
     DRAFT_VLLM_QUANTIZATION="$QS_DRAFT_VLLM_QUANTIZATION" \
     DRAFT_VLLM_STARTUP_TIMEOUT="$QS_DRAFT_VLLM_STARTUP_TIMEOUT" \

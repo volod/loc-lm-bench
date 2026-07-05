@@ -280,6 +280,8 @@ class BackendMetadata(TypedDict, total=False):
     backend: str
     host: str
     gpu_memory_utilization: float
+    cpu_offload_gb: float | None
+    kv_offloading_size_gb: float | None
     n_gpu_layers: int  # llama.cpp GPU/CPU layer split (-1 == all on GPU)
     ctx_size: int | None  # llama.cpp requested context (`-c`)
     served_context: int | None

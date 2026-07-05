@@ -9,6 +9,7 @@ from llb.inference.generate import (
     bucket_vram_mb_to_tier,
     generate_serving_configs,
     load_manifest,
+    select_host_gemma4_target,
 )
 from llb.paths import PROJECT_ROOT
 
@@ -68,7 +69,14 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     assert (out / "serve_gemma_4_12b_vllm.sh").exists()
     vllm_cfg = (out / "run_eval_gemma_4_12b_vllm.yaml").read_text(encoding="utf-8")
     assert "gpu_memory_utilization: 0.85" in vllm_cfg
-    assert "max_model_len: 8192" in vllm_cfg
+    assert "max_model_len: 16384" in vllm_cfg
+    assert "cpu_offload_gb: 16" in vllm_cfg
+    assert "kv_offloading_size_gb: 32" in vllm_cfg
+    vllm_serve = (out / "serve_gemma_4_12b_vllm.sh").read_text(encoding="utf-8")
+    assert "--cpu-offload-gb 16" in vllm_serve
+    assert "--kv-offloading-size 32" in vllm_serve
+    assert "${VLLM_USE_FLASHINFER_SAMPLER:-0}" in vllm_serve
+    assert "${{" not in vllm_serve
     serve = (out / "serve_gemma_4.sh").read_text(encoding="utf-8")
     assert "ollama pull" in serve
     gemma = (out / "run_eval_gemma_4.yaml").read_text(encoding="utf-8")
@@ -78,6 +86,25 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     assert "backend: ollama" in mistral
     assert "model: mistral-small3.1:24b" in mistral
     assert (out / "serve_mistral.sh").exists()
+
+
+def test_select_host_gemma4_target_prefers_cuda_12b_on_16gb() -> None:
+    row = select_host_gemma4_target(gpu_gb=16)
+    assert row["target"] == "gemma-4-12b-vllm"
+    assert row["backend"] == "vllm"
+    assert row["model"] == "google/gemma-4-12B-it-qat-w4a16-ct"
+    assert row["gpu_memory_utilization"] == 0.85
+    assert row["max_model_len"] == 16384
+    assert row["cpu_offload_gb"] == 16
+    assert row["kv_offloading_size_gb"] == 32
+
+
+def test_select_host_gemma4_target_uses_31b_vllm_on_32gb() -> None:
+    row = select_host_gemma4_target(gpu_gb=32)
+    assert row["target"] == "gemma-4"
+    assert row["backend"] == "vllm"
+    assert row["model"] == "google/gemma-4-31B-it-qat-w4a16-ct"
+    assert row["max_model_len"] == 16384
 
 
 def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:

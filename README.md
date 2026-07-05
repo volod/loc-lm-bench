@@ -70,11 +70,12 @@ The all-in-one PDF corpus target intentionally stops before model scoring becaus
 ```sh
 # Purpose: run PDF corpus prep end to end up to the verification gate.
 # Default input: .data/quickstart-pdf-corpus PDFs and all converted markdown documents.
-# Model selection: QUICKSTART_DRAFT_MODEL=auto prompts to use benchmark evidence,
-# run the local benchmark, select a local model, or opt into a frontier litellm route.
+# Model selection: QUICKSTART_DRAFT_MODEL=auto uses the host-fit CUDA Gemma 4 tier target;
+# override with benchmark, a pinned local model, or a frontier litellm route when needed.
 # Output/result: converted markdown, full RAG index, draft goldset, ontology, graph,
 # validation metrics, and a debug log under $DATA_DIR/llb/logs/quickstart/.
-make quickstart-pdf-corpus
+# approve the multi hour draft gate with QUICKSTART_ASSUME_YES=1
+QUICKSTART_ASSUME_YES=1 make quickstart-pdf-corpus
 
 # Purpose: run the same corpus flow in reviewable groups for experiments and debugging.
 # Default input/output/result: same as quickstart-pdf-corpus, split by pipeline stage.
@@ -96,6 +97,15 @@ make quickstart-pdf-corpus-score
 Common model-selection overrides:
 
 ```sh
+# Default: resolve the most capable Gemma 4 target for this CUDA tier.
+QUICKSTART_MODEL_SELECTION=gemma4 make quickstart-pdf-corpus
+
+# On the 16 GiB CUDA tier this selects Gemma 4 12B vLLM with a 16k context,
+# 16 GiB CPU weight offload, and a 32 GiB CPU KV offload buffer.
+
+# Approve the full-draft confirmation gate in the logged all-in-one wrapper.
+QUICKSTART_ASSUME_YES=1 make quickstart-pdf-corpus
+
 # Use benchmark evidence from the committed-goldset quickstart,
 # then draft the full PDF corpus.
 QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus

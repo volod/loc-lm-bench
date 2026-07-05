@@ -51,6 +51,8 @@ def build_vllm_command(
     port: int = 8000,
     gpu_memory_utilization: float = 0.85,
     max_model_len: int | None = None,
+    cpu_offload_gb: float | None = None,
+    kv_offloading_size_gb: float | None = None,
     dtype: str = "auto",
     quantization: str | None = None,
     served_model_name: str | None = None,
@@ -69,6 +71,10 @@ def build_vllm_command(
     ]
     if max_model_len:
         cmd += ["--max-model-len", str(max_model_len)]
+    if cpu_offload_gb:
+        cmd += ["--cpu-offload-gb", f"{cpu_offload_gb:g}"]
+    if kv_offloading_size_gb:
+        cmd += ["--kv-offloading-size", f"{kv_offloading_size_gb:g}"]
     if dtype and dtype != "auto":
         cmd += ["--dtype", dtype]
     if quantization:
@@ -146,6 +152,8 @@ class VllmLauncher(BackendLauncher):
         port: int = 8000,
         gpu_memory_utilization: float = 0.85,
         max_model_len: int | None = None,
+        cpu_offload_gb: float | None = None,
+        kv_offloading_size_gb: float | None = None,
         dtype: str = "auto",
         quantization: str | None = None,
         extra_args: list[str] | None = None,
@@ -162,12 +170,16 @@ class VllmLauncher(BackendLauncher):
                 "backend": "vllm",
                 "host": host,
                 "gpu_memory_utilization": gpu_memory_utilization,
+                "cpu_offload_gb": cpu_offload_gb,
+                "kv_offloading_size_gb": kv_offloading_size_gb,
             },
         )
         self.host = host.rstrip("/")
         self.port = port
         self.gpu_memory_utilization = gpu_memory_utilization
         self.max_model_len = max_model_len
+        self.cpu_offload_gb = cpu_offload_gb
+        self.kv_offloading_size_gb = kv_offloading_size_gb
         self.dtype = dtype
         self.quantization = quantization
         self.extra_args = extra_args
@@ -191,6 +203,8 @@ class VllmLauncher(BackendLauncher):
             port=self.port,
             gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,
+            cpu_offload_gb=self.cpu_offload_gb,
+            kv_offloading_size_gb=self.kv_offloading_size_gb,
             dtype=self.dtype,
             quantization=self.quantization,
             extra_args=self.extra_args,

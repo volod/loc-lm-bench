@@ -504,6 +504,16 @@ def prepare_goldset_draft_cmd(
         min=1,
         help="vLLM --max-model-len when this command launches the server; defaults to --num-ctx when set",
     ),
+    vllm_cpu_offload_gb: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        help="vLLM --cpu-offload-gb when this command launches the server",
+    ),
+    vllm_kv_offloading_size_gb: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        help="vLLM --kv-offloading-size when this command launches the server",
+    ),
     vllm_dtype: str = typer.Option(
         "auto", help="vLLM --dtype when this command launches the server"
     ),
@@ -636,6 +646,8 @@ def prepare_goldset_draft_cmd(
             port=vllm_port,
             gpu_memory_utilization=vllm_gpu_memory_utilization,
             max_model_len=vllm_max_model_len or num_ctx,
+            cpu_offload_gb=vllm_cpu_offload_gb,
+            kv_offloading_size_gb=vllm_kv_offloading_size_gb,
             dtype=vllm_dtype,
             quantization=vllm_quantization,
             startup_timeout=vllm_startup_timeout,

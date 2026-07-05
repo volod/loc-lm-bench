@@ -139,6 +139,24 @@ def test_resume_reads_settings_from_meta(tmp_path):
     assert result.items or result.items == []
 
 
+def test_fresh_run_clears_prior_extraction_journal(tmp_path):
+    corpus = _corpus(tmp_path)
+    cfg = EndpointConfig(kind="local", model="fake")
+    bundle = tmp_path / "bundle"
+    draft_goldset(corpus, cfg, complete=fake_endpoint, max_items=7, out_dir=bundle)
+    assert (bundle / EXTRACTION_JOURNAL_FILENAME).is_file()
+
+    def killing(prompt: str) -> str:
+        if "будує онтологію" in prompt:
+            raise KeyboardInterrupt("fresh run must call extraction again")
+        return fake_endpoint(prompt)
+
+    with pytest.raises(KeyboardInterrupt, match="fresh run"):
+        draft_goldset(corpus, cfg, complete=killing, max_items=7, out_dir=bundle)
+    assert (bundle / EXTRACTION_JOURNAL_META_FILENAME).is_file()
+    assert not (bundle / EXTRACTION_JOURNAL_FILENAME).exists()
+
+
 def test_resume_without_meta_raises(tmp_path):
     corpus = _corpus(tmp_path)
     cfg = EndpointConfig(kind="local", model="fake")
