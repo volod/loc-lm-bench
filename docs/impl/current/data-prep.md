@@ -153,17 +153,17 @@ inventory export was curated with:
 
 ```bash
 make curate-drafts CURATE_KIND=inventory \
-  CURATE_INPUTS="$DATA_DIR/quickstart-pdf-corpus-goods-md/nlmg-inventory-goods.json" \
-  CURATE_OUT="$DATA_DIR/quickstart-pdf-corpus-goods-md/nlmg-inventory-goods.curated.json" \
-  CURATE_CORPUS="$DATA_DIR/quickstart-pdf-corpus-goods-md"
+  CURATE_INPUTS="$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.json" \
+  CURATE_OUT="$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.json" \
+  CURATE_CORPUS="$DATA_DIR/quickstart-pdf-corpus-md"
 ```
 
 Output:
-`$DATA_DIR/quickstart-pdf-corpus-goods-md/nlmg-inventory-goods.curated.json` and
-`$DATA_DIR/quickstart-pdf-corpus-goods-md/nlmg-inventory-goods.curated.curation_report.json`.
-The run loaded 266 inventory document entries, kept 5 staged documents, and retained 647 topics,
-206 entities, 155 relations, 121 numeric facts, 276 sensitive-topic labels, and 111 cross-document
-links. The report recorded 65 repairs and 762 invalid quote-grounding failures, all from quotes
+`$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.json` and
+`$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.curation_report.json`.
+The run loaded inventory document entries, kept staged documents, and retained topics,
+entities, relations, numeric facts, sensitive-topic labels, and cross-document
+links. The report recorded repairs and invalid quote-grounding failures, all from quotes
 that were not exact substrings of the staged markdown corpus.
 
 Prompt 02 (`docs/guides/data-prep/external-service-prompts/02-goldset-draft.md`) documents how to
