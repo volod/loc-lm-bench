@@ -232,8 +232,10 @@ Only then open the service:
 Service notes:
 
 - **NotebookLM** is grounded in the uploaded sources by design, which suits inventory and QA
-  drafting; ask it to output the same JSON shapes. It is more conversational -- restate the
-  "raw JSON only, one code block" instruction if it adds prose.
+  drafting; ask it to output the same JSON shapes. It is more conversational -- paste the
+  manifest doc-id list and state that every `doc` and `cross_document[].docs` value must be the
+  staged `.md`/`.txt` id from the manifest, not the original PDF name or NotebookLM source title.
+  Restate the "raw JSON only, one code block" instruction if it adds prose.
 - **Claude / ChatGPT Projects** keep the instructions and files across chats in the project, so
   you can run `01`-`04` as separate chats without re-uploading.
 
@@ -243,6 +245,24 @@ Service notes:
    service. Save the JSON as `inventory.json`. This is your coverage plan -- the external
    analogue of the local ontology extraction. With several services, merge their inventories
    into one wider plan: `make curate-drafts CURATE_KIND=inventory`.
+   For NotebookLM continuation batches, prefer saving each reply to its own file. If you keep
+   a single file, make it a valid JSON array of complete inventory response objects:
+
+   ```json
+   [
+     {
+       "documents": [],
+       "cross_document": []
+     },
+     {
+       "documents": [],
+       "cross_document": []
+     }
+   ]
+   ```
+
+   Do not paste several JSON objects back to back without commas. Do not use original PDF names
+   in `doc`; use the staged ids such as `pdf-3c3a452a8e9c.md`.
 2. Run [`02`](external-service-prompts/02-goldset-draft.md),
    [`03`](external-service-prompts/03-chain-questions.md), and
    [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
@@ -281,6 +301,8 @@ What it does (kinds: `squad`, `grounded`, `security`, `chains`, `inventory`; com
 
 - **merges** raw exports -- whole JSON files, replies with fenced code blocks, or JSONL -- from
   any number of services and batches;
+- **accepts inventory batch arrays** for `CURATE_KIND=inventory`: one file may contain a top-level
+  array of complete prompt-01 response objects, useful for NotebookLM "continue" sessions;
 - **repairs** near-verbatim quotes: an answer/context/grounding quote that differs from the
   corpus only by whitespace or case is re-snapped to the exact corpus text (and a wrong `title`
   is corrected to the document where the context was actually found);

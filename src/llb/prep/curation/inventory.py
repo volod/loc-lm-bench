@@ -57,6 +57,32 @@ def _ground_quote(
     return exact
 
 
+def _iter_inventory_objects(
+    value: Any, source: str, report: CurationReport
+) -> list[dict[str, Any]]:
+    """Return inventory response objects from one parsed export value.
+
+    NotebookLM continuation sessions are often saved as one JSON array of complete response
+    objects: [{batch 1 inventory}, {batch 2 inventory}, ...]. The inventory curator treats that as
+    equivalent to separate files while keeping other artifact kinds' array handling unchanged.
+    """
+    if isinstance(value, dict):
+        return [value]
+    if not isinstance(value, list):
+        report.reject_invalid("inventory", source, "inventory export is not an object")
+        return []
+
+    objects: list[dict[str, Any]] = []
+    for idx, item in enumerate(value, 1):
+        if isinstance(item, dict):
+            objects.append(item)
+        else:
+            report.reject_invalid(
+                f"inventory batch {idx}", source, "inventory array entry is not an object"
+            )
+    return objects
+
+
 def _merge_entities(
     doc: dict[str, Any],
     entities: list[Any],
@@ -148,65 +174,64 @@ def curate_inventory(
         source = str(path)
         loaded = 0
         for value in load_json_documents(path):
-            if not isinstance(value, dict):
-                continue
-            for raw_doc in value.get("documents", []):
-                if not isinstance(raw_doc, dict) or not str(raw_doc.get("doc", "")).strip():
-                    report.reject_invalid("document", source, "missing doc name")
-                    continue
-                loaded += 1
-                name = str(raw_doc["doc"]).strip()
-                doc_text = corpus_texts.get(name) if corpus_texts is not None else None
-                if corpus_texts is not None and doc_text is None:
-                    report.reject_invalid(name, source, "document not in corpus")
-                    continue
-                doc = docs.setdefault(
-                    name,
-                    {
-                        "doc": name,
-                        "topics": [],
-                        "entities": [],
-                        "relations": [],
-                        "numeric_facts": [],
-                        "sensitive_topics": [],
-                    },
-                )
-                _merge_labels(doc["topics"], raw_doc.get("topics", []))
-                _merge_labels(doc["sensitive_topics"], raw_doc.get("sensitive_topics", []))
-                _merge_entities(doc, raw_doc.get("entities", []), doc_text, source, report)
-                _merge_keyed_quotes(
-                    doc,
-                    "relations",
-                    raw_doc.get("relations", []),
-                    ("subject", "relation", "object"),
-                    doc_text,
-                    source,
-                    report,
-                )
-                _merge_keyed_quotes(
-                    doc,
-                    "numeric_facts",
-                    raw_doc.get("numeric_facts", []),
-                    ("fact",),
-                    doc_text,
-                    source,
-                    report,
-                )
-            for raw_link in value.get("cross_document", []):
-                if not isinstance(raw_link, dict):
-                    continue
-                key = normalize_text(str(raw_link.get("entity_or_topic", "")))
-                if not key:
-                    continue
-                link = cross.setdefault(
-                    key,
-                    {
-                        "entity_or_topic": str(raw_link["entity_or_topic"]).strip(),
-                        "docs": [],
-                        "note": str(raw_link.get("note", "")),
-                    },
-                )
-                link["docs"] = _merge_labels(link["docs"], raw_link.get("docs", []))
+            for value in _iter_inventory_objects(value, source, report):
+                for raw_doc in value.get("documents", []):
+                    if not isinstance(raw_doc, dict) or not str(raw_doc.get("doc", "")).strip():
+                        report.reject_invalid("document", source, "missing doc name")
+                        continue
+                    loaded += 1
+                    name = str(raw_doc["doc"]).strip()
+                    doc_text = corpus_texts.get(name) if corpus_texts is not None else None
+                    if corpus_texts is not None and doc_text is None:
+                        report.reject_invalid(name, source, "document not in corpus")
+                        continue
+                    doc = docs.setdefault(
+                        name,
+                        {
+                            "doc": name,
+                            "topics": [],
+                            "entities": [],
+                            "relations": [],
+                            "numeric_facts": [],
+                            "sensitive_topics": [],
+                        },
+                    )
+                    _merge_labels(doc["topics"], raw_doc.get("topics", []))
+                    _merge_labels(doc["sensitive_topics"], raw_doc.get("sensitive_topics", []))
+                    _merge_entities(doc, raw_doc.get("entities", []), doc_text, source, report)
+                    _merge_keyed_quotes(
+                        doc,
+                        "relations",
+                        raw_doc.get("relations", []),
+                        ("subject", "relation", "object"),
+                        doc_text,
+                        source,
+                        report,
+                    )
+                    _merge_keyed_quotes(
+                        doc,
+                        "numeric_facts",
+                        raw_doc.get("numeric_facts", []),
+                        ("fact",),
+                        doc_text,
+                        source,
+                        report,
+                    )
+                for raw_link in value.get("cross_document", []):
+                    if not isinstance(raw_link, dict):
+                        continue
+                    key = normalize_text(str(raw_link.get("entity_or_topic", "")))
+                    if not key:
+                        continue
+                    link = cross.setdefault(
+                        key,
+                        {
+                            "entity_or_topic": str(raw_link["entity_or_topic"]).strip(),
+                            "docs": [],
+                            "note": str(raw_link.get("note", "")),
+                        },
+                    )
+                    link["docs"] = _merge_labels(link["docs"], raw_link.get("docs", []))
         report.sources[source] = loaded
 
     report.loaded = sum(report.sources.values())

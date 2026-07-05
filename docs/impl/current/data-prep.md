@@ -125,6 +125,9 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
 (Artifact D, review-only), `inventory` (merged coverage plan for the drafting prompts). Behavior:
 
 - lenient loading: whole JSON files, raw replies with fenced code blocks, or JSONL;
+- inventory batch arrays: `CURATE_KIND=inventory` also accepts one top-level JSON array of complete
+  prompt-01 response objects, so NotebookLM "continue" sessions can be saved as
+  `[{response 1}, {response 2}, ...]` in a single file;
 - verbatim repair via `frontier.ground_span`: near-verbatim answers/contexts/grounding quotes are
   re-snapped to exact corpus text when `CURATE_CORPUS=<staged-dir>` is set, and a wrong SQuAD
   `title` is corrected to the document where the context was found;
@@ -143,6 +146,30 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
   per-reason counts.
 
 Unit coverage: `tests/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
+
+NotebookLM inventory-array coverage is implemented in `src/llb/prep/curation/inventory.py` and
+covered by `test_inventory_accepts_array_of_response_objects`. The goods quickstart NotebookLM
+inventory export was curated with:
+
+```bash
+make curate-drafts CURATE_KIND=inventory \
+  CURATE_INPUTS="$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.json" \
+  CURATE_OUT="$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.json" \
+  CURATE_CORPUS="$DATA_DIR/quickstart-pdf-corpus-md"
+```
+
+Output:
+`$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.json` and
+`$DATA_DIR/quickstart-pdf-corpus-md/nlm-inventory.curated.curation_report.json`.
+The run loaded inventory document entries, kept staged documents, and retained topics,
+entities, relations, numeric facts, sensitive-topic labels, and cross-document
+links. The report recorded repairs and invalid quote-grounding failures, all from quotes
+that were not exact substrings of the staged markdown corpus.
+
+Prompt 02 (`docs/guides/data-prep/external-service-prompts/02-goldset-draft.md`) documents how to
+map a large curated inventory into a drafting prompt: extract a per-document JSON slice with `jq`,
+paste that slice into `COVERAGE PLAN`, and use bounded array windows for section-like batches when a
+single document's inventory is too large for one chat turn.
 
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system

@@ -16,7 +16,8 @@ DOC = (
     "Розділ 1. Загальні положення про облік матеріальних цінностей.\n"
     "Відповідальною особою призначається начальник служби. "
     "Передача здійснюється протягом п'яти робочих днів. "
-    "Акт приймання складається у трьох примірниках."
+    "Акт приймання складається у трьох примірниках. "
+    "Відповідальною особою призначається головний бухгалтер."
 )
 
 
@@ -530,6 +531,64 @@ def test_inventory_merge_normalizes_types_and_grounds_quotes(tmp_path, corpus):
     assert link["docs"] == ["doc-a.md", "doc-b.md"]
     reasons = [r["reason"] for r in report.invalid]
     assert "document not in corpus" in reasons and "quote not found in document" in reasons
+
+
+def test_inventory_accepts_array_of_response_objects(tmp_path, corpus):
+    """NotebookLM continuation batches may be saved as [{response 1}, {response 2}, ...]."""
+    batch1 = {
+        "documents": [
+            {
+                "doc": "doc-a.md",
+                "topics": ["облік цінностей"],
+                "entities": [
+                    {
+                        "name": "головний бухгалтер",
+                        "type": "PERSON",
+                        "mentions": 2,
+                        "quote": "Відповідальною особою призначається головний бухгалтер",
+                    }
+                ],
+                "relations": [],
+                "numeric_facts": [],
+                "sensitive_topics": [],
+            }
+        ],
+        "cross_document": [],
+    }
+    batch2 = {
+        "documents": [
+            {
+                "doc": "doc-a.md",
+                "topics": ["акти приймання"],
+                "entities": [],
+                "relations": [],
+                "numeric_facts": [
+                    {
+                        "fact": "акт приймання складається у трьох примірниках",
+                        "quote": "Акт приймання складається у трьох примірниках.",
+                    }
+                ],
+                "sensitive_topics": ["матеріальна відповідальність"],
+            }
+        ],
+        "cross_document": [
+            {"entity_or_topic": "акт приймання", "docs": ["doc-a.md"], "note": "same doc"}
+        ],
+    }
+    path = tmp_path / "notebooklm-inventory.json"
+    path.write_text(json.dumps([batch1, batch2], ensure_ascii=False), encoding="utf-8")
+
+    payload, report = curation.curate("inventory", [path], corpus_root=corpus)
+
+    assert report.sources[str(path)] == 2
+    assert report.loaded == 2
+    assert len(payload["documents"]) == 1
+    doc = payload["documents"][0]
+    assert doc["topics"] == ["облік цінностей", "акти приймання"]
+    assert len(doc["entities"]) == 1
+    assert len(doc["numeric_facts"]) == 1
+    assert doc["sensitive_topics"] == ["матеріальна відповідальність"]
+    assert payload["cross_document"][0]["docs"] == ["doc-a.md"]
 
 
 # --- output writing ---------------------------------------------------------------------------
