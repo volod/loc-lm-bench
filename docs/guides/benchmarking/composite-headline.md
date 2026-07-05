@@ -12,6 +12,22 @@ The headline is allowed only when every required category for a model is:
 - backed by a per-case objective series so a CI can be recomputed after reload;
 - stamped as human verification gate-verified with a valid verification reference.
 
+## At a glance
+
+```text
+1. verify category data [HUMAN]  verify-sample/review/accept per category bundle
+                                 [gate: each bundle has a valid verification reference]
+2. run the categories + preflight  make composite-headline MODEL=<id> BACKEND=<backend>
+                                 [chains bench-* --data-verified, then bench-composite]
+3. read the preflight            [gate: no missing-tier / unverified / missing-CI blockers]
+4. publish                       llb board, only after a clean preflight
+```
+
+The human actions are the per-category verification reviews (step 1) and freezing the cohort
+(model ids, bundles, judge policy) before step 2. Everything else fails closed: an invalid
+verification reference stops a category before model calls, and `bench-composite` refuses a
+headline while any blocker remains.
+
 ## Weights
 
 The first composite is category suite-only. It uses the spec taxonomy proportions

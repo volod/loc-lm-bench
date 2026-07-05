@@ -4,8 +4,8 @@ A step-by-step manual for the parts of LLM evaluation that **no AI service can l
 do for you**, with the essential papers, manuals, and a how-to-understand explanation for each.
 
 These are not project bookkeeping -- they are the three places where *human ground truth* is the
-whole point of the measurement. The design rationale is in the [design spec](../design/spec.md),
-and the current implementation map is in [current.md](../impl/current.md). This manual turns those
+whole point of the measurement. The design rationale is in the [design spec](../../design/spec.md),
+and the current implementation map is in [current.md](../../impl/current.md). This manual turns those
 into runnable procedures.
 
 ## Why a human is irreducible here (read this first)
@@ -62,7 +62,7 @@ ranks alone. The decision travels in the run manifest.
 - **The bias you are guarding against.** The judge is a local Gemma-family model and much of the
   candidate pool is also Gemma-family, so the judge may self-prefer Gemma answers. Calibration is
   one of four mitigations (gate + objective weight + disclosure + an optional non-Gemma cross-check
-  judge). Read the bias disclosure in [`current.md`](../impl/current.md) before you rate.
+  judge). Read the bias disclosure in [`current.md`](../../impl/current.md) before you rate.
 
 ### Step-by-step procedure
 The tooling provides the statistics, gate, worksheet pre-fill, and scoring. Your job is the human
@@ -71,7 +71,7 @@ column. Everything is offline except generating the worksheet, which needs a run
 1. **Stand up the judge endpoint.** On a 16 GB box a 12B judge usually cannot co-reside with a vLLM
    candidate; use GGUF/CPU offload, a smaller test judge, or another local host while generating
    the worksheet. See the [local judge guide](judge-experiments.md) and the judge tier table in
-   [`current.md`](../impl/current.md).
+   [`current.md`](../../impl/current.md).
 
 2. **Pre-fill the worksheet** (fills `model_answer` and an UNGATED `judge_rating`; leaves
    `human_rating` blank). The judge runs ungated here on purpose -- calibration measures agreement,
@@ -148,7 +148,7 @@ recorded in the manifest. The engine, prompts, gate, and worksheet are handled b
 `src/llb/judge/rate.py` (the interactive rater), `src/llb/scoring/judge.py` (the gate + bias
 note). The operator walkthrough for all three commands -- and the new-goldset / text-corpus-draft
 cases -- is the [calibration-tooling manual](calibration-tooling.md); see also the
-[data-prep guide](data-prep.md) and [judge-experiments guide](judge-experiments.md).
+[data-prep guide](../data-prep/data-prep.md) and [judge-experiments guide](judge-experiments.md).
 
 ---
 
@@ -159,10 +159,10 @@ Approving AI-drafted artifacts and confirming facts only you know:
 
 1. The AI-drafted **text-analysis scoring schema** is approved (thresholds accepted as proposed),
    recorded at the top of
-   [`docs/design/text-analysis-schema.md`](../design/text-analysis-schema.md).
+   [`docs/design/text-analysis-schema.md`](../../design/text-analysis-schema.md).
 2. The AI-drafted **knowledge-graph ontology schema** (the 13-type closed node vocabulary + caps)
    and the **GraphRAG scope** are approved, recorded at the top of
-   [`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md).
+   [`docs/design/graph-ontology-schema.md`](../../design/graph-ontology-schema.md).
 3. Confirm the **corpus facts** only you have: whether text-analysis reference answers already
    exist or must be authored, and which corpus is real vs synthetic. The two are reported
    separately and must never be merged.
@@ -184,7 +184,7 @@ Approving AI-drafted artifacts and confirming facts only you know:
 ### Step-by-step: how to do a schema sign-off
 The text-analysis schema and the graph ontology plus GraphRAG scope are the reference examples:
 `docs/design/text-analysis-schema.md` and
-[`docs/design/graph-ontology-schema.md`](../design/graph-ontology-schema.md). Kept here as the
+[`docs/design/graph-ontology-schema.md`](../../design/graph-ontology-schema.md). Kept here as the
 reusable template, the shape is always:
 
 1. **Read** the proposal doc + its executable form (the engine is short) and run its tests if you
@@ -295,8 +295,8 @@ question-answering gold set, every evaluation category, and the graph ontology d
    ```
 
    Canonical-item *replacement* (not a boolean-only flip) is what prevents a reused ID from
-   certifying changed content. See the [gold-set-from-scratch guide](goldset-from-scratch.md) for
-   the ledger mechanics.
+   certifying changed content. See the
+   [gold-set-from-scratch guide](../data-prep/goldset-from-scratch.md) for the ledger mechanics.
 
 ### Done when
 A documented stratified sample passes the four checks and the accepted items are flipped to
@@ -322,7 +322,7 @@ review / accept tooling), `src/llb/goldset/validate.py` (the structural gate),
 verifies), `src/llb/prep/verified_ledger.py` (the adoption mechanism). The operator walkthrough for
 all three commands -- real-corpus and synthetic bundles -- is the
 [verification-tooling manual](verification-tooling.md); see also the
-[gold-set-from-scratch guide](goldset-from-scratch.md).
+[gold-set-from-scratch guide](../data-prep/goldset-from-scratch.md).
 
 ---
 
@@ -357,7 +357,7 @@ to accept a dataset":
 - No judged headline trusted before calibration cleared rho `>= 0.6`; otherwise objective-only
   ranking applies.
 
-The settled decisions behind every item above live in the [design spec](../design/spec.md) and
-[`current/scope-boundaries.md`](../impl/current/scope-boundaries.md); the categories these gates
+The settled decisions behind every item above live in the [design spec](../../design/spec.md) and
+[`current/scope-boundaries.md`](../../impl/current/scope-boundaries.md); the categories these gates
 protect are in the
-[evaluation-categories learning path](learning-path-evaluation-categories.md).
+[evaluation-categories learning path](../learning-path/learning-path-evaluation-categories.md).

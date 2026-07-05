@@ -110,7 +110,7 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   sweep, every recommendation line names its numeric evidence; the probe mode is resumable via
   the `durable-eval-runner`; `make ci` green.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) recommendation
-  section; [`docs/guides/mlflow-analysis.md`](../guides/mlflow-analysis.md).
+  section; [`docs/guides/benchmarking/mlflow-analysis.md`](../guides/benchmarking/mlflow-analysis.md).
 
 ### 8. context-policy-bench
 
@@ -146,7 +146,7 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   policies for the fixed model; provenance records policy, prompt-system ids, and chain set
   digest; verified-data stamping matches the category suite rules; `make ci` green.
 - Documentation target: [extended workflows](current/extended-workflows.md);
-  [`docs/guides/prompt-system-rag.md`](../guides/prompt-system-rag.md).
+  [`docs/guides/benchmarking/prompt-system-rag.md`](../guides/benchmarking/prompt-system-rag.md).
 
 ### 10. corpus-chunking-strategies
 
@@ -184,7 +184,7 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   the fixture; a `compare-retrieval` run ranks the new strategies against `markdown`/`semantic` on
   the committed gold set with recall@k and MRR.
 - Documentation target: [RAG core](current/rag-core.md) chunking section;
-  [`docs/guides/run-rag-core.md`](../guides/run-rag-core.md).
+  [`docs/guides/benchmarking/run-rag-core.md`](../guides/benchmarking/run-rag-core.md).
 
 ### 11. verification-gate-adjudication
 
@@ -220,8 +220,9 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   unit-tested against a synthetic reviewed sample; a reused id can still never certify changed
   content (adoption-through-ledger test preserved).
 - Documentation target: [data prep](current/data-prep.md) verification gate;
-  [`docs/guides/verification-tooling.md`](../guides/verification-tooling.md) and
-  [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md).
+  [`docs/guides/human-tooling/verification-tooling.md`](../guides/human-tooling/verification-tooling.md)
+  and
+  [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
 ### 12. hybrid-retrieval-uk
 
@@ -275,7 +276,7 @@ metadata-filter seam (its governance fields stand alone), 11 after task 3's code
   `--retrieval-mode hybrid` with a clear message; sweep cells fingerprint the fusion knobs so grid
   points resume independently.
 - Documentation target: [RAG core](current/rag-core.md) retrieval store and sweep sections;
-  [`docs/guides/run-rag-core.md`](../guides/run-rag-core.md).
+  [`docs/guides/benchmarking/run-rag-core.md`](../guides/benchmarking/run-rag-core.md).
 
 ### 13. rerank-context-order
 
@@ -547,7 +548,7 @@ finish task 7's human review before agent task 8's acceptance run.
   with parse rate at least matching the local drafter; the comparison report ranks both lanes
   on kept-yield and accept rate.
 - Documentation target: [data prep](current/data-prep.md) frontier lane notes;
-  [`docs/guides/goldset-from-scratch.md`](../guides/goldset-from-scratch.md).
+  [`docs/guides/data-prep/goldset-from-scratch.md`](../guides/data-prep/goldset-from-scratch.md).
 
 ### 3. verify-cli-throughput
 
@@ -578,8 +579,8 @@ finish task 7's human review before agent task 8's acceptance run.
   40-item review pass on the quickstart draft with the measured items-per-hour noted in the
   current docs.
 - Documentation target: [data prep](current/data-prep.md) verification gate;
-  [`docs/guides/human-in-the-loop-evaluation.md`](../guides/human-in-the-loop-evaluation.md)
-  and [`docs/guides/verification-tooling.md`](../guides/verification-tooling.md).
+  [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md)
+  and [`docs/guides/human-tooling/verification-tooling.md`](../guides/human-tooling/verification-tooling.md).
 
 ### 5. security-corpus-probes
 
@@ -613,7 +614,7 @@ finish task 7's human review before agent task 8's acceptance run.
   bias-pair consistency with bootstrap CIs; unverified derived sets are rejected from
   composite/headline paths.
 - Documentation target: [category suite](current/category-benchmark-suite.md) security section;
-  [`docs/guides/learning-path-security.md`](../guides/learning-path-security.md).
+  [`docs/guides/learning-path/learning-path-security.md`](../guides/learning-path/learning-path-security.md).
 
 ### 7. chain-goldset-generation
 

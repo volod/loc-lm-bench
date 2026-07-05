@@ -5,12 +5,24 @@ This is the operator manual for the GraphRAG backend verification that answers o
 It scores `recall@k` / `MRR` for `{faiss, graph/local_khop, graph/global_community}` over
 the SAME gold set, by the source-span metric, so the three are directly comparable
 (the manifest already records backend + strategy). The *why* of GraphRAG lives in
-[`current.md`](../impl/current.md) (GraphRAG backend); this page is the *how*,
+[`current.md`](../../impl/current.md) (GraphRAG backend); this page is the *how*,
 plus the first real-host result.
 
 Answer-quality comparison (the model's answers, not just retrieval) rides the normal
 `run-eval --retrieval-backend ...` path because it needs a model; this tool isolates the
 model-independent **retrieval** signal, which is CI-provable from fakes.
+
+## At a glance
+
+    1. build the FAISS baseline   make build-index CORPUS=<corpus-dir>
+    2. build the graph store      llb build-graph --extract-model <capable-model> ...
+                                  [needs a local endpoint; disable thinking on reasoning models]
+    3. compare                    make compare-retrieval GOLDSET=<goldset> RAG_K=10
+                                  [recall@k + MRR per backend, same source-span metric]
+
+The human decision sits in step 2 (pick a capable extraction model and the right serving knobs)
+and in reading step 3: GraphRAG pays off on multi-hop narrative corpora, not single-span factoid
+lookup -- see the [reference result](#reference-factoid-corpus-result) before concluding.
 
 ## The two commands
 

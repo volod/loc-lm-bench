@@ -76,9 +76,9 @@ Projects, Gemini/NotebookLM, ChatGPT Projects) and imported either as SQuAD-shap
 (`make import-external-draft`, Artifact B). Restricted or private corpora stay on the local ontology
 pipeline -- egress is never the default. The workflow, per-service setup, copy-paste prompts, and the
 exact artifact shapes are in
-[`docs/guides/external-ai-service-artifacts.md`](../../guides/external-ai-service-artifacts.md),
-[`docs/guides/external-service-prompts/`](../../guides/external-service-prompts/README.md), and
-the [external-service draft contract](../../design/external-draft-contract.md).
+[`docs/guides/data-prep/external-ai-service-artifacts.md`](../../guides/data-prep/external-ai-service-artifacts.md),
+[`docs/guides/data-prep/external-service-prompts/`](../../guides/data-prep/external-service-prompts/README.md),
+and the [external-service draft contract](../../design/external-draft-contract.md).
 
 ### Grounded-JSONL import (Artifact B -> draft bundle)
 
@@ -259,7 +259,8 @@ PyMuPDF4LLM. The three PDFs that had zero embedded text were recovered by Doclin
 | `pdf-3db280e14095.md` | 59 | 11,296 | 58 |
 
 The PDF quickstart validation flow is documented in
-[`docs/guides/quickstart-pdf-corpus.md`](../../guides/quickstart-pdf-corpus.md). The source PDFs are
+[`docs/guides/quickstart/quickstart-pdf-corpus.md`](../../guides/quickstart/quickstart-pdf-corpus.md).
+The source PDFs are
 under `.data/quickstart-pdf-corpus/`, the full converted markdown corpus is under
 `.data/quickstart-pdf-corpus-md/`, and the reviewable draft bundle is under
 `.data/quickstart-pdf-corpus-draft/`. The grouped quickstart wrapper is

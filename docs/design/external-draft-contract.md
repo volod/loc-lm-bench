@@ -7,9 +7,9 @@ is shipped; see [data prep](../impl/current/data-prep.md) grounded-JSONL import.
 This contract defines the exact shapes an operator must obtain when drafting benchmark artifacts
 **outside** this repository with an AI provider service (claude.ai Projects, NotebookLM /
 gemini.google.com/notebook, chatgpt.com/projects). The step-by-step workflow lives in
-[`../guides/external-ai-service-artifacts.md`](../guides/external-ai-service-artifacts.md); the
-copy-paste prompts live in
-[`../guides/external-service-prompts/`](../guides/external-service-prompts/README.md).
+[`../guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md);
+the copy-paste prompts live in
+[`../guides/data-prep/external-service-prompts/`](../guides/data-prep/external-service-prompts/README.md).
 
 The benchmark's goal is unchanged: evaluate **local RAG and local LLM inference**. External
 services only *prepare draft test data*; they never retrieve, answer, judge, or score.
@@ -181,7 +181,7 @@ Placed beside every exported artifact file. Without it the bundle is not importa
   "service_model": "<model name as displayed by the service, with date>",
   "export_date": "2026-07-03",
   "operator": "<who ran the session>",
-  "prompt_pack": "docs/guides/external-service-prompts @ <git commit or date>",
+  "prompt_pack": "docs/guides/data-prep/external-service-prompts @ <git commit or date>",
   "data_classification": "open",
   "corpus_docs": ["pdf-3c3a452a8e9c.md", "pdf-3bc34dd5f5c2.md"],
   "corpus_manifest_sha256": "<sha256 of pdf_corpus_manifest.json when present>",

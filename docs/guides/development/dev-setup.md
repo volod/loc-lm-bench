@@ -1,7 +1,7 @@
 # Dev setup
 
 Requires [uv](https://docs.astral.sh/uv/) (Python 3.13) on any host. On **Debian/Ubuntu**,
-`make venv` installs OS packages from [scripts/apt/](../../scripts/apt/) (`sudo apt-get` when
+`make venv` installs OS packages from [scripts/apt/](../../../scripts/apt/) (`sudo apt-get` when
 needed).
 
     make venv     # apt + .venv + package + extras + .env
@@ -26,7 +26,7 @@ builds; only the OS package step is skipped.
 
 ## Apt dependencies (Debian/Ubuntu)
 
-Lists live under [scripts/apt/](../../scripts/apt/). Install manually with:
+Lists live under [scripts/apt/](../../../scripts/apt/). Install manually with:
 
     make apt-deps                      # production profile (default)
     make apt-deps APT_PROFILE=dev    # dev-only packages (shellcheck)

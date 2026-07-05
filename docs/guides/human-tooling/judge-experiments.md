@@ -9,6 +9,18 @@ The judge remains a diagnostic until its Spearman correlation with human ratings
 configured threshold. A successful smoke experiment validates model connectivity and structured
 output; it does not satisfy that calibration gate.
 
+## At a glance
+
+    1. wire the endpoint     export DEEPEVAL_JUDGE_BASE_URL / _API_KEY / telemetry opt-out
+    2. smoke experiment      make judge-experiment JUDGE_MODEL=<id> JUDGE_BASE_URL=<url>
+                             [gate: three fixed cases score in the expected directions]
+    3. calibration [HUMAN]   make calibration-run -> calibration-rate -> calibration-score
+                             [gate: rho >= 0.6 -- the only thing that promotes the judge]
+
+A passing smoke run means "the judge is wired and returns sane structured output"; only the
+human-rated calibration (step 3, detailed in the
+[calibration-tooling manual](calibration-tooling.md)) can admit the judge into rankings.
+
 ## Setup
 
 Install the project extras and configure a local OpenAI-compatible endpoint:

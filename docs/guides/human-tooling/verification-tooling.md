@@ -14,6 +14,32 @@ a **stratified sample** and accept it, and only then may those items flip to `ve
 and score real models. A clean sample accepts the bundle; a dirty one sends the drafts back.
 Nothing scores a real model until its data clears this gate.
 
+## At a glance
+
+```text
+draft bundle (verified=false)
+  -> 0. validate structure        make validate-goldset    [gate: spans/ids/splits ok]
+  -> 1. draw stratified sample    make verify-sample       [offline, deterministic]
+  -> 2. review each item [HUMAN]  make verify-review       [four checks per item]
+  -> 3. accept + emit ledger      make verify-accept       [gate: reject rate <= tolerance]
+  -> 4. flip via the ledger       ingest_squad --verified-goldset .../accepted/goldset.jsonl
+```
+
+Step-by-step for a real-corpus bundle (details in
+[Case 1](#case-1-a-draft-from-a-real-corpus-the-common-case)):
+
+```bash
+make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus
+make verify-sample  BUNDLE=<bundle> VERIFY_N=30
+make verify-review  VERIFY_WS=<bundle>/verify_sample.csv     # the human step
+make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv VERIFY_TOLERANCE=0.05
+```
+
+Only step 2 is human-paced; everything else is a command. The gates: the structural validate
+must pass before you read anything, and `verify-accept` reports the per-stratum + overall reject
+rate against tolerance -- only individually-accepted items enter the accepted ledger, and only
+ledger items may become `verified=true`.
+
 ## The three commands
 
 | Command | What it does | Needs |
@@ -173,7 +199,7 @@ python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset
 
 The ingester re-adopts those ids by **replacement** (canonical content + grounded spans), which is
 what stops a reused id from certifying changed content. See
-[goldset-from-scratch](goldset-from-scratch.md) for the ledger mechanics.
+[goldset-from-scratch](../data-prep/goldset-from-scratch.md) for the ledger mechanics.
 
 ### Done when
 A documented stratified sample passes the four checks and the accepted items are flipped to
@@ -217,7 +243,7 @@ Practical notes:
   covered (the "document the sample" discipline from *Datasheets for Datasets*).
 - When a verified category bundle is ready for the category suite composite headline,
   rerun that category with `--data-verified --verification-ref <bundle>/sample_manifest.json`,
-  then follow the [composite-headline close-out](composite-headline.md).
+  then follow the [composite-headline close-out](../benchmarking/composite-headline.md).
 
 ### Verification references in category runs
 
@@ -266,5 +292,6 @@ Then rerun the category command with one of:
 
 The *why* and the papers are in the
 [Eval-data verification](human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data)
-section of the human-in-the-loop manual; see also the [data-prep guide](data-prep.md) and the
+section of the human-in-the-loop manual; see also the
+[data-prep guide](../data-prep/data-prep.md) and the
 [calibration-tooling manual](calibration-tooling.md) (its verification-side twin).

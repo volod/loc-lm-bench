@@ -12,6 +12,29 @@ your `human_rating` -- and measure their Spearman rank correlation. `rho >= 0.6`
 judge into the ranking blend; below it the judge stays a demoted diagnostic and objective
 correctness ranks alone. The decision travels in the run manifest.
 
+## At a glance
+
+```text
+verified goldset with a calibration split
+  -> 1. pre-fill worksheet      make calibration-run    [needs candidate + judge endpoints]
+  -> 2. rate each item [HUMAN]  make calibration-rate   [judge column hidden -- rate first]
+  -> 3. score the agreement     make calibration-score  [gate: Spearman rho >= 0.6]
+```
+
+Step-by-step on the committed goldset (details in [Case 1](#case-1-the-canonical-committed-goldset-default)):
+
+```bash
+make calibration-run      # candidate answers + ungated judge ratings -> worksheet
+make calibration-rate     # the human step: 1-5 ratings, judge hidden
+make calibration-score    # rho + bootstrap CI + trust decision
+```
+
+Only step 2 is human-paced, and only step 1 needs a GPU/endpoint. The gate: `rho >= 0.6` admits
+the judge into the ranking blend; a demotion below the gate is the mechanism working, not a bug.
+For your own goldset add `GOLDSET=<path> CAL_NAME=<name>` ([Case 2](#case-2-a-new-goldset-you-built));
+an unverified corpus draft must clear the verification gate first
+([Case 3](#case-3-a-draft-generated-from-a-text-corpus)).
+
 ## The three commands
 
 | Command | What it does | Needs |
@@ -41,7 +64,7 @@ So:
 
 To persist a generated set, copy it into `calibration/` and add its name to `CAL_PERMANENT`. This
 two-root split avoids a brittle `.gitignore` exception -- the whole `calibration/` dir is committed,
-generated sets live elsewhere. See [`calibration/README.md`](../../calibration/README.md).
+generated sets live elsewhere. See [`calibration/README.md`](../../../calibration/README.md).
 
 The worksheet **is** the session state -- every interactive edit rewrites only the human columns,
 merged into the file atomically, so resume and crash-safety are free. Columns:
@@ -164,7 +187,7 @@ designed, not a bug.
 To calibrate against your own set instead of the committed fixture, point `GOLDSET` at a JSONL
 that has a `calibration` split with `verified=true` items. (`run-eval` scores **only**
 `verified=true` items -- an unverified set produces zero calibration rows.) See
-[goldset-from-scratch](goldset-from-scratch.md) for building and splitting one.
+[goldset-from-scratch](../data-prep/goldset-from-scratch.md) for building and splitting one.
 
 Set `CAL_NAME` so the worksheet auto-routes to its own gitignored file under
 `$DATA_DIR/llb/calibration/` (copy it into `calibration/` + add to `CAL_PERMANENT` to persist):

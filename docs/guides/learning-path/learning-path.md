@@ -17,7 +17,7 @@ with RAG, GPU serving, Optuna, or LLM-as-judge evaluation -- those are what this
 - Every stage has a **"In this repo"** pointer so you connect theory to the actual code.
 - You do not need to finish a stage's deep links before moving on -- skim first, return for depth.
 - The fastest way to learn the whole loop is to run `make demo-eval` once (see the
-  [README](../../README.md)) and read the manifest it writes under `.data/llb/`.
+  [README](../../../README.md)) and read the manifest it writes under `.data/llb/`.
 
 ## Syllabus at a glance
 
@@ -122,7 +122,7 @@ How models are ranked, and why the judge is gated.
 [Spearman rank correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
   with a [bootstrap confidence interval](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)).
 - Judge bias: a Gemma-family judge may self-prefer Gemma answers -- this project discloses and
-  gates it (see the [current-state disclosure](../impl/current.md)). This is distinct
+  gates it (see the [current-state disclosure](../../impl/current.md)). This is distinct
   from social, cultural, and political bias, which Stage 9 treats as model behavior to measure
   directly.
 
@@ -265,7 +265,7 @@ action in this repo.
 
 By session 9 you can run the full pipeline, explain every number on the board, and reason about
 the forward plan. From here, the deepest single source is the
-[design spec](../design/spec.md); the [current state](../impl/current.md) maps each
+[design spec](../../design/spec.md); the [current state](../../impl/current.md) maps each
 module to its behavior.
 
 ## A note on the project's philosophy

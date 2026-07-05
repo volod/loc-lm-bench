@@ -6,19 +6,38 @@ real models** -- including the human-assisted steps. The benchmark separates sta
 committed public fixture and never regenerates it, and any runtime import or AI draft stays
 `verified=false` (cannot score a model) until a human accepts it.
 
-The full pipeline, with one `make` shortcut per stage:
+## At a glance
 
-```
-create ─▶ validate ─▶ cross-check ─▶ human verification gate sample-verify ─▶ 
-  §1         §2           §3                §4                    §4.4
+The full pipeline, one `make` shortcut per stage; stages marked `[HUMAN]` need your judgment:
 
-flip via ledger ─▶ (calibrate) ─▶ score
-        §5          run-eval
+```text
+1. create -> 2. validate -> 3. cross-check -> 4. sample-verify [HUMAN] ->
+5. flip via ledger -> 6. calibrate the judge [HUMAN, judged runs only] -> 7. score
 ```
+
+Step-by-step, with the gate each stage must clear (each links to its detailed section below):
+
+1. [Create the items](#1-create-the-items): committed fixture, manual skeleton, or
+   `make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>`. Gate: a gold set + sibling `corpus/`.
+2. [Validate](#2-validate-structural-gate): `make validate-goldset GOLDSET=... CORPUS=...`.
+   Gate: every span resolves, ids unique, splits disjoint.
+3. [Cross-check](#3-cross-check-second-frontier-data-gate):
+   `make cross-check-goldset BUNDLE=... CROSS_CHECK_MODEL=<second model>`. Gate: a SECOND model
+   re-confirms grounding; passing does NOT set `verified=true`.
+4. [Human verification gate](#4-human-verification-gate----human-sample-verify-then-flip-via-the-ledger)
+   `[HUMAN]`: `make verify-sample` -> `make verify-review` -> `make verify-accept`.
+   Gate: reject rate within `VERIFY_TOLERANCE`; only accepted items may flip.
+5. [Flip via the ledger](#44-flip-via-the-ledger-never-hand-edit-the-boolean):
+   `python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset.jsonl`.
+   Never hand-edit the `verified` boolean.
+6. [Calibrate the judge](#5-if-the-run-is-judged-calibrate-the-judge) `[HUMAN, judged runs
+   only]`: `make calibration-run` -> `calibration-rate` -> `calibration-score`.
+   Gate: Spearman `rho >= 0.6` admits the judge; otherwise objective scoring ranks alone.
+7. [Score](#6-score): `make build-index` -> `make run-eval`.
 
 Stages 3-4 are the **human-assisted** part. The detailed human how-to lives in two operator
-manuals this guide links into: [verification tooling](verification-tooling.md)
-(the human verification gate gate) and [calibration tooling](calibration-tooling.md)
+manuals this guide links into: [verification tooling](../human-tooling/verification-tooling.md)
+(the human verification gate gate) and [calibration tooling](../human-tooling/calibration-tooling.md)
 (the judge gate). Everything is offline except the draft/cross-check endpoints and
 the eventual model run.
 
@@ -117,7 +136,7 @@ own drafts is circular.)
 The irreducibly-human stage: verify a **stratified sample** and accept it; only accepted items flip
 to `verified=true`. A clean sample accepts the bundle; a dirty one sends the drafts back. Three
 `make` shortcuts (full how-to + the per-item check legend: the
-[verification-tooling manual](verification-tooling.md)):
+[verification-tooling manual](../human-tooling/verification-tooling.md)):
 
 ```
 make verify-sample  BUNDLE=$BUNDLE VERIFY_N=30            # stratified sample -> verify_sample.csv
@@ -152,7 +171,7 @@ Skip this for objective-only scoring. If a board uses the LLM-as-judge (QA faith
 summarization, agentic trajectory quality, free-form text-analysis), calibrate the judge against
 human ratings on the new set's `calibration` split first -- the judge enters the ranking blend only
 when its Spearman `rho >= 0.6`. Full walkthrough: the
-[calibration-tooling manual](calibration-tooling.md).
+[calibration-tooling manual](../human-tooling/calibration-tooling.md).
 
 ```
 make calibration-run   GOLDSET=<verified-goldset>.jsonl CAL_NAME=<name>  # answers + ungated judge
@@ -194,9 +213,10 @@ SOURCE-SPAN (char offsets, not chunk ids). Only `verified: true` items score mod
 
 ## See also
 
-- [Verification tooling](verification-tooling.md) -- the human verification gate `verify-*`
+- [Verification tooling](../human-tooling/verification-tooling.md) -- the human verification gate `verify-*`
   operator manual (stages 3-4).
-- [Calibration tooling](calibration-tooling.md) -- the judge `calibration-*` operator manual (stage 5).
+- [Calibration tooling](../human-tooling/calibration-tooling.md) -- the judge `calibration-*`
+  operator manual (stage 5).
 - [Data prep](data-prep.md) -- the create-stage commands in brief.
-- [Human-in-the-loop evaluation](human-in-the-loop-evaluation.md) -- the *why* behind the human
-  gates (acceptance sampling, the ground-truth guarantee, the papers).
+- [Human-in-the-loop evaluation](../human-tooling/human-in-the-loop-evaluation.md) -- the *why*
+  behind the human gates (acceptance sampling, the ground-truth guarantee, the papers).

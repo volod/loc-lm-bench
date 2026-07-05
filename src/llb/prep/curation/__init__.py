@@ -10,7 +10,7 @@ One entry point per external-draft contract artifact kind:
 
 `curate()` dispatches by kind and returns `(payload, CurationReport)`; the CLI command is
 `llb curate-drafts` (make: `curate-drafts`). See
-`docs/guides/external-ai-service-artifacts.md` for the workflow position: curation runs after
+`docs/guides/data-prep/external-ai-service-artifacts.md` for the workflow position: curation runs after
 export, before import/validation.
 """
 

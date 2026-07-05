@@ -10,18 +10,23 @@ external AI provider services:
 - **ChatGPT Projects** -- <https://chatgpt.com/projects>
 
 Any other assistant qualifies when it can hold project instructions, ground its answers in
-uploaded files, and return raw JSON -- the per-service setup steps are in the
-[prompt pack README](external-service-prompts/README.md#per-service-setup-one-time-per-corpus-project).
-
-These services support Ukrainian well and can lift the quality and completeness of draft test
-sets. This manual explains **when** you may use them, **exactly what** to produce, and **how** to
-bring the results back into the local benchmark.
+uploaded files, and return raw JSON. These services support Ukrainian well and can lift the
+quality and completeness of draft test sets. This manual explains **when** you may use them,
+**exactly what** to produce, and **how** to bring the results back into the local benchmark.
 
 > **The benchmark's purpose is to evaluate LOCAL RAG and LOCAL LLM inference.** External services
 > are used here only to *draft candidate test data*. They never retrieve, answer, judge, or
 > score. The scored run always happens locally against local models.
 
-## 0. The one rule that gates everything: open data only
+Read this page top to bottom on first use: the [workflow at a glance](#workflow-at-a-glance)
+shows the whole sequence and which steps are yours, the
+[step-by-step command chain](#step-by-step-the-command-chain-and-quality-gates) is the
+copy-paste summary, and the detailed sections after it explain each step. Do NOT jump straight
+into a service's project setup -- steps 1-2 happen locally first, and skipping them (for example
+uploading original PDFs instead of the staged corpus) silently breaks quote re-grounding, and the
+import will later drop most rows.
+
+## The one rule that gates everything: open data only
 
 External AI services are permitted **only for open data** -- documents that are public or have
 been explicitly cleared for third-party processing. Uploading a document to Claude, NotebookLM,
@@ -38,21 +43,121 @@ make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir> DRAFT_MODEL=<local-tag>
 
 The local lane produces the same artifact shapes this manual covers, with **zero data egress**.
 Use it whenever classification is uncertain. This restates the settled
-[data-egress policy](../impl/current/scope-boundaries.md#data-egress).
+[data-egress policy](../../impl/current/scope-boundaries.md#data-egress).
 
 Decision:
 
-```
+```text
 Is EVERY document in the corpus public / cleared for third-party upload?
-├─ No / unsure ─▶ LOCAL flow only (make quickstart-pdf-corpus). Stop; do not read further.
-└─ Yes ─────────▶ External-service flow below is allowed as a drafting aid.
+|-- No / unsure -> LOCAL flow only (make quickstart-pdf-corpus). Stop; do not read further.
+'-- Yes --------> External-service flow below is allowed as a drafting aid.
 ```
 
-## 1. What you produce and where it goes
+## Workflow at a glance
+
+Nine steps; the left column runs on your box, the right column inside the external service.
+Steps marked `[HUMAN]` need your attention and judgment -- everything else is a command.
+
+```text
+LOCAL (your box)                              EXTERNAL SERVICE (open data only)
+------------------------------------------   ------------------------------------------
+1. Stage the corpus: PDFs -> staged .md/.txt
+   + manifest with doc ids  [HUMAN: confirm
+   every document is open data]
+2. Read corpus stats; size the drafting run
+        |
+        |  upload the STAGED files only ->    3. Create project / notebook / Gem; paste
+        |                                        instructions 00; attach staged files +
+        |                                        doc-id list         [HUMAN: per service]
+        |                                     4. Run prompt 01 (inventory), then 02/03/04
+        |                                        in 10-20 item batches  [HUMAN: drive the
+        |  <- export each raw reply              chats, export every reply to a file]
+        v
+5. Write the external_provenance.json sidecar    [HUMAN: required before any import]
+6. Curate: merge + repair + filter + dedup (make curate-drafts)
+7. Import + structural validation (make ingest-squad / import-external-draft /
+   validate-goldset)
+8. Cross-check + human verification gate (make cross-check-goldset, verify-*)
+                                                 [HUMAN: review the stratified sample]
+9. Local scored runs (make build-index -> run-eval / bench-security)
+```
+
+The irreducible human actions are: the open-data decision (step 1), driving the service chats
+(steps 3-4), authoring the provenance sidecar (step 5), and the verification review (step 8).
+Steps 6-7 and 9 are mechanical commands with built-in quality gates.
+
+## Step-by-step: the command chain and quality gates
+
+The condensed chain for an operator who already knows the flow. Each step links to its detailed
+section below; run the steps in order and check each gate before moving on.
+
+1. **Stage the corpus** ([details](#step-1-stage-the-corpus-for-upload)):
+
+   ```bash
+   make pdf-to-markdown PDF_DIR=<pdf-dir> PDF_OUT_DIR=<staged-dir>   # PDFs
+   # or: make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<staged-dir>
+   ```
+
+   Gate: every document open / cleared; keep the manifest and note the doc ids.
+2. **Size the drafting run** ([details](#step-2-read-the-corpus-statistics-and-size-the-run)):
+
+   ```bash
+   ls <staged-dir>/*.md | wc -l && wc -m <staged-dir>/*.md | sort -n
+   ```
+
+   Gate: a per-document item budget exists (roughly one item per 2-4k characters).
+3. **Set up each service** ([details](#step-3-configure-the-service-project)): create the
+   project, paste `00-project-instructions.md`, attach the STAGED files, paste the doc-id list.
+   Gate: the model can name your documents exactly.
+4. **Run the prompts** ([details](#step-4-run-the-prompts-and-export-the-replies)): `01` once per
+   service, then `02`-`04` against the (merged) inventory, in batches of 10-20 items; save every
+   reply to its own file. Gate: each reply is raw JSON in one code block.
+5. **Write the provenance sidecar** ([details](#step-5-write-the-provenance-sidecar)): author
+   `external_provenance.json` beside the exports. Gate: sidecar exists and says
+   `"data_classification": "open"` -- the importer refuses to run without it.
+6. **Curate** ([details](#step-6-curate-the-merged-exports)):
+
+   ```bash
+   make curate-drafts CURATE_KIND=<squad|grounded|security|chains|inventory> \
+     CURATE_INPUTS="<export> <export> ..." CURATE_OUT=<merged> CURATE_CORPUS=<staged-dir>
+   ```
+
+   Gate: read `*.curation_report.json`; a high invalid count from one service means its session
+   drifted -- tighten and redraft.
+7. **Import + validate** ([details](#step-7-import-and-validate-each-artifact)):
+
+   ```bash
+   make ingest-squad SQUAD_JSON=<merged-goldset>          # SQuAD goldset (Artifact A)
+   make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<corpus-dir>
+   # grounded JSONL (Artifact B): make import-external-draft ARTIFACT= CORPUS= SIDECAR=
+   ```
+
+   Gate: skip/drop counts near zero; a high skip count means the model paraphrased.
+8. **Cross-check + human verification gate** ([details](#step-8-human-verification-gate)):
+
+   ```bash
+   make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
+   make verify-sample  BUNDLE=<bundle> VERIFY_N=30
+   make verify-review  VERIFY_WS=<bundle>/verify_sample.csv
+   make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
+   ```
+
+   Gate: reject rate within tolerance; only accepted items flip to `verified: true`.
+9. **Run the local benchmark** ([details](#step-9-produce-local-run-results)):
+
+   ```bash
+   make build-index GOLDSET=<verified.jsonl> CORPUS=<corpus>
+   make run-eval    MODEL=<local-tag> BACKEND=<ollama|vllm|llama.cpp> GOLDSET=<verified.jsonl>
+   make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-tag>
+   ```
+
+   Gate: retrieval `recall@10 >= 0.8` before reading any model ranking.
+
+## What you produce and where it goes
 
 Every artifact below is defined precisely by the
-[external-service draft contract](../design/external-draft-contract.md). The copy-paste prompts
-are in [`external-service-prompts/`](external-service-prompts/README.md).
+[external-service draft contract](../../design/external-draft-contract.md). The copy-paste
+prompts are in [`external-service-prompts/`](external-service-prompts/README.md).
 
 | Artifact | Prompt | Curate (merge/dedup/filter) | Import / run command | Status |
 | --- | --- | --- | --- | --- |
@@ -67,7 +172,7 @@ Session outputs live under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`, ea
 `external_provenance.json` sidecar (contract section 6). Nothing external ever sets
 `verified: true`; every drafted item is reviewed locally before it can score a model.
 
-## 2. Stage the corpus for upload
+## Step 1: Stage the corpus for upload
 
 Upload the **staged corpus text**, not the original PDFs -- the drafting model must quote the same
 text the local RAG index will contain, so quotes re-ground cleanly on import.
@@ -82,7 +187,7 @@ Note the produced `.md` file ids (`pdf-<digest>.md`) and keep `pdf_corpus_manife
 record the doc ids and the manifest sha256 in the sidecar. Upload the `.md`/`.txt` files to the
 service. For a large corpus, upload in themed groups so the model keeps every document in context.
 
-## 2a. Read the corpus statistics and size the drafting run
+## Step 2: Read the corpus statistics and size the run
 
 Before opening the first chat, look at what the staging step produced -- the numbers decide how
 many items to request per document and where the coverage risk is:
@@ -112,7 +217,10 @@ characters. For the whole corpus this lands at roughly 200-600 requested items p
 characters; request the full budget from EACH service you use -- overlap is removed at curation,
 and the merged union covers more of the inventory than any single service reaches.
 
-## 3. Configure the project and run the prompts
+## Step 3: Configure the service project
+
+Prerequisites from steps 1-2: the staged `.md`/`.txt` files and the doc-id list with sizes.
+Only then open the service:
 
 1. **Create a project** (Claude Projects / ChatGPT Projects), a **notebook** (NotebookLM), or a
    **custom Gem** (Gemini) -- the exact per-service steps are in the
@@ -120,18 +228,6 @@ and the merged union covers more of the inventory than any single service reache
 2. Paste [`00-project-instructions.md`](external-service-prompts/00-project-instructions.md) into
    the service's instructions field (or as the first message where none exists), then attach the
    staged corpus files and paste the doc-id list with sizes.
-3. Run [`01-ontology-inventory.md`](external-service-prompts/01-ontology-inventory.md) once per
-   service. Save the JSON as `inventory.json`. This is your coverage plan -- the external
-   analogue of the local ontology extraction. With several services, merge their inventories
-   into one wider plan: `make curate-drafts CURATE_KIND=inventory`.
-4. Run [`02`](external-service-prompts/02-goldset-draft.md),
-   [`03`](external-service-prompts/03-chain-questions.md), and
-   [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
-   the coverage plan. Ask for **batches of 10-20 items** and say "continue" until the plan is
-   covered; large single replies truncate and produce invalid JSON.
-5. Export each reply to its own file (the raw reply text with its fenced code block is fine).
-   Do NOT hand-merge batches -- `make curate-drafts` merges, repairs, filters, and deduplicates
-   them in section 5.
 
 Service notes:
 
@@ -141,7 +237,22 @@ Service notes:
 - **Claude / ChatGPT Projects** keep the instructions and files across chats in the project, so
   you can run `01`-`04` as separate chats without re-uploading.
 
-## 4. Write the provenance sidecar
+## Step 4: Run the prompts and export the replies
+
+1. Run [`01-ontology-inventory.md`](external-service-prompts/01-ontology-inventory.md) once per
+   service. Save the JSON as `inventory.json`. This is your coverage plan -- the external
+   analogue of the local ontology extraction. With several services, merge their inventories
+   into one wider plan: `make curate-drafts CURATE_KIND=inventory`.
+2. Run [`02`](external-service-prompts/02-goldset-draft.md),
+   [`03`](external-service-prompts/03-chain-questions.md), and
+   [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
+   the coverage plan. Ask for **batches of 10-20 items** and say "continue" until the plan is
+   covered; large single replies truncate and produce invalid JSON.
+3. Export each reply to its own file (the raw reply text with its fenced code block is fine).
+   Do NOT hand-merge batches -- `make curate-drafts` merges, repairs, filters, and deduplicates
+   them in step 6.
+
+## Step 5: Write the provenance sidecar
 
 Beside the exported files, write `external_provenance.json` (contract section 6):
 
@@ -152,9 +263,7 @@ nano "$DATA_DIR/external-drafts/claude-20260703/external_provenance.json"
 Record service, model, date, operator, the doc ids you uploaded, the manifest sha256, and
 `"data_classification": "open"`. **An artifact bundle without this sidecar must not be imported.**
 
-## 5. Curate, validate, and import each artifact locally
-
-### 5.0 Curate the merged exports first (all artifact kinds)
+## Step 6: Curate the merged exports
 
 Curation turns the pile of per-service, per-batch exports into ONE importable file per artifact
 kind -- and it is where multi-service drafting pays off:
@@ -188,9 +297,11 @@ What it does (kinds: `squad`, `grounded`, `security`, `chains`, `inventory`; com
   -- your first quality signal per service (a high invalid count from one service means its
   session drifted from the verbatim rule; tighten and redraft).
 
-Then proceed with the merged file:
+Then proceed with the merged file.
 
-### 5a. Goldset (SQuAD JSON, Artifact A)
+## Step 7: Import and validate each artifact
+
+### 7a. Goldset (SQuAD JSON, Artifact A)
 
 ```bash
 python -m json.tool "$DATA_DIR/external-drafts/claude-20260703/goldset_draft.json" >/dev/null
@@ -203,7 +314,7 @@ Import re-grounds each answer by substring search and **skips any answer that is
 substring** of its context -- your first quality signal. A high skip count means the model
 paraphrased; tighten the verbatim rule and redraft.
 
-### 5a-bis. Goldset (grounded JSONL, Artifact B) -- full-document needle realism
+### 7b. Goldset (grounded JSONL, Artifact B) -- full-document needle realism
 
 When you want the needle scored against the FULL original document (not a context-sized SQuAD doc),
 draft Artifact B (one grounded row per line: `quote` + `source_doc_id`) and import it:
@@ -224,7 +335,7 @@ non-verbatim row**, computes exact `source_spans`, stamps `provenance: frontier-
 before any bundle is written**. Then run the usual `make validate-goldset` ->
 `make cross-check-goldset` -> `verify-*` chain on the emitted bundle.
 
-### 5b. Security cases (Artifact C)
+### 7c. Security cases (Artifact C)
 
 ```bash
 python -m json.tool "$DATA_DIR/external-drafts/claude-20260703/security_cases.json" >/dev/null
@@ -237,16 +348,17 @@ The loader rejects unknown families and malformed detector kinds at load. Benign
 the over-refusal metric; matched bias pairs feed decision-consistency; denial-guard asks feed
 attack-success rate. Run only against **local** models -- this is a local-inference safety probe.
 
-### 5c. Chains (Artifact D) -- review-only
+### 7d. Chains (Artifact D) -- review-only
 
 Keep chain drafts as review material until the `chain-goldset-generation` forward task lands;
 do not import them into scoring paths.
 
-## 6. Human verification gate (required before any headline use)
+## Step 8: Human verification gate
 
-External drafting does not shortcut review. Route imported goldset drafts through cross-check and
-the human verification gate exactly as any draft bundle (see
-[goldset-from-scratch](goldset-from-scratch.md) and [verification tooling](verification-tooling.md)):
+Required before any headline use. External drafting does not shortcut review. Route imported
+goldset drafts through cross-check and the human verification gate exactly as any draft bundle
+(see [goldset-from-scratch](goldset-from-scratch.md) and
+[verification tooling](../human-tooling/verification-tooling.md)):
 
 ```bash
 make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
@@ -258,7 +370,7 @@ make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
 Only accepted `verified: true` items score models. Security cases go through the same `verify-*`
 review before any headline metric.
 
-## 7. Produce local run results
+## Step 9: Produce local run results
 
 With verified data in hand, the scored run is entirely local:
 
@@ -271,9 +383,9 @@ make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-t
 Run artifacts land under `$DATA_DIR/run-eval/<timestamp>-<run-id>/`. These local results -- not
 anything produced inside the external service -- are the benchmark's output.
 
-## 7a. End-to-end example: benchmark a mixed PDF corpus with external drafting
+## End-to-end example: benchmark a mixed PDF corpus with external drafting
 
-The full path for a typical open corpus of the profile in section 2a (a few regulations, one or
+The full path for a typical open corpus of the profile in step 2 (a few regulations, one or
 two large system manuals, a tail of how-to notes). It is the same corpus-to-recommendation spine
 as `make quickstart-corpus`, with the local drafting stage swapped for the external lane:
 
@@ -281,7 +393,7 @@ as `make quickstart-corpus`, with the local drafting stage swapped for the exter
 # 1. Stage: PDFs (and any .md/.txt) -> canonical corpus + manifests
 make ingest-corpus CORPUS_ROOT=<pdf-dir> CORPUS_OUT_DIR=<staged-dir>
 
-# 2. Size the run from the stats (section 2a), then draft in 1+ external services
+# 2. Size the run from the stats (step 2), then draft in 1+ external services
 #    (prompts 00-04 per service; export replies under $DATA_DIR/external-drafts/<service>-<date>/)
 
 # 3. Curate: merge services/batches, repair quotes, filter, dedup
@@ -313,14 +425,14 @@ make recommend                             # ranks models at their best top_k fo
 make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-tag>
 ```
 
-Yield expectations for planning (per 1M staged characters, using the section 2a sizing): request
+Yield expectations for planning (per 1M staged characters, using the step 2 sizing): request
 roughly 200-600 items per service; after curation (cross-service dedup + invalid/flabby drops)
 expect the merged kept set to be materially smaller than the sum of requests, and plan the human
 review sample (`VERIFY_N`) against the merged count, not the requested one. Retrieval quality is
 gated before any model ranking (step 6), so a corpus whose drafts cluster on one manual shows up
 as a recall problem before it can distort model scores.
 
-## 8. What you may and may not send to a service
+## What you may and may not send to a service
 
 | Allowed to upload (open data only) | Never upload |
 | --- | --- |
@@ -329,13 +441,15 @@ as a recall problem before it can distort model scores.
 | Draft QA for a second-opinion rewrite | Any material for retrieval, answering, or ranking |
 
 Scoring, judging, and ranking are local-only by design (see
-[product decisions](../impl/current/scope-boundaries.md)). The external service is a drafting
+[product decisions](../../impl/current/scope-boundaries.md)). The external service is a drafting
 assistant at the front of the pipeline and nothing more.
 
 ## See also
 
-- [External-service draft contract](../design/external-draft-contract.md) -- exact artifact shapes.
+- [External-service draft contract](../../design/external-draft-contract.md) -- exact artifact
+  shapes.
 - [Prompt pack](external-service-prompts/README.md) -- the copy-paste prompts.
 - [Create a gold set (end-to-end)](goldset-from-scratch.md) -- the local drafting spine.
-- [Data prep](../impl/current/data-prep.md) -- the local ontology pipeline and PDF conversion.
-- [Product decisions: data egress](../impl/current/scope-boundaries.md#data-egress) -- the policy.
+- [Data prep](../../impl/current/data-prep.md) -- the local ontology pipeline and PDF conversion.
+- [Product decisions: data egress](../../impl/current/scope-boundaries.md#data-egress) -- the
+  policy.
