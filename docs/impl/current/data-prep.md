@@ -300,26 +300,31 @@ born-digital.
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
 `QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
-`QUICKSTART_DRAFT_NUM_CTX=16384`. With the auto model setting it prints ranked local candidates
-from `llb recommend` JSON when benchmark artifacts exist; otherwise it prompts the operator to run
-the local committed-goldset benchmark, choose a local model manually, or opt into a frontier
-`litellm` model. Auto-selection is backend-aware: `llb.quickstart.model_choice drafter` accepts
-Ollama and vLLM candidates, and `scripts/quickstart.sh` passes only the local backends available on
-the host. A vLLM pick sets `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts
-`VllmLauncher`, points the local draft endpoint at `http://localhost:<port>/v1`, and records
-`endpoint.backend` plus `endpoint.base_url` in provenance. `--no-think` still works for reasoning
-models: Ollama uses native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible
-`extra_body` (`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
-`reasoning_effort=none`). The draft step prints an estimated hour count (character-based, `wc -m`,
-since Cyrillic UTF-8 bytes would double it) and requires confirmation before the full
-ontology/goldset generation starts. It passes the full PDF RAG store at
+`QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=gemma4` resolves the
+most capable Gemma 4 target from the CUDA serving-tier manifest. On the 16 GB host it picks
+`google/gemma-4-12B-it-qat-w4a16-ct`, sets `QUICKSTART_DRAFT_BACKEND=vllm`, and applies the tier
+row's `max_model_len=16384`, `gpu_memory_utilization=0.85`, `cpu_offload_gb=16`, and
+`kv_offloading_size_gb=32`. `legacy-auto` still consumes existing `llb recommend` JSON when present,
+and `benchmark`, `choose`, and `frontier` remain explicit operator modes. A vLLM pick sets
+`QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts `VllmLauncher`, points the local
+draft endpoint at `http://localhost:<port>/v1`, and records `endpoint.backend` plus
+`endpoint.base_url` in provenance. `--no-think` still works for reasoning models: Ollama uses
+native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible `extra_body`
+(`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
+`reasoning_effort=none`). Fresh non-resume draft runs clear prior extraction journal state in the
+output directory before the first model call; only `--resume` reuses journaled windows. The draft
+step prints an estimated hour count (character-based, `wc -m`, since Cyrillic UTF-8 bytes would
+double it) and requires confirmation before the full ontology/goldset generation starts. The logged
+make wrapper cannot prompt inside the tee'd child
+process, so unattended full-draft runs require `QUICKSTART_ASSUME_YES=1`; the non-interactive error
+now prints the exact rerun command instead of suggesting a model pin. It passes the full PDF RAG
+store at
 `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
 gated on `verify-review` and `verify-accept`.
 
-The local recommendation JSON at `.data/quickstart-leaderboard/recommend/pdf_model_choice.json`
-ranks `google/gemma-4-E4B-it-qat-w4a16-ct` as `recommended_for_host` on the 16 GB host with backend
-`vllm`; the selector now returns both model and backend so the PDF draft step launches the matching
-server instead of falling back to an Ollama-only candidate.
+The host Gemma 4 selector ranks CUDA/vLLM rows ahead of larger Ollama/offload rows, then chooses
+the largest Gemma 4 parameter count within that backend class. The 12/16 GB tiers therefore use the
+extra `gemma-4-12b-vllm` target, while 24/32 GB tiers use the primary 31B vLLM Gemma 4 target.
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid

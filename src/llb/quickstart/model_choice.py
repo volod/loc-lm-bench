@@ -150,6 +150,30 @@ def print_count(path: Path) -> None:
     print(len(_candidates(_load(path))))
 
 
+HOST_GEMMA4_FIELDS = (
+    "target",
+    "model",
+    "backend",
+    "tier-gb",
+    "gpu-memory-utilization",
+    "max-model-len",
+    "cpu-offload-gb",
+    "kv-offloading-size-gb",
+)
+
+
+def print_host_gemma4(field: str, gpu_gb: int | None = None) -> None:
+    from llb.inference.generate import select_host_gemma4_target
+
+    row = select_host_gemma4_target(gpu_gb=gpu_gb)
+    key = field.replace("-", "_")
+    value = row.get(key)
+    if isinstance(value, float):
+        print(f"{value:g}")
+        return
+    print("" if value is None else value)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -184,6 +208,10 @@ def main(argv: list[str] | None = None) -> None:
     count = sub.add_parser("count")
     count.add_argument("json", type=Path)
 
+    host_gemma4 = sub.add_parser("host-gemma4")
+    host_gemma4.add_argument("field", choices=HOST_GEMMA4_FIELDS)
+    host_gemma4.add_argument("--gpu-gb", type=int, default=None)
+
     args = parser.parse_args(argv)
     if args.command == "table":
         print_table(args.json)
@@ -201,6 +229,8 @@ def main(argv: list[str] | None = None) -> None:
         print_speed(args.json, args.model)
     elif args.command == "count":
         print_count(args.json)
+    elif args.command == "host-gemma4":
+        print_host_gemma4(args.field, gpu_gb=args.gpu_gb)
 
 
 if __name__ == "__main__":

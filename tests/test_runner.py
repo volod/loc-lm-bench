@@ -358,10 +358,18 @@ def test_make_launcher_resolves_vllm():
     from llb.backends.vllm import VllmLauncher
     from llb.executor.runner import _make_launcher
 
-    cfg = RunConfig(backend="vllm", model="org/Model", gpu_memory_utilization=0.9)
+    cfg = RunConfig(
+        backend="vllm",
+        model="org/Model",
+        gpu_memory_utilization=0.9,
+        cpu_offload_gb=16,
+        kv_offloading_size_gb=32,
+    )
     launcher = _make_launcher(cfg)
     assert isinstance(launcher, VllmLauncher)
     assert launcher.gpu_memory_utilization == 0.9 and "serve" in launcher.command()
+    assert launcher.cpu_offload_gb == 16
+    assert launcher.kv_offloading_size_gb == 32
 
 
 def test_run_eval_records_telemetry(tmp_path):

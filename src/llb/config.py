@@ -107,6 +107,8 @@ class RunConfig(BaseModel):
     vllm_port: int = Field(default=8000, ge=1, le=65535)
     gpu_memory_utilization: float = Field(default=0.85, gt=0, le=1)
     max_model_len: int | None = Field(default=None, ge=1)
+    cpu_offload_gb: float | None = Field(default=None, ge=0)
+    kv_offloading_size_gb: float | None = Field(default=None, ge=0)
     dtype: str = "auto"
     quantization: str | None = None
 

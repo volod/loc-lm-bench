@@ -93,7 +93,8 @@ the command uses the existing OpenAI-compatible endpoint. `DRAFT_NO_THINK=1` sen
   `VLLM_USE_FLASHINFER_SAMPLER=0` (greedy decoding does not need it); export
   `VLLM_USE_FLASHINFER_SAMPLER=1` to opt back in where the kernel builds.
 - **Cap `max_model_len`.** A model's native window (e.g. 131072) makes vLLM over-reserve the
-  KV cache and fail startup on 16 GB. The sample config caps it to 8192.
+  KV cache and fail startup on 16 GB. The 16 GB Gemma 4 sample config uses 16384 plus CPU weight
+  offload and a CPU KV offload buffer.
 - **Free VRAM first.** vLLM's startup check needs `gpu-memory-utilization x total` VRAM free.
   A resident Ollama model (it keeps weights ~5 min) can fail the launch; unload it
   (`curl -s localhost:11434/api/generate -d '{"model":"<tag>","keep_alive":0}'`) or lower
@@ -102,8 +103,9 @@ the command uses the existing OpenAI-compatible endpoint. `DRAFT_NO_THINK=1` sen
 ## Config
 
 vLLM serving knobs live in `RunConfig` (set in YAML or via flags): `backend: vllm`,
-`vllm_host`, `vllm_port`, `gpu_memory_utilization`, `max_model_len`, `dtype`, `quantization`,
-`measure_telemetry`. Use `make list-models` first to confirm a model fits this host.
+`vllm_host`, `vllm_port`, `gpu_memory_utilization`, `max_model_len`, `cpu_offload_gb`,
+`kv_offloading_size_gb`, `dtype`, `quantization`, `measure_telemetry`. Use `make list-models`
+first to confirm a model fits this host.
 
 ## What needs your GPU
 

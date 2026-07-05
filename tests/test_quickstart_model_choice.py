@@ -106,6 +106,21 @@ def test_candidate_backend_reports_selected_backend(recommend_json, capsys):
     assert capsys.readouterr().out.strip() == "ollama"
 
 
+def test_host_gemma4_field_reports_tiered_cuda_target(capsys):
+    model_choice.print_host_gemma4("model", gpu_gb=16)
+    model_choice.print_host_gemma4("backend", gpu_gb=16)
+    model_choice.print_host_gemma4("max-model-len", gpu_gb=16)
+    model_choice.print_host_gemma4("cpu-offload-gb", gpu_gb=16)
+    model_choice.print_host_gemma4("kv-offloading-size-gb", gpu_gb=16)
+    assert capsys.readouterr().out.splitlines() == [
+        "google/gemma-4-12B-it-qat-w4a16-ct",
+        "vllm",
+        "16384",
+        "16",
+        "32",
+    ]
+
+
 def test_drafter_fails_loudly_when_no_backend_qualifies(tmp_path):
     cohort = [_summary("vllm-only", 0.60, 58.9, 14782, 0.237, backend="vllm")]
     path = _write_recommendation(tmp_path, cohort)
