@@ -30,9 +30,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from llb.backends import hardware, planner
 from llb.backends.hardware import Gpu, detect_gpus, max_vram_mb
-from llb import env
-from llb.config import DEFAULT_OLLAMA_HOST
-from llb.contracts import ModelSpec, PreparationReport, PreparedModel, SourceRecord
+from llb.core import env
+from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.contracts import ModelSpec, PreparationReport, PreparedModel, SourceRecord
 
 ACTION_PULL = "pull"  # ollama pull
 ACTION_CACHE = "cache"  # hf snapshot download for vLLM

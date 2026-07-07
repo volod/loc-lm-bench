@@ -24,8 +24,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from llb.config import DEFAULT_OLLAMA_HOST
-from llb.contracts import ContentionReport, ResidentProc
+from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.contracts import ContentionReport, ResidentProc
 
 _LOG = logging.getLogger(__name__)
 

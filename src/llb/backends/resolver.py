@@ -26,8 +26,8 @@ import urllib.request
 from typing import Any, Callable
 
 from llb.backends import planner
-from llb.config import DEFAULT_OLLAMA_HOST
-from llb.contracts import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel, SourceRecord
+from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.contracts import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel, SourceRecord
 
 # Fixed backend preference order (highest first). Sources for absent backends are skipped.
 BACKEND_PRIORITY = ("vllm", "ollama", "llamacpp")

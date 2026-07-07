@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from llb.backends.base import ChatResult
-from llb.contracts import ChatMessage, GpuSummary, TelemetryReport
+from llb.core.contracts import ChatMessage, GpuSummary, TelemetryReport
 from llb.prompts import render_text_list
 
 # Fixed Ukrainian prompts for the throughput protocol (comparable across models).

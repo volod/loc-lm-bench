@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from llb.backends.planner import plan_model
-from llb.config import RunConfig
-from llb.contracts import EvalResult, ModelSpec
+from llb.core.config import RunConfig
+from llb.core.contracts import EvalResult, ModelSpec
 
 _LOG = logging.getLogger(__name__)
 

@@ -31,7 +31,7 @@ def gen_serving_config_cmd(
 ) -> None:
     """Generate serve scripts and run-eval YAML for the largest models on this GPU tier."""
     from llb.inference.generate import generate_serving_configs, resolve_tier
-    from llb.paths import PROJECT_ROOT
+    from llb.core.paths import PROJECT_ROOT
 
     manifest_path = manifest.resolve()
     out = generate_serving_configs(

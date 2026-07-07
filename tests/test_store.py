@@ -2,7 +2,7 @@
 
 import pytest
 
-from llb.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.config import DEFAULT_EMBEDDING_MODEL
 from llb.rag.store import (
     RagStore,
     _build_children,

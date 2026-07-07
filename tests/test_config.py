@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from llb.config import RUN_EVAL_METHOD, RunConfig
-from llb.paths import PROJECT_ROOT
+from llb.core.config import RUN_EVAL_METHOD, RunConfig
+from llb.core.paths import PROJECT_ROOT
 
 
 def test_defaults_are_cuda_free_ollama():

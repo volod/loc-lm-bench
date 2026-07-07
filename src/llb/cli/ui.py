@@ -83,7 +83,7 @@ def recommend_cmd(
         recommendation_payload,
     )
     from llb.inference.generate import resolve_tier
-    from llb.paths import resolve_data_dir
+    from llb.core.paths import resolve_data_dir
 
     data_dir = resolve_data_dir()
     run_root = run_root or (data_dir / "run-eval")

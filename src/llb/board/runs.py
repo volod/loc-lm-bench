@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.contracts import JsonObject, ScreenReport
+from llb.core.contracts import JsonObject, ScreenReport
 from llb.scoring.aggregate import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
 from llb.board.io import mean_or_none, read_case_objectives, read_case_series, read_case_splits

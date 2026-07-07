@@ -12,7 +12,7 @@ so the gate logic is unit-testable without a GPU.
 
 from typing import Callable
 
-from llb.contracts import VramReclaimReport
+from llb.core.contracts import VramReclaimReport
 
 DEFAULT_TOLERANCE_MB = 512
 DEFAULT_MAX_POLLS = 30

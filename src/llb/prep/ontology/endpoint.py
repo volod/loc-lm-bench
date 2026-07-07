@@ -17,8 +17,8 @@ import logging
 from dataclasses import dataclass
 
 from llb.backends.openai_client import chat_once, make_client
-from llb.config import DEFAULT_OLLAMA_HOST
-from llb.contracts import ChatMessage
+from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.contracts import ChatMessage
 from llb.prep.frontier import LLMComplete, ProvenanceLog, litellm_complete
 
 _LOG = logging.getLogger(__name__)

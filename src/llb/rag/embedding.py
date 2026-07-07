@@ -20,8 +20,8 @@ imports fine in the base install; the real embedding path needs the `[rag]` extr
 import os
 from typing import Any
 
-from llb import env
-from llb.config import DEFAULT_EMBEDDING_MODEL
+from llb.core import env
+from llb.core.config import DEFAULT_EMBEDDING_MODEL
 
 # Per-family query/passage conventions. Retrieval-tuned encoders expect an asymmetric
 # instruction on the QUERY side (and, for e5, a "passage:" tag on the passage side); applying

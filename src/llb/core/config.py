@@ -19,9 +19,9 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from llb.contracts import JsonObject
-from llb import env
-from llb.paths import load_project_env, resolve_data_dir, resolve_project_path
+from llb.core.contracts import JsonObject
+from llb.core import env
+from llb.core.paths import load_project_env, resolve_data_dir, resolve_project_path
 
 Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
 RetrievalMode = Literal["flat", "parent_child"]

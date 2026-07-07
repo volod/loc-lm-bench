@@ -23,12 +23,12 @@ from itertools import islice
 from pathlib import Path
 from typing import Any, cast
 
-from llb.contracts import JsonObject, SquadAnswers, SquadRecord
-from llb import env
+from llb.core.contracts import JsonObject, SquadAnswers, SquadRecord
+from llb.core import env
 from llb.goldset.schema import GoldItem, Provenance, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items
-from llb.paths import resolve_data_dir, resolve_project_path
+from llb.core.paths import resolve_data_dir, resolve_project_path
 from llb.prep.verified_ledger import (
     DEFAULT_VERIFIED_GOLDSET,
     apply_verified_ledger,
@@ -352,6 +352,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))

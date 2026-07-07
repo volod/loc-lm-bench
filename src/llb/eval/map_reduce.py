@@ -19,7 +19,7 @@ from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.contracts import ChatMessage, UsageRecord
+from llb.core.contracts import ChatMessage, UsageRecord
 from llb.eval.common import EMPTY, classify_response
 from llb.prompts import render_chat, render_text
 

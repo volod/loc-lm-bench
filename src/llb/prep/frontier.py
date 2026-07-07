@@ -37,6 +37,14 @@ LLMComplete = Callable[[str], str]  # prompt -> raw completion text
 PROVENANCE_DRAFTED: Provenance = "frontier-drafted"
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
+# Markdown / PDF-extraction decoration that carries no semantic content -- dropped before matching
+# so a clean drafted span still grounds against markdown-decorated corpus text (and vice versa).
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)  # e.g. per-page `<!-- source_pdf: ... -->`
+_LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)  # inline table `<br>` -> whitespace
+_DROP_CHARS = set("*_#|•")  # bold/italic/heading/table-pipe/bullet markers
+_DASHES = "–—―"  # en/em/horizontal-bar dashes -> ascii hyphen
+_SPACE_BEFORE_PUNCT = ".,;:)"  # PDF extraction often inserts a space before these
+
 
 # --- per-call cost / model provenance (frontier drafting) ----------------------------------------------
 
@@ -77,22 +85,61 @@ class ProvenanceLog:
 
 
 def _normalize(text: str) -> tuple[str, list[int]]:
-    """Casefold + collapse whitespace, returning the normalized string and, for each normalized
-    char, its index in the ORIGINAL text (so a match maps back to exact offsets)."""
+    """Casefold, collapse whitespace, and drop markdown / PDF-extraction decoration, returning the
+    normalized string and, for each normalized char, its index in the ORIGINAL text (so a match
+    maps back to EXACT offsets). Dropping decoration lets a clean drafted span ground against
+    markdown-decorated corpus text: `**bold**`, `#### headings`, `| table |` pipes, `<br>`, list
+    bullets, HTML comments (per-page `<!-- source_pdf ... -->` markers), curly quotes/dashes, table
+    `----` rules, and the stray space PDF extraction inserts before `.,;:)` are all normalized away."""
+    # Blank out multi-char decoration first (keeping length so offsets stay aligned to the original).
+    masked = _HTML_COMMENT.sub(lambda m: " " * len(m.group()), text)
+    masked = _LINE_BREAK.sub(lambda m: " " * len(m.group()), masked)
     out: list[str] = []
     index: list[int] = []
     prev_space = False
-    for i, ch in enumerate(text):
-        if ch.isspace():
-            if prev_space:
+    i, n = 0, len(masked)
+    while i < n:
+        ch = masked[i]
+        if ch in _DASHES or ch == "-":
+            run = 1
+            while i + run < n and (masked[i + run] in _DASHES or masked[i + run] == "-"):
+                run += 1
+            if run >= 2:  # table rule / separator -> word boundary
+                if not prev_space and out:
+                    out.append(" ")
+                    index.append(i)
+                    prev_space = True
+                i += run
                 continue
-            out.append(" ")
-            index.append(i)
-            prev_space = True
-        else:
-            out.append(ch.casefold())
+            out.append("-")
             index.append(i)
             prev_space = False
+            i += 1
+            continue
+        if ch in _DROP_CHARS:
+            i += 1
+            continue
+        if ch.isspace():
+            i += 1
+            if not prev_space and out:
+                out.append(" ")
+                index.append(i - 1)
+                prev_space = True
+            continue
+        if ch in _SPACE_BEFORE_PUNCT and prev_space:
+            out.pop()  # drop the space PDF extraction wedged before this punctuation
+            index.pop()
+        if ch in "“”„":
+            ch = '"'
+        elif ch in "‘’‚‛":
+            ch = "'"
+        out.append(ch.casefold())
+        index.append(i)
+        prev_space = False
+        i += 1
+    while out and out[-1] == " ":  # no trailing boundary space (keeps offsets/length exact)
+        out.pop()
+        index.pop()
     return "".join(out), index
 
 

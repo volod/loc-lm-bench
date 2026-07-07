@@ -12,6 +12,7 @@ import importlib
 import json
 import logging
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -61,6 +62,53 @@ _MANY_BLANK_LINES = re.compile(r"\n{3,}")
 _MARKER_PAGE_ID = re.compile(r"/page/(\d+)(?:/|$)")
 _MARKDOWN_HEADING = re.compile(r"(?m)^\s{0,3}#{1,6}\s+")
 _HTML_TAG = re.compile(r"<[^>]+>")
+
+# --- page-furniture stripping (running headers/footers, page numbers, image/comment noise) --------
+_PICTURE_PLACEHOLDER = re.compile(r"\*\*==>.*?<==\*\*", re.DOTALL)  # extractor image stubs
+_HTML_COMMENT_BLOCK = re.compile(r"<!--.*?-->", re.DOTALL)
+_PAGE_NUMBER_LINE = re.compile(r"^\s*\**\s*\d{1,4}\s*\**\s*$")  # a bold-or-bare page number, alone
+_FURNITURE_DECORATION = re.compile(r"[*#>_|♆•]")
+_FURNITURE_MAX_LEN = 90  # running headers/footers are short; body paragraphs are not
+_FURNITURE_REPEAT_FRACTION = 0.30  # a short line on >=30% of pages is page furniture, not content
+
+
+def _furniture_key(line: str) -> str:
+    """Decoration-insensitive key for detecting a line that recurs as a running header/footer."""
+    return re.sub(r"\s+", " ", _FURNITURE_DECORATION.sub(" ", line)).strip().casefold()
+
+
+def strip_page_furniture(page_texts: list[str]) -> list[str]:
+    """Drop PDF page furniture so a passage that crosses a page break still grounds contiguously.
+
+    Removes lines that recur across a large fraction of pages (running headers/footers), standalone
+    page-number lines, image placeholders, and HTML comments. Repetition is measured across the
+    WHOLE document, so this must see every page at once. Body content is preserved: only short,
+    frequently repeating lines qualify. Returns one cleaned string per input page (possibly empty).
+    """
+    counts: Counter[str] = Counter()
+    for text in page_texts:
+        for line in text.split("\n"):
+            key = _furniture_key(line)
+            if key:
+                counts[key] += 1
+    threshold = max(8, int(_FURNITURE_REPEAT_FRACTION * max(len(page_texts), 1)))
+    cleaned: list[str] = []
+    for text in page_texts:
+        kept: list[str] = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                kept.append(line)
+                continue
+            key = _furniture_key(line)
+            if key and len(stripped) <= _FURNITURE_MAX_LEN and counts[key] >= threshold:
+                continue  # running header / footer
+            if _PAGE_NUMBER_LINE.match(line):
+                continue  # standalone page number
+            kept.append(line)
+        body = _HTML_COMMENT_BLOCK.sub(" ", _PICTURE_PLACEHOLDER.sub(" ", "\n".join(kept)))
+        cleaned.append(_MANY_BLANK_LINES.sub("\n\n", body).strip())
+    return cleaned
 
 
 @dataclass(frozen=True)
@@ -667,14 +715,20 @@ def _render_doc(source: str, extraction: PdfExtraction) -> RenderedPdfDoc:
         text = f"{header}{extraction.text}\n"
         return RenderedPdfDoc(text=text, citations=citations)
 
-    for page in pages:
+    cleaned_texts = strip_page_furniture([page.text for page in pages])
+    for page, cleaned in zip(pages, cleaned_texts):
+        body = cleaned.strip()
+        if not body:
+            continue  # page was entirely furniture (e.g. a cover/running-header-only page)
+        # block offsets are relative to the original page text; furniture removal shifts them.
+        blocks = page.blocks if cleaned == page.text else []
         page_marker = (
             f"<!-- source_pdf: {source} page: {page.page} parser: {extraction.parser} -->\n\n"
         )
         page_start = sum(len(part) for part in parts)
         text_start = page_start + len(page_marker)
-        page_text = f"{page.text.strip()}\n\n"
-        text_end = text_start + len(page.text.strip())
+        page_text = f"{body}\n\n"
+        text_end = text_start + len(body)
         page_end = page_start + len(page_marker) + len(page_text)
         parts.extend([page_marker, page_text])
         citations.append(
@@ -684,9 +738,9 @@ def _render_doc(source: str, extraction: PdfExtraction) -> RenderedPdfDoc:
                 char_end=page_end,
                 text_start=text_start,
                 text_end=text_end,
-                n_chars=len(page.text.strip()),
+                n_chars=len(body),
                 parser=extraction.parser,
-                blocks=_offset_blocks(page.blocks, text_start),
+                blocks=_offset_blocks(blocks, text_start),
             )
         )
     return RenderedPdfDoc(text="".join(parts).rstrip() + "\n", citations=citations)

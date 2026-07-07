@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.goldset.schema import GoldItem, load_goldset
-from llb.paths import PROJECT_ROOT
+from llb.core.paths import PROJECT_ROOT
 
 # The committed human-verified fixture used as the default verification ledger.
 DEFAULT_VERIFIED_GOLDSET = (

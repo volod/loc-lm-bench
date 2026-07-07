@@ -386,7 +386,7 @@ def test_load_extractions_roundtrip(tmp_path):
 def test_run_eval_with_graph_backend_records_strategy(tmp_path):
     pytest.importorskip("duckdb")
     from llb.backends.base import BackendLauncher, ChatResult
-    from llb.config import RunConfig
+    from llb.core.config import RunConfig
     from llb.executor.runner import run_eval
     from llb.graph.store import GraphStore
 

@@ -3,7 +3,7 @@
 import click
 import pytest
 
-from llb.runtime import INTERRUPT_EXIT, run, run_typer
+from llb.core.runtime import INTERRUPT_EXIT, run, run_typer
 
 
 def test_run_returns_normal_exit_codes():

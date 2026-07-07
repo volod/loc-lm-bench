@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 
-from llb.config import RunConfig
-from llb.contracts import RetrievalMetrics, RunPaths, TelemetryReport
+from llb.core.config import RunConfig
+from llb.core.contracts import RetrievalMetrics, RunPaths, TelemetryReport
 
 _LOG = logging.getLogger(__name__)
 

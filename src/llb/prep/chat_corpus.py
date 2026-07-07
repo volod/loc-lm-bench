@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from llb.contracts import PlantedLabelRecord
+from llb.core.contracts import PlantedLabelRecord
 from llb.prep.frontier import LLMComplete, parse_json_block
 from llb.prep.text_analysis_corpus import DEFAULT_KINDS, _count_by_kind, plant_labels
 from llb.prompts import render_text

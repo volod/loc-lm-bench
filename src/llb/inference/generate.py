@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 
 from llb.backends.hardware import detect_gpus
-from llb.paths import PROJECT_ROOT, resolve_data_dir
+from llb.core.paths import PROJECT_ROOT, resolve_data_dir
 
 _LOG = logging.getLogger(__name__)
 

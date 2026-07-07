@@ -17,7 +17,7 @@ dependency-free here.
 import unicodedata
 from typing import Any
 
-from llb.contracts import CorrectnessScores
+from llb.core.contracts import CorrectnessScores
 
 
 def normalize(text: str) -> str:

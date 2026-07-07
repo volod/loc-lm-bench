@@ -3,7 +3,7 @@
 from collections.abc import Iterable, Iterator
 from itertools import islice
 
-from llb.contracts import SquadRecord
+from llb.core.contracts import SquadRecord
 
 DATASET_ID = "FIdo-AI/ua-squad"
 DATASET_REVISION = "943ef27daea65e400350ef1875d07c7e97288177"

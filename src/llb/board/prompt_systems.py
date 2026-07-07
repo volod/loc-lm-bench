@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from llb.contracts import BoardRow
+from llb.core.contracts import BoardRow
 from llb.scoring.aggregate import ModelResult, format_board, rank_board, ranking_policy_note
 
 from llb.board.categories import AGENTIC_METHOD
