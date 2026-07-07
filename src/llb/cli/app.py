@@ -10,6 +10,7 @@ Commands by area:
   ingest-corpus / ingest-pdf-corpus                  mixed txt/md/pdf -> canonical .md/.txt corpus
   prepare-goldset / prepare-synthetic-corpus         frontier data-prep (litellm)
   prepare-goldset-draft                              ontology-assisted draft (local/frontier; --resume)
+  coverage-plan-text / curate-drafts                 external-service source prep + curation
   judge-experiment                                   local judge calibration DeepEval UA smoke artifact
   screen-public                                      Tier-1 public lm-eval-harness-uk screen
   board / mlflow-ui                                  Streamlit leaderboard / MLflow UI

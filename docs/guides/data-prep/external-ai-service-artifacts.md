@@ -70,7 +70,8 @@ LOCAL (your box)                              EXTERNAL SERVICE (open data only)
         |                                        instructions 00; attach staged files +
         |                                        doc-id list         [HUMAN: per service]
         |                                     4. Run prompt 01 (inventory), then 02/03/04
-        |                                        in 10-20 item batches  [HUMAN: drive the
+        |                                        in batches (NotebookLM <=15 items)
+        |                                        [HUMAN: drive the
         |  <- export each raw reply              chats, export every reply to a file]
         v
 5. Write the external_provenance.json sidecar    [HUMAN: required before any import]
@@ -110,8 +111,9 @@ section below; run the steps in order and check each gate before moving on.
    project, paste `00-project-instructions.md`, attach the STAGED files, paste the doc-id list.
    Gate: the model can name your documents exactly.
 4. **Run the prompts** ([details](#step-4-run-the-prompts-and-export-the-replies)): `01` once per
-   service, then `02`-`04` against the (merged) inventory, in batches of 10-20 items; save every
-   reply to its own file. Gate: each reply is raw JSON in one code block.
+   service, then `02`-`04` against the (merged) inventory, in batches; for NotebookLM prompt 02,
+   use an uploaded coverage text source and request at most 15 items. Save every reply to its own
+   file. Gate: each reply is raw JSON in one code block.
 5. **Write the provenance sidecar** ([details](#step-5-write-the-provenance-sidecar)): author
    `external_provenance.json` beside the exports. Gate: sidecar exists and says
    `"data_classification": "open"` -- the importer refuses to run without it.
@@ -235,7 +237,10 @@ Service notes:
   drafting; ask it to output the same JSON shapes. It is more conversational -- paste the
   manifest doc-id list and state that every `doc` and `cross_document[].docs` value must be the
   staged `.md`/`.txt` id from the manifest, not the original PDF name or NotebookLM source title.
-  Restate the "raw JSON only, one code block" instruction if it adds prose.
+  Restate the "raw JSON only, one code block" instruction if it adds prose. For prompt 02, do not
+  paste a large JSON coverage plan into NotebookLM chat. Convert the document slice to a text
+  source with `make coverage-plan-text`, upload that `.txt` file as a source, and reference its
+  file name in the prompt.
 - **Claude / ChatGPT Projects** keep the instructions and files across chats in the project, so
   you can run `01`-`04` as separate chats without re-uploading.
 
@@ -266,8 +271,20 @@ Service notes:
 2. Run [`02`](external-service-prompts/02-goldset-draft.md),
    [`03`](external-service-prompts/03-chain-questions.md), and
    [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
-   the coverage plan. Ask for **batches of 10-20 items** and say "continue" until the plan is
-   covered; large single replies truncate and produce invalid JSON.
+   the coverage plan. For NotebookLM prompt 02, upload a per-document coverage text source instead
+   of pasting the JSON slice:
+
+   ```bash
+   make coverage-plan-text \
+     COVERAGE_JSON="$DATA_DIR/quickstart-pdf-corpus-md/coverage-pdf-6d8c2128b330.md.json" \
+     COVERAGE_TEXT="$DATA_DIR/quickstart-pdf-corpus-md/coverage-6d8c2128b330.txt"
+   ```
+
+   Upload `coverage-6d8c2128b330.txt` as a NotebookLM source and write
+   `COVERAGE PLAN: coverage-6d8c2128b330.txt` in the prompt. Ask for **batches of 10-20 items**
+   on services that can return larger JSON replies; for NotebookLM, request at most 15 items per
+   reply. Say "continue" until the plan is covered; large single replies truncate and produce
+   invalid JSON.
 3. Export each reply to its own file (the raw reply text with its fenced code block is fine).
    Do NOT hand-merge batches -- `make curate-drafts` merges, repairs, filters, and deduplicates
    them in step 6.

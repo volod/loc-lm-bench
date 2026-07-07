@@ -10,6 +10,9 @@
 
 .gemini/
 .local_bin/
+.claude-code-history/
+.codex-history/
+
 
 # numpy memmap files
 *.npy

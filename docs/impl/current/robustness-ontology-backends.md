@@ -145,8 +145,10 @@ PDF corpora at least one citation-valid needle must exist (`has_citation_valid_n
 applicable by `pdf_citation_gate_applicable`). A single `passed` roll-up ANDs the required gates
 (the needle gate only when page sidecars exist); `nonzero_grounded_facts` stays informational since
 SRO relations power the GraphRAG store but no longer solely block a fact-sparse corpus. The
-pipeline logs the roll-up (WARNING when it fails), and a failing gate is never fatal -- the bundle
-is always written for inspection and the human verification gate remains the real block on scoring.
+pipeline logs the roll-up (WARNING when it fails). Plain `prepare-goldset-draft` still writes a
+failing bundle for inspection, while the PDF and mixed-corpus quickstart wrappers pass
+`--require-passed-gates` so a zero-item or ungrounded draft exits non-zero before graph/validation
+steps.
 
 Every emitted gold item remains `verified=false`. The bundle must pass cross-check and human
 verification before it can score real models.

@@ -37,7 +37,7 @@ def test_manifest_has_supported_tiers() -> None:
             assert target in entries
 
 
-def test_generate_serving_configs_for_tier_12_uses_validated_short_context_12b(
+def test_generate_serving_configs_for_tier_12_uses_offloaded_long_context_12b(
     tmp_path: Path,
 ) -> None:
     out = generate_serving_configs(gpu_gb=12, output_root=tmp_path / "gpu-12gb")
@@ -49,7 +49,12 @@ def test_generate_serving_configs_for_tier_12_uses_validated_short_context_12b(
     cfg = (out / "run_eval_gemma_4_12b_vllm.yaml").read_text(encoding="utf-8")
     assert "model: google/gemma-4-12B-it-qat-w4a16-ct" in cfg
     assert "gpu_memory_utilization: 0.9" in cfg
-    assert "max_model_len: 1024" in cfg
+    assert "max_model_len: 16384" in cfg
+    assert "cpu_offload_gb: 16" in cfg
+    assert "kv_offloading_size_gb: 32" in cfg
+    vllm_serve = (out / "serve_gemma_4_12b_vllm.sh").read_text(encoding="utf-8")
+    assert "--cpu-offload-gb 16" in vllm_serve
+    assert "--kv-offloading-size 32" in vllm_serve
 
 
 def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
@@ -94,6 +99,16 @@ def test_select_host_gemma4_target_prefers_cuda_12b_on_16gb() -> None:
     assert row["backend"] == "vllm"
     assert row["model"] == "google/gemma-4-12B-it-qat-w4a16-ct"
     assert row["gpu_memory_utilization"] == 0.85
+    assert row["max_model_len"] == 16384
+    assert row["cpu_offload_gb"] == 16
+    assert row["kv_offloading_size_gb"] == 32
+
+
+def test_select_host_gemma4_target_uses_offloaded_12b_on_12gb_for_long_context() -> None:
+    row = select_host_gemma4_target(gpu_gb=12, min_context_tokens=16384)
+    assert row["target"] == "gemma-4-12b-vllm"
+    assert row["backend"] == "vllm"
+    assert row["model"] == "google/gemma-4-12B-it-qat-w4a16-ct"
     assert row["max_model_len"] == 16384
     assert row["cpu_offload_gb"] == 16
     assert row["kv_offloading_size_gb"] == 32

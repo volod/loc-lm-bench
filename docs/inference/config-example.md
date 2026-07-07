@@ -190,10 +190,11 @@ w4a16 at util **0.80**, ctx **8192**
 ### 12 GiB GPU / 64 GiB RAM (RTX PRO 3000 Blackwell laptop)
 
 RTX PRO 3000 Blackwell laptop GPU, 12227 MiB, driver 610.43.02. The generated extra vLLM
-target is Gemma 4 12B w4a16 at util **0.90**, ctx **1024**; a one-case
-`run-eval --backend vllm --max-model-len 1024 --gpu-memory-utilization 0.90 --evict`
-passed with `LLB_EMBED_DEVICE=cpu`. E4B w4a16 is not a valid 12 GiB vLLM target on this
-host because weights plus vLLM serving overhead exceed available VRAM before KV cache.
+target is Gemma 4 12B w4a16 at util **0.90**, ctx **16384**, `cpu_offload_gb=16`, and
+`kv_offloading_size_gb=32`. A bounded PDF-drafter launch probe confirmed vLLM served that
+long-context target with CPU/KV offload on this host; deliberately reducing the draft completion
+budget to 512 tokens truncated extraction JSON, so keep `QUICKSTART_DRAFT_MAX_TOKENS=4096` for
+production PDF drafting.
 
 ### 32 GiB GPU / 64 GiB RAM (HP Z2 Tower)
 

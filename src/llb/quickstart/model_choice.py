@@ -162,10 +162,12 @@ HOST_GEMMA4_FIELDS = (
 )
 
 
-def print_host_gemma4(field: str, gpu_gb: int | None = None) -> None:
+def print_host_gemma4(
+    field: str, gpu_gb: int | None = None, min_context_tokens: int | None = None
+) -> None:
     from llb.inference.generate import select_host_gemma4_target
 
-    row = select_host_gemma4_target(gpu_gb=gpu_gb)
+    row = select_host_gemma4_target(gpu_gb=gpu_gb, min_context_tokens=min_context_tokens)
     key = field.replace("-", "_")
     value = row.get(key)
     if isinstance(value, float):
@@ -211,6 +213,7 @@ def main(argv: list[str] | None = None) -> None:
     host_gemma4 = sub.add_parser("host-gemma4")
     host_gemma4.add_argument("field", choices=HOST_GEMMA4_FIELDS)
     host_gemma4.add_argument("--gpu-gb", type=int, default=None)
+    host_gemma4.add_argument("--min-context-tokens", type=int, default=None)
 
     args = parser.parse_args(argv)
     if args.command == "table":
@@ -230,7 +233,11 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "count":
         print_count(args.json)
     elif args.command == "host-gemma4":
-        print_host_gemma4(args.field, gpu_gb=args.gpu_gb)
+        print_host_gemma4(
+            args.field,
+            gpu_gb=args.gpu_gb,
+            min_context_tokens=args.min_context_tokens,
+        )
 
 
 if __name__ == "__main__":
