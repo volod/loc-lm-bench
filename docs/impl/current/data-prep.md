@@ -150,6 +150,15 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
 
 Unit coverage: `tests/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
 
+`make external-squad-rag` is the single-command prompt-02 SQuAD path for a directory or explicit
+list of external exports. It accepts `SQUAD_DRAFT_INPUT_DIR=<exports-dir>` or
+`SQUAD_DRAFT_INPUTS="<file> [<file> ...]"`, requires `SQUAD_DRAFT_CORPUS=<staged-corpus-dir>`, and
+writes the curated export, canonical `llb/goldset/<name>`, imported `llb/corpus`, and `llb/rag`
+index under `SQUAD_DRAFT_OUT_DIR` (default `$DATA_DIR/external-squad-rag`). The target runs
+curation, SQuAD ingest, structural validation, and `build-index` in order. It sources the project
+`.env` before curation so `HF_TOKEN` is exported for semantic deduplication and embedding
+downloads.
+
 NotebookLM inventory-array coverage is implemented in `src/llb/prep/curation/inventory.py` and
 covered by `test_inventory_accepts_array_of_response_objects`. The goods quickstart NotebookLM
 inventory export was curated with:

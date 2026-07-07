@@ -3,9 +3,10 @@
 
 .PHONY: \
 	gen-rag-items pdf-to-markdown ingest-corpus validate-goldset ingest-squad \
-	curate-drafts import-external-draft coverage-plan-text calibration-worksheet \
-	calibration-run calibration-rate calibration-score cross-check-goldset verify-sample \
-	verify-review verify-accept judge-experiment ingest-uk-squad prepare-goldset-draft
+	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
+	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
+	verify-sample verify-review verify-accept judge-experiment ingest-uk-squad \
+	prepare-goldset-draft
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -34,6 +35,37 @@ validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed 
 ingest-squad: ## Ingest local SQuAD QA; matching reviewed ids are verified (SQUAD_JSON=path)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.prep.ingest_squad --squad-json "$(SQUAD_JSON)"
+
+external-squad-rag: ## Curate prompt-02 SQuAD exports, import a canonical goldset, validate, and build RAG
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(SQUAD_DRAFT_CORPUS)" || { echo "ERROR: set SQUAD_DRAFT_CORPUS=<staged-corpus-dir>"; exit 1; }
+	@test -n "$(SQUAD_DRAFT_INPUT_DIR)$(SQUAD_DRAFT_INPUTS)" || { echo "ERROR: set SQUAD_DRAFT_INPUT_DIR=<exports-dir> or SQUAD_DRAFT_INPUTS=\"<file> [<file> ...]\""; exit 1; }
+	@set -euo pipefail; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	mkdir -p "$(SQUAD_DRAFT_OUT_DIR)"; \
+	inputs=(); \
+	if [ -n "$(SQUAD_DRAFT_INPUTS)" ]; then \
+	  read -r -a inputs <<< "$(SQUAD_DRAFT_INPUTS)"; \
+	else \
+	  while IFS= read -r path; do inputs+=("$$path"); done < <(find "$(SQUAD_DRAFT_INPUT_DIR)" -maxdepth 1 -type f \( -name '*.json' -o -name '*.jsonl' -o -name '*.txt' -o -name '*.md' \) | sort); \
+	fi; \
+	if [ "$${#inputs[@]}" -eq 0 ]; then echo "ERROR: no draft export files found" >&2; exit 1; fi; \
+	echo "[external-squad-rag] curate $${#inputs[@]} export files -> $(SQUAD_DRAFT_CURATED)"; \
+	$(PY) -m llb.main curate-drafts "$${inputs[@]}" --kind squad --out "$(SQUAD_DRAFT_CURATED)" \
+	  --corpus-root "$(SQUAD_DRAFT_CORPUS)" $(if $(filter 0,$(SQUAD_DRAFT_SEMANTIC)),--no-semantic-dedup,); \
+	echo "[external-squad-rag] ingest -> $(SQUAD_DRAFT_OUT_DIR)/llb/goldset/$(SQUAD_DRAFT_GOLDSET_NAME)"; \
+	$(PY) -m llb.prep.ingest_squad --squad-json "$(SQUAD_DRAFT_CURATED)" \
+	  --out-dir "$(SQUAD_DRAFT_OUT_DIR)/llb" --out-name "$(SQUAD_DRAFT_GOLDSET_NAME)"; \
+	echo "[external-squad-rag] validate"; \
+	$(PY) -m llb.goldset.validate --goldset "$(SQUAD_DRAFT_OUT_DIR)/llb/goldset/$(SQUAD_DRAFT_GOLDSET_NAME)" \
+	  --corpus-root "$(SQUAD_DRAFT_OUT_DIR)/llb/corpus"; \
+	echo "[external-squad-rag] build RAG index"; \
+	export DATA_DIR="$(SQUAD_DRAFT_OUT_DIR)"; \
+	$(PY) -m llb.main build-index --corpus-root "$(SQUAD_DRAFT_OUT_DIR)/llb/corpus" \
+	  $(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",); \
+	echo "[external-squad-rag] goldset: $(SQUAD_DRAFT_OUT_DIR)/llb/goldset/$(SQUAD_DRAFT_GOLDSET_NAME)"; \
+	echo "[external-squad-rag] corpus:  $(SQUAD_DRAFT_OUT_DIR)/llb/corpus"; \
+	echo "[external-squad-rag] rag:     $(SQUAD_DRAFT_OUT_DIR)/llb/rag"
 
 curate-drafts: ## Merge/dedup/filter external drafts; CURATE_KIND= CURATE_INPUTS="a b" CURATE_OUT= CURATE_CORPUS= CURATE_DEDUP_AGAINST= CURATE_SEMANTIC=0|1
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

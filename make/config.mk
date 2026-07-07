@@ -24,6 +24,14 @@ PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v
 GOLDSET ?= $(PUBLISHED_GOLDSET_ROOT)/goldset.jsonl
 CORPUS ?= $(PUBLISHED_GOLDSET_ROOT)/corpus
 SQUAD_JSON ?= samples/squad_uk_fixture.json
+# External prompt-02 SQuAD draft -> curated canonical goldset + RAG index.
+SQUAD_DRAFT_INPUT_DIR ?=
+SQUAD_DRAFT_INPUTS ?=
+SQUAD_DRAFT_CORPUS ?=
+SQUAD_DRAFT_OUT_DIR ?= $(DATA_DIR)/external-squad-rag
+SQUAD_DRAFT_CURATED ?= $(SQUAD_DRAFT_OUT_DIR)/goldset.curated.json
+SQUAD_DRAFT_GOLDSET_NAME ?= squad_uk.jsonl
+SQUAD_DRAFT_SEMANTIC ?= 1
 # curate-drafts: merge/dedup/filter externally drafted artifacts before import.
 CURATE_KIND ?= squad
 CURATE_INPUTS ?=

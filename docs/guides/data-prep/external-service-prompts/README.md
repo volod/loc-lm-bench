@@ -105,6 +105,15 @@ make curate-drafts CURATE_KIND=squad \
   CURATE_CORPUS=<staged-corpus-dir>
 ```
 
+For a directory of prompt-02 SQuAD exports, the one-command import path is:
+
+```bash
+make external-squad-rag \
+  SQUAD_DRAFT_INPUT_DIR=<directory-with-prompt-02-exports> \
+  SQUAD_DRAFT_CORPUS=<staged-corpus-dir> \
+  SQUAD_DRAFT_OUT_DIR=<output-work-dir>
+```
+
 Curation repairs near-verbatim quotes back to exact corpus text, drops answers that are not
 substrings of their context, rejects flabby questions (answer leaks, document-structure
 references, vague stubs), removes exact and near-duplicate questions across services (pinned-E5

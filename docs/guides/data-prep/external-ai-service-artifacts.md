@@ -342,11 +342,41 @@ Then proceed with the merged file.
 
 ### 7a. Goldset (SQuAD JSON, Artifact A)
 
+For a directory of prompt-02 SQuAD exports, use the all-in-one Make target. It discovers JSON,
+JSONL, text, and markdown reply exports in the input directory, curates and deduplicates them,
+imports the canonical goldset/corpus, validates the result, and builds the RAG index:
+
 ```bash
-python -m json.tool "$DATA_DIR/external-drafts/claude-20260703/goldset_draft.json" >/dev/null
-make ingest-squad SQUAD_JSON="$DATA_DIR/external-drafts/claude-20260703/goldset_draft.json"
+make external-squad-rag \
+  SQUAD_DRAFT_INPUT_DIR=<directory-with-prompt-02-exports> \
+  SQUAD_DRAFT_CORPUS=<staged-corpus-dir> \
+  SQUAD_DRAFT_OUT_DIR=<output-work-dir>
+```
+
+The target sources the project `.env` before curation, so `HF_TOKEN` is available for semantic
+deduplication and embedding downloads.
+
+Use `SQUAD_DRAFT_INPUTS="<file> [<file> ...]"` instead of `SQUAD_DRAFT_INPUT_DIR` when the exports
+are not all in one directory. The target writes the curated export and report inside the output
+work dir, then writes the RAG-ready artifacts under:
+
+```text
+<output-work-dir>/llb/goldset/squad_uk.jsonl
+<output-work-dir>/llb/corpus
+<output-work-dir>/llb/rag
+```
+
+The explicit step-by-step form is still useful when you need to inspect each gate separately:
+
+```bash
+make curate-drafts CURATE_KIND=squad \
+  CURATE_INPUTS="<export-a> <export-b>" \
+  CURATE_OUT=<curated-squad-json> \
+  CURATE_CORPUS=<staged-corpus-dir>
+make ingest-squad SQUAD_JSON=<curated-squad-json>
 # then structurally validate the canonical output against its corpus:
 make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<corpus-dir>
+make build-index CORPUS=<corpus-dir>
 ```
 
 Import re-grounds each answer by substring search and **skips any answer that is not a verbatim
