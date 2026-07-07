@@ -36,7 +36,7 @@ tiers:
       request_timeout_s: 300
     gemma-4:
       backend: ollama
-      model: gemma4:31b
+      model: gemma4:e4b
       request_timeout_s: 300
     qwen3.6:
       backend: ollama
@@ -50,7 +50,9 @@ tiers:
       backend: vllm
       model: google/gemma-4-12B-it-qat-w4a16-ct
       gpu_memory_utilization: 0.90
-      max_model_len: 1024
+      max_model_len: 16384
+      cpu_offload_gb: 16
+      kv_offloading_size_gb: 32
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
 
   16:

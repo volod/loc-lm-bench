@@ -92,10 +92,12 @@ stable target id and file stem.
 On a 12 GiB RTX PRO 3000 Blackwell laptop GPU (12227 MiB, driver 610.43.02), the quickstart setup
 generates and selects `$DATA_DIR/llb/serving/gpu-12gb/tier.json` even when stale tier directories
 exist from earlier runs. The 12 GiB extra vLLM target is `gemma-4-12b-vllm`:
-`google/gemma-4-12B-it-qat-w4a16-ct`, `gpu_memory_utilization=0.90`, `max_model_len=1024`.
-That short-context cell passed a one-case `run-eval` smoke with `LLB_EMBED_DEVICE=cpu`; the previous
-E4B w4a16 target is rejected on this host because weights plus vLLM serving overhead exceed
-available VRAM before KV cache. The resolver also prices vLLM candidates with the same serving
+`google/gemma-4-12B-it-qat-w4a16-ct`, `gpu_memory_utilization=0.90`, `max_model_len=16384`,
+`cpu_offload_gb=16`, and `kv_offloading_size_gb=32`. A bounded PDF-drafter launch probe on the same
+host confirmed vLLM started with CPU/KV offload, reported 78,115 GPU KV-cache tokens, and allowed
+4.77x concurrency for 16,384-token requests. The 512-token reduced probe returned useful extraction
+content but hit the completion cap before closing JSON, so production PDF drafting keeps the default
+`QUICKSTART_DRAFT_MAX_TOKENS=4096`. The resolver also prices vLLM candidates with the same serving
 overhead used by the pre-launch contention guard and the default vLLM memory fraction, so sweeps do
 not select vLLM rows that will be aborted immediately by the guard or by KV-cache allocation.
 

@@ -102,11 +102,16 @@ quickstart_py() {
 
 host_gemma4_field() {
   local field="$1"
-  if [ -n "$QS_GPU_GB" ]; then
-    quickstart_py host-gemma4 --gpu-gb "$QS_GPU_GB" "$field"
-  else
-    quickstart_py host-gemma4 "$field"
+  local -a args
+  args=(host-gemma4)
+  if [ -n "$QS_DRAFT_NUM_CTX" ]; then
+    args+=(--min-context-tokens "$QS_DRAFT_NUM_CTX")
   fi
+  if [ -n "$QS_GPU_GB" ]; then
+    args+=(--gpu-gb "$QS_GPU_GB")
+  fi
+  args+=("$field")
+  quickstart_py "${args[@]}"
 }
 
 resolve_quickstart_gpu_tier() {
@@ -711,6 +716,7 @@ track_b_draft() {
     DRAFT_VLLM_STARTUP_TIMEOUT="$QS_DRAFT_VLLM_STARTUP_TIMEOUT" \
     DRAFT_RETRIEVAL_INDEX_DIR="$QS_PDF_RAG_DATA/llb/rag" \
     DRAFT_RETRIEVAL_K="$QS_RAG_K" \
+    DRAFT_REQUIRE_PASSED_GATES=1 \
     DRAFT_OUT_DIR="$QS_PDF_DRAFT" \
     DRAFT_TIMEOUT="$QS_DRAFT_TIMEOUT"
   result "draft bundle: $(rel_path "$QS_PDF_DRAFT")"
@@ -857,6 +863,7 @@ track_c_draft() {
     DRAFT_VLLM_STARTUP_TIMEOUT="$QS_DRAFT_VLLM_STARTUP_TIMEOUT" \
     DRAFT_RETRIEVAL_INDEX_DIR="$QS_CORPUS_RAG_DATA/llb/rag" \
     DRAFT_RETRIEVAL_K="$QS_RAG_K" \
+    DRAFT_REQUIRE_PASSED_GATES=1 \
     DRAFT_OUT_DIR="$QS_CORPUS_DRAFT" \
     DRAFT_RESUME="$QS_CORPUS_RESUME" \
     DRAFT_TIMEOUT="$QS_DRAFT_TIMEOUT"

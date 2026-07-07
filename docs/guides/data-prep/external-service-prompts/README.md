@@ -49,7 +49,7 @@ JSON in code blocks. Record the service slug you actually used in the
 | --- | --- | --- | --- |
 | Claude Projects | Project -> "Set project instructions" | Project knowledge: add the staged `.md`/`.txt` files | Instructions and files persist across chats; run `01`-`04` as separate chats in one project |
 | ChatGPT Projects | Project -> "Instructions" | Project files | Same persistence model as Claude Projects |
-| NotebookLM | No instructions field: paste `00` as the FIRST message of every notebook chat | "Sources": add the staged files | Grounded-by-design, which suits inventory and QA drafting; paste the manifest doc ids and restate "raw JSON only, one code block" whenever it adds prose |
+| NotebookLM | No instructions field: paste `00` as the FIRST message of every notebook chat | "Sources": add the staged files and prompt-02 coverage `.txt` sources | Grounded-by-design, which suits inventory and QA drafting; paste the manifest doc ids; for prompt 02, reference the uploaded coverage source file instead of pasting large JSON; request at most 15 items per reply |
 | Gemini (Gems) | Gem editor -> "Instructions" (create a custom Gem per corpus) | Attach the staged files to the Gem (or per chat) | Re-attach files if a new chat loses them; verify it cites the uploaded text, not general knowledge |
 
 Setup to-dos that apply to every service:
@@ -71,8 +71,11 @@ Setup to-dos that apply to every service:
    `make curate-drafts CURATE_KIND=inventory CURATE_INPUTS="<inv1> <inv2>" CURATE_OUT=<merged>`.
    For NotebookLM "continue" inventory batches, either save each reply as a separate file or save
    one valid JSON array of complete prompt-01 response objects.
-3. Run `02`-`04` feeding the (merged) inventory in as the coverage plan. Ask for output in
-   **batches** (10-20 items per reply) to avoid truncated JSON; say "continue with the next
+3. Run `02`-`04` feeding the (merged) inventory in as the coverage plan. For NotebookLM prompt 02,
+   convert the per-document inventory slice with `make coverage-plan-text`, upload the `.txt`
+   output as a source, and reference the source file name in `COVERAGE PLAN`; do not paste large
+   JSON or long text chunks into the NotebookLM prompt. Ask for output in **batches** (10-20 items
+   per reply, but at most 15 for NotebookLM) to avoid truncated JSON; say "continue with the next
    batch" until the coverage plan is exhausted.
 4. Save every exported reply plus the required `external_provenance.json` sidecar under
    `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`. Raw reply text with fenced code blocks is

@@ -11,6 +11,7 @@ import pytest
 
 from llb.prep import curation
 from llb.prep.curation.common import load_json_documents
+from llb.prep.curation.coverage_text import coverage_plan_to_text, write_coverage_plan_text
 
 DOC = (
     "Розділ 1. Загальні положення про облік матеріальних цінностей.\n"
@@ -589,6 +590,77 @@ def test_inventory_accepts_array_of_response_objects(tmp_path, corpus):
     assert len(doc["numeric_facts"]) == 1
     assert doc["sensitive_topics"] == ["матеріальна відповідальність"]
     assert payload["cross_document"][0]["docs"] == ["doc-a.md"]
+
+
+def test_coverage_plan_to_text_renders_notebooklm_source():
+    coverage = {
+        "documents": [
+            {
+                "doc": "doc-a.md",
+                "topics": ["облік цінностей"],
+                "entities": [
+                    {
+                        "name": "головний бухгалтер",
+                        "type": "PERSON",
+                        "mentions": 2,
+                        "quote": "головний\nбухгалтер",
+                    }
+                ],
+                "relations": [
+                    {
+                        "subject": "акт",
+                        "relation": "складається",
+                        "object": "у трьох примірниках",
+                        "quote": "Акт приймання складається у трьох примірниках.",
+                    }
+                ],
+                "numeric_facts": [
+                    {
+                        "fact": "передача протягом п'яти днів",
+                        "quote": "протягом п'яти робочих днів",
+                    }
+                ],
+                "sensitive_topics": ["матеріальна відповідальність"],
+            }
+        ],
+        "cross_document": [
+            {"entity_or_topic": "акт приймання", "docs": ["doc-a.md"], "note": "same doc"}
+        ],
+    }
+
+    text = coverage_plan_to_text(coverage)
+
+    assert "Coverage plan" in text
+    assert "Document: doc-a.md" in text
+    assert "Topics:\n- облік цінностей" in text
+    assert 'quote: "головний бухгалтер"' in text
+    assert "Cross-document links:" in text
+    assert "docs: doc-a.md" in text
+
+
+def test_write_coverage_plan_text_uses_default_txt_path(tmp_path):
+    coverage = {
+        "documents": [
+            {
+                "doc": "doc-a.md",
+                "topics": ["облік цінностей"],
+                "entities": [],
+                "relations": [],
+                "numeric_facts": [],
+                "sensitive_topics": [],
+            }
+        ],
+        "cross_document": [],
+    }
+    source = tmp_path / "coverage-doc-a.md.json"
+    source.write_text(json.dumps(coverage, ensure_ascii=False), encoding="utf-8")
+
+    result = write_coverage_plan_text(source)
+
+    assert result.path == tmp_path / "coverage-doc-a.md.txt"
+    assert result.documents == 1
+    assert result.cross_document_links == 0
+    assert "Document: doc-a.md" in result.path.read_text(encoding="utf-8")
 
 
 # --- output writing ---------------------------------------------------------------------------

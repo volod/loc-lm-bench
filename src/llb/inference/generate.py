@@ -109,14 +109,29 @@ def _gemma4_rank(row: dict[str, Any], allow_cuda: bool) -> tuple[int, float]:
     return cuda_score, _model_size_b(str(row["target"]), str(row["model"]))
 
 
+def _supports_min_context(row: dict[str, Any], min_context_tokens: int | None) -> bool:
+    """Whether a serving row has enough configured context for the requested workflow."""
+    if not min_context_tokens:
+        return True
+    if row.get("backend") != "vllm":
+        return True
+    max_model_len = row.get("max_model_len")
+    return isinstance(max_model_len, int) and max_model_len >= min_context_tokens
+
+
 def select_host_gemma4_target(
-    *, gpu_gb: int | None = None, manifest_path: Path | None = None
+    *,
+    gpu_gb: int | None = None,
+    manifest_path: Path | None = None,
+    min_context_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Return the most capable Gemma 4 target for the resolved CUDA tier.
 
     CUDA hosts prefer vLLM Gemma 4 rows over larger Ollama/offload rows. Within the same backend
     class, larger Gemma 4 parameter counts win. CPU/no-GPU fallback still returns a Gemma 4 row,
-    but it does not prefer vLLM unless the caller explicitly supplied a GPU tier.
+    but it does not prefer vLLM unless the caller explicitly supplied a GPU tier. When
+    `min_context_tokens` is set, short-context vLLM eval cells are ignored for long-prompt
+    workflows such as corpus drafting.
     """
     tier_info = resolve_tier(gpu_gb)
     manifest = load_manifest(manifest_path)
@@ -147,9 +162,13 @@ def select_host_gemma4_target(
             row["cpu_offload_gb"] = float(entry["cpu_offload_gb"])
         if entry.get("kv_offloading_size_gb") is not None:
             row["kv_offloading_size_gb"] = float(entry["kv_offloading_size_gb"])
-        rows.append(row)
+        if _supports_min_context(row, min_context_tokens):
+            rows.append(row)
     if not rows:
-        raise ValueError(f"tier {tier_info.tier_gb}: no Gemma 4 serving target in manifest")
+        suffix = (
+            f" with context >= {min_context_tokens} tokens" if min_context_tokens else ""
+        )
+        raise ValueError(f"tier {tier_info.tier_gb}: no Gemma 4 serving target{suffix}")
     return max(rows, key=lambda row: _gemma4_rank(row, allow_cuda))
 
 

@@ -568,6 +568,11 @@ def prepare_goldset_draft_cmd(
         None,
         help="persisted graph store dir for --multi-hop paths (default: build the graph in-run)",
     ),
+    require_passed_gates: bool = typer.Option(
+        False,
+        "--require-passed-gates",
+        help="exit non-zero after writing the bundle when the ontology calibration gates fail",
+    ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
     from llb.config import DEFAULT_VLLM_HOST
@@ -716,6 +721,28 @@ def prepare_goldset_draft_cmd(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
         f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
     )
+    if require_passed_gates:
+        from llb.prep.ontology.artifacts import required_gate_names
+        from llb.prep.ontology.constants import PDF_ONTOLOGY_REPORT_FILENAME
+
+        gates = (
+            result.calibration_report.get("gates")
+            if isinstance(result.calibration_report, dict)
+            else None
+        )
+        passed = isinstance(gates, dict) and bool(gates.get("passed"))
+        if not passed:
+            failed: list[str] = []
+            if isinstance(gates, dict):
+                required = required_gate_names(bool(gates.get("pdf_citation_gate_applicable")))
+                failed = [name for name in required if not gates.get(name)]
+            detail = ", ".join(failed) if failed else "see report"
+            typer.echo(
+                "[error] ontology calibration gates not passed "
+                f"({detail}); inspect {result.out_dir / PDF_ONTOLOGY_REPORT_FILENAME}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
 
 def _vllm_host_for_port(default_host: str, port: int) -> str:
@@ -787,6 +814,25 @@ def curate_drafts_cmd(
         f"exact-dup={counts['exact_duplicates']} near-dup={counts['near_duplicates']} "
         f"repaired={counts['repaired']}) -> {out}\n"
         f"[curate] report -> {report_path}"
+    )
+
+
+@app.command("coverage-plan-text")
+def coverage_plan_text_cmd(
+    input_path: Path = typer.Option(
+        ..., "--input", "-i", help="curated inventory coverage JSON slice"
+    ),
+    out: Optional[Path] = typer.Option(
+        None, "--out", "-o", help="output text path (default: input path with .txt suffix)"
+    ),
+) -> None:
+    """Convert a prompt-01 inventory coverage JSON slice into a NotebookLM source text file."""
+    from llb.prep.curation.coverage_text import write_coverage_plan_text
+
+    result = write_coverage_plan_text(input_path, out)
+    typer.echo(
+        "[coverage-plan-text] "
+        f"{result.documents} docs, {result.cross_document_links} cross-links -> {result.path}"
     )
 
 

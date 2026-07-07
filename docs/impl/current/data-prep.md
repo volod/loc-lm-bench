@@ -128,6 +128,9 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
 - inventory batch arrays: `CURATE_KIND=inventory` also accepts one top-level JSON array of complete
   prompt-01 response objects, so NotebookLM "continue" sessions can be saved as
   `[{response 1}, {response 2}, ...]` in a single file;
+- coverage source rendering: `make coverage-plan-text` / `llb coverage-plan-text`
+  (`src/llb/prep/curation/coverage_text.py`) converts a per-document prompt-01 inventory slice
+  into a NotebookLM-friendly `.txt` source using the shared curation JSON loader and atomic writer;
 - verbatim repair via `frontier.ground_span`: near-verbatim answers/contexts/grounding quotes are
   re-snapped to exact corpus text when `CURATE_CORPUS=<staged-dir>` is set, and a wrong SQuAD
   `title` is corrected to the document where the context was found;
@@ -168,8 +171,11 @@ that were not exact substrings of the staged markdown corpus.
 
 Prompt 02 (`docs/guides/data-prep/external-service-prompts/02-goldset-draft.md`) documents how to
 map a large curated inventory into a drafting prompt: extract a per-document JSON slice with `jq`,
-paste that slice into `COVERAGE PLAN`, and use bounded array windows for section-like batches when a
-single document's inventory is too large for one chat turn.
+convert that slice to text for NotebookLM with `make coverage-plan-text`, upload the text as a
+NotebookLM source, and reference the source file name in `COVERAGE PLAN`. Non-NotebookLM services
+can still receive a compact pasted JSON slice, and bounded array windows remain useful for
+section-like batches when a single document's inventory is too large for one chat turn. NotebookLM
+draft replies are capped at 15 requested items.
 
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system
@@ -301,11 +307,13 @@ born-digital.
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
 `QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
 `QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=gemma4` resolves the
-most capable Gemma 4 target from the CUDA serving-tier manifest. On the 16 GB host it picks
-`google/gemma-4-12B-it-qat-w4a16-ct`, sets `QUICKSTART_DRAFT_BACKEND=vllm`, and applies the tier
-row's `max_model_len=16384`, `gpu_memory_utilization=0.85`, `cpu_offload_gb=16`, and
-`kv_offloading_size_gb=32`. `legacy-auto` still consumes existing `llb recommend` JSON when present,
-and `benchmark`, `choose`, and `frontier` remain explicit operator modes. A vLLM pick sets
+most capable Gemma 4 target from the CUDA serving-tier manifest, filtering out vLLM rows whose
+configured `max_model_len` is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB hosts the PDF drafter now
+uses the offloaded vLLM target `google/gemma-4-12B-it-qat-w4a16-ct` with `max_model_len=16384`,
+`gpu_memory_utilization=0.90`, `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`. On 16 GB hosts
+the same 12B target uses `gpu_memory_utilization=0.85` plus the same context, CPU-offload, and
+KV-offload settings. `legacy-auto` still consumes existing `llb recommend` JSON when present, and
+`benchmark`, `choose`, and `frontier` remain explicit operator modes. A vLLM pick sets
 `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts `VllmLauncher`, points the local
 draft endpoint at `http://localhost:<port>/v1`, and records `endpoint.backend` plus
 `endpoint.base_url` in provenance. `--no-think` still works for reasoning models: Ollama uses
@@ -317,14 +325,18 @@ step prints an estimated hour count (character-based, `wc -m`, since Cyrillic UT
 double it) and requires confirmation before the full ontology/goldset generation starts. The logged
 make wrapper cannot prompt inside the tee'd child
 process, so unattended full-draft runs require `QUICKSTART_ASSUME_YES=1`; the non-interactive error
-now prints the exact rerun command instead of suggesting a model pin. It passes the full PDF RAG
-store at
+now prints the exact rerun command instead of suggesting a model pin. The PDF and mixed-corpus
+quickstart wrappers pass `DRAFT_REQUIRE_PASSED_GATES=1`, so a zero-item or ungrounded draft writes
+its inspection bundle and then exits non-zero instead of continuing to graph/validation. The wrapper
+passes the full PDF RAG store at
 `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
 gated on `verify-review` and `verify-accept`.
 
 The host Gemma 4 selector ranks CUDA/vLLM rows ahead of larger Ollama/offload rows, then chooses
-the largest Gemma 4 parameter count within that backend class. The 12/16 GB tiers therefore use the
-extra `gemma-4-12b-vllm` target, while 24/32 GB tiers use the primary 31B vLLM Gemma 4 target.
+the largest Gemma 4 parameter count within that backend class. Long-context callers pass a minimum
+context requirement so short-context smoke cells cannot be selected for PDF drafting. The 12/16 GB
+tiers therefore use the extra `gemma-4-12b-vllm` target, while 24/32 GB tiers use the primary 31B
+vLLM Gemma 4 target.
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid

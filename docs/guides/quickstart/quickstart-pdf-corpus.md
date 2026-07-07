@@ -123,13 +123,16 @@ export HF_HUB_OFFLINE=1
 The wrapper draft target is the normal path. It stages all converted markdown documents, selects a
 drafter, estimates the full draft duration, asks for confirmation, and writes the review bundle.
 With the default `QUICKSTART_DRAFT_MODEL=auto` and `QUICKSTART_MODEL_SELECTION=gemma4`, the selector
-uses the most capable Gemma 4 serving target for the resolved CUDA tier. On 16 GB CUDA hosts this
-resolves to `google/gemma-4-12B-it-qat-w4a16-ct` via vLLM and carries over the tier manifest's
-`max_model_len=16384`, `gpu_memory_utilization=0.85`, `cpu_offload_gb=16`, and
-`kv_offloading_size_gb=32` settings. A fresh draft run into an existing output directory clears
-prior extraction journal state; only explicit resume mode reuses journaled extraction windows.
-The logged make wrapper cannot prompt inside the tee'd child process; set
-`QUICKSTART_ASSUME_YES=1` when intentionally approving the full-draft runtime gate.
+uses the most capable Gemma 4 serving target for the resolved CUDA tier and filters out vLLM rows
+whose configured context is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB CUDA hosts this resolves to
+`google/gemma-4-12B-it-qat-w4a16-ct` via vLLM with `max_model_len=16384`,
+`gpu_memory_utilization=0.90`, `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`; on 16 GB hosts
+the same target uses `gpu_memory_utilization=0.85`. A fresh draft run into an existing output
+directory clears prior extraction journal state; only explicit resume mode reuses journaled
+extraction windows. The quickstart draft target requires the ontology calibration gates to pass, so
+a zero-item or ungrounded bundle exits non-zero after writing `pdf_ontology_report.json`. The logged
+make wrapper cannot prompt inside the tee'd child process; set `QUICKSTART_ASSUME_YES=1` when
+intentionally approving the full-draft runtime gate.
 
 ```sh
 make quickstart-pdf-corpus-draft

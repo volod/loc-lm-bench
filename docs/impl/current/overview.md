@@ -55,6 +55,15 @@ all-in-one and grouped execution:
 `scripts/quickstart.sh` owns the grouped orchestration and writes timestamped logs under
 `$DATA_DIR/llb/logs/quickstart/` with step headings, called commands, metrics emitted by each tool,
 and `[result]` artifact summaries.
+
+The top-level `Makefile` is the public entry point: it sets root variables, includes grouped make
+fragments, and defines `help`. Target implementations live under `make/`: `config.mk` for shared
+defaults and exported environment, `quickstart.mk` for grouped quickstarts, `dev.mk` for local
+development and tests, `data-prep.mk` for corpus/goldset/verification work, `eval.mk` for
+RAG/evaluation/pipeline targets, and `models.mk` for model and serving setup. `make help` scans
+all included fragments through `$(MAKEFILE_LIST)` and uses the `##@` section markers plus
+`make/help.awk` to print a grouped, standard CLI-style target list.
+
 The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
 only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. On CUDA hosts,
 `make venv` installs vLLM binary wheels through `scripts/build_vllm.sh` by default
@@ -81,10 +90,10 @@ skipped missing vLLM and llama.cpp serving binaries with actionable log lines, r
 Latest 12 GiB CUDA-host quickstart evidence on the RTX PRO 3000 Blackwell laptop: the setup wrapper
 detected `gpu_tier=12` and selected `.data/quickstart-leaderboard/llb/serving/gpu-12gb/tier.json`
 despite a stale `gpu-16gb` directory. `make build-vllm` installed/reused vLLM 0.24.0 and recorded
-the native sampler fallback for driver 610.43.02. A one-case vLLM smoke for
-`google/gemma-4-12B-it-qat-w4a16-ct` passed at `max_model_len=1024`,
-`gpu_memory_utilization=0.90`, and `LLB_EMBED_DEVICE=cpu`; E4B w4a16 was rejected by the VRAM
-guard on the same host.
+the native sampler fallback for driver 610.43.02. The PDF quickstart now selects
+`google/gemma-4-12B-it-qat-w4a16-ct` at `max_model_len=16384`, `gpu_memory_utilization=0.90`,
+`cpu_offload_gb=16`, and `kv_offloading_size_gb=32`; a bounded drafter probe confirmed vLLM served
+the long-context target with CPU/KV offload on this 12 GiB GPU.
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.

@@ -36,12 +36,14 @@ Check that each backend records the same manifest shape. For vLLM, inspect conte
 fields. For llama.cpp, inspect served context and `n_gpu_layers`.
 
 On 12 GiB CUDA hosts, pin embeddings to CPU before a vLLM probe so the embedder does not compete
-with the served model for the last few hundred MiB:
+with the served model for the last few hundred MiB. Use the generated config so the offloaded 12B
+target carries its `cpu_offload_gb` and `kv_offloading_size_gb` settings into `run-eval`:
 
 ```bash
-LLB_EMBED_DEVICE=cpu llb run-eval --backend vllm \
-  --model google/gemma-4-12B-it-qat-w4a16-ct \
-  --max-model-len 1024 --gpu-memory-utilization 0.90 --evict --limit 1
+make gen-serving-config
+LLB_EMBED_DEVICE=cpu llb run-eval \
+  --config "$DATA_DIR/llb/serving/gpu-12gb/run_eval_gemma_4_12b_vllm.yaml" \
+  --evict --limit 1
 ```
 
 ## Robust Backend Checks
