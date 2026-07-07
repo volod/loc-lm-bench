@@ -58,6 +58,22 @@ store lives under
 `.data/quickstart-pdf-corpus-graph/llb/graph/` with 290 nodes, 159 edges, and 139 communities
 from the same 4-document draft bundle.
 
+## Standalone Closed-Service Runner
+
+`src/llb/standalone/rag_squad_goldset.py` is a stdlib-only helper for operators who need to score a
+closed RAG service outside the normal `llb run-eval` backend path. It reads SQuAD-shaped JSONL,
+POSTs each `question` to `RAG_SERVICE_URL`, strips reasoning `<think>` blocks, and streams the
+original row plus `predicted_answer`, `error`, `service`, and `latency_s` to an output JSONL file.
+
+```bash
+python src/llb/standalone/rag_squad_goldset.py INPUT.jsonl OUTPUT.jsonl --limit 10
+```
+
+The wire-format seam is intentionally narrow: edit `build_request()` and `parse_answer()` for the
+remote service shape, or set `RAG_SERVICE_URL`, `RAG_SERVICE_NAME`, `RAG_API_KEY`,
+`RAG_TIMEOUT_S`, and `RAG_RETRIES` in the environment. The helper is type-checked by the standard
+`make ci` mypy pass.
+
 ## Retrieval Store
 
 `src/llb/rag/store.py` builds `RagStore`:

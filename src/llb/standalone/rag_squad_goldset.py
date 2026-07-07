@@ -54,7 +54,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO, cast
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG — remote operators edit here.
@@ -124,7 +124,7 @@ def build_request(question: str) -> urllib.request.Request:
     return urllib.request.Request(RAG_SERVICE_URL, data=body, headers=headers, method="POST")
 
 
-def parse_answer(payload: dict) -> str:
+def parse_answer(payload: dict[str, Any]) -> str:
     """Extract the answer text from the service response. ADJUST to your API.
 
     Common shapes:
@@ -132,7 +132,7 @@ def parse_answer(payload: dict) -> str:
         {"result": {"text": "..."}}                  -> payload["result"]["text"]
         {"choices": [{"message": {"content": ...}}]} -> OpenAI-compatible chat
     """
-    return payload["answer"]
+    return cast(str, payload["answer"])
 
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -154,7 +154,7 @@ def query_rag_service(question: str) -> str:
         try:
             req = build_request(question)
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
+                payload = cast(dict[str, Any], json.loads(resp.read().decode("utf-8")))
             return clean_answer(parse_answer(payload))
         except RETRYABLE as exc:
             last_exc = exc
@@ -164,7 +164,9 @@ def query_rag_service(question: str) -> str:
                     f"  transient error (attempt {attempt}/{RETRY_ATTEMPTS}): {exc} — retrying in {wait:.0f}s"
                 )
                 time.sleep(wait)
-    raise last_exc  # exhausted retries
+    if last_exc is not None:
+        raise last_exc  # exhausted retries
+    raise RuntimeError("RAG service query failed without an attempt")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,14 +209,14 @@ class Stats:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _load_item(line: str) -> dict | None:
+def _load_item(line: str) -> dict[str, Any] | None:
     line = line.strip()
     if not line:
         return None
-    return json.loads(line)
+    return cast(dict[str, Any], json.loads(line))
 
 
-def _get_answer(item: dict) -> str:
+def _get_answer(item: dict[str, Any]) -> str:
     """Query the RAG service and record its answer on the item. Returns the answer."""
     answer = query_rag_service(item["question"])
     item["predicted_answer"] = answer
@@ -222,14 +224,14 @@ def _get_answer(item: dict) -> str:
     return answer
 
 
-def _set_error(item: dict, exc: Exception) -> None:
+def _set_error(item: dict[str, Any], exc: Exception) -> None:
     # One bad item must not abort a long run; record and move on.
     item["predicted_answer"] = ""
     item["error"] = f"{type(exc).__name__}: {exc}"
     log(f"[warn] {item.get('id', '?')}: {item['error']}")
 
 
-def _write_item(item: dict, started: float, f_out: TextIO) -> float:
+def _write_item(item: dict[str, Any], started: float, f_out: TextIO) -> float:
     """Stamp service + latency, write the JSONL line, and return the latency in seconds."""
     latency = round(time.monotonic() - started, 3)
     item["service"] = SERVICE_NAME
@@ -281,18 +283,24 @@ def process(input_path: Path, output_path: Path, limit: int | None) -> Stats:
     return stats
 
 
-def _set_parser() -> argparse.Namespace:
+def _set_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     # Positionals are optional so a no-arg run (e.g. from an IDE) works out of the box;
     # DEFAULT_INPUT is a dev convenience — on the remote host pass explicit paths.
     parser.add_argument(
-        "input", type=Path, nargs="?", default=DEFAULT_INPUT,
+        "input",
+        type=Path,
+        nargs="?",
+        default=DEFAULT_INPUT,
         help=f"Input goldset JSONL (SQuAD format). Default: {DEFAULT_INPUT}",
     )
     parser.add_argument(
-        "output", type=Path, nargs="?", default=None,
+        "output",
+        type=Path,
+        nargs="?",
+        default=None,
         help="Output JSONL with predicted answers. Default: <input>.answers.jsonl",
     )
     parser.add_argument("--limit", type=int, default=None, help="Only process the first N items.")
