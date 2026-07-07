@@ -165,9 +165,7 @@ def select_host_gemma4_target(
         if _supports_min_context(row, min_context_tokens):
             rows.append(row)
     if not rows:
-        suffix = (
-            f" with context >= {min_context_tokens} tokens" if min_context_tokens else ""
-        )
+        suffix = f" with context >= {min_context_tokens} tokens" if min_context_tokens else ""
         raise ValueError(f"tier {tier_info.tier_gb}: no Gemma 4 serving target{suffix}")
     return max(rows, key=lambda row: _gemma4_rank(row, allow_cuda))
 

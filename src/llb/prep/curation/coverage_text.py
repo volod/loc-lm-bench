@@ -6,6 +6,7 @@ compact text source that can be uploaded beside the staged corpus files and refe
 prompt 02.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -41,6 +42,11 @@ def _clean(value: Any) -> str:
 def _quote(value: Any) -> str:
     text = _clean(value)
     return f'"{text}"' if text else '""'
+
+
+def _list_field(mapping: Mapping[Any, Any], key: str) -> list[Any]:
+    value = mapping.get(key)
+    return value if isinstance(value, list) else []
 
 
 def _format_topic(value: Any) -> list[str]:
@@ -82,7 +88,7 @@ def _format_numeric_fact(value: Any) -> list[str]:
 def _format_cross_document(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return _format_topic(value)
-    docs = value.get("docs") if isinstance(value.get("docs"), list) else []
+    docs = _list_field(value, "docs")
     return [
         f"- entity_or_topic: {_clean(value.get('entity_or_topic'))}",
         f"  docs: {', '.join(_clean(doc) for doc in docs if _clean(doc))}",
@@ -125,12 +131,8 @@ def _coverage_object(path: Path) -> dict[str, Any]:
 
 def coverage_plan_to_text(coverage: dict[str, Any]) -> str:
     """Render a prompt-01 inventory slice as a NotebookLM-friendly plain-text source."""
-    documents = coverage.get("documents") if isinstance(coverage.get("documents"), list) else []
-    cross = (
-        coverage.get("cross_document")
-        if isinstance(coverage.get("cross_document"), list)
-        else []
-    )
+    documents = _list_field(coverage, "documents")
+    cross = _list_field(coverage, "cross_document")
     lines = [
         "Coverage plan",
         "",
@@ -151,17 +153,19 @@ def default_coverage_text_path(path: Path) -> Path:
     return path.with_suffix(".txt")
 
 
-def write_coverage_plan_text(input_path: Path, output_path: Path | None = None) -> CoverageTextResult:
+def write_coverage_plan_text(
+    input_path: Path, output_path: Path | None = None
+) -> CoverageTextResult:
     """Load a coverage JSON slice and atomically write its text rendering."""
     input_path = Path(input_path)
-    output = Path(output_path) if output_path is not None else default_coverage_text_path(input_path)
+    output = (
+        Path(output_path) if output_path is not None else default_coverage_text_path(input_path)
+    )
     coverage = _coverage_object(input_path)
     text = coverage_plan_to_text(coverage)
     atomic_write_text(output, text)
-    documents = coverage.get("documents") if isinstance(coverage.get("documents"), list) else []
-    cross = (
-        coverage.get("cross_document")
-        if isinstance(coverage.get("cross_document"), list)
-        else []
+    documents = _list_field(coverage, "documents")
+    cross = _list_field(coverage, "cross_document")
+    return CoverageTextResult(
+        path=output, documents=len(documents), cross_document_links=len(cross)
     )
-    return CoverageTextResult(path=output, documents=len(documents), cross_document_links=len(cross))

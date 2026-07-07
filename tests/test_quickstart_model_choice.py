@@ -126,9 +126,7 @@ def test_host_gemma4_field_reports_offloaded_12gb_drafter(capsys):
     model_choice.print_host_gemma4("backend", gpu_gb=12, min_context_tokens=16384)
     model_choice.print_host_gemma4("max-model-len", gpu_gb=12, min_context_tokens=16384)
     model_choice.print_host_gemma4("cpu-offload-gb", gpu_gb=12, min_context_tokens=16384)
-    model_choice.print_host_gemma4(
-        "kv-offloading-size-gb", gpu_gb=12, min_context_tokens=16384
-    )
+    model_choice.print_host_gemma4("kv-offloading-size-gb", gpu_gb=12, min_context_tokens=16384)
     assert capsys.readouterr().out.splitlines() == [
         "google/gemma-4-12B-it-qat-w4a16-ct",
         "vllm",
