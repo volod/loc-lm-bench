@@ -429,10 +429,16 @@ def tune_cmd(
     isolate: bool = typer.Option(
         False, help="run each trial under the executor VRAM-reclaim + thermal-cooldown gate"
     ),
+    extended_chunkers: bool = typer.Option(
+        False,
+        "--extended-chunkers",
+        help="add the page/heading/late chunking strategies to the stage-1 search space "
+        "(late re-embeds whole documents per trial; page needs PDF citation sidecars)",
+    ),
 ) -> None:
     """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.optimize.tuner import two_stage
+    from llb.optimize.tuner import EXTENDED_STRATEGIES, two_stage
 
     cfg = load_config(
         None, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
@@ -456,6 +462,7 @@ def tune_cmd(
         isolate=isolate,
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
+        strategies=EXTENDED_STRATEGIES if extended_chunkers else None,
     )
     t = out.tune
     typer.echo(

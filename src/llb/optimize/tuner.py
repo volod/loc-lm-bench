@@ -36,6 +36,10 @@ FINAL_SPLIT = "final"
 OPTUNA_METHOD = "optuna"
 
 STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
+# The corpus-chunking additions (page / heading / late) join the search space only behind an
+# explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per trial and
+# `page` only differs from `recursive` on sidecar-bearing PDF corpora, so they are opt-in.
+EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late"]
 RETRIEVAL_MODES = ["flat", "parent_child"]
 CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
@@ -82,15 +86,18 @@ _OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memo
 SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]
 
 
-def suggest_overrides(trial: Any, backend: str = "ollama") -> dict[str, Any]:
+def suggest_overrides(
+    trial: Any, backend: str = "ollama", strategies: list[str] | None = None
+) -> dict[str, Any]:
     """Sample one config from an Optuna trial (embedding is pinned, never sampled).
 
-    RAG params are always sampled. BACKEND-AWARE serving knobs are sampled only when the
-    resolved backend actually exposes them: `gpu_memory_utilization` / `max_model_len` are vLLM
-    concepts, so sampling them for Ollama would tune dead parameters (llama.cpp knobs land with
-    that launcher).
+    RAG params are always sampled; `strategies` overrides the chunking-strategy choices
+    (`EXTENDED_STRATEGIES` behind `tune --extended-chunkers`). BACKEND-AWARE serving knobs are
+    sampled only when the resolved backend actually exposes them: `gpu_memory_utilization` /
+    `max_model_len` are vLLM concepts, so sampling them for Ollama would tune dead parameters
+    (llama.cpp knobs land with that launcher).
     """
-    strategy = trial.suggest_categorical("strategy", STRATEGIES)
+    strategy = trial.suggest_categorical("strategy", list(strategies or STRATEGIES))
     chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
     overlap_frac = trial.suggest_float("overlap_frac", 0.0, 0.4)
     mode = trial.suggest_categorical("retrieval_mode", RETRIEVAL_MODES)
@@ -175,6 +182,7 @@ def make_objective(
     vram_mib: int = 0,
     ram_mib: int = 0,
     on_trial: TrialCallback | None = None,
+    strategies: list[str] | None = None,
 ) -> Callable[[Any], float]:
     """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate.
 
@@ -185,7 +193,7 @@ def make_objective(
     import optuna
 
     def objective(trial: Any) -> float:
-        overrides = suggest_overrides(trial, backend=base_config.backend)
+        overrides = suggest_overrides(trial, backend=base_config.backend, strategies=strategies)
         try:
             config = base_config.with_overrides(**overrides)
         except ValueError as exc:  # e.g. overlap >= chunk_size after rounding
@@ -230,6 +238,7 @@ def tune(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     gpu_sampler: Callable[[], list[Any]] | None = None,
+    strategies: list[str] | None = None,
 ) -> TuneResult:
     """Stage 1: search the RAG/backend space on the tuning split; return the best config.
 
@@ -270,6 +279,7 @@ def tune(
             vram_mib=vram_mib,
             ram_mib=ram_mib,
             on_trial=on_trial,
+            strategies=strategies,
         ),
         n_trials=n_trials,
     )
@@ -320,6 +330,7 @@ def two_stage(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     gpu_sampler: Callable[[], list[Any]] | None = None,
+    strategies: list[str] | None = None,
 ) -> TwoStageResult:
     """Stage 1 tunes on the tuning split; stage 2 scores the winner on the full final split."""
     result = tune(
@@ -337,6 +348,7 @@ def two_stage(
         vram_reader=vram_reader,
         pid_usage_reader=pid_usage_reader,
         gpu_sampler=gpu_sampler,
+        strategies=strategies,
     )
     runner = final_runner or _run_eval_final
     _LOG.info(

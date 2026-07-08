@@ -3,7 +3,7 @@
 
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
-	compare-embeddings run-eval analyze-misses sweep pipeline prompt-system-prepare prompt-system-review \
+	compare-embeddings run-eval analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -12,9 +12,10 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(DATA_DIR)/llb/rag" --strategy all --size 800 --overlap 120
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (EMBEDDING_MODEL= to override; needs ".[rag]")
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CHUNK_STRATEGY= EMBEDDING_MODEL= to override; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)" \
+		$(if $(CHUNK_STRATEGY),--strategy "$(CHUNK_STRATEGY)",) \
 		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",)
 
 build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=...; needs ".[graph]")
@@ -26,9 +27,10 @@ validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-compare-retrieval: ## GraphRAG backend: compare faiss vs both graph strategies' recall@k/MRR on the gold set
+compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=page,heading,late ranks chunkers instead
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
+	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
+		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -55,6 +57,22 @@ analyze-misses: ## Miss analysis: classify + cluster one run's misses (RUN_DIR=<
 		$(if $(ANALYZE_GOLDSET),--goldset "$(ANALYZE_GOLDSET)",) \
 		$(if $(MISS_THRESHOLD),--miss-threshold $(MISS_THRESHOLD),) \
 		$(if $(PROBE_TOP_K),--probe-top-k "$(PROBE_TOP_K)",)
+
+score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(EXTERNAL_RAG_ANSWERS)" || { echo "ERROR: set EXTERNAL_RAG_ANSWERS=<answered-jsonl>"; exit 1; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main score-external-rag --answers "$(EXTERNAL_RAG_ANSWERS)" \
+		--source-limit "$(EXTERNAL_RAG_SOURCE_LIMIT)" \
+		$(if $(EXTERNAL_RAG_CSV),--csv-out "$(EXTERNAL_RAG_CSV)",) \
+		$(if $(EXTERNAL_RAG_REPORT),--report-out "$(EXTERNAL_RAG_REPORT)",) \
+		$(if $(EXTERNAL_RAG_ANSWER_FIELD),--answer-field "$(EXTERNAL_RAG_ANSWER_FIELD)",) \
+		$(if $(EXTERNAL_RAG_SOURCES_FIELD),--sources-field "$(EXTERNAL_RAG_SOURCES_FIELD)",) \
+		$(if $(EXTERNAL_RAG_ERROR_FIELD),--error-field "$(EXTERNAL_RAG_ERROR_FIELD)",) \
+		$(if $(EXTERNAL_RAG_LABEL),--label "$(EXTERNAL_RAG_LABEL)",) \
+		$(if $(EXTERNAL_RAG_START),--start "$(EXTERNAL_RAG_START)",) \
+		$(if $(EXTERNAL_RAG_CLEAR),--clear,) \
+		$(if $(EXTERNAL_RAG_KEEP_SOURCE_FOOTER),--keep-source-footer,)
 
 sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -45,6 +45,24 @@ $DATA_DIR/run-eval/<timestamp>-<run-id>/
 
 Each invocation gets a new directory.
 
+## Choosing a chunking strategy
+
+`build-index` chunks with `recursive` by default. Eight strategies are available
+(`fixed | sentence | recursive | markdown | semantic | page | heading | late`; see the
+[RAG core](../../impl/current/rag-core.md) chunking section for what each does):
+
+```bash
+make build-index CHUNK_STRATEGY=heading
+make compare-retrieval CHUNK_STRATEGIES=page,heading,late,markdown,semantic RAG_K=10
+```
+
+`compare-retrieval CHUNK_STRATEGIES=...` builds one store per strategy over the same corpus and
+pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by recall@k /
+MRR, so pick the demonstrated winner rather than assuming one. `page` needs the PDF-lane
+`*.citations.json` sidecars to differ from `recursive`; `late` is flat-mode only and costs a
+whole-document embedding pass. `llb tune --extended-chunkers` adds the three new strategies to
+the Optuna search space.
+
 ## Notes
 
 - The embedding model is pinned. If `validate-retrieval` is below `recall@10 >= 0.8`, retrieval is

@@ -114,6 +114,43 @@ def build_vector_store_comparison(config: Any, backends: list[str]) -> dict[str,
     return stores
 
 
+def build_chunking_comparison(
+    config: Any, strategies: list[str], stores_root: Any = None
+) -> dict[str, Retriever]:
+    """Build one FAISS store per CHUNKING strategy for a source-span retrieval comparison.
+
+    Every store shares the config's corpus, chunk size/overlap, and PINNED embedder and differs
+    ONLY in the chunking strategy, so `compare_retrieval` demonstrates (not assumes) the best
+    chunker per corpus. Stores are built in `flat` mode -- parent_child would confound the
+    boundary comparison (and `late` refuses it). When `stores_root` is given each store persists
+    under `<stores_root>/<strategy>/` for reuse. Real path: needs the `[rag]` extra.
+    """
+    from pathlib import Path
+
+    from llb.rag.chunking import STRATEGIES
+    from llb.rag.store import RagStore
+
+    unknown = [s for s in strategies if s not in STRATEGIES]
+    if unknown:
+        raise ValueError(
+            f"unknown chunking strategy: {unknown[0]!r}; choose from {', '.join(STRATEGIES)}"
+        )
+    stores: dict[str, Retriever] = {}
+    for strategy in strategies:
+        store = RagStore.build(
+            config.corpus_root,
+            strategy,
+            config.chunk_size,
+            config.chunk_overlap,
+            config.embedding_model,
+            mode="flat",
+        )
+        if stores_root is not None:
+            store.save(Path(stores_root) / strategy)
+        stores[strategy] = store
+    return stores
+
+
 def load_compare_stores(config: Any) -> dict[str, Retriever]:
     """Load the three standard backends for `config`, skipping any whose store is not built.
 

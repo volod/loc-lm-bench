@@ -74,6 +74,46 @@ remote service shape, or set `RAG_SERVICE_URL`, `RAG_SERVICE_NAME`, `RAG_API_KEY
 `RAG_TIMEOUT_S`, and `RAG_RETRIES` in the environment. The helper is type-checked by the standard
 `make ci` mypy pass.
 
+## External Answer Log Scoring
+
+`llb score-external-rag` / `make score-external-rag` reviews a JSONL file that already contains
+answers from an external or closed RAG system. It does not launch the local RAG backend. It reads
+the gold fields plus an answer field (`llm_answer`, `predicted_answer`, `model_answer`, or
+`answer`), computes the same objective answer-correctness signals as `run-eval`, and opens an
+interactive human scoring loop. The scoring/report core is in `src/llb/scoring/external_rag.py`;
+the terminal session loop is in `src/llb/scoring/external_rag_session.py`; coverage lives in
+`tests/test_external_rag_score.py`.
+
+The JSONL answer log is the session state. Each edit atomically writes `human_score_0_1`,
+`human_decision`, `human_notes`, `human_corrected_answer`, and `human_status` back into the same
+file, so partial sessions resume at the first unscored row. `EXTERNAL_RAG_CLEAR=1` / `--clear`
+clears those human fields after confirmation. The card shown to the reviewer includes the
+question, reference answer, gold source spans, raw answer, scored answer, first returned sources,
+and error field.
+
+Final artifacts are written only after all rows have a human score plus decision:
+
+```text
+<answered>.csv
+<answered>.report.md
+```
+
+The CSV is sorted by `review_priority_rank` and includes the JSONL-backed human review fields. The
+report records aggregate objective estimates, human decision counts, mean human score, split
+estimates, common returned sources, actual scoring parameters, and improvement commands. A trailing
+source footer in the answer text is stripped before objective scoring while the raw answer is
+preserved in the CSV.
+
+```bash
+make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl>
+llb score-external-rag --answers <answered-jsonl> --answer-field predicted_answer
+make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl> EXTERNAL_RAG_CLEAR=1
+```
+
+This is an external-system diagnostic, not a certified local leaderboard. If the answer log contains
+only source article ids, titles, or URLs, the command cannot compute source-span recall; external
+retrieval recall needs source records with corpus `doc_id`, `char_start`, and `char_end`.
+
 ## Retrieval Store
 
 `src/llb/rag/store.py` builds `RagStore`:
@@ -103,9 +143,9 @@ after. `store_meta.json` records `page_annotation_coverage` (the fraction of ind
 gained a `pages` field) and `build-index` logs it. In `parent_child` mode both the indexed children
 and their parents are annotated, so the fields surface on retrieval hits either way. Retrieved hits
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
-"file X, page N, section Y" without re-deriving the join. Page-aligned chunk *boundaries* and the
-metadata *filter* seam are forward tasks 10 and 12 in [`plan.md`](../plan.md); governance fields
-(`language`, `date`/`version`, ACL) are forward task 17.
+"file X, page N, section Y" without re-deriving the join. The metadata *filter* seam is forward
+task 12 in [`plan.md`](../plan.md); governance fields (`language`, `date`/`version`, ACL) are
+forward task 17.
 
 Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): a `markdown`/`flat`
 store over the quickstart HR PDF corpus (`.data/quickstart-pdf-corpus-hr/_md`, 8 converted docs)
@@ -117,6 +157,57 @@ Retrieval modes:
 
 - `flat`: index generation chunks directly;
 - `parent_child`: index smaller child chunks and return deduplicated larger parent chunks.
+
+## Chunking Strategies
+
+`src/llb/rag/chunking.py` implements every strategy behind one seam
+(`chunk_spans -> (start, end, metadata)`), each anchored to `doc_id` + exact character offsets so
+`validate-goldset` and source-span scoring work identically across strategies:
+
+- `fixed`: character window with overlap (pure Python, zero deps);
+- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence);
+- `recursive`: pinned langchain `RecursiveCharacterTextSplitter` (offset-verified; default);
+- `markdown`: one chunk per leaf section BODY (heading lines stripped), breadcrumb in
+  `metadata.headers`, long sections recursively sub-split;
+- `semantic`: native embedding-distance-spike splitter over sentence offsets (pinned embedder);
+- `page`: PDF page/citation-aware -- chunk boundaries never cross a `*.citations.json`
+  page-sidecar span (loader: `doc_page_spans` reusing `page_metadata.load_page_citations`);
+  pages longer than `size` sub-split WITHIN the page; docs without a sidecar fall back to
+  `recursive`, as do `parent_child` children (their page coordinates are unknown inside a parent
+  slice);
+- `heading`: heading-hierarchy (layout-aware) -- a whole heading subtree that fits `size` becomes
+  ONE chunk with heading lines INCLUDED in the text (unlike `markdown`); oversized subtrees emit
+  their own section and recurse into child headings; every chunk carries the full breadcrumb;
+- `late`: late chunking (Guenther et al. 2024) -- spans are IDENTICAL to `sentence` (so a
+  retrieval delta isolates the embedding effect), but vectors are mean-pooled from
+  whole-document token embeddings (`src/llb/rag/late_encoding.py`; the document is processed in
+  consecutive encoder windows, e5-base: 512 tokens). Needs a token-level local embedder
+  (`Embedder.passage_token_offsets` / `encode_passage_tokens`); flat mode only -- `RagStore.build`
+  refuses `parent_child`; a chunk no token overlapped falls back to per-chunk encoding, logged.
+
+Selection: `make build-index CHUNK_STRATEGY=<name>` / `build-index --strategy <name>` /
+`RunConfig.strategy`; chunk-only via `python -m llb.rag.chunking --strategy <name>`. The Optuna
+tuner searches the original five by default; `llb tune --extended-chunkers` adds
+`page`/`heading`/`late` (`EXTENDED_STRATEGIES` in `src/llb/optimize/tuner.py`) -- opt-in because
+`late` re-embeds whole documents per trial and `page` only differs from `recursive` on
+sidecar-bearing PDF corpora.
+
+Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,markdown,semantic`
+(`compare-retrieval --strategies ...`) builds one flat FAISS store per strategy over the SAME
+corpus + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by
+recall@k / MRR on the gold set, so the best chunker is demonstrated per corpus, never assumed.
+Tests: `tests/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
+committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
+fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
+
+Durable evidence (2026-07-08, CUDA host, outside quick CI): on the committed
+`samples/goldsets/ip_regulation_uk` fixture (8 items, single `.md` corpus, no PDF sidecars --
+`page` therefore equals `recursive` there), recall@10 SATURATES at 1.000 for all seven compared
+strategies; at k=3 `heading`/`markdown`/`page`/`recursive`/`semantic`/`sentence` all hold
+1.000 recall / 1.000 MRR while `late` drops to 0.875 / 0.750 -- on this tiny corpus late pooling
+blurs, not sharpens, retrieval; it must prove itself per corpus before adoption. Like the
+embedder bake-off, the fixture is too small to discriminate the winners -- the discriminating
+run is forward task `chunking-comparison-full-corpus` in [`plan.md`](../plan.md).
 
 ## Embedder Conventions And Bake-off
 

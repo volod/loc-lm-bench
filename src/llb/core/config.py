@@ -23,7 +23,9 @@ from llb.core.contracts import JsonObject
 from llb.core import env
 from llb.core.paths import load_project_env, resolve_data_dir, resolve_project_path
 
-Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
+Strategy = Literal[
+    "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late"
+]
 RetrievalMode = Literal["flat", "parent_child"]
 RetrievalBackend = Literal["faiss", "graph"]
 RetrievalStrategy = Literal["local_khop", "global_community"]

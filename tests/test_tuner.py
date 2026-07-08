@@ -5,6 +5,8 @@ import pytest
 from llb.core.config import RunConfig
 from llb.core.contracts import ModelSpec
 from llb.optimize.tuner import (
+    EXTENDED_STRATEGIES,
+    STRATEGIES,
     TwoStageResult,
     estimate_prompt_tokens,
     fits_context,
@@ -61,6 +63,31 @@ def test_suggest_overrides_flat_keeps_overlap_below_size():
     assert over["strategy"] == "markdown" and over["chunk_size"] == 800
     assert over["chunk_overlap"] == 200 and over["chunk_overlap"] < over["chunk_size"]
     assert "child_chunk_size" not in over  # flat mode
+
+
+def test_suggest_overrides_extended_chunkers_behind_the_flag():
+    # Default search space excludes the corpus-chunking additions; `strategies=` opts them in.
+    captured: dict[str, list] = {}
+
+    class RecordingTrial(FakeTrial):
+        def suggest_categorical(self, name, choices):
+            captured.setdefault(name, list(choices))
+            return super().suggest_categorical(name, choices)
+
+    vals = {
+        "strategy": "late",
+        "chunk_size": 512,
+        "overlap_frac": 0.1,
+        "retrieval_mode": "flat",
+        "top_k": 5,
+    }
+    over = suggest_overrides(RecordingTrial(vals), strategies=EXTENDED_STRATEGIES)
+    assert {"page", "heading", "late"} <= set(captured["strategy"])
+    assert over["strategy"] == "late"
+
+    captured.clear()
+    suggest_overrides(RecordingTrial({**vals, "strategy": "markdown"}))
+    assert captured["strategy"] == STRATEGIES  # default space unchanged
 
 
 def test_suggest_overrides_parent_child_clamps_child_below_size():

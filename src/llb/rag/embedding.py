@@ -122,3 +122,43 @@ class Embedder:
             show_progress_bar=False,
         )
         return np.asarray(vectors, dtype="float32")
+
+    # --- token-level passage hooks (late chunking, `llb.rag.late_encoding`) ---
+
+    def max_seq_tokens(self) -> int:
+        """The encoder's window in tokens (late chunking sizes its document windows by it)."""
+        return int(self._load().get_max_seq_length() or 512)
+
+    def passage_token_offsets(self, text: str) -> list[tuple[int, int]]:
+        """Char span of every token of raw `text` (no special tokens, no truncation)."""
+        encoded = self._load().tokenizer(
+            text, add_special_tokens=False, return_offsets_mapping=True, truncation=False
+        )
+        return [(start, end) for start, end in encoded["offset_mapping"] if end > start]
+
+    def encode_passage_tokens(self, text: str) -> tuple[list[tuple[int, int]], list[list[float]]]:
+        """Per-token char spans + embeddings for ONE passage window (<= `max_seq_tokens`).
+
+        The window is encoded under the family's PASSAGE convention (prefix included), and
+        prefix/special tokens are dropped so every returned span indexes into raw `text`.
+        """
+        model = self._load()
+        prefixed = apply_passage_convention(self.model_name, [text])[0]
+        shift = len(prefixed) - len(text)
+        token_vectors = model.encode(
+            prefixed, output_value="token_embeddings", show_progress_bar=False
+        ).tolist()
+        offsets = model.tokenizer(
+            prefixed,
+            return_offsets_mapping=True,
+            truncation=True,
+            max_length=self.max_seq_tokens(),
+        )["offset_mapping"]
+        spans: list[tuple[int, int]] = []
+        vectors: list[list[float]] = []
+        for (start, end), vector in zip(offsets, token_vectors):
+            if end <= max(start, shift):  # special tokens (0,0) and the passage prefix
+                continue
+            spans.append((max(0, start - shift), end - shift))
+            vectors.append([float(x) for x in vector])
+        return spans, vectors

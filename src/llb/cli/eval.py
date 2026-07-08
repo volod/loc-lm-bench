@@ -229,6 +229,64 @@ def analyze_misses_cmd(
     typer.echo(f"[analyze-misses] misses -> {paths['misses']}")
 
 
+@app.command("score-external-rag")
+def score_external_rag_cmd(
+    answers: Path = typer.Option(
+        ..., "--answers", help="answered goldset JSONL from an external or closed RAG system"
+    ),
+    csv_out: Optional[Path] = typer.Option(
+        None, help="detailed per-row CSV path (default: <answers>.csv)"
+    ),
+    report_out: Optional[Path] = typer.Option(
+        None, help="Markdown report path (default: <answers>.report.md)"
+    ),
+    answer_field: Optional[str] = typer.Option(
+        None, help="answer field to score (default: auto: llm_answer, predicted_answer, ...)"
+    ),
+    sources_field: Optional[str] = typer.Option(
+        None, help="source-list field to flatten (default: auto: llm_sources, sources, ...)"
+    ),
+    error_field: Optional[str] = typer.Option(
+        None, help="error field (default: auto: llm_error, error)"
+    ),
+    source_limit: int = typer.Option(3, min=0, help="number of top sources to flatten into CSV"),
+    label: Optional[str] = typer.Option(None, help="system label in the report"),
+    strip_source_footer: bool = typer.Option(
+        True,
+        "--strip-source-footer/--keep-source-footer",
+        help="strip a trailing Source:/Dzherelo: footer before objective scoring",
+    ),
+    start: Optional[int] = typer.Option(
+        None, "--start", min=1, help="start review at 1-based row number"
+    ),
+    clear: bool = typer.Option(
+        False,
+        "--clear",
+        help="confirmation-gated restart: clear JSONL human fields before reviewing",
+    ),
+) -> None:
+    """Interactively score an external RAG JSONL; finalize CSV + report when complete."""
+    from llb.scoring.external_rag_session import run_external_rag_session
+
+    try:
+        run_external_rag_session(
+            answers,
+            csv_out=csv_out,
+            report_out=report_out,
+            answer_field=answer_field,
+            sources_field=sources_field,
+            error_field=error_field,
+            source_limit=source_limit,
+            strip_source_footer=strip_source_footer,
+            label=label,
+            start=start,
+            clear=clear,
+        )
+    except ValueError as exc:
+        typer.echo(f"[score-external-rag] {exc}", err=True)
+        raise typer.Exit(code=2)
+
+
 @app.command("judge-experiment")
 def judge_experiment_cmd(
     judge_model: str = typer.Option(..., help="served local judge model id"),

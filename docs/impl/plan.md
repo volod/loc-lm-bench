@@ -39,7 +39,9 @@ section boundary and are called out because they are **blocked by human work**:
 
 The retrieval-quality cluster (12-16) gives the query-and-rerank side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k`, the sweep grids `top_k`, and task 10 adds strategies). Together 12 + 15 cover the
+`top_k` -- including the shipped page/heading/late chunkers behind `tune --extended-chunkers`; see
+[RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`). Together
+12 + 15 cover the
 Ukrainian-language retrieval stack: dense + BM25/sparse + metadata hybrid with
 inflection-aware lemmatization (12) and query-side
 normalization -- casefold, apostrophes, transliteration, typo tolerance, aliases/glossary --
@@ -56,8 +58,8 @@ the reindex/deletion/rollback policy (measured shortfall and scope decision reco
 [RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)). The
 strategy-independent page/section join that links every chunk back to its origin file, page, and
 heading -- from chunk char offsets to the PDF citation sidecars -- is now shipped
-(`src/llb/rag/page_metadata.py`; see [RAG core](current/rag-core.md) retrieval store); tasks 10 and
-12 reuse its sidecar loader and the `pages`/`source_pdf`/`headers` fields it attaches.
+(`src/llb/rag/page_metadata.py`; see [RAG core](current/rag-core.md) retrieval store); task 12
+reuses its sidecar loader and the `pages`/`source_pdf`/`headers` fields it attaches.
 
 The fine-tuning cluster (18-22) extends the spine one step past recommendation: from naming the
 best base model to naming the best *adapted* model for the operator's corpus, with the whole loop
@@ -76,14 +78,14 @@ These land to `make ci` green with fixtures, fakes, and deterministic harnesses.
 prioritized Ukrainian-RAG-quality foundations are both shipped: the measured embedder ranking
 (`llb compare-embeddings`; see [RAG core](current/rag-core.md) retrieval store) that replaces the
 assumed default embedder with evidence, and the page/section join
-(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file; tasks 10 and 12
-build on the latter's sidecar loader and fields, and 12/15 build on the measured embedder result.
+(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file; task 12
+builds on the latter's sidecar loader and fields, and 12/15 build on the measured embedder result.
 The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
 merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: the independent lot (10, 12, 15, 16) in any order, 13 after 12, 17's
+Recommended sequence: the independent lot (12, 15, 16) in any order, 13 after 12, 17's
 ACL-filter half after 12's
 metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
@@ -129,44 +131,6 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   digest; verified-data stamping matches the category suite rules; `make ci` green.
 - Documentation target: [extended workflows](current/extended-workflows.md);
   [`docs/guides/benchmarking/prompt-system-rag.md`](../guides/benchmarking/prompt-system-rag.md).
-
-### 10. corpus-chunking-strategies
-
-- Dependencies: soft-follows the shipped page-metadata join (`src/llb/rag/page_metadata.py`): the
-  page-aware strategy reuses its sidecar page-span loader; the boundary alignment and new
-  strategies are this task's own. Picks up the "new
-  chunking strategies" item the shipped autopipeline held out of scope; independent of the rest.
-- User-visible outcome: the RAG store gains chunking strategies suited to mixed real-world corpora
-  and demonstrated (not assumed) to help retrieval: a PDF page/citation-aware strategy that keeps
-  chunk boundaries on page-sidecar spans, a heading-hierarchy (layout-aware) strategy that carries
-  the full breadcrumb, and a late-chunking / propositional strategy -- each selectable as a
-  `--strategy` value, offset-exact, and ranked against the existing strategies on the same gold set.
-  This is the "new chunking strategies" item the shipped any-corpus autopipeline held out of scope
-  (see [data prep](current/data-prep.md)); the current set is
-  `fixed | sentence | recursive | markdown | semantic` (`src/llb/rag/chunking.py`).
-- Scope boundary: in scope -- extend `STRATEGIES` in `src/llb/rag/chunking.py` with the new
-  strategies, each returning `(start, end, metadata)` spans anchored to `doc_id` + character offsets
-  so `validate-goldset` and source-span scoring keep working; the page-aware strategy aligns chunk
-  boundaries on the page spans exposed by the shipped page-metadata sidecar loader
-  (`src/llb/rag/page_metadata.py`); a
-  `compare-retrieval` row per new strategy so the best chunker is DEMONSTRATED per corpus; the RAG
-  build grid gains the strategies behind a flag. Out of scope -- new embedding models, changing the
-  source-span gold contract, changing the retrieval scorer, attaching page metadata to existing
-  strategies' chunks (the shipped page-metadata join owns that). Reuse `src/llb/rag/chunking.py`,
-  `src/llb/rag/compare.py`, and `src/llb/rag/page_metadata.py` (the shipped sidecar loader).
-- Data and artifact paths: FAISS stores per strategy under `$DATA_DIR/llb/rag/<strategy>/`; a
-  `compare-retrieval` report gains the new strategy rows; a small page-sidecar fixture under
-  `samples/` for the page-aware chunker unit tests.
-- Execution path: `make build-index CHUNK_STRATEGY=<name>`;
-  `python -m llb.rag.chunking --corpus-root <dir> --strategy <name> --size <n> --overlap <n>`;
-  `make compare-retrieval`; unit tests assert offset-exactness and page-boundary alignment on the
-  fixture.
-- Acceptance gates: `make ci` green; every new strategy's chunks resolve to their exact source text
-  (offset round-trip test); the page-aware strategy never splits across a page-sidecar boundary on
-  the fixture; a `compare-retrieval` run ranks the new strategies against `markdown`/`semantic` on
-  the committed gold set with recall@k and MRR.
-- Documentation target: [RAG core](current/rag-core.md) chunking section;
-  [`docs/guides/benchmarking/run-rag-core.md`](../guides/benchmarking/run-rag-core.md).
 
 ### 11. verification-gate-adjudication
 
@@ -416,6 +380,29 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   manifest refuses with a rebuild message; stored chunk text and offsets stay byte-identical.
 - Documentation target: [data prep](current/data-prep.md) ingestion;
   [RAG core](current/rag-core.md) retrieval store.
+
+### external-rag-source-mapping (optional)
+
+- Dependencies: none.
+- User-visible outcome: external RAG answer-log scoring can audit retrieval evidence, not only
+  answer text, by joining provider source records onto benchmark corpus spans. Operators supply a
+  mapping sidecar from provider article ids or URLs to corpus `doc_id` plus optional character
+  ranges, and the CSV/report gains source-hit, first-hit-rank, and missing-mapping columns.
+- Scope boundary: in scope -- extend `llb score-external-rag` with `--source-map <json|jsonl|csv>`;
+  support mappings keyed by `article_id`, `url`, or `article_title`; reuse
+  `llb.rag.retrieval.first_hit_rank` once mapped records carry `doc_id`, `char_start`, and
+  `char_end`; report unmapped returned sources separately from mapped retrieval misses. Out of
+  scope -- crawling external article URLs, mutating the external system, or treating title-only
+  fuzzy matches as proof.
+- Data and artifact paths: source-map sidecars live beside the answer log or under
+  `$DATA_DIR/external-rag/<system>/`; per-row mapping diagnostics stay in the CSV and report.
+- Execution path: `llb score-external-rag --answers <answered-jsonl> --source-map <map.jsonl>`;
+  unit tests cover id/url/title key precedence, missing mappings, and span-overlap hit ranks.
+- Acceptance gates: `make ci` green; a fixture with mapped top sources reports recall@3 and MRR by
+  the same source-span metric as local retrieval; title-only mappings are flagged as weak evidence
+  unless spans are present.
+- Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
+  [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
 ### 18. local-model-self-improvement-loop
 
@@ -674,6 +661,34 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   on the full corpus; current docs record the discriminated winner and its index size / device fit.
 - Documentation target: [RAG core](current/rag-core.md) Embedder Conventions And Bake-off;
   [platform matrix](current/platform-vector-matrix.md).
+
+### chunking-comparison-full-corpus (optional)
+
+- Dependencies: the shipped chunking-strategy comparison (`compare-retrieval --strategies` /
+  `make compare-retrieval CHUNK_STRATEGIES=...`; see [RAG core](current/rag-core.md) chunking
+  strategies). Heavy store builds run on the CUDA host (deterministic, no human judgment).
+- Why this is forward work: the committed durable evidence ranks the eight strategies on the tiny
+  `samples/goldsets/ip_regulation_uk` fixture, where recall@10 SATURATES at 1.000 for every
+  strategy and even k=3 separates only `late` (0.875/0.750) from a seven-way 1.000/1.000 tie; the
+  single-`.md` corpus also has no PDF sidecars, so the `page` strategy degenerates to `recursive`
+  and its page-alignment value is never exercised on real data.
+- User-visible outcome: a chunker ranking over a REAL full Ukrainian PDF corpus (e.g. the
+  quickstart PDF corpus, whose `*.citations.json` sidecars make `page` meaningful) at a k where
+  recall separates strategies, yielding a demonstrated per-corpus chunker recommendation before an
+  operator pins `RunConfig.strategy`.
+- Scope boundary: in scope -- run the shipped comparison over a full-corpus goldset, record the
+  ranked table + winner in [RAG core](current/rag-core.md), and note `late`'s extra embed
+  wall-clock beside its quality delta. Out of scope -- new comparison code (the command is
+  shipped), new strategies, changing the source-span metric.
+- Data and artifact paths: per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`; the ranked
+  table lands in current docs.
+- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10
+  CHUNK_STRATEGIES=page,heading,late,markdown,semantic,recursive` on the CUDA host (outside
+  quick CI); then `make build-index CHUNK_STRATEGY=<winner>`.
+- Acceptance gates: the report shows a NON-saturated recall@k spread over a sidecar-bearing
+  corpus; current docs record the discriminated winner and the measured `page`-vs-`recursive` and
+  `late`-vs-`sentence` deltas.
+- Documentation target: [RAG core](current/rag-core.md) chunking strategies.
 
 ### external-import-needle-parity (optional)
 

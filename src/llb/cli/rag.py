@@ -21,7 +21,7 @@ def build_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     corpus_root: Optional[Path] = typer.Option(None, help="corpus directory to chunk"),
     strategy: Optional[str] = typer.Option(
-        None, help="fixed | sentence | recursive | markdown | semantic"
+        None, help="fixed | sentence | recursive | markdown | semantic | page | heading | late"
     ),
     size: Optional[int] = typer.Option(None, help="chunk size (chars)"),
     overlap: Optional[int] = typer.Option(None, help="chunk overlap (chars)"),
@@ -274,25 +274,52 @@ def compare_retrieval_cmd(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k / MRR cutoff"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
+    strategies: Optional[str] = typer.Option(
+        None,
+        "--strategies",
+        help="comma-separated CHUNKING strategies to compare instead of the built backends "
+        "(builds one FAISS store per strategy over the corpus -- the sibling corpus/ of "
+        "--goldset when present -- and persists each under $DATA_DIR/llb/rag/<strategy>/)",
+    ),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
-    """Compare FAISS vs graph/local_khop vs graph/global_community retrieval on one gold set (GraphRAG backend).
+    """Compare retrieval backends -- or chunking strategies -- on one gold set by the source-span metric.
 
-    Scores each BUILT backend's recall@k / MRR on the SAME items by the source-span metric (a
-    backend whose store is not built is skipped). Quantifies when the graph paths beat flat vector
-    retrieval; answer-quality comparison rides `run-eval --retrieval-backend ...` (it needs a model).
+    Default: scores each BUILT backend (FAISS vs graph/local_khop vs graph/global_community) on
+    the SAME items (a backend whose store is not built is skipped). With `--strategies` it instead
+    builds one store per CHUNKING strategy (same corpus + pinned embedder) and ranks the chunkers,
+    so the best chunker is demonstrated per corpus. Answer-quality comparison rides
+    `run-eval --retrieval-backend ...` (it needs a model).
     """
     import json
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval, format_comparison, load_compare_stores
+    from llb.rag.compare import (
+        build_chunking_comparison,
+        compare_retrieval,
+        format_comparison,
+        load_compare_stores,
+    )
 
-    cfg = load_config(config, goldset_path=goldset)
+    cfg = load_config(
+        config,
+        goldset_path=goldset,
+        corpus_root=_compare_vector_corpus_root(goldset, None) if strategies else None,
+    )
     items = load_goldset(cfg.goldset_path)
     if split:
         items = [it for it in items if it.split == split]
-    stores = load_compare_stores(cfg)
+    if strategies:
+        selected = [s.strip() for s in strategies.split(",") if s.strip()]
+        try:
+            stores = build_chunking_comparison(cfg, selected, stores_root=cfg.index_dir())
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2) from None
+        typer.echo(f"[compare-retrieval] per-strategy stores saved under {cfg.index_dir()}/")
+    else:
+        stores = load_compare_stores(cfg)
     if not stores:
         typer.echo(
             "[error] no retrieval backend is built (run build-index / build-graph)", err=True

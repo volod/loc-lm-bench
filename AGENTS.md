@@ -89,6 +89,9 @@ should never have to ask you to make `plan.md` forward-only again.
   fires spuriously, the `markdown-tables` extension + `MD013.tables = false` already handle it;
   reach for a per-rule `enabled = false` in `[tool.pymarkdown]` over editing content to match a
   cosmetic rule.
+- **Examples:** Use abstract placeholders in docs and examples (for example
+  `<answered-jsonl>` or `<corpus-dir>`) instead of current-run, user-specific, or local artifact
+  filenames unless the path is a committed fixture.
 
 ## Heavy compilation (ninja / cmake / CUDA)
 

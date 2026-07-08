@@ -18,6 +18,7 @@ from llb.core.config import DEFAULT_EMBEDDING_MODEL
 from llb.core.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
+from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
@@ -126,6 +127,11 @@ class RagStore:
         """
         if mode not in ("flat", "parent_child"):
             raise ValueError(f"unknown retrieval mode: {mode}")
+        if strategy == "late" and mode == "parent_child":
+            raise ValueError(
+                "the 'late' strategy supports flat mode only (children re-chunk parent "
+                "slices, so their vectors could not pool over whole-document tokens)"
+            )
         if child_size <= 0:
             raise ValueError("child_size must be > 0")
         embedder = embedder if embedder is not None else Embedder(embedding_model)
@@ -151,7 +157,12 @@ class RagStore:
         if parents is not None:
             annotate_page_metadata(parents, corpus_root)
 
-        vectors = embedder.encode_passages([c["text"] for c in indexed])
+        if strategy == "late":
+            # Late chunking: pool whole-document token embeddings per chunk span instead of
+            # encoding each chunk text in isolation (see `llb.rag.late_encoding`).
+            vectors = encode_store_vectors(indexed, corpus_root, embedder)
+        else:
+            vectors = embedder.encode_passages([c["text"] for c in indexed])
         index = build_vector_index(vector_store, vectors)
         meta: RagStoreMeta = {
             "mode": mode,
