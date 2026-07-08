@@ -42,6 +42,10 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
       request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
+      request_timeout_s: 300
     mistral:
       backend: ollama
       model: mistral-small3.1:24b
@@ -71,6 +75,10 @@ tiers:
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
       request_timeout_s: 300
     mistral:
       backend: ollama
@@ -104,6 +112,10 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
+      request_timeout_s: 300
     mistral:
       backend: vllm
       model: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
@@ -133,6 +145,10 @@ tiers:
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
+      request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
       request_timeout_s: 300
     mistral:
       backend: vllm
