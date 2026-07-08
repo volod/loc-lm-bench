@@ -3,7 +3,7 @@
 
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
-	compare-embeddings run-eval sweep pipeline prompt-system-prepare prompt-system-review \
+	compare-embeddings run-eval analyze-misses sweep pipeline prompt-system-prepare prompt-system-review \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -46,6 +46,15 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PRO
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+analyze-misses: ## Miss analysis: classify + cluster one run's misses (RUN_DIR=<bundle>; PROBE_TOP_K=3,8 re-runs the miss subset; MISS_THRESHOLD= ANALYZE_GOLDSET=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(RUN_DIR)" || { echo "ERROR: set RUN_DIR=<run-eval bundle dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main analyze-misses --run-dir "$(RUN_DIR)" \
+		$(if $(ANALYZE_GOLDSET),--goldset "$(ANALYZE_GOLDSET)",) \
+		$(if $(MISS_THRESHOLD),--miss-threshold $(MISS_THRESHOLD),) \
+		$(if $(PROBE_TOP_K),--probe-top-k "$(PROBE_TOP_K)",)
 
 sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

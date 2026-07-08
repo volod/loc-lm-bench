@@ -73,10 +73,12 @@ def recommend_cmd(
     model-comparison chart (needs the [viz] extra). The recommended-for-host pick is the
     highest-accuracy model that is Pareto-optimal and fits the GPU tier's VRAM budget with headroom.
     """
+    from llb.board.miss_analysis import latest_analysis
     from llb.board.recommend import (
         HostInfo,
         build_recommendation,
         format_config_detail_md,
+        format_miss_section_md,
         format_summary_md,
         load_config_cells,
         load_run_summaries,
@@ -109,7 +111,10 @@ def recommend_cmd(
     summary_md = format_summary_md(rec)
     # The per-configuration (model x top_k) proof: every config cell, not just best-per-model.
     detail_md = format_config_detail_md(load_config_cells(run_root, min_cases=min_cases))
+    # The misses section renders only when `llb analyze-misses` has persisted an analysis.
+    miss_md = format_miss_section_md(latest_analysis(data_dir))
     full_md = summary_md + ("\n\n" + detail_md if detail_md else "")
+    full_md += "\n\n" + miss_md if miss_md else ""
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(full_md + "\n", encoding="utf-8")

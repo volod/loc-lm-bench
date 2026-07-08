@@ -1,0 +1,5 @@
+{
+  "id": "board.miss.probe_confirmed",
+  "kind": "text",
+  "template": "probe_confirmed.txt"
+}

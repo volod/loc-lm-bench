@@ -160,6 +160,52 @@ led accuracy (objective 0.546), Lapa was the recommended host pick (0.505, fits 
 Qwen3.6 led efficiency (0.216 quality/W), and the Ukrainian-specialized models out-scored the
 multilingual Mistral Small 3.1 (0.399) and Qwen baselines on Ukrainian RAG.
 
+## Miss Analysis (analyze-misses)
+
+`llb analyze-misses --run-dir <run>` (`make analyze-misses RUN_DIR=<run>`) explains a finalized
+run's wrong answers. Classifier, clustering, and recommendations live in
+`src/llb/board/miss_analysis.py`; the probe orchestration in `src/llb/board/miss_probe.py`;
+tests in `tests/test_miss_analysis.py` (a synthetic scored bundle with one case per miss class
+proves zero cross-class leakage and that every recommendation line names numeric evidence).
+
+Every miss lands in exactly ONE class, decided in precedence order: `refusal` (typed status),
+`format_artifact` (empty / malformed / timeout / backend_error -- output or transport, not
+knowledge), `retrieval_miss` (typed status, or the gold span never overlaps a retrieved span),
+`judge_disagreement` (objective below the miss threshold while the trusted per-case judge rated
+>= 0.7 -- a scoring conflict for a human to look at), else `generation_miss` (evidence present,
+answer wrong). A scoreable case is a miss when `objective_score < 0.5`
+(`--miss-threshold` / `MISS_THRESHOLD=` overrides). Span overlap reads the additive per-case
+`retrieval.jsonl` record every run bundle now persists beside `scores.jsonl`
+(`batch_retrieval_records` in `src/llb/executor/cases.py`; doc id + char offsets + rank +
+score + bounded 160-char text preview + the gold spans); bundles that predate the record fall
+back to the scored `retrieval_hit` flag with a logged warning.
+
+Misses are clustered by document (`source_doc_id`), topic, and question type, with per-key miss
+rates computed over ALL scored cases of that key. Labels come from the goldset's
+`item_provenance.jsonl` sidecar when the draft pipeline emitted one (`question_type` / `topic`);
+otherwise a deterministic UA/EN interrogative heuristic types the question and the longest
+content token stands in for the topic. Recommendations are ranked by the miss count they
+address and rendered from `board.miss.*` prompt templates: raise/lower `top_k`, change
+chunking, add prompt-system dictionary terms for a dominant generation-miss cluster, try the
+named alternative model (cited with its measured objective from comparable sibling bundles --
+same split and case count), review refusals / artifacts / judge disagreements.
+
+Probe mode (`--probe-top-k 3,8` / `PROBE_TOP_K=3,8`) re-runs ONLY the miss subset at each
+alternative retrieval depth through the normal durable `run_eval` (same recorded config; only
+`top_k` and `run_name` change, judge and telemetry off), so the retrieval hypothesis is
+confirmed or rejected with measured recovery numbers, and a shallower depth that beats the miss
+subset's baseline objective by >= 0.05 earns a "lower top_k" line. Probe bundles are ordinary
+run bundles named `miss-probe-<run_id>-k<k>`: a finalized probe is reused (never re-run), an
+interrupted probe's staging is found by its pinned config + goldset digests and resumed via the
+durable-eval-runner journal, and only then does a fresh probe start. Off-cohort probe bundles
+never pollute the board headline (tiny `n_cases` -> cohort exclusion).
+
+Artifacts land at `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`;
+`llb recommend` appends a `## Miss analysis` section (intro + top 5 ranked lines) from the
+latest `analysis.json` when one exists (`format_miss_section_md` in
+`src/llb/board/recommend.py`). Run bundles are never mutated. Automatic re-tuning stays out of
+scope -- the Optuna tuner owns search.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to

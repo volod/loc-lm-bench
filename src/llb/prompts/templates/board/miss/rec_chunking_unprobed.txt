@@ -1,0 +1,1 @@
+Change chunking (currently strategy={{ strategy }}, size={{ size }}, overlap={{ overlap }}): {{ n_retrieval }} retrieval misses at top_k={{ top_k }}; re-run with --probe-top-k to test depth before re-chunking.

@@ -140,6 +140,95 @@ def run_eval_cmd(
     )
 
 
+@app.command("analyze-misses")
+def analyze_misses_cmd(
+    run_dir: Path = typer.Option(
+        ..., "--run-dir", help="finalized run-eval bundle whose misses to explain"
+    ),
+    goldset: Optional[Path] = typer.Option(
+        None, help="goldset JSONL the run scored (default: the bundle manifest's goldset_path)"
+    ),
+    miss_threshold: Optional[float] = typer.Option(
+        None,
+        "--miss-threshold",
+        help="objective score below which a scoreable (status=ok) case counts as a miss "
+        "(default 0.5)",
+    ),
+    probe_top_k: Optional[str] = typer.Option(
+        None,
+        "--probe-top-k",
+        help="comma-separated retrieval depths (e.g. 3,8): re-run ONLY the miss subset at each "
+        "depth to confirm or reject the retrieval hypothesis (launches the model backend)",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="analysis output dir (default: $DATA_DIR/miss-analysis/<timestamp>)"
+    ),
+) -> None:
+    """Explain one run's wrong answers: classify every miss (retrieval / generation / refusal /
+    format artifact / judge disagreement), cluster by document, topic, and question type, and
+    write ranked, evidence-backed recommendations that `llb recommend` folds into its summary."""
+    from llb.board.miss_analysis import (
+        DEFAULT_MISS_THRESHOLD,
+        analysis_out_dir,
+        analyze_run,
+        load_item_provenance,
+        refresh_recommendations,
+        write_analysis,
+    )
+    from llb.board.miss_probe import parse_probe_depths, run_probes
+    from llb.board.runs import load_run_records
+    from llb.core.paths import resolve_data_dir
+    from llb.goldset.schema import load_goldset
+
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        typer.echo(f"[analyze-misses] no manifest.json in {run_dir}", err=True)
+        raise typer.Exit(code=2)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config = manifest.get("config") or {}
+    goldset_path = goldset or Path(str(config.get("goldset_path", "")))
+    if not str(goldset_path) or not goldset_path.is_file():
+        typer.echo(
+            f"[analyze-misses] goldset not found: '{goldset_path}' "
+            "(the bundle's recorded goldset moved? pass --goldset)",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    items = load_goldset(goldset_path)
+    provenance = load_item_provenance(goldset_path)
+
+    # Comparable sibling runs (same split + case count, board dedup rules) back the
+    # "try the named alternative model" recommendation with measured numbers.
+    alternatives = [
+        (record.result.model, record.result.objective_score)
+        for record in load_run_records(run_dir.parent)
+        if record.split == manifest.get("split")
+        and record.result.n_cases == int(manifest.get("n_cases", -1))
+    ]
+    threshold = miss_threshold if miss_threshold is not None else DEFAULT_MISS_THRESHOLD
+    analysis = analyze_run(
+        run_dir, items, threshold=threshold, provenance=provenance, alternatives=alternatives
+    )
+
+    if probe_top_k and analysis.misses:
+        depths = parse_probe_depths(probe_top_k)
+        analysis.probes = run_probes(manifest, analysis.misses, items, depths)
+        refresh_recommendations(analysis, alternatives=alternatives)
+    elif probe_top_k:
+        typer.echo("[analyze-misses] no misses to probe; skipping --probe-top-k")
+
+    out = out_dir or analysis_out_dir(resolve_data_dir())
+    paths = write_analysis(analysis, out)
+    counted = ", ".join(f"{cls}={n}" for cls, n in analysis.class_counts.items() if n) or "none"
+    typer.echo(
+        f"[analyze-misses] {len(analysis.misses)} of {analysis.n_cases} cases missed ({counted})"
+    )
+    for rank, rec in enumerate(analysis.recommendations, 1):
+        typer.echo(f"[analyze-misses] {rank}. {rec['line']}")
+    typer.echo(f"[analyze-misses] report -> {paths['report']}")
+    typer.echo(f"[analyze-misses] misses -> {paths['misses']}")
+
+
 @app.command("judge-experiment")
 def judge_experiment_cmd(
     judge_model: str = typer.Option(..., help="served local judge model id"),

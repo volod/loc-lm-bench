@@ -36,7 +36,7 @@ from llb.core.contracts import (
 from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.executor import durability
-from llb.executor.cases import CaseBatch, spans_as_dicts
+from llb.executor.cases import CaseBatch, batch_retrieval_records, spans_as_dicts
 from llb.executor.reporting import emit_summary
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.rag import retrieval
@@ -604,6 +604,7 @@ def run_eval(
         run_dir,
         mirror=mirror,
         staging_dir=staging_dir,
+        retrieval_rows=batch_retrieval_records(batch),
     )
 
     worksheet_rows = 0

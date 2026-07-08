@@ -47,8 +47,9 @@ that never mutates the stored corpus text (15). The measured Ukrainian embedder 
 underpins both (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the lang-uk model plus an
 opt-in Cohere API row for open corpora) is now shipped; see [RAG core](current/rag-core.md)
 retrieval store. Every knob these tasks add must land
-in `compare-retrieval`, the sweep grid, or the tuner search space so task 6's miss analysis can cite
-it as evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
+in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
+(`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
+evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
 fuses, so it pays off most after 12); 15 and 16 stand alone. Task 17 adds the governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
@@ -80,51 +81,18 @@ build on the latter's sidecar loader and fields, and 12/15 build on the measured
 The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
 merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
-Recommended sequence: **6 first** (its probe mode reuses the shipped durable-eval-runner), then
-the independent lot (10, 12, 15, 16) in any order, 13 after 12, 17's ACL-filter half after 12's
-metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 after 6
-(its miss-targeted export consumes task 6's miss clusters; the export/guard/trainer code stands
+The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
+shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
+Recommended sequence: the independent lot (10, 12, 15, 16) in any order, 13 after 12, 17's
+ACL-filter half after 12's
+metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
+(its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
+exists; the export/guard/trainer code stands
 alone), 19-22 after 18 (the fine-tuning cluster reuses 18's trainer seam and contamination
 guard; 20 beside 19, 21 and 22 after 19), and 8 last (blocked by human task 7). The
 durable-eval-runner (retry + `cases.progress.jsonl` journal +
 `--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
-
-### 6. miss-analysis-recommendations
-
-- Dependencies: none. The probe mode reuses the shipped durable-eval-runner's `--resume`
-  (`llb run-eval --resume`; see [RAG core](current/rag-core.md) durability section) so a probe
-  campaign survives a flap. Soft-consumes the extra per-case signals from tasks 12-16 when present
-  (richer recommendations), but is not blocked by them -- it ships with the existing knobs.
-- User-visible outcome: after any run or sweep, one command explains the wrong answers: each
-  miss classified as retrieval miss (gold span absent from context), generation miss (evidence
-  present, answer wrong), refusal, format/scoring artifact, or judge disagreement; misses
-  clustered by document, topic, and question type; and ranked, evidence-backed recommendations
-  (raise or lower `top_k`, change chunking, add prompt-system dictionary terms, try the named
-  alternative model) that `llb recommend` folds into its summary.
-- Scope boundary: in scope -- `src/llb/board/miss_analysis.py` plus `llb analyze-misses`,
-  consuming per-case `scores.jsonl`, retrieved spans, typed statuses, and judge diagnostics
-  from finalized run bundles; run bundles do not yet persist per-case retrieved spans
-  (`retrieval_pairs` stay in-process in `src/llb/executor/cases.py` and `scores.jsonl` carries
-  only `retrieval_hit`/`first_hit_rank`), so this task first adds an additive per-case
-  retrieved-spans record to the bundle -- the miss classifier's span overlap and the
-  observability-trace checklist item both need it; a bounded probe mode that re-runs only the
-  miss subset at
-  alternative retrieval depths to confirm or reject the retrieval hypothesis; a misses section
-  in the `recommend` summary sourced from prompt templates like the existing report prose. Out
-  of scope -- automatic re-tuning (the Optuna tuner owns search), mutating run bundles.
-- Data and artifact paths: `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl}`;
-  `$DATA_DIR/recommend/summary.md` gains the misses section when an analysis exists.
-- Execution path: `llb analyze-misses --run-dir <run>` and
-  `make analyze-misses RUN_DIR=<run>`; probe mode
-  `llb analyze-misses --run-dir <run> --probe-top-k 3,8`; unit tests over a synthetic scored
-  bundle covering every miss class.
-- Acceptance gates: the classifier separates retrieval misses from generation misses using span
-  overlap on the synthetic bundle with zero cross-class leakage; on the committed-fixture
-  sweep, every recommendation line names its numeric evidence; the probe mode is resumable via
-  the `durable-eval-runner`; `make ci` green.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) recommendation
-  section; [`docs/guides/benchmarking/mlflow-analysis.md`](../guides/benchmarking/mlflow-analysis.md).
 
 ### 8. context-policy-bench
 
@@ -243,7 +211,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Dependencies: soft-follows the shipped page-metadata join (the metadata filter seam filters over
   the page/section fields `src/llb/rag/page_metadata.py` attaches; the lexical/fusion half stands
   alone). Base of the retrieval cluster --
-  task 13 reranks the pool this task fuses, and its fusion knobs feed task 6 recommendations.
+  task 13 reranks the pool this task fuses, and its fusion knobs feed the shipped miss
+  analysis's recommendations once they land in the manifest/fingerprint.
 - User-visible outcome: retrieval gains the full hybrid shape Ukrainian enterprise corpora need --
   dense E5 plus lexical BM25 fused with reciprocal-rank fusion, plus a chunk-metadata filter seam
   -- so exact surnames, article/law numbers, codes, abbreviations, and mixed Ukrainian-English
@@ -266,7 +235,10 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   applied before fusion; an oracle-doc-filter diagnostic row in
   `compare-retrieval` (candidates restricted to each gold item's `source_doc_id`) quantifying the
   recall headroom a document router would buy; a `compare-retrieval` row set (dense vs hybrid vs
-  hybrid+lemmas) and tuner/sweep axes for the fusion knobs. Out of scope -- server-side hybrid
+  hybrid+lemmas) and tuner/sweep axes for the fusion knobs; once the lemma normalizer exists,
+  reuse it to collapse the shipped miss analysis's inflection-sensitive heuristic topic keys
+  (`topic_of` in `src/llb/board/miss_analysis.py` picks a raw surface token today, so the same
+  topic can split across case forms). Out of scope -- server-side hybrid
   features of any vector DB (fusion stays local and backend-neutral), new embedding models
   (the shipped `compare-embeddings` bake-off owns embedder selection; see
   [RAG core](current/rag-core.md) retrieval store), query rewriting and typo tolerance (task 15),
@@ -295,9 +267,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 ### 13. rerank-context-order
 
 - Dependencies: soft-follows task 12 (it reranks the fused candidate pool and is most valuable
-  after hybrid; it also works over dense-only retrieval). Its reranker/order knobs feed task 6
-  recommendations. The heavy real-reranker validation run executes on the CUDA host, no human
-  judgment.
+  after hybrid; it also works over dense-only retrieval). Its reranker/order knobs feed the
+  shipped miss analysis's recommendations. The heavy real-reranker validation run executes on
+  the CUDA host, no human judgment.
 - User-visible outcome: a mechanism to tune what happens between retrieval and generation: an
   optional local cross-encoder reranker (retrieve `rerank_candidates`, rerank, keep `top_k`)
   measured for top-k precision gain against its own latency cost; a context-order policy
@@ -326,7 +298,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   over the committed goldset reports post-rerank MRR uplift-or-tie plus measured reranker latency
   (heavy, on the CUDA host, outside quick CI); the position probe emits per-position accuracy with
   bootstrap CIs and names the recommended ordering for the probed model; every knob lands in the
-  manifest/fingerprint so sweeps and task 6's miss analysis can recommend "enable reranker" with
+  manifest/fingerprint so sweeps and the shipped miss analysis can recommend "enable reranker" with
   numeric evidence.
 - Documentation target: [RAG core](current/rag-core.md);
   [evaluation rigor](current/rigor-board-judge.md) for the position probe.
@@ -334,7 +306,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 ### 15. uk-query-processing
 
 - Dependencies: none (the glossary derives from a shipped `prompt_dictionary_candidates.jsonl`
-  draft artifact). Its A/B deltas feed task 6.
+  draft artifact). Its A/B deltas feed the shipped miss analysis's recommendations.
 - User-visible outcome: an opt-in query lane between the user question and retrieval that
   measurably helps Ukrainian queries while never touching the stored corpus text: deterministic
   normalization (matching-side casefold, apostrophe-variant unification, a small transliteration
@@ -374,7 +346,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 16. groundedness-citation-metrics
 
-- Dependencies: none. Enriches the per-case signals tasks 6 and 8 consume. The one manual
+- Dependencies: none. Enriches the per-case signals task 8 and the shipped miss analysis
+  consume. The one manual
   groundedness/abstention run executes on the CUDA host (deterministic, no human judgment).
 - User-visible outcome: answer-side RAG quality beyond reference-answer overlap: a cited-answer
   mode whose prompt requires `[i]` chunk citations for factual claims, scored for citation
@@ -446,9 +419,10 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 18. local-model-self-improvement-loop
 
-- Dependencies: soft-follows task 6 (`miss-analysis-recommendations`): when a miss analysis
+- Dependencies: soft-consumes the shipped miss analysis (`llb analyze-misses` emits
+  `misses.jsonl`; see [evaluation rigor](current/rigor-board-judge.md)): when an analysis
   exists, the training-set export targets and weights the miss clusters; without one it falls
-  back to the whole tuning split, so task 6 improves this task but does not block it. Reuses
+  back to the whole tuning split. Reuses
   the shipped split discipline (`src/llb/goldset/splits.py` -- calibration/tuning/final are
   disjoint by seeded assignment precisely so tuning can never leak into the final leaderboard
   number), the durable-eval-runner (per-round resume), and the board/recommend machinery. The
@@ -461,13 +435,14 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   LoRA/QLoRA fine-tunes the local model, re-evaluates the adapter as a new board row through
   the unchanged eval runner, and iterates rounds until the gain disappears -- ending with a
   per-round report (base vs tuned on the held-out final split, bootstrap CIs) and an explicit
-  accept/reject verdict for the adapter. Task 6's evidence-backed "model X fails on cluster Y"
-  becomes "model X + adapter-`<digest>` passes, with the round-by-round proof".
+  accept/reject verdict for the adapter. The miss analysis's evidence-backed "model X fails on
+  cluster Y" becomes "model X + adapter-`<digest>` passes, with the round-by-round proof".
 - Scope boundary: in scope -- `src/llb/finetune/dataset.py`: a deterministic export from a
   finalized run bundle plus its goldset -- SFT records (question + retrieved context ->
   reference answer, reusing the eval's own prompt templates so train and eval formats cannot
   drift) drawn ONLY from tuning-split items, optional DPO preference pairs (the model's scored
-  wrong answer = rejected, the reference = chosen) from task 6's `misses.jsonl` when present,
+  wrong answer = rejected, the reference = chosen) from the miss analysis's `misses.jsonl`
+  when present,
   and a `dataset_manifest.json` recording item ids, split provenance, and a content digest;
   `src/llb/finetune/trainer.py`: seeded LoRA/QLoRA behind an injectable trainer seam (real
   implementation via a new `[finetune]` optional extra -- peft/trl -- following the existing
@@ -517,7 +492,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 - Dependencies: follows task 18 (`local-model-self-improvement-loop`) -- the campaign reuses
   its dataset export, injectable trainer seam, contamination guard, and per-round report; land
-  18's code first. Soft-follows task 6 (per-model miss-targeted exports when an analysis
+  18's code first. Soft-consumes the shipped miss analysis (per-model miss-targeted exports when an analysis
   exists). Reuses the feasibility planner (`src/llb/backends/planner.py` -- can this model run
   on THIS host, and at what context), the VRAM reclaim gate (`src/llb/executor/vram.py` -- the
   sequential-execution contract between roster entries), and the durable-runner journal pattern

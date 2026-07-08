@@ -1,0 +1,1 @@
+ -- the top_k={{ k }} probe recovered only {{ recovered }}/{{ n }} (retrieval hypothesis REJECTED at that depth)

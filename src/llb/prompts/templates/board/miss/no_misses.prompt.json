@@ -1,0 +1,5 @@
+{
+  "id": "board.miss.no_misses",
+  "kind": "text",
+  "template": "no_misses.txt"
+}

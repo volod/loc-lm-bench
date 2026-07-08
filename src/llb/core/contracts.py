@@ -75,6 +75,29 @@ class RetrievalMetrics(TypedDict):
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
 
 
+class RetrievedSpanRecord(TypedDict):
+    """One retrieved chunk as persisted in a run bundle's `retrieval.jsonl` (miss analysis):
+    the span coordinates the miss classifier's overlap check needs plus a bounded text preview
+    for observability -- never the full chunk text."""
+
+    doc_id: str
+    char_start: int
+    char_end: int
+    rank: int
+    retrieval_score: NotRequired[float | None]
+    text_preview: NotRequired[str]
+
+
+class CaseRetrievalRecord(TypedDict):
+    """Per-case retrieved-spans record (`retrieval.jsonl`, one line per scored case): what the
+    model actually saw versus the gold spans, so a finalized bundle supports span-overlap miss
+    classification without re-running retrieval."""
+
+    item_id: str
+    retrieved: list[RetrievedSpanRecord]
+    gold_spans: list[SourceSpanRecord]
+
+
 class CorrectnessScores(TypedDict):
     score: float
     token_f1: float
@@ -369,6 +392,7 @@ class RunPaths(TypedDict):
     manifest: str
     scores: str
     mirror: str
+    retrieval: NotRequired[str]  # per-case retrieved-spans record (miss analysis)
     worksheet: NotRequired[str]
 
 
