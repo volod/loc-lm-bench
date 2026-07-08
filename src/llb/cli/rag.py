@@ -21,13 +21,24 @@ def build_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     corpus_root: Optional[Path] = typer.Option(None, help="corpus directory to chunk"),
     strategy: Optional[str] = typer.Option(
-        None, help="fixed | sentence | recursive | markdown | semantic"
+        None, help="fixed | sentence | recursive | markdown | semantic | page | heading | late"
     ),
     size: Optional[int] = typer.Option(None, help="chunk size (chars)"),
     overlap: Optional[int] = typer.Option(None, help="chunk overlap (chars)"),
     embedding_model: Optional[str] = typer.Option(None, help="pinned embedding model"),
-    mode: Optional[str] = typer.Option(None, help="flat | parent_child"),
+    mode: Optional[str] = typer.Option(
+        None,
+        "--mode",
+        "--retrieval-mode",
+        help="flat | parent_child | hybrid (hybrid adds a lexical BM25 index beside the vectors)",
+    ),
     child_size: Optional[int] = typer.Option(None, help="child chunk size (parent_child mode)"),
+    lemmatize: bool = typer.Option(
+        False,
+        "--lemmatize",
+        help="hybrid mode: collapse Ukrainian inflection to lemmas on the LEXICAL side "
+        "(pymorphy3, the [lex] extra); stored chunk text is never altered",
+    ),
     vector_store: str = typer.Option(
         "faiss",
         help="vector backend behind the RAG-store seam: faiss (default) | chroma ([rag-chroma]) | "
@@ -54,6 +65,7 @@ def build_index(
         embedding_model=embedding_model,
         retrieval_mode=mode,
         child_chunk_size=child_size,
+        lexical_lemmas=lemmatize or None,
     )
 
     store = RagStore.build(
@@ -65,15 +77,23 @@ def build_index(
         mode=cfg.retrieval_mode,
         child_size=cfg.child_chunk_size,
         vector_store=vector_store,
+        lexical_lemmas=cfg.lexical_lemmas,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
     coverage = store.meta.get("page_annotation_coverage", 0.0)
     pages = f", {coverage:.0%} page-annotated" if coverage else ""
+    lexical_meta = store.meta.get("lexical")
+    lexical = (
+        f", lexical {lexical_meta['n_terms']} terms"
+        f"{' (lemmatized)' if lexical_meta['lemmatize'] else ''}"
+        if lexical_meta
+        else ""
+    )
     typer.echo(
         f"[build-index] {store.meta['n_indexed']} indexed chunks{parents} "
         f"({cfg.strategy}/{cfg.retrieval_mode}, {vector_store}, dim {store.meta['dim']}) "
-        f"-> {cfg.index_dir()}{pages}"
+        f"-> {cfg.index_dir()}{pages}{lexical}"
     )
 
 
@@ -274,32 +294,107 @@ def compare_retrieval_cmd(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k / MRR cutoff"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
+    strategies: Optional[str] = typer.Option(
+        None,
+        "--strategies",
+        help="comma-separated CHUNKING strategies to compare instead of the built backends "
+        "(builds one FAISS store per strategy over the corpus -- the sibling corpus/ of "
+        "--goldset when present -- and persists each under $DATA_DIR/llb/rag/<strategy>/)",
+    ),
+    hybrid: bool = typer.Option(
+        False,
+        "--hybrid",
+        help="compare dense vs hybrid (BM25+RRF) vs hybrid+lemmas plus the oracle-doc-filter "
+        "headroom row over one embedded corpus (the sibling corpus/ of --goldset when present); "
+        "the hybrid store persists under $DATA_DIR/llb/rag/hybrid/",
+    ),
+    fusion_weight: Optional[float] = typer.Option(
+        None, help="hybrid rows: dense share of the weighted RRF (0..1; default 0.5)"
+    ),
+    reranker: Optional[str] = typer.Option(
+        None,
+        help="add a '<row>+rerank' twin per compared row: retrieve --rerank-candidates, "
+        "rerank with this local cross-encoder (HF id), keep k -- the pre/post-rerank "
+        "recall@k/MRR delta plus the measured rerank latency",
+    ),
+    rerank_candidates: Optional[int] = typer.Option(
+        None, help="rerank rows: candidate pool depth fed into the reranker (default 30)"
+    ),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
-    """Compare FAISS vs graph/local_khop vs graph/global_community retrieval on one gold set (GraphRAG backend).
+    """Compare retrieval backends -- or chunking strategies, or hybrid fusion -- on one gold set.
 
-    Scores each BUILT backend's recall@k / MRR on the SAME items by the source-span metric (a
-    backend whose store is not built is skipped). Quantifies when the graph paths beat flat vector
-    retrieval; answer-quality comparison rides `run-eval --retrieval-backend ...` (it needs a model).
+    Default: scores each BUILT backend (FAISS vs graph/local_khop vs graph/global_community) on
+    the SAME items (a backend whose store is not built is skipped). With `--strategies` it instead
+    builds one store per CHUNKING strategy (same corpus + pinned embedder) and ranks the chunkers,
+    so the best chunker is demonstrated per corpus. With `--hybrid` it demonstrates (not assumes)
+    per corpus whether dense+BM25 RRF fusion beats dense-only, what Ukrainian lemmatization adds,
+    and how much recall headroom perfect document routing would buy. `--reranker` adds a reranked
+    twin row per compared row (rerank-context-order). Answer-quality comparison rides
+    `run-eval --retrieval-backend ...` (it needs a model).
     """
     import json
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval, format_comparison, load_compare_stores
+    from llb.rag.compare import (
+        add_rerank_rows,
+        build_chunking_comparison,
+        build_hybrid_comparison,
+        compare_retrieval,
+        format_comparison,
+        load_compare_stores,
+    )
 
-    cfg = load_config(config, goldset_path=goldset)
+    if strategies and hybrid:
+        typer.echo("[error] --strategies and --hybrid are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    cfg = load_config(
+        config,
+        goldset_path=goldset,
+        corpus_root=_compare_vector_corpus_root(goldset, None) if (strategies or hybrid) else None,
+        fusion_weight=fusion_weight,
+    )
     items = load_goldset(cfg.goldset_path)
     if split:
         items = [it for it in items if it.split == split]
-    stores = load_compare_stores(cfg)
+    compare_items = [(it.question, spans_as_dicts(it)) for it in items]
+    if strategies:
+        selected = [s.strip() for s in strategies.split(",") if s.strip()]
+        try:
+            stores = build_chunking_comparison(cfg, selected, stores_root=cfg.index_dir())
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2) from None
+        typer.echo(f"[compare-retrieval] per-strategy stores saved under {cfg.index_dir()}/")
+    elif hybrid:
+        stores = build_hybrid_comparison(cfg, compare_items, stores_root=cfg.index_dir())
+        typer.echo(f"[compare-retrieval] hybrid store saved under {cfg.index_dir()}/hybrid/")
+    else:
+        stores = load_compare_stores(cfg)
     if not stores:
         typer.echo(
             "[error] no retrieval backend is built (run build-index / build-graph)", err=True
         )
         raise typer.Exit(code=2)
-    report = compare_retrieval(stores, [(it.question, spans_as_dicts(it)) for it in items], k)
+    if reranker:
+        from llb.rag.rerank import DEFAULT_RERANK_CANDIDATES, CrossEncoderReranker
+
+        stores = add_rerank_rows(
+            stores,
+            CrossEncoderReranker(reranker),
+            rerank_candidates or DEFAULT_RERANK_CANDIDATES,
+        )
+    report = compare_retrieval(stores, compare_items, k)
     typer.echo(format_comparison(report))
+    for label, store in sorted(stores.items()):
+        latency = getattr(store, "mean_stage_latency", None)
+        if callable(latency):
+            stages = latency()
+            typer.echo(
+                f"[compare-retrieval] {label}: mean/query retrieve "
+                f"{stages['retrieve_s'] * 1000:.1f} ms + rerank {stages['rerank_s'] * 1000:.1f} ms"
+            )
     if out is not None:
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[compare-retrieval] wrote report -> {out}")
@@ -386,6 +481,7 @@ def _local_store_builder(cfg: "RunConfig", stores_dir: Path) -> "StoreBuilder":
             model,
             mode=cfg.retrieval_mode,
             child_size=cfg.child_chunk_size,
+            lexical_lemmas=cfg.lexical_lemmas,
         )
         embed_seconds = time.perf_counter() - started
         out_dir = stores_dir / slugify_model(model)
@@ -426,6 +522,7 @@ def _api_store_builder(
             mode=cfg.retrieval_mode,
             child_size=cfg.child_chunk_size,
             embedder=embedder,
+            lexical_lemmas=cfg.lexical_lemmas,
         )
         embed_seconds = time.perf_counter() - started
         out_dir = stores_dir / slugify_model(model)

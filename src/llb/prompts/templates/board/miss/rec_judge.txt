@@ -1,0 +1,1 @@
+Review scoring on {{ n_judge }} judge-disagreement cases: the trusted judge rated them >= {{ judge_min }} while objective scored below {{ threshold }} -- a possible reference-answer or scorer artifact.

@@ -159,6 +159,15 @@ curation, SQuAD ingest, structural validation, and `build-index` in order. It so
 `.env` before curation so `HF_TOKEN` is exported for semantic deduplication and embedding
 downloads.
 
+Already-answered external RAG logs use the RAG-core diagnostic command rather than `run-eval`:
+`make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl>` opens an interactive human scoring
+session over rows carrying gold fields plus `llm_answer` or `predicted_answer`. Human scores,
+decisions, notes, and corrected answers are saved back into the JSONL after each edit; final CSV and
+Markdown report artifacts are written only after all rows are scored. The CSV keeps raw answers and
+first-source columns, while objective scoring uses the same reference-correctness functions as
+local RAG runs. See [RAG core](rag-core.md) external answer log scoring and
+[`docs/guides/data-prep/goldset-from-scratch.md`](../../guides/data-prep/goldset-from-scratch.md).
+
 NotebookLM inventory-array coverage is implemented in `src/llb/prep/curation/inventory.py` and
 covered by `test_inventory_accepts_array_of_response_objects`. The goods quickstart NotebookLM
 inventory export was curated with:
@@ -446,7 +455,13 @@ live under `$DATA_DIR/llb/calibration/` unless deliberately promoted.
 - `sentence`: dependency-free sentence-aware chunks;
 - `recursive`: LangChain recursive splitter when available, pure fallback otherwise;
 - `markdown`: heading-aware chunks with breadcrumb metadata;
-- `semantic`: pinned-embedder breakpoints while preserving source offsets.
+- `semantic`: pinned-embedder breakpoints while preserving source offsets;
+- `page`: PDF page/citation-aware boundaries that never cross a page-sidecar span;
+- `heading`: heading-hierarchy packing with heading lines kept in the chunk text;
+- `late`: sentence spans embedded by whole-document token pooling (late chunking).
+
+The `page`/`heading`/`late` details, comparison command, and durable evidence live in the
+[RAG core](rag-core.md) chunking-strategies section.
 
 ```bash
 make build-rag-store

@@ -23,14 +23,26 @@ from llb.core.contracts import JsonObject
 from llb.core import env
 from llb.core.paths import load_project_env, resolve_data_dir, resolve_project_path
 
-Strategy = Literal["fixed", "sentence", "recursive", "markdown", "semantic"]
-RetrievalMode = Literal["flat", "parent_child"]
+Strategy = Literal[
+    "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late"
+]
+RetrievalMode = Literal["flat", "parent_child", "hybrid"]
 RetrievalBackend = Literal["faiss", "graph"]
 RetrievalStrategy = Literal["local_khop", "global_community"]
+# Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
+# "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
+ContextOrder = Literal["rank", "reverse_rank"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
+# Hybrid retrieval defaults (hybrid-retrieval-uk): dense-vs-lexical RRF weight and the
+# per-side candidate depth fed into the fusion.
+DEFAULT_FUSION_WEIGHT = 0.5
+DEFAULT_FUSION_CANDIDATES = 50
+# Reranking defaults (rerank-context-order): candidate pool depth fed into the optional
+# cross-encoder before the top_k cut. The default reranker model id lives in `llb.rag.rerank`.
+DEFAULT_RERANK_CANDIDATES = 30
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_VLLM_HOST = "http://localhost:8000"
 DEFAULT_LLAMACPP_HOST = "http://localhost:8080"
@@ -134,9 +146,31 @@ class RunConfig(BaseModel):
 
     # Retrieval mode. "flat" indexes `chunk_size` chunks directly. "parent_child" indexes
     # small `child_chunk_size` children for precise matching but returns their larger parent
-    # (the `chunk_size` chunk) for generation context.
+    # (the `chunk_size` chunk) for generation context. "hybrid" indexes like "flat" but also
+    # builds a lexical BM25 index beside the vector index and fuses the two rankings with
+    # weighted RRF at query time (hybrid-retrieval-uk).
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
+
+    # Hybrid fusion knobs (used when retrieval_mode == "hybrid"; recorded in the manifest and
+    # the sweep cell fingerprint). `fusion_weight` is the dense share of the weighted RRF
+    # (1.0 == dense order, 0.0 == lexical order); `fusion_candidates` is the per-side candidate
+    # depth fed into the fusion. `lexical_lemmas` opts the lexical side into Ukrainian
+    # lemmatization at index AND query time (pymorphy3, the [lex] extra); the stored chunk
+    # text is never altered.
+    fusion_weight: float = Field(default=DEFAULT_FUSION_WEIGHT, ge=0, le=1)
+    fusion_candidates: int = Field(default=DEFAULT_FUSION_CANDIDATES, ge=1)
+    lexical_lemmas: bool = False
+
+    # Rerank + context order (rerank-context-order), both recorded in the manifest and the
+    # sweep cell fingerprint. `reranker` names a local cross-encoder (HF id; None == off, the
+    # default -- see `llb.rag.rerank.DEFAULT_RERANKER` for the pinned candidate);
+    # `rerank_candidates` is the retrieved pool depth fed into it before the `top_k` cut.
+    # `context_order` lays the kept chunks into the prompt best-first ("rank") or best-last
+    # ("reverse_rank"); it applies with or without a reranker.
+    reranker: str | None = None
+    rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
+    context_order: ContextOrder = "rank"
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

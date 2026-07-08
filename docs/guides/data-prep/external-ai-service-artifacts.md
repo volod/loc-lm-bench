@@ -14,9 +14,11 @@ uploaded files, and return raw JSON. These services support Ukrainian well and c
 quality and completeness of draft test sets. This manual explains **when** you may use them,
 **exactly what** to produce, and **how** to bring the results back into the local benchmark.
 
-> **The benchmark's purpose is to evaluate LOCAL RAG and LOCAL LLM inference.** External services
-> are used here only to *draft candidate test data*. They never retrieve, answer, judge, or
-> score. The scored run always happens locally against local models.
+> **The benchmark's purpose is to evaluate LOCAL RAG and LOCAL LLM inference.** External assistant
+> services in this manual are used only to *draft candidate test data*. They do not set
+> `verified=true`, judge, or produce local leaderboard rows. A separate diagnostic lane can score
+> an already-answered external RAG answer log when the thing under analysis is the external RAG
+> product itself.
 
 Read this page top to bottom on first use: the [workflow at a glance](#workflow-at-a-glance)
 shows the whole sequence and which steps are yours, the
@@ -55,8 +57,9 @@ Is EVERY document in the corpus public / cleared for third-party upload?
 
 ## Workflow at a glance
 
-Nine steps; the left column runs on your box, the right column inside the external service.
-Steps marked `[HUMAN]` need your attention and judgment -- everything else is a command.
+Nine core steps plus an optional external-RAG diagnostic; the left column runs on your box, the
+right column inside the external service. Steps marked `[HUMAN]` need your attention and judgment
+-- everything else is a command.
 
 ```text
 LOCAL (your box)                              EXTERNAL SERVICE (open data only)
@@ -169,6 +172,7 @@ prompts are in [`external-service-prompts/`](external-service-prompts/README.md)
 | Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | blocked on `chain-goldset-generation` | review-only |
 | Security cases | `04` | `make curate-drafts CURATE_KIND=security` | `make bench-security SECURITY_CASES=` | works today |
 | Local run results | -- | -- | `make run-eval` / `make bench-security` | works today |
+| External RAG answer log | -- | -- | `make score-external-rag EXTERNAL_RAG_ANSWERS=` | diagnostic |
 
 Session outputs live under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`, each with an
 `external_provenance.json` sidecar (contract section 6). Nothing external ever sets
@@ -451,6 +455,70 @@ make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-t
 
 Run artifacts land under `$DATA_DIR/run-eval/<timestamp>-<run-id>/`. These local results -- not
 anything produced inside the external service -- are the benchmark's output.
+
+## Step 10: Score an external RAG answer log (diagnostic)
+
+Use this only when the system you need to analyze is an external RAG product that reused the same
+project documentation corpus and already wrote answers into a JSONL goldset export. Each row should
+carry the normal gold fields plus `llm_answer` and, when available, `llm_sources`:
+
+```json
+{"id": "...", "question": "...", "reference_answer": "...", "llm_answer": "...",
+ "llm_sources": [{"article_id": "...", "article_title": "...", "score": 0.63, "url": "..."}]}
+```
+
+Run the interactive scorer:
+
+```bash
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl>
+```
+
+The command shows one answer card at a time: `question`, `reference_answer`, gold source text,
+raw `llm_answer`, the text used for objective scoring, first returned `llm_sources`, and
+`llm_error`. The reviewer records the human judgment directly in the JSONL:
+
+```text
+a        accept, score=1
+p        partial, score=0.5
+r        reject, score=0
+s <0..1> explicit score
+o        edit human_notes
+w        edit human_corrected_answer
+n/b/u/j  navigate
+q        save and quit
+```
+
+Partial sessions are safe. Re-run the same command to resume at the first row without
+`human_score_0_1` plus `human_decision`. To restart the review, clear the JSONL-backed human
+fields:
+
+```bash
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl> \
+  EXTERNAL_RAG_CLEAR=1
+```
+
+Final outputs are written only after every row has a human score and decision:
+
+```text
+<answered-jsonl-stem>.csv
+<answered-jsonl-stem>.report.md
+```
+
+The CSV is sorted by `review_priority_rank` and includes `question`, `reference_answer`, raw
+`llm_answer`, the answer text used for objective scoring, first three source records, objective
+columns (`exact`, `token_f1`, `contains`), and the JSONL-backed human fields:
+`human_score_0_1`, `human_decision`, `human_notes`, `human_corrected_answer`, and `human_status`.
+
+The Markdown report gives aggregate objective estimates, human decision counts, the human mean
+score, split estimates, common sources, and links to project commands for improvement work:
+`build-index`, `validate-retrieval`, `compare-embeddings`, `sweep`, `tune`,
+`prompt-system-prepare`, `run-eval`, `analyze-misses`, and `recommend`.
+
+Important limitation: if the external answer log returns only article titles or URLs, the scorer
+cannot compute benchmark source-span recall for that external system. To audit retrieval directly,
+teach the external API to return `doc_id`, `char_start`, and `char_end` for each returned source.
 
 ## End-to-end example: benchmark a mixed PDF corpus with external drafting
 

@@ -10,6 +10,7 @@ The shared status taxonomy, refusal markers, `classify_response`, and `format_co
 in `llb.eval.common`; see that module for the failure-taxonomy contract.
 """
 
+import time
 from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
@@ -40,6 +41,10 @@ class RagState(TypedDict, total=False):
     status: str
     error: str | None
     usage: UsageRecord
+    # Per-stage wall-clock (rerank-context-order): retrieval always, rerank when a reranking
+    # store is wired. Generation latency stays in `usage` (from the backend's ChatResult).
+    retrieve_latency_s: float
+    rerank_latency_s: float
 
 
 def build_messages(
@@ -61,12 +66,31 @@ def build_messages(
     )
 
 
-def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:
-    """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back."""
+def make_retrieve_node(
+    store: Any, k: int, context_order: str = eval_common.ORDER_RANK
+) -> Callable[[RagState], RagState]:
+    """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
+
+    `context_order` is the rerank-context-order policy applied when the kept chunks are laid
+    into the prompt; `retrieved` stays in rank order so the source-span metrics are unaffected.
+    A reranking store (`llb.rag.rerank.RerankingRetriever`) exposes its per-stage wall-clock,
+    recorded as `retrieve_latency_s` / `rerank_latency_s`.
+    """
 
     def retrieve(state: RagState) -> RagState:
+        started = time.perf_counter()
         chunks = store.retrieve(state["question"], k)
-        update: RagState = {"retrieved": chunks, "context": eval_common.format_context(chunks)}
+        total_s = time.perf_counter() - started
+        update: RagState = {
+            "retrieved": chunks,
+            "context": eval_common.format_context(chunks, order=context_order),
+        }
+        stage = getattr(store, "stage_latency", None)
+        if isinstance(stage, dict) and "rerank_s" in stage:
+            update["retrieve_latency_s"] = float(stage.get("retrieve_s", 0.0))
+            update["rerank_latency_s"] = float(stage["rerank_s"])
+        else:
+            update["retrieve_latency_s"] = total_s
         if not chunks:
             update["status"] = eval_common.RETRIEVAL_MISS
         return update
@@ -113,6 +137,7 @@ def build_rag_graph(
     temperature: float,
     timeout: float,
     prompt_package: Any | None = None,
+    context_order: str = eval_common.ORDER_RANK,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -123,7 +148,7 @@ def build_rag_graph(
         ) from exc
     graph = StateGraph(RagState)
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
-    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k)))
+    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k, context_order)))
     graph.add_node(
         "generate",
         cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package)),

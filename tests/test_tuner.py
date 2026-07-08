@@ -5,6 +5,8 @@ import pytest
 from llb.core.config import RunConfig
 from llb.core.contracts import ModelSpec
 from llb.optimize.tuner import (
+    EXTENDED_STRATEGIES,
+    STRATEGIES,
     TwoStageResult,
     estimate_prompt_tokens,
     fits_context,
@@ -63,6 +65,31 @@ def test_suggest_overrides_flat_keeps_overlap_below_size():
     assert "child_chunk_size" not in over  # flat mode
 
 
+def test_suggest_overrides_extended_chunkers_behind_the_flag():
+    # Default search space excludes the corpus-chunking additions; `strategies=` opts them in.
+    captured: dict[str, list] = {}
+
+    class RecordingTrial(FakeTrial):
+        def suggest_categorical(self, name, choices):
+            captured.setdefault(name, list(choices))
+            return super().suggest_categorical(name, choices)
+
+    vals = {
+        "strategy": "late",
+        "chunk_size": 512,
+        "overlap_frac": 0.1,
+        "retrieval_mode": "flat",
+        "top_k": 5,
+    }
+    over = suggest_overrides(RecordingTrial(vals), strategies=EXTENDED_STRATEGIES)
+    assert {"page", "heading", "late"} <= set(captured["strategy"])
+    assert over["strategy"] == "late"
+
+    captured.clear()
+    suggest_overrides(RecordingTrial({**vals, "strategy": "markdown"}))
+    assert captured["strategy"] == STRATEGIES  # default space unchanged
+
+
 def test_suggest_overrides_parent_child_clamps_child_below_size():
     over = suggest_overrides(
         FakeTrial(
@@ -77,6 +104,63 @@ def test_suggest_overrides_parent_child_clamps_child_below_size():
         )
     )
     assert over["child_chunk_size"] < over["chunk_size"]
+
+
+def test_suggest_overrides_hybrid_samples_fusion_knobs():
+    over = suggest_overrides(
+        FakeTrial(
+            {
+                "strategy": "recursive",
+                "chunk_size": 512,
+                "overlap_frac": 0.1,
+                "retrieval_mode": "hybrid",
+                "top_k": 5,
+                "fusion_weight": 0.4,
+                "fusion_candidates": 40,
+            }
+        )
+    )
+    assert over["retrieval_mode"] == "hybrid"
+    assert over["fusion_weight"] == 0.4 and over["fusion_candidates"] == 40
+
+
+def test_suggest_overrides_flat_never_samples_fusion_knobs():
+    over = suggest_overrides(
+        FakeTrial(
+            {
+                "strategy": "recursive",
+                "chunk_size": 512,
+                "overlap_frac": 0.1,
+                "retrieval_mode": "flat",
+                "top_k": 5,
+            }
+        )
+    )
+    assert "fusion_weight" not in over and "fusion_candidates" not in over
+
+
+def test_suggest_overrides_rerank_axes_only_behind_the_flag():
+    # rerank-context-order: no `--reranker` -> the axes are never sampled; with it, the on/off
+    # categorical gates the candidate-depth axis (off-trial samples no dead depth parameter).
+    vals = {
+        "strategy": "recursive",
+        "chunk_size": 512,
+        "overlap_frac": 0.1,
+        "retrieval_mode": "flat",
+        "top_k": 5,
+    }
+    assert "reranker" not in suggest_overrides(FakeTrial(vals))
+
+    off = suggest_overrides(
+        FakeTrial({**vals, "use_reranker": False}), reranker="BAAI/bge-reranker-v2-m3"
+    )
+    assert "reranker" not in off and "rerank_candidates" not in off
+
+    on = suggest_overrides(
+        FakeTrial({**vals, "use_reranker": True, "rerank_candidates": 30}),
+        reranker="BAAI/bge-reranker-v2-m3",
+    )
+    assert on["reranker"] == "BAAI/bge-reranker-v2-m3" and on["rerank_candidates"] == 30
 
 
 def test_estimate_prompt_tokens_grows_with_topk_and_size():

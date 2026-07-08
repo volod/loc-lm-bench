@@ -1,0 +1,5 @@
+{
+  "id": "board.recommend.misses_intro",
+  "kind": "text",
+  "template": "misses_intro.txt"
+}

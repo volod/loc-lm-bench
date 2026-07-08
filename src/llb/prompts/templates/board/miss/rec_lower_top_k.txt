@@ -1,0 +1,1 @@
+Lower top_k to {{ k }} (currently {{ top_k }}): the probe scored {{ probe_obj }} mean objective on the miss subset vs {{ base_obj }} at the current depth -- fewer distractor chunks helped.

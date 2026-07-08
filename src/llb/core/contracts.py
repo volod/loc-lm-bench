@@ -38,6 +38,8 @@ class ChunkRecord(SourceSpanRecord):
     metadata: NotRequired[JsonObject]
     retrieval_score: NotRequired[float | None]
     rank: NotRequired[int]
+    rerank_score: NotRequired[float]  # cross-encoder relevance (rerank-context-order)
+    pre_rerank_rank: NotRequired[int]  # retrieval rank before the rerank stage
 
 
 class RagStoreMeta(TypedDict):
@@ -56,6 +58,9 @@ class RagStoreMeta(TypedDict):
     page_annotation_coverage: NotRequired[
         float
     ]  # fraction of indexed chunks carrying source-PDF page provenance (chunk-page-metadata)
+    lexical: NotRequired[
+        JsonObject
+    ]  # hybrid-retrieval-uk BM25 sidecar meta: {"lemmatize": bool, "n_terms": int}
 
 
 class UsageRecord(TypedDict, total=False):
@@ -73,6 +78,29 @@ class RetrievalMetrics(TypedDict):
 
 
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
+
+
+class RetrievedSpanRecord(TypedDict):
+    """One retrieved chunk as persisted in a run bundle's `retrieval.jsonl` (miss analysis):
+    the span coordinates the miss classifier's overlap check needs plus a bounded text preview
+    for observability -- never the full chunk text."""
+
+    doc_id: str
+    char_start: int
+    char_end: int
+    rank: int
+    retrieval_score: NotRequired[float | None]
+    text_preview: NotRequired[str]
+
+
+class CaseRetrievalRecord(TypedDict):
+    """Per-case retrieved-spans record (`retrieval.jsonl`, one line per scored case): what the
+    model actually saw versus the gold spans, so a finalized bundle supports span-overlap miss
+    classification without re-running retrieval."""
+
+    item_id: str
+    retrieved: list[RetrievedSpanRecord]
+    gold_spans: list[SourceSpanRecord]
 
 
 class CorrectnessScores(TypedDict):
@@ -237,6 +265,8 @@ class CaseScoreRow(TypedDict):
     answer_preview: str
     semantic: NotRequired[float]
     judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
+    retrieve_latency_s: NotRequired[float]  # retrieval stage wall-clock (rerank-context-order)
+    rerank_latency_s: NotRequired[float]  # rerank stage wall-clock (only when a reranker is on)
 
 
 class LeaderboardRow(TypedDict):
@@ -332,6 +362,9 @@ class RunMetrics(TypedDict):
     tokens_per_watt: NotRequired[float]
     quality_per_watt: NotRequired[float]  # objective_score * tokens_per_s / mean_power_w
     judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
+    # Mean per-case stage wall-clock seconds (rerank-context-order): retrieve always (when
+    # measured), rerank only when a reranker is configured, generate from the backend latency.
+    stage_latency: NotRequired[dict[str, float]]
 
 
 class RunEnvironment(TypedDict):
@@ -369,6 +402,7 @@ class RunPaths(TypedDict):
     manifest: str
     scores: str
     mirror: str
+    retrieval: NotRequired[str]  # per-case retrieved-spans record (miss analysis)
     worksheet: NotRequired[str]
 
 

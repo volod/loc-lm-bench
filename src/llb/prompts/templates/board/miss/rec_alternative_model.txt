@@ -1,0 +1,1 @@
+Try {{ alt_model }}: it scored {{ alt_objective }} objective vs {{ objective }} for {{ model }} on the same {{ split }} split; the {{ n_generation }} generation misses are the headroom.

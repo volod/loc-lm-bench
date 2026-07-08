@@ -12,6 +12,16 @@ Strategies:
                sub-split of long sections; header breadcrumbs go into chunk `metadata`
   - semantic   native: embed sentences with the PINNED embedder, break at distance spikes
                (offset-exact; langchain's SemanticChunker does not preserve source offsets)
+  - page       PDF page/citation-aware: chunk boundaries never cross a `*.citations.json`
+               page-sidecar span (see `llb.rag.page_metadata`); pages longer than `size`
+               are sub-split WITHIN the page; docs without a sidecar fall back to recursive
+  - heading    heading-hierarchy (layout-aware): a whole heading subtree that fits `size`
+               becomes ONE chunk (heading lines INCLUDED in the text, unlike `markdown`);
+               oversized subtrees recurse into child headings; every chunk carries the full
+               breadcrumb in `metadata.headers`
+  - late       late chunking: spans are IDENTICAL to `sentence` (so any retrieval delta
+               isolates the embedding effect), but vectors are pooled from whole-document
+               token embeddings (`llb.rag.late_encoding`) instead of per-chunk encoding
 
 `recursive` (and the `markdown` sub-split) use `langchain-text-splitters`, pinned in the base
 dependencies so chunk boundaries are reproducible across environments; a missing or
@@ -36,7 +46,7 @@ from typing import Any
 from llb.core.contracts import ChunkRecord, ChunkSummary, JsonObject
 
 PURE_STRATEGIES = ("fixed", "sentence")
-STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic")
+STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late")
 
 _TERM = re.compile(r"[.!?…]+")
 _CLOSERS = '”»")]’'
@@ -217,6 +227,136 @@ def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, J
     return out
 
 
+def page_aligned_spans(
+    text: str, size: int, overlap: int, page_spans: list[tuple[int, int]]
+) -> list[tuple[int, int]]:
+    """Spans whose boundaries never cross a page-sidecar span (PDF page/citation-aware).
+
+    The document is partitioned into regions: each sidecar page span plus the gaps around
+    them (front matter, inter-page markers). A region that fits `size` becomes one span; a
+    longer region is sub-split WITHIN itself via `recursive_spans`, so no chunk ever
+    straddles a page boundary and every citation resolves to exactly one page range.
+    """
+    validate_chunking(size, overlap)
+    n = len(text)
+    regions: list[tuple[int, int]] = []
+    cursor = 0
+    for raw_start, raw_end in sorted(page_spans):
+        start, end = max(cursor, raw_start, 0), min(raw_end, n)
+        if end <= start:
+            continue
+        if start > cursor:
+            regions.append((cursor, start))  # gap before this page (never merged into it)
+        regions.append((start, end))
+        cursor = end
+    if cursor < n:
+        regions.append((cursor, n))
+
+    spans: list[tuple[int, int]] = []
+    for region_start, region_end in regions:
+        rs, re_ = _trim(text, region_start, region_end)
+        if re_ <= rs:
+            continue
+        if re_ - rs <= size:
+            spans.append((rs, re_))
+        else:
+            spans.extend((rs + s, rs + e) for s, e in recursive_spans(text[rs:re_], size, overlap))
+    return spans
+
+
+def heading_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, JsonObject]]:
+    """Heading-hierarchy (layout-aware) split: whole subtrees pack into one chunk when they fit.
+
+    Unlike `markdown_spans` (one chunk per leaf section BODY, header lines stripped), this
+    strategy keeps heading lines INSIDE the chunk text -- the layout the embedder sees matches
+    the layout a reader sees -- and a heading whose entire subtree (itself + all nested
+    subsections) fits within `size` becomes a single chunk. Oversized subtrees emit their own
+    section (heading line + immediate body, recursively sub-split) and then recurse into each
+    child heading. Every chunk carries the full breadcrumb of enclosing headings in
+    `metadata.headers`.
+    """
+    headers = [
+        (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)
+    ]
+    out: list[tuple[int, int, JsonObject]] = []
+
+    def emit(body_start: int, body_end: int, meta: JsonObject) -> None:
+        bs, be = _trim(text, body_start, body_end)
+        if be <= bs:
+            return
+        if be - bs <= size:
+            out.append((bs, be, meta))
+        else:
+            for rs, re_ in recursive_spans(text[bs:be], size, overlap):
+                out.append((bs + rs, bs + re_, meta))
+
+    if not headers:
+        emit(0, len(text), {"headers": {}})
+        return out
+    if headers[0][0] > 0:  # preamble before the first heading
+        emit(0, headers[0][0], {"headers": {}})
+
+    # Full breadcrumb per heading (same stack rule as markdown_spans / heading_breadcrumb).
+    crumbs: list[dict[str, str]] = []
+    stack: dict[int, str] = {}
+    for _, _, level, title in headers:
+        stack = {lvl: t for lvl, t in stack.items() if lvl < level}
+        stack[level] = title
+        crumbs.append({f"h{lvl}": stack[lvl] for lvl in sorted(stack)})
+
+    def subtree_end(i: int) -> int:
+        level = headers[i][2]
+        for j in range(i + 1, len(headers)):
+            if headers[j][2] <= level:
+                return headers[j][0]
+        return len(text)
+
+    def emit_subtree(i: int) -> None:
+        h_start, h_end, _, _ = headers[i]
+        end = subtree_end(i)
+        meta: JsonObject = {"headers": crumbs[i]}
+        if end - h_start <= size:  # the whole subtree, heading line included, is one chunk
+            emit(h_start, end, meta)
+            return
+        j = i + 1
+        first_child = headers[j][0] if j < len(headers) and headers[j][0] < end else end
+        body_s, body_e = _trim(text, h_end, first_child)
+        if body_e > body_s:  # own section text (skip heading-only chunks; the breadcrumb
+            emit(h_start, first_child, meta)  # already carries the title to child chunks)
+        while j < len(headers) and headers[j][0] < end:
+            emit_subtree(j)
+            child_end = subtree_end(j)
+            j += 1
+            while j < len(headers) and headers[j][0] < child_end:
+                j += 1  # skip the grandchildren emit_subtree(j) already covered
+
+    i = 0
+    while i < len(headers):
+        emit_subtree(i)
+        top_end = subtree_end(i)
+        i += 1
+        while i < len(headers) and headers[i][0] < top_end:
+            i += 1
+    return out
+
+
+def doc_page_spans(corpus_root: Path, doc_id: str) -> list[tuple[int, int]] | None:
+    """Page char spans for `doc_id` from its citation sidecar, or None when it has none."""
+    # Function-level import: page_metadata imports this module for `_MD_HEADER`.
+    from llb.rag.page_metadata import load_page_citations
+
+    cite = load_page_citations(Path(corpus_root), doc_id)
+    if cite is None:
+        return None
+    _, spans = cite
+    out = [
+        (span["char_start"], span["char_end"])
+        for span in spans
+        if isinstance(span.get("char_start"), int) and isinstance(span.get("char_end"), int)
+    ]
+    return out or None
+
+
 def _percentile(values: list[float], pct: float) -> float:
     if not values:
         return 0.0
@@ -262,18 +402,34 @@ def semantic_spans(
 
 
 def chunk_spans(
-    text: str, strategy: str, size: int, overlap: int, embedder: Any = None
+    text: str,
+    strategy: str,
+    size: int,
+    overlap: int,
+    embedder: Any = None,
+    page_spans: list[tuple[int, int]] | None = None,
 ) -> list[tuple[int, int, JsonObject]]:
-    """Unified (start, end, metadata) spans for a strategy."""
+    """Unified (start, end, metadata) spans for a strategy.
+
+    `page_spans` feeds the `page` strategy (sidecar page char spans from `doc_page_spans`);
+    without them -- a plain `.md`/`.txt` doc, or `parent_child` children re-chunking a parent
+    slice whose page coordinates are unknown -- `page` falls back to `recursive`.
+    """
     validate_chunking(size, overlap)
     if strategy == "fixed":
         return [(s, e, {}) for s, e in fixed_spans(text, size, overlap)]
-    if strategy == "sentence":
+    if strategy in ("sentence", "late"):  # late = sentence spans + late-pooled vectors
         return [(s, e, {}) for s, e in sentence_chunk_spans(text, size)]
     if strategy == "recursive":
         return [(s, e, {}) for s, e in recursive_spans(text, size, overlap)]
     if strategy == "markdown":
         return markdown_spans(text, size, overlap)
+    if strategy == "heading":
+        return heading_spans(text, size, overlap)
+    if strategy == "page":
+        if page_spans:
+            return [(s, e, {}) for s, e in page_aligned_spans(text, size, overlap, page_spans)]
+        return [(s, e, {}) for s, e in recursive_spans(text, size, overlap)]
     if strategy == "semantic":
         if embedder is None:
             raise SystemExit('ERROR: the "semantic" strategy needs an embedder (the [rag] extra).')
@@ -288,9 +444,11 @@ def chunk_text(
     size: int,
     overlap: int,
     embedder: Any = None,
+    page_spans: list[tuple[int, int]] | None = None,
 ) -> list[ChunkRecord]:
     chunks: list[ChunkRecord] = []
-    for k, (start, end, meta) in enumerate(chunk_spans(text, strategy, size, overlap, embedder)):
+    spans = chunk_spans(text, strategy, size, overlap, embedder, page_spans=page_spans)
+    for k, (start, end, meta) in enumerate(spans):
         chunks.append(
             {
                 "doc_id": doc_id,
@@ -323,7 +481,10 @@ def chunk_corpus(
 ) -> list[ChunkRecord]:
     chunks: list[ChunkRecord] = []
     for doc_id, text in iter_docs(corpus_root):
-        chunks.extend(chunk_text(text, doc_id, strategy, size, overlap, embedder))
+        page_spans = doc_page_spans(corpus_root, doc_id) if strategy == "page" else None
+        chunks.extend(
+            chunk_text(text, doc_id, strategy, size, overlap, embedder, page_spans=page_spans)
+        )
     return chunks
 
 
@@ -338,8 +499,18 @@ def summarize(chunks: list[ChunkRecord]) -> ChunkSummary:
     }
 
 
-def build_faiss(chunks: list[ChunkRecord], model_name: str, index_dir: Path, strategy: str) -> None:
-    """Embed chunk texts and write a FAISS index. Needs the `[rag]` extra."""
+def build_faiss(
+    chunks: list[ChunkRecord],
+    model_name: str,
+    index_dir: Path,
+    strategy: str,
+    corpus_root: Path | None = None,
+) -> None:
+    """Embed chunk texts and write a FAISS index. Needs the `[rag]` extra.
+
+    The `late` strategy pools whole-document token embeddings instead of encoding each
+    chunk text, so it needs `corpus_root` to re-read the source documents.
+    """
     try:
         import faiss
         import numpy as np
@@ -354,7 +525,14 @@ def build_faiss(chunks: list[ChunkRecord], model_name: str, index_dir: Path, str
         )
         return
     index_dir.mkdir(parents=True, exist_ok=True)
-    vectors = np.asarray(Embedder(model_name).encode_passages([c["text"] for c in chunks]))
+    if strategy == "late":
+        if corpus_root is None:
+            raise ValueError("the 'late' strategy needs corpus_root to embed whole documents")
+        from llb.rag.late_encoding import encode_store_vectors
+
+        vectors = encode_store_vectors(chunks, corpus_root, Embedder(model_name))
+    else:
+        vectors = np.asarray(Embedder(model_name).encode_passages([c["text"] for c in chunks]))
     index = faiss.IndexFlatIP(vectors.shape[1])
     index.add(vectors)
     faiss.write_index(index, str(index_dir / f"{strategy}.faiss"))
@@ -420,7 +598,9 @@ def main(argv: list[str] | None = None) -> int:
             s["max"],
         )
         if args.embed:
-            build_faiss(chunks, args.model, args.out_dir / "index", strategy)
+            build_faiss(
+                chunks, args.model, args.out_dir / "index", strategy, corpus_root=args.corpus_root
+            )
 
     _LOG.info("[build-rag-store] chunks written -> %s", chunks_dir)
     return 0

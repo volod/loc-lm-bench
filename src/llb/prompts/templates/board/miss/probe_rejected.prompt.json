@@ -1,0 +1,5 @@
+{
+  "id": "board.miss.probe_rejected",
+  "kind": "text",
+  "template": "probe_rejected.txt"
+}

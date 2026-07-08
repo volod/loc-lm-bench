@@ -1,0 +1,1 @@
+Change chunking (currently strategy={{ strategy }}, size={{ size }}, overlap={{ overlap }}): {{ n_unrecovered }} of {{ n_retrieval }} retrieval misses stay unrecovered even at top_k={{ max_k }}, so depth alone does not fix them.

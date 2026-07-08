@@ -27,6 +27,9 @@ _LOG = logging.getLogger(__name__)
 # Keep some VRAM headroom so the "recommended for this host" pick is not a card pinned at 100%.
 SAFE_VRAM_FRACTION = 0.92
 RAG_CONFIG_KEYS = ("strategy", "chunk_size", "chunk_overlap", "top_k", "retrieval_mode")
+# The recommend summary quotes at most this many ranked miss-analysis recommendation lines;
+# the full ranked list stays in the analysis report it links.
+MISS_SECTION_MAX_RECOMMENDATIONS = 5
 
 
 def _t(name: str, **values: object) -> str:
@@ -457,6 +460,36 @@ def recommendation_payload(rec: Recommendation) -> JsonObject:
         "rag_config": rec.rag_config,
         "candidates": [candidate for candidate in candidates if candidate is not None],
     }
+
+
+def format_miss_section_md(analysis: JsonObject | None) -> str:
+    """Render the recommend summary's miss-analysis section from the latest persisted
+    `analysis.json` payload (see `llb.board.miss_analysis.latest_analysis`); '' when no
+    analysis exists so the summary stays unchanged for operators who never ran one."""
+    if not analysis:
+        return ""
+    class_counts = analysis.get("class_counts") or {}
+    classes = ", ".join(f"{cls}={n}" for cls, n in class_counts.items() if n) or "none"
+    lines = [
+        "## Miss analysis",
+        "",
+        _t(
+            "misses_intro",
+            n_misses=analysis.get("n_misses", 0),
+            n_cases=analysis.get("n_cases", 0),
+            model=_short(str(analysis.get("model", "?"))),
+            split=analysis.get("split", "?"),
+            classes=classes,
+            report=analysis.get("report_path", "?"),
+        ),
+    ]
+    recommendations = analysis.get("recommendations") or []
+    if recommendations:
+        lines += [""] + [
+            f"{rank}. {rec.get('line', '')}"
+            for rank, rec in enumerate(recommendations[:MISS_SECTION_MAX_RECOMMENDATIONS], 1)
+        ]
+    return "\n".join(lines)
 
 
 def format_config_detail_md(cells: list[RunSummary]) -> str:
