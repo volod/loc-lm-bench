@@ -19,7 +19,7 @@ import json
 import logging
 from pathlib import Path
 
-from llb.contracts import ChunkRecord, JsonObject
+from llb.core.contracts import ChunkRecord, JsonObject
 from llb.prep.pdf_corpus import PDF_CITATION_SUFFIX
 from llb.rag.chunking import _MD_HEADER
 

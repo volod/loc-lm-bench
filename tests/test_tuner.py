@@ -2,8 +2,8 @@
 
 import pytest
 
-from llb.config import RunConfig
-from llb.contracts import ModelSpec
+from llb.core.config import RunConfig
+from llb.core.contracts import ModelSpec
 from llb.optimize.tuner import (
     TwoStageResult,
     estimate_prompt_tokens,

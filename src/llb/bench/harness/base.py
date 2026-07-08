@@ -13,7 +13,7 @@ from llb.bench.agentic import (
     run_episode,
 )
 from llb.bench.common import LLMComplete
-from llb.contracts import ToolDef
+from llb.core.contracts import ToolDef
 
 
 def loop_harness(

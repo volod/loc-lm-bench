@@ -5,7 +5,7 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 """
 
 from llb.cli.rag import _compare_vector_corpus_root
-from llb.contracts import ChunkRecord, SourceSpanRecord
+from llb.core.contracts import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import compare_retrieval, format_comparison
 
 

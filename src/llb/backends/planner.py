@@ -41,7 +41,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from llb.contracts import ModelPlanRow, ModelSpec
+from llb.core.contracts import ModelPlanRow, ModelSpec
 
 MIB = 1024 * 1024
 KV_ELEM_BYTES = 2  # fp16 KV cache element

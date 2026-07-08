@@ -11,7 +11,7 @@ from llb.inference.generate import (
     load_manifest,
     select_host_gemma4_target,
 )
-from llb.paths import PROJECT_ROOT
+from llb.core.paths import PROJECT_ROOT
 
 
 @pytest.mark.parametrize(

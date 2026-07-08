@@ -575,7 +575,7 @@ def prepare_goldset_draft_cmd(
     ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
-    from llb.config import DEFAULT_VLLM_HOST
+    from llb.core.config import DEFAULT_VLLM_HOST
     from llb.prep.ontology import (
         EndpointConfig,
         default_out_dir,

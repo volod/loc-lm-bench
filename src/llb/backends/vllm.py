@@ -24,8 +24,8 @@ from typing import Any, Callable, Protocol, TextIO, cast
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
-from llb.contracts import BackendMetadata, ChatMessage
-from llb import env
+from llb.core.contracts import BackendMetadata, ChatMessage
+from llb.core import env
 
 
 class _Process(Protocol):

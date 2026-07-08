@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, TypeGuard
 from urllib.parse import unquote, urlparse
 
-from llb.paths import resolve_data_dir, resolve_project_path
+from llb.core.paths import resolve_data_dir, resolve_project_path
 from llb.tracking.manifest import RunManifest
 
 _LOG = logging.getLogger(__name__)

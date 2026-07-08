@@ -10,7 +10,7 @@ from operator import itemgetter
 import pytest
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, BackendLauncher, ChatResult
-from llb.config import RunConfig
+from llb.core.config import RunConfig
 from llb.eval import graph
 from llb.executor import durability
 from llb.executor.runner import run_eval

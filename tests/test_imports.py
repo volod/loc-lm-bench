@@ -8,9 +8,9 @@ test imports the whole package surface; it fails loudly if a heavy dep stops bei
 import importlib
 
 MODULES = [
-    "llb.config",
-    "llb.env",
-    "llb.runtime",
+    "llb.core.config",
+    "llb.core.env",
+    "llb.core.runtime",
     "llb.main",
     "llb.rag.chunking",
     "llb.rag.retrieval",

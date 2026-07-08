@@ -5,8 +5,8 @@ from typing import Any, Optional
 
 import typer
 
-from llb.config import RunConfig
-from llb.contracts import ModelSpec
+from llb.core.config import RunConfig
+from llb.core.contracts import ModelSpec
 
 
 def load_config(config_path: Optional[Path], **overrides: Any) -> RunConfig:

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 from llb.goldset.schema import GoldItem, Split, dump_goldset
 from llb.goldset.splits import assign_splits
-from llb.paths import resolve_data_dir
+from llb.core.paths import resolve_data_dir
 from llb.prep.frontier import LLMComplete, ProvenanceLog
 from llb.prep.ontology.artifacts import (
     copy_pdf_citation_sidecars,

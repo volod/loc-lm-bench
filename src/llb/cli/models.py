@@ -16,8 +16,8 @@ from llb.cli.helpers import (
     planning_models,
     resolver_probes,
 )
-from llb.config import RunConfig
-from llb.contracts import ModelSpec, PreparedModel, ResolvedModel
+from llb.core.config import RunConfig
+from llb.core.contracts import ModelSpec, PreparedModel, ResolvedModel
 
 
 def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:

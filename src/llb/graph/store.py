@@ -46,7 +46,7 @@ from llb.graph.retrieval import (
     node_link_scores,
     serialize_subgraph,
 )
-from llb.contracts import ChunkRecord
+from llb.core.contracts import ChunkRecord
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 
 _LOG = logging.getLogger(__name__)

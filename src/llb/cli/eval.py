@@ -13,7 +13,7 @@ from llb.cli.helpers import (
     load_models,
     resolver_probes,
 )
-from llb.config import RunConfig
+from llb.core.config import RunConfig
 from llb.screen.public import ScreenReport
 
 

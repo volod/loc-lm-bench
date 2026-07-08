@@ -10,7 +10,7 @@ from llb.cli.app import app
 from llb.cli.helpers import load_config
 
 if TYPE_CHECKING:
-    from llb.config import RunConfig
+    from llb.core.config import RunConfig
     from llb.prep.frontier import LLMComplete, ProvenanceLog
     from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
     from llb.rag.embedding_bakeoff import StoreBuilder

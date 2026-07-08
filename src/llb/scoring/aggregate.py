@@ -13,7 +13,7 @@ import random
 from collections import Counter
 from dataclasses import dataclass, field
 
-from llb.contracts import BoardRow, LeaderboardRow
+from llb.core.contracts import BoardRow, LeaderboardRow
 
 DEFAULT_WEIGHT_JUDGE = 0.5
 TIER_PRIVATE = "private"  # Tier-2 private gold-set metrics

@@ -11,7 +11,7 @@ entirely and recorded only as a tagged diagnostic.
 
 import re
 
-from llb.contracts import ChunkRecord
+from llb.core.contracts import ChunkRecord
 from llb.graph.constants import (
     CONFIDENCE_TIE_BOOST,
     KIND_EDGE_FACT,

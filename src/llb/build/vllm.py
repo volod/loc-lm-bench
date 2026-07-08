@@ -11,8 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from llb import env
-from llb.paths import PROJECT_ROOT, resolve_data_dir, resolve_project_path
+from llb.core import env
+from llb.core.paths import PROJECT_ROOT, resolve_data_dir, resolve_project_path
 
 _LOG = logging.getLogger(__name__)
 
@@ -224,6 +224,6 @@ def _run_sampler_preflight() -> None:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     raise SystemExit(run(main))

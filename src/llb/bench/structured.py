@@ -20,7 +20,7 @@ from llb.bench.common import (
     render_board,
     verified_data_config,
 )
-from llb.contracts import BoardRow, RunMetrics, RunPaths, StructuredCaseRow
+from llb.core.contracts import BoardRow, RunMetrics, RunPaths, StructuredCaseRow
 from llb.prompts import render_text
 from llb.scoring import structured
 from llb.scoring.aggregate import TIER_STRUCTURED, ModelResult, bootstrap_mean_ci

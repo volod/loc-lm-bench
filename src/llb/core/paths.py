@@ -11,10 +11,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from llb import env
+from llb.core import env
 
 DEFAULT_DATA_DIR = ".data"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]  # src/llb/core/paths.py -> repo root
 
 
 def load_project_env() -> None:

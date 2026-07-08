@@ -159,7 +159,7 @@ def test_model_weight_floor_uses_embedding_aware_estimate():
 
 def test_runner_guard_applies_derate_and_aborts(monkeypatch):
     from llb.backends.vllm import VllmLauncher
-    from llb.config import RunConfig
+    from llb.core.config import RunConfig
     from llb.executor import contention, runner
 
     launcher = VllmLauncher("google/gemma-4-E4B-it-qat-w4a16-ct", gpu_memory_utilization=0.85)

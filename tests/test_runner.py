@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from llb.backends.base import BackendLauncher, ChatResult
-from llb.config import RunConfig
+from llb.core.config import RunConfig
 from llb.eval import common
 from llb.eval import graph
 from llb.executor import runner as runner_module

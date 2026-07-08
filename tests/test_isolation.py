@@ -2,8 +2,8 @@
 
 import pytest
 
-from llb.config import RunConfig
-from llb.contracts import GpuSample
+from llb.core.config import RunConfig
+from llb.core.contracts import GpuSample
 from llb.executor.isolation import (
     cell_key,
     cool_down,

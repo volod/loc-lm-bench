@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.contracts import ToolDef
+from llb.core.contracts import ToolDef
 from llb.prep.frontier import parse_json_block
 
 # JSON-schema primitive type -> accepted Python types.

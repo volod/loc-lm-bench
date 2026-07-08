@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from llb.contracts import RagDataSpec
+from llb.core.contracts import RagDataSpec
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.validate import validate_items
 
@@ -118,6 +118,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))

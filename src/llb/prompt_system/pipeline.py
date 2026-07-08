@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.bench.common import new_run_timestamp
-from llb.paths import resolve_data_dir
+from llb.core.paths import resolve_data_dir
 from llb.prompt_system.budget import (
     DEFAULT_ANSWER_TOKENS,
     CharRatioTokenizer,

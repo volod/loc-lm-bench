@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from llb.config import DEFAULT_EMBEDDING_MODEL
-from llb.contracts import ChunkRecord, RagStoreMeta
+from llb.core.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
 from llb.rag.page_metadata import annotate_page_metadata

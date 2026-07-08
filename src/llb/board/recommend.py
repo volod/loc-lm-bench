@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.board.runs import RunRecord, best_per_model, load_run_records
-from llb.contracts import BoardRow, JsonObject
+from llb.core.contracts import BoardRow, JsonObject
 from llb.prompts import render_text
 from llb.scoring.aggregate import (
     ModelResult,

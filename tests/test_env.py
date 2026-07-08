@@ -1,7 +1,7 @@
 """`.env.example` stays aligned with the canonical env registry."""
 
-from llb import env
-from llb.paths import PROJECT_ROOT
+from llb.core import env
+from llb.core.paths import PROJECT_ROOT
 
 
 def test_env_example_documents_required_vars():

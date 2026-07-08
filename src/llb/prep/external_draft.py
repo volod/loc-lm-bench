@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from llb.contracts import ValidationReport
+from llb.core.contracts import ValidationReport
 from llb.goldset.schema import GoldItem, Provenance, SourceSpan, Split, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.goldset.validate import validate_items

@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 
-from llb import env
+from llb.core import env
 from typing import Any, Callable, Optional
 
 INTERRUPT_EXIT = 130  # 128 + SIGINT -- the conventional exit code for Ctrl-C

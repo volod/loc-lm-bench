@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from llb.backends.base import BackendLauncher
-from llb.config import RunConfig
-from llb.contracts import (
+from llb.core.config import RunConfig
+from llb.core.contracts import (
     BackendMetadata,
     CaseScoreRow,
     ContentionReport,

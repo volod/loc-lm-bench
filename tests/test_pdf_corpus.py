@@ -22,6 +22,7 @@ from llb.prep.pdf_corpus import (
     doc_id_for_pdf,
     ingest_pdf_corpus,
     iter_pdf_files,
+    strip_page_furniture,
 )
 
 RUNNER = CliRunner()
@@ -42,6 +43,24 @@ def test_iter_pdf_files_is_recursive_and_stable(tmp_path: Path) -> None:
 
 def test_clean_pdf_text_removes_form_feeds_and_extra_blank_lines() -> None:
     assert clean_pdf_text(" A  \n\n\n\x0c\n B \n") == "A\n\n B"
+
+
+def test_strip_page_furniture_drops_running_headers_footers_and_noise() -> None:
+    # a running header + footer + page number wrap each page's unique body
+    pages = [
+        f"MANUAL v1\n\n<!-- c -->\nBody paragraph {i} unique text.\n**==> picture <==**\nConf.\n**{i}**"
+        for i in range(1, 13)
+    ]
+    cleaned = strip_page_furniture(pages)
+    assert len(cleaned) == len(pages)
+    joined = "\n".join(cleaned)
+    # repeated furniture and per-page noise are gone
+    assert "MANUAL v1" not in joined
+    assert "Conf." not in joined
+    assert "picture" not in joined and "<!--" not in joined
+    assert not any(line.strip() in {str(i) for i in range(1, 13)} for line in joined.split("\n"))
+    # unique body content survives on every page
+    assert all(f"Body paragraph {i} unique text." in cleaned[i - 1] for i in range(1, 13))
 
 
 def test_ingest_pdf_corpus_writes_docs_and_manifest(tmp_path: Path) -> None:

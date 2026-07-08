@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from llb.contracts import JsonObject
+from llb.core.contracts import JsonObject
 from llb.scoring.composite_types import CompositeIssue
 
 

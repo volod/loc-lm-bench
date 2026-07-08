@@ -5,7 +5,7 @@ Pure resolution only -- no SentenceTransformer load, so no `[rag]` extra / GPU i
 
 import pytest
 
-from llb import env
+from llb.core import env
 from llb.rag.embedding import (
     BGE_QUERY_INSTRUCTION,
     FAMILY_BGE,

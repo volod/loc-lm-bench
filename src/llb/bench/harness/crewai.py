@@ -28,7 +28,7 @@ from llb.bench.agentic import (
 )
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
-from llb.contracts import ToolDef
+from llb.core.contracts import ToolDef
 from llb.prompts import render_text_map
 
 _LOG = logging.getLogger(__name__)

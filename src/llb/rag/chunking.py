@@ -33,7 +33,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from llb.contracts import ChunkRecord, ChunkSummary, JsonObject
+from llb.core.contracts import ChunkRecord, ChunkSummary, JsonObject
 
 PURE_STRATEGIES = ("fixed", "sentence")
 STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic")
@@ -427,6 +427,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))

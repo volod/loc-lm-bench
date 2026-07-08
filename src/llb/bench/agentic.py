@@ -38,7 +38,7 @@ from llb.bench.common import (
     verified_data_config,
 )
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
-from llb.contracts import (
+from llb.core.contracts import (
     AgenticCaseRow,
     BoardRow,
     JudgeDiagnostics,

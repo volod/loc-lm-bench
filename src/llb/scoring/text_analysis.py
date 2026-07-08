@@ -21,7 +21,7 @@ headline quality is the GATED judge (`llb.scoring.judge`), entering only when tr
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from llb.contracts import PlantedLabelRecord, SubtaskScore
+from llb.core.contracts import PlantedLabelRecord, SubtaskScore
 
 Similarity = Callable[[str, str], float]
 

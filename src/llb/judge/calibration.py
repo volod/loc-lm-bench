@@ -18,8 +18,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from llb.contracts import CalibrationResult, JsonObject, WorksheetItem
-from llb.fsutil import atomic_write_text
+from llb.core.contracts import CalibrationResult, JsonObject, WorksheetItem
+from llb.core.fsutil import atomic_write_text
 from llb.goldset.schema import GoldItem
 
 DEFAULT_THRESHOLD = 0.6
@@ -355,6 +355,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))

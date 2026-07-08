@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from llb.fsutil import atomic_write_text
+from llb.core.fsutil import atomic_write_text
 from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
 
 _LOG = logging.getLogger(__name__)
@@ -904,6 +904,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))

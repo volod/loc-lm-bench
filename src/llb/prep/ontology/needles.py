@@ -2,7 +2,7 @@
 
 from typing import Protocol, cast
 
-from llb.contracts import ChunkRecord, SourceSpanRecord
+from llb.core.contracts import ChunkRecord, SourceSpanRecord
 from llb.goldset.schema import GoldItem
 from llb.rag.retrieval import first_hit_rank
 
