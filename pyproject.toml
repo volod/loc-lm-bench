@@ -37,6 +37,9 @@ rag-chroma = ["chromadb==1.5.9"]
 rag-qdrant = ["qdrant-client==1.18.0"]
 rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
+# hybrid-retrieval-uk opt-in lemmatization: collapse Ukrainian inflection to lemmas on the
+# LEXICAL (BM25) side of hybrid retrieval; the stored corpus text is never altered.
+lex = ["pymorphy3>=2.0", "pymorphy3-dicts-uk>=2.4"]
 track = ["mlflow>=2.15", "duckdb>=1.0", "optuna>=3.6"]  # pyarrow arrives transitively via mlflow
 board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart

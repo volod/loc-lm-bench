@@ -9,12 +9,34 @@ from llb.executor.isolation import cell_key
 
 
 def test_parse_rag_grid_default_and_values() -> None:
-    assert models._parse_rag_grid(None) == [None]  # no grid -> default single-config sweep
-    assert models._parse_rag_grid("top_k=3,5,8") == [3, 5, 8]
-    assert models._parse_rag_grid("top_k=5,5,3") == [5, 3]  # de-duped, order preserved
+    assert models._parse_rag_grid(None) == [{}]  # no grid -> default single-config sweep
+    assert models._parse_rag_grid("top_k=3,5,8") == [{"top_k": 3}, {"top_k": 5}, {"top_k": 8}]
+    # de-duped, order preserved
+    assert models._parse_rag_grid("top_k=5,5,3") == [{"top_k": 5}, {"top_k": 3}]
 
 
-@pytest.mark.parametrize("bad", ["chunk_size=800", "top_k=", "top_k=0", "top_k=a,b", "5,8"])
+def test_parse_rag_grid_crosses_top_k_and_fusion_weight() -> None:
+    grid = models._parse_rag_grid("top_k=3,5;fusion_weight=0.4,0.6")
+    assert grid == [
+        {"top_k": 3, "fusion_weight": 0.4},
+        {"top_k": 3, "fusion_weight": 0.6},
+        {"top_k": 5, "fusion_weight": 0.4},
+        {"top_k": 5, "fusion_weight": 0.6},
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "chunk_size=800",
+        "top_k=",
+        "top_k=0",
+        "top_k=a,b",
+        "5,8",
+        "fusion_weight=1.5",
+        "top_k=3;top_k=5",
+    ],
+)
 def test_parse_rag_grid_rejects_bad_specs(bad: str) -> None:
     with pytest.raises(typer.BadParameter):
         models._parse_rag_grid(bad)
@@ -25,14 +47,24 @@ def test_grid_cells_expands_top_k() -> None:
     overrides = {"model": "m", "backend": "ollama", "run_name": "sweep-x"}
 
     # no grid -> one cell, base top_k untouched
-    single = models._grid_cells(base, overrides, [None])
+    single = models._grid_cells(base, overrides, [{}])
     assert len(single) == 1 and single[0].top_k == base.top_k
 
     # grid -> one cell per top_k, distinct resume keys + readable run-name suffixes
-    cells = models._grid_cells(base, overrides, [3, 8])
+    cells = models._grid_cells(base, overrides, [{"top_k": 3}, {"top_k": 8}])
     assert [c.top_k for c in cells] == [3, 8]
     assert [c.run_name for c in cells] == ["sweep-x-k3", "sweep-x-k8"]
     assert cell_key(cells[0]) != cell_key(cells[1])  # top_k is in the fingerprint -> no collision
+
+
+def test_grid_cells_fusion_weight_implies_hybrid_mode() -> None:
+    base = load_config(None)
+    overrides = {"model": "m", "backend": "ollama", "run_name": "sweep-x"}
+    cells = models._grid_cells(base, overrides, [{"fusion_weight": 0.4}, {"fusion_weight": 0.6}])
+    assert [c.fusion_weight for c in cells] == [0.4, 0.6]
+    assert all(c.retrieval_mode == "hybrid" for c in cells)
+    assert [c.run_name for c in cells] == ["sweep-x-w0.4", "sweep-x-w0.6"]
+    assert cell_key(cells[0]) != cell_key(cells[1])  # fusion knobs join the fingerprint
 
 
 def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> None:

@@ -1,0 +1,221 @@
+"""Lexical BM25 index + Ukrainian-aware normalization for hybrid retrieval.
+
+Dense-only cosine loses exact surnames, article/law numbers, codes, abbreviations, and mixed
+Ukrainian-English terms to semantically-close distractors. This module adds the lexical side:
+a pure-Python BM25 index built over the SAME offset-exact chunk records as the vector index,
+with Ukrainian-aware token normalization applied on the LEXICAL side only -- the stored chunk
+text is never altered.
+
+Normalization (always on): casefold, apostrophe-variant unification (U+2019 / U+02BC / `'` all
+become U+0027), punctuation strip via word-token extraction. Opt-in lemmatization collapses
+Ukrainian cases/inflection to lemmas at index AND query time (`pymorphy3` + `pymorphy3-dicts-uk`
+behind the `[lex]` optional extra; the lemmatizer callable is injectable for tests).
+
+`rrf_fuse` implements weighted reciprocal-rank fusion over the dense + lexical rankings; it is
+pure and backend-neutral, so every `VectorIndex` backend gains hybrid identically.
+"""
+
+import json
+import logging
+import math
+import re
+from collections import Counter
+from collections.abc import Callable, Iterable
+from pathlib import Path
+
+_LOG = logging.getLogger(__name__)
+
+# One token -> its lemma (identity when lemmatization is off or unavailable).
+Lemmatizer = Callable[[str], str]
+
+# Apostrophe variants unified to U+0027 so "м’яч" / "мʼяч" / "м'яч" index as one token.
+_APOSTROPHE_VARIANTS = str.maketrans({"’": "'", "ʼ": "'"})
+# Word tokens: letters/digits plus in-word apostrophes; everything else is punctuation.
+_TOKEN_RE = re.compile(r"[\w']+")
+
+# BM25 constants (Robertson/Sparck Jones defaults; recorded in the persisted index meta).
+BM25_K1 = 1.5
+BM25_B = 0.75
+# Standard RRF rank damping constant (Cormack et al. 2009).
+RRF_K = 60
+LEXICAL_INDEX_VERSION = "bm25-uk-v1"
+LEXICAL_EXTRA_HINT = (
+    "lemmatization needs the [lex] optional extra: uv pip install -e '.[lex]' "
+    "(pymorphy3 + pymorphy3-dicts-uk)"
+)
+
+
+def normalize_token(token: str) -> str:
+    """Casefold + apostrophe unification + edge-apostrophe strip (matching side only)."""
+    return token.translate(_APOSTROPHE_VARIANTS).casefold().strip("'")
+
+
+def tokenize(text: str, lemmatizer: Lemmatizer | None = None) -> list[str]:
+    """Normalized word tokens of `text`; `lemmatizer` (when given) maps each to its lemma."""
+    tokens = [normalize_token(t) for t in _TOKEN_RE.findall(text)]
+    tokens = [t for t in tokens if t]
+    if lemmatizer is None:
+        return tokens
+    return [lemmatizer(t) for t in tokens]
+
+
+def load_uk_lemmatizer() -> Lemmatizer:
+    """The pymorphy3 Ukrainian lemmatizer (first-parse normal form), memoized per token.
+
+    Raises SystemExit with an install hint when the `[lex]` extra is absent, so callers fail
+    with a clear message instead of a bare ImportError.
+    """
+    try:
+        import pymorphy3
+    except ImportError:
+        raise SystemExit(f"[lexical] {LEXICAL_EXTRA_HINT}") from None
+    analyzer = pymorphy3.MorphAnalyzer(lang="uk")
+    cache: dict[str, str] = {}
+
+    def lemma(token: str) -> str:
+        hit = cache.get(token)
+        if hit is None:
+            parses = analyzer.parse(token)
+            hit = parses[0].normal_form if parses else token
+            cache[token] = hit
+        return hit
+
+    return lemma
+
+
+def best_effort_lemma(token: str) -> str:
+    """Lemmatize one normalized token when pymorphy3 is installed; identity otherwise.
+
+    Shared with the miss analysis so heuristic topic keys collapse across Ukrainian case
+    forms instead of splitting one topic into "начальник" / "начальника" clusters.
+    """
+    global _BEST_EFFORT_LEMMATIZER
+    if _BEST_EFFORT_LEMMATIZER is None:
+        try:
+            _BEST_EFFORT_LEMMATIZER = load_uk_lemmatizer()
+        except SystemExit:
+            _BEST_EFFORT_LEMMATIZER = _identity
+    return _BEST_EFFORT_LEMMATIZER(normalize_token(token))
+
+
+def _identity(token: str) -> str:
+    return token
+
+
+_BEST_EFFORT_LEMMATIZER: Lemmatizer | None = None
+
+
+class LexicalIndex:
+    """Deterministic pure-Python BM25 over chunk texts (build-order ids, like the vector index)."""
+
+    def __init__(
+        self,
+        postings: dict[str, list[tuple[int, int]]],
+        doc_lengths: list[int],
+        lemmatize: bool,
+        lemmatizer: Lemmatizer | None = None,
+    ):
+        self.postings = postings  # term -> [(chunk_ordinal, term_frequency)] sorted by ordinal
+        self.doc_lengths = doc_lengths
+        self.lemmatize = lemmatize
+        self._lemmatizer = lemmatizer
+        self.n_docs = len(doc_lengths)
+        self.avg_doc_len = (sum(doc_lengths) / self.n_docs) if self.n_docs else 0.0
+
+    @classmethod
+    def build(
+        cls, texts: Iterable[str], lemmatize: bool = False, lemmatizer: Lemmatizer | None = None
+    ) -> "LexicalIndex":
+        """Index `texts` in order. With `lemmatize`, tokens collapse to lemmas at index time
+        (query tokens are lemmatized identically in `search`); the texts themselves are never
+        modified. `lemmatizer` injects a fake for tests; default is the pymorphy3 Ukrainian one.
+        """
+        if lemmatize and lemmatizer is None:
+            lemmatizer = load_uk_lemmatizer()
+        postings: dict[str, list[tuple[int, int]]] = {}
+        doc_lengths: list[int] = []
+        for ordinal, text in enumerate(texts):
+            tokens = tokenize(text, lemmatizer if lemmatize else None)
+            doc_lengths.append(len(tokens))
+            for term, tf in sorted(Counter(tokens).items()):
+                postings.setdefault(term, []).append((ordinal, tf))
+        return cls(postings, doc_lengths, lemmatize, lemmatizer)
+
+    def _query_lemmatizer(self) -> Lemmatizer | None:
+        if not self.lemmatize:
+            return None
+        if self._lemmatizer is None:  # loaded index: resolve the real lemmatizer lazily
+            self._lemmatizer = load_uk_lemmatizer()
+        return self._lemmatizer
+
+    def search(
+        self, query: str, k: int, allowed: set[int] | None = None
+    ) -> list[tuple[int, float]]:
+        """Top-k `(chunk_ordinal, bm25_score)` for `query`, best first, ties broken by ordinal.
+
+        `allowed` restricts candidates to those ordinals (the metadata-filter seam applies
+        BEFORE fusion); only chunks matching at least one query term are returned.
+        """
+        if k < 1 or not self.n_docs:
+            return []
+        scores: dict[int, float] = {}
+        for term in tokenize(query, self._query_lemmatizer()):
+            entries = self.postings.get(term)
+            if not entries:
+                continue
+            idf = math.log(1.0 + (self.n_docs - len(entries) + 0.5) / (len(entries) + 0.5))
+            for ordinal, tf in entries:
+                if allowed is not None and ordinal not in allowed:
+                    continue
+                norm = 1.0 - BM25_B + BM25_B * (self.doc_lengths[ordinal] / self.avg_doc_len)
+                scores[ordinal] = scores.get(ordinal, 0.0) + idf * (
+                    tf * (BM25_K1 + 1.0) / (tf + BM25_K1 * norm)
+                )
+        ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+        return ranked[:k]
+
+    def save(self, path: Path | str) -> None:
+        payload = {
+            "version": LEXICAL_INDEX_VERSION,
+            "lemmatize": self.lemmatize,
+            "doc_lengths": self.doc_lengths,
+            "postings": {term: entries for term, entries in sorted(self.postings.items())},
+        }
+        Path(path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: Path | str) -> "LexicalIndex":
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        postings = {
+            term: [(int(ordinal), int(tf)) for ordinal, tf in entries]
+            for term, entries in payload["postings"].items()
+        }
+        return cls(postings, [int(n) for n in payload["doc_lengths"]], bool(payload["lemmatize"]))
+
+
+def rrf_fuse(
+    dense: list[int], lexical: list[int], weight: float, k_const: int = RRF_K
+) -> list[tuple[int, float]]:
+    """Weighted reciprocal-rank fusion of two ranked id lists, best first.
+
+    score(id) = weight * 1/(k_const + dense_rank) + (1 - weight) * 1/(k_const + lexical_rank),
+    with an absent id contributing nothing from that side. `weight`=1 reproduces the dense
+    order; `weight`=0 the lexical order. Ties break on dense rank, then id, so the fusion is
+    deterministic for any dense backend.
+    """
+    if not 0.0 <= weight <= 1.0:
+        raise ValueError(f"fusion weight must be within [0, 1], got {weight}")
+    dense_rank = {cid: rank for rank, cid in enumerate(dense, 1)}
+    lexical_rank = {cid: rank for rank, cid in enumerate(lexical, 1)}
+    fused: dict[int, float] = {}
+    for cid in dense_rank.keys() | lexical_rank.keys():
+        score = 0.0
+        if cid in dense_rank:
+            score += weight / (k_const + dense_rank[cid])
+        if cid in lexical_rank:
+            score += (1.0 - weight) / (k_const + lexical_rank[cid])
+        fused[cid] = score
+    return sorted(
+        fused.items(),
+        key=lambda pair: (-pair[1], dense_rank.get(pair[0], len(dense) + 1), pair[0]),
+    )

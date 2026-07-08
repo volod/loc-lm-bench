@@ -37,29 +37,27 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality cluster (12-16) gives the query-and-rerank side the same tune-and-demonstrate
+The retrieval-quality cluster (13-16) gives the query-and-rerank side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k` -- including the shipped page/heading/late chunkers behind `tune --extended-chunkers`; see
-[RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`). Together
-12 + 15 cover the
-Ukrainian-language retrieval stack: dense + BM25/sparse + metadata hybrid with
-inflection-aware lemmatization (12) and query-side
-normalization -- casefold, apostrophes, transliteration, typo tolerance, aliases/glossary --
-that never mutates the stored corpus text (15). The measured Ukrainian embedder ranking that
-underpins both (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the lang-uk model plus an
-opt-in Cohere API row for open corpora) is now shipped; see [RAG core](current/rag-core.md)
-retrieval store. Every knob these tasks add must land
+`top_k` plus the hybrid fusion knobs -- including the shipped page/heading/late chunkers behind
+`tune --extended-chunkers`; see [RAG core](current/rag-core.md) chunking strategies -- and the
+sweep grids `top_k` and `fusion_weight`). The Ukrainian hybrid retrieval stack -- dense + BM25
+fused with weighted RRF, index-side inflection-aware lemmatization, and the chunk-metadata filter
+seam -- is now shipped (see [RAG core](current/rag-core.md) hybrid retrieval); task 15 adds the
+query-side lane on top: normalization -- casefold, apostrophes, transliteration, typo tolerance,
+aliases/glossary -- that never mutates the stored corpus text. The measured Ukrainian embedder
+ranking that underpins the stack (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the
+lang-uk model plus an opt-in Cohere API row for open corpora) is also shipped; see
+[RAG core](current/rag-core.md) retrieval store. Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
 (`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
-evidence-backed. Within the cluster only 13 has an ordering preference (it reranks the pool 12
-fuses, so it pays off most after 12); 15 and 16 stand alone. Task 17 adds the governance
+evidence-backed. Within the cluster 13, 15, and 16 stand alone (13 reranks the candidate pool
+the shipped hybrid fusion emits, and also works over dense-only retrieval). Task 17 adds the
+governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
-[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)). The
-strategy-independent page/section join that links every chunk back to its origin file, page, and
-heading -- from chunk char offsets to the PDF citation sidecars -- is now shipped
-(`src/llb/rag/page_metadata.py`; see [RAG core](current/rag-core.md) retrieval store); task 12
-reuses its sidecar loader and the `pages`/`source_pdf`/`headers` fields it attaches.
+[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)); its ACL
+filter applies through the shipped chunk-metadata filter seam (`src/llb/rag/filters.py`).
 
 The fine-tuning cluster (18-22) extends the spine one step past recommendation: from naming the
 best base model to naming the best *adapted* model for the operator's corpus, with the whole loop
@@ -74,20 +72,20 @@ all local, no egress. Ordering inside the cluster: 18 first, then 19; 20 lands b
 
 ## Agent Implementation Tasks
 
-These land to `make ci` green with fixtures, fakes, and deterministic harnesses. The two
-prioritized Ukrainian-RAG-quality foundations are both shipped: the measured embedder ranking
+These land to `make ci` green with fixtures, fakes, and deterministic harnesses. The
+Ukrainian-RAG-quality foundations are shipped: the measured embedder ranking
 (`llb compare-embeddings`; see [RAG core](current/rag-core.md) retrieval store) that replaces the
-assumed default embedder with evidence, and the page/section join
-(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file; task 12
-builds on the latter's sidecar loader and fields, and 12/15 build on the measured embedder result.
+assumed default embedder with evidence, the page/section join
+(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file, and the hybrid
+dense+BM25 retrieval with the chunk-metadata filter seam (see [RAG core](current/rag-core.md)
+hybrid retrieval); task 15 builds on the measured embedder result.
 The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
 merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: the independent lot (12, 15, 16) in any order, 13 after 12, 17's
-ACL-filter half after 12's
-metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
+Recommended sequence: the independent lot (13, 15, 16) in any order, 17's ACL-filter half through
+the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
 exists; the export/guard/trainer code stands
 alone), 19-22 after 18 (the fine-tuning cluster reuses 18's trainer seam and contamination
@@ -170,68 +168,11 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   and
   [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
-### 12. hybrid-retrieval-uk
-
-- Dependencies: soft-follows the shipped page-metadata join (the metadata filter seam filters over
-  the page/section fields `src/llb/rag/page_metadata.py` attaches; the lexical/fusion half stands
-  alone). Base of the retrieval cluster --
-  task 13 reranks the pool this task fuses, and its fusion knobs feed the shipped miss
-  analysis's recommendations once they land in the manifest/fingerprint.
-- User-visible outcome: retrieval gains the full hybrid shape Ukrainian enterprise corpora need --
-  dense E5 plus lexical BM25 fused with reciprocal-rank fusion, plus a chunk-metadata filter seam
-  -- so exact surnames, article/law numbers, codes, abbreviations, and mixed Ukrainian-English
-  terminology stop losing to semantic-only search, and Ukrainian inflection (a genitive
-  "начальника служби" query vs the nominative corpus form) stops defeating the lexical side;
-  `compare-retrieval` demonstrates (not assumes) per corpus whether hybrid beats dense-only, what
-  lemmatization adds, and how much recall headroom perfect document routing would buy; the
-  sweep/tuner can grid the fusion knobs.
-  Today every store is dense-only cosine (`src/llb/rag/store.py`, `src/llb/rag/vector_index.py`).
-- Scope boundary: in scope -- a lexical index built beside the vector index at `build-index` time
-  (pure-Python BM25, in-repo or `rank-bm25` behind the same optional-extra pattern as `[rag]`)
-  over the same offset-exact chunks; Ukrainian-aware token normalization on the lexical side only
-  (casefold, apostrophe-variant unification U+2019/U+02BC/`'`, punctuation strip), with opt-in
-  lemmatization via `pymorphy3` + `pymorphy3-dicts-uk` (cases/inflection collapse to lemmas at
-  index and query time; the stored chunk text is never altered); RRF fusion inside
-  `RagStore.retrieve`
-  driven by `fusion_candidates` and `fusion_weight` in `RunConfig`, so every dense `VectorIndex`
-  backend (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically; a metadata filter seam over
-  `doc_id` plus the section breadcrumb and PDF page range the shipped page-metadata join attaches,
-  applied before fusion; an oracle-doc-filter diagnostic row in
-  `compare-retrieval` (candidates restricted to each gold item's `source_doc_id`) quantifying the
-  recall headroom a document router would buy; a `compare-retrieval` row set (dense vs hybrid vs
-  hybrid+lemmas) and tuner/sweep axes for the fusion knobs; once the lemma normalizer exists,
-  reuse it to collapse the shipped miss analysis's inflection-sensitive heuristic topic keys
-  (`topic_of` in `src/llb/board/miss_analysis.py` picks a raw surface token today, so the same
-  topic can split across case forms). Out of scope -- server-side hybrid
-  features of any vector DB (fusion stays local and backend-neutral), new embedding models
-  (the shipped `compare-embeddings` bake-off owns embedder selection; see
-  [RAG core](current/rag-core.md) retrieval store), query rewriting and typo tolerance (task 15),
-  a learned document router (the oracle
-  row only measures the headroom). Reuse `src/llb/rag/store.py`,
-  `src/llb/rag/compare.py`, and `src/llb/optimize/tuner.py:suggest_overrides`.
-- Data and artifact paths: the lexical index persists beside the FAISS artifacts in the store
-  directory (`$DATA_DIR/llb/rag/`) and joins the store fingerprint; hybrid rows in the existing
-  compare-retrieval report; a small exact-term goldset subset (codes, surnames, numbers) recorded
-  under `samples/` for the lexical-win regression.
-- Execution path: `make build-index RETRIEVAL_MODE=hybrid` /
-  `llb build-index --retrieval-mode hybrid`; `llb run-eval --retrieval-mode hybrid
-  --fusion-weight <w>`; `make compare-retrieval` gains the hybrid row;
-  `llb sweep --rag-grid fusion_weight=...`; unit tests cover tokenizer normalization, BM25
-  determinism, and RRF ordering against a fake dense index.
-- Acceptance gates: `make ci` green; on the committed goldset hybrid `recall@10` is
-  equal-or-better than the dense baseline and strictly better on the exact-term subset; the
-  report shows the lemmatization on/off delta and the oracle-doc-filter headroom row; chunk
-  offsets stay exact end-to-end and stored chunk text is byte-identical with lemmatization on; a
-  store built without the lexical index refuses
-  `--retrieval-mode hybrid` with a clear message; sweep cells fingerprint the fusion knobs so grid
-  points resume independently.
-- Documentation target: [RAG core](current/rag-core.md) retrieval store and sweep sections;
-  [`docs/guides/benchmarking/run-rag-core.md`](../guides/benchmarking/run-rag-core.md).
-
 ### 13. rerank-context-order
 
-- Dependencies: soft-follows task 12 (it reranks the fused candidate pool and is most valuable
-  after hybrid; it also works over dense-only retrieval). Its reranker/order knobs feed the
+- Dependencies: none open -- it reranks the candidate pool the shipped hybrid fusion emits (see
+  [RAG core](current/rag-core.md) hybrid retrieval) and also works over dense-only retrieval.
+  Its reranker/order knobs feed the
   shipped miss analysis's recommendations. The heavy real-reranker validation run executes on
   the CUDA host, no human judgment.
 - User-visible outcome: a mechanism to tune what happens between retrieval and generation: an
@@ -289,7 +230,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   the LLM rewrite through the existing endpoint seam, off by default, recording both
   original and rewritten query per case; an A/B mode in `validate-retrieval`/`compare-retrieval`
   reporting per-step `recall@k`/MRR deltas. Out of scope -- mutating corpus or chunk text
-  (original word forms stay untouched; index-side token normalization belongs to task 12),
+  (original word forms stay untouched; index-side token normalization is shipped -- see
+  [RAG core](current/rag-core.md) hybrid retrieval),
   multi-turn conversational rewriting (task 8), learned/ML spell-correction models (the
   edit-distance step is the deterministic ceiling this project needs).
 - Data and artifact paths: a `query_glossary.json` artifact derived from a draft bundle and
@@ -346,8 +288,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 17. corpus-governance-metadata
 
-- Dependencies: the ACL-filter half soft-follows task 12 (it applies through the same chunk-metadata
-  filter seam); the governance fields and reindex policy stand alone.
+- Dependencies: none open -- the ACL-filter half applies through the shipped chunk-metadata
+  filter seam (`src/llb/rag/filters.py`; see [RAG core](current/rag-core.md) hybrid retrieval);
+  the governance fields and reindex policy stand alone.
 - User-visible outcome: corpus ingestion and the RAG store gain governance metadata and a lifecycle
   policy: every `corpus_manifest.json` entry and chunk record carries `language`,
   `version`/`effective_date` when the source provides one, `ingestion_time`, `source_system`, and
@@ -359,7 +302,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Scope boundary: in scope -- additive optional governance fields on `corpus_manifest.json`,
   `ChunkRecord.metadata`, and `store_meta.json` (passthrough text derives `language` from an
   operator-supplied default or a cheap detector; PDF lanes inherit from the conversion manifest);
-  an ACL-filter argument through the task 12 metadata-filter seam with a refusal guarantee (a
+  an ACL-filter argument through the shipped metadata-filter seam with a refusal guarantee (a
   query scoped to an ACL label never receives an out-of-scope chunk); stale/deleted-doc detection
   comparing the store fingerprint against the corpus manifest with a clear rebuild message. Out of
   scope -- runtime prompt-injection filtering and output PII filters (decision recorded in
@@ -371,7 +314,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   deletion, and staleness tests.
 - Execution path: `llb ingest-corpus --default-language uk --acl-label <tag>`;
   `llb build-index` (staleness check against the corpus manifest);
-  `llb run-eval --acl <tag>` once the task 12 filter seam exists; unit tests cover field
+  `llb run-eval --acl <tag>` through the shipped filter seam; unit tests cover field
   propagation end-to-end, ACL filtering, deletion propagation, and the stale-store refusal.
 - Acceptance gates: `make ci` green; every chunk built from the fixture carries its governance
   fields through retrieval into the returned chunk records; an ACL-scoped retrieval never returns
@@ -689,6 +632,38 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   corpus; current docs record the discriminated winner and the measured `page`-vs-`recursive` and
   `late`-vs-`sentence` deltas.
 - Documentation target: [RAG core](current/rag-core.md) chunking strategies.
+
+### hybrid-comparison-full-corpus (optional)
+
+- Dependencies: the shipped hybrid retrieval comparison (`compare-retrieval --hybrid` /
+  `make compare-retrieval HYBRID=1`; see [RAG core](current/rag-core.md) hybrid retrieval).
+  Heavy store builds run on the CUDA host (deterministic, no human judgment).
+- Why this is forward work: the committed durable evidence ranks dense vs hybrid on two tiny
+  single-document fixtures where three signals stay UNDER-MEASURED: recall@10 saturates at 1.000
+  (only MRR separates the rows), the lemmatization on/off delta is zero because the exact-term
+  queries are built around non-inflecting numbers/codes, and the `dense+oracle-doc` router
+  headroom row degenerates to the dense row (a document filter is a no-op on a one-document
+  corpus).
+- User-visible outcome: a dense-vs-hybrid(-vs-lemmas) ranking plus a MEANINGFUL router-headroom
+  number over a real multi-document Ukrainian corpus (e.g. the quickstart PDF corpus) with
+  inflection-rich queries, yielding a per-corpus verdict on the fusion default
+  (`fusion_weight`, lemmas on/off) an operator can trust before pinning
+  `RunConfig.retrieval_mode=hybrid`.
+- Scope boundary: in scope -- run the shipped comparison over a full-corpus goldset at a k where
+  recall separates the rows, record the ranked table + fusion-knob verdict in
+  [RAG core](current/rag-core.md), and grid `fusion_weight` in one sweep to cross-check the
+  compare-retrieval verdict against end-to-end scores. Out of scope -- new comparison code (the
+  command is shipped), query-side rewriting (task 15), a learned document router (the oracle row
+  only measures headroom).
+- Data and artifact paths: the hybrid store under `$DATA_DIR/llb/rag/hybrid/`; the ranked table
+  lands in current docs.
+- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1` on the
+  CUDA host (outside quick CI); then `make build-index RETRIEVAL_MODE=hybrid [LEMMATIZE=1]` and
+  `make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"`.
+- Acceptance gates: the report shows a non-saturated dense-vs-hybrid spread, a non-degenerate
+  oracle-doc headroom row (multi-document corpus), and a measured lemmatization delta (positive,
+  zero, or negative -- reported honestly); current docs record the fusion-knob verdict.
+- Documentation target: [RAG core](current/rag-core.md) hybrid retrieval.
 
 ### external-import-needle-parity (optional)
 

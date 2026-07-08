@@ -319,7 +319,12 @@ def question_type_of(question: str, provenance_row: JsonObject | None) -> str:
 
 
 def topic_of(question: str, provenance_row: JsonObject | None) -> str:
-    """Drafted `topic` label when present, else the longest content token of the question."""
+    """Drafted `topic` label when present, else the longest content token of the question.
+
+    The heuristic token is lemmatized best-effort (identity when the `[lex]` extra is absent),
+    so Ukrainian case forms of one topic ("начальник" / "начальника") collapse into a single
+    cluster key instead of splitting the same topic across inflections.
+    """
     if provenance_row is not None and provenance_row.get("topic"):
         return str(provenance_row["topic"])
     tokens = re.findall(r"\w+", question.casefold())
@@ -328,7 +333,11 @@ def topic_of(question: str, provenance_row: JsonObject | None) -> str:
         for token in tokens
         if len(token) >= _TOPIC_MIN_TOKEN_CHARS and token not in _TOPIC_STOPWORDS
     ]
-    return max(candidates, key=len) if candidates else DEFAULT_QUESTION_TYPE
+    if not candidates:
+        return DEFAULT_QUESTION_TYPE
+    from llb.rag.lexical import best_effort_lemma
+
+    return best_effort_lemma(max(candidates, key=len))
 
 
 def _cluster_keys(item: GoldItem | None, provenance_row: JsonObject | None) -> dict[str, str]:

@@ -412,7 +412,7 @@ def _load_store(config: RunConfig) -> Any:
             strategy=config.retrieval_strategy,
             khop_depth=config.graph_khop_depth,
         )
-    from llb.rag.store import RagStore, store_embedder_mismatch
+    from llb.rag.store import MODE_HYBRID, RagStore, store_embedder_mismatch
 
     store = RagStore.load(config.index_dir())
     built = store_embedder_mismatch(store.meta, config.embedding_model)
@@ -423,6 +423,22 @@ def _load_store(config: RunConfig) -> Any:
             f"index (build-index --embedding-model {config.embedding_model}) or set the config to "
             f"match; a store is embedded and queried by one encoder, so they must agree."
         )
+    if config.retrieval_mode == MODE_HYBRID:
+        if getattr(store, "lexical", None) is None:
+            raise SystemExit(
+                f"[run-eval] --retrieval-mode hybrid needs a lexical index, but the store at "
+                f"{config.index_dir()} was built '{store.meta.get('mode')}' (dense-only). "
+                f"Rebuild it with `build-index --retrieval-mode hybrid`."
+            )
+        store.fusion_weight = config.fusion_weight
+        store.fusion_candidates = config.fusion_candidates
+    elif getattr(store, "lexical", None) is not None:
+        # A hybrid store can always serve dense-only: drop the lexical side for this run.
+        _LOG.info(
+            "[run-eval] retrieval_mode=%s over a hybrid store; lexical fusion disabled",
+            config.retrieval_mode,
+        )
+        store.lexical = None
     return store
 
 

@@ -106,6 +106,39 @@ def test_suggest_overrides_parent_child_clamps_child_below_size():
     assert over["child_chunk_size"] < over["chunk_size"]
 
 
+def test_suggest_overrides_hybrid_samples_fusion_knobs():
+    over = suggest_overrides(
+        FakeTrial(
+            {
+                "strategy": "recursive",
+                "chunk_size": 512,
+                "overlap_frac": 0.1,
+                "retrieval_mode": "hybrid",
+                "top_k": 5,
+                "fusion_weight": 0.4,
+                "fusion_candidates": 40,
+            }
+        )
+    )
+    assert over["retrieval_mode"] == "hybrid"
+    assert over["fusion_weight"] == 0.4 and over["fusion_candidates"] == 40
+
+
+def test_suggest_overrides_flat_never_samples_fusion_knobs():
+    over = suggest_overrides(
+        FakeTrial(
+            {
+                "strategy": "recursive",
+                "chunk_size": 512,
+                "overlap_frac": 0.1,
+                "retrieval_mode": "flat",
+                "top_k": 5,
+            }
+        )
+    )
+    assert "fusion_weight" not in over and "fusion_candidates" not in over
+
+
 def test_estimate_prompt_tokens_grows_with_topk_and_size():
     base = RunConfig(max_tokens=128)
     big = base.with_overrides(top_k=12, chunk_size=1200)

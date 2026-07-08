@@ -40,7 +40,11 @@ STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
 # explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per trial and
 # `page` only differs from `recursive` on sidecar-bearing PDF corpora, so they are opt-in.
 EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late"]
-RETRIEVAL_MODES = ["flat", "parent_child"]
+RETRIEVAL_MODES = ["flat", "parent_child", "hybrid"]
+# Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
+# the per-side candidate depth, sampled only when the trial picked hybrid mode.
+FUSION_WEIGHT_RANGE = (0.2, 0.8)
+FUSION_CANDIDATES_RANGE = (20, 80)
 CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
@@ -114,6 +118,14 @@ def suggest_overrides(
         ceiling = max(128, chunk_size - 64)
         child = trial.suggest_int("child_chunk_size", 128, 640, step=32)
         overrides["child_chunk_size"] = min(child, ceiling)
+    if mode == "hybrid":
+        # Fusion knobs only exist in hybrid mode (dead parameters otherwise).
+        overrides["fusion_weight"] = trial.suggest_float(
+            "fusion_weight", *FUSION_WEIGHT_RANGE, step=0.1
+        )
+        overrides["fusion_candidates"] = trial.suggest_int(
+            "fusion_candidates", *FUSION_CANDIDATES_RANGE, step=20
+        )
     if backend == "vllm":
         overrides["gpu_memory_utilization"] = trial.suggest_float(
             "gpu_memory_utilization", 0.70, 0.90, step=0.05
@@ -360,7 +372,7 @@ def two_stage(
 def _build_store(config: RunConfig) -> Any:
     from llb.rag.store import RagStore
 
-    return RagStore.build(
+    store = RagStore.build(
         config.corpus_root,
         config.strategy,
         config.chunk_size,
@@ -368,7 +380,13 @@ def _build_store(config: RunConfig) -> Any:
         config.embedding_model,
         mode=config.retrieval_mode,
         child_size=config.child_chunk_size,
+        lexical_lemmas=config.lexical_lemmas,
     )
+    # The store is injected into run_eval directly (no _load_store pass), so the trial's
+    # fusion knobs must be applied here to take effect in hybrid mode.
+    store.fusion_weight = config.fusion_weight
+    store.fusion_candidates = config.fusion_candidates
+    return store
 
 
 def _run_eval_quality(config: RunConfig) -> tuple[float, float]:

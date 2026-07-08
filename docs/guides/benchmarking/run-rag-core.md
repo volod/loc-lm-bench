@@ -63,6 +63,28 @@ MRR, so pick the demonstrated winner rather than assuming one. `page` needs the 
 whole-document embedding pass. `llb tune --extended-chunkers` adds the three new strategies to
 the Optuna search space.
 
+## Hybrid retrieval (dense + BM25)
+
+Dense-only cosine loses exact surnames, article/law numbers, codes, and abbreviations to
+semantically-close distractors, and Ukrainian inflection defeats naive keyword matching. Hybrid
+mode adds a lexical BM25 index beside the vectors and fuses both rankings with weighted
+reciprocal-rank fusion at query time (see the
+[RAG core](../../impl/current/rag-core.md) hybrid section):
+
+```bash
+make compare-retrieval HYBRID=1 RAG_K=10        # demonstrate: dense vs hybrid vs hybrid+lemmas
+make build-index RETRIEVAL_MODE=hybrid          # add LEMMATIZE=1 for Ukrainian lemma collapse
+make run-eval MODEL=llama3.2:3b RETRIEVAL_MODE=hybrid FUSION_WEIGHT=0.5
+make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"
+```
+
+Run the comparison FIRST: it embeds the corpus once and reports per corpus whether hybrid beats
+dense-only, what lemmatization adds (`LEMMATIZE`/`hybrid+lemmas` need the `[lex]` extra:
+`uv pip install -e ".[lex]"`), and the `dense+oracle-doc` diagnostic row -- the recall headroom
+a perfect document router would buy. `FUSION_WEIGHT` is the dense share of the fusion (1.0 ==
+dense order, 0.0 == lexical order); a run against a store built without the lexical index
+refuses with a rebuild message.
+
 ## Notes
 
 - The embedding model is pinned. If `validate-retrieval` is below `recall@10 >= 0.8`, retrieval is

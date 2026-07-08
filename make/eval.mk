@@ -12,11 +12,13 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(DATA_DIR)/llb/rag" --strategy all --size 800 --overlap 120
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CHUNK_STRATEGY= EMBEDDING_MODEL= to override; needs ".[rag]")
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CHUNK_STRATEGY= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)" \
 		$(if $(CHUNK_STRATEGY),--strategy "$(CHUNK_STRATEGY)",) \
-		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",)
+		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",) \
+		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
+		$(if $(LEMMATIZE),--lemmatize,)
 
 build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=...; needs ".[graph]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -27,10 +29,12 @@ validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=page,heading,late ranks chunkers instead
+compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=... ranks chunkers, HYBRID=1 ranks dense vs hybrid(+lemmas) + oracle-doc headroom
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
-		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",)
+		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",) \
+		$(if $(HYBRID),--hybrid,) \
+		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -38,11 +42,13 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid FUSION_WEIGHT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
+		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
 		$(if $(RESUME),--resume "$(RESUME)",) \
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \

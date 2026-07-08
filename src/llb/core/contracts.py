@@ -56,6 +56,9 @@ class RagStoreMeta(TypedDict):
     page_annotation_coverage: NotRequired[
         float
     ]  # fraction of indexed chunks carrying source-PDF page provenance (chunk-page-metadata)
+    lexical: NotRequired[
+        JsonObject
+    ]  # hybrid-retrieval-uk BM25 sidecar meta: {"lemmatize": bool, "n_terms": int}
 
 
 class UsageRecord(TypedDict, total=False):

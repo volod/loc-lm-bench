@@ -52,6 +52,17 @@ def run_eval_cmd(
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph backend strategy: local_khop | global_community"
     ),
+    retrieval_mode: Optional[str] = typer.Option(
+        None,
+        help="flat | parent_child | hybrid (hybrid fuses dense + lexical BM25 rankings; the "
+        "index must be built with `build-index --retrieval-mode hybrid`)",
+    ),
+    fusion_weight: Optional[float] = typer.Option(
+        None, help="hybrid mode: dense share of the weighted RRF, 0..1 (default 0.5)"
+    ),
+    fusion_candidates: Optional[int] = typer.Option(
+        None, help="hybrid mode: per-side candidate depth fed into the fusion (default 50)"
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",
@@ -115,6 +126,9 @@ def run_eval_cmd(
         judge_base_url=judge_base_url,
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
+        retrieval_mode=retrieval_mode,
+        fusion_weight=fusion_weight,
+        fusion_candidates=fusion_candidates,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )

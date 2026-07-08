@@ -143,9 +143,9 @@ after. `store_meta.json` records `page_annotation_coverage` (the fraction of ind
 gained a `pages` field) and `build-index` logs it. In `parent_child` mode both the indexed children
 and their parents are annotated, so the fields surface on retrieval hits either way. Retrieved hits
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
-"file X, page N, section Y" without re-deriving the join. The metadata *filter* seam is forward
-task 12 in [`plan.md`](../plan.md); governance fields (`language`, `date`/`version`, ACL) are
-forward task 17.
+"file X, page N, section Y" without re-deriving the join. The metadata *filter* seam over these
+fields is shipped (`src/llb/rag/filters.py`; see Hybrid Retrieval below); governance fields
+(`language`, `date`/`version`, ACL) are forward task 17 in [`plan.md`](../plan.md).
 
 Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): a `markdown`/`flat`
 store over the quickstart HR PDF corpus (`.data/quickstart-pdf-corpus-hr/_md`, 8 converted docs)
@@ -156,7 +156,88 @@ breadcrumb.
 Retrieval modes:
 
 - `flat`: index generation chunks directly;
-- `parent_child`: index smaller child chunks and return deduplicated larger parent chunks.
+- `parent_child`: index smaller child chunks and return deduplicated larger parent chunks;
+- `hybrid`: index like `flat`, plus a lexical BM25 index fused with the dense ranking at query
+  time (see Hybrid Retrieval below).
+
+## Hybrid Retrieval (Dense + BM25 + RRF)
+
+Shipped (hybrid-retrieval-uk): retrieval has the full hybrid shape Ukrainian enterprise corpora
+need -- dense E5 plus lexical BM25 fused with weighted reciprocal-rank fusion, plus a
+chunk-metadata filter seam -- so exact surnames, article/law numbers, codes, and abbreviations
+stop losing to semantic-only search.
+
+Modules:
+
+- `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo, no new required dep)
+  over the SAME offset-exact chunks the vector index holds; Ukrainian-aware token normalization
+  on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`'`,
+  punctuation strip); opt-in lemmatization via `pymorphy3` + `pymorphy3-dicts-uk` (the new
+  `[lex]` optional extra) collapsing cases/inflection to lemmas at index AND query time -- the
+  stored chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
+  (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
+- `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
+  heading_contains, page_range)` builds a predicate over `doc_id` plus the page-metadata join's
+  `metadata.headers` breadcrumb and `metadata.pages` range; `RagStore.retrieve(question, k,
+  chunk_filter=...)` applies it BEFORE fusion/ranking (with a filter the whole index is scanned,
+  so the cut is exact). Task 17's ACL label will apply through this same seam.
+- `src/llb/rag/store.py` -- `mode="hybrid"` builds the lexical index beside the vector index;
+  fusion runs inside `RagStore.retrieve`, so every dense `VectorIndex` backend
+  (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically. The lexical index persists as
+  `lexical_index.json` beside the FAISS artifacts and joins `store_meta.json`
+  (`meta.lexical = {lemmatize, n_terms}`). Loading a hybrid store whose lexical file is missing
+  refuses with a rebuild message, and `run-eval --retrieval-mode hybrid` over a dense-only store
+  refuses too (`_load_store`); a non-hybrid config over a hybrid store serves dense-only.
+
+Knobs (all `RunConfig` fields, hence in the manifest and the sweep cell fingerprint):
+`retrieval_mode=hybrid`, `fusion_weight` (dense share of the RRF, default 0.5; 1.0 == dense
+order, 0.0 == lexical order), `fusion_candidates` (per-side candidate depth, default 50), and
+`lexical_lemmas` (index-time lemmatization, recorded in the store meta).
+
+Commands:
+
+```bash
+make build-index RETRIEVAL_MODE=hybrid LEMMATIZE=1    # build-index --retrieval-mode hybrid --lemmatize
+make run-eval MODEL=<m> RETRIEVAL_MODE=hybrid FUSION_WEIGHT=0.5
+make compare-retrieval HYBRID=1 GOLDSET=<goldset.jsonl>
+make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"
+llb tune ...    # the Optuna space samples retrieval_mode=hybrid + both fusion knobs
+```
+
+`compare-retrieval --hybrid` embeds the corpus ONCE and scores four rows sharing that dense
+index: `dense`, `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second, lemmatized lexical
+index; skipped with a log line when `[lex]` is absent), and `dense+oracle-doc` -- a diagnostic
+row restricting candidates to each gold item's `source_doc_id` through the filter seam,
+quantifying the recall headroom a PERFECT document router would buy (never a scoring config).
+
+The lemma normalizer is reused by the miss analysis: `topic_of` in
+`src/llb/board/miss_analysis.py` lemmatizes its heuristic topic key best-effort, so Ukrainian
+case forms of one topic collapse into a single cluster instead of splitting across inflections
+(identity fallback when `[lex]` is absent).
+
+Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukrainian orders
+registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
+for exact terms; the CI regression (`tests/test_hybrid_store.py`) proves hybrid strictly beats a
+signal-free dense ranking there. Tests: `tests/test_lexical.py` (normalization, BM25 determinism
+and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page
+predicates), `tests/test_hybrid_store.py` (fusion order, weight extremes, filter-before-fusion,
+refusal paths, config-knob application, byte-identical text), plus grid/tuner coverage in
+`tests/test_cli_models.py` / `tests/test_tuner.py`.
+
+Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick CI), via
+`compare-retrieval --hybrid`:
+
+- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture), k=10: all four rows hold
+  recall 1.000 / MRR 1.000 -- hybrid is equal-or-better than dense on the committed goldset (the
+  gate), and the fixture is too small to discriminate further.
+- `samples/goldsets/exact_terms_uk` (8 exact-term items), k=10: recall ties at 1.000 but hybrid
+  MRR 0.938 vs dense 0.713; at k=3 hybrid holds recall 1.000 / MRR 0.938 vs dense 0.875 / 0.688
+  -- the strict exact-term win the lexical side exists for. `hybrid+lemmas` matched plain
+  `hybrid` on both fixtures (exact numbers do not inflect; the lemma delta needs an
+  inflection-rich full corpus -- forward task `hybrid-comparison-full-corpus` in
+  [`plan.md`](../plan.md)). The oracle-doc row equals dense on these single-document corpora by
+  construction (a doc filter is a no-op with one doc); it becomes informative only on a
+  multi-document corpus.
 
 ## Chunking Strategies
 
@@ -390,16 +471,21 @@ sweep's cell-directory diff).
 the sweep answers "which `(model, top_k)`" for THIS host, not just "which model". This is the
 default because the best depth VARIES by model -- on the 16 GiB committed goldset MamayLM-12B peaks
 at `top_k=3` (0.541, well above its 0.501 at `top_k=5`) while Mistral peaks at `top_k=8`, and
-gridding flipped the host recommendation from Lapa to MamayLM-12B@top_k=3. Only the query-time
-`top_k` is gridded -- it changes retrieval depth against the SAME index, so no re-index is needed;
-`top_k` is part of the cell fingerprint, so each grid point gets its own resume key (existing cells
-resume, not re-run), and `recommend`'s best-per-model dedup then represents each model by its
-highest-scoring `top_k`. Index-time knobs (`chunk_size`/`chunk_overlap`) are out of scope because
-they need rebuilt indexes. Set `SWEEP_RAG_GRID=` (empty) to disable the grid and run one cell per
-model at the manifest's single config.
+gridding flipped the host recommendation from Lapa to MamayLM-12B@top_k=3. Only QUERY-TIME knobs
+are gridded -- they change retrieval against the SAME index, so no re-index is needed: `top_k`
+(depth) and `fusion_weight` (the hybrid dense/lexical RRF share; a `fusion_weight` axis implies
+`retrieval_mode=hybrid`, so build the index with `RETRIEVAL_MODE=hybrid` first). Axes are
+`;`-separated and cross-multiplied (`top_k=3,5;fusion_weight=0.4,0.6` -> 4 cells per model).
+Every grid knob is a `RunConfig` field and therefore part of the cell fingerprint, so each grid
+point gets its own resume key (existing cells resume, not re-run), and `recommend`'s
+best-per-model dedup then represents each model by its highest-scoring grid point. Index-time
+knobs (`chunk_size`/`chunk_overlap`) are out of scope because they need rebuilt indexes. Set
+`SWEEP_RAG_GRID=` (empty) to disable the grid and run one cell per model at the manifest's
+single config.
 
 ```bash
 make sweep SWEEP_ID=grid                              # default grid: 5 models x 3 top_k -> 15 cells
 make sweep SWEEP_ID=one SWEEP_RAG_GRID=               # disable: one cell per model
-make recommend                                        # ranks each model at its best top_k
+make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"   # hybrid fusion grid (hybrid index)
+make recommend                                        # ranks each model at its best grid point
 ```

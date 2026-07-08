@@ -1,24 +1,36 @@
 """RAG store: chunked corpus + pinned embedding + FAISS index, retrievable by question.
 
-Two retrieval modes:
+Three retrieval modes:
   - flat:          index `chunk_size` chunks; retrieve returns those chunks.
   - parent_child:  index small `child_chunk_size` children for precise matching, but return
                    their larger PARENT chunk for generation context (retrieve a child ->
                    surface its parent). Precision from the child, context from the parent.
+  - hybrid:        index like `flat`, but ALSO build a lexical BM25 index over the same
+                   offset-exact chunks and fuse the dense + lexical rankings with weighted
+                   reciprocal-rank fusion at query time (hybrid-retrieval-uk). Fusion happens
+                   inside `retrieve`, so every dense `VectorIndex` backend gains hybrid
+                   identically.
 
-`retrieve` returns chunk dicts (doc_id + char offsets) in both modes, so recall@k / MRR by
-SOURCE-SPAN overlap score directly against the gold labels.
+`retrieve` returns chunk dicts (doc_id + char offsets) in every mode, so recall@k / MRR by
+SOURCE-SPAN overlap score directly against the gold labels. The optional `chunk_filter`
+predicate (see `llb.rag.filters`) restricts candidates BEFORE fusion/ranking.
 """
 
 import json
 from pathlib import Path
 from typing import Any, cast
 
-from llb.core.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_FUSION_CANDIDATES,
+    DEFAULT_FUSION_WEIGHT,
+)
 from llb.core.contracts import ChunkRecord, RagStoreMeta
 from llb.rag.chunking import chunk_corpus, chunk_spans
 from llb.rag.embedding import Embedder
+from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
+from llb.rag.lexical import Lemmatizer, LexicalIndex, rrf_fuse
 from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
@@ -31,6 +43,8 @@ from llb.rag.vector_index import (
 CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
 PARENTS_FILE = "parents.jsonl"  # the parent docstore (parent_child mode only)
 META_FILE = "store_meta.json"
+LEXICAL_FILE = "lexical_index.json"  # BM25 postings beside the vector index (hybrid mode)
+MODE_HYBRID = "hybrid"
 
 
 def _children_to_parents(
@@ -94,12 +108,18 @@ class RagStore:
         embedder: Embedder,
         meta: RagStoreMeta,
         parents: list[ChunkRecord] | None = None,
+        lexical: LexicalIndex | None = None,
     ):
         self.chunks = chunks  # indexed units (children when parent_child)
         self.index = index
         self.embedder = embedder
         self.meta = meta
         self.parents = parents
+        self.lexical = lexical  # BM25 side of hybrid mode (None otherwise)
+        # Query-time fusion knobs; `_load_store` overwrites them from the RunConfig so the
+        # manifest-recorded values are the ones actually used.
+        self.fusion_weight = DEFAULT_FUSION_WEIGHT
+        self.fusion_candidates = DEFAULT_FUSION_CANDIDATES
         self.backend = str(
             meta.get("backend", RAG_BACKEND_FAISS)
         )  # platform matrix vector-store backend
@@ -117,6 +137,8 @@ class RagStore:
         child_size: int = 400,
         vector_store: str = RAG_BACKEND_FAISS,
         embedder: Any = None,
+        lexical_lemmas: bool = False,
+        lemmatizer: Lemmatizer | None = None,
     ) -> "RagStore":
         """Chunk + embed a corpus into a retrievable store.
 
@@ -124,8 +146,12 @@ class RagStore:
         (e.g. the `compare-embeddings` API lane's `ApiEmbedder`); its `model_name` overrides
         `embedding_model` in the persisted meta so a store always records the encoder it was
         built with. Defaults to the pinned local `Embedder(embedding_model)`.
+
+        `mode="hybrid"` additionally builds the lexical BM25 index over the same chunks;
+        `lexical_lemmas` opts its tokenization into Ukrainian lemmatization (`lemmatizer`
+        injects a fake for tests). The stored chunk text is byte-identical either way.
         """
-        if mode not in ("flat", "parent_child"):
+        if mode not in ("flat", "parent_child", MODE_HYBRID):
             raise ValueError(f"unknown retrieval mode: {mode}")
         if strategy == "late" and mode == "parent_child":
             raise ValueError(
@@ -164,6 +190,11 @@ class RagStore:
         else:
             vectors = embedder.encode_passages([c["text"] for c in indexed])
         index = build_vector_index(vector_store, vectors)
+        lexical = None
+        if mode == MODE_HYBRID:
+            lexical = LexicalIndex.build(
+                [c["text"] for c in indexed], lemmatize=lexical_lemmas, lemmatizer=lemmatizer
+            )
         meta: RagStoreMeta = {
             "mode": mode,
             "strategy": strategy,
@@ -177,14 +208,28 @@ class RagStore:
             "backend": vector_store,
             "page_annotation_coverage": round(page_coverage, 4),
         }
-        return cls(indexed, index, embedder, meta, parents=parents)
+        if lexical is not None:
+            meta["lexical"] = {"lemmatize": lexical.lemmatize, "n_terms": len(lexical.postings)}
+        return cls(indexed, index, embedder, meta, parents=parents, lexical=lexical)
 
-    def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
-        """Top-k results. Flat: the matched chunks. parent_child: their unique parents."""
+    def retrieve(
+        self, question: str, k: int, chunk_filter: ChunkFilter | None = None
+    ) -> list[ChunkRecord]:
+        """Top-k results. Flat: the matched chunks. parent_child: their unique parents.
+        Hybrid: the weighted-RRF fusion of the dense and lexical rankings.
+
+        `chunk_filter` (see `llb.rag.filters.metadata_filter`) restricts candidates BEFORE
+        fusion/ranking; with a filter the whole index is scanned, so the cut is exact.
+        """
         query_vec = self.embedder.encode_queries([question])
-        search_k = min(len(self.chunks), k * 4 if self.parents else k)
+        if self.lexical is not None and self.meta.get("mode") == MODE_HYBRID:
+            return self._retrieve_hybrid(question, query_vec, k, chunk_filter)
+        base_k = k * 4 if self.parents else k
+        search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), base_k)
         while True:
             hits = self._search(query_vec, max(1, search_k))
+            if chunk_filter is not None:
+                hits = _renumber([hit for hit in hits if chunk_filter(hit)])
             if self.parents is None:
                 return hits[:k]
             parent_hits = _children_to_parents(hits, self._parent_by_id)
@@ -193,6 +238,30 @@ class RagStore:
             # Child hits can cluster under one parent. Expand until k unique parents are
             # found or the complete child index has been searched.
             search_k = min(len(self.chunks), max(search_k + 1, search_k * 2))
+
+    def _retrieve_hybrid(
+        self, question: str, query_vec: Any, k: int, chunk_filter: ChunkFilter | None
+    ) -> list[ChunkRecord]:
+        """Fuse the dense and lexical top candidates with weighted RRF; return the top k."""
+        assert self.lexical is not None
+        depth = max(self.fusion_candidates, k)
+        search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), depth)
+        _scores, ids = self.index.search(query_vec, max(1, search_k))
+        dense_ids = [int(cid) for cid in ids[0] if cid >= 0]
+        allowed: set[int] | None = None
+        if chunk_filter is not None:
+            allowed = {i for i, c in enumerate(self.chunks) if chunk_filter(c)}
+            dense_ids = [cid for cid in dense_ids if cid in allowed]
+        dense_ids = dense_ids[:depth]
+        lexical_ids = [cid for cid, _ in self.lexical.search(question, depth, allowed)]
+        fused = rrf_fuse(dense_ids, lexical_ids, self.fusion_weight)
+        hits: list[ChunkRecord] = []
+        for rank, (cid, score) in enumerate(fused[:k], 1):
+            chunk = cast(ChunkRecord, dict(self.chunks[cid]))
+            chunk["retrieval_score"] = float(score)
+            chunk["rank"] = rank
+            hits.append(chunk)
+        return hits
 
     def _search(self, query_vec: Any, search_k: int) -> list[ChunkRecord]:
         """Return ranked indexed units for an already encoded query."""
@@ -213,6 +282,8 @@ class RagStore:
         _write_jsonl(self.chunks, index_dir / CHUNKS_FILE)
         if self.parents is not None:
             _write_jsonl(self.parents, index_dir / PARENTS_FILE)
+        if self.lexical is not None:
+            self.lexical.save(index_dir / LEXICAL_FILE)
         save_vector_index(self.index, self.backend, index_dir)
         (index_dir / META_FILE).write_text(
             json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -223,12 +294,21 @@ class RagStore:
         index_dir = Path(index_dir)
         chunks = _read_jsonl(index_dir / CHUNKS_FILE)
         meta = json.loads((index_dir / META_FILE).read_text(encoding="utf-8"))
+        lexical = None
+        if meta.get("mode") == MODE_HYBRID:
+            lexical_path = index_dir / LEXICAL_FILE
+            if not lexical_path.is_file():
+                raise SystemExit(
+                    f"[rag] the hybrid store at {index_dir} is missing its lexical index "
+                    f"({LEXICAL_FILE}); rebuild it with `build-index --retrieval-mode hybrid`."
+                )
+            lexical = LexicalIndex.load(lexical_path)
         index = load_vector_index(meta.get("backend", RAG_BACKEND_FAISS), index_dir)
         embedder = Embedder(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
         parents = None
         if meta.get("mode") == "parent_child":
             parents = _read_jsonl(index_dir / PARENTS_FILE)
-        return cls(chunks, index, embedder, meta, parents=parents)
+        return cls(chunks, index, embedder, meta, parents=parents, lexical=lexical)
 
 
 def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | None:
@@ -240,6 +320,13 @@ def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | No
     """
     built = str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
     return built if built != expected_model else None
+
+
+def _renumber(hits: list[ChunkRecord]) -> list[ChunkRecord]:
+    """Reassign contiguous 1-based ranks after a filter removed candidates."""
+    for rank, hit in enumerate(hits, 1):
+        hit["rank"] = rank
+    return hits
 
 
 def _write_jsonl(rows: list[ChunkRecord], path: Path) -> None:

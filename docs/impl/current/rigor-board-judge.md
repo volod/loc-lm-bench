@@ -184,7 +184,10 @@ Misses are clustered by document (`source_doc_id`), topic, and question type, wi
 rates computed over ALL scored cases of that key. Labels come from the goldset's
 `item_provenance.jsonl` sidecar when the draft pipeline emitted one (`question_type` / `topic`);
 otherwise a deterministic UA/EN interrogative heuristic types the question and the longest
-content token stands in for the topic. Recommendations are ranked by the miss count they
+content token stands in for the topic -- lemmatized best-effort through the hybrid-retrieval
+lemma normalizer (`llb.rag.lexical.best_effort_lemma`; identity when the `[lex]` extra is
+absent), so Ukrainian case forms of one topic land in a single cluster instead of splitting
+across inflections. Recommendations are ranked by the miss count they
 address and rendered from `board.miss.*` prompt templates: raise/lower `top_k`, change
 chunking, add prompt-system dictionary terms for a dominant generation-miss cluster, try the
 named alternative model (cited with its measured objective from comparable sibling bundles --
