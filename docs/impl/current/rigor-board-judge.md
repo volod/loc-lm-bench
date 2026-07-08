@@ -209,6 +209,40 @@ latest `analysis.json` when one exists (`format_miss_section_md` in
 `src/llb/board/recommend.py`). Run bundles are never mutated. Automatic re-tuning stays out of
 scope -- the Optuna tuner owns search.
 
+## Context-Position Probe (probe-context-position)
+
+`llb probe-context-position --model <m> --backend <b> --k <k>`
+(`make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5`) measures a model's
+lost-in-the-middle sensitivity and names its `context_order` recommendation with evidence
+(rerank-context-order). Core in `src/llb/eval/position_probe.py`; CLI in `src/llb/cli/eval.py`;
+tests in `tests/test_position_probe.py` (a fake store + a fake chat that answers correctly only
+when the gold chunk leads the prompt prove case construction, exact gold placement, per-position
+scoring, the recommendation rule, and the artifacts -- no backend, no GPU).
+
+Per verified gold item, ONE retrieval at `--candidate-depth` (default 50) supplies both the gold
+chunk (the first candidate overlapping a gold span) and the k-1 best-ranked non-gold distractors
+-- real retrieved distractors, never synthetic filler. Items whose gold chunk is not retrievable
+or that lack k-1 distractors are counted per skip reason (`gold_not_retrieved` /
+`too_few_distractors`), never invented. The gold chunk is then laid at the head, middle, and
+tail of the fixed-k context (`k >= 3` enforced -- below that the slots collapse) and the same
+question is asked three times through the standard RAG chat prompt. Each answer is
+status-classified and scored by the objective correctness scorer against the reference answer.
+
+The report gives per-position n / mean objective / bootstrap 95% CI and recommends `rank`
+(best-first) when the head mean is at least the tail mean, else `reverse_rank` (best-last);
+overlapping head/tail CIs are flagged as unresolved at that n (the recommendation still names
+the higher mean, honestly qualified). Artifacts land at
+`$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; probe cases never enter run
+bundles, the board, or correctness aggregates.
+
+Durable evidence (2026-07-08, real run on the CUDA host, outside quick CI): `llama3.2:3b`
+(ollama) over the published `ua_squad_postedited_v1` goldset at k=5, 20 final items (0 skips):
+head 0.355 [0.207, 0.510], middle 0.341 [0.198, 0.487], tail 0.327 [0.179, 0.478] -- a mild
+best-first slope, so the probe recommends `rank` while flagging the overlapping head/tail CIs
+as unresolved at n=20 (the honest verdict: this model is not measurably position-sensitive at
+this sample size; the default ordering stands). The rerank half of the same validation run is
+recorded in [RAG core](rag-core.md) Reranking And Context Order.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to

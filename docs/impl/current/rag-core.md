@@ -239,6 +239,82 @@ Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick
   construction (a doc filter is a no-op with one doc); it becomes informative only on a
   multi-document corpus.
 
+## Reranking And Context Order (rerank-context-order)
+
+Shipped: the stage between retrieval and generation is tunable -- an optional local
+cross-encoder reranker (retrieve `rerank_candidates`, rerank, keep `top_k`), a context-order
+policy for how the kept chunks are laid into the prompt, and a lost-in-the-middle position
+probe that names the per-model ordering recommendation with measured evidence.
+
+Modules:
+
+- `src/llb/rag/rerank.py` -- the reranker seam. `RerankingRetriever` wraps ANY retrieval
+  backend exposing `.retrieve(question, k)` (flat / parent_child / hybrid stores and the
+  GraphRAG store alike): it pulls `max(rerank_candidates, k)` candidates, scores every
+  (question, chunk text) pair through an injectable `RerankScorer`, and keeps the `top_k`
+  best -- each kept chunk carrying `rerank_score`, its original `pre_rerank_rank`, and a fresh
+  contiguous `rank`; chunk text and offsets are never altered, so source-span recall@k / MRR
+  score the reranked ranking on unchanged rules. The real scorer is `CrossEncoderReranker`
+  (lazy sentence-transformers CrossEncoder, the `[rag]` extra; pinned default candidate
+  `BAAI/bge-reranker-v2-m3`, multilingual). `maybe_wrap_reranker` applies the config knobs in
+  `_load_store` (run-eval, every backend) and the tuner's `_build_store`, so reranking rides
+  every existing seam. The wrapper records per-call retrieve/rerank wall-clock
+  (`stage_latency`) plus cumulative means (`mean_stage_latency`).
+- `src/llb/eval/common.py` -- `order_chunks` / `format_context(chunks, order=...)`: the
+  context-order policy (`rank` = best-first, the default; `reverse_rank` = best-last) applied
+  ONLY when chunks are laid into the prompt; `retrieved` state stays in rank order so
+  retrieval metrics are unaffected. The `[i]` labels number PROMPT positions.
+- `src/llb/eval/graph.py` -- the retrieve node applies the policy and records
+  `retrieve_latency_s` / `rerank_latency_s` into the case state (journaled by the
+  durable-eval-runner, carried into `scores.jsonl` rows); the manifest's `metrics` gains a
+  `stage_latency` object (mean retrieve / rerank / generate seconds per case), so the
+  reranker's precision gain is always weighed against its measured latency cost.
+- `src/llb/eval/position_probe.py` -- `llb probe-context-position` (see
+  [evaluation rigor](rigor-board-judge.md) for the probe contract and artifacts).
+
+Knobs (all `RunConfig` fields, hence in the manifest and the sweep cell fingerprint):
+`reranker` (HF cross-encoder id; `None` == off, the default), `rerank_candidates` (pool depth,
+default 30), `context_order` (`rank` | `reverse_rank`, applies with or without a reranker).
+
+Commands:
+
+```bash
+make run-eval MODEL=<m> RERANKER=BAAI/bge-reranker-v2-m3 RERANK_CANDIDATES=30 CONTEXT_ORDER=rank
+make compare-retrieval RERANKER=BAAI/bge-reranker-v2-m3 GOLDSET=<goldset.jsonl> [HYBRID=1]
+make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5
+make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"    # 0 == reranker-off cell
+llb tune --reranker BAAI/bge-reranker-v2-m3 ...       # adds on/off + candidate-depth axes
+```
+
+`compare-retrieval --reranker <id>` adds a `<row>+rerank` twin per compared row (the oracle-doc
+headroom row excepted), so pre/post-rerank recall@k / MRR compare through the one
+`evaluate_retrieval` metric, with mean per-query retrieve/rerank latency echoed per rerank row.
+In the sweep grid a `rerank_candidates=0` point is the reranker-off cell; positive depths enable
+the sweep-level `--reranker` model (default `BAAI/bge-reranker-v2-m3`). The tuner samples
+`use_reranker` on/off and, only when on, the candidate depth (15..60) -- dead parameters are
+never sampled.
+
+Tests: `tests/test_rerank.py` (fake cross-encoder: candidate flow, kept set, rank bookkeeping,
+stable ties, wrapper delegation, exact context ordering per policy, stage-latency capture and
+manifest aggregation, config knob validation), `tests/test_compare_retrieval.py` (rerank twin
+rows lift MRR through the shared metric; oracle row excluded), plus grid/tuner coverage in
+`tests/test_cli_models.py` / `tests/test_tuner.py`.
+
+Durable evidence (2026-07-08, real `BAAI/bge-reranker-v2-m3` on the CUDA host RTX 4060 Ti,
+outside quick CI), via `compare-retrieval --hybrid --reranker BAAI/bge-reranker-v2-m3`, k=10,
+`rerank_candidates=30`:
+
+- `samples/goldsets/exact_terms_uk` (8 exact-term items): the reranker lifts every base row to
+  MRR 1.000 -- `dense+rerank` 1.000 vs dense 0.713, `hybrid+rerank` 1.000 vs hybrid 0.938
+  (recall already saturated at 1.000). The cross-encoder recovers the exact-term precision that
+  dense-only loses, even without the lexical side.
+- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture): every row holds
+  1.000/1.000 -- post-rerank uplift-or-tie holds (a tie; the fixture cannot discriminate).
+- Measured latency cost: ~150 ms/query steady-state rerank wall-clock at pool depth 30 on the
+  16 GB host (~300 ms on the first store while CUDA warms; the first-row mean absorbs the one-off
+  model load). Retrieval itself stays ~13 ms/query, so the reranker multiplies retrieval-stage
+  cost ~12x while staying far below generation cost.
+
 ## Chunking Strategies
 
 `src/llb/rag/chunking.py` implements every strategy behind one seam
@@ -358,11 +434,12 @@ on a real full corpus to separate steady-state throughput and to let recall@k di
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
 
-All shipped stores retrieve dense-only (cosine over the pinned E5 embedding). Measured against the
-gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the real
-full-corpus PDF index (`recall@10=0.729`, see the quickstart note above), so dense-only has NOT
-been proven sufficient for a real Ukrainian corpus. Hybrid retrieval, reranking, and query
-processing are forward tasks 12/13/15 in [`plan.md`](../plan.md).
+The default store retrieves dense-only (cosine over the pinned E5 embedding). Measured against
+the gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the
+real full-corpus PDF index (`recall@10=0.729`, see the quickstart note above), so dense-only has
+NOT been proven sufficient for a real Ukrainian corpus. Hybrid retrieval (see Hybrid Retrieval
+above) and cross-encoder reranking (see Reranking And Context Order above) are the shipped
+levers; query processing is forward task 15 in [`plan.md`](../plan.md).
 
 ## Generation Graph
 

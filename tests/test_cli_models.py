@@ -67,6 +67,28 @@ def test_grid_cells_fusion_weight_implies_hybrid_mode() -> None:
     assert cell_key(cells[0]) != cell_key(cells[1])  # fusion knobs join the fingerprint
 
 
+def test_grid_cells_rerank_candidates_toggle_reranker() -> None:
+    # rerank-context-order: 0 == reranker-off cell; a positive depth enables the sweep-level
+    # cross-encoder with that candidate pool -- and both land in the cell fingerprint.
+    base = load_config(None)
+    overrides = {"model": "m", "backend": "ollama", "run_name": "sweep-x"}
+    cells = models._grid_cells(
+        base,
+        overrides,
+        [{"rerank_candidates": 0}, {"rerank_candidates": 30}],
+        reranker="BAAI/bge-reranker-v2-m3",
+    )
+    off, on = cells
+    assert off.reranker is None
+    assert on.reranker == "BAAI/bge-reranker-v2-m3" and on.rerank_candidates == 30
+    assert [c.run_name for c in cells] == ["sweep-x-r0", "sweep-x-r30"]
+    assert cell_key(off) != cell_key(on)
+    assert models._parse_rag_grid("rerank_candidates=0,30") == [
+        {"rerank_candidates": 0},
+        {"rerank_candidates": 30},
+    ]
+
+
 def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> None:
     # patch the resolver itself: it prefers the venv-local `vllm` CLI over PATH, so patching
     # shutil.which alone still finds the real binary on CUDA hosts

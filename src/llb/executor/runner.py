@@ -204,6 +204,7 @@ def _default_runner_fn(
         config.temperature,
         config.request_timeout_s,
         prompt_package=prompt_package,
+        context_order=config.context_order,
     )
 
     def run(item: GoldItem) -> RagState:
@@ -331,9 +332,36 @@ def _aggregate(
         metrics["mean_power_w"] = round(float(mean_power), 2)
         metrics["tokens_per_watt"] = round(tokens_per_s / float(mean_power), 4)
         metrics["quality_per_watt"] = round(objective * tokens_per_s / float(mean_power), 4)
+    stage = _stage_latency(case_rows)
+    if stage:
+        metrics["stage_latency"] = stage
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
     return rows, metrics
+
+
+def _stage_latency(case_rows: list[CaseScoreRow]) -> dict[str, float]:
+    """Mean per-case stage wall-clock (rerank-context-order): retrieve / rerank / generate.
+
+    Retrieve and rerank means cover the cases that recorded them (rerank only exists when a
+    reranker is configured); generate is the mean backend latency. Empty when nothing was
+    measured, so pre-existing bundles keep their shape."""
+
+    def mean_of(key: str) -> float | None:
+        values = [float(row[key]) for row in case_rows if key in row]  # type: ignore[literal-required]
+        return round(sum(values) / len(values), 4) if values else None
+
+    stage: dict[str, float] = {}
+    retrieve_s = mean_of("retrieve_latency_s")
+    if retrieve_s is not None:
+        stage["retrieve_s"] = retrieve_s
+    rerank_s = mean_of("rerank_latency_s")
+    if rerank_s is not None:
+        stage["rerank_s"] = rerank_s
+    if stage:
+        generate = [float(row["latency_s"]) for row in case_rows if row.get("latency_s")]
+        stage["generate_s"] = round(sum(generate) / len(generate), 4) if generate else 0.0
+    return stage
 
 
 def _run_timestamp(run_id: str) -> str:
@@ -403,14 +431,21 @@ def _load_store(config: RunConfig) -> Any:
     """Load the configured retrieval store: the GraphRAG backend (GraphRAG backend) or the default FAISS store.
 
     Both expose the same `.retrieve(question, k) -> list[ChunkRecord]` seam, so the eval graph,
-    scoring, isolation, and board are unchanged regardless of backend."""
+    scoring, isolation, and board are unchanged regardless of backend. With `config.reranker`
+    set, the loaded store is wrapped in the cross-encoder rerank stage (rerank-context-order);
+    the wrapper honors the same retrieve seam, so every backend gains reranking identically."""
+    from llb.rag.rerank import maybe_wrap_reranker
+
     if config.retrieval_backend == "graph":
         from llb.graph.store import GraphStore
 
-        return GraphStore.load(
-            config.graph_dir(),
-            strategy=config.retrieval_strategy,
-            khop_depth=config.graph_khop_depth,
+        return maybe_wrap_reranker(
+            GraphStore.load(
+                config.graph_dir(),
+                strategy=config.retrieval_strategy,
+                khop_depth=config.graph_khop_depth,
+            ),
+            config,
         )
     from llb.rag.store import MODE_HYBRID, RagStore, store_embedder_mismatch
 
@@ -439,7 +474,7 @@ def _load_store(config: RunConfig) -> Any:
             config.retrieval_mode,
         )
         store.lexical = None
-    return store
+    return maybe_wrap_reranker(store, config)
 
 
 def _write_calibration_worksheet(

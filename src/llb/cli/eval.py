@@ -63,6 +63,19 @@ def run_eval_cmd(
     fusion_candidates: Optional[int] = typer.Option(
         None, help="hybrid mode: per-side candidate depth fed into the fusion (default 50)"
     ),
+    reranker: Optional[str] = typer.Option(
+        None,
+        help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
+        "--rerank-candidates, rerank, keep top_k (off by default)",
+    ),
+    rerank_candidates: Optional[int] = typer.Option(
+        None, help="candidate pool depth fed into the reranker before the top_k cut (default 30)"
+    ),
+    context_order: Optional[str] = typer.Option(
+        None,
+        help="how kept chunks are laid into the prompt: rank (best-first, default) | "
+        "reverse_rank (best-last)",
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",
@@ -129,6 +142,9 @@ def run_eval_cmd(
         retrieval_mode=retrieval_mode,
         fusion_weight=fusion_weight,
         fusion_candidates=fusion_candidates,
+        reranker=reranker,
+        rerank_candidates=rerank_candidates,
+        context_order=context_order,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )
@@ -152,6 +168,79 @@ def run_eval_cmd(
             selected_prompt.provenance if selected_prompt is not None else None
         ),
     )
+
+
+@app.command("probe-context-position")
+def probe_context_position_cmd(
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    k: int = typer.Option(5, min=3, help="fixed context size (gold at head/middle/tail)"),
+    split: str = typer.Option("final", help="gold split to probe"),
+    limit: Optional[int] = typer.Option(None, help="cap the number of probed items"),
+    candidate_depth: Optional[int] = typer.Option(
+        None, help="retrieval depth scanned for the gold chunk + distractors (default 50)"
+    ),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM/llama.cpp served context window (overrides the config)"
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="probe output dir (default: $DATA_DIR/context-position/<timestamp>)"
+    ),
+) -> None:
+    """Lost-in-the-middle probe (rerank-context-order): place each item's gold chunk at the
+    head, middle, and tail of a fixed-k context of real retrieved distractors, score every
+    position, and recommend a per-model `context_order` with bootstrap CIs."""
+    from llb.bench.common import new_run_timestamp
+    from llb.core.contracts import ChatMessage
+    from llb.eval.position_probe import (
+        DEFAULT_CANDIDATE_DEPTH,
+        render_report,
+        run_probe,
+        write_probe,
+    )
+    from llb.executor.runner import _load_store, _make_launcher
+    from llb.goldset.schema import load_goldset
+
+    cfg = load_config(
+        config, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
+    )
+    items = [it for it in load_goldset(cfg.goldset_path) if it.verified and it.split == split]
+    items.sort(key=lambda it: it.id)
+    if limit is not None:
+        items = items[:limit]
+    if not items:
+        typer.echo(f"[probe-context-position] no verified '{split}' items to probe", err=True)
+        raise typer.Exit(code=2)
+    store = _load_store(cfg)
+    launcher = _make_launcher(cfg)
+    with launcher as served:
+
+        def chat(messages: list[ChatMessage]) -> tuple[str, str | None]:
+            result = served.chat(
+                messages,
+                max_tokens=cfg.max_tokens,
+                temperature=cfg.temperature,
+                timeout=cfg.request_timeout_s,
+            )
+            return result.text or "", result.error
+
+        report = run_probe(
+            items,
+            store,
+            chat,
+            model=cfg.model,
+            backend=cfg.backend,
+            k=k,
+            candidate_depth=candidate_depth or DEFAULT_CANDIDATE_DEPTH,
+        )
+    _, run_ts = new_run_timestamp()
+    out = out_dir or (cfg.data_dir / "context-position" / run_ts)
+    paths = write_probe(report, out)
+    typer.echo(render_report(report))
+    typer.echo(f"[probe-context-position] report -> {paths['report']}")
+    typer.echo(f"[probe-context-position] cases -> {paths['cases']}")
 
 
 @app.command("analyze-misses")

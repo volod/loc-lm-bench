@@ -50,8 +50,17 @@ JOURNAL_NAME = "cases.progress.jsonl"
 JOURNAL_META_NAME = "cases.progress.meta.json"
 
 # Fields of the terminal RagState the journal needs to reproduce scoring, retrieval, and the judge
-# record deterministically on resume (context/question are not scored, so they are dropped).
-_JOURNALED_STATE_KEYS = ("retrieved", "answer", "status", "error", "usage")
+# record deterministically on resume (context/question are not scored, so they are dropped). The
+# stage latencies (rerank-context-order) are journaled so a resumed run's rows keep them.
+_JOURNALED_STATE_KEYS = (
+    "retrieved",
+    "answer",
+    "status",
+    "error",
+    "usage",
+    "retrieve_latency_s",
+    "rerank_latency_s",
+)
 
 
 @dataclass

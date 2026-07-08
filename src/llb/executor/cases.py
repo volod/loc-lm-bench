@@ -97,6 +97,10 @@ def score_case(item: GoldItem, state: RagState, embedder: Any = None) -> CaseSco
     }
     if "semantic" in corr:
         row["semantic"] = corr["semantic"]
+    if "retrieve_latency_s" in state:
+        row["retrieve_latency_s"] = round(float(state["retrieve_latency_s"]), 4)
+    if "rerank_latency_s" in state:
+        row["rerank_latency_s"] = round(float(state["rerank_latency_s"]), 4)
     return row
 
 

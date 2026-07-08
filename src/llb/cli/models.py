@@ -281,11 +281,17 @@ def _sweep_cell_overrides(
 
 # Query-time --rag-grid axes: value parser + validity predicate per supported key. Only
 # query-time knobs belong here (they retrieve against the SAME index, so no re-index per cell).
+# `rerank_candidates` (rerank-context-order): 0 == reranker off; a positive depth enables the
+# sweep-level `--reranker` cross-encoder with that candidate pool.
 _RAG_GRID_AXES: dict[str, tuple[Any, Any]] = {
     "top_k": (int, lambda v: v >= 1),
     "fusion_weight": (float, lambda v: 0.0 <= v <= 1.0),
+    "rerank_candidates": (int, lambda v: v >= 0),
 }
-_RAG_GRID_USAGE = "--rag-grid must look like 'top_k=3,5,8' or 'top_k=3,5;fusion_weight=0.4,0.6'"
+_RAG_GRID_USAGE = (
+    "--rag-grid must look like 'top_k=3,5,8', 'top_k=3,5;fusion_weight=0.4,0.6', "
+    "or 'rerank_candidates=0,30' (0 == reranker off)"
+)
 
 
 def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
@@ -324,23 +330,42 @@ def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
     return points
 
 
+_GRID_SUFFIX_PREFIX = {"top_k": "k", "fusion_weight": "w", "rerank_candidates": "r"}
+
+
 def _grid_cells(
-    base: RunConfig, overrides: dict[str, Any], rag_grid: list[dict[str, Any]]
+    base: RunConfig,
+    overrides: dict[str, Any],
+    rag_grid: list[dict[str, Any]],
+    reranker: str | None = None,
 ) -> list[RunConfig]:
     """One revalidated RunConfig per grid point for a resolved model (a single cell when no grid).
 
     Every grid knob is a `RunConfig` field and therefore part of the cell fingerprint, so
-    distinct grid points get distinct resume keys; the `-k<top_k>`/`-w<fusion_weight>` run-name
-    suffix only makes the sweep log readable. A `fusion_weight` point implies
-    `retrieval_mode=hybrid` (the knob is dead outside hybrid fusion).
+    distinct grid points get distinct resume keys; the `-k<top_k>`/`-w<fusion_weight>`/
+    `-r<rerank_candidates>` run-name suffix only makes the sweep log readable. A `fusion_weight`
+    point implies `retrieval_mode=hybrid` (the knob is dead outside hybrid fusion). A
+    `rerank_candidates` point of 0 turns the reranker OFF; a positive depth turns it on with
+    the sweep-level `reranker` cross-encoder id.
     """
     cells: list[RunConfig] = []
     for point in rag_grid:
         cell = dict(overrides)
         suffix = ""
         for key, value in point.items():
+            suffix += (
+                f"-{_GRID_SUFFIX_PREFIX[key]}{value:g}"
+                if isinstance(value, float)
+                else (f"-{_GRID_SUFFIX_PREFIX[key]}{value}")
+            )
+            if key == "rerank_candidates":
+                if value == 0:
+                    cell["reranker"] = None
+                    continue
+                cell["reranker"] = reranker
+                cell["rerank_candidates"] = value
+                continue
             cell[key] = value
-            suffix += f"-k{value}" if key == "top_k" else f"-w{value:g}"
         if "fusion_weight" in point:
             cell["retrieval_mode"] = "hybrid"
         if suffix:
@@ -381,16 +406,23 @@ def sweep_cmd(
     rag_grid: Optional[str] = typer.Option(
         None,
         "--rag-grid",
-        help="opt-in retrieval grid, e.g. 'top_k=3,5,8' or 'top_k=3,5;fusion_weight=0.4,0.6' "
-        "-> one cell per (model, grid point); fusion_weight implies retrieval_mode=hybrid "
-        "(build the index with --retrieval-mode hybrid first); default keeps the manifest's "
+        help="opt-in retrieval grid, e.g. 'top_k=3,5,8', 'top_k=3,5;fusion_weight=0.4,0.6', or "
+        "'rerank_candidates=0,30' -> one cell per (model, grid point); fusion_weight implies "
+        "retrieval_mode=hybrid (build the index with --retrieval-mode hybrid first); "
+        "rerank_candidates=0 is the reranker-off cell; default keeps the manifest's "
         "single config",
+    ),
+    reranker: Optional[str] = typer.Option(
+        None,
+        help="cross-encoder id for positive rerank_candidates grid points "
+        "(default BAAI/bge-reranker-v2-m3)",
     ),
 ) -> None:
     """Run one isolated cell per runnable model (process-per-cell, VRAM gate, thermal cooldown)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import resolve_all
     from llb.executor.isolation import run_sweep
+    from llb.rag.rerank import DEFAULT_RERANKER
 
     grid = _parse_rag_grid(rag_grid)
     if grid != [{}]:
@@ -412,7 +444,7 @@ def sweep_cmd(
             continue
         overrides = _sweep_cell_overrides(r, telemetry, max_model_len)
         if overrides is not None:
-            cells.extend(_grid_cells(base, overrides, grid))
+            cells.extend(_grid_cells(base, overrides, grid, reranker=reranker or DEFAULT_RERANKER))
 
     if not cells:
         typer.echo("[sweep] no runnable models resolved; nothing to do")
@@ -467,6 +499,13 @@ def tune_cmd(
         help="add the page/heading/late chunking strategies to the stage-1 search space "
         "(late re-embeds whole documents per trial; page needs PDF citation sidecars)",
     ),
+    tune_reranker: Optional[str] = typer.Option(
+        None,
+        "--reranker",
+        help="add the opt-in rerank axes (reranker on/off + candidate depth) to the stage-1 "
+        "search space, using this local cross-encoder id (e.g. BAAI/bge-reranker-v2-m3); "
+        "each on-trial reranks per case, so trials get slower",
+    ),
 ) -> None:
     """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
@@ -495,6 +534,7 @@ def tune_cmd(
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
         strategies=EXTENDED_STRATEGIES if extended_chunkers else None,
+        reranker=tune_reranker,
     )
     t = out.tune
     typer.echo(

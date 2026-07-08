@@ -38,6 +38,8 @@ class ChunkRecord(SourceSpanRecord):
     metadata: NotRequired[JsonObject]
     retrieval_score: NotRequired[float | None]
     rank: NotRequired[int]
+    rerank_score: NotRequired[float]  # cross-encoder relevance (rerank-context-order)
+    pre_rerank_rank: NotRequired[int]  # retrieval rank before the rerank stage
 
 
 class RagStoreMeta(TypedDict):
@@ -263,6 +265,8 @@ class CaseScoreRow(TypedDict):
     answer_preview: str
     semantic: NotRequired[float]
     judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
+    retrieve_latency_s: NotRequired[float]  # retrieval stage wall-clock (rerank-context-order)
+    rerank_latency_s: NotRequired[float]  # rerank stage wall-clock (only when a reranker is on)
 
 
 class LeaderboardRow(TypedDict):
@@ -358,6 +362,9 @@ class RunMetrics(TypedDict):
     tokens_per_watt: NotRequired[float]
     quality_per_watt: NotRequired[float]  # objective_score * tokens_per_s / mean_power_w
     judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
+    # Mean per-case stage wall-clock seconds (rerank-context-order): retrieve always (when
+    # measured), rerank only when a reranker is configured, generate from the backend latency.
+    stage_latency: NotRequired[dict[str, float]]
 
 
 class RunEnvironment(TypedDict):

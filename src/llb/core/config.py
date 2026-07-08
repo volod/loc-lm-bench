@@ -29,6 +29,9 @@ Strategy = Literal[
 RetrievalMode = Literal["flat", "parent_child", "hybrid"]
 RetrievalBackend = Literal["faiss", "graph"]
 RetrievalStrategy = Literal["local_khop", "global_community"]
+# Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
+# "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
+ContextOrder = Literal["rank", "reverse_rank"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
@@ -37,6 +40,9 @@ DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
 # per-side candidate depth fed into the fusion.
 DEFAULT_FUSION_WEIGHT = 0.5
 DEFAULT_FUSION_CANDIDATES = 50
+# Reranking defaults (rerank-context-order): candidate pool depth fed into the optional
+# cross-encoder before the top_k cut. The default reranker model id lives in `llb.rag.rerank`.
+DEFAULT_RERANK_CANDIDATES = 30
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_VLLM_HOST = "http://localhost:8000"
 DEFAULT_LLAMACPP_HOST = "http://localhost:8080"
@@ -155,6 +161,16 @@ class RunConfig(BaseModel):
     fusion_weight: float = Field(default=DEFAULT_FUSION_WEIGHT, ge=0, le=1)
     fusion_candidates: int = Field(default=DEFAULT_FUSION_CANDIDATES, ge=1)
     lexical_lemmas: bool = False
+
+    # Rerank + context order (rerank-context-order), both recorded in the manifest and the
+    # sweep cell fingerprint. `reranker` names a local cross-encoder (HF id; None == off, the
+    # default -- see `llb.rag.rerank.DEFAULT_RERANKER` for the pinned candidate);
+    # `rerank_candidates` is the retrieved pool depth fed into it before the `top_k` cut.
+    # `context_order` lays the kept chunks into the prompt best-first ("rank") or best-last
+    # ("reverse_rank"); it applies with or without a reranker.
+    reranker: str | None = None
+    rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
+    context_order: ContextOrder = "rank"
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

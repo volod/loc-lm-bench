@@ -27,6 +27,10 @@ ROW_DENSE = "dense"
 ROW_HYBRID = "hybrid"
 ROW_HYBRID_LEMMAS = "hybrid+lemmas"
 ROW_ORACLE_DOC = "dense+oracle-doc"
+# Suffix of the reranked twin row (rerank-context-order): `<label>+rerank` scores the SAME
+# store's candidates after the cross-encoder cut, so pre/post-rerank recall@k / MRR compare
+# through the one `evaluate_retrieval` metric.
+RERANK_ROW_SUFFIX = "+rerank"
 
 
 class Retriever(Protocol):
@@ -72,6 +76,28 @@ def _best_recall(per_backend: dict[str, RetrievalMetrics]) -> str | None:
             label,
         ),
     )
+
+
+def add_rerank_rows(
+    stores: dict[str, Retriever], scorer: Any, candidates: int
+) -> dict[str, Retriever]:
+    """Add a `<label>+rerank` twin per compared store (rerank-context-order).
+
+    Each twin wraps the SAME store in the cross-encoder rerank stage (retrieve `candidates`,
+    rerank, keep k), so the report shows the pre/post-rerank recall@k / MRR delta per backend.
+    The oracle-doc headroom row is skipped (it is a diagnostic bound, not a rankable config).
+    `scorer` is the injectable `RerankScorer` (a fake in tests; `CrossEncoderReranker` real).
+    """
+    from llb.rag.rerank import RerankingRetriever
+
+    out: dict[str, Retriever] = dict(stores)
+    for label, store in stores.items():
+        if label == ROW_ORACLE_DOC:
+            continue
+        out[f"{label}{RERANK_ROW_SUFFIX}"] = RerankingRetriever(
+            store, scorer, candidates=candidates
+        )
+    return out
 
 
 def format_comparison(report: ComparisonReport) -> str:

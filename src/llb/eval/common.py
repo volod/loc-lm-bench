@@ -95,10 +95,30 @@ def is_refusal(text: str) -> bool:
     return _REFUSAL_RE.search(normalize_refusal_text(text)) is not None
 
 
-def format_context(chunks: list[ChunkRecord]) -> str:
-    """Render retrieved chunks as a delimited, numbered block (corpus is untrusted input)."""
+# Context-order policies (rerank-context-order): how ranked chunks are laid into the prompt.
+# "rank" keeps best-first; "reverse_rank" flips to best-last (for tail-attending models).
+ORDER_RANK = "rank"
+ORDER_REVERSE_RANK = "reverse_rank"
+CONTEXT_ORDERS = (ORDER_RANK, ORDER_REVERSE_RANK)
+
+
+def order_chunks(chunks: list[ChunkRecord], order: str = ORDER_RANK) -> list[ChunkRecord]:
+    """Apply a context-order policy to ranked chunks (pure; never mutates the input list)."""
+    if order == ORDER_RANK:
+        return list(chunks)
+    if order == ORDER_REVERSE_RANK:
+        return list(reversed(chunks))
+    raise ValueError(f"unknown context order: {order!r}; choose from {CONTEXT_ORDERS}")
+
+
+def format_context(chunks: list[ChunkRecord], order: str = ORDER_RANK) -> str:
+    """Render retrieved chunks as a delimited, numbered block (corpus is untrusted input).
+
+    `order` is the context-order policy applied when the kept chunks are laid into the
+    prompt; the `[i]` labels number PROMPT positions, so citations stay stable per prompt.
+    """
     parts = []
-    for i, chunk in enumerate(chunks, 1):
+    for i, chunk in enumerate(order_chunks(chunks, order), 1):
         parts.append(f"[{i}] ({chunk.get('doc_id', '?')})\n{chunk.get('text', '').strip()}")
     return "\n\n".join(parts)
 

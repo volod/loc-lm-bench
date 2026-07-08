@@ -37,13 +37,17 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality cluster (13-16) gives the query-and-rerank side the same tune-and-demonstrate
+The retrieval-quality cluster (15-16) gives the query side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k` plus the hybrid fusion knobs -- including the shipped page/heading/late chunkers behind
-`tune --extended-chunkers`; see [RAG core](current/rag-core.md) chunking strategies -- and the
-sweep grids `top_k` and `fusion_weight`). The Ukrainian hybrid retrieval stack -- dense + BM25
+`top_k` plus the hybrid fusion and opt-in reranker knobs -- including the shipped
+page/heading/late chunkers behind `tune --extended-chunkers`; see
+[RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`,
+`fusion_weight`, and `rerank_candidates`). The Ukrainian hybrid retrieval stack -- dense + BM25
 fused with weighted RRF, index-side inflection-aware lemmatization, and the chunk-metadata filter
-seam -- is now shipped (see [RAG core](current/rag-core.md) hybrid retrieval); task 15 adds the
+seam -- is shipped, and so is the rerank-and-order stage between retrieval and generation (the
+cross-encoder reranker seam, the `context_order` prompt-layout policy, and the
+`probe-context-position` lost-in-the-middle probe; see [RAG core](current/rag-core.md)
+reranking and context order); task 15 adds the
 query-side lane on top: normalization -- casefold, apostrophes, transliteration, typo tolerance,
 aliases/glossary -- that never mutates the stored corpus text. The measured Ukrainian embedder
 ranking that underpins the stack (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the
@@ -51,8 +55,7 @@ lang-uk model plus an opt-in Cohere API row for open corpora) is also shipped; s
 [RAG core](current/rag-core.md) retrieval store. Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
 (`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
-evidence-backed. Within the cluster 13, 15, and 16 stand alone (13 reranks the candidate pool
-the shipped hybrid fusion emits, and also works over dense-only retrieval). Task 17 adds the
+evidence-backed. Within the cluster 15 and 16 stand alone. Task 17 adds the
 governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
@@ -84,7 +87,7 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: the independent lot (13, 15, 16) in any order, 17's ACL-filter half through
+Recommended sequence: the independent lot (15, 16) in any order, 17's ACL-filter half through
 the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
 exists; the export/guard/trainer code stands
@@ -167,46 +170,6 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   [`docs/guides/human-tooling/verification-tooling.md`](../guides/human-tooling/verification-tooling.md)
   and
   [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
-
-### 13. rerank-context-order
-
-- Dependencies: none open -- it reranks the candidate pool the shipped hybrid fusion emits (see
-  [RAG core](current/rag-core.md) hybrid retrieval) and also works over dense-only retrieval.
-  Its reranker/order knobs feed the
-  shipped miss analysis's recommendations. The heavy real-reranker validation run executes on
-  the CUDA host, no human judgment.
-- User-visible outcome: a mechanism to tune what happens between retrieval and generation: an
-  optional local cross-encoder reranker (retrieve `rerank_candidates`, rerank, keep `top_k`)
-  measured for top-k precision gain against its own latency cost; a context-order policy
-  (`rank | reverse_rank`, best-first vs best-last) applied when kept chunks are laid into the
-  prompt; and `llb probe-context-position` -- a lost-in-the-middle probe that places the gold
-  chunk at head/middle/tail among real distractors at fixed k and reports per-model position
-  sensitivity -- ending in a per-model ordering recommendation.
-- Scope boundary: in scope -- a reranker seam `src/llb/rag/rerank.py` (default candidate
-  `BAAI/bge-reranker-v2-m3`, multilingual) behind `RunConfig` fields, off by default, fed by any
-  retrieval backend including hybrid; the ordering policy applied at `format_context`
-  (`src/llb/eval/common.py`) and recorded in the manifest; per-stage latency (retrieve vs rerank
-  vs generate) in run telemetry; pre/post-rerank `recall@k`/MRR through the existing
-  `evaluate_retrieval`; tuner/sweep axes for reranker on/off and candidate depth. Out of scope --
-  API rerankers (egress policy), training or fine-tuning rerankers, chain-level context policies
-  (task 8 owns multi-step chains; this task owns single-turn chunk ordering), changing the
-  retrieval-metrics contract.
-- Data and artifact paths: probe reports under
-  `$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; the manifest gains reranker
-  model, candidate depth, ordering policy, and per-stage latency fields.
-- Execution path: `llb run-eval --reranker <hf-id> --rerank-candidates 30 --context-order rank`;
-  `make compare-retrieval RERANKER=<hf-id>`;
-  `llb probe-context-position --model <m> --backend <b> --k <k>`; unit tests drive an injected
-  fake cross-encoder asserting candidate flow, the kept set, and exact context ordering per
-  policy.
-- Acceptance gates: `make ci` green with the fake cross-encoder; a real `bge-reranker-v2-m3` run
-  over the committed goldset reports post-rerank MRR uplift-or-tie plus measured reranker latency
-  (heavy, on the CUDA host, outside quick CI); the position probe emits per-position accuracy with
-  bootstrap CIs and names the recommended ordering for the probed model; every knob lands in the
-  manifest/fingerprint so sweeps and the shipped miss analysis can recommend "enable reranker" with
-  numeric evidence.
-- Documentation target: [RAG core](current/rag-core.md);
-  [evaluation rigor](current/rigor-board-judge.md) for the position probe.
 
 ### 15. uk-query-processing
 
@@ -357,7 +320,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   disjoint by seeded assignment precisely so tuning can never leak into the final leaderboard
   number), the durable-eval-runner (per-round resume), and the board/recommend machinery. The
   heavy fine-tune + re-eval rounds execute seeded on the CUDA host with no human judgment --
-  the same heavy-run discipline as tasks 13 and 16.
+  the same heavy-run discipline as task 16.
 - User-visible outcome: the benchmark closes its loop from measurement to improvement: one
   command turns a scored run into a measurably better *local* model. It exports a
   contamination-guarded training set from the tuning split (SFT records in the exact prompt
@@ -664,6 +627,38 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   oracle-doc headroom row (multi-document corpus), and a measured lemmatization delta (positive,
   zero, or negative -- reported honestly); current docs record the fusion-knob verdict.
 - Documentation target: [RAG core](current/rag-core.md) hybrid retrieval.
+
+### rerank-order-full-cohort (optional)
+
+- Dependencies: the shipped rerank + context-order stage (`compare-retrieval --reranker`,
+  `probe-context-position`; see [RAG core](current/rag-core.md) reranking and context order).
+  Heavy runs execute on the CUDA host (deterministic, no human judgment).
+- Why this is forward work: the committed rerank evidence lives on the two tiny fixtures where
+  recall@10 saturates at 1.000 (only MRR discriminates -- the exact-term fixture shows the big
+  cross-encoder win, dense MRR 0.713 -> 1.000, but recall headroom is invisible), and the
+  committed position-probe run (llama3.2:3b, n=20) ends with OVERLAPPING head/tail CIs, so no
+  model has a resolved ordering verdict yet.
+- User-visible outcome: a rerank on/off verdict at a k where recall separates (does the
+  cross-encoder recover the real-corpus recall@10=0.729 shortfall dense-only shows on the
+  quickstart PDF index?) plus a resolved per-model `context_order` recommendation for each
+  roster model at an n where the CIs separate -- or the honest verdict that the model is not
+  position-sensitive.
+- Scope boundary: in scope -- run `make compare-retrieval RERANKER=... [HYBRID=1]` over a
+  full-corpus goldset, grid `rerank_candidates=0,30` in one sweep to cross-check retrieval
+  uplift against end-to-end scores, and run `make probe-context-position` per roster model at
+  full-split n; record verdicts in current docs. Out of scope -- new probe/rerank code (the
+  commands are shipped), API rerankers (egress policy).
+- Data and artifact paths: probe reports under `$DATA_DIR/context-position/<timestamp>/`; the
+  ranked rerank rows land in current docs.
+- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1
+  RERANKER=BAAI/bge-reranker-v2-m3`; `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"`;
+  `make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5` (no LIMIT cap) -- all on the
+  CUDA host, outside quick CI.
+- Acceptance gates: the rerank rows report a non-saturated pre/post-rerank recall@k spread plus
+  steady-state latency on the full corpus; each probed model gets either non-overlapping
+  head/tail CIs or an explicit not-position-sensitive verdict; current docs record both.
+- Documentation target: [RAG core](current/rag-core.md) reranking and context order;
+  [evaluation rigor](current/rigor-board-judge.md) context-position probe.
 
 ### external-import-needle-parity (optional)
 

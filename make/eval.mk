@@ -3,7 +3,7 @@
 
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
-	compare-embeddings run-eval analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
+	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -29,12 +29,14 @@ validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K)
 
-compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=... ranks chunkers, HYBRID=1 ranks dense vs hybrid(+lemmas) + oracle-doc headroom
+compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=... ranks chunkers, HYBRID=1 ranks dense vs hybrid(+lemmas) + oracle-doc headroom, RERANKER=<hf-id> adds reranked twin rows (RERANK_CANDIDATES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
 		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",) \
 		$(if $(HYBRID),--hybrid,) \
-		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),)
+		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
+		$(if $(RERANKER),--reranker "$(RERANKER)",) \
+		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -42,18 +44,28 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid FUSION_WEIGHT= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid FUSION_WEIGHT= RERANKER= RERANK_CANDIDATES= CONTEXT_ORDER= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
+		$(if $(RERANKER),--reranker "$(RERANKER)",) \
+		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
 		$(if $(RESUME),--resume "$(RESUME)",) \
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= PROBE_K= SPLIT= LIMIT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main probe-context-position --model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" --k $(PROBE_K) \
+		$(if $(LIMIT),--limit $(LIMIT),)
 
 analyze-misses: ## Miss analysis: classify + cluster one run's misses (RUN_DIR=<bundle>; PROBE_TOP_K=3,8 re-runs the miss subset; MISS_THRESHOLD= ANALYZE_GOLDSET=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

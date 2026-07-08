@@ -103,6 +103,8 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
+# Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
+PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/models_uk.yaml
 PREP_BACKEND ?= all
 SERVING_TIER_JSON ?=

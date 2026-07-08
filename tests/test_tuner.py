@@ -139,6 +139,30 @@ def test_suggest_overrides_flat_never_samples_fusion_knobs():
     assert "fusion_weight" not in over and "fusion_candidates" not in over
 
 
+def test_suggest_overrides_rerank_axes_only_behind_the_flag():
+    # rerank-context-order: no `--reranker` -> the axes are never sampled; with it, the on/off
+    # categorical gates the candidate-depth axis (off-trial samples no dead depth parameter).
+    vals = {
+        "strategy": "recursive",
+        "chunk_size": 512,
+        "overlap_frac": 0.1,
+        "retrieval_mode": "flat",
+        "top_k": 5,
+    }
+    assert "reranker" not in suggest_overrides(FakeTrial(vals))
+
+    off = suggest_overrides(
+        FakeTrial({**vals, "use_reranker": False}), reranker="BAAI/bge-reranker-v2-m3"
+    )
+    assert "reranker" not in off and "rerank_candidates" not in off
+
+    on = suggest_overrides(
+        FakeTrial({**vals, "use_reranker": True, "rerank_candidates": 30}),
+        reranker="BAAI/bge-reranker-v2-m3",
+    )
+    assert on["reranker"] == "BAAI/bge-reranker-v2-m3" and on["rerank_candidates"] == 30
+
+
 def test_estimate_prompt_tokens_grows_with_topk_and_size():
     base = RunConfig(max_tokens=128)
     big = base.with_overrides(top_k=12, chunk_size=1200)
