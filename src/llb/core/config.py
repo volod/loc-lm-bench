@@ -220,6 +220,17 @@ class RunConfig(BaseModel):
     # not blended into the headline score). Off by default -- it embeds every answer.
     score_semantic: bool = False
 
+    # Answer-side RAG quality (groundedness-citation-metrics), all additive columns that never
+    # change the headline objective. `cited_answers` swaps in the `[i]`-citation generation prompt
+    # and scores citation validity + hallucinated-citation rate. `score_groundedness` records the
+    # deterministic groundedness fraction (share of answer claims supported by the retrieved
+    # context) per case. `insufficient_context_probes` re-runs N sampled gold items with their gold
+    # evidence excluded from retrieval and scores abstention accuracy; probe cases are scored
+    # separately and never enter the plain correctness aggregates.
+    cited_answers: bool = False
+    score_groundedness: bool = False
+    insufficient_context_probes: int = Field(default=0, ge=0)
+
     # Paths (resolved against the project / DATA_DIR, never hardcoded)
     data_dir: Path = Path(".data")
     corpus_root: Path = Path(".data/llb/corpus")

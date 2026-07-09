@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
@@ -43,6 +43,10 @@ from llb.rag import retrieval
 from llb.scoring.aggregate import ModelResult, format_table, rank_results
 from llb.scoring.judge import judge_is_trusted, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
+
+if TYPE_CHECKING:
+    from llb.eval.insufficient_context import InsufficientContextReport
+    from llb.executor.cases import ScoreOptions
 
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
 
@@ -206,12 +210,58 @@ def _default_runner_fn(
         prompt_package=prompt_package,
         context_order=config.context_order,
         query_prep=build_query_prep(config, store, launcher),
+        cited=config.cited_answers,
     )
 
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
     return run
+
+
+def _score_options(config: RunConfig) -> "ScoreOptions":
+    """The opt-in answer-side scoring toggles for this run (groundedness-citation-metrics)."""
+    from llb.executor.cases import ScoreOptions
+
+    return ScoreOptions(
+        score_groundedness=config.score_groundedness,
+        cited_answers=config.cited_answers,
+        context_order=config.context_order,
+    )
+
+
+def _maybe_run_probes(
+    config: RunConfig, items: list[GoldItem], store: Any, backend: Any
+) -> "InsufficientContextReport | None":
+    """Run the insufficient-context abstention probe over a seeded sample, if configured.
+
+    The gold evidence is excluded from retrieval for each probed item; correct behavior is an
+    explicit abstention. Probe rows are scored separately and never enter the correctness batch."""
+    if config.insufficient_context_probes <= 0:
+        return None
+    from llb.eval.insufficient_context import run_insufficient_context_probe
+
+    def chat(messages: Any) -> tuple[str, str | None]:
+        result = backend.chat(
+            messages,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.request_timeout_s,
+        )
+        return result.text or "", result.error
+
+    return run_insufficient_context_probe(
+        items,
+        store,
+        chat,
+        model=config.model,
+        backend=config.backend,
+        k=config.top_k,
+        n=config.insufficient_context_probes,
+        seed=config.seed,
+        cited=config.cited_answers,
+        context_order=config.context_order,
+    )
 
 
 def _launcher_rewriter(config: RunConfig, launcher: Any) -> Callable[[str], str]:
@@ -394,7 +444,16 @@ def _aggregate(
         metrics["stage_latency"] = stage
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
+    _attach_answer_side_metrics(metrics, case_rows)
     return rows, metrics
+
+
+def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Mean per-case groundedness / citation signals (groundedness-citation-metrics), when present."""
+    for key in ("groundedness", "citation_validity", "hallucinated_citation_rate"):
+        values = [float(row[key]) for row in case_rows if key in row]
+        if values:
+            metrics[key] = round(sum(values) / len(values), 4)
 
 
 def _stage_latency(case_rows: list[CaseScoreRow]) -> dict[str, float]:
@@ -643,6 +702,7 @@ def run_eval(
         embedder = (
             store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
         )
+        score_options = _score_options(config)
         policy = durability.RetryPolicy(
             max_case_retries=max_case_retries,
             retry_backoff_s=retry_backoff_s,
@@ -663,8 +723,10 @@ def run_eval(
                 relaunch=relaunch,
                 sleep=sleep if sleep is not None else time.sleep,
                 counters=counters,
+                options=score_options,
             )
             telemetry_report = _collect_optional_telemetry(config, backend)
+            probe_report = _maybe_run_probes(config, items, store, backend)
     except KeyboardInterrupt:
         if active_launcher is not None:
             _preserve_backend_log(active_launcher, config)
@@ -687,6 +749,9 @@ def run_eval(
     effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
     judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
+    if probe_report is not None:
+        metrics["abstention_accuracy"] = round(probe_report.abstention_accuracy, 4)
+        metrics["n_probes"] = probe_report.n_probes
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
     manifest = RunManifest(
@@ -720,6 +785,11 @@ def run_eval(
         worksheet_rows = _write_calibration_worksheet(config, batch, worksheet, judge_scorer)
         paths["worksheet"] = str(worksheet)
 
+    if probe_report is not None:
+        from llb.eval.insufficient_context import write_probe
+
+        paths.update(write_probe(probe_report, run_dir))  # type: ignore[typeddict-item]
+
     table = format_table(rows)
     if emit:
         emit_summary(
@@ -731,6 +801,7 @@ def run_eval(
             paths,
             worksheet,
             worksheet_rows,
+            metrics,
         )
     return {
         "rows": rows,

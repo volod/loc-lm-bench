@@ -122,3 +122,15 @@ def test_query_prep_rejects_unknown_step():
 def test_query_prep_rejects_duplicate_step():
     with pytest.raises(ValidationError, match="unique"):
         RunConfig().with_overrides(query_prep=["typos", "typos"])
+
+
+def test_answer_side_flags_default_off():
+    cfg = RunConfig()
+    assert cfg.cited_answers is False
+    assert cfg.score_groundedness is False
+    assert cfg.insufficient_context_probes == 0
+
+
+def test_insufficient_context_probes_must_be_non_negative():
+    with pytest.raises(ValidationError):
+        RunConfig().with_overrides(insufficient_context_probes=-1)

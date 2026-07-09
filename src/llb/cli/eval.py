@@ -99,6 +99,23 @@ def run_eval_cmd(
         "--score-semantic/--no-score-semantic",
         help="enable or disable the embedding-similarity correctness signal",
     ),
+    cited_answers: Optional[bool] = typer.Option(
+        None,
+        "--cited-answers/--no-cited-answers",
+        help="require [i] chunk citations in the generation prompt and score citation validity + "
+        "hallucinated-citation rate (groundedness-citation-metrics)",
+    ),
+    score_groundedness: Optional[bool] = typer.Option(
+        None,
+        "--score-groundedness/--no-score-groundedness",
+        help="record the deterministic groundedness fraction (share of answer claims supported by "
+        "the retrieved context) as an additive per-case column",
+    ),
+    insufficient_context_probes: Optional[int] = typer.Option(
+        None,
+        help="re-run N sampled gold items with their gold evidence excluded from retrieval and "
+        "score abstention accuracy (probe cases never enter the correctness aggregates)",
+    ),
     telemetry: Optional[bool] = typer.Option(
         None,
         "--telemetry/--no-telemetry",
@@ -166,6 +183,9 @@ def run_eval_cmd(
         query_prep=_parse_query_prep(query_prep),
         query_glossary_path=query_glossary,
         score_semantic=score_semantic,
+        cited_answers=cited_answers,
+        score_groundedness=score_groundedness,
+        insufficient_context_probes=insufficient_context_probes,
         measure_telemetry=telemetry,
     )
     selected_prompt = None

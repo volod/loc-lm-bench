@@ -47,7 +47,7 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid FUSION_WEIGHT= RERANKER= RERANK_CANDIDATES= CONTEXT_ORDER= QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY= PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid RERANKER= CONTEXT_ORDER= QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY= CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=n PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
@@ -59,6 +59,9 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
+		$(if $(CITED_ANSWERS),--cited-answers,) \
+		$(if $(SCORE_GROUNDEDNESS),--score-groundedness,) \
+		$(if $(INSUFFICIENT_CONTEXT_PROBES),--insufficient-context-probes $(INSUFFICIENT_CONTEXT_PROBES),) \
 		--limit $(LIMIT) $(if $(TELEMETRY),--telemetry) \
 		$(if $(RESUME),--resume "$(RESUME)",) \
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \

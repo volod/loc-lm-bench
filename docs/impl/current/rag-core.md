@@ -541,6 +541,55 @@ diagnostic and objective correctness ranks alone.
 `src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
 throughput, then lower VRAM when telemetry is available.
 
+### Groundedness and citation metrics (groundedness-citation-metrics)
+
+Shipped: three answer-side signals that go beyond reference-answer overlap, all deterministic and
+additive -- they never change the headline objective (they stay separate columns until a ranking
+policy explicitly adopts them). `src/llb/scoring/groundedness.py` is a pure, dependency-free scorer
+(no RAGAS, no frontier judge); the calibration-gated judge's faithfulness stays the optional
+secondary groundedness signal.
+
+- Groundedness fraction (`--score-groundedness`): the share of the answer's sentence-ish claims
+  SUPPORTED by any retrieved chunk via token-overlap matching (a claim is supported when
+  `GROUNDEDNESS_SUPPORT_THRESHOLD`=0.6 of its content tokens appear in a chunk). A fully-supported
+  answer scores 1.0; an answer whose claims are absent from the context scores near 0.0.
+- Citation validity + hallucinated-citation rate (`--cited-answers`): swaps in the
+  `eval.rag.cited_answer` generation prompt (requires `[i]` chunk citations, reusing the numbered
+  format `format_context` emits) and validates each citation against the chunk it points at, in
+  PROMPT-LAYOUT order (so `reverse_rank` renumbering is respected). A citation whose in-range chunk
+  lacks the claim is flagged invalid (lowers validity); a citation whose index is out of range is
+  hallucinated.
+- Insufficient-context abstention probe (`--insufficient-context-probes <n>`,
+  `src/llb/eval/insufficient_context.py`): re-runs a seeded sample of gold items with every chunk
+  overlapping their gold spans EXCLUDED from retrieval (through the shipped chunk-metadata filter
+  seam). Correct behavior is an explicit abstention (`llb.eval.common.is_abstention` = refusal OR an
+  insufficient-context marker), scored as abstention accuracy. Probe rows live in `probes.jsonl` (+
+  `insufficient_context_report.md`), NEVER in `scores.jsonl`, so they cannot enter the plain
+  correctness aggregates.
+
+Per-case fields land in `scores.jsonl` (`groundedness`, `citation_validity`,
+`hallucinated_citation_rate`, `n_citations`); their means plus `abstention_accuracy` / `n_probes`
+land in the manifest `metrics`, echoed as the run's `answer-side:` summary line. Config knobs
+(`cited_answers`, `score_groundedness`, `insufficient_context_probes`) are recorded in the manifest
+fingerprint. `RunConfig` toggles are off by default, so pre-existing bundles keep their shape.
+
+Modules/tests: `src/llb/scoring/groundedness.py`, `src/llb/eval/insufficient_context.py`, the
+`eval.rag.cited_answer` template, `ScoreOptions` in `src/llb/executor/cases.py`;
+`tests/test_groundedness.py` (fully/partially/unsupported groundedness with zero cross-class leakage,
+valid/flagged-invalid/hallucinated citations, abstention markers, cited-answer prompt wiring, per-case
+scoring + context-order-aware citation numbering) and `tests/test_insufficient_context.py` (gold
+exclusion, seeded sampling, abstention accuracy, transport-error exclusion).
+
+Durable evidence (2026-07-09, `llama3.2:3b` on Ollama, `intfloat/multilingual-e5-base` flat FAISS
+over `samples/goldsets/ip_regulation_uk`, final split n=4, `--cited-answers --score-groundedness
+--insufficient-context-probes 4`): mean groundedness 0.625 (per-case 1.0 / 0.5 / 1.0 / 0.0);
+citation validity 0.000 with hallucinated-citation rate 0.000 -- the 3B model largely IGNORED the
+`[i]` citation instruction (mostly emitted no citations), so validity is dominated by "did not cite"
+rather than "cited wrongly"; abstention accuracy 0.000 -- on all four probes the model FABRICATED an
+answer (even citing non-existent chunks) instead of abstaining when its gold evidence was removed.
+Honest, unflattering evidence that a small model's answer-side grounding discipline is weak -- exactly
+the axis these metrics expose beyond a passing recall@k.
+
 ## Backends
 
 `BackendLauncher` is the core seam:

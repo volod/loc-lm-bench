@@ -37,28 +37,25 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality cluster (16) gives the answer side the same tune-and-demonstrate
-discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k` plus the hybrid fusion and opt-in reranker knobs -- including the shipped
-page/heading/late chunkers behind `tune --extended-chunkers`; see
+The retrieval-quality stack is now shipped end to end and its remaining forward work is the
+governance layer (task 17). Shipped: chunk-side tuning (the Optuna tuner searches
+strategy/size/overlap/mode/`top_k` plus the hybrid fusion and opt-in reranker knobs -- including
+the page/heading/late chunkers behind `tune --extended-chunkers`; see
 [RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`,
-`fusion_weight`, and `rerank_candidates`). The Ukrainian hybrid retrieval stack -- dense + BM25
+`fusion_weight`, and `rerank_candidates`); the Ukrainian hybrid retrieval stack (dense + BM25
 fused with weighted RRF, index-side inflection-aware lemmatization, and the chunk-metadata filter
-seam -- is shipped, and so is the rerank-and-order stage between retrieval and generation (the
-cross-encoder reranker seam, the `context_order` prompt-layout policy, and the
-`probe-context-position` lost-in-the-middle probe; see [RAG core](current/rag-core.md)
-reranking and context order); the query-side processing lane is shipped too -- deterministic
-normalization (casefold, apostrophes, transliteration), corpus-vocabulary typo tolerance,
+seam); the rerank-and-order stage between retrieval and generation (the cross-encoder reranker
+seam, the `context_order` prompt-layout policy, and the `probe-context-position`
+lost-in-the-middle probe; see [RAG core](current/rag-core.md) reranking and context order); the
+query-side processing lane (deterministic normalization, corpus-vocabulary typo tolerance,
 alias/glossary expansion, and an opt-in logged LLM rewrite, none of which mutate the stored corpus
-text, with an A/B report attributing each step's retrieval delta (see
-[RAG core](current/rag-core.md) query-side processing). The measured Ukrainian embedder
-ranking that underpins the stack (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the
-lang-uk model plus an opt-in Cohere API row for open corpora) is also shipped; see
-[RAG core](current/rag-core.md) retrieval store. Every knob these tasks add must land
-in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
-(`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
-evidence-backed. Task 16 stands alone. Task 17 adds the
-governance
+text, with an A/B report attributing each step's retrieval delta; see
+[RAG core](current/rag-core.md) query-side processing); the answer-side groundedness/citation
+metrics (deterministic groundedness fraction, `[i]` citation validity + hallucinated-citation
+rate, and insufficient-context abstention probes; see [RAG core](current/rag-core.md) groundedness
+and citation metrics); and the measured Ukrainian embedder ranking (`llb compare-embeddings` over
+BGE-M3 / multilingual-e5 / the lang-uk model plus an opt-in Cohere API row for open corpora; see
+[RAG core](current/rag-core.md) retrieval store). Task 17 adds the governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
 [RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)); its ACL
@@ -90,7 +87,7 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 16 anytime, 17's ACL-filter half through
+Recommended sequence: 17's ACL-filter half through
 the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
 exists; the export/guard/trainer code stands
@@ -205,41 +202,31 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   retrieval delta on a non-saturated corpus.
 - Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
-### 16. groundedness-citation-metrics
+### citation-coverage-metric (optional)
 
-- Dependencies: none. Enriches the per-case signals task 8 and the shipped miss analysis
-  consume. The one manual
-  groundedness/abstention run executes on the CUDA host (deterministic, no human judgment).
-- User-visible outcome: answer-side RAG quality beyond reference-answer overlap: a cited-answer
-  mode whose prompt requires `[i]` chunk citations for factual claims, scored for citation
-  validity (the cited chunk actually contains the supporting span) and hallucinated-citation rate;
-  a deterministic groundedness signal (fraction of answer content supported by the retrieved
-  context via span/overlap matching, with the calibration-gated judge as an optional secondary);
-  and insufficient-context probes -- gold questions re-run with their gold evidence excluded from
-  retrieval -- where correct behavior is explicit abstention, scored as abstention accuracy. All
-  three become additive columns in run bundles, the board, and `recommend`.
-- Scope boundary: in scope -- `src/llb/scoring/groundedness.py`; an `eval.rag.cited_answer`
-  template in the prompt registry (`src/llb/prompts/registry.py`) reusing the numbered-chunk
-  format `format_context` already emits; probe construction by excluding gold-span chunks at
-  retrieval time for a sampled subset; abstention detection reusing the refusal /
-  insufficient-data markers from the shared taxonomy while keeping "correct abstention on a
-  probe" distinct from "refusal on a scoreable case". Out of scope -- a RAGAS dependency,
-  frontier judges (egress policy), changing the headline objective (new metrics stay separate
-  columns until a ranking policy explicitly adopts them), chain scoring (task 8).
-- Data and artifact paths: additive per-case fields in `scores.jsonl` (citation
-  validity, groundedness fraction, probe flag, abstention outcome); aggregate columns in board
-  and `recommend` summaries when present.
-- Execution path: `llb run-eval --cited-answers --score-groundedness`;
-  `llb run-eval --insufficient-context-probes <n>`; unit tests over synthetic contexts/answers
-  covering fully-supported, partially-supported, unsupported-claim, invalid-citation, and
-  correct-abstention cases.
-- Acceptance gates: `make ci` green; the deterministic scorer separates fully-supported from
-  injected-unsupported answers on the synthetic fixture with zero cross-class leakage; a citation
-  pointing at a chunk that lacks the claimed span is always flagged; probe cases never enter plain
-  correctness aggregates; one manual run on the committed goldset records per-model groundedness
-  and abstention accuracy in current docs.
-- Documentation target: [RAG core](current/rag-core.md) scoring;
-  [evaluation rigor](current/rigor-board-judge.md).
+- Dependencies: the shipped groundedness/citation metrics (`--cited-answers`; see
+  [RAG core](current/rag-core.md) groundedness and citation metrics). Agent-buildable, deterministic.
+- Why this is forward work: the shipped `citation_validity` collapses two very different failure
+  modes into one low number -- a model that emits NO `[i]` citations and a model that cites the
+  WRONG chunk both score 0.0. The durable llama3.2:3b run made this concrete: validity 0.000 with
+  hallucination 0.000 because the small model simply ignored the citation instruction (mostly
+  emitted no citations), so the metric could not separate "does not cite" from "cites wrongly".
+- User-visible outcome: a `citation_coverage` signal -- the share of factual claims that carry ANY
+  `[i]` citation -- reported beside `citation_validity`, so the board distinguishes an
+  instruction-following gap (low coverage) from a grounding gap (high coverage, low validity).
+- Scope boundary: in scope -- extend `src/llb/scoring/groundedness.py` with a per-claim coverage
+  count (a claim with >= `MIN_CLAIM_TOKENS` content tokens is "covered" when it carries at least
+  one citation) and add `citation_coverage` as an additive per-case field + manifest metric. Out of
+  scope -- changing the validity/hallucination definitions, a learned claim-detector (the
+  sentence-split heuristic is the deterministic ceiling), scoring non-cited runs.
+- Data and artifact paths: additive `citation_coverage` in `scores.jsonl` and the manifest
+  `metrics`; no bundle-shape change otherwise.
+- Execution path: `llb run-eval --cited-answers`; unit tests -- a fully-cited answer scores 1.0
+  coverage, an uncited answer 0.0, a partially-cited answer in between, all independent of validity.
+- Acceptance gates: `make ci` green; coverage separates a no-citation answer from a wrong-citation
+  answer on the synthetic fixture (the two now yield different coverage at equal validity); the
+  manifest carries mean `citation_coverage` when cited-answers is on.
+- Documentation target: [RAG core](current/rag-core.md) groundedness and citation metrics.
 
 ### 17. corpus-governance-metadata
 
@@ -312,7 +299,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   disjoint by seeded assignment precisely so tuning can never leak into the final leaderboard
   number), the durable-eval-runner (per-round resume), and the board/recommend machinery. The
   heavy fine-tune + re-eval rounds execute seeded on the CUDA host with no human judgment --
-  the same heavy-run discipline as task 16.
+  the same heavy-run discipline the shipped durable-evidence runs already follow.
 - User-visible outcome: the benchmark closes its loop from measurement to improvement: one
   command turns a scored run into a measurably better *local* model. It exports a
   contamination-guarded training set from the tuning split (SFT records in the exact prompt

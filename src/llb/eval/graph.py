@@ -52,8 +52,14 @@ class RagState(TypedDict, total=False):
     query_corrections: int
 
 
+# Generation prompt ids: the baseline RAG chat and the cited-answer variant that requires `[i]`
+# chunk citations for factual claims (groundedness-citation-metrics).
+CHAT_TEMPLATE = "eval.rag.chat"
+CITED_ANSWER_TEMPLATE = "eval.rag.cited_answer"
+
+
 def build_messages(
-    question: str, context: str, prompt_package: Any | None = None
+    question: str, context: str, prompt_package: Any | None = None, cited: bool = False
 ) -> list[ChatMessage]:
     augmentation: PromptAugmentation | None = None
     if prompt_package is not None:
@@ -65,7 +71,7 @@ def build_messages(
                 {"additional_prompt": extra, "context": context},
             )
     return render_chat(
-        "eval.rag.chat",
+        CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE,
         {"context": context, "question": question},
         augmentation=augmentation,
     )
@@ -126,13 +132,16 @@ def make_generate_node(
     temperature: float,
     timeout: float,
     prompt_package: Any | None = None,
+    cited: bool = False,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response."""
 
     def generate(state: RagState) -> RagState:
         if state.get("status") == eval_common.RETRIEVAL_MISS:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
-        messages = build_messages(state["question"], state.get("context", ""), prompt_package)
+        messages = build_messages(
+            state["question"], state.get("context", ""), prompt_package, cited=cited
+        )
         result = launcher.chat(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
         )
@@ -161,6 +170,7 @@ def build_rag_graph(
     prompt_package: Any | None = None,
     context_order: str = eval_common.ORDER_RANK,
     query_prep: Any | None = None,
+    cited: bool = False,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -174,7 +184,10 @@ def build_rag_graph(
     graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k, context_order, query_prep)))
     graph.add_node(
         "generate",
-        cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package)),
+        cast(
+            Any,
+            make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package, cited),
+        ),
     )
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "generate")

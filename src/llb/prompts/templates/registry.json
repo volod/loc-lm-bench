@@ -655,6 +655,26 @@
         }
       ]
     },
+    "eval.rag.cited_answer": {
+      "kind": "chat",
+      "descriptor": "eval/rag/cited_answer.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/cited_answer_system.txt",
+            "sha256": "1fa16719d3bfb83c0d5adc4a2b38fec485a63e1924e5bd16f1865cdd047084d4"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/user.txt",
+            "sha256": "412b37385f500443e3daa2d4a2347d67ee20ed11de6cab3c24ef98a5b6f2a02e"
+          }
+        }
+      ]
+    },
     "eval.rag.package_context": {
       "kind": "text",
       "descriptor": "eval/rag/package_context.prompt.json",

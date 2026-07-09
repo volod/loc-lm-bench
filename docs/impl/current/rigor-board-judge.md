@@ -235,6 +235,17 @@ the higher mean, honestly qualified). Artifacts land at
 `$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; probe cases never enter run
 bundles, the board, or correctness aggregates.
 
+## Insufficient-Context Abstention Probe (run-eval --insufficient-context-probes)
+
+`llb run-eval --insufficient-context-probes <n>` re-runs a seeded sample of gold items with their
+gold evidence excluded from retrieval and scores abstention accuracy -- the share on which the
+model correctly declines instead of fabricating an answer. Like the position probe, these probe
+cases are scored on their OWN axis (`probes.jsonl` + `insufficient_context_report.md` in the run
+bundle) and NEVER enter the correctness aggregates. It is part of the answer-side
+groundedness/citation metrics; the mechanism, the deterministic groundedness + citation-validity
+scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evidence live in
+[RAG core](rag-core.md) groundedness and citation metrics.
+
 Durable evidence (2026-07-08, real run on the CUDA host, outside quick CI): `llama3.2:3b`
 (ollama) over the published `ua_squad_postedited_v1` goldset at k=5, 20 final items (0 skips):
 head 0.355 [0.207, 0.510], middle 0.341 [0.198, 0.487], tail 0.327 [0.179, 0.478] -- a mild
