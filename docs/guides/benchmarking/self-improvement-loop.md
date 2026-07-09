@@ -108,6 +108,46 @@ The default objective serves each trial adapter through vLLM LoRA modules, so th
 `--backend vllm`. It refuses any other backend before the study starts rather than after the first
 trial has already paid for a fine-tune.
 
+## Distill From A Local Teacher
+
+Use distillation when a stronger local model should teach a smaller student without sending data to
+an API. The teacher answers only verified tuning-split questions through the normal RAG backend
+seam. Each answer is scored against the reference answer with the deterministic correctness scorer;
+only answers at or above `--gate` become SFT targets.
+
+```bash
+llb distill \
+  --teacher <teacher-model> \
+  --student <student-model> \
+  --backend vllm \
+  --goldset <goldset> \
+  --corpus <corpus-dir> \
+  --gate 0.8
+
+make distill TEACHER=<teacher-model> STUDENT=<student-model> BACKEND=vllm GOLDSET=<goldset>
+```
+
+Guards:
+
+- teacher and student must be different models;
+- the configured calibration judge cannot be the teacher;
+- below-gate teacher answers are written to `teacher_outputs.jsonl` as rejected and never enter
+  `dataset/sft.jsonl`;
+- the trained distilled adapter uses the same tuning-only manifest and registry path as every other
+  adapter.
+
+Artifacts land under `$DATA_DIR/distill/<timestamp>/`:
+
+- `teacher_outputs.jsonl`: all teacher answers with gate scores and accept/reject decisions;
+- `dataset/`: accepted teacher-answer SFT targets;
+- `reference_dataset/`: the same accepted item ids with reference-answer targets;
+- `adapter/` and `reference_adapter/`: the distilled and same-items reference-SFT adapters;
+- `comparison/`, `distill_manifest.json`, and `report.md`: paired comparison evidence.
+
+The report compares the distilled adapter against the same student trained on reference answers over
+the same held-out comparison items. A no-gain result is still useful evidence; the lane records the
+delta and confidence intervals rather than assuming the teacher helps.
+
 ## Run The Full Loop
 
 ```bash

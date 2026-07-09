@@ -4,7 +4,7 @@
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
 	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
-	export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign \
+	export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign distill \
 	register-adapter list-adapters serve-adapter gc-adapters \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
@@ -137,6 +137,20 @@ finetune-campaign: ## Multi-model adapter campaign (MODELS=<csv> BACKEND= GOLDSE
 		$(if $(FINETUNE_CAMPAIGN_OUT),--out-dir "$(FINETUNE_CAMPAIGN_OUT)",) \
 		$(if $(FINETUNE_CAMPAIGN_RESUME),--resume "$(FINETUNE_CAMPAIGN_RESUME)",) \
 		$(if $(FINETUNE_CAMPAIGN_MANIFEST),--manifest "$(FINETUNE_CAMPAIGN_MANIFEST)",) \
+		$(if $(TRAINER),--trainer "$(TRAINER)",)
+
+distill: ## Local teacher -> student adapter distillation (TEACHER= STUDENT= BACKEND= GOLDSET= GATE=0.8 TRAINER=auto|fake)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(TEACHER)" || { echo "ERROR: set TEACHER=<teacher model>"; exit 1; }
+	@test -n "$(STUDENT)" || { echo "ERROR: set STUDENT=<student model>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main distill --teacher "$(TEACHER)" --student "$(STUDENT)" \
+		--backend "$(BACKEND)" --goldset "$(GOLDSET)" --corpus "$(CORPUS)" \
+		--gate "$(or $(GATE),0.8)" \
+		$(if $(LIMIT),--limit "$(LIMIT)",) \
+		$(if $(DISTILL_COMPARE_SPLIT),--compare-split "$(DISTILL_COMPARE_SPLIT)",) \
+		$(if $(DISTILL_COMPARE_LIMIT),--compare-limit "$(DISTILL_COMPARE_LIMIT)",) \
+		$(if $(DISTILL_OUT),--out-dir "$(DISTILL_OUT)",) \
 		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 register-adapter: ## Register an adapter trained outside the loop (ADAPTER_DIR=<dir> GOLDSET= CORPUS= SOURCE_RUN=)

@@ -119,6 +119,10 @@ candidate row. It is file-driven and split-guarded:
 - `src/llb/finetune/campaign.py` schedules the loop ingredients across a `--models` roster with
   planner skip reasons, a shared campaign SFT export, per-model preference exports, VRAM reclaim
   between roster entries, `campaign.progress.jsonl` resume, and a tunability `report.md`.
+- `src/llb/finetune/distill.py` runs local text-level distillation: a teacher answers verified
+  tuning items through the normal RAG backend seam, deterministic correctness gates decide which
+  answers become SFT targets, the same student is trained on teacher targets and reference targets,
+  and the report compares the two adapters over the same held-out items.
 - `src/llb/finetune/registry.py`, `lifecycle.py`, and `serving.py` make adapters first-class,
   traceable artifacts (see [Adapter Registry And Lifecycle](#adapter-registry-and-lifecycle)).
 - `src/llb/finetune/hparam_search.py` searches the LoRA space per model and feeds the winning
@@ -135,8 +139,11 @@ llb finetune-adapter --dataset <dataset-dir> --model <model> --seed <seed>
 llb self-improve --model <model> --backend vllm --goldset <goldset> --rounds 2
 llb finetune-campaign --models <m1,m2> --backend vllm \
   --goldset <goldset> --corpus <corpus-dir> --rounds 1
+llb distill --teacher <teacher> --student <student> --backend vllm \
+  --goldset <goldset> --corpus <corpus-dir> --gate 0.8
 make self-improve MODEL=<model> BACKEND=vllm GOLDSET=<goldset> ROUNDS=2
 make finetune-campaign MODELS=<m1,m2> BACKEND=vllm GOLDSET=<goldset> CORPUS=<corpus-dir>
+make distill TEACHER=<teacher> STUDENT=<student> BACKEND=vllm GOLDSET=<goldset>
 ```
 
 Artifacts live under `$DATA_DIR/self-improve/<timestamp>/round-<n>/` for campaign state and under
@@ -149,6 +156,13 @@ one directory per roster model. Each model directory records base-final and per-
 run pointers, miss analysis, a per-model preference dataset, and the final adapter. Resume replays
 `campaign.progress.jsonl` and does not retrain a completed roster entry.
 
+Distillation artifacts live under `$DATA_DIR/distill/<timestamp>/`: `teacher_outputs.jsonl`,
+`dataset/` for accepted teacher-answer SFT targets, `reference_dataset/` for the same item ids with
+reference-answer targets, `adapter/`, `reference_adapter/`, `comparison/`, `distill_manifest.json`,
+and `report.md`. The distillation manifest and accepted dataset manifest record the teacher model,
+student model, gate threshold, accepted item ids, and per-item gate scores. The distilled adapter is
+registered with its paired comparison delta; the reference adapter stays local comparison evidence.
+
 Adapter-backed `run-eval` rows are labeled `<base>+adapter-<digest>` in manifests and board loaders.
 `llb recommend` appends a self-improvement section when a campaign `state.json` exists and a
 fine-tune campaign section when `$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` exists. The
@@ -158,11 +172,15 @@ lower peak VRAM; skipped models remain visible with the planner reason.
 Tests:
 
 ```bash
-uv run pytest tests/test_finetune.py tests/test_adapter_registry.py tests/test_recommend.py
+uv run pytest tests/test_finetune.py tests/test_distill.py tests/test_adapter_registry.py \
+  tests/test_recommend.py
 ```
 
 The campaign implementation is covered by fake eval/trainer/planner tests for scheduling order,
 planner skip reasons, shared dataset digest reuse, JSONL resume, and report ranking.
+The distillation implementation is covered by fake teacher/trainer/comparison tests for gate
+exclusion, tuning-only teacher generation, identity and judge-teacher refusals, report math,
+registry registration, and contamination-guard compatibility.
 
 ## Hyperparameter Search
 

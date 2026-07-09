@@ -395,46 +395,6 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   pinned-batch best config (no-gain is acceptable evidence).
 - Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
 
-### 22. local-distillation-lane (optional)
-
-- Dependencies: follows the self-improvement loop in
-  [extended workflows](current/extended-workflows.md) (trainer seam, contamination guard, and the
-  shipped adapter registry) and soft-follows campaign reports (the
-  report names the natural teacher -- the roster's best adapted model). Local-only, so no egress
-  question arises. The heavy distillation run executes on the CUDA host.
-- User-visible outcome: the roster's strongest local model teaches the smaller ones: the
-  teacher answers tuning-split questions with retrieved context, its answers are quality-gated
-  deterministically against the reference answers (only an answer scoring at or above the gate
-  becomes a training target -- teacher misses are dropped, never invented into data), and the
-  student is fine-tuned on the accepted set through the trainer. The report compares
-  student-distilled against student-SFT-on-references over the same items, so distillation must
-  demonstrate its value, not assume it.
-- Scope boundary: in scope -- `src/llb/finetune/distill.py`: teacher generation through the
-  existing backend seam over tuning-split items only; the deterministic quality gate reusing
-  the existing correctness scorers; identity guards -- teacher != student, and the
-  calibration-gated judge is never the teacher (extending the recorded planter != judge rule
-  in `src/llb/prep/frontier.py`); distilled adapters flow through the same contamination guard
-  and registry as every other adapter; the paired
-  distilled-vs-reference-SFT comparison in the report. Out of scope -- frontier or API
-  teachers (egress; human task 2's lane is drafting-only), logit or soft-label distillation
-  across tokenizers (text-level SFT only), training or improving the teacher itself, chain or
-  agentic trace distillation (task 8 owns chain evaluation).
-- Data and artifact paths: `$DATA_DIR/distill/<timestamp>/` holding `teacher_outputs.jsonl`,
-  the accepted `dataset/`, the student `adapter/`, and `report.md`; the dataset manifest
-  records the teacher id, gate threshold, and per-item gate scores.
-- Execution path: `llb distill --teacher <m1> --student <m2> --backend <b> --gate <t>` and
-  `make distill TEACHER=<m1> STUDENT=<m2> BACKEND=<b>`; unit tests with a fake teacher
-  endpoint and the fake trainer -- gate exclusion of below-threshold answers, identity-guard
-  refusals, tuning-split discipline, and the paired-comparison report math.
-- Acceptance gates: `make ci` green with the fakes; a below-gate teacher answer can never
-  reach the training set (unit-tested); teacher == student and judge == teacher both refuse
-  with clear messages; one real CUDA run distills the campaign's best teacher into one smaller
-  student and records the distilled-vs-reference-SFT delta with CIs honestly (no-gain is
-  acceptable evidence); the distilled adapter passes the contamination guard and registers
-  like any other.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide.
-
 ### 23. compressed-qat-adapter-support (optional)
 
 - Dependencies: follows the baseline trainer path in

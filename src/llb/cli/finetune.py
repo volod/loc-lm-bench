@@ -145,6 +145,54 @@ def finetune_hparams_cmd(
     )
 
 
+@app.command("distill")
+def distill_cmd(
+    teacher: str = typer.Option(..., "--teacher", help="local teacher model id"),
+    student: str = typer.Option(..., "--student", help="student base model id to fine-tune"),
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL"),
+    corpus: Optional[Path] = typer.Option(
+        None, "--corpus", help="corpus root used to build the retrieval index"
+    ),
+    gate: float = typer.Option(0.8, "--gate", min=0.0, max=1.0, help="teacher answer F1 gate"),
+    limit: Optional[int] = typer.Option(None, help="cap tuning teacher items for smoke runs"),
+    compare_split: str = typer.Option(
+        "final", "--compare-split", help="split used for distilled-vs-reference comparison"
+    ),
+    compare_limit: Optional[int] = typer.Option(
+        None, "--compare-limit", help="cap comparison items for smoke runs"
+    ),
+    out_dir: Optional[Path] = typer.Option(None, help="distillation output dir"),
+    trainer: str = typer.Option(
+        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
+    ),
+) -> None:
+    """Distill tuning-split teacher answers into a student LoRA adapter."""
+    from llb.finetune.distill import run_distillation
+
+    cfg = load_config(
+        config, model=student, backend=backend, goldset_path=goldset, corpus_root=corpus
+    )
+    result = run_distillation(
+        cfg,
+        teacher=teacher,
+        student=student,
+        gate=gate,
+        out_dir=out_dir,
+        trainer=trainer,
+        limit=limit,
+        compare_split=compare_split,
+        compare_limit=compare_limit,
+    )
+    typer.echo(
+        f"[distill] accepted={result.accepted} rejected={result.rejected} "
+        f"delta={result.comparison.delta:.4f}"
+    )
+    typer.echo(f"[distill] adapter -> {result.adapter_dir}")
+    typer.echo(f"[distill] report -> {result.report_path}")
+
+
 @app.command("self-improve")
 def self_improve_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
