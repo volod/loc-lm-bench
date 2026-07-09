@@ -119,6 +119,8 @@ candidate row. It is file-driven and split-guarded:
 - `src/llb/finetune/campaign.py` schedules the loop ingredients across a `--models` roster with
   planner skip reasons, a shared campaign SFT export, per-model preference exports, VRAM reclaim
   between roster entries, `campaign.progress.jsonl` resume, and a tunability `report.md`.
+- `src/llb/finetune/registry.py`, `lifecycle.py`, and `serving.py` make adapters first-class,
+  traceable artifacts (see [Adapter Registry And Lifecycle](#adapter-registry-and-lifecycle)).
 
 Commands:
 
@@ -143,24 +145,111 @@ run pointers, miss analysis, a per-model preference dataset, and the final adapt
 `campaign.progress.jsonl` and does not retrain a completed roster entry.
 
 Adapter-backed `run-eval` rows are labeled `<base>+adapter-<digest>` in manifests and board loaders.
-vLLM serving passes the adapter through `--enable-lora --lora-modules`; Ollama and llama.cpp require
-a merged model artifact before they can serve the adapter. `llb recommend` appends a
-self-improvement section when a campaign `state.json` exists and a fine-tune campaign section when
-`$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` exists. The campaign section ranks completed
-models by final-split delta, then shorter training wall-clock, then lower peak VRAM; skipped models
-remain visible with the planner reason.
+`llb recommend` appends a self-improvement section when a campaign `state.json` exists and a
+fine-tune campaign section when `$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` exists. The
+campaign section ranks completed models by final-split delta, then shorter training wall-clock, then
+lower peak VRAM; skipped models remain visible with the planner reason.
 
 Tests:
 
 ```bash
-uv run pytest tests/test_finetune.py tests/test_recommend.py
+uv run pytest tests/test_finetune.py tests/test_adapter_registry.py tests/test_recommend.py
 ```
-
-The committed poisoned manifest fixture at `samples/finetune/poisoned-adapter/adapter_manifest.json`
-is used to keep the protected-split refusal path easy to exercise.
 
 The campaign implementation is covered by fake eval/trainer/planner tests for scheduling order,
 planner skip reasons, shared dataset digest reuse, JSONL resume, and report ranking.
+
+## Adapter Registry And Lifecycle
+
+Adapters are first-class artifacts, not loose directories. `$DATA_DIR/adapters/registry.jsonl` is an
+append-only event log (`register` / `merge` / `delete`) folded into the current entry set on read, so
+a partial write can never lose earlier history. The entry id IS the `adapter_digest`, so it can never
+be reassigned to different weights.
+
+Modules:
+
+- `src/llb/finetune/registry.py`: `AdapterEntry`, the event log, `register_adapter` (idempotent --
+  an unchanged re-registration appends nothing), `resolve_adapter` (id / unique prefix / label /
+  directory), and `staleness`;
+- `src/llb/finetune/lifecycle.py`: run-bundle citation scan, supersession, and garbage collection;
+- `src/llb/finetune/serving.py`: the serve plan, the cached merge lane, and the backend seam.
+
+```bash
+llb register-adapter --adapter-dir <dir> [--goldset <g>] [--corpus <c>] [--source-run <run>]
+llb list-adapters [--json]
+llb serve-adapter --adapter <id> --backend vllm|ollama|llamacpp [--smoke]
+llb gc-adapters [--dry-run] [--force]
+llb run-eval --adapter <id> --model <base> --backend vllm
+make list-adapters ; make serve-adapter ADAPTER=<id> BACKEND=<b> ; make gc-adapters GC_DRY_RUN=1
+```
+
+Entries record the base model, dataset digest, dataset item ids and split counts, the goldset and
+corpus digests observed AT TRAINING TIME, the source run, and an eval summary. Self-improvement and
+campaign rounds auto-register through `register_round_adapter` after the adapter's own final eval,
+so the entry carries the evidence the board later cites. Registration is best-effort: an injected
+trainer that writes no `adapter_manifest.json` logs a warning instead of aborting the round. A bare
+`llb finetune-adapter` does not register, so `llb register-adapter` exists to adopt a hand-trained
+adapter into the registry rather than leave its board row silently dropped.
+
+### Staleness
+
+`staleness()` compares the recorded goldset/corpus digests against the present ones
+(`durability.goldset_digest` and `corpus_governance.corpus_fingerprint`, the same functions the
+durable-run journal and the stale-store check use). Verdicts are `current`, `stale`, and `unknown`;
+a missing digest yields `unknown` and never `current`. Detection reports, it never retrains.
+
+`board/runs.py` resolves every adapter-backed bundle through the registry before it can rank:
+
+- an unregistered adapter's row is DROPPED (a tuned number nobody can trace is not comparable);
+- a registered-but-stale adapter's row is stamped `<base>+adapter-<digest> [stale]`.
+
+`recommend.load_run_summaries` reuses `load_run_records`, so both the board and `llb recommend`
+inherit the rule from one seam.
+
+### Contamination guard through the registry
+
+`validate_adapter_for_eval` reads training provenance from the registry when the adapter is
+registered, falling back to `adapter_manifest.json` only when it is not (a freshly trained adapter
+registers after its first eval). The manifest beside the weights is operator-writable, so a
+hand-edited one could otherwise launder a final-split adapter past the gate. The refusal message
+names the intersecting ids, the offending splits, and which provenance was consulted.
+
+### Serving
+
+vLLM serves the LoRA directly through the existing `--enable-lora --lora-modules` wiring. Ollama and
+llama.cpp serve whole model artifacts, so `serving.py` merges the adapter into its base weights
+(PEFT `merge_and_unload`), converts to GGUF via the llama.cpp checkout's `convert_hf_to_gguf.py`, and
+for Ollama registers a `llb-adapter-<short-id>` tag. The merge is expensive and one-way, so it is
+cached under `$DATA_DIR/adapters/merged/<short-id>/<backend>/` behind a `merge.json` and recorded as
+a registry `merge` event. Both the merge and the launcher are injectable, so CI exercises all three
+backends without CUDA, llama.cpp, or a running Ollama daemon. `serve-adapter` probes the endpoint
+with one generation and then holds it in the foreground until Ctrl-C; there is no serving daemon.
+
+### Garbage collection
+
+An adapter is superseded once a newer adapter exists for the same base model, ordered by
+`(created_at, log sequence)`. `created_at` has second resolution, so two fast rounds tie; the
+append-log position breaks the tie exactly. Only superseded adapters are GC candidates, and GC
+refuses any that a published run bundle cites (matched by recorded digest or by served
+`adapter_path`). `--force` overrides the citation refusal but never the safety rule that GC only
+deletes directories inside `$DATA_DIR`. Deletions append a `delete` tombstone.
+
+### Committed fixtures
+
+- `samples/finetune/registry/registry.jsonl`: a stale entry (with a folded `merge` event) and a
+  poisoned-digest entry, both pointing at adapter dirs outside `$DATA_DIR`;
+- `samples/finetune/stale-adapter/`: recorded digests that no longer match
+  `samples/goldsets/ip_regulation_uk/`;
+- `samples/finetune/laundered-adapter/`: an `adapter_manifest.json` that CLAIMS a clean tuning-only
+  training set while the registry records the `final`-split ids it was really trained on;
+- `samples/finetune/poisoned-adapter/`: the simpler case where the manifest itself declares the
+  protected split, refused even when unregistered.
+
+`tests/test_adapter_registry.py` covers registry round-trip and idempotence, the staleness flip when
+the goldset digest changes, the `unknown` verdict, guard resolution through the registry, serving
+smoke over a fake launcher for all three backends, merge-event recording and merge caching, GC
+citation refusal plus `--force`, the same-second supersession tie, the outside-`$DATA_DIR` safety
+rule, and board drop/stamp behavior.
 
 CUDA evidence on the 12 GB RTX PRO 3000 host:
 

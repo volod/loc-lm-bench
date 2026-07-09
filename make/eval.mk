@@ -5,6 +5,7 @@
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
 	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
 	export-finetune-set finetune-adapter self-improve finetune-campaign \
+	register-adapter list-adapters serve-adapter gc-adapters \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -121,6 +122,31 @@ finetune-campaign: ## Multi-model adapter campaign (MODELS=<csv> BACKEND= GOLDSE
 		$(if $(FINETUNE_CAMPAIGN_RESUME),--resume "$(FINETUNE_CAMPAIGN_RESUME)",) \
 		$(if $(FINETUNE_CAMPAIGN_MANIFEST),--manifest "$(FINETUNE_CAMPAIGN_MANIFEST)",) \
 		$(if $(TRAINER),--trainer "$(TRAINER)",)
+
+register-adapter: ## Register an adapter trained outside the loop (ADAPTER_DIR=<dir> GOLDSET= CORPUS= SOURCE_RUN=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADAPTER_DIR)" || { echo "ERROR: set ADAPTER_DIR=<adapter dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main register-adapter --adapter-dir "$(ADAPTER_DIR)" \
+		$(if $(GOLDSET),--goldset "$(GOLDSET)",) $(if $(CORPUS),--corpus "$(CORPUS)",) \
+		$(if $(SOURCE_RUN),--source-run "$(SOURCE_RUN)",)
+
+list-adapters: ## List registered adapters with base model, eval evidence, and staleness verdict (ADAPTERS_JSON=1)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main list-adapters $(if $(ADAPTERS_JSON),--json,)
+
+serve-adapter: ## Serve a registered adapter (ADAPTER=<id> BACKEND=vllm|ollama|llamacpp SERVE_SMOKE=1 to probe and exit)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADAPTER)" || { echo "ERROR: set ADAPTER=<adapter id> (see 'make list-adapters')"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main serve-adapter --adapter "$(ADAPTER)" \
+		$(if $(BACKEND),--backend "$(BACKEND)",) $(if $(SERVE_SMOKE),--smoke,)
+
+gc-adapters: ## Delete superseded adapters no run bundle cites (GC_FORCE=1 overrides citations; GC_DRY_RUN=1 previews)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main gc-adapters $(if $(GC_FORCE),--force,) $(if $(GC_DRY_RUN),--dry-run,)
 
 score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

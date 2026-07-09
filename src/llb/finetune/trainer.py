@@ -8,13 +8,16 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from llb.core.contracts import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import DATASET_MANIFEST, load_dataset_manifest
 
 ADAPTER_MANIFEST = "adapter_manifest.json"
+# Digest prefix length used everywhere an adapter is named short: labels, registry rows, merged
+# artifact directories, and Ollama tags.
+ADAPTER_DIGEST_SHORT_CHARS = 12
 DEFAULT_LORA_R = 16
 DEFAULT_LORA_ALPHA = 32
 DEFAULT_LORA_DROPOUT = 0.05
@@ -153,7 +156,9 @@ def real_train_adapter(
         task_type="CAUSAL_LM",
         target_modules=params.get("target_modules"),
     )
-    peft_model = get_peft_model(base, lora)
+    # `get_peft_model` is typed `PeftModel | PeftMixedModel`, and only `mixed=True` yields the
+    # latter, which SFTTrainer does not accept. The peft/trl stubs cannot express that.
+    peft_model = cast(Any, get_peft_model(base, lora))
     args = SFTConfig(
         output_dir=str(out / "trainer"),
         seed=seed,
@@ -175,7 +180,9 @@ def real_train_adapter(
         processing_class=tokenizer,
     )
     trainer.train()
-    trainer.model.save_pretrained(out)
+    # Save what was actually trained: SFTTrainer may re-wrap the model during `accelerate` prepare,
+    # so `trainer.model` is the adapter to persist, not `peft_model`. Its stub type is `Module | None`.
+    cast(Any, trainer.model).save_pretrained(out)
     tokenizer.save_pretrained(out)
     loss_curve = [
         float(row["loss"])
@@ -198,7 +205,7 @@ def real_train_adapter(
 
 
 def adapter_label(model: str, adapter_digest: str) -> str:
-    return f"{model}+adapter-{adapter_digest[:12]}"
+    return f"{model}+adapter-{adapter_digest[:ADAPTER_DIGEST_SHORT_CHARS]}"
 
 
 def adapter_digest(

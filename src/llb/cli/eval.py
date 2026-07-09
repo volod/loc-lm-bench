@@ -11,6 +11,7 @@ from llb.cli.helpers import (
     best_effort_gpu_readers,
     load_config,
     load_models,
+    resolve_registered_adapter,
     resolver_probes,
 )
 from llb.core.config import RunConfig
@@ -30,6 +31,12 @@ def run_eval_cmd(
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
     backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        help="registered adapter id, id prefix, or label (`llb list-adapters`); the contamination "
+        "guard then reads the registry's recorded digests, not the adapter directory's manifest",
+    ),
     max_model_len: Optional[int] = typer.Option(
         None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
     ),
@@ -194,6 +201,8 @@ def run_eval_cmd(
         insufficient_context_probes=insufficient_context_probes,
         measure_telemetry=telemetry,
     )
+    if adapter is not None:
+        cfg = cfg.with_overrides(adapter_path=resolve_registered_adapter(cfg.data_dir, adapter))
     selected_prompt = None
     prompt_id = prompt_system or prompt_system_id_from_package_path(prompt_package)
     if prompt_id is not None:

@@ -16,6 +16,7 @@ from llb.finetune.campaign import (
 from llb.finetune.dataset import export_finetune_set
 from llb.finetune.guard import validate_adapter_for_eval
 from llb.finetune.loop import run_self_improve
+from llb.finetune.registry import load_registry, registry_path
 from llb.finetune.trainer import fake_train_adapter, load_adapter_manifest
 from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
 
@@ -242,6 +243,13 @@ def test_self_improve_fake_loop_writes_round_state(tmp_path: Path):
     state = json.loads((tmp_path / "campaign" / "state.json").read_text(encoding="utf-8"))
     assert state["rounds"][0]["delta"] == pytest.approx(0.6)
 
+    registered = list(load_registry(registry_path(tmp_path)).values())
+    assert len(registered) == 1
+    assert registered[0].base_model == "base-model"
+    assert registered[0].eval_summary["delta"] == pytest.approx(0.6)
+    assert registered[0].eval_summary["verdict"] == "accept"
+    assert registered[0].goldset_digest is not None
+
 
 def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path):
     tuning = _item("tune-1", "tuning")
@@ -316,15 +324,21 @@ def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path)
     assert result.entries[0].status == SKIP_VERDICT
     completed = [entry for entry in result.entries if entry.status == COMPLETE_VERDICT]
     assert {entry.shared_dataset_digest for entry in completed} == {
-        json.loads((result.shared_dataset_dir / "dataset_manifest.json").read_text(encoding="utf-8"))[
-            "dataset_digest"
-        ]
+        json.loads(
+            (result.shared_dataset_dir / "dataset_manifest.json").read_text(encoding="utf-8")
+        )["dataset_digest"]
     }
     assert train_calls == ["model-b", "model-a"]
     report = (tmp_path / "ft-campaign" / "report.md").read_text(encoding="utf-8")
     assert "| 1 | model-a |" in report
     assert "| 2 | model-b |" in report
     assert "skipped: does not fit" in report
+
+    registered = load_registry(registry_path(tmp_path))
+    assert {entry.base_model for entry in registered.values()} == {"model-a", "model-b"}
+    by_model = {entry.base_model: entry for entry in registered.values()}
+    assert by_model["model-a"].eval_summary["delta"] == pytest.approx(0.3)
+    assert by_model["model-b"].eval_summary["delta"] == pytest.approx(0.1)
 
 
 def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Path):
@@ -341,7 +355,9 @@ def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Pat
         eval_count += 1
         items = [item for item in load_goldset(goldset) if item.split == split]
         objective = 0.6 if config.adapter_path else 0.2
-        run = _write_bundle(tmp_path, f"resume-{eval_count}-{config.model}-{split}", split, items, objective)
+        run = _write_bundle(
+            tmp_path, f"resume-{eval_count}-{config.model}-{split}", split, items, objective
+        )
         return {
             "rows": [],
             "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
@@ -371,6 +387,7 @@ def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Pat
             "verdict": "gpu",
             "note": "plan @ ctx=2048",
         }
+
     out_dir = tmp_path / "resume-campaign"
     run_finetune_campaign(
         cfg,

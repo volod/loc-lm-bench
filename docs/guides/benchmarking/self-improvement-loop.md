@@ -104,10 +104,95 @@ Campaign state lands under `$DATA_DIR/finetune-campaign/<timestamp>/`:
 `llb recommend` appends the latest campaign ranking when a campaign progress journal exists.
 Planner-rejected models stay in the report with their skip reason.
 
+## Track Adapters In The Registry
+
+Every successful self-improvement round and campaign round registers its adapter in the append-only
+log at `$DATA_DIR/adapters/registry.jsonl`. The registry id is the adapter digest, so an entry can
+never be reassigned to different weights.
+
+A bare `llb finetune-adapter` does NOT register, and an unregistered adapter never renders on the
+board. Register it by hand:
+
+```bash
+llb register-adapter --adapter-dir <adapter-dir> --goldset <goldset> --corpus <corpus-dir>
+make register-adapter ADAPTER_DIR=<adapter-dir> GOLDSET=<goldset> CORPUS=<corpus-dir>
+```
+
+Then list what the registry knows:
+
+```bash
+llb list-adapters
+llb list-adapters --json
+make list-adapters
+```
+
+Each row carries the base model, dataset digest, source run, eval evidence, and a staleness verdict:
+
+- `current`: the goldset and corpus digests recorded at training time still match what is on disk;
+- `stale`: one of them changed, so the recorded eval evidence no longer describes this benchmark;
+- `unknown`: a digest was never recorded, or the goldset/corpus it names is gone. This is never
+  reported as `current` -- absence of evidence is not evidence.
+
+A stale adapter is stamped, never silently ignored. Its board row renders as
+`<base>+adapter-<digest> [stale]`, and an adapter that is not registered at all does not render on
+the board or in `llb recommend` -- a tuned number nobody can trace is not a comparable number.
+
+Retrain a stale adapter to refresh it; the registry never retrains on your behalf.
+
+## Serve A Registered Adapter
+
+```bash
+llb serve-adapter --adapter <adapter-id> --backend vllm
+llb serve-adapter --adapter <adapter-id> --backend ollama --smoke
+make serve-adapter ADAPTER=<adapter-id> BACKEND=llamacpp
+```
+
+`--adapter` accepts a full adapter id, a unique id prefix, or the adapter label. The command probes
+the endpoint with one generation, then holds the backend open in the foreground until Ctrl-C;
+`--smoke` exits right after the probe instead. There is no serving daemon.
+
+vLLM loads the LoRA directly (`--enable-lora --lora-modules`). Ollama and llama.cpp serve whole
+model artifacts, so the adapter is first merged into its base weights and converted to GGUF. That
+merge is cached under `$DATA_DIR/adapters/merged/<short-id>/<backend>/` and recorded as a registry
+`merge` event, so the merged artifact stays traceable to the adapter digest that produced it. The
+GGUF conversion needs the llama.cpp checkout (`make build-llamacpp`) and the `[finetune]` extra.
+
+## Evaluate Through The Registry
+
+```bash
+llb run-eval --adapter <adapter-id> --model <base-model> --backend vllm --goldset <goldset>
+```
+
+Passing `--adapter` resolves the adapter through the registry, so the contamination guard reads the
+digests the registry *recorded* rather than the `adapter_manifest.json` sitting beside the weights.
+
+## Collect Superseded Adapters
+
+An adapter is superseded once a newer adapter exists for the same base model. Only superseded
+adapters are GC candidates:
+
+```bash
+llb gc-adapters --dry-run
+llb gc-adapters
+llb gc-adapters --force
+make gc-adapters GC_DRY_RUN=1
+```
+
+GC refuses to delete an adapter that any published run bundle still cites -- deleting one would
+strand a board row that can no longer be reproduced. `--force` overrides that refusal. It does not
+override the safety rule that GC only ever deletes directories inside `$DATA_DIR`, so committed
+fixtures and hand-placed adapters are never touched. Deletions append a `delete` tombstone; the
+original `register` event stays in history.
+
 ## Guardrails
 
-`run-eval` refuses adapter-backed runs when the adapter manifest records calibration/final split
-training data or any protected eval id overlap. It also refuses a tuned model judging itself.
+`run-eval` refuses adapter-backed runs when the recorded training provenance includes
+calibration/final split data or overlaps any protected eval id, and it refuses a tuned model judging
+itself.
 
-Adapter serving is currently direct for vLLM LoRA modules. For Ollama or llama.cpp, merge the
-adapter into a model artifact first, then evaluate that merged artifact as the model.
+Provenance is read from the registry when the adapter is registered, and from
+`adapter_manifest.json` only when it is not -- a freshly trained adapter registers after its first
+eval. This matters: a manifest beside the weights is operator-writable, so a hand-edited one could
+otherwise launder a final-split adapter past the gate. See
+[`samples/finetune/laundered-adapter/`](../../../samples/finetune/laundered-adapter/) for the
+fixture that pins this behavior.

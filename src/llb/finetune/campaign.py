@@ -19,7 +19,12 @@ from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject, ModelPlanRow, ModelSpec
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import DATASET_MANIFEST, export_finetune_set
-from llb.finetune.loop import _ci_from_run, _objective_from_run, _publish_run_pointer
+from llb.finetune.loop import (
+    _ci_from_run,
+    _objective_from_run,
+    _publish_run_pointer,
+    register_round_adapter,
+)
 from llb.finetune.trainer import train_adapter
 from llb.goldset.schema import load_goldset
 
@@ -143,6 +148,7 @@ def run_finetune_campaign(
 
         base_final_dir = _eval_to_dir(eval_fn, model_cfg, "final", entry_dir / "base-final")
         _publish_run_pointer(entry_dir / "run-base-final", base_final_dir)
+        base_objective = _objective_from_run(base_final_dir)
         current_cfg = model_cfg
         tuning_dir: Path | None = None
         preference_dir: Path | None = None
@@ -182,6 +188,19 @@ def run_finetune_campaign(
             current_cfg = model_cfg.with_overrides(adapter_path=adapter_dir)
             final_dir = _eval_to_dir(eval_fn, current_cfg, "final", round_dir / "final")
             _publish_run_pointer(round_dir / "run-final", final_dir)
+            round_objective = _objective_from_run(final_dir)
+            register_round_adapter(
+                model_cfg,
+                adapter_dir=adapter_dir,
+                source_run=tuning_dir,
+                eval_summary={
+                    "final_run_dir": str(final_dir),
+                    "objective_score": round_objective,
+                    "base_objective": base_objective,
+                    "delta": round_objective - base_objective,
+                    "round": round_index,
+                },
+            )
         try:
             reclaim = reclaim_fn()
         except Exception as exc:
@@ -189,8 +208,13 @@ def run_finetune_campaign(
                 raise
             reclaim = {"reclaimed": False, "reason": str(exc)}
 
-        base_objective = _objective_from_run(base_final_dir)
-        if tuning_dir is None or preference_dir is None or adapter_dir is None or final_dir is None:
+        if (
+            tuning_dir is None
+            or preference_dir is None
+            or adapter_dir is None
+            or final_dir is None
+            or shared_dataset_dir is None
+        ):
             raise RuntimeError("campaign entry did not run any rounds")
         tuned_objective = _objective_from_run(final_dir)
         entry = CampaignEntry(
@@ -280,14 +304,18 @@ def _append_entry(root: Path, entry: CampaignEntry) -> None:
     existing = list(_read_completed_entries(root).values())
     path = root / PROGRESS_FILENAME
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"event": "entry", "entry": entry.as_dict()}, ensure_ascii=False) + "\n")
+        fh.write(
+            json.dumps({"event": "entry", "entry": entry.as_dict()}, ensure_ascii=False) + "\n"
+        )
     _write_state(root, [*existing, entry])
 
 
 def _write_state(root: Path, entries: list[CampaignEntry]) -> None:
     atomic_write_text(
         root / "campaign_state.json",
-        json.dumps({"entries": [entry.as_dict() for entry in entries]}, ensure_ascii=False, indent=2)
+        json.dumps(
+            {"entries": [entry.as_dict() for entry in entries]}, ensure_ascii=False, indent=2
+        )
         + "\n",
     )
 
@@ -356,7 +384,9 @@ def _peak_vram(run_dir: Path) -> float | None:
         return None
 
 
-def _write_report(root: Path, entries: list[CampaignEntry], shared_dataset_dir: Path | None) -> None:
+def _write_report(
+    root: Path, entries: list[CampaignEntry], shared_dataset_dir: Path | None
+) -> None:
     ranked = sorted(
         [entry for entry in entries if entry.status == COMPLETE_VERDICT],
         key=lambda entry: (

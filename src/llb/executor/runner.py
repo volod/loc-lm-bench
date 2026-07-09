@@ -674,12 +674,14 @@ def run_eval(
     adapter_manifest = None
     if config.adapter_path is not None:
         from llb.finetune.guard import validate_adapter_for_eval
+        from llb.finetune.registry import registry_path
 
         adapter_manifest = validate_adapter_for_eval(
             adapter_path=config.adapter_path,
             items=items,
             model=config.model,
             judge_model=config.judge_model,
+            registry=registry_path(config.data_dir),
         )
 
     config_payload = config.fingerprint()

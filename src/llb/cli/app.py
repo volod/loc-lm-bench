@@ -15,6 +15,8 @@ Commands by area:
   judge-experiment                                   local judge calibration DeepEval UA smoke artifact
   export-finetune-set / finetune-adapter / self-improve
                                                      local adapter self-improvement loop
+  register-adapter / list-adapters / serve-adapter / gc-adapters
+                                                     adapter registry, serving, and lifecycle
   screen-public                                      Tier-1 public lm-eval-harness-uk screen
   board / mlflow-ui                                  Streamlit leaderboard / MLflow UI
 

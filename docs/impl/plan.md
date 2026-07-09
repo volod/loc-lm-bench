@@ -41,16 +41,16 @@ For remaining tasks that depend on retrieval behavior, use the current RAG basel
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
 [data prep](current/data-prep.md).
 
-The remaining fine-tuning cluster (20-23) extends the spine one step past recommendation: from
+The remaining fine-tuning cluster (21-23) extends the spine one step past recommendation: from
 naming the best base model to naming the best *adapted* model for the operator's corpus, with the
-single-model self-improvement loop and multi-model campaign substrate as reusable bases (see
-[extended workflows](current/extended-workflows.md)). Task 20 gives adapters a registry and
-lifecycle so every tuned board number stays traceable and servable; 21 adds budgeted per-model
-hyperparameter search that never leaves the tuning split; 22 (optional) distills the roster's best
-local teacher into smaller students; 23 (optional) adds native support for compressed QAT
-checkpoints whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all
-local, no egress. Ordering inside the cluster: 20 before lifecycle-dependent serving, 21 and 22
-after the campaign substrate, 23 after the baseline trainer path.
+single-model self-improvement loop, the multi-model campaign substrate, and the adapter registry as
+reusable bases (see [extended workflows](current/extended-workflows.md)). Task 21 adds budgeted
+per-model hyperparameter search that never leaves the tuning split; 22 (optional) distills the
+roster's best local teacher into smaller students; 23 (optional) adds native support for compressed
+QAT checkpoints whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all
+local, no egress. Ordering inside the cluster: 21 and 22 after the campaign substrate, 23 after the
+baseline trainer path. The three `adapter-*` tasks above harden the shipped registry and merge lane
+and are independent of the cluster.
 
 ## Agent Implementation Tasks
 
@@ -67,8 +67,7 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 11 after task 3's code; 20 beside the campaign substrate in
-[extended workflows](current/extended-workflows.md); 21 and 22 after the campaign substrate; 23
+Recommended sequence: 11 after task 3's code; 21 and 22 after the campaign substrate; 23
 after the baseline trainer path; and 8 last (blocked by human task 7). The
 durable-eval-runner (retry + `cases.progress.jsonl` journal +
 `--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
@@ -228,45 +227,90 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
   [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
-### 20. adapter-registry-lifecycle
+### adapter-merge-serving-cuda-evidence (optional)
 
-- Dependencies: follows the self-improvement loop and campaign substrate in
-  [extended workflows](current/extended-workflows.md). Campaign rounds auto-register when the
-  registry is present. All gates run on committed fixtures -- no heavy run.
-- User-visible outcome: adapters become first-class, traceable artifacts instead of loose
-  directories: a local registry lists every adapter with its base model, dataset digest,
-  source run, and eval evidence; staleness is detected (the goldset or corpus changed since
-  training, so the recorded evidence no longer describes the present benchmark) and stamped,
-  never silently ignored; one command serves any registered adapter through the existing
-  backends; and superseded adapters can be garbage-collected without ever deleting one a run
-  bundle still cites. Board and `recommend` cite only registered adapters, so every tuned
-  number stays reproducible.
-- Scope boundary: in scope -- `src/llb/finetune/registry.py` over an append-only
-  `$DATA_DIR/adapters/registry.jsonl` (id = adapter digest; entries record base model id,
-  dataset digest, goldset/corpus digests, source run path, and an eval summary); automatic
-  registration on a successful self-improvement or campaign round; a staleness check comparing
-  recorded digests against the current goldset/corpus with the verdict shown in
-  `llb list-adapters`;
-  `llb serve-adapter --adapter <id> --backend vllm|ollama|llamacpp` wiring the existing
-  backend seam (vLLM LoRA modules directly; the merge-to-GGUF lane for ollama/llama.cpp, with
-  the merge recorded as a registry event); `run-eval` resolving adapter ids through the
-  registry so the contamination guard reads recorded digests, not operator-supplied ones; GC
-  that refuses to delete an adapter referenced by any run bundle unless forced. Out of scope
-  -- remote registries or hubs, uploading adapters anywhere (egress), automatic retraining on
-  staleness (report only), a long-running serving daemon.
-- Data and artifact paths: `$DATA_DIR/adapters/registry.jsonl` plus the adapter directories it
-  indexes; a committed registry fixture with a stale entry and a poisoned-digest entry under
-  `samples/` for the lifecycle tests.
-- Execution path: `llb list-adapters`; `llb serve-adapter --adapter <id> --backend <b>`;
-  `llb gc-adapters [--force]`; unit tests -- registry round-trip, staleness flip when the
-  goldset digest changes, guard resolution through the registry (the poisoned entry is
-  refused), GC refusal on a cited adapter, merge-event recording via a fake backend.
-- Acceptance gates: `make ci` green; a stale adapter is always stamped before its row can
-  render on the board; the contamination guard rejects the poisoned-digest fixture with a
-  message naming the intersecting ids; GC never deletes a cited adapter without `--force`
-  (unit-tested); serving smoke passes against the fake backend for all three backends.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide's serving section.
+- Dependencies: the shipped adapter registry, merge lane, and `serve-adapter` (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle). The heavy
+  merge + serve executes on the CUDA host (deterministic, no human judgment).
+- Why this is forward work: the merge-to-GGUF lane (PEFT `merge_and_unload` ->
+  `convert_hf_to_gguf.py` -> `ollama create`) is only exercised against an INJECTED fake merge in
+  CI, so the real path has never run: the converter's architecture coverage, the merged model's
+  tokenizer round-trip, and whether a merged adapter actually answers as the ADAPTER (and not as
+  the base model) are all unverified. A merge that silently produced base-model behavior would be
+  invisible to every current test.
+- User-visible outcome: a recorded CUDA-host run merging one registered adapter and serving it on
+  BOTH `ollama` and `llamacpp`, with a `run-eval` comparison proving the merged artifact scores like
+  the vLLM LoRA row (within overlapping CIs) rather than like the base model.
+- Scope boundary: in scope -- run the shipped `llb serve-adapter --backend ollama|llamacpp` against
+  a real adapter; record the merge wall-clock, GGUF size, and the merged-vs-LoRA-vs-base objective
+  triple in current docs; note any architecture the converter rejects. Out of scope -- new merge
+  code (the lane is shipped), quantized GGUF outtypes beyond the pinned `f16`, uploading merged
+  artifacts anywhere (egress).
+- Data and artifact paths: `$DATA_DIR/adapters/merged/<short-id>/<backend>/`; the comparison table
+  lands in current docs.
+- Execution path: `llb serve-adapter --adapter <id> --backend ollama --smoke`, then
+  `llb run-eval --model <merged-tag> --backend ollama` on the CUDA host (outside quick CI).
+- Acceptance gates: both GGUF backends serve the merged adapter and answer the probe; the merged
+  row's final-split objective matches the vLLM LoRA row within overlapping CIs and differs from the
+  base row -- or the divergence is recorded honestly as a merge-fidelity finding; current docs record
+  the merge cost and the three-way objective comparison.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle; the self-improvement-loop guide's serving section.
+
+### adapter-citation-scan-orchestrator-journals
+
+- Dependencies: the shipped GC citation scan (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle).
+  Agent-buildable; all gates use committed fixtures.
+- Why this is forward work: `lifecycle.cited_adapters` scans ONLY published run bundles under
+  `$DATA_DIR/run-eval/*/manifest.json`. Self-improvement `state.json`, campaign
+  `campaign.progress.jsonl`, and both `report.md` files also cite `adapter_dir` paths, and those
+  citations are invisible to GC. `llb gc-adapters` can therefore delete a superseded adapter whose
+  directory a campaign report still links, leaving a dangling path in durable evidence -- exactly
+  the failure the citation guard exists to prevent, one directory up.
+- User-visible outcome: GC refuses to delete an adapter cited by any durable artifact, not just a
+  published run bundle, and names the citing artifact in the refusal reason.
+- Scope boundary: in scope -- extend `cited_adapters` to additionally scan
+  `$DATA_DIR/self-improve/*/state.json` (`rounds[].adapter_dir`) and
+  `$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` (`entry.adapter_dir`), resolving each path
+  through the registry's `adapter_dir` index the way the `adapter_path` match already does; carry the
+  citing artifact kind into `GcDecision.cited_by`. Out of scope -- rewriting orchestrator journals to
+  store adapter ids instead of paths (a separate migration), scanning arbitrary operator files.
+- Data and artifact paths: no new artifact; `gc_rows` gains the citing-artifact kind.
+- Execution path: `llb gc-adapters --dry-run`; unit tests -- a superseded adapter cited only by a
+  campaign journal is refused, and `--force` still deletes it.
+- Acceptance gates: `make ci` green; a campaign-journal-only citation blocks an unforced GC
+  (unit-tested against a committed journal fixture); the refusal message names the journal.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle.
+
+### adapter-staleness-retrieval-fingerprint (optional)
+
+- Dependencies: the shipped staleness check (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle) and the RAG
+  store meta (`store_meta.json`; see [RAG core](current/rag-core.md)). Agent-buildable,
+  deterministic.
+- Why this is forward work: staleness compares the goldset digest and the CORPUS fingerprint, but an
+  adapter is trained on retrieved CONTEXT, which also depends on the embedder, chunk strategy, and
+  retrieval mode. Re-embedding the same corpus with a different `embedding_model`, or rechunking it,
+  leaves `corpus_fingerprint` unchanged, so an adapter whose training contexts no longer exist still
+  reads `current`. The staleness stamp is therefore weaker than it appears.
+- User-visible outcome: an adapter also goes `stale` when the RAG store that produced its training
+  contexts was rebuilt with a different embedder, chunker, or retrieval mode, with the changed knob
+  named in the reason.
+- Scope boundary: in scope -- record the store's retrieval fingerprint (embedder, strategy, chunk
+  size/overlap, retrieval mode) from `store_meta.json` in the registry entry at registration, and add
+  a third comparison to `staleness()` with a per-knob reason. Out of scope -- rebuilding the store,
+  changing `corpus_fingerprint`, retraining on staleness (report only).
+- Data and artifact paths: an additive `retrieval_fingerprint` field on registry entries; older
+  entries lacking it report `unknown` on that axis, never `current`.
+- Execution path: `llb list-adapters`; unit tests -- an entry registered against one embedder flips
+  to `stale` when the store meta names another, and a legacy entry without the field reports
+  `unknown`.
+- Acceptance gates: `make ci` green; the embedder swap flips the verdict and names the knob; a
+  registry entry predating the field never reads `current` on the retrieval axis.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle.
 
 ### 21. finetune-hparam-search
 
@@ -309,8 +353,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 ### 22. local-distillation-lane (optional)
 
 - Dependencies: follows the self-improvement loop in
-  [extended workflows](current/extended-workflows.md) (trainer seam and contamination guard;
-  registry integration through task 20 when present) and soft-follows campaign reports (the
+  [extended workflows](current/extended-workflows.md) (trainer seam, contamination guard, and the
+  shipped adapter registry) and soft-follows campaign reports (the
   report names the natural teacher -- the roster's best adapted model). Local-only, so no egress
   question arises. The heavy distillation run executes on the CUDA host.
 - User-visible outcome: the roster's strongest local model teaches the smaller ones: the
@@ -325,7 +369,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   the existing correctness scorers; identity guards -- teacher != student, and the
   calibration-gated judge is never the teacher (extending the recorded planter != judge rule
   in `src/llb/prep/frontier.py`); distilled adapters flow through the same contamination guard
-  and (when task 20 exists) registry as every other adapter; the paired
+  and registry as every other adapter; the paired
   distilled-vs-reference-SFT comparison in the report. Out of scope -- frontier or API
   teachers (egress; human task 2's lane is drafting-only), logit or soft-label distillation
   across tokenizers (text-level SFT only), training or improving the teacher itself, chain or
@@ -349,8 +393,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 ### 23. compressed-qat-adapter-support (optional)
 
 - Dependencies: follows the baseline trainer path in
-  [extended workflows](current/extended-workflows.md) and should land after task 20 if registered
-  adapter provenance is available.
+  [extended workflows](current/extended-workflows.md); registered adapter provenance is available
+  through the shipped adapter registry.
 - User-visible outcome: compressed-tensors QAT checkpoints can participate in adapter campaigns
   instead of serving only as base models: the trainer detects compressed linear modules, chooses a
   compatible adapter-injection strategy or an explicit skip reason, and reports whether the

@@ -16,6 +16,7 @@ from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import export_finetune_set
+from llb.finetune.registry import registry_path, try_register_adapter
 from llb.finetune.trainer import train_adapter
 from llb.goldset.schema import load_goldset
 from llb.scoring.aggregate import bootstrap_mean_ci
@@ -134,6 +135,18 @@ def run_self_improve(
         tuned_ci = _ci_from_run(final_dir, seed=config.seed + round_index)
         delta = tuned_objective - base_objective
         verdict = "accept" if delta > min_gain and not _ci_overlaps(base_ci, tuned_ci) else "reject"
+        register_round_adapter(
+            config,
+            adapter_dir=adapter_dir,
+            source_run=tuning_dir,
+            eval_summary={
+                "final_run_dir": str(final_dir),
+                "objective_score": tuned_objective,
+                "base_objective": base_objective,
+                "delta": delta,
+                "verdict": verdict,
+            },
+        )
         report = RoundReport(
             round_index=round_index,
             dataset_dir=dataset_dir,
@@ -159,6 +172,28 @@ def run_self_improve(
     verdict = "accept" if reports and reports[-1].verdict == "accept" else "reject"
     _write_report(root, base_final_dir, reports)
     return SelfImproveResult(root, base_final_dir, reports, verdict)
+
+
+def register_round_adapter(
+    config: RunConfig,
+    *,
+    adapter_dir: Path,
+    source_run: Path,
+    eval_summary: JsonObject,
+) -> None:
+    """Make a freshly trained adapter a first-class, traceable artifact.
+
+    Registration happens after the adapter's own final eval, so the entry carries the evidence the
+    board later cites, plus the goldset/corpus digests that decide staleness.
+    """
+    try_register_adapter(
+        registry=registry_path(config.data_dir),
+        adapter_dir=adapter_dir,
+        goldset_path=config.goldset_path,
+        corpus_root=config.corpus_root,
+        source_run=source_run,
+        eval_summary=eval_summary,
+    )
 
 
 def _default_eval_fn(*, limit: int | None) -> EvalFn:

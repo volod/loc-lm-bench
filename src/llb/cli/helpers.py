@@ -18,6 +18,18 @@ def load_config(config_path: Optional[Path], **overrides: Any) -> RunConfig:
         raise typer.Exit(code=2) from None
 
 
+def resolve_registered_adapter(data_dir: Path, adapter: str) -> Path:
+    """Resolve an adapter id / prefix / label to its directory, reporting a clean CLI error."""
+    from llb.finetune.registry import load_registry, registry_path, resolve_adapter
+
+    try:
+        entry = resolve_adapter(load_registry(registry_path(data_dir)), adapter)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    return entry.resolved_dir
+
+
 def load_models(manifest: Path) -> list[ModelSpec]:
     """Load a models manifest, reporting a YAML/schema error as a clean one-liner."""
     from llb.backends.prepare import load_manifest
