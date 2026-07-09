@@ -3613,6 +3613,7 @@ crewai = [
 dev = [
     { name = "complexipy" },
     { name = "mypy" },
+    { name = "optuna" },
     { name = "pymarkdownlnt" },
     { name = "pytest" },
     { name = "radon" },
@@ -3624,6 +3625,7 @@ eval = [
 finetune = [
     { name = "accelerate" },
     { name = "datasets" },
+    { name = "optuna" },
     { name = "peft" },
     { name = "trl" },
 ]
@@ -3704,6 +3706,8 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "nvidia-ml-py", marker = "extra == 'telemetry'", specifier = ">=12.0" },
     { name = "openai", specifier = ">=1.40" },
+    { name = "optuna", marker = "extra == 'dev'", specifier = ">=3.6" },
+    { name = "optuna", marker = "extra == 'finetune'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'track'", specifier = ">=3.6" },
     { name = "peft", marker = "extra == 'finetune'", specifier = ">=0.12" },
     { name = "psutil", marker = "extra == 'telemetry'", specifier = ">=5.9" },

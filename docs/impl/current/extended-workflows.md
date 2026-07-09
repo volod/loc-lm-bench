@@ -170,6 +170,10 @@ planner skip reasons, shared dataset digest reuse, JSONL resume, and report rank
 bounded budget, so fine-tuning stops guessing rank, alpha, learning rate, epochs, and target
 modules.
 
+Dependency contract: the `[finetune]` and `[dev]` extras include Optuna. GitHub CI installs
+`.[dev]`, so the fake-trainer hparam tests stay in the lightweight `make ci` suite without pulling
+the CUDA training stack.
+
 ```bash
 llb finetune-hparams --model <m> --dataset <tuning-dataset> --backend vllm \
   --goldset <goldset> --max-trials 8 [--max-hours 2] [--seed 13] [--dev-fraction 0.25]

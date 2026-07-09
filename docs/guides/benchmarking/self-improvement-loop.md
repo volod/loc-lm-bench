@@ -12,6 +12,9 @@ CUDA host needs the fine-tuning extra:
 uv pip install -e ".[finetune]"
 ```
 
+The `finetune` extra includes Optuna for `finetune-hparams`; GitHub CI installs `.[dev]`, which
+also includes Optuna for the fake-trainer hparam tests without pulling the CUDA training stack.
+
 ## Export A Dataset
 
 Start from a finalized tuning-split run bundle. If miss analysis exists, pass its `misses.jsonl` so

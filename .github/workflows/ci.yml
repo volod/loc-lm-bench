@@ -1,12 +1,13 @@
 # CI: format + lint + type checks + unit tests only.
 #
 # Deliberately lightweight -- it only checks that the code has no syntactic or logical
-# errors. It installs the base package + the `dev` extra (mypy, ruff, pytest) and nothing else,
-# so it never pulls heavy/eval deps (faiss, datasets, mlflow, sentence-transformers,
-# torch/vLLM) and never runs an actual benchmark, model download, or GPU work.
+# errors. It installs the base package + the `dev` extra (mypy, ruff, pytest, lightweight Optuna)
+# and nothing else, so it never pulls heavy/eval deps (faiss, datasets, mlflow,
+# sentence-transformers, torch/vLLM) and never runs an actual benchmark, model download, or GPU
+# work.
 #
 # `make ci` runs the LIGHTWEIGHT pytest group (`-m "not slow"`); the intrinsically expensive
-# tests (Optuna sweeps, embedder/model loads, deepeval, subprocess builds) carry
+# tests (real Optuna sweeps, embedder/model loads, deepeval, subprocess builds) carry
 # `@pytest.mark.slow` and run only locally via `make test`. See docs/impl/current.md (Dev setup).
 name: ci
 
