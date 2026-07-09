@@ -1,0 +1,27 @@
+{
+  "kind": "llb.finetune.adapter",
+  "base_model": "sample/base",
+  "adapter_digest": "poisoned-final-split-fixture",
+  "adapter_label": "sample/base+adapter-poisoned",
+  "dataset_digest": "poisoned-dataset-fixture",
+  "dataset_manifest": "samples/finetune/poisoned-adapter/dataset_manifest.json",
+  "dataset_item_ids": [
+    "sample-final-item"
+  ],
+  "dataset_split_counts": {
+    "final": 1
+  },
+  "seed": 13,
+  "hyperparameters": {
+    "method": "lora",
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05
+  },
+  "trainer": "fake",
+  "loss_curve": [
+    1.0,
+    0.5
+  ],
+  "created_at": "fixture"
+}

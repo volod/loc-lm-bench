@@ -330,6 +330,8 @@ class BackendMetadata(TypedDict, total=False):
     load_time_s: float | None
     sampler: str  # vLLM sampler actually used (flashinfer | native; vLLM serving preflight)
     flashinfer_version: str | None  # flashinfer version behind the sampler choice
+    adapter_path: str | None  # vLLM LoRA adapter path when adapter serving is active
+    adapter_name: str | None  # vLLM LoRA module name
 
 
 class GpuSummary(TypedDict):

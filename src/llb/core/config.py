@@ -138,6 +138,7 @@ class RunConfig(BaseModel):
     kv_offloading_size_gb: float | None = Field(default=None, ge=0)
     dtype: str = "auto"
     quantization: str | None = None
+    adapter_path: Path | None = None
 
     # llama.cpp serving (used when backend == "llamacpp"). The GGUF runs via `llama-server`,
     # splitting layers GPU<->CPU: n_gpu_layers is the offload split (-1 == all on GPU; set it to
@@ -257,6 +258,8 @@ class RunConfig(BaseModel):
         )
         if values.get("query_glossary_path") is not None:
             values["query_glossary_path"] = resolve_project_path(values["query_glossary_path"])
+        if values.get("adapter_path") is not None:
+            values["adapter_path"] = resolve_project_path(values["adapter_path"])
         return values
 
     @model_validator(mode="after")

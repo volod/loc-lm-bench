@@ -230,86 +230,16 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
   [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
-### 18. local-model-self-improvement-loop
-
-- Dependencies: soft-consumes the shipped miss analysis (`llb analyze-misses` emits
-  `misses.jsonl`; see [evaluation rigor](current/rigor-board-judge.md)): when an analysis
-  exists, the training-set export targets and weights the miss clusters; without one it falls
-  back to the whole tuning split. Reuses
-  the shipped split discipline (`src/llb/goldset/splits.py` -- calibration/tuning/final are
-  disjoint by seeded assignment precisely so tuning can never leak into the final leaderboard
-  number), the durable-eval-runner (per-round resume), and the board/recommend machinery. The
-  heavy fine-tune + re-eval rounds execute seeded on the CUDA host with no human judgment --
-  the same heavy-run discipline the shipped durable-evidence runs already follow.
-- User-visible outcome: the benchmark closes its loop from measurement to improvement: one
-  command turns a scored run into a measurably better *local* model. It exports a
-  contamination-guarded training set from the tuning split (SFT records in the exact prompt
-  shape the eval sends; optional preference pairs built from the model's own scored misses),
-  LoRA/QLoRA fine-tunes the local model, re-evaluates the adapter as a new board row through
-  the unchanged eval runner, and iterates rounds until the gain disappears -- ending with a
-  per-round report (base vs tuned on the held-out final split, bootstrap CIs) and an explicit
-  accept/reject verdict for the adapter. The miss analysis's evidence-backed "model X fails on
-  cluster Y" becomes "model X + adapter-`<digest>` passes, with the round-by-round proof".
-- Scope boundary: in scope -- `src/llb/finetune/dataset.py`: a deterministic export from a
-  finalized run bundle plus its goldset -- SFT records (question + retrieved context ->
-  reference answer, reusing the eval's own prompt templates so train and eval formats cannot
-  drift) drawn ONLY from tuning-split items, optional DPO preference pairs (the model's scored
-  wrong answer = rejected, the reference = chosen) from the miss analysis's `misses.jsonl`
-  when present,
-  and a `dataset_manifest.json` recording item ids, split provenance, and a content digest;
-  `src/llb/finetune/trainer.py`: seeded LoRA/QLoRA behind an injectable trainer seam (real
-  implementation via a new `[finetune]` optional extra -- peft/trl -- following the existing
-  extras pattern; CI drives a fake trainer), emitting an adapter directory plus
-  `adapter_manifest.json` (base model id, dataset digest, hyperparameters, seed, loss curve);
-  the contamination guard as the non-negotiable invariant: `run-eval` refuses to score a
-  model+adapter whose recorded dataset digest intersects calibration/final item ids --
-  extending the split discipline from configs to weights -- and a tuned model is barred from
-  judging its own answers, mirroring the recorded planter != judge guard
-  (`src/llb/prep/frontier.py`); adapter serving through the existing backend seam (vLLM LoRA
-  modules directly; a merge-to-GGUF lane for ollama/llama.cpp), with base model + adapter
-  digest recorded in the run manifest; an orchestrator `llb self-improve` chaining
-  run-eval -> analyze-misses -> export -> fine-tune -> re-eval per round, stopping on a
-  CI-overlapping delta or the round budget, resumable mid-campaign; tuned board rows labeled
-  `<model>+adapter-<digest>` beside the base row, and a self-improvement section in the
-  `recommend` summary when rounds exist. Out of scope -- full-parameter training, RLHF/online
-  RL, training or altering the judge or the embedder, frontier-API distillation (egress; the
-  frontier lane belongs to human task 2), auto-adopting an adapter as the recommended default
-  (the verdict is reported; adoption stays an operator decision), changing the `GoldItem`
-  schema or the split assignment.
-- Data and artifact paths:
-  `$DATA_DIR/self-improve/<timestamp>/round-<i>/{dataset/,adapter/,run/,report.md}` with
-  `dataset_manifest.json` and `adapter_manifest.json` as above; a synthetic scored-bundle +
-  goldset fixture and a poisoned adapter-manifest fixture under `samples/` for the export and
-  guard tests.
-- Execution path: `llb export-finetune-set --run-dir <run> --goldset <gs> --out <dir>`;
-  `llb finetune-adapter --dataset <dir> --model <m> --seed <s>` (heavy, CUDA host, outside
-  quick CI); `llb self-improve --model <m> --backend <b> --rounds 2` and
-  `make self-improve MODEL=<m> BACKEND=<b>`; unit tests cover split discipline of the export
-  (it can never emit a calibration/final id), preference-pair construction from the synthetic
-  miss fixture, the contamination guard's refusal on the poisoned manifest, fake-trainer loop
-  wiring including the stop rule, and per-round resume.
-- Acceptance gates: `make ci` green with the fake trainer; the split-leakage test proves zero
-  calibration/final items in any export; the contamination guard blocks the poisoned-manifest
-  fixture with a clear message naming the offending ids; one real seeded QLoRA round on the
-  CUDA host over the committed goldset records base vs tuned final-split scores with bootstrap
-  CIs in current docs -- reported honestly (gain, tie, or regression are all acceptable
-  evidence; the mechanism must not require a gain to land); the tuned row shows no security-tier
-  regression (`bench-security` delta recorded beside the correctness delta); provenance chains
-  adapter -> dataset digest -> source run so every tuned board number traces to its exact
-  training data.
-- Documentation target: [extended workflows](current/extended-workflows.md) self-improvement
-  section; a new operator guide
-  [`docs/guides/benchmarking/self-improvement-loop.md`](../guides/benchmarking/self-improvement-loop.md).
-
 ### 19. finetune-campaign-multi-model
 
-- Dependencies: follows task 18 (`local-model-self-improvement-loop`) -- the campaign reuses
-  its dataset export, injectable trainer seam, contamination guard, and per-round report; land
-  18's code first. Soft-consumes the shipped miss analysis (per-model miss-targeted exports when an analysis
-  exists). Reuses the feasibility planner (`src/llb/backends/planner.py` -- can this model run
-  on THIS host, and at what context), the VRAM reclaim gate (`src/llb/executor/vram.py` -- the
-  sequential-execution contract between roster entries), and the durable-runner journal pattern
-  for campaign resume. The heavy campaign executes seeded on the CUDA host, no human judgment.
+- Dependencies: follows the self-improvement loop in
+  [extended workflows](current/extended-workflows.md). The campaign reuses its dataset export,
+  injectable trainer seam, contamination guard, and per-round report. Soft-consumes the shipped
+  miss analysis (per-model miss-targeted exports when an analysis exists). Reuses the
+  feasibility planner (`src/llb/backends/planner.py` -- can this model run on THIS host, and at
+  what context), the VRAM reclaim gate (`src/llb/executor/vram.py` -- the sequential-execution
+  contract between roster entries), and the durable-runner journal pattern for campaign resume.
+  The heavy campaign executes seeded on the CUDA host, no human judgment.
 - User-visible outcome: one command fine-tunes and re-evaluates a whole roster of local models
   over the same corpus goldset, answering a question the base-model leaderboard cannot: which
   model is the best pick for this corpus *after* adaptation. Sequential VRAM-safe scheduling,
@@ -349,9 +279,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 20. adapter-registry-lifecycle
 
-- Dependencies: follows task 18 (registers the adapters its rounds emit and extends its
-  manifests); task 19 soft-consumes the registry when present (campaign rounds auto-register).
-  Land after 18, beside 19. All gates run on committed fixtures -- no heavy run.
+- Dependencies: follows the self-improvement loop in
+  [extended workflows](current/extended-workflows.md); task 19 soft-consumes the registry when
+  present (campaign rounds auto-register). All gates run on committed fixtures -- no heavy run.
 - User-visible outcome: adapters become first-class, traceable artifacts instead of loose
   directories: a local registry lists every adapter with its base model, dataset digest,
   source run, and eval evidence; staleness is detected (the goldset or corpus changed since

@@ -79,7 +79,9 @@ def recommend_cmd(
         build_recommendation,
         format_config_detail_md,
         format_miss_section_md,
+        format_self_improvement_section_md,
         format_summary_md,
+        latest_self_improvement,
         load_config_cells,
         load_run_summaries,
         recommendation_payload,
@@ -113,8 +115,10 @@ def recommend_cmd(
     detail_md = format_config_detail_md(load_config_cells(run_root, min_cases=min_cases))
     # The misses section renders only when `llb analyze-misses` has persisted an analysis.
     miss_md = format_miss_section_md(latest_analysis(data_dir))
+    improve_md = format_self_improvement_section_md(latest_self_improvement(data_dir))
     full_md = summary_md + ("\n\n" + detail_md if detail_md else "")
     full_md += "\n\n" + miss_md if miss_md else ""
+    full_md += "\n\n" + improve_md if improve_md else ""
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(full_md + "\n", encoding="utf-8")

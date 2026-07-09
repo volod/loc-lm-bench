@@ -55,6 +55,8 @@ def build_vllm_command(
     kv_offloading_size_gb: float | None = None,
     dtype: str = "auto",
     quantization: str | None = None,
+    adapter_path: str | None = None,
+    adapter_name: str = "adapter",
     served_model_name: str | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
@@ -79,6 +81,8 @@ def build_vllm_command(
         cmd += ["--dtype", dtype]
     if quantization:
         cmd += ["--quantization", quantization]
+    if adapter_path:
+        cmd += ["--enable-lora", "--lora-modules", f"{adapter_name}={adapter_path}"]
     if served_model_name:
         cmd += ["--served-model-name", served_model_name]
     if extra_args:
@@ -156,6 +160,8 @@ class VllmLauncher(BackendLauncher):
         kv_offloading_size_gb: float | None = None,
         dtype: str = "auto",
         quantization: str | None = None,
+        adapter_path: Path | str | None = None,
+        adapter_name: str = "adapter",
         extra_args: list[str] | None = None,
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
@@ -172,6 +178,8 @@ class VllmLauncher(BackendLauncher):
                 "gpu_memory_utilization": gpu_memory_utilization,
                 "cpu_offload_gb": cpu_offload_gb,
                 "kv_offloading_size_gb": kv_offloading_size_gb,
+                "adapter_path": str(adapter_path) if adapter_path else None,
+                "adapter_name": adapter_name if adapter_path else None,
             },
         )
         self.host = host.rstrip("/")
@@ -182,6 +190,9 @@ class VllmLauncher(BackendLauncher):
         self.kv_offloading_size_gb = kv_offloading_size_gb
         self.dtype = dtype
         self.quantization = quantization
+        self.adapter_path = str(adapter_path) if adapter_path else None
+        self.adapter_name = adapter_name
+        self.request_model = adapter_name if adapter_path else model
         self.extra_args = extra_args
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
@@ -207,6 +218,8 @@ class VllmLauncher(BackendLauncher):
             kv_offloading_size_gb=self.kv_offloading_size_gb,
             dtype=self.dtype,
             quantization=self.quantization,
+            adapter_path=self.adapter_path,
+            adapter_name=self.adapter_name,
             extra_args=self.extra_args,
         )
 
@@ -268,7 +281,7 @@ class VllmLauncher(BackendLauncher):
             self._client = make_client(f"{self.host}/v1", api_key="vllm")
         self._last = chat_once(
             self._client,
-            self.model,
+            self.request_model,
             messages,
             max_tokens=max_tokens,
             temperature=temperature,

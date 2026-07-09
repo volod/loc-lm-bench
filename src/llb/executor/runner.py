@@ -107,6 +107,11 @@ def _select_eval_items(
 
 
 def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLauncher:
+    if config.adapter_path is not None and config.backend != "vllm":
+        raise SystemExit(
+            f"[run-eval] adapter serving is wired for vLLM LoRA modules; backend "
+            f"{config.backend!r} needs a merged model artifact first"
+        )
     if config.backend == "ollama":
         from llb.backends.ollama import OllamaLauncher
 
@@ -124,6 +129,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             kv_offloading_size_gb=config.kv_offloading_size_gb,
             dtype=config.dtype,
             quantization=config.quantization,
+            adapter_path=config.adapter_path,
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":
@@ -665,8 +671,23 @@ def run_eval(
             "(only items with verified=true are scored; public-reused sets ship "
             "verified=false pending human review)"
         )
+    adapter_manifest = None
+    if config.adapter_path is not None:
+        from llb.finetune.guard import validate_adapter_for_eval
+
+        adapter_manifest = validate_adapter_for_eval(
+            adapter_path=config.adapter_path,
+            items=items,
+            model=config.model,
+            judge_model=config.judge_model,
+        )
 
     config_payload = config.fingerprint()
+    if adapter_manifest is not None:
+        config_payload["adapter"] = adapter_manifest
+        label = adapter_manifest.get("adapter_label")
+        if isinstance(label, str) and label:
+            config_payload["model"] = label
     if prompt_system_provenance is not None:
         config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
 

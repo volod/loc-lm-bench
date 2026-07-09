@@ -45,6 +45,7 @@ board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
 prep = ["litellm>=1.40"]
 telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
+finetune = ["peft>=0.12", "trl>=0.9", "accelerate>=0.33", "datasets>=2.19"]
 goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
 mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (tooling benchmark MCP transport)
 # Optional high-quality PDF OCR/layout stack for CUDA transform hosts. Marker is intentionally

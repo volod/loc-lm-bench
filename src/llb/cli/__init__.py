@@ -7,6 +7,7 @@ from llb.cli.app import app
 
 import llb.cli.bench  # noqa: F401
 import llb.cli.eval  # noqa: F401
+import llb.cli.finetune  # noqa: F401
 import llb.cli.inference  # noqa: F401
 import llb.cli.models  # noqa: F401
 import llb.cli.prep  # noqa: F401

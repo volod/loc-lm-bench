@@ -97,3 +97,49 @@ The IP regulation samples provide a small checked prompt-system fixture:
 These samples are useful for local prompt-system mechanics and board rendering. Treat tuning wins
 as provisional until a held-out final split confirms them; the prompt-system lane exists to make
 that split discipline visible.
+
+## Local Self-Improvement Loop
+
+The self-improvement workflow closes the loop from a measured local RAG run to an adapter-backed
+candidate row. It is file-driven and split-guarded:
+
+- `src/llb/finetune/dataset.py` exports SFT records and optional DPO preference pairs from a
+  finalized tuning-split run bundle. The exporter renders `eval.rag.chat` messages through the
+  same prompt path as `run-eval`, writes `sft.jsonl`, `dpo.jsonl`, and `dataset_manifest.json`,
+  and records the item ids, split counts, source run, and dataset digest.
+- `src/llb/finetune/trainer.py` trains LoRA/QLoRA adapters behind a trainer seam. `--trainer fake`
+  writes deterministic CI artifacts; the real path lazy-imports PEFT, TRL, Transformers, and
+  Datasets from the `[finetune]` extra and saves an adapter plus `adapter_manifest.json`.
+- `src/llb/finetune/guard.py` enforces the contamination invariant before `run-eval` launches a
+  backend: adapter manifests may contain only tuning-split training ids, may not intersect
+  calibration/final eval ids, and a tuned model cannot judge itself.
+- `src/llb/finetune/loop.py` orchestrates base final eval, per-round tuning eval, miss analysis,
+  dataset export, adapter training, adapter final eval, stop/accept logic, `state.json`, and
+  `report.md`.
+
+Commands:
+
+```bash
+llb export-finetune-set --run-dir <tuning-run> --goldset <goldset> --out <dataset-dir>
+llb finetune-adapter --dataset <dataset-dir> --model <model> --seed <seed>
+llb self-improve --model <model> --backend vllm --goldset <goldset> --rounds 2
+make self-improve MODEL=<model> BACKEND=vllm GOLDSET=<goldset> ROUNDS=2
+```
+
+Artifacts live under `$DATA_DIR/self-improve/<timestamp>/round-<n>/` for campaign state and under
+`$DATA_DIR/run-eval/` for canonical board bundles. Round directories carry `dataset/`, `adapter/`,
+`run` and `run-final` pointers, plus per-round reports.
+
+Adapter-backed `run-eval` rows are labeled `<base>+adapter-<digest>` in manifests and board loaders.
+vLLM serving passes the adapter through `--enable-lora --lora-modules`; Ollama and llama.cpp require
+a merged model artifact before they can serve the adapter. `llb recommend` appends a
+self-improvement section when a campaign `state.json` exists.
+
+Tests:
+
+```bash
+uv run pytest tests/test_finetune.py
+```
+
+The committed poisoned manifest fixture at `samples/finetune/poisoned-adapter/adapter_manifest.json`
+is used to keep the protected-split refusal path easy to exercise.

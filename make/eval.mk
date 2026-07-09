@@ -4,6 +4,7 @@
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
 	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
+	export-finetune-set finetune-adapter self-improve \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -84,6 +85,30 @@ analyze-misses: ## Miss analysis: classify + cluster one run's misses (RUN_DIR=<
 		$(if $(ANALYZE_GOLDSET),--goldset "$(ANALYZE_GOLDSET)",) \
 		$(if $(MISS_THRESHOLD),--miss-threshold $(MISS_THRESHOLD),) \
 		$(if $(PROBE_TOP_K),--probe-top-k "$(PROBE_TOP_K)",)
+
+export-finetune-set: ## Export tuning-split SFT/DPO records (RUN_DIR=<tuning-run> GOLDSET= OUT_DIR= MISSES=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(RUN_DIR)" || { echo "ERROR: set RUN_DIR=<tuning run-eval bundle dir>"; exit 1; }
+	@test -n "$(OUT_DIR)" || { echo "ERROR: set OUT_DIR=<dataset dir>"; exit 1; }
+	$(PY) -m llb.main export-finetune-set --run-dir "$(RUN_DIR)" --goldset "$(GOLDSET)" \
+		--out "$(OUT_DIR)" $(if $(MISSES),--misses "$(MISSES)",)
+
+finetune-adapter: ## Train a LoRA/QLoRA adapter (DATASET=<export dir> MODEL=<base> ADAPTER_OUT= TRAINER=auto|fake)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DATASET)" || { echo "ERROR: set DATASET=<export-finetune-set dir>"; exit 1; }
+	@test -n "$(MODEL)" || { echo "ERROR: set MODEL=<base model>"; exit 1; }
+	$(PY) -m llb.main finetune-adapter --dataset "$(DATASET)" --model "$(MODEL)" \
+		$(if $(ADAPTER_OUT),--out "$(ADAPTER_OUT)",) $(if $(TRAINER),--trainer "$(TRAINER)",)
+
+self-improve: ## Local self-improvement loop (MODEL= BACKEND= GOLDSET= ROUNDS=2 LIMIT= TRAINER=auto|fake)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main self-improve --model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --rounds "$(ROUNDS)" \
+		$(if $(LIMIT),--limit "$(LIMIT)",) \
+		$(if $(SELF_IMPROVE_OUT),--out-dir "$(SELF_IMPROVE_OUT)",) \
+		$(if $(SELF_IMPROVE_RESUME),--resume "$(SELF_IMPROVE_RESUME)",) \
+		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

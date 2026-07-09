@@ -13,6 +13,8 @@ Commands by area:
   prepare-goldset-draft                              ontology-assisted draft (local/frontier; --resume)
   coverage-plan-text / curate-drafts                 external-service source prep + curation
   judge-experiment                                   local judge calibration DeepEval UA smoke artifact
+  export-finetune-set / finetune-adapter / self-improve
+                                                     local adapter self-improvement loop
   screen-public                                      Tier-1 public lm-eval-harness-uk screen
   board / mlflow-ui                                  Streamlit leaderboard / MLflow UI
 
