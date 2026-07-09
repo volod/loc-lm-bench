@@ -47,12 +47,13 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid RERANKER= CONTEXT_ORDER= QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY= CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=n PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY= CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=n PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
+		$(if $(ACL_LABEL),--acl "$(ACL_LABEL)",) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \

@@ -61,6 +61,9 @@ class RagStoreMeta(TypedDict):
     lexical: NotRequired[
         JsonObject
     ]  # hybrid-retrieval-uk BM25 sidecar meta: {"lemmatize": bool, "n_terms": int}
+    corpus_fingerprint: NotRequired[str]  # staged-corpus fingerprint used for stale-store checks
+    corpus_manifest: NotRequired[str]  # manifest filename whose ok entries produced the store
+    governance_fields: NotRequired[list[str]]  # governance metadata fields copied onto chunks
 
 
 class UsageRecord(TypedDict, total=False):

@@ -143,9 +143,23 @@ after. `store_meta.json` records `page_annotation_coverage` (the fraction of ind
 gained a `pages` field) and `build-index` logs it. In `parent_child` mode both the indexed children
 and their parents are annotated, so the fields surface on retrieval hits either way. Retrieved hits
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
-"file X, page N, section Y" without re-deriving the join. The metadata *filter* seam over these
-fields is shipped (`src/llb/rag/filters.py`; see Hybrid Retrieval below); governance fields
-(`language`, `date`/`version`, ACL) are forward task 17 in [`plan.md`](../plan.md).
+"file X, page N, section Y" without re-deriving the join.
+
+Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking.py`, and
+`src/llb/rag/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
+`metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
+`metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
+The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
+`corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
+that fingerprint with the current corpus manifest before loading the vector store; a changed or
+deleted source refuses with a rebuild message instead of silently serving stale chunks. Immutable
+store directories are the rollback unit.
+
+ACL scoping uses the same metadata-filter seam as page and heading filters:
+`metadata_filter(acl_label=...)` rejects any chunk whose `metadata.acl_label` differs, and
+`run-eval --acl <tag>` passes that predicate into retrieval before dense ranking, hybrid fusion,
+or reranking. An ACL-scoped query therefore never receives an out-of-scope chunk; if no chunk is
+in scope, the case is a retrieval miss before generation.
 
 Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): a `markdown`/`flat`
 store over the quickstart HR PDF corpus (`.data/quickstart-pdf-corpus-hr/_md`, 8 converted docs)
@@ -177,10 +191,10 @@ Modules:
   stored chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
 - `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
-  heading_contains, page_range)` builds a predicate over `doc_id` plus the page-metadata join's
-  `metadata.headers` breadcrumb and `metadata.pages` range; `RagStore.retrieve(question, k,
-  chunk_filter=...)` applies it BEFORE fusion/ranking (with a filter the whole index is scanned,
-  so the cut is exact). Task 17's ACL label will apply through this same seam.
+  heading_contains, page_range, acl_label)` builds a predicate over `doc_id` plus the
+  page-metadata join's `metadata.headers` breadcrumb, `metadata.pages` range, and governance
+  `metadata.acl_label`; `RagStore.retrieve(question, k, chunk_filter=...)` applies it BEFORE
+  fusion/ranking (with a filter the whole index is scanned, so the cut is exact).
 - `src/llb/rag/store.py` -- `mode="hybrid"` builds the lexical index beside the vector index;
   fusion runs inside `RagStore.retrieve`, so every dense `VectorIndex` backend
   (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically. The lexical index persists as
@@ -219,7 +233,7 @@ Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukraini
 registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
 for exact terms; the CI regression (`tests/test_hybrid_store.py`) proves hybrid strictly beats a
 signal-free dense ranking there. Tests: `tests/test_lexical.py` (normalization, BM25 determinism
-and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page
+and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page/ACL
 predicates), `tests/test_hybrid_store.py` (fusion order, weight extremes, filter-before-fusion,
 refusal paths, config-knob application, byte-identical text), plus grid/tuner coverage in
 `tests/test_cli_models.py` / `tests/test_tuner.py`.

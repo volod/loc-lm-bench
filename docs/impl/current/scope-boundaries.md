@@ -61,11 +61,11 @@ meaningful operational question and can share the same task set, world, scoring,
 loc-lm-bench measures model security behavior (`bench-security`, corpus-derived probes); it is a
 benchmark, not a production RAG service. Runtime guardrails -- prompt-injection filtering of
 retrieved content, output PII/secret filters, and identity-backed authorization -- are out of
-scope and belong to the application embedding a recommended model. The benchmark-side remainder of
-permission-aware retrieval (per-chunk `language`/`date`/`version`/ACL metadata, an ACL filter at
-retrieval time, and a reindex/deletion/rollback policy) is forward task 17
-(`corpus-governance-metadata` in [`plan.md`](../plan.md)). This resolves the corresponding items of
-the Ukrainian-RAG minimum production checklist deliberately rather than silently.
+scope and belong to the application embedding a recommended model. The benchmark-side governance
+layer is limited to plain metadata tags, ACL-scoped retrieval, deletion propagation, stale-store
+refusal, and immutable store-directory rollback; see [data prep](data-prep.md) and
+[RAG core](rag-core.md). This resolves the corresponding items of the Ukrainian-RAG minimum
+production checklist deliberately rather than silently.
 
 ## Public Leaderboard Scope
 

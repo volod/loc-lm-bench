@@ -48,19 +48,40 @@ def ingest_corpus_cmd(
     refresh: bool = typer.Option(
         False, "--refresh", help="reconvert/re-copy every source even when it is unchanged"
     ),
+    default_language: Optional[str] = typer.Option(
+        None,
+        "--default-language",
+        help="language tag for sources that do not provide one (otherwise a cheap detector runs)",
+    ),
+    source_system: str = typer.Option(
+        "local", help="default source-system tag recorded in corpus governance metadata"
+    ),
+    acl_label: Optional[str] = typer.Option(
+        None, "--acl-label", help="default ACL label copied to manifest items and chunks"
+    ),
 ) -> None:
     """Ingest a mixed txt/md/pdf directory into one canonical corpus (PDFs converted, text passed through)."""
     from llb.prep.corpus_ingest import ingest_corpus
 
     try:
-        result = ingest_corpus(root, out_dir, min_chars=min_chars, parser=parser, refresh=refresh)
+        result = ingest_corpus(
+            root,
+            out_dir,
+            min_chars=min_chars,
+            parser=parser,
+            refresh=refresh,
+            default_language=default_language,
+            source_system=source_system,
+            acl_label=acl_label,
+        )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     reused_note = f", {result.n_reused} reused unchanged" if result.n_reused else ""
+    removed_note = f", {result.n_removed_sources} removed" if result.n_removed_sources else ""
     typer.echo(
         f"[ingest-corpus] {result.n_docs}/{len(result.items)} documents ingested "
-        f"({result.n_skipped} skipped{reused_note}) -> {result.out_dir}"
+        f"({result.n_skipped} skipped{reused_note}{removed_note}) -> {result.out_dir}"
     )
 
 

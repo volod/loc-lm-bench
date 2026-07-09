@@ -32,6 +32,7 @@ from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.lexical import Lemmatizer, LexicalIndex, rrf_fuse
 from llb.rag.page_metadata import annotate_page_metadata
+from llb.prep.corpus_governance import GOVERNANCE_FIELDS, corpus_fingerprint
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
     VectorIndex,
@@ -82,6 +83,7 @@ def _build_children(
         for j, (start, end, meta) in enumerate(
             chunk_spans(text, strategy, child_size, overlap, sem)
         ):
+            metadata = {**(parent.get("metadata") or {}), **(meta or {})}
             children.append(
                 {
                     "doc_id": parent["doc_id"],
@@ -92,7 +94,7 @@ def _build_children(
                     "parent_id": parent["chunk_id"],
                     "strategy": strategy,
                     "size": child_size,
-                    "metadata": meta or parent.get("metadata", {}),
+                    "metadata": metadata,
                 }
             )
     return children
@@ -207,6 +209,9 @@ class RagStore:
             "dim": int(vectors.shape[1]),
             "backend": vector_store,
             "page_annotation_coverage": round(page_coverage, 4),
+            "corpus_fingerprint": corpus_fingerprint(corpus_root),
+            "corpus_manifest": "corpus_manifest.json",
+            "governance_fields": list(GOVERNANCE_FIELDS),
         }
         if lexical is not None:
             meta["lexical"] = {"lemmatize": lexical.lemmatize, "n_terms": len(lexical.postings)}
@@ -320,6 +325,23 @@ def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | No
     """
     built = str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
     return built if built != expected_model else None
+
+
+def stale_store_message(
+    meta: RagStoreMeta, corpus_root: Path | str, index_dir: Path | str
+) -> str | None:
+    """Return a rebuild message when the store fingerprint differs from the current corpus."""
+    built = meta.get("corpus_fingerprint")
+    if not isinstance(built, str):
+        return None
+    current = corpus_fingerprint(corpus_root)
+    if built == current:
+        return None
+    return (
+        f"[rag] stale store at {index_dir}: corpus manifest fingerprint changed. "
+        "Rebuild with `llb build-index --corpus-root <corpus-dir>` so removed sources and "
+        "governance metadata propagate into chunks."
+    )
 
 
 def _renumber(hits: list[ChunkRecord]) -> list[ChunkRecord]:

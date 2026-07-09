@@ -82,6 +82,7 @@ def make_retrieve_node(
     k: int,
     context_order: str = eval_common.ORDER_RANK,
     query_prep: Any | None = None,
+    chunk_filter: Any | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -106,7 +107,10 @@ def make_retrieve_node(
                 "query_corrections": len(result.edits),
             }
         started = time.perf_counter()
-        chunks = store.retrieve(question, k)
+        if chunk_filter is None:
+            chunks = store.retrieve(question, k)
+        else:
+            chunks = store.retrieve(question, k, chunk_filter=chunk_filter)
         total_s = time.perf_counter() - started
         update: RagState = {
             "retrieved": chunks,
@@ -170,6 +174,7 @@ def build_rag_graph(
     prompt_package: Any | None = None,
     context_order: str = eval_common.ORDER_RANK,
     query_prep: Any | None = None,
+    chunk_filter: Any | None = None,
     cited: bool = False,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
@@ -181,7 +186,10 @@ def build_rag_graph(
         ) from exc
     graph = StateGraph(RagState)
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
-    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k, context_order, query_prep)))
+    graph.add_node(
+        "retrieve",
+        cast(Any, make_retrieve_node(store, k, context_order, query_prep, chunk_filter)),
+    )
     graph.add_node(
         "generate",
         cast(

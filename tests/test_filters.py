@@ -12,6 +12,16 @@ def _chunk(doc="a.md", headers=None, pages=None):
     return {"doc_id": doc, "char_start": 0, "char_end": 10, "text": "t", "metadata": meta}
 
 
+def _acl_chunk(label):
+    return {
+        "doc_id": "a.md",
+        "char_start": 0,
+        "char_end": 10,
+        "text": "t",
+        "metadata": {"acl_label": label},
+    }
+
+
 def test_doc_id_filter():
     accept = metadata_filter(doc_ids={"a.md"})
     assert accept(_chunk("a.md")) is True
@@ -37,3 +47,10 @@ def test_conditions_combine_with_and():
     assert accept(_chunk("a.md", pages=[2, 3])) is True
     assert accept(_chunk("b.md", pages=[2, 3])) is False
     assert accept(_chunk("a.md", pages=[4, 5])) is False
+
+
+def test_acl_filter_matches_governance_label():
+    accept = metadata_filter(acl_label="finance")
+    assert accept(_acl_chunk("finance")) is True
+    assert accept(_acl_chunk("hr")) is False
+    assert accept(_chunk()) is False

@@ -242,10 +242,27 @@ records every source with its `kind` (`pdf`|`text`), status, and reuse flag, so 
 unchanged mixed corpus reports `reused: true` for every document. The staged corpus walk excludes
 the output subtree, so the default `<root>/_md` output is never re-ingested as new input.
 
+Governance metadata is part of the same manifest contract. Every manifest item records
+`language`, `ingestion_time`, `source_system`, optional `version`, optional `effective_date`, and
+optional `acl_label`. Text sources can provide per-document values in `<source>.metadata.json` or
+markdown front matter; otherwise `--default-language` is used, then a cheap deterministic detector.
+`--source-system` and `--acl-label` set defaults for sources that do not provide their own values.
+PDF rows inherit any conversion-manifest governance fields when present and otherwise use the same
+operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
+non-time governance fields are unchanged.
+
+Deletion propagation is explicit: a source removed from the input root is removed from the next
+`corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
+manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
+old staged outputs. The rollback unit is the immutable store directory built from a manifest
+fingerprint; keep a previous `$DATA_DIR/llb/rag` directory to roll back an index.
+
 ```bash
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_DEFAULT_LANGUAGE=uk CORPUS_ACL_LABEL=<tag>
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_REFRESH=1
-llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto
+llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto \
+  --default-language uk --acl-label <tag>
 ```
 
 `make quickstart-corpus CORPUS_SRC=<dir>` (script target `corpus`) generalizes the PDF quickstart

@@ -64,6 +64,11 @@ def run_eval_cmd(
         help="flat | parent_child | hybrid (hybrid fuses dense + lexical BM25 rankings; the "
         "index must be built with `build-index --retrieval-mode hybrid`)",
     ),
+    acl: Optional[str] = typer.Option(
+        None,
+        "--acl",
+        help="restrict RAG retrieval to chunks whose governance metadata has this ACL label",
+    ),
     fusion_weight: Optional[float] = typer.Option(
         None, help="hybrid mode: dense share of the weighted RRF, 0..1 (default 0.5)"
     ),
@@ -175,6 +180,7 @@ def run_eval_cmd(
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
         retrieval_mode=retrieval_mode,
+        acl_label=acl,
         fusion_weight=fusion_weight,
         fusion_candidates=fusion_candidates,
         reranker=reranker,

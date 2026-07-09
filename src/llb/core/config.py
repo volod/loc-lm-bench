@@ -204,6 +204,7 @@ class RunConfig(BaseModel):
     retrieval_backend: RetrievalBackend = "faiss"
     retrieval_strategy: RetrievalStrategy = "local_khop"
     graph_khop_depth: int = Field(default=2, ge=1)
+    acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default
     # from the environment (JUDGE_MODEL unset -> no judge runs); an explicit value or CLI flag

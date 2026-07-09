@@ -200,6 +200,11 @@ def _guard_vllm_contention(
 def _default_runner_fn(
     config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
 ) -> Callable[[GoldItem], RagState]:
+    chunk_filter = None
+    if config.acl_label is not None:
+        from llb.rag.filters import metadata_filter
+
+        chunk_filter = metadata_filter(acl_label=config.acl_label)
     app = eval_graph.build_rag_graph(
         store,
         launcher,
@@ -210,6 +215,7 @@ def _default_runner_fn(
         prompt_package=prompt_package,
         context_order=config.context_order,
         query_prep=build_query_prep(config, store, launcher),
+        chunk_filter=chunk_filter,
         cited=config.cited_answers,
     )
 
@@ -563,9 +569,12 @@ def _load_store(config: RunConfig) -> Any:
             ),
             config,
         )
-    from llb.rag.store import MODE_HYBRID, RagStore, store_embedder_mismatch
+    from llb.rag.store import MODE_HYBRID, RagStore, stale_store_message, store_embedder_mismatch
 
     store = RagStore.load(config.index_dir())
+    stale = stale_store_message(store.meta, config.corpus_root, config.index_dir())
+    if stale is not None:
+        raise SystemExit(stale)
     built = store_embedder_mismatch(store.meta, config.embedding_model)
     if built is not None:
         raise SystemExit(

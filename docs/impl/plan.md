@@ -37,29 +37,9 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality stack is now shipped end to end and its remaining forward work is the
-governance layer (task 17). Shipped: chunk-side tuning (the Optuna tuner searches
-strategy/size/overlap/mode/`top_k` plus the hybrid fusion and opt-in reranker knobs -- including
-the page/heading/late chunkers behind `tune --extended-chunkers`; see
-[RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`,
-`fusion_weight`, and `rerank_candidates`); the Ukrainian hybrid retrieval stack (dense + BM25
-fused with weighted RRF, index-side inflection-aware lemmatization, and the chunk-metadata filter
-seam); the rerank-and-order stage between retrieval and generation (the cross-encoder reranker
-seam, the `context_order` prompt-layout policy, and the `probe-context-position`
-lost-in-the-middle probe; see [RAG core](current/rag-core.md) reranking and context order); the
-query-side processing lane (deterministic normalization, corpus-vocabulary typo tolerance,
-alias/glossary expansion, and an opt-in logged LLM rewrite, none of which mutate the stored corpus
-text, with an A/B report attributing each step's retrieval delta; see
-[RAG core](current/rag-core.md) query-side processing); the answer-side groundedness/citation
-metrics (deterministic groundedness fraction, `[i]` citation validity + hallucinated-citation
-rate, and insufficient-context abstention probes; see [RAG core](current/rag-core.md) groundedness
-and citation metrics); and the measured Ukrainian embedder ranking (`llb compare-embeddings` over
-BGE-M3 / multilingual-e5 / the lang-uk model plus an opt-in Cohere API row for open corpora; see
-[RAG core](current/rag-core.md) retrieval store). Task 17 adds the governance
-remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
-the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
-[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)); its ACL
-filter applies through the shipped chunk-metadata filter seam (`src/llb/rag/filters.py`).
+For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
+[RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
+[data prep](current/data-prep.md).
 
 The fine-tuning cluster (18-22) extends the spine one step past recommendation: from naming the
 best base model to naming the best *adapted* model for the operator's corpus, with the whole loop
@@ -87,8 +67,7 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 17's ACL-filter half through
-the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
+Recommended sequence: 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
 exists; the export/guard/trainer code stands
 alone), 19-22 after 18 (the fine-tuning cluster reuses 18's trainer seam and contamination
@@ -227,44 +206,6 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   answer on the synthetic fixture (the two now yield different coverage at equal validity); the
   manifest carries mean `citation_coverage` when cited-answers is on.
 - Documentation target: [RAG core](current/rag-core.md) groundedness and citation metrics.
-
-### 17. corpus-governance-metadata
-
-- Dependencies: none open -- the ACL-filter half applies through the shipped chunk-metadata
-  filter seam (`src/llb/rag/filters.py`; see [RAG core](current/rag-core.md) hybrid retrieval);
-  the governance fields and reindex policy stand alone.
-- User-visible outcome: corpus ingestion and the RAG store gain governance metadata and a lifecycle
-  policy: every `corpus_manifest.json` entry and chunk record carries `language`,
-  `version`/`effective_date` when the source provides one, `ingestion_time`, `source_system`, and
-  an optional ACL label; retrieval can filter candidates by ACL label before anything reaches the
-  model; and `ingest-corpus`/`build-index` gain deletion propagation (a source removed from the
-  corpus root drops out of the next build and the manifest diff says so), stale-store detection
-  (store fingerprint vs corpus manifest), and a documented rollback unit (immutable store
-  directories).
-- Scope boundary: in scope -- additive optional governance fields on `corpus_manifest.json`,
-  `ChunkRecord.metadata`, and `store_meta.json` (passthrough text derives `language` from an
-  operator-supplied default or a cheap detector; PDF lanes inherit from the conversion manifest);
-  an ACL-filter argument through the shipped metadata-filter seam with a refusal guarantee (a
-  query scoped to an ACL label never receives an out-of-scope chunk); stale/deleted-doc detection
-  comparing the store fingerprint against the corpus manifest with a clear rebuild message. Out of
-  scope -- runtime prompt-injection filtering and output PII filters (decision recorded in
-  [product decisions](current/scope-boundaries.md)), a permissions backend or user identity model
-  (the ACL label is a plain string tag; enforcement policy belongs to the embedding application),
-  mutating stored chunk text or offsets.
-- Data and artifact paths: governance fields inline in `corpus_manifest.json`, `chunks.jsonl`, and
-  `store_meta.json`; a small mixed-ACL, mixed-language fixture under `samples/` for the filter,
-  deletion, and staleness tests.
-- Execution path: `llb ingest-corpus --default-language uk --acl-label <tag>`;
-  `llb build-index` (staleness check against the corpus manifest);
-  `llb run-eval --acl <tag>` through the shipped filter seam; unit tests cover field
-  propagation end-to-end, ACL filtering, deletion propagation, and the stale-store refusal.
-- Acceptance gates: `make ci` green; every chunk built from the fixture carries its governance
-  fields through retrieval into the returned chunk records; an ACL-scoped retrieval never returns
-  an out-of-scope chunk (unit-tested); removing a source document and re-ingesting drops its chunks
-  from the next build with the removal recorded in the manifest; a store older than its corpus
-  manifest refuses with a rebuild message; stored chunk text and offsets stay byte-identical.
-- Documentation target: [data prep](current/data-prep.md) ingestion;
-  [RAG core](current/rag-core.md) retrieval store.
 
 ### external-rag-source-mapping (optional)
 
