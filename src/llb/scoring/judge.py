@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
-from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
-from llb import env
-from llb.paths import load_project_env, resolve_data_dir
+from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
+from llb.core import env
+from llb.core.paths import load_project_env, resolve_data_dir
 from llb.prompts import render_text, render_text_list, render_text_map
 
 _LOG = logging.getLogger(__name__)

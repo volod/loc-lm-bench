@@ -111,10 +111,30 @@ Open a run and select **Artifacts -> canonical**:
   environment, and canonical run id.
 - `scores.jsonl`: one row per case, including status, objective score,
   retrieval hit/rank, latency, token count, and answer preview.
+- `retrieval.jsonl`: one row per case with the retrieved chunk spans (doc id, char offsets,
+  rank, score, bounded text preview) beside the gold spans -- the observability trace of what
+  the model actually saw.
 - `vllm/`: backend logs when the run launched vLLM.
 
 MLflow does not replace the case table with aggregate charts. Download `scores.jsonl` for
 DuckDB, pandas, or notebook analysis when individual errors need inspection.
+
+## Explain the wrong answers
+
+For a structured error analysis, skip the manual JSONL digging and run the miss analysis over
+the bundle directory (canonical location under `$DATA_DIR/run-eval/`):
+
+    make analyze-misses RUN_DIR=$DATA_DIR/run-eval/<timestamp>
+    # PROBE_TOP_K=3,8 re-runs ONLY the miss subset at those depths (needs the backend)
+    make analyze-misses RUN_DIR=<run> PROBE_TOP_K=3,8
+
+It classifies every miss as a retrieval miss, generation miss, refusal, format/scoring
+artifact, or judge disagreement (span overlap over `retrieval.jsonl`), clusters misses by
+document, topic, and question type, and writes ranked, evidence-backed recommendations to
+`$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`. `llb recommend`
+folds the latest analysis into its summary. See the miss-analysis section of
+[evaluation rigor](../../impl/current/rigor-board-judge.md) for the class definitions and the
+probe-mode reuse/resume rules.
 
 ## Troubleshooting
 

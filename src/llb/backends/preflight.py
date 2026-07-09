@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TypedDict, cast
 
-from llb import env
-from llb.paths import resolve_data_dir
+from llb.core import env
+from llb.core.paths import resolve_data_dir
 
 _LOG = logging.getLogger(__name__)
 

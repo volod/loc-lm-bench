@@ -9,6 +9,7 @@ from llb.board.recommend import (
     RunSummary,
     build_recommendation,
     format_config_detail_md,
+    format_finetune_campaign_section_md,
     format_summary_md,
     load_config_cells,
     load_run_summaries,
@@ -267,6 +268,41 @@ def test_format_config_detail_notes_when_no_grid_swept():
 
 def test_format_config_detail_empty_when_no_cells():
     assert format_config_detail_md([]) == ""
+
+
+def test_format_finetune_campaign_section_ranks_completed_entries():
+    md = format_finetune_campaign_section_md(
+        {
+            "campaign_dir": "/runs/ft",
+            "report_path": "/runs/ft/report.md",
+            "entries": [
+                {
+                    "model": "slow",
+                    "status": "completed",
+                    "base_objective": 0.2,
+                    "tuned_objective": 0.3,
+                    "delta": 0.1,
+                    "train_wall_clock_s": 20,
+                    "peak_vram_mb": 9000,
+                },
+                {
+                    "model": "winner",
+                    "status": "completed",
+                    "base_objective": 0.2,
+                    "tuned_objective": 0.5,
+                    "delta": 0.3,
+                    "train_wall_clock_s": 30,
+                    "peak_vram_mb": 10000,
+                },
+                {"model": "too-big", "status": "skipped", "reason": "does not fit"},
+            ],
+        }
+    )
+
+    assert "## Fine-tune campaign" in md
+    assert "| 1 | winner |" in md
+    assert "| 2 | slow |" in md
+    assert "skipped: does not fit" in md
 
 
 def test_load_config_cells_keeps_each_top_k_but_dedups_reruns(tmp_path):

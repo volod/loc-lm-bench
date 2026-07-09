@@ -11,10 +11,18 @@ from llb.cli.helpers import (
     best_effort_gpu_readers,
     load_config,
     load_models,
+    resolve_registered_adapter,
     resolver_probes,
 )
-from llb.config import RunConfig
+from llb.core.config import RunConfig
 from llb.screen.public import ScreenReport
+
+
+def _parse_query_prep(steps: Optional[str]) -> Optional[list[str]]:
+    """Parse a comma-separated --query-prep list into ordered steps (None leaves the config)."""
+    if steps is None:
+        return None
+    return [step.strip() for step in steps.split(",") if step.strip()]
 
 
 @app.command("run-eval")
@@ -23,6 +31,12 @@ def run_eval_cmd(
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
     backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        help="registered adapter id, id prefix, or label (`llb list-adapters`); the contamination "
+        "guard then reads the registry's recorded digests, not the adapter directory's manifest",
+    ),
     max_model_len: Optional[int] = typer.Option(
         None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
     ),
@@ -52,10 +66,67 @@ def run_eval_cmd(
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph backend strategy: local_khop | global_community"
     ),
+    retrieval_mode: Optional[str] = typer.Option(
+        None,
+        help="flat | parent_child | hybrid (hybrid fuses dense + lexical BM25 rankings; the "
+        "index must be built with `build-index --retrieval-mode hybrid`)",
+    ),
+    acl: Optional[str] = typer.Option(
+        None,
+        "--acl",
+        help="restrict RAG retrieval to chunks whose governance metadata has this ACL label",
+    ),
+    fusion_weight: Optional[float] = typer.Option(
+        None, help="hybrid mode: dense share of the weighted RRF, 0..1 (default 0.5)"
+    ),
+    fusion_candidates: Optional[int] = typer.Option(
+        None, help="hybrid mode: per-side candidate depth fed into the fusion (default 50)"
+    ),
+    reranker: Optional[str] = typer.Option(
+        None,
+        help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
+        "--rerank-candidates, rerank, keep top_k (off by default)",
+    ),
+    rerank_candidates: Optional[int] = typer.Option(
+        None, help="candidate pool depth fed into the reranker before the top_k cut (default 30)"
+    ),
+    context_order: Optional[str] = typer.Option(
+        None,
+        help="how kept chunks are laid into the prompt: rank (best-first, default) | "
+        "reverse_rank (best-last)",
+    ),
+    query_prep: Optional[str] = typer.Option(
+        None,
+        "--query-prep",
+        help="opt-in query-side lane (uk-query-processing): comma-separated ordered steps "
+        "normalize,typos,glossary,rewrite (rewrite calls the local model; off by default). "
+        "The raw query is always preserved; only the retrieval query is transformed",
+    ),
+    query_glossary: Optional[Path] = typer.Option(
+        None,
+        help="query_glossary.json for the query-prep 'glossary' step (build-query-glossary)",
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",
         help="enable or disable the embedding-similarity correctness signal",
+    ),
+    cited_answers: Optional[bool] = typer.Option(
+        None,
+        "--cited-answers/--no-cited-answers",
+        help="require [i] chunk citations in the generation prompt and score citation validity + "
+        "hallucinated-citation rate (groundedness-citation-metrics)",
+    ),
+    score_groundedness: Optional[bool] = typer.Option(
+        None,
+        "--score-groundedness/--no-score-groundedness",
+        help="record the deterministic groundedness fraction (share of answer claims supported by "
+        "the retrieved context) as an additive per-case column",
+    ),
+    insufficient_context_probes: Optional[int] = typer.Option(
+        None,
+        help="re-run N sampled gold items with their gold evidence excluded from retrieval and "
+        "score abstention accuracy (probe cases never enter the correctness aggregates)",
     ),
     telemetry: Optional[bool] = typer.Option(
         None,
@@ -115,9 +186,23 @@ def run_eval_cmd(
         judge_base_url=judge_base_url,
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
+        retrieval_mode=retrieval_mode,
+        acl_label=acl,
+        fusion_weight=fusion_weight,
+        fusion_candidates=fusion_candidates,
+        reranker=reranker,
+        rerank_candidates=rerank_candidates,
+        context_order=context_order,
+        query_prep=_parse_query_prep(query_prep),
+        query_glossary_path=query_glossary,
         score_semantic=score_semantic,
+        cited_answers=cited_answers,
+        score_groundedness=score_groundedness,
+        insufficient_context_probes=insufficient_context_probes,
         measure_telemetry=telemetry,
     )
+    if adapter is not None:
+        cfg = cfg.with_overrides(adapter_path=resolve_registered_adapter(cfg.data_dir, adapter))
     selected_prompt = None
     prompt_id = prompt_system or prompt_system_id_from_package_path(prompt_package)
     if prompt_id is not None:
@@ -138,6 +223,226 @@ def run_eval_cmd(
             selected_prompt.provenance if selected_prompt is not None else None
         ),
     )
+
+
+@app.command("probe-context-position")
+def probe_context_position_cmd(
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    k: int = typer.Option(5, min=3, help="fixed context size (gold at head/middle/tail)"),
+    split: str = typer.Option("final", help="gold split to probe"),
+    limit: Optional[int] = typer.Option(None, help="cap the number of probed items"),
+    candidate_depth: Optional[int] = typer.Option(
+        None, help="retrieval depth scanned for the gold chunk + distractors (default 50)"
+    ),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM/llama.cpp served context window (overrides the config)"
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="probe output dir (default: $DATA_DIR/context-position/<timestamp>)"
+    ),
+) -> None:
+    """Lost-in-the-middle probe (rerank-context-order): place each item's gold chunk at the
+    head, middle, and tail of a fixed-k context of real retrieved distractors, score every
+    position, and recommend a per-model `context_order` with bootstrap CIs."""
+    from llb.bench.common import new_run_timestamp
+    from llb.core.contracts import ChatMessage
+    from llb.eval.position_probe import (
+        DEFAULT_CANDIDATE_DEPTH,
+        render_report,
+        run_probe,
+        write_probe,
+    )
+    from llb.executor.runner import _load_store, _make_launcher
+    from llb.goldset.schema import load_goldset
+
+    cfg = load_config(
+        config, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
+    )
+    items = [it for it in load_goldset(cfg.goldset_path) if it.verified and it.split == split]
+    items.sort(key=lambda it: it.id)
+    if limit is not None:
+        items = items[:limit]
+    if not items:
+        typer.echo(f"[probe-context-position] no verified '{split}' items to probe", err=True)
+        raise typer.Exit(code=2)
+    store = _load_store(cfg)
+    launcher = _make_launcher(cfg)
+    with launcher as served:
+
+        def chat(messages: list[ChatMessage]) -> tuple[str, str | None]:
+            result = served.chat(
+                messages,
+                max_tokens=cfg.max_tokens,
+                temperature=cfg.temperature,
+                timeout=cfg.request_timeout_s,
+            )
+            return result.text or "", result.error
+
+        report = run_probe(
+            items,
+            store,
+            chat,
+            model=cfg.model,
+            backend=cfg.backend,
+            k=k,
+            candidate_depth=candidate_depth or DEFAULT_CANDIDATE_DEPTH,
+        )
+    _, run_ts = new_run_timestamp()
+    out = out_dir or (cfg.data_dir / "context-position" / run_ts)
+    paths = write_probe(report, out)
+    typer.echo(render_report(report))
+    typer.echo(f"[probe-context-position] report -> {paths['report']}")
+    typer.echo(f"[probe-context-position] cases -> {paths['cases']}")
+
+
+@app.command("analyze-misses")
+def analyze_misses_cmd(
+    run_dir: Path = typer.Option(
+        ..., "--run-dir", help="finalized run-eval bundle whose misses to explain"
+    ),
+    goldset: Optional[Path] = typer.Option(
+        None, help="goldset JSONL the run scored (default: the bundle manifest's goldset_path)"
+    ),
+    miss_threshold: Optional[float] = typer.Option(
+        None,
+        "--miss-threshold",
+        help="objective score below which a scoreable (status=ok) case counts as a miss "
+        "(default 0.5)",
+    ),
+    probe_top_k: Optional[str] = typer.Option(
+        None,
+        "--probe-top-k",
+        help="comma-separated retrieval depths (e.g. 3,8): re-run ONLY the miss subset at each "
+        "depth to confirm or reject the retrieval hypothesis (launches the model backend)",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, help="analysis output dir (default: $DATA_DIR/miss-analysis/<timestamp>)"
+    ),
+) -> None:
+    """Explain one run's wrong answers: classify every miss (retrieval / generation / refusal /
+    format artifact / judge disagreement), cluster by document, topic, and question type, and
+    write ranked, evidence-backed recommendations that `llb recommend` folds into its summary."""
+    from llb.board.miss_analysis import (
+        DEFAULT_MISS_THRESHOLD,
+        analysis_out_dir,
+        analyze_run,
+        load_item_provenance,
+        refresh_recommendations,
+        write_analysis,
+    )
+    from llb.board.miss_probe import parse_probe_depths, run_probes
+    from llb.board.runs import load_run_records
+    from llb.core.paths import resolve_data_dir
+    from llb.goldset.schema import load_goldset
+
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        typer.echo(f"[analyze-misses] no manifest.json in {run_dir}", err=True)
+        raise typer.Exit(code=2)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config = manifest.get("config") or {}
+    goldset_path = goldset or Path(str(config.get("goldset_path", "")))
+    if not str(goldset_path) or not goldset_path.is_file():
+        typer.echo(
+            f"[analyze-misses] goldset not found: '{goldset_path}' "
+            "(the bundle's recorded goldset moved? pass --goldset)",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    items = load_goldset(goldset_path)
+    provenance = load_item_provenance(goldset_path)
+
+    # Comparable sibling runs (same split + case count, board dedup rules) back the
+    # "try the named alternative model" recommendation with measured numbers.
+    alternatives = [
+        (record.result.model, record.result.objective_score)
+        for record in load_run_records(run_dir.parent)
+        if record.split == manifest.get("split")
+        and record.result.n_cases == int(manifest.get("n_cases", -1))
+    ]
+    threshold = miss_threshold if miss_threshold is not None else DEFAULT_MISS_THRESHOLD
+    analysis = analyze_run(
+        run_dir, items, threshold=threshold, provenance=provenance, alternatives=alternatives
+    )
+
+    if probe_top_k and analysis.misses:
+        depths = parse_probe_depths(probe_top_k)
+        analysis.probes = run_probes(manifest, analysis.misses, items, depths)
+        refresh_recommendations(analysis, alternatives=alternatives)
+    elif probe_top_k:
+        typer.echo("[analyze-misses] no misses to probe; skipping --probe-top-k")
+
+    out = out_dir or analysis_out_dir(resolve_data_dir())
+    paths = write_analysis(analysis, out)
+    counted = ", ".join(f"{cls}={n}" for cls, n in analysis.class_counts.items() if n) or "none"
+    typer.echo(
+        f"[analyze-misses] {len(analysis.misses)} of {analysis.n_cases} cases missed ({counted})"
+    )
+    for rank, rec in enumerate(analysis.recommendations, 1):
+        typer.echo(f"[analyze-misses] {rank}. {rec['line']}")
+    typer.echo(f"[analyze-misses] report -> {paths['report']}")
+    typer.echo(f"[analyze-misses] misses -> {paths['misses']}")
+
+
+@app.command("score-external-rag")
+def score_external_rag_cmd(
+    answers: Path = typer.Option(
+        ..., "--answers", help="answered goldset JSONL from an external or closed RAG system"
+    ),
+    csv_out: Optional[Path] = typer.Option(
+        None, help="detailed per-row CSV path (default: <answers>.csv)"
+    ),
+    report_out: Optional[Path] = typer.Option(
+        None, help="Markdown report path (default: <answers>.report.md)"
+    ),
+    answer_field: Optional[str] = typer.Option(
+        None, help="answer field to score (default: auto: llm_answer, predicted_answer, ...)"
+    ),
+    sources_field: Optional[str] = typer.Option(
+        None, help="source-list field to flatten (default: auto: llm_sources, sources, ...)"
+    ),
+    error_field: Optional[str] = typer.Option(
+        None, help="error field (default: auto: llm_error, error)"
+    ),
+    source_limit: int = typer.Option(3, min=0, help="number of top sources to flatten into CSV"),
+    label: Optional[str] = typer.Option(None, help="system label in the report"),
+    strip_source_footer: bool = typer.Option(
+        True,
+        "--strip-source-footer/--keep-source-footer",
+        help="strip a trailing Source:/Dzherelo: footer before objective scoring",
+    ),
+    start: Optional[int] = typer.Option(
+        None, "--start", min=1, help="start review at 1-based row number"
+    ),
+    clear: bool = typer.Option(
+        False,
+        "--clear",
+        help="confirmation-gated restart: clear JSONL human fields before reviewing",
+    ),
+) -> None:
+    """Interactively score an external RAG JSONL; finalize CSV + report when complete."""
+    from llb.scoring.external_rag_session import run_external_rag_session
+
+    try:
+        run_external_rag_session(
+            answers,
+            csv_out=csv_out,
+            report_out=report_out,
+            answer_field=answer_field,
+            sources_field=sources_field,
+            error_field=error_field,
+            source_limit=source_limit,
+            strip_source_footer=strip_source_footer,
+            label=label,
+            start=start,
+            clear=clear,
+        )
+    except ValueError as exc:
+        typer.echo(f"[score-external-rag] {exc}", err=True)
+        raise typer.Exit(code=2)
 
 
 @app.command("judge-experiment")
@@ -214,6 +519,8 @@ def _run_screen_with_backend(
             port=cfg.vllm_port,
             gpu_memory_utilization=cfg.gpu_memory_utilization,
             max_model_len=cfg.max_model_len,
+            cpu_offload_gb=cfg.cpu_offload_gb,
+            kv_offloading_size_gb=cfg.kv_offloading_size_gb,
         )
         with launcher:
             return do_screen(f"{cfg.vllm_host.rstrip('/')}/v1")

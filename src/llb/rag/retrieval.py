@@ -14,7 +14,7 @@ Inputs are plain dicts so this module has zero heavy deps and is fully unit-test
   span  = {"doc_id": str, "char_start": int, "char_end": int, ...}
 """
 
-from llb.contracts import ChunkRecord, RetrievalMetrics, RetrievalPair, SourceSpanRecord
+from llb.core.contracts import ChunkRecord, RetrievalMetrics, RetrievalPair, SourceSpanRecord
 
 
 def spans_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:

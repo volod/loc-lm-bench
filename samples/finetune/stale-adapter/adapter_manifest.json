@@ -1,0 +1,27 @@
+{
+  "kind": "llb.finetune.adapter",
+  "base_model": "sample/base",
+  "adapter_digest": "5741e0c2f4a1b3d6e8907c5a2b4d6f8091a3c5e7d9f1b3a5c7e9d1f3b5a7c9e1",
+  "adapter_label": "sample/base+adapter-5741e0c2f4a1",
+  "dataset_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "dataset_manifest": "samples/finetune/stale-adapter/dataset_manifest.json",
+  "dataset_item_ids": [
+    "sample-tuning-item"
+  ],
+  "dataset_split_counts": {
+    "tuning": 1
+  },
+  "seed": 13,
+  "hyperparameters": {
+    "method": "lora",
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05
+  },
+  "trainer": "fake",
+  "loss_curve": [
+    1.0,
+    0.5
+  ],
+  "created_at": "fixture"
+}

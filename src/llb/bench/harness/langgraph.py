@@ -23,7 +23,7 @@ from llb.bench.agentic import (
 )
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
-from llb.contracts import ToolDef
+from llb.core.contracts import ToolDef
 from llb.scoring.tooling import parse_tool_call
 
 # Routing labels (the conditional-edge targets).

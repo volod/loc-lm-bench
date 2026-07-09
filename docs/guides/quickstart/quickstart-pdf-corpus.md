@@ -122,9 +122,17 @@ export HF_HUB_OFFLINE=1
 
 The wrapper draft target is the normal path. It stages all converted markdown documents, selects a
 drafter, estimates the full draft duration, asks for confirmation, and writes the review bundle.
-When `QUICKSTART_DRAFT_MODEL=auto`, the model-selection step uses existing benchmark evidence when
-available; otherwise it prompts to run the local committed-goldset benchmark, select a local model
-manually, or opt into a frontier `litellm` route.
+With the default `QUICKSTART_DRAFT_MODEL=auto` and `QUICKSTART_MODEL_SELECTION=gemma4`, the selector
+uses the most capable Gemma 4 serving target for the resolved CUDA tier and filters out vLLM rows
+whose configured context is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB CUDA hosts this resolves to
+`google/gemma-4-12B-it-qat-w4a16-ct` via vLLM with `max_model_len=16384`,
+`gpu_memory_utilization=0.90`, `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`; on 16 GB hosts
+the same target uses `gpu_memory_utilization=0.85`. A fresh draft run into an existing output
+directory clears prior extraction journal state; only explicit resume mode reuses journaled
+extraction windows. The quickstart draft target requires the ontology calibration gates to pass, so
+a zero-item or ungrounded bundle exits non-zero after writing `pdf_ontology_report.json`. The logged
+make wrapper cannot prompt inside the tee'd child process; set `QUICKSTART_ASSUME_YES=1` when
+intentionally approving the full-draft runtime gate.
 
 ```sh
 make quickstart-pdf-corpus-draft
@@ -134,6 +142,12 @@ To force a benchmark before drafting:
 
 ```sh
 QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus-draft
+```
+
+To approve the full-draft gate in the all-in-one wrapper:
+
+```sh
+QUICKSTART_ASSUME_YES=1 make quickstart-pdf-corpus
 ```
 
 To pin a local model and skip the model-selection prompt:
@@ -150,13 +164,15 @@ CLI, then set the draft backend:
 QUICKSTART_DRAFT_BACKEND=vllm \
   QUICKSTART_DRAFT_MODEL=google/gemma-4-E4B-it-qat-w4a16-ct \
   QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN=16384 \
+  QUICKSTART_DRAFT_VLLM_CPU_OFFLOAD_GB=16 \
+  QUICKSTART_DRAFT_VLLM_KV_OFFLOADING_SIZE_GB=32 \
   make quickstart-pdf-corpus-draft
 ```
 
-With `QUICKSTART_DRAFT_MODEL=auto`, the selector can choose a vLLM-ranked recommendation when the
-vLLM CLI is available. If `QUICKSTART_DRAFT_BASE_URL` is unset, the draft command starts and stops
-`vllm serve` itself; set `QUICKSTART_DRAFT_BASE_URL=http://host:port/v1` to use an already-running
-server.
+With `QUICKSTART_MODEL_SELECTION=legacy-auto`, the selector uses existing recommendation JSON when
+it exists, then falls back to the host-fit Gemma 4 target. If `QUICKSTART_DRAFT_BASE_URL` is unset,
+the draft command starts and stops `vllm serve` itself; set
+`QUICKSTART_DRAFT_BASE_URL=http://host:port/v1` to use an already-running server.
 
 To opt into an external provider, set the provider API key expected by `litellm`, then run:
 
@@ -181,7 +197,7 @@ Default full-draft knobs:
 
 - `QUICKSTART_PDF_DRAFT_DOCS=all`
 - `QUICKSTART_DRAFT_MODEL=auto`
-- `QUICKSTART_DRAFT_BACKEND=ollama`
+- `QUICKSTART_MODEL_SELECTION=gemma4`
 - `QUICKSTART_DRAFT_MAX_ITEMS=180`
 - `QUICKSTART_DRAFT_VERIFY_N=40`
 - `QUICKSTART_DRAFT_TIMEOUT=900`

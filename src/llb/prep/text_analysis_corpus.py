@@ -24,7 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from llb.contracts import PlantedLabelRecord
+from llb.core.contracts import PlantedLabelRecord
 from llb.prep.frontier import (
     LLMComplete,
     ProvenanceLog,

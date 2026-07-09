@@ -24,8 +24,8 @@ from typing import Any, Callable, Protocol, TextIO, cast
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
-from llb.contracts import BackendMetadata, ChatMessage
-from llb import env
+from llb.core.contracts import BackendMetadata, ChatMessage
+from llb.core import env
 
 
 class _Process(Protocol):
@@ -44,6 +44,22 @@ class _HttpGetter(Protocol):
     def __call__(self, url: str, timeout: float = 3.0) -> tuple[int, str] | None: ...
 
 
+# `--max-lora-rank` only accepts these values, and it defaults to 16: an adapter trained at a higher
+# rank makes `add_lora` fail at startup ("LoRA rank 64 is greater than max_lora_rank 16"), so the
+# launcher sizes the flag from the adapter it is about to serve, rounding UP to the nearest value.
+VLLM_MAX_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
+
+
+def served_lora_rank(rank: int) -> int:
+    """The smallest `--max-lora-rank` vLLM accepts that can still hold `rank`."""
+    for allowed in VLLM_MAX_LORA_RANKS:
+        if rank <= allowed:
+            return allowed
+    raise SystemExit(
+        f"[vllm] LoRA rank {rank} exceeds the largest servable rank {VLLM_MAX_LORA_RANKS[-1]}"
+    )
+
+
 def build_vllm_command(
     model: str,
     *,
@@ -51,8 +67,13 @@ def build_vllm_command(
     port: int = 8000,
     gpu_memory_utilization: float = 0.85,
     max_model_len: int | None = None,
+    cpu_offload_gb: float | None = None,
+    kv_offloading_size_gb: float | None = None,
     dtype: str = "auto",
     quantization: str | None = None,
+    adapter_path: str | None = None,
+    adapter_name: str = "adapter",
+    max_lora_rank: int | None = None,
     served_model_name: str | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
@@ -69,10 +90,18 @@ def build_vllm_command(
     ]
     if max_model_len:
         cmd += ["--max-model-len", str(max_model_len)]
+    if cpu_offload_gb:
+        cmd += ["--cpu-offload-gb", f"{cpu_offload_gb:g}"]
+    if kv_offloading_size_gb:
+        cmd += ["--kv-offloading-size", f"{kv_offloading_size_gb:g}"]
     if dtype and dtype != "auto":
         cmd += ["--dtype", dtype]
     if quantization:
         cmd += ["--quantization", quantization]
+    if adapter_path:
+        cmd += ["--enable-lora", "--lora-modules", f"{adapter_name}={adapter_path}"]
+        if max_lora_rank:
+            cmd += ["--max-lora-rank", str(served_lora_rank(max_lora_rank))]
     if served_model_name:
         cmd += ["--served-model-name", served_model_name]
     if extra_args:
@@ -146,8 +175,13 @@ class VllmLauncher(BackendLauncher):
         port: int = 8000,
         gpu_memory_utilization: float = 0.85,
         max_model_len: int | None = None,
+        cpu_offload_gb: float | None = None,
+        kv_offloading_size_gb: float | None = None,
         dtype: str = "auto",
         quantization: str | None = None,
+        adapter_path: Path | str | None = None,
+        adapter_name: str = "adapter",
+        max_lora_rank: int | None = None,
         extra_args: list[str] | None = None,
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
@@ -162,14 +196,27 @@ class VllmLauncher(BackendLauncher):
                 "backend": "vllm",
                 "host": host,
                 "gpu_memory_utilization": gpu_memory_utilization,
+                "cpu_offload_gb": cpu_offload_gb,
+                "kv_offloading_size_gb": kv_offloading_size_gb,
+                "adapter_path": str(adapter_path) if adapter_path else None,
+                "adapter_name": adapter_name if adapter_path else None,
+                "max_lora_rank": served_lora_rank(max_lora_rank)
+                if (adapter_path and max_lora_rank)
+                else None,
             },
         )
         self.host = host.rstrip("/")
         self.port = port
         self.gpu_memory_utilization = gpu_memory_utilization
         self.max_model_len = max_model_len
+        self.cpu_offload_gb = cpu_offload_gb
+        self.kv_offloading_size_gb = kv_offloading_size_gb
         self.dtype = dtype
         self.quantization = quantization
+        self.adapter_path = str(adapter_path) if adapter_path else None
+        self.adapter_name = adapter_name
+        self.max_lora_rank = max_lora_rank
+        self.request_model = adapter_name if adapter_path else model
         self.extra_args = extra_args
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
@@ -191,8 +238,13 @@ class VllmLauncher(BackendLauncher):
             port=self.port,
             gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,
+            cpu_offload_gb=self.cpu_offload_gb,
+            kv_offloading_size_gb=self.kv_offloading_size_gb,
             dtype=self.dtype,
             quantization=self.quantization,
+            adapter_path=self.adapter_path,
+            adapter_name=self.adapter_name,
+            max_lora_rank=self.max_lora_rank,
             extra_args=self.extra_args,
         )
 
@@ -254,7 +306,7 @@ class VllmLauncher(BackendLauncher):
             self._client = make_client(f"{self.host}/v1", api_key="vllm")
         self._last = chat_once(
             self._client,
-            self.model,
+            self.request_model,
             messages,
             max_tokens=max_tokens,
             temperature=temperature,

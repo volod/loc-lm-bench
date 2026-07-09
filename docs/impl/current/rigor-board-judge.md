@@ -160,6 +160,100 @@ led accuracy (objective 0.546), Lapa was the recommended host pick (0.505, fits 
 Qwen3.6 led efficiency (0.216 quality/W), and the Ukrainian-specialized models out-scored the
 multilingual Mistral Small 3.1 (0.399) and Qwen baselines on Ukrainian RAG.
 
+## Miss Analysis (analyze-misses)
+
+`llb analyze-misses --run-dir <run>` (`make analyze-misses RUN_DIR=<run>`) explains a finalized
+run's wrong answers. Classifier, clustering, and recommendations live in
+`src/llb/board/miss_analysis.py`; the probe orchestration in `src/llb/board/miss_probe.py`;
+tests in `tests/test_miss_analysis.py` (a synthetic scored bundle with one case per miss class
+proves zero cross-class leakage and that every recommendation line names numeric evidence).
+
+Every miss lands in exactly ONE class, decided in precedence order: `refusal` (typed status),
+`format_artifact` (empty / malformed / timeout / backend_error -- output or transport, not
+knowledge), `retrieval_miss` (typed status, or the gold span never overlaps a retrieved span),
+`judge_disagreement` (objective below the miss threshold while the trusted per-case judge rated
+>= 0.7 -- a scoring conflict for a human to look at), else `generation_miss` (evidence present,
+answer wrong). A scoreable case is a miss when `objective_score < 0.5`
+(`--miss-threshold` / `MISS_THRESHOLD=` overrides). Span overlap reads the additive per-case
+`retrieval.jsonl` record every run bundle now persists beside `scores.jsonl`
+(`batch_retrieval_records` in `src/llb/executor/cases.py`; doc id + char offsets + rank +
+score + bounded 160-char text preview + the gold spans); bundles that predate the record fall
+back to the scored `retrieval_hit` flag with a logged warning.
+
+Misses are clustered by document (`source_doc_id`), topic, and question type, with per-key miss
+rates computed over ALL scored cases of that key. Labels come from the goldset's
+`item_provenance.jsonl` sidecar when the draft pipeline emitted one (`question_type` / `topic`);
+otherwise a deterministic UA/EN interrogative heuristic types the question and the longest
+content token stands in for the topic -- lemmatized best-effort through the hybrid-retrieval
+lemma normalizer (`llb.rag.lexical.best_effort_lemma`; identity when the `[lex]` extra is
+absent), so Ukrainian case forms of one topic land in a single cluster instead of splitting
+across inflections. Recommendations are ranked by the miss count they
+address and rendered from `board.miss.*` prompt templates: raise/lower `top_k`, change
+chunking, add prompt-system dictionary terms for a dominant generation-miss cluster, try the
+named alternative model (cited with its measured objective from comparable sibling bundles --
+same split and case count), review refusals / artifacts / judge disagreements.
+
+Probe mode (`--probe-top-k 3,8` / `PROBE_TOP_K=3,8`) re-runs ONLY the miss subset at each
+alternative retrieval depth through the normal durable `run_eval` (same recorded config; only
+`top_k` and `run_name` change, judge and telemetry off), so the retrieval hypothesis is
+confirmed or rejected with measured recovery numbers, and a shallower depth that beats the miss
+subset's baseline objective by >= 0.05 earns a "lower top_k" line. Probe bundles are ordinary
+run bundles named `miss-probe-<run_id>-k<k>`: a finalized probe is reused (never re-run), an
+interrupted probe's staging is found by its pinned config + goldset digests and resumed via the
+durable-eval-runner journal, and only then does a fresh probe start. Off-cohort probe bundles
+never pollute the board headline (tiny `n_cases` -> cohort exclusion).
+
+Artifacts land at `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`;
+`llb recommend` appends a `## Miss analysis` section (intro + top 5 ranked lines) from the
+latest `analysis.json` when one exists (`format_miss_section_md` in
+`src/llb/board/recommend.py`). Run bundles are never mutated. Automatic re-tuning stays out of
+scope -- the Optuna tuner owns search.
+
+## Context-Position Probe (probe-context-position)
+
+`llb probe-context-position --model <m> --backend <b> --k <k>`
+(`make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5`) measures a model's
+lost-in-the-middle sensitivity and names its `context_order` recommendation with evidence
+(rerank-context-order). Core in `src/llb/eval/position_probe.py`; CLI in `src/llb/cli/eval.py`;
+tests in `tests/test_position_probe.py` (a fake store + a fake chat that answers correctly only
+when the gold chunk leads the prompt prove case construction, exact gold placement, per-position
+scoring, the recommendation rule, and the artifacts -- no backend, no GPU).
+
+Per verified gold item, ONE retrieval at `--candidate-depth` (default 50) supplies both the gold
+chunk (the first candidate overlapping a gold span) and the k-1 best-ranked non-gold distractors
+-- real retrieved distractors, never synthetic filler. Items whose gold chunk is not retrievable
+or that lack k-1 distractors are counted per skip reason (`gold_not_retrieved` /
+`too_few_distractors`), never invented. The gold chunk is then laid at the head, middle, and
+tail of the fixed-k context (`k >= 3` enforced -- below that the slots collapse) and the same
+question is asked three times through the standard RAG chat prompt. Each answer is
+status-classified and scored by the objective correctness scorer against the reference answer.
+
+The report gives per-position n / mean objective / bootstrap 95% CI and recommends `rank`
+(best-first) when the head mean is at least the tail mean, else `reverse_rank` (best-last);
+overlapping head/tail CIs are flagged as unresolved at that n (the recommendation still names
+the higher mean, honestly qualified). Artifacts land at
+`$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; probe cases never enter run
+bundles, the board, or correctness aggregates.
+
+## Insufficient-Context Abstention Probe (run-eval --insufficient-context-probes)
+
+`llb run-eval --insufficient-context-probes <n>` re-runs a seeded sample of gold items with their
+gold evidence excluded from retrieval and scores abstention accuracy -- the share on which the
+model correctly declines instead of fabricating an answer. Like the position probe, these probe
+cases are scored on their OWN axis (`probes.jsonl` + `insufficient_context_report.md` in the run
+bundle) and NEVER enter the correctness aggregates. It is part of the answer-side
+groundedness/citation metrics; the mechanism, the deterministic groundedness + citation-validity
+scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evidence live in
+[RAG core](rag-core.md) groundedness and citation metrics.
+
+Durable evidence (2026-07-08, real run on the CUDA host, outside quick CI): `llama3.2:3b`
+(ollama) over the published `ua_squad_postedited_v1` goldset at k=5, 20 final items (0 skips):
+head 0.355 [0.207, 0.510], middle 0.341 [0.198, 0.487], tail 0.327 [0.179, 0.478] -- a mild
+best-first slope, so the probe recommends `rank` while flagging the overlapping head/tail CIs
+as unresolved at n=20 (the honest verdict: this model is not measurably position-sensitive at
+this sample size; the default ordering stands). The rerank half of the same validation run is
+recorded in [RAG core](rag-core.md) Reranking And Context Order.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to

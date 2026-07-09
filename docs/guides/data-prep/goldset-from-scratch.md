@@ -193,6 +193,69 @@ make build-index   GOLDSET=<verified-goldset>.jsonl CORPUS=<corpus>
 make run-eval      MODEL=<tag> GOLDSET=<verified-goldset>.jsonl [JUDGE_RHO=<rho> enables the judge]
 ```
 
+### 6b. Score an already-answered external RAG log
+
+Use this when the RAG system under analysis is outside this codebase and has already answered the
+gold questions. The input is one JSON object per line with the normal gold fields plus an answer
+field such as `llm_answer` or `predicted_answer`; optional `llm_sources` are shown in the
+interactive card and flattened into the final CSV. This is an external-system diagnostic, not a
+certified local benchmark leaderboard. If the rows are still `verified=false`, treat the result as
+an estimate until the human review fields are filled.
+
+```
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl>
+```
+
+The command opens an interactive human scoring session. Each row shows the question,
+`reference_answer`, gold source text, raw `llm_answer`, scored answer text, first returned
+`llm_sources`, and `llm_error`. Use:
+
+```
+a        accept, score=1
+p        partial, score=0.5
+r        reject, score=0
+s <0..1> explicit score
+o        edit human_notes
+w        edit human_corrected_answer
+n/b/u/j  navigate
+q        save and quit
+```
+
+Intermediate state is written back into the same JSONL as `human_score_0_1`,
+`human_decision`, `human_notes`, `human_corrected_answer`, and `human_status`. Re-run the same
+command to resume at the first unscored row. To restart scoring, use:
+
+```
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl> \
+  EXTERNAL_RAG_CLEAR=1
+```
+
+Only after every row has a human score and decision does the command write final artifacts. By
+default they are:
+
+```
+<answered-jsonl-stem>.csv
+<answered-jsonl-stem>.report.md
+```
+
+Use explicit paths or non-standard field names when needed:
+
+```
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl> \
+  EXTERNAL_RAG_CSV=<out.csv> \
+  EXTERNAL_RAG_REPORT=<report.md> \
+  EXTERNAL_RAG_ANSWER_FIELD=predicted_answer \
+  EXTERNAL_RAG_SOURCES_FIELD=sources
+```
+
+The scorer strips a trailing `Source:` footer before objective scoring but keeps the
+raw answer in the CSV. If your external API can return corpus `doc_id`, `char_start`, and
+`char_end` for sources, include them in `llm_sources`; otherwise source-span recall cannot be
+computed for the external system.
+
 ---
 
 ## Authoring rules

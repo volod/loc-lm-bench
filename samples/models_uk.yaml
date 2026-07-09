@@ -96,6 +96,20 @@ models:
         bpw: 3.5
         min_vram_gb: 8
 
+  # --- Ollama-curated Qwen3 MoE baseline for the cross-tier best-model search: one tag that
+  #     serves on EVERY CUDA tier (q4_k_m weights ~18.6 GiB -- VRAM-resident on 24/32 GB,
+  #     CPU-offloaded via Ollama on 12/16 GB; vLLM has no equivalent single-artifact path).
+  - name: qwen3-30b-a3b
+    backend: ollama
+    source: qwen3:30b
+    min_vram_gb: 8
+    params_b: 30.5        # MoE total held in memory; ~3.3B active per token
+    quant: q4_k_m
+    n_layers: 48
+    kv_dim: 512           # 4 KV heads * 128 head_dim
+    max_context: 40960
+    notes: Qwen3 30B-A3B MoE q4_k_m (curated Ollama tag, Apache-2.0); hybrid thinking is ON by default -- disable it for scoring (Ollama native `think=false`), like gemma4
+
   - name: mistral-small-3.1-24b
     backend: vllm
     source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16

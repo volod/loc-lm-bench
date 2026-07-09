@@ -31,8 +31,8 @@ from typing import Callable, TypeVar, cast
 
 import yaml
 
-from llb.config import RunConfig
-from llb.contracts import CellResult, CoolDownReport, GpuSample, IsolationOutcome, SweepReport
+from llb.core.config import RunConfig
+from llb.core.contracts import CellResult, CoolDownReport, GpuSample, IsolationOutcome, SweepReport
 from llb.executor.vram import (
     DEFAULT_TOLERANCE_MB,
     VERDICT_LEAKED,

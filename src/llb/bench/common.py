@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import TypeVar
 
 from llb.backends.base import BackendLauncher
-from llb.config import RunConfig
-from llb.contracts import (
+from llb.core.config import RunConfig
+from llb.core.contracts import (
     ChatMessage,
     JsonObject,
     JudgeInputRecord,

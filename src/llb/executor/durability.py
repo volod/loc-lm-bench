@@ -34,10 +34,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
-from llb.contracts import DurabilityStatus
+from llb.core.contracts import DurabilityStatus
 from llb.eval import graph as eval_graph
-from llb.executor.cases import CaseBatch, score_case, spans_as_dicts
-from llb.fsutil import atomic_write_text
+from llb.executor.cases import CaseBatch, ScoreOptions, score_case, spans_as_dicts
+from llb.core.fsutil import atomic_write_text
 from llb.goldset.schema import GoldItem
 
 RagState = eval_graph.RagState
@@ -50,8 +50,17 @@ JOURNAL_NAME = "cases.progress.jsonl"
 JOURNAL_META_NAME = "cases.progress.meta.json"
 
 # Fields of the terminal RagState the journal needs to reproduce scoring, retrieval, and the judge
-# record deterministically on resume (context/question are not scored, so they are dropped).
-_JOURNALED_STATE_KEYS = ("retrieved", "answer", "status", "error", "usage")
+# record deterministically on resume (context/question are not scored, so they are dropped). The
+# stage latencies (rerank-context-order) are journaled so a resumed run's rows keep them.
+_JOURNALED_STATE_KEYS = (
+    "retrieved",
+    "answer",
+    "status",
+    "error",
+    "usage",
+    "retrieve_latency_s",
+    "rerank_latency_s",
+)
 
 
 @dataclass
@@ -294,6 +303,7 @@ def execute_cases_durable(
     relaunch: Callable[[], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     counters: DurabilityCounters | None = None,
+    options: ScoreOptions | None = None,
 ) -> tuple[CaseBatch, DurabilityCounters]:
     """Resumable, retrying variant of `execute_cases`.
 
@@ -315,7 +325,7 @@ def execute_cases_durable(
             state = _run_case_with_retry(item, runner_fn, policy, relaunch, sleep, counters)
             journal.record(item.id, state)
         spans = spans_as_dicts(item)
-        rows.append(score_case(item, state, embedder=embedder))
+        rows.append(score_case(item, state, embedder=embedder, options=options))
         retrieval_pairs.append((state.get("retrieved", []), spans))
         answers.append((item, state.get("answer", "")))
     return CaseBatch(rows=rows, retrieval_pairs=retrieval_pairs, answers=answers), counters

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from llb.contracts import (
+from llb.core.contracts import (
     ContentionReport,
     DurabilityStatus,
     JsonObject,
@@ -33,7 +33,7 @@ from llb.contracts import (
     RunPaths,
     TelemetryReport,
 )
-from llb.fsutil import atomic_write_text as _atomic_write_text
+from llb.core.fsutil import atomic_write_text as _atomic_write_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -89,8 +89,11 @@ def persist_run(
     out_dir: Path | str,
     mirror: Callable[[RunManifest, Path], None] | None = None,
     staging_dir: Path | str | None = None,
+    retrieval_rows: Sequence[Mapping[str, object]] | None = None,
 ) -> RunPaths:
-    """Atomically publish manifest + scores as one directory, then mirror best-effort."""
+    """Atomically publish manifest + scores (+ optional per-case retrieved spans) as one
+    directory, then mirror best-effort. `retrieval_rows` is the additive `retrieval.jsonl`
+    record (miss analysis); omitting it keeps the legacy bundle shape."""
     out_dir = Path(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     if out_dir.exists():
@@ -114,6 +117,11 @@ def persist_run(
             json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
         )
         staged_scores = write_scores(case_rows, staging / "scores")
+        staged_retrieval = (
+            write_scores(retrieval_rows, staging / "retrieval")
+            if retrieval_rows is not None
+            else None
+        )
         staging.replace(out_dir)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
@@ -131,11 +139,14 @@ def persist_run(
     except Exception as exc:  # a mirror failure must not lose a completed run
         mirror_status = f"failed: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
 
-    return {
+    paths: RunPaths = {
         "manifest": str(manifest_path),
         "scores": str(scores_path),
         "mirror": mirror_status,
     }
+    if staged_retrieval is not None:
+        paths["retrieval"] = str(out_dir / staged_retrieval.name)
+    return paths
 
 
 def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:

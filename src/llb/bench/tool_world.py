@@ -12,7 +12,7 @@ import operator
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from llb.contracts import ToolDef
+from llb.core.contracts import ToolDef
 
 # Tool names.
 READ_FILE = "read_file"

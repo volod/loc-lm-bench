@@ -17,11 +17,11 @@ import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from llb.backends.base import BackendLauncher
-from llb.config import RunConfig
-from llb.contracts import (
+from llb.core.config import RunConfig
+from llb.core.contracts import (
     BackendMetadata,
     CaseScoreRow,
     ContentionReport,
@@ -36,13 +36,17 @@ from llb.contracts import (
 from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.executor import durability
-from llb.executor.cases import CaseBatch, spans_as_dicts
+from llb.executor.cases import CaseBatch, batch_retrieval_records, spans_as_dicts
 from llb.executor.reporting import emit_summary
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.rag import retrieval
 from llb.scoring.aggregate import ModelResult, format_table, rank_results
 from llb.scoring.judge import judge_is_trusted, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
+
+if TYPE_CHECKING:
+    from llb.eval.insufficient_context import InsufficientContextReport
+    from llb.executor.cases import ScoreOptions
 
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
 
@@ -103,12 +107,18 @@ def _select_eval_items(
 
 
 def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLauncher:
+    if config.adapter_path is not None and config.backend != "vllm":
+        raise SystemExit(
+            f"[run-eval] adapter serving is wired for vLLM LoRA modules; backend "
+            f"{config.backend!r} needs a merged model artifact first"
+        )
     if config.backend == "ollama":
         from llb.backends.ollama import OllamaLauncher
 
         return OllamaLauncher(config.model, host=config.ollama_host)
     if config.backend == "vllm":
         from llb.backends.vllm import VllmLauncher
+        from llb.finetune.trainer import adapter_lora_rank
 
         return VllmLauncher(
             config.model,
@@ -116,8 +126,12 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             port=config.vllm_port,
             gpu_memory_utilization=config.gpu_memory_utilization,
             max_model_len=config.max_model_len,
+            cpu_offload_gb=config.cpu_offload_gb,
+            kv_offloading_size_gb=config.kv_offloading_size_gb,
             dtype=config.dtype,
             quantization=config.quantization,
+            adapter_path=config.adapter_path,
+            max_lora_rank=adapter_lora_rank(config.adapter_path),
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":
@@ -194,6 +208,11 @@ def _guard_vllm_contention(
 def _default_runner_fn(
     config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
 ) -> Callable[[GoldItem], RagState]:
+    chunk_filter = None
+    if config.acl_label is not None:
+        from llb.rag.filters import metadata_filter
+
+        chunk_filter = metadata_filter(acl_label=config.acl_label)
     app = eval_graph.build_rag_graph(
         store,
         launcher,
@@ -202,12 +221,117 @@ def _default_runner_fn(
         config.temperature,
         config.request_timeout_s,
         prompt_package=prompt_package,
+        context_order=config.context_order,
+        query_prep=build_query_prep(config, store, launcher),
+        chunk_filter=chunk_filter,
+        cited=config.cited_answers,
     )
 
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
     return run
+
+
+def _score_options(config: RunConfig) -> "ScoreOptions":
+    """The opt-in answer-side scoring toggles for this run (groundedness-citation-metrics)."""
+    from llb.executor.cases import ScoreOptions
+
+    return ScoreOptions(
+        score_groundedness=config.score_groundedness,
+        cited_answers=config.cited_answers,
+        context_order=config.context_order,
+    )
+
+
+def _maybe_run_probes(
+    config: RunConfig, items: list[GoldItem], store: Any, backend: Any
+) -> "InsufficientContextReport | None":
+    """Run the insufficient-context abstention probe over a seeded sample, if configured.
+
+    The gold evidence is excluded from retrieval for each probed item; correct behavior is an
+    explicit abstention. Probe rows are scored separately and never enter the correctness batch."""
+    if config.insufficient_context_probes <= 0:
+        return None
+    from llb.eval.insufficient_context import run_insufficient_context_probe
+
+    def chat(messages: Any) -> tuple[str, str | None]:
+        result = backend.chat(
+            messages,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.request_timeout_s,
+        )
+        return result.text or "", result.error
+
+    return run_insufficient_context_probe(
+        items,
+        store,
+        chat,
+        model=config.model,
+        backend=config.backend,
+        k=config.top_k,
+        n=config.insufficient_context_probes,
+        seed=config.seed,
+        cited=config.cited_answers,
+        context_order=config.context_order,
+    )
+
+
+def _launcher_rewriter(config: RunConfig, launcher: Any) -> Callable[[str], str]:
+    """Local-LLM query rewriter over the run's backend endpoint seam (uk-query-processing)."""
+    from llb.prompts import render_chat
+
+    def rewrite(query: str) -> str:
+        messages = render_chat("eval.rag.query_rewrite", {"query": query})
+        result = launcher.chat(
+            messages,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.request_timeout_s,
+        )
+        return result.text or ""
+
+    return rewrite
+
+
+def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any | None:
+    """Build the opt-in query-side lane for this run, resolving each step's dependency.
+
+    Returns None when no steps are configured (the lane is an exact no-op). The typo step reads
+    the corpus vocabulary from the loaded store's chunks; the glossary step loads
+    `config.query_glossary_path`; the rewrite step wraps the backend launcher. Missing
+    dependencies raise a clear SystemExit rather than a bare error mid-run."""
+    from llb.rag import query_prep as qp
+
+    steps = list(config.query_prep)
+    if not steps:
+        return None
+    vocabulary = None
+    glossary = None
+    rewriter = None
+    if qp.STEP_TYPOS in steps:
+        chunks = getattr(store, "chunks", None) or []
+        vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+    if qp.STEP_GLOSSARY in steps:
+        if config.query_glossary_path is None:
+            raise SystemExit(
+                "[run-eval] query_prep 'glossary' step needs query_glossary_path "
+                "(build one with `llb build-query-glossary`)."
+            )
+        if not Path(config.query_glossary_path).is_file():
+            raise SystemExit(f"[run-eval] query glossary not found: {config.query_glossary_path}")
+        glossary = qp.Glossary.load(config.query_glossary_path)
+    if qp.STEP_REWRITE in steps:
+        if launcher is None:
+            raise SystemExit("[run-eval] query_prep 'rewrite' step needs a backend launcher")
+        rewriter = _launcher_rewriter(config, launcher)
+    try:
+        return qp.QueryPrep.build(
+            steps, vocabulary=vocabulary, glossary=glossary, rewriter=rewriter
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None
 
 
 def _judge_records(batch: CaseBatch) -> list[JudgeInputRecord]:
@@ -329,9 +453,45 @@ def _aggregate(
         metrics["mean_power_w"] = round(float(mean_power), 2)
         metrics["tokens_per_watt"] = round(tokens_per_s / float(mean_power), 4)
         metrics["quality_per_watt"] = round(objective * tokens_per_s / float(mean_power), 4)
+    stage = _stage_latency(case_rows)
+    if stage:
+        metrics["stage_latency"] = stage
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
+    _attach_answer_side_metrics(metrics, case_rows)
     return rows, metrics
+
+
+def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Mean per-case groundedness / citation signals (groundedness-citation-metrics), when present."""
+    for key in ("groundedness", "citation_validity", "hallucinated_citation_rate"):
+        values = [float(row[key]) for row in case_rows if key in row]
+        if values:
+            metrics[key] = round(sum(values) / len(values), 4)
+
+
+def _stage_latency(case_rows: list[CaseScoreRow]) -> dict[str, float]:
+    """Mean per-case stage wall-clock (rerank-context-order): retrieve / rerank / generate.
+
+    Retrieve and rerank means cover the cases that recorded them (rerank only exists when a
+    reranker is configured); generate is the mean backend latency. Empty when nothing was
+    measured, so pre-existing bundles keep their shape."""
+
+    def mean_of(key: str) -> float | None:
+        values = [float(row[key]) for row in case_rows if key in row]  # type: ignore[literal-required]
+        return round(sum(values) / len(values), 4) if values else None
+
+    stage: dict[str, float] = {}
+    retrieve_s = mean_of("retrieve_latency_s")
+    if retrieve_s is not None:
+        stage["retrieve_s"] = retrieve_s
+    rerank_s = mean_of("rerank_latency_s")
+    if rerank_s is not None:
+        stage["rerank_s"] = rerank_s
+    if stage:
+        generate = [float(row["latency_s"]) for row in case_rows if row.get("latency_s")]
+        stage["generate_s"] = round(sum(generate) / len(generate), 4) if generate else 0.0
+    return stage
 
 
 def _run_timestamp(run_id: str) -> str:
@@ -401,18 +561,28 @@ def _load_store(config: RunConfig) -> Any:
     """Load the configured retrieval store: the GraphRAG backend (GraphRAG backend) or the default FAISS store.
 
     Both expose the same `.retrieve(question, k) -> list[ChunkRecord]` seam, so the eval graph,
-    scoring, isolation, and board are unchanged regardless of backend."""
+    scoring, isolation, and board are unchanged regardless of backend. With `config.reranker`
+    set, the loaded store is wrapped in the cross-encoder rerank stage (rerank-context-order);
+    the wrapper honors the same retrieve seam, so every backend gains reranking identically."""
+    from llb.rag.rerank import maybe_wrap_reranker
+
     if config.retrieval_backend == "graph":
         from llb.graph.store import GraphStore
 
-        return GraphStore.load(
-            config.graph_dir(),
-            strategy=config.retrieval_strategy,
-            khop_depth=config.graph_khop_depth,
+        return maybe_wrap_reranker(
+            GraphStore.load(
+                config.graph_dir(),
+                strategy=config.retrieval_strategy,
+                khop_depth=config.graph_khop_depth,
+            ),
+            config,
         )
-    from llb.rag.store import RagStore, store_embedder_mismatch
+    from llb.rag.store import MODE_HYBRID, RagStore, stale_store_message, store_embedder_mismatch
 
     store = RagStore.load(config.index_dir())
+    stale = stale_store_message(store.meta, config.corpus_root, config.index_dir())
+    if stale is not None:
+        raise SystemExit(stale)
     built = store_embedder_mismatch(store.meta, config.embedding_model)
     if built is not None:
         raise SystemExit(
@@ -421,7 +591,23 @@ def _load_store(config: RunConfig) -> Any:
             f"index (build-index --embedding-model {config.embedding_model}) or set the config to "
             f"match; a store is embedded and queried by one encoder, so they must agree."
         )
-    return store
+    if config.retrieval_mode == MODE_HYBRID:
+        if getattr(store, "lexical", None) is None:
+            raise SystemExit(
+                f"[run-eval] --retrieval-mode hybrid needs a lexical index, but the store at "
+                f"{config.index_dir()} was built '{store.meta.get('mode')}' (dense-only). "
+                f"Rebuild it with `build-index --retrieval-mode hybrid`."
+            )
+        store.fusion_weight = config.fusion_weight
+        store.fusion_candidates = config.fusion_candidates
+    elif getattr(store, "lexical", None) is not None:
+        # A hybrid store can always serve dense-only: drop the lexical side for this run.
+        _LOG.info(
+            "[run-eval] retrieval_mode=%s over a hybrid store; lexical fusion disabled",
+            config.retrieval_mode,
+        )
+        store.lexical = None
+    return maybe_wrap_reranker(store, config)
 
 
 def _write_calibration_worksheet(
@@ -487,8 +673,25 @@ def run_eval(
             "(only items with verified=true are scored; public-reused sets ship "
             "verified=false pending human review)"
         )
+    adapter_manifest = None
+    if config.adapter_path is not None:
+        from llb.finetune.guard import validate_adapter_for_eval
+        from llb.finetune.registry import registry_path
+
+        adapter_manifest = validate_adapter_for_eval(
+            adapter_path=config.adapter_path,
+            items=items,
+            model=config.model,
+            judge_model=config.judge_model,
+            registry=registry_path(config.data_dir),
+        )
 
     config_payload = config.fingerprint()
+    if adapter_manifest is not None:
+        config_payload["adapter"] = adapter_manifest
+        label = adapter_manifest.get("adapter_label")
+        if isinstance(label, str) and label:
+            config_payload["model"] = label
     if prompt_system_provenance is not None:
         config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
 
@@ -533,6 +736,7 @@ def run_eval(
         embedder = (
             store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
         )
+        score_options = _score_options(config)
         policy = durability.RetryPolicy(
             max_case_retries=max_case_retries,
             retry_backoff_s=retry_backoff_s,
@@ -553,8 +757,10 @@ def run_eval(
                 relaunch=relaunch,
                 sleep=sleep if sleep is not None else time.sleep,
                 counters=counters,
+                options=score_options,
             )
             telemetry_report = _collect_optional_telemetry(config, backend)
+            probe_report = _maybe_run_probes(config, items, store, backend)
     except KeyboardInterrupt:
         if active_launcher is not None:
             _preserve_backend_log(active_launcher, config)
@@ -577,6 +783,9 @@ def run_eval(
     effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
     judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
     rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
+    if probe_report is not None:
+        metrics["abstention_accuracy"] = round(probe_report.abstention_accuracy, 4)
+        metrics["n_probes"] = probe_report.n_probes
     retrieval_metrics = retrieval.evaluate_retrieval(batch.retrieval_pairs, config.top_k)
 
     manifest = RunManifest(
@@ -602,12 +811,18 @@ def run_eval(
         run_dir,
         mirror=mirror,
         staging_dir=staging_dir,
+        retrieval_rows=batch_retrieval_records(batch),
     )
 
     worksheet_rows = 0
     if worksheet is not None:
         worksheet_rows = _write_calibration_worksheet(config, batch, worksheet, judge_scorer)
         paths["worksheet"] = str(worksheet)
+
+    if probe_report is not None:
+        from llb.eval.insufficient_context import write_probe
+
+        paths.update(write_probe(probe_report, run_dir))  # type: ignore[typeddict-item]
 
     table = format_table(rows)
     if emit:
@@ -620,6 +835,7 @@ def run_eval(
             paths,
             worksheet,
             worksheet_rows,
+            metrics,
         )
     return {
         "rows": rows,

@@ -128,6 +128,9 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
 - inventory batch arrays: `CURATE_KIND=inventory` also accepts one top-level JSON array of complete
   prompt-01 response objects, so NotebookLM "continue" sessions can be saved as
   `[{response 1}, {response 2}, ...]` in a single file;
+- coverage source rendering: `make coverage-plan-text` / `llb coverage-plan-text`
+  (`src/llb/prep/curation/coverage_text.py`) converts a per-document prompt-01 inventory slice
+  into a NotebookLM-friendly `.txt` source using the shared curation JSON loader and atomic writer;
 - verbatim repair via `frontier.ground_span`: near-verbatim answers/contexts/grounding quotes are
   re-snapped to exact corpus text when `CURATE_CORPUS=<staged-dir>` is set, and a wrong SQuAD
   `title` is corrected to the document where the context was found;
@@ -146,6 +149,24 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
   per-reason counts.
 
 Unit coverage: `tests/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
+
+`make external-squad-rag` is the single-command prompt-02 SQuAD path for a directory or explicit
+list of external exports. It accepts `SQUAD_DRAFT_INPUT_DIR=<exports-dir>` or
+`SQUAD_DRAFT_INPUTS="<file> [<file> ...]"`, requires `SQUAD_DRAFT_CORPUS=<staged-corpus-dir>`, and
+writes the curated export, canonical `llb/goldset/<name>`, imported `llb/corpus`, and `llb/rag`
+index under `SQUAD_DRAFT_OUT_DIR` (default `$DATA_DIR/external-squad-rag`). The target runs
+curation, SQuAD ingest, structural validation, and `build-index` in order. It sources the project
+`.env` before curation so `HF_TOKEN` is exported for semantic deduplication and embedding
+downloads.
+
+Already-answered external RAG logs use the RAG-core diagnostic command rather than `run-eval`:
+`make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl>` opens an interactive human scoring
+session over rows carrying gold fields plus `llm_answer` or `predicted_answer`. Human scores,
+decisions, notes, and corrected answers are saved back into the JSONL after each edit; final CSV and
+Markdown report artifacts are written only after all rows are scored. The CSV keeps raw answers and
+first-source columns, while objective scoring uses the same reference-correctness functions as
+local RAG runs. See [RAG core](rag-core.md) external answer log scoring and
+[`docs/guides/data-prep/goldset-from-scratch.md`](../../guides/data-prep/goldset-from-scratch.md).
 
 NotebookLM inventory-array coverage is implemented in `src/llb/prep/curation/inventory.py` and
 covered by `test_inventory_accepts_array_of_response_objects`. The goods quickstart NotebookLM
@@ -168,8 +189,11 @@ that were not exact substrings of the staged markdown corpus.
 
 Prompt 02 (`docs/guides/data-prep/external-service-prompts/02-goldset-draft.md`) documents how to
 map a large curated inventory into a drafting prompt: extract a per-document JSON slice with `jq`,
-paste that slice into `COVERAGE PLAN`, and use bounded array windows for section-like batches when a
-single document's inventory is too large for one chat turn.
+convert that slice to text for NotebookLM with `make coverage-plan-text`, upload the text as a
+NotebookLM source, and reference the source file name in `COVERAGE PLAN`. Non-NotebookLM services
+can still receive a compact pasted JSON slice, and bounded array windows remain useful for
+section-like batches when a single document's inventory is too large for one chat turn. NotebookLM
+draft replies are capped at 15 requested items.
 
 `make pdf-to-markdown`, `llb pdf-to-markdown`, and `llb ingest-pdf-corpus` extract local PDF
 directories into the canonical `.md` corpus shape used by RAG, ontology drafting, prompt-system
@@ -218,10 +242,27 @@ records every source with its `kind` (`pdf`|`text`), status, and reuse flag, so 
 unchanged mixed corpus reports `reused: true` for every document. The staged corpus walk excludes
 the output subtree, so the default `<root>/_md` output is never re-ingested as new input.
 
+Governance metadata is part of the same manifest contract. Every manifest item records
+`language`, `ingestion_time`, `source_system`, optional `version`, optional `effective_date`, and
+optional `acl_label`. Text sources can provide per-document values in `<source>.metadata.json` or
+markdown front matter; otherwise `--default-language` is used, then a cheap deterministic detector.
+`--source-system` and `--acl-label` set defaults for sources that do not provide their own values.
+PDF rows inherit any conversion-manifest governance fields when present and otherwise use the same
+operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
+non-time governance fields are unchanged.
+
+Deletion propagation is explicit: a source removed from the input root is removed from the next
+`corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
+manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
+old staged outputs. The rollback unit is the immutable store directory built from a manifest
+fingerprint; keep a previous `$DATA_DIR/llb/rag` directory to roll back an index.
+
 ```bash
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_DEFAULT_LANGUAGE=uk CORPUS_ACL_LABEL=<tag>
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_REFRESH=1
-llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto
+llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto \
+  --default-language uk --acl-label <tag>
 ```
 
 `make quickstart-corpus CORPUS_SRC=<dir>` (script target `corpus`) generalizes the PDF quickstart
@@ -240,7 +281,8 @@ and writes these review artifacts beside `goldset.jsonl`:
   metrics when enabled, and quality gates with a `passed` roll-up (grounded extractions of any kind
   + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
-  spans and PDF page references when sidecars exist.
+  spans and PDF page references when sidecars exist. This artifact also seeds the query-side
+  glossary (see Query Glossary below).
 - `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. Each
   row carries its `question_type` (closed taxonomy: factoid, definition, procedural, numeric,
   comparative, multi-hop) and `difficulty` label. When
@@ -300,26 +342,37 @@ born-digital.
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
 `QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
-`QUICKSTART_DRAFT_NUM_CTX=16384`. With the auto model setting it prints ranked local candidates
-from `llb recommend` JSON when benchmark artifacts exist; otherwise it prompts the operator to run
-the local committed-goldset benchmark, choose a local model manually, or opt into a frontier
-`litellm` model. Auto-selection is backend-aware: `llb.quickstart.model_choice drafter` accepts
-Ollama and vLLM candidates, and `scripts/quickstart.sh` passes only the local backends available on
-the host. A vLLM pick sets `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts
-`VllmLauncher`, points the local draft endpoint at `http://localhost:<port>/v1`, and records
-`endpoint.backend` plus `endpoint.base_url` in provenance. `--no-think` still works for reasoning
-models: Ollama uses native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible
-`extra_body` (`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
-`reasoning_effort=none`). The draft step prints an estimated hour count (character-based, `wc -m`,
-since Cyrillic UTF-8 bytes would double it) and requires confirmation before the full
-ontology/goldset generation starts. It passes the full PDF RAG store at
+`QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=gemma4` resolves the
+most capable Gemma 4 target from the CUDA serving-tier manifest, filtering out vLLM rows whose
+configured `max_model_len` is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB hosts the PDF drafter now
+uses the offloaded vLLM target `google/gemma-4-12B-it-qat-w4a16-ct` with `max_model_len=16384`,
+`gpu_memory_utilization=0.90`, `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`. On 16 GB hosts
+the same 12B target uses `gpu_memory_utilization=0.85` plus the same context, CPU-offload, and
+KV-offload settings. `legacy-auto` still consumes existing `llb recommend` JSON when present, and
+`benchmark`, `choose`, and `frontier` remain explicit operator modes. A vLLM pick sets
+`QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts `VllmLauncher`, points the local
+draft endpoint at `http://localhost:<port>/v1`, and records `endpoint.backend` plus
+`endpoint.base_url` in provenance. `--no-think` still works for reasoning models: Ollama uses
+native `/api/chat` `think=false`, while vLLM uses OpenAI-compatible `extra_body`
+(`chat_template_kwargs.enable_thinking=false`, `include_reasoning=false`,
+`reasoning_effort=none`). Fresh non-resume draft runs clear prior extraction journal state in the
+output directory before the first model call; only `--resume` reuses journaled windows. The draft
+step prints an estimated hour count (character-based, `wc -m`, since Cyrillic UTF-8 bytes would
+double it) and requires confirmation before the full ontology/goldset generation starts. The logged
+make wrapper cannot prompt inside the tee'd child
+process, so unattended full-draft runs require `QUICKSTART_ASSUME_YES=1`; the non-interactive error
+now prints the exact rerun command instead of suggesting a model pin. The PDF and mixed-corpus
+quickstart wrappers pass `DRAFT_REQUIRE_PASSED_GATES=1`, so a zero-item or ungrounded draft writes
+its inspection bundle and then exits non-zero instead of continuing to graph/validation. The wrapper
+passes the full PDF RAG store at
 `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
 gated on `verify-review` and `verify-accept`.
 
-The local recommendation JSON at `.data/quickstart-leaderboard/recommend/pdf_model_choice.json`
-ranks `google/gemma-4-E4B-it-qat-w4a16-ct` as `recommended_for_host` on the 16 GB host with backend
-`vllm`; the selector now returns both model and backend so the PDF draft step launches the matching
-server instead of falling back to an Ollama-only candidate.
+The host Gemma 4 selector ranks CUDA/vLLM rows ahead of larger Ollama/offload rows, then chooses
+the largest Gemma 4 parameter count within that backend class. Long-context callers pass a minimum
+context requirement so short-context smoke cells cannot be selected for PDF drafting. The 12/16 GB
+tiers therefore use the extra `gemma-4-12b-vllm` target, while 24/32 GB tiers use the primary 31B
+vLLM Gemma 4 target.
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid
@@ -420,7 +473,13 @@ live under `$DATA_DIR/llb/calibration/` unless deliberately promoted.
 - `sentence`: dependency-free sentence-aware chunks;
 - `recursive`: LangChain recursive splitter when available, pure fallback otherwise;
 - `markdown`: heading-aware chunks with breadcrumb metadata;
-- `semantic`: pinned-embedder breakpoints while preserving source offsets.
+- `semantic`: pinned-embedder breakpoints while preserving source offsets;
+- `page`: PDF page/citation-aware boundaries that never cross a page-sidecar span;
+- `heading`: heading-hierarchy packing with heading lines kept in the chunk text;
+- `late`: sentence spans embedded by whole-document token pooling (late chunking).
+
+The `page`/`heading`/`late` details, comparison command, and durable evidence live in the
+[RAG core](rag-core.md) chunking-strategies section.
 
 ```bash
 make build-rag-store
@@ -429,3 +488,16 @@ python -m llb.rag.chunking --corpus-root <dir> --out-dir .data/llb/rag \
 ```
 
 Production RAG indexes are built through `llb build-index` or `make build-index`.
+
+## Query Glossary (uk-query-processing)
+
+`llb build-query-glossary --bundle <draft>` (or `make build-query-glossary BUNDLE=<draft>`) turns a
+draft bundle's `prompt_dictionary_candidates.jsonl` into a `query_glossary.json` for the query-side
+`glossary` step (`src/llb/rag/query_prep.py` `build_glossary_from_candidates`). Each candidate
+`term` becomes a canonical entry carrying its recorded aliases plus a romanized Latin variant
+(`--no-transliterations` disables the seeding); entries are sorted by canonical term for a
+deterministic artifact. Hand-add more surzhyk / transliteration aliases by editing the emitted JSON
+-- the `glossary` retrieval step appends every surface form of any entry the query triggers, never
+mutating the stored corpus. A committed fixture lives at `samples/query-prep/` (dictionary
+candidates + the generated `query_glossary.json`). The lane's retrieval behavior, A/B report, and
+durable deltas live in the [RAG core](rag-core.md) query-side-processing section.

@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from llb.config import RUN_EVAL_METHOD, RunConfig
-from llb.paths import PROJECT_ROOT
+from llb.core.config import RUN_EVAL_METHOD, RunConfig
+from llb.core.paths import PROJECT_ROOT
 
 
 def test_defaults_are_cuda_free_ollama():
@@ -102,3 +102,35 @@ def test_invalid_yaml_has_path_context(tmp_path):
 def test_run_timestamp_must_be_one_path_segment():
     with pytest.raises(ValueError, match="path segment"):
         RunConfig().run_dir(str(Path("nested") / "timestamp"))
+
+
+def test_query_prep_defaults_to_empty_noop():
+    assert RunConfig().query_prep == []
+    assert RunConfig().query_glossary_path is None
+
+
+def test_query_prep_accepts_known_steps():
+    cfg = RunConfig().with_overrides(query_prep=["normalize", "typos", "glossary"])
+    assert cfg.query_prep == ["normalize", "typos", "glossary"]
+
+
+def test_query_prep_rejects_unknown_step():
+    with pytest.raises(ValidationError, match="unknown query_prep step"):
+        RunConfig().with_overrides(query_prep=["normalize", "nope"])
+
+
+def test_query_prep_rejects_duplicate_step():
+    with pytest.raises(ValidationError, match="unique"):
+        RunConfig().with_overrides(query_prep=["typos", "typos"])
+
+
+def test_answer_side_flags_default_off():
+    cfg = RunConfig()
+    assert cfg.cited_answers is False
+    assert cfg.score_groundedness is False
+    assert cfg.insufficient_context_probes == 0
+
+
+def test_insufficient_context_probes_must_be_non_negative():
+    with pytest.raises(ValidationError):
+        RunConfig().with_overrides(insufficient_context_probes=-1)

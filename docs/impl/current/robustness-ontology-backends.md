@@ -3,6 +3,18 @@
 This page covers the implementation pieces that make local serving reliable on constrained GPUs and
 make ontology-assisted data drafting reusable by GraphRAG.
 
+## CLI Exit Codes
+
+`src/llb/core/runtime.py` `run_typer` drives the Typer app with `standalone_mode=False` so Ctrl-C is
+not swallowed by click. In that mode click **returns** a `typer.Exit(code)` as an int rather than
+raising it (`typer.Exit` IS `click.exceptions.Exit`), so `run_typer` reads the returned code and
+re-raises it as `SystemExit`. Without that, every `raise typer.Exit(code=N)` in `src/llb/cli/`
+exited 0 and a failing command looked successful to `make` and CI.
+
+`--help` returns 0 through the same path and stays exit 0. `tests/test_runtime.py` pins both with a
+`_ReturningApp` fake that models click's real non-standalone contract; the older `_FakeApp` (which
+raises `Exit`) cannot express it.
+
 ## Memory Planner
 
 `src/llb/backends/planner.py` estimates whether a model can run on the host. The estimate is
@@ -145,8 +157,10 @@ PDF corpora at least one citation-valid needle must exist (`has_citation_valid_n
 applicable by `pdf_citation_gate_applicable`). A single `passed` roll-up ANDs the required gates
 (the needle gate only when page sidecars exist); `nonzero_grounded_facts` stays informational since
 SRO relations power the GraphRAG store but no longer solely block a fact-sparse corpus. The
-pipeline logs the roll-up (WARNING when it fails), and a failing gate is never fatal -- the bundle
-is always written for inspection and the human verification gate remains the real block on scoring.
+pipeline logs the roll-up (WARNING when it fails). Plain `prepare-goldset-draft` still writes a
+failing bundle for inspection, while the PDF and mixed-corpus quickstart wrappers pass
+`--require-passed-gates` so a zero-item or ungrounded draft exits non-zero before graph/validation
+steps.
 
 Every emitted gold item remains `verified=false`. The bundle must pass cross-check and human
 verification before it can score real models.

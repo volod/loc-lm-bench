@@ -1,0 +1,5 @@
+{
+  "id": "board.miss.rec_judge",
+  "kind": "text",
+  "template": "rec_judge.txt"
+}

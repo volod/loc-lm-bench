@@ -3,7 +3,7 @@
 import click
 import pytest
 
-from llb.runtime import INTERRUPT_EXIT, run, run_typer
+from llb.core.runtime import INTERRUPT_EXIT, run, run_typer
 
 
 def test_run_returns_normal_exit_codes():
@@ -49,6 +49,21 @@ class _FakeApp:
         return None
 
 
+class _ReturningApp:
+    """A Typer app driven with `standalone_mode=False`, which RETURNS `typer.Exit(code)` as an int.
+
+    This is click's real contract and the one `_FakeApp` cannot express: a command that does
+    `raise typer.Exit(code=2)` surfaces here as a returned `2`, never as a raised exception.
+    """
+
+    def __init__(self, code):
+        self.code = code
+
+    def __call__(self, standalone_mode=True):
+        assert standalone_mode is False, "run_typer must drive the app in non-standalone mode"
+        return self.code
+
+
 def test_run_typer_translates_abort_to_130():
     with pytest.raises(SystemExit) as ei:
         run_typer(_FakeApp(click.exceptions.Abort()))
@@ -65,6 +80,18 @@ def test_run_typer_preserves_typer_exit_code():
     with pytest.raises(SystemExit) as ei:
         run_typer(_FakeApp(click.exceptions.Exit(2)))
     assert ei.value.code == 2
+
+
+def test_run_typer_exits_on_a_returned_failure_code():
+    """`raise typer.Exit(code=2)` reaches run_typer as a RETURN value, not an exception."""
+    with pytest.raises(SystemExit) as ei:
+        run_typer(_ReturningApp(2))
+    assert ei.value.code == 2
+
+
+def test_run_typer_returned_zero_stays_success():
+    """`--help` returns 0 through the same path and must not become a failure."""
+    assert run_typer(_ReturningApp(0)) is None
 
 
 def test_run_typer_normal_completion_does_not_exit():

@@ -1,0 +1,5 @@
+{
+  "id": "board.miss.summary_line",
+  "kind": "text",
+  "template": "summary_line.txt"
+}

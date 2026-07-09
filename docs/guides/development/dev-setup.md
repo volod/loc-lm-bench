@@ -94,7 +94,7 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 
 | Extra | Pulls | For |
 |-------|-------|-----|
-| `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt | tests, lint, code quality |
+| `dev` | pytest, ruff, mypy, radon, complexipy, pymarkdownlnt, optuna | tests, lint, code quality, lightweight search fakes |
 | `goldset` | datasets | `ingest_squad --hf-dataset` |
 | `rag` | faiss-cpu, sentence-transformers, langchain, DeepEval | index + judge |
 | `rag-chroma` | chromadb | Chroma vector-store adapter |
@@ -105,6 +105,7 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 | `board` | streamlit | leaderboard |
 | `prep` | litellm | frontier-API prep utils |
 | `telemetry` | nvidia-ml-py, psutil | GPU/host telemetry |
+| `finetune` | peft, trl, accelerate, datasets, optuna | LoRA training and hparam search |
 | `pdf-quality` | Docling, Unstructured, MarkItDown OCR/layout helpers | scanned-PDF recovery and parser probes |
 
 `make venv` includes the Chroma and Qdrant vector-store extras so the full local suite runs their

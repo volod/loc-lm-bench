@@ -13,11 +13,19 @@ from llb.backends.vllm import (
 
 def test_build_command_includes_serving_flags():
     cmd = build_vllm_command(
-        "org/Model", port=8001, gpu_memory_utilization=0.9, max_model_len=8192, quantization="awq"
+        "org/Model",
+        port=8001,
+        gpu_memory_utilization=0.9,
+        max_model_len=8192,
+        cpu_offload_gb=16,
+        kv_offloading_size_gb=32,
+        quantization="awq",
     )
     assert cmd[:3] == ["vllm", "serve", "org/Model"]
     assert "--gpu-memory-utilization" in cmd and "0.9" in cmd
     assert "8192" in cmd and "awq" in cmd
+    assert "--cpu-offload-gb" in cmd and "16" in cmd
+    assert "--kv-offloading-size" in cmd and "32" in cmd
 
 
 def test_parse_served_context():
@@ -124,3 +132,35 @@ def test_chat_uses_injected_client():
     result = launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
     assert isinstance(result, ChatResult) and result.text == "привіт"
     assert launcher.telemetry()["tokens_per_s"] >= 0.0
+
+
+def test_chat_uses_lora_module_name_for_adapter_requests():
+    launcher = VllmLauncher(
+        "org/Model",
+        adapter_path="/tmp/adapter",
+        adapter_name="adapter",
+        popen=lambda cmd, **kw: FakeProc(),
+        http_get=lambda url, timeout=3.0: (200, '{"data": []}'),
+        sleep=lambda _s: None,
+    )
+    launcher.start()
+    seen = {}
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    import types
+
+                    seen.update(kwargs)
+                    msg = types.SimpleNamespace(content="ok")
+                    usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+                    return types.SimpleNamespace(
+                        choices=[types.SimpleNamespace(message=msg)], usage=usage
+                    )
+
+    launcher._client = FakeClient()
+    result = launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
+    assert result.text == "ok"
+    assert seen["model"] == "adapter"

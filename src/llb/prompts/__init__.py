@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from llb.contracts import ChatMessage
+from llb.core.contracts import ChatMessage
 from llb.prompts.engine import PromptAugmentation, render_template
 
 if TYPE_CHECKING:

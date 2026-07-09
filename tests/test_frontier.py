@@ -116,6 +116,19 @@ def test_ground_span_exact_then_normalized_then_none():
     assert ground_span(DOC, "Лондон") is None
 
 
+def test_ground_span_tolerates_markdown_and_pdf_decoration():
+    # a clean drafted span grounds against markdown-decorated / comment-laden corpus text,
+    # mapping back to the EXACT original substring (decoration and all).
+    doc = "Натисніть кнопку **Створити акт** <!-- source_pdf: x page: 2 --> у розділі."
+    start, exact = ground_span(doc, "натисніть кнопку створити акт у розділі.") or (None, None)
+    assert exact == doc[start : start + len(exact)]
+    assert exact.startswith("Натисніть") and exact.endswith("розділі.")
+    # heading markers, table pipes / rule rows, curly quotes, and a wedged space before punctuation
+    table = "#### Поле\n| Опис |\n| ------ |\n| Кашкет об’єднуються . |"
+    start, exact = ground_span(table, "поле опис кашкет об'єднуються.") or (None, None)
+    assert exact == table[start : start + len(exact)]
+
+
 def test_build_drafted_items_grounds_via_normalization(tmp_path):
     doc = "Київ   є  СТОЛИЦЕЮ України."
     drafts = [{"question": "Столиця?", "reference_answer": "Київ", "answer_span": "столицею"}]

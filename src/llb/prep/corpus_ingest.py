@@ -27,6 +27,13 @@ from llb.prep.pdf_corpus import (
     default_markdown_out_dir,
     ingest_pdf_corpus,
 )
+from llb.prep.corpus_governance import (
+    DEFAULT_SOURCE_SYSTEM,
+    manifest_items_fingerprint,
+    preserve_ingestion_time,
+    source_governance,
+    utc_ingestion_time,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -54,6 +61,12 @@ class CorpusItem:
     reused: bool = False
     error: str | None = None
     parser: str | None = None  # PDF lane only
+    language: str | None = None
+    version: str | None = None
+    effective_date: str | None = None
+    ingestion_time: str | None = None
+    source_system: str | None = None
+    acl_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +76,7 @@ class CorpusIngestResult:
     source_root: Path
     out_dir: Path
     items: list[CorpusItem]
+    removed_sources: list[str]
 
     @property
     def n_docs(self) -> int:
@@ -75,6 +89,10 @@ class CorpusIngestResult:
     @property
     def n_reused(self) -> int:
         return sum(1 for item in self.items if item.reused)
+
+    @property
+    def n_removed_sources(self) -> int:
+        return len(self.removed_sources)
 
 
 def _iter_by_suffix(root: Path, out_dir: Path) -> tuple[list[Path], list[Path]]:
@@ -101,8 +119,8 @@ def _iter_by_suffix(root: Path, out_dir: Path) -> tuple[list[Path], list[Path]]:
     return pdfs, texts
 
 
-def _previous_text_items(out_dir: Path) -> dict[str, dict[str, Any]]:
-    """Load prior `text` manifest items as `source -> payload` for incremental reuse."""
+def _previous_manifest_items(out_dir: Path) -> dict[str, dict[str, Any]]:
+    """Load prior unified manifest items as `source -> payload` for reuse and diff reporting."""
     path = out_dir / CORPUS_MANIFEST
     if not path.is_file():
         return {}
@@ -113,11 +131,7 @@ def _previous_text_items(out_dir: Path) -> dict[str, dict[str, Any]]:
     items = payload.get("items") if isinstance(payload, dict) else None
     previous: dict[str, dict[str, Any]] = {}
     for item in items if isinstance(items, list) else []:
-        if (
-            isinstance(item, dict)
-            and item.get("kind") == KIND_TEXT
-            and isinstance(item.get("source"), str)
-        ):
+        if isinstance(item, dict) and isinstance(item.get("source"), str):
             previous[item["source"]] = item
     return previous
 
@@ -129,12 +143,27 @@ def _ingest_text_file(
     min_chars: int,
     previous: dict[str, dict[str, Any]],
     refresh: bool,
+    default_language: str | None,
+    default_source_system: str,
+    default_acl_label: str | None,
+    ingestion_time: str,
 ) -> CorpusItem:
     source = path.relative_to(root).as_posix()
     doc_id = source  # preserve the relative path so RAG/ontology keep the same doc id
     source_sha256 = _sha256_file(path)
     target = out_dir / doc_id
     prev = previous.get(source)
+    text = path.read_text(encoding="utf-8")
+    governance = source_governance(
+        root,
+        path,
+        text=text,
+        default_language=default_language,
+        default_source_system=default_source_system,
+        default_acl_label=default_acl_label,
+        ingestion_time=ingestion_time,
+    )
+    governance = preserve_ingestion_time(prev, governance)
     if (
         not refresh
         and prev is not None
@@ -152,8 +181,13 @@ def _ingest_text_file(
             n_chars=int(prev["n_chars"]),
             source_sha256=source_sha256,
             reused=True,
+            language=governance["language"],
+            version=governance["version"],
+            effective_date=governance["effective_date"],
+            ingestion_time=governance["ingestion_time"],
+            source_system=governance["source_system"],
+            acl_label=governance["acl_label"],
         )
-    text = path.read_text(encoding="utf-8")
     if len(text) < min_chars:
         return CorpusItem(
             source=source,
@@ -163,6 +197,12 @@ def _ingest_text_file(
             n_chars=len(text),
             source_sha256=source_sha256,
             error=f"text shorter than {min_chars} chars",
+            language=governance["language"],
+            version=governance["version"],
+            effective_date=governance["effective_date"],
+            ingestion_time=governance["ingestion_time"],
+            source_system=governance["source_system"],
+            acl_label=governance["acl_label"],
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
@@ -173,12 +213,39 @@ def _ingest_text_file(
         status="ok",
         n_chars=len(text),
         source_sha256=source_sha256,
+        language=governance["language"],
+        version=governance["version"],
+        effective_date=governance["effective_date"],
+        ingestion_time=governance["ingestion_time"],
+        source_system=governance["source_system"],
+        acl_label=governance["acl_label"],
     )
 
 
-def _pdf_item_to_corpus_item(payload: dict[str, Any]) -> CorpusItem:
+def _pdf_item_to_corpus_item(
+    payload: dict[str, Any],
+    previous: dict[str, dict[str, Any]],
+    *,
+    default_language: str | None,
+    default_source_system: str,
+    default_acl_label: str | None,
+    ingestion_time: str,
+) -> CorpusItem:
+    source = str(payload.get("source", ""))
+    prev = previous.get(source)
+    governance = preserve_ingestion_time(
+        prev,
+        {
+            "language": payload.get("language") or default_language or "und",
+            "version": payload.get("version"),
+            "effective_date": payload.get("effective_date"),
+            "ingestion_time": ingestion_time,
+            "source_system": payload.get("source_system") or default_source_system,
+            "acl_label": payload.get("acl_label") or default_acl_label,
+        },
+    )
     return CorpusItem(
-        source=str(payload.get("source", "")),
+        source=source,
         doc_id=payload.get("doc_id"),
         kind=KIND_PDF,
         status=str(payload.get("status", "error")),
@@ -187,10 +254,17 @@ def _pdf_item_to_corpus_item(payload: dict[str, Any]) -> CorpusItem:
         reused=bool(payload.get("reused", False)),
         error=payload.get("error"),
         parser=payload.get("parser"),
+        language=governance["language"],
+        version=governance["version"],
+        effective_date=governance["effective_date"],
+        ingestion_time=governance["ingestion_time"],
+        source_system=governance["source_system"],
+        acl_label=governance["acl_label"],
     )
 
 
 def _manifest(result: CorpusIngestResult) -> dict[str, object]:
+    item_rows = [asdict(item) for item in result.items]
     return {
         "kind": "corpus",
         "source_root": str(result.source_root),
@@ -199,8 +273,45 @@ def _manifest(result: CorpusIngestResult) -> dict[str, object]:
         "n_docs": result.n_docs,
         "n_skipped": result.n_skipped,
         "n_reused": result.n_reused,
-        "items": [asdict(item) for item in result.items],
+        "n_removed_sources": result.n_removed_sources,
+        "removed_sources": result.removed_sources,
+        "corpus_fingerprint": manifest_items_fingerprint(item_rows),
+        "items": item_rows,
     }
+
+
+def _cleanup_stale_outputs(
+    out_dir: Path, previous: dict[str, dict[str, Any]], current: list[CorpusItem]
+) -> list[str]:
+    """Remove old staged docs whose source disappeared or whose doc id changed."""
+    current_sources = {item.source for item in current}
+    current_doc_ids = {item.doc_id for item in current if item.status == "ok" and item.doc_id}
+    removed_sources: list[str] = []
+    for source, payload in sorted(previous.items()):
+        if source not in current_sources:
+            removed_sources.append(source)
+        doc_id = payload.get("doc_id")
+        if (
+            payload.get("status") != "ok"
+            or not isinstance(doc_id, str)
+            or doc_id in current_doc_ids
+        ):
+            continue
+        target = out_dir / doc_id
+        try:
+            if target.is_file():
+                target.unlink()
+        except OSError:
+            _LOG.warning("[corpus] could not remove stale staged document %s", target)
+        citation_path = payload.get("citation_path")
+        if isinstance(citation_path, str):
+            try:
+                cite = out_dir / citation_path
+                if cite.is_file():
+                    cite.unlink()
+            except OSError:
+                _LOG.warning("[corpus] could not remove stale citation sidecar %s", citation_path)
+    return removed_sources
 
 
 def ingest_corpus(
@@ -211,6 +322,9 @@ def ingest_corpus(
     parser: str = "auto",
     refresh: bool = False,
     extractor: PdfTextExtractor | None = None,
+    default_language: str | None = None,
+    source_system: str = DEFAULT_SOURCE_SYSTEM,
+    acl_label: str | None = None,
 ) -> CorpusIngestResult:
     """Ingest a mixed `txt`/`md`/`pdf` directory into one canonical `.md`/`.txt` corpus.
 
@@ -227,6 +341,8 @@ def ingest_corpus(
     target.mkdir(parents=True, exist_ok=True)
 
     items: list[CorpusItem] = []
+    ingestion_time = utc_ingestion_time()
+    previous = {} if refresh else _previous_manifest_items(target)
     if pdfs:
         pdf_result = ingest_pdf_corpus(
             source_root,
@@ -236,13 +352,38 @@ def ingest_corpus(
             extractor=extractor,
             refresh=refresh,
         )
-        items.extend(_pdf_item_to_corpus_item(asdict(item)) for item in pdf_result.items)
+        items.extend(
+            _pdf_item_to_corpus_item(
+                asdict(item),
+                previous,
+                default_language=default_language,
+                default_source_system=source_system,
+                default_acl_label=acl_label,
+                ingestion_time=ingestion_time,
+            )
+            for item in pdf_result.items
+        )
 
-    previous = {} if refresh else _previous_text_items(target)
     for path in texts:
-        items.append(_ingest_text_file(source_root, path, target, min_chars, previous, refresh))
+        items.append(
+            _ingest_text_file(
+                source_root,
+                path,
+                target,
+                min_chars,
+                previous,
+                refresh,
+                default_language,
+                source_system,
+                acl_label,
+                ingestion_time,
+            )
+        )
 
-    result = CorpusIngestResult(source_root=source_root, out_dir=target, items=items)
+    removed_sources = _cleanup_stale_outputs(target, previous, items)
+    result = CorpusIngestResult(
+        source_root=source_root, out_dir=target, items=items, removed_sources=removed_sources
+    )
     (target / CORPUS_MANIFEST).write_text(
         json.dumps(_manifest(result), ensure_ascii=False, indent=2), encoding="utf-8"
     )

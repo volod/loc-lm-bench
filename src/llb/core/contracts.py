@@ -38,6 +38,8 @@ class ChunkRecord(SourceSpanRecord):
     metadata: NotRequired[JsonObject]
     retrieval_score: NotRequired[float | None]
     rank: NotRequired[int]
+    rerank_score: NotRequired[float]  # cross-encoder relevance (rerank-context-order)
+    pre_rerank_rank: NotRequired[int]  # retrieval rank before the rerank stage
 
 
 class RagStoreMeta(TypedDict):
@@ -56,6 +58,12 @@ class RagStoreMeta(TypedDict):
     page_annotation_coverage: NotRequired[
         float
     ]  # fraction of indexed chunks carrying source-PDF page provenance (chunk-page-metadata)
+    lexical: NotRequired[
+        JsonObject
+    ]  # hybrid-retrieval-uk BM25 sidecar meta: {"lemmatize": bool, "n_terms": int}
+    corpus_fingerprint: NotRequired[str]  # staged-corpus fingerprint used for stale-store checks
+    corpus_manifest: NotRequired[str]  # manifest filename whose ok entries produced the store
+    governance_fields: NotRequired[list[str]]  # governance metadata fields copied onto chunks
 
 
 class UsageRecord(TypedDict, total=False):
@@ -73,6 +81,29 @@ class RetrievalMetrics(TypedDict):
 
 
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
+
+
+class RetrievedSpanRecord(TypedDict):
+    """One retrieved chunk as persisted in a run bundle's `retrieval.jsonl` (miss analysis):
+    the span coordinates the miss classifier's overlap check needs plus a bounded text preview
+    for observability -- never the full chunk text."""
+
+    doc_id: str
+    char_start: int
+    char_end: int
+    rank: int
+    retrieval_score: NotRequired[float | None]
+    text_preview: NotRequired[str]
+
+
+class CaseRetrievalRecord(TypedDict):
+    """Per-case retrieved-spans record (`retrieval.jsonl`, one line per scored case): what the
+    model actually saw versus the gold spans, so a finalized bundle supports span-overlap miss
+    classification without re-running retrieval."""
+
+    item_id: str
+    retrieved: list[RetrievedSpanRecord]
+    gold_spans: list[SourceSpanRecord]
 
 
 class CorrectnessScores(TypedDict):
@@ -237,6 +268,15 @@ class CaseScoreRow(TypedDict):
     answer_preview: str
     semantic: NotRequired[float]
     judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
+    retrieve_latency_s: NotRequired[float]  # retrieval stage wall-clock (rerank-context-order)
+    rerank_latency_s: NotRequired[float]  # rerank stage wall-clock (only when a reranker is on)
+    query_processed: NotRequired[str]  # query actually retrieved with (uk-query-processing)
+    query_corrections: NotRequired[int]  # count of query-prep transformations applied
+    # Answer-side RAG quality (groundedness-citation-metrics), additive; present only when enabled.
+    groundedness: NotRequired[float]  # share of answer claims supported by the retrieved context
+    citation_validity: NotRequired[float]  # share of [i] citations whose chunk supports the claim
+    hallucinated_citation_rate: NotRequired[float]  # share of citations pointing out of range
+    n_citations: NotRequired[int]  # count of [i] citations the answer emitted
 
 
 class LeaderboardRow(TypedDict):
@@ -280,6 +320,8 @@ class BackendMetadata(TypedDict, total=False):
     backend: str
     host: str
     gpu_memory_utilization: float
+    cpu_offload_gb: float | None
+    kv_offloading_size_gb: float | None
     n_gpu_layers: int  # llama.cpp GPU/CPU layer split (-1 == all on GPU)
     ctx_size: int | None  # llama.cpp requested context (`-c`)
     served_context: int | None
@@ -288,6 +330,9 @@ class BackendMetadata(TypedDict, total=False):
     load_time_s: float | None
     sampler: str  # vLLM sampler actually used (flashinfer | native; vLLM serving preflight)
     flashinfer_version: str | None  # flashinfer version behind the sampler choice
+    adapter_path: str | None  # vLLM LoRA adapter path when adapter serving is active
+    adapter_name: str | None  # vLLM LoRA module name
+    max_lora_rank: int | None  # vLLM --max-lora-rank, sized to the served adapter's trained rank
 
 
 class GpuSummary(TypedDict):
@@ -330,6 +375,15 @@ class RunMetrics(TypedDict):
     tokens_per_watt: NotRequired[float]
     quality_per_watt: NotRequired[float]  # objective_score * tokens_per_s / mean_power_w
     judge_score: NotRequired[float]  # mean per-case judge, recorded only when the judge is trusted
+    # Mean per-case stage wall-clock seconds (rerank-context-order): retrieve always (when
+    # measured), rerank only when a reranker is configured, generate from the backend latency.
+    stage_latency: NotRequired[dict[str, float]]
+    # Answer-side RAG quality aggregates (groundedness-citation-metrics), present only when enabled.
+    groundedness: NotRequired[float]  # mean per-case groundedness fraction
+    citation_validity: NotRequired[float]  # mean per-case citation validity (cited-answer runs)
+    hallucinated_citation_rate: NotRequired[float]  # mean per-case hallucinated-citation rate
+    abstention_accuracy: NotRequired[float]  # share of insufficient-context probes that abstained
+    n_probes: NotRequired[int]  # number of insufficient-context probes run
 
 
 class RunEnvironment(TypedDict):
@@ -367,7 +421,10 @@ class RunPaths(TypedDict):
     manifest: str
     scores: str
     mirror: str
+    retrieval: NotRequired[str]  # per-case retrieved-spans record (miss analysis)
     worksheet: NotRequired[str]
+    probes: NotRequired[str]  # insufficient-context probe rows (groundedness-citation-metrics)
+    insufficient_context_report: NotRequired[str]  # probe abstention-accuracy report
 
 
 class DurabilityStatus(TypedDict):

@@ -10,7 +10,7 @@ from llb.board.prompt_systems import (
     rag_prompt_system_comparison,
 )
 from llb.board.runs import best_per_model, config_summary, load_run_records, load_screen_reports
-from llb.paths import resolve_data_dir
+from llb.core.paths import resolve_data_dir
 from llb.scoring.aggregate import rank_board, ranking_policy_note
 
 

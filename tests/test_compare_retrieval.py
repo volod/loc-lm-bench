@@ -5,8 +5,8 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 """
 
 from llb.cli.rag import _compare_vector_corpus_root
-from llb.contracts import ChunkRecord, SourceSpanRecord
-from llb.rag.compare import compare_retrieval, format_comparison
+from llb.core.contracts import ChunkRecord, SourceSpanRecord
+from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
 
 
 class _FakeStore:
@@ -71,6 +71,23 @@ def test_format_comparison_is_ascii_and_lists_backends():
 def test_format_comparison_handles_no_backends():
     text = format_comparison(compare_retrieval({}, _items(), k=5))
     assert "no backends loaded" in text
+
+
+def test_add_rerank_rows_pairs_each_backend_and_skips_the_oracle():
+    # rerank-context-order: the reranked twin scores the SAME store's candidates after the
+    # cross-encoder cut, so the report shows the pre/post-rerank delta per backend. A scorer
+    # that ranks the gold-hitting chunk first lifts MRR from 1/2 to 1 on the reranked row.
+    def gold_first_scorer(question: str, texts: list[str]) -> list[float]:
+        return [1.0 if text == "gold" else 0.0 for text in texts]
+
+    hits = [_chunk("d1", 50, 60), {**_chunk("d1", 0, 10), "text": "gold"}]
+    stores = {"faiss": _FakeStore(hits), ROW_ORACLE_DOC: _FakeStore(hits)}
+    rows = add_rerank_rows(stores, gold_first_scorer, candidates=5)
+    assert set(rows) == {"faiss", "faiss+rerank", ROW_ORACLE_DOC}  # oracle gets no twin
+    report = compare_retrieval(rows, _items(), k=2)
+    assert report["backends"]["faiss"]["mrr"] == 0.5  # gold at rank 2 pre-rerank
+    assert report["backends"]["faiss+rerank"]["mrr"] == 1.0  # reranked to rank 1
+    assert report["best_recall"] == "faiss+rerank"
 
 
 def test_compare_vector_stores_infers_sibling_corpus(tmp_path):

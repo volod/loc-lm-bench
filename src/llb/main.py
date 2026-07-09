@@ -4,7 +4,7 @@ from llb.cli import app
 
 
 def main() -> None:
-    from llb.runtime import run_typer
+    from llb.core.runtime import run_typer
 
     run_typer(app)
 

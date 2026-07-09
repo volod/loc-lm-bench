@@ -109,7 +109,7 @@ Largest backend + model per target. Details and vLLM knobs:
 | Tier | MamayLM | Lapa | Gemma 4 family target | Qwen3.6 35B-A3B | Mistral Small 3.1 24B | Extra vLLM on tier |
 | ---- | ------- | ---- | -------------- | --------------- | --------------------- | ------------------ |
 | 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.90, ctx 1024) |
-| 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.85, ctx 8192) |
+| 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.85, ctx 16384, CPU offload 16/32) |
 | 24 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM w4a16 (0.90, 16384) | -- |
 | 32 GiB | vLLM FP8 (0.90, 8192) | vLLM bf16 (0.90, 8192) | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM FP8 (0.90, 8192) | -- |
 
@@ -124,8 +124,10 @@ upgrades to the higher-quality FP8 (~24 GiB weights), which leaves no KV room on
 
 **Goal:** largest checkpoint + explicit context without startup OOM.
 
-vLLM keeps **weights on GPU** (no CPU offload). One pool sized by
-`gpu_memory_utilization` holds weights, KV cache (from `max_model_len`), and workspace.
+vLLM normally keeps **weights and KV cache on GPU**. One pool sized by
+`gpu_memory_utilization` holds weights, KV cache (from `max_model_len`), and workspace. Generated
+configs can opt into RAM-backed pressure relief with `cpu_offload_gb` for model weights and
+`kv_offloading_size_gb` for a CPU KV offload buffer.
 
 | GPU VRAM | Typical `gpu_memory_utilization` |
 | -------- | ------------------------------- |
@@ -134,9 +136,10 @@ vLLM keeps **weights on GPU** (no CPU offload). One pool sized by
 | 24 GiB | 0.88-0.90 |
 | 32 GiB | 0.90-0.92 |
 
-Generated vLLM serve scripts also set `--kv-cache-dtype fp8`, `--max-num-seqs 1`, and
-text-only `--limit-mm-per-prompt`. **Always use explicit `--max-model-len`** from the
-manifest (never `auto` in generated configs).
+Generated vLLM serve scripts also set `--kv-cache-dtype fp8`, `--max-num-seqs 1`, and text-only
+`--limit-mm-per-prompt`; rows with RAM offload also emit `--cpu-offload-gb` and
+`--kv-offloading-size`. **Always use explicit `--max-model-len`** from the manifest (never `auto`
+in generated configs).
 
 **If startup OOMs:** halve `max_model_len` in
 [samples/config-example/manifest.yaml](../../samples/config-example/manifest.yaml), re-run
@@ -146,7 +149,7 @@ manifest (never `auto` in generated configs).
 
 | Backend | Weights | When used on a tier |
 | ------- | ------- | ------------------- |
-| vLLM | GPU only | Largest quant that fits VRAM (24G+ Gemma, 32G MamayLM) |
+| vLLM | GPU, optionally GPU + RAM offload | Largest quant/context that fits host memory |
 | Ollama | GPU + RAM offload | Full-size targets on 12-24 GiB; Qwen3.6 on all tiers |
 
 ---
@@ -187,10 +190,11 @@ w4a16 at util **0.80**, ctx **8192**
 ### 12 GiB GPU / 64 GiB RAM (RTX PRO 3000 Blackwell laptop)
 
 RTX PRO 3000 Blackwell laptop GPU, 12227 MiB, driver 610.43.02. The generated extra vLLM
-target is Gemma 4 12B w4a16 at util **0.90**, ctx **1024**; a one-case
-`run-eval --backend vllm --max-model-len 1024 --gpu-memory-utilization 0.90 --evict`
-passed with `LLB_EMBED_DEVICE=cpu`. E4B w4a16 is not a valid 12 GiB vLLM target on this
-host because weights plus vLLM serving overhead exceed available VRAM before KV cache.
+target is Gemma 4 12B w4a16 at util **0.90**, ctx **16384**, `cpu_offload_gb=16`, and
+`kv_offloading_size_gb=32`. A bounded PDF-drafter launch probe confirmed vLLM served that
+long-context target with CPU/KV offload on this host; deliberately reducing the draft completion
+budget to 512 tokens truncated extraction JSON, so keep `QUICKSTART_DRAFT_MAX_TOKENS=4096` for
+production PDF drafting.
 
 ### 32 GiB GPU / 64 GiB RAM (HP Z2 Tower)
 

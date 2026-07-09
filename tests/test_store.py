@@ -2,11 +2,13 @@
 
 import pytest
 
-from llb.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.config import DEFAULT_EMBEDDING_MODEL
+from llb.prep.corpus_ingest import ingest_corpus
 from llb.rag.store import (
     RagStore,
     _build_children,
     _children_to_parents,
+    stale_store_message,
     store_embedder_mismatch,
 )
 
@@ -63,7 +65,7 @@ def test_build_children_shifts_offsets_and_links_parent():
             "char_start": 50,
             "char_end": 50 + len(parent_text),
             "text": parent_text,
-            "metadata": {},
+            "metadata": {"acl_label": "finance"},
         }
     ]
     children = _build_children(parents, "sentence", child_size=20, overlap=0, embedder=None)
@@ -74,6 +76,7 @@ def test_build_children_shifts_offsets_and_links_parent():
         # child text is the exact source slice relative to the parent
         rel = c["char_start"] - 50
         assert parent_text[rel : rel + (c["char_end"] - c["char_start"])] == c["text"]
+        assert c["metadata"]["acl_label"] == "finance"
 
 
 def test_parent_child_retrieval_expands_until_k_unique_parents():
@@ -101,3 +104,22 @@ def test_parent_child_retrieval_expands_until_k_unique_parents():
 
     assert [hit["chunk_id"] for hit in hits] == ["p1", "p2"]
     assert index.search_sizes == [8, 10]
+
+
+def test_stale_store_message_flags_changed_corpus_manifest(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+    doc = root / "a.md"
+    doc.write_text("Document text for governance fingerprint. " * 20, encoding="utf-8")
+    corpus = tmp_path / "corpus"
+    ingest_corpus(root, corpus, min_chars=50, default_language="en")
+
+    from llb.prep.corpus_governance import corpus_fingerprint
+
+    meta = {"corpus_fingerprint": corpus_fingerprint(corpus)}
+    assert stale_store_message(meta, corpus, tmp_path / "rag") is None
+
+    doc.write_text("Changed document text for governance fingerprint. " * 20, encoding="utf-8")
+    ingest_corpus(root, corpus, min_chars=50, default_language="en")
+
+    assert stale_store_message(meta, corpus, tmp_path / "rag")

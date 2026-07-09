@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from llb.contracts import IsolationOutcome, ScreenReport, ScreenTaskResult
+from llb.core.contracts import IsolationOutcome, ScreenReport, ScreenTaskResult
 
 _LOG = logging.getLogger(__name__)
 

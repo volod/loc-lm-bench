@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from llb.backends.planner import plan_model
-from llb.config import RunConfig
-from llb.contracts import EvalResult, ModelSpec
+from llb.core.config import RunConfig
+from llb.core.contracts import EvalResult, ModelSpec
 
 _LOG = logging.getLogger(__name__)
 
@@ -36,7 +36,18 @@ FINAL_SPLIT = "final"
 OPTUNA_METHOD = "optuna"
 
 STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
-RETRIEVAL_MODES = ["flat", "parent_child"]
+# The corpus-chunking additions (page / heading / late) join the search space only behind an
+# explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per trial and
+# `page` only differs from `recursive` on sidecar-bearing PDF corpora, so they are opt-in.
+EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late"]
+RETRIEVAL_MODES = ["flat", "parent_child", "hybrid"]
+# Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
+# the per-side candidate depth, sampled only when the trial picked hybrid mode.
+FUSION_WEIGHT_RANGE = (0.2, 0.8)
+FUSION_CANDIDATES_RANGE = (20, 80)
+# Rerank search range (rerank-context-order): the candidate pool depth fed into the
+# cross-encoder, sampled only when the trial turned the opt-in reranker on.
+RERANK_CANDIDATES_RANGE = (15, 60)
 CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
@@ -82,15 +93,23 @@ _OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memo
 SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]
 
 
-def suggest_overrides(trial: Any, backend: str = "ollama") -> dict[str, Any]:
+def suggest_overrides(
+    trial: Any,
+    backend: str = "ollama",
+    strategies: list[str] | None = None,
+    reranker: str | None = None,
+) -> dict[str, Any]:
     """Sample one config from an Optuna trial (embedding is pinned, never sampled).
 
-    RAG params are always sampled. BACKEND-AWARE serving knobs are sampled only when the
-    resolved backend actually exposes them: `gpu_memory_utilization` / `max_model_len` are vLLM
-    concepts, so sampling them for Ollama would tune dead parameters (llama.cpp knobs land with
-    that launcher).
+    RAG params are always sampled; `strategies` overrides the chunking-strategy choices
+    (`EXTENDED_STRATEGIES` behind `tune --extended-chunkers`). `reranker` (a cross-encoder id,
+    `tune --reranker`) adds the opt-in rerank-context-order axes: reranker on/off plus the
+    candidate depth, sampled only when on (dead parameters otherwise). BACKEND-AWARE serving
+    knobs are sampled only when the resolved backend actually exposes them:
+    `gpu_memory_utilization` / `max_model_len` are vLLM concepts, so sampling them for Ollama
+    would tune dead parameters (llama.cpp knobs land with that launcher).
     """
-    strategy = trial.suggest_categorical("strategy", STRATEGIES)
+    strategy = trial.suggest_categorical("strategy", list(strategies or STRATEGIES))
     chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
     overlap_frac = trial.suggest_float("overlap_frac", 0.0, 0.4)
     mode = trial.suggest_categorical("retrieval_mode", RETRIEVAL_MODES)
@@ -107,6 +126,19 @@ def suggest_overrides(trial: Any, backend: str = "ollama") -> dict[str, Any]:
         ceiling = max(128, chunk_size - 64)
         child = trial.suggest_int("child_chunk_size", 128, 640, step=32)
         overrides["child_chunk_size"] = min(child, ceiling)
+    if mode == "hybrid":
+        # Fusion knobs only exist in hybrid mode (dead parameters otherwise).
+        overrides["fusion_weight"] = trial.suggest_float(
+            "fusion_weight", *FUSION_WEIGHT_RANGE, step=0.1
+        )
+        overrides["fusion_candidates"] = trial.suggest_int(
+            "fusion_candidates", *FUSION_CANDIDATES_RANGE, step=20
+        )
+    if reranker is not None and trial.suggest_categorical("use_reranker", [False, True]):
+        overrides["reranker"] = reranker
+        overrides["rerank_candidates"] = trial.suggest_int(
+            "rerank_candidates", *RERANK_CANDIDATES_RANGE, step=15
+        )
     if backend == "vllm":
         overrides["gpu_memory_utilization"] = trial.suggest_float(
             "gpu_memory_utilization", 0.70, 0.90, step=0.05
@@ -162,7 +194,8 @@ class TwoStageResult:
     final: EvalResult  # the stage-2 run on the full final split -- the leaderboard entry
 
 
-def _is_oom(exc: BaseException) -> bool:
+def is_oom(exc: BaseException) -> bool:
+    """True for a MEASURED capacity failure, which every Optuna study prunes instead of crashing."""
     blob = f"{type(exc).__name__} {exc}".lower()
     return any(marker in blob for marker in _OOM_MARKERS)
 
@@ -175,6 +208,8 @@ def make_objective(
     vram_mib: int = 0,
     ram_mib: int = 0,
     on_trial: TrialCallback | None = None,
+    strategies: list[str] | None = None,
+    reranker: str | None = None,
 ) -> Callable[[Any], float]:
     """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate.
 
@@ -185,7 +220,9 @@ def make_objective(
     import optuna
 
     def objective(trial: Any) -> float:
-        overrides = suggest_overrides(trial, backend=base_config.backend)
+        overrides = suggest_overrides(
+            trial, backend=base_config.backend, strategies=strategies, reranker=reranker
+        )
         try:
             config = base_config.with_overrides(**overrides)
         except ValueError as exc:  # e.g. overlap >= chunk_size after rounding
@@ -200,7 +237,7 @@ def make_objective(
         except optuna.TrialPruned:
             raise
         except Exception as exc:
-            if _is_oom(exc):
+            if is_oom(exc):
                 raise optuna.TrialPruned(f"measured OOM: {exc}") from None
             raise
         quality, throughput = outcome if isinstance(outcome, tuple) else (outcome, 0.0)
@@ -230,6 +267,8 @@ def tune(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     gpu_sampler: Callable[[], list[Any]] | None = None,
+    strategies: list[str] | None = None,
+    reranker: str | None = None,
 ) -> TuneResult:
     """Stage 1: search the RAG/backend space on the tuning split; return the best config.
 
@@ -270,6 +309,8 @@ def tune(
             vram_mib=vram_mib,
             ram_mib=ram_mib,
             on_trial=on_trial,
+            strategies=strategies,
+            reranker=reranker,
         ),
         n_trials=n_trials,
     )
@@ -320,6 +361,8 @@ def two_stage(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     gpu_sampler: Callable[[], list[Any]] | None = None,
+    strategies: list[str] | None = None,
+    reranker: str | None = None,
 ) -> TwoStageResult:
     """Stage 1 tunes on the tuning split; stage 2 scores the winner on the full final split."""
     result = tune(
@@ -337,6 +380,8 @@ def two_stage(
         vram_reader=vram_reader,
         pid_usage_reader=pid_usage_reader,
         gpu_sampler=gpu_sampler,
+        strategies=strategies,
+        reranker=reranker,
     )
     runner = final_runner or _run_eval_final
     _LOG.info(
@@ -346,9 +391,10 @@ def two_stage(
 
 
 def _build_store(config: RunConfig) -> Any:
+    from llb.rag.rerank import maybe_wrap_reranker
     from llb.rag.store import RagStore
 
-    return RagStore.build(
+    store = RagStore.build(
         config.corpus_root,
         config.strategy,
         config.chunk_size,
@@ -356,7 +402,13 @@ def _build_store(config: RunConfig) -> Any:
         config.embedding_model,
         mode=config.retrieval_mode,
         child_size=config.child_chunk_size,
+        lexical_lemmas=config.lexical_lemmas,
     )
+    # The store is injected into run_eval directly (no _load_store pass), so the trial's
+    # fusion + rerank knobs must be applied here to take effect.
+    store.fusion_weight = config.fusion_weight
+    store.fusion_candidates = config.fusion_candidates
+    return maybe_wrap_reranker(store, config)
 
 
 def _run_eval_quality(config: RunConfig) -> tuple[float, float]:

@@ -48,19 +48,40 @@ def ingest_corpus_cmd(
     refresh: bool = typer.Option(
         False, "--refresh", help="reconvert/re-copy every source even when it is unchanged"
     ),
+    default_language: Optional[str] = typer.Option(
+        None,
+        "--default-language",
+        help="language tag for sources that do not provide one (otherwise a cheap detector runs)",
+    ),
+    source_system: str = typer.Option(
+        "local", help="default source-system tag recorded in corpus governance metadata"
+    ),
+    acl_label: Optional[str] = typer.Option(
+        None, "--acl-label", help="default ACL label copied to manifest items and chunks"
+    ),
 ) -> None:
     """Ingest a mixed txt/md/pdf directory into one canonical corpus (PDFs converted, text passed through)."""
     from llb.prep.corpus_ingest import ingest_corpus
 
     try:
-        result = ingest_corpus(root, out_dir, min_chars=min_chars, parser=parser, refresh=refresh)
+        result = ingest_corpus(
+            root,
+            out_dir,
+            min_chars=min_chars,
+            parser=parser,
+            refresh=refresh,
+            default_language=default_language,
+            source_system=source_system,
+            acl_label=acl_label,
+        )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     reused_note = f", {result.n_reused} reused unchanged" if result.n_reused else ""
+    removed_note = f", {result.n_removed_sources} removed" if result.n_removed_sources else ""
     typer.echo(
         f"[ingest-corpus] {result.n_docs}/{len(result.items)} documents ingested "
-        f"({result.n_skipped} skipped{reused_note}) -> {result.out_dir}"
+        f"({result.n_skipped} skipped{reused_note}{removed_note}) -> {result.out_dir}"
     )
 
 
@@ -504,6 +525,16 @@ def prepare_goldset_draft_cmd(
         min=1,
         help="vLLM --max-model-len when this command launches the server; defaults to --num-ctx when set",
     ),
+    vllm_cpu_offload_gb: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        help="vLLM --cpu-offload-gb when this command launches the server",
+    ),
+    vllm_kv_offloading_size_gb: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        help="vLLM --kv-offloading-size when this command launches the server",
+    ),
     vllm_dtype: str = typer.Option(
         "auto", help="vLLM --dtype when this command launches the server"
     ),
@@ -558,9 +589,14 @@ def prepare_goldset_draft_cmd(
         None,
         help="persisted graph store dir for --multi-hop paths (default: build the graph in-run)",
     ),
+    require_passed_gates: bool = typer.Option(
+        False,
+        "--require-passed-gates",
+        help="exit non-zero after writing the bundle when the ontology calibration gates fail",
+    ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
-    from llb.config import DEFAULT_VLLM_HOST
+    from llb.core.config import DEFAULT_VLLM_HOST
     from llb.prep.ontology import (
         EndpointConfig,
         default_out_dir,
@@ -636,6 +672,8 @@ def prepare_goldset_draft_cmd(
             port=vllm_port,
             gpu_memory_utilization=vllm_gpu_memory_utilization,
             max_model_len=vllm_max_model_len or num_ctx,
+            cpu_offload_gb=vllm_cpu_offload_gb,
+            kv_offloading_size_gb=vllm_kv_offloading_size_gb,
             dtype=vllm_dtype,
             quantization=vllm_quantization,
             startup_timeout=vllm_startup_timeout,
@@ -704,6 +742,28 @@ def prepare_goldset_draft_cmd(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
         f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
     )
+    if require_passed_gates:
+        from llb.prep.ontology.artifacts import required_gate_names
+        from llb.prep.ontology.constants import PDF_ONTOLOGY_REPORT_FILENAME
+
+        gates = (
+            result.calibration_report.get("gates")
+            if isinstance(result.calibration_report, dict)
+            else None
+        )
+        passed = isinstance(gates, dict) and bool(gates.get("passed"))
+        if not passed:
+            failed: list[str] = []
+            if isinstance(gates, dict):
+                required = required_gate_names(bool(gates.get("pdf_citation_gate_applicable")))
+                failed = [name for name in required if not gates.get(name)]
+            detail = ", ".join(failed) if failed else "see report"
+            typer.echo(
+                "[error] ontology calibration gates not passed "
+                f"({detail}); inspect {result.out_dir / PDF_ONTOLOGY_REPORT_FILENAME}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
 
 def _vllm_host_for_port(default_host: str, port: int) -> str:
@@ -775,6 +835,25 @@ def curate_drafts_cmd(
         f"exact-dup={counts['exact_duplicates']} near-dup={counts['near_duplicates']} "
         f"repaired={counts['repaired']}) -> {out}\n"
         f"[curate] report -> {report_path}"
+    )
+
+
+@app.command("coverage-plan-text")
+def coverage_plan_text_cmd(
+    input_path: Path = typer.Option(
+        ..., "--input", "-i", help="curated inventory coverage JSON slice"
+    ),
+    out: Optional[Path] = typer.Option(
+        None, "--out", "-o", help="output text path (default: input path with .txt suffix)"
+    ),
+) -> None:
+    """Convert a prompt-01 inventory coverage JSON slice into a NotebookLM source text file."""
+    from llb.prep.curation.coverage_text import write_coverage_plan_text
+
+    result = write_coverage_plan_text(input_path, out)
+    typer.echo(
+        "[coverage-plan-text] "
+        f"{result.documents} docs, {result.cross_document_links} cross-links -> {result.path}"
     )
 
 

@@ -1,0 +1,1 @@
+Check output format/transport: {{ n_artifact }} misses are format/scoring artifacts ({{ breakdown }}) -- not model knowledge failures.

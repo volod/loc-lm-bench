@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
-from llb.contracts import BackendMetadata, ChatMessage
+from llb.core.contracts import BackendMetadata, ChatMessage
 
 DEFAULT_LLAMACPP_HOST = "http://localhost:8080"
 # llama.cpp convention: a negative gpu-layer count offloads EVERY layer to the GPU. The runner

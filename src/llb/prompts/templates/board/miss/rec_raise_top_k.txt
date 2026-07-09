@@ -1,0 +1,1 @@
+Raise top_k (currently {{ top_k }}): {{ n_retrieval }} of {{ n_misses }} misses are retrieval misses -- the gold span never entered the top-{{ top_k }} context{{ probe_note }}.

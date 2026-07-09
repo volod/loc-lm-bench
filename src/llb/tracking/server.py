@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from llb.paths import resolve_data_dir
+from llb.core.paths import resolve_data_dir
 from llb.tracking.mlflow import MLFLOW_STORE_DIR, sync_mlflow_runs
 
 _LOG = logging.getLogger(__name__)

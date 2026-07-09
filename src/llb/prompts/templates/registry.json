@@ -235,6 +235,118 @@
         "sha256": "5c55b6a83297585d1ea091109df5335f829431a7f70725efd8ebe4fa1f1516af"
       }
     },
+    "board.miss.header_line": {
+      "kind": "text",
+      "descriptor": "board/miss/header_line.prompt.json",
+      "template": {
+        "path": "board/miss/header_line.txt",
+        "sha256": "346d4a64385491463398d568383434c61457d3b2069a4e1f3d2c2ac8e05ad328"
+      }
+    },
+    "board.miss.no_misses": {
+      "kind": "text",
+      "descriptor": "board/miss/no_misses.prompt.json",
+      "template": {
+        "path": "board/miss/no_misses.txt",
+        "sha256": "85767331077e04ed987a009cc8416c59ddc7ed2c6b724527e0054f1861d2a345"
+      }
+    },
+    "board.miss.probe_confirmed": {
+      "kind": "text",
+      "descriptor": "board/miss/probe_confirmed.prompt.json",
+      "template": {
+        "path": "board/miss/probe_confirmed.txt",
+        "sha256": "2731d813ebdb1d1202845f84c712464cef77214a999d0c91882f6c06860de4df"
+      }
+    },
+    "board.miss.probe_rejected": {
+      "kind": "text",
+      "descriptor": "board/miss/probe_rejected.prompt.json",
+      "template": {
+        "path": "board/miss/probe_rejected.txt",
+        "sha256": "5fd2b4ae7611400b10c9d23615a6e6fed99e5e8ecc0fae71e772b812a67f3c4a"
+      }
+    },
+    "board.miss.rec_alternative_model": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_alternative_model.prompt.json",
+      "template": {
+        "path": "board/miss/rec_alternative_model.txt",
+        "sha256": "854ab0b9748b002e4b7d0f69d82a404925427b2d5439c567ab2c129ab1a3d9d7"
+      }
+    },
+    "board.miss.rec_artifacts": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_artifacts.prompt.json",
+      "template": {
+        "path": "board/miss/rec_artifacts.txt",
+        "sha256": "44f4f0bcbce3285952b6a7d9f42c7669ca173ab1ba48e60f7e8aaab4779dcd32"
+      }
+    },
+    "board.miss.rec_chunking_probed": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_chunking_probed.prompt.json",
+      "template": {
+        "path": "board/miss/rec_chunking_probed.txt",
+        "sha256": "7ce482e7320927d44df142ca8bdf26e24ebba889fae988f5e93dd14572f95299"
+      }
+    },
+    "board.miss.rec_chunking_unprobed": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_chunking_unprobed.prompt.json",
+      "template": {
+        "path": "board/miss/rec_chunking_unprobed.txt",
+        "sha256": "fdf2d2f5443b5233edceea6b164c2f6898e03e3dbc3ebef3437f26ce346c32d1"
+      }
+    },
+    "board.miss.rec_dictionary": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_dictionary.prompt.json",
+      "template": {
+        "path": "board/miss/rec_dictionary.txt",
+        "sha256": "971db56bd1eced3fc5dea6ebc787cd08d2816d7ea4093af985c7ff808e583d7a"
+      }
+    },
+    "board.miss.rec_judge": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_judge.prompt.json",
+      "template": {
+        "path": "board/miss/rec_judge.txt",
+        "sha256": "b52932540753d8618185396ca30b55341c3054c0020dad42c179a2f5bd67dd6d"
+      }
+    },
+    "board.miss.rec_lower_top_k": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_lower_top_k.prompt.json",
+      "template": {
+        "path": "board/miss/rec_lower_top_k.txt",
+        "sha256": "4b527ef8b7aa496c50baaa4fd32a42428383e0cff3670285fcadcbd1d98daf63"
+      }
+    },
+    "board.miss.rec_raise_top_k": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_raise_top_k.prompt.json",
+      "template": {
+        "path": "board/miss/rec_raise_top_k.txt",
+        "sha256": "3553d0bab863ba8a9513927bea331f954543ac806b4894183d76145ea38de022"
+      }
+    },
+    "board.miss.rec_refusals": {
+      "kind": "text",
+      "descriptor": "board/miss/rec_refusals.prompt.json",
+      "template": {
+        "path": "board/miss/rec_refusals.txt",
+        "sha256": "abc349b8920e7fefef9ebdcdc6a1e1a4b72f6ba5d37212eb0ff5ca6cafdf8834"
+      }
+    },
+    "board.miss.summary_line": {
+      "kind": "text",
+      "descriptor": "board/miss/summary_line.prompt.json",
+      "template": {
+        "path": "board/miss/summary_line.txt",
+        "sha256": "cdef71a6be28bf2ca9021bf8f9f8adbf9f8e761831d9630d0c1eacfe16b9d075"
+      }
+    },
     "board.recommend.best_accuracy": {
       "kind": "text",
       "descriptor": "board/recommend/best_accuracy.prompt.json",
@@ -337,6 +449,14 @@
       "template": {
         "path": "board/recommend/host_planning.txt",
         "sha256": "b9986611025806f9d5d95926d70f20425a8e6aba4d0cb8c3802cd0099901f3df"
+      }
+    },
+    "board.recommend.misses_intro": {
+      "kind": "text",
+      "descriptor": "board/recommend/misses_intro.prompt.json",
+      "template": {
+        "path": "board/recommend/misses_intro.txt",
+        "sha256": "3c3eebae209afb19bd698376580e5739380d56c828b078fa7ea87fe71ffdb3ea"
       }
     },
     "board.recommend.models_compared": {
@@ -535,6 +655,26 @@
         }
       ]
     },
+    "eval.rag.cited_answer": {
+      "kind": "chat",
+      "descriptor": "eval/rag/cited_answer.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/cited_answer_system.txt",
+            "sha256": "1fa16719d3bfb83c0d5adc4a2b38fec485a63e1924e5bd16f1865cdd047084d4"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/user.txt",
+            "sha256": "412b37385f500443e3daa2d4a2347d67ee20ed11de6cab3c24ef98a5b6f2a02e"
+          }
+        }
+      ]
+    },
     "eval.rag.package_context": {
       "kind": "text",
       "descriptor": "eval/rag/package_context.prompt.json",
@@ -542,6 +682,26 @@
         "path": "eval/rag/package_context.txt",
         "sha256": "281e443f4553ebe2beb845a65aded77e7cd61e5ad9713c33a8b7565f0bbc36ac"
       }
+    },
+    "eval.rag.query_rewrite": {
+      "kind": "chat",
+      "descriptor": "eval/rag/query_rewrite.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/query_rewrite_system.txt",
+            "sha256": "6167563a9297a42438a1a92db9a19fa1a3954e31a898154ec118b5f584bc77c7"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/query_rewrite_user.txt",
+            "sha256": "082b441825db0a5350aa921ca82710c34586b5cfc08704e3175533db4f91dd93"
+          }
+        }
+      ]
     },
     "eval.rag.system": {
       "kind": "text",

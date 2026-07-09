@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from llb.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
-from llb.paths import resolve_data_dir
+from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
+from llb.core.paths import resolve_data_dir
 from llb.scoring.judge import (
     UA_ANSWER_RELEVANCY_STEPS,
     UA_FAITHFULNESS_STEPS,

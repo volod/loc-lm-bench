@@ -31,7 +31,7 @@ from llb.bench.common import (
     run_gated_judge,
     verified_data_config,
 )
-from llb.contracts import (
+from llb.core.contracts import (
     BoardRow,
     JudgeInputRecord,
     JudgeScore,

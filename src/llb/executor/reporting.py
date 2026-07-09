@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 
-from llb.config import RunConfig
-from llb.contracts import RetrievalMetrics, RunPaths, TelemetryReport
+from llb.core.config import RunConfig
+from llb.core.contracts import RetrievalMetrics, RunMetrics, RunPaths, TelemetryReport
 
 _LOG = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ def emit_summary(
     paths: RunPaths,
     worksheet: Path | str | None,
     worksheet_rows: int,
+    metrics: RunMetrics | None = None,
 ) -> None:
     """Log the concise user-facing summary for one completed run."""
     _LOG.info("[run-eval] model=%s backend=%s cases=%d", config.model, config.backend, n_cases)
@@ -31,6 +32,7 @@ def emit_summary(
         retrieval_metrics["recall_at_k"],
         retrieval_metrics["mrr"],
     )
+    _emit_answer_side(metrics)
     _LOG.info("\n%s", table)
     if telemetry:
         _LOG.info(
@@ -48,3 +50,22 @@ def emit_summary(
             worksheet,
             worksheet_rows,
         )
+
+
+def _emit_answer_side(metrics: RunMetrics | None) -> None:
+    """Log the answer-side RAG-quality line when any signal is present (groundedness-citation-metrics)."""
+    if metrics is None:
+        return
+    parts: list[str] = []
+    if "groundedness" in metrics:
+        parts.append(f"groundedness={metrics['groundedness']:.3f}")
+    if "citation_validity" in metrics:
+        parts.append(f"citation_validity={metrics['citation_validity']:.3f}")
+    if "hallucinated_citation_rate" in metrics:
+        parts.append(f"hallucinated_citations={metrics['hallucinated_citation_rate']:.3f}")
+    if "abstention_accuracy" in metrics:
+        parts.append(
+            f"abstention_acc={metrics['abstention_accuracy']:.3f} (n={metrics.get('n_probes', 0)})"
+        )
+    if parts:
+        _LOG.info("[run-eval] answer-side: %s", " ".join(parts))

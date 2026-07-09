@@ -28,6 +28,11 @@ from llb.prep.curation.common import (
     load_corpus_texts,
     resolve_embedder,
 )
+from llb.prep.curation.coverage_text import (
+    coverage_plan_to_text,
+    default_coverage_text_path,
+    write_coverage_plan_text,
+)
 from llb.prep.curation.grounded import curate_grounded
 from llb.prep.curation.inventory import curate_inventory
 from llb.prep.curation.security import curate_security
@@ -47,9 +52,12 @@ __all__ = [
     "curate_inventory",
     "curate_security",
     "curate_squad",
+    "coverage_plan_to_text",
+    "default_coverage_text_path",
     "load_prior_bundle_questions",
     "resolve_embedder",
     "write_curated",
+    "write_coverage_plan_text",
 ]
 
 

@@ -36,11 +36,15 @@ tiers:
       request_timeout_s: 300
     gemma-4:
       backend: ollama
-      model: gemma4:31b
+      model: gemma4:e4b
       request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
       request_timeout_s: 300
     mistral:
       backend: ollama
@@ -50,7 +54,9 @@ tiers:
       backend: vllm
       model: google/gemma-4-12B-it-qat-w4a16-ct
       gpu_memory_utilization: 0.90
-      max_model_len: 1024
+      max_model_len: 16384
+      cpu_offload_gb: 16
+      kv_offloading_size_gb: 32
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
 
   16:
@@ -70,6 +76,10 @@ tiers:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
       request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
+      request_timeout_s: 300
     mistral:
       backend: ollama
       model: mistral-small3.1:24b
@@ -78,7 +88,9 @@ tiers:
       backend: vllm
       model: google/gemma-4-12B-it-qat-w4a16-ct
       gpu_memory_utilization: 0.85
-      max_model_len: 8192
+      max_model_len: 16384
+      cpu_offload_gb: 16
+      kv_offloading_size_gb: 32
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
 
   24:
@@ -99,6 +111,10 @@ tiers:
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
+      request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
       request_timeout_s: 300
     mistral:
       backend: vllm
@@ -129,6 +145,10 @@ tiers:
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
+      request_timeout_s: 300
+    qwen3-30b:
+      backend: ollama
+      model: qwen3:30b
       request_timeout_s: 300
     mistral:
       backend: vllm

@@ -11,7 +11,7 @@ from llb.backends.llamacpp import (
     parse_served_context,
     resolve_llama_server_binary,
 )
-from llb.contracts import ModelSpec
+from llb.core.contracts import ModelSpec
 
 
 def test_source_args_maps_repo_path_and_ollama_style():
@@ -176,7 +176,7 @@ def test_collect_telemetry_records_n_gpu_layers_and_served_context():
 
 
 def test_make_launcher_builds_llamacpp_from_config(tmp_path):
-    from llb.config import RunConfig
+    from llb.core.config import RunConfig
     from llb.executor.runner import _make_launcher
 
     cfg = RunConfig(

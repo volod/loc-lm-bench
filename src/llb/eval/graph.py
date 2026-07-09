@@ -10,11 +10,12 @@ The shared status taxonomy, refusal markers, `classify_response`, and `format_co
 in `llb.eval.common`; see that module for the failure-taxonomy contract.
 """
 
+import time
 from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
+from llb.core.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
 from llb.eval import common as eval_common
 from llb.prompts import PromptAugmentation, render_chat, render_text
 
@@ -40,10 +41,25 @@ class RagState(TypedDict, total=False):
     status: str
     error: str | None
     usage: UsageRecord
+    # Per-stage wall-clock (rerank-context-order): retrieval always, rerank when a reranking
+    # store is wired. Generation latency stays in `usage` (from the backend's ChatResult).
+    retrieve_latency_s: float
+    rerank_latency_s: float
+    # Query-side processing lane (uk-query-processing): the processed query actually retrieved
+    # with and the number of transformations applied. The raw query stays in `question`, so both
+    # forms are recoverable per case; absent when the lane is off.
+    query_processed: str
+    query_corrections: int
+
+
+# Generation prompt ids: the baseline RAG chat and the cited-answer variant that requires `[i]`
+# chunk citations for factual claims (groundedness-citation-metrics).
+CHAT_TEMPLATE = "eval.rag.chat"
+CITED_ANSWER_TEMPLATE = "eval.rag.cited_answer"
 
 
 def build_messages(
-    question: str, context: str, prompt_package: Any | None = None
+    question: str, context: str, prompt_package: Any | None = None, cited: bool = False
 ) -> list[ChatMessage]:
     augmentation: PromptAugmentation | None = None
     if prompt_package is not None:
@@ -55,18 +71,58 @@ def build_messages(
                 {"additional_prompt": extra, "context": context},
             )
     return render_chat(
-        "eval.rag.chat",
+        CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE,
         {"context": context, "question": question},
         augmentation=augmentation,
     )
 
 
-def make_retrieve_node(store: Any, k: int) -> Callable[[RagState], RagState]:
-    """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back."""
+def make_retrieve_node(
+    store: Any,
+    k: int,
+    context_order: str = eval_common.ORDER_RANK,
+    query_prep: Any | None = None,
+    chunk_filter: Any | None = None,
+) -> Callable[[RagState], RagState]:
+    """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
+
+    `context_order` is the rerank-context-order policy applied when the kept chunks are laid
+    into the prompt; `retrieved` stays in rank order so the source-span metrics are unaffected.
+    A reranking store (`llb.rag.rerank.RerankingRetriever`) exposes its per-stage wall-clock,
+    recorded as `retrieve_latency_s` / `rerank_latency_s`.
+
+    `query_prep` (`llb.rag.query_prep.QueryPrep`) is the opt-in query-side lane: when set, the
+    question is processed BEFORE retrieval (the raw question stays in state for generation), and
+    the processed form + correction count are recorded (uk-query-processing).
+    """
 
     def retrieve(state: RagState) -> RagState:
-        chunks = store.retrieve(state["question"], k)
-        update: RagState = {"retrieved": chunks, "context": eval_common.format_context(chunks)}
+        question = state["question"]
+        prep_update: RagState = {}
+        if query_prep is not None:
+            result = query_prep.process(question)
+            question = result.processed
+            prep_update = {
+                "query_processed": result.processed,
+                "query_corrections": len(result.edits),
+            }
+        started = time.perf_counter()
+        if chunk_filter is None:
+            chunks = store.retrieve(question, k)
+        else:
+            chunks = store.retrieve(question, k, chunk_filter=chunk_filter)
+        total_s = time.perf_counter() - started
+        update: RagState = {
+            "retrieved": chunks,
+            "context": eval_common.format_context(chunks, order=context_order),
+            **prep_update,
+        }
+        stage = getattr(store, "stage_latency", None)
+        if isinstance(stage, dict) and "rerank_s" in stage:
+            update["retrieve_latency_s"] = float(stage.get("retrieve_s", 0.0))
+            update["rerank_latency_s"] = float(stage["rerank_s"])
+        else:
+            update["retrieve_latency_s"] = total_s
         if not chunks:
             update["status"] = eval_common.RETRIEVAL_MISS
         return update
@@ -80,13 +136,16 @@ def make_generate_node(
     temperature: float,
     timeout: float,
     prompt_package: Any | None = None,
+    cited: bool = False,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response."""
 
     def generate(state: RagState) -> RagState:
         if state.get("status") == eval_common.RETRIEVAL_MISS:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
-        messages = build_messages(state["question"], state.get("context", ""), prompt_package)
+        messages = build_messages(
+            state["question"], state.get("context", ""), prompt_package, cited=cited
+        )
         result = launcher.chat(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
         )
@@ -113,6 +172,10 @@ def build_rag_graph(
     temperature: float,
     timeout: float,
     prompt_package: Any | None = None,
+    context_order: str = eval_common.ORDER_RANK,
+    query_prep: Any | None = None,
+    chunk_filter: Any | None = None,
+    cited: bool = False,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -123,10 +186,16 @@ def build_rag_graph(
         ) from exc
     graph = StateGraph(RagState)
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
-    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k)))
+    graph.add_node(
+        "retrieve",
+        cast(Any, make_retrieve_node(store, k, context_order, query_prep, chunk_filter)),
+    )
     graph.add_node(
         "generate",
-        cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package)),
+        cast(
+            Any,
+            make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package, cited),
+        ),
     )
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "generate")

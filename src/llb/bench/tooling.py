@@ -27,7 +27,7 @@ from llb.bench.common import (
     render_board,
     verified_data_config,
 )
-from llb.contracts import BoardRow, RunMetrics, RunPaths, ToolDef, ToolingCaseRow
+from llb.core.contracts import BoardRow, RunMetrics, RunPaths, ToolDef, ToolingCaseRow
 from llb.prompts import render_text
 from llb.scoring import tooling
 from llb.scoring.aggregate import TIER_TOOLING, ModelResult, bootstrap_mean_ci

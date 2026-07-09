@@ -10,6 +10,7 @@ import json
 import pytest
 
 from llb.prep.corpus_ingest import CORPUS_MANIFEST, ingest_corpus
+from llb.rag.chunking import chunk_corpus
 
 MD_DOC = "# Розділ\n\n" + ("Це достатньо довгий український документ. " * 20)
 TXT_DOC = "Це текстовий документ про кругообіг води у природі. " * 20
@@ -44,6 +45,44 @@ def test_ingest_corpus_text_passthrough_and_reuse(tmp_path):
     assert all(item.reused for item in rerun.items)
 
 
+def test_ingest_corpus_writes_governance_and_chunks_inherit_it(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+    (root / "public.md").write_text(MD_DOC, encoding="utf-8")
+    (root / "public.md.metadata.json").write_text(
+        json.dumps(
+            {
+                "language": "uk",
+                "version": "v2",
+                "effective_date": "2026-01-01",
+                "source_system": "registry",
+                "acl_label": "public",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "internal.txt").write_text(TXT_DOC, encoding="utf-8")
+    out = tmp_path / "out"
+
+    ingest_corpus(root, out, min_chars=50, default_language="en", acl_label="internal")
+
+    by_source = {item["source"]: item for item in _manifest(out)["items"]}
+    assert by_source["public.md"]["language"] == "uk"
+    assert by_source["public.md"]["version"] == "v2"
+    assert by_source["public.md"]["effective_date"] == "2026-01-01"
+    assert by_source["public.md"]["source_system"] == "registry"
+    assert by_source["public.md"]["acl_label"] == "public"
+    assert by_source["internal.txt"]["language"] == "en"
+    assert by_source["internal.txt"]["acl_label"] == "internal"
+    assert by_source["public.md"]["ingestion_time"]
+
+    chunks = chunk_corpus(out, "sentence", 200, 0)
+    by_doc = {chunk["doc_id"]: chunk for chunk in chunks}
+    assert by_doc["public.md"]["metadata"]["acl_label"] == "public"
+    assert by_doc["public.md"]["metadata"]["version"] == "v2"
+    assert by_doc["internal.txt"]["metadata"]["acl_label"] == "internal"
+
+
 def test_ingest_corpus_reconverts_changed_text(tmp_path):
     root = tmp_path / "src"
     root.mkdir()
@@ -56,6 +95,27 @@ def test_ingest_corpus_reconverts_changed_text(tmp_path):
     rerun = ingest_corpus(root, out, min_chars=50)
     assert rerun.n_reused == 0
     assert (out / "a.md").read_text(encoding="utf-8").endswith("для тесту.")
+
+
+def test_ingest_corpus_deletion_propagates_to_staged_output_and_manifest_diff(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+    keep = root / "keep.md"
+    remove = root / "remove.md"
+    keep.write_text(MD_DOC, encoding="utf-8")
+    remove.write_text(TXT_DOC, encoding="utf-8")
+    out = tmp_path / "out"
+    ingest_corpus(root, out, min_chars=50)
+    assert (out / "remove.md").is_file()
+
+    remove.unlink()
+    rerun = ingest_corpus(root, out, min_chars=50)
+
+    assert rerun.removed_sources == ["remove.md"]
+    assert not (out / "remove.md").exists()
+    manifest = _manifest(out)
+    assert manifest["removed_sources"] == ["remove.md"]
+    assert [item["source"] for item in manifest["items"]] == ["keep.md"]
 
 
 def test_ingest_corpus_routes_pdf_through_injected_extractor(tmp_path):

@@ -14,9 +14,11 @@ uploaded files, and return raw JSON. These services support Ukrainian well and c
 quality and completeness of draft test sets. This manual explains **when** you may use them,
 **exactly what** to produce, and **how** to bring the results back into the local benchmark.
 
-> **The benchmark's purpose is to evaluate LOCAL RAG and LOCAL LLM inference.** External services
-> are used here only to *draft candidate test data*. They never retrieve, answer, judge, or
-> score. The scored run always happens locally against local models.
+> **The benchmark's purpose is to evaluate LOCAL RAG and LOCAL LLM inference.** External assistant
+> services in this manual are used only to *draft candidate test data*. They do not set
+> `verified=true`, judge, or produce local leaderboard rows. A separate diagnostic lane can score
+> an already-answered external RAG answer log when the thing under analysis is the external RAG
+> product itself.
 
 Read this page top to bottom on first use: the [workflow at a glance](#workflow-at-a-glance)
 shows the whole sequence and which steps are yours, the
@@ -55,8 +57,9 @@ Is EVERY document in the corpus public / cleared for third-party upload?
 
 ## Workflow at a glance
 
-Nine steps; the left column runs on your box, the right column inside the external service.
-Steps marked `[HUMAN]` need your attention and judgment -- everything else is a command.
+Nine core steps plus an optional external-RAG diagnostic; the left column runs on your box, the
+right column inside the external service. Steps marked `[HUMAN]` need your attention and judgment
+-- everything else is a command.
 
 ```text
 LOCAL (your box)                              EXTERNAL SERVICE (open data only)
@@ -70,7 +73,8 @@ LOCAL (your box)                              EXTERNAL SERVICE (open data only)
         |                                        instructions 00; attach staged files +
         |                                        doc-id list         [HUMAN: per service]
         |                                     4. Run prompt 01 (inventory), then 02/03/04
-        |                                        in 10-20 item batches  [HUMAN: drive the
+        |                                        in batches (NotebookLM <=15 items)
+        |                                        [HUMAN: drive the
         |  <- export each raw reply              chats, export every reply to a file]
         v
 5. Write the external_provenance.json sidecar    [HUMAN: required before any import]
@@ -110,8 +114,9 @@ section below; run the steps in order and check each gate before moving on.
    project, paste `00-project-instructions.md`, attach the STAGED files, paste the doc-id list.
    Gate: the model can name your documents exactly.
 4. **Run the prompts** ([details](#step-4-run-the-prompts-and-export-the-replies)): `01` once per
-   service, then `02`-`04` against the (merged) inventory, in batches of 10-20 items; save every
-   reply to its own file. Gate: each reply is raw JSON in one code block.
+   service, then `02`-`04` against the (merged) inventory, in batches; for NotebookLM prompt 02,
+   use an uploaded coverage text source and request at most 15 items. Save every reply to its own
+   file. Gate: each reply is raw JSON in one code block.
 5. **Write the provenance sidecar** ([details](#step-5-write-the-provenance-sidecar)): author
    `external_provenance.json` beside the exports. Gate: sidecar exists and says
    `"data_classification": "open"` -- the importer refuses to run without it.
@@ -167,6 +172,7 @@ prompts are in [`external-service-prompts/`](external-service-prompts/README.md)
 | Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | blocked on `chain-goldset-generation` | review-only |
 | Security cases | `04` | `make curate-drafts CURATE_KIND=security` | `make bench-security SECURITY_CASES=` | works today |
 | Local run results | -- | -- | `make run-eval` / `make bench-security` | works today |
+| External RAG answer log | -- | -- | `make score-external-rag EXTERNAL_RAG_ANSWERS=` | diagnostic |
 
 Session outputs live under `$DATA_DIR/external-drafts/<service>-<YYYYMMDD>/`, each with an
 `external_provenance.json` sidecar (contract section 6). Nothing external ever sets
@@ -235,7 +241,10 @@ Service notes:
   drafting; ask it to output the same JSON shapes. It is more conversational -- paste the
   manifest doc-id list and state that every `doc` and `cross_document[].docs` value must be the
   staged `.md`/`.txt` id from the manifest, not the original PDF name or NotebookLM source title.
-  Restate the "raw JSON only, one code block" instruction if it adds prose.
+  Restate the "raw JSON only, one code block" instruction if it adds prose. For prompt 02, do not
+  paste a large JSON coverage plan into NotebookLM chat. Convert the document slice to a text
+  source with `make coverage-plan-text`, upload that `.txt` file as a source, and reference its
+  file name in the prompt.
 - **Claude / ChatGPT Projects** keep the instructions and files across chats in the project, so
   you can run `01`-`04` as separate chats without re-uploading.
 
@@ -266,8 +275,20 @@ Service notes:
 2. Run [`02`](external-service-prompts/02-goldset-draft.md),
    [`03`](external-service-prompts/03-chain-questions.md), and
    [`04`](external-service-prompts/04-security-cases.md), feeding the (merged) inventory in as
-   the coverage plan. Ask for **batches of 10-20 items** and say "continue" until the plan is
-   covered; large single replies truncate and produce invalid JSON.
+   the coverage plan. For NotebookLM prompt 02, upload a per-document coverage text source instead
+   of pasting the JSON slice:
+
+   ```bash
+   make coverage-plan-text \
+     COVERAGE_JSON="$DATA_DIR/quickstart-pdf-corpus-md/coverage-pdf-6d8c2128b330.md.json" \
+     COVERAGE_TEXT="$DATA_DIR/quickstart-pdf-corpus-md/coverage-6d8c2128b330.txt"
+   ```
+
+   Upload `coverage-6d8c2128b330.txt` as a NotebookLM source and write
+   `COVERAGE PLAN: coverage-6d8c2128b330.txt` in the prompt. Ask for **batches of 10-20 items**
+   on services that can return larger JSON replies; for NotebookLM, request at most 15 items per
+   reply. Say "continue" until the plan is covered; large single replies truncate and produce
+   invalid JSON.
 3. Export each reply to its own file (the raw reply text with its fenced code block is fine).
    Do NOT hand-merge batches -- `make curate-drafts` merges, repairs, filters, and deduplicates
    them in step 6.
@@ -325,11 +346,41 @@ Then proceed with the merged file.
 
 ### 7a. Goldset (SQuAD JSON, Artifact A)
 
+For a directory of prompt-02 SQuAD exports, use the all-in-one Make target. It discovers JSON,
+JSONL, text, and markdown reply exports in the input directory, curates and deduplicates them,
+imports the canonical goldset/corpus, validates the result, and builds the RAG index:
+
 ```bash
-python -m json.tool "$DATA_DIR/external-drafts/claude-20260703/goldset_draft.json" >/dev/null
-make ingest-squad SQUAD_JSON="$DATA_DIR/external-drafts/claude-20260703/goldset_draft.json"
+make external-squad-rag \
+  SQUAD_DRAFT_INPUT_DIR=<directory-with-prompt-02-exports> \
+  SQUAD_DRAFT_CORPUS=<staged-corpus-dir> \
+  SQUAD_DRAFT_OUT_DIR=<output-work-dir>
+```
+
+The target sources the project `.env` before curation, so `HF_TOKEN` is available for semantic
+deduplication and embedding downloads.
+
+Use `SQUAD_DRAFT_INPUTS="<file> [<file> ...]"` instead of `SQUAD_DRAFT_INPUT_DIR` when the exports
+are not all in one directory. The target writes the curated export and report inside the output
+work dir, then writes the RAG-ready artifacts under:
+
+```text
+<output-work-dir>/llb/goldset/squad_uk.jsonl
+<output-work-dir>/llb/corpus
+<output-work-dir>/llb/rag
+```
+
+The explicit step-by-step form is still useful when you need to inspect each gate separately:
+
+```bash
+make curate-drafts CURATE_KIND=squad \
+  CURATE_INPUTS="<export-a> <export-b>" \
+  CURATE_OUT=<curated-squad-json> \
+  CURATE_CORPUS=<staged-corpus-dir>
+make ingest-squad SQUAD_JSON=<curated-squad-json>
 # then structurally validate the canonical output against its corpus:
 make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<corpus-dir>
+make build-index CORPUS=<corpus-dir>
 ```
 
 Import re-grounds each answer by substring search and **skips any answer that is not a verbatim
@@ -404,6 +455,70 @@ make bench-security SECURITY_CASES=<verified-cases.json> SECURITY_MODEL=<local-t
 
 Run artifacts land under `$DATA_DIR/run-eval/<timestamp>-<run-id>/`. These local results -- not
 anything produced inside the external service -- are the benchmark's output.
+
+## Step 10: Score an external RAG answer log (diagnostic)
+
+Use this only when the system you need to analyze is an external RAG product that reused the same
+project documentation corpus and already wrote answers into a JSONL goldset export. Each row should
+carry the normal gold fields plus `llm_answer` and, when available, `llm_sources`:
+
+```json
+{"id": "...", "question": "...", "reference_answer": "...", "llm_answer": "...",
+ "llm_sources": [{"article_id": "...", "article_title": "...", "score": 0.63, "url": "..."}]}
+```
+
+Run the interactive scorer:
+
+```bash
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl>
+```
+
+The command shows one answer card at a time: `question`, `reference_answer`, gold source text,
+raw `llm_answer`, the text used for objective scoring, first returned `llm_sources`, and
+`llm_error`. The reviewer records the human judgment directly in the JSONL:
+
+```text
+a        accept, score=1
+p        partial, score=0.5
+r        reject, score=0
+s <0..1> explicit score
+o        edit human_notes
+w        edit human_corrected_answer
+n/b/u/j  navigate
+q        save and quit
+```
+
+Partial sessions are safe. Re-run the same command to resume at the first row without
+`human_score_0_1` plus `human_decision`. To restart the review, clear the JSONL-backed human
+fields:
+
+```bash
+make score-external-rag \
+  EXTERNAL_RAG_ANSWERS=<answered-jsonl> \
+  EXTERNAL_RAG_CLEAR=1
+```
+
+Final outputs are written only after every row has a human score and decision:
+
+```text
+<answered-jsonl-stem>.csv
+<answered-jsonl-stem>.report.md
+```
+
+The CSV is sorted by `review_priority_rank` and includes `question`, `reference_answer`, raw
+`llm_answer`, the answer text used for objective scoring, first three source records, objective
+columns (`exact`, `token_f1`, `contains`), and the JSONL-backed human fields:
+`human_score_0_1`, `human_decision`, `human_notes`, `human_corrected_answer`, and `human_status`.
+
+The Markdown report gives aggregate objective estimates, human decision counts, the human mean
+score, split estimates, common sources, and links to project commands for improvement work:
+`build-index`, `validate-retrieval`, `compare-embeddings`, `sweep`, `tune`,
+`prompt-system-prepare`, `run-eval`, `analyze-misses`, and `recommend`.
+
+Important limitation: if the external answer log returns only article titles or URLs, the scorer
+cannot compute benchmark source-span recall for that external system. To audit retrieval directly,
+teach the external API to return `doc_id`, `char_start`, and `char_end` for each returned source.
 
 ## End-to-end example: benchmark a mixed PDF corpus with external drafting
 

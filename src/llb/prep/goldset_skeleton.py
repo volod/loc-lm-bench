@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llb.paths import resolve_data_dir
+from llb.core.paths import resolve_data_dir
 
 _LOG = logging.getLogger(__name__)
 METHOD = "goldset-skeleton"
@@ -70,6 +70,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    from llb.runtime import run
+    from llb.core.runtime import run
 
     sys.exit(run(main))
