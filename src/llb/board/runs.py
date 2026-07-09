@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.core.contracts import JsonObject, ScreenReport
+from llb.finetune.registry import AdapterEntry, load_registry, registry_path, staleness
 from llb.scoring.aggregate import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
 from llb.board.io import mean_or_none, read_case_objectives, read_case_series, read_case_splits
@@ -14,6 +15,9 @@ _LOG = logging.getLogger(__name__)
 
 CONFIG_KEYS = ("strategy", "chunk_size", "chunk_overlap", "top_k", "retrieval_mode")
 FINAL_SPLIT = "final"
+# An adapter-backed row is only reproducible through the registry, so an unregistered adapter's
+# bundle never renders and a stale one is stamped in the model label before it can be compared.
+STALE_STAMP = "stale"
 
 
 @dataclass
@@ -25,14 +29,27 @@ class RunRecord:
     split: str
 
 
-def record_from_manifest(manifest: JsonObject, run_dir: Path) -> RunRecord | None:
-    """Build a final-split RunRecord, or None for incomplete/non-leaderboard manifests."""
+def record_from_manifest(
+    manifest: JsonObject,
+    run_dir: Path,
+    *,
+    registry: dict[str, AdapterEntry] | None = None,
+) -> RunRecord | None:
+    """Build a final-split RunRecord, or None for incomplete/non-leaderboard manifests.
+
+    An adapter-backed bundle additionally needs a registry entry: without one its tuned number
+    cannot be traced back to a dataset digest and source run, so the row is dropped rather than
+    ranked. A registered-but-stale adapter renders with a `[stale]` stamp on its model label.
+    """
     config = manifest.get("config") or {}
     model = config.get("model")
     if not model:
         return None
     split = _declared_or_legacy_split(manifest, run_dir)
     if split != FINAL_SPLIT:
+        return None
+    model = _adapter_model_label(str(model), config, registry or {}, run_dir)
+    if model is None:
         return None
     metrics = manifest.get("metrics") or {}
     telemetry = manifest.get("telemetry") or {}
@@ -61,6 +78,25 @@ def record_from_manifest(manifest: JsonObject, run_dir: Path) -> RunRecord | Non
     )
 
 
+def _adapter_model_label(
+    model: str, config: JsonObject, registry: dict[str, AdapterEntry], run_dir: Path
+) -> str | None:
+    """Stamp or reject an adapter-backed row; plain base-model rows pass through untouched."""
+    adapter = config.get("adapter")
+    if not isinstance(adapter, dict):
+        return model
+    digest = str(adapter.get("adapter_digest") or "")
+    entry = registry.get(digest)
+    if entry is None:
+        _LOG.warning(
+            "[board] skipping %s: adapter %s is not registered (`llb list-adapters`)",
+            run_dir,
+            digest[:12] or "?",
+        )
+        return None
+    return f"{model} [{STALE_STAMP}]" if staleness(entry).is_stale else model
+
+
 def _declared_or_legacy_split(manifest: JsonObject, run_dir: Path) -> str | None:
     declared_split = manifest.get("split")
     if declared_split is not None:
@@ -73,18 +109,25 @@ def _declared_or_legacy_split(manifest: JsonObject, run_dir: Path) -> str | None
     return None
 
 
-def load_run_records(run_root: Path | str) -> list[RunRecord]:
-    """Load published final-split bundles under `run_root`."""
+def load_run_records(
+    run_root: Path | str, *, data_dir: Path | str | None = None
+) -> list[RunRecord]:
+    """Load published final-split bundles under `run_root`, resolving adapters through the registry.
+
+    `data_dir` locates `adapters/registry.jsonl`; it defaults to the parent of the canonical
+    `$DATA_DIR/run-eval/` bundle root.
+    """
     root = Path(run_root)
     records: list[RunRecord] = []
     if not root.exists():
         return records
+    registry = load_registry(registry_path(Path(data_dir) if data_dir is not None else root.parent))
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            record = record_from_manifest(manifest, manifest_path.parent)
+            record = record_from_manifest(manifest, manifest_path.parent, registry=registry)
         except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
             _LOG.warning("[board] unreadable run bundle %s: %s", manifest_path.parent, exc)
             continue

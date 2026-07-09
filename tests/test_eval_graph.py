@@ -9,8 +9,11 @@ class FakeStore:
     def __init__(self, chunks):
         self._chunks = chunks
 
-    def retrieve(self, question, k):
-        return self._chunks[:k]
+    def retrieve(self, question, k, chunk_filter=None):
+        chunks = self._chunks
+        if chunk_filter is not None:
+            chunks = [chunk for chunk in chunks if chunk_filter(chunk)]
+        return chunks[:k]
 
 
 class FakeLauncher:
@@ -103,6 +106,32 @@ def test_retrieve_node_builds_context():
     update = node({"question": "q"})
     assert "Київ столиця" in update["context"]
     assert "status" not in update  # no miss
+
+
+def test_retrieve_node_applies_acl_chunk_filter():
+    from llb.rag.filters import metadata_filter
+
+    chunks = [
+        {
+            "doc_id": "a.txt",
+            "text": "public",
+            "char_start": 0,
+            "char_end": 6,
+            "metadata": {"acl_label": "public"},
+        },
+        {
+            "doc_id": "b.txt",
+            "text": "internal",
+            "char_start": 0,
+            "char_end": 8,
+            "metadata": {"acl_label": "internal"},
+        },
+    ]
+    node = graph.make_retrieve_node(
+        FakeStore(chunks), k=5, chunk_filter=metadata_filter(acl_label="internal")
+    )
+    update = node({"question": "q"})
+    assert [chunk["doc_id"] for chunk in update["retrieved"]] == ["b.txt"]
 
 
 def test_generate_node_ok_path():

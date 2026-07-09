@@ -37,41 +37,20 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality cluster (15-16) gives the query side the same tune-and-demonstrate
-discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
-`top_k` plus the hybrid fusion and opt-in reranker knobs -- including the shipped
-page/heading/late chunkers behind `tune --extended-chunkers`; see
-[RAG core](current/rag-core.md) chunking strategies -- and the sweep grids `top_k`,
-`fusion_weight`, and `rerank_candidates`). The Ukrainian hybrid retrieval stack -- dense + BM25
-fused with weighted RRF, index-side inflection-aware lemmatization, and the chunk-metadata filter
-seam -- is shipped, and so is the rerank-and-order stage between retrieval and generation (the
-cross-encoder reranker seam, the `context_order` prompt-layout policy, and the
-`probe-context-position` lost-in-the-middle probe; see [RAG core](current/rag-core.md)
-reranking and context order); task 15 adds the
-query-side lane on top: normalization -- casefold, apostrophes, transliteration, typo tolerance,
-aliases/glossary -- that never mutates the stored corpus text. The measured Ukrainian embedder
-ranking that underpins the stack (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the
-lang-uk model plus an opt-in Cohere API row for open corpora) is also shipped; see
-[RAG core](current/rag-core.md) retrieval store. Every knob these tasks add must land
-in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
-(`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
-evidence-backed. Within the cluster 15 and 16 stand alone. Task 17 adds the
-governance
-remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
-the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
-[RAG core](current/rag-core.md) and [product decisions](current/scope-boundaries.md)); its ACL
-filter applies through the shipped chunk-metadata filter seam (`src/llb/rag/filters.py`).
+For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
+[RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
+[data prep](current/data-prep.md).
 
-The fine-tuning cluster (18-22) extends the spine one step past recommendation: from naming the
-best base model to naming the best *adapted* model for the operator's corpus, with the whole loop
-drivable by an agent end to end. Task 18 builds the single-model loop (contamination-guarded
-export, injectable trainer seam, round report) and owns the invariants every later task reuses;
-19 runs that loop across a multi-model roster with feasibility-aware scheduling and ranks models
-by measured tunability; 20 gives adapters a registry and lifecycle so every tuned board number
-stays traceable and servable; 21 adds budgeted per-model hyperparameter search that never leaves
-the tuning split; 22 (optional) distills the roster's best local teacher into smaller students --
-all local, no egress. Ordering inside the cluster: 18 first, then 19; 20 lands beside 19; 21 and
-22 after 19.
+The remaining fine-tuning cluster (22-23) extends the spine one step past recommendation: from
+naming the best base model to naming the best *adapted* model for the operator's corpus, with the
+single-model self-improvement loop, the multi-model campaign substrate, the adapter registry, and the
+budgeted LoRA hyperparameter search as reusable bases (see
+[extended workflows](current/extended-workflows.md)). Task 22 (optional) distills the roster's best
+local teacher into smaller students; 23 (optional) adds native support for compressed QAT checkpoints
+whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all local, no egress.
+Ordering inside the cluster: 22 after the campaign substrate, 23 after the baseline trainer path. The
+`adapter-*` and `finetune-hparams-*` tasks above harden the shipped registry, merge lane, and search,
+and are independent of the cluster.
 
 ## Agent Implementation Tasks
 
@@ -81,18 +60,15 @@ Ukrainian-RAG-quality foundations are shipped: the measured embedder ranking
 assumed default embedder with evidence, the page/section join
 (`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file, and the hybrid
 dense+BM25 retrieval with the chunk-metadata filter seam (see [RAG core](current/rag-core.md)
-hybrid retrieval); task 15 builds on the measured embedder result.
+hybrid retrieval); the query-side processing lane (`--query-prep`) that builds on the measured
+embedder result is shipped (see [RAG core](current/rag-core.md) query-side processing).
 The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
 merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: the independent lot (15, 16) in any order, 17's ACL-filter half through
-the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
-(its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
-exists; the export/guard/trainer code stands
-alone), 19-22 after 18 (the fine-tuning cluster reuses 18's trainer seam and contamination
-guard; 20 beside 19, 21 and 22 after 19), and 8 last (blocked by human task 7). The
+Recommended sequence: 11 after task 3's code; 22 after the campaign substrate; 23
+after the baseline trainer path; and 8 last (blocked by human task 7). The
 durable-eval-runner (retry + `cases.progress.jsonl` journal +
 `--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
@@ -171,121 +147,62 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   and
   [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
-### 15. uk-query-processing
+### morphology-aware-typo-guard (optional)
 
-- Dependencies: none (the glossary derives from a shipped `prompt_dictionary_candidates.jsonl`
-  draft artifact). Its A/B deltas feed the shipped miss analysis's recommendations.
-- User-visible outcome: an opt-in query lane between the user question and retrieval that
-  measurably helps Ukrainian queries while never touching the stored corpus text: deterministic
-  normalization (matching-side casefold, apostrophe-variant unification, a small transliteration
-  table for Latin-typed Ukrainian terms), corpus-vocabulary typo tolerance, alias/glossary
-  expansion (including surzhyk and transliterated variants of domain terms) sourced from the
-  shipped `prompt_dictionary_candidates.jsonl` draft
-  artifact, and an optional logged local-LLM query rewrite -- with an A/B report proving each
-  step's retrieval delta before anyone turns it on by default.
-- Scope boundary: in scope -- `src/llb/rag/query_prep.py` as a pure, unit-testable pipeline of
-  named steps; a deterministic typo-tolerance step: build the token vocabulary from the indexed
-  corpus, correct a query token that is ABSENT from that vocabulary to its nearest in-vocabulary
-  token within Damerau-Levenshtein distance 1 (2 for tokens over 8 chars), never alter a token
-  the corpus already contains, and log every correction; a glossary builder that turns a draft
-  bundle's dictionary candidates into alias
-  expansions, with room for hand-added surzhyk/transliteration aliases in the same artifact;
-  the LLM rewrite through the existing endpoint seam, off by default, recording both
-  original and rewritten query per case; an A/B mode in `validate-retrieval`/`compare-retrieval`
-  reporting per-step `recall@k`/MRR deltas. Out of scope -- mutating corpus or chunk text
-  (original word forms stay untouched; index-side token normalization is shipped -- see
-  [RAG core](current/rag-core.md) hybrid retrieval),
-  multi-turn conversational rewriting (task 8), learned/ML spell-correction models (the
-  edit-distance step is the deterministic ceiling this project needs).
-- Data and artifact paths: a `query_glossary.json` artifact derived from a draft bundle and
-  referenced by path in `RunConfig`; A/B rows in the compare/validate reports; original and
-  processed query per case in run bundles.
-- Execution path: `llb run-eval --query-prep normalize,typos,glossary`;
-  `llb validate-retrieval --query-prep <steps> --query-prep-ab`;
-  `llb build-query-glossary --bundle <draft> --out <json>`; unit tests: apostrophe unification,
-  transliteration-table round-trips, typo correction that never touches in-vocabulary tokens,
-  deterministic alias expansion, and exact no-op when the lane
-  is off.
-- Acceptance gates: `make ci` green; the A/B report on the committed goldset attributes a
-  per-step delta (positive, zero, or negative -- the mechanism reports it honestly); the raw query
-  is always preserved in logs; the LLM-rewrite step never runs without its explicit flag; current
-  docs record the measured deltas for the fixture.
-- Documentation target: [RAG core](current/rag-core.md); [data prep](current/data-prep.md) for the
-  glossary artifact provenance.
+- Dependencies: the shipped query-side processing lane's `typos` step (see
+  [RAG core](current/rag-core.md) query-side processing). Agent-buildable; the `[lex]` extra
+  (pymorphy3) is already used index-side.
+- Why this is forward work: the deterministic edit-distance `typos` step corrects any query token
+  ABSENT from the corpus vocabulary to its nearest in-vocabulary token. On inflection-rich
+  Ukrainian this also "corrects" grammatically-valid inflected query forms (e.g. `поділяють` ->
+  `поділяти`, `документами` -> `документа`) that are not misspellings but simply a different case
+  than the corpus surface form -- a crude inflection-match that can HURT retrieval on a
+  non-saturated corpus (the committed fixture saturates at recall@5 1.000, so the A/B could not
+  surface the regression there).
+- User-visible outcome: a `typos` step that skips a token pymorphy3 recognizes as a valid
+  Ukrainian word form (so genuine misspellings are still corrected, but valid inflections are left
+  for the shipped index+query lemmatization to match), gated behind a flag so the pure
+  edit-distance behavior stays the default when the `[lex]` extra is absent.
+- Scope boundary: in scope -- an optional morphology check in `src/llb/rag/query_prep.py`
+  `apply_typos` reusing `llb.rag.lexical.load_uk_lemmatizer` / a pymorphy3 `word_is_known` probe;
+  an A/B row demonstrating the guard's effect on an inflection-rich non-saturated corpus. Out of
+  scope -- a learned spell-corrector (the deterministic ceiling stands), changing the default
+  edit-distance thresholds.
+- Data and artifact paths: no new artifact; the guard is a `RunConfig` sub-knob of the `typos`
+  step recorded in the manifest fingerprint.
+- Execution path: `llb validate-retrieval --query-prep typos --query-prep-ab` on an
+  inflection-rich goldset with and without the guard; unit tests: a valid inflected form is left
+  untouched under the guard, a genuine misspelling is still corrected.
+- Acceptance gates: `make ci` green; the guard leaves a pymorphy3-known valid form unchanged while
+  still correcting an unknown misspelling (unit-tested); the A/B records the guarded-vs-unguarded
+  retrieval delta on a non-saturated corpus.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
-### 16. groundedness-citation-metrics
+### citation-coverage-metric (optional)
 
-- Dependencies: none. Enriches the per-case signals task 8 and the shipped miss analysis
-  consume. The one manual
-  groundedness/abstention run executes on the CUDA host (deterministic, no human judgment).
-- User-visible outcome: answer-side RAG quality beyond reference-answer overlap: a cited-answer
-  mode whose prompt requires `[i]` chunk citations for factual claims, scored for citation
-  validity (the cited chunk actually contains the supporting span) and hallucinated-citation rate;
-  a deterministic groundedness signal (fraction of answer content supported by the retrieved
-  context via span/overlap matching, with the calibration-gated judge as an optional secondary);
-  and insufficient-context probes -- gold questions re-run with their gold evidence excluded from
-  retrieval -- where correct behavior is explicit abstention, scored as abstention accuracy. All
-  three become additive columns in run bundles, the board, and `recommend`.
-- Scope boundary: in scope -- `src/llb/scoring/groundedness.py`; an `eval.rag.cited_answer`
-  template in the prompt registry (`src/llb/prompts/registry.py`) reusing the numbered-chunk
-  format `format_context` already emits; probe construction by excluding gold-span chunks at
-  retrieval time for a sampled subset; abstention detection reusing the refusal /
-  insufficient-data markers from the shared taxonomy while keeping "correct abstention on a
-  probe" distinct from "refusal on a scoreable case". Out of scope -- a RAGAS dependency,
-  frontier judges (egress policy), changing the headline objective (new metrics stay separate
-  columns until a ranking policy explicitly adopts them), chain scoring (task 8).
-- Data and artifact paths: additive per-case fields in `scores.jsonl` (citation
-  validity, groundedness fraction, probe flag, abstention outcome); aggregate columns in board
-  and `recommend` summaries when present.
-- Execution path: `llb run-eval --cited-answers --score-groundedness`;
-  `llb run-eval --insufficient-context-probes <n>`; unit tests over synthetic contexts/answers
-  covering fully-supported, partially-supported, unsupported-claim, invalid-citation, and
-  correct-abstention cases.
-- Acceptance gates: `make ci` green; the deterministic scorer separates fully-supported from
-  injected-unsupported answers on the synthetic fixture with zero cross-class leakage; a citation
-  pointing at a chunk that lacks the claimed span is always flagged; probe cases never enter plain
-  correctness aggregates; one manual run on the committed goldset records per-model groundedness
-  and abstention accuracy in current docs.
-- Documentation target: [RAG core](current/rag-core.md) scoring;
-  [evaluation rigor](current/rigor-board-judge.md).
-
-### 17. corpus-governance-metadata
-
-- Dependencies: none open -- the ACL-filter half applies through the shipped chunk-metadata
-  filter seam (`src/llb/rag/filters.py`; see [RAG core](current/rag-core.md) hybrid retrieval);
-  the governance fields and reindex policy stand alone.
-- User-visible outcome: corpus ingestion and the RAG store gain governance metadata and a lifecycle
-  policy: every `corpus_manifest.json` entry and chunk record carries `language`,
-  `version`/`effective_date` when the source provides one, `ingestion_time`, `source_system`, and
-  an optional ACL label; retrieval can filter candidates by ACL label before anything reaches the
-  model; and `ingest-corpus`/`build-index` gain deletion propagation (a source removed from the
-  corpus root drops out of the next build and the manifest diff says so), stale-store detection
-  (store fingerprint vs corpus manifest), and a documented rollback unit (immutable store
-  directories).
-- Scope boundary: in scope -- additive optional governance fields on `corpus_manifest.json`,
-  `ChunkRecord.metadata`, and `store_meta.json` (passthrough text derives `language` from an
-  operator-supplied default or a cheap detector; PDF lanes inherit from the conversion manifest);
-  an ACL-filter argument through the shipped metadata-filter seam with a refusal guarantee (a
-  query scoped to an ACL label never receives an out-of-scope chunk); stale/deleted-doc detection
-  comparing the store fingerprint against the corpus manifest with a clear rebuild message. Out of
-  scope -- runtime prompt-injection filtering and output PII filters (decision recorded in
-  [product decisions](current/scope-boundaries.md)), a permissions backend or user identity model
-  (the ACL label is a plain string tag; enforcement policy belongs to the embedding application),
-  mutating stored chunk text or offsets.
-- Data and artifact paths: governance fields inline in `corpus_manifest.json`, `chunks.jsonl`, and
-  `store_meta.json`; a small mixed-ACL, mixed-language fixture under `samples/` for the filter,
-  deletion, and staleness tests.
-- Execution path: `llb ingest-corpus --default-language uk --acl-label <tag>`;
-  `llb build-index` (staleness check against the corpus manifest);
-  `llb run-eval --acl <tag>` through the shipped filter seam; unit tests cover field
-  propagation end-to-end, ACL filtering, deletion propagation, and the stale-store refusal.
-- Acceptance gates: `make ci` green; every chunk built from the fixture carries its governance
-  fields through retrieval into the returned chunk records; an ACL-scoped retrieval never returns
-  an out-of-scope chunk (unit-tested); removing a source document and re-ingesting drops its chunks
-  from the next build with the removal recorded in the manifest; a store older than its corpus
-  manifest refuses with a rebuild message; stored chunk text and offsets stay byte-identical.
-- Documentation target: [data prep](current/data-prep.md) ingestion;
-  [RAG core](current/rag-core.md) retrieval store.
+- Dependencies: the shipped groundedness/citation metrics (`--cited-answers`; see
+  [RAG core](current/rag-core.md) groundedness and citation metrics). Agent-buildable, deterministic.
+- Why this is forward work: the shipped `citation_validity` collapses two very different failure
+  modes into one low number -- a model that emits NO `[i]` citations and a model that cites the
+  WRONG chunk both score 0.0. The durable llama3.2:3b run made this concrete: validity 0.000 with
+  hallucination 0.000 because the small model simply ignored the citation instruction (mostly
+  emitted no citations), so the metric could not separate "does not cite" from "cites wrongly".
+- User-visible outcome: a `citation_coverage` signal -- the share of factual claims that carry ANY
+  `[i]` citation -- reported beside `citation_validity`, so the board distinguishes an
+  instruction-following gap (low coverage) from a grounding gap (high coverage, low validity).
+- Scope boundary: in scope -- extend `src/llb/scoring/groundedness.py` with a per-claim coverage
+  count (a claim with >= `MIN_CLAIM_TOKENS` content tokens is "covered" when it carries at least
+  one citation) and add `citation_coverage` as an additive per-case field + manifest metric. Out of
+  scope -- changing the validity/hallucination definitions, a learned claim-detector (the
+  sentence-split heuristic is the deterministic ceiling), scoring non-cited runs.
+- Data and artifact paths: additive `citation_coverage` in `scores.jsonl` and the manifest
+  `metrics`; no bundle-shape change otherwise.
+- Execution path: `llb run-eval --cited-answers`; unit tests -- a fully-cited answer scores 1.0
+  coverage, an uncited answer 0.0, a partially-cited answer in between, all independent of validity.
+- Acceptance gates: `make ci` green; coverage separates a no-citation answer from a wrong-citation
+  answer on the synthetic fixture (the two now yield different coverage at equal validity); the
+  manifest carries mean `citation_coverage` when cited-answers is on.
+- Documentation target: [RAG core](current/rag-core.md) groundedness and citation metrics.
 
 ### external-rag-source-mapping (optional)
 
@@ -310,235 +227,199 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
   [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
-### 18. local-model-self-improvement-loop
+### adapter-merge-serving-cuda-evidence (optional)
 
-- Dependencies: soft-consumes the shipped miss analysis (`llb analyze-misses` emits
-  `misses.jsonl`; see [evaluation rigor](current/rigor-board-judge.md)): when an analysis
-  exists, the training-set export targets and weights the miss clusters; without one it falls
-  back to the whole tuning split. Reuses
-  the shipped split discipline (`src/llb/goldset/splits.py` -- calibration/tuning/final are
-  disjoint by seeded assignment precisely so tuning can never leak into the final leaderboard
-  number), the durable-eval-runner (per-round resume), and the board/recommend machinery. The
-  heavy fine-tune + re-eval rounds execute seeded on the CUDA host with no human judgment --
-  the same heavy-run discipline as task 16.
-- User-visible outcome: the benchmark closes its loop from measurement to improvement: one
-  command turns a scored run into a measurably better *local* model. It exports a
-  contamination-guarded training set from the tuning split (SFT records in the exact prompt
-  shape the eval sends; optional preference pairs built from the model's own scored misses),
-  LoRA/QLoRA fine-tunes the local model, re-evaluates the adapter as a new board row through
-  the unchanged eval runner, and iterates rounds until the gain disappears -- ending with a
-  per-round report (base vs tuned on the held-out final split, bootstrap CIs) and an explicit
-  accept/reject verdict for the adapter. The miss analysis's evidence-backed "model X fails on
-  cluster Y" becomes "model X + adapter-`<digest>` passes, with the round-by-round proof".
-- Scope boundary: in scope -- `src/llb/finetune/dataset.py`: a deterministic export from a
-  finalized run bundle plus its goldset -- SFT records (question + retrieved context ->
-  reference answer, reusing the eval's own prompt templates so train and eval formats cannot
-  drift) drawn ONLY from tuning-split items, optional DPO preference pairs (the model's scored
-  wrong answer = rejected, the reference = chosen) from the miss analysis's `misses.jsonl`
-  when present,
-  and a `dataset_manifest.json` recording item ids, split provenance, and a content digest;
-  `src/llb/finetune/trainer.py`: seeded LoRA/QLoRA behind an injectable trainer seam (real
-  implementation via a new `[finetune]` optional extra -- peft/trl -- following the existing
-  extras pattern; CI drives a fake trainer), emitting an adapter directory plus
-  `adapter_manifest.json` (base model id, dataset digest, hyperparameters, seed, loss curve);
-  the contamination guard as the non-negotiable invariant: `run-eval` refuses to score a
-  model+adapter whose recorded dataset digest intersects calibration/final item ids --
-  extending the split discipline from configs to weights -- and a tuned model is barred from
-  judging its own answers, mirroring the recorded planter != judge guard
-  (`src/llb/prep/frontier.py`); adapter serving through the existing backend seam (vLLM LoRA
-  modules directly; a merge-to-GGUF lane for ollama/llama.cpp), with base model + adapter
-  digest recorded in the run manifest; an orchestrator `llb self-improve` chaining
-  run-eval -> analyze-misses -> export -> fine-tune -> re-eval per round, stopping on a
-  CI-overlapping delta or the round budget, resumable mid-campaign; tuned board rows labeled
-  `<model>+adapter-<digest>` beside the base row, and a self-improvement section in the
-  `recommend` summary when rounds exist. Out of scope -- full-parameter training, RLHF/online
-  RL, training or altering the judge or the embedder, frontier-API distillation (egress; the
-  frontier lane belongs to human task 2), auto-adopting an adapter as the recommended default
-  (the verdict is reported; adoption stays an operator decision), changing the `GoldItem`
-  schema or the split assignment.
-- Data and artifact paths:
-  `$DATA_DIR/self-improve/<timestamp>/round-<i>/{dataset/,adapter/,run/,report.md}` with
-  `dataset_manifest.json` and `adapter_manifest.json` as above; a synthetic scored-bundle +
-  goldset fixture and a poisoned adapter-manifest fixture under `samples/` for the export and
-  guard tests.
-- Execution path: `llb export-finetune-set --run-dir <run> --goldset <gs> --out <dir>`;
-  `llb finetune-adapter --dataset <dir> --model <m> --seed <s>` (heavy, CUDA host, outside
-  quick CI); `llb self-improve --model <m> --backend <b> --rounds 2` and
-  `make self-improve MODEL=<m> BACKEND=<b>`; unit tests cover split discipline of the export
-  (it can never emit a calibration/final id), preference-pair construction from the synthetic
-  miss fixture, the contamination guard's refusal on the poisoned manifest, fake-trainer loop
-  wiring including the stop rule, and per-round resume.
-- Acceptance gates: `make ci` green with the fake trainer; the split-leakage test proves zero
-  calibration/final items in any export; the contamination guard blocks the poisoned-manifest
-  fixture with a clear message naming the offending ids; one real seeded QLoRA round on the
-  CUDA host over the committed goldset records base vs tuned final-split scores with bootstrap
-  CIs in current docs -- reported honestly (gain, tie, or regression are all acceptable
-  evidence; the mechanism must not require a gain to land); the tuned row shows no security-tier
-  regression (`bench-security` delta recorded beside the correctness delta); provenance chains
-  adapter -> dataset digest -> source run so every tuned board number traces to its exact
-  training data.
-- Documentation target: [extended workflows](current/extended-workflows.md) self-improvement
-  section; a new operator guide
-  [`docs/guides/benchmarking/self-improvement-loop.md`](../guides/benchmarking/self-improvement-loop.md).
+- Dependencies: the shipped adapter registry, merge lane, and `serve-adapter` (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle). The heavy
+  merge + serve executes on the CUDA host (deterministic, no human judgment).
+- Why this is forward work: the merge-to-GGUF lane (PEFT `merge_and_unload` ->
+  `convert_hf_to_gguf.py` -> `ollama create`) is only exercised against an INJECTED fake merge in
+  CI, so the real path has never run: the converter's architecture coverage, the merged model's
+  tokenizer round-trip, and whether a merged adapter actually answers as the ADAPTER (and not as
+  the base model) are all unverified. A merge that silently produced base-model behavior would be
+  invisible to every current test.
+- User-visible outcome: a recorded CUDA-host run merging one registered adapter and serving it on
+  BOTH `ollama` and `llamacpp`, with a `run-eval` comparison proving the merged artifact scores like
+  the vLLM LoRA row (within overlapping CIs) rather than like the base model.
+- Scope boundary: in scope -- run the shipped `llb serve-adapter --backend ollama|llamacpp` against
+  a real adapter; record the merge wall-clock, GGUF size, and the merged-vs-LoRA-vs-base objective
+  triple in current docs; note any architecture the converter rejects. Out of scope -- new merge
+  code (the lane is shipped), quantized GGUF outtypes beyond the pinned `f16`, uploading merged
+  artifacts anywhere (egress).
+- Data and artifact paths: `$DATA_DIR/adapters/merged/<short-id>/<backend>/`; the comparison table
+  lands in current docs.
+- Execution path: `llb serve-adapter --adapter <id> --backend ollama --smoke`, then
+  `llb run-eval --model <merged-tag> --backend ollama` on the CUDA host (outside quick CI).
+- Acceptance gates: both GGUF backends serve the merged adapter and answer the probe; the merged
+  row's final-split objective matches the vLLM LoRA row within overlapping CIs and differs from the
+  base row -- or the divergence is recorded honestly as a merge-fidelity finding; current docs record
+  the merge cost and the three-way objective comparison.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle; the self-improvement-loop guide's serving section.
 
-### 19. finetune-campaign-multi-model
+### adapter-citation-scan-orchestrator-journals
 
-- Dependencies: follows task 18 (`local-model-self-improvement-loop`) -- the campaign reuses
-  its dataset export, injectable trainer seam, contamination guard, and per-round report; land
-  18's code first. Soft-consumes the shipped miss analysis (per-model miss-targeted exports when an analysis
-  exists). Reuses the feasibility planner (`src/llb/backends/planner.py` -- can this model run
-  on THIS host, and at what context), the VRAM reclaim gate (`src/llb/executor/vram.py` -- the
-  sequential-execution contract between roster entries), and the durable-runner journal pattern
-  for campaign resume. The heavy campaign executes seeded on the CUDA host, no human judgment.
-- User-visible outcome: one command fine-tunes and re-evaluates a whole roster of local models
-  over the same corpus goldset, answering a question the base-model leaderboard cannot: which
-  model is the best pick for this corpus *after* adaptation. Sequential VRAM-safe scheduling,
-  per-model rounds, and a campaign report ranking roster models by measured tunability --
-  final-split gain with bootstrap CIs against training wall-clock and peak VRAM -- beside
-  base-vs-adapted board rows, so `recommend` can name the best adapted model with evidence.
-- Scope boundary: in scope -- `src/llb/finetune/campaign.py` orchestrating task 18's loop per
-  roster entry from an explicit `--models` list (there is no single roster variable today; the
-  campaign defines the roster shape and `make` passes it through); the model-independent SFT
-  export computed once per campaign and shared across entries while preference pairs stay
-  per-model (each model's own scored misses); feasibility-aware scheduling -- a roster entry
-  the planner rejects, or whose trainer cannot fit beside the serving stack, is skipped with
-  the recorded reason, never crashed into; VRAM reclaim enforced between entries exactly as
-  between eval runs; a `campaign.progress.jsonl` journal with `--resume` that never re-trains
-  a finished entry; adapted rows labeled per task 18 beside every base row; a tunability
-  section in the `recommend` summary when a campaign report exists. Out of scope -- parallel
-  or multi-GPU training (the sequential single-host contract stands), cross-model weight
-  merging or model soups, changing the contamination guard (task 18 owns it), frontier or API
-  teachers (egress).
-- Data and artifact paths:
-  `$DATA_DIR/finetune-campaign/<timestamp>/{campaign.progress.jsonl,report.md}` plus
-  `<model>/round-<i>/` per entry reusing task 18's round layout; the shared SFT export stored
-  once under the campaign root with its `dataset_manifest.json`.
-- Execution path: `llb finetune-campaign --models <m1,m2,...> --backend <b> --rounds <n>` and
-  `make finetune-campaign MODELS=<csv> BACKEND=<b>`; unit tests drive the fake trainer plus a
-  fake planner -- scheduling order, skip-with-reason on an infeasible entry, journal resume
-  mid-roster, shared-export reuse (byte-identical dataset digest across entries), and the
-  ranking math in the report.
-- Acceptance gates: `make ci` green with the fakes; resuming a half-finished campaign
-  re-trains nothing already journaled (unit-tested); an infeasible roster entry appears in the
-  report with its planner reason; every adapted row passes task 18's contamination guard; one
-  real campaign over at least two quickstart-scale models on the CUDA host records the
-  tunability ranking with CIs in current docs -- honestly (a roster where no model gains is
-  acceptable evidence).
-- Documentation target: [extended workflows](current/extended-workflows.md) self-improvement
-  section; the self-improvement-loop guide gains the campaign chapter.
+- Dependencies: the shipped GC citation scan (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle).
+  Agent-buildable; all gates use committed fixtures.
+- Why this is forward work: `lifecycle.cited_adapters` scans ONLY published run bundles under
+  `$DATA_DIR/run-eval/*/manifest.json`. Self-improvement `state.json`, campaign
+  `campaign.progress.jsonl`, and both `report.md` files also cite `adapter_dir` paths, and those
+  citations are invisible to GC. `llb gc-adapters` can therefore delete a superseded adapter whose
+  directory a campaign report still links, leaving a dangling path in durable evidence -- exactly
+  the failure the citation guard exists to prevent, one directory up.
+- User-visible outcome: GC refuses to delete an adapter cited by any durable artifact, not just a
+  published run bundle, and names the citing artifact in the refusal reason.
+- Scope boundary: in scope -- extend `cited_adapters` to additionally scan
+  `$DATA_DIR/self-improve/*/state.json` (`rounds[].adapter_dir`) and
+  `$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` (`entry.adapter_dir`), resolving each path
+  through the registry's `adapter_dir` index the way the `adapter_path` match already does; carry the
+  citing artifact kind into `GcDecision.cited_by`. Out of scope -- rewriting orchestrator journals to
+  store adapter ids instead of paths (a separate migration), scanning arbitrary operator files.
+- Data and artifact paths: no new artifact; `gc_rows` gains the citing-artifact kind.
+- Execution path: `llb gc-adapters --dry-run`; unit tests -- a superseded adapter cited only by a
+  campaign journal is refused, and `--force` still deletes it.
+- Acceptance gates: `make ci` green; a campaign-journal-only citation blocks an unforced GC
+  (unit-tested against a committed journal fixture); the refusal message names the journal.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle.
 
-### 20. adapter-registry-lifecycle
+### adapter-staleness-retrieval-fingerprint (optional)
 
-- Dependencies: follows task 18 (registers the adapters its rounds emit and extends its
-  manifests); task 19 soft-consumes the registry when present (campaign rounds auto-register).
-  Land after 18, beside 19. All gates run on committed fixtures -- no heavy run.
-- User-visible outcome: adapters become first-class, traceable artifacts instead of loose
-  directories: a local registry lists every adapter with its base model, dataset digest,
-  source run, and eval evidence; staleness is detected (the goldset or corpus changed since
-  training, so the recorded evidence no longer describes the present benchmark) and stamped,
-  never silently ignored; one command serves any registered adapter through the existing
-  backends; and superseded adapters can be garbage-collected without ever deleting one a run
-  bundle still cites. Board and `recommend` cite only registered adapters, so every tuned
-  number stays reproducible.
-- Scope boundary: in scope -- `src/llb/finetune/registry.py` over an append-only
-  `$DATA_DIR/adapters/registry.jsonl` (id = adapter digest; entries record base model id,
-  dataset digest, goldset/corpus digests, source run path, and an eval summary); automatic
-  registration on a successful task 18/19 round; a staleness check comparing recorded digests
-  against the current goldset/corpus with the verdict shown in `llb list-adapters`;
-  `llb serve-adapter --adapter <id> --backend vllm|ollama|llamacpp` wiring the existing
-  backend seam (vLLM LoRA modules directly; the merge-to-GGUF lane for ollama/llama.cpp, with
-  the merge recorded as a registry event); `run-eval` resolving adapter ids through the
-  registry so the contamination guard reads recorded digests, not operator-supplied ones; GC
-  that refuses to delete an adapter referenced by any run bundle unless forced. Out of scope
-  -- remote registries or hubs, uploading adapters anywhere (egress), automatic retraining on
-  staleness (report only), a long-running serving daemon.
-- Data and artifact paths: `$DATA_DIR/adapters/registry.jsonl` plus the adapter directories it
-  indexes; a committed registry fixture with a stale entry and a poisoned-digest entry under
-  `samples/` for the lifecycle tests.
-- Execution path: `llb list-adapters`; `llb serve-adapter --adapter <id> --backend <b>`;
-  `llb gc-adapters [--force]`; unit tests -- registry round-trip, staleness flip when the
-  goldset digest changes, guard resolution through the registry (the poisoned entry is
-  refused), GC refusal on a cited adapter, merge-event recording via a fake backend.
-- Acceptance gates: `make ci` green; a stale adapter is always stamped before its row can
-  render on the board; the contamination guard rejects the poisoned-digest fixture with a
-  message naming the intersecting ids; GC never deletes a cited adapter without `--force`
-  (unit-tested); serving smoke passes against the fake backend for all three backends.
+- Dependencies: the shipped staleness check (see
+  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle) and the RAG
+  store meta (`store_meta.json`; see [RAG core](current/rag-core.md)). Agent-buildable,
+  deterministic.
+- Why this is forward work: staleness compares the goldset digest and the CORPUS fingerprint, but an
+  adapter is trained on retrieved CONTEXT, which also depends on the embedder, chunk strategy, and
+  retrieval mode. Re-embedding the same corpus with a different `embedding_model`, or rechunking it,
+  leaves `corpus_fingerprint` unchanged, so an adapter whose training contexts no longer exist still
+  reads `current`. The staleness stamp is therefore weaker than it appears.
+- User-visible outcome: an adapter also goes `stale` when the RAG store that produced its training
+  contexts was rebuilt with a different embedder, chunker, or retrieval mode, with the changed knob
+  named in the reason.
+- Scope boundary: in scope -- record the store's retrieval fingerprint (embedder, strategy, chunk
+  size/overlap, retrieval mode) from `store_meta.json` in the registry entry at registration, and add
+  a third comparison to `staleness()` with a per-knob reason. Out of scope -- rebuilding the store,
+  changing `corpus_fingerprint`, retraining on staleness (report only).
+- Data and artifact paths: an additive `retrieval_fingerprint` field on registry entries; older
+  entries lacking it report `unknown` on that axis, never `current`.
+- Execution path: `llb list-adapters`; unit tests -- an entry registered against one embedder flips
+  to `stale` when the store meta names another, and a legacy entry without the field reports
+  `unknown`.
+- Acceptance gates: `make ci` green; the embedder swap flips the verdict and names the knob; a
+  registry entry predating the field never reads `current` on the retrieval axis.
+- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
+  lifecycle.
+
+### finetune-hparams-stratified-dev-slice
+
+- Dependencies: the shipped budgeted LoRA search (see
+  [extended workflows](current/extended-workflows.md) hyperparameter search). Agent-buildable; all
+  gates use committed fixtures.
+- Why this is forward work: `carve_dev_slice` draws the held-out sub-slice UNIFORMLY at random from
+  the tuning item ids. On a corpus where the base model answers only a minority of items, a uniform
+  slice can land almost entirely on items it scores 0.0 on, and the objective becomes a
+  near-constant that ranks every trial the same. The first CUDA search on this repo hit exactly
+  that: a 12-item dataset produced a 3-item dev slice holding ONE item the base model could answer,
+  and every trial tied at 0.0000. The workaround was a bigger dataset, not a better slice.
+- User-visible outcome: the dev slice is stratified so it carries a representative share of items
+  the base model answers, making the trial objective discriminate at small dev sizes;
+  `hparams_manifest.json` records the strata and the base-model score distribution the slice was
+  drawn against.
+- Scope boundary: in scope -- an optional `--stratify-by-base-score <tuning-run-dir>` that buckets
+  tuning items by their base-model `objective_score` from a scored run bundle and draws the dev
+  slice proportionally per bucket, keeping the train/dev disjointness and seeded determinism the
+  current slice guarantees; a refusal (or loud warning) when the drawn dev slice has zero answerable
+  items, because a study cannot rank trials against a constant objective. Out of scope -- changing
+  the default uniform slice when no run bundle is supplied, a learned slice selector, changing the
+  objective metric.
+- Data and artifact paths: an additive `dev_slice.strata` block in `hparams_manifest.json`; no new
+  artifact.
+- Execution path: `llb finetune-hparams --stratify-by-base-score <tuning-run>`; unit tests -- a
+  synthetic score distribution with 3 answerable of 12 items yields a dev slice holding at least one
+  answerable item at every seed, disjointness still holds, and an all-zero slice is refused.
+- Acceptance gates: `make ci` green; the stratified slice beats the uniform slice on
+  answerable-item coverage over a committed score fixture across seeds; the zero-signal refusal is
+  unit-tested.
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+
+### finetune-hparams-infeasible-point-prune (optional)
+
+- Dependencies: the shipped budgeted LoRA search and the memory planner
+  (`src/llb/backends/planner.py`; see
+  [robust backends and ontology drafting](current/robustness-ontology-backends.md) memory planner).
+  Agent-buildable, deterministic.
+- Why this is forward work: `optimize/tuner.py` prunes over-context RAG points BEFORE a trial runs,
+  so a doomed configuration never costs a run. The LoRA search has no analogous pre-run prune: it
+  only prunes on a MEASURED OOM, after the trial has already paid for a full fine-tune plus a
+  backend launch. On a constrained host a large rank crossed with the widest target-module preset
+  can be known-infeasible up front.
+- User-visible outcome: a trial whose adapter cannot fit the host's VRAM alongside the base model is
+  pruned before training starts, with the estimated footprint in the prune reason, so a bounded
+  budget spends its trials on configurations that can actually run.
+- Scope boundary: in scope -- an adapter-parameter estimate (rank x target modules x layer count)
+  fed through the existing planner's VRAM headroom, raising `optuna.TrialPruned` from the objective
+  before `trainer_fn` is called; the estimate recorded per trial in `hparams_manifest.json`. Out of
+  scope -- replacing the measured-OOM prune (both are needed), calibrating the estimate against a
+  benchmark, a second planner.
+- Data and artifact paths: an additive `estimated_adapter_mib` per trial record; no new artifact.
+- Execution path: `llb finetune-hparams --max-trials 8` on a small-VRAM host; unit tests -- a
+  rank-64 point on a fixture host with no headroom prunes before the trainer is invoked, and a
+  rank-8 point still trains.
+- Acceptance gates: `make ci` green; the pre-run prune fires without calling the injected trainer
+  (unit-tested); a pruned trial still leaves a manifest row naming the estimated footprint.
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+
+### finetune-hparams-effective-batch-axis (optional)
+
+- Dependencies: the shipped budgeted LoRA search. Agent-buildable; the real search runs on the CUDA
+  host.
+- Why this is forward work: the search space covers rank, alpha, dropout, learning rate, epochs, and
+  target modules, but `per_device_train_batch_size`, `gradient_accumulation_steps`, and `max_length`
+  stay pinned at the trainer's conservative defaults. Effective batch size interacts strongly with
+  learning rate, so a recorded best learning rate is only best AT the pinned batch size -- an
+  operator who changes the batch size silently invalidates the searched config.
+- User-visible outcome: the study searches effective batch size beside learning rate, so the
+  recorded best config is self-consistent, and `hparams_manifest.json` records the batch geometry
+  the learning rate was chosen under.
+- Scope boundary: in scope -- add `per_device_train_batch_size` x `gradient_accumulation_steps`
+  (sampled as an effective-batch categorical so the two are never independently meaningless) and
+  `max_length` to `suggest_lora_hyperparameters`; the trainer already consumes all three keys. Out
+  of scope -- a learning-rate schedule search, gradient checkpointing, a second optimizer.
+- Data and artifact paths: additive keys in the sampled hyperparameters; no new artifact.
+- Execution path: `llb finetune-hparams --max-trials 12`; unit tests -- the sampled effective batch
+  is always the product of the two knobs, and a seeded study still reproduces its trial table.
+- Acceptance gates: `make ci` green with the fake trainer; the effective-batch invariant is
+  unit-tested; one real bounded search on the CUDA host records whether the widened space beats the
+  pinned-batch best config (no-gain is acceptable evidence).
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+
+### 23. compressed-qat-adapter-support (optional)
+
+- Dependencies: follows the baseline trainer path in
+  [extended workflows](current/extended-workflows.md); registered adapter provenance is available
+  through the shipped adapter registry.
+- User-visible outcome: compressed-tensors QAT checkpoints can participate in adapter campaigns
+  instead of serving only as base models: the trainer detects compressed linear modules, chooses a
+  compatible adapter-injection strategy or an explicit skip reason, and reports whether the
+  checkpoint is trainable on the host without crashing mid-campaign.
+- Scope boundary: in scope -- model-introspection helpers for native quantization configs,
+  per-architecture target-module selection, a compatibility shim or documented fallback for PEFT
+  injection into compressed linear layers, and campaign skip/report plumbing that names the exact
+  trainability blocker. Out of scope -- dequantizing full checkpoints into new base weights,
+  uploading converted models, or adding a second training framework before the PEFT path is
+  exhausted.
+- Data and artifact paths: compatibility probes live under
+  `$DATA_DIR/finetune-compat/<model>/<timestamp>/`; campaign skip reasons stay in
+  `campaign.progress.jsonl` and `report.md`.
+- Execution path: `llb finetune-compat --model <m> --backend <b>` plus campaign auto-probing for
+  native compressed checkpoints; unit tests use fake compressed linear modules and a fake trainer.
+- Acceptance gates: `make ci` green; compressed native-quant fixtures either receive a working
+  adapter or a deterministic skip reason before training starts; one CUDA-host probe records the
+  trainable/not-trainable verdict for a compressed QAT checkpoint in current docs.
 - Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide's serving section.
-
-### 21. finetune-hparam-search
-
-- Dependencies: follows task 18 (searches over its injectable trainer seam); reuses the Optuna
-  study conventions of `src/llb/optimize/tuner.py` (the `[track]` extra already pins optuna) --
-  seeded study, pruned infeasible points, bounded budget -- and feeds task 19 (a recorded best
-  config becomes that model's campaign default). The real bounded search runs on the CUDA host.
-- User-visible outcome: fine-tuning stops guessing hyperparameters: per model, a budgeted
-  Optuna search over the LoRA space (rank, alpha, learning rate, epochs, target modules) finds
-  the best configuration -- scored on a held-out dev slice carved from the tuning split ONLY,
-  so neither calibration nor final ever influences the search -- and records it beside the
-  adapter artifacts for tasks 18/19 to consume as defaults.
-- Scope boundary: in scope -- `src/llb/finetune/hparam_search.py` reusing the tuner's study
-  conventions; a seeded dev-slice split *within* the tuning split (train sub-slice vs dev
-  sub-slice, disjointness unit-tested), extending the recorded split discipline from
-  configuration knobs to hyperparameters; `--max-trials` / `--max-hours` budget guards that
-  abort cleanly with the study resumable; an `hparams_manifest.json` per model (best config,
-  study seed, trial table, objective values) consumed by the task 18 trainer as defaults;
-  fake-trainer trials in CI with a synthetic objective. Out of scope -- searching on the final
-  or calibration split (forbidden by the guard), full-parameter tuning, a second tuner
-  framework, per-trial human review.
-- Data and artifact paths: `$DATA_DIR/finetune-hparams/<model>/<timestamp>/` with the study
-  journal and `hparams_manifest.json`; the manifest path recorded in `adapter_manifest.json`
-  when a searched config trained the adapter.
-- Execution path: `llb finetune-hparams --model <m> --dataset <dir> --max-trials 8` and
-  `make finetune-hparams MODEL=<m>`; unit tests -- dev-slice disjointness (no calibration or
-  final id can enter a trial), deterministic fake-trainer study given the seed, budget abort
-  plus resume, and manifest consumption by the trainer.
-- Acceptance gates: `make ci` green with the fake trainer; the dev-slice test proves zero
-  calibration/final leakage into any trial; an aborted study resumes without repeating
-  finished trials; one real bounded search (at most 8 trials) on the CUDA host records a
-  per-model best config and its dev-slice objective in current docs; a task 18 round trained
-  with the manifest config reproduces the recorded configuration in its provenance.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide's tuning appendix.
-
-### 22. local-distillation-lane (optional)
-
-- Dependencies: follows task 18 (trainer seam and contamination guard; registry integration
-  through task 20 when present) and soft-follows task 19 (the campaign report names the natural
-  teacher -- the roster's best adapted model). Local-only, so no egress question arises. The
-  heavy distillation run executes on the CUDA host.
-- User-visible outcome: the roster's strongest local model teaches the smaller ones: the
-  teacher answers tuning-split questions with retrieved context, its answers are quality-gated
-  deterministically against the reference answers (only an answer scoring at or above the gate
-  becomes a training target -- teacher misses are dropped, never invented into data), and the
-  student is fine-tuned on the accepted set through the task 18 trainer. The report compares
-  student-distilled against student-SFT-on-references over the same items, so distillation must
-  demonstrate its value, not assume it.
-- Scope boundary: in scope -- `src/llb/finetune/distill.py`: teacher generation through the
-  existing backend seam over tuning-split items only; the deterministic quality gate reusing
-  the existing correctness scorers; identity guards -- teacher != student, and the
-  calibration-gated judge is never the teacher (extending the recorded planter != judge rule
-  in `src/llb/prep/frontier.py`); distilled adapters flow through the same contamination guard
-  and (when task 20 exists) registry as every other adapter; the paired
-  distilled-vs-reference-SFT comparison in the report. Out of scope -- frontier or API
-  teachers (egress; human task 2's lane is drafting-only), logit or soft-label distillation
-  across tokenizers (text-level SFT only), training or improving the teacher itself, chain or
-  agentic trace distillation (task 8 owns chain evaluation).
-- Data and artifact paths: `$DATA_DIR/distill/<timestamp>/` holding `teacher_outputs.jsonl`,
-  the accepted `dataset/`, the student `adapter/`, and `report.md`; the dataset manifest
-  records the teacher id, gate threshold, and per-item gate scores.
-- Execution path: `llb distill --teacher <m1> --student <m2> --backend <b> --gate <t>` and
-  `make distill TEACHER=<m1> STUDENT=<m2> BACKEND=<b>`; unit tests with a fake teacher
-  endpoint and the fake trainer -- gate exclusion of below-threshold answers, identity-guard
-  refusals, tuning-split discipline, and the paired-comparison report math.
-- Acceptance gates: `make ci` green with the fakes; a below-gate teacher answer can never
-  reach the training set (unit-tested); teacher == student and judge == teacher both refuse
-  with clear messages; one real CUDA run distills the campaign's best teacher into one smaller
-  student and records the distilled-vs-reference-SFT delta with CIs honestly (no-gain is
-  acceptable evidence); the distilled adapter passes the contamination guard and registers
-  like any other.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide.
+  self-improvement-loop guide's compatibility notes.
 
 ### embedding-bakeoff-full-corpus
 
@@ -616,8 +497,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   recall separates the rows, record the ranked table + fusion-knob verdict in
   [RAG core](current/rag-core.md), and grid `fusion_weight` in one sweep to cross-check the
   compare-retrieval verdict against end-to-end scores. Out of scope -- new comparison code (the
-  command is shipped), query-side rewriting (task 15), a learned document router (the oracle row
-  only measures headroom).
+  command is shipped), the shipped query-side processing lane (`--query-prep`), a learned document
+  router (the oracle row only measures headroom).
 - Data and artifact paths: the hybrid store under `$DATA_DIR/llb/rag/hybrid/`; the ranked table
   lands in current docs.
 - Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1` on the

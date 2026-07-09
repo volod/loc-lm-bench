@@ -1,0 +1,5 @@
+{"term": "інтелектуальна власність", "kind": "entity", "ontology_type": "concept", "support_count": 9, "doc_count": 1, "aliases": ["ІВ"], "examples": []}
+{"term": "авторське право", "kind": "entity", "ontology_type": "concept", "support_count": 7, "doc_count": 1, "aliases": [], "examples": []}
+{"term": "промислова власність", "kind": "entity", "ontology_type": "concept", "support_count": 5, "doc_count": 1, "aliases": [], "examples": []}
+{"term": "патент", "kind": "entity", "ontology_type": "concept", "support_count": 4, "doc_count": 1, "aliases": ["patent"], "examples": []}
+{"term": "торговельна марка", "kind": "entity", "ontology_type": "concept", "support_count": 3, "doc_count": 1, "aliases": ["ТМ", "торгова марка"], "examples": []}

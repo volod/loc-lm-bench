@@ -1,0 +1,39 @@
+{
+  "version": "query-glossary-v1",
+  "entries": [
+    {
+      "canonical": "авторське право",
+      "aliases": [
+        "avtorske pravo"
+      ]
+    },
+    {
+      "canonical": "патент",
+      "aliases": [
+        "patent"
+      ]
+    },
+    {
+      "canonical": "промислова власність",
+      "aliases": [
+        "promyslova vlasnist"
+      ]
+    },
+    {
+      "canonical": "торговельна марка",
+      "aliases": [
+        "ТМ",
+        "торгова марка",
+        "torhovelna marka"
+      ]
+    },
+    {
+      "canonical": "інтелектуальна власність",
+      "aliases": [
+        "ІВ",
+        "intelektualna vlasnist"
+      ]
+    }
+  ],
+  "source_bundle": "samples/query-prep/prompt_dictionary_candidates.jsonl"
+}

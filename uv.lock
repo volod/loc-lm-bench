@@ -3613,6 +3613,7 @@ crewai = [
 dev = [
     { name = "complexipy" },
     { name = "mypy" },
+    { name = "optuna" },
     { name = "pymarkdownlnt" },
     { name = "pytest" },
     { name = "radon" },
@@ -3620,6 +3621,13 @@ dev = [
 ]
 eval = [
     { name = "langgraph" },
+]
+finetune = [
+    { name = "accelerate" },
+    { name = "datasets" },
+    { name = "optuna" },
+    { name = "peft" },
+    { name = "trl" },
 ]
 goldset = [
     { name = "datasets" },
@@ -3674,10 +3682,12 @@ viz = [
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", marker = "extra == 'finetune'", specifier = ">=0.33" },
     { name = "anyio", marker = "extra == 'mcp'", specifier = ">=4.0" },
     { name = "chromadb", marker = "extra == 'rag-chroma'", specifier = "==1.5.9" },
     { name = "complexipy", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15,<2" },
+    { name = "datasets", marker = "extra == 'finetune'", specifier = ">=2.19" },
     { name = "datasets", marker = "extra == 'goldset'", specifier = ">=2.19" },
     { name = "deepeval", marker = "extra == 'rag'", specifier = ">=4.0.6,<5" },
     { name = "docling", extras = ["rapidocr"], marker = "extra == 'pdf-quality'", specifier = ">=2.0" },
@@ -3696,7 +3706,10 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "nvidia-ml-py", marker = "extra == 'telemetry'", specifier = ">=12.0" },
     { name = "openai", specifier = ">=1.40" },
+    { name = "optuna", marker = "extra == 'dev'", specifier = ">=3.6" },
+    { name = "optuna", marker = "extra == 'finetune'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'track'", specifier = ">=3.6" },
+    { name = "peft", marker = "extra == 'finetune'", specifier = ">=0.12" },
     { name = "psutil", marker = "extra == 'telemetry'", specifier = ">=5.9" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pymarkdownlnt", marker = "extra == 'dev'", specifier = ">=0.9.32" },
@@ -3711,10 +3724,11 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3.0" },
     { name = "streamlit", marker = "extra == 'board'", specifier = ">=1.36" },
+    { name = "trl", marker = "extra == 'finetune'", specifier = ">=0.9" },
     { name = "typer", specifier = ">=0.12" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.18" },
 ]
-provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "lex", "track", "board", "viz", "prep", "telemetry", "goldset", "mcp", "pdf-quality", "dev"]
+provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "lex", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "mcp", "pdf-quality", "dev"]
 
 [[package]]
 name = "llvmlite"
@@ -5564,6 +5578,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/05/56/6f450312ba05a27d7713b73857c1a25100dbda04fbc1331b13fb227a607d/pdfplumber-0.11.10.tar.gz", hash = "sha256:b95b2d28c66efb0a794a83b88c6c6aea5987532a445d20a1cbcfa657022e6e57", size = 102892, upload-time = "2026-06-15T03:31:31.035Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/9a/07d658e1e7fad860f1c541ab941348125dbdab773be3a0afaf32361866c7/pdfplumber-0.11.10-py3-none-any.whl", hash = "sha256:7741ea81bf165b474b153e6789d10d18e06b6ddcf3ec84289c3ef2fed6802580", size = 60047, upload-time = "2026-06-15T03:31:29.702Z" },
+]
+
+[[package]]
+name = "peft"
+version = "0.19.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "transformers", version = "5.8.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-dev') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-chroma') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-lancedb')" },
+    { name = "transformers", version = "5.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-dev') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-chroma') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-lancedb')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/cf/037f1e3d5186496c05513a6754639e2dab3038a05f384284d49a9bd06a2d/peft-0.19.1.tar.gz", hash = "sha256:0d97542fe96dcdaa20d3b81c06f26f988618f416a73544ab23c3618ccb674a40", size = 763738, upload-time = "2026-04-16T15:46:45.105Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/b6/f54d676ed93cc2dd2234c3b172ea9c8c3d7d29361e66b1b23dec57a67465/peft-0.19.1-py3-none-any.whl", hash = "sha256:2113f72a81621b5913ef28f9022204c742df111890c5f49d812716a4a301e356", size = 680692, upload-time = "2026-04-16T15:46:42.886Z" },
 ]
 
 [[package]]
@@ -8984,6 +9020,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/09/5683146fda6a2b569deb78ccfd8fbfea8bfe55f726b081c0a6bb18dd6f28/triton-3.7.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2020153b08280415ec0da6607834e79166442147e78e144df06b508c75b186d2", size = 197729537, upload-time = "2026-06-17T19:53:35.516Z" },
     { url = "https://files.pythonhosted.org/packages/e9/f8/448220c3092019f9fdfab39ec47985968181d67da34b44f6a7f6280a5cbb/triton-3.7.1-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c58e4c61f0c73b5dba3b5d19b4a7093c32f90dc18b2a7f121a7c16ccd31107b7", size = 184814760, upload-time = "2026-06-17T20:04:04.984Z" },
     { url = "https://files.pythonhosted.org/packages/f0/ac/229b7d4589d2e5937310e72c6d46e89599d16a4a12b479ffa1499fee8eb8/triton-3.7.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:10ba85fa2cca4a2fbdeb36bf1cb082f2c252bda55bf9fccd74f65ec5bc647e68", size = 197824404, upload-time = "2026-06-17T19:53:42.772Z" },
+]
+
+[[package]]
+name = "trl"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "datasets" },
+    { name = "jinja2" },
+    { name = "packaging" },
+    { name = "transformers", version = "5.8.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-dev') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-chroma') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-lancedb')" },
+    { name = "transformers", version = "5.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-dev') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-chroma') or (extra == 'extra-3-llb-crewai' and extra == 'extra-3-llb-rag-lancedb')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/39/74/34b50058ea7d8c2a1c0bec49dcb6dda4ac929589bace52522fe8d1487306/trl-1.7.1.tar.gz", hash = "sha256:36609abf76f61d305d4c8a8ad5c903b79f177b7e5c4ec1014c4ade4cb7ac4a43", size = 691318, upload-time = "2026-07-04T04:03:09.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/34/24d445a6156db4a9b976b1ab4aefc5e8ee8046da95524768fb78a0f705f0/trl-1.7.1-py3-none-any.whl", hash = "sha256:d5ef8ac38c64746eebf23005dccefc6488874643039d0b4a20f036e1124115b4", size = 842380, upload-time = "2026-07-04T04:03:08.223Z" },
 ]
 
 [[package]]

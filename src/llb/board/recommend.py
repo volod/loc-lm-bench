@@ -492,6 +492,131 @@ def format_miss_section_md(analysis: JsonObject | None) -> str:
     return "\n".join(lines)
 
 
+def latest_self_improvement(data_dir: Path | str) -> JsonObject | None:
+    """Newest `$DATA_DIR/self-improve/*/state.json` with report path attached."""
+    root = Path(data_dir) / "self-improve"
+    if not root.is_dir():
+        return None
+    for candidate in sorted(root.iterdir(), reverse=True):
+        state_path = candidate / "state.json"
+        if not state_path.is_file():
+            continue
+        try:
+            payload: JsonObject = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        payload["report_path"] = str(candidate / "report.md")
+        payload["campaign_dir"] = str(candidate)
+        return payload
+    return None
+
+
+def format_self_improvement_section_md(campaign: JsonObject | None) -> str:
+    """Render latest self-improvement campaign status for `llb recommend`."""
+    if not campaign:
+        return ""
+    rounds = campaign.get("rounds") or []
+    if not isinstance(rounds, list) or not rounds:
+        return ""
+    lines = [
+        "## Self-improvement",
+        "",
+        f"Campaign: `{campaign.get('campaign_dir', '?')}`",
+        f"Report: `{campaign.get('report_path', '?')}`",
+        "",
+        "| round | base objective | tuned objective | delta | verdict |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for row in rounds:
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(row.get("round", "?")),
+                    _fmt_float(row.get("base_objective")),
+                    _fmt_float(row.get("tuned_objective")),
+                    _fmt_float(row.get("delta")),
+                    str(row.get("verdict", "?")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines)
+
+
+def latest_finetune_campaign(data_dir: Path | str) -> JsonObject | None:
+    """Newest multi-model fine-tune campaign payload, or None when no campaign exists."""
+    from llb.finetune.campaign import latest_campaign
+
+    return latest_campaign(data_dir)
+
+
+def format_finetune_campaign_section_md(campaign: JsonObject | None) -> str:
+    """Render latest multi-model tunability ranking for `llb recommend`."""
+    if not campaign:
+        return ""
+    entries = campaign.get("entries") or []
+    if not isinstance(entries, list) or not entries:
+        return ""
+    completed = [entry for entry in entries if isinstance(entry, dict)]
+    ranked = sorted(
+        completed,
+        key=lambda entry: (
+            _float_for_sort(entry.get("delta")),
+            -_float_for_sort(entry.get("train_wall_clock_s")),
+            -_float_for_sort(entry.get("peak_vram_mb")),
+        ),
+        reverse=True,
+    )
+    lines = [
+        "## Fine-tune campaign",
+        "",
+        f"Campaign: `{campaign.get('campaign_dir', '?')}`",
+        f"Report: `{campaign.get('report_path', '?')}`",
+        "",
+        "| rank | model | base objective | adapted objective | delta | train s | peak VRAM | status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for rank, row in enumerate(ranked, 1):
+        status = str(row.get("status", "?"))
+        reason = row.get("reason")
+        if reason:
+            status = f"{status}: {reason}"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(rank) if row.get("status") == "completed" else "",
+                    _short(str(row.get("model", "?"))),
+                    _fmt_float(row.get("base_objective")),
+                    _fmt_float(row.get("tuned_objective")),
+                    _fmt_float(row.get("delta")),
+                    _fmt_float(row.get("train_wall_clock_s")),
+                    _fmt_float(row.get("peak_vram_mb")),
+                    status,
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines)
+
+
+def _float_for_sort(value: object) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _fmt_float(value: object) -> str:
+    try:
+        return f"{float(value):.4f}"  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "n/a"
+
+
 def format_config_detail_md(cells: list[RunSummary]) -> str:
     """Render the detailed (model x config) proof: one row per (model, top_k) cell of the ranked
     cohort, grouped by model with each model's best config marked. '' when there are no cells.

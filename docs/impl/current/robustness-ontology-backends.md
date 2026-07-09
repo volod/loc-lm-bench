@@ -3,6 +3,18 @@
 This page covers the implementation pieces that make local serving reliable on constrained GPUs and
 make ontology-assisted data drafting reusable by GraphRAG.
 
+## CLI Exit Codes
+
+`src/llb/core/runtime.py` `run_typer` drives the Typer app with `standalone_mode=False` so Ctrl-C is
+not swallowed by click. In that mode click **returns** a `typer.Exit(code)` as an int rather than
+raising it (`typer.Exit` IS `click.exceptions.Exit`), so `run_typer` reads the returned code and
+re-raises it as `SystemExit`. Without that, every `raise typer.Exit(code=N)` in `src/llb/cli/`
+exited 0 and a failing command looked successful to `make` and CI.
+
+`--help` returns 0 through the same path and stays exit 0. `tests/test_runtime.py` pins both with a
+`_ReturningApp` fake that models click's real non-standalone contract; the older `_FakeApp` (which
+raises `Exit`) cannot express it.
+
 ## Memory Planner
 
 `src/llb/backends/planner.py` estimates whether a model can run on the host. The estimate is

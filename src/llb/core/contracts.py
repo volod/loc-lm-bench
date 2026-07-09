@@ -61,6 +61,9 @@ class RagStoreMeta(TypedDict):
     lexical: NotRequired[
         JsonObject
     ]  # hybrid-retrieval-uk BM25 sidecar meta: {"lemmatize": bool, "n_terms": int}
+    corpus_fingerprint: NotRequired[str]  # staged-corpus fingerprint used for stale-store checks
+    corpus_manifest: NotRequired[str]  # manifest filename whose ok entries produced the store
+    governance_fields: NotRequired[list[str]]  # governance metadata fields copied onto chunks
 
 
 class UsageRecord(TypedDict, total=False):
@@ -267,6 +270,13 @@ class CaseScoreRow(TypedDict):
     judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
     retrieve_latency_s: NotRequired[float]  # retrieval stage wall-clock (rerank-context-order)
     rerank_latency_s: NotRequired[float]  # rerank stage wall-clock (only when a reranker is on)
+    query_processed: NotRequired[str]  # query actually retrieved with (uk-query-processing)
+    query_corrections: NotRequired[int]  # count of query-prep transformations applied
+    # Answer-side RAG quality (groundedness-citation-metrics), additive; present only when enabled.
+    groundedness: NotRequired[float]  # share of answer claims supported by the retrieved context
+    citation_validity: NotRequired[float]  # share of [i] citations whose chunk supports the claim
+    hallucinated_citation_rate: NotRequired[float]  # share of citations pointing out of range
+    n_citations: NotRequired[int]  # count of [i] citations the answer emitted
 
 
 class LeaderboardRow(TypedDict):
@@ -320,6 +330,9 @@ class BackendMetadata(TypedDict, total=False):
     load_time_s: float | None
     sampler: str  # vLLM sampler actually used (flashinfer | native; vLLM serving preflight)
     flashinfer_version: str | None  # flashinfer version behind the sampler choice
+    adapter_path: str | None  # vLLM LoRA adapter path when adapter serving is active
+    adapter_name: str | None  # vLLM LoRA module name
+    max_lora_rank: int | None  # vLLM --max-lora-rank, sized to the served adapter's trained rank
 
 
 class GpuSummary(TypedDict):
@@ -365,6 +378,12 @@ class RunMetrics(TypedDict):
     # Mean per-case stage wall-clock seconds (rerank-context-order): retrieve always (when
     # measured), rerank only when a reranker is configured, generate from the backend latency.
     stage_latency: NotRequired[dict[str, float]]
+    # Answer-side RAG quality aggregates (groundedness-citation-metrics), present only when enabled.
+    groundedness: NotRequired[float]  # mean per-case groundedness fraction
+    citation_validity: NotRequired[float]  # mean per-case citation validity (cited-answer runs)
+    hallucinated_citation_rate: NotRequired[float]  # mean per-case hallucinated-citation rate
+    abstention_accuracy: NotRequired[float]  # share of insufficient-context probes that abstained
+    n_probes: NotRequired[int]  # number of insufficient-context probes run
 
 
 class RunEnvironment(TypedDict):
@@ -404,6 +423,8 @@ class RunPaths(TypedDict):
     mirror: str
     retrieval: NotRequired[str]  # per-case retrieved-spans record (miss analysis)
     worksheet: NotRequired[str]
+    probes: NotRequired[str]  # insufficient-context probe rows (groundedness-citation-metrics)
+    insufficient_context_report: NotRequired[str]  # probe abstention-accuracy report
 
 
 class DurabilityStatus(TypedDict):

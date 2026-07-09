@@ -143,9 +143,23 @@ after. `store_meta.json` records `page_annotation_coverage` (the fraction of ind
 gained a `pages` field) and `build-index` logs it. In `parent_child` mode both the indexed children
 and their parents are annotated, so the fields surface on retrieval hits either way. Retrieved hits
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
-"file X, page N, section Y" without re-deriving the join. The metadata *filter* seam over these
-fields is shipped (`src/llb/rag/filters.py`; see Hybrid Retrieval below); governance fields
-(`language`, `date`/`version`, ACL) are forward task 17 in [`plan.md`](../plan.md).
+"file X, page N, section Y" without re-deriving the join.
+
+Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking.py`, and
+`src/llb/rag/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
+`metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
+`metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
+The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
+`corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
+that fingerprint with the current corpus manifest before loading the vector store; a changed or
+deleted source refuses with a rebuild message instead of silently serving stale chunks. Immutable
+store directories are the rollback unit.
+
+ACL scoping uses the same metadata-filter seam as page and heading filters:
+`metadata_filter(acl_label=...)` rejects any chunk whose `metadata.acl_label` differs, and
+`run-eval --acl <tag>` passes that predicate into retrieval before dense ranking, hybrid fusion,
+or reranking. An ACL-scoped query therefore never receives an out-of-scope chunk; if no chunk is
+in scope, the case is a retrieval miss before generation.
 
 Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): a `markdown`/`flat`
 store over the quickstart HR PDF corpus (`.data/quickstart-pdf-corpus-hr/_md`, 8 converted docs)
@@ -177,10 +191,10 @@ Modules:
   stored chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
 - `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
-  heading_contains, page_range)` builds a predicate over `doc_id` plus the page-metadata join's
-  `metadata.headers` breadcrumb and `metadata.pages` range; `RagStore.retrieve(question, k,
-  chunk_filter=...)` applies it BEFORE fusion/ranking (with a filter the whole index is scanned,
-  so the cut is exact). Task 17's ACL label will apply through this same seam.
+  heading_contains, page_range, acl_label)` builds a predicate over `doc_id` plus the
+  page-metadata join's `metadata.headers` breadcrumb, `metadata.pages` range, and governance
+  `metadata.acl_label`; `RagStore.retrieve(question, k, chunk_filter=...)` applies it BEFORE
+  fusion/ranking (with a filter the whole index is scanned, so the cut is exact).
 - `src/llb/rag/store.py` -- `mode="hybrid"` builds the lexical index beside the vector index;
   fusion runs inside `RagStore.retrieve`, so every dense `VectorIndex` backend
   (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically. The lexical index persists as
@@ -219,7 +233,7 @@ Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukraini
 registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
 for exact terms; the CI regression (`tests/test_hybrid_store.py`) proves hybrid strictly beats a
 signal-free dense ranking there. Tests: `tests/test_lexical.py` (normalization, BM25 determinism
-and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page
+and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page/ACL
 predicates), `tests/test_hybrid_store.py` (fusion order, weight extremes, filter-before-fusion,
 refusal paths, config-knob application, byte-identical text), plus grid/tuner coverage in
 `tests/test_cli_models.py` / `tests/test_tuner.py`.
@@ -314,6 +328,83 @@ outside quick CI), via `compare-retrieval --hybrid --reranker BAAI/bge-reranker-
   16 GB host (~300 ms on the first store while CUDA warms; the first-row mean absorbs the one-off
   model load). Retrieval itself stays ~13 ms/query, so the reranker multiplies retrieval-stage
   cost ~12x while staying far below generation cost.
+
+## Query-Side Processing (uk-query-processing)
+
+Shipped: an opt-in query lane between the user question and retrieval that measurably helps
+Ukrainian queries while NEVER touching the stored corpus text (the query-side twin of the
+index-side lexical normalization above). The raw question is always preserved -- only the
+retrieval query is transformed -- and every step is honest: an A/B report attributes each step's
+recall@k / MRR delta before anyone turns the lane on by default. Off by default (`query_prep`
+empty is an exact no-op).
+
+`src/llb/rag/query_prep.py` is a pure, unit-testable pipeline of NAMED steps (no store, model,
+or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
+
+- `normalize` -- matching-side casefold, apostrophe-variant unification (U+2019 / U+02BC / `'`),
+  and a small transliteration table that maps Latin-typed Ukrainian tokens back to Cyrillic
+  (`zakon` -> `закон`). The romanization map is injective, so the Latin->Cyrillic inverse is
+  longest-match deterministic.
+- `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
+  the indexed corpus (`build_vocabulary` over `store.chunks`); a query token ABSENT from it is
+  corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
+  tokens over 8 chars). A token the corpus already contains is NEVER altered, and a purely numeric
+  token (article/law number, code) is never "corrected" into a different one. Every correction is
+  logged.
+- `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
+  transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
+  so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
+  built from a draft bundle's `prompt_dictionary_candidates.jsonl` (see
+  [data prep](data-prep.md) query glossary).
+- `rewrite` -- an optional local-LLM query rewrite through the run's backend endpoint seam
+  (`eval.rag.query_rewrite` prompt). OFF by default and NEVER present unless explicitly requested;
+  records both the original and rewritten query per case.
+
+Wiring: `src/llb/eval/graph.py`'s retrieve node processes the question BEFORE `store.retrieve`
+(the raw question stays in state for generation) and records `query_processed` /
+`query_corrections` into the case state, carried into `scores.jsonl` rows so both query forms are
+recoverable per case. `src/llb/executor/runner.py` `build_query_prep` resolves each step's
+dependency (vocabulary from the loaded store, glossary from `query_glossary_path`, rewriter from
+the launcher) and raises a clear message on a missing one.
+
+Knobs (both `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
+`normalize` | `typos` | `glossary` | `rewrite`; unknown/duplicated steps rejected at config
+validation) and `query_glossary_path`.
+
+Commands:
+
+```bash
+make build-query-glossary BUNDLE=<draft dir>            # -> <bundle>/query_glossary.json
+make run-eval MODEL=<m> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json>
+make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json> QUERY_PREP_AB=1
+```
+
+The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
+(`+normalize`, `+typos`, `+glossary`) with per-step recall@k / MRR deltas, so each step's marginal
+retrieval effect is attributable (the `rewrite` step needs a model, so it runs only in `run-eval`,
+not the A/B). `query_prep_ab_report` is pure over the `.retrieve` seam.
+
+Tests: `tests/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
+Damerau-Levenshtein transposition, typo correction that never touches in-vocabulary or numeric
+tokens + long-token distance 2 + deterministic tie-break, deterministic alias expansion + glossary
+build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
+dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
+processed-query wiring, runner resolver dependency wiring), plus config validation in
+`tests/test_config.py`.
+
+Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
+`samples/goldsets/ip_regulation_uk/corpus`, k=5):
+
+- Clean UA goldset queries (`samples/goldsets/ip_regulation_uk`, 8 items): baseline recall@5
+  1.000 / MRR 1.000; `+normalize`, `+typos`, `+glossary` all hold 1.000/1.000 (+0.000 each). The
+  fixture saturates (as the base-model comparisons here do), so the deltas are honestly zero --
+  the typo step also "corrects" a few valid inflected query forms to the nearest corpus form
+  (crude inflection matching, not a misspelling; the shipped lemmatization is the right tool for
+  inflection), which the A/B would surface as a negative delta on a non-saturated corpus.
+- Latin-typed variant of the same 8 queries (each Cyrillic word romanized -- e.g.
+  `na yaki dvi velyki hrupy podilyayut pravo intelektualnoyi vlasnosti?`): baseline recall@5
+  0.875 / MRR 0.812; `+normalize` (transliteration) RECOVERS to 1.000 / 1.000 -- a +0.125 recall /
+  +0.188 MRR uplift. This is the mechanism's honest positive-delta demonstration.
 
 ## Chunking Strategies
 
@@ -463,6 +554,55 @@ diagnostic and objective correctness ranks alone.
 
 `src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
 throughput, then lower VRAM when telemetry is available.
+
+### Groundedness and citation metrics (groundedness-citation-metrics)
+
+Shipped: three answer-side signals that go beyond reference-answer overlap, all deterministic and
+additive -- they never change the headline objective (they stay separate columns until a ranking
+policy explicitly adopts them). `src/llb/scoring/groundedness.py` is a pure, dependency-free scorer
+(no RAGAS, no frontier judge); the calibration-gated judge's faithfulness stays the optional
+secondary groundedness signal.
+
+- Groundedness fraction (`--score-groundedness`): the share of the answer's sentence-ish claims
+  SUPPORTED by any retrieved chunk via token-overlap matching (a claim is supported when
+  `GROUNDEDNESS_SUPPORT_THRESHOLD`=0.6 of its content tokens appear in a chunk). A fully-supported
+  answer scores 1.0; an answer whose claims are absent from the context scores near 0.0.
+- Citation validity + hallucinated-citation rate (`--cited-answers`): swaps in the
+  `eval.rag.cited_answer` generation prompt (requires `[i]` chunk citations, reusing the numbered
+  format `format_context` emits) and validates each citation against the chunk it points at, in
+  PROMPT-LAYOUT order (so `reverse_rank` renumbering is respected). A citation whose in-range chunk
+  lacks the claim is flagged invalid (lowers validity); a citation whose index is out of range is
+  hallucinated.
+- Insufficient-context abstention probe (`--insufficient-context-probes <n>`,
+  `src/llb/eval/insufficient_context.py`): re-runs a seeded sample of gold items with every chunk
+  overlapping their gold spans EXCLUDED from retrieval (through the shipped chunk-metadata filter
+  seam). Correct behavior is an explicit abstention (`llb.eval.common.is_abstention` = refusal OR an
+  insufficient-context marker), scored as abstention accuracy. Probe rows live in `probes.jsonl` (+
+  `insufficient_context_report.md`), NEVER in `scores.jsonl`, so they cannot enter the plain
+  correctness aggregates.
+
+Per-case fields land in `scores.jsonl` (`groundedness`, `citation_validity`,
+`hallucinated_citation_rate`, `n_citations`); their means plus `abstention_accuracy` / `n_probes`
+land in the manifest `metrics`, echoed as the run's `answer-side:` summary line. Config knobs
+(`cited_answers`, `score_groundedness`, `insufficient_context_probes`) are recorded in the manifest
+fingerprint. `RunConfig` toggles are off by default, so pre-existing bundles keep their shape.
+
+Modules/tests: `src/llb/scoring/groundedness.py`, `src/llb/eval/insufficient_context.py`, the
+`eval.rag.cited_answer` template, `ScoreOptions` in `src/llb/executor/cases.py`;
+`tests/test_groundedness.py` (fully/partially/unsupported groundedness with zero cross-class leakage,
+valid/flagged-invalid/hallucinated citations, abstention markers, cited-answer prompt wiring, per-case
+scoring + context-order-aware citation numbering) and `tests/test_insufficient_context.py` (gold
+exclusion, seeded sampling, abstention accuracy, transport-error exclusion).
+
+Durable evidence (2026-07-09, `llama3.2:3b` on Ollama, `intfloat/multilingual-e5-base` flat FAISS
+over `samples/goldsets/ip_regulation_uk`, final split n=4, `--cited-answers --score-groundedness
+--insufficient-context-probes 4`): mean groundedness 0.625 (per-case 1.0 / 0.5 / 1.0 / 0.0);
+citation validity 0.000 with hallucinated-citation rate 0.000 -- the 3B model largely IGNORED the
+`[i]` citation instruction (mostly emitted no citations), so validity is dominated by "did not cite"
+rather than "cited wrongly"; abstention accuracy 0.000 -- on all four probes the model FABRICATED an
+answer (even citing non-existent chunks) instead of abstaining when its gold evidence was removed.
+Honest, unflattering evidence that a small model's answer-side grounding discipline is weak -- exactly
+the axis these metrics expose beyond a passing recall@k.
 
 ## Backends
 

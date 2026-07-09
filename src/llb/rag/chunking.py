@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.core.contracts import ChunkRecord, ChunkSummary, JsonObject
+from llb.prep.corpus_governance import manifest_governance_by_doc
 
 PURE_STRATEGIES = ("fixed", "sentence")
 STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late")
@@ -480,11 +481,17 @@ def chunk_corpus(
     embedder: Any = None,
 ) -> list[ChunkRecord]:
     chunks: list[ChunkRecord] = []
+    governance_by_doc = manifest_governance_by_doc(corpus_root)
     for doc_id, text in iter_docs(corpus_root):
         page_spans = doc_page_spans(corpus_root, doc_id) if strategy == "page" else None
-        chunks.extend(
-            chunk_text(text, doc_id, strategy, size, overlap, embedder, page_spans=page_spans)
+        doc_chunks = chunk_text(
+            text, doc_id, strategy, size, overlap, embedder, page_spans=page_spans
         )
+        governance = governance_by_doc.get(doc_id)
+        if governance:
+            for chunk in doc_chunks:
+                chunk["metadata"] = {**(chunk.get("metadata") or {}), **governance}
+        chunks.extend(doc_chunks)
     return chunks
 
 

@@ -79,16 +79,22 @@ def run(entry: Callable[[], Optional[int]]) -> int:
 
 def run_typer(app: Any) -> None:
     """Run a Typer app with shared Ctrl-C + crash handling. Click swallows SIGINT in its
-    standalone mode, so we drive the app in non-standalone mode and translate the result."""
+    standalone mode, so we drive the app in non-standalone mode and translate the result.
+
+    In non-standalone mode click RETURNS a `typer.Exit(code)` as an int instead of raising it
+    (`typer.Exit` IS `click.exceptions.Exit`), so the returned code -- not just the exception
+    path -- is what carries a command's failure. Dropping it would exit 0 on every
+    `raise typer.Exit(code=2)`. `--help` returns 0 and stays exit 0.
+    """
     import click
 
     configure_logging()
     try:
-        app(standalone_mode=False)
+        code = app(standalone_mode=False)
     except (KeyboardInterrupt, click.exceptions.Abort):
         _announce_interrupt()
         raise SystemExit(INTERRUPT_EXIT) from None
-    except click.exceptions.Exit as exc:  # typer.Exit(code) and --help
+    except click.exceptions.Exit as exc:  # raised rather than returned by some click paths
         raise SystemExit(exc.exit_code) from None
     except click.ClickException as exc:  # usage errors
         exc.show()
@@ -96,3 +102,5 @@ def run_typer(app: Any) -> None:
     except Exception:
         _report_crash()
         raise SystemExit(1) from None
+    if isinstance(code, int) and code != 0:
+        raise SystemExit(code)

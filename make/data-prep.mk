@@ -6,7 +6,7 @@
 	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
 	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
 	verify-sample verify-review verify-accept judge-experiment ingest-uk-squad \
-	prepare-goldset-draft
+	prepare-goldset-draft build-query-glossary
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -21,11 +21,14 @@ pdf-to-markdown: ## Convert PDF_DIR to markdown corpus (default DATA_DIR/quickst
 	if [ -n "$(PDF_REFRESH)" ]; then args+=(--refresh); fi; \
 	$(PY) -m llb.main pdf-to-markdown "$(PDF_DIR)" "$${args[@]}"
 
-ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus (CORPUS_OUT_DIR=, CORPUS_MIN_CHARS=, CORPUS_PARSER=auto, CORPUS_REFRESH=1)
+ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus (CORPUS_OUT_DIR=, CORPUS_MIN_CHARS=, CORPUS_PARSER=auto, CORPUS_REFRESH=1, CORPUS_DEFAULT_LANGUAGE=uk, CORPUS_ACL_LABEL=tag)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--root "$(CORPUS_ROOT)" --min-chars "$(CORPUS_MIN_CHARS)" --parser "$(CORPUS_PARSER)"); \
 	if [ -n "$(CORPUS_OUT_DIR)" ]; then args+=(--out-dir "$(CORPUS_OUT_DIR)"); fi; \
 	if [ -n "$(CORPUS_REFRESH)" ]; then args+=(--refresh); fi; \
+	if [ -n "$(CORPUS_DEFAULT_LANGUAGE)" ]; then args+=(--default-language "$(CORPUS_DEFAULT_LANGUAGE)"); fi; \
+	if [ -n "$(CORPUS_SOURCE_SYSTEM)" ]; then args+=(--source-system "$(CORPUS_SOURCE_SYSTEM)"); fi; \
+	if [ -n "$(CORPUS_ACL_LABEL)" ]; then args+=(--acl-label "$(CORPUS_ACL_LABEL)"); fi; \
 	$(PY) -m llb.main ingest-corpus "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
@@ -103,6 +106,12 @@ calibration-rate: ## Interactively fill human ratings/answers in CAL_WS (judge_r
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.judge.calibration score --ratings "$(RATINGS)"
+
+build-query-glossary: ## uk-query-processing: build query_glossary.json from a draft BUNDLE's dictionary candidates (QUERY_GLOSSARY_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with prompt_dictionary_candidates.jsonl>"; exit 1; }
+	$(PY) -m llb.main build-query-glossary --bundle "$(BUNDLE)" \
+		--out "$(if $(QUERY_GLOSSARY_OUT),$(QUERY_GLOSSARY_OUT),$(BUNDLE)/query_glossary.json)"
 
 cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/support on a draft BUNDLE (CROSS_CHECK_MODEL=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

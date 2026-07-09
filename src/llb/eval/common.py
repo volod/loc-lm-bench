@@ -95,6 +95,57 @@ def is_refusal(text: str) -> bool:
     return _REFUSAL_RE.search(normalize_refusal_text(text)) is not None
 
 
+# Markers a model uses to signal the CONTEXT is insufficient to answer -- the correct behavior on an
+# insufficient-context probe (groundedness-citation-metrics). Distinct from `_REFUSAL_MARKERS`: a
+# refusal declines the task ("I cannot"), whereas these state the retrieved context lacks the answer,
+# which is exactly what the RAG system prompt asks for ("скажи, що інформації недостатньо"). High
+# precision (each names the context/information as lacking), UA + RU + EN, so a substantive answer
+# effectively never contains one.
+_INSUFFICIENT_MARKERS = (
+    # Ukrainian
+    "інформації недостатньо",
+    "недостатньо інформації",
+    "недостатньо даних",
+    "немає інформації",
+    "немає достатньо",
+    "не міститься в контекст",
+    "у контексті немає",
+    "в контексті немає",
+    "контекст не містить",
+    "не вказано в контекст",
+    "не надано інформації",
+    "неможливо відповісти на основі",
+    # Russian (bilingual UA models)
+    "информации недостаточно",
+    "недостаточно информации",
+    "в контексте нет",
+    "контекст не содержит",
+    # English
+    "not enough information",
+    "insufficient information",
+    "no information",
+    "context does not contain",
+    "cannot answer based on",
+)
+_INSUFFICIENT_RE = re.compile("|".join(re.escape(marker) for marker in _INSUFFICIENT_MARKERS))
+
+
+def is_insufficient_context(text: str) -> bool:
+    """True when the response explicitly reports the retrieved context lacks the answer."""
+    if not text or not text.strip():
+        return False
+    return _INSUFFICIENT_RE.search(normalize_refusal_text(text)) is not None
+
+
+def is_abstention(text: str) -> bool:
+    """True when the model abstains -- either a refusal OR an explicit insufficient-context signal.
+
+    The correct behavior on an insufficient-context probe (the gold evidence is excluded from
+    retrieval): the model should decline rather than fabricate an answer.
+    """
+    return is_refusal(text) or is_insufficient_context(text)
+
+
 # Context-order policies (rerank-context-order): how ranked chunks are laid into the prompt.
 # "rank" keeps best-first; "reverse_rank" flips to best-last (for tail-attending models).
 ORDER_RANK = "rank"

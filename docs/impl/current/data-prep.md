@@ -242,10 +242,27 @@ records every source with its `kind` (`pdf`|`text`), status, and reuse flag, so 
 unchanged mixed corpus reports `reused: true` for every document. The staged corpus walk excludes
 the output subtree, so the default `<root>/_md` output is never re-ingested as new input.
 
+Governance metadata is part of the same manifest contract. Every manifest item records
+`language`, `ingestion_time`, `source_system`, optional `version`, optional `effective_date`, and
+optional `acl_label`. Text sources can provide per-document values in `<source>.metadata.json` or
+markdown front matter; otherwise `--default-language` is used, then a cheap deterministic detector.
+`--source-system` and `--acl-label` set defaults for sources that do not provide their own values.
+PDF rows inherit any conversion-manifest governance fields when present and otherwise use the same
+operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
+non-time governance fields are unchanged.
+
+Deletion propagation is explicit: a source removed from the input root is removed from the next
+`corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
+manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
+old staged outputs. The rollback unit is the immutable store directory built from a manifest
+fingerprint; keep a previous `$DATA_DIR/llb/rag` directory to roll back an index.
+
 ```bash
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500
+make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_DEFAULT_LANGUAGE=uk CORPUS_ACL_LABEL=<tag>
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_REFRESH=1
-llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto
+llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parser auto \
+  --default-language uk --acl-label <tag>
 ```
 
 `make quickstart-corpus CORPUS_SRC=<dir>` (script target `corpus`) generalizes the PDF quickstart
@@ -264,7 +281,8 @@ and writes these review artifacts beside `goldset.jsonl`:
   metrics when enabled, and quality gates with a `passed` roll-up (grounded extractions of any kind
   + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
-  spans and PDF page references when sidecars exist.
+  spans and PDF page references when sidecars exist. This artifact also seeds the query-side
+  glossary (see Query Glossary below).
 - `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. Each
   row carries its `question_type` (closed taxonomy: factoid, definition, procedural, numeric,
   comparative, multi-hop) and `difficulty` label. When
@@ -470,3 +488,16 @@ python -m llb.rag.chunking --corpus-root <dir> --out-dir .data/llb/rag \
 ```
 
 Production RAG indexes are built through `llb build-index` or `make build-index`.
+
+## Query Glossary (uk-query-processing)
+
+`llb build-query-glossary --bundle <draft>` (or `make build-query-glossary BUNDLE=<draft>`) turns a
+draft bundle's `prompt_dictionary_candidates.jsonl` into a `query_glossary.json` for the query-side
+`glossary` step (`src/llb/rag/query_prep.py` `build_glossary_from_candidates`). Each candidate
+`term` becomes a canonical entry carrying its recorded aliases plus a romanized Latin variant
+(`--no-transliterations` disables the seeding); entries are sorted by canonical term for a
+deterministic artifact. Hand-add more surzhyk / transliteration aliases by editing the emitted JSON
+-- the `glossary` retrieval step appends every surface form of any entry the query triggers, never
+mutating the stored corpus. A committed fixture lives at `samples/query-prep/` (dictionary
+candidates + the generated `query_glossary.json`). The lane's retrieval behavior, A/B report, and
+durable deltas live in the [RAG core](rag-core.md) query-side-processing section.
