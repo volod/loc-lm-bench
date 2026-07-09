@@ -102,3 +102,23 @@ def test_invalid_yaml_has_path_context(tmp_path):
 def test_run_timestamp_must_be_one_path_segment():
     with pytest.raises(ValueError, match="path segment"):
         RunConfig().run_dir(str(Path("nested") / "timestamp"))
+
+
+def test_query_prep_defaults_to_empty_noop():
+    assert RunConfig().query_prep == []
+    assert RunConfig().query_glossary_path is None
+
+
+def test_query_prep_accepts_known_steps():
+    cfg = RunConfig().with_overrides(query_prep=["normalize", "typos", "glossary"])
+    assert cfg.query_prep == ["normalize", "typos", "glossary"]
+
+
+def test_query_prep_rejects_unknown_step():
+    with pytest.raises(ValidationError, match="unknown query_prep step"):
+        RunConfig().with_overrides(query_prep=["normalize", "nope"])
+
+
+def test_query_prep_rejects_duplicate_step():
+    with pytest.raises(ValidationError, match="unique"):
+        RunConfig().with_overrides(query_prep=["typos", "typos"])

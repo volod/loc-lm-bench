@@ -37,7 +37,7 @@ section boundary and are called out because they are **blocked by human work**:
   land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
   **not** block task 11 -- only the shared code surface does.
 
-The retrieval-quality cluster (15-16) gives the query side the same tune-and-demonstrate
+The retrieval-quality cluster (16) gives the answer side the same tune-and-demonstrate
 discipline chunk-side tuning already has (the Optuna tuner searches strategy/size/overlap/mode/
 `top_k` plus the hybrid fusion and opt-in reranker knobs -- including the shipped
 page/heading/late chunkers behind `tune --extended-chunkers`; see
@@ -47,15 +47,17 @@ fused with weighted RRF, index-side inflection-aware lemmatization, and the chun
 seam -- is shipped, and so is the rerank-and-order stage between retrieval and generation (the
 cross-encoder reranker seam, the `context_order` prompt-layout policy, and the
 `probe-context-position` lost-in-the-middle probe; see [RAG core](current/rag-core.md)
-reranking and context order); task 15 adds the
-query-side lane on top: normalization -- casefold, apostrophes, transliteration, typo tolerance,
-aliases/glossary -- that never mutates the stored corpus text. The measured Ukrainian embedder
+reranking and context order); the query-side processing lane is shipped too -- deterministic
+normalization (casefold, apostrophes, transliteration), corpus-vocabulary typo tolerance,
+alias/glossary expansion, and an opt-in logged LLM rewrite, none of which mutate the stored corpus
+text, with an A/B report attributing each step's retrieval delta (see
+[RAG core](current/rag-core.md) query-side processing). The measured Ukrainian embedder
 ranking that underpins the stack (`llb compare-embeddings` over BGE-M3 / multilingual-e5 / the
 lang-uk model plus an opt-in Cohere API row for open corpora) is also shipped; see
 [RAG core](current/rag-core.md) retrieval store. Every knob these tasks add must land
 in `compare-retrieval`, the sweep grid, or the tuner search space so the shipped miss analysis
 (`llb analyze-misses`; see [evaluation rigor](current/rigor-board-judge.md)) can cite it as
-evidence-backed. Within the cluster 15 and 16 stand alone. Task 17 adds the
+evidence-backed. Task 16 stands alone. Task 17 adds the
 governance
 remainder -- per-chunk `language`/`date`/`version`/`ACL` metadata, permission-aware retrieval, and
 the reindex/deletion/rollback policy (measured shortfall and scope decision recorded in
@@ -81,13 +83,14 @@ Ukrainian-RAG-quality foundations are shipped: the measured embedder ranking
 assumed default embedder with evidence, the page/section join
 (`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file, and the hybrid
 dense+BM25 retrieval with the chunk-metadata filter seam (see [RAG core](current/rag-core.md)
-hybrid retrieval); task 15 builds on the measured embedder result.
+hybrid retrieval); the query-side processing lane (`--query-prep`) that builds on the measured
+embedder result is shipped (see [RAG core](current/rag-core.md) query-side processing).
 The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
 merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: the independent lot (15, 16) in any order, 17's ACL-filter half through
+Recommended sequence: 16 anytime, 17's ACL-filter half through
 the shipped metadata-filter seam (its governance fields stand alone), 11 after task 3's code, 18 anytime
 (its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
 exists; the export/guard/trainer code stands
@@ -171,47 +174,36 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   and
   [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
-### 15. uk-query-processing
+### morphology-aware-typo-guard (optional)
 
-- Dependencies: none (the glossary derives from a shipped `prompt_dictionary_candidates.jsonl`
-  draft artifact). Its A/B deltas feed the shipped miss analysis's recommendations.
-- User-visible outcome: an opt-in query lane between the user question and retrieval that
-  measurably helps Ukrainian queries while never touching the stored corpus text: deterministic
-  normalization (matching-side casefold, apostrophe-variant unification, a small transliteration
-  table for Latin-typed Ukrainian terms), corpus-vocabulary typo tolerance, alias/glossary
-  expansion (including surzhyk and transliterated variants of domain terms) sourced from the
-  shipped `prompt_dictionary_candidates.jsonl` draft
-  artifact, and an optional logged local-LLM query rewrite -- with an A/B report proving each
-  step's retrieval delta before anyone turns it on by default.
-- Scope boundary: in scope -- `src/llb/rag/query_prep.py` as a pure, unit-testable pipeline of
-  named steps; a deterministic typo-tolerance step: build the token vocabulary from the indexed
-  corpus, correct a query token that is ABSENT from that vocabulary to its nearest in-vocabulary
-  token within Damerau-Levenshtein distance 1 (2 for tokens over 8 chars), never alter a token
-  the corpus already contains, and log every correction; a glossary builder that turns a draft
-  bundle's dictionary candidates into alias
-  expansions, with room for hand-added surzhyk/transliteration aliases in the same artifact;
-  the LLM rewrite through the existing endpoint seam, off by default, recording both
-  original and rewritten query per case; an A/B mode in `validate-retrieval`/`compare-retrieval`
-  reporting per-step `recall@k`/MRR deltas. Out of scope -- mutating corpus or chunk text
-  (original word forms stay untouched; index-side token normalization is shipped -- see
-  [RAG core](current/rag-core.md) hybrid retrieval),
-  multi-turn conversational rewriting (task 8), learned/ML spell-correction models (the
-  edit-distance step is the deterministic ceiling this project needs).
-- Data and artifact paths: a `query_glossary.json` artifact derived from a draft bundle and
-  referenced by path in `RunConfig`; A/B rows in the compare/validate reports; original and
-  processed query per case in run bundles.
-- Execution path: `llb run-eval --query-prep normalize,typos,glossary`;
-  `llb validate-retrieval --query-prep <steps> --query-prep-ab`;
-  `llb build-query-glossary --bundle <draft> --out <json>`; unit tests: apostrophe unification,
-  transliteration-table round-trips, typo correction that never touches in-vocabulary tokens,
-  deterministic alias expansion, and exact no-op when the lane
-  is off.
-- Acceptance gates: `make ci` green; the A/B report on the committed goldset attributes a
-  per-step delta (positive, zero, or negative -- the mechanism reports it honestly); the raw query
-  is always preserved in logs; the LLM-rewrite step never runs without its explicit flag; current
-  docs record the measured deltas for the fixture.
-- Documentation target: [RAG core](current/rag-core.md); [data prep](current/data-prep.md) for the
-  glossary artifact provenance.
+- Dependencies: the shipped query-side processing lane's `typos` step (see
+  [RAG core](current/rag-core.md) query-side processing). Agent-buildable; the `[lex]` extra
+  (pymorphy3) is already used index-side.
+- Why this is forward work: the deterministic edit-distance `typos` step corrects any query token
+  ABSENT from the corpus vocabulary to its nearest in-vocabulary token. On inflection-rich
+  Ukrainian this also "corrects" grammatically-valid inflected query forms (e.g. `поділяють` ->
+  `поділяти`, `документами` -> `документа`) that are not misspellings but simply a different case
+  than the corpus surface form -- a crude inflection-match that can HURT retrieval on a
+  non-saturated corpus (the committed fixture saturates at recall@5 1.000, so the A/B could not
+  surface the regression there).
+- User-visible outcome: a `typos` step that skips a token pymorphy3 recognizes as a valid
+  Ukrainian word form (so genuine misspellings are still corrected, but valid inflections are left
+  for the shipped index+query lemmatization to match), gated behind a flag so the pure
+  edit-distance behavior stays the default when the `[lex]` extra is absent.
+- Scope boundary: in scope -- an optional morphology check in `src/llb/rag/query_prep.py`
+  `apply_typos` reusing `llb.rag.lexical.load_uk_lemmatizer` / a pymorphy3 `word_is_known` probe;
+  an A/B row demonstrating the guard's effect on an inflection-rich non-saturated corpus. Out of
+  scope -- a learned spell-corrector (the deterministic ceiling stands), changing the default
+  edit-distance thresholds.
+- Data and artifact paths: no new artifact; the guard is a `RunConfig` sub-knob of the `typos`
+  step recorded in the manifest fingerprint.
+- Execution path: `llb validate-retrieval --query-prep typos --query-prep-ab` on an
+  inflection-rich goldset with and without the guard; unit tests: a valid inflected form is left
+  untouched under the guard, a genuine misspelling is still corrected.
+- Acceptance gates: `make ci` green; the guard leaves a pymorphy3-known valid form unchanged while
+  still correcting an unknown misspelling (unit-tested); the A/B records the guarded-vs-unguarded
+  retrieval delta on a non-saturated corpus.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
 ### 16. groundedness-citation-metrics
 
@@ -616,8 +608,8 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   recall separates the rows, record the ranked table + fusion-knob verdict in
   [RAG core](current/rag-core.md), and grid `fusion_weight` in one sweep to cross-check the
   compare-retrieval verdict against end-to-end scores. Out of scope -- new comparison code (the
-  command is shipped), query-side rewriting (task 15), a learned document router (the oracle row
-  only measures headroom).
+  command is shipped), the shipped query-side processing lane (`--query-prep`), a learned document
+  router (the oracle row only measures headroom).
 - Data and artifact paths: the hybrid store under `$DATA_DIR/llb/rag/hybrid/`; the ranked table
   lands in current docs.
 - Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1` on the

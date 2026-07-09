@@ -205,12 +205,69 @@ def _default_runner_fn(
         config.request_timeout_s,
         prompt_package=prompt_package,
         context_order=config.context_order,
+        query_prep=build_query_prep(config, store, launcher),
     )
 
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
     return run
+
+
+def _launcher_rewriter(config: RunConfig, launcher: Any) -> Callable[[str], str]:
+    """Local-LLM query rewriter over the run's backend endpoint seam (uk-query-processing)."""
+    from llb.prompts import render_chat
+
+    def rewrite(query: str) -> str:
+        messages = render_chat("eval.rag.query_rewrite", {"query": query})
+        result = launcher.chat(
+            messages,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.request_timeout_s,
+        )
+        return result.text or ""
+
+    return rewrite
+
+
+def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any | None:
+    """Build the opt-in query-side lane for this run, resolving each step's dependency.
+
+    Returns None when no steps are configured (the lane is an exact no-op). The typo step reads
+    the corpus vocabulary from the loaded store's chunks; the glossary step loads
+    `config.query_glossary_path`; the rewrite step wraps the backend launcher. Missing
+    dependencies raise a clear SystemExit rather than a bare error mid-run."""
+    from llb.rag import query_prep as qp
+
+    steps = list(config.query_prep)
+    if not steps:
+        return None
+    vocabulary = None
+    glossary = None
+    rewriter = None
+    if qp.STEP_TYPOS in steps:
+        chunks = getattr(store, "chunks", None) or []
+        vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+    if qp.STEP_GLOSSARY in steps:
+        if config.query_glossary_path is None:
+            raise SystemExit(
+                "[run-eval] query_prep 'glossary' step needs query_glossary_path "
+                "(build one with `llb build-query-glossary`)."
+            )
+        if not Path(config.query_glossary_path).is_file():
+            raise SystemExit(f"[run-eval] query glossary not found: {config.query_glossary_path}")
+        glossary = qp.Glossary.load(config.query_glossary_path)
+    if qp.STEP_REWRITE in steps:
+        if launcher is None:
+            raise SystemExit("[run-eval] query_prep 'rewrite' step needs a backend launcher")
+        rewriter = _launcher_rewriter(config, launcher)
+    try:
+        return qp.QueryPrep.build(
+            steps, vocabulary=vocabulary, glossary=glossary, rewriter=rewriter
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None
 
 
 def _judge_records(batch: CaseBatch) -> list[JudgeInputRecord]:

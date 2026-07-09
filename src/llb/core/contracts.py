@@ -267,6 +267,8 @@ class CaseScoreRow(TypedDict):
     judge_score: NotRequired[float]  # per-case judge (mean of faithfulness + answer-relevancy)
     retrieve_latency_s: NotRequired[float]  # retrieval stage wall-clock (rerank-context-order)
     rerank_latency_s: NotRequired[float]  # rerank stage wall-clock (only when a reranker is on)
+    query_processed: NotRequired[str]  # query actually retrieved with (uk-query-processing)
+    query_corrections: NotRequired[int]  # count of query-prep transformations applied
 
 
 class LeaderboardRow(TypedDict):

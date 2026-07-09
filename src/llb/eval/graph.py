@@ -45,6 +45,11 @@ class RagState(TypedDict, total=False):
     # store is wired. Generation latency stays in `usage` (from the backend's ChatResult).
     retrieve_latency_s: float
     rerank_latency_s: float
+    # Query-side processing lane (uk-query-processing): the processed query actually retrieved
+    # with and the number of transformations applied. The raw query stays in `question`, so both
+    # forms are recoverable per case; absent when the lane is off.
+    query_processed: str
+    query_corrections: int
 
 
 def build_messages(
@@ -67,7 +72,10 @@ def build_messages(
 
 
 def make_retrieve_node(
-    store: Any, k: int, context_order: str = eval_common.ORDER_RANK
+    store: Any,
+    k: int,
+    context_order: str = eval_common.ORDER_RANK,
+    query_prep: Any | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -75,15 +83,29 @@ def make_retrieve_node(
     into the prompt; `retrieved` stays in rank order so the source-span metrics are unaffected.
     A reranking store (`llb.rag.rerank.RerankingRetriever`) exposes its per-stage wall-clock,
     recorded as `retrieve_latency_s` / `rerank_latency_s`.
+
+    `query_prep` (`llb.rag.query_prep.QueryPrep`) is the opt-in query-side lane: when set, the
+    question is processed BEFORE retrieval (the raw question stays in state for generation), and
+    the processed form + correction count are recorded (uk-query-processing).
     """
 
     def retrieve(state: RagState) -> RagState:
+        question = state["question"]
+        prep_update: RagState = {}
+        if query_prep is not None:
+            result = query_prep.process(question)
+            question = result.processed
+            prep_update = {
+                "query_processed": result.processed,
+                "query_corrections": len(result.edits),
+            }
         started = time.perf_counter()
-        chunks = store.retrieve(state["question"], k)
+        chunks = store.retrieve(question, k)
         total_s = time.perf_counter() - started
         update: RagState = {
             "retrieved": chunks,
             "context": eval_common.format_context(chunks, order=context_order),
+            **prep_update,
         }
         stage = getattr(store, "stage_latency", None)
         if isinstance(stage, dict) and "rerank_s" in stage:
@@ -138,6 +160,7 @@ def build_rag_graph(
     timeout: float,
     prompt_package: Any | None = None,
     context_order: str = eval_common.ORDER_RANK,
+    query_prep: Any | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -148,7 +171,7 @@ def build_rag_graph(
         ) from exc
     graph = StateGraph(RagState)
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
-    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k, context_order)))
+    graph.add_node("retrieve", cast(Any, make_retrieve_node(store, k, context_order, query_prep)))
     graph.add_node(
         "generate",
         cast(Any, make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package)),

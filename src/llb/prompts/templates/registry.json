@@ -663,6 +663,26 @@
         "sha256": "281e443f4553ebe2beb845a65aded77e7cd61e5ad9713c33a8b7565f0bbc36ac"
       }
     },
+    "eval.rag.query_rewrite": {
+      "kind": "chat",
+      "descriptor": "eval/rag/query_rewrite.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/query_rewrite_system.txt",
+            "sha256": "6167563a9297a42438a1a92db9a19fa1a3954e31a898154ec118b5f584bc77c7"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/query_rewrite_user.txt",
+            "sha256": "082b441825db0a5350aa921ca82710c34586b5cfc08704e3175533db4f91dd93"
+          }
+        }
+      ]
+    },
     "eval.rag.system": {
       "kind": "text",
       "descriptor": "eval/rag/system.prompt.json",

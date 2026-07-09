@@ -17,6 +17,13 @@ from llb.core.config import RunConfig
 from llb.screen.public import ScreenReport
 
 
+def _parse_query_prep(steps: Optional[str]) -> Optional[list[str]]:
+    """Parse a comma-separated --query-prep list into ordered steps (None leaves the config)."""
+    if steps is None:
+        return None
+    return [step.strip() for step in steps.split(",") if step.strip()]
+
+
 @app.command("run-eval")
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
@@ -75,6 +82,17 @@ def run_eval_cmd(
         None,
         help="how kept chunks are laid into the prompt: rank (best-first, default) | "
         "reverse_rank (best-last)",
+    ),
+    query_prep: Optional[str] = typer.Option(
+        None,
+        "--query-prep",
+        help="opt-in query-side lane (uk-query-processing): comma-separated ordered steps "
+        "normalize,typos,glossary,rewrite (rewrite calls the local model; off by default). "
+        "The raw query is always preserved; only the retrieval query is transformed",
+    ),
+    query_glossary: Optional[Path] = typer.Option(
+        None,
+        help="query_glossary.json for the query-prep 'glossary' step (build-query-glossary)",
     ),
     score_semantic: Optional[bool] = typer.Option(
         None,
@@ -145,6 +163,8 @@ def run_eval_cmd(
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,
+        query_prep=_parse_query_prep(query_prep),
+        query_glossary_path=query_glossary,
         score_semantic=score_semantic,
         measure_telemetry=telemetry,
     )

@@ -71,6 +71,21 @@ def _validate_chunk_sizes(
         raise ValueError("chunk_overlap must be smaller than child_chunk_size")
 
 
+def _validate_query_prep(steps: list[str]) -> None:
+    """Reject unknown or duplicated query-prep step names (uk-query-processing)."""
+    if not steps:
+        return
+    from llb.rag.query_prep import QUERY_PREP_STEPS
+
+    unknown = [step for step in steps if step not in QUERY_PREP_STEPS]
+    if unknown:
+        raise ValueError(
+            f"unknown query_prep step(s): {unknown}; choose from {list(QUERY_PREP_STEPS)}"
+        )
+    if len(set(steps)) != len(steps):
+        raise ValueError(f"query_prep steps must be unique, got {steps}")
+
+
 def _validate_http_endpoint_url(url: str, label: str) -> None:
     endpoint = urlsplit(url)
     if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
@@ -172,6 +187,14 @@ class RunConfig(BaseModel):
     rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
     context_order: ContextOrder = "rank"
 
+    # Query-side processing lane (uk-query-processing): an ORDERED, opt-in list of query-prep
+    # steps applied between the user question and retrieval (never mutating the stored corpus).
+    # Empty (the default) is an exact no-op. Valid steps: normalize | typos | glossary | rewrite.
+    # `query_glossary_path` points at the `query_glossary.json` the glossary step expands from
+    # (built with `build-query-glossary`). Both are recorded in the manifest fingerprint.
+    query_prep: list[str] = Field(default_factory=list)
+    query_glossary_path: Path | None = None
+
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the
     # span-preserving graph strategy: "local_khop" (entity-link + k-hop subgraph) or
@@ -220,6 +243,8 @@ class RunConfig(BaseModel):
             if values.get("goldset_path") is not None
             else data_dir / "llb" / "goldset" / "goldset_uk.jsonl"
         )
+        if values.get("query_glossary_path") is not None:
+            values["query_glossary_path"] = resolve_project_path(values["query_glossary_path"])
         return values
 
     @model_validator(mode="after")
@@ -227,6 +252,7 @@ class RunConfig(BaseModel):
         _validate_chunk_sizes(
             self.chunk_overlap, self.chunk_size, self.retrieval_mode, self.child_chunk_size
         )
+        _validate_query_prep(self.query_prep)
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         if self.backend == "vllm":

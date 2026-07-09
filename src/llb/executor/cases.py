@@ -101,6 +101,9 @@ def score_case(item: GoldItem, state: RagState, embedder: Any = None) -> CaseSco
         row["retrieve_latency_s"] = round(float(state["retrieve_latency_s"]), 4)
     if "rerank_latency_s" in state:
         row["rerank_latency_s"] = round(float(state["rerank_latency_s"]), 4)
+    if "query_processed" in state:
+        row["query_processed"] = str(state["query_processed"])
+        row["query_corrections"] = int(state.get("query_corrections", 0))
     return row
 
 

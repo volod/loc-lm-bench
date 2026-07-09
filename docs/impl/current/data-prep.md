@@ -264,7 +264,8 @@ and writes these review artifacts beside `goldset.jsonl`:
   metrics when enabled, and quality gates with a `passed` roll-up (grounded extractions of any kind
   + a non-empty gold set, plus a citation-valid needle for PDF corpora).
 - `prompt_dictionary_candidates.jsonl`: source-backed entity and relation terms with supporting
-  spans and PDF page references when sidecars exist.
+  spans and PDF page references when sidecars exist. This artifact also seeds the query-side
+  glossary (see Query Glossary below).
 - `needle_items.jsonl`: drafted gold items whose source spans map back to PDF page sidecars. Each
   row carries its `question_type` (closed taxonomy: factoid, definition, procedural, numeric,
   comparative, multi-hop) and `difficulty` label. When
@@ -470,3 +471,16 @@ python -m llb.rag.chunking --corpus-root <dir> --out-dir .data/llb/rag \
 ```
 
 Production RAG indexes are built through `llb build-index` or `make build-index`.
+
+## Query Glossary (uk-query-processing)
+
+`llb build-query-glossary --bundle <draft>` (or `make build-query-glossary BUNDLE=<draft>`) turns a
+draft bundle's `prompt_dictionary_candidates.jsonl` into a `query_glossary.json` for the query-side
+`glossary` step (`src/llb/rag/query_prep.py` `build_glossary_from_candidates`). Each candidate
+`term` becomes a canonical entry carrying its recorded aliases plus a romanized Latin variant
+(`--no-transliterations` disables the seeding); entries are sorted by canonical term for a
+deterministic artifact. Hand-add more surzhyk / transliteration aliases by editing the emitted JSON
+-- the `glossary` retrieval step appends every surface form of any entry the query triggers, never
+mutating the stored corpus. A committed fixture lives at `samples/query-prep/` (dictionary
+candidates + the generated `query_glossary.json`). The lane's retrieval behavior, A/B report, and
+durable deltas live in the [RAG core](rag-core.md) query-side-processing section.
