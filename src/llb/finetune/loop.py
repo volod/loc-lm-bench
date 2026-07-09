@@ -81,11 +81,7 @@ def run_self_improve(
     if rounds < 1:
         raise ValueError("rounds must be >= 1")
     eval_fn = eval_fn or _default_eval_fn(limit=limit)
-    trainer_fn = trainer_fn or (
-        lambda dataset, model, adapter, seed: train_adapter(
-            dataset_dir=dataset, model=model, out_dir=adapter, seed=seed, trainer=trainer
-        )
-    )
+    trainer_fn = trainer_fn or _default_trainer_fn(config, trainer)
     root = Path(resume) if resume is not None else Path(out_dir or _default_out_dir(config))
     root.mkdir(parents=True, exist_ok=True)
     state = _load_state(root)
@@ -194,6 +190,23 @@ def register_round_adapter(
         source_run=source_run,
         eval_summary=eval_summary,
     )
+
+
+def _default_trainer_fn(config: RunConfig, trainer: str) -> TrainerFn:
+    """Train through the seam, defaulting hyperparameters to this model's recorded search."""
+    from llb.finetune.hparam_search import trainer_defaults
+
+    def train(dataset: Path, model: str, adapter: Path, seed: int) -> JsonObject:
+        return train_adapter(
+            dataset_dir=dataset,
+            model=model,
+            out_dir=adapter,
+            seed=seed,
+            trainer=trainer,
+            **trainer_defaults(config.data_dir, model),
+        )
+
+    return train
 
 
 def _default_eval_fn(*, limit: int | None) -> EvalFn:

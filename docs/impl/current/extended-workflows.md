@@ -121,6 +121,11 @@ candidate row. It is file-driven and split-guarded:
   between roster entries, `campaign.progress.jsonl` resume, and a tunability `report.md`.
 - `src/llb/finetune/registry.py`, `lifecycle.py`, and `serving.py` make adapters first-class,
   traceable artifacts (see [Adapter Registry And Lifecycle](#adapter-registry-and-lifecycle)).
+- `src/llb/finetune/hparam_search.py` searches the LoRA space per model and feeds the winning
+  config back as the trainer's defaults (see
+  [Hyperparameter Search](#hyperparameter-search)).
+- `src/llb/finetune/naming.py` holds `model_slug`, the one filesystem name a model gets across the
+  campaign and hyperparameter artifact trees.
 
 Commands:
 
@@ -158,6 +163,115 @@ uv run pytest tests/test_finetune.py tests/test_adapter_registry.py tests/test_r
 
 The campaign implementation is covered by fake eval/trainer/planner tests for scheduling order,
 planner skip reasons, shared dataset digest reuse, JSONL resume, and report ranking.
+
+## Hyperparameter Search
+
+`src/llb/finetune/hparam_search.py` searches the LoRA configuration space for one model with a
+bounded budget, so fine-tuning stops guessing rank, alpha, learning rate, epochs, and target
+modules.
+
+```bash
+llb finetune-hparams --model <m> --dataset <tuning-dataset> --backend vllm \
+  --goldset <goldset> --max-trials 8 [--max-hours 2] [--seed 13] [--dev-fraction 0.25]
+llb finetune-hparams ... --resume <study-dir>
+make finetune-hparams MODEL=<m> DATASET=<dir> GOLDSET=<g> MAX_TRIALS=8
+```
+
+Artifacts land under `$DATA_DIR/finetune-hparams/<model-slug>/<timestamp>/`: `study.db` (the
+persistent Optuna study), `trials.jsonl` (a live progress log), `trials/trial-<n>/` (the trial's
+train-slice dataset and adapter), and `hparams_manifest.json` (best config, study seed, dev slice,
+budget, and the full trial table).
+
+### Split discipline
+
+The discipline of `optimize/tuner.py` extends one level down. That tuner searches RAG and serving
+knobs on the tuning split while `final` stays held out; here the search space is the LoRA config
+itself, and the held-out set is carved from *inside* the tuning split:
+
+- `carve_dev_slice` seeds a deterministic, disjoint train/dev partition of the dataset's item ids.
+  Each trial trains only on the train sub-slice and is scored only on the dev sub-slice, so a trial
+  never sees its own evaluation items.
+- `assert_tuning_only` refuses the search outright when the dataset's `split_counts` name any split
+  but `tuning`, and -- when a goldset is available -- when its item ids intersect the real
+  calibration/final ids. A dataset manifest is operator-writable, so its split counts alone are not
+  proof (the same lesson the registry records for adapter manifests).
+- The default objective scores the trial adapter through `run_eval` over the dev items only. It
+  refuses a non-vLLM backend and a missing goldset BEFORE the study is created: the first trial
+  fine-tunes a model before it ever reaches the objective, so a late refusal would waste a full
+  training run.
+
+### Budget and resume
+
+`--max-trials` caps the trial count; `--max-hours` caps wall clock. A trial is atomic (a whole
+fine-tune), so the wall-clock budget is checked BETWEEN trials through an Optuna callback -- one
+in-flight trial may overrun the deadline and is never killed mid-training. An aborted study records
+`budget_exhausted: true` and stays resumable: the SQLite study persists, and `--resume <dir>` runs
+only `max_trials - len(study.trials)` further trials, so finished trials are never repeated.
+
+A measured OOM prunes its trial (reusing `optimize.tuner.is_oom`) instead of crashing the study; any
+other exception fails loudly -- but only after `hparams_manifest.json` is written, so a study killed
+by one bad trial stays inspectable and resumable instead of leaving a bare `study.db`.
+
+### Feeding the trainer
+
+`trainer_defaults(data_dir, model)` reads the newest `hparams_manifest.json` for that model and
+returns `{"hyperparameters": <best>, "hparams_manifest": <path>}`. It is the default trainer wiring
+for `self-improve`, `finetune-campaign`, and `finetune-adapter` (which accepts `--default-hparams`
+to opt out). `train_adapter` records `hparams_manifest` in `adapter_manifest.json` as pure
+provenance: it never enters `adapter_digest`, because two adapters with identical hyperparameters
+are the same adapter whether or not a search chose them.
+
+Discovery only scans the default tree `$DATA_DIR/finetune-hparams/<model-slug>/<timestamp>/`. A
+study written elsewhere with `--out-dir` is a one-off: it is never auto-consumed as a trainer
+default.
+
+`dataset.subset_dataset` materializes each trial's train sub-slice as a real dataset directory with
+its own recomputed digest. A filtered view would inherit the parent's `dataset_digest`, and since
+`adapter_digest` derives from it, two adapters trained on different data would collide on one
+registry id.
+
+Tests: `tests/test_finetune_hparams.py` covers dev-slice disjointness and determinism, both guard
+refusals, the no-protected-id-in-any-trial invariant, a seeded study reproducing its trial table,
+the budget abort plus resume without repeated trials, OOM pruning, the manifest surviving a failed
+trial, subset digests, and the trainer consuming a recorded best config through a self-improvement
+round.
+
+### CUDA evidence on the 12 GB RTX PRO 3000 host
+
+An 8-trial search for `Qwen/Qwen2.5-0.5B-Instruct` over the `ua_squad_postedited_v1` tuning split
+(82 verified items -> 62 train / 20 dev at `dev_fraction=0.25`, `seed=13`).
+
+- Tuning-split base run: `objective 0.2610`, reliability `1.000`, recall@3 `0.915`, `177.7` tok/s;
+  the dev slice's base objective is `0.2056`.
+- Study: `.data/finetune-hparams-evidence/study/hparams_manifest.json`
+  (`finetune-hparams-Qwen-Qwen2.5-0.5B-Instruct-313415c09b62-s13`); 8 complete, 0 pruned; each trial
+  fine-tunes the 62 train items and scores the 20 dev items through vLLM LoRA serving in `60` to
+  `99` s.
+
+| trial | dev objective | rank | alpha | dropout | learning rate | epochs | target modules |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | 0.3233 | 16 | 64 | 0.05 | 2.96e-05 | 3 | qv |
+| 1 | 0.2917 | 8 | 16 | 0.00 | 1.18e-04 | 4 | attn_mlp |
+| 7 | 0.2861 | 32 | 64 | 0.00 | 1.88e-04 | 1 | attn |
+| 6 | 0.2789 | 64 | 128 | 0.00 | 1.38e-05 | 2 | qv |
+| 0 | 0.2674 | 64 | 256 | 0.05 | 1.26e-05 | 4 | attn_mlp |
+| 4 | 0.2583 | 4 | 8 | 0.15 | 4.71e-04 | 4 | qv |
+| 3 | 0.2059 | 4 | 8 | 0.00 | 2.61e-05 | 1 | attn |
+| 5 | 0.2056 | 16 | 16 | 0.10 | 1.66e-05 | 4 | qv |
+
+The best config (trial 2) scores `0.3233` on the dev slice against the base model's `0.2056`, and the
+spread across trials is non-saturated, so the search discriminates rather than tying. Rank is not
+monotonic: the two rank-4 points bracket the field and the widest module preset (`attn_mlp`) does not
+win, which is the whole reason to measure rather than guess.
+
+Two caveats the numbers carry:
+
+- The dev slice is drawn uniformly, and this base model answers only a minority of items. A first
+  attempt on a 12-item dataset produced a 3-item dev slice holding ONE answerable item, and all
+  trials tied at `0.0000` -- the objective was a constant. The full 82-item tuning split fixed it;
+  a stratified slice would fix it properly (see the forward task in `plan.md`).
+- Trial 5 lands exactly on the base objective `0.2056`: a tuned adapter is not automatically better
+  than no adapter, and the search records that honestly.
 
 ## Adapter Registry And Lifecycle
 
@@ -216,8 +330,18 @@ names the intersecting ids, the offending splits, and which provenance was consu
 
 ### Serving
 
-vLLM serves the LoRA directly through the existing `--enable-lora --lora-modules` wiring. Ollama and
-llama.cpp serve whole model artifacts, so `serving.py` merges the adapter into its base weights
+vLLM serves the LoRA directly through the existing `--enable-lora --lora-modules` wiring, sized by
+`--max-lora-rank`. That flag defaults to 16, so an adapter trained at a higher rank fails
+`add_lora` at engine startup (`LoRA rank 64 is greater than max_lora_rank 16`) and vLLM exits before
+serving anything. Both adapter launch paths (`executor/runner.py` for `run-eval`, `serving.py` for
+`serve-adapter`) therefore read the rank off the adapter they are about to serve --
+`trainer.adapter_lora_rank` prefers PEFT's own `adapter_config.json` over our manifest, since it
+describes the weights actually on disk -- and `backends/vllm.served_lora_rank` rounds it up to the
+nearest value vLLM accepts (`1, 8, 16, 32, 64, 128, 256, 320, 512`). An adapter of unknown rank
+leaves the flag off and vLLM keeps its default.
+
+Ollama and llama.cpp serve whole model artifacts, so `serving.py` merges the adapter into its base
+weights
 (PEFT `merge_and_unload`), converts to GGUF via the llama.cpp checkout's `convert_hf_to_gguf.py`, and
 for Ollama registers a `llb-adapter-<short-id>` tag. The merge is expensive and one-way, so it is
 cached under `$DATA_DIR/adapters/merged/<short-id>/<backend>/` behind a `merge.json` and recorded as

@@ -21,11 +21,12 @@ from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import DATASET_MANIFEST, export_finetune_set
 from llb.finetune.loop import (
     _ci_from_run,
+    _default_trainer_fn,
     _objective_from_run,
     _publish_run_pointer,
     register_round_adapter,
 )
-from llb.finetune.trainer import train_adapter
+from llb.finetune.naming import model_slug
 from llb.goldset.schema import load_goldset
 
 PROGRESS_FILENAME = "campaign.progress.jsonl"
@@ -113,11 +114,7 @@ def run_finetune_campaign(
     if rounds < 1:
         raise ValueError("rounds must be >= 1")
     eval_fn = eval_fn or _default_eval_fn(limit=limit)
-    trainer_fn = trainer_fn or (
-        lambda dataset, model, adapter, seed: train_adapter(
-            dataset_dir=dataset, model=model, out_dir=adapter, seed=seed, trainer=trainer
-        )
-    )
+    trainer_fn = trainer_fn or _default_trainer_fn(config, trainer)
     planner_fn = planner_fn or _default_planner_fn(model_specs or [])
     reclaim_fn = reclaim_fn or _default_reclaim_fn()
 
@@ -130,7 +127,7 @@ def run_finetune_campaign(
     for model_index, model in enumerate(roster):
         if model in done:
             continue
-        entry_dir = root / _model_slug(model)
+        entry_dir = root / model_slug(model)
         entry_dir.mkdir(parents=True, exist_ok=True)
         model_cfg = config.with_overrides(model=model)
         plan = planner_fn(model, model_cfg)
@@ -458,11 +455,6 @@ def _parse_models(models: list[str]) -> list[str]:
 
 def _model_key(spec: ModelSpec) -> str:
     return str(spec.get("name") or spec.get("source"))
-
-
-def _model_slug(model: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in model)
-    return cleaned.strip("-") or "model"
 
 
 def _path_or_none(path: Path | None) -> str | None:

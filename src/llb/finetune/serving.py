@@ -251,6 +251,7 @@ def default_launcher(plan: ServePlan, config: RunConfig) -> BackendLauncher:
     """Build the real launcher for a serve plan, reusing the run-eval backend wiring."""
     if plan.backend == BACKEND_VLLM:
         from llb.backends.vllm import VllmLauncher
+        from llb.finetune.trainer import adapter_lora_rank
 
         return VllmLauncher(
             plan.served_model,
@@ -264,6 +265,7 @@ def default_launcher(plan: ServePlan, config: RunConfig) -> BackendLauncher:
             quantization=config.quantization,
             adapter_path=plan.adapter_path,
             adapter_name=ADAPTER_LORA_NAME,
+            max_lora_rank=adapter_lora_rank(plan.adapter_path),
         )
     if plan.backend == BACKEND_OLLAMA:
         from llb.backends.ollama import OllamaLauncher

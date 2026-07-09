@@ -118,6 +118,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
         return OllamaLauncher(config.model, host=config.ollama_host)
     if config.backend == "vllm":
         from llb.backends.vllm import VllmLauncher
+        from llb.finetune.trainer import adapter_lora_rank
 
         return VllmLauncher(
             config.model,
@@ -130,6 +131,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             dtype=config.dtype,
             quantization=config.quantization,
             adapter_path=config.adapter_path,
+            max_lora_rank=adapter_lora_rank(config.adapter_path),
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":

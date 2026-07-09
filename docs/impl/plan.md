@@ -41,15 +41,15 @@ For remaining tasks that depend on retrieval behavior, use the current RAG basel
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
 [data prep](current/data-prep.md).
 
-The remaining fine-tuning cluster (21-23) extends the spine one step past recommendation: from
+The remaining fine-tuning cluster (22-23) extends the spine one step past recommendation: from
 naming the best base model to naming the best *adapted* model for the operator's corpus, with the
-single-model self-improvement loop, the multi-model campaign substrate, and the adapter registry as
-reusable bases (see [extended workflows](current/extended-workflows.md)). Task 21 adds budgeted
-per-model hyperparameter search that never leaves the tuning split; 22 (optional) distills the
-roster's best local teacher into smaller students; 23 (optional) adds native support for compressed
-QAT checkpoints whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all
-local, no egress. Ordering inside the cluster: 21 and 22 after the campaign substrate, 23 after the
-baseline trainer path. The three `adapter-*` tasks above harden the shipped registry and merge lane
+single-model self-improvement loop, the multi-model campaign substrate, the adapter registry, and the
+budgeted LoRA hyperparameter search as reusable bases (see
+[extended workflows](current/extended-workflows.md)). Task 22 (optional) distills the roster's best
+local teacher into smaller students; 23 (optional) adds native support for compressed QAT checkpoints
+whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all local, no egress.
+Ordering inside the cluster: 22 after the campaign substrate, 23 after the baseline trainer path. The
+`adapter-*` and `finetune-hparams-*` tasks above harden the shipped registry, merge lane, and search,
 and are independent of the cluster.
 
 ## Agent Implementation Tasks
@@ -67,7 +67,7 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 11 after task 3's code; 21 and 22 after the campaign substrate; 23
+Recommended sequence: 11 after task 3's code; 22 after the campaign substrate; 23
 after the baseline trainer path; and 8 last (blocked by human task 7). The
 durable-eval-runner (retry + `cases.progress.jsonl` journal +
 `--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
@@ -312,43 +312,88 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
   lifecycle.
 
-### 21. finetune-hparam-search
+### finetune-hparams-stratified-dev-slice
 
-- Dependencies: follows the self-improvement loop in
-  [extended workflows](current/extended-workflows.md) and searches over its injectable trainer
-  seam; reuses the Optuna
-  study conventions of `src/llb/optimize/tuner.py` (the `[track]` extra already pins optuna) --
-  seeded study, pruned infeasible points, bounded budget -- and feeds campaign defaults (a
-  recorded best config becomes that model's campaign default). The real bounded search runs on
-  the CUDA host.
-- User-visible outcome: fine-tuning stops guessing hyperparameters: per model, a budgeted
-  Optuna search over the LoRA space (rank, alpha, learning rate, epochs, target modules) finds
-  the best configuration -- scored on a held-out dev slice carved from the tuning split ONLY,
-  so neither calibration nor final ever influences the search -- and records it beside the
-  adapter artifacts for self-improvement and campaign runs to consume as defaults.
-- Scope boundary: in scope -- `src/llb/finetune/hparam_search.py` reusing the tuner's study
-  conventions; a seeded dev-slice split *within* the tuning split (train sub-slice vs dev
-  sub-slice, disjointness unit-tested), extending the recorded split discipline from
-  configuration knobs to hyperparameters; `--max-trials` / `--max-hours` budget guards that
-  abort cleanly with the study resumable; an `hparams_manifest.json` per model (best config,
-  study seed, trial table, objective values) consumed by the trainer as defaults;
-  fake-trainer trials in CI with a synthetic objective. Out of scope -- searching on the final
-  or calibration split (forbidden by the guard), full-parameter tuning, a second tuner
-  framework, per-trial human review.
-- Data and artifact paths: `$DATA_DIR/finetune-hparams/<model>/<timestamp>/` with the study
-  journal and `hparams_manifest.json`; the manifest path recorded in `adapter_manifest.json`
-  when a searched config trained the adapter.
-- Execution path: `llb finetune-hparams --model <m> --dataset <dir> --max-trials 8` and
-  `make finetune-hparams MODEL=<m>`; unit tests -- dev-slice disjointness (no calibration or
-  final id can enter a trial), deterministic fake-trainer study given the seed, budget abort
-  plus resume, and manifest consumption by the trainer.
-- Acceptance gates: `make ci` green with the fake trainer; the dev-slice test proves zero
-  calibration/final leakage into any trial; an aborted study resumes without repeating
-  finished trials; one real bounded search (at most 8 trials) on the CUDA host records a
-  per-model best config and its dev-slice objective in current docs; a self-improvement round trained
-  with the manifest config reproduces the recorded configuration in its provenance.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide's tuning appendix.
+- Dependencies: the shipped budgeted LoRA search (see
+  [extended workflows](current/extended-workflows.md) hyperparameter search). Agent-buildable; all
+  gates use committed fixtures.
+- Why this is forward work: `carve_dev_slice` draws the held-out sub-slice UNIFORMLY at random from
+  the tuning item ids. On a corpus where the base model answers only a minority of items, a uniform
+  slice can land almost entirely on items it scores 0.0 on, and the objective becomes a
+  near-constant that ranks every trial the same. The first CUDA search on this repo hit exactly
+  that: a 12-item dataset produced a 3-item dev slice holding ONE item the base model could answer,
+  and every trial tied at 0.0000. The workaround was a bigger dataset, not a better slice.
+- User-visible outcome: the dev slice is stratified so it carries a representative share of items
+  the base model answers, making the trial objective discriminate at small dev sizes;
+  `hparams_manifest.json` records the strata and the base-model score distribution the slice was
+  drawn against.
+- Scope boundary: in scope -- an optional `--stratify-by-base-score <tuning-run-dir>` that buckets
+  tuning items by their base-model `objective_score` from a scored run bundle and draws the dev
+  slice proportionally per bucket, keeping the train/dev disjointness and seeded determinism the
+  current slice guarantees; a refusal (or loud warning) when the drawn dev slice has zero answerable
+  items, because a study cannot rank trials against a constant objective. Out of scope -- changing
+  the default uniform slice when no run bundle is supplied, a learned slice selector, changing the
+  objective metric.
+- Data and artifact paths: an additive `dev_slice.strata` block in `hparams_manifest.json`; no new
+  artifact.
+- Execution path: `llb finetune-hparams --stratify-by-base-score <tuning-run>`; unit tests -- a
+  synthetic score distribution with 3 answerable of 12 items yields a dev slice holding at least one
+  answerable item at every seed, disjointness still holds, and an all-zero slice is refused.
+- Acceptance gates: `make ci` green; the stratified slice beats the uniform slice on
+  answerable-item coverage over a committed score fixture across seeds; the zero-signal refusal is
+  unit-tested.
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+
+### finetune-hparams-infeasible-point-prune (optional)
+
+- Dependencies: the shipped budgeted LoRA search and the memory planner
+  (`src/llb/backends/planner.py`; see
+  [robust backends and ontology drafting](current/robustness-ontology-backends.md) memory planner).
+  Agent-buildable, deterministic.
+- Why this is forward work: `optimize/tuner.py` prunes over-context RAG points BEFORE a trial runs,
+  so a doomed configuration never costs a run. The LoRA search has no analogous pre-run prune: it
+  only prunes on a MEASURED OOM, after the trial has already paid for a full fine-tune plus a
+  backend launch. On a constrained host a large rank crossed with the widest target-module preset
+  can be known-infeasible up front.
+- User-visible outcome: a trial whose adapter cannot fit the host's VRAM alongside the base model is
+  pruned before training starts, with the estimated footprint in the prune reason, so a bounded
+  budget spends its trials on configurations that can actually run.
+- Scope boundary: in scope -- an adapter-parameter estimate (rank x target modules x layer count)
+  fed through the existing planner's VRAM headroom, raising `optuna.TrialPruned` from the objective
+  before `trainer_fn` is called; the estimate recorded per trial in `hparams_manifest.json`. Out of
+  scope -- replacing the measured-OOM prune (both are needed), calibrating the estimate against a
+  benchmark, a second planner.
+- Data and artifact paths: an additive `estimated_adapter_mib` per trial record; no new artifact.
+- Execution path: `llb finetune-hparams --max-trials 8` on a small-VRAM host; unit tests -- a
+  rank-64 point on a fixture host with no headroom prunes before the trainer is invoked, and a
+  rank-8 point still trains.
+- Acceptance gates: `make ci` green; the pre-run prune fires without calling the injected trainer
+  (unit-tested); a pruned trial still leaves a manifest row naming the estimated footprint.
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+
+### finetune-hparams-effective-batch-axis (optional)
+
+- Dependencies: the shipped budgeted LoRA search. Agent-buildable; the real search runs on the CUDA
+  host.
+- Why this is forward work: the search space covers rank, alpha, dropout, learning rate, epochs, and
+  target modules, but `per_device_train_batch_size`, `gradient_accumulation_steps`, and `max_length`
+  stay pinned at the trainer's conservative defaults. Effective batch size interacts strongly with
+  learning rate, so a recorded best learning rate is only best AT the pinned batch size -- an
+  operator who changes the batch size silently invalidates the searched config.
+- User-visible outcome: the study searches effective batch size beside learning rate, so the
+  recorded best config is self-consistent, and `hparams_manifest.json` records the batch geometry
+  the learning rate was chosen under.
+- Scope boundary: in scope -- add `per_device_train_batch_size` x `gradient_accumulation_steps`
+  (sampled as an effective-batch categorical so the two are never independently meaningless) and
+  `max_length` to `suggest_lora_hyperparameters`; the trainer already consumes all three keys. Out
+  of scope -- a learning-rate schedule search, gradient checkpointing, a second optimizer.
+- Data and artifact paths: additive keys in the sampled hyperparameters; no new artifact.
+- Execution path: `llb finetune-hparams --max-trials 12`; unit tests -- the sampled effective batch
+  is always the product of the two knobs, and a seeded study still reproduces its trial table.
+- Acceptance gates: `make ci` green with the fake trainer; the effective-batch invariant is
+  unit-tested; one real bounded search on the CUDA host records whether the widened space beats the
+  pinned-batch best config (no-gain is acceptable evidence).
+- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
 
 ### 22. local-distillation-lane (optional)
 

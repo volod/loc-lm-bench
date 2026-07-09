@@ -46,15 +46,24 @@ def finetune_adapter_cmd(
         ..., "--dataset", help="dataset directory from export-finetune-set"
     ),
     model: str = typer.Option(..., "--model", help="base local model id"),
+    config: Optional[Path] = typer.Option(None, help="YAML run config (locates DATA_DIR)"),
     out: Optional[Path] = typer.Option(None, "--out", help="adapter output dir"),
     seed: int = typer.Option(13, "--seed", help="training seed recorded in adapter manifest"),
     trainer: str = typer.Option(
         "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
     ),
+    searched_hparams: bool = typer.Option(
+        True,
+        "--searched-hparams/--default-hparams",
+        help="use this model's recorded finetune-hparams best config as the trainer defaults",
+    ),
 ) -> None:
     """Fine-tune a LoRA/QLoRA adapter behind the training seam."""
+    from llb.finetune.hparam_search import trainer_defaults
     from llb.finetune.trainer import train_adapter
 
+    cfg = load_config(config)
+    defaults = trainer_defaults(cfg.data_dir, model) if searched_hparams else {}
     out_dir = out or (dataset.parent / "adapter")
     manifest = train_adapter(
         dataset_dir=dataset,
@@ -62,12 +71,78 @@ def finetune_adapter_cmd(
         out_dir=out_dir,
         seed=seed,
         trainer=trainer,
+        **defaults,
     )
+    if defaults:
+        typer.echo(f"[finetune-adapter] hyperparameters <- {defaults['hparams_manifest']}")
     typer.echo(
         f"[finetune-adapter] adapter={manifest['adapter_label']} "
         f"digest={manifest['adapter_digest']}"
     )
     typer.echo(f"[finetune-adapter] manifest -> {out_dir / 'adapter_manifest.json'}")
+
+
+@app.command("finetune-hparams")
+def finetune_hparams_cmd(
+    model: str = typer.Option(..., "--model", help="base local model id"),
+    dataset: Path = typer.Option(
+        ..., "--dataset", help="tuning-split dataset directory from export-finetune-set"
+    ),
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
+    goldset: Optional[Path] = typer.Option(
+        None, help="goldset the dev slice is scored against (and the split guard checks)"
+    ),
+    max_trials: int = typer.Option(8, "--max-trials", min=1, help="trial budget for the study"),
+    max_hours: Optional[float] = typer.Option(
+        None, "--max-hours", help="wall-clock budget; checked between trials, never mid-training"
+    ),
+    seed: int = typer.Option(13, "--seed", help="study + dev-slice seed"),
+    dev_fraction: float = typer.Option(
+        0.25, "--dev-fraction", help="share of the tuning split held out to score trials"
+    ),
+    trainer: str = typer.Option(
+        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
+    ),
+    out_dir: Optional[Path] = typer.Option(None, help="study output dir"),
+    resume: Optional[Path] = typer.Option(None, help="resume a finetune-hparams study dir"),
+) -> None:
+    """Search the LoRA space for one model on a held-out dev slice of the tuning split."""
+    from llb.finetune.hparam_search import search_hyperparameters
+
+    cfg = load_config(config, model=model, backend=backend, goldset_path=goldset)
+    result = search_hyperparameters(
+        cfg,
+        model=model,
+        dataset_dir=dataset,
+        max_trials=max_trials,
+        max_hours=max_hours,
+        seed=seed,
+        dev_fraction=dev_fraction,
+        trainer=trainer,
+        out_dir=out_dir,
+        resume=resume,
+        goldset_path=goldset,
+    )
+    typer.echo(
+        f"[finetune-hparams] trials={len(result.trials)}/{max_trials} "
+        f"complete={result.n_complete} budget_exhausted={result.budget_exhausted}"
+    )
+    typer.echo(
+        f"[finetune-hparams] dev slice: {len(result.dev_slice.train_ids)} train / "
+        f"{len(result.dev_slice.dev_ids)} dev items (seed {result.dev_slice.seed})"
+    )
+    typer.echo(f"[finetune-hparams] manifest -> {result.manifest_path}")
+    if result.best_hyperparameters is None:
+        typer.echo(
+            f"[finetune-hparams] no trial completed; resume with --resume {result.out_dir}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"[finetune-hparams] best trial {result.best_trial} objective="
+        f"{result.best_objective:.4f} config={json.dumps(result.best_hyperparameters, sort_keys=True)}"
+    )
 
 
 @app.command("self-improve")

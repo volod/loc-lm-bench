@@ -194,7 +194,8 @@ class TwoStageResult:
     final: EvalResult  # the stage-2 run on the full final split -- the leaderboard entry
 
 
-def _is_oom(exc: BaseException) -> bool:
+def is_oom(exc: BaseException) -> bool:
+    """True for a MEASURED capacity failure, which every Optuna study prunes instead of crashing."""
     blob = f"{type(exc).__name__} {exc}".lower()
     return any(marker in blob for marker in _OOM_MARKERS)
 
@@ -236,7 +237,7 @@ def make_objective(
         except optuna.TrialPruned:
             raise
         except Exception as exc:
-            if _is_oom(exc):
+            if is_oom(exc):
                 raise optuna.TrialPruned(f"measured OOM: {exc}") from None
             raise
         quality, throughput = outcome if isinstance(outcome, tuple) else (outcome, 0.0)

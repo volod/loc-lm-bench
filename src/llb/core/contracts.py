@@ -332,6 +332,7 @@ class BackendMetadata(TypedDict, total=False):
     flashinfer_version: str | None  # flashinfer version behind the sampler choice
     adapter_path: str | None  # vLLM LoRA adapter path when adapter serving is active
     adapter_name: str | None  # vLLM LoRA module name
+    max_lora_rank: int | None  # vLLM --max-lora-rank, sized to the served adapter's trained rank
 
 
 class GpuSummary(TypedDict):

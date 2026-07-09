@@ -117,6 +117,61 @@ def export_finetune_set(
     return manifest_payload
 
 
+def subset_dataset(
+    *,
+    dataset_dir: Path | str,
+    out_dir: Path | str,
+    item_ids: list[str] | tuple[str, ...],
+    role: str,
+) -> JsonObject:
+    """Materialize a real dataset directory holding only `item_ids`, with its own digest.
+
+    A hyperparameter trial trains on a sub-slice of the tuning split, so it needs a dataset of its
+    own rather than a filtered view: `adapter_digest` is derived from `dataset_digest`, so a subset
+    that inherited its parent's digest would let two adapters trained on different data collide on
+    one registry id.
+    """
+    dataset_dir = Path(dataset_dir)
+    out_dir = Path(out_dir)
+    parent = load_dataset_manifest(dataset_dir)
+    keep = {str(item_id) for item_id in item_ids}
+    sft = [
+        row
+        for row in _read_jsonl_if_exists(dataset_dir / SFT_FILENAME)
+        if str(row.get("item_id")) in keep
+    ]
+    dpo = [
+        row
+        for row in _read_jsonl_if_exists(dataset_dir / DPO_FILENAME)
+        if str(row.get("item_id")) in keep
+    ]
+    if not sft:
+        raise ValueError(f"dataset subset '{role}' selected no SFT records from {dataset_dir}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(out_dir / SFT_FILENAME, sft)
+    _write_jsonl(out_dir / DPO_FILENAME, dpo)
+    manifest_payload: JsonObject = {
+        "kind": "llb.finetune.dataset",
+        "dataset_digest": dataset_digest(sft, dpo),
+        "parent_dataset_digest": parent.get("dataset_digest"),
+        "subset_role": role,
+        "source_run": parent.get("source_run"),
+        "source_run_id": parent.get("source_run_id"),
+        "goldset_path": parent.get("goldset_path"),
+        "misses_path": parent.get("misses_path"),
+        "item_ids": [str(record["item_id"]) for record in sft],
+        "split_counts": dict(Counter(str(record["split"]) for record in sft)),
+        "n_sft": len(sft),
+        "n_dpo": len(dpo),
+        "prompt_template": parent.get("prompt_template", "eval.rag.chat"),
+    }
+    atomic_write_text(
+        out_dir / DATASET_MANIFEST,
+        json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n",
+    )
+    return manifest_payload
+
+
 def dataset_digest(sft_records: list[JsonObject], dpo_records: list[JsonObject]) -> str:
     payload = {"sft": sft_records, "dpo": dpo_records}
     blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

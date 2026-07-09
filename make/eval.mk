@@ -4,7 +4,7 @@
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
 	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
-	export-finetune-set finetune-adapter self-improve finetune-campaign \
+	export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign \
 	register-adapter list-adapters serve-adapter gc-adapters \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
@@ -100,6 +100,22 @@ finetune-adapter: ## Train a LoRA/QLoRA adapter (DATASET=<export dir> MODEL=<bas
 	@test -n "$(MODEL)" || { echo "ERROR: set MODEL=<base model>"; exit 1; }
 	$(PY) -m llb.main finetune-adapter --dataset "$(DATASET)" --model "$(MODEL)" \
 		$(if $(ADAPTER_OUT),--out "$(ADAPTER_OUT)",) $(if $(TRAINER),--trainer "$(TRAINER)",)
+
+finetune-hparams: ## Budgeted LoRA hparam search on a tuning-split dev slice (MODEL= DATASET= GOLDSET= MAX_TRIALS=8 MAX_HOURS= TRAINER=auto|fake HPARAMS_RESUME=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(MODEL)" || { echo "ERROR: set MODEL=<base model>"; exit 1; }
+	@test -n "$(DATASET)" || { echo "ERROR: set DATASET=<export-finetune-set dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main finetune-hparams --model "$(MODEL)" --dataset "$(DATASET)" \
+		--max-trials "$(or $(MAX_TRIALS),8)" \
+		$(if $(BACKEND),--backend "$(BACKEND)",) \
+		$(if $(GOLDSET),--goldset "$(GOLDSET)",) \
+		$(if $(MAX_HOURS),--max-hours "$(MAX_HOURS)",) \
+		$(if $(HPARAMS_SEED),--seed "$(HPARAMS_SEED)",) \
+		$(if $(DEV_FRACTION),--dev-fraction "$(DEV_FRACTION)",) \
+		$(if $(HPARAMS_OUT),--out-dir "$(HPARAMS_OUT)",) \
+		$(if $(HPARAMS_RESUME),--resume "$(HPARAMS_RESUME)",) \
+		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 self-improve: ## Local self-improvement loop (MODEL= BACKEND= GOLDSET= ROUNDS=2 LIMIT= TRAINER=auto|fake)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

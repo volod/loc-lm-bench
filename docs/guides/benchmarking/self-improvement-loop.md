@@ -50,6 +50,61 @@ llb finetune-adapter --dataset <dataset-dir> --model <model>
 The adapter directory contains `adapter_manifest.json` with base model, dataset digest, item ids,
 hyperparameters, seed, loss curve, and adapter digest.
 
+Hyperparameters default to this model's recorded search when one exists (see
+[Search The Hyperparameters](#search-the-hyperparameters)); pass `--default-hparams` to train on the
+built-in LoRA defaults instead.
+
+## Search The Hyperparameters
+
+Rank, alpha, learning rate, epochs, and target modules are worth measuring rather than guessing.
+`finetune-hparams` runs a budgeted Optuna study per model, scoring each trial on a dev slice held
+out from *inside* the tuning split.
+
+```bash
+llb finetune-hparams \
+  --model <model> \
+  --dataset <tuning-dataset-dir> \
+  --backend vllm \
+  --goldset <goldset> \
+  --max-trials 8
+
+make finetune-hparams MODEL=<model> DATASET=<dataset-dir> GOLDSET=<goldset> MAX_TRIALS=8
+```
+
+Optional flags:
+
+- `--max-hours <h>` caps wall clock. A trial is a whole fine-tune, so the budget is checked between
+  trials: one in-flight trial may overrun the deadline, and none is ever killed mid-training.
+- `--resume <study-dir>` continues an aborted study and runs only the trials the budget still owes.
+  Finished trials are never repeated.
+- `--dev-fraction <f>` sets the share of tuning items held out to score trials (default `0.25`).
+- `--seed <n>` seeds both the sampler and the dev slice, so a study is reproducible.
+- `--trainer fake` exercises the control plane without CUDA.
+
+Results land under `$DATA_DIR/finetune-hparams/<model>/<timestamp>/`:
+
+- `hparams_manifest.json`: best config, its dev-slice objective, the study seed, the dev slice, the
+  budget, and the full trial table;
+- `study.db`: the persistent Optuna study that makes `--resume` work;
+- `trials.jsonl`: a live progress log;
+- `trials/trial-<n>/`: that trial's train-slice dataset and adapter.
+
+Once a search is recorded, `self-improve`, `finetune-campaign`, and `finetune-adapter` train with
+its best config by default, and each adapter manifest records the `hparams_manifest` path that chose
+it.
+
+### What the search never touches
+
+Calibration and final items never enter a trial. The search refuses a dataset whose manifest declares
+a non-tuning split, and -- when a goldset is given -- one whose item ids intersect the real
+calibration/final ids, because a dataset manifest is operator-writable and its split counts are not
+proof. Within the tuning split, each trial trains on the train sub-slice and is scored only on the
+disjoint dev sub-slice.
+
+The default objective serves each trial adapter through vLLM LoRA modules, so the search needs
+`--backend vllm`. It refuses any other backend before the study starts rather than after the first
+trial has already paid for a fine-tune.
+
 ## Run The Full Loop
 
 ```bash
@@ -151,11 +206,16 @@ make serve-adapter ADAPTER=<adapter-id> BACKEND=llamacpp
 the endpoint with one generation, then holds the backend open in the foreground until Ctrl-C;
 `--smoke` exits right after the probe instead. There is no serving daemon.
 
-vLLM loads the LoRA directly (`--enable-lora --lora-modules`). Ollama and llama.cpp serve whole
-model artifacts, so the adapter is first merged into its base weights and converted to GGUF. That
-merge is cached under `$DATA_DIR/adapters/merged/<short-id>/<backend>/` and recorded as a registry
-`merge` event, so the merged artifact stays traceable to the adapter digest that produced it. The
-GGUF conversion needs the llama.cpp checkout (`make build-llamacpp`) and the `[finetune]` extra.
+vLLM loads the LoRA directly (`--enable-lora --lora-modules`), and `--max-lora-rank` is sized
+automatically from the adapter's own rank. This matters: vLLM defaults that flag to 16, so an
+adapter trained at rank 32 or 64 would otherwise make the engine exit at startup with
+`LoRA rank 64 is greater than max_lora_rank 16`. Nothing to pass by hand.
+
+Ollama and llama.cpp serve whole model artifacts, so the adapter is first merged into its base
+weights and converted to GGUF. That merge is cached under
+`$DATA_DIR/adapters/merged/<short-id>/<backend>/` and recorded as a registry `merge` event, so the
+merged artifact stays traceable to the adapter digest that produced it. The GGUF conversion needs
+the llama.cpp checkout (`make build-llamacpp`) and the `[finetune]` extra.
 
 ## Evaluate Through The Registry
 

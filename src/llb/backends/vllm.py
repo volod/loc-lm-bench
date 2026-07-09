@@ -44,6 +44,22 @@ class _HttpGetter(Protocol):
     def __call__(self, url: str, timeout: float = 3.0) -> tuple[int, str] | None: ...
 
 
+# `--max-lora-rank` only accepts these values, and it defaults to 16: an adapter trained at a higher
+# rank makes `add_lora` fail at startup ("LoRA rank 64 is greater than max_lora_rank 16"), so the
+# launcher sizes the flag from the adapter it is about to serve, rounding UP to the nearest value.
+VLLM_MAX_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
+
+
+def served_lora_rank(rank: int) -> int:
+    """The smallest `--max-lora-rank` vLLM accepts that can still hold `rank`."""
+    for allowed in VLLM_MAX_LORA_RANKS:
+        if rank <= allowed:
+            return allowed
+    raise SystemExit(
+        f"[vllm] LoRA rank {rank} exceeds the largest servable rank {VLLM_MAX_LORA_RANKS[-1]}"
+    )
+
+
 def build_vllm_command(
     model: str,
     *,
@@ -57,6 +73,7 @@ def build_vllm_command(
     quantization: str | None = None,
     adapter_path: str | None = None,
     adapter_name: str = "adapter",
+    max_lora_rank: int | None = None,
     served_model_name: str | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
@@ -83,6 +100,8 @@ def build_vllm_command(
         cmd += ["--quantization", quantization]
     if adapter_path:
         cmd += ["--enable-lora", "--lora-modules", f"{adapter_name}={adapter_path}"]
+        if max_lora_rank:
+            cmd += ["--max-lora-rank", str(served_lora_rank(max_lora_rank))]
     if served_model_name:
         cmd += ["--served-model-name", served_model_name]
     if extra_args:
@@ -162,6 +181,7 @@ class VllmLauncher(BackendLauncher):
         quantization: str | None = None,
         adapter_path: Path | str | None = None,
         adapter_name: str = "adapter",
+        max_lora_rank: int | None = None,
         extra_args: list[str] | None = None,
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
@@ -180,6 +200,9 @@ class VllmLauncher(BackendLauncher):
                 "kv_offloading_size_gb": kv_offloading_size_gb,
                 "adapter_path": str(adapter_path) if adapter_path else None,
                 "adapter_name": adapter_name if adapter_path else None,
+                "max_lora_rank": served_lora_rank(max_lora_rank)
+                if (adapter_path and max_lora_rank)
+                else None,
             },
         )
         self.host = host.rstrip("/")
@@ -192,6 +215,7 @@ class VllmLauncher(BackendLauncher):
         self.quantization = quantization
         self.adapter_path = str(adapter_path) if adapter_path else None
         self.adapter_name = adapter_name
+        self.max_lora_rank = max_lora_rank
         self.request_model = adapter_name if adapter_path else model
         self.extra_args = extra_args
         self.startup_timeout = startup_timeout
@@ -220,6 +244,7 @@ class VllmLauncher(BackendLauncher):
             quantization=self.quantization,
             adapter_path=self.adapter_path,
             adapter_name=self.adapter_name,
+            max_lora_rank=self.max_lora_rank,
             extra_args=self.extra_args,
         )
 

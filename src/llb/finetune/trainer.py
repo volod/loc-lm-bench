@@ -15,6 +15,8 @@ from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import DATASET_MANIFEST, load_dataset_manifest
 
 ADAPTER_MANIFEST = "adapter_manifest.json"
+# PEFT writes this beside the adapter weights; it is the authoritative record of the trained rank.
+PEFT_ADAPTER_CONFIG = "adapter_config.json"
 # Digest prefix length used everywhere an adapter is named short: labels, registry rows, merged
 # artifact directories, and Ollama tags.
 ADAPTER_DIGEST_SHORT_CHARS = 12
@@ -42,8 +44,15 @@ def train_adapter(
     seed: int = 13,
     trainer: str = "auto",
     hyperparameters: JsonObject | None = None,
+    hparams_manifest: Path | str | None = None,
 ) -> JsonObject:
-    """Train or fake-train a LoRA adapter and write `adapter_manifest.json`."""
+    """Train or fake-train a LoRA adapter and write `adapter_manifest.json`.
+
+    `hparams_manifest` is pure provenance: the path of the `finetune-hparams` study whose best
+    config was passed in as `hyperparameters`. It is recorded, never re-read, and never enters
+    `adapter_digest` -- two adapters with identical hyperparameters are the same adapter whether or
+    not a search chose them.
+    """
     if trainer == "fake":
         return fake_train_adapter(
             dataset_dir=dataset_dir,
@@ -51,6 +60,7 @@ def train_adapter(
             out_dir=out_dir,
             seed=seed,
             hyperparameters=hyperparameters,
+            hparams_manifest=hparams_manifest,
         )
     return real_train_adapter(
         dataset_dir=dataset_dir,
@@ -58,6 +68,7 @@ def train_adapter(
         out_dir=out_dir,
         seed=seed,
         hyperparameters=hyperparameters,
+        hparams_manifest=hparams_manifest,
     )
 
 
@@ -68,6 +79,7 @@ def fake_train_adapter(
     out_dir: Path | str,
     seed: int = 13,
     hyperparameters: JsonObject | None = None,
+    hparams_manifest: Path | str | None = None,
 ) -> JsonObject:
     """CI trainer: deterministic manifest + tiny marker file, no CUDA dependency."""
     dataset = load_dataset_manifest(dataset_dir)
@@ -85,6 +97,7 @@ def fake_train_adapter(
         adapter_digest=digest,
         trainer="fake",
         loss_curve=[1.0, 0.5],
+        hparams_manifest=hparams_manifest,
     )
     _write_manifest(out, manifest)
     return manifest
@@ -97,6 +110,7 @@ def real_train_adapter(
     out_dir: Path | str,
     seed: int = 13,
     hyperparameters: JsonObject | None = None,
+    hparams_manifest: Path | str | None = None,
 ) -> JsonObject:
     """Real LoRA/QLoRA training entrypoint.
 
@@ -199,6 +213,7 @@ def real_train_adapter(
         adapter_digest=digest,
         trainer="peft-trl",
         loss_curve=loss_curve,
+        hparams_manifest=hparams_manifest,
     )
     _write_manifest(out, manifest)
     return manifest
@@ -231,6 +246,45 @@ def load_adapter_manifest(adapter_dir: Path | str) -> JsonObject:
     return data
 
 
+def adapter_lora_rank(adapter_dir: Path | str | None) -> int | None:
+    """The LoRA rank a serving backend must be sized for, or None when it cannot be determined.
+
+    PEFT's own `adapter_config.json` wins: it describes the weights on disk and exists for adapters
+    this project did not train. The `adapter_manifest.json` hyperparameters are the fallback (the
+    fake trainer writes no PEFT config).
+    """
+    if adapter_dir is None:
+        return None
+    peft_config = Path(adapter_dir) / PEFT_ADAPTER_CONFIG
+    if peft_config.is_file():
+        rank = _read_json_key(peft_config, "r")
+        if rank is not None:
+            return rank
+    try:
+        hyperparameters = load_adapter_manifest(adapter_dir).get("hyperparameters") or {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return _as_positive_int(hyperparameters.get("lora_r"))
+
+
+def _read_json_key(path: Path, key: str) -> int | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return _as_positive_int(data.get(key)) if isinstance(data, dict) else None
+
+
+def _as_positive_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    try:
+        rank = int(value)
+    except (TypeError, ValueError):
+        return None
+    return rank if rank > 0 else None
+
+
 def _has_native_quantization(config: Any) -> bool:
     """True when the checkpoint config already declares its own quantization scheme."""
     quantization = getattr(config, "quantization_config", None)
@@ -247,6 +301,7 @@ def _adapter_manifest(
     adapter_digest: str,
     trainer: str,
     loss_curve: list[float],
+    hparams_manifest: Path | str | None = None,
 ) -> JsonObject:
     return {
         "kind": "llb.finetune.adapter",
@@ -259,6 +314,7 @@ def _adapter_manifest(
         "dataset_split_counts": dict(dataset.get("split_counts") or {}),
         "seed": seed,
         "hyperparameters": hyperparameters,
+        "hparams_manifest": str(hparams_manifest) if hparams_manifest else None,
         "trainer": trainer,
         "loss_curve": loss_curve,
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
