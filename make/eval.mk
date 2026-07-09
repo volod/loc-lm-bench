@@ -4,7 +4,7 @@
 .PHONY: \
 	build-rag-store build-index build-graph validate-retrieval compare-retrieval \
 	compare-embeddings run-eval probe-context-position analyze-misses score-external-rag sweep pipeline prompt-system-prepare prompt-system-review \
-	export-finetune-set finetune-adapter self-improve \
+	export-finetune-set finetune-adapter self-improve finetune-campaign \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
 	composite-headline platform-matrix
 
@@ -108,6 +108,18 @@ self-improve: ## Local self-improvement loop (MODEL= BACKEND= GOLDSET= ROUNDS=2 
 		$(if $(LIMIT),--limit "$(LIMIT)",) \
 		$(if $(SELF_IMPROVE_OUT),--out-dir "$(SELF_IMPROVE_OUT)",) \
 		$(if $(SELF_IMPROVE_RESUME),--resume "$(SELF_IMPROVE_RESUME)",) \
+		$(if $(TRAINER),--trainer "$(TRAINER)",)
+
+finetune-campaign: ## Multi-model adapter campaign (MODELS=<csv> BACKEND= GOLDSET= ROUNDS=1 TRAINER=auto|fake)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main finetune-campaign --models "$(or $(MODELS),$(FINETUNE_CAMPAIGN_MODELS))" \
+		--backend "$(BACKEND)" --goldset "$(GOLDSET)" --corpus "$(CORPUS)" \
+		--rounds "$(or $(ROUNDS),$(FINETUNE_CAMPAIGN_ROUNDS))" \
+		$(if $(FINETUNE_CAMPAIGN_LIMIT),--limit "$(FINETUNE_CAMPAIGN_LIMIT)",) \
+		$(if $(FINETUNE_CAMPAIGN_OUT),--out-dir "$(FINETUNE_CAMPAIGN_OUT)",) \
+		$(if $(FINETUNE_CAMPAIGN_RESUME),--resume "$(FINETUNE_CAMPAIGN_RESUME)",) \
+		$(if $(FINETUNE_CAMPAIGN_MANIFEST),--manifest "$(FINETUNE_CAMPAIGN_MANIFEST)",) \
 		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=)

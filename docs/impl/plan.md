@@ -41,16 +41,16 @@ For remaining tasks that depend on retrieval behavior, use the current RAG basel
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
 [data prep](current/data-prep.md).
 
-The fine-tuning cluster (18-22) extends the spine one step past recommendation: from naming the
-best base model to naming the best *adapted* model for the operator's corpus, with the whole loop
-drivable by an agent end to end. Task 18 builds the single-model loop (contamination-guarded
-export, injectable trainer seam, round report) and owns the invariants every later task reuses;
-19 runs that loop across a multi-model roster with feasibility-aware scheduling and ranks models
-by measured tunability; 20 gives adapters a registry and lifecycle so every tuned board number
-stays traceable and servable; 21 adds budgeted per-model hyperparameter search that never leaves
-the tuning split; 22 (optional) distills the roster's best local teacher into smaller students --
-all local, no egress. Ordering inside the cluster: 18 first, then 19; 20 lands beside 19; 21 and
-22 after 19.
+The remaining fine-tuning cluster (20-23) extends the spine one step past recommendation: from
+naming the best base model to naming the best *adapted* model for the operator's corpus, with the
+single-model self-improvement loop and multi-model campaign substrate as reusable bases (see
+[extended workflows](current/extended-workflows.md)). Task 20 gives adapters a registry and
+lifecycle so every tuned board number stays traceable and servable; 21 adds budgeted per-model
+hyperparameter search that never leaves the tuning split; 22 (optional) distills the roster's best
+local teacher into smaller students; 23 (optional) adds native support for compressed QAT
+checkpoints whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all
+local, no egress. Ordering inside the cluster: 20 before lifecycle-dependent serving, 21 and 22
+after the campaign substrate, 23 after the baseline trainer path.
 
 ## Agent Implementation Tasks
 
@@ -67,11 +67,9 @@ merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for 
 realism (see [data prep](current/data-prep.md) grounded-JSONL import).
 The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
 shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 11 after task 3's code, 18 anytime
-(its miss-targeted export consumes the shipped miss analysis's miss clusters when an analysis
-exists; the export/guard/trainer code stands
-alone), 19-22 after 18 (the fine-tuning cluster reuses 18's trainer seam and contamination
-guard; 20 beside 19, 21 and 22 after 19), and 8 last (blocked by human task 7). The
+Recommended sequence: 11 after task 3's code; 20 beside the campaign substrate in
+[extended workflows](current/extended-workflows.md); 21 and 22 after the campaign substrate; 23
+after the baseline trainer path; and 8 last (blocked by human task 7). The
 durable-eval-runner (retry + `cases.progress.jsonl` journal +
 `--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
 [RAG core](current/rag-core.md) durability section.
@@ -230,58 +228,11 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
   [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
-### 19. finetune-campaign-multi-model
-
-- Dependencies: follows the self-improvement loop in
-  [extended workflows](current/extended-workflows.md). The campaign reuses its dataset export,
-  injectable trainer seam, contamination guard, and per-round report. Soft-consumes the shipped
-  miss analysis (per-model miss-targeted exports when an analysis exists). Reuses the
-  feasibility planner (`src/llb/backends/planner.py` -- can this model run on THIS host, and at
-  what context), the VRAM reclaim gate (`src/llb/executor/vram.py` -- the sequential-execution
-  contract between roster entries), and the durable-runner journal pattern for campaign resume.
-  The heavy campaign executes seeded on the CUDA host, no human judgment.
-- User-visible outcome: one command fine-tunes and re-evaluates a whole roster of local models
-  over the same corpus goldset, answering a question the base-model leaderboard cannot: which
-  model is the best pick for this corpus *after* adaptation. Sequential VRAM-safe scheduling,
-  per-model rounds, and a campaign report ranking roster models by measured tunability --
-  final-split gain with bootstrap CIs against training wall-clock and peak VRAM -- beside
-  base-vs-adapted board rows, so `recommend` can name the best adapted model with evidence.
-- Scope boundary: in scope -- `src/llb/finetune/campaign.py` orchestrating task 18's loop per
-  roster entry from an explicit `--models` list (there is no single roster variable today; the
-  campaign defines the roster shape and `make` passes it through); the model-independent SFT
-  export computed once per campaign and shared across entries while preference pairs stay
-  per-model (each model's own scored misses); feasibility-aware scheduling -- a roster entry
-  the planner rejects, or whose trainer cannot fit beside the serving stack, is skipped with
-  the recorded reason, never crashed into; VRAM reclaim enforced between entries exactly as
-  between eval runs; a `campaign.progress.jsonl` journal with `--resume` that never re-trains
-  a finished entry; adapted rows labeled per task 18 beside every base row; a tunability
-  section in the `recommend` summary when a campaign report exists. Out of scope -- parallel
-  or multi-GPU training (the sequential single-host contract stands), cross-model weight
-  merging or model soups, changing the contamination guard (task 18 owns it), frontier or API
-  teachers (egress).
-- Data and artifact paths:
-  `$DATA_DIR/finetune-campaign/<timestamp>/{campaign.progress.jsonl,report.md}` plus
-  `<model>/round-<i>/` per entry reusing task 18's round layout; the shared SFT export stored
-  once under the campaign root with its `dataset_manifest.json`.
-- Execution path: `llb finetune-campaign --models <m1,m2,...> --backend <b> --rounds <n>` and
-  `make finetune-campaign MODELS=<csv> BACKEND=<b>`; unit tests drive the fake trainer plus a
-  fake planner -- scheduling order, skip-with-reason on an infeasible entry, journal resume
-  mid-roster, shared-export reuse (byte-identical dataset digest across entries), and the
-  ranking math in the report.
-- Acceptance gates: `make ci` green with the fakes; resuming a half-finished campaign
-  re-trains nothing already journaled (unit-tested); an infeasible roster entry appears in the
-  report with its planner reason; every adapted row passes task 18's contamination guard; one
-  real campaign over at least two quickstart-scale models on the CUDA host records the
-  tunability ranking with CIs in current docs -- honestly (a roster where no model gains is
-  acceptable evidence).
-- Documentation target: [extended workflows](current/extended-workflows.md) self-improvement
-  section; the self-improvement-loop guide gains the campaign chapter.
-
 ### 20. adapter-registry-lifecycle
 
-- Dependencies: follows the self-improvement loop in
-  [extended workflows](current/extended-workflows.md); task 19 soft-consumes the registry when
-  present (campaign rounds auto-register). All gates run on committed fixtures -- no heavy run.
+- Dependencies: follows the self-improvement loop and campaign substrate in
+  [extended workflows](current/extended-workflows.md). Campaign rounds auto-register when the
+  registry is present. All gates run on committed fixtures -- no heavy run.
 - User-visible outcome: adapters become first-class, traceable artifacts instead of loose
   directories: a local registry lists every adapter with its base model, dataset digest,
   source run, and eval evidence; staleness is detected (the goldset or corpus changed since
@@ -293,8 +244,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Scope boundary: in scope -- `src/llb/finetune/registry.py` over an append-only
   `$DATA_DIR/adapters/registry.jsonl` (id = adapter digest; entries record base model id,
   dataset digest, goldset/corpus digests, source run path, and an eval summary); automatic
-  registration on a successful task 18/19 round; a staleness check comparing recorded digests
-  against the current goldset/corpus with the verdict shown in `llb list-adapters`;
+  registration on a successful self-improvement or campaign round; a staleness check comparing
+  recorded digests against the current goldset/corpus with the verdict shown in
+  `llb list-adapters`;
   `llb serve-adapter --adapter <id> --backend vllm|ollama|llamacpp` wiring the existing
   backend seam (vLLM LoRA modules directly; the merge-to-GGUF lane for ollama/llama.cpp, with
   the merge recorded as a registry event); `run-eval` resolving adapter ids through the
@@ -318,21 +270,24 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 21. finetune-hparam-search
 
-- Dependencies: follows task 18 (searches over its injectable trainer seam); reuses the Optuna
+- Dependencies: follows the self-improvement loop in
+  [extended workflows](current/extended-workflows.md) and searches over its injectable trainer
+  seam; reuses the Optuna
   study conventions of `src/llb/optimize/tuner.py` (the `[track]` extra already pins optuna) --
-  seeded study, pruned infeasible points, bounded budget -- and feeds task 19 (a recorded best
-  config becomes that model's campaign default). The real bounded search runs on the CUDA host.
+  seeded study, pruned infeasible points, bounded budget -- and feeds campaign defaults (a
+  recorded best config becomes that model's campaign default). The real bounded search runs on
+  the CUDA host.
 - User-visible outcome: fine-tuning stops guessing hyperparameters: per model, a budgeted
   Optuna search over the LoRA space (rank, alpha, learning rate, epochs, target modules) finds
   the best configuration -- scored on a held-out dev slice carved from the tuning split ONLY,
   so neither calibration nor final ever influences the search -- and records it beside the
-  adapter artifacts for tasks 18/19 to consume as defaults.
+  adapter artifacts for self-improvement and campaign runs to consume as defaults.
 - Scope boundary: in scope -- `src/llb/finetune/hparam_search.py` reusing the tuner's study
   conventions; a seeded dev-slice split *within* the tuning split (train sub-slice vs dev
   sub-slice, disjointness unit-tested), extending the recorded split discipline from
   configuration knobs to hyperparameters; `--max-trials` / `--max-hours` budget guards that
   abort cleanly with the study resumable; an `hparams_manifest.json` per model (best config,
-  study seed, trial table, objective values) consumed by the task 18 trainer as defaults;
+  study seed, trial table, objective values) consumed by the trainer as defaults;
   fake-trainer trials in CI with a synthetic objective. Out of scope -- searching on the final
   or calibration split (forbidden by the guard), full-parameter tuning, a second tuner
   framework, per-trial human review.
@@ -346,22 +301,23 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Acceptance gates: `make ci` green with the fake trainer; the dev-slice test proves zero
   calibration/final leakage into any trial; an aborted study resumes without repeating
   finished trials; one real bounded search (at most 8 trials) on the CUDA host records a
-  per-model best config and its dev-slice objective in current docs; a task 18 round trained
+  per-model best config and its dev-slice objective in current docs; a self-improvement round trained
   with the manifest config reproduces the recorded configuration in its provenance.
 - Documentation target: [extended workflows](current/extended-workflows.md); the
   self-improvement-loop guide's tuning appendix.
 
 ### 22. local-distillation-lane (optional)
 
-- Dependencies: follows task 18 (trainer seam and contamination guard; registry integration
-  through task 20 when present) and soft-follows task 19 (the campaign report names the natural
-  teacher -- the roster's best adapted model). Local-only, so no egress question arises. The
-  heavy distillation run executes on the CUDA host.
+- Dependencies: follows the self-improvement loop in
+  [extended workflows](current/extended-workflows.md) (trainer seam and contamination guard;
+  registry integration through task 20 when present) and soft-follows campaign reports (the
+  report names the natural teacher -- the roster's best adapted model). Local-only, so no egress
+  question arises. The heavy distillation run executes on the CUDA host.
 - User-visible outcome: the roster's strongest local model teaches the smaller ones: the
   teacher answers tuning-split questions with retrieved context, its answers are quality-gated
   deterministically against the reference answers (only an answer scoring at or above the gate
   becomes a training target -- teacher misses are dropped, never invented into data), and the
-  student is fine-tuned on the accepted set through the task 18 trainer. The report compares
+  student is fine-tuned on the accepted set through the trainer. The report compares
   student-distilled against student-SFT-on-references over the same items, so distillation must
   demonstrate its value, not assume it.
 - Scope boundary: in scope -- `src/llb/finetune/distill.py`: teacher generation through the
@@ -389,6 +345,32 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   like any other.
 - Documentation target: [extended workflows](current/extended-workflows.md); the
   self-improvement-loop guide.
+
+### 23. compressed-qat-adapter-support (optional)
+
+- Dependencies: follows the baseline trainer path in
+  [extended workflows](current/extended-workflows.md) and should land after task 20 if registered
+  adapter provenance is available.
+- User-visible outcome: compressed-tensors QAT checkpoints can participate in adapter campaigns
+  instead of serving only as base models: the trainer detects compressed linear modules, chooses a
+  compatible adapter-injection strategy or an explicit skip reason, and reports whether the
+  checkpoint is trainable on the host without crashing mid-campaign.
+- Scope boundary: in scope -- model-introspection helpers for native quantization configs,
+  per-architecture target-module selection, a compatibility shim or documented fallback for PEFT
+  injection into compressed linear layers, and campaign skip/report plumbing that names the exact
+  trainability blocker. Out of scope -- dequantizing full checkpoints into new base weights,
+  uploading converted models, or adding a second training framework before the PEFT path is
+  exhausted.
+- Data and artifact paths: compatibility probes live under
+  `$DATA_DIR/finetune-compat/<model>/<timestamp>/`; campaign skip reasons stay in
+  `campaign.progress.jsonl` and `report.md`.
+- Execution path: `llb finetune-compat --model <m> --backend <b>` plus campaign auto-probing for
+  native compressed checkpoints; unit tests use fake compressed linear modules and a fake trainer.
+- Acceptance gates: `make ci` green; compressed native-quant fixtures either receive a working
+  adapter or a deterministic skip reason before training starts; one CUDA-host probe records the
+  trainable/not-trainable verdict for a compressed QAT checkpoint in current docs.
+- Documentation target: [extended workflows](current/extended-workflows.md); the
+  self-improvement-loop guide's compatibility notes.
 
 ### embedding-bakeoff-full-corpus
 

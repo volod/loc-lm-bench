@@ -18,6 +18,15 @@ ADAPTER_MANIFEST = "adapter_manifest.json"
 DEFAULT_LORA_R = 16
 DEFAULT_LORA_ALPHA = 32
 DEFAULT_LORA_DROPOUT = 0.05
+DEFAULT_TARGET_MODULES = [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+]
 
 TrainerFn = Callable[..., JsonObject]
 
@@ -96,9 +105,8 @@ def real_train_adapter(
         import torch
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-        from trl import SFTTrainer
-        from transformers import TrainingArguments
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from trl import SFTConfig, SFTTrainer
     except ImportError as exc:
         raise SystemExit(
             "[finetune-adapter] install the finetune extra on the CUDA host: "
@@ -112,6 +120,7 @@ def real_train_adapter(
     if not sft_rows:
         raise SystemExit("[finetune-adapter] no SFT records found in dataset")
 
+    pretrained_config = AutoConfig.from_pretrained(model, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -120,7 +129,7 @@ def real_train_adapter(
     ]
     hf_dataset = Dataset.from_list(train_rows)
     quantization_config = None
-    if bool(params.get("load_in_4bit", True)):
+    if bool(params.get("load_in_4bit", True)) and not _has_native_quantization(pretrained_config):
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type=str(params.get("bnb_4bit_quant_type", "nf4")),
@@ -129,6 +138,7 @@ def real_train_adapter(
     model_kwargs: dict[str, Any] = {
         "trust_remote_code": True,
         "device_map": params.get("device_map", "auto"),
+        "config": pretrained_config,
     }
     if quantization_config is not None:
         model_kwargs["quantization_config"] = quantization_config
@@ -144,7 +154,7 @@ def real_train_adapter(
         target_modules=params.get("target_modules"),
     )
     peft_model = get_peft_model(base, lora)
-    args = TrainingArguments(
+    args = SFTConfig(
         output_dir=str(out / "trainer"),
         seed=seed,
         per_device_train_batch_size=int(params.get("per_device_train_batch_size", 1)),
@@ -154,14 +164,15 @@ def real_train_adapter(
         max_steps=int(params.get("max_steps", -1)),
         logging_steps=int(params.get("logging_steps", 1)),
         save_strategy="no",
-        report_to=[],
+        report_to="none",
+        dataset_text_field="text",
+        max_length=int(params.get("max_length", 1024)),
     )
     trainer = SFTTrainer(
         model=peft_model,
         args=args,
         train_dataset=hf_dataset,
-        dataset_text_field="text",
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
     trainer.train()
     trainer.model.save_pretrained(out)
@@ -213,6 +224,12 @@ def load_adapter_manifest(adapter_dir: Path | str) -> JsonObject:
     return data
 
 
+def _has_native_quantization(config: Any) -> bool:
+    """True when the checkpoint config already declares its own quantization scheme."""
+    quantization = getattr(config, "quantization_config", None)
+    return bool(quantization)
+
+
 def _adapter_manifest(
     *,
     model: str,
@@ -247,6 +264,7 @@ def _default_hyperparameters(overrides: JsonObject | None) -> JsonObject:
         "lora_r": DEFAULT_LORA_R,
         "lora_alpha": DEFAULT_LORA_ALPHA,
         "lora_dropout": DEFAULT_LORA_DROPOUT,
+        "target_modules": DEFAULT_TARGET_MODULES,
     }
     if overrides:
         params.update(overrides)

@@ -8,6 +8,11 @@ import pytest
 from llb.backends.vllm import build_vllm_command
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult
+from llb.finetune.campaign import (
+    COMPLETE_VERDICT,
+    SKIP_VERDICT,
+    run_finetune_campaign,
+)
 from llb.finetune.dataset import export_finetune_set
 from llb.finetune.guard import validate_adapter_for_eval
 from llb.finetune.loop import run_self_improve
@@ -236,3 +241,159 @@ def test_self_improve_fake_loop_writes_round_state(tmp_path: Path):
     assert result.verdict == "accept"
     state = json.loads((tmp_path / "campaign" / "state.json").read_text(encoding="utf-8"))
     assert state["rounds"][0]["delta"] == pytest.approx(0.6)
+
+
+def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path):
+    tuning = _item("tune-1", "tuning")
+    final = _item("final-1", "final")
+    goldset = tmp_path / "goldset.jsonl"
+    dump_goldset([tuning, final], goldset)
+    cfg = RunConfig(data_dir=tmp_path, goldset_path=goldset, model="seed-model", backend="vllm")
+    eval_calls: list[tuple[str, str, bool]] = []
+    train_calls: list[str] = []
+
+    gains = {"model-a": 0.3, "model-b": 0.1}
+
+    def eval_fn(config: RunConfig, split: str, round_dir: Path) -> EvalResult:
+        eval_calls.append((config.model, split, config.adapter_path is not None))
+        items = [item for item in load_goldset(goldset) if item.split == split]
+        base = 0.2
+        objective = base + gains.get(config.model, 0.0) if config.adapter_path else base
+        run = _write_bundle(
+            tmp_path,
+            f"{len(eval_calls)}-{config.model.replace('/', '-')}-{split}",
+            split,
+            items,
+            objective,
+        )
+        manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+        manifest["config"]["model"] = config.model
+        manifest["telemetry"] = {"peak_vram_mb": 1000 + len(eval_calls)}
+        (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return {
+            "rows": [],
+            "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
+            "retrieval": {"n": len(items), "k": 1, "recall_at_k": 1.0, "mrr": 1.0},
+            "paths": {"manifest": str(run / "manifest.json"), "scores": str(run / "scores.jsonl")},
+            "table": "",
+            "telemetry": None,
+            "manifest": None,
+            "run_timestamp": run.name,
+        }
+
+    def trainer_fn(dataset_dir: Path, model: str, out_dir: Path, seed: int):
+        train_calls.append(model)
+        return fake_train_adapter(dataset_dir=dataset_dir, model=model, out_dir=out_dir, seed=seed)
+
+    def planner_fn(model: str, config: RunConfig):
+        verdict = "no" if model == "too-big" else "gpu"
+        return {
+            "name": model,
+            "backend": config.backend,
+            "params_b": 1.0,
+            "quant": "q4",
+            "weights_mib": 100.0,
+            "n_layers": 1,
+            "ctx_gpu": 2048,
+            "ctx_max": 2048,
+            "gpu_layers": 1,
+            "verdict": verdict,
+            "note": "does not fit" if verdict == "no" else "plan @ ctx=2048",
+        }
+
+    result = run_finetune_campaign(
+        cfg,
+        models=["too-big,model-b,model-a"],
+        rounds=1,
+        out_dir=tmp_path / "ft-campaign",
+        eval_fn=eval_fn,
+        trainer_fn=trainer_fn,
+        planner_fn=planner_fn,
+        reclaim_fn=lambda: {"reclaimed": True, "polls": 1, "residual_mb": 0},
+    )
+
+    assert [entry.model for entry in result.entries] == ["too-big", "model-b", "model-a"]
+    assert result.entries[0].status == SKIP_VERDICT
+    completed = [entry for entry in result.entries if entry.status == COMPLETE_VERDICT]
+    assert {entry.shared_dataset_digest for entry in completed} == {
+        json.loads((result.shared_dataset_dir / "dataset_manifest.json").read_text(encoding="utf-8"))[
+            "dataset_digest"
+        ]
+    }
+    assert train_calls == ["model-b", "model-a"]
+    report = (tmp_path / "ft-campaign" / "report.md").read_text(encoding="utf-8")
+    assert "| 1 | model-a |" in report
+    assert "| 2 | model-b |" in report
+    assert "skipped: does not fit" in report
+
+
+def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Path):
+    tuning = _item("tune-1", "tuning")
+    final = _item("final-1", "final")
+    goldset = tmp_path / "goldset.jsonl"
+    dump_goldset([tuning, final], goldset)
+    cfg = RunConfig(data_dir=tmp_path, goldset_path=goldset, model="seed-model", backend="vllm")
+    train_calls: list[str] = []
+    eval_count = 0
+
+    def eval_fn(config: RunConfig, split: str, round_dir: Path) -> EvalResult:
+        nonlocal eval_count
+        eval_count += 1
+        items = [item for item in load_goldset(goldset) if item.split == split]
+        objective = 0.6 if config.adapter_path else 0.2
+        run = _write_bundle(tmp_path, f"resume-{eval_count}-{config.model}-{split}", split, items, objective)
+        return {
+            "rows": [],
+            "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
+            "retrieval": {"n": len(items), "k": 1, "recall_at_k": 1.0, "mrr": 1.0},
+            "paths": {"manifest": str(run / "manifest.json"), "scores": str(run / "scores.jsonl")},
+            "table": "",
+            "telemetry": None,
+            "manifest": None,
+            "run_timestamp": run.name,
+        }
+
+    def trainer_fn(dataset_dir: Path, model: str, out_dir: Path, seed: int):
+        train_calls.append(model)
+        return fake_train_adapter(dataset_dir=dataset_dir, model=model, out_dir=out_dir, seed=seed)
+
+    def planner_fn(model: str, config: RunConfig):
+        return {
+            "name": model,
+            "backend": config.backend,
+            "params_b": 1.0,
+            "quant": "q4",
+            "weights_mib": 100.0,
+            "n_layers": 1,
+            "ctx_gpu": 2048,
+            "ctx_max": 2048,
+            "gpu_layers": 1,
+            "verdict": "gpu",
+            "note": "plan @ ctx=2048",
+        }
+    out_dir = tmp_path / "resume-campaign"
+    run_finetune_campaign(
+        cfg,
+        models=["model-a"],
+        rounds=1,
+        out_dir=out_dir,
+        eval_fn=eval_fn,
+        trainer_fn=trainer_fn,
+        planner_fn=planner_fn,
+        reclaim_fn=lambda: {"reclaimed": True},
+    )
+    run_finetune_campaign(
+        cfg,
+        models=["model-a,model-b"],
+        rounds=1,
+        resume=out_dir,
+        eval_fn=eval_fn,
+        trainer_fn=trainer_fn,
+        planner_fn=planner_fn,
+        reclaim_fn=lambda: {"reclaimed": True},
+    )
+
+    assert train_calls == ["model-a", "model-b"]
+    progress = (out_dir / "campaign.progress.jsonl").read_text(encoding="utf-8")
+    assert progress.count('"model": "model-a"') == 1
+    assert progress.count('"model": "model-b"') == 1

@@ -165,6 +165,12 @@ SWEEP_RAG_GRID ?= top_k=3,5,8
 PIPELINE_TOP_N ?= 2
 PIPELINE_TRIALS ?= 20
 PIPELINE_OFFLINE ?=
+FINETUNE_CAMPAIGN_MODELS ?= $(MODEL)
+FINETUNE_CAMPAIGN_ROUNDS ?= 1
+FINETUNE_CAMPAIGN_LIMIT ?=
+FINETUNE_CAMPAIGN_OUT ?=
+FINETUNE_CAMPAIGN_RESUME ?=
+FINETUNE_CAMPAIGN_MANIFEST ?= $(MODELS_MANIFEST)
 # Judge knobs (judge calibration gate). JUDGE_MODEL is the model id exposed by a LOCAL OpenAI-compatible endpoint
 # (no data egress + reproducible; bias documented in current.md); JUDGE_BASE_URL points at it.
 # Default = the Ollama gemma3:27b judge on :11434 (the default BACKEND=ollama candidate runs there

@@ -20,6 +20,6 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Prompt template registry and review workflow | [Prompt templates](current/prompt-templates.md) |
 | Knowledge-graph retrieval and graph-vs-vector comparison | [GraphRAG](current/graphrag-backend.md) |
 | Backend matrix, power telemetry, vector-store adapters | [Platform matrix](current/platform-vector-matrix.md) |
-| Agentic harnesses, judge diagnostics, prompt-system packages | [Extended workflows](current/extended-workflows.md) |
+| Agentic harnesses, judge diagnostics, prompt-system packages, local fine-tuning | [Extended workflows](current/extended-workflows.md) |
 | Host acceptance checklist and repeatable smoke runs | [Host validation](current/host-validation.md) |
 | Settled scope and decision motivation | [Product decisions](current/scope-boundaries.md) |

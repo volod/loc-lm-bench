@@ -70,6 +70,40 @@ The orchestrator runs:
 Campaign state lands under `$DATA_DIR/self-improve/<timestamp>/`; canonical eval bundles remain
 under `$DATA_DIR/run-eval/` so the board and `llb recommend` see the tuned row.
 
+## Run A Multi-Model Campaign
+
+Use the roster campaign when the question is which local model is best after adaptation, not just
+which base model wins before tuning.
+
+```bash
+llb finetune-campaign \
+  --models <model-a>,<model-b> \
+  --backend vllm \
+  --goldset <goldset> \
+  --corpus <corpus-dir> \
+  --rounds 1
+
+make finetune-campaign MODELS=<model-a>,<model-b> BACKEND=vllm GOLDSET=<goldset> CORPUS=<corpus-dir>
+```
+
+Optional flags:
+
+- `--manifest <models-yaml>` gives the feasibility planner model metadata;
+- `--resume <campaign-dir>` replays `campaign.progress.jsonl` and skips completed roster entries;
+- `--trainer fake` runs the control plane without CUDA training dependencies;
+- `--limit <n>` caps each eval split for smoke runs.
+
+Campaign state lands under `$DATA_DIR/finetune-campaign/<timestamp>/`:
+
+- `shared-dataset/`: one SFT export reused across feasible roster entries;
+- `<model>/round-<n>/preference-dataset/`: per-model preference export from that model's misses;
+- `<model>/round-<n>/adapter/`: trained adapter manifest and weights or fake marker;
+- `campaign.progress.jsonl`: append-only resume journal;
+- `report.md`: tunability ranking by final-split gain, training wall-clock, and peak VRAM.
+
+`llb recommend` appends the latest campaign ranking when a campaign progress journal exists.
+Planner-rejected models stay in the report with their skip reason.
+
 ## Guardrails
 
 `run-eval` refuses adapter-backed runs when the adapter manifest records calibration/final split

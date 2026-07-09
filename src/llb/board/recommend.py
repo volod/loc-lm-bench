@@ -546,6 +546,70 @@ def format_self_improvement_section_md(campaign: JsonObject | None) -> str:
     return "\n".join(lines)
 
 
+def latest_finetune_campaign(data_dir: Path | str) -> JsonObject | None:
+    """Newest multi-model fine-tune campaign payload, or None when no campaign exists."""
+    from llb.finetune.campaign import latest_campaign
+
+    return latest_campaign(data_dir)
+
+
+def format_finetune_campaign_section_md(campaign: JsonObject | None) -> str:
+    """Render latest multi-model tunability ranking for `llb recommend`."""
+    if not campaign:
+        return ""
+    entries = campaign.get("entries") or []
+    if not isinstance(entries, list) or not entries:
+        return ""
+    completed = [entry for entry in entries if isinstance(entry, dict)]
+    ranked = sorted(
+        completed,
+        key=lambda entry: (
+            _float_for_sort(entry.get("delta")),
+            -_float_for_sort(entry.get("train_wall_clock_s")),
+            -_float_for_sort(entry.get("peak_vram_mb")),
+        ),
+        reverse=True,
+    )
+    lines = [
+        "## Fine-tune campaign",
+        "",
+        f"Campaign: `{campaign.get('campaign_dir', '?')}`",
+        f"Report: `{campaign.get('report_path', '?')}`",
+        "",
+        "| rank | model | base objective | adapted objective | delta | train s | peak VRAM | status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for rank, row in enumerate(ranked, 1):
+        status = str(row.get("status", "?"))
+        reason = row.get("reason")
+        if reason:
+            status = f"{status}: {reason}"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(rank) if row.get("status") == "completed" else "",
+                    _short(str(row.get("model", "?"))),
+                    _fmt_float(row.get("base_objective")),
+                    _fmt_float(row.get("tuned_objective")),
+                    _fmt_float(row.get("delta")),
+                    _fmt_float(row.get("train_wall_clock_s")),
+                    _fmt_float(row.get("peak_vram_mb")),
+                    status,
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines)
+
+
+def _float_for_sort(value: object) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
 def _fmt_float(value: object) -> str:
     try:
         return f"{float(value):.4f}"  # type: ignore[arg-type]

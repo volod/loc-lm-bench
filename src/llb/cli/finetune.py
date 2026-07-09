@@ -6,7 +6,7 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.cli.helpers import load_config
+from llb.cli.helpers import load_config, planning_models
 
 
 @app.command("export-finetune-set")
@@ -101,3 +101,45 @@ def self_improve_cmd(
         f"base_final={result.base_final_run_dir}"
     )
     typer.echo(f"[self-improve] report -> {result.out_dir / 'report.md'}")
+
+
+@app.command("finetune-campaign")
+def finetune_campaign_cmd(
+    config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    models: str = typer.Option(..., "--models", help="comma-separated local model roster"),
+    backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
+    goldset: Optional[Path] = typer.Option(None, help="gold set JSONL"),
+    corpus: Optional[Path] = typer.Option(None, "--corpus", help="corpus root used to build RAG index"),
+    rounds: int = typer.Option(1, min=1, help="adapter rounds per feasible roster entry"),
+    limit: Optional[int] = typer.Option(None, help="cap eval items per split for smoke runs"),
+    out_dir: Optional[Path] = typer.Option(None, help="campaign output dir"),
+    resume: Optional[Path] = typer.Option(None, help="resume a finetune-campaign dir"),
+    trainer: str = typer.Option(
+        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
+    ),
+    manifest: Optional[Path] = typer.Option(
+        None, "--manifest", help="optional model manifest for feasibility planning"
+    ),
+) -> None:
+    """Run the local self-improvement loop across a roster and rank tunability."""
+    from llb.finetune.campaign import run_finetune_campaign
+
+    cfg = load_config(config, backend=backend, goldset_path=goldset, corpus_root=corpus)
+    specs = planning_models(manifest) if manifest is not None else None
+    result = run_finetune_campaign(
+        cfg,
+        models=[models],
+        rounds=rounds,
+        out_dir=out_dir,
+        resume=resume,
+        trainer=trainer,
+        limit=limit,
+        model_specs=specs,
+    )
+    completed = sum(1 for entry in result.entries if entry.status == "completed")
+    skipped = sum(1 for entry in result.entries if entry.status == "skipped")
+    typer.echo(
+        f"[finetune-campaign] completed={completed} skipped={skipped} "
+        f"entries={len(result.entries)}"
+    )
+    typer.echo(f"[finetune-campaign] report -> {result.out_dir / 'report.md'}")

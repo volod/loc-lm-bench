@@ -116,6 +116,9 @@ candidate row. It is file-driven and split-guarded:
 - `src/llb/finetune/loop.py` orchestrates base final eval, per-round tuning eval, miss analysis,
   dataset export, adapter training, adapter final eval, stop/accept logic, `state.json`, and
   `report.md`.
+- `src/llb/finetune/campaign.py` schedules the loop ingredients across a `--models` roster with
+  planner skip reasons, a shared campaign SFT export, per-model preference exports, VRAM reclaim
+  between roster entries, `campaign.progress.jsonl` resume, and a tunability `report.md`.
 
 Commands:
 
@@ -123,23 +126,62 @@ Commands:
 llb export-finetune-set --run-dir <tuning-run> --goldset <goldset> --out <dataset-dir>
 llb finetune-adapter --dataset <dataset-dir> --model <model> --seed <seed>
 llb self-improve --model <model> --backend vllm --goldset <goldset> --rounds 2
+llb finetune-campaign --models <m1,m2> --backend vllm \
+  --goldset <goldset> --corpus <corpus-dir> --rounds 1
 make self-improve MODEL=<model> BACKEND=vllm GOLDSET=<goldset> ROUNDS=2
+make finetune-campaign MODELS=<m1,m2> BACKEND=vllm GOLDSET=<goldset> CORPUS=<corpus-dir>
 ```
 
 Artifacts live under `$DATA_DIR/self-improve/<timestamp>/round-<n>/` for campaign state and under
 `$DATA_DIR/run-eval/` for canonical board bundles. Round directories carry `dataset/`, `adapter/`,
 `run` and `run-final` pointers, plus per-round reports.
 
+Multi-model campaign artifacts live under `$DATA_DIR/finetune-campaign/<timestamp>/`. The campaign
+root contains `shared-dataset/dataset_manifest.json`, `campaign.progress.jsonl`, `report.md`, and
+one directory per roster model. Each model directory records base-final and per-round tuning/final
+run pointers, miss analysis, a per-model preference dataset, and the final adapter. Resume replays
+`campaign.progress.jsonl` and does not retrain a completed roster entry.
+
 Adapter-backed `run-eval` rows are labeled `<base>+adapter-<digest>` in manifests and board loaders.
 vLLM serving passes the adapter through `--enable-lora --lora-modules`; Ollama and llama.cpp require
 a merged model artifact before they can serve the adapter. `llb recommend` appends a
-self-improvement section when a campaign `state.json` exists.
+self-improvement section when a campaign `state.json` exists and a fine-tune campaign section when
+`$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` exists. The campaign section ranks completed
+models by final-split delta, then shorter training wall-clock, then lower peak VRAM; skipped models
+remain visible with the planner reason.
 
 Tests:
 
 ```bash
-uv run pytest tests/test_finetune.py
+uv run pytest tests/test_finetune.py tests/test_recommend.py
 ```
 
 The committed poisoned manifest fixture at `samples/finetune/poisoned-adapter/adapter_manifest.json`
 is used to keep the protected-split refusal path easy to exercise.
+
+The campaign implementation is covered by fake eval/trainer/planner tests for scheduling order,
+planner skip reasons, shared dataset digest reuse, JSONL resume, and report ranking.
+
+CUDA evidence on the 12 GB RTX PRO 3000 host:
+
+- Command shape: `LLB_EMBED_DEVICE=cpu llb finetune-campaign --config
+  .data/quickstart-leaderboard/llb/serving/gpu-12gb/run_eval_gemma_4_12b_vllm.yaml --models
+  Qwen/Qwen2.5-0.5B-Instruct,Qwen/Qwen2.5-1.5B-Instruct --corpus
+  samples/goldsets/ua_squad_postedited_v1/corpus --rounds 1 --limit 1 --out-dir
+  .data/finetune-campaign/task19-evidence-qwen-small-12gb`.
+- Campaign report:
+  `.data/finetune-campaign/task19-evidence-qwen-small-12gb/report.md`.
+- Recommend summary:
+  `.data/recommend/task19-summary.md`.
+- Shared dataset digest: `5b99939c91b02500eda6fe3aa7cb27c46012928929f93def380a245b4a6711b0`.
+- `Qwen/Qwen2.5-0.5B-Instruct`: base final objective `0.0000`, adapted objective `0.0000`,
+  delta `0.0000`, train wall-clock `6.7800` s, adapted peak VRAM `11862` MiB.
+- `Qwen/Qwen2.5-1.5B-Instruct`: base final objective `0.0000`, adapted objective `0.0000`,
+  delta `0.0000`, train wall-clock `6.4219` s, adapted peak VRAM `11690` MiB.
+- `llb recommend --gpu-gb 12 --no-chart` rendered the fine-tune campaign section and selected the
+  0.5B base model for this smoke cohort because all one-case objectives were tied at zero and the
+  base model was faster than its adapter-backed row.
+- `google/gemma-4-12B-it-qat-w4a16-ct` served on the same host at `max_model_len=1024`
+  (`41.8` to `42.9` tok/s, peak VRAM about `11523` MiB), but PEFT LoRA injection could not train
+  the compressed-tensors QAT checkpoint because its compressed linear modules do not expose the
+  normal `weight` attribute.
