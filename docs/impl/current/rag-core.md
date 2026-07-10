@@ -26,7 +26,7 @@ llb list-models
 llb build-index --vector-store faiss
 llb validate-retrieval --k 10
 llb run-eval --model llama3.2:3b --backend ollama
-llb run-eval --config samples/run_config_uk.yaml
+llb run-eval --config samples/configs/run_config_uk.yaml
 llb run-eval --split calibration --worksheet calibration.csv
 llb run-eval --score-semantic
 llb run-eval --resume .data/run-eval/<timestamp>-<run-id>   # continue an interrupted run
@@ -82,7 +82,7 @@ the gold fields plus an answer field (`llm_answer`, `predicted_answer`, `model_a
 `answer`), computes the same objective answer-correctness signals as `run-eval`, and opens an
 interactive human scoring loop. The scoring/report core is in `src/llb/scoring/external_rag.py`;
 the terminal session loop is in `src/llb/scoring/external_rag_session.py`; coverage lives in
-`tests/test_external_rag_score.py`.
+`tests/llb/scoring/test_external_rag_score.py`.
 
 The JSONL answer log is the session state. Each edit atomically writes `human_score_0_1`,
 `human_decision`, `human_notes`, `human_corrected_answer`, and `human_status` back into the same
@@ -110,9 +110,38 @@ llb score-external-rag --answers <answered-jsonl> --answer-field predicted_answe
 make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl> EXTERNAL_RAG_CLEAR=1
 ```
 
-This is an external-system diagnostic, not a certified local leaderboard. If the answer log contains
-only source article ids, titles, or URLs, the command cannot compute source-span recall; external
-retrieval recall needs source records with corpus `doc_id`, `char_start`, and `char_end`.
+This is an external-system diagnostic, not a certified local leaderboard.
+
+### Source-span audit (external-rag-source-mapping)
+
+When the answer log returns only provider-namespace source records (article ids, titles, URLs),
+an operator-supplied mapping sidecar joins them onto benchmark corpus spans so retrieval evidence
+can be audited, not only answer text:
+
+```bash
+make score-external-rag EXTERNAL_RAG_ANSWERS=<answered-jsonl> EXTERNAL_RAG_SOURCE_MAP=<map.jsonl>
+llb score-external-rag --answers <answered-jsonl> --source-map <map.jsonl>
+```
+
+The sidecar (`.json` list, `.jsonl`, or `.csv`; lives beside the answer log or under
+`$DATA_DIR/external-rag/<system>/`) maps provider keys to corpus locations: each record carries
+`doc_id` (required), optional `char_start`/`char_end`, and at least one of `article_id`, `url`,
+`article_title` (matched in that precedence order). `src/llb/scoring/external_rag_sources.py`
+implements the audit; `tests/llb/scoring/test_external_rag_sources.py` covers it.
+
+- A mapped source WITH a char range is scored by the same source-span metric as local retrieval
+  (`llb.rag.retrieval.first_hit_rank` over the returned-source order): a span overlapping the
+  item's gold spans is a hit.
+- A mapping with only `doc_id` (typically title-keyed) can produce at most a doc-level match,
+  flagged `source_hit_weak=true` -- weak evidence, never span proof.
+- A returned source with no mapping counts into `source_unmapped_count` -- an audit gap reported
+  separately from mapped retrieval misses.
+
+The CSV gains additive columns (`source_hit`, `source_first_hit_rank`, `source_hit_weak`,
+`source_mapped_count`, `source_unmapped_count`; absent without `--source-map`), and the report
+gains a "Source-span audit" section with span-proof `recall@3` and MRR (weak hits and unmapped
+sources reported beside them, never folded in). Without a sidecar the limitation stands: external
+retrieval recall needs source records resolvable to corpus `doc_id`, `char_start`, `char_end`.
 
 ## Retrieval Store
 
@@ -231,12 +260,13 @@ case forms of one topic collapse into a single cluster instead of splitting acro
 
 Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukrainian orders
 registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
-for exact terms; the CI regression (`tests/test_hybrid_store.py`) proves hybrid strictly beats a
-signal-free dense ranking there. Tests: `tests/test_lexical.py` (normalization, BM25 determinism
-and tie-breaks, lemma matching, save/load), `tests/test_filters.py` (doc/heading/page/ACL
-predicates), `tests/test_hybrid_store.py` (fusion order, weight extremes, filter-before-fusion,
-refusal paths, config-knob application, byte-identical text), plus grid/tuner coverage in
-`tests/test_cli_models.py` / `tests/test_tuner.py`.
+for exact terms; the CI regression (`tests/llb/rag/test_hybrid_store.py`) proves hybrid strictly
+beats a signal-free dense ranking there. Tests: `tests/llb/rag/test_lexical.py` (normalization,
+BM25 determinism and tie-breaks, lemma matching, save/load), `tests/llb/rag/test_filters.py`
+(doc/heading/page/ACL predicates), `tests/llb/rag/test_hybrid_store.py` (fusion order, weight
+extremes, filter-before-fusion, refusal paths, config-knob application, byte-identical text), plus
+grid/tuner coverage in
+`tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
 
 Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick CI), via
 `compare-retrieval --hybrid`:
@@ -333,11 +363,11 @@ the sweep-level `--reranker` model (default `BAAI/bge-reranker-v2-m3`). The tune
 `use_reranker` on/off and, only when on, the candidate depth (15..60) -- dead parameters are
 never sampled.
 
-Tests: `tests/test_rerank.py` (fake cross-encoder: candidate flow, kept set, rank bookkeeping,
+Tests: `tests/llb/rag/test_rerank.py` (fake cross-encoder: candidate flow, kept set, rank bookkeeping,
 stable ties, wrapper delegation, exact context ordering per policy, stage-latency capture and
-manifest aggregation, config knob validation), `tests/test_compare_retrieval.py` (rerank twin
+manifest aggregation, config knob validation), `tests/llb/rag/test_compare_retrieval.py` (rerank twin
 rows lift MRR through the shared metric; oracle row excluded), plus grid/tuner coverage in
-`tests/test_cli_models.py` / `tests/test_tuner.py`.
+`tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
 
 Durable evidence (2026-07-08, real `BAAI/bge-reranker-v2-m3` on the CUDA host RTX 4060 Ti,
 outside quick CI), via `compare-retrieval --hybrid --reranker BAAI/bge-reranker-v2-m3`, k=10,
@@ -453,13 +483,13 @@ The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each 
 retrieval effect is attributable (the `rewrite` step needs a model, so it runs only in `run-eval`,
 not the A/B). `query_prep_ab_report` is pure over the `.retrieve` seam.
 
-Tests: `tests/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
+Tests: `tests/llb/rag/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
 Damerau-Levenshtein transposition, typo correction that never touches in-vocabulary or numeric
 tokens + long-token distance 2 + deterministic tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
 processed-query wiring, runner resolver dependency wiring), plus config validation in
-`tests/test_config.py`.
+`tests/llb/core/test_config.py`.
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
@@ -531,7 +561,7 @@ Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,m
 (`compare-retrieval --strategies ...`) builds one flat FAISS store per strategy over the SAME
 corpus + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by
 recall@k / MRR on the gold set, so the best chunker is demonstrated per corpus, never assumed.
-Tests: `tests/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
+Tests: `tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
 
@@ -589,7 +619,7 @@ index size, dimension, and device -- ending in a written recommendation the oper
 `stores/<model-slug>/`. Default local candidates: `intfloat/multilingual-e5-base` (current default),
 `intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
-are fake-store unit-tested (`tests/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
+are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
 
 Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
 with, and `_load_store` refuses a run whose `config.embedding_model` differs
@@ -678,7 +708,7 @@ throughput, then lower VRAM when telemetry is available.
 
 ### Groundedness and citation metrics (groundedness-citation-metrics)
 
-Shipped: three answer-side signals that go beyond reference-answer overlap, all deterministic and
+Shipped: four answer-side signals that go beyond reference-answer overlap, all deterministic and
 additive -- they never change the headline objective (they stay separate columns until a ranking
 policy explicitly adopts them). `src/llb/scoring/groundedness.py` is a pure, dependency-free scorer
 (no RAGAS, no frontier judge); the calibration-gated judge's faithfulness stays the optional
@@ -694,6 +724,13 @@ secondary groundedness signal.
   PROMPT-LAYOUT order (so `reverse_rank` renumbering is respected). A citation whose in-range chunk
   lacks the claim is flagged invalid (lowers validity); a citation whose index is out of range is
   hallucinated.
+- Citation coverage (`--cited-answers`, citation-coverage-metric): the share of countable claims
+  (>= `MIN_CLAIM_TOKENS` content tokens, the same rule groundedness counts by) that carry ANY
+  `[i]` citation, right or wrong. Validity alone collapses two failures into one low number -- a
+  model that emits NO citations and a model that cites the WRONG chunk both score 0.0 validity
+  (the durable llama3.2:3b run below made that concrete). Coverage separates them: coverage 0.0 =
+  an instruction-following gap (does not cite); coverage high with validity low = a grounding gap
+  (cites, but points at the wrong chunks). Reported beside validity, fully independent of it.
 - Insufficient-context abstention probe (`--insufficient-context-probes <n>`,
   `src/llb/eval/insufficient_context.py`): re-runs a seeded sample of gold items with every chunk
   overlapping their gold spans EXCLUDED from retrieval (through the shipped chunk-metadata filter
@@ -702,7 +739,7 @@ secondary groundedness signal.
   `insufficient_context_report.md`), NEVER in `scores.jsonl`, so they cannot enter the plain
   correctness aggregates.
 
-Per-case fields land in `scores.jsonl` (`groundedness`, `citation_validity`,
+Per-case fields land in `scores.jsonl` (`groundedness`, `citation_validity`, `citation_coverage`,
 `hallucinated_citation_rate`, `n_citations`); their means plus `abstention_accuracy` / `n_probes`
 land in the manifest `metrics`, echoed as the run's `answer-side:` summary line. Config knobs
 (`cited_answers`, `score_groundedness`, `insufficient_context_probes`) are recorded in the manifest
@@ -710,10 +747,12 @@ fingerprint. `RunConfig` toggles are off by default, so pre-existing bundles kee
 
 Modules/tests: `src/llb/scoring/groundedness.py`, `src/llb/eval/insufficient_context.py`, the
 `eval.rag.cited_answer` template, `ScoreOptions` in `src/llb/executor/cases.py`;
-`tests/test_groundedness.py` (fully/partially/unsupported groundedness with zero cross-class leakage,
-valid/flagged-invalid/hallucinated citations, abstention markers, cited-answer prompt wiring, per-case
-scoring + context-order-aware citation numbering) and `tests/test_insufficient_context.py` (gold
-exclusion, seeded sampling, abstention accuracy, transport-error exclusion).
+`tests/llb/scoring/test_groundedness.py` (fully/partially/unsupported groundedness with zero
+cross-class leakage, valid/flagged-invalid/hallucinated citations, coverage separating no-citation
+from wrong-citation at equal validity, abstention markers, cited-answer prompt wiring, per-case
+scoring + context-order-aware citation numbering, manifest mean coverage) and
+`tests/llb/eval/test_insufficient_context.py` (gold exclusion, seeded sampling, abstention
+accuracy, transport-error exclusion).
 
 Durable evidence (2026-07-09, `llama3.2:3b` on Ollama, `intfloat/multilingual-e5-base` flat FAISS
 over `samples/goldsets/ip_regulation_uk`, final split n=4, `--cited-answers --score-groundedness

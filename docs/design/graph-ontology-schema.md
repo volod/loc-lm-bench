@@ -30,7 +30,7 @@ rank **objective-only** (recall@k / MRR / objective correctness rank regardless 
   [`src/llb/graph/`](../../src/llb/graph/) (`build.py`, `community.py`, `retrieval.py`, `store.py`)
   + the `retrieval_backend` / `retrieval_strategy` / `graph_khop_depth` fields in
   [`src/llb/config.py`](../../src/llb/config.py).
-- Tests: [`tests/test_graph.py`](../../tests/test_graph.py).
+- Tests: [`tests/llb/graph/test_graph.py`](../../tests/llb/graph/test_graph.py).
 - Spec basis: `docs/design/spec.md` (GraphRAG / knowledge-graph retrieval), the ontology-assisted drafting
   extraction-reuse constraint, and the source-span grounding premise (source-span metric).
 
@@ -165,7 +165,7 @@ This is the human gate. Nothing about it requires running a GPU.
 
    ```
    make test                                  # full suite, or:
-   .venv/bin/python -m pytest tests/test_graph.py -q
+   .venv/bin/python -m pytest tests/llb/graph/test_graph.py -q
    ```
 
    To regenerate the worked-example numbers over your own corpus, run `llb build-graph` (from an

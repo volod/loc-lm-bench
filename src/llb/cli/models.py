@@ -48,7 +48,7 @@ def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:
 @app.command("prep-models")
 def prep_models_cmd(
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+        Path("samples/configs/models_uk.yaml"), help="candidate-models YAML manifest"
     ),
     backend: str = typer.Option("all", help="ollama | vllm | all"),
     force: bool = typer.Option(False, help="prepare even if a model looks too big for VRAM"),
@@ -144,7 +144,7 @@ def prep_serving_targets_cmd(
 @app.command("list-models")
 def list_models_cmd(
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+        Path("samples/configs/models_uk.yaml"), help="candidate-models YAML manifest"
     ),
     context: Optional[int] = typer.Option(
         None, help="plan at this target context instead of the max the host can hold"
@@ -220,7 +220,7 @@ def preflight_vllm_cmd(
 @app.command("resolve-models")
 def resolve_models_cmd(
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+        Path("samples/configs/models_uk.yaml"), help="candidate-models YAML manifest"
     ),
     context: Optional[int] = typer.Option(
         None, help="resolve fit at this target context instead of the max the host can hold"
@@ -393,7 +393,7 @@ def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
 @app.command("sweep")
 def sweep_cmd(
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+        Path("samples/configs/models_uk.yaml"), help="candidate-models YAML manifest"
     ),
     split: str = typer.Option("final", help="gold split to evaluate each cell on"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL for every cell"),
@@ -487,7 +487,8 @@ def tune_cmd(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL"),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM context cap"),
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="manifest to read the model's arch from (VRAM prune)"
+        Path("samples/configs/models_uk.yaml"),
+        help="manifest to read the model's arch from (VRAM prune)",
     ),
     seed: int = typer.Option(13, help="Optuna sampler seed"),
     isolate: bool = typer.Option(

@@ -165,7 +165,7 @@ multilingual Mistral Small 3.1 (0.399) and Qwen baselines on Ukrainian RAG.
 `llb analyze-misses --run-dir <run>` (`make analyze-misses RUN_DIR=<run>`) explains a finalized
 run's wrong answers. Classifier, clustering, and recommendations live in
 `src/llb/board/miss_analysis.py`; the probe orchestration in `src/llb/board/miss_probe.py`;
-tests in `tests/test_miss_analysis.py` (a synthetic scored bundle with one case per miss class
+tests in `tests/llb/board/test_miss_analysis.py` (a synthetic scored bundle with one case per miss class
 proves zero cross-class leakage and that every recommendation line names numeric evidence).
 
 Every miss lands in exactly ONE class, decided in precedence order: `refusal` (typed status),
@@ -215,7 +215,7 @@ scope -- the Optuna tuner owns search.
 (`make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5`) measures a model's
 lost-in-the-middle sensitivity and names its `context_order` recommendation with evidence
 (rerank-context-order). Core in `src/llb/eval/position_probe.py`; CLI in `src/llb/cli/eval.py`;
-tests in `tests/test_position_probe.py` (a fake store + a fake chat that answers correctly only
+tests in `tests/llb/eval/test_position_probe.py` (a fake store + a fake chat that answers correctly only
 when the gold chunk leads the prompt prove case construction, exact gold placement, per-position
 scoring, the recommendation rule, and the artifacts -- no backend, no GPU).
 
@@ -300,8 +300,8 @@ Cyrillic-echoed leak is never missed.
   `bench/security/` (adversarial text is data, not code). Alongside DAN role-play and fiction
   framing, a **language-switch** frame tells a UA-tuned assistant to drop its guardrails and answer
   in Russian — probing whether safety generalizes across the languages the model knows. The
-  committed seed (`samples/security_cases_uk.json`) adds a language-switch jailbreak (`jb-003`) and
-  a Cyrillic-homoglyph RAG injection (`rag-003`).
+  committed seed (`samples/benchmarks/security_cases_uk.json`) adds a language-switch jailbreak
+  (`jb-003`) and a Cyrillic-homoglyph RAG injection (`rag-003`).
 - **Over-refusal controls.** The seed carries UA benign controls that look sensitive but are
   legitimate — dual-use history, defensive security, and crisis mental-health resources — so a model
   cannot win by blanket-refusing Ukrainian civic/dual-use questions. These feed refusal-

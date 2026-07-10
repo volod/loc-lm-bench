@@ -185,7 +185,7 @@ MamayLM/Gemma weights, `VLLM_HOST` if vLLM is not on port 8000, and keep
 RTX 4060 Ti, 16380 MiB, sm 89. Full-size target repos need **Ollama**; largest vLLM
 quant on this tier is Gemma 4 12B w4a16 (manifest extra entry). real-model validation validated E4B
 w4a16 at util **0.80**, ctx **8192**
-([run_config_vllm_uk.yaml](../../samples/run_config_vllm_uk.yaml)).
+([run_config_vllm_uk.yaml](../../samples/configs/run_config_vllm_uk.yaml)).
 
 ### 12 GiB GPU / 64 GiB RAM (RTX PRO 3000 Blackwell laptop)
 
@@ -208,4 +208,4 @@ RTX 5090, 32607 MiB, sm 120. **vLLM** for MamayLM 27B FP8 and Gemma 4 31B w4a16;
 
 - [samples/config-example/](../../samples/config-example/) -- manifest + templates
 - [vLLM backend guide](../guides/benchmarking/vllm-backend.md)
-- [samples/models_uk.yaml](../../samples/models_uk.yaml) -- planner registry
+- [samples/configs/models_uk.yaml](../../samples/configs/models_uk.yaml) -- planner registry

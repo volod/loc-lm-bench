@@ -40,13 +40,14 @@ must pass before you read anything, and `verify-accept` reports the per-stratum 
 rate against tolerance -- only individually-accepted items enter the accepted ledger, and only
 ledger items may become `verified=true`.
 
-## The three commands
+## The commands
 
 | Command | What it does | Needs |
 | --- | --- | --- |
-| `make verify-sample` | Draws a **stratified sample** from a draft bundle and writes a verification worksheet + a `sample_manifest.json` (size + strata). | nothing (offline; reads the bundle) |
+| `make verify-sample` | Draws a **stratified sample** from a draft bundle and writes a verification worksheet + a `sample_manifest.json` (size + strata). `VERIFY_ANNOTATORS=<k>` writes the same sample as `k` per-reviewer worksheets. | nothing (offline; reads the bundle) |
 | `make verify-review` | **Interactive verifier**: walk the sample item by item, run the four checks against the corpus, accept/reject. | nothing (offline; CSV only) |
-| `make verify-accept` | Computes the per-stratum + overall reject rate vs tolerance and emits the **accepted-ledger** bundle. | nothing (offline; CSV only) |
+| `make verify-adjudicate` | Multi-annotator only: writes the **agreement report** (Cohen's/Fleiss' kappa) and draws disagreements into `adjudication.csv`. | nothing (offline; CSV only) |
+| `make verify-accept` | Computes the reject rate vs tolerance under the chosen policy (`VERIFY_ACCEPT_POLICY=global\|per-stratum\|weighted`) and emits the **accepted-ledger** bundle. | nothing (offline; CSV only) |
 
 None of these needs a GPU or an endpoint -- the drafting and the second-frontier cross-check
 already ran. Sampling, reviewing, and accepting are pure file operations: you can verify on a
@@ -99,6 +100,7 @@ merged into the file atomically, so resume and crash-safety are free. Columns:
 | `edited_answer` | **you** (`e` command) | accept-with-edit reference answer; stored only after it re-grounds to a verbatim corpus span |
 | `human_note` | **you** (`note` command) | optional free-text note (record the reason for any `fail`) |
 | `human_status` | the reviewer | `pending` / `decided` (resume keys on an empty `decision`) |
+| `reviewer_id` | `verify-sample` | multi-annotator worksheets only: which reviewer this sheet belongs to (`r1`..`rk`, or `adjudicator`); blank on single-reviewer worksheets |
 
 The four checks (the same ones the second frontier ran -- you are confirming it did not
 *systematically* err):
@@ -306,16 +308,65 @@ Then rerun the category command with one of:
 
 ---
 
+## Case 4: multi-annotator review and adjudication
+
+When one reviewer's judgment is not enough (a high-stakes goldset, or you want measured
+inter-annotator agreement), run the same gate with several annotators:
+
+```bash
+make verify-sample     BUNDLE=<bundle> VERIFY_N=30 VERIFY_ANNOTATORS=2
+make verify-review     VERIFY_WS=<bundle>/verify_sample.r1.csv    # reviewer 1
+make verify-review     VERIFY_WS=<bundle>/verify_sample.r2.csv    # reviewer 2, independently
+make verify-adjudicate BUNDLE=<bundle>
+make verify-review     VERIFY_WS=<bundle>/adjudication.csv        # decide the disagreements
+make verify-accept     BUNDLE=<bundle> VERIFY_ACCEPT_POLICY=per-stratum
+```
+
+How it behaves:
+
+- **One sample, k sheets.** All reviewers verify the SAME stratified sample (agreement is only
+  defined over shared ratings); each sheet is stamped with its `reviewer_id`.
+- **Agreement report.** `verify-adjudicate` writes `agreement.json` beside the worksheets:
+  observed agreement, Cohen's kappa (2 reviewers) or Fleiss' kappa (3+), per-reviewer tallies,
+  and the disagreement item ids. Rough reading: kappa above ~0.6 is substantial agreement;
+  near 0 means the reviewers agree no more than chance -- recalibrate on the four checks before
+  trusting the sample.
+- **Adjudication.** Disagreements (differing decisions, or unanimous accepts whose edited
+  answers differ) land in `adjudication.csv` with human columns blank and every prior verdict
+  in a read-only `prior_decisions` column on the card. Decide independently first, then compare.
+  Re-running `verify-adjudicate` never loses adjudicator decisions already made.
+- **Consensus acceptance.** `verify-accept` (pointed at the ordinary base
+  `VERIFY_WS=<bundle>/verify_sample.csv`; the manifest routes it) scores the consensus:
+  unanimous decisions stand, adjudicated decisions override, everything else counts as
+  undecided and blocks acceptance. Only the consensus feeds the accepted ledger.
+- **Acceptance policies.** `VERIFY_ACCEPT_POLICY=global` (default) keeps the single overall
+  tolerance; `per-stratum` requires EVERY stratum within its own tolerance (override cells with
+  `VERIFY_STRATUM_TOLERANCES="frontier-drafted|final|doc.md=0.1"`); `weighted` compares a
+  confidence-weighted reject rate that penalizes rejects on rows the automated signals
+  (cross-check + retrieval rank) rated confident. Policies apply to single-reviewer worksheets
+  too.
+
+A multi-reviewer bundle's `sample_manifest.json` deliberately cannot serve as a
+`--verification-ref` (it has no single `worksheet`); use the accepted ledger after
+`verify-accept` passes.
+
+---
+
 ## In this repo
 
-- `src/llb/goldset/verify.py` -- stratification, deterministic sampling, the acceptance arithmetic,
-  worksheet I/O, and accepted-ledger emission; the `sample` / `review` / `accept` subcommands.
+- `src/llb/goldset/verify.py` -- stratification, deterministic sampling, the acceptance arithmetic
+  (global / per-stratum / confidence-weighted policies), worksheet I/O, and accepted-ledger
+  emission; the `sample` / `review` / `adjudicate` / `accept` subcommands.
+- `src/llb/goldset/verify_multi.py` -- the multi-annotator lane: per-reviewer worksheets,
+  Cohen's/Fleiss' kappa agreement report, the adjudication worksheet, and consensus resolution.
 - `src/llb/goldset/verify_session.py` -- the interactive reviewer (`run_session` + the pure
   `parse_command` / `format_card` / `first_undecided_index` pieces).
 - `src/llb/goldset/validate.py` -- the structural gate (`make validate-goldset`).
 - `src/llb/prep/verified_ledger.py` -- the adoption-by-replacement mechanism behind the flip.
-- `tests/test_goldset_verify.py` -- the strata/sampling/acceptance math, the accepted-ledger
+- `tests/llb/goldset/test_goldset_verify.py` -- the strata/sampling/acceptance math, the accepted-ledger
   round-trip through the ledger, and the scripted session loop (no model/endpoint/GPU needed).
+- `tests/llb/goldset/test_verify_adjudication.py` -- hand-computed kappa fixtures, the adjudication draw,
+  consensus resolution, and each acceptance policy.
 
 The *why* and the papers are in the
 [Eval-data verification](human-in-the-loop-evaluation.md#eval-data-verification----human-sample-acceptance-of-ai-drafted-data)

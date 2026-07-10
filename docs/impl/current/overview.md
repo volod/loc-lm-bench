@@ -135,7 +135,25 @@ src/llb/
   tracking/         canonical manifests and MLflow mirror
 ```
 
-`samples/` contains committed fixtures and seeds. It is data, not runtime output.
+`samples/` contains committed fixtures and seeds. It is data, not runtime output. Root-level
+YAML/JSON fixture files are grouped by use:
+
+| Path | Contents |
+| --- | --- |
+| `samples/configs/` | candidate model manifest and run-eval config examples |
+| `samples/benchmarks/` | category-suite case seeds and tool catalogs |
+| `samples/data-prep/` | import and synthetic RAG-item fixtures |
+| `samples/goldsets/` | verified committed gold-set bundles with corpus files |
+| `samples/verification/` | human-review sample manifests and worksheets |
+
+See `samples/README.md` for the full fixture map.
+
+`tests/` mirrors the package layout instead of holding a flat pile of modules. Tests for
+`src/llb/<package>/...` live under `tests/llb/<package>/...`; package submodules may get matching
+subdirectories such as `tests/llb/prep/ontology/`. Repository fixture checks that are not tied to
+one `llb` package live under `tests/samples/`. The root of `tests/` should stay free of
+`test_*.py` files. Pytest explicitly allows recursion into `tests/llb/build/` so it can mirror
+`src/llb/build/`.
 
 ## Artifact Roots
 
@@ -157,5 +175,8 @@ the reproducible benchmark state. Generated worksheets stay under `$DATA_DIR/llb
 
 `make test-fast` runs the lightweight suite used by CI. `make test` runs the full local flow,
 including slow tests and markdown lint. A test should be marked slow only when its cost is
-intrinsic to the behavior being checked: Optuna sweeps, real embedder/model loading, DeepEval, or
-subprocess build helpers.
+intrinsic to the behavior being checked: recursive/langchain chunking integration, multi-trial
+Optuna or fine-tune campaign simulations, optional chart rendering, real embedder/model loading,
+DeepEval, or subprocess build helpers. The lightweight suite keeps pure span math, fake-backed
+retrieval/fusion, hparam slice and guard checks, and small manifest integrations in CI; the full
+suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus regressions.

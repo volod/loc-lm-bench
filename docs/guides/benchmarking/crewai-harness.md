@@ -31,7 +31,7 @@ past 1.x, re-run the validation below -- CrewAI's custom-LLM and tool APIs chang
 
 ## 2. Validate the real crew on a host
 
-The fake-crew unit tests (`tests/test_harness.py`) cover the Episode adaptation with no dependency.
+The fake-crew unit tests (`tests/llb/bench/test_harness.py`) cover the Episode adaptation with no dependency.
 This step validates the live CrewAI integration (the LLM adapter, tool execution, ReAct parsing).
 
 Fast scripted check (no model, no GPU) -- the candidate `complete` returns CrewAI ReAct turns and the
@@ -57,7 +57,7 @@ shipped `run_real_crew` must execute the tool against the shared world and captu
 Real model over Ollama (a tool-capable instruct model), the full benchmark cell:
 
     .venv/bin/llb bench-agentic --harness crewai --backend ollama --model <tag> \
-      --tasks samples/agentic_tasks_uk.json
+      --tasks samples/benchmarks/agentic_tasks_uk.json
 
 Then produce the comparison board across harnesses for one model:
 

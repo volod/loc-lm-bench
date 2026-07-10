@@ -1,6 +1,6 @@
 """security benchmark corpus-specific security planter -- RAG-injection + canary leak cases over a REAL corpus.
 
-The committed UA seed (`samples/security_cases_uk.json`) is hand-authored and corpus-agnostic. This
+The committed UA seed (`samples/benchmarks/security_cases_uk.json`) is hand-authored and corpus-agnostic. This
 planter is the frontier drafting-style counterpart for the two CORPUS-SPECIFIC leak families: it takes real
 corpus documents and plants
 

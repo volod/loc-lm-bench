@@ -13,7 +13,7 @@ budget, and at what context". The resolver adds the two things on top of that:
        - vLLM keeps the whole model in VRAM (no layer split to CPU), so it needs `gpu`.
        - Ollama / llama.cpp split layers GPU<->CPU RAM, so `offload` is fine for them.
      That encodes the design rule "prefer vLLM when the model fits VRAM, else fall back to
-     the GGUF on Ollama/llama.cpp" (see `samples/models_uk.yaml`).
+     the GGUF on Ollama/llama.cpp" (see `samples/configs/models_uk.yaml`).
 
 A model declares its serving options either as the single `backend` + `source` it already
 carries, or as a `sources: {backend: source}` map for the same logical model across backends.

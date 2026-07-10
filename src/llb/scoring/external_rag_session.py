@@ -264,6 +264,7 @@ def run_external_rag_session(
     label: str | None = None,
     start: int | None = None,
     clear: bool = False,
+    source_map: Path | None = None,
     inputs: Iterable[str] | None = None,
     output: Callable[[str], None] | None = None,
 ) -> ExternalRagReviewResult:
@@ -335,6 +336,7 @@ def run_external_rag_session(
         source_limit=source_limit,
         strip_source_footer=strip_source_footer,
         label=label,
+        source_map_path=source_map,
     )
     _emit_final_result(result, emit)
     return ExternalRagReviewResult(reviewed, total, True, result)

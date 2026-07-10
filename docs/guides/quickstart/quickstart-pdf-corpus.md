@@ -308,7 +308,7 @@ For a sweep, use the committed candidate manifest:
 ```sh
 env DATA_DIR=.data/quickstart-pdf-corpus-leaderboard HF_HUB_OFFLINE=1 make sweep \
   SWEEP_ID=quickstart-pdf-corpus \
-  MODELS_MANIFEST=samples/models_uk.yaml \
+  MODELS_MANIFEST=samples/configs/models_uk.yaml \
   GOLDSET=$PDF_ACCEPTED/goldset.jsonl \
   SPLIT=final
 ```
@@ -317,7 +317,7 @@ env DATA_DIR=.data/quickstart-pdf-corpus-leaderboard HF_HUB_OFFLINE=1 make sweep
 
 ```sh
 env DATA_DIR=.data/quickstart-pdf-corpus-leaderboard make pipeline \
-  MODELS_MANIFEST=samples/models_uk.yaml \
+  MODELS_MANIFEST=samples/configs/models_uk.yaml \
   GOLDSET=$PDF_ACCEPTED/goldset.jsonl \
   PIPELINE_TOP_N=2 \
   PIPELINE_TRIALS=20

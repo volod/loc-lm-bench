@@ -45,7 +45,7 @@ DEFAULT_MIN_KV_HEADROOM_MB = 512
 DEFAULT_MIN_SERVING_CTX = 2048
 DEFAULT_WAIT_TIMEOUT_S = 120.0
 DEFAULT_WAIT_POLL_S = 3.0
-DEFAULT_MANIFEST = Path("samples/models_uk.yaml")
+DEFAULT_MANIFEST = Path("samples/configs/models_uk.yaml")
 
 ACTION_OK = "ok"  # requested gpu-memory-utilization already fits the free VRAM
 ACTION_DERATE = "derate"  # lowered gpu-memory-utilization to the free fraction

@@ -145,6 +145,7 @@ def _score_answer_side(
     if options.cited_answers:
         report = groundedness.citation_report(answer, ordered)
         row["citation_validity"] = round(report["citation_validity"], 4)
+        row["citation_coverage"] = round(report["citation_coverage"], 4)
         row["hallucinated_citation_rate"] = round(report["hallucinated_citation_rate"], 4)
         row["n_citations"] = report["n_citations"]
 

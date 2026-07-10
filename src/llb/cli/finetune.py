@@ -106,6 +106,18 @@ def finetune_hparams_cmd(
     ),
     out_dir: Optional[Path] = typer.Option(None, help="study output dir"),
     resume: Optional[Path] = typer.Option(None, help="resume a finetune-hparams study dir"),
+    stratify_by_base_score: Optional[Path] = typer.Option(
+        None,
+        "--stratify-by-base-score",
+        help="scored base-model run bundle (scores.jsonl); the dev slice is drawn "
+        "proportionally per base-score bucket so it holds answerable items",
+    ),
+    vram_headroom_mib: Optional[float] = typer.Option(
+        None,
+        "--vram-headroom-mib",
+        help="VRAM left beside the base model during training; a trial whose estimated "
+        "adapter footprint exceeds it is pruned BEFORE the fine-tune runs",
+    ),
 ) -> None:
     """Search the LoRA space for one model on a held-out dev slice of the tuning split."""
     from llb.finetune.hparam_search import search_hyperparameters
@@ -123,6 +135,8 @@ def finetune_hparams_cmd(
         out_dir=out_dir,
         resume=resume,
         goldset_path=goldset,
+        stratify_by_base_score=stratify_by_base_score,
+        vram_headroom_mib=vram_headroom_mib,
     )
     typer.echo(
         f"[finetune-hparams] trials={len(result.trials)}/{max_trials} "
@@ -320,6 +334,12 @@ def register_adapter_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     goldset: Optional[Path] = typer.Option(None, help="goldset the adapter was trained against"),
     corpus: Optional[Path] = typer.Option(None, "--corpus", help="corpus root used for training"),
+    index_dir: Optional[Path] = typer.Option(
+        None,
+        "--index-dir",
+        help="RAG store dir whose store_meta.json produced the training contexts "
+        "(default: the config's index dir when it holds a store)",
+    ),
     source_run: Optional[Path] = typer.Option(
         None, help="tuning run bundle that produced the data"
     ),
@@ -333,12 +353,14 @@ def register_adapter_cmd(
 
     cfg = load_config(config, goldset_path=goldset, corpus_root=corpus)
     registry = registry_path(cfg.data_dir)
+    resolved_index = index_dir if index_dir is not None else cfg.index_dir()
     try:
         entry = register_adapter(
             registry=registry,
             adapter_dir=adapter_dir,
             goldset_path=cfg.goldset_path if cfg.goldset_path.is_file() else None,
             corpus_root=cfg.corpus_root if cfg.corpus_root.is_dir() else None,
+            index_dir=resolved_index if resolved_index.is_dir() else None,
             source_run=source_run,
         )
     except ValueError as exc:

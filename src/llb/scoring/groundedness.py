@@ -7,7 +7,7 @@ answer-side signals, deterministically and dependency-free (pure token/span over
 normalized text the correctness scorer uses), so they can stand as separate columns beside the
 headline objective without a RAGAS dependency or a frontier judge.
 
-Three signals:
+Four signals:
   - groundedness fraction: the share of the answer's claims (sentence-ish units) that are supported
     by ANY retrieved chunk via token-overlap matching. A fully-supported answer scores 1.0; an
     answer whose claims are absent from the context scores near 0.0.
@@ -16,6 +16,10 @@ Three signals:
     flagged invalid.
   - hallucinated-citation rate: the share of citations whose index is out of the retrieved range
     (points at a chunk that was never in the prompt).
+  - citation coverage: the share of countable claims that carry ANY `[i]` citation. Validity
+    collapses two very different failures into one low number -- a model that emits NO citations
+    and a model that cites the WRONG chunk both score 0.0 validity; coverage separates the
+    instruction-following gap (low coverage) from the grounding gap (high coverage, low validity).
 
 The calibration-gated judge's faithfulness score remains the OPTIONAL secondary groundedness signal
 (recorded elsewhere only when the judge is trusted); this deterministic scorer is the primary one.
@@ -93,13 +97,16 @@ def groundedness_fraction(answer: str, ordered_chunks: list[ChunkRecord]) -> flo
 
 
 class CitationReport(TypedDict):
-    """Citation-validity signals for one answer."""
+    """Citation-validity + coverage signals for one answer."""
 
     n_citations: int
     n_valid: int
     n_hallucinated: int
+    n_claims: int
+    n_covered_claims: int
     citation_validity: float
     hallucinated_citation_rate: float
+    citation_coverage: float
 
 
 def citation_report(answer: str, ordered_chunks: list[ChunkRecord]) -> CitationReport:
@@ -109,15 +116,24 @@ def citation_report(answer: str, ordered_chunks: list[ChunkRecord]) -> CitationR
     the prompt) and VALID when its in-range chunk supports the claim (the sentence carrying it). An
     in-range citation whose chunk lacks the claim is neither valid nor hallucinated -- it is a
     flagged invalid citation, lowering `citation_validity` without inflating the hallucination rate.
+
+    `citation_coverage` is independent of validity: a countable claim (>= `MIN_CLAIM_TOKENS`
+    content tokens, the same rule groundedness counts by) is COVERED when it carries at least one
+    citation, right or wrong. Coverage 0.0 with validity 0.0 means the model ignored the citation
+    instruction; coverage 1.0 with low validity means it cites but points at the wrong chunks.
     """
     n = len(ordered_chunks)
     n_citations = 0
     n_valid = 0
     n_hallucinated = 0
+    n_claims = 0
+    n_covered = 0
     for claim in split_claims(answer):
         citations = parse_citations(claim)
-        if not citations:
-            continue
+        if len(_content_tokens(claim)) >= MIN_CLAIM_TOKENS:
+            n_claims += 1
+            if citations:
+                n_covered += 1
         for index in citations:
             n_citations += 1
             if index < 1 or index > n:
@@ -129,6 +145,9 @@ def citation_report(answer: str, ordered_chunks: list[ChunkRecord]) -> CitationR
         n_citations=n_citations,
         n_valid=n_valid,
         n_hallucinated=n_hallucinated,
+        n_claims=n_claims,
+        n_covered_claims=n_covered,
         citation_validity=(n_valid / n_citations) if n_citations else 0.0,
         hallucinated_citation_rate=(n_hallucinated / n_citations) if n_citations else 0.0,
+        citation_coverage=(n_covered / n_claims) if n_claims else 0.0,
     )

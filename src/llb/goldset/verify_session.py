@@ -321,6 +321,14 @@ def format_card(
         f"== id: {row.get('item_id', '')}",
         f"== meta: stratum={row.get('stratum', '')} synthetic={row.get('synthetic', '')} "
         f"retrieval_rank={rank}",
+    ]
+    reviewer = (row.get("reviewer_id") or "").strip()
+    if reviewer:
+        lines.append(f"== reviewer: {reviewer}")
+    priors = (row.get("prior_decisions") or "").strip()
+    if priors:
+        lines.append(f"== prior_decisions: {priors} -- decide independently, then compare")
+    lines += [
         "",
         f"== question: {row.get('question', '')}",
         f"== reference_answer: {row.get('reference_answer', '')}",

@@ -147,6 +147,9 @@ show_error_codes = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 cache_dir = ".data/cache/pytest"  # keep .pytest_cache out of the root (make passes -o for custom DATA_DIR)
+# Pytest's default `norecursedirs` skips directories named `build`; keep this explicit list so
+# `tests/llb/build/` can mirror `src/llb/build/` and still be collected.
+norecursedirs = [".*", "__pycache__", ".eggs", "dist", "CVS", "_darcs", "{arch}", "*.egg", "venv"]
 # DeepEval ships optional pytest integration and rerun plugins as runtime dependencies. The
 # benchmark invokes metrics explicitly, so disable those global plugins in this test suite.
 addopts = "-q -p no:deepeval -p no:rerunfailures"

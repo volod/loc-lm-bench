@@ -77,7 +77,7 @@ config assembly, judge-status assembly, and artifact persistence into named help
 
 ```bash
 make bench-security MODEL=<model> BACKEND=<backend>
-llb bench-security --cases samples/security_cases_uk.json --model <model>
+llb bench-security --cases samples/benchmarks/security_cases_uk.json --model <model>
 llb adapt-security-set --source advbench --rows-file <local-export> --out <cases.json>
 llb plant-security-cases --corpus-root <corpus> --out <cases.json>
 ```
@@ -112,9 +112,9 @@ The BFCL adapter builds the answer index, tool catalog, case instruction, and ex
 sections independently before returning the `{tools, cases}` bundle.
 
 ```bash
-llb bench-tooling --catalog samples/tooling_cases_uk.json --model <model>
+llb bench-tooling --catalog samples/benchmarks/tooling_cases_uk.json --model <model>
 llb bench-tooling --tool-protocol native --base-url <endpoint> --model <model>
-llb serve-tools-mcp --catalog samples/tooling_cases_uk.json
+llb serve-tools-mcp --catalog samples/benchmarks/tooling_cases_uk.json
 llb adapt-bfcl --functions-file <functions> --answers-file <answers> --out <bundle.json>
 ```
 
@@ -137,7 +137,7 @@ The runner separates harness resolution, episode execution, objective scoring, g
 judge attachment, and artifact persistence into named helper phases.
 
 ```bash
-llb bench-agentic --tasks samples/agentic_tasks_uk.json --harness loop --model <model>
+llb bench-agentic --tasks samples/benchmarks/agentic_tasks_uk.json --harness loop --model <model>
 llb prepare-agentic-search --corpus-root <corpus> --out <tasks.json>
 llb bench-agentic-compare --model <model>
 ```
@@ -154,7 +154,7 @@ The runner separates summary generation, coverage scoring, optional faithfulness
 assembly, and artifact persistence into named helper phases.
 
 ```bash
-llb bench-summarization --cases samples/summarization_cases_uk.json --model <model>
+llb bench-summarization --cases samples/benchmarks/summarization_cases_uk.json --model <model>
 ```
 
 Optional faithfulness uses the same gated judge side-channel as other free-form categories.
@@ -169,7 +169,7 @@ The recursive field matcher is split by object comparison, ordered arrays, unord
 scalar leaf matching so nested scoring remains inspectable.
 
 ```bash
-llb bench-structured --cases samples/structured_cases_uk.json --model <model>
+llb bench-structured --cases samples/benchmarks/structured_cases_uk.json --model <model>
 ```
 
 Non-conformant output receives zero field accuracy.

@@ -55,7 +55,7 @@ needs `HF_TOKEN` in `.env` (it is reported per-model, not fatal).
 ## 3. Run on the real backend, with telemetry
 
     make build-index                                  # if not already built
-    llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry # the
+    llb run-eval --config samples/configs/run_config_vllm_uk.yaml --telemetry # the
     real-model validation reference run
 
 or pick the model directly (cap the context so the KV cache fits -- see Gotchas):
@@ -112,7 +112,7 @@ first to confirm a model fits this host.
 The launcher, telemetry, and build helper are built + unit-tested with fakes and now
 **validated on a real model** (real-model validation above). The from-source build path
 still runs only on a CUDA host. The real-model validation fit correction is already fed
-back into `samples/models_uk.yaml`: w4a16 weights are under-estimated by `list-models`
+back into `samples/configs/models_uk.yaml`: w4a16 weights are under-estimated by `list-models`
 (`params_b x bpw` ignores the high-precision large-vocab embedding -- measured 9.8 GiB
 vs predicted ~4.2 GiB). An embedding-aware estimate is forward work
 (plan.md robust backend prep).

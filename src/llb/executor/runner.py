@@ -473,7 +473,12 @@ def _aggregate(
 
 def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
     """Mean per-case groundedness / citation signals (groundedness-citation-metrics), when present."""
-    for key in ("groundedness", "citation_validity", "hallucinated_citation_rate"):
+    for key in (
+        "groundedness",
+        "citation_validity",
+        "citation_coverage",
+        "hallucinated_citation_rate",
+    ):
         values = [float(row[key]) for row in case_rows if key in row]
         if values:
             metrics[key] = round(sum(values) / len(values), 4)

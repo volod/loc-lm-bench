@@ -10,7 +10,7 @@ The host GPU is detected first; oversized models are skipped (vLLM) or flagged
 (Ollama, which can offload to CPU). The plan/decision logic is pure and unit-testable;
 the side-effecting `ollama_pull` / `hf_cache` are injectable.
 
-Manifest entry (YAML, see `samples/models_uk.yaml`):
+Manifest entry (YAML, see `samples/configs/models_uk.yaml`):
   - name: <label>
     backend: ollama | vllm
     source: <ollama-tag> | <hf-repo-id>

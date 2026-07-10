@@ -1,6 +1,6 @@
 """agentic benchmark real-UA-corpus agentic search tasks -- generated, deterministic, no human authoring.
 
-The committed agentic seed (`samples/agentic_tasks_uk.json`) is small and hand-authored. This module
+The committed agentic seed (`samples/benchmarks/agentic_tasks_uk.json`) is small and hand-authored. This module
 GROWS the task set from a REAL corpus (the category expansion text-analysis corpus is the natural source): it plants
 search tasks whose success assertion is computed PURELY from the corpus, so the answer is objective
 and needs no human gold authoring to BUILD (the human verification gate sample-verify still gates headline use):

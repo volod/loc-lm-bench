@@ -1,0 +1,48 @@
+# loc-lm-bench run config -- Milestone 2 (one real backend: vLLM serving HF weights).
+# Pass with `llb run-eval --config samples/configs/run_config_vllm_uk.yaml --telemetry`.
+# This is the M2.4 reference config, validated on an RTX 4060 Ti 16 GB (vLLM 0.23.0).
+# Any field left out falls back to llb.config.RunConfig defaults; CLI flags override fields.
+
+run_name: m2-vllm-e4b
+seed: 13
+
+# Model + backend. The HF weights are cached once by `make prep-models PREP_BACKEND=vllm`.
+model: google/gemma-4-E4B-it-qat-w4a16-ct
+backend: vllm
+max_tokens: 256
+temperature: 0.0        # greedy decoding -- reproducible scoring, and no need for the
+                        # flashinfer sampler (the launcher defaults it off; see the vLLM guide)
+n_shot: 0
+
+# vLLM serving knobs. max_model_len caps the KV cache so it fits 16 GB -- the model's native
+# window is 131072, which would over-reserve the KV cache and fail engine startup.
+gpu_memory_utilization: 0.80
+max_model_len: 8192
+
+# Retrieval. The embedding is PINNED and validated separately (Premise 4).
+embedding_model: intfloat/multilingual-e5-base
+strategy: recursive
+chunk_size: 800
+chunk_overlap: 120
+top_k: 5
+retrieval_mode: flat
+
+# Gated LLM judge (Premise 2 / OQ2). A LOCAL Gemma-4 judge: no corpus egress + reproducible,
+# but NOT independent of the candidate pool -- it shares lineage with the Gemma-4 / MamayLM /
+# Lapa candidates and may self-prefer Gemma-family answers (bias documented in current.md). It
+# only enters ranking once calibration rho >= judge_threshold; below it, objective score ranks
+# alone. The id must match the model exposed by a local OpenAI-compatible endpoint:
+#   12 GB: ollama_chat/gemma-4-e4b-it          (GGUF/CPU offload; the 12B won't fit)
+#   32 GB: hosted_vllm/google/gemma-4-12B-it   (bf16, higher fidelity)
+# On 16 GB the 12B judge normally cannot co-reside with a vLLM candidate; use Ollama GGUF/CPU
+# offload or serve the judge on another local host.
+judge_model: hosted_vllm/google/gemma-4-12B-it-qat-w4a16-ct
+judge_base_url: http://localhost:8000/v1
+judge_threshold: 0.6
+
+# Steady-state throughput + peak-VRAM telemetry (also enable with `run-eval --telemetry`).
+measure_telemetry: true
+
+# Stable committed public development fixture. Replace both paths for private evaluation.
+corpus_root: samples/goldsets/ua_squad_postedited_v1/corpus
+goldset_path: samples/goldsets/ua_squad_postedited_v1/goldset.jsonl

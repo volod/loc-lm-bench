@@ -192,7 +192,7 @@ reusable template, the shape is always:
 
    ```
    make test                                            # full suite, or:
-   .venv/bin/python -m pytest tests/test_text_analysis.py -q
+   .venv/bin/python -m pytest tests/llb/scoring/test_text_analysis.py -q
    ```
 
 2. **Confirm or adjust the decisions that are genuinely yours.** For the text-analysis schema those
@@ -304,6 +304,13 @@ question-answering gold set, every evaluation category, and the graph ontology d
    Canonical-item *replacement* (not a boolean-only flip) is what prevents a reused ID from
    certifying changed content. See the
    [gold-set-from-scratch guide](../data-prep/goldset-from-scratch.md) for the ledger mechanics.
+
+Need more than one reviewer? `VERIFY_ANNOTATORS=<k>` on step 3 writes the same sample as `k`
+per-reviewer worksheets; after everyone reviews independently, `make verify-adjudicate` reports
+inter-annotator agreement (Cohen's/Fleiss' kappa) and routes disagreements to an adjudication
+worksheet, and `verify-accept` scores the consensus under a configurable policy
+(`VERIFY_ACCEPT_POLICY=global|per-stratum|weighted`). Walkthrough:
+[verification-tooling, Case 4](verification-tooling.md#case-4-multi-annotator-review-and-adjudication).
 
 ### Done when
 A documented stratified sample passes the four checks and the accepted items are flipped to

@@ -6,7 +6,7 @@ offsets from the exact text, build schema-validated GoldItems, write JSONL, and 
 against the on-disk corpus.
 
 Run via `scripts/gen_rag_items.sh` or `make gen-rag-items`, or directly:
-    python -m llb.prep.gen_rag_items --spec samples/rag_items_uk.json --out-dir .data/llb
+    python -m llb.prep.gen_rag_items --spec samples/data-prep/rag_items_uk.json --out-dir .data/llb
 """
 
 import argparse
