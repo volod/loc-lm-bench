@@ -164,7 +164,7 @@ def scripted(outputs):
 
 
 def test_run_tooling_perfect_model_persists(tmp_path):
-    catalog, cases = bench_tool.load_catalog_file("samples/tooling_cases_uk.json")
+    catalog, cases = bench_tool.load_catalog_file("samples/benchmarks/tooling_cases_uk.json")
     outputs = [
         '{"name":"get_weather","arguments":{"city":"Київ"}}',
         '{"name":"get_weather","arguments":{"city":"Львів","date":"завтра"}}',
@@ -197,7 +197,7 @@ def test_run_tooling_perfect_model_persists(tmp_path):
 
 
 def test_run_tooling_text_only_model_scores_low():
-    catalog, cases = bench_tool.load_catalog_file("samples/tooling_cases_uk.json")
+    catalog, cases = bench_tool.load_catalog_file("samples/benchmarks/tooling_cases_uk.json")
     # always answers in prose, never calls -> only the no-tool cases score
     run = bench_tool.run_tooling(
         catalog, cases, model="m", backend="ollama", complete=lambda _: "Звичайно!", persist=False
@@ -207,7 +207,7 @@ def test_run_tooling_text_only_model_scores_low():
 
 
 def test_load_catalog_file_shape():
-    catalog, cases = bench_tool.load_catalog_file("samples/tooling_cases_uk.json")
+    catalog, cases = bench_tool.load_catalog_file("samples/benchmarks/tooling_cases_uk.json")
     assert "get_weather" in catalog and len(cases) == 12
     assert any(c.expected_tool is None for c in cases)  # no-tool cases present
     assert any(c.arg_match for c in cases)  # per-argument tolerance cases present

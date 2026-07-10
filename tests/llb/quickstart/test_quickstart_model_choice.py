@@ -13,7 +13,7 @@ import pytest
 
 from llb.board.recommend import HostInfo, build_recommendation, recommendation_payload
 from llb.quickstart import model_choice
-from tests.test_recommend import COHORT, MAMAYLM_V2_12B, MAMAYLM_V2_27B, _summary
+from tests.llb.board.test_recommend import COHORT, MAMAYLM_V2_12B, MAMAYLM_V2_27B, _summary
 
 
 @pytest.fixture

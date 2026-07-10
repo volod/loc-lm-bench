@@ -109,7 +109,7 @@ vLLM w4a16 (`RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16`, ~14 
 tiers. The curated Ollama tag is deliberate: the lmstudio/bartowski HF GGUF mirrors of this
 checkpoint crash the Ollama 0.20 llama.cpp runner on load (exit status 2), while the curated tag is
 tested against the runtime and serves the text path (we score text only). The planner registry
-entry (`mistral-small-3.1-24b` in `samples/models_uk.yaml`) lists BOTH vLLM quants under
+entry (`mistral-small-3.1-24b` in `samples/configs/models_uk.yaml`) lists BOTH vLLM quants under
 `sources.vllm` (fp8 + w4a16); the resolver is embedding-aware (prices the untied 131k-token
 embedding at bf16, so w4a16 lands at ~14.4 GiB and fp8 at ~23.6 GiB, not the flat
 `params_b x bpw`) and picks the highest-quality quant whose serving window fits the GPU -- fp8 on

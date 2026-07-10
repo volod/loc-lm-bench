@@ -1,7 +1,5 @@
 """Chunk page/section provenance join (chunk-page-metadata, task 18)."""
 
-from pathlib import Path
-
 import pytest
 
 from llb.rag.chunking import STRATEGIES, chunk_corpus, chunk_text
@@ -12,8 +10,9 @@ from llb.rag.page_metadata import (
     load_page_citations,
 )
 from llb.rag.store import _build_children
+from llb.core.paths import PROJECT_ROOT
 
-FIXTURE = Path(__file__).resolve().parents[1] / "samples" / "pdf_pages"
+FIXTURE = PROJECT_ROOT / "samples" / "pdf_pages"
 PDF_DOC = "pdf-37e9918f8c51.md"
 PLAIN_DOC = "plain_note.md"
 

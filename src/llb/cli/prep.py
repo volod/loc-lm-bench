@@ -314,7 +314,7 @@ def adapt_security_set_cmd(
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of adapted cases"),
     merge_seed: bool = typer.Option(
-        False, help="prepend the committed UA seed (samples/security_cases_uk.json)"
+        False, help="prepend the committed UA seed (samples/benchmarks/security_cases_uk.json)"
     ),
 ) -> None:
     """security benchmark: adapt a public adversarial set (UA-framed) into SecurityCase records for bench-security."""
@@ -334,7 +334,7 @@ def adapt_security_set_cmd(
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     if merge_seed:
-        seed_path = Path("samples/security_cases_uk.json")
+        seed_path = Path("samples/benchmarks/security_cases_uk.json")
         seed = _json.loads(seed_path.read_text(encoding="utf-8"))
         cases = list(seed) + cases
     out.write_text(_json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -354,7 +354,7 @@ def plant_security_cases_cmd(
     ),
     limit: Optional[int] = typer.Option(None, help="cap the number of source documents"),
     merge_seed: bool = typer.Option(
-        False, help="prepend the committed UA seed (samples/security_cases_uk.json)"
+        False, help="prepend the committed UA seed (samples/benchmarks/security_cases_uk.json)"
     ),
 ) -> None:
     """security benchmark: plant corpus-specific RAG-injection + canary leak cases over a real corpus."""
@@ -373,7 +373,9 @@ def plant_security_cases_cmd(
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     if merge_seed:
-        seed = _json.loads(Path("samples/security_cases_uk.json").read_text(encoding="utf-8"))
+        seed = _json.loads(
+            Path("samples/benchmarks/security_cases_uk.json").read_text(encoding="utf-8")
+        )
         cases = list(seed) + cases
     out.write_text(_json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(
@@ -391,7 +393,7 @@ def prepare_agentic_search_cmd(
     top_k: int = typer.Option(8, min=1, help="max query terms per task kind (count + locate)"),
     limit: Optional[int] = typer.Option(None, help="cap the number of source documents"),
     merge_seed: bool = typer.Option(
-        False, help="prepend the committed UA seed (samples/agentic_tasks_uk.json)"
+        False, help="prepend the committed UA seed (samples/benchmarks/agentic_tasks_uk.json)"
     ),
 ) -> None:
     """agentic benchmark: build deterministic real-corpus agentic SEARCH tasks (count + locate) from a corpus."""
@@ -405,7 +407,9 @@ def prepare_agentic_search_cmd(
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
     if merge_seed:
-        seed = _json.loads(Path("samples/agentic_tasks_uk.json").read_text(encoding="utf-8"))
+        seed = _json.loads(
+            Path("samples/benchmarks/agentic_tasks_uk.json").read_text(encoding="utf-8")
+        )
         tasks = list(seed) + tasks
     out.write_text(_json.dumps(tasks, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(

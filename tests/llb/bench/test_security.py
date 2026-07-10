@@ -230,7 +230,7 @@ def test_from_record_reads_lang_and_group_from_top_level_or_attrs():
 
 
 def test_committed_seed_has_matched_cross_language_groups():
-    cases = bench_sec.load_cases_file("samples/security_cases_uk.json")
+    cases = bench_sec.load_cases_file("samples/benchmarks/security_cases_uk.json")
     groups: dict[str, set[str]] = {}
     for c in cases:
         if c.xlang_group:
@@ -302,7 +302,7 @@ def test_run_security_persists_cross_language_block(tmp_path):
 
 
 def test_committed_security_cases_load_and_cover_all_families():
-    cases = bench_sec.load_cases_file("samples/security_cases_uk.json")
+    cases = bench_sec.load_cases_file("samples/benchmarks/security_cases_uk.json")
     families = {c.family for c in cases if not c.benign}
     assert families == security.ALL_FAMILIES  # every spec family represented
     assert any(c.benign for c in cases)  # benign controls present for over-refusal

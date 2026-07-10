@@ -151,7 +151,7 @@ def test_run_agentic_completion_rate_and_persist(tmp_path):
 
 
 def test_run_agentic_failing_model():
-    tasks = agentic.load_tasks_file("samples/agentic_tasks_uk.json")
+    tasks = agentic.load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
     run = agentic.run_agentic(
         tasks,
         model="m",
@@ -163,7 +163,7 @@ def test_run_agentic_failing_model():
 
 
 def test_load_tasks_file_and_from_record_coerces_success():
-    tasks = agentic.load_tasks_file("samples/agentic_tasks_uk.json")
+    tasks = agentic.load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
     assert len(tasks) == 4 and all(t.success for t in tasks)
     one = agentic.AgenticTask.from_record(
         {"id": "x", "prompt": "p", "success": {"kind": "answer_contains", "value": "y"}}

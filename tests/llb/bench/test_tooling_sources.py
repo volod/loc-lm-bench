@@ -59,7 +59,7 @@ def test_arguments_match_default_exact_unchanged():
 
 
 def test_committed_cases_exercise_tolerance():
-    _catalog, cases = bench_tooling.load_catalog_file("samples/tooling_cases_uk.json")
+    _catalog, cases = bench_tooling.load_catalog_file("samples/benchmarks/tooling_cases_uk.json")
     by_id = {c.id: c for c in cases}
     assert by_id["tc-009"].arg_match["query"]["mode"] == "contains"
     assert by_id["tc-011"].arg_match["city"]["mode"] == "oneof"

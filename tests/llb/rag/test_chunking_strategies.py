@@ -17,8 +17,9 @@ from llb.rag.late_encoding import (
     pool_span_vectors,
     window_char_spans,
 )
+from llb.core.paths import PROJECT_ROOT
 
-FIXTURE = Path(__file__).resolve().parents[1] / "samples" / "pdf_pages"
+FIXTURE = PROJECT_ROOT / "samples" / "pdf_pages"
 PDF_DOC = "pdf-37e9918f8c51.md"
 PLAIN_DOC = "plain_note.md"
 # Hand-read from the committed sidecar: page 1 spans chars [30, 288), page 2 [288, 531).

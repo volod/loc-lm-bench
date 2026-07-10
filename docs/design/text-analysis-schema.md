@@ -9,7 +9,7 @@ This is proposal text analysis; a human sign-off (human decision, item text-anal
 - Executable form: [`src/llb/scoring/text_analysis.py`](../../src/llb/scoring/text_analysis.py)
   (taxonomy, planted-label model, matching engine) + the `PlantedLabelRecord` / `SubtaskScore`
   contracts in [`src/llb/contracts.py`](../../src/llb/contracts.py).
-- Tests: [`tests/test_text_analysis.py`](../../tests/test_text_analysis.py).
+- Tests: [`tests/llb/scoring/test_text_analysis.py`](../../tests/llb/scoring/test_text_analysis.py).
 - Spec basis: `docs/design/spec.md` Appendix D ("Text Analysis"), the
   `prepare-synthetic-corpus` planter constraints, and the open question flagged in the
   2026-06-19 eng-review ("Text-analysis scoring SCHEMA ... is an explicit open question to
@@ -159,12 +159,12 @@ Planted `topic` labels `T1="економіка"`, `T2="енергетика"`; c
 This is the human gate. Nothing about it requires running a GPU.
 
 1. **Read** this document plus `src/llb/scoring/text_analysis.py` (the engine is short and the
-   tests in `tests/test_text_analysis.py` show the exact credit behavior). Run the tests if you
-   want to see the numbers move:
+   tests in `tests/llb/scoring/test_text_analysis.py` show the exact credit behavior). Run the
+   tests if you want to see the numbers move:
 
    ```
    make test                                  # full suite, or:
-   .venv/bin/python -m pytest tests/test_text_analysis.py -q
+   .venv/bin/python -m pytest tests/llb/scoring/test_text_analysis.py -q
    ```
 
 2. **Confirm or adjust the four decisions** that are genuinely yours to make:

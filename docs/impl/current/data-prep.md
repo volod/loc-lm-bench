@@ -115,9 +115,9 @@ against the FULL original corpus doc:
   `needle_retrieval` summary. Without an index the lane is an exact no-op.
 
 Committed fixture + unit coverage (no network): `samples/external-drafts/claude-projects-open/`
-(one open-data artifact + sidecar), `tests/test_external_draft.py` (including the needle-rank
+(one open-data artifact + sidecar), `tests/llb/prep/test_external_draft.py` (including the needle-rank
 annotation over an injected fake retriever), and the grounded cases in
-`tests/test_curate_drafts.py`.
+`tests/llb/prep/test_curate_drafts.py`.
 
 ```bash
 llb curate-drafts <svc-a>.jsonl <svc-b>.jsonl --kind grounded \
@@ -159,7 +159,7 @@ union). Kinds: `squad` (Artifact A -> `make ingest-squad`), `grounded` (Artifact
 - id collision rewrite across services and a `*.curation_report.json` sidecar with per-source,
   per-reason counts.
 
-Unit coverage: `tests/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
+Unit coverage: `tests/llb/prep/test_curate_drafts.py` (fake hashed-BoW embedder; no model downloads).
 
 `make external-squad-rag` is the single-command prompt-02 SQuAD path for a directory or explicit
 list of external exports. It accepts `SQUAD_DRAFT_INPUT_DIR=<exports-dir>` or
@@ -481,7 +481,7 @@ with the measured human review-pass evidence recorded at the end of this section
   `rejection_reasons.json` beside the accepted ledger, and the drafting pipeline reads it back
   (draft-feedback-rejection-reasons, below) to tighten its prompts on a re-draft.
 
-All of it is unit-tested with injected input/output/clock in `tests/test_goldset_verify.py`
+All of it is unit-tested with injected input/output/clock in `tests/llb/goldset/test_goldset_verify.py`
 (golden-path session tests included); the worksheet CSV stays backward compatible -- the new
 columns are optional and appended on load for older worksheets.
 
@@ -512,7 +512,7 @@ when `n` cannot cover them all) plus a deterministic largest-remainder top-up, e
 capped at its own size -- so `verify-sample VERIFY_N=<n>` draws exactly `min(n, population)`
 rows at every seed while staying seeded-reproducible. The sibling `sample_manifest.json`
 records the final per-stratum allocation as before. Unit-tested against the undershooting
-7/7/6-strata fixture in `tests/test_goldset_verify.py`.
+7/7/6-strata fixture in `tests/llb/goldset/test_goldset_verify.py`.
 
 ### Rejection feedback into re-drafting
 
@@ -531,14 +531,15 @@ non-circularity instruction). The combined hint block is appended to the ontolog
 line of every draft prompt; an empty summary is a no-op. `provenance.json` gains an
 `applied_feedback` block (source path, sha256 digest, applied hint codes + counts), the setting
 is pinned in the journal meta so `--resume` replays it, and
-`settings.rejection_feedback` names the file. Unit tests: `tests/test_draft_feedback.py` (per-code
-mapping, dominant ordering, no-op summary, prompt + provenance round-trip over a fake endpoint).
+`settings.rejection_feedback` names the file. Unit tests:
+`tests/llb/prep/ontology/test_draft_feedback.py` (per-code mapping, dominant ordering, no-op
+summary, prompt + provenance round-trip over a fake endpoint).
 
 ### Multi-annotator gate and adjudication
 
 The verification gate supports more than one annotator plus configurable acceptance arithmetic
 (`src/llb/goldset/verify_multi.py` + policy extensions in `verify.py`; tests in
-`tests/test_verify_adjudication.py`):
+`tests/llb/goldset/test_verify_adjudication.py`):
 
 ```bash
 make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_ANNOTATORS=<k>

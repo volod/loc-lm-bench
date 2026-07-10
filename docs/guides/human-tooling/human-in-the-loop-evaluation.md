@@ -192,7 +192,7 @@ reusable template, the shape is always:
 
    ```
    make test                                            # full suite, or:
-   .venv/bin/python -m pytest tests/test_text_analysis.py -q
+   .venv/bin/python -m pytest tests/llb/scoring/test_text_analysis.py -q
    ```
 
 2. **Confirm or adjust the decisions that are genuinely yours.** For the text-analysis schema those

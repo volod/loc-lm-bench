@@ -122,7 +122,7 @@ missing or non-open sidecar aborts before any bundle is written. Merge multi-ser
 
 Import/run: `make bench-security SECURITY_CASES=<cases.json> SECURITY_MODEL=<m>
 SECURITY_BACKEND=<b>`. Schema: `src/llb/scoring/security.py` (`SecurityCase.from_record`);
-committed example: `samples/security_cases_uk.json`.
+committed example: `samples/benchmarks/security_cases_uk.json`.
 
 ```json
 [

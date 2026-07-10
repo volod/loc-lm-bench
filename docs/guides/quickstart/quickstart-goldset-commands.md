@@ -39,7 +39,7 @@ make build-index
 make validate-retrieval
 
 # Purpose: resolve and prepare candidate model families for this host.
-# Default input: samples/models_uk.yaml.
+# Default input: samples/configs/models_uk.yaml.
 # Output/result: host fit table and pulled/cached runnable candidates. prep-models reuses any
 # artifact already in its backend store and refuses a download up front when the cache filesystem
 # lacks room for it (no failing an hour into a multi-GiB pull); --dry-run previews the disk plan.
@@ -47,7 +47,7 @@ make list-models
 make prep-models
 
 # Purpose: run one isolated evaluation cell per runnable candidate model and backend.
-# Default input: samples/models_uk.yaml, GOLDSET=committed fixture, SPLIT=final.
+# Default input: samples/configs/models_uk.yaml, GOLDSET=committed fixture, SPLIT=final.
 # Output/result: run bundles in $DATA_DIR/run-eval/ plus resume markers in
 # $DATA_DIR/sweep/qs-committed/cells/; qs-committed is only the user-chosen sweep name.
 make sweep SWEEP_ID=qs-committed
@@ -66,7 +66,7 @@ make platform-matrix
 make recommend RECOMMEND_MIN_CASES=50
 
 # Purpose: run security tests as a separate benchmark tier; do not mix ASR with RAG quality.
-# Default input: samples/security_cases_uk.json, SECURITY_MODEL=MamayLM 27B GGUF,
+# Default input: samples/benchmarks/security_cases_uk.json, SECURITY_MODEL=MamayLM 27B GGUF,
 # SECURITY_BACKEND=ollama.
 # Output/result: ASR, defense rate, refusal-appropriateness, per-family ASR, and security bundle.
 make bench-security

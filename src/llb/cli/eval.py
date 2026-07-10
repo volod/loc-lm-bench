@@ -595,7 +595,7 @@ def screen_public_cmd(
 @app.command("pipeline")
 def pipeline_cmd(
     manifest: Path = typer.Option(
-        Path("samples/models_uk.yaml"), help="candidate-models YAML manifest"
+        Path("samples/configs/models_uk.yaml"), help="candidate-models YAML manifest"
     ),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL for the Tier-2 tuning"),
     top_n: int = typer.Option(2, min=1, help="finalists to keep per screen track"),

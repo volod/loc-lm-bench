@@ -82,7 +82,7 @@ def bench_text_analysis_cmd(
 @app.command("bench-security")
 def bench_security_cmd(
     cases: Path = typer.Option(
-        Path("samples/security_cases_uk.json"), help="security-case set (JSON array)"
+        Path("samples/benchmarks/security_cases_uk.json"), help="security-case set (JSON array)"
     ),
     model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
     backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
@@ -150,7 +150,7 @@ def bench_security_cmd(
 @app.command("bench-tooling")
 def bench_tooling_cmd(
     catalog: Path = typer.Option(
-        Path("samples/tooling_cases_uk.json"), help="tooling bundle (tools + cases JSON)"
+        Path("samples/benchmarks/tooling_cases_uk.json"), help="tooling bundle (tools + cases JSON)"
     ),
     model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
     backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
@@ -236,7 +236,7 @@ def bench_tooling_cmd(
 @app.command("bench-agentic")
 def bench_agentic_cmd(
     tasks: Path = typer.Option(
-        Path("samples/agentic_tasks_uk.json"), help="agentic task set (JSON array)"
+        Path("samples/benchmarks/agentic_tasks_uk.json"), help="agentic task set (JSON array)"
     ),
     model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
     backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
@@ -351,7 +351,8 @@ def bench_agentic_compare_cmd(
 @app.command("bench-summarization")
 def bench_summarization_cmd(
     cases: Path = typer.Option(
-        Path("samples/summarization_cases_uk.json"), help="summarization cases (JSON array)"
+        Path("samples/benchmarks/summarization_cases_uk.json"),
+        help="summarization cases (JSON array)",
     ),
     model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
     backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
@@ -414,7 +415,8 @@ def bench_summarization_cmd(
 @app.command("bench-structured")
 def bench_structured_cmd(
     cases: Path = typer.Option(
-        Path("samples/structured_cases_uk.json"), help="structured-output cases (JSON array)"
+        Path("samples/benchmarks/structured_cases_uk.json"),
+        help="structured-output cases (JSON array)",
     ),
     model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
     backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
@@ -491,7 +493,7 @@ def bench_composite_cmd(
 @app.command("serve-tools-mcp")
 def serve_tools_mcp_cmd(
     catalog: Path = typer.Option(
-        Path("samples/tooling_cases_uk.json"), help="tooling bundle (tools + cases JSON)"
+        Path("samples/benchmarks/tooling_cases_uk.json"), help="tooling bundle (tools + cases JSON)"
     ),
     name: str = typer.Option("loc-lm-bench-tools", help="MCP server name"),
 ) -> None:

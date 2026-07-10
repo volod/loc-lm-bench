@@ -1,6 +1,5 @@
 import hashlib
 import json
-from pathlib import Path
 
 import pytest
 
@@ -9,9 +8,9 @@ from llb.goldset.validate import validate_items
 from llb.prep.published_goldset import SOURCE_SHA256, build_fixture, select_context_diverse
 from llb.prep.ua_squad_source import DATASET_ID, DATASET_REVISION, DATASET_SPLIT
 from llb.rag.chunking import chunk_corpus
+from llb.core.paths import PROJECT_ROOT
 
-REPO = Path(__file__).resolve().parents[1]
-FIXTURE_ROOT = REPO / "samples" / "goldsets" / "ua_squad_postedited_v1"
+FIXTURE_ROOT = PROJECT_ROOT / "samples" / "goldsets" / "ua_squad_postedited_v1"
 
 
 def test_committed_published_fixture_is_canonical_and_verified():

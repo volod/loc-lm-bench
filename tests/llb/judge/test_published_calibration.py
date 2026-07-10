@@ -6,12 +6,10 @@ and this test re-derives rho from it on every run -- no model, endpoint, or GPU 
 edits the worksheet and the calibration stops clearing the gate, CI fails here.
 """
 
-from pathlib import Path
-
+from llb.core.paths import PROJECT_ROOT
 from llb.judge.calibration import DEFAULT_THRESHOLD, _load_ratings, calibrate
 
-REPO = Path(__file__).resolve().parents[1]
-WORKSHEET = REPO / "calibration" / "ua_squad_postedited_v1.csv"
+WORKSHEET = PROJECT_ROOT / "calibration" / "ua_squad_postedited_v1.csv"
 
 
 def test_committed_calibration_clears_the_gate():

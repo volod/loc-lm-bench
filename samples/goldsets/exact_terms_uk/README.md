@@ -4,7 +4,7 @@ A committed micro-goldset for the hybrid-retrieval regression (hybrid-retrieval-
 Ukrainian orders registry of 40 near-identical entries that differ ONLY in exact terms --
 order numbers, DSTU standard codes, surnames, and funding amounts. Dense-only cosine
 retrieval confuses the near-duplicate paragraphs, while lexical BM25 pins the exact number
-or code, so hybrid fusion must retrieve strictly better here (`tests/test_hybrid_store.py`
+or code, so hybrid fusion must retrieve strictly better here (`tests/llb/rag/test_hybrid_store.py`
 asserts it with a deterministic fake dense index; the real-embedder evidence lives in
 `docs/impl/current/rag-core.md`).
 

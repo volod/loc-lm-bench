@@ -1,5 +1,5 @@
 # loc-lm-bench run config -- Milestone 1 (compile-free skeleton: prebuilt Ollama, no source build).
-# Pass with `llb run-eval --config samples/run_config_uk.yaml`. Any field left out falls
+# Pass with `llb run-eval --config samples/configs/run_config_uk.yaml`. Any field left out falls
 # back to the defaults in llb.config.RunConfig; CLI flags override individual fields.
 
 run_name: m1-uk-skeleton

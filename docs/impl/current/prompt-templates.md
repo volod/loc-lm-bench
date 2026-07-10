@@ -31,8 +31,8 @@ Regenerate the registry after adding or editing prompt descriptors:
 uv run --no-sync python -m llb.prompts.registry
 ```
 
-`tests/test_prompts.py` compares the checked-in registry with a fresh scan, so stale hashes or
-missing descriptors fail locally.
+`tests/llb/prompts/test_prompts.py` compares the checked-in registry with a fresh scan, so stale
+hashes or missing descriptors fail locally.
 
 ## Current Coverage
 

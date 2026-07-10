@@ -515,8 +515,8 @@ learning path is done.
 - - **2. Orchestration** (Long-document + multi-hop section; HotpotQA + Lost-in-the-Middle): Read
 - `eval/{map_reduce,multi_hop}.py`; run their tests; trace one multi-hop controller decision.
 - - **3. Text-analysis scoring** (The [scoring schema](../../design/text-analysis-schema.md) + worked
-- example): Run `pytest tests/test_text_analysis.py -q`; change the full-credit threshold and watch
-- credit move.
+- example): Run `pytest tests/llb/scoring/test_text_analysis.py -q`; change the full-credit
+- threshold and watch credit move.
 - - **4. Security** (The [security learning path](learning-path-security.md), sessions 1-3): Sketch
 - one RAG-injection case with a planted canary + a benign control + an objective detector.
 - - **5. Tool use** (Tool-use section; OpenAI function calling + Gorilla/BFCL + MCP): Define one

@@ -11,9 +11,9 @@ raising it (`typer.Exit` IS `click.exceptions.Exit`), so `run_typer` reads the r
 re-raises it as `SystemExit`. Without that, every `raise typer.Exit(code=N)` in `src/llb/cli/`
 exited 0 and a failing command looked successful to `make` and CI.
 
-`--help` returns 0 through the same path and stays exit 0. `tests/test_runtime.py` pins both with a
-`_ReturningApp` fake that models click's real non-standalone contract; the older `_FakeApp` (which
-raises `Exit`) cannot express it.
+`--help` returns 0 through the same path and stays exit 0.
+`tests/llb/core/test_runtime.py` pins both with a `_ReturningApp` fake that models click's real
+non-standalone contract; the older `_FakeApp` (which raises `Exit`) cannot express it.
 
 ## Memory Planner
 

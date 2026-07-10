@@ -64,7 +64,7 @@ def test_run_summarization_empty_output_is_unreliable():
 
 
 def test_load_committed_summarization_cases():
-    cases = bench_sm.load_cases_file("samples/summarization_cases_uk.json")
+    cases = bench_sm.load_cases_file("samples/benchmarks/summarization_cases_uk.json")
     assert len(cases) == 3 and all(c.reference for c in cases)
 
 

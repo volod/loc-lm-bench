@@ -262,5 +262,5 @@ items). Promote a calibration subset to verified first, exactly as for any score
   `rate` subcommands.
 - `src/llb/judge/rate.py` -- the interactive rater (`run_session` + the pure
   `parse_command` / `format_card` / `first_unrated_index` pieces).
-- `tests/test_calibration.py`, `tests/test_rate.py` -- the stats, the worksheet round-trip +
-  merge, and the scripted session loop (no model/endpoint/GPU needed).
+- `tests/llb/judge/test_calibration.py`, `tests/llb/judge/test_rate.py` -- the stats, the
+  worksheet round-trip + merge, and the scripted session loop (no model/endpoint/GPU needed).

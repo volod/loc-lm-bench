@@ -6,7 +6,6 @@ committed `samples/external-drafts` fixture so it stays valid.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -255,9 +254,10 @@ def test_drop_flag_requires_an_index(tmp_path, corpus):
 
 
 def test_committed_fixture_imports(tmp_path):
-    repo = Path(__file__).resolve().parents[1]
-    fixture = repo / "samples" / "external-drafts" / "claude-projects-open"
-    corpus = repo / "samples" / "goldsets" / "ip_regulation_uk" / "corpus"
+    from llb.core.paths import PROJECT_ROOT
+
+    fixture = PROJECT_ROOT / "samples" / "external-drafts" / "claude-projects-open"
+    corpus = PROJECT_ROOT / "samples" / "goldsets" / "ip_regulation_uk" / "corpus"
     out = tmp_path / "bundle"
     result = import_external_draft(
         fixture / "grounded_draft.jsonl",

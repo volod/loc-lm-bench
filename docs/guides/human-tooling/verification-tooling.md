@@ -363,9 +363,9 @@ A multi-reviewer bundle's `sample_manifest.json` deliberately cannot serve as a
   `parse_command` / `format_card` / `first_undecided_index` pieces).
 - `src/llb/goldset/validate.py` -- the structural gate (`make validate-goldset`).
 - `src/llb/prep/verified_ledger.py` -- the adoption-by-replacement mechanism behind the flip.
-- `tests/test_goldset_verify.py` -- the strata/sampling/acceptance math, the accepted-ledger
+- `tests/llb/goldset/test_goldset_verify.py` -- the strata/sampling/acceptance math, the accepted-ledger
   round-trip through the ledger, and the scripted session loop (no model/endpoint/GPU needed).
-- `tests/test_verify_adjudication.py` -- hand-computed kappa fixtures, the adjudication draw,
+- `tests/llb/goldset/test_verify_adjudication.py` -- hand-computed kappa fixtures, the adjudication draw,
   consensus resolution, and each acceptance policy.
 
 The *why* and the papers are in the

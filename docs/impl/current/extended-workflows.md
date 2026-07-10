@@ -172,8 +172,10 @@ lower peak VRAM; skipped models remain visible with the planner reason.
 Tests:
 
 ```bash
-uv run pytest tests/test_finetune.py tests/test_distill.py tests/test_adapter_registry.py \
-  tests/test_recommend.py
+uv run pytest tests/llb/finetune/test_finetune.py \
+  tests/llb/finetune/test_distill.py \
+  tests/llb/finetune/test_adapter_registry.py \
+  tests/llb/board/test_recommend.py
 ```
 
 The campaign implementation is covered by fake eval/trainer/planner tests for scheduling order,
@@ -239,8 +241,8 @@ itself, and the held-out set is carved from *inside* the tuning split:
   `hparams_manifest.json` records an additive `dev_slice.strata` block (the source run plus
   per-bucket population/dev counts and mean base score). The default without the flag stays the
   uniform slice. Committed fixture: `samples/finetune/base-score-run/scores.jsonl` (12 items, 3
-  answerable), used by `tests/test_finetune_hparams.py` to prove the stratified slice holds an
-  answerable item at every seed where the uniform slice misses.
+  answerable), used by `tests/llb/finetune/test_finetune_hparams.py` to prove the stratified
+  slice holds an answerable item at every seed where the uniform slice misses.
 - `assert_tuning_only` refuses the search outright when the dataset's `split_counts` name any split
   but `tuning`, and -- when a goldset is available -- when its item ids intersect the real
   calibration/final ids. A dataset manifest is operator-writable, so its split counts alone are not
@@ -293,12 +295,12 @@ its own recomputed digest. A filtered view would inherit the parent's `dataset_d
 `adapter_digest` derives from it, two adapters trained on different data would collide on one
 registry id.
 
-Tests: `tests/test_finetune_hparams.py` covers dev-slice disjointness and determinism, both guard
-refusals, the no-protected-id-in-any-trial invariant, manifest writing, the manifest surviving a
-failed trial, subset digests, and the trainer consuming a recorded best config through a
-self-improvement round in the lightweight suite. Slow coverage keeps the seeded full trial table,
-budget abort plus resume without repeated trials, OOM and infeasible-point pruning, and effective
-batch sampling.
+Tests: `tests/llb/finetune/test_finetune_hparams.py` covers dev-slice disjointness and
+determinism, both guard refusals, the no-protected-id-in-any-trial invariant, manifest writing,
+the manifest surviving a failed trial, subset digests, and the trainer consuming a recorded best
+config through a self-improvement round in the lightweight suite. Slow coverage keeps the seeded
+full trial table, budget abort plus resume without repeated trials, OOM and infeasible-point
+pruning, and effective batch sampling.
 
 ### CUDA evidence on the 12 GB RTX PRO 3000 host
 
@@ -374,7 +376,7 @@ QAT checkpoints (`*-qat-w4a16-ct` and friends) serve well on vLLM, but PEFT can 
 into layer types it has a dispatch for (full-precision `Linear`, bitsandbytes 4/8-bit, GPTQ, AWQ,
 EETQ, HQQ) -- a `compressed-tensors` checkpoint's `CompressedLinear` layers cannot take adapters.
 
-Two stages, both pure over injectable seams (`tests/test_finetune_compat.py` runs with fake
+Two stages, both pure over injectable seams (`tests/llb/finetune/test_finetune_compat.py` runs with fake
 modules and configs, no torch):
 
 - Config introspection (`inspect_quantization` + `assess_quantization`): classifies the
@@ -554,12 +556,12 @@ tombstone.
 - `samples/finetune/poisoned-adapter/`: the simpler case where the manifest itself declares the
   protected split, refused even when unregistered.
 
-`tests/test_adapter_registry.py` covers registry round-trip and idempotence, the staleness flip when
-the goldset digest changes, the `unknown` verdict, guard resolution through the registry, serving
-smoke over a fake launcher for all three backends, merge-event recording and merge caching, GC
-citation refusal plus `--force` (run-bundle, self-improve-state, and campaign-journal citations,
-including the committed journal fixture), the same-second supersession tie, the
-outside-`$DATA_DIR` safety rule, and board drop/stamp behavior.
+`tests/llb/finetune/test_adapter_registry.py` covers registry round-trip and idempotence, the
+staleness flip when the goldset digest changes, the `unknown` verdict, guard resolution through
+the registry, serving smoke over a fake launcher for all three backends, merge-event recording and
+merge caching, GC citation refusal plus `--force` (run-bundle, self-improve-state, and
+campaign-journal citations, including the committed journal fixture), the same-second supersession
+tie, the outside-`$DATA_DIR` safety rule, and board drop/stamp behavior.
 
 Merge-serving CUDA evidence (2026-07-10, RTX 4060 Ti 16 GB, adapter-merge-serving-cuda-evidence;
 the first time the real merge lane ran end to end):

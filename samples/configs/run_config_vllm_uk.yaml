@@ -1,5 +1,5 @@
 # loc-lm-bench run config -- Milestone 2 (one real backend: vLLM serving HF weights).
-# Pass with `llb run-eval --config samples/run_config_vllm_uk.yaml --telemetry`.
+# Pass with `llb run-eval --config samples/configs/run_config_vllm_uk.yaml --telemetry`.
 # This is the M2.4 reference config, validated on an RTX 4060 Ti 16 GB (vLLM 0.23.0).
 # Any field left out falls back to llb.config.RunConfig defaults; CLI flags override fields.
 

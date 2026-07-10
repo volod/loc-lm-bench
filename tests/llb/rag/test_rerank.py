@@ -166,7 +166,7 @@ def test_config_rejects_bad_rerank_knobs():
 
 
 def test_score_case_carries_stage_latency_and_aggregate_means():
-    from tests.test_runner import gold_item
+    from tests.llb.executor.test_runner import gold_item
 
     item = gold_item("q1", "Яка столиця України?", "Київ", "Київ є столицею")
     state = {

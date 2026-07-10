@@ -135,7 +135,25 @@ src/llb/
   tracking/         canonical manifests and MLflow mirror
 ```
 
-`samples/` contains committed fixtures and seeds. It is data, not runtime output.
+`samples/` contains committed fixtures and seeds. It is data, not runtime output. Root-level
+YAML/JSON fixture files are grouped by use:
+
+| Path | Contents |
+| --- | --- |
+| `samples/configs/` | candidate model manifest and run-eval config examples |
+| `samples/benchmarks/` | category-suite case seeds and tool catalogs |
+| `samples/data-prep/` | import and synthetic RAG-item fixtures |
+| `samples/goldsets/` | verified committed gold-set bundles with corpus files |
+| `samples/verification/` | human-review sample manifests and worksheets |
+
+See `samples/README.md` for the full fixture map.
+
+`tests/` mirrors the package layout instead of holding a flat pile of modules. Tests for
+`src/llb/<package>/...` live under `tests/llb/<package>/...`; package submodules may get matching
+subdirectories such as `tests/llb/prep/ontology/`. Repository fixture checks that are not tied to
+one `llb` package live under `tests/samples/`. The root of `tests/` should stay free of
+`test_*.py` files. Pytest explicitly allows recursion into `tests/llb/build/` so it can mirror
+`src/llb/build/`.
 
 ## Artifact Roots
 

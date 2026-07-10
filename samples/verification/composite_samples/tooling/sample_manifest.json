@@ -1,6 +1,6 @@
 {
   "kind": "committed-sample-fixture-review",
-  "artifact": "../../../tooling_cases_uk.json",
+  "artifact": "../../../benchmarks/tooling_cases_uk.json",
   "worksheet": "verify_sample.csv",
   "sample_size": 12,
   "population": 12,

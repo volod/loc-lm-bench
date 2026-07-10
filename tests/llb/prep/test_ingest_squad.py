@@ -1,16 +1,15 @@
 import json
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import llb.prep.ingest_squad as ingest_squad_module
+from llb.core.paths import PROJECT_ROOT
 from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
 from llb.goldset.validate import validate_items
 from llb.prep.ingest_squad import load_hf, load_squad_json, main, squad_to_gold, write_corpus
 from llb.prep.ua_squad_source import DATASET_ID, DATASET_REVISION, DATASET_SPLIT
 from llb.prep.verified_ledger import DEFAULT_VERIFIED_GOLDSET
 
-REPO = Path(__file__).resolve().parents[1]
 VERIFIED_CORPUS = DEFAULT_VERIFIED_GOLDSET.parent / "corpus"
 
 
@@ -32,7 +31,7 @@ def _reviewed_squad_record() -> tuple[dict[str, object], GoldItem]:
 
 
 def test_ingest_fixture(tmp_path):
-    records = load_squad_json(REPO / "samples" / "squad_uk_fixture.json")
+    records = load_squad_json(PROJECT_ROOT / "samples" / "data-prep" / "squad_uk_fixture.json")
     docs, items, skipped = squad_to_gold(records)
     assert len(items) == 4 and skipped == 0
 
@@ -43,7 +42,7 @@ def test_ingest_fixture(tmp_path):
 
 
 def test_ingest_can_mark_a_pinned_published_fixture_verified():
-    records = load_squad_json(REPO / "samples" / "squad_uk_fixture.json")
+    records = load_squad_json(PROJECT_ROOT / "samples" / "data-prep" / "squad_uk_fixture.json")
     _docs, items, _skipped = squad_to_gold(records, verified=True)
     assert items and all(item.provenance == "public-reused" and item.verified for item in items)
 

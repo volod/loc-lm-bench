@@ -103,7 +103,7 @@ def test_run_structured_invalid_verification_ref_does_not_call_model(tmp_path):
 
 
 def test_load_committed_structured_cases():
-    cases = bench_st.load_cases_file("samples/structured_cases_uk.json")
+    cases = bench_st.load_cases_file("samples/benchmarks/structured_cases_uk.json")
     assert len(cases) == 6 and all(c.schema for c in cases)
     # nested / array / unordered cases are now committed (exercise the recursive matcher)
     by_id = {c.id: c for c in cases}

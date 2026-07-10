@@ -21,4 +21,4 @@ make import-external-draft \
   SIDECAR=samples/external-drafts/claude-projects-open/external_provenance.json
 ```
 
-Used by `tests/test_external_draft.py::test_committed_fixture_imports` (3 kept, 2 dropped).
+Used by `tests/llb/prep/test_external_draft.py::test_committed_fixture_imports` (3 kept, 2 dropped).

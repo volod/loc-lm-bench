@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gen_rag_items.sh -- thin entrypoint for the sample RAG gold-item generator.
 #
-# Data lives in samples/rag_items_uk.json; logic lives in src/llb/prep/gen_rag_items.py.
+# Data lives in samples/data-prep/rag_items_uk.json; logic lives in src/llb/prep/gen_rag_items.py.
 # Output goes under DATA_DIR/llb/ (regeneratable runtime data, gitignored). ASCII logs only.
 set -euo pipefail
 
@@ -15,5 +15,5 @@ PY="$(llb_python)"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 exec "$PY" -m llb.prep.gen_rag_items \
-  --spec "$PROJECT_ROOT/samples/rag_items_uk.json" \
+  --spec "$PROJECT_ROOT/samples/data-prep/rag_items_uk.json" \
   --out-dir "$DATA_DIR/llb"
