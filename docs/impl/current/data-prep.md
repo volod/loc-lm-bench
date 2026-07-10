@@ -436,6 +436,66 @@ The rationale is anti-anchoring and auditability: automated cross-check context 
 reviewer, but it is hidden by default; the accepted ledger is a new reviewed artifact rather than an
 in-place mutation of the draft.
 
+### Reviewer throughput tooling
+
+The review CLI carries the throughput features from the `verify-cli-throughput` task, complete
+with the measured human review-pass evidence recorded at the end of this section:
+
+- **Confidence-ordered queue** -- `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`
+  reviews least-confident items first: each cross-check verdict flag contributes +1/-1 and a
+  needle `retrieval_rank` contributes `1/rank` (`row_confidence`/`confidence_order` in
+  `verify.py`). Only the session queue is reordered; the CSV row order never changes.
+- **On-card evidence** -- worksheet rows (new optional columns `retrieval_rank`,
+  `page_citation`) carry the item's needle retrieval rank (joined from `needle_items.jsonl` /
+  `item_provenance.jsonl`) and a `<source.pdf> p.N[-M]` citation resolved through the PDF lane's
+  `*.citations.json` sidecars, so the reviewer can check the original page without leaving the
+  terminal.
+- **Accept-with-edit re-grounding** -- the `e` command captures an edited reference answer and
+  re-grounds it IMMEDIATELY against the bundle corpus (resolved via `sample_manifest.json`); an
+  edit that is not a verbatim corpus span is refused on the spot, an accept over a stale edit is
+  blocked, and `emit_accepted_ledger` re-checks authoritatively (raises) so a hand-edited CSV can
+  never certify an un-grounded answer. Accepted edits flow into the ledger with the primary span
+  replaced by the re-grounded offsets.
+- **Additive sample enlargement** -- `make verify-sample BUNDLE=<draft> VERIFY_N=<n>
+  VERIFY_MERGE=1` (`merge_sample_worksheet`) enlarges an existing worksheet to ~`n` rows by
+  appending only item ids not already present: decided rows are preserved byte-for-byte, never
+  re-drawn or re-shown, and re-running the merge is idempotent.
+- **Session throughput stats** -- each decision prints a pace line (decided count, items/hour,
+  ETA for the remaining rows); the end-of-session summary repeats it and every sitting appends a
+  record to `verify_session_stats.json` beside the worksheet (the durable items-per-hour
+  evidence the throughput task cites).
+- **Coded rejection reasons** -- `x` infers a code from the first failed check
+  (`ungrounded`/`circular`/`wrong_reference`/`label_mismatch`), `x <code>` sets one explicitly
+  (also `bad_question`, `other`); `make verify-accept` exports the aggregate to
+  `rejection_reasons.json` beside the accepted ledger so the drafting pipeline can read why items
+  were rejected and tighten its prompts.
+
+All of it is unit-tested with injected input/output/clock in `tests/test_goldset_verify.py`
+(golden-path session tests included); the worksheet CSV stays backward compatible -- the new
+columns are optional and appended on load for older worksheets.
+
+The review card and controls are unified with the external-RAG human review session
+(`llb.scoring.external_rag_session`, the origin interface): a `=====` banner, `== field:` labels,
+a blank line before `== question:` delimiting consecutive cards, indented multi-line evidence
+blocks, a two-line grouped prompt hint, and the shared `o` (note) / `w` (edit answer) keys. The
+decision keys intentionally differ (`y`/`x` here) because `a`/`r`/`p` mark the verification
+checks. The card layout and key aliases are documented behavior, not test surface -- session
+tests cover decisions, re-grounding, merge, and stats, not print formatting.
+
+Measured throughput evidence (2026-07-10, quickstart PDF corpus draft, 69 drafted items): a
+single-sitting human pass with `VERIFY_ORDER=confidence` decided all 46 sampled rows in 9.9
+minutes -- **279.5 items/h** -- recorded in `verify_session_stats.json` beside the worksheet.
+`verify-accept` passed at 44 accepted / 2 rejected (reject rate 0.043 vs tolerance 0.05); both
+rejects concentrated in the corpus's one long-manual document, one of them a TOC-mined
+page-number question whose row also carried no `retrieval_rank` (the signal the confidence queue
+sorts on). Two advisory per-stratum FAIL warnings were small-sample artifacts: at tolerance 0.05
+a stratum needs >= 20 decided rows to absorb a single reject, and the flagged cells held 7 and 5.
+Operational notes from the pass: the stratified draw can undershoot the requested `VERIFY_N`
+(40 -> 39 here; the additive `VERIFY_MERGE=1` lane topped it up, and
+`verify-sample-exact-allocation` in [`plan.md`](../plan.md) tracks the proper fix), and a bare
+`x` reject with no failed checks exports `code: other` -- marking the failing check first (or
+`x <code>`) keeps `rejection_reasons.json` actionable.
+
 ## Judge Calibration
 
 Judge calibration is a separate human-rating problem. The code measures whether a local judge

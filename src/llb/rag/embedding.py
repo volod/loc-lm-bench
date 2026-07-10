@@ -130,9 +130,17 @@ class Embedder:
         return int(self._load().get_max_seq_length() or 512)
 
     def passage_token_offsets(self, text: str) -> list[tuple[int, int]]:
-        """Char span of every token of raw `text` (no special tokens, no truncation)."""
+        """Char span of every token of raw `text` (no special tokens, no truncation).
+
+        `verbose=False` silences the tokenizer's over-max-length warning: this untruncated pass
+        only extracts offsets for late-chunking windowing -- the model never sees the sequence.
+        """
         encoded = self._load().tokenizer(
-            text, add_special_tokens=False, return_offsets_mapping=True, truncation=False
+            text,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+            truncation=False,
+            verbose=False,
         )
         return [(start, end) for start, end in encoded["offset_mapping"] if end > start]
 

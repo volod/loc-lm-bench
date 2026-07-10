@@ -119,6 +119,7 @@ def real_train_adapter(
     a richer site trainer through `run_self_improve` without changing manifests or guards.
     """
     try:
+        import bitsandbytes  # noqa: F401  (the default 4-bit load path needs it at model load)
         import torch
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training

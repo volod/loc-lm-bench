@@ -27,11 +27,12 @@ build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assi
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
 	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
 
-validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the gold set; QUERY_PREP=normalize,typos,glossary QUERY_PREP_AB=1 QUERY_GLOSSARY= for the query-side A/B (needs ".[rag]")
+validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the gold set; QUERY_PREP=normalize,typos,glossary QUERY_PREP_TYPO_GUARD=1 QUERY_PREP_AB=1 QUERY_GLOSSARY= for the query-side A/B (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
+		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
 		$(if $(QUERY_PREP_AB),--query-prep-ab,)
 
 compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=... ranks chunkers, HYBRID=1 ranks dense vs hybrid(+lemmas) + oracle-doc headroom, RERANKER=<hf-id> adds reranked twin rows (RERANK_CANDIDATES=)
@@ -62,6 +63,7 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
+		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
 		$(if $(CITED_ANSWERS),--cited-answers,) \
 		$(if $(SCORE_GROUNDEDNESS),--score-groundedness,) \
 		$(if $(INSUFFICIENT_CONTEXT_PROBES),--insufficient-context-probes $(INSUFFICIENT_CONTEXT_PROBES),) \
@@ -194,14 +196,15 @@ score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report
 		$(if $(EXTERNAL_RAG_CLEAR),--clear,) \
 		$(if $(EXTERNAL_RAG_KEEP_SOURCE_FOOTER),--keep-source-footer,)
 
-sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8)
+sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8; RERANKER= for positive rerank_candidates points)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main sweep --manifest "$(MODELS_MANIFEST)" --split "$(SPLIT)" \
 		--goldset "$(GOLDSET)" --sweep-id "$(SWEEP_ID)" \
 		--max-model-len "$(SWEEP_MAX_MODEL_LEN)" $(if $(SWEEP_OFFLINE),--offline,) \
 		$(if $(SWEEP_LIMIT),--limit "$(SWEEP_LIMIT)",) \
-		$(if $(SWEEP_RAG_GRID),--rag-grid "$(SWEEP_RAG_GRID)",)
+		$(if $(SWEEP_RAG_GRID),--rag-grid "$(SWEEP_RAG_GRID)",) \
+		$(if $(RERANKER),--reranker "$(RERANKER)",)
 
 pipeline: ## Select public-screen finalists, tune, and print the final board
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -18,6 +18,7 @@ from llb.board.miss_analysis import analyze_run, load_item_provenance, write_ana
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject, ModelPlanRow, ModelSpec
 from llb.core.fsutil import atomic_write_text
+from llb.finetune.compat import VERDICT_NOT_TRAINABLE as COMPAT_NOT_TRAINABLE
 from llb.finetune.dataset import DATASET_MANIFEST, export_finetune_set
 from llb.finetune.loop import (
     _ci_from_run,
@@ -39,6 +40,9 @@ EvalFn = Callable[[RunConfig, str, Path], EvalResult]
 TrainerFn = Callable[[Path, str, Path, int], JsonObject]
 PlannerFn = Callable[[str, RunConfig], ModelPlanRow]
 ReclaimFn = Callable[[], JsonObject]
+# model id -> compat verdict payload (compressed-qat-adapter-support). Only a POSITIVE
+# not-trainable verdict skips; an unknown verdict lets the entry proceed.
+CompatFn = Callable[[str], JsonObject]
 
 
 @dataclass
@@ -61,6 +65,7 @@ class CampaignEntry:
     peak_vram_mb: float | None = None
     planner: JsonObject = field(default_factory=dict)
     reclaim: JsonObject = field(default_factory=dict)
+    compat: JsonObject = field(default_factory=dict)
 
     def as_dict(self) -> JsonObject:
         return {
@@ -82,6 +87,7 @@ class CampaignEntry:
             "peak_vram_mb": self.peak_vram_mb,
             "planner": self.planner,
             "reclaim": self.reclaim,
+            "compat": self.compat,
         }
 
 
@@ -106,6 +112,7 @@ def run_finetune_campaign(
     trainer_fn: TrainerFn | None = None,
     planner_fn: PlannerFn | None = None,
     reclaim_fn: ReclaimFn | None = None,
+    compat_fn: CompatFn | None = None,
 ) -> CampaignResult:
     """Run a sequential, resumable adapter campaign for a roster of local models."""
     roster = _parse_models(models)
@@ -117,6 +124,7 @@ def run_finetune_campaign(
     trainer_fn = trainer_fn or _default_trainer_fn(config, trainer)
     planner_fn = planner_fn or _default_planner_fn(model_specs or [])
     reclaim_fn = reclaim_fn or _default_reclaim_fn()
+    compat_fn = compat_fn or _default_compat_fn()
 
     root = Path(resume) if resume is not None else Path(out_dir or _default_out_dir(config))
     root.mkdir(parents=True, exist_ok=True)
@@ -138,6 +146,23 @@ def run_finetune_campaign(
                 status=SKIP_VERDICT,
                 reason=str(plan.get("note") or "planner rejected model"),
                 planner=planner_payload,
+            )
+            _append_entry(root, entry)
+            entries.append(entry)
+            continue
+
+        # Compressed-QAT trainability pre-probe (compressed-qat-adapter-support): a checkpoint
+        # whose native quantization scheme has no PEFT dispatch is skipped WITH the exact blocker
+        # before its base eval or any training run is paid for. Only a positive not-trainable
+        # verdict skips; an unknown/unreachable config lets the entry proceed.
+        compat_payload = dict(compat_fn(model))
+        if str(compat_payload.get("verdict")) == COMPAT_NOT_TRAINABLE:
+            entry = CampaignEntry(
+                model=model,
+                status=SKIP_VERDICT,
+                reason=f"not trainable: {compat_payload.get('blocker') or 'compat probe'}",
+                planner=planner_payload,
+                compat=compat_payload,
             )
             _append_entry(root, entry)
             entries.append(entry)
@@ -265,6 +290,13 @@ def _default_planner_fn(model_specs: list[ModelSpec]) -> PlannerFn:
         return plan_model(enrich_arch(spec), vram_mib=vram_mib, ram_mib=ram_mib)
 
     return plan
+
+
+def _default_compat_fn() -> CompatFn:
+    """Config-only trainability probe: cheap, and UNKNOWN (never a skip) when unreachable."""
+    from llb.finetune.compat import config_compat_probe
+
+    return config_compat_probe
 
 
 def _default_reclaim_fn() -> ReclaimFn:

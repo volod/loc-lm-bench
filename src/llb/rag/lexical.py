@@ -83,6 +83,31 @@ def load_uk_lemmatizer() -> Lemmatizer:
     return lemma
 
 
+def load_uk_word_probe() -> Callable[[str], bool]:
+    """A pymorphy3 "is this a known Ukrainian word form?" probe, memoized per token.
+
+    Backs the opt-in morphology guard of the query-prep `typos` step: a grammatically valid
+    inflected query form (`поділяють`, `документами`) is NOT a misspelling and must not be
+    "corrected" to a different corpus surface form -- the index+query lemmatization already
+    matches valid inflections. Same missing-extra contract as `load_uk_lemmatizer`.
+    """
+    try:
+        import pymorphy3
+    except ImportError:
+        raise SystemExit(f"[lexical] {LEXICAL_EXTRA_HINT}") from None
+    analyzer = pymorphy3.MorphAnalyzer(lang="uk")
+    cache: dict[str, bool] = {}
+
+    def known(token: str) -> bool:
+        hit = cache.get(token)
+        if hit is None:
+            hit = bool(analyzer.word_is_known(token))
+            cache[token] = hit
+        return hit
+
+    return known
+
+
 def best_effort_lemma(token: str) -> str:
     """Lemmatize one normalized token when pymorphy3 is installed; identity otherwise.
 

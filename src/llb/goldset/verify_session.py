@@ -19,23 +19,36 @@ without a terminal, model, endpoint, or GPU (it operates only on the CSV).
 """
 
 import csv
+import json
 import sys
+import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from llb.core.fsutil import atomic_write_text
 from llb.goldset.verify import (
     ACCEPT,
     CHECK_COLS,
+    CORPUS_DIRNAME,
     FAIL,
     HUMAN_COLS,
     PASS,
     REJECT,
+    REJECT_CODES,
     STATUS_DECIDED,
     STATUS_PENDING,
+    _worksheet_bundle_hint,
+    confidence_order,
+    corpus_window,
+    ground_answer,
+    infer_reject_code,
     load_worksheet,
     write_worksheet_rows,
 )
+
+SESSION_STATS_FILENAME = "verify_session_stats.json"
+_EDIT_CONFIRM_CTX_CHARS = 80  # corpus window rendered to confirm a re-grounded edit
 
 # The four checks, in card order, mapped to the keystroke that marks them. Lowercase = PASS,
 # uppercase = FAIL. `planted` only applies to synthetic items (blank/N/A for real ones).
@@ -56,6 +69,7 @@ CHECK_LABEL: dict[str, str] = {
 CHECK = "check"
 ACCEPT_CMD = "accept"
 REJECT_CMD = "reject"
+EDIT = "edit"
 NOTE = "note"
 NEXT = "next"
 PREV = "prev"
@@ -68,6 +82,10 @@ UNKNOWN = "unknown"
 
 _ESC = "\x1b"
 _ARROWS = {f"{_ESC}[A": PREV, f"{_ESC}[D": PREV, f"{_ESC}[B": NEXT, f"{_ESC}[C": NEXT}
+# Command keys mirror the external-RAG review session (`llb.scoring.external_rag_session`) where
+# the two tools do the same thing: o=note and w=edit-the-answer are shared aliases, and the
+# navigation row (Enter/n, b, u, j<N>, ?, q) is identical. The decision keys necessarily differ:
+# here a/r/p mark CHECKS (answerable/reference/planted), so accept/reject are y/x.
 _SIMPLE_COMMANDS = {
     "": NEXT,
     "n": NEXT,
@@ -76,15 +94,23 @@ _SIMPLE_COMMANDS = {
     "c": CLEAR,
     "y": ACCEPT_CMD,
     "x": REJECT_CMD,
+    "e": EDIT,
+    "w": EDIT,
     "q": QUIT,
     "quit": QUIT,
     "?": HELP,
     "h": HELP,
     "help": HELP,
+    "o": NOTE,
     "note": NOTE,
 }
 
-PROMPT_HINT = "g/a/r/p=check PASS  G/A/R/P=FAIL  y=accept  x=reject  n=next  b=prev  j<N>=jump  ?=help  q=quit"
+PROMPT_HINT = (
+    "decide: y=accept, x=reject (code inferred), x <code>=coded reject; "
+    "checks: g/a/r/p=PASS, G/A/R/P=FAIL\n"
+    "edit/nav: e/w=edit answer, o=note, c=clear, Enter/n=next, b=prev, u=undecided, "
+    "j<N>=jump, ?=help, q=quit"
+)
 
 
 @dataclass(frozen=True)
@@ -120,17 +146,32 @@ def _parse_jump_command(s: str) -> Command | None:
     return Command(UNKNOWN, raw=s)
 
 
+def _parse_reject_code_command(s: str) -> Command | None:
+    """`x <code>` -- reject with an explicit coded reason (bare `x` stays a simple command)."""
+    if not s.lower().startswith("x "):
+        return None
+    return Command(REJECT_CMD, field=s[2:].strip().lower())
+
+
 def parse_command(raw: str) -> Command:
     """Parse one prompt line into a `Command` (pure; no I/O, no state).
 
     Empty / `n` = next; `b`/up/left arrow = previous; `g/a/r/p` mark a check PASS, the uppercase
-    forms FAIL; `y` = accept, `x` = reject; `note` = edit a note; `j <N>`/`jN` = jump; `u` = next
-    undecided; `c` = clear this item; `?`/`h` = help; `q` = save + quit.
+    forms FAIL; `y` = accept, `x` = reject (code inferred from failed checks), `x <code>` = reject
+    with an explicit coded reason; `e` = edit the reference answer (re-grounded immediately);
+    `note` = edit a note; `j <N>`/`jN` = jump; `u` = next undecided; `c` = clear this item;
+    `?`/`h` = help; `q` = save + quit.
     """
     s = raw.strip()
     if s in _ARROWS:
         return Command(_ARROWS[s])
-    for parser in (_parse_simple_command, _parse_check_command, _parse_jump_command):
+    parsers = (
+        _parse_simple_command,
+        _parse_check_command,
+        _parse_reject_code_command,
+        _parse_jump_command,
+    )
+    for parser in parsers:
         cmd = parser(s)
         if cmd is not None:
             return cmd
@@ -157,8 +198,10 @@ def decision_tally(rows: Sequence[dict[str, str]]) -> tuple[int, int]:
     return accepted, rejected
 
 
-def summary_lines(rows: Sequence[dict[str, str]], path: Path) -> list[str]:
-    """The end-of-session report: progress, accept/reject split, and the next command."""
+def summary_lines(
+    rows: Sequence[dict[str, str]], path: Path, stats: "SessionStats | None" = None
+) -> list[str]:
+    """The end-of-session report: progress, accept/reject split, pace, and the next command."""
     total = len(rows)
     decided = decided_count(rows)
     accepted, rejected = decision_tally(rows)
@@ -167,11 +210,17 @@ def summary_lines(rows: Sequence[dict[str, str]], path: Path) -> list[str]:
         f"[verify] progress : {decided}/{total} decided, {total - decided} remaining "
         f"(accept {accepted}, reject {rejected})",
     ]
+    if stats is not None and stats.decisions:
+        lines.append(
+            f"[verify] pace     : {stats.decisions} decided this session in "
+            f"{stats.elapsed_seconds() / 60.0:.1f} min -- {stats.items_per_hour():.1f} items/h "
+            f"(recorded in {SESSION_STATS_FILENAME})"
+        )
     if decided < total:
         lines.append(
             "[verify] resume   : re-run `make verify-review` (continues at the first undecided item)"
         )
-    lines.append(f"[verify] accept   : make verify-accept WS={path} BUNDLE=<draft bundle>")
+    lines.append(f"[verify] accept   : make verify-accept VERIFY_WS={path} BUNDLE=<draft bundle>")
     return lines
 
 
@@ -190,7 +239,7 @@ def completion_panel(rows: Sequence[dict[str, str]], total: int) -> str:
     accepted, rejected = decision_tally(rows)
     return "\n".join(
         [
-            f"===== all {total} items decided (accept {accepted}, reject {rejected}) =====",
+            f"===== all {total} items decided (accept={accepted}, reject={rejected}) =====",
             "  review/change: b = last item, j <N> = jump to item N, u = next undecided",
             "  finish: press Enter or q to save + quit (then run make verify-accept)",
         ]
@@ -242,6 +291,12 @@ def _is_synthetic_row(row: dict[str, str]) -> bool:
     return (row.get("synthetic") or "").strip().lower() == "true"
 
 
+def _indent(text: str, prefix: str = "    ") -> str:
+    if not text:
+        return prefix.rstrip()
+    return "\n".join(prefix + line for line in text.splitlines())
+
+
 def format_card(
     row: dict[str, str],
     position: int,
@@ -251,33 +306,50 @@ def format_card(
     show_crosscheck: bool = False,
 ) -> str:
     """Render the per-item card: the question/reference, the cited span inside its corpus window,
-    the four check states, and the decision. `cc_*` shown ONLY when `show_crosscheck` is set."""
+    the four check states, and the decision. `cc_*` shown ONLY when `show_crosscheck` is set.
+
+    The layout mirrors the external-RAG review card (`external_rag_session.format_card`): a
+    `=====` banner, `== field:` labels, a BLANK line before `== question:` so consecutive cards
+    are visually delimited, and indented multi-line evidence blocks.
+    """
     remaining = total - decided
+    rank = (row.get("retrieval_rank") or "").strip() or "(none)"
+    page = (row.get("page_citation") or "").strip() or "(none)"
     lines = [
+        "===== goldset verification review =====",
         f"item {position}/{total} (decided {decided}, remaining {remaining})",
-        f"  item_id    : {row.get('item_id', '')}",
-        f"  stratum    : {row.get('stratum', '')}",
-        f"  question   : {row.get('question', '')}",
-        f"  reference  : {row.get('reference_answer', '')}",
-        f"  span doc   : {row.get('span_doc_id', '')}",
-        f"  context    : {row.get('context', '')}",
-        "  checks:",
+        f"== id: {row.get('item_id', '')}",
+        f"== meta: stratum={row.get('stratum', '')} synthetic={row.get('synthetic', '')} "
+        f"retrieval_rank={rank}",
+        "",
+        f"== question: {row.get('question', '')}",
+        f"== reference_answer: {row.get('reference_answer', '')}",
+        f"== span: doc={row.get('span_doc_id', '')} page={page}",
+        "== context (cited span between >>> <<<)",
+        _indent(row.get("context", "") or "(missing)"),
+        "== checks:",
     ]
     synthetic = _is_synthetic_row(row)
     for col in CHECK_COLS:
         if col == "chk_planted" and not synthetic:
             continue
-        lines.append(f"    {col:<13}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
-    lines.append(f"  decision   : {_field(row, 'decision', '(undecided)')}")
+        lines.append(f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
+    lines.append(f"== decision: {_field(row, 'decision', '(undecided)')}")
+    edited = (row.get("edited_answer") or "").strip()
+    if edited:
+        lines.append(f"== edited_answer: {edited}")
+    code = (row.get("reject_code") or "").strip()
+    if code:
+        lines.append(f"== reject_code: {code}")
     note = (row.get("human_note") or "").strip()
     if note:
-        lines.append(f"  note       : {note}")
+        lines.append(f"== human_note: {note}")
     if show_crosscheck:
         cc = "  ".join(
             f"{key}={_field(row, f'cc_{key}', '?')}"
             for key in ("grounded", "non_circular", "supported", "answerable")
         )
-        lines.append(f"  crosscheck : {cc}  note={_field(row, 'cc_note', '')}")
+        lines.append(f"== crosscheck: {cc}  note={_field(row, 'cc_note', '')}")
     return "\n".join(lines)
 
 
@@ -291,12 +363,17 @@ def help_text() -> str:
             "checks (lowercase = PASS, uppercase = FAIL):",
             checks,
             "decision:",
-            "  y  accept (within tolerance)            x  reject (back to the pipeline)",
+            "  y        accept (within tolerance)",
+            "  x        reject (code inferred from failed checks)",
+            f"  x <code> reject with an explicit code: {', '.join(REJECT_CODES)}",
+            "edits:",
+            "  e / w    edit the reference answer (accept-with-edit; re-grounded immediately)",
+            "  o / note edit a note",
+            "  c        clear this item's marks",
             "navigation:",
-            "  n/Enter  next                           b/up/left  previous",
-            "  j <N>    jump to item N                 u  next undecided",
-            "  note     edit a note                    c  clear this item's marks",
-            "  ?/h      this help                      q  save + quit",
+            "  n/Enter  next                           b        previous",
+            "  j <N>    jump to item N                 u        next undecided",
+            "  ?/h      this help                      q        save + quit",
             "verify INDEPENDENTLY against the corpus window -- do not anchor to the cross-check.",
         ]
     )
@@ -376,6 +453,83 @@ def _clear_row(row: dict[str, str]) -> None:
     for col in HUMAN_COLS:
         row[col] = ""
     row["human_status"] = STATUS_PENDING
+
+
+# --- session throughput stats (the items-per-hour evidence) --------------------------------
+
+
+@dataclass
+class SessionStats:
+    """Wall-clock throughput of ONE review sitting.
+
+    Decisions per elapsed hour is the measured reviewer-throughput number the human evidence
+    records; the clock is injected so tests never sleep.
+    """
+
+    clock: Callable[[], float]
+    started: float = 0.0
+    decisions: int = 0
+
+    def __post_init__(self) -> None:
+        self.started = self.clock()
+
+    def on_decision(self) -> None:
+        self.decisions += 1
+
+    def elapsed_seconds(self) -> float:
+        return max(self.clock() - self.started, 0.0)
+
+    def items_per_hour(self) -> float:
+        elapsed = self.elapsed_seconds()
+        if not self.decisions or elapsed <= 0:
+            return 0.0
+        return self.decisions * 3600.0 / elapsed
+
+
+def throughput_line(stats: SessionStats, rows: Sequence[dict[str, str]]) -> str:
+    """One-line session pace: decided count, items/hour, and the ETA for the remaining rows."""
+    remaining = len(rows) - decided_count(rows)
+    rate = stats.items_per_hour()
+    minutes = stats.elapsed_seconds() / 60.0
+    line = f"[stats] session: {stats.decisions} decided in {minutes:.1f} min"
+    if rate > 0:
+        line += f" -- {rate:.1f} items/h"
+        if remaining:
+            line += f"; ~{remaining * 60.0 / rate:.0f} min for {remaining} remaining"
+    return line
+
+
+def append_session_stats(worksheet_path: Path, record: dict[str, object]) -> Path:
+    """Append one session record to `verify_session_stats.json` beside the worksheet.
+
+    The durable trace of measured reviewer throughput (what the current docs cite), so a
+    finished 40-item pass does not live only in scrollback.
+    """
+    path = Path(worksheet_path).with_name(SESSION_STATS_FILENAME)
+    payload: dict[str, object] = {"sessions": []}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict) and isinstance(loaded.get("sessions"), list):
+                payload = loaded
+        except (OSError, json.JSONDecodeError):
+            pass
+    sessions = payload["sessions"]
+    assert isinstance(sessions, list)
+    sessions.append(record)
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
+    return path
+
+
+def _session_record(stats: SessionStats, rows: Sequence[dict[str, str]]) -> dict[str, object]:
+    return {
+        "decided_this_session": stats.decisions,
+        "elapsed_seconds": round(stats.elapsed_seconds(), 1),
+        "items_per_hour": round(stats.items_per_hour(), 1),
+        "total_decided": decided_count(rows),
+        "total_rows": len(rows),
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
 
 
 def _go_forward(
@@ -461,47 +615,131 @@ def _handle_navigation_action(
     return idx, True
 
 
+def _doc_text_for_row(corpus_root: Path | None, row: dict[str, str]) -> str | None:
+    """The span doc's full text, or None when the bundle corpus is not reachable."""
+    if corpus_root is None:
+        return None
+    doc_id = (row.get("span_doc_id") or "").strip()
+    if not doc_id:
+        return None
+    path = Path(corpus_root) / doc_id
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _edit_still_grounds(corpus_root: Path | None, row: dict[str, str]) -> bool:
+    """Whether the row's `edited_answer` (if any) is still a verbatim span of its doc.
+
+    Returns True when there is no edit or the corpus is unreachable (the ledger emission
+    re-checks authoritatively and raises); False only on a positively failed re-ground.
+    """
+    edited = (row.get("edited_answer") or "").strip()
+    if not edited:
+        return True
+    text = _doc_text_for_row(corpus_root, row)
+    if text is None:
+        return True
+    return ground_answer(text, edited) is not None
+
+
+def _reject_code_for(cmd: Command, row: dict[str, str], emit: Callable[[str], None]) -> str | None:
+    """Resolve the coded rejection reason: explicit `x <code>` (validated) or inferred."""
+    explicit = cmd.field.strip().lower()
+    if not explicit:
+        code = infer_reject_code(row)
+        emit(f"[verify] reject code: {code} (inferred; `x <code>` to override)")
+        return code
+    if explicit not in REJECT_CODES:
+        emit(f"[verify] unknown reject code {explicit!r}; use one of: {', '.join(REJECT_CODES)}")
+        return None
+    return explicit
+
+
 def _handle_decision_action(
     cmd: Command,
     row: dict[str, str],
     idx: int,
     total: int,
-    rows: Sequence[dict[str, str]],
-    emit: Callable[[str], None],
-    path: Path,
-    fieldnames: Sequence[str],
+    ctx: "SessionContext",
 ) -> tuple[int, bool]:
     if cmd.kind == ACCEPT_CMD:
-        decision = ACCEPT
+        if not _edit_still_grounds(ctx.corpus_root, row):
+            ctx.emit(
+                "[verify] BLOCKED: the edited answer no longer matches a verbatim span of "
+                f"{row.get('span_doc_id', '')} -- re-ground it with `e` before accepting."
+            )
+            return idx, True
+        _set_decision(row, ACCEPT)
+        row["reject_code"] = ""
     elif cmd.kind == REJECT_CMD:
-        decision = REJECT
+        code = _reject_code_for(cmd, row, ctx.emit)
+        if code is None:
+            return idx, True
+        _set_decision(row, REJECT)
+        row["reject_code"] = code
     else:
         return idx, False
 
-    _set_decision(row, decision)
-    _save(path, rows, fieldnames)
-    return _go_forward(idx, total, rows, emit), True
+    _save(ctx.path, ctx.rows, ctx.fieldnames)
+    ctx.stats.on_decision()
+    ctx.emit(throughput_line(ctx.stats, ctx.rows))
+    return _go_forward(idx, total, ctx.rows, ctx.emit), True
+
+
+def _handle_answer_edit(row: dict[str, str], ctx: "SessionContext") -> None:
+    """Accept-with-edit: capture an edited reference answer and re-ground it IMMEDIATELY.
+
+    The edit is stored only when the new answer exists verbatim in the span's corpus doc; an
+    un-groundable edit is refused on the spot (and `emit_accepted_ledger` re-checks at accept
+    time, so a hand-edited CSV cannot certify either).
+    """
+    text = _read("edited reference answer (empty to clear): ", ctx.it, ctx.emit).strip()
+    if not text:
+        row["edited_answer"] = ""
+        _save(ctx.path, ctx.rows, ctx.fieldnames)
+        ctx.emit("[verify] edit cleared; the original reference answer stands.")
+        return
+    doc_text = _doc_text_for_row(ctx.corpus_root, row)
+    if doc_text is None:
+        ctx.emit(
+            "[verify] BLOCKED: cannot re-ground the edit -- bundle corpus not reachable "
+            "(is sample_manifest.json beside the worksheet?). Edit not saved."
+        )
+        return
+    hint = max(doc_text.find((row.get("span_text") or "").strip()), 0)
+    offsets = ground_answer(doc_text, text, hint_start=hint)
+    if offsets is None:
+        ctx.emit(
+            f"[verify] BLOCKED: edited answer is not a verbatim span of "
+            f"{row.get('span_doc_id', '')} -- not saved. Re-word it to exact corpus text."
+        )
+        return
+    row["edited_answer"] = text
+    _save(ctx.path, ctx.rows, ctx.fieldnames)
+    ctx.emit(
+        "[verify] edit re-grounded: "
+        + corpus_window(doc_text, offsets[0], offsets[1], ctx=_EDIT_CONFIRM_CTX_CHARS)
+    )
 
 
 def _handle_edit_action(
     cmd: Command,
     row: dict[str, str],
-    rows: Sequence[dict[str, str]],
-    emit: Callable[[str], None],
-    it: Iterator[str] | None,
-    path: Path,
-    fieldnames: Sequence[str],
+    ctx: "SessionContext",
 ) -> bool:
     if cmd.kind == CHECK:
-        if _set_check(row, cmd, emit):
-            _save(path, rows, fieldnames)
+        if _set_check(row, cmd, ctx.emit):
+            _save(ctx.path, ctx.rows, ctx.fieldnames)
     elif cmd.kind == CLEAR:
         _clear_row(row)
-        _save(path, rows, fieldnames)
+        _save(ctx.path, ctx.rows, ctx.fieldnames)
+    elif cmd.kind == EDIT:
+        _handle_answer_edit(row, ctx)
     elif cmd.kind == NOTE:
-        text = _read("note (empty to clear): ", it, emit).strip()
+        text = _read("note (empty to clear): ", ctx.it, ctx.emit).strip()
         row["human_note"] = text
-        _save(path, rows, fieldnames)
+        _save(ctx.path, ctx.rows, ctx.fieldnames)
     else:
         return False
     return True
@@ -514,35 +752,63 @@ def _emit_unknown_command(cmd: Command, emit: Callable[[str], None]) -> None:
         emit(f"[verify] not a command: {cmd.raw!r} (? for help).")
 
 
-def _handle_row_action(
-    rows: Sequence[dict[str, str]],
-    idx: int,
-    total: int,
-    emit: Callable[[str], None],
-    it: Iterator[str] | None,
-    path: Path,
-    fieldnames: Sequence[str],
-    show_crosscheck: bool = False,
-) -> int:
+@dataclass
+class SessionContext:
+    """Everything one review sitting shares across handlers (I/O, worksheet, corpus, stats)."""
+
+    path: Path
+    fieldnames: Sequence[str]
+    rows: list[dict[str, str]]
+    emit: Callable[[str], None]
+    it: Iterator[str] | None
+    corpus_root: Path | None
+    stats: SessionStats
+    show_crosscheck: bool = False
+
+
+def _handle_row_action(ctx: SessionContext, idx: int, total: int) -> int:
+    rows = ctx.rows
     row = rows[idx]
-    emit(format_card(row, idx + 1, total, decided_count(rows), show_crosscheck=show_crosscheck))
-    cmd = parse_command(_read(f"{PROMPT_HINT}\nverify> ", it, emit))
+    ctx.emit(
+        format_card(row, idx + 1, total, decided_count(rows), show_crosscheck=ctx.show_crosscheck)
+    )
+    cmd = parse_command(_read(f"{PROMPT_HINT}\nverify> ", ctx.it, ctx.emit))
 
     if cmd.kind == QUIT:
         raise _Quit
-    idx, handled = _handle_navigation_action(cmd, idx, total, rows, emit)
+    idx, handled = _handle_navigation_action(cmd, idx, total, rows, ctx.emit)
     if handled:
         return idx
 
-    idx, handled = _handle_decision_action(cmd, row, idx, total, rows, emit, path, fieldnames)
+    idx, handled = _handle_decision_action(cmd, row, idx, total, ctx)
     if handled:
         return idx
 
-    if _handle_edit_action(cmd, row, rows, emit, it, path, fieldnames):
+    if _handle_edit_action(cmd, row, ctx):
         return idx
 
-    _emit_unknown_command(cmd, emit)
+    _emit_unknown_command(cmd, ctx.emit)
     return idx
+
+
+def _resolve_corpus_root(worksheet_path: Path) -> Path | None:
+    """The bundle `corpus/` dir named by the sibling `sample_manifest.json`, if reachable."""
+    bundle = _worksheet_bundle_hint(worksheet_path)
+    if bundle is None:
+        return None
+    corpus = Path(bundle) / CORPUS_DIRNAME
+    return corpus if corpus.is_dir() else None
+
+
+def _session_view(rows: list[dict[str, str]], order: str) -> list[dict[str, str]]:
+    """The review-queue view of `rows`: worksheet order, or least-confident first.
+
+    Reordering the view (the SAME row dicts) is enough: saves merge human columns back into the
+    on-disk worksheet by item id, so the CSV row order never changes.
+    """
+    if order == "confidence":
+        return [rows[i] for i in confidence_order(rows)]
+    return list(rows)
 
 
 def run_session(
@@ -553,25 +819,48 @@ def run_session(
     start: int | None = None,
     show_crosscheck: bool = False,
     clear: bool = False,
+    order: str = "worksheet",
+    corpus_root: Path | str | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> int:
     """Drive the interactive verification over `worksheet_path`; return the decided count.
 
     `inputs` / `output` are injected for testing; in a real terminal they default to `input()` /
     stdout. Every edit writes the whole CSV atomically, so a crash, EOF, or Ctrl-C never loses
     work. With no `start`, resume at the first undecided item. `clear` wipes all human columns
-    first (confirmation-gated).
+    first (confirmation-gated). `order="confidence"` reviews least-confident items first without
+    reordering the CSV. `corpus_root` (default: resolved from the sibling `sample_manifest.json`)
+    enables accept-with-edit re-grounding. `clock` is injected for stats tests; the session
+    appends its measured items-per-hour to `verify_session_stats.json` beside the worksheet.
     """
     path = Path(worksheet_path)
     emit = output or _default_output
     it: Iterator[str] | None = iter(inputs) if inputs is not None else None
 
-    rows, fieldnames = load_worksheet(path)
-    if not rows:
+    disk_rows, fieldnames = load_worksheet(path)
+    if not disk_rows:
         emit(f"[verify] worksheet has no rows: {path}")
         return 0
 
-    if not _maybe_clear_human_columns(clear, rows, path, fieldnames, it, emit):
-        return decided_count(rows)
+    if not _maybe_clear_human_columns(clear, disk_rows, path, fieldnames, it, emit):
+        return decided_count(disk_rows)
+
+    rows = _session_view(disk_rows, order)
+    if corpus_root is None:
+        resolved_corpus = _resolve_corpus_root(path)
+    else:
+        resolved_corpus = Path(corpus_root)
+    stats = SessionStats(clock=clock or time.monotonic)
+    ctx = SessionContext(
+        path=path,
+        fieldnames=fieldnames,
+        rows=rows,
+        emit=emit,
+        it=it,
+        corpus_root=resolved_corpus,
+        stats=stats,
+        show_crosscheck=show_crosscheck,
+    )
 
     total = len(rows)
     idx = _get_idx(start, total, rows)
@@ -584,13 +873,15 @@ def run_session(
             if is_completion:
                 continue
 
-            idx = _handle_row_action(rows, idx, total, emit, it, path, fieldnames, show_crosscheck)
+            idx = _handle_row_action(ctx, idx, total)
     except (_Quit, EOFError):
         pass
     except KeyboardInterrupt:
         emit("")
 
     _save(path, rows, fieldnames)
-    for line in summary_lines(rows, path):
+    if stats.decisions:
+        append_session_stats(path, _session_record(stats, rows))
+    for line in summary_lines(rows, path, stats=stats):
         emit(line)
     return decided_count(rows)

@@ -235,6 +235,37 @@ the higher mean, honestly qualified). Artifacts land at
 `$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`; probe cases never enter run
 bundles, the board, or correctness aggregates.
 
+Durable evidence (2026-07-10, rerank-order-full-cohort on the CUDA host, outside quick CI):
+full-final-split probes (`ua_squad_postedited_v1`, 82 final items, k=5, no LIMIT cap) per
+roster model on ollama, superseding the earlier n=20 llama run:
+
+- `llama3.2:3b`: head 0.448 [0.360, 0.526], middle 0.419 [0.331, 0.498],
+  tail 0.433 [0.351, 0.511] -- the mild best-first slope survives at n=82 but the head/tail CIs
+  still overlap. Explicit verdict: NOT measurably position-sensitive (head-tail delta 0.015 well
+  inside the CIs); the default `rank` ordering stands and no more n will plausibly resolve a
+  gap this small into a knob worth setting.
+- `gemma4:e4b`: head 0.414 [0.337, 0.493], middle 0.362 [0.291, 0.434],
+  tail 0.407 [0.333, 0.482] -- the classic lost-in-the-middle U-shape (the middle slot pays
+  ~-0.05 against both edges) but every pairwise CI overlaps at n=82. Explicit verdict: NOT
+  measurably head/tail position-sensitive (`rank` stands); the middle dip suggests keeping
+  `top_k` small enough that gold evidence never sits deep mid-context, which the shipped
+  per-model `top_k` sweep already optimizes.
+- `hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M`: head 0.517 [0.427, 0.592],
+  middle 0.507 [0.422, 0.584], tail 0.505 [0.423, 0.581] -- the flattest profile in the cohort
+  (head-tail delta 0.012, all CIs overlap). Explicit verdict: NOT position-sensitive; `rank`
+  stands, and the Ukrainian-specialized 12B is the most ordering-robust model probed.
+- `hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M`: head 0.528 [0.442, 0.606],
+  middle 0.481 [0.401, 0.566], tail 0.485 [0.404, 0.566] -- the largest head advantage in the
+  cohort (+0.043 over tail) with a mild middle dip, but the CIs still overlap at n=82. Explicit
+  verdict: NOT measurably position-sensitive; `rank` (already best-first) captures whatever
+  head preference exists, so no knob change is warranted.
+
+Cohort verdict: no probed roster model resolves head/tail position sensitivity at the full
+final-split n=82 -- the honest cohort-wide recommendation is that the default `rank` ordering
+stands everywhere and `context_order` is not a knob worth per-model tuning on this goldset.
+The rerank half of the cohort is recorded in [RAG core](rag-core.md) Reranking And Context
+Order.
+
 ## Insufficient-Context Abstention Probe (run-eval --insufficient-context-probes)
 
 `llb run-eval --insufficient-context-probes <n>` re-runs a seeded sample of gold items with their
@@ -245,14 +276,6 @@ bundle) and NEVER enter the correctness aggregates. It is part of the answer-sid
 groundedness/citation metrics; the mechanism, the deterministic groundedness + citation-validity
 scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evidence live in
 [RAG core](rag-core.md) groundedness and citation metrics.
-
-Durable evidence (2026-07-08, real run on the CUDA host, outside quick CI): `llama3.2:3b`
-(ollama) over the published `ua_squad_postedited_v1` goldset at k=5, 20 final items (0 skips):
-head 0.355 [0.207, 0.510], middle 0.341 [0.198, 0.487], tail 0.327 [0.179, 0.478] -- a mild
-best-first slope, so the probe recommends `rank` while flagging the overlapping head/tail CIs
-as unresolved at n=20 (the honest verdict: this model is not measurably position-sensitive at
-this sample size; the default ordering stands). The rerank half of the same validation run is
-recorded in [RAG core](rag-core.md) Reranking And Context Order.
 
 ## Ukrainian Security Adaptation
 

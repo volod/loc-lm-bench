@@ -195,6 +195,11 @@ class RunConfig(BaseModel):
     # (built with `build-query-glossary`). Both are recorded in the manifest fingerprint.
     query_prep: list[str] = Field(default_factory=list)
     query_glossary_path: Path | None = None
+    # Morphology guard for the 'typos' step (morphology-aware-typo-guard): when on, an
+    # out-of-vocabulary query token pymorphy3 recognizes as a valid Ukrainian word form is left
+    # unchanged (it is an inflection for the lemmatization lane, not a misspelling). Off by
+    # default so the pure edit-distance behavior stands when the [lex] extra is absent.
+    query_prep_typo_guard: bool = False
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the
@@ -268,6 +273,8 @@ class RunConfig(BaseModel):
             self.chunk_overlap, self.chunk_size, self.retrieval_mode, self.child_chunk_size
         )
         _validate_query_prep(self.query_prep)
+        if self.query_prep_typo_guard and "typos" not in self.query_prep:
+            raise ValueError("query_prep_typo_guard needs the 'typos' step in query_prep")
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         if self.backend == "vllm":

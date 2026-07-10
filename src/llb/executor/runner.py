@@ -310,9 +310,14 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
     vocabulary = None
     glossary = None
     rewriter = None
+    known_word = None
     if qp.STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
         vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+        if config.query_prep_typo_guard:
+            from llb.rag.lexical import load_uk_word_probe
+
+            known_word = load_uk_word_probe()
     if qp.STEP_GLOSSARY in steps:
         if config.query_glossary_path is None:
             raise SystemExit(
@@ -328,7 +333,11 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         rewriter = _launcher_rewriter(config, launcher)
     try:
         return qp.QueryPrep.build(
-            steps, vocabulary=vocabulary, glossary=glossary, rewriter=rewriter
+            steps,
+            vocabulary=vocabulary,
+            glossary=glossary,
+            rewriter=rewriter,
+            known_word=known_word,
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None

@@ -7,11 +7,6 @@ the topic files under [`current/`](current/). The product spec lives in
 
 ## Forward Tasks
 
-The any-corpus autopipeline that turns a mixed `txt`/`md`/`pdf` directory into a validated RAG
-index plus a resumable, unverified draft bundle is now shipped (`llb ingest-corpus`,
-`make quickstart-corpus`, `prepare-goldset-draft --resume`; see [data prep](current/data-prep.md)).
-The tasks below build the rest of the corpus-to-recommendation spine on that foundation.
-
 The forward work is split into two sections by **who must act to complete it**:
 
 - **[Agent Implementation Tasks](#agent-implementation-tasks)** land to `make ci` green with
@@ -25,56 +20,47 @@ The forward work is split into two sections by **who must act to complete it**:
   step** is what gates completion.
 
 Task numbers are stable ids and never change; every task carries an explicit `Dependencies` line,
-and the recommended build order within each section follows those lines. Two dependencies cross the
-section boundary and are called out because they are **blocked by human work**:
+and the recommended build order within each section follows those lines. One dependency crosses the
+section boundary and is called out because it is **blocked by human work**:
 
 - **Agent task 8 (`context-policy-bench`) is BLOCKED BY human task 7 (`chain-goldset-generation`).**
   Task 8 scores a *verified* chain fixture, and only the human review gate in task 7 can produce
   one. Task 8's code (context-assembly + fake-endpoint tests) can be written earlier, but its
   acceptance run cannot pass until task 7's human-accepted chains exist.
-- **Agent task 11 (`verification-gate-adjudication`) depends on the CODE of human task 3
-  (`verify-cli-throughput`).** Both extend `src/llb/goldset/verify.py` and `verify_session.py`;
-  land task 3's code first to avoid a merge conflict. Task 3's *human throughput evidence* does
-  **not** block task 11 -- only the shared code surface does.
 
 For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
 [data prep](current/data-prep.md).
 
-The remaining fine-tuning cluster (22-23) extends the spine one step past recommendation: from
-naming the best base model to naming the best *adapted* model for the operator's corpus, with the
-single-model self-improvement loop, the multi-model campaign substrate, the adapter registry, and the
-budgeted LoRA hyperparameter search as reusable bases (see
-[extended workflows](current/extended-workflows.md)). Task 22 (optional) distills the roster's best
-local teacher into smaller students; 23 (optional) adds native support for compressed QAT checkpoints
-whose linear layers need adapter injection beyond ordinary PEFT LoRA defaults -- all local, no egress.
-Ordering inside the cluster: 22 after the campaign substrate, 23 after the baseline trainer path. The
-`adapter-*` and `finetune-hparams-*` tasks above harden the shipped registry, merge lane, and search,
-and are independent of the cluster.
+Every task below carries an explicit `Agent status` line with one of four markers:
+
+- **CLEAR** -- agent-buildable to `make ci` green with fixtures/fakes; no run evidence, no human
+  gate.
+- **RUN NEEDED** -- agent-buildable, but acceptance requires a heavy deterministic run; every dev
+  box is a proper CUDA host, so the agent executes these runs itself on the current machine.
+- **BLOCKED BY HUMAN** -- the acceptance gate consumes an artifact only a human step can produce.
+- **HUMAN-GATED** -- the deliverable itself is human judgment or authorization; supporting code and
+  unit tests are agent-buildable.
 
 ## Agent Implementation Tasks
 
-These land to `make ci` green with fixtures, fakes, and deterministic harnesses. The
-Ukrainian-RAG-quality foundations are shipped: the measured embedder ranking
-(`llb compare-embeddings`; see [RAG core](current/rag-core.md) retrieval store) that replaces the
-assumed default embedder with evidence, the page/section join
-(`src/llb/rag/page_metadata.py`) that links every chunk back to its origin file, and the hybrid
-dense+BM25 retrieval with the chunk-metadata filter seam (see [RAG core](current/rag-core.md)
-hybrid retrieval); the query-side processing lane (`--query-prep`) that builds on the measured
-embedder result is shipped (see [RAG core](current/rag-core.md) query-side processing).
-The external multi-service drafting lane is also shipped end to end -- both the `curate-drafts`
-merge/dedup/filter step and the grounded-JSONL `import-external-draft` lane for full-document needle
-realism (see [data prep](current/data-prep.md) grounded-JSONL import).
-The miss analysis (`llb analyze-misses` + probe mode + the recommend misses section) is also
-shipped; see [evaluation rigor](current/rigor-board-judge.md) miss-analysis section.
-Recommended sequence: 11 after task 3's code; 22 after the campaign substrate; 23
-after the baseline trainer path; and 8 last (blocked by human task 7). The
-durable-eval-runner (retry + `cases.progress.jsonl` journal +
-`--resume` + bounded backend relaunch + `manifest.durability` counters) is now shipped; see
-[RAG core](current/rag-core.md) durability section.
+These land to `make ci` green with fixtures, fakes, and deterministic harnesses.
+Recommended agent sequence (optional tasks included; human-gated work last):
+
+1. **CLEAR (fixtures only), in order**: 11 (`verification-gate-adjudication`);
+   `adapter-citation-scan-orchestrator-journals`; `finetune-hparams-stratified-dev-slice`; and the
+   optional `citation-coverage-metric`, `external-rag-source-mapping`,
+   `adapter-staleness-retrieval-fingerprint`, `finetune-hparams-infeasible-point-prune`,
+   `verify-sample-exact-allocation`, `draft-feedback-rejection-reasons`, and
+   `external-import-needle-parity` in any order.
+2. **Human-gated tail**: task 8's code (context assembly + fake-endpoint tests) can be pre-built at
+   any point, but its acceptance run stays last -- it is blocked by human task 7's verified chain
+   fixture.
 
 ### 8. context-policy-bench
 
+- Agent status: **BLOCKED BY HUMAN task 7** -- the code is agent-buildable now, but the acceptance
+  run consumes the verified `chains.jsonl` fixture only task 7's human review gate can emit.
 - Dependencies: **BLOCKED BY human task 7 (`chain-goldset-generation`)** -- the acceptance run
   needs the verified `chains.jsonl` committed fixture that only task 7's human review gate can
   emit. The code (multi-hop substrate reuse, prompt-system role packages, context-assembly unit
@@ -111,17 +97,18 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### 11. verification-gate-adjudication
 
-- Dependencies: land after **task 3's `verify.py`/`verify_session.py` code** (both tasks extend the
-  same modules; sequencing avoids a merge conflict). Task 3's human throughput evidence does not
-  block this task. Otherwise independent -- all acceptance gates use synthetic reviewed fixtures.
+- Agent status: **CLEAR** -- fixtures only; no human step gates this task.
+- Dependencies: none -- the `verify.py`/`verify_session.py` review-CLI surface this task extends is
+  shipped (see [data prep](current/data-prep.md) reviewer throughput tooling); all acceptance gates
+  use synthetic reviewed fixtures.
 - User-visible outcome: the human verification gate supports more than one annotator and richer
   acceptance rules: a stratified sample can be assigned to N reviewers, inter-annotator agreement
   (Cohen's/Fleiss' kappa) is reported, disagreements route to an adjudication pass, and acceptance
   arithmetic becomes configurable (per-stratum thresholds and confidence-weighted acceptance) rather
   than a single global tolerance. This is the "changes to the verification gate" item the shipped
   any-corpus autopipeline held out of scope (see [data prep](current/data-prep.md)), plus the
-  multi-annotator / acceptance-arithmetic carve-outs of
-  [`verify-cli-throughput`](#3-verify-cli-throughput).
+  multi-annotator / acceptance-arithmetic carve-outs the shipped review CLI deliberately left out
+  (see [data prep](current/data-prep.md) reviewer throughput tooling).
 - Scope boundary: in scope -- extend `src/llb/goldset/verify.py` (stratification, sampling,
   acceptance arithmetic, ledger emission) and `src/llb/goldset/verify_session.py` with a reviewer
   id on worksheet rows, an agreement report, an adjudication worksheet drawn from disagreements, and
@@ -147,39 +134,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   and
   [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
-### morphology-aware-typo-guard (optional)
-
-- Dependencies: the shipped query-side processing lane's `typos` step (see
-  [RAG core](current/rag-core.md) query-side processing). Agent-buildable; the `[lex]` extra
-  (pymorphy3) is already used index-side.
-- Why this is forward work: the deterministic edit-distance `typos` step corrects any query token
-  ABSENT from the corpus vocabulary to its nearest in-vocabulary token. On inflection-rich
-  Ukrainian this also "corrects" grammatically-valid inflected query forms (e.g. `поділяють` ->
-  `поділяти`, `документами` -> `документа`) that are not misspellings but simply a different case
-  than the corpus surface form -- a crude inflection-match that can HURT retrieval on a
-  non-saturated corpus (the committed fixture saturates at recall@5 1.000, so the A/B could not
-  surface the regression there).
-- User-visible outcome: a `typos` step that skips a token pymorphy3 recognizes as a valid
-  Ukrainian word form (so genuine misspellings are still corrected, but valid inflections are left
-  for the shipped index+query lemmatization to match), gated behind a flag so the pure
-  edit-distance behavior stays the default when the `[lex]` extra is absent.
-- Scope boundary: in scope -- an optional morphology check in `src/llb/rag/query_prep.py`
-  `apply_typos` reusing `llb.rag.lexical.load_uk_lemmatizer` / a pymorphy3 `word_is_known` probe;
-  an A/B row demonstrating the guard's effect on an inflection-rich non-saturated corpus. Out of
-  scope -- a learned spell-corrector (the deterministic ceiling stands), changing the default
-  edit-distance thresholds.
-- Data and artifact paths: no new artifact; the guard is a `RunConfig` sub-knob of the `typos`
-  step recorded in the manifest fingerprint.
-- Execution path: `llb validate-retrieval --query-prep typos --query-prep-ab` on an
-  inflection-rich goldset with and without the guard; unit tests: a valid inflected form is left
-  untouched under the guard, a genuine misspelling is still corrected.
-- Acceptance gates: `make ci` green; the guard leaves a pymorphy3-known valid form unchanged while
-  still correcting an unknown misspelling (unit-tested); the A/B records the guarded-vs-unguarded
-  retrieval delta on a non-saturated corpus.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
 ### citation-coverage-metric (optional)
 
+- Agent status: **CLEAR** -- deterministic, fixtures only; no run evidence, no human gate.
 - Dependencies: the shipped groundedness/citation metrics (`--cited-answers`; see
   [RAG core](current/rag-core.md) groundedness and citation metrics). Agent-buildable, deterministic.
 - Why this is forward work: the shipped `citation_validity` collapses two very different failure
@@ -206,6 +163,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### external-rag-source-mapping (optional)
 
+- Agent status: **CLEAR** -- fixtures only; no run evidence, no human gate.
 - Dependencies: none.
 - User-visible outcome: external RAG answer-log scoring can audit retrieval evidence, not only
   answer text, by joining provider source records onto benchmark corpus spans. Operators supply a
@@ -227,38 +185,9 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 - Documentation target: [RAG core](current/rag-core.md) external answer log scoring and
   [`docs/guides/data-prep/external-ai-service-artifacts.md`](../guides/data-prep/external-ai-service-artifacts.md).
 
-### adapter-merge-serving-cuda-evidence (optional)
-
-- Dependencies: the shipped adapter registry, merge lane, and `serve-adapter` (see
-  [extended workflows](current/extended-workflows.md) adapter registry and lifecycle). The heavy
-  merge + serve executes on the CUDA host (deterministic, no human judgment).
-- Why this is forward work: the merge-to-GGUF lane (PEFT `merge_and_unload` ->
-  `convert_hf_to_gguf.py` -> `ollama create`) is only exercised against an INJECTED fake merge in
-  CI, so the real path has never run: the converter's architecture coverage, the merged model's
-  tokenizer round-trip, and whether a merged adapter actually answers as the ADAPTER (and not as
-  the base model) are all unverified. A merge that silently produced base-model behavior would be
-  invisible to every current test.
-- User-visible outcome: a recorded CUDA-host run merging one registered adapter and serving it on
-  BOTH `ollama` and `llamacpp`, with a `run-eval` comparison proving the merged artifact scores like
-  the vLLM LoRA row (within overlapping CIs) rather than like the base model.
-- Scope boundary: in scope -- run the shipped `llb serve-adapter --backend ollama|llamacpp` against
-  a real adapter; record the merge wall-clock, GGUF size, and the merged-vs-LoRA-vs-base objective
-  triple in current docs; note any architecture the converter rejects. Out of scope -- new merge
-  code (the lane is shipped), quantized GGUF outtypes beyond the pinned `f16`, uploading merged
-  artifacts anywhere (egress).
-- Data and artifact paths: `$DATA_DIR/adapters/merged/<short-id>/<backend>/`; the comparison table
-  lands in current docs.
-- Execution path: `llb serve-adapter --adapter <id> --backend ollama --smoke`, then
-  `llb run-eval --model <merged-tag> --backend ollama` on the CUDA host (outside quick CI).
-- Acceptance gates: both GGUF backends serve the merged adapter and answer the probe; the merged
-  row's final-split objective matches the vLLM LoRA row within overlapping CIs and differs from the
-  base row -- or the divergence is recorded honestly as a merge-fidelity finding; current docs record
-  the merge cost and the three-way objective comparison.
-- Documentation target: [extended workflows](current/extended-workflows.md) adapter registry and
-  lifecycle; the self-improvement-loop guide's serving section.
-
 ### adapter-citation-scan-orchestrator-journals
 
+- Agent status: **CLEAR** -- fixtures only; no run evidence, no human gate.
 - Dependencies: the shipped GC citation scan (see
   [extended workflows](current/extended-workflows.md) adapter registry and lifecycle).
   Agent-buildable; all gates use committed fixtures.
@@ -286,6 +215,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### adapter-staleness-retrieval-fingerprint (optional)
 
+- Agent status: **CLEAR** -- deterministic, fixtures only; no run evidence, no human gate.
 - Dependencies: the shipped staleness check (see
   [extended workflows](current/extended-workflows.md) adapter registry and lifecycle) and the RAG
   store meta (`store_meta.json`; see [RAG core](current/rag-core.md)). Agent-buildable,
@@ -314,6 +244,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### finetune-hparams-stratified-dev-slice
 
+- Agent status: **CLEAR** -- fixtures only; no run evidence, no human gate.
 - Dependencies: the shipped budgeted LoRA search (see
   [extended workflows](current/extended-workflows.md) hyperparameter search). Agent-buildable; all
   gates use committed fixtures.
@@ -346,6 +277,7 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 
 ### finetune-hparams-infeasible-point-prune (optional)
 
+- Agent status: **CLEAR** -- deterministic, fixtures only; no run evidence, no human gate.
 - Dependencies: the shipped budgeted LoRA search and the memory planner
   (`src/llb/backends/planner.py`; see
   [robust backends and ontology drafting](current/robustness-ontology-backends.md) memory planner).
@@ -371,178 +303,60 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
   (unit-tested); a pruned trial still leaves a manifest row naming the estimated footprint.
 - Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
 
-### finetune-hparams-effective-batch-axis (optional)
+### verify-sample-exact-allocation (optional)
 
-- Dependencies: the shipped budgeted LoRA search. Agent-buildable; the real search runs on the CUDA
-  host.
-- Why this is forward work: the search space covers rank, alpha, dropout, learning rate, epochs, and
-  target modules, but `per_device_train_batch_size`, `gradient_accumulation_steps`, and `max_length`
-  stay pinned at the trainer's conservative defaults. Effective batch size interacts strongly with
-  learning rate, so a recorded best learning rate is only best AT the pinned batch size -- an
-  operator who changes the batch size silently invalidates the searched config.
-- User-visible outcome: the study searches effective batch size beside learning rate, so the
-  recorded best config is self-consistent, and `hparams_manifest.json` records the batch geometry
-  the learning rate was chosen under.
-- Scope boundary: in scope -- add `per_device_train_batch_size` x `gradient_accumulation_steps`
-  (sampled as an effective-batch categorical so the two are never independently meaningless) and
-  `max_length` to `suggest_lora_hyperparameters`; the trainer already consumes all three keys. Out
-  of scope -- a learning-rate schedule search, gradient checkpointing, a second optimizer.
-- Data and artifact paths: additive keys in the sampled hyperparameters; no new artifact.
-- Execution path: `llb finetune-hparams --max-trials 12`; unit tests -- the sampled effective batch
-  is always the product of the two knobs, and a seeded study still reproduces its trial table.
-- Acceptance gates: `make ci` green with the fake trainer; the effective-batch invariant is
-  unit-tested; one real bounded search on the CUDA host records whether the widened space beats the
-  pinned-batch best config (no-gain is acceptable evidence).
-- Documentation target: [extended workflows](current/extended-workflows.md) hyperparameter search.
+- Agent status: **CLEAR** -- fixtures only; no run evidence, no human gate.
+- Dependencies: the shipped stratified sampler (`draw_stratified_sample` in
+  `src/llb/goldset/verify.py`; see [data prep](current/data-prep.md) verification gate).
+- Why this is forward work: the sampler trims when proportional quotas overshoot `n` but never
+  tops up when rounding undershoots, so `verify-sample VERIFY_N=40` can emit a 39-row worksheet
+  (the quickstart-draft review hit exactly this; the operator had to merge-enlarge with a larger
+  `n` to cross the target). Related sizing fact: at tolerance 0.05 a stratum needs >= 20 decided
+  rows to absorb a single reject, so under-filled cells guarantee advisory per-stratum FAIL
+  warnings on any reject.
+- User-visible outcome: `verify-sample` draws exactly `min(n, population)` rows, so a requested
+  40-item review is a 40-item review; the sample manifest records the final per-stratum
+  allocation.
+- Scope boundary: in scope -- a deterministic largest-remainder top-up in
+  `draw_stratified_sample` distributing the rounding shortfall across strata while keeping the
+  per-stratum floor of one and seeded reproducibility. Out of scope -- changing the floor-of-one
+  rule, the acceptance arithmetic, or the merge lane.
+- Data and artifact paths: no new artifact; `sample_manifest.json` already records strata sizes.
+- Execution path: `make verify-sample BUNDLE=<draft> VERIFY_N=<n>`; unit tests -- a population
+  whose proportional rounding undershoots today yields exactly `n` rows at every seed, and a
+  seeded draw stays reproducible.
+- Acceptance gates: `make ci` green; the exact-`n` draw is unit-tested against an undershooting
+  fixture; existing determinism tests still pass.
+- Documentation target: [data prep](current/data-prep.md) verification gate.
 
-### 23. compressed-qat-adapter-support (optional)
+### draft-feedback-rejection-reasons (optional)
 
-- Dependencies: follows the baseline trainer path in
-  [extended workflows](current/extended-workflows.md); registered adapter provenance is available
-  through the shipped adapter registry.
-- User-visible outcome: compressed-tensors QAT checkpoints can participate in adapter campaigns
-  instead of serving only as base models: the trainer detects compressed linear modules, chooses a
-  compatible adapter-injection strategy or an explicit skip reason, and reports whether the
-  checkpoint is trainable on the host without crashing mid-campaign.
-- Scope boundary: in scope -- model-introspection helpers for native quantization configs,
-  per-architecture target-module selection, a compatibility shim or documented fallback for PEFT
-  injection into compressed linear layers, and campaign skip/report plumbing that names the exact
-  trainability blocker. Out of scope -- dequantizing full checkpoints into new base weights,
-  uploading converted models, or adding a second training framework before the PEFT path is
-  exhausted.
-- Data and artifact paths: compatibility probes live under
-  `$DATA_DIR/finetune-compat/<model>/<timestamp>/`; campaign skip reasons stay in
-  `campaign.progress.jsonl` and `report.md`.
-- Execution path: `llb finetune-compat --model <m> --backend <b>` plus campaign auto-probing for
-  native compressed checkpoints; unit tests use fake compressed linear modules and a fake trainer.
-- Acceptance gates: `make ci` green; compressed native-quant fixtures either receive a working
-  adapter or a deterministic skip reason before training starts; one CUDA-host probe records the
-  trainable/not-trainable verdict for a compressed QAT checkpoint in current docs.
-- Documentation target: [extended workflows](current/extended-workflows.md); the
-  self-improvement-loop guide's compatibility notes.
-
-### embedding-bakeoff-full-corpus
-
-- Dependencies: the shipped `llb compare-embeddings` bake-off (see
-  [RAG core](current/rag-core.md) Embedder Conventions And Bake-off). Heavy store builds run on the
-  CUDA host (deterministic, no human judgment).
-- Why this is forward work: the committed durable evidence ranks the four local candidates on the
-  tiny `samples/goldsets/ip_regulation_uk` fixture (8 items / 10 chunks), where recall@10 SATURATES
-  (e5-base, e5-large, and bge-m3 all hit 1.000) so the winner is decided only by an MRR + throughput
-  tie-break, and the reported `chunks/s` is cold-load-dominated rather than steady-state. The
-  recommendation "e5-base for the 16 GB host" is therefore under-discriminated.
-- User-visible outcome: a bake-off report over a REAL full Ukrainian corpus (e.g. the quickstart PDF
-  corpus index) at a larger `k`, where recall@k actually separates the candidates and embed
-  throughput reflects steady state, yielding a confidently-ranked embedder recommendation the
-  operator can trust before pinning `RunConfig.embedding_model`.
-- Scope boundary: in scope -- run `make compare-embeddings` on a full-corpus goldset, record the
-  ranked table + winner in [RAG core](current/rag-core.md) and
-  [platform matrix](current/platform-vector-matrix.md), and note the per-candidate index size / VRAM
-  fit on the 16 GB host. Out of scope -- new bake-off code (the command is shipped), an API row
-  unless the corpus is explicitly open, changing the pinned drafting-side E5 seams.
-- Data and artifact paths: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus the per-model
-  stores; the durable table lands in current docs.
-- Execution path: `make compare-embeddings GOLDSET=<full-corpus goldset> RAG_K=20` on the CUDA host
-  (outside quick CI); then `make build-index EMBEDDING_MODEL=<winner>`.
-- Acceptance gates: the report ranks all four local candidates with a NON-saturated recall@k spread
-  on the full corpus; current docs record the discriminated winner and its index size / device fit.
-- Documentation target: [RAG core](current/rag-core.md) Embedder Conventions And Bake-off;
-  [platform matrix](current/platform-vector-matrix.md).
-
-### chunking-comparison-full-corpus (optional)
-
-- Dependencies: the shipped chunking-strategy comparison (`compare-retrieval --strategies` /
-  `make compare-retrieval CHUNK_STRATEGIES=...`; see [RAG core](current/rag-core.md) chunking
-  strategies). Heavy store builds run on the CUDA host (deterministic, no human judgment).
-- Why this is forward work: the committed durable evidence ranks the eight strategies on the tiny
-  `samples/goldsets/ip_regulation_uk` fixture, where recall@10 SATURATES at 1.000 for every
-  strategy and even k=3 separates only `late` (0.875/0.750) from a seven-way 1.000/1.000 tie; the
-  single-`.md` corpus also has no PDF sidecars, so the `page` strategy degenerates to `recursive`
-  and its page-alignment value is never exercised on real data.
-- User-visible outcome: a chunker ranking over a REAL full Ukrainian PDF corpus (e.g. the
-  quickstart PDF corpus, whose `*.citations.json` sidecars make `page` meaningful) at a k where
-  recall separates strategies, yielding a demonstrated per-corpus chunker recommendation before an
-  operator pins `RunConfig.strategy`.
-- Scope boundary: in scope -- run the shipped comparison over a full-corpus goldset, record the
-  ranked table + winner in [RAG core](current/rag-core.md), and note `late`'s extra embed
-  wall-clock beside its quality delta. Out of scope -- new comparison code (the command is
-  shipped), new strategies, changing the source-span metric.
-- Data and artifact paths: per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`; the ranked
-  table lands in current docs.
-- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10
-  CHUNK_STRATEGIES=page,heading,late,markdown,semantic,recursive` on the CUDA host (outside
-  quick CI); then `make build-index CHUNK_STRATEGY=<winner>`.
-- Acceptance gates: the report shows a NON-saturated recall@k spread over a sidecar-bearing
-  corpus; current docs record the discriminated winner and the measured `page`-vs-`recursive` and
-  `late`-vs-`sentence` deltas.
-- Documentation target: [RAG core](current/rag-core.md) chunking strategies.
-
-### hybrid-comparison-full-corpus (optional)
-
-- Dependencies: the shipped hybrid retrieval comparison (`compare-retrieval --hybrid` /
-  `make compare-retrieval HYBRID=1`; see [RAG core](current/rag-core.md) hybrid retrieval).
-  Heavy store builds run on the CUDA host (deterministic, no human judgment).
-- Why this is forward work: the committed durable evidence ranks dense vs hybrid on two tiny
-  single-document fixtures where three signals stay UNDER-MEASURED: recall@10 saturates at 1.000
-  (only MRR separates the rows), the lemmatization on/off delta is zero because the exact-term
-  queries are built around non-inflecting numbers/codes, and the `dense+oracle-doc` router
-  headroom row degenerates to the dense row (a document filter is a no-op on a one-document
-  corpus).
-- User-visible outcome: a dense-vs-hybrid(-vs-lemmas) ranking plus a MEANINGFUL router-headroom
-  number over a real multi-document Ukrainian corpus (e.g. the quickstart PDF corpus) with
-  inflection-rich queries, yielding a per-corpus verdict on the fusion default
-  (`fusion_weight`, lemmas on/off) an operator can trust before pinning
-  `RunConfig.retrieval_mode=hybrid`.
-- Scope boundary: in scope -- run the shipped comparison over a full-corpus goldset at a k where
-  recall separates the rows, record the ranked table + fusion-knob verdict in
-  [RAG core](current/rag-core.md), and grid `fusion_weight` in one sweep to cross-check the
-  compare-retrieval verdict against end-to-end scores. Out of scope -- new comparison code (the
-  command is shipped), the shipped query-side processing lane (`--query-prep`), a learned document
-  router (the oracle row only measures headroom).
-- Data and artifact paths: the hybrid store under `$DATA_DIR/llb/rag/hybrid/`; the ranked table
-  lands in current docs.
-- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1` on the
-  CUDA host (outside quick CI); then `make build-index RETRIEVAL_MODE=hybrid [LEMMATIZE=1]` and
-  `make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"`.
-- Acceptance gates: the report shows a non-saturated dense-vs-hybrid spread, a non-degenerate
-  oracle-doc headroom row (multi-document corpus), and a measured lemmatization delta (positive,
-  zero, or negative -- reported honestly); current docs record the fusion-knob verdict.
-- Documentation target: [RAG core](current/rag-core.md) hybrid retrieval.
-
-### rerank-order-full-cohort (optional)
-
-- Dependencies: the shipped rerank + context-order stage (`compare-retrieval --reranker`,
-  `probe-context-position`; see [RAG core](current/rag-core.md) reranking and context order).
-  Heavy runs execute on the CUDA host (deterministic, no human judgment).
-- Why this is forward work: the committed rerank evidence lives on the two tiny fixtures where
-  recall@10 saturates at 1.000 (only MRR discriminates -- the exact-term fixture shows the big
-  cross-encoder win, dense MRR 0.713 -> 1.000, but recall headroom is invisible), and the
-  committed position-probe run (llama3.2:3b, n=20) ends with OVERLAPPING head/tail CIs, so no
-  model has a resolved ordering verdict yet.
-- User-visible outcome: a rerank on/off verdict at a k where recall separates (does the
-  cross-encoder recover the real-corpus recall@10=0.729 shortfall dense-only shows on the
-  quickstart PDF index?) plus a resolved per-model `context_order` recommendation for each
-  roster model at an n where the CIs separate -- or the honest verdict that the model is not
-  position-sensitive.
-- Scope boundary: in scope -- run `make compare-retrieval RERANKER=... [HYBRID=1]` over a
-  full-corpus goldset, grid `rerank_candidates=0,30` in one sweep to cross-check retrieval
-  uplift against end-to-end scores, and run `make probe-context-position` per roster model at
-  full-split n; record verdicts in current docs. Out of scope -- new probe/rerank code (the
-  commands are shipped), API rerankers (egress policy).
-- Data and artifact paths: probe reports under `$DATA_DIR/context-position/<timestamp>/`; the
-  ranked rerank rows land in current docs.
-- Execution path: `make compare-retrieval GOLDSET=<full-corpus goldset> RAG_K=10 HYBRID=1
-  RERANKER=BAAI/bge-reranker-v2-m3`; `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"`;
-  `make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5` (no LIMIT cap) -- all on the
-  CUDA host, outside quick CI.
-- Acceptance gates: the rerank rows report a non-saturated pre/post-rerank recall@k spread plus
-  steady-state latency on the full corpus; each probed model gets either non-overlapping
-  head/tail CIs or an explicit not-position-sensitive verdict; current docs record both.
-- Documentation target: [RAG core](current/rag-core.md) reranking and context order;
-  [evaluation rigor](current/rigor-board-judge.md) context-position probe.
+- Agent status: **CLEAR** -- fixtures only; no run evidence, no human gate.
+- Dependencies: the shipped coded-rejection export (`rejection_reasons.json`; see
+  [data prep](current/data-prep.md) reviewer throughput tooling).
+- Why this is forward work: the verify gate exports WHY items were rejected, but the drafting
+  pipeline never reads it -- an operator re-drafting after a failed acceptance gets the same
+  prompts that produced the rejected items, so the feedback loop currently ends at a JSON file.
+- User-visible outcome: `prepare-goldset-draft` accepts a rejection-feedback file and tightens the
+  draft prompts per dominant reject code (e.g. a `circular`-heavy summary adds an explicit
+  non-circularity instruction with a rejected example), with the applied feedback recorded in
+  bundle provenance.
+- Scope boundary: in scope -- a deterministic reject-code-to-prompt-hint mapper in the ontology
+  draft stage reusing the closed reject-code set; provenance records the applied hints and the
+  feedback file digest. Out of scope -- a learned prompt optimizer, changing the reject-code set,
+  automatic re-drafting.
+- Data and artifact paths: no new artifact; `provenance.json` gains an applied-feedback block.
+- Execution path:
+  `make prepare-goldset-draft DRAFT_REJECTION_FEEDBACK=<bundle>/accepted/rejection_reasons.json`;
+  unit tests -- each reject code maps to a deterministic hint, and an empty summary is a no-op.
+- Acceptance gates: `make ci` green; the hint mapping is unit-tested per code; provenance names
+  the feedback source.
+- Documentation target: [data prep](current/data-prep.md).
 
 ### external-import-needle-parity (optional)
 
+- Agent status: **CLEAR** -- fixtures only (committed `samples/external-drafts` + fake retriever);
+  no run evidence, no human gate.
 - Dependencies: the shipped grounded-JSONL import (see [data prep](current/data-prep.md)
   grounded-JSONL import) and the shipped `prepare-goldset-draft --retrieval-index-dir` needle-rank
   annotation. Agent-buildable with the committed `samples/external-drafts` fixture; no network.
@@ -570,11 +384,20 @@ durable-eval-runner (retry + `cases.progress.jsonl` journal +
 ## Human-Assisted Tasks
 
 Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
-completion. Tasks 3 and 7 also gate agent work: land task 3's code before agent task 11, and
-finish task 7's human review before agent task 8's acceptance run.
+completion. Task 7 also gates agent work: finish its human review before agent task 8's
+acceptance run.
+
+Recommended order for the human steps once the agent has pre-built each task's code: task 7's
+chain review first (it is the only human step blocking agent work -- task 8's acceptance run);
+then task 1's coverage-vs-cap review and task 5's derived-case review (both consume the same
+verify-gate muscle over agent-prepared bundles); task 2's egress consent + spend decision is
+independent and can happen whenever the operator is ready to authorize it.
 
 ### 1. draft-yield-quality-max -- residual empirical acceptance
 
+- Agent status: **HUMAN-GATED** -- the coverage-vs-cap accept-rate evidence needs a human
+  `verify-sample` review pass; the optional multi-hop answer hardening is CLEAR (agent-buildable
+  now). The agent can run both draft passes on the current CUDA host so only the review gates.
 - Dependencies: none (uses the shipped drafting knobs). Human step: the acceptance evidence below
   needs a local drafter model and a human reviewer and cannot run in CI; the optional multi-hop
   hardening is agent-buildable and unit-tested.
@@ -601,6 +424,9 @@ finish task 7's human review before agent task 8's acceptance run.
 
 ### 2. frontier-ua-draft-lane
 
+- Agent status: **HUMAN-GATED** -- human egress consent + API spend authorization gate the real
+  2-document frontier probe; all code and fake-completer tests are CLEAR (agent-buildable now, no
+  network).
 - Dependencies: none (code reuses `src/llb/prep/frontier.py`). Human step: the real-frontier
   2-document probe requires **human egress consent and API spend** under the recorded egress policy;
   the code and all fake-completer tests are agent-buildable without any network call.
@@ -633,40 +459,11 @@ finish task 7's human review before agent task 8's acceptance run.
 - Documentation target: [data prep](current/data-prep.md) frontier lane notes;
   [`docs/guides/data-prep/goldset-from-scratch.md`](../guides/data-prep/goldset-from-scratch.md).
 
-### 3. verify-cli-throughput
-
-- Dependencies: none. **Blocks agent task 11** (that task extends the same
-  `verify.py`/`verify_session.py` surface -- land this task's code first). Human step: the
-  "materially more items per hour" outcome needs a recorded human 40-item review pass with measured
-  throughput; the CLI code and unit tests are agent-buildable.
-- User-visible outcome: a human reviewer clears materially more items per hour in the terminal
-  review session: a confidence-ordered queue (cross-check verdict and `retrieval_rank` decide
-  order), on-card evidence with PDF page citations, accept-with-edit that re-grounds an edited
-  answer span immediately, additive sample enlargement that never re-shows decided rows,
-  session stats with an items-per-hour ETA, and coded rejection reasons exported for draft
-  feedback.
-- Scope boundary: in scope -- extend `src/llb/goldset/verify.py` and
-  `src/llb/goldset/verify_session.py`; keep the worksheet CSV shape backward compatible (new
-  optional columns only); a `verify-sample` merge mode that draws additional stratified rows
-  while carrying prior decisions forward; a rejection-reason summary artifact the drafting
-  pipeline can read to tighten prompts. Out of scope -- a web UI, multi-annotator merging,
-  changes to acceptance arithmetic.
-- Data and artifact paths: worksheets under the draft bundle as today; a
-  `rejection_reasons.json` summary beside the accepted ledger.
-- Execution path: `make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_MERGE=1`;
-  `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`; unit tests for merge
-  idempotence, ordering, and re-grounding of edited spans.
-- Acceptance gates: `make ci` green including session golden-path tests; merging a larger
-  sample adds only new rows and preserves every decided row byte-for-byte; an edited answer
-  that no longer matches its span is blocked until re-grounded; manual evidence -- one recorded
-  40-item review pass on the quickstart draft with the measured items-per-hour noted in the
-  current docs.
-- Documentation target: [data prep](current/data-prep.md) verification gate;
-  [`docs/guides/human-tooling/human-in-the-loop-evaluation.md`](../guides/human-tooling/human-in-the-loop-evaluation.md)
-  and [`docs/guides/human-tooling/verification-tooling.md`](../guides/human-tooling/verification-tooling.md).
-
 ### 5. security-corpus-probes
 
+- Agent status: **HUMAN-GATED** -- derived cases must clear the human verify gate before any
+  headline/composite use; the generator, unit tests, and the `bench-security` run itself are CLEAR
+  / agent-executable on the current CUDA host.
 - Dependencies: the shipped ontology artifacts (`ontology.json`, `extraction.jsonl`) from a
   local-drafter bundle. Human step: derived security cases must clear the human
   `verify-sample`/`verify-review`/`verify-accept` gate before any headline/composite use; the
@@ -701,6 +498,9 @@ finish task 7's human review before agent task 8's acceptance run.
 
 ### 7. chain-goldset-generation
 
+- Agent status: **HUMAN-GATED** -- >= 10 chains must be human-reviewed and accepted into the
+  committed fixture; the schema, drafting, and validation code are CLEAR (agent-buildable now).
+  This human step is the single upstream blocker of agent task 8's acceptance run.
 - Dependencies: none (reuses the shipped graph-path walker `src/llb/prep/ontology/graph_paths.py`).
   **Blocks agent task 8** (`context-policy-bench` scores this task's verified chain fixture). Human
   step: >= 10 chains must be human-reviewed and accepted into the committed fixture; the schema,

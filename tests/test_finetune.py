@@ -377,6 +377,75 @@ def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path)
     assert by_model["model-b"].eval_summary["delta"] == pytest.approx(0.1)
 
 
+def test_finetune_campaign_skips_compressed_checkpoint_before_training(tmp_path: Path):
+    """compressed-qat-adapter-support: the compat probe skips BEFORE base eval or training."""
+    tuning = _item("tune-1", "tuning")
+    final = _item("final-1", "final")
+    goldset = tmp_path / "goldset.jsonl"
+    dump_goldset([tuning, final], goldset)
+    cfg = RunConfig(data_dir=tmp_path, goldset_path=goldset, model="seed-model", backend="vllm")
+    eval_calls: list[str] = []
+    train_calls: list[str] = []
+
+    def eval_fn(config: RunConfig, split: str, round_dir: Path) -> EvalResult:
+        eval_calls.append(config.model)
+        items = [item for item in load_goldset(goldset) if item.split == split]
+        run = _write_bundle(
+            tmp_path,
+            f"{len(eval_calls)}-{config.model.replace('/', '-')}-{split}",
+            split,
+            items,
+            0.2,
+        )
+        return {
+            "rows": [],
+            "metrics": {"objective_score": 0.2, "reliability": 1.0, "tokens_per_s": 1.0},
+            "retrieval": {"n": len(items), "k": 1, "recall_at_k": 1.0, "mrr": 1.0},
+            "paths": {"manifest": str(run / "manifest.json"), "scores": str(run / "scores.jsonl")},
+            "table": "",
+            "telemetry": None,
+            "manifest": None,
+            "run_timestamp": run.name,
+        }
+
+    def trainer_fn(dataset_dir: Path, model: str, out_dir: Path, seed: int):
+        train_calls.append(model)
+        return fake_train_adapter(dataset_dir=dataset_dir, model=model, out_dir=out_dir, seed=seed)
+
+    def planner_fn(model: str, config: RunConfig):
+        return {"name": model, "backend": config.backend, "verdict": "gpu", "note": "fits"}
+
+    def compat_fn(model: str):
+        if model == "fake/qat-w4a16-ct":
+            return {
+                "verdict": "not-trainable",
+                "blocker": "native quant_method 'compressed-tensors' has no PEFT LoRA dispatch",
+            }
+        return {"verdict": "trainable", "injection_strategy": "peft-lora", "blocker": None}
+
+    result = run_finetune_campaign(
+        cfg,
+        models=["fake/qat-w4a16-ct,model-a"],
+        rounds=1,
+        out_dir=tmp_path / "ft-campaign",
+        eval_fn=eval_fn,
+        trainer_fn=trainer_fn,
+        planner_fn=planner_fn,
+        reclaim_fn=lambda: {"reclaimed": True, "polls": 1, "residual_mb": 0},
+        compat_fn=compat_fn,
+    )
+
+    skipped = result.entries[0]
+    assert skipped.status == SKIP_VERDICT
+    assert "compressed-tensors" in (skipped.reason or "")
+    assert skipped.compat["verdict"] == "not-trainable"
+    # the compressed model never reached an eval or the trainer
+    assert all(model != "fake/qat-w4a16-ct" for model in eval_calls)
+    assert train_calls == ["model-a"]
+    progress = (tmp_path / "ft-campaign" / "campaign.progress.jsonl").read_text(encoding="utf-8")
+    assert "compressed-tensors" in progress
+
+
 def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Path):
     tuning = _item("tune-1", "tuning")
     final = _item("final-1", "final")

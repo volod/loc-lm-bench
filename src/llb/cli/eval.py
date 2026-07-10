@@ -106,6 +106,12 @@ def run_eval_cmd(
         None,
         help="query_glossary.json for the query-prep 'glossary' step (build-query-glossary)",
     ),
+    query_prep_typo_guard: bool = typer.Option(
+        False,
+        "--query-prep-typo-guard",
+        help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
+        "unchanged (an inflection is not a misspelling; needs the [lex] extra)",
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",
@@ -195,6 +201,7 @@ def run_eval_cmd(
         context_order=context_order,
         query_prep=_parse_query_prep(query_prep),
         query_glossary_path=query_glossary,
+        query_prep_typo_guard=query_prep_typo_guard or None,
         score_semantic=score_semantic,
         cited_answers=cited_answers,
         score_groundedness=score_groundedness,

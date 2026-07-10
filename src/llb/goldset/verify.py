@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import random
+import re
 import shutil
 import sys
 from collections.abc import Sequence
@@ -29,7 +30,8 @@ from pathlib import Path
 from typing import cast
 
 from llb.core.fsutil import atomic_write_text
-from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
+from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset, load_goldset
+from llb.rag.page_metadata import intersect_pages, load_page_citations
 
 _LOG = logging.getLogger(__name__)
 
@@ -42,14 +44,21 @@ PROVENANCE_FILENAME = "provenance.json"
 CORPUS_DIRNAME = "corpus"
 CROSS_CHECK_SUFFIX = ".cross_check.json"
 SAMPLE_MANIFEST = "sample_manifest.json"
+REJECTION_REASONS_FILENAME = "rejection_reasons.json"
 CONTEXT_CHARS = 400  # corpus window rendered on each side of a cited span
 
-# The human-owned columns -- the four per-item checks, the accept/reject decision, a free note,
-# and a status. `pass` / `fail` / "" for a check ("" = not yet checked; planted is "" for real
-# items); decision is `accept` / `reject` / "". Everything else in the worksheet is read-only
-# context the sampler fills in. Kept here so the session and the accept path share one schema.
+# Bundle files that may carry a per-item `retrieval_rank` (rows keyed by `id`): the ontology
+# lane's needle report and the external-import provenance sidecar. Missing files are fine.
+RETRIEVAL_RANK_SOURCES = ("needle_items.jsonl", "item_provenance.jsonl")
+
+# The human-owned columns -- the four per-item checks, the accept/reject decision, a coded
+# rejection reason, an optional edited answer (must re-ground before it can certify), a free
+# note, and a status. `pass` / `fail` / "" for a check ("" = not yet checked; planted is "" for
+# real items); decision is `accept` / `reject` / "". Everything else in the worksheet is
+# read-only context the sampler fills in. Kept here so the session and the accept path share
+# one schema.
 CHECK_COLS = ["chk_grounded", "chk_answerable", "chk_reference", "chk_planted"]
-HUMAN_COLS = [*CHECK_COLS, "decision", "human_note", "human_status"]
+HUMAN_COLS = [*CHECK_COLS, "decision", "reject_code", "edited_answer", "human_note", "human_status"]
 
 # Read-only cross-check columns (the second frontier's verdict). The analog of `judge_rating`:
 # HIDDEN from the card by default so it cannot anchor the human; `--show-crosscheck` reveals it.
@@ -67,6 +76,8 @@ WORKSHEET_COLS = [
     "span_doc_id",
     "span_text",
     "context",
+    "retrieval_rank",
+    "page_citation",
     *CROSS_CHECK_COLS,
     *HUMAN_COLS,
 ]
@@ -77,6 +88,17 @@ ACCEPT = "accept"
 REJECT = "reject"
 STATUS_PENDING = "pending"
 STATUS_DECIDED = "decided"
+
+# Coded rejection reasons, exported to `rejection_reasons.json` so the drafting pipeline can read
+# WHY items were rejected and tighten its prompts. The first four mirror the four checks (a
+# failed check infers its code when the reviewer rejects without naming one).
+CHECK_REJECT_CODES = {
+    "chk_grounded": "ungrounded",
+    "chk_answerable": "circular",
+    "chk_reference": "wrong_reference",
+    "chk_planted": "label_mismatch",
+}
+REJECT_CODES = (*CHECK_REJECT_CODES.values(), "bad_question", "other")
 
 
 @dataclass(frozen=True)
@@ -221,6 +243,155 @@ def _corpus_text(corpus_root: Path, doc_id: str, cache: dict[str, str | None]) -
         path = corpus_root / doc_id
         cache[doc_id] = path.read_text(encoding="utf-8") if path.is_file() else None
     return cache[doc_id]
+
+
+# --- retrieval-rank + page-citation context (read-only reviewer signals) --------------------
+
+
+def load_retrieval_ranks(bundle: Path) -> dict[str, int]:
+    """Index per-item `retrieval_rank` from any bundle sidecar that records it (empty if none).
+
+    Reads `RETRIEVAL_RANK_SOURCES` (rows keyed by `id`); a null / missing rank means the item's
+    gold span was NOT retrieved within top-k and is simply absent from the result.
+    """
+    ranks: dict[str, int] = {}
+    for name in RETRIEVAL_RANK_SOURCES:
+        path = Path(bundle) / name
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            item_id = row.get("id")
+            rank = row.get("retrieval_rank")
+            if item_id and isinstance(rank, int) and rank > 0:
+                ranks[str(item_id)] = rank
+    return ranks
+
+
+def page_citation_for_span(
+    corpus_root: Path,
+    doc_id: str,
+    char_start: int,
+    char_end: int,
+    cache: dict[str, tuple[str | None, list[dict[str, object]]] | None],
+) -> str:
+    """Render a `<source.pdf> p.N[-M]` citation for a span, "" when no PDF sidecar covers it.
+
+    Reuses the PDF lane's `*.citations.json` sidecar (the same page join `build-index` uses), so
+    the reviewer can check the original PDF page without hunting for offsets.
+    """
+    if doc_id not in cache:
+        cache[doc_id] = load_page_citations(Path(corpus_root), doc_id)
+    cite = cache[doc_id]
+    if cite is None:
+        return ""
+    source, spans = cite
+    pages = intersect_pages(char_start, char_end, spans)
+    if not pages:
+        return ""
+    label = f"p.{pages[0]}" if pages[0] == pages[-1] else f"p.{pages[0]}-{pages[-1]}"
+    name = Path(source).name if source else ""
+    return f"{name} {label}".strip()
+
+
+# --- confidence ordering (review queue) -----------------------------------------------------
+
+
+def row_confidence(row: dict[str, str]) -> float:
+    """A draft item's prior plausibility from the read-only signals on its worksheet row.
+
+    Each cross-check verdict flag contributes +1 (true) / -1 (false); a top-k retrieval rank
+    contributes 1/rank. Higher = more likely fine. Purely heuristic -- it ORDERS the review
+    queue and never decides anything.
+    """
+    score = 0.0
+    for col in ("cc_grounded", "cc_non_circular", "cc_supported", "cc_answerable"):
+        value = (row.get(col) or "").strip().lower()
+        if value == "true":
+            score += 1.0
+        elif value == "false":
+            score -= 1.0
+    rank = (row.get("retrieval_rank") or "").strip()
+    if rank.isdigit() and int(rank) > 0:
+        score += 1.0 / int(rank)
+    return score
+
+
+def confidence_order(rows: Sequence[dict[str, str]]) -> list[int]:
+    """Row indices ordered LEAST-confident first (ties keep worksheet order).
+
+    Suspicious items meet the reviewer's fresh attention first; the tail becomes quick
+    confirmations -- that is the throughput win. The worksheet itself is never reordered.
+    """
+    return sorted(range(len(rows)), key=lambda i: (row_confidence(rows[i]), i))
+
+
+# --- coded rejection reasons ----------------------------------------------------------------
+
+
+def infer_reject_code(row: dict[str, str]) -> str:
+    """The reject code implied by the first failed check, else `other`."""
+    for col in CHECK_COLS:
+        if (row.get(col) or "").strip() == FAIL:
+            return CHECK_REJECT_CODES[col]
+    return "other"
+
+
+def rejection_reasons_summary(rows: Sequence[dict[str, str]]) -> dict[str, object]:
+    """Aggregate rejected rows by code for draft feedback (`rejection_reasons.json`).
+
+    Rows rejected before the code column existed fall back to the inferred code, so older
+    worksheets still export a useful summary.
+    """
+    by_code: dict[str, dict[str, object]] = {}
+    rejected = 0
+    for row in rows:
+        if (row.get("decision") or "").strip() != REJECT:
+            continue
+        rejected += 1
+        code = (row.get("reject_code") or "").strip() or infer_reject_code(row)
+        cell = by_code.setdefault(code, {"count": 0, "items": []})
+        cell["count"] = cast(int, cell["count"]) + 1
+        entry: dict[str, str] = {"item_id": (row.get("item_id") or "").strip()}
+        note = (row.get("human_note") or "").strip()
+        if note:
+            entry["note"] = note
+        cast(list[dict[str, str]], cell["items"]).append(entry)
+    return {"rejected": rejected, "by_code": dict(sorted(by_code.items()))}
+
+
+# --- accept-with-edit re-grounding ----------------------------------------------------------
+
+
+def ground_answer(doc_text: str, answer: str, *, hint_start: int = 0) -> tuple[int, int] | None:
+    """Locate `answer` verbatim in `doc_text`, preferring the occurrence nearest `hint_start`.
+
+    Returns `(char_start, char_end)` or None when the text does not contain the answer -- the
+    caller must then BLOCK the edit until the reviewer re-words it to a verbatim span.
+    """
+    answer = answer.strip()
+    if not answer:
+        return None
+    starts = [m.start() for m in re.finditer(re.escape(answer), doc_text)]
+    if not starts:
+        return None
+    best = min(starts, key=lambda s: abs(s - hint_start))
+    return best, best + len(answer)
+
+
+def worksheet_edits(rows: Sequence[dict[str, str]]) -> dict[str, str]:
+    """Item id -> edited reference answer, for rows carrying a non-empty `edited_answer`."""
+    return {
+        (row.get("item_id") or "").strip(): (row.get("edited_answer") or "").strip()
+        for row in rows
+        if (row.get("edited_answer") or "").strip() and (row.get("item_id") or "").strip()
+    }
 
 
 # --- worksheet I/O (atomic, CSV-as-state -- mirrors judge/calibration.py) ------------------
@@ -627,11 +798,18 @@ def _row_for(
     verdict: dict[str, object],
     *,
     synthetic: bool,
+    retrieval_rank: int | None = None,
+    page_cache: dict[str, tuple[str | None, list[dict[str, object]]] | None] | None = None,
 ) -> dict[str, str]:
     span = item.source_spans[0]
     text = _corpus_text(corpus_root, span.doc_id, cache)
     context = (
         corpus_window(text, span.char_start, span.char_end) if text is not None else "(missing doc)"
+    )
+    page = (
+        page_citation_for_span(corpus_root, span.doc_id, span.char_start, span.char_end, page_cache)
+        if page_cache is not None
+        else ""
     )
 
     def _flag(key: str) -> str:
@@ -650,12 +828,57 @@ def _row_for(
         "span_doc_id": span.doc_id,
         "span_text": span.text,
         "context": context,
+        "retrieval_rank": "" if retrieval_rank is None else str(retrieval_rank),
+        "page_citation": page,
         "cc_grounded": _flag("grounded"),
         "cc_non_circular": _flag("non_circular"),
         "cc_supported": _flag("supported"),
         "cc_answerable": _flag("answerable"),
         "cc_note": str(verdict.get("note", "")),
     }
+
+
+def _sample_rows(
+    bundle: Path, sample: Sequence[GoldItem], *, synthetic: bool
+) -> list[dict[str, str]]:
+    """Build worksheet rows for `sample`, joining cross-check, retrieval rank, and page cites."""
+    verdicts = load_cross_check(bundle)
+    ranks = load_retrieval_ranks(bundle)
+    corpus_root = bundle / CORPUS_DIRNAME
+    cache: dict[str, str | None] = {}
+    page_cache: dict[str, tuple[str | None, list[dict[str, object]]] | None] = {}
+    return [
+        _row_for(
+            it,
+            corpus_root,
+            cache,
+            verdicts.get(it.id, {}),
+            synthetic=synthetic,
+            retrieval_rank=ranks.get(it.id),
+            page_cache=page_cache,
+        )
+        for it in sample
+    ]
+
+
+def _write_sample_manifest(
+    out_path: Path,
+    bundle: Path,
+    manifest_update: dict[str, object],
+    *,
+    merge_existing: bool = False,
+) -> None:
+    """Write the sibling `sample_manifest.json` (merge into the existing one on enlargement)."""
+    manifest_path = Path(out_path).with_name(SAMPLE_MANIFEST)
+    manifest: dict[str, object] = {}
+    if merge_existing and manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            manifest = {}
+    manifest.update({"bundle": str(bundle), "worksheet": str(out_path)})
+    manifest.update(manifest_update)
+    atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
 def build_sample_worksheet(
@@ -671,33 +894,67 @@ def build_sample_worksheet(
     items = load_goldset(find_goldset(bundle))
     synthetic = bundle_is_synthetic(bundle)
     sample = draw_stratified_sample(items, n, seed=seed)
-    verdicts = load_cross_check(bundle)
-    corpus_root = bundle / CORPUS_DIRNAME
-    cache: dict[str, str | None] = {}
-    rows = [
-        _row_for(it, corpus_root, cache, verdicts.get(it.id, {}), synthetic=synthetic)
-        for it in sample
-    ]
+    rows = _sample_rows(bundle, sample, synthetic=synthetic)
     write_worksheet_rows(out_path, rows)
 
     strata_sizes: dict[str, int] = {}
     for it in sample:
         strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
-    manifest = {
-        "bundle": str(bundle),
-        "worksheet": str(out_path),
-        "synthetic": synthetic,
-        "seed": seed,
-        "requested": n,
-        "sample_size": len(sample),
-        "population": len(items),
-        "strata": strata_sizes,
-    }
-    atomic_write_text(
-        Path(out_path).with_name(SAMPLE_MANIFEST),
-        json.dumps(manifest, ensure_ascii=False, indent=2),
+    _write_sample_manifest(
+        out_path,
+        bundle,
+        {
+            "synthetic": synthetic,
+            "seed": seed,
+            "requested": n,
+            "sample_size": len(sample),
+            "population": len(items),
+            "strata": strata_sizes,
+        },
     )
     return len(sample), strata_sizes
+
+
+def merge_sample_worksheet(
+    bundle: Path, out_path: Path, *, n: int, seed: int = 13
+) -> tuple[int, int]:
+    """Enlarge an existing worksheet ADDITIVELY to ~`n` rows; returns `(added, total)`.
+
+    Draws a fresh stratified sample of size `n` over the whole bundle and appends rows ONLY for
+    item ids the worksheet does not already hold: existing rows -- including every human decision
+    -- are rewritten byte-for-byte untouched, and a decided row is never re-shown or re-drawn.
+    Falls back to a fresh `build_sample_worksheet` when the worksheet does not exist yet.
+    """
+    out_path = Path(out_path)
+    if not out_path.is_file():
+        size, _ = build_sample_worksheet(bundle, out_path, n=n, seed=seed)
+        return size, size
+    bundle = Path(bundle)
+    existing_rows, fieldnames = load_worksheet(out_path)
+    existing_ids = {(row.get("item_id") or "").strip() for row in existing_rows}
+    items = load_goldset(find_goldset(bundle))
+    synthetic = bundle_is_synthetic(bundle)
+    sample = draw_stratified_sample(items, n, seed=seed)
+    new_items = [it for it in sample if it.id not in existing_ids]
+    if not new_items:
+        return 0, len(existing_rows)
+    new_rows = _sample_rows(bundle, new_items, synthetic=synthetic)
+    all_rows = [*existing_rows, *new_rows]
+    write_worksheet_rows(out_path, all_rows, fieldnames)
+    _write_sample_manifest(
+        out_path,
+        bundle,
+        {
+            "synthetic": synthetic,
+            "seed": seed,
+            "requested": n,
+            "sample_size": len(all_rows),
+            "population": len(items),
+            "merged_added": len(new_rows),
+        },
+        merge_existing=True,
+    )
+    return len(new_rows), len(all_rows)
 
 
 # --- acceptance arithmetic ----------------------------------------------------------------
@@ -766,7 +1023,41 @@ def accepted_ids(rows: Sequence[dict[str, str]]) -> list[str]:
     ]
 
 
-def emit_accepted_ledger(bundle: Path, accepted: Sequence[str], out_dir: Path) -> int:
+def _apply_edit(item: GoldItem, edited_answer: str, corpus_root: Path) -> GoldItem:
+    """Re-ground `edited_answer` in the item's span doc and return the edited item.
+
+    The edited answer must exist VERBATIM in the corpus doc -- an edit that no longer matches any
+    span is refused here (raises), so an un-groundable edit can never certify through the ledger
+    even if the worksheet cell was hand-edited after the session's own re-grounding.
+    """
+    span = item.source_spans[0]
+    doc_path = corpus_root / span.doc_id
+    if not doc_path.is_file():
+        raise FileNotFoundError(f"{item.id}: corpus doc for edited answer not found: {doc_path}")
+    text = doc_path.read_text(encoding="utf-8")
+    offsets = ground_answer(text, edited_answer, hint_start=span.char_start)
+    if offsets is None:
+        raise ValueError(
+            f"{item.id}: edited answer is not a verbatim span of {span.doc_id}; "
+            "re-ground it in the review session before accepting"
+        )
+    start, end = offsets
+    new_span = SourceSpan(doc_id=span.doc_id, char_start=start, char_end=end, text=text[start:end])
+    return item.model_copy(
+        update={
+            "reference_answer": edited_answer,
+            "source_spans": [new_span, *item.source_spans[1:]],
+        }
+    )
+
+
+def emit_accepted_ledger(
+    bundle: Path,
+    accepted: Sequence[str],
+    out_dir: Path,
+    *,
+    edits: dict[str, str] | None = None,
+) -> int:
     """Write an accepted-ledger bundle (`goldset.jsonl` verified=true + sibling `corpus/`).
 
     The accepted items are taken VERBATIM from the draft bundle (canonical content + grounded
@@ -774,10 +1065,15 @@ def emit_accepted_ledger(bundle: Path, accepted: Sequence[str], out_dir: Path) -
     ledger is self-contained. Feeding this to `ingest_squad --verified-goldset <out_dir>/goldset.jsonl`
     re-adopts those ids by REPLACEMENT, which is what stops a reused id from certifying changed
     content. We never hand-edit the boolean in the draft bundle.
+
+    `edits` (item id -> accept-with-edit reference answer from the worksheet) are applied through
+    `_apply_edit`: the edited answer is re-grounded against the bundle corpus and the primary span
+    replaced; an edit that no longer grounds raises instead of certifying.
     """
     bundle = Path(bundle)
     out_dir = Path(out_dir)
     keep = set(accepted)
+    edits = edits or {}
     src_corpus = bundle / CORPUS_DIRNAME
     dst_corpus = out_dir / CORPUS_DIRNAME
     verified: list[GoldItem] = []
@@ -785,6 +1081,9 @@ def emit_accepted_ledger(bundle: Path, accepted: Sequence[str], out_dir: Path) -
     for item in load_goldset(find_goldset(bundle)):
         if item.id not in keep:
             continue
+        edited_answer = edits.get(item.id, "")
+        if edited_answer:
+            item = _apply_edit(item, edited_answer, src_corpus)
         verified.append(item.model_copy(update={"verified": True}))
         doc_ids.add(item.source_doc_id)
         doc_ids.update(span.doc_id for span in item.source_spans)
@@ -829,6 +1128,48 @@ def _log_report(report: dict[str, object]) -> None:
             )
 
 
+def write_rejection_reasons(rows: Sequence[dict[str, str]], out_dir: Path) -> Path | None:
+    """Export the coded-rejection summary beside the accepted ledger; None when nothing rejected."""
+    summary = rejection_reasons_summary(rows)
+    if not cast(int, summary["rejected"]):
+        return None
+    out_path = Path(out_dir) / REJECTION_REASONS_FILENAME
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(out_path, json.dumps(summary, ensure_ascii=False, indent=2))
+    return out_path
+
+
+def run_accept(
+    worksheet: Path,
+    bundle: Path,
+    out_dir: Path | None = None,
+    tolerance: float = DEFAULT_TOLERANCE,
+) -> int:
+    """The `accept` subcommand: acceptance report, rejection-reason export, ledger emission."""
+    rows, _ = load_worksheet(worksheet)
+    report = acceptance_report(rows, tolerance)
+    _log_report(report)
+    out_dir = out_dir or (Path(bundle) / "accepted")
+    reasons_path = write_rejection_reasons(rows, out_dir)
+    if reasons_path is not None:
+        _LOG.info("[verify] rejection reasons for draft feedback -> %s", reasons_path)
+    accepted = accepted_ids(rows)
+    if not accepted:
+        _LOG.info("[verify] no accepted items -- nothing to flip; resolve the sample first")
+        return 0 if report["passed"] else 1
+    edits = {k: v for k, v in worksheet_edits(rows).items() if k in set(accepted)}
+    n = emit_accepted_ledger(bundle, accepted, out_dir, edits=edits)
+    if edits:
+        _LOG.info("[verify] applied %d accept-with-edit answer(s) through re-grounding", len(edits))
+    _LOG.info("[verify] wrote %d accepted item(s) -> %s", n, out_dir / GOLDSET_FILENAME)
+    _LOG.info(
+        "[verify] flip via the ledger: python -m llb.prep.ingest_squad "
+        "--squad-json <source> --verified-goldset %s",
+        out_dir / GOLDSET_FILENAME,
+    )
+    return 0 if report["passed"] else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="human verification gate human sample-verification of draft data."
@@ -842,6 +1183,11 @@ def main(argv: list[str] | None = None) -> int:
     sa.add_argument("--out", required=True, type=Path, help="verification worksheet CSV to write")
     sa.add_argument("-n", "--size", type=int, default=30, help="target sample size")
     sa.add_argument("--seed", type=int, default=13)
+    sa.add_argument(
+        "--merge",
+        action="store_true",
+        help="enlarge an existing worksheet additively (decided rows preserved byte-for-byte)",
+    )
 
     rv = sub.add_parser("review", help="interactively verify the sampled items")
     rv.add_argument("--worksheet", required=True, type=Path)
@@ -852,6 +1198,12 @@ def main(argv: list[str] | None = None) -> int:
         help="reveal the second-frontier verdict (post-hoc only; anchors the human -- off by default)",
     )
     rv.add_argument("--clear", action="store_true", help="wipe ALL human columns first (gated)")
+    rv.add_argument(
+        "--order",
+        choices=("worksheet", "confidence"),
+        default="worksheet",
+        help="review queue order: worksheet row order, or least-confident first",
+    )
 
     ac = sub.add_parser("accept", help="acceptance report + emit the accepted-ledger bundle")
     ac.add_argument("--worksheet", required=True, type=Path)
@@ -869,9 +1221,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "sample":
-        size, strata = build_sample_worksheet(args.bundle, args.out, n=args.size, seed=args.seed)
-        _LOG.info("[verify] sampled %d item(s) across %d strata -> %s", size, len(strata), args.out)
-        _LOG.info("[verify] review: make verify-review WS=%s", args.out)
+        if args.merge:
+            added, total = merge_sample_worksheet(
+                args.bundle, args.out, n=args.size, seed=args.seed
+            )
+            _LOG.info("[verify] merged %d new item(s) -> %d total in %s", added, total, args.out)
+        else:
+            size, strata = build_sample_worksheet(
+                args.bundle, args.out, n=args.size, seed=args.seed
+            )
+            _LOG.info(
+                "[verify] sampled %d item(s) across %d strata -> %s", size, len(strata), args.out
+            )
+        _LOG.info("[verify] review: make verify-review VERIFY_WS=%s", args.out)
         return 0
 
     if args.cmd == "review":
@@ -882,25 +1244,11 @@ def main(argv: list[str] | None = None) -> int:
             start=args.start,
             show_crosscheck=args.show_crosscheck,
             clear=args.clear,
+            order=args.order,
         )
         return 0
 
-    rows, _ = load_worksheet(args.worksheet)
-    report = acceptance_report(rows, args.tolerance)
-    _log_report(report)
-    accepted = accepted_ids(rows)
-    if not accepted:
-        _LOG.info("[verify] no accepted items -- nothing to flip; resolve the sample first")
-        return 0 if report["passed"] else 1
-    out_dir = args.out_dir or (Path(args.bundle) / "accepted")
-    n = emit_accepted_ledger(args.bundle, accepted, out_dir)
-    _LOG.info("[verify] wrote %d accepted item(s) -> %s", n, out_dir / GOLDSET_FILENAME)
-    _LOG.info(
-        "[verify] flip via the ledger: python -m llb.prep.ingest_squad "
-        "--squad-json <source> --verified-goldset %s",
-        out_dir / GOLDSET_FILENAME,
-    )
-    return 0 if report["passed"] else 1
+    return run_accept(args.worksheet, args.bundle, args.out_dir, args.tolerance)
 
 
 if __name__ == "__main__":

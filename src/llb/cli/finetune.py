@@ -145,6 +145,47 @@ def finetune_hparams_cmd(
     )
 
 
+@app.command("finetune-compat")
+def finetune_compat_cmd(
+    model: str = typer.Option(..., "--model", help="checkpoint id to probe for trainability"),
+    config: Optional[Path] = typer.Option(None, help="YAML run config (locates DATA_DIR)"),
+    config_only: bool = typer.Option(
+        False,
+        "--config-only",
+        help="stop after the cheap config-introspection stage (no weights are loaded)",
+    ),
+) -> None:
+    """Probe whether a (possibly compressed-QAT) checkpoint can take a LoRA adapter on this host.
+
+    Stage 1 classifies the checkpoint's native quantization scheme against PEFT's dispatch table
+    (config only). Stage 2 loads the model, scans its linear classes, selects target modules from
+    the modules that exist, attaches a rank-4 LoRA, and runs one forward/backward micro-step. The
+    verdict + evidence land in `$DATA_DIR/finetune-compat/<model>/<timestamp>/compat_report.json`.
+    """
+    from llb.finetune.compat import (
+        VERDICT_TRAINABLE,
+        config_compat_probe,
+        probe_trainability,
+    )
+
+    cfg = load_config(config, model=model)
+    if config_only:
+        verdict = config_compat_probe(model, local_only=False)
+        typer.echo(
+            f"[finetune-compat] {model}: {verdict['verdict']}"
+            + (f" -- {verdict['blocker']}" if verdict.get("blocker") else "")
+        )
+        raise typer.Exit(code=0 if verdict["verdict"] == VERDICT_TRAINABLE else 1)
+    report = probe_trainability(model, out_root=cfg.data_dir)
+    typer.echo(
+        f"[finetune-compat] {model}: {report['verdict']}"
+        + (f" -- {report['blocker']}" if report.get("blocker") else "")
+    )
+    typer.echo(f"[finetune-compat] report -> {report['report_path']}")
+    if report["verdict"] != VERDICT_TRAINABLE:
+        raise typer.Exit(code=1)
+
+
 @app.command("distill")
 def distill_cmd(
     teacher: str = typer.Option(..., "--teacher", help="local teacher model id"),

@@ -73,6 +73,20 @@ TARGET_MODULE_PRESETS: dict[str, list[str]] = {
     "attn_mlp": list(DEFAULT_TARGET_MODULES),
 }
 
+# Effective-batch axis (finetune-hparams-effective-batch-axis). Effective batch size interacts
+# strongly with the learning rate, so a best learning rate is only best AT its batch geometry.
+# The two knobs are sampled as ONE named geometry (per_device x grad_accum) rather than
+# independently -- independent draws would mostly differ only in a VRAM/wall-clock trade at the
+# same effective batch, wasting budget on gradient-equivalent points. Geometries stay
+# single-per-device-heavy because the constrained 16 GB host is the design target.
+BATCH_GEOMETRY_CHOICES: dict[str, tuple[int, int]] = {
+    "1x4": (1, 4),  # the trainer's conservative default
+    "1x8": (1, 8),
+    "2x4": (2, 4),
+    "2x8": (2, 8),
+}
+MAX_LENGTH_CHOICES = [512, 1024, 2048]
+
 # (adapter_dir, hyperparameters) -> dev-slice objective. Injectable so CI needs no backend.
 ObjectiveFn = Callable[[Path, JsonObject], float]
 # (dataset_dir, model, adapter_dir, seed, hyperparameters) -> adapter manifest.
@@ -188,10 +202,17 @@ def assert_tuning_only(
 
 
 def suggest_lora_hyperparameters(trial: Any) -> JsonObject:
-    """Sample one LoRA configuration. The keys are exactly what `train_adapter` consumes."""
+    """Sample one LoRA configuration. The keys are exactly what `train_adapter` consumes.
+
+    The batch geometry rides one categorical (`batch_geometry`), so the recorded best config is
+    self-consistent: the learning rate was chosen AT the recorded effective batch size, and both
+    land in `hparams_manifest.json` together.
+    """
     rank = trial.suggest_categorical("lora_r", LORA_R_CHOICES)
     multiplier = trial.suggest_categorical("lora_alpha_multiplier", LORA_ALPHA_MULTIPLIERS)
     preset = trial.suggest_categorical("target_modules_preset", sorted(TARGET_MODULE_PRESETS))
+    geometry = trial.suggest_categorical("batch_geometry", sorted(BATCH_GEOMETRY_CHOICES))
+    per_device, grad_accum = BATCH_GEOMETRY_CHOICES[geometry]
     return {
         "method": "lora",
         "lora_r": int(rank),
@@ -203,6 +224,11 @@ def suggest_lora_hyperparameters(trial: Any) -> JsonObject:
         "num_train_epochs": float(trial.suggest_int("num_train_epochs", *EPOCHS_RANGE)),
         "target_modules": list(TARGET_MODULE_PRESETS[preset]),
         "target_modules_preset": preset,
+        "batch_geometry": geometry,
+        "per_device_train_batch_size": int(per_device),
+        "gradient_accumulation_steps": int(grad_accum),
+        "effective_batch_size": int(per_device) * int(grad_accum),
+        "max_length": int(trial.suggest_categorical("max_length", MAX_LENGTH_CHOICES)),
     }
 
 

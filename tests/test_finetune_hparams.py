@@ -254,6 +254,33 @@ def test_study_is_deterministic_for_a_seed(tmp_path: Path):
     assert first.best_objective == second.best_objective
 
 
+def test_sampled_effective_batch_is_the_product_of_its_geometry(tmp_path: Path):
+    """finetune-hparams-effective-batch-axis: the two batch knobs are never independently drawn."""
+    from llb.finetune.hparam_search import BATCH_GEOMETRY_CHOICES, MAX_LENGTH_CHOICES
+
+    dataset = _dataset(tmp_path)
+    config = _config(tmp_path)
+    result = search_hyperparameters(
+        config,
+        model=MODEL,
+        dataset_dir=dataset,
+        max_trials=6,
+        seed=3,
+        trainer="fake",
+        out_dir=tmp_path / "study",
+        trainer_fn=_trainer_fn,
+        objective_fn=_rank_objective,
+    )
+    assert result.trials
+    for trial in result.trials:
+        params = trial.hyperparameters
+        per_device, grad_accum = BATCH_GEOMETRY_CHOICES[str(params["batch_geometry"])]
+        assert params["per_device_train_batch_size"] == per_device
+        assert params["gradient_accumulation_steps"] == grad_accum
+        assert params["effective_batch_size"] == per_device * grad_accum
+        assert params["max_length"] in MAX_LENGTH_CHOICES
+
+
 def test_budget_abort_stops_between_trials_and_the_study_resumes(tmp_path: Path):
     dataset = _dataset(tmp_path)
     config = _config(tmp_path)

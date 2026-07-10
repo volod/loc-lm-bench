@@ -54,6 +54,10 @@ QUERY_GLOSSARY_VERSION = "query-glossary-v1"
 # Injected local-LLM rewrite seam: original query -> rewritten query (identity when absent).
 Rewriter = Callable[[str], str]
 
+# Injected morphology probe for the typos step's opt-in guard: True when the token is a known
+# valid Ukrainian word form (pymorphy3 `word_is_known`; `llb.rag.lexical.load_uk_word_probe`).
+KnownWordProbe = Callable[[str], bool]
+
 # Reversible-ish Ukrainian romanization used to invert Latin-typed terms back to Cyrillic. The map
 # is injective, so the Latin->Cyrillic inverse is well-defined by longest-key-first matching; the
 # soft sign and a few rare digraph collisions (shch) are intentionally out of the reversible core.
@@ -255,12 +259,22 @@ def nearest_vocab_token(token: str, vocabulary: "frozenset[str]", max_distance: 
     return best[1] if best is not None else None
 
 
-def apply_typos(query: str, vocabulary: "frozenset[str]") -> tuple[str, list[QueryEdit]]:
+def apply_typos(
+    query: str,
+    vocabulary: "frozenset[str]",
+    known_word: KnownWordProbe | None = None,
+) -> tuple[str, list[QueryEdit]]:
     """Correct out-of-vocabulary word tokens to their nearest in-vocabulary neighbor.
 
     An in-vocabulary token is never altered. Purely numeric tokens are left untouched so an
     article/law number or code is never "corrected" into a different one. Every correction is
     recorded and logged.
+
+    `known_word` is the opt-in morphology guard (morphology-aware-typo-guard): an OOV token the
+    probe recognizes as a valid Ukrainian word form is a grammatical inflection, not a typo, so
+    it is left for index+query lemmatization to match instead of being edit-distance "corrected"
+    to a different corpus surface form. Genuine misspellings stay unknown to the probe and are
+    still corrected.
     """
     from llb.rag.lexical import _TOKEN_RE
 
@@ -270,6 +284,9 @@ def apply_typos(query: str, vocabulary: "frozenset[str]") -> tuple[str, list[Que
         raw = match.group(0)
         token = normalize_token(raw)
         if not token or token.isdigit() or token in vocabulary:
+            return raw
+        if known_word is not None and known_word(token):
+            _LOG.debug("[query-prep] typo guard: %r is a known word form; left unchanged", token)
             return raw
         correction = nearest_vocab_token(token, vocabulary, _typo_budget(token))
         if correction is None or correction == token:
@@ -460,6 +477,7 @@ class QueryPrep:
     vocabulary: "frozenset[str]" = field(default_factory=frozenset)
     glossary: Glossary | None = None
     rewriter: Rewriter | None = None
+    known_word: KnownWordProbe | None = None
 
     @classmethod
     def build(
@@ -469,6 +487,7 @@ class QueryPrep:
         vocabulary: "frozenset[str] | None" = None,
         glossary: Glossary | None = None,
         rewriter: Rewriter | None = None,
+        known_word: KnownWordProbe | None = None,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
@@ -481,6 +500,8 @@ class QueryPrep:
             raise ValueError(f"duplicate query-prep step(s): {ordered}")
         if STEP_TYPOS in ordered and vocabulary is None:
             raise ValueError("the 'typos' step needs a corpus vocabulary")
+        if known_word is not None and STEP_TYPOS not in ordered:
+            raise ValueError("the typo morphology guard needs the 'typos' step")
         if STEP_GLOSSARY in ordered and glossary is None:
             raise ValueError("the 'glossary' step needs a query glossary")
         if STEP_REWRITE in ordered and rewriter is None:
@@ -490,6 +511,7 @@ class QueryPrep:
             vocabulary=vocabulary if vocabulary is not None else frozenset(),
             glossary=glossary,
             rewriter=rewriter,
+            known_word=known_word,
         )
 
     def process(self, query: str) -> QueryPrepResult:
@@ -500,7 +522,9 @@ class QueryPrep:
             if step == STEP_NORMALIZE:
                 current, step_edits = apply_normalize(current)
             elif step == STEP_TYPOS:
-                current, step_edits = apply_typos(current, self.vocabulary)
+                current, step_edits = apply_typos(
+                    current, self.vocabulary, known_word=self.known_word
+                )
             elif step == STEP_GLOSSARY:
                 assert self.glossary is not None  # guaranteed by build()
                 current, step_edits = apply_glossary(current, self.glossary)
@@ -535,17 +559,24 @@ def cumulative_pipelines(
     vocabulary: "frozenset[str] | None" = None,
     glossary: Glossary | None = None,
     rewriter: Rewriter | None = None,
+    known_word: KnownWordProbe | None = None,
 ) -> list[tuple[str, "QueryPrep"]]:
     """`baseline` (no steps) then one pipeline per cumulative prefix (`+normalize`, `+typos`, ...).
 
     The A/B report scores each stage so a per-step marginal retrieval delta is attributable. Every
-    prefix reuses the same resolved dependencies.
+    prefix reuses the same resolved dependencies (`known_word` only binds to prefixes that
+    include the typos step).
     """
     ordered = tuple(steps)
     stages: list[tuple[str, QueryPrep]] = [(AB_BASELINE_LABEL, QueryPrep.build(()))]
     for index in range(1, len(ordered) + 1):
+        prefix = ordered[:index]
         pipeline = QueryPrep.build(
-            ordered[:index], vocabulary=vocabulary, glossary=glossary, rewriter=rewriter
+            prefix,
+            vocabulary=vocabulary,
+            glossary=glossary,
+            rewriter=rewriter,
+            known_word=known_word if STEP_TYPOS in prefix else None,
         )
         stages.append((f"+{ordered[index - 1]}", pipeline))
     return stages

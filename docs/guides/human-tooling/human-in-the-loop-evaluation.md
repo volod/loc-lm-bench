@@ -276,16 +276,23 @@ question-answering gold set, every evaluation category, and the graph ontology d
    budget across strata (provenance x split x source-doc; the synthetic flag is a bundle-level fact
    from `provenance.json`, so the planted check applies to all items or none) and writes
    `sample_manifest.json` documenting the size + per-stratum counts. A few dozen across strata is
-   typical for an acceptance check.
+   typical for an acceptance check. Need more later? `VERIFY_MERGE=1` enlarges the worksheet
+   additively -- decided rows are preserved byte-for-byte and never re-shown.
 4. **Verify each sampled item.** `make verify-review VERIFY_WS=<bundle>/verify_sample.csv` walks the
-   sample; each card shows the cited span inside its surrounding corpus window so you confirm
-   grounding without leaving the tool. Mark the four checks (`g/a/r/p` = pass, uppercase = fail),
-   then accept/reject. The second-frontier cross-check is HIDDEN by default (`SHOW_CROSSCHECK=1` to
-   reveal) so it cannot anchor you -- verify independently.
+   sample; each card shows the cited span inside its surrounding corpus window -- plus the PDF page
+   citation and needle retrieval rank when the bundle has them -- so you confirm grounding without
+   leaving the tool. Mark the four checks (`g/a/r/p` = pass, uppercase = fail), then accept/reject
+   (`x <code>` records a coded rejection reason; `e` accepts with an edited answer that is
+   re-grounded immediately). `VERIFY_ORDER=confidence` reviews least-confident items first; each
+   decision prints your items-per-hour pace, recorded in `verify_session_stats.json`. The
+   second-frontier cross-check is HIDDEN by default (`SHOW_CROSSCHECK=1` to reveal) so it cannot
+   anchor you -- verify independently.
 5. **Decide.** `make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv` prints the
    per-stratum + overall reject rate against `VERIFY_TOLERANCE` (default 0.05). It always emits the
-   items that individually passed, and warns FAIL if a stratum/overall exceeds tolerance -- you
-   decide whether to send the bundle back to the pipeline.
+   items that individually passed, re-grounds any accept-with-edit answers (an un-groundable edit
+   aborts instead of certifying), exports `rejection_reasons.json` beside the ledger for draft
+   feedback, and warns FAIL if a stratum/overall exceeds tolerance -- you decide whether to send
+   the bundle back to the pipeline.
 6. **Flip accepted items to `verified=true` via the ledger** (do NOT hand-edit the boolean alone).
    `verify-accept` writes an accepted-ledger bundle (`<bundle>/accepted/`: the accepted items with
    `verified=true` + their copied corpus) and prints the exact adoption command:

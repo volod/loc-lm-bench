@@ -12,6 +12,7 @@ llama.cpp, or a running Ollama daemon.
 
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -163,6 +164,11 @@ def serve_adapter(
             temperature=0.0,
             timeout=config.request_timeout_s,
         )
+        probe_error = probe.error
+        if probe_error is None and not (probe.text or "").strip():
+            # A served-but-mute endpoint (e.g. a chat-template-less merge emitting an immediate
+            # EOS) must fail the smoke, not pass as "answered".
+            probe_error = "probe returned an empty completion"
         result = ServeResult(
             adapter_id=entry.adapter_id,
             base_model=entry.base_model,
@@ -173,11 +179,11 @@ def serve_adapter(
             staleness=report,
             merged=plan.merged,
             probe_text=probe.text,
-            probe_error=probe.error,
+            probe_error=probe_error,
         )
         if on_ready is not None:
             on_ready(result)
-        if hold and probe.error is None:
+        if hold and probe_error is None:
             _hold_until_interrupt(endpoint, request_model)
     finally:
         launcher.stop()
@@ -325,6 +331,46 @@ def _merge_lora_weights(entry: AdapterEntry, merged_dir: Path) -> None:
     AutoTokenizer.from_pretrained(entry.base_model, trust_remote_code=True).save_pretrained(
         merged_dir
     )
+    copy_base_tokenizer_assets(entry.base_model, merged_dir)
+
+
+# The base repo's tokenizer files the merge carries verbatim. A LoRA never changes the tokenizer,
+# and the transformers >= 5 `save_pretrained` resave is LOSSY for GGUF conversion: it drops the
+# sentencepiece `tokenizer.model` (the converter's GPT-2-style fallback then asserts on
+# vocabularies whose added tokens sit past `config.vocab_size` -- the first 2026-07-10 Gemma-3
+# merge failure) and rewrites `tokenizer_config.json` in a shape that loses the control-token
+# markings, so `<start_of_turn>`/`<end_of_turn>` export as NORMAL instead of CONTROL token types
+# and an Ollama-served merge emits turn-marker soup / empty answers (the second Gemma-3 failure;
+# the same weights answered correctly once the pristine files were restored).
+TOKENIZER_ASSET_FILES = (
+    "tokenizer.model",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+)
+
+
+def copy_base_tokenizer_assets(
+    base_model: str,
+    merged_dir: Path,
+    downloader: Callable[[str, str], str] | None = None,
+) -> None:
+    """Overwrite the resaved tokenizer files with the base repo's pristine originals.
+
+    Best-effort per file: repos without a given file (e.g. Qwen has no `tokenizer.model`) simply
+    keep the resaved copy, which converts fine for them.
+    """
+    if downloader is None:
+        from huggingface_hub import hf_hub_download
+
+        downloader = hf_hub_download
+    for filename in TOKENIZER_ASSET_FILES:
+        try:
+            source = downloader(base_model, filename)
+        except Exception as exc:
+            _LOG.debug("[serve-adapter] no %s carried from %s: %s", filename, base_model, exc)
+            continue
+        shutil.copy2(source, merged_dir / filename)
 
 
 def _convert_to_gguf(merged_dir: Path, out_dir: Path, entry: AdapterEntry, data_dir: Path) -> Path:
@@ -353,6 +399,67 @@ def _convert_to_gguf(merged_dir: Path, out_dir: Path, entry: AdapterEntry, data_
 def _ollama_create(gguf_path: Path, out_dir: Path, entry: AdapterEntry) -> str:
     tag = ollama_tag(entry)
     modelfile = out_dir / MODELFILE_NAME
-    atomic_write_text(modelfile, f"FROM {gguf_path}\n")
+    chat_template = read_chat_template(out_dir / MERGED_WEIGHTS_DIRNAME)
+    atomic_write_text(modelfile, modelfile_text(gguf_path, chat_template))
     subprocess.run(["ollama", "create", tag, "-f", str(modelfile)], check=True)
     return tag
+
+
+def read_chat_template(merged_dir: Path) -> str:
+    """The merged tokenizer's chat template: `chat_template.jinja` (transformers >= 5) or the
+    legacy `tokenizer_config.json` field. Empty when the tokenizer ships none."""
+    jinja = merged_dir / "chat_template.jinja"
+    if jinja.is_file():
+        return jinja.read_text(encoding="utf-8")
+    config = merged_dir / "tokenizer_config.json"
+    if config.is_file():
+        return str(json.loads(config.read_text(encoding="utf-8")).get("chat_template") or "")
+    return ""
+
+
+# Chat-template families the Modelfile writer recognizes, keyed by an unambiguous marker in the
+# HF jinja template. Ollama does NOT apply the `tokenizer.chat_template` GGUF metadata when a
+# model is created from a bare `FROM <gguf>` Modelfile -- without an explicit TEMPLATE it serves
+# raw-completion style and a merged instruct model degrades to gibberish/empty chat answers (the
+# 2026-07-10 merged-eval collapse: objective 0.019 vs 0.327 served properly). Each entry maps to
+# the equivalent Go TEMPLATE plus its stop tokens.
+_OLLAMA_TEMPLATE_FAMILIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "<|im_start|>",  # ChatML: Qwen, and most *-chatml fine-tunes
+        "{{- range .Messages }}<|im_start|>{{ .Role }}\n"
+        "{{ .Content }}<|im_end|>\n"
+        "{{ end }}<|im_start|>assistant\n",
+        ("<|im_start|>", "<|im_end|>"),
+    ),
+    (
+        "<start_of_turn>",  # Gemma family (no system role; assistant is "model")
+        '{{- range .Messages }}<start_of_turn>{{ if eq .Role "assistant" }}model{{ else }}user{{ end }}\n'
+        "{{ .Content }}<end_of_turn>\n"
+        "{{ end }}<start_of_turn>model\n",
+        ("<start_of_turn>", "<end_of_turn>"),
+    ),
+    (
+        "<|start_header_id|>",  # Llama 3 family
+        "{{- range .Messages }}<|start_header_id|>{{ .Role }}<|end_header_id|>\n\n"
+        "{{ .Content }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>\n\n",
+        ("<|eot_id|>",),
+    ),
+)
+
+
+def modelfile_text(gguf_path: Path, chat_template: str) -> str:
+    """A Modelfile that preserves the merged model's chat conduct, not just its weights."""
+    lines = [f"FROM {gguf_path}"]
+    for marker, template, stops in _OLLAMA_TEMPLATE_FAMILIES:
+        if marker in chat_template:
+            lines.append(f'TEMPLATE """{template}"""')
+            lines.extend(f'PARAMETER stop "{stop}"' for stop in stops)
+            break
+    else:
+        _LOG.warning(
+            "[serve-adapter] unrecognized chat template; the Ollama tag is created WITHOUT a "
+            "TEMPLATE and will serve raw completions -- add a TEMPLATE to %s and re-create "
+            "the tag before trusting chat answers",
+            MODELFILE_NAME,
+        )
+    return "\n".join(lines) + "\n"

@@ -90,9 +90,13 @@ merged into the file atomically, so resume and crash-safety are free. Columns:
 | `question`, `reference_answer` | `verify-sample` | the drafted item you verify |
 | `span_doc_id`, `span_text` | `verify-sample` | the cited span the answer is grounded in |
 | `context` | `verify-sample` | the span shown inside its surrounding corpus window (`>>>span<<<`) -- read this to confirm grounding without leaving the tool |
+| `retrieval_rank` | `verify-sample` | the item's needle retrieval rank against the full-corpus index (from `needle_items.jsonl` / `item_provenance.jsonl`); blank = retrieval miss or not annotated |
+| `page_citation` | `verify-sample` | `<source.pdf> p.N[-M]` for the cited span (from the PDF `*.citations.json` sidecar); blank for non-PDF docs |
 | `cc_grounded`, `cc_non_circular`, `cc_supported`, `cc_answerable`, `cc_note` | `verify-sample` | the second-frontier verdict -- **hidden in the reviewer by default** |
 | `chk_grounded`, `chk_answerable`, `chk_reference`, `chk_planted` | **you** | the four per-item checks: `pass` / `fail` / "" (planted is "" / N/A for real items) |
 | `decision` | **you** (`y` / `x`) | `accept` / `reject` / "" |
+| `reject_code` | **you** (`x` / `x <code>`) | coded rejection reason (`ungrounded`, `circular`, `wrong_reference`, `label_mismatch`, `bad_question`, `other`); bare `x` infers it from the first failed check |
+| `edited_answer` | **you** (`e` command) | accept-with-edit reference answer; stored only after it re-grounds to a verbatim corpus span |
 | `human_note` | **you** (`note` command) | optional free-text note (record the reason for any `fail`) |
 | `human_status` | the reviewer | `pending` / `decided` (resume keys on an empty `decision`) |
 
@@ -134,7 +138,10 @@ represented. `VERIFY_SEED=` makes the draw deterministic (reproducible samples).
 make verify-review VERIFY_WS=$DATA_DIR/prepare-goldset/<ts>/verify_sample.csv
 ```
 
-This opens the reviewer and resumes at the first undecided item. Each card shows the question, the
+This opens the reviewer and resumes at the first undecided item. The card layout mirrors the
+external-RAG review session (`make score-external-rag`): a `=====` banner, `== field:` labels, a
+blank line before `== question:` so consecutive cards are visually delimited, and the shared
+`o`/`w` edit keys. Each card shows the question, the
 reference, and the cited span **inside its corpus window**, so you confirm grounding in place. The
 second-frontier `cc_*` verdict is **hidden by default**: if you see it first you will unconsciously
 defer to it, and the gate would then measure whether you echoed the cross-check instead of whether
@@ -150,8 +157,10 @@ or `reject` -- the decision advances to the next item.
 | `g` / `a` / `r` / `p` | mark grounded / answerable / reference / planted **pass** |
 | `G` / `A` / `R` / `P` | mark the same check **fail** (uppercase) |
 | `y` | accept this item and advance |
-| `x` | reject this item and advance |
-| `note` | edit `human_note` (prompts for one line; empty clears it) |
+| `x` | reject and advance (the reject code is inferred from the first failed check) |
+| `x <code>` | reject with an explicit code: `ungrounded`, `circular`, `wrong_reference`, `label_mismatch`, `bad_question`, `other` |
+| `e` / `w` | accept-with-edit: type a corrected reference answer; it is **re-grounded immediately** against the bundle corpus and refused unless it is a verbatim span |
+| `o` / `note` | edit `human_note` (prompts for one line; empty clears it) |
 | `n` / Enter | next item (no change) |
 | `b` / arrows | previous item (go back to change a mark) |
 | `j <N>` | jump to item N (1-based) |
@@ -160,11 +169,17 @@ or `reject` -- the decision advances to the next item.
 | `?` / `h` | help + the check legend |
 | `q` | save and quit |
 
-(The planted check is refused on a real, non-synthetic item -- it is N/A there.)
+(The planted check is refused on a real, non-synthetic item -- it is N/A there. An accept over an
+edited answer that no longer matches a verbatim span is blocked until you re-ground it with `e`.)
+
+Each decision prints a pace line (items decided this session, items/hour, ETA for the remainder),
+and every sitting appends its measured throughput to `verify_session_stats.json` beside the
+worksheet.
 
 Useful options:
 
 ```
+make verify-review VERIFY_WS=… VERIFY_ORDER=confidence  # least-confident items first
 make verify-review VERIFY_WS=… START=20           # begin at item 20
 make verify-review VERIFY_WS=… SHOW_CROSSCHECK=1   # reveal cc_* (POST-HOC review only -- it anchors)
 make verify-review VERIFY_WS=… CLEAR=1             # wipe all human columns and start fresh (gated)
@@ -172,6 +187,15 @@ make verify-review VERIFY_WS=… CLEAR=1             # wipe all human columns an
 
 Ctrl-C, EOF, and `q` all save and quit; the last edit is already on disk (write-through), so you
 never lose work. Re-running `make verify-review` continues where you left off.
+
+Need a bigger sample after starting? Enlarge it **additively**:
+
+```
+make verify-sample BUNDLE=… VERIFY_N=60 VERIFY_MERGE=1
+```
+
+This appends only item ids the worksheet does not already hold -- decided rows are preserved
+byte-for-byte and never re-shown, and re-running the merge is a no-op.
 
 ### 3. Accept (or send it back) and flip via the ledger
 
@@ -184,7 +208,10 @@ This prints the acceptance report -- the per-stratum and overall **reject rate**
 `VERIFY_TOLERANCE` (default `0.05`) -- and writes the **accepted-ledger** bundle at
 `<bundle>/accepted/`: the items you accepted, with `verified=true`, plus their copied corpus docs,
 so the ledger is self-contained. It also flags any item that has a failed check but no decision
-(`undecided_with_failures`) so nothing slips through unreviewed.
+(`undecided_with_failures`) so nothing slips through unreviewed. Accept-with-edit answers are
+re-grounded against the bundle corpus here as well (an un-groundable edit aborts instead of
+certifying), and a `rejection_reasons.json` summary of your coded rejections lands beside the
+ledger for draft-pipeline feedback.
 
 The policy is **report + accept the clean items**: a stratum or overall rate above tolerance prints
 a `FAIL` warning, but the individually-accepted items are still emitted -- *you* decide whether the

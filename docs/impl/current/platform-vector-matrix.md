@@ -225,9 +225,12 @@ llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 \
 make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply the winner
 ```
 
-Recommended embedder for the 16 GB host (durable evidence 2026-07-04, four local candidates over
-`samples/goldsets/ip_regulation_uk`): `intfloat/multilingual-e5-base`, the current default -- the
-three retrieval-tuned encoders (e5-base, e5-large, bge-m3) all saturate recall@10 = MRR = 1.000 on
-the small fixture, while the paraphrase/STS `lang-uk` model alone drops MRR (0.917); e5-base wins the
-throughput/size tie-break. Re-run on a real full corpus to let recall@k discriminate (the fixture
-saturates). The full table lives in [RAG core](rag-core.md).
+Recommended embedder for the 16 GB host (durable evidence 2026-07-10, embedding-bakeoff-full-corpus:
+four local candidates over the verified 44-item quickstart-PDF accepted goldset, 1139 chunks,
+non-saturated): `intfloat/multilingual-e5-base`, the current default -- highest recall@10 (0.955 vs
+0.932 for e5-large and bge-m3), ~1.8x the embed throughput of the 1024-dim pair (69 vs 38 chunks/s
+on GPU), and the smallest index (4.99 MB vs 6.10 MB). e5-large is the MRR winner (0.795 vs 0.740)
+and ties e5-base at recall@20 -- prefer it only when first-hit rank is the binding constraint. The
+paraphrase/STS `lang-uk` model collapses to recall@10 0.455 on the real corpus. Embed VRAM peaked
+~4 GB, so all candidates fit the 16 GB host. The full two-cutoff table lives in
+[RAG core](rag-core.md).
