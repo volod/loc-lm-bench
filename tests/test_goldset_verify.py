@@ -18,12 +18,20 @@ from llb.goldset.verify import (
     accepted_ids,
     build_sample_worksheet,
     check_verification_ref,
+    confidence_order,
     corpus_window,
     draw_stratified_sample,
     emit_accepted_ledger,
     format_verification_status,
+    ground_answer,
+    infer_reject_code,
     load_cross_check,
+    load_retrieval_ranks,
     load_worksheet,
+    merge_sample_worksheet,
+    rejection_reasons_summary,
+    row_confidence,
+    run_accept,
     stratify,
     write_worksheet_rows,
 )
@@ -36,6 +44,8 @@ from llb.goldset.verify_session import (
     PREV,
     QUIT,
     REJECT_CMD,
+    SESSION_STATS_FILENAME,
+    SessionStats,
     _go_forward,
     _go_undecided,
     decided_count,
@@ -43,6 +53,7 @@ from llb.goldset.verify_session import (
     format_card,
     parse_command,
     run_session,
+    throughput_line,
 )
 from llb.prep.verified_ledger import apply_verified_ledger, load_verified_ledger
 
@@ -417,3 +428,296 @@ def test_go_undecided_handles_completion_index():
 def test_decided_count(tmp_path):
     rows = [_ws_row("a", "accept"), _ws_row("b", "reject"), _ws_row("c", "")]
     assert decided_count(rows) == 2
+
+
+# --- reviewer signals: retrieval rank + page citation ---------------------------------------
+
+
+def test_worksheet_carries_retrieval_rank_and_page_citation(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    (bundle / "needle_items.jsonl").write_text(
+        json.dumps({"id": "a", "retrieval_rank": 2}) + "\n", encoding="utf-8"
+    )
+    sidecar = bundle / "corpus" / "squad" / "doc1.citations.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "source": "orig/doc1.pdf",
+                "pages": [{"page": 3, "char_start": 0, "char_end": len(TEXT)}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "ws.csv"
+    build_sample_worksheet(bundle, out, n=1)
+    rows, _ = load_worksheet(out)
+    assert rows[0]["retrieval_rank"] == "2"
+    assert rows[0]["page_citation"] == "doc1.pdf p.3"
+    # The card renders both so the reviewer sees them without leaving the terminal.
+    card = format_card(rows[0], 1, 1, 0)
+    assert "doc1.pdf p.3" in card and "retrieval_rank=2" in card
+
+
+def test_load_retrieval_ranks_reads_both_sidecars(tmp_path):
+    (tmp_path / "needle_items.jsonl").write_text(
+        json.dumps({"id": "a", "retrieval_rank": 1}) + "\n", encoding="utf-8"
+    )
+    (tmp_path / "item_provenance.jsonl").write_text(
+        json.dumps({"id": "b", "retrieval_rank": 4})
+        + "\n"
+        + json.dumps({"id": "c", "retrieval_rank": None})
+        + "\n",
+        encoding="utf-8",
+    )
+    ranks = load_retrieval_ranks(tmp_path)
+    assert ranks == {"a": 1, "b": 4}  # a null rank (retrieval miss) is simply absent
+
+
+# --- confidence ordering --------------------------------------------------------------------
+
+
+def test_confidence_order_puts_least_confident_first():
+    good = _ws_row("good", cc_grounded="true", cc_supported="true", retrieval_rank="1")
+    bad = _ws_row("bad", cc_grounded="false")
+    mid = _ws_row("mid")
+    assert row_confidence(good) > row_confidence(mid) > row_confidence(bad)
+    assert confidence_order([good, bad, mid]) == [1, 2, 0]
+
+
+def test_session_confidence_order_reviews_suspicious_first(tmp_path):
+    path = _ws(
+        tmp_path,
+        [_ws_row("good", cc_grounded="true"), _ws_row("bad", cc_grounded="false")],
+    )
+    run_session(path, inputs=iter(["y", "q"]), output=[].append, order="confidence")
+    rows, _ = load_worksheet(path)
+    # The single accept landed on the LOW-confidence row, and the CSV order never changed.
+    assert [r["item_id"] for r in rows] == ["good", "bad"]
+    assert {r["item_id"]: r["decision"] for r in rows} == {"good": "", "bad": "accept"}
+
+
+# --- additive sample enlargement (merge mode) -----------------------------------------------
+
+
+def test_merge_adds_only_new_rows_and_preserves_decided_bytes(tmp_path):
+    bundle = _bundle(tmp_path, [_item(f"i{k}") for k in range(6)])
+    out = tmp_path / "verify_sample.csv"
+    build_sample_worksheet(bundle, out, n=2, seed=1)
+    rows, fields = load_worksheet(out)
+    rows[0]["decision"] = "accept"
+    rows[0]["human_note"] = "ok, з комою"  # the comma forces CSV quoting on this row
+    write_worksheet_rows(out, rows, fields)
+    before_lines = out.read_bytes().splitlines(keepends=True)
+    decided_id = rows[0]["item_id"]
+
+    added, total = merge_sample_worksheet(bundle, out, n=5, seed=1)
+    assert added == 3 and total == 5  # same-seed draw is a superset; only new ids appended
+
+    after_rows, _ = load_worksheet(out)
+    ids = [r["item_id"] for r in after_rows]
+    assert len(set(ids)) == len(ids)  # a decided row is never re-drawn
+    assert ids[:2] == [r["item_id"] for r in rows]  # existing rows keep their order
+    after_lines = out.read_bytes().splitlines(keepends=True)
+    assert after_lines[: len(before_lines)] == before_lines  # decided rows byte-for-byte
+    assert next(r for r in after_rows if r["item_id"] == decided_id)["decision"] == "accept"
+    manifest = json.loads((out.with_name("sample_manifest.json")).read_text(encoding="utf-8"))
+    assert manifest["merged_added"] == 3 and manifest["sample_size"] == 5
+
+
+def test_merge_is_idempotent(tmp_path):
+    bundle = _bundle(tmp_path, [_item(f"i{k}") for k in range(6)])
+    out = tmp_path / "verify_sample.csv"
+    build_sample_worksheet(bundle, out, n=2, seed=1)
+    merge_sample_worksheet(bundle, out, n=5, seed=1)
+    snapshot = out.read_bytes()
+    added, total = merge_sample_worksheet(bundle, out, n=5, seed=1)
+    assert added == 0 and total == 5
+    assert out.read_bytes() == snapshot
+
+
+def test_merge_falls_back_to_fresh_build(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a"), _item("b")])
+    out = tmp_path / "ws.csv"
+    added, total = merge_sample_worksheet(bundle, out, n=2, seed=1)
+    assert added == 2 and total == 2
+    assert out.is_file()
+
+
+# --- coded rejection reasons ----------------------------------------------------------------
+
+
+def test_parse_reject_code_commands():
+    cmd = parse_command("x bad_question")
+    assert cmd.kind == REJECT_CMD and cmd.field == "bad_question"
+    assert parse_command("x").kind == REJECT_CMD and parse_command("x").field == ""
+
+
+def test_infer_reject_code_prefers_first_failed_check():
+    assert infer_reject_code(_ws_row("a", chk_reference="fail")) == "wrong_reference"
+    assert (
+        infer_reject_code(_ws_row("a", chk_grounded="fail", chk_reference="fail")) == "ungrounded"
+    )
+    assert infer_reject_code(_ws_row("a")) == "other"
+
+
+def test_session_reject_infers_code_from_failed_check(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a")])
+    out: list[str] = []
+    run_session(path, inputs=iter(["R", "x", "q"]), output=out.append)
+    rows, _ = load_worksheet(path)
+    assert rows[0]["decision"] == "reject" and rows[0]["reject_code"] == "wrong_reference"
+    assert any("inferred" in line for line in out)
+
+
+def test_session_reject_explicit_code_and_invalid_code(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a"), _ws_row("b")])
+    out: list[str] = []
+    run_session(path, inputs=iter(["x bad_question", "x nonsense", "q"]), output=out.append)
+    rows, _ = load_worksheet(path)
+    by_id = {r["item_id"]: r for r in rows}
+    assert by_id["a"]["reject_code"] == "bad_question"
+    assert by_id["b"]["decision"] == ""  # an unknown code refuses to decide
+    assert any("unknown reject code" in line for line in out)
+
+
+def test_session_accept_clears_stale_reject_code(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a", "reject", reject_code="bad_question")])
+    run_session(path, inputs=iter(["j1", "y", "q"]), output=[].append)
+    rows, _ = load_worksheet(path)
+    assert rows[0]["decision"] == "accept" and rows[0]["reject_code"] == ""
+
+
+def test_run_accept_exports_rejection_reasons(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a"), _item("b")])
+    out = tmp_path / "ws.csv"
+    build_sample_worksheet(bundle, out, n=2, seed=1)
+    rows, fields = load_worksheet(out)
+    rows[0]["decision"] = "accept"
+    rows[1]["decision"] = "reject"
+    rows[1]["reject_code"] = "bad_question"
+    rows[1]["human_note"] = "тривiальне"
+    write_worksheet_rows(out, rows, fields)
+    assert run_accept(out, bundle, None, tolerance=0.6) == 0
+    reasons = json.loads(
+        (bundle / "accepted" / "rejection_reasons.json").read_text(encoding="utf-8")
+    )
+    assert reasons["rejected"] == 1
+    cell = reasons["by_code"]["bad_question"]
+    assert cell["count"] == 1 and cell["items"][0]["note"] == "тривiальне"
+
+
+def test_rejection_reasons_summary_infers_missing_codes():
+    rows = [_ws_row("a", "reject", chk_grounded="fail"), _ws_row("b", "accept")]
+    summary = rejection_reasons_summary(rows)
+    assert summary["rejected"] == 1 and "ungrounded" in summary["by_code"]
+
+
+# --- accept-with-edit re-grounding ----------------------------------------------------------
+
+
+def test_ground_answer_prefers_occurrence_nearest_hint():
+    text = "рік 1871 та ще раз 1871 у кінці"
+    late = text.rfind("1871")
+    assert ground_answer(text, "1871", hint_start=late) == (late, late + 4)
+    assert ground_answer(text, "відсутнє") is None
+
+
+def test_session_edit_regrounds_immediately(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    ws = bundle / "verify_sample.csv"
+    build_sample_worksheet(bundle, ws, n=1)  # manifest beside ws resolves the corpus root
+    out: list[str] = []
+    run_session(ws, inputs=iter(["e", "Новограді-Волинському", "y", "q"]), output=out.append)
+    rows, _ = load_worksheet(ws)
+    assert rows[0]["edited_answer"] == "Новограді-Волинському"
+    assert rows[0]["decision"] == "accept"
+    assert any("re-grounded" in line for line in out)
+
+
+def test_session_edit_blocked_when_not_verbatim(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    ws = bundle / "verify_sample.csv"
+    build_sample_worksheet(bundle, ws, n=1)
+    out: list[str] = []
+    run_session(ws, inputs=iter(["e", "цього немає в корпусі", "q"]), output=out.append)
+    rows, _ = load_worksheet(ws)
+    assert rows[0]["edited_answer"] == ""  # the un-groundable edit was refused on the spot
+    assert any("BLOCKED" in line for line in out)
+
+
+def test_session_accept_blocked_until_stale_edit_regrounds(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    ws = bundle / "verify_sample.csv"
+    build_sample_worksheet(bundle, ws, n=1)
+    rows, fields = load_worksheet(ws)
+    rows[0]["edited_answer"] = "рядок не з корпусу"  # simulate a hand-edited CSV cell
+    write_worksheet_rows(ws, rows, fields)
+    out: list[str] = []
+    run_session(ws, inputs=iter(["y", "q"]), output=out.append)
+    rows, _ = load_worksheet(ws)
+    assert rows[0]["decision"] == ""  # accept refused until the edit re-grounds
+    assert any("BLOCKED" in line for line in out)
+
+
+def test_emit_accepted_ledger_applies_regrounded_edit(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    out_dir = tmp_path / "accepted"
+    n = emit_accepted_ledger(bundle, ["a"], out_dir, edits={"a": "Новограді-Волинському"})
+    assert n == 1
+    item = load_goldset(out_dir / "goldset.jsonl")[0]
+    assert item.verified is True
+    assert item.reference_answer == "Новограді-Волинському"
+    assert item.source_spans[0].text == "Новограді-Волинському"
+    start = item.source_spans[0].char_start
+    assert TEXT[start : start + len("Новограді-Волинському")] == "Новограді-Волинському"
+
+
+def test_emit_accepted_ledger_blocks_ungrounded_edit(tmp_path):
+    bundle = _bundle(tmp_path, [_item("a")])
+    with pytest.raises(ValueError, match="verbatim"):
+        emit_accepted_ledger(
+            bundle, ["a"], tmp_path / "accepted", edits={"a": "вигадана вiдповiдь"}
+        )
+
+
+# --- session throughput stats ---------------------------------------------------------------
+
+
+def _ticking_clock(step=30.0):
+    state = {"now": 0.0}
+
+    def clock():
+        state["now"] += step
+        return state["now"]
+
+    return clock
+
+
+def test_session_stats_measure_items_per_hour(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a"), _ws_row("b")])
+    out: list[str] = []
+    decided = run_session(
+        path, inputs=iter(["y", "y", "q"]), output=out.append, clock=_ticking_clock()
+    )
+    assert decided == 2
+    assert any("items/h" in line for line in out)  # per-decision pace + end-of-session summary
+    stats = json.loads((path.with_name(SESSION_STATS_FILENAME)).read_text(encoding="utf-8"))
+    record = stats["sessions"][-1]
+    assert record["decided_this_session"] == 2
+    assert record["items_per_hour"] > 0
+    assert record["total_rows"] == 2
+
+
+def test_session_without_decisions_writes_no_stats(tmp_path):
+    path = _ws(tmp_path, [_ws_row("a")])
+    run_session(path, inputs=iter(["n", "q"]), output=[].append, clock=_ticking_clock())
+    assert not path.with_name(SESSION_STATS_FILENAME).exists()
+
+
+def test_throughput_line_reports_rate_and_eta():
+    clock = _ticking_clock(step=60.0)
+    stats = SessionStats(clock=clock)  # started at 60
+    stats.on_decision()
+    rows = [_ws_row("a", "accept"), _ws_row("b", ""), _ws_row("c", "")]
+    line = throughput_line(stats, rows)  # elapsed 60s, 1 decision -> 60 items/h, 2 remaining
+    assert "60.0 items/h" in line and "2 remaining" in line

@@ -208,6 +208,11 @@ VERIFY_WS ?= $(if $(BUNDLE),$(BUNDLE)/verify_sample.csv,)
 VERIFY_N ?= 30
 VERIFY_SEED ?= 13
 VERIFY_TOLERANCE ?= 0.05
+# VERIFY_MERGE=1 enlarges an existing worksheet additively (decided rows preserved byte-for-byte,
+# never re-shown); VERIFY_ORDER=confidence reviews least-confident items first (cross-check
+# verdict + retrieval rank decide the queue; the CSV row order never changes).
+VERIFY_MERGE ?=
+VERIFY_ORDER ?=
 # Composite-headline pipeline knobs. Each verification ref must point at a reviewed
 # verify_sample.csv, a sample_manifest.json that points to one, or an accepted-ledger bundle.
 COMPOSITE_SAMPLE_VERIFICATION_ROOT ?= $(PROJECT_ROOT)/samples/verification/composite_samples
