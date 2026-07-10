@@ -157,5 +157,8 @@ the reproducible benchmark state. Generated worksheets stay under `$DATA_DIR/llb
 
 `make test-fast` runs the lightweight suite used by CI. `make test` runs the full local flow,
 including slow tests and markdown lint. A test should be marked slow only when its cost is
-intrinsic to the behavior being checked: Optuna sweeps, real embedder/model loading, DeepEval, or
-subprocess build helpers.
+intrinsic to the behavior being checked: recursive/langchain chunking integration, multi-trial
+Optuna or fine-tune campaign simulations, optional chart rendering, real embedder/model loading,
+DeepEval, or subprocess build helpers. The lightweight suite keeps pure span math, fake-backed
+retrieval/fusion, hparam slice and guard checks, and small manifest integrations in CI; the full
+suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus regressions.

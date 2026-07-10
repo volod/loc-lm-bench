@@ -213,6 +213,14 @@ VERIFY_TOLERANCE ?= 0.05
 # verdict + retrieval rank decide the queue; the CSV row order never changes).
 VERIFY_MERGE ?=
 VERIFY_ORDER ?=
+# Multi-annotator gate: VERIFY_ANNOTATORS=k writes the SAME stratified sample as k per-reviewer
+# worksheets (verify_sample.r<i>.csv); verify-adjudicate then reports agreement (Cohen/Fleiss
+# kappa) and draws disagreements into adjudication.csv. VERIFY_ACCEPT_POLICY picks the acceptance
+# arithmetic (global | per-stratum | weighted); VERIFY_STRATUM_TOLERANCES overrides per-stratum
+# thresholds as space-separated "provenance|split|doc=tol" pairs.
+VERIFY_ANNOTATORS ?=
+VERIFY_ACCEPT_POLICY ?=
+VERIFY_STRATUM_TOLERANCES ?=
 # Composite-headline pipeline knobs. Each verification ref must point at a reviewed
 # verify_sample.csv, a sample_manifest.json that points to one, or an accepted-ledger bundle.
 COMPOSITE_SAMPLE_VERIFICATION_ROOT ?= $(PROJECT_ROOT)/samples/verification/composite_samples

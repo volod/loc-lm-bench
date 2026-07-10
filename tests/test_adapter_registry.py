@@ -9,7 +9,16 @@ from llb.backends.base import BackendLauncher, ChatResult
 from llb.board.runs import STALE_STAMP, load_run_records
 from llb.core.config import RunConfig
 from llb.finetune.guard import validate_adapter_for_eval
-from llb.finetune.lifecycle import GC_DELETE, GC_KEEP, GC_REFUSE, cited_adapters, gc_adapters
+from llb.core.paths import PROJECT_ROOT
+from llb.finetune.lifecycle import (
+    GC_DELETE,
+    GC_KEEP,
+    GC_REFUSE,
+    cited_adapters,
+    gc_adapters,
+    gc_rows,
+    plan_gc,
+)
 from llb.finetune.registry import (
     VERDICT_CURRENT,
     VERDICT_STALE,
@@ -198,6 +207,22 @@ def test_registry_round_trip_is_idempotent(tmp_path: Path):
     assert resolve_adapter(entries, entry.adapter_label).adapter_id == entry.adapter_id
 
 
+def _store_meta(tmp_path: Path, *, name: str = "rag", **overrides) -> Path:
+    """A minimal RAG store dir holding only the store_meta.json the fingerprint reads."""
+    meta = {
+        "mode": "flat",
+        "strategy": "markdown",
+        "size": 800,
+        "overlap": 120,
+        "embedding_model": "intfloat/multilingual-e5-base",
+    }
+    meta.update(overrides)
+    index_dir = tmp_path / name
+    index_dir.mkdir(parents=True, exist_ok=True)
+    (index_dir / "store_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    return index_dir
+
+
 def test_staleness_flips_when_the_goldset_digest_changes(tmp_path: Path):
     goldset = _goldset(tmp_path, _item("tune-1", "tuning"))
     corpus = _corpus(tmp_path)
@@ -206,6 +231,7 @@ def test_staleness_flips_when_the_goldset_digest_changes(tmp_path: Path):
         adapter_dir=_trained_adapter(tmp_path),
         goldset_path=goldset,
         corpus_root=corpus,
+        index_dir=_store_meta(tmp_path),
     )
     assert staleness(entry).verdict == VERDICT_CURRENT
 
@@ -223,12 +249,76 @@ def test_staleness_is_unknown_when_a_digest_was_never_recorded(tmp_path: Path):
         registry=registry_path(tmp_path),
         adapter_dir=_trained_adapter(tmp_path),
         goldset_path=_goldset(tmp_path),
+        index_dir=_store_meta(tmp_path),
     )
 
     report = staleness(entry)
 
     assert report.verdict == VERDICT_UNKNOWN
     assert report.reasons == ("corpus digest unavailable",)
+
+
+def test_staleness_flips_when_the_store_embedder_changes(tmp_path: Path):
+    """Same corpus fingerprint, different retrieval knobs -> the training contexts are gone."""
+    goldset = _goldset(tmp_path, _item("tune-1", "tuning"))
+    corpus = _corpus(tmp_path)
+    index_dir = _store_meta(tmp_path)
+    entry = register_adapter(
+        registry=registry_path(tmp_path),
+        adapter_dir=_trained_adapter(tmp_path),
+        goldset_path=goldset,
+        corpus_root=corpus,
+        index_dir=index_dir,
+    )
+    assert staleness(entry).verdict == VERDICT_CURRENT
+
+    _store_meta(tmp_path, embedding_model="other/embedder")  # rebuild with another embedder
+
+    report = staleness(entry)
+    assert report.verdict == VERDICT_STALE
+    assert report.reasons == (
+        "retrieval embedding_model changed since training "
+        "(intfloat/multilingual-e5-base -> other/embedder)",
+    )
+
+    _store_meta(tmp_path, size=400)  # rechunk instead: a different knob is named
+    rechunked = staleness(entry)
+    assert rechunked.verdict == VERDICT_STALE
+    assert any("chunk_size" in reason for reason in rechunked.reasons)
+
+
+def test_staleness_legacy_entry_without_fingerprint_reads_unknown(tmp_path: Path):
+    """An entry registered before the retrieval fingerprint existed can never read current."""
+    goldset = _goldset(tmp_path, _item("tune-1", "tuning"))
+    corpus = _corpus(tmp_path)
+    entry = register_adapter(
+        registry=registry_path(tmp_path),
+        adapter_dir=_trained_adapter(tmp_path),
+        goldset_path=goldset,
+        corpus_root=corpus,
+    )
+    report = staleness(entry)
+    assert report.verdict == VERDICT_UNKNOWN
+    assert report.reasons == ("retrieval fingerprint unavailable",)
+
+
+def test_retrieval_fingerprint_round_trips_through_the_event_log(tmp_path: Path):
+    index_dir = _store_meta(tmp_path)
+    entry = register_adapter(
+        registry=registry_path(tmp_path),
+        adapter_dir=_trained_adapter(tmp_path),
+        goldset_path=_goldset(tmp_path),
+        index_dir=index_dir,
+    )
+    loaded = load_registry(registry_path(tmp_path))[entry.adapter_id]
+    assert loaded.retrieval_fingerprint == {
+        "embedding_model": "intfloat/multilingual-e5-base",
+        "strategy": "markdown",
+        "chunk_size": 800,
+        "chunk_overlap": 120,
+        "retrieval_mode": "flat",
+    }
+    assert loaded.index_dir == str(index_dir)
 
 
 def test_committed_fixture_stamps_the_stale_entry():
@@ -474,7 +564,7 @@ def test_gc_refuses_a_cited_adapter_until_forced(tmp_path: Path):
     _run_bundle(run_root, "cited-run", model="base-model", adapter_digest=old_entry.adapter_id)
 
     assert cited_adapters(run_root, load_registry(registry)) == {
-        old_entry.adapter_id: (str(run_root / "cited-run"),)
+        old_entry.adapter_id: (f"run-bundle:{run_root / 'cited-run'}",)
     }
 
     refused = gc_adapters(data_dir=tmp_path)
@@ -492,6 +582,80 @@ def test_gc_refuses_a_cited_adapter_until_forced(tmp_path: Path):
     assert not old.exists()
     assert new.is_dir()
     assert old_entry.adapter_id not in load_registry(registry)
+
+
+def _superseded_pair(tmp_path: Path) -> tuple[Path, Path, AdapterEntry, AdapterEntry]:
+    """Two registered adapters for the same base model; the first is superseded."""
+    registry = registry_path(tmp_path)
+    old = _trained_adapter(tmp_path, seed=1)
+    new = _trained_adapter(tmp_path, seed=2)
+    old_entry = _entry(old, created_at="2026-01-01T00:00:00Z")
+    new_entry = _entry(new, created_at="2026-02-01T00:00:00Z")
+    _register_event(registry, old_entry)
+    _register_event(registry, new_entry)
+    return old, new, old_entry, new_entry
+
+
+def test_gc_refuses_adapter_cited_only_by_campaign_journal(tmp_path: Path):
+    """A superseded adapter no run bundle cites, but a campaign journal still links."""
+    old, _new, old_entry, _ = _superseded_pair(tmp_path)
+    journal = tmp_path / "finetune-campaign" / "2026-03-01" / "campaign.progress.jsonl"
+    journal.parent.mkdir(parents=True)
+    journal.write_text(
+        json.dumps({"model": "base-model", "status": "completed", "adapter_dir": str(old)}) + "\n",
+        encoding="utf-8",
+    )
+
+    plan = gc_adapters(data_dir=tmp_path, dry_run=True)
+    decision = next(d for d in plan.decisions if d.entry.adapter_id == old_entry.adapter_id)
+    assert decision.action == GC_REFUSE
+    assert decision.cited_by == (f"campaign-journal:{journal}",)
+    assert str(journal) in decision.reason  # the refusal names the citing journal
+    row = next(r for r in gc_rows(plan) if r["action"] == GC_REFUSE)
+    assert row["cited_kinds"] == "campaign-journal"
+
+    forced = gc_adapters(data_dir=tmp_path, force=True)
+    assert [d.entry.adapter_id for d in forced.deleted] == [old_entry.adapter_id]
+    assert not old.exists()
+
+
+def test_gc_refuses_adapter_cited_by_self_improve_state(tmp_path: Path):
+    old, _new, old_entry, _ = _superseded_pair(tmp_path)
+    state = tmp_path / "self-improve" / "2026-03-02" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text(
+        json.dumps({"rounds": [{"round": 1, "adapter_dir": str(old)}]}), encoding="utf-8"
+    )
+
+    plan = gc_adapters(data_dir=tmp_path, dry_run=True)
+    decision = next(d for d in plan.decisions if d.entry.adapter_id == old_entry.adapter_id)
+    assert decision.action == GC_REFUSE
+    assert decision.cited_by == (f"self-improve-state:{state}",)
+    assert old.is_dir()
+
+
+def test_committed_campaign_journal_fixture_blocks_unforced_gc(tmp_path: Path):
+    """The committed journal fixture cites the committed stale adapter; GC must refuse it."""
+    entries = load_registry(FIXTURE_REGISTRY)
+    cited = cited_adapters(
+        tmp_path / "no-runs", entries, data_dir=Path("samples/finetune/gc-journals")
+    )
+    journal = (
+        "samples/finetune/gc-journals/finetune-campaign/campaign-fixture/campaign.progress.jsonl"
+    )
+    assert [c.split(":", 1)[0] for c in cited[STALE_FIXTURE_ID]] == ["campaign-journal"]
+    assert cited[STALE_FIXTURE_ID][0].endswith(journal)
+
+    # plan_gc is pure; PROJECT_ROOT as data root keeps the fixture inside the deletable zone
+    # so the CITATION (not the outside-$DATA_DIR rule) is what blocks the unforced plan.
+    plan = plan_gc(entries, cited=cited, data_dir=PROJECT_ROOT, force=False)
+    decision = next(d for d in plan.decisions if d.entry.adapter_id == STALE_FIXTURE_ID)
+    assert decision.action == GC_REFUSE
+    assert journal in decision.reason
+
+    forced = plan_gc(entries, cited=cited, data_dir=PROJECT_ROOT, force=True)
+    assert [d.entry.adapter_id for d in forced.deleted] == [STALE_FIXTURE_ID]
+    assert Path("samples/finetune/stale-adapter/adapter_manifest.json").is_file()
 
 
 def test_supersession_uses_log_order_when_created_at_ties(tmp_path: Path):

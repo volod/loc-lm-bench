@@ -305,6 +305,13 @@ question-answering gold set, every evaluation category, and the graph ontology d
    certifying changed content. See the
    [gold-set-from-scratch guide](../data-prep/goldset-from-scratch.md) for the ledger mechanics.
 
+Need more than one reviewer? `VERIFY_ANNOTATORS=<k>` on step 3 writes the same sample as `k`
+per-reviewer worksheets; after everyone reviews independently, `make verify-adjudicate` reports
+inter-annotator agreement (Cohen's/Fleiss' kappa) and routes disagreements to an adjudication
+worksheet, and `verify-accept` scores the consensus under a configurable policy
+(`VERIFY_ACCEPT_POLICY=global|per-stratum|weighted`). Walkthrough:
+[verification-tooling, Case 4](verification-tooling.md#case-4-multi-annotator-review-and-adjudication).
+
 ### Done when
 A documented stratified sample passes the four checks and the accepted items are flipped to
 `verified=true` through the ledger. Only then may they enter a scored run.

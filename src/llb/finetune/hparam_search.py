@@ -45,6 +45,19 @@ DEFAULT_MAX_TRIALS = 8
 DEFAULT_DEV_FRACTION = 0.25
 # Below two items a "held-out dev slice" is not held out from anything: one of train/dev is empty.
 MIN_SLICE_ITEMS = 2
+
+# Base-score strata for `--stratify-by-base-score`. An item is ANSWERABLE when the base model
+# already scores above zero on it; a dev slice with no answerable item makes the trial objective
+# a near-constant that ranks every configuration the same (the first CUDA search on this repo hit
+# exactly that with a uniform 3-item slice). Buckets are drawn from in ANSWERABLE-FIRST priority
+# order so the floor-of-one lands on discriminating items before zeros.
+BUCKET_HIGH = "high"  # objective_score >= HIGH_SCORE_BOUNDARY
+BUCKET_LOW = "low"  # 0 < objective_score < HIGH_SCORE_BOUNDARY
+BUCKET_ZERO = "zero"  # objective_score == 0.0
+BUCKET_UNSCORED = "unscored"  # item absent from the base run's scores.jsonl
+HIGH_SCORE_BOUNDARY = 0.5
+BUCKET_PRIORITY = (BUCKET_HIGH, BUCKET_LOW, BUCKET_ZERO, BUCKET_UNSCORED)
+SCORES_FILENAME = "scores.jsonl"
 SECONDS_PER_HOUR = 3600.0
 DIGEST_TAG_CHARS = 12
 
@@ -87,24 +100,39 @@ BATCH_GEOMETRY_CHOICES: dict[str, tuple[int, int]] = {
 }
 MAX_LENGTH_CHOICES = [512, 1024, 2048]
 
+# Pre-run VRAM feasibility (finetune-hparams-infeasible-point-prune). A LoRA pair holds two
+# matrices of `hidden x rank` per targeted module per layer, and training multiplies each
+# parameter by weight + gradient (bf16) plus fp32 Adam moments and master copy. The estimate is
+# deliberately coarse -- it exists to prune KNOWN-infeasible points before a fine-tune is paid
+# for, not to replace the measured-OOM prune that stays in place after it.
+LORA_MATRICES_PER_MODULE = 2
+ADAPTER_TRAIN_BYTES_PER_PARAM = 16.0  # 2 weight + 2 grad + 8 Adam m/v + 4 fp32 master
+
 # (adapter_dir, hyperparameters) -> dev-slice objective. Injectable so CI needs no backend.
 ObjectiveFn = Callable[[Path, JsonObject], float]
 # (dataset_dir, model, adapter_dir, seed, hyperparameters) -> adapter manifest.
 TrialTrainerFn = Callable[[Path, str, Path, int, JsonObject], JsonObject]
 Clock = Callable[[], float]
+# hyperparameters -> estimated training footprint in MiB, or None when the arch is unknown.
+EstimateFn = Callable[[JsonObject], float | None]
 
 
 @dataclass(frozen=True)
 class DevSlice:
-    """A seeded, disjoint split of the tuning-split item ids into train and held-out dev."""
+    """A seeded, disjoint split of the tuning-split item ids into train and held-out dev.
+
+    `strata` is set only by the stratified carve: per-bucket population/dev counts and the
+    base-score distribution the slice was drawn against, recorded into `hparams_manifest.json`.
+    """
 
     train_ids: tuple[str, ...]
     dev_ids: tuple[str, ...]
     seed: int
     dev_fraction: float
+    strata: JsonObject | None = None
 
     def as_dict(self) -> JsonObject:
-        return {
+        payload: JsonObject = {
             "seed": self.seed,
             "dev_fraction": self.dev_fraction,
             "n_train": len(self.train_ids),
@@ -112,6 +140,9 @@ class DevSlice:
             "train_ids": list(self.train_ids),
             "dev_ids": list(self.dev_ids),
         }
+        if self.strata is not None:
+            payload["strata"] = self.strata
+        return payload
 
 
 @dataclass(frozen=True)
@@ -121,6 +152,7 @@ class TrialRecord:
     objective: float | None
     hyperparameters: JsonObject
     duration_s: float = 0.0
+    estimated_adapter_mib: float | None = None
 
     def as_dict(self) -> JsonObject:
         return {
@@ -129,6 +161,7 @@ class TrialRecord:
             "objective": self.objective,
             "hyperparameters": self.hyperparameters,
             "duration_s": round(self.duration_s, 3),
+            "estimated_adapter_mib": self.estimated_adapter_mib,
         }
 
 
@@ -174,6 +207,114 @@ def carve_dev_slice(
     )
 
 
+def load_base_scores(run_dir: Path | str) -> dict[str, float]:
+    """Per-item base-model `objective_score` from a scored run bundle's `scores.jsonl`."""
+    path = Path(run_dir) / SCORES_FILENAME
+    if not path.is_file():
+        raise ValueError(f"--stratify-by-base-score run has no {SCORES_FILENAME}: {run_dir}")
+    scores: dict[str, float] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+        item_id = row.get("item_id")
+        value = row.get("objective_score")
+        if item_id is not None and value is not None:
+            scores[str(item_id)] = float(value)
+    return scores
+
+
+def base_score_bucket(score: float | None) -> str:
+    """The base-score stratum an item falls into (see `BUCKET_PRIORITY`)."""
+    if score is None:
+        return BUCKET_UNSCORED
+    if score <= 0.0:
+        return BUCKET_ZERO
+    return BUCKET_HIGH if score >= HIGH_SCORE_BOUNDARY else BUCKET_LOW
+
+
+def _dev_quota_per_bucket(buckets: dict[str, list[str]], n_dev: int, total: int) -> dict[str, int]:
+    """Proportional dev quota per bucket: floor of one (answerable buckets first), then
+    largest-remainder top-up, each bucket capped at its own size. Deterministic."""
+    quotas = {bucket: 0 for bucket in buckets}
+    remaining = n_dev
+    for bucket in BUCKET_PRIORITY:
+        if remaining > 0 and buckets.get(bucket):
+            quotas[bucket] = 1
+            remaining -= 1
+    while remaining > 0:
+        ideal = {b: len(ids) * n_dev / total for b, ids in buckets.items()}
+        open_buckets = [b for b in BUCKET_PRIORITY if b in buckets and quotas[b] < len(buckets[b])]
+        if not open_buckets:
+            break
+        winner = max(open_buckets, key=lambda b: ideal[b] - quotas[b])
+        quotas[winner] += 1
+        remaining -= 1
+    return quotas
+
+
+def carve_stratified_dev_slice(
+    item_ids: list[str] | tuple[str, ...],
+    base_scores: dict[str, float],
+    *,
+    seed: int = DEFAULT_SEED,
+    dev_fraction: float = DEFAULT_DEV_FRACTION,
+    base_score_run: str | None = None,
+) -> DevSlice:
+    """Carve the dev slice proportionally per base-score bucket (answerable items guaranteed).
+
+    Same guarantees as `carve_dev_slice` -- train/dev disjoint, deterministic for a seed, at
+    least one item on each side -- plus: every non-empty bucket is represented (floor of one,
+    answerable buckets first), so a small dev slice still carries items the base model can
+    answer and the trial objective can discriminate. Refuses a population with NO answerable
+    item: a study cannot rank trials against a constant objective.
+    """
+    if not 0.0 < dev_fraction < 1.0:
+        raise ValueError(f"dev_fraction must lie strictly between 0 and 1, got {dev_fraction}")
+    unique = sorted({str(item_id) for item_id in item_ids})
+    if len(unique) < MIN_SLICE_ITEMS:
+        raise ValueError(
+            f"a held-out dev slice needs at least {MIN_SLICE_ITEMS} tuning items, got {len(unique)}"
+        )
+    if not any(base_scores.get(item_id, 0.0) > 0.0 for item_id in unique):
+        raise ValueError(
+            "stratified dev slice refused: the base model scores 0.0 on every tuning item, so "
+            "no dev slice can discriminate between trials; grow or diversify the dataset "
+            "(or drop --stratify-by-base-score to accept a constant objective knowingly)"
+        )
+    buckets: dict[str, list[str]] = {}
+    for item_id in unique:
+        buckets.setdefault(base_score_bucket(base_scores.get(item_id)), []).append(item_id)
+
+    n_dev = min(len(unique) - 1, max(1, round(len(unique) * dev_fraction)))
+    quotas = _dev_quota_per_bucket(buckets, n_dev, len(unique))
+    rng = Random(seed)
+    dev: set[str] = set()
+    for bucket in BUCKET_PRIORITY:
+        ids = list(buckets.get(bucket, []))
+        rng.shuffle(ids)
+        dev.update(ids[: quotas.get(bucket, 0)])
+
+    strata: JsonObject = {
+        bucket: {
+            "population": len(ids),
+            "dev": sum(1 for item_id in ids if item_id in dev),
+            "mean_base_score": round(sum(base_scores.get(i, 0.0) for i in ids) / len(ids), 6),
+        }
+        for bucket, ids in sorted(buckets.items())
+    }
+    if base_score_run is not None:
+        strata = {"base_score_run": base_score_run, "buckets": strata}
+    return DevSlice(
+        train_ids=tuple(sorted(set(unique) - dev)),
+        dev_ids=tuple(sorted(dev)),
+        seed=seed,
+        dev_fraction=dev_fraction,
+        strata=strata,
+    )
+
+
 def assert_tuning_only(
     dataset_manifest: JsonObject, *, goldset_path: Path | str | None = None
 ) -> None:
@@ -199,6 +340,50 @@ def assert_tuning_only(
             "[finetune-hparams] search dataset holds protected-split item ids: "
             + ", ".join(overlap)
         )
+
+
+def adapter_param_estimate(params: JsonObject, *, hidden_size: int, n_layers: int) -> int:
+    """Estimated LoRA parameter count: rank x targeted modules x layers x two `hidden x r` mats."""
+    rank = int(params.get("lora_r") or 0)
+    n_modules = len(params.get("target_modules") or [])
+    return n_layers * n_modules * LORA_MATRICES_PER_MODULE * hidden_size * rank
+
+
+def estimated_adapter_train_mib(params: JsonObject, *, hidden_size: int, n_layers: int) -> float:
+    """The adapter's TRAINING footprint in MiB (weights + grads + optimizer states)."""
+    from llb.backends.planner import MIB
+
+    count = adapter_param_estimate(params, hidden_size=hidden_size, n_layers=n_layers)
+    return count * ADAPTER_TRAIN_BYTES_PER_PARAM / MIB
+
+
+def _cached_model_arch(model: str) -> JsonObject | None:
+    """`hidden_size` / `n_layers` from the model's locally cached HF config, or None."""
+    from llb.backends.planner import arch_from_config, cached_config_path
+
+    path = cached_config_path(model)
+    if path is None:
+        return None
+    try:
+        return arch_from_config(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def _default_estimate_fn(model: str, model_arch: JsonObject | None) -> EstimateFn:
+    """Footprint estimator over the model's arch; returns None (never prunes) when unknown."""
+    arch = model_arch if model_arch is not None else _cached_model_arch(model)
+
+    def estimate(params: JsonObject) -> float | None:
+        if not arch:
+            return None
+        hidden_size = arch.get("hidden_size")
+        n_layers = arch.get("n_layers")
+        if not isinstance(hidden_size, int) or not isinstance(n_layers, int):
+            return None
+        return estimated_adapter_train_mib(params, hidden_size=hidden_size, n_layers=n_layers)
+
+    return estimate
 
 
 def suggest_lora_hyperparameters(trial: Any) -> JsonObject:
@@ -245,11 +430,22 @@ def search_hyperparameters(
     out_dir: Path | str | None = None,
     resume: Path | str | None = None,
     goldset_path: Path | str | None = None,
+    stratify_by_base_score: Path | str | None = None,
+    vram_headroom_mib: float | None = None,
+    model_arch: JsonObject | None = None,
     trainer_fn: TrialTrainerFn | None = None,
     objective_fn: ObjectiveFn | None = None,
     clock: Clock | None = None,
 ) -> HparamSearchResult:
-    """Search the LoRA space for one model on a tuning-split dataset, within a bounded budget."""
+    """Search the LoRA space for one model on a tuning-split dataset, within a bounded budget.
+
+    `vram_headroom_mib` (finetune-hparams-infeasible-point-prune) enables the pre-run prune: a
+    trial whose estimated adapter TRAINING footprint (rank x target modules x layers, through
+    `estimated_adapter_train_mib`) exceeds the headroom left beside the base model is pruned
+    BEFORE the trainer runs, with the estimate in the prune reason. `model_arch` overrides the
+    hidden-size/layer-count arch read from the model's cached HF config. Without a headroom the
+    pre-run prune is off; the measured-OOM prune always stays in place.
+    """
     import optuna
 
     if max_trials < 1:
@@ -258,11 +454,17 @@ def search_hyperparameters(
     dataset_manifest = load_dataset_manifest(dataset_dir)
     goldset = _resolve_goldset(goldset_path, config)
     assert_tuning_only(dataset_manifest, goldset_path=goldset)
-    dev_slice = carve_dev_slice(
-        [str(item_id) for item_id in dataset_manifest.get("item_ids") or []],
-        seed=seed,
-        dev_fraction=dev_fraction,
-    )
+    item_ids = [str(item_id) for item_id in dataset_manifest.get("item_ids") or []]
+    if stratify_by_base_score is not None:
+        dev_slice = carve_stratified_dev_slice(
+            item_ids,
+            load_base_scores(stratify_by_base_score),
+            seed=seed,
+            dev_fraction=dev_fraction,
+            base_score_run=str(stratify_by_base_score),
+        )
+    else:
+        dev_slice = carve_dev_slice(item_ids, seed=seed, dev_fraction=dev_fraction)
 
     root = Path(resume) if resume is not None else Path(out_dir or _default_out_dir(config, model))
     root.mkdir(parents=True, exist_ok=True)
@@ -306,6 +508,8 @@ def search_hyperparameters(
                     trainer_fn=trainer_fn,
                     objective_fn=objective_fn,
                     clock=now,
+                    estimate_fn=_default_estimate_fn(model, model_arch),
+                    vram_headroom_mib=vram_headroom_mib,
                 ),
                 n_trials=remaining,
                 callbacks=[stop_when_over_budget],
@@ -393,6 +597,8 @@ def _make_objective(
     trainer_fn: TrialTrainerFn,
     objective_fn: ObjectiveFn,
     clock: Clock,
+    estimate_fn: EstimateFn | None = None,
+    vram_headroom_mib: float | None = None,
 ) -> Callable[[Any], float]:
     import optuna
 
@@ -401,6 +607,23 @@ def _make_objective(
     def objective(trial: Any) -> float:
         params = suggest_lora_hyperparameters(trial)
         trial.set_user_attr("hyperparameters", params)
+        estimate = estimate_fn(params) if estimate_fn is not None else None
+        if estimate is not None:
+            estimate = round(estimate, 1)
+            trial.set_user_attr("estimated_adapter_mib", estimate)
+        if estimate is not None and vram_headroom_mib is not None and estimate > vram_headroom_mib:
+            # Known-infeasible before any training is paid for; the measured-OOM prune below
+            # still catches what this coarse estimate cannot.
+            _append_trial(
+                journal,
+                TrialRecord(
+                    trial.number, STATE_PRUNED, None, params, estimated_adapter_mib=estimate
+                ),
+            )
+            raise optuna.TrialPruned(
+                f"estimated adapter training footprint {estimate:.0f} MiB exceeds "
+                f"VRAM headroom {vram_headroom_mib:.0f} MiB"
+            )
         trial_dir = root / TRIALS_DIRNAME / f"trial-{trial.number}"
         started = clock()
         try:
@@ -417,12 +640,30 @@ def _make_objective(
             raise
         except Exception as exc:
             if is_oom(exc):
-                _append_trial(journal, TrialRecord(trial.number, STATE_PRUNED, None, params))
+                _append_trial(
+                    journal,
+                    TrialRecord(
+                        trial.number, STATE_PRUNED, None, params, estimated_adapter_mib=estimate
+                    ),
+                )
                 raise optuna.TrialPruned(f"measured OOM: {exc}") from None
-            _append_trial(journal, TrialRecord(trial.number, STATE_FAILED, None, params))
+            _append_trial(
+                journal,
+                TrialRecord(
+                    trial.number, STATE_FAILED, None, params, estimated_adapter_mib=estimate
+                ),
+            )
             raise
         _append_trial(
-            journal, TrialRecord(trial.number, STATE_COMPLETE, value, params, clock() - started)
+            journal,
+            TrialRecord(
+                trial.number,
+                STATE_COMPLETE,
+                value,
+                params,
+                clock() - started,
+                estimated_adapter_mib=estimate,
+            ),
         )
         return value
 
@@ -566,12 +807,14 @@ def _record_from_trial(trial: Any) -> TrialRecord:
         optuna.trial.TrialState.COMPLETE: STATE_COMPLETE,
         optuna.trial.TrialState.PRUNED: STATE_PRUNED,
     }
+    estimate = trial.user_attrs.get("estimated_adapter_mib")
     return TrialRecord(
         number=int(trial.number),
         state=states.get(trial.state, STATE_FAILED),
         objective=float(trial.value) if trial.value is not None else None,
         hyperparameters=dict(trial.user_attrs.get("hyperparameters") or {}),
         duration_s=trial.duration.total_seconds() if trial.duration else 0.0,
+        estimated_adapter_mib=float(estimate) if estimate is not None else None,
     )
 
 

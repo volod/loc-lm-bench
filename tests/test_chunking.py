@@ -13,12 +13,20 @@ from llb.rag.chunking import (
 TEXT = "Перше речення. Друге речення! Третє речення?\n\nНовий абзац тут. І ще одне."
 
 
-def test_offsets_resolve_for_all_strategies():
-    for strategy in ("fixed", "sentence", "recursive"):
+def test_offsets_resolve_for_pure_strategies():
+    for strategy in ("fixed", "sentence"):
         chunks = chunk_text(TEXT, "d.txt", strategy, size=30, overlap=5)
         assert chunks, strategy
         for c in chunks:
             assert TEXT[c["char_start"] : c["char_end"]] == c["text"]
+
+
+@pytest.mark.slow
+def test_offsets_resolve_for_recursive_strategy():
+    chunks = chunk_text(TEXT, "d.txt", "recursive", size=30, overlap=5)
+    assert chunks
+    for c in chunks:
+        assert TEXT[c["char_start"] : c["char_end"]] == c["text"]
 
 
 def test_fixed_covers_and_respects_size():
@@ -40,15 +48,22 @@ def test_sentence_never_cuts_midsentence():
         assert end in sentence_ends or end == len(TEXT)
 
 
+@pytest.mark.slow
 def test_recursive_starts_at_zero():
     spans = recursive_spans(TEXT, size=25, overlap=5)
     assert spans and spans[0][0] == 0
 
 
-def test_chunk_text_carries_metadata_field():
-    for strategy in ("fixed", "sentence", "recursive"):
+def test_chunk_text_carries_metadata_field_for_pure_strategies():
+    for strategy in ("fixed", "sentence"):
         for c in chunk_text(TEXT, "d.txt", strategy, size=30, overlap=5):
             assert "metadata" in c  # uniform shape; empty for non-structured strategies
+
+
+@pytest.mark.slow
+def test_recursive_chunk_text_carries_metadata_field():
+    for c in chunk_text(TEXT, "d.txt", "recursive", size=30, overlap=5):
+        assert "metadata" in c
 
 
 # --- native semantic chunking (offset-exact, fake embedder -> CI-safe) ---
@@ -84,6 +99,7 @@ def test_semantic_spans_single_sentence():
 # --- recursive splitter: a pinned base dependency, so always present (no skip) ---
 
 
+@pytest.mark.slow
 def test_recursive_spans_offsets_in_range():
     text = (
         "Абзац один тут.\n\nАбзац два значно довший і має більше слів для поділу на частини зараз."
@@ -93,6 +109,7 @@ def test_recursive_spans_offsets_in_range():
     assert all(0 <= s < e <= len(text) and text[s:e] for s, e in spans)
 
 
+@pytest.mark.slow
 def test_recursive_spans_fails_loudly_on_version_drift(monkeypatch):
     # The recursive splitter is version-pinned so chunk boundaries stay reproducible; an
     # unexpected version must fail early instead of silently producing different chunks.

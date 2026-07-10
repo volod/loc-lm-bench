@@ -275,6 +275,7 @@ class CaseScoreRow(TypedDict):
     # Answer-side RAG quality (groundedness-citation-metrics), additive; present only when enabled.
     groundedness: NotRequired[float]  # share of answer claims supported by the retrieved context
     citation_validity: NotRequired[float]  # share of [i] citations whose chunk supports the claim
+    citation_coverage: NotRequired[float]  # share of countable claims carrying ANY [i] citation
     hallucinated_citation_rate: NotRequired[float]  # share of citations pointing out of range
     n_citations: NotRequired[int]  # count of [i] citations the answer emitted
 
@@ -381,6 +382,7 @@ class RunMetrics(TypedDict):
     # Answer-side RAG quality aggregates (groundedness-citation-metrics), present only when enabled.
     groundedness: NotRequired[float]  # mean per-case groundedness fraction
     citation_validity: NotRequired[float]  # mean per-case citation validity (cited-answer runs)
+    citation_coverage: NotRequired[float]  # mean per-case citation coverage (cited-answer runs)
     hallucinated_citation_rate: NotRequired[float]  # mean per-case hallucinated-citation rate
     abstention_accuracy: NotRequired[float]  # share of insufficient-context probes that abstained
     n_probes: NotRequired[int]  # number of insufficient-context probes run

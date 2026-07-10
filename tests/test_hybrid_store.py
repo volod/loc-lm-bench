@@ -153,6 +153,7 @@ def test_oracle_doc_filter_scopes_each_question_to_its_gold_doc():
     assert len(oracle.retrieve("інше", k=4)) == 4
 
 
+@pytest.mark.slow
 def test_exact_term_fixture_hybrid_strictly_beats_dense():
     """The lexical-win regression: on the committed exact-term registry, hybrid recall@10
     must strictly beat a dense side that confuses the near-identical entries (modeled as a
@@ -179,6 +180,7 @@ def test_exact_term_fixture_hybrid_strictly_beats_dense():
     assert hybrid_metrics["mrr"] > dense_metrics["mrr"]
 
 
+@pytest.mark.slow
 def test_stored_chunk_text_is_byte_identical_with_lemmatization_on():
     chunks = chunk_corpus(FIXTURE / "corpus", "recursive", 800, 120, None)
     source = (FIXTURE / "corpus" / "orders_registry_uk.md").read_text(encoding="utf-8")

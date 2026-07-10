@@ -43,6 +43,18 @@ VERDICT_CURRENT = "current"
 VERDICT_STALE = "stale"
 VERDICT_UNKNOWN = "unknown"
 
+# The retrieval knobs recorded from `store_meta.json` at registration and compared by
+# `staleness`. An adapter is trained on retrieved CONTEXT: re-embedding or rechunking the same
+# corpus leaves `corpus_fingerprint` unchanged while the training contexts no longer exist, so
+# these knobs form a third staleness axis beside the goldset and corpus digests.
+RETRIEVAL_FINGERPRINT_KEYS = (
+    ("embedding_model", "embedding_model"),
+    ("strategy", "strategy"),
+    ("chunk_size", "size"),
+    ("chunk_overlap", "overlap"),
+    ("retrieval_mode", "mode"),
+)
+
 # Shortest `--adapter` prefix accepted; below this a sha256 prefix is not discriminating enough.
 MIN_ADAPTER_ID_PREFIX = 6
 
@@ -62,6 +74,10 @@ class AdapterEntry:
     corpus_digest: str | None = None
     goldset_path: str | None = None
     corpus_root: str | None = None
+    # RAG-store retrieval knobs at training time (adapter-staleness-retrieval-fingerprint);
+    # additive -- entries registered before the field carry None and read `unknown` on that axis.
+    retrieval_fingerprint: JsonObject | None = None
+    index_dir: str | None = None
     source_run: str | None = None
     eval_summary: JsonObject = field(default_factory=dict)
     created_at: str = ""
@@ -99,6 +115,10 @@ class AdapterEntry:
             "corpus_digest": self.corpus_digest,
             "goldset_path": self.goldset_path,
             "corpus_root": self.corpus_root,
+            "retrieval_fingerprint": (
+                dict(self.retrieval_fingerprint) if self.retrieval_fingerprint is not None else None
+            ),
+            "index_dir": self.index_dir,
             "source_run": self.source_run,
             "eval": dict(self.eval_summary),
             "created_at": self.created_at,
@@ -188,10 +208,14 @@ def register_adapter(
     adapter_dir: Path | str,
     goldset_path: Path | str | None = None,
     corpus_root: Path | str | None = None,
+    index_dir: Path | str | None = None,
     source_run: Path | str | None = None,
     eval_summary: JsonObject | None = None,
 ) -> AdapterEntry:
     """Register a trained adapter, digesting the goldset/corpus it was trained against.
+
+    `index_dir` names the RAG store whose retrieval knobs (`store_meta.json`) produced the
+    training contexts; they are recorded as the entry's `retrieval_fingerprint`.
 
     Re-registering an identical adapter is a no-op: the event is only appended when the recorded
     provenance actually changed, so a resumed campaign does not grow the log on every replay.
@@ -202,6 +226,7 @@ def register_adapter(
         adapter_dir=Path(adapter_dir),
         goldset_path=goldset_path,
         corpus_root=corpus_root,
+        index_dir=index_dir,
         source_run=source_run,
         eval_summary=eval_summary or {},
     )
@@ -219,6 +244,7 @@ def try_register_adapter(
     adapter_dir: Path | str,
     goldset_path: Path | str | None = None,
     corpus_root: Path | str | None = None,
+    index_dir: Path | str | None = None,
     source_run: Path | str | None = None,
     eval_summary: JsonObject | None = None,
 ) -> AdapterEntry | None:
@@ -234,6 +260,7 @@ def try_register_adapter(
             adapter_dir=adapter_dir,
             goldset_path=goldset_path,
             corpus_root=corpus_root,
+            index_dir=index_dir,
             source_run=source_run,
             eval_summary=eval_summary,
         )
@@ -305,15 +332,21 @@ def staleness(
     *,
     goldset_path: Path | str | None = None,
     corpus_root: Path | str | None = None,
+    index_dir: Path | str | None = None,
 ) -> StalenessReport:
-    """Compare recorded training digests against the present goldset/corpus.
+    """Compare recorded training digests against the present goldset/corpus/RAG store.
 
-    Defaults to the goldset/corpus the entry itself names, so `list-adapters` needs no flags. A
-    missing recorded digest, or a goldset/corpus that no longer exists, yields `unknown` -- never a
-    silent `current`.
+    Defaults to the goldset/corpus/index the entry itself names, so `list-adapters` needs no
+    flags. A missing recorded digest, or a goldset/corpus that no longer exists, yields
+    `unknown` -- never a silent `current`. The third axis is the retrieval fingerprint: the
+    store's embedder, chunk strategy/size/overlap, or retrieval mode changing since training
+    flips the entry `stale` with the changed knob named, because the adapter's training contexts
+    no longer exist even when `corpus_fingerprint` is unchanged. An entry registered before the
+    fingerprint existed reads `unknown` on that axis, never `current`.
     """
     goldset = goldset_path if goldset_path is not None else entry.goldset_path
     corpus = corpus_root if corpus_root is not None else entry.corpus_root
+    index = index_dir if index_dir is not None else entry.index_dir
     reasons: list[str] = []
     stale = False
     unknown = False
@@ -327,11 +360,55 @@ def staleness(
         elif recorded != current:
             stale = True
             reasons.append(f"{label} changed since training")
+    changed_knobs, fingerprint_unknown = _retrieval_axis(
+        entry.retrieval_fingerprint, retrieval_fingerprint_for(index)
+    )
+    if fingerprint_unknown:
+        unknown = True
+        reasons.append("retrieval fingerprint unavailable")
+    for knob, recorded_value, current_value in changed_knobs:
+        stale = True
+        reasons.append(
+            f"retrieval {knob} changed since training ({recorded_value} -> {current_value})"
+        )
     if stale:
         return StalenessReport(VERDICT_STALE, tuple(reasons))
     if unknown:
         return StalenessReport(VERDICT_UNKNOWN, tuple(reasons))
     return StalenessReport(VERDICT_CURRENT)
+
+
+def _retrieval_axis(
+    recorded: JsonObject | None, current: JsonObject | None
+) -> tuple[list[tuple[str, object, object]], bool]:
+    """Per-knob retrieval comparison: (changed knobs, axis-unknown)."""
+    if recorded is None or current is None:
+        return [], True
+    changed = [
+        (knob, recorded.get(knob), current.get(knob))
+        for knob, _meta_key in RETRIEVAL_FINGERPRINT_KEYS
+        if recorded.get(knob) != current.get(knob)
+    ]
+    return changed, False
+
+
+def retrieval_fingerprint_for(index_dir: Path | str | None) -> JsonObject | None:
+    """The retrieval knobs recorded in a store's `store_meta.json`, or None when unreadable."""
+    if index_dir is None:
+        return None
+    from llb.rag.store import META_FILE
+
+    path = resolve_project_path(index_dir) / META_FILE
+    if not path.is_file():
+        return None
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("[adapters] cannot read store meta %s: %s", path, exc)
+        return None
+    if not isinstance(meta, dict):
+        return None
+    return {knob: meta.get(meta_key) for knob, meta_key in RETRIEVAL_FINGERPRINT_KEYS}
 
 
 def goldset_digest_for(goldset_path: Path | str | None) -> str | None:
@@ -397,6 +474,7 @@ def _entry_from_manifest(
     adapter_dir: Path,
     goldset_path: Path | str | None,
     corpus_root: Path | str | None,
+    index_dir: Path | str | None,
     source_run: Path | str | None,
     eval_summary: JsonObject,
 ) -> AdapterEntry:
@@ -416,6 +494,8 @@ def _entry_from_manifest(
         corpus_digest=corpus_digest_for(corpus_root),
         goldset_path=str(goldset_path) if goldset_path is not None else None,
         corpus_root=str(corpus_root) if corpus_root is not None else None,
+        retrieval_fingerprint=retrieval_fingerprint_for(index_dir),
+        index_dir=str(index_dir) if index_dir is not None else None,
         source_run=str(source_run) if source_run is not None else None,
         eval_summary=dict(eval_summary),
         created_at=utc_now(),
@@ -436,6 +516,12 @@ def _entry_from_event(event: JsonObject, *, sequence: int = 0) -> AdapterEntry:
         corpus_digest=_str_or_none(event.get("corpus_digest")),
         goldset_path=_str_or_none(event.get("goldset_path")),
         corpus_root=_str_or_none(event.get("corpus_root")),
+        retrieval_fingerprint=(
+            dict(event["retrieval_fingerprint"])
+            if isinstance(event.get("retrieval_fingerprint"), dict)
+            else None
+        ),
+        index_dir=_str_or_none(event.get("index_dir")),
         source_run=_str_or_none(event.get("source_run")),
         eval_summary=dict(event.get("eval") or {}),
         created_at=str(event.get("created_at") or ""),

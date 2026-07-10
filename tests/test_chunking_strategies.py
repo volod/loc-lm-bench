@@ -33,11 +33,17 @@ def test_new_strategies_registered():
 
 @pytest.mark.parametrize("strategy", NEW_STRATEGIES)
 def test_offsets_resolve_for_new_strategies(strategy):
-    chunks = chunk_corpus(FIXTURE, strategy, size=120, overlap=20)
+    if strategy == "page":
+        text = (FIXTURE / PDF_DOC).read_text(encoding="utf-8")
+        chunks = chunk_text(text, PDF_DOC, strategy, size=1000, overlap=20, page_spans=PAGE_SPANS)
+        texts = {PDF_DOC: text}
+    else:
+        chunks = chunk_corpus(FIXTURE, strategy, size=1000, overlap=20)
+        texts = {
+            doc: (FIXTURE / doc).read_text(encoding="utf-8")
+            for doc in {c["doc_id"] for c in chunks}
+        }
     assert chunks
-    texts = {
-        doc: (FIXTURE / doc).read_text(encoding="utf-8") for doc in {c["doc_id"] for c in chunks}
-    }
     for c in chunks:
         assert texts[c["doc_id"]][c["char_start"] : c["char_end"]] == c["text"]
 
@@ -53,9 +59,7 @@ def test_doc_page_spans_reads_sidecar():
 def test_page_never_crosses_a_page_boundary():
     text = (FIXTURE / PDF_DOC).read_text(encoding="utf-8")
     regions = [(0, 30), *PAGE_SPANS, (531, len(text))]
-    chunks = [
-        c for c in chunk_corpus(FIXTURE, "page", size=100, overlap=20) if c["doc_id"] == PDF_DOC
-    ]
+    chunks = chunk_text(text, PDF_DOC, "page", size=1000, overlap=20, page_spans=PAGE_SPANS)
     assert chunks
     for c in chunks:
         assert any(rs <= c["char_start"] and c["char_end"] <= re_ for rs, re_ in regions), (
@@ -63,6 +67,7 @@ def test_page_never_crosses_a_page_boundary():
         )
 
 
+@pytest.mark.slow
 def test_page_subsplits_within_a_long_page():
     # size 100 < page-1 span length, so page 1 must yield several chunks, all inside it.
     chunks = [
@@ -72,6 +77,7 @@ def test_page_subsplits_within_a_long_page():
     assert len(page_one) >= 2
 
 
+@pytest.mark.slow
 def test_page_without_sidecar_falls_back_to_recursive():
     text = (FIXTURE / PLAIN_DOC).read_text(encoding="utf-8")
     page = chunk_text(text, PLAIN_DOC, "page", size=60, overlap=10)
@@ -97,6 +103,7 @@ def test_heading_packs_whole_subtree_into_one_chunk():
     assert meta["headers"] == {"h1": "Розділ"}
 
 
+@pytest.mark.slow
 def test_heading_oversized_subtree_recurses_with_full_breadcrumb():
     spans = heading_spans(HEADING_TEXT, size=60, overlap=0)
     texts = [HEADING_TEXT[s:e] for s, e, _ in spans]
@@ -106,6 +113,7 @@ def test_heading_oversized_subtree_recurses_with_full_breadcrumb():
     assert {m["headers"]["h2"] for m in sub} == {"Перший підрозділ", "Другий підрозділ"}
 
 
+@pytest.mark.slow
 def test_heading_skips_heading_only_sections():
     text = "# Порожній\n\n## Дитина\n\nТекст дитини тут."
     spans = heading_spans(text, size=20, overlap=0)  # too small to pack the subtree

@@ -199,14 +199,18 @@ chosen under, and an operator changing the batch size knows they left the search
 sampled record always satisfies `effective_batch_size == per_device * grad_accum` (unit-tested).
 
 Dependency contract: the `[finetune]` and `[dev]` extras include Optuna. GitHub CI installs
-`.[dev]`, so the fake-trainer hparam tests stay in the lightweight `make ci` suite without pulling
-the CUDA training stack.
+`.[dev]`, so pure hparam slice/guard tests plus small fake-trainer manifest integrations stay in
+the lightweight `make ci` suite without pulling the CUDA training stack. Multi-trial hparam
+resume/prune simulations and multi-entry fine-tune campaign ranking/resume simulations are marked
+`slow`; they run in the full local `make test` suite.
 
 ```bash
 llb finetune-hparams --model <m> --dataset <tuning-dataset> --backend vllm \
-  --goldset <goldset> --max-trials 8 [--max-hours 2] [--seed 13] [--dev-fraction 0.25]
+  --goldset <goldset> --max-trials 8 [--max-hours 2] [--seed 13] [--dev-fraction 0.25] \
+  [--stratify-by-base-score <scored-base-run-dir>]
 llb finetune-hparams ... --resume <study-dir>
-make finetune-hparams MODEL=<m> DATASET=<dir> GOLDSET=<g> MAX_TRIALS=8
+make finetune-hparams MODEL=<m> DATASET=<dir> GOLDSET=<g> MAX_TRIALS=8 \
+  HPARAMS_STRATIFY_RUN=<scored-base-run-dir>
 ```
 
 Artifacts land under `$DATA_DIR/finetune-hparams/<model-slug>/<timestamp>/`: `study.db` (the
@@ -223,6 +227,20 @@ itself, and the held-out set is carved from *inside* the tuning split:
 - `carve_dev_slice` seeds a deterministic, disjoint train/dev partition of the dataset's item ids.
   Each trial trains only on the train sub-slice and is scored only on the dev sub-slice, so a trial
   never sees its own evaluation items.
+- `--stratify-by-base-score <scored-base-run-dir>` (make: `HPARAMS_STRATIFY_RUN=`) replaces the
+  uniform draw with a stratified one: `carve_stratified_dev_slice` buckets the tuning items by
+  the base model's per-item `objective_score` from the given run bundle's `scores.jsonl`
+  (`high` >= 0.5, `low` > 0, `zero`, `unscored`) and draws the dev slice proportionally per
+  bucket with a floor of one, answerable buckets first -- so a small dev slice always carries
+  items the base model can answer and the trial objective can discriminate (the failure the
+  first CUDA search hit: a uniform 3-item slice with one answerable item tied every trial at
+  0.0000). A population the base model scores 0.0 everywhere is REFUSED -- no slice can rank
+  trials against a constant objective. The same disjointness and seeded determinism hold, and
+  `hparams_manifest.json` records an additive `dev_slice.strata` block (the source run plus
+  per-bucket population/dev counts and mean base score). The default without the flag stays the
+  uniform slice. Committed fixture: `samples/finetune/base-score-run/scores.jsonl` (12 items, 3
+  answerable), used by `tests/test_finetune_hparams.py` to prove the stratified slice holds an
+  answerable item at every seed where the uniform slice misses.
 - `assert_tuning_only` refuses the search outright when the dataset's `split_counts` name any split
   but `tuning`, and -- when a goldset is available -- when its item ids intersect the real
   calibration/final ids. A dataset manifest is operator-writable, so its split counts alone are not
@@ -244,6 +262,19 @@ A measured OOM prunes its trial (reusing `optimize.tuner.is_oom`) instead of cra
 other exception fails loudly -- but only after `hparams_manifest.json` is written, so a study killed
 by one bad trial stays inspectable and resumable instead of leaving a bare `study.db`.
 
+Pre-run infeasibility prune (finetune-hparams-infeasible-point-prune): with
+`--vram-headroom-mib <n>` (make: `HPARAMS_VRAM_HEADROOM=`) -- the VRAM left beside the base model
+during training on the host -- a trial whose estimated adapter TRAINING footprint exceeds the
+headroom is pruned BEFORE `trainer_fn` runs, so a bounded budget never pays a full fine-tune for
+a known-infeasible point. The estimate is `rank x targeted modules x layers x 2 (hidden x r)
+matrices x 16 bytes/param` (bf16 weight + grad, fp32 Adam moments + master copy;
+`estimated_adapter_train_mib`), with hidden size / layer count read from the model's cached HF
+config (`model_arch` overrides it programmatically). Every trial row in `hparams_manifest.json`
+and `trials.jsonl` carries the additive `estimated_adapter_mib`, and the prune reason names the
+estimated footprint against the headroom. The estimate is deliberately coarse: it complements
+the measured-OOM prune (which always stays in place), never replaces it. Without a headroom the
+pre-run prune is off.
+
 ### Feeding the trainer
 
 `trainer_defaults(data_dir, model)` reads the newest `hparams_manifest.json` for that model and
@@ -263,10 +294,11 @@ its own recomputed digest. A filtered view would inherit the parent's `dataset_d
 registry id.
 
 Tests: `tests/test_finetune_hparams.py` covers dev-slice disjointness and determinism, both guard
-refusals, the no-protected-id-in-any-trial invariant, a seeded study reproducing its trial table,
-the budget abort plus resume without repeated trials, OOM pruning, the manifest surviving a failed
-trial, subset digests, and the trainer consuming a recorded best config through a self-improvement
-round.
+refusals, the no-protected-id-in-any-trial invariant, manifest writing, the manifest surviving a
+failed trial, subset digests, and the trainer consuming a recorded best config through a
+self-improvement round in the lightweight suite. Slow coverage keeps the seeded full trial table,
+budget abort plus resume without repeated trials, OOM and infeasible-point pruning, and effective
+batch sampling.
 
 ### CUDA evidence on the 12 GB RTX PRO 3000 host
 
@@ -417,6 +449,18 @@ adapter into the registry rather than leave its board row silently dropped.
 durable-run journal and the stale-store check use). Verdicts are `current`, `stale`, and `unknown`;
 a missing digest yields `unknown` and never `current`. Detection reports, it never retrains.
 
+A third axis covers the RAG store (adapter-staleness-retrieval-fingerprint): an adapter is
+trained on retrieved CONTEXT, so re-embedding or rechunking the same corpus invalidates its
+training contexts while `corpus_fingerprint` stays unchanged. Registration records a
+`retrieval_fingerprint` (embedder, chunk strategy/size/overlap, retrieval mode) read from the
+store's `store_meta.json` (`register_adapter --index-dir` on the CLI; `self-improve` /
+`finetune-campaign` rounds record the config's index dir automatically), and `staleness()`
+compares it per knob against the store's present meta -- a rebuilt store flips the entry `stale`
+with the changed knob named in the reason (for example
+`retrieval embedding_model changed since training (a -> b)`). The field is additive: an entry
+registered before it exists reads `unknown` on the retrieval axis (reason
+`retrieval fingerprint unavailable`), never `current`.
+
 `board/runs.py` resolves every adapter-backed bundle through the registry before it can rank:
 
 - an unregistered adapter's row is DROPPED (a tuned number nobody can trace is not comparable);
@@ -485,14 +529,24 @@ resaved copy that already converts fine. Unit-tested with an injected downloader
 An adapter is superseded once a newer adapter exists for the same base model, ordered by
 `(created_at, log sequence)`. `created_at` has second resolution, so two fast rounds tie; the
 append-log position breaks the tie exactly. Only superseded adapters are GC candidates, and GC
-refuses any that a published run bundle cites (matched by recorded digest or by served
-`adapter_path`). `--force` overrides the citation refusal but never the safety rule that GC only
-deletes directories inside `$DATA_DIR`. Deletions append a `delete` tombstone.
+refuses any that a durable artifact still cites. The citation scan covers published run bundles
+(`$DATA_DIR/run-eval/*/manifest.json`, matched by recorded digest or by served `adapter_path`)
+AND the orchestrator journals that also link adapter directories: self-improvement
+`$DATA_DIR/self-improve/*/state.json` (`rounds[].adapter_dir`) and campaign
+`$DATA_DIR/finetune-campaign/*/campaign.progress.jsonl` (`entry.adapter_dir`), both resolved
+through the registry's adapter-dir index the way the served-path match is. Every citation
+carries its artifact kind (`run-bundle` / `self-improve-state` / `campaign-journal`) in
+`GcDecision.cited_by`, the refusal reason names the citing artifact(s), and `gc_rows` exposes
+the kinds in a `cited_kinds` column. `--force` overrides the citation refusal but never the
+safety rule that GC only deletes directories inside `$DATA_DIR`. Deletions append a `delete`
+tombstone.
 
 ### Committed fixtures
 
 - `samples/finetune/registry/registry.jsonl`: a stale entry (with a folded `merge` event) and a
   poisoned-digest entry, both pointing at adapter dirs outside `$DATA_DIR`;
+- `samples/finetune/gc-journals/`: a data-dir-shaped fixture whose campaign journal cites the
+  committed stale adapter, proving a journal-only citation blocks an unforced GC;
 - `samples/finetune/stale-adapter/`: recorded digests that no longer match
   `samples/goldsets/ip_regulation_uk/`;
 - `samples/finetune/laundered-adapter/`: an `adapter_manifest.json` that CLAIMS a clean tuning-only
@@ -503,8 +557,9 @@ deletes directories inside `$DATA_DIR`. Deletions append a `delete` tombstone.
 `tests/test_adapter_registry.py` covers registry round-trip and idempotence, the staleness flip when
 the goldset digest changes, the `unknown` verdict, guard resolution through the registry, serving
 smoke over a fake launcher for all three backends, merge-event recording and merge caching, GC
-citation refusal plus `--force`, the same-second supersession tie, the outside-`$DATA_DIR` safety
-rule, and board drop/stamp behavior.
+citation refusal plus `--force` (run-bundle, self-improve-state, and campaign-journal citations,
+including the committed journal fixture), the same-second supersession tie, the
+outside-`$DATA_DIR` safety rule, and board drop/stamp behavior.
 
 Merge-serving CUDA evidence (2026-07-10, RTX 4060 Ti 16 GB, adapter-merge-serving-cuda-evidence;
 the first time the real merge lane ran end to end):

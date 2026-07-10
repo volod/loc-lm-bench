@@ -64,6 +64,10 @@ HUMAN_COLS = [*CHECK_COLS, "decision", "reject_code", "edited_answer", "human_no
 # HIDDEN from the card by default so it cannot anchor the human; `--show-crosscheck` reveals it.
 CROSS_CHECK_COLS = ["cc_grounded", "cc_non_circular", "cc_supported", "cc_answerable", "cc_note"]
 
+# Sampler-owned reviewer id for multi-annotator worksheets (see `verify_multi.py`). Appended
+# LAST so older worksheets stay column-compatible; blank on single-reviewer worksheets.
+REVIEWER_COL = "reviewer_id"
+
 WORKSHEET_COLS = [
     "item_id",
     "provenance",
@@ -80,7 +84,18 @@ WORKSHEET_COLS = [
     "page_citation",
     *CROSS_CHECK_COLS,
     *HUMAN_COLS,
+    REVIEWER_COL,
 ]
+
+# Acceptance-arithmetic policies (`--policy` on the accept subcommand):
+# - global: one reject rate over all decided rows vs the tolerance (the original rule);
+# - per-stratum: EVERY stratum must be within its own tolerance (overridable per stratum);
+# - weighted: confidence-weighted reject rate -- a reject on a row the automated signals
+#   rated confident counts more, because it means those signals cannot be trusted either.
+POLICY_GLOBAL = "global"
+POLICY_PER_STRATUM = "per-stratum"
+POLICY_WEIGHTED = "weighted"
+ACCEPT_POLICIES = (POLICY_GLOBAL, POLICY_PER_STRATUM, POLICY_WEIGHTED)
 
 PASS = "pass"
 FAIL = "fail"
@@ -166,12 +181,41 @@ def stratify(items: Sequence[GoldItem]) -> dict[str, list[GoldItem]]:
     return strata
 
 
-def draw_stratified_sample(items: Sequence[GoldItem], n: int, *, seed: int = 13) -> list[GoldItem]:
-    """Draw ~`n` items spread across strata (deterministic given `seed`).
+def stratum_quotas(strata_sizes: dict[str, int], n: int) -> dict[str, int]:
+    """Exact per-stratum allocation summing to `min(n, population)` (deterministic).
 
-    Allocates the budget proportionally to each stratum's size with a floor of one per
-    non-empty stratum (so every cell is represented), shuffles within each stratum by `seed`,
-    then returns the union in canonical (input) order. If `n` >= len(items), returns all items.
+    Floor of one per non-empty stratum first (largest strata first when `n` cannot cover them
+    all), then a largest-remainder top-up distributes the remaining budget proportionally,
+    each stratum capped at its own size -- so proportional rounding can neither overshoot nor
+    undershoot the requested sample size (verify-sample-exact-allocation).
+    """
+    total = sum(strata_sizes.values())
+    budget = min(n, total)
+    quotas = {key: 0 for key in strata_sizes}
+    allocated = 0
+    for key in sorted(strata_sizes, key=lambda k: (-strata_sizes[k], k)):
+        if allocated >= budget:
+            break
+        if strata_sizes[key] > 0:
+            quotas[key] = 1
+            allocated += 1
+    while allocated < budget:
+        open_keys = [key for key in strata_sizes if quotas[key] < strata_sizes[key]]
+        winner = max(
+            sorted(open_keys),
+            key=lambda k: (n * strata_sizes[k] / total) - quotas[k],
+        )
+        quotas[winner] += 1
+        allocated += 1
+    return quotas
+
+
+def draw_stratified_sample(items: Sequence[GoldItem], n: int, *, seed: int = 13) -> list[GoldItem]:
+    """Draw exactly `min(n, population)` items spread across strata (deterministic given `seed`).
+
+    Allocates the budget with `stratum_quotas` (floor of one per non-empty stratum, exact
+    largest-remainder proportional top-up), shuffles within each stratum by `seed`, then
+    returns the union in canonical (input) order. If `n` >= len(items), returns all items.
     """
     total = len(items)
     if n >= total:
@@ -180,21 +224,13 @@ def draw_stratified_sample(items: Sequence[GoldItem], n: int, *, seed: int = 13)
     rng = random.Random(seed)
     picked: set[int] = set()
     index = {id(it): i for i, it in enumerate(items)}
-    # Proportional allocation with a floor of 1, largest-remainder rounded up to `n`.
-    quotas: dict[str, int] = {}
-    for key, group in strata.items():
-        quotas[key] = max(1, round(n * len(group) / total))
+    quotas = stratum_quotas({key: len(group) for key, group in strata.items()}, n)
     for key, group in sorted(strata.items()):
         order = list(group)
         rng.shuffle(order)
-        for it in order[: min(quotas[key], len(group))]:
+        for it in order[: quotas[key]]:
             picked.add(index[id(it)])
-    # Trim or top up to land near `n` while keeping determinism.
-    ordered = sorted(picked)
-    if len(ordered) > n:
-        rng.shuffle(ordered)
-        ordered = sorted(ordered[:n])
-    return [items[i] for i in ordered]
+    return [items[i] for i in sorted(picked)]
 
 
 # --- cross-check sidecar ------------------------------------------------------------------
@@ -968,16 +1004,52 @@ def _failed_any_check(row: dict[str, str]) -> bool:
     return any((row.get(col) or "").strip() == FAIL for col in CHECK_COLS)
 
 
+def confidence_weighted_reject_rate(rows: Sequence[dict[str, str]]) -> float:
+    """Reject rate where each decided row weighs `1 + max(row_confidence, 0)`.
+
+    A reject on a row the automated signals (cross-check verdict + retrieval rank) rated
+    CONFIDENT is worse than a reject those signals already flagged: it means the pipeline's own
+    quality signals mispredict, so it counts more against the bundle. Deterministic from the
+    worksheet columns alone.
+    """
+    weighted_total = weighted_rejected = 0.0
+    for row in rows:
+        if not _is_decided(row):
+            continue
+        weight = 1.0 + max(row_confidence(row), 0.0)
+        weighted_total += weight
+        if (row.get("decision") or "").strip() == REJECT:
+            weighted_rejected += weight
+    return (weighted_rejected / weighted_total) if weighted_total else 0.0
+
+
+def _stratum_tolerance(key: str, tolerance: float, overrides: dict[str, float] | None) -> float:
+    if overrides and key in overrides:
+        return overrides[key]
+    return tolerance
+
+
 def acceptance_report(
-    rows: Sequence[dict[str, str]], tolerance: float = DEFAULT_TOLERANCE
+    rows: Sequence[dict[str, str]],
+    tolerance: float = DEFAULT_TOLERANCE,
+    *,
+    policy: str = POLICY_GLOBAL,
+    stratum_tolerances: dict[str, float] | None = None,
 ) -> dict[str, object]:
     """Acceptance-sampling summary: per-stratum + overall decided/reject counts and pass/fail.
 
     A decided item is a `reject` defect; the reject RATE over decided items is compared to
-    `tolerance`. A stratum (and the bundle) PASSES when its rate is within tolerance. Items with
-    a failed check but no explicit decision are surfaced as `undecided_with_failures` so nothing
-    silently slips through. Pure -- the caller decides what to emit.
+    `tolerance`. Items with a failed check but no explicit decision are surfaced as
+    `undecided_with_failures` so nothing silently slips through. Pure -- the caller decides
+    what to emit.
+
+    `policy` selects the acceptance arithmetic (`ACCEPT_POLICIES`): `global` compares the
+    overall rate (per-stratum results stay advisory, the original rule); `per-stratum`
+    requires EVERY stratum within its own tolerance (`stratum_tolerances` overrides the
+    global default per stratum key); `weighted` compares the confidence-weighted rate.
     """
+    if policy not in ACCEPT_POLICIES:
+        raise ValueError(f"unknown acceptance policy {policy!r}; use one of {ACCEPT_POLICIES}")
     per_stratum: dict[str, dict[str, float]] = {}
     decided = rejected = 0
     undecided_with_failures = 0
@@ -992,13 +1064,22 @@ def acceptance_report(
                 cell["rejected"] += 1
         elif _failed_any_check(row):
             undecided_with_failures += 1
-    for cell in per_stratum.values():
+    for key, cell in per_stratum.items():
         d = cell["decided"]
         cell["reject_rate"] = (cell["rejected"] / d) if d else 0.0
-        cell["passed"] = float(cell["reject_rate"] <= tolerance)
+        cell["tolerance"] = _stratum_tolerance(key, tolerance, stratum_tolerances)
+        cell["passed"] = float(cell["reject_rate"] <= cell["tolerance"])
     overall_rate = (rejected / decided) if decided else 0.0
+    weighted_rate = confidence_weighted_reject_rate(rows)
+    if policy == POLICY_PER_STRATUM:
+        passed = decided > 0 and all(bool(c["passed"]) for c in per_stratum.values())
+    elif policy == POLICY_WEIGHTED:
+        passed = decided > 0 and weighted_rate <= tolerance
+    else:
+        passed = decided > 0 and overall_rate <= tolerance
     return {
         "tolerance": tolerance,
+        "policy": policy,
         "n": len(rows),
         "decided": decided,
         "rejected": rejected,
@@ -1006,7 +1087,8 @@ def acceptance_report(
         "undecided": len(rows) - decided,
         "undecided_with_failures": undecided_with_failures,
         "reject_rate": overall_rate,
-        "passed": overall_rate <= tolerance and decided > 0,
+        "weighted_reject_rate": weighted_rate,
+        "passed": passed,
         "per_stratum": per_stratum,
     }
 
@@ -1100,7 +1182,8 @@ def emit_accepted_ledger(
 
 def _log_report(report: dict[str, object]) -> None:
     _LOG.info(
-        "[verify] decided=%s accepted=%s rejected=%s reject_rate=%.3f tolerance=%s -> %s",
+        "[verify] policy=%s decided=%s accepted=%s rejected=%s reject_rate=%.3f tolerance=%s -> %s",
+        report.get("policy", POLICY_GLOBAL),
         report["decided"],
         report["accepted"],
         report["rejected"],
@@ -1108,6 +1191,11 @@ def _log_report(report: dict[str, object]) -> None:
         report["tolerance"],
         "PASS" if report["passed"] else "FAIL",
     )
+    if report.get("policy") == POLICY_WEIGHTED:
+        _LOG.info(
+            "[verify] confidence-weighted reject rate: %.3f",
+            float(cast(float, report["weighted_reject_rate"])),
+        )
     if report["undecided"]:
         _LOG.info("[verify] %s sampled item(s) still undecided", report["undecided"])
     if report["undecided_with_failures"]:
@@ -1139,15 +1227,36 @@ def write_rejection_reasons(rows: Sequence[dict[str, str]], out_dir: Path) -> Pa
     return out_path
 
 
+def _accept_rows(worksheet: Path) -> list[dict[str, str]]:
+    """The row set acceptance scores: multi-reviewer consensus when the sibling manifest
+    records reviewer worksheets (see `verify_multi.py`), else the single worksheet as-is."""
+    from llb.goldset.verify_multi import resolve_multi_reviewer_rows
+
+    consensus = resolve_multi_reviewer_rows(worksheet)
+    if consensus is not None:
+        _LOG.info(
+            "[verify] multi-reviewer bundle: scoring the consensus of the recorded "
+            "worksheets (+ adjudication.csv when present)"
+        )
+        return consensus
+    rows, _ = load_worksheet(worksheet)
+    return rows
+
+
 def run_accept(
     worksheet: Path,
     bundle: Path,
     out_dir: Path | None = None,
     tolerance: float = DEFAULT_TOLERANCE,
+    *,
+    policy: str = POLICY_GLOBAL,
+    stratum_tolerances: dict[str, float] | None = None,
 ) -> int:
     """The `accept` subcommand: acceptance report, rejection-reason export, ledger emission."""
-    rows, _ = load_worksheet(worksheet)
-    report = acceptance_report(rows, tolerance)
+    rows = _accept_rows(Path(worksheet))
+    report = acceptance_report(
+        rows, tolerance, policy=policy, stratum_tolerances=stratum_tolerances
+    )
     _log_report(report)
     out_dir = out_dir or (Path(bundle) / "accepted")
     reasons_path = write_rejection_reasons(rows, out_dir)
@@ -1188,6 +1297,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="enlarge an existing worksheet additively (decided rows preserved byte-for-byte)",
     )
+    sa.add_argument(
+        "--annotators",
+        type=int,
+        default=1,
+        help="write the SAME sample as k per-reviewer worksheets (multi-annotator gate)",
+    )
 
     rv = sub.add_parser("review", help="interactively verify the sampled items")
     rv.add_argument("--worksheet", required=True, type=Path)
@@ -1205,6 +1320,20 @@ def main(argv: list[str] | None = None) -> int:
         help="review queue order: worksheet row order, or least-confident first",
     )
 
+    aj = sub.add_parser(
+        "adjudicate",
+        help="agreement report (Cohen/Fleiss kappa) + adjudication worksheet from disagreements",
+    )
+    aj.add_argument(
+        "--bundle", required=True, type=Path, help="the draft bundle the samples came from"
+    )
+    aj.add_argument(
+        "--worksheet",
+        type=Path,
+        default=None,
+        help="base worksheet path (default: <bundle>/verify_sample.csv)",
+    )
+
     ac = sub.add_parser("accept", help="acceptance report + emit the accepted-ledger bundle")
     ac.add_argument("--worksheet", required=True, type=Path)
     ac.add_argument(
@@ -1217,10 +1346,35 @@ def main(argv: list[str] | None = None) -> int:
         help="accepted-ledger dir (default: <bundle>/accepted)",
     )
     ac.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
+    ac.add_argument(
+        "--policy",
+        choices=ACCEPT_POLICIES,
+        default=POLICY_GLOBAL,
+        help="acceptance arithmetic: global rate, per-stratum thresholds, or confidence-weighted",
+    )
+    ac.add_argument(
+        "--stratum-tolerance",
+        action="append",
+        default=[],
+        metavar="STRATUM=TOL",
+        help="per-stratum tolerance override (repeatable; used by --policy per-stratum)",
+    )
 
     args = parser.parse_args(argv)
 
     if args.cmd == "sample":
+        if args.annotators > 1:
+            from llb.goldset.verify_multi import build_multi_reviewer_worksheets
+
+            if args.merge:
+                parser.error("--merge is not supported together with --annotators")
+            paths = build_multi_reviewer_worksheets(
+                args.bundle, args.out, n=args.size, annotators=args.annotators, seed=args.seed
+            )
+            for path in paths:
+                _LOG.info("[verify] reviewer worksheet: make verify-review VERIFY_WS=%s", path)
+            _LOG.info("[verify] after all reviews: make verify-adjudicate BUNDLE=%s", args.bundle)
+            return 0
         if args.merge:
             added, total = merge_sample_worksheet(
                 args.bundle, args.out, n=args.size, seed=args.seed
@@ -1248,7 +1402,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    return run_accept(args.worksheet, args.bundle, args.out_dir, args.tolerance)
+    if args.cmd == "adjudicate":
+        from llb.goldset.verify_multi import run_adjudicate
+
+        return run_adjudicate(args.bundle, args.worksheet)
+
+    overrides: dict[str, float] = {}
+    for spec in args.stratum_tolerance:
+        key, sep, value = spec.rpartition("=")
+        if not sep or not key:
+            parser.error(f"--stratum-tolerance expects STRATUM=TOL, got {spec!r}")
+        try:
+            overrides[key] = float(value)
+        except ValueError:
+            parser.error(f"--stratum-tolerance value is not a number: {spec!r}")
+    return run_accept(
+        args.worksheet,
+        args.bundle,
+        args.out_dir,
+        args.tolerance,
+        policy=args.policy,
+        stratum_tolerances=overrides or None,
+    )
 
 
 if __name__ == "__main__":

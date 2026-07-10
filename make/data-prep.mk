@@ -5,7 +5,7 @@
 	gen-rag-items pdf-to-markdown ingest-corpus validate-goldset ingest-squad \
 	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
 	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
-	verify-sample verify-review verify-accept judge-experiment ingest-uk-squad \
+	verify-sample verify-review verify-adjudicate verify-accept judge-experiment ingest-uk-squad \
 	prepare-goldset-draft build-query-glossary
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
@@ -79,13 +79,16 @@ curate-drafts: ## Merge/dedup/filter external drafts; CURATE_KIND= CURATE_INPUTS
 		$(foreach b,$(CURATE_DEDUP_AGAINST),--dedup-against "$(b)") \
 		$(if $(filter 0,$(CURATE_SEMANTIC)),--no-semantic-dedup,)
 
-import-external-draft: ## Import an external-service grounded goldset (Artifact B); ARTIFACT= CORPUS= SIDECAR= [OUT_DIR=]
+import-external-draft: ## Import an external-service grounded goldset (Artifact B); ARTIFACT= CORPUS= SIDECAR= [OUT_DIR= RETRIEVAL_INDEX_DIR= RETRIEVAL_K= DROP_NONRETRIEVABLE_NEEDLES=1]
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(ARTIFACT)" || { echo "ERROR: set ARTIFACT=<grounded-jsonl export>"; exit 1; }
 	@test -n "$(CORPUS)" || { echo "ERROR: set CORPUS=<local corpus dir the quotes ground against>"; exit 1; }
 	@test -n "$(SIDECAR)" || { echo "ERROR: set SIDECAR=<external_provenance.json (data_classification: open)>"; exit 1; }
 	$(PY) -m llb.main import-external-draft --artifact "$(ARTIFACT)" --corpus-root "$(CORPUS)" \
-		--sidecar "$(SIDECAR)" $(if $(OUT_DIR),--out-dir "$(OUT_DIR)",)
+		--sidecar "$(SIDECAR)" $(if $(OUT_DIR),--out-dir "$(OUT_DIR)",) \
+		$(if $(RETRIEVAL_INDEX_DIR),--retrieval-index-dir "$(RETRIEVAL_INDEX_DIR)",) \
+		$(if $(RETRIEVAL_K),--retrieval-k "$(RETRIEVAL_K)",) \
+		$(if $(DROP_NONRETRIEVABLE_NEEDLES),--drop-nonretrievable-needles,)
 
 calibration-worksheet: ## Emit a blank judge-calibration worksheet from GOLDSET
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -119,19 +122,24 @@ cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/suppo
 	@test -n "$(CROSS_CHECK_MODEL)" || { echo "ERROR: set CROSS_CHECK_MODEL=<second-frontier id, != the drafter>"; exit 1; }
 	$(PY) -m llb.main cross-check-goldset --goldset "$(BUNDLE)/goldset.jsonl" --corpus "$(BUNDLE)/corpus" --model "$(CROSS_CHECK_MODEL)"
 
-verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=, VERIFY_MERGE=1 to enlarge additively)
+verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=, VERIFY_MERGE=1 to enlarge additively, VERIFY_ANNOTATORS=k for per-reviewer worksheets)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
-	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED) $(if $(VERIFY_MERGE),--merge)
+	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED) $(if $(VERIFY_MERGE),--merge) $(if $(VERIFY_ANNOTATORS),--annotators $(VERIFY_ANNOTATORS))
 
 verify-review: ## human verification gate: interactively verify the sampled items (VERIFY_WS=path, VERIFY_ORDER=confidence, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.goldset.verify review --worksheet "$(VERIFY_WS)" $(if $(START),--start $(START)) $(if $(SHOW_CROSSCHECK),--show-crosscheck) $(if $(CLEAR),--clear) $(if $(VERIFY_ORDER),--order $(VERIFY_ORDER))
 
-verify-accept: ## human verification gate: acceptance report + emit the accepted-ledger bundle (VERIFY_WS=, BUNDLE=, VERIFY_TOLERANCE=)
+verify-adjudicate: ## human verification gate: agreement report (kappa) + adjudication worksheet from multi-reviewer disagreements (BUNDLE=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the samples came from>"; exit 1; }
+	$(PY) -m llb.goldset.verify adjudicate --bundle "$(BUNDLE)"
+
+verify-accept: ## human verification gate: acceptance report + emit the accepted-ledger bundle (VERIFY_WS=, BUNDLE=, VERIFY_TOLERANCE=, VERIFY_ACCEPT_POLICY=global|per-stratum|weighted, VERIFY_STRATUM_TOLERANCES="key=tol ...")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the sample came from>"; exit 1; }
-	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE)
+	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE) $(if $(VERIFY_ACCEPT_POLICY),--policy $(VERIFY_ACCEPT_POLICY)) $(foreach t,$(VERIFY_STRATUM_TOLERANCES),--stratum-tolerance "$(t)")
 
 judge-experiment: ## Run fixed UA judge cases against a local OpenAI-compatible endpoint
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -194,6 +202,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
+	if [ -n "$(DRAFT_REJECTION_FEEDBACK)" ]; then args+=(--rejection-feedback "$(DRAFT_REJECTION_FEEDBACK)"); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"

@@ -287,6 +287,7 @@ def test_self_improve_fake_loop_writes_round_state(tmp_path: Path):
     assert registered[0].goldset_digest is not None
 
 
+@pytest.mark.slow
 def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path):
     tuning = _item("tune-1", "tuning")
     final = _item("final-1", "final")
@@ -446,6 +447,7 @@ def test_finetune_campaign_skips_compressed_checkpoint_before_training(tmp_path:
     assert "compressed-tensors" in progress
 
 
+@pytest.mark.slow
 def test_finetune_campaign_resume_does_not_retrain_completed_entry(tmp_path: Path):
     tuning = _item("tune-1", "tuning")
     final = _item("final-1", "final")

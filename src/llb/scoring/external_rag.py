@@ -19,6 +19,13 @@ from llb.core.contracts import CorrectnessScores
 from llb.core.fsutil import atomic_write_text
 from llb.eval import common as eval_common
 from llb.scoring.correctness import answer_correctness
+from llb.scoring.external_rag_sources import (
+    SOURCE_AUDIT_COLUMNS,
+    SourceMap,
+    audit_row_sources,
+    load_source_map,
+    summarize_source_audit,
+)
 
 ANSWER_FIELD_CANDIDATES = ("llm_answer", "predicted_answer", "model_answer", "answer")
 ERROR_FIELD_CANDIDATES = ("llm_error", "error")
@@ -101,14 +108,21 @@ def score_external_rag_file(
     source_limit: int = DEFAULT_SOURCE_LIMIT,
     strip_source_footer: bool = True,
     label: str | None = None,
+    source_map_path: Path | None = None,
 ) -> ExternalRagResult:
-    """Read an answered JSONL file and write the detailed CSV plus Markdown report."""
+    """Read an answered JSONL file and write the detailed CSV plus Markdown report.
+
+    `source_map_path` (external-rag-source-mapping) joins the provider's returned source
+    records onto corpus spans, adding the source-hit / first-hit-rank / missing-mapping
+    columns and the source-span audit summary.
+    """
     if source_limit < 0:
         raise ValueError("source_limit must be >= 0")
     records = load_jsonl(answers_path)
     if not records:
         raise ValueError(f"{answers_path}: no JSONL records found")
 
+    source_map = load_source_map(source_map_path) if source_map_path is not None else None
     scored = score_records(
         records,
         answer_field=answer_field,
@@ -116,11 +130,14 @@ def score_external_rag_file(
         error_field=error_field,
         source_limit=source_limit,
         strip_source_footer=strip_source_footer,
+        source_map=source_map,
     )
     csv_path = csv_out or answers_path.with_suffix(".csv")
     report_path = report_out or answers_path.with_name(f"{answers_path.stem}.report.md")
     summary = summarize(scored, answers_path=answers_path, label=label)
-    write_csv(scored, csv_path, source_limit=source_limit)
+    if source_map is not None:
+        summary["source_audit"] = summarize_source_audit(scored)
+    write_csv(scored, csv_path, source_limit=source_limit, source_audit=source_map is not None)
     write_report(
         scored,
         summary,
@@ -205,6 +222,7 @@ def score_records(
     error_field: str | None = None,
     source_limit: int = DEFAULT_SOURCE_LIMIT,
     strip_source_footer: bool = True,
+    source_map: SourceMap | None = None,
 ) -> list[dict[str, object]]:
     """Score records and return CSV-ready rows sorted by human review priority."""
     rows: list[dict[str, object]] = []
@@ -233,6 +251,15 @@ def score_records(
             source_limit=source_limit,
         )
         row.update(_source_columns(raw_sources, source_limit))
+        if source_map is not None:
+            gold_spans = record.get("source_spans")
+            row.update(
+                audit_row_sources(
+                    _source_list(raw_sources),
+                    gold_spans if isinstance(gold_spans, list) else [],
+                    source_map,
+                )
+            )
         rows.append(row)
 
     _attach_ranks(rows)
@@ -307,9 +334,11 @@ def summarize(
     }
 
 
-def write_csv(rows: list[dict[str, object]], path: Path, *, source_limit: int) -> None:
+def write_csv(
+    rows: list[dict[str, object]], path: Path, *, source_limit: int, source_audit: bool = False
+) -> None:
     """Write the detailed per-row worksheet CSV."""
-    fieldnames = csv_columns(source_limit)
+    fieldnames = csv_columns(source_limit, source_audit=source_audit)
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -373,6 +402,7 @@ def write_report(
         "",
         _priority_table(rows),
         "",
+        *_source_audit_section(summary),
         "## Common returned sources",
         "",
         _source_table(summary["source_title_counts"]),
@@ -410,7 +440,7 @@ def write_report(
     atomic_write_text(path, "\n".join(lines) + "\n")
 
 
-def csv_columns(source_limit: int) -> list[str]:
+def csv_columns(source_limit: int, *, source_audit: bool = False) -> list[str]:
     """Stable CSV column order for human review and downstream analysis."""
     columns = [
         "review_priority_rank",
@@ -452,6 +482,8 @@ def csv_columns(source_limit: int) -> list[str]:
                 f"source_{index}_url",
             ]
         )
+    if source_audit:
+        columns.extend(SOURCE_AUDIT_COLUMNS)
     columns.extend(
         [
             HUMAN_SCORE_FIELD,
@@ -763,6 +795,33 @@ def _priority_table(rows: list[dict[str, object]]) -> str:
             )
         )
     return _md_table(["priority", "id", "status", "score", "question"], table_rows)
+
+
+def _source_audit_section(summary: dict[str, object]) -> list[str]:
+    """The source-span audit block (present only when a --source-map was supplied)."""
+    audit = summary.get("source_audit")
+    if not isinstance(audit, dict):
+        return []
+    rows = [
+        ("rows audited (returned >= 1 source)", str(audit.get("rows_audited", 0))),
+        ("source recall@3 (span-proof)", f"{_as_float(audit.get('source_recall_at_3')):.4f}"),
+        ("source MRR (span-proof)", f"{_as_float(audit.get('source_mrr')):.4f}"),
+        ("weak (doc-level only) hit rows", str(audit.get("weak_hit_rows", 0))),
+        ("mapped sources", str(audit.get("mapped_sources", 0))),
+        ("unmapped sources", str(audit.get("unmapped_sources", 0))),
+        ("unmapped rate", f"{_as_float(audit.get('unmapped_rate')):.4f}"),
+    ]
+    return [
+        "## Source-span audit",
+        "",
+        "Provider sources joined onto corpus spans via the operator --source-map. recall@3 and "
+        "MRR count SPAN-PROOF hits only (the same source-span metric as local retrieval); a "
+        "doc-level match from a span-less mapping is flagged weak evidence, and unmapped "
+        "returned sources are an audit gap, not a retrieval miss.",
+        "",
+        _md_table(["metric", "value"], rows),
+        "",
+    ]
 
 
 def _source_table(source_counts: object) -> str:

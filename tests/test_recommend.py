@@ -335,6 +335,7 @@ def test_load_config_cells_keeps_each_top_k_but_dedups_reruns(tmp_path):
     assert by_top_k[8].result.objective_score == 0.55  # best re-run of the top_k=8 cell
 
 
+@pytest.mark.slow
 def test_render_comparison_chart_writes_png(tmp_path):
     pytest.importorskip("matplotlib")
     from llb.board.charts import render_comparison_chart

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from llb.rag.chunking import STRATEGIES, chunk_corpus
+from llb.rag.chunking import STRATEGIES, chunk_corpus, chunk_text
 from llb.rag.page_metadata import (
     annotate_page_metadata,
     heading_breadcrumb,
@@ -21,6 +21,12 @@ PLAIN_DOC = "plain_note.md"
 PAGE_SPANS = [
     {"page": 1, "char_start": 30, "char_end": 288},
     {"page": 2, "char_start": 288, "char_end": 531},
+]
+PAGE_SPAN_TUPLES = [(span["char_start"], span["char_end"]) for span in PAGE_SPANS]
+ANNOTATION_STRATEGIES = [
+    pytest.param(strategy, marks=pytest.mark.slow) if strategy == "recursive" else strategy
+    for strategy in STRATEGIES
+    if strategy != "semantic"
 ]
 
 
@@ -119,10 +125,15 @@ def test_annotate_breaks_shared_metadata_aliasing() -> None:
     assert b["metadata"]["pages"] == [2, 2]
 
 
-@pytest.mark.parametrize("strategy", [s for s in STRATEGIES if s != "semantic"])
+@pytest.mark.parametrize("strategy", ANNOTATION_STRATEGIES)
 def test_offsets_round_trip_after_annotation(strategy: str) -> None:
-    chunks = chunk_corpus(FIXTURE, strategy, size=200, overlap=40)
     doc_text = (FIXTURE / PDF_DOC).read_text(encoding="utf-8")
+    if strategy == "page":
+        chunks = chunk_text(
+            doc_text, PDF_DOC, strategy, size=1000, overlap=40, page_spans=PAGE_SPAN_TUPLES
+        )
+    else:
+        chunks = chunk_corpus(FIXTURE, strategy, size=1000, overlap=40)
     annotate_page_metadata(chunks, FIXTURE)
     for chunk in chunks:
         if chunk["doc_id"] != PDF_DOC:
@@ -135,6 +146,7 @@ def test_offsets_round_trip_after_annotation(strategy: str) -> None:
             assert pages == [hit[0], hit[-1]]
 
 
+@pytest.mark.slow
 def test_parent_child_propagation_annotates_children() -> None:
     parents = chunk_corpus(FIXTURE, "recursive", size=400, overlap=0)
     parents = [p for p in parents if p["doc_id"] == PDF_DOC]

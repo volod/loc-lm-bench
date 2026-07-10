@@ -103,7 +103,7 @@ finetune-adapter: ## Train a LoRA/QLoRA adapter (DATASET=<export dir> MODEL=<bas
 	$(PY) -m llb.main finetune-adapter --dataset "$(DATASET)" --model "$(MODEL)" \
 		$(if $(ADAPTER_OUT),--out "$(ADAPTER_OUT)",) $(if $(TRAINER),--trainer "$(TRAINER)",)
 
-finetune-hparams: ## Budgeted LoRA hparam search on a tuning-split dev slice (MODEL= DATASET= GOLDSET= MAX_TRIALS=8 MAX_HOURS= TRAINER=auto|fake HPARAMS_RESUME=)
+finetune-hparams: ## Budgeted LoRA hparam search on a tuning-split dev slice (MODEL= DATASET= GOLDSET= MAX_TRIALS=8 MAX_HOURS= TRAINER=auto|fake HPARAMS_RESUME= HPARAMS_STRATIFY_RUN=<scored base run> HPARAMS_VRAM_HEADROOM=<MiB>)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(MODEL)" || { echo "ERROR: set MODEL=<base model>"; exit 1; }
 	@test -n "$(DATASET)" || { echo "ERROR: set DATASET=<export-finetune-set dir>"; exit 1; }
@@ -117,6 +117,8 @@ finetune-hparams: ## Budgeted LoRA hparam search on a tuning-split dev slice (MO
 		$(if $(DEV_FRACTION),--dev-fraction "$(DEV_FRACTION)",) \
 		$(if $(HPARAMS_OUT),--out-dir "$(HPARAMS_OUT)",) \
 		$(if $(HPARAMS_RESUME),--resume "$(HPARAMS_RESUME)",) \
+		$(if $(HPARAMS_STRATIFY_RUN),--stratify-by-base-score "$(HPARAMS_STRATIFY_RUN)",) \
+		$(if $(HPARAMS_VRAM_HEADROOM),--vram-headroom-mib "$(HPARAMS_VRAM_HEADROOM)",) \
 		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 self-improve: ## Local self-improvement loop (MODEL= BACKEND= GOLDSET= ROUNDS=2 LIMIT= TRAINER=auto|fake)
@@ -180,7 +182,7 @@ gc-adapters: ## Delete superseded adapters no run bundle cites (GC_FORCE=1 overr
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main gc-adapters $(if $(GC_FORCE),--force,) $(if $(GC_DRY_RUN),--dry-run,)
 
-score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=)
+score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=, EXTERNAL_RAG_SOURCE_MAP=<provider-to-doc_id sidecar> for the source-span audit)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(EXTERNAL_RAG_ANSWERS)" || { echo "ERROR: set EXTERNAL_RAG_ANSWERS=<answered-jsonl>"; exit 1; }
 	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
@@ -194,7 +196,8 @@ score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report
 		$(if $(EXTERNAL_RAG_LABEL),--label "$(EXTERNAL_RAG_LABEL)",) \
 		$(if $(EXTERNAL_RAG_START),--start "$(EXTERNAL_RAG_START)",) \
 		$(if $(EXTERNAL_RAG_CLEAR),--clear,) \
-		$(if $(EXTERNAL_RAG_KEEP_SOURCE_FOOTER),--keep-source-footer,)
+		$(if $(EXTERNAL_RAG_KEEP_SOURCE_FOOTER),--keep-source-footer,) \
+		$(if $(EXTERNAL_RAG_SOURCE_MAP),--source-map "$(EXTERNAL_RAG_SOURCE_MAP)",)
 
 sweep: ## Run isolated candidate sweep (SWEEP_ID= MODELS_MANIFEST= SPLIT= GOLDSET= SWEEP_LIMIT= SWEEP_RAG_GRID=top_k=3,5,8; RERANKER= for positive rerank_candidates points)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -187,6 +187,7 @@ def register_round_adapter(
         adapter_dir=adapter_dir,
         goldset_path=config.goldset_path,
         corpus_root=config.corpus_root,
+        index_dir=config.index_dir(),
         source_run=source_run,
         eval_summary=eval_summary,
     )

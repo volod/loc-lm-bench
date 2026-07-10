@@ -30,6 +30,7 @@ from llb.prep.frontier import ground_span
 from llb.prep.ontology.constants import DEFAULT_QUESTION_TYPE, QUESTION_TYPES
 from llb.prep.ontology.coverage import classify_difficulty
 from llb.prep.ontology.models import ItemLabels
+from llb.prep.ontology.needles import NeedleRetriever, annotate_needle_retrieval
 from llb.prep.ontology.question_types import classify_question_type
 
 _LOG = logging.getLogger(__name__)
@@ -169,6 +170,10 @@ def _write_bundle(
     corpus_texts: dict[str, str],
     sidecar: dict[str, Any],
     report: ImportReport,
+    *,
+    retrieval_ranks: dict[str, int | None] | None = None,
+    retrieval_k: int | None = None,
+    needle_report: dict[str, Any] | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     dump_goldset(items, out_dir / GOLDSET_FILENAME)
@@ -181,21 +186,21 @@ def _write_bundle(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(corpus_texts[doc_id], encoding="utf-8")
 
-    # Item provenance: question_type / difficulty per item (NOT part of the GoldItem schema).
+    # Item provenance: question_type / difficulty per item (NOT part of the GoldItem schema);
+    # `retrieval_rank` is additive and present only when an index was given (needle parity with
+    # the local ontology lane -- the verify worksheet reads it from this file).
     with (out_dir / ITEM_PROVENANCE_FILENAME).open("w", encoding="utf-8") as fh:
         for item in items:
             label = item_labels[item.id]
-            fh.write(
-                json.dumps(
-                    {
-                        "id": item.id,
-                        "question_type": label.question_type,
-                        "difficulty": label.difficulty,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+            row: dict[str, Any] = {
+                "id": item.id,
+                "question_type": label.question_type,
+                "difficulty": label.difficulty,
+            }
+            if retrieval_ranks is not None:
+                row["retrieval_rank"] = retrieval_ranks.get(item.id)
+                row["retrieval_k"] = retrieval_k
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     provenance = {
         "kind": "external-draft-import",
@@ -216,12 +221,22 @@ def _write_bundle(
         ),
         "import_report": report.to_dict(),
     }
+    if needle_report is not None:
+        provenance["needle_retrieval"] = needle_report
     (out_dir / PROVENANCE_FILENAME).write_text(
         json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (out_dir / IMPORT_REPORT_FILENAME).write_text(
         json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def _load_retriever(index_dir: Path | str | None) -> NeedleRetriever | None:
+    if index_dir is None:
+        return None
+    from llb.rag.store import RagStore
+
+    return RagStore.load(index_dir)
 
 
 def import_external_draft(
@@ -231,14 +246,29 @@ def import_external_draft(
     out_dir: Path,
     *,
     seed: int = 13,
+    retrieval_index_dir: Path | str | None = None,
+    retrieval_k: int = 10,
+    drop_nonretrievable_needles: bool = False,
+    retriever: NeedleRetriever | None = None,
 ) -> ImportResult:
     """Import a grounded-JSONL Artifact B export into a canonical draft bundle.
 
     Enforces the open-data sidecar first (aborts before writing anything on a missing/non-open
     sidecar), re-grounds each quote (dropping + counting non-verbatim rows), assigns splits, and
     writes goldset.jsonl + verbatim corpus/ + provenance.json + item_provenance.jsonl + report.
+
+    `retrieval_index_dir` (external-import-needle-parity) annotates each imported item with its
+    gold-span retrieval rank against the given full-corpus index -- the same needle signal the
+    local ontology lane records -- into `item_provenance.jsonl`, where the verify worksheet
+    already reads it. `drop_nonretrievable_needles` additionally drops rank-less items (explicit
+    opt-in only). Without an index the lane is an exact no-op. `retriever` is injectable for
+    tests.
     """
     sidecar_data = load_sidecar(sidecar)  # egress gate BEFORE any bundle write
+    if drop_nonretrievable_needles and retrieval_index_dir is None and retriever is None:
+        raise SystemExit(
+            "[import-external-draft] --drop-nonretrievable-needles requires --retrieval-index-dir"
+        )
     corpus_texts = load_corpus_texts(Path(corpus_root))
     rows = load_jsonl_rows(load_json_documents(Path(artifact)))
 
@@ -257,6 +287,28 @@ def import_external_draft(
         items.append(item)
         item_labels[item.id] = label
 
+    resolved_retriever = (
+        retriever if retriever is not None else _load_retriever(retrieval_index_dir)
+    )
+    retrieval_ranks: dict[str, int | None] | None = None
+    needle_report: dict[str, Any] | None = None
+    if resolved_retriever is not None and items:
+        needle_rows, needle_report = annotate_needle_retrieval(
+            items,
+            resolved_retriever,
+            k=retrieval_k,
+            drop_nonretrievable=drop_nonretrievable_needles,
+        )
+        retrieval_ranks = {
+            str(row["id"]): cast("int | None", row["retrieval_rank"]) for row in needle_rows
+        }
+        if drop_nonretrievable_needles:
+            for item in items:
+                if item.id not in retrieval_ranks:
+                    report.drop(item.id, f"gold span not retrieved within top-{retrieval_k}")
+            items = [item for item in items if item.id in retrieval_ranks]
+            item_labels = {item.id: item_labels[item.id] for item in items}
+
     if not items:
         raise SystemExit(
             "[import-external-draft] no verbatim-grounded items to import "
@@ -269,7 +321,17 @@ def import_external_draft(
     report.kept = len(items)
 
     out_dir = Path(out_dir)
-    _write_bundle(out_dir, items, item_labels, corpus_texts, sidecar_data, report)
+    _write_bundle(
+        out_dir,
+        items,
+        item_labels,
+        corpus_texts,
+        sidecar_data,
+        report,
+        retrieval_ranks=retrieval_ranks,
+        retrieval_k=retrieval_k if retrieval_ranks is not None else None,
+        needle_report=needle_report,
+    )
     validation = validate_items(items, out_dir / CORPUS_DIRNAME)
     _LOG.info(
         "[import-external-draft] imported %d items (verified=false, %d dropped) -> %s",

@@ -97,6 +97,7 @@ class PipelineResult:
     item_labels: dict[str, ItemLabels] = field(default_factory=dict)
     coverage_report: dict[str, object] | None = None
     dedup_report: dict[str, object] | None = None
+    applied_feedback: dict[str, object] | None = None
     log: ProvenanceLog = field(default_factory=ProvenanceLog)
 
 
@@ -308,6 +309,8 @@ def _provenance(
         provenance["seed_coverage"] = result.coverage_report
     if result.dedup_report is not None:
         provenance["dedup"] = result.dedup_report
+    if result.applied_feedback is not None:
+        provenance["applied_feedback"] = result.applied_feedback
     return provenance
 
 
@@ -411,6 +414,7 @@ def draft_goldset(
     dedup_against: list[Path | str] | None = None,
     graph_dir: Path | str | None = None,
     dedup_embedder: QuestionEmbedder | None = None,
+    rejection_feedback: Path | str | None = None,
     write: bool = True,
     resume: bool = False,
 ) -> PipelineResult:
@@ -419,7 +423,10 @@ def draft_goldset(
     Yield-max knobs: `coverage_target` drafts up to N seeds per stratum bucket instead of the flat
     `max_items` cap; `multi_hop` also drafts multi-span chain questions walked from the knowledge
     graph (built in-run, or loaded from `graph_dir`); `dedup_against` drops questions that are pinned-E5
-    near-duplicates of the listed prior bundles. `resume=True` re-enters an existing bundle: it reads
+    near-duplicates of the listed prior bundles. `rejection_feedback`
+    (draft-feedback-rejection-reasons) points at a verify-gate `rejection_reasons.json`; its
+    dominant reject codes tighten the draft prompts deterministically, and the applied hints +
+    file digest land in provenance. `resume=True` re-enters an existing bundle: it reads
     the pinned settings from the journal meta, reuses journaled extraction windows instead of
     re-calling the model, and replays the deterministic seed/draft/emit stages -- producing the same
     bundle as an uninterrupted run.
@@ -452,6 +459,8 @@ def draft_goldset(
         dedup_against = list(meta_dedup) if meta_dedup is not None else dedup_against
         meta_graph_dir = meta.get("graph_dir")
         graph_dir = meta_graph_dir if meta_graph_dir is not None else graph_dir
+        meta_feedback = meta.get("rejection_feedback")
+        rejection_feedback = meta_feedback if meta_feedback is not None else rejection_feedback
     if doc_limit is not None and doc_limit < 1:
         raise ValueError("doc_limit must be >= 1 when set")
     if extract_concurrency is not None and extract_concurrency < 1:
@@ -495,6 +504,9 @@ def draft_goldset(
                     if dedup_against
                     else None,
                     "graph_dir": str(graph_dir) if graph_dir is not None else None,
+                    "rejection_feedback": str(rejection_feedback)
+                    if rejection_feedback is not None
+                    else None,
                 },
                 endpoint,
             )
@@ -521,7 +533,27 @@ def draft_goldset(
     pool = build_seeds(docs, extractions)
     seeds = select_seeds(pool, max_items=max_items, seed=seed, coverage_target=coverage_target)
     cov_report = coverage_report(pool, seeds, coverage_target=coverage_target, max_items=max_items)
-    raw_drafts = draft_items(complete, docs, seeds, ontology_constraints(ontology))
+    draft_hint = ontology_constraints(ontology)
+    applied_feedback: dict[str, object] | None = None
+    if rejection_feedback is not None:
+        from llb.prep.ontology.feedback import (
+            applied_feedback_block,
+            feedback_hint_text,
+            feedback_hints,
+            load_rejection_feedback,
+        )
+
+        hints = feedback_hints(load_rejection_feedback(rejection_feedback))
+        applied_feedback = applied_feedback_block(rejection_feedback, hints)
+        hint_text = feedback_hint_text(hints)
+        if hint_text:
+            draft_hint = f"{draft_hint}\n{hint_text}" if draft_hint else hint_text
+            _LOG.info(
+                "[ontology] applying rejection feedback (%d hint(s)) from %s",
+                len(hints),
+                rejection_feedback,
+            )
+    raw_drafts = draft_items(complete, docs, seeds, draft_hint)
     items, item_labels = refine_drafts_labeled(docs, raw_drafts)
 
     if multi_hop:
@@ -559,6 +591,7 @@ def draft_goldset(
         item_labels=item_labels,
         coverage_report=cov_report,
         dedup_report=dedup_report,
+        applied_feedback=applied_feedback,
         log=log,
     )
     settings: dict[str, object] = {
@@ -573,6 +606,7 @@ def draft_goldset(
         "multi_hop_max_paths": multi_hop_max_paths,
         "dedup_against": [str(path) for path in dedup_against] if dedup_against else None,
         "graph_dir": str(graph_dir) if graph_dir is not None else None,
+        "rejection_feedback": str(rejection_feedback) if rejection_feedback is not None else None,
         "needle_retrieval_index_dir": str(retrieval_index_dir)
         if retrieval_index_dir is not None
         else None,

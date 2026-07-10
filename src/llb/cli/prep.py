@@ -589,6 +589,12 @@ def prepare_goldset_draft_cmd(
         None,
         help="persisted graph store dir for --multi-hop paths (default: build the graph in-run)",
     ),
+    rejection_feedback: Optional[Path] = typer.Option(
+        None,
+        "--rejection-feedback",
+        help="verify-gate rejection_reasons.json; dominant reject codes tighten the draft "
+        "prompts and the applied hints land in provenance",
+    ),
     require_passed_gates: bool = typer.Option(
         False,
         "--require-passed-gates",
@@ -651,6 +657,9 @@ def prepare_goldset_draft_cmd(
         raise typer.Exit(code=2)
     if graph_dir is not None and not graph_dir.is_dir():
         typer.echo(f"[error] graph store dir not found: {graph_dir}", err=True)
+        raise typer.Exit(code=2)
+    if rejection_feedback is not None and not rejection_feedback.is_file():
+        typer.echo(f"[error] rejection feedback file not found: {rejection_feedback}", err=True)
         raise typer.Exit(code=2)
     dedup_against_dirs: Optional[list[Path | str]] = (
         [Path(part.strip()) for part in dedup_against.split(",") if part.strip()]
@@ -723,6 +732,7 @@ def prepare_goldset_draft_cmd(
             multi_hop_max_paths=multi_hop_max_paths,
             dedup_against=dedup_against_dirs,
             graph_dir=graph_dir,
+            rejection_feedback=rejection_feedback,
             resume=resuming,
         )
     finally:
@@ -874,6 +884,21 @@ def import_external_draft_cmd(
         None, help="output bundle dir (default: $DATA_DIR/prepare-goldset/<timestamp>/)"
     ),
     seed: int = typer.Option(13, help="deterministic split-assignment seed"),
+    retrieval_index_dir: Optional[Path] = typer.Option(
+        None,
+        "--retrieval-index-dir",
+        help="full-corpus RAG index; annotates each imported item with its gold-span "
+        "retrieval_rank in item provenance (needle parity with local drafts)",
+    ),
+    retrieval_k: int = typer.Option(
+        10, "--retrieval-k", min=1, help="top-k window for the needle-rank annotation"
+    ),
+    drop_nonretrievable_needles: bool = typer.Option(
+        False,
+        "--drop-nonretrievable-needles",
+        help="drop imported items whose gold span is not retrieved within top-k "
+        "(requires --retrieval-index-dir)",
+    ),
 ) -> None:
     """Import an external-service grounded goldset (Artifact B) into a canonical draft bundle.
 
@@ -885,8 +910,20 @@ def import_external_draft_cmd(
     from llb.prep.external_draft import import_external_draft
     from llb.prep.ontology.pipeline import default_out_dir
 
+    if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
+        typer.echo(f"[error] retrieval index dir not found: {retrieval_index_dir}", err=True)
+        raise typer.Exit(code=2)
     resolved_out_dir = out_dir or default_out_dir()
-    result = import_external_draft(artifact, corpus_root, sidecar, resolved_out_dir, seed=seed)
+    result = import_external_draft(
+        artifact,
+        corpus_root,
+        sidecar,
+        resolved_out_dir,
+        seed=seed,
+        retrieval_index_dir=retrieval_index_dir,
+        retrieval_k=retrieval_k,
+        drop_nonretrievable_needles=drop_nonretrievable_needles,
+    )
     counts = result.report.to_dict()["counts"]
     typer.echo(
         f"[import-external-draft] imported {result.report.kept}/{result.report.loaded} items "

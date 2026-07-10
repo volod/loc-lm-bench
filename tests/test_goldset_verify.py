@@ -119,6 +119,35 @@ def test_sample_returns_all_when_n_exceeds_population():
     assert len(draw_stratified_sample(items, 99)) == 3
 
 
+def test_sample_draws_exactly_n_when_proportional_rounding_undershoots():
+    """verify-sample-exact-allocation: 3 strata of 7/7/6 at n=4 used to yield 3 rows (all
+    quotas rounded down to the floor of one); the largest-remainder top-up restores the 4th."""
+    items = [_item(f"a{i}", doc="squad/doc-a.txt") for i in range(7)]
+    items += [_item(f"b{i}", doc="squad/doc-b.txt") for i in range(7)]
+    items += [_item(f"c{i}", doc="squad/doc-c.txt") for i in range(6)]
+    for seed in range(20):
+        sample = draw_stratified_sample(items, 4, seed=seed)
+        assert len(sample) == 4, f"seed {seed} drew {len(sample)} rows"
+        docs = {it.source_doc_id for it in sample}
+        assert len(docs) == 3  # the floor of one still covers every stratum
+    one = [it.id for it in draw_stratified_sample(items, 4, seed=13)]
+    two = [it.id for it in draw_stratified_sample(items, 4, seed=13)]
+    assert one == two  # seeded draws stay reproducible
+
+
+def test_stratum_quotas_sum_exactly_and_respect_sizes():
+    from llb.goldset.verify import stratum_quotas
+
+    quotas = stratum_quotas({"a": 7, "b": 7, "c": 6}, 4)
+    assert sum(quotas.values()) == 4
+    assert all(q >= 1 for q in quotas.values())
+    capped = stratum_quotas({"a": 2, "b": 1}, 40)  # budget capped at the population
+    assert capped == {"a": 2, "b": 1}
+    tight = stratum_quotas({"a": 5, "b": 4, "c": 3}, 2)  # n below the stratum count:
+    assert sum(tight.values()) == 2  # largest strata get the floor first, deterministically
+    assert tight["a"] == 1 and tight["b"] == 1 and tight["c"] == 0
+
+
 # --- pure: corpus window ------------------------------------------------------------------
 
 

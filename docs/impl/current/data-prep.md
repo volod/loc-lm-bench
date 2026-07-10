@@ -103,16 +103,27 @@ against the FULL original corpus doc:
   classified via `ontology.question_types`) WITHOUT changing the `GoldItem` schema;
 - multi-service merge: `llb curate-drafts --kind grounded` merges/dedups/filters many Artifact B
   exports (re-grounding quotes, dropping non-verbatim/flabby rows, unique-id rewrite) into ONE JSONL
-  before import, exactly like the other curation kinds.
+  before import, exactly like the other curation kinds;
+- needle parity (external-import-needle-parity): an optional
+  `--retrieval-index-dir <index>` / `--retrieval-k <k>` annotates each imported item with its
+  gold-span retrieval rank against the full-corpus index (the shipped
+  `ontology.needles.annotate_needle_retrieval`), recorded as additive `retrieval_rank` /
+  `retrieval_k` fields in `item_provenance.jsonl` -- the same per-item confidence-ordering +
+  retrieval-uniqueness signal local drafts carry into the verify worksheet (which already reads
+  that file). `--drop-nonretrievable-needles` (explicit opt-in, requires the index) drops
+  rank-less items with the reason counted in the import report; `provenance.json` gains the
+  `needle_retrieval` summary. Without an index the lane is an exact no-op.
 
 Committed fixture + unit coverage (no network): `samples/external-drafts/claude-projects-open/`
-(one open-data artifact + sidecar), `tests/test_external_draft.py`, and the grounded cases in
+(one open-data artifact + sidecar), `tests/test_external_draft.py` (including the needle-rank
+annotation over an injected fake retriever), and the grounded cases in
 `tests/test_curate_drafts.py`.
 
 ```bash
 llb curate-drafts <svc-a>.jsonl <svc-b>.jsonl --kind grounded \
   --corpus-root <corpus> --out grounded.jsonl
-make import-external-draft ARTIFACT=grounded.jsonl CORPUS=<corpus> SIDECAR=<external_provenance.json>
+make import-external-draft ARTIFACT=grounded.jsonl CORPUS=<corpus> \
+  SIDECAR=<external_provenance.json> RETRIEVAL_INDEX_DIR=<rag-index> RETRIEVAL_K=10
 ```
 
 ### External-draft curation (merge / dedup / filter)
@@ -467,8 +478,8 @@ with the measured human review-pass evidence recorded at the end of this section
 - **Coded rejection reasons** -- `x` infers a code from the first failed check
   (`ungrounded`/`circular`/`wrong_reference`/`label_mismatch`), `x <code>` sets one explicitly
   (also `bad_question`, `other`); `make verify-accept` exports the aggregate to
-  `rejection_reasons.json` beside the accepted ledger so the drafting pipeline can read why items
-  were rejected and tighten its prompts.
+  `rejection_reasons.json` beside the accepted ledger, and the drafting pipeline reads it back
+  (draft-feedback-rejection-reasons, below) to tighten its prompts on a re-draft.
 
 All of it is unit-tested with injected input/output/clock in `tests/test_goldset_verify.py`
 (golden-path session tests included); the worksheet CSV stays backward compatible -- the new
@@ -490,11 +501,83 @@ rejects concentrated in the corpus's one long-manual document, one of them a TOC
 page-number question whose row also carried no `retrieval_rank` (the signal the confidence queue
 sorts on). Two advisory per-stratum FAIL warnings were small-sample artifacts: at tolerance 0.05
 a stratum needs >= 20 decided rows to absorb a single reject, and the flagged cells held 7 and 5.
-Operational notes from the pass: the stratified draw can undershoot the requested `VERIFY_N`
-(40 -> 39 here; the additive `VERIFY_MERGE=1` lane topped it up, and
-`verify-sample-exact-allocation` in [`plan.md`](../plan.md) tracks the proper fix), and a bare
+Operational notes from the pass: the stratified draw undershot the requested `VERIFY_N` at the
+time (40 -> 39; the additive `VERIFY_MERGE=1` lane topped it up), and a bare
 `x` reject with no failed checks exports `code: other` -- marking the failing check first (or
 `x <code>`) keeps `rejection_reasons.json` actionable.
+
+The undershoot itself is fixed (verify-sample-exact-allocation): `draw_stratified_sample` now
+allocates through `stratum_quotas` -- a floor of one per non-empty stratum (largest strata first
+when `n` cannot cover them all) plus a deterministic largest-remainder top-up, each stratum
+capped at its own size -- so `verify-sample VERIFY_N=<n>` draws exactly `min(n, population)`
+rows at every seed while staying seeded-reproducible. The sibling `sample_manifest.json`
+records the final per-stratum allocation as before. Unit-tested against the undershooting
+7/7/6-strata fixture in `tests/test_goldset_verify.py`.
+
+### Rejection feedback into re-drafting
+
+The feedback loop no longer ends at the JSON file (draft-feedback-rejection-reasons):
+
+```bash
+make prepare-goldset-draft DRAFT_CORPUS=<dir> \
+  DRAFT_REJECTION_FEEDBACK=<bundle>/accepted/rejection_reasons.json
+```
+
+`llb prepare-goldset-draft --rejection-feedback <file>` maps each dominant reject code to a
+deterministic Ukrainian draft-prompt hint (`src/llb/prep/ontology/feedback.py`; the mapping
+covers exactly the closed reject-code set, ordered by rejection count, and each hint carries the
+first rejected item's note as an example -- e.g. a `circular`-heavy summary adds an explicit
+non-circularity instruction). The combined hint block is appended to the ontology-constraint
+line of every draft prompt; an empty summary is a no-op. `provenance.json` gains an
+`applied_feedback` block (source path, sha256 digest, applied hint codes + counts), the setting
+is pinned in the journal meta so `--resume` replays it, and
+`settings.rejection_feedback` names the file. Unit tests: `tests/test_draft_feedback.py` (per-code
+mapping, dominant ordering, no-op summary, prompt + provenance round-trip over a fake endpoint).
+
+### Multi-annotator gate and adjudication
+
+The verification gate supports more than one annotator plus configurable acceptance arithmetic
+(`src/llb/goldset/verify_multi.py` + policy extensions in `verify.py`; tests in
+`tests/test_verify_adjudication.py`):
+
+```bash
+make verify-sample BUNDLE=<draft> VERIFY_N=<n> VERIFY_ANNOTATORS=<k>
+make verify-review VERIFY_WS=<bundle>/verify_sample.r1.csv   # each reviewer, own sheet
+make verify-adjudicate BUNDLE=<draft>
+make verify-review VERIFY_WS=<bundle>/adjudication.csv
+make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<draft> \
+  VERIFY_ACCEPT_POLICY=<global|per-stratum|weighted>
+```
+
+- **Multi-reviewer sampling** -- `VERIFY_ANNOTATORS=<k>` draws ONE stratified sample and writes
+  it as `k` identical per-reviewer worksheets (`verify_sample.r<i>.csv`), each row stamped with
+  a `reviewer_id` (a new optional column, appended last so older worksheets stay compatible).
+  The manifest records the reviewer worksheets and intentionally omits the single-`worksheet`
+  key, so a multi-reviewer bundle can only stamp `--data-verified` through its accepted ledger.
+- **Agreement report** -- `verify-adjudicate` writes `agreement.json` beside the worksheets:
+  observed agreement plus Cohen's kappa (2 reviewers) or Fleiss' kappa (3+) over the jointly
+  decided rows, per-reviewer decided/accept/reject counts, and the disagreement item ids. A
+  unanimous accept whose accept-with-edit answers differ counts as a disagreement (the edit
+  changes what the ledger would certify).
+- **Adjudication pass** -- disagreements are drawn into `adjudication.csv` (exactly those rows),
+  human columns blank for an independent decision, prior verdicts carried forward in a read-only
+  `prior_decisions` column (`r1=reject:bad_question;r2=accept`) shown on the review card.
+  Rebuilding preserves adjudicator decisions already made. The ordinary `verify-review` session
+  reviews it unchanged.
+- **Consensus acceptance** -- `verify-accept` on a multi-reviewer bundle scores the consensus:
+  unanimous decisions stand, adjudicated decisions override disagreements, and anything else
+  (a reviewer still undecided, an unadjudicated disagreement) stays undecided and blocks
+  acceptance. The accepted ledger and adoption-through-ledger invariant are unchanged.
+- **Acceptance policies** -- `--policy` (make: `VERIFY_ACCEPT_POLICY=`) selects the arithmetic:
+  `global` (the original single-tolerance rule, still the default), `per-stratum` (EVERY stratum
+  within its own tolerance; `VERIFY_STRATUM_TOLERANCES="<stratum>=<tol> ..."` overrides cells),
+  and `weighted` (confidence-weighted reject rate where a decided row weighs
+  `1 + max(row_confidence, 0)` -- a reject on a row the automated signals rated confident counts
+  more, because it means those signals mispredict).
+
+Agreement statistics are unit-tested against hand-computed kappa fixtures; the adjudication
+draw, each acceptance policy, and the reused-id adoption invariant are covered by synthetic
+reviewed fixtures.
 
 ## Judge Calibration
 

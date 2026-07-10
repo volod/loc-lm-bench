@@ -429,6 +429,12 @@ def score_external_rag_cmd(
         "--clear",
         help="confirmation-gated restart: clear JSONL human fields before reviewing",
     ),
+    source_map: Optional[Path] = typer.Option(
+        None,
+        "--source-map",
+        help="mapping sidecar (json/jsonl/csv) from provider article_id/url/article_title to "
+        "corpus doc_id [+ char range]; enables the source-span audit columns",
+    ),
 ) -> None:
     """Interactively score an external RAG JSONL; finalize CSV + report when complete."""
     from llb.scoring.external_rag_session import run_external_rag_session
@@ -446,6 +452,7 @@ def score_external_rag_cmd(
             label=label,
             start=start,
             clear=clear,
+            source_map=source_map,
         )
     except ValueError as exc:
         typer.echo(f"[score-external-rag] {exc}", err=True)

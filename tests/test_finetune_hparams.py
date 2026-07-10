@@ -15,7 +15,9 @@ from llb.finetune.hparam_search import (
     STATE_PRUNED,
     assert_tuning_only,
     carve_dev_slice,
+    carve_stratified_dev_slice,
     latest_hparams_manifest,
+    load_base_scores,
     search_hyperparameters,
     trainer_defaults,
 )
@@ -145,6 +147,158 @@ def test_dev_slice_always_leaves_an_item_on_each_side():
         carve_dev_slice(["only-one"])
 
 
+# finetune-hparams-stratified-dev-slice: 12 committed scores, 3 answerable (tune-0/1/2).
+BASE_SCORE_RUN = Path("samples/finetune/base-score-run")
+STRATIFY_IDS = [f"tune-{index}" for index in range(12)]
+
+
+def test_stratified_slice_holds_an_answerable_item_at_every_seed():
+    scores = load_base_scores(BASE_SCORE_RUN)
+    assert sum(1 for value in scores.values() if value > 0) == 3
+    for seed in range(25):
+        dev_slice = carve_stratified_dev_slice(STRATIFY_IDS, scores, seed=seed, dev_fraction=0.25)
+        assert set(dev_slice.train_ids) & set(dev_slice.dev_ids) == set()
+        assert set(dev_slice.train_ids) | set(dev_slice.dev_ids) == set(STRATIFY_IDS)
+        assert any(scores.get(item_id, 0.0) > 0 for item_id in dev_slice.dev_ids), (
+            f"seed {seed}: dev slice holds no answerable item"
+        )
+        again = carve_stratified_dev_slice(STRATIFY_IDS, scores, seed=seed, dev_fraction=0.25)
+        assert (dev_slice.train_ids, dev_slice.dev_ids) == (again.train_ids, again.dev_ids)
+
+
+def test_stratified_slice_beats_uniform_on_answerable_coverage():
+    """The uniform slice can land on zero answerable items; the stratified one never does."""
+    scores = load_base_scores(BASE_SCORE_RUN)
+
+    def answerable_in_dev(dev_ids: tuple[str, ...]) -> int:
+        return sum(1 for item_id in dev_ids if scores.get(item_id, 0.0) > 0)
+
+    uniform_misses = sum(
+        1
+        for seed in range(25)
+        if answerable_in_dev(carve_dev_slice(STRATIFY_IDS, seed=seed, dev_fraction=0.25).dev_ids)
+        == 0
+    )
+    stratified_misses = sum(
+        1
+        for seed in range(25)
+        if answerable_in_dev(
+            carve_stratified_dev_slice(STRATIFY_IDS, scores, seed=seed, dev_fraction=0.25).dev_ids
+        )
+        == 0
+    )
+    assert uniform_misses > 0, "the fixture must exhibit the uniform-slice failure"
+    assert stratified_misses == 0
+
+
+def test_stratified_slice_refuses_an_all_zero_population():
+    with pytest.raises(ValueError, match="constant objective|discriminate"):
+        carve_stratified_dev_slice(STRATIFY_IDS, {}, seed=13, dev_fraction=0.25)
+
+
+def test_load_base_scores_requires_a_scored_run():
+    with pytest.raises(ValueError, match="scores.jsonl"):
+        load_base_scores(Path("samples/finetune"))  # a dir without scores.jsonl
+
+
+def test_manifest_records_dev_slice_strata(tmp_path: Path):
+    dataset = _dataset(tmp_path, item_ids=STRATIFY_IDS)
+    result = search_hyperparameters(
+        _config(tmp_path),
+        model=MODEL,
+        dataset_dir=dataset,
+        max_trials=1,
+        seed=7,
+        trainer="fake",
+        out_dir=tmp_path / "study",
+        stratify_by_base_score=BASE_SCORE_RUN,
+        trainer_fn=_trainer_fn,
+        objective_fn=_rank_objective,
+    )
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    strata = manifest["dev_slice"]["strata"]
+    assert strata["base_score_run"] == str(BASE_SCORE_RUN)
+    buckets = strata["buckets"]
+    assert buckets["zero"]["population"] == 9
+    assert buckets["high"]["population"] == 2 and buckets["low"]["population"] == 1
+    assert buckets["high"]["dev"] >= 1  # the answerable floor landed
+    assert buckets["high"]["mean_base_score"] == pytest.approx(0.85)
+
+
+# finetune-hparams-infeasible-point-prune: a fixture arch a 16 GB-class host can reason about.
+FIXTURE_ARCH = {"hidden_size": 4096, "n_layers": 32}
+
+
+def test_adapter_footprint_estimate_is_hand_computable():
+    from llb.finetune.hparam_search import adapter_param_estimate, estimated_adapter_train_mib
+
+    params = {"lora_r": 8, "target_modules": ["q_proj", "v_proj"]}
+    # 32 layers x 2 modules x 2 matrices x 4096 hidden x rank 8 = 4,194,304 params
+    assert adapter_param_estimate(params, hidden_size=4096, n_layers=32) == 4_194_304
+    # x 16 bytes / MiB = 64 MiB
+    assert estimated_adapter_train_mib(params, hidden_size=4096, n_layers=32) == 64.0
+
+
+@pytest.mark.slow
+def test_infeasible_point_prunes_before_the_trainer_runs(tmp_path: Path):
+    """A rank-64 x attn_mlp point on a no-headroom host never reaches the trainer."""
+    dataset = _dataset(tmp_path)
+    trained_ranks: list[int] = []
+
+    def counting_trainer(dataset_dir, model, adapter_dir, seed, params):
+        trained_ranks.append(int(params["lora_r"]))
+        return _trainer_fn(dataset_dir, model, adapter_dir, seed, params)
+
+    # Headroom fits rank 8 on the widest preset (~1.8 GiB for rank 64) but not rank >= 16.
+    headroom = 300.0
+    result = search_hyperparameters(
+        _config(tmp_path),
+        model=MODEL,
+        dataset_dir=dataset,
+        max_trials=10,
+        seed=7,
+        trainer="fake",
+        out_dir=tmp_path / "study",
+        vram_headroom_mib=headroom,
+        model_arch=FIXTURE_ARCH,
+        trainer_fn=counting_trainer,
+        objective_fn=_rank_objective,
+    )
+    pruned = [t for t in result.trials if t.state == STATE_PRUNED]
+    complete = [t for t in result.trials if t.state == STATE_COMPLETE]
+    assert pruned, "the fixture space must contain an infeasible point"
+    assert complete, "a small-rank point must still train"
+    assert len(trained_ranks) == len(complete)  # the trainer never saw a pruned point
+    for trial in result.trials:
+        assert trial.estimated_adapter_mib is not None
+        if trial.state == STATE_PRUNED:
+            assert trial.estimated_adapter_mib > headroom
+        if trial.state == STATE_COMPLETE:
+            assert trial.estimated_adapter_mib <= headroom
+    # The manifest carries the estimate on every trial row, pruned ones included.
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert all(row["estimated_adapter_mib"] is not None for row in manifest["trials"])
+
+
+@pytest.mark.slow
+def test_prune_is_off_without_a_headroom(tmp_path: Path):
+    dataset = _dataset(tmp_path)
+    result = search_hyperparameters(
+        _config(tmp_path),
+        model=MODEL,
+        dataset_dir=dataset,
+        max_trials=4,
+        seed=7,
+        trainer="fake",
+        out_dir=tmp_path / "study",
+        model_arch=FIXTURE_ARCH,
+        trainer_fn=_trainer_fn,
+        objective_fn=_rank_objective,
+    )
+    assert all(t.state == STATE_COMPLETE for t in result.trials)
+    assert all(t.estimated_adapter_mib is not None for t in result.trials)
+
+
 def test_guard_refuses_a_dataset_manifest_declaring_a_protected_split():
     with pytest.raises(SystemExit, match="non-tuning splits: final"):
         assert_tuning_only({"split_counts": {"tuning": 3, "final": 1}, "item_ids": []})
@@ -228,6 +382,7 @@ def test_the_default_objective_needs_a_goldset(tmp_path: Path):
         )
 
 
+@pytest.mark.slow
 def test_study_is_deterministic_for_a_seed(tmp_path: Path):
     dataset = _dataset(tmp_path)
     config = _config(tmp_path)
@@ -254,6 +409,7 @@ def test_study_is_deterministic_for_a_seed(tmp_path: Path):
     assert first.best_objective == second.best_objective
 
 
+@pytest.mark.slow
 def test_sampled_effective_batch_is_the_product_of_its_geometry(tmp_path: Path):
     """finetune-hparams-effective-batch-axis: the two batch knobs are never independently drawn."""
     from llb.finetune.hparam_search import BATCH_GEOMETRY_CHOICES, MAX_LENGTH_CHOICES
@@ -281,6 +437,7 @@ def test_sampled_effective_batch_is_the_product_of_its_geometry(tmp_path: Path):
         assert params["max_length"] in MAX_LENGTH_CHOICES
 
 
+@pytest.mark.slow
 def test_budget_abort_stops_between_trials_and_the_study_resumes(tmp_path: Path):
     dataset = _dataset(tmp_path)
     config = _config(tmp_path)
@@ -327,6 +484,7 @@ def test_budget_abort_stops_between_trials_and_the_study_resumes(tmp_path: Path)
     assert len(trained) - before == 5, "a resume retrains only the unfinished trials"
 
 
+@pytest.mark.slow
 def test_resume_at_the_same_budget_runs_no_further_trial(tmp_path: Path):
     dataset = _dataset(tmp_path)
     config = _config(tmp_path)
@@ -364,6 +522,7 @@ def test_resume_at_the_same_budget_runs_no_further_trial(tmp_path: Path):
     assert len(result.trials) == 3
 
 
+@pytest.mark.slow
 def test_a_measured_oom_prunes_the_trial_instead_of_killing_the_study(tmp_path: Path):
     dataset = _dataset(tmp_path)
 

@@ -114,6 +114,52 @@ def test_no_citations_yields_zero_rates():
 
 
 # --------------------------------------------------------------------------------------------
+# citation coverage: separates "does not cite" from "cites wrongly" (citation-coverage-metric)
+# --------------------------------------------------------------------------------------------
+
+
+def test_coverage_fully_cited_answer_is_one():
+    answer = "Київ є столицею України [1]. Патент захищає винахід двадцять років [3]."
+    report = g.citation_report(answer, CHUNKS)
+    assert report["n_claims"] == 2 and report["n_covered_claims"] == 2
+    assert report["citation_coverage"] == 1.0
+
+
+def test_coverage_uncited_answer_is_zero():
+    report = g.citation_report("Київ є столицею України. Дніпро тече через області.", CHUNKS)
+    assert report["citation_coverage"] == 0.0
+    assert report["n_claims"] == 2 and report["n_covered_claims"] == 0
+
+
+def test_coverage_partially_cited_answer_is_between():
+    answer = "Київ є столицею України [1]. Дніпро тече через області."
+    report = g.citation_report(answer, CHUNKS)
+    assert report["citation_coverage"] == 0.5
+
+
+def test_coverage_separates_no_citation_from_wrong_citation():
+    """The failure the metric exists for: both answers score 0.0 validity, but coverage differs."""
+    uncited = g.citation_report("Київ є столицею України з 1991 року.", CHUNKS)
+    wrongly_cited = g.citation_report("Київ є столицею України з 1991 року [2].", CHUNKS)
+    assert uncited["citation_validity"] == wrongly_cited["citation_validity"] == 0.0
+    assert uncited["citation_coverage"] == 0.0
+    assert wrongly_cited["citation_coverage"] == 1.0
+
+
+def test_coverage_is_independent_of_validity():
+    hallucinated = g.citation_report("Київ є столицею України [9].", CHUNKS)
+    assert hallucinated["citation_coverage"] == 1.0  # covered, even though the citation is bogus
+    assert hallucinated["citation_validity"] == 0.0
+
+
+def test_coverage_ignores_fragmentary_claims():
+    # "Так [1]" has fewer than MIN_CLAIM_TOKENS content tokens -> not countable either way.
+    report = g.citation_report("Так [1].", CHUNKS)
+    assert report["n_claims"] == 0
+    assert report["citation_coverage"] == 0.0
+
+
+# --------------------------------------------------------------------------------------------
 # abstention detection (probe correctness signal)
 # --------------------------------------------------------------------------------------------
 
@@ -189,8 +235,22 @@ def test_score_case_records_groundedness_and_citations_when_enabled():
     )
     assert row["groundedness"] == 1.0
     assert row["citation_validity"] == 1.0
+    assert row["citation_coverage"] == 1.0
     assert row["hallucinated_citation_rate"] == 0.0
     assert row["n_citations"] == 1
+
+
+def test_manifest_metrics_carry_mean_citation_coverage():
+    from llb.executor.runner import _attach_answer_side_metrics
+
+    rows = [
+        {"citation_validity": 0.0, "citation_coverage": 1.0},
+        {"citation_validity": 0.0, "citation_coverage": 0.0},
+    ]
+    metrics: dict = {}
+    _attach_answer_side_metrics(metrics, rows)  # type: ignore[arg-type]
+    assert metrics["citation_coverage"] == 0.5
+    assert metrics["citation_validity"] == 0.0
 
 
 def test_score_case_citation_order_follows_context_order():

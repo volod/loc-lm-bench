@@ -517,8 +517,23 @@ score, split estimates, common sources, and links to project commands for improv
 `prompt-system-prepare`, `run-eval`, `analyze-misses`, and `recommend`.
 
 Important limitation: if the external answer log returns only article titles or URLs, the scorer
-cannot compute benchmark source-span recall for that external system. To audit retrieval directly,
-teach the external API to return `doc_id`, `char_start`, and `char_end` for each returned source.
+cannot compute benchmark source-span recall for that external system by itself. Two ways to audit
+retrieval:
+
+- teach the external API to return `doc_id`, `char_start`, and `char_end` for each returned
+  source, or
+- supply a mapping sidecar with `EXTERNAL_RAG_SOURCE_MAP=<map.json|jsonl|csv>` (`--source-map`)
+  translating provider `article_id` / `url` / `article_title` keys into corpus `doc_id` plus an
+  optional char range. The CSV then gains `source_hit`, `source_first_hit_rank`,
+  `source_hit_weak`, and mapped/unmapped counts, and the report a "Source-span audit" section
+  with span-proof recall@3 and MRR. Mappings without a char range only support weak doc-level
+  matches (flagged, never counted as span proof), and unmapped returned sources are reported as
+  an audit gap, separate from retrieval misses. Example sidecar record:
+
+```json
+{"article_id": "a17", "url": "https://kb/articles/a17", "doc_id": "manual/chapter-3.md",
+ "char_start": 1200, "char_end": 1420}
+```
 
 ## End-to-end example: benchmark a mixed PDF corpus with external drafting
 
