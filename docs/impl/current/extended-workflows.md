@@ -185,8 +185,18 @@ registry registration, and contamination-guard compatibility.
 ## Hyperparameter Search
 
 `src/llb/finetune/hparam_search.py` searches the LoRA configuration space for one model with a
-bounded budget, so fine-tuning stops guessing rank, alpha, learning rate, epochs, and target
-modules.
+bounded budget, so fine-tuning stops guessing rank, alpha, learning rate, epochs, target modules,
+or batch geometry.
+
+The search space also covers the effective batch axis (finetune-hparams-effective-batch-axis):
+`per_device_train_batch_size` x `gradient_accumulation_steps` ride ONE `batch_geometry`
+categorical (`1x4` the trainer default, `1x8`, `2x4`, `2x8`) rather than two independent draws --
+independent draws would mostly differ only in a VRAM/wall-clock trade at the same effective batch,
+wasting budget on gradient-equivalent points -- and `max_length` (512/1024/2048) is sampled beside
+it. Effective batch size interacts strongly with the learning rate, so the recorded best config is
+now self-consistent: `hparams_manifest.json` carries the batch geometry the learning rate was
+chosen under, and an operator changing the batch size knows they left the searched optimum. The
+sampled record always satisfies `effective_batch_size == per_device * grad_accum` (unit-tested).
 
 Dependency contract: the `[finetune]` and `[dev]` extras include Optuna. GitHub CI installs
 `.[dev]`, so the fake-trainer hparam tests stay in the lightweight `make ci` suite without pulling
@@ -295,6 +305,79 @@ Two caveats the numbers carry:
 - Trial 5 lands exactly on the base objective `0.2056`: a tuned adapter is not automatically better
   than no adapter, and the search records that honestly.
 
+### Effective-batch-axis evidence on the 16 GB RTX 4060 Ti host
+
+The widened-space acceptance run (2026-07-10, finetune-hparams-effective-batch-axis): a 6-trial
+search for `google/gemma-3-1b-it` over the `ua_squad_postedited_v1` tuning split (82 items ->
+62 train / 20 dev, `seed=13`; full-split base tuning objective `0.3050`), study
+`.data/finetune-hparams/google-gemma-3-1b-it/20260710T121020*/hparams_manifest.json`, ~2 min per
+trial end to end (QLoRA fine-tune + vLLM LoRA dev eval):
+
+| trial | dev objective | geometry | eff. batch | max_length | rank | lr | preset |
+| --- | ---: | --- | ---: | ---: | ---: | --- | --- |
+| 1 | **0.3262** | 2x8 | 16 | 2048 | 16 | 2.63e-05 | attn_mlp |
+| 2 | 0.3151 | 2x8 | 16 | 2048 | 4 | 2.53e-05 | attn |
+| 4 | 0.2986 | 2x8 | 16 | 2048 | 64 | 1.53e-04 | qv |
+| 0 | 0.2865 | 2x4 | 8 | 2048 | 64 | 2.73e-05 | attn_mlp |
+| 5 | 0.2692 | 2x4 | 8 | 2048 | 8 | 3.55e-04 | attn_mlp |
+| 3 | 0.2427 | 1x8 | 8 | 2048 | 64 | 9.08e-05 | attn_mlp |
+
+What the run demonstrates: the learning-rate x effective-batch interaction is measurable, not
+theoretical -- trials 0 and 1 sample a near-identical learning rate (2.7e-05 vs 2.6e-05) and the
+effective-batch-16 point beats the effective-batch-8 point by **+0.040** dev objective; the three
+top trials all ride the largest geometry (`2x8`). The honest caveats: the trainer-default `1x4`
+geometry was never drawn in this 6-trial budget (TPE explored the wider geometries), so the
+comparison to the pinned default is indirect (via `2x4`/`1x8` at effective batch 8, both of which
+lose), and a 20-item dev slice carries wide uncertainty per point. The operational win stands
+regardless of ranking noise: `hparams_manifest.json` now records the batch geometry every
+learning rate was chosen under, so the recorded best config
+(`2x8`, lr 2.63e-05, rank 16, `attn_mlp`, `max_length` 2048) is self-consistent and
+`trainer_defaults` feeds all of it -- geometry included -- to later rounds.
+
+## Compressed-QAT Trainability (finetune-compat)
+
+`src/llb/finetune/compat.py` (compressed-qat-adapter-support) answers "can this checkpoint take a
+LoRA adapter on this host?" BEFORE a campaign pays for a base eval or a training run. Compressed
+QAT checkpoints (`*-qat-w4a16-ct` and friends) serve well on vLLM, but PEFT can only inject LoRA
+into layer types it has a dispatch for (full-precision `Linear`, bitsandbytes 4/8-bit, GPTQ, AWQ,
+EETQ, HQQ) -- a `compressed-tensors` checkpoint's `CompressedLinear` layers cannot take adapters.
+
+Two stages, both pure over injectable seams (`tests/test_finetune_compat.py` runs with fake
+modules and configs, no torch):
+
+- Config introspection (`inspect_quantization` + `assess_quantization`): classifies the
+  checkpoint's native `quantization_config.quant_method` against PEFT's dispatch table -- no
+  weights, no CUDA. `compressed-tensors` is a deterministic not-trainable verdict with the exact
+  blocker plus the documented fallback (train on the uncompressed base and serve merged/quantized,
+  or take the bitsandbytes path); a PEFT-dispatched scheme names its injection strategy; an
+  unrecognized scheme stays `unknown` so the heavy probe decides.
+- The heavy probe (`probe_trainability`, `llb finetune-compat --model <m>`): loads the model,
+  scans its ACTUAL linear module classes, selects per-architecture target modules from the modules
+  that exist (`select_target_modules` grounds the choice in the model's own names -- llama-style
+  `q_proj`, falcon `query_key_value`, gpt2 `c_attn`, with a most-frequent-suffix fallback --
+  instead of assuming llama naming), attaches a rank-4 LoRA, and runs one forward/backward
+  micro-step. Any failure becomes the recorded blocker, never a crash. Reports land under
+  `$DATA_DIR/finetune-compat/<model>/<timestamp>/compat_report.json`; `--config-only` stops after
+  stage 1.
+
+Campaign integration: `run_finetune_campaign` runs a config-only compat probe (injectable
+`compat_fn`; the default reads only locally-cached configs, so Ollama tags and never-downloaded
+models return `unknown` without touching the network) after the memory planner and BEFORE the
+base eval -- a positive not-trainable verdict skips the entry into `campaign.progress.jsonl` and
+`report.md` with the exact blocker; an unknown verdict never false-skips.
+
+CUDA evidence (2026-07-10, RTX 4060 Ti 16 GB):
+
+- `google/gemma-4-E4B-it-qat-w4a16-ct` -> **not-trainable** at the config stage
+  (`quant_method 'compressed-tensors' has no PEFT LoRA dispatch`); the skip fires before any
+  weights load. `cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4` hits the same verdict -- its "AWQ"
+  is AWQ-inside-compressed-tensors, which the config stage classifies correctly.
+- `Qwen/Qwen3-4B-FP8` -> config stage says `unknown` (`quant_method 'fp8'`), the heavy probe
+  loads it and the module scan finds `FP8Linear` (no PEFT dispatch) -> **not-trainable** with
+  that exact blocker -- the load-time detection path proven on a real checkpoint.
+- Reports: `.data/finetune-compat/google-gemma-4-E4B-it-qat-w4a16-ct/*/compat_report.json`,
+  `.data/finetune-compat/Qwen-Qwen3-4B-FP8/*/compat_report.json`.
+
 ## Adapter Registry And Lifecycle
 
 Adapters are first-class artifacts, not loose directories. `$DATA_DIR/adapters/registry.jsonl` is an
@@ -369,7 +452,33 @@ for Ollama registers a `llb-adapter-<short-id>` tag. The merge is expensive and 
 cached under `$DATA_DIR/adapters/merged/<short-id>/<backend>/` behind a `merge.json` and recorded as
 a registry `merge` event. Both the merge and the launcher are injectable, so CI exercises all three
 backends without CUDA, llama.cpp, or a running Ollama daemon. `serve-adapter` probes the endpoint
-with one generation and then holds it in the foreground until Ctrl-C; there is no serving daemon.
+with one generation -- an empty completion FAILS the probe (a served-but-mute endpoint is not
+serving) -- and then holds it in the foreground until Ctrl-C; there is no serving daemon.
+
+Chat-template preservation (found by the first real CUDA merge run): llama.cpp's server applies
+the `tokenizer.chat_template` GGUF metadata natively, but **Ollama ignores it** when a model is
+created from a bare `FROM <gguf>` Modelfile -- the tag serves raw completions and a merged
+instruct model degrades to gibberish or empty chat answers. `modelfile_text` therefore reads the
+merged tokenizer's chat template (`chat_template.jinja` under transformers >= 5, else the legacy
+`tokenizer_config.json` field), detects the template family by its unambiguous marker (ChatML
+`<|im_start|>`, Gemma `<start_of_turn>`, Llama 3 `<|start_header_id|>`), and writes the
+equivalent Go `TEMPLATE` plus its `PARAMETER stop` tokens into the Modelfile; an unrecognized
+template stays a bare FROM with a loud warning naming the fix. Family detection, the bare-FROM
+fallback, and the empty-probe failure are unit-tested with fixtures.
+
+Pristine tokenizer files (found by the Gemma-3 merge run): a LoRA never changes the tokenizer,
+but the merge used to re-save it through `AutoTokenizer.save_pretrained`, and the
+transformers >= 5 resave is LOSSY for GGUF conversion -- it drops the sentencepiece
+`tokenizer.model` (the converter's GPT-2-style fallback then asserts on vocabularies whose added
+tokens sit past `config.vocab_size`) and rewrites `tokenizer_config.json` so the control-token
+markings are lost: `<start_of_turn>`/`<end_of_turn>` exported as NORMAL instead of CONTROL token
+types, Ollama then never matched the template's turn markers as specials, and the merged Gemma
+answered every non-trivial prompt with an immediate `<end_of_turn>` (final-split objective 0.199
+vs 0.410 served properly -- while the SAME safetensors answered correctly in transformers).
+`copy_base_tokenizer_assets` now overwrites the resaved files with the base repo's originals
+(`tokenizer.model`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`),
+best-effort per file so repos without a given file (Qwen has no sentencepiece model) keep the
+resaved copy that already converts fine. Unit-tested with an injected downloader.
 
 ### Garbage collection
 
@@ -396,6 +505,48 @@ the goldset digest changes, the `unknown` verdict, guard resolution through the 
 smoke over a fake launcher for all three backends, merge-event recording and merge caching, GC
 citation refusal plus `--force`, the same-second supersession tie, the outside-`$DATA_DIR` safety
 rule, and board drop/stamp behavior.
+
+Merge-serving CUDA evidence (2026-07-10, RTX 4060 Ti 16 GB, adapter-merge-serving-cuda-evidence;
+the first time the real merge lane ran end to end):
+
+- Adapter: `ea848f7e160e` (`Qwen/Qwen2.5-0.5B-Instruct`, one `self-improve` round over the
+  `ua_squad_postedited_v1` tuning split, registered; campaign
+  `.data/self-improve/merge-evidence-qwen05b/`).
+- Both GGUF backends merged and answered the smoke probe: PEFT merge + `convert_hf_to_gguf.py`
+  (f16) + launch + probe in **~15 s wall-clock per backend** for the 0.5B model, GGUF size
+  **949 MB** (vs ~1 GB safetensors); converter accepted the Qwen2 architecture without complaint.
+- Three-way final-split objective (n=82, same goldset/store/seed):
+  base (vLLM) **0.2880** [0.204, 0.370]; vLLM LoRA row **0.3272** [0.239, 0.422]; merged tag on
+  ollama **0.3119** [0.218, 0.402] -- inside the LoRA row's CI and above the base point estimate,
+  so the merged artifact answers as the ADAPTER, not the base model. Run bundles:
+  `.data/run-eval/20260710T075222*` (base), `...075718*` (LoRA), `...081359*` (merged, fixed
+  template).
+- Merge-fidelity finding the run surfaced (now fixed + unit-tested): the FIRST merged eval
+  collapsed to objective **0.0191** -- every answer empty -- because the bare `FROM <gguf>`
+  Modelfile lost the chat template (see chat-template preservation above). The llamacpp GGUF
+  carries `tokenizer.chat_template` and llama-server applies it natively; only the Ollama create
+  path needed the explicit TEMPLATE. The smoke probe was also hardened to fail on an empty
+  completion, which would have caught this before the eval did.
+- Real-path dependency gaps closed by this run: `gguf` (the converter import) and `bitsandbytes`
+  (the trainer's default QLoRA load) are now part of the `finetune` extra, and the trainer's
+  early dependency check covers bitsandbytes instead of failing mid-load.
+
+Second cohort model, `google/gemma-3-1b-it` (2026-07-10, same host; adapter `db80e8440b7d` from
+one `self-improve` round trained with the effective-batch search's best config, campaign
+`.data/self-improve/merge-evidence-gemma-3-1b/`):
+
+- Merge cost: ~24 s (ollama) / ~18 s (llamacpp) wall-clock per backend, 1.9 GB f16 GGUF; the
+  converter needed the base repo's pristine tokenizer files (see the two merge-fidelity findings
+  above -- both surfaced BY this model and are now fixed and unit-tested: the Gemma-3 vocab
+  assert without `tokenizer.model`, and the control-token loss that made the served merge answer
+  every real prompt with an immediate `<end_of_turn>`).
+- Three-way final-split objective (n=82): base (vLLM) **0.3872** [0.299, 0.480]; vLLM LoRA row
+  **0.4103** [0.326, 0.498]; merged tag on ollama **0.3427** [0.260, 0.428] -- inside the LoRA
+  row's CI, so the merge passes the fidelity gate, with the honest caveat that the point
+  estimate sits 0.068 below the LoRA row (unresolved at n=82, and partly a cross-backend
+  comparison: the merged row is f16-GGUF-on-ollama while both reference rows are
+  safetensors-on-vLLM). Run bundles: `.data/run-eval/20260710T122520*` (base),
+  `...122821*` (LoRA), `...125503*` (merged).
 
 CUDA evidence on the 12 GB RTX PRO 3000 host:
 

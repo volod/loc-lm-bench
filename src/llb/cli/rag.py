@@ -271,6 +271,12 @@ def validate_retrieval(
     query_glossary: Optional[Path] = typer.Option(
         None, help="query_glossary.json for the 'glossary' step (build-query-glossary)"
     ),
+    query_prep_typo_guard: bool = typer.Option(
+        False,
+        "--query-prep-typo-guard",
+        help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
+        "unchanged (an inflection is not a misspelling; needs the [lex] extra)",
+    ),
     query_prep_ab: bool = typer.Option(
         False,
         "--query-prep-ab",
@@ -296,6 +302,7 @@ def validate_retrieval(
         retrieval_strategy=retrieval_strategy,
         query_prep=steps or None,
         query_glossary_path=query_glossary,
+        query_prep_typo_guard=query_prep_typo_guard or None,
     )
     store = _load_store(cfg)
     items = load_goldset(cfg.goldset_path)
@@ -310,10 +317,12 @@ def validate_retrieval(
             err=True,
         )
         raise typer.Exit(code=2)
-    vocabulary, glossary = _resolve_query_prep_deps(cfg, store, steps)
+    vocabulary, glossary, known_word = _resolve_query_prep_deps(cfg, store, steps)
 
     if query_prep_ab:
-        stages = qp.cumulative_pipelines(steps, vocabulary=vocabulary, glossary=glossary)
+        stages = qp.cumulative_pipelines(
+            steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
+        )
         report = qp.query_prep_ab_report(ab_items, store.retrieve, k, stages)
         typer.echo(qp.format_query_prep_ab(report))
         if out is not None:
@@ -321,7 +330,9 @@ def validate_retrieval(
             typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")
         return
 
-    pipeline = qp.QueryPrep.build(steps, vocabulary=vocabulary, glossary=glossary)
+    pipeline = qp.QueryPrep.build(
+        steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
+    )
     pairs = [
         (store.retrieve(pipeline.process(question).processed, k), spans)
         for question, spans in ab_items
@@ -335,15 +346,22 @@ def validate_retrieval(
     )
 
 
-def _resolve_query_prep_deps(cfg: "RunConfig", store: "Any", steps: list[str]) -> "tuple[Any, Any]":
-    """Resolve the (vocabulary, glossary) the deterministic query-prep steps need for a store."""
+def _resolve_query_prep_deps(
+    cfg: "RunConfig", store: "Any", steps: list[str]
+) -> "tuple[Any, Any, Any]":
+    """Resolve the (vocabulary, glossary, known-word probe) the query-prep steps need."""
     from llb.rag import query_prep as qp
 
     vocabulary = None
     glossary = None
+    known_word = None
     if qp.STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
         vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+        if cfg.query_prep_typo_guard:
+            from llb.rag.lexical import load_uk_word_probe
+
+            known_word = load_uk_word_probe()
     if qp.STEP_GLOSSARY in steps:
         if cfg.query_glossary_path is None:
             typer.echo(
@@ -352,7 +370,7 @@ def _resolve_query_prep_deps(cfg: "RunConfig", store: "Any", steps: list[str]) -
             )
             raise typer.Exit(code=2)
         glossary = qp.Glossary.load(cfg.query_glossary_path)
-    return vocabulary, glossary
+    return vocabulary, glossary, known_word
 
 
 @app.command("build-query-glossary")

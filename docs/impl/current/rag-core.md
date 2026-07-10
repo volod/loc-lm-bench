@@ -247,11 +247,36 @@ Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick
 - `samples/goldsets/exact_terms_uk` (8 exact-term items), k=10: recall ties at 1.000 but hybrid
   MRR 0.938 vs dense 0.713; at k=3 hybrid holds recall 1.000 / MRR 0.938 vs dense 0.875 / 0.688
   -- the strict exact-term win the lexical side exists for. `hybrid+lemmas` matched plain
-  `hybrid` on both fixtures (exact numbers do not inflect; the lemma delta needs an
-  inflection-rich full corpus -- forward task `hybrid-comparison-full-corpus` in
-  [`plan.md`](../plan.md)). The oracle-doc row equals dense on these single-document corpora by
-  construction (a doc filter is a no-op with one doc); it becomes informative only on a
-  multi-document corpus.
+  `hybrid` on both fixtures (exact numbers do not inflect). The oracle-doc row equals dense on
+  these single-document corpora by construction (a doc filter is a no-op with one doc).
+
+Durable evidence, full corpus (2026-07-10, hybrid-comparison-full-corpus on the CUDA host,
+outside quick CI): dense vs hybrid over the verified 44-item quickstart-PDF accepted goldset
+(5 documents, 1139 chunks, inflection-rich Ukrainian questions; k=10), with the `fusion_weight`
+gridded across three runs:
+
+| row | recall@10 | MRR |
+| --- | ---: | ---: |
+| dense | **0.955** | 0.740 |
+| dense+oracle-doc (headroom) | 0.977 | 0.753 |
+| hybrid w=0.5 (default) | 0.932 | 0.742 |
+| hybrid w=0.6 | 0.932 | 0.750 |
+| hybrid w=0.7 | **0.955** | 0.748 |
+| hybrid+lemmas w=0.5 | 0.932 | **0.762** |
+| hybrid+lemmas w=0.6 | 0.932 | 0.759 |
+| hybrid+lemmas w=0.7 | 0.932 | 0.753 |
+
+Fusion-knob verdict for this corpus: dense-only STAYS the default -- at the 0.5 default the
+BM25 side actively costs recall (-0.023), and only a dense-heavy `fusion_weight=0.7` climbs
+back to the dense recall while adding a small MRR gain (+0.008). The measured lemmatization
+delta on an inflection-rich corpus is a real but MRR-only effect: +0.020 MRR at w=0.5 with
+recall unchanged (the tiny-fixture zero was a corpus artifact, as predicted). The oracle-doc
+router headroom row is finally non-degenerate on this multi-document corpus: perfect document
+routing would buy +0.022 recall / +0.013 MRR -- modest, so a learned router stays unattractive
+here. Operators who want hybrid for exact-term robustness (see the exact-term fixture win
+above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
+(`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
+decision hangs on it.
 
 ## Reranking And Context Order (rerank-context-order)
 
@@ -329,6 +354,43 @@ outside quick CI), via `compare-retrieval --hybrid --reranker BAAI/bge-reranker-
   model load). Retrieval itself stays ~13 ms/query, so the reranker multiplies retrieval-stage
   cost ~12x while staying far below generation cost.
 
+Durable evidence, full corpus (2026-07-10, rerank-order-full-cohort on the CUDA host, outside
+quick CI): rerank twin rows over the verified 44-item quickstart-PDF accepted goldset (1139
+chunks, k=10, non-saturated), `BAAI/bge-reranker-v2-m3`:
+
+| row | recall@10 | MRR | rerank ms/query |
+| --- | ---: | ---: | ---: |
+| dense | **0.955** | 0.740 | -- |
+| dense+rerank (pool 30) | 0.909 | 0.859 | 783 |
+| dense+rerank (pool 60) | 0.886 | 0.845 | 1434 |
+| hybrid | 0.932 | 0.742 | -- |
+| hybrid+rerank (pool 30) | 0.932 | **0.871** | 684 |
+| hybrid+lemmas+rerank (pool 30) | 0.909 | 0.867 | 673 |
+
+The full-corpus answer to "does the cross-encoder recover the dense recall shortfall?" is NO --
+reranking is an MRR tool, not a recall tool, here: at pool 30 it lifts MRR by +0.119..+0.129
+(0.740 -> 0.859 dense, 0.742 -> 0.871 hybrid) but DEMOTES gold chunks out of the top-10 on the
+dense row (recall 0.955 -> 0.909), and deepening the pool to 60 makes recall worse still (0.886)
+while doubling latency -- more candidates just give the cross-encoder more distractors to
+promote. Steady-state rerank cost on the full corpus is ~700-780 ms/query at pool 30 (the tiny
+fixture's ~150 ms was short-chunk-flattered), a real budget item beside ~5 ms retrieval. Verdict:
+keep the reranker OFF by default on this corpus; switch it on (pool 30, ideally over hybrid,
+where recall is not paid) only when first-hit rank dominates the harness, e.g. small `top_k`
+generation prompts.
+
+End-to-end cross-check (2026-07-10, `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"
+RERANKER=BAAI/bge-reranker-v2-m3`, `llama3.2:3b` on ollama, accepted-goldset final split n=14,
+k=5): the reranker DID lift in-run retrieval at this small k (recall@5 0.857 -> 0.929, MRR
+0.685 -> 0.893 -- exactly the small-`top_k` regime the retrieval-side verdict carved out for
+it), yet the end-to-end objective moved the other way: 0.378 [0.194, 0.584] rerank-off vs
+0.312 [0.129, 0.515] rerank-on, overlapping CIs, at +0.96 s/query rerank latency (generation
+itself is ~0.56 s/query, so reranking roughly doubles per-question cost). Retrieval uplift did
+not translate into answer quality for this model at n=14 -- the off-by-default verdict stands
+even in the reranker's best-case retrieval regime, and flipping it on should be justified with
+end-to-end (not retrieval-only) evidence on the operator's own model + corpus. Run bundles:
+`$DATA_DIR/run-eval/20260710T074826*` (off) / `20260710T074854*` (on) under the
+`quickstart-pdf-corpus-rag` data dir, sweep id `rerank-crosscheck`.
+
 ## Query-Side Processing (uk-query-processing)
 
 Shipped: an opt-in query lane between the user question and retrieval that measurably helps
@@ -350,7 +412,13 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
   tokens over 8 chars). A token the corpus already contains is NEVER altered, and a purely numeric
   token (article/law number, code) is never "corrected" into a different one. Every correction is
-  logged.
+  logged. An opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
+  `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
+  recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`, the `[lex]`
+  extra): a grammatically valid inflection (`настанові`, `документами`) is not a misspelling and is
+  left for the index+query lemmatization lane to match, while genuine misspellings stay unknown to
+  the probe and are still corrected. Off by default so the pure edit-distance behavior stands when
+  the extra is absent.
 - `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
   transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
   so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
@@ -367,9 +435,10 @@ recoverable per case. `src/llb/executor/runner.py` `build_query_prep` resolves e
 dependency (vocabulary from the loaded store, glossary from `query_glossary_path`, rewriter from
 the launcher) and raises a clear message on a missing one.
 
-Knobs (both `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
+Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
 `normalize` | `typos` | `glossary` | `rewrite`; unknown/duplicated steps rejected at config
-validation) and `query_glossary_path`.
+validation), `query_glossary_path`, and `query_prep_typo_guard` (refused at config validation
+unless the `typos` step is present).
 
 Commands:
 
@@ -405,6 +474,24 @@ Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
   `na yaki dvi velyki hrupy podilyayut pravo intelektualnoyi vlasnosti?`): baseline recall@5
   0.875 / MRR 0.812; `+normalize` (transliteration) RECOVERS to 1.000 / 1.000 -- a +0.125 recall /
   +0.188 MRR uplift. This is the mechanism's honest positive-delta demonstration.
+
+Morphology-guard A/B (2026-07-10, morphology-aware-typo-guard on the CUDA host): over the
+verified 44-item quickstart-PDF accepted goldset against the full-corpus 1139-chunk e5-base
+store (k=10, non-saturated) the predicted regression is real and the guard removes it:
+
+| stage | recall@10 | MRR | d(MRR) |
+| --- | ---: | ---: | ---: |
+| baseline | 0.955 | 0.740 | -- |
+| +normalize | 0.955 | 0.748 | +0.009 |
+| +typos (unguarded) | 0.955 | 0.736 | **-0.012** |
+| +typos (guarded) | 0.955 | 0.748 | +0.000 |
+
+Unguarded, the edit-distance step "corrected" valid inflections to the corpus surface form
+(`настанові` -> `настанова`) and paid -0.012 MRR; guarded, those known word forms pass through
+untouched (the lemmatization lane is the right tool for them) while genuine out-of-vocabulary
+typos -- including the mixed-script `wеб` (Latin `w`) -> `веб` -- are still corrected, and the
+step becomes MRR-neutral. Verdict: turn the guard on whenever the `[lex]` extra is installed and
+the `typos` step is in use.
 
 ## Chunking Strategies
 
@@ -448,14 +535,36 @@ Tests: `tests/test_chunking_strategies.py` (offset round-trips, page-boundary al
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
 
-Durable evidence (2026-07-08, CUDA host, outside quick CI): on the committed
-`samples/goldsets/ip_regulation_uk` fixture (8 items, single `.md` corpus, no PDF sidecars --
-`page` therefore equals `recursive` there), recall@10 SATURATES at 1.000 for all seven compared
-strategies; at k=3 `heading`/`markdown`/`page`/`recursive`/`semantic`/`sentence` all hold
-1.000 recall / 1.000 MRR while `late` drops to 0.875 / 0.750 -- on this tiny corpus late pooling
-blurs, not sharpens, retrieval; it must prove itself per corpus before adoption. Like the
-embedder bake-off, the fixture is too small to discriminate the winners -- the discriminating
-run is forward task `chunking-comparison-full-corpus` in [`plan.md`](../plan.md).
+Durable evidence, tiny fixture (2026-07-08, CUDA host, outside quick CI): on the committed
+`samples/goldsets/ip_regulation_uk` fixture (8 items, single `.md` corpus, no PDF sidecars)
+recall@10 saturates at 1.000 for all seven strategies and only `late` drops at k=3 -- too small
+to discriminate; superseded by the full-corpus run below.
+
+Durable evidence, full corpus (2026-07-10, chunking-comparison-full-corpus on the CUDA host,
+outside quick CI): all seven strategies over the verified 44-item quickstart-PDF accepted goldset
+(5 PDF documents WITH `*.citations.json` sidecars, so `page` is genuinely page-aligned here;
+pinned e5-base, k=10, non-saturated):
+
+| strategy | recall@10 | MRR |
+| --- | ---: | ---: |
+| `sentence` | **0.977** | **0.740** |
+| `recursive` (default) | 0.955 | 0.740 |
+| `heading` | 0.932 | 0.716 |
+| `semantic` | 0.932 | 0.721 |
+| `page` | 0.909 | 0.724 |
+| `late` | 0.886 | 0.576 |
+| `markdown` | 0.818 | 0.703 |
+
+Winner for this corpus: `sentence` (+0.022 recall@10 over the `recursive` default at equal MRR)
+-- apply with `make build-index CHUNK_STRATEGY=sentence`. The two headline deltas the tiny
+fixture could not measure are now measured honestly: `page` vs `recursive` is -0.046 recall --
+page-aligned packing LOSES to plain recursive splitting even on a sidecar-bearing corpus (page
+boundaries cut mid-topic in these scanned-manual PDFs), so `page`'s value is page-provenance
+display, not retrieval quality; `late` vs `sentence` (identical spans, late document-context
+pooling) is -0.091 recall / -0.164 MRR -- late pooling blurs retrieval on this corpus and its
+extra whole-document embed pass costs the most wall-clock of any strategy, so it stays a
+prove-it-per-corpus option, never a default. `markdown` trails badly because the docling-emitted
+markdown carries few semantic heading boundaries in the big 1.1 MB manual.
 
 ## Embedder Conventions And Bake-off
 
@@ -498,24 +607,36 @@ lazily imported and the embed callable is injectable, so the consent gate + budg
 unit-tested with a fake client, no network in CI. The drafting-side pinned-E5 seams (ontology dedup,
 semantic scoring, retrieval-uniqueness annotation) are deliberately NOT switched by this task.
 
-Durable evidence (2026-07-04, heavy build on the CUDA host, outside quick CI): the four local
-candidates over the committed `samples/goldsets/ip_regulation_uk` fixture (8 items, 10 chunks,
-`k=10`):
+Durable evidence, tiny fixture (2026-07-04, heavy build on the CUDA host, outside quick CI): the
+four local candidates over the committed `samples/goldsets/ip_regulation_uk` fixture (8 items,
+10 chunks, `k=10`) all saturate recall@10 at 1.000 except the paraphrase/STS `lang-uk` model
+(MRR 0.917) -- too small to discriminate; superseded by the full-corpus run below.
 
-| model | recall@10 | MRR | dim |
-| --- | ---: | ---: | ---: |
-| `intfloat/multilingual-e5-base` | 1.000 | 1.000 | 768 |
-| `intfloat/multilingual-e5-large` | 1.000 | 1.000 | 1024 |
-| `BAAI/bge-m3` | 1.000 | 1.000 | 1024 |
-| `lang-uk/ukr-paraphrase-multilingual-mpnet-base` | 1.000 | 0.917 | 768 |
+Durable evidence, full corpus (2026-07-10, embedding-bakeoff-full-corpus on the CUDA host,
+`LLB_EMBED_DEVICE=cuda`, outside quick CI): the four local candidates over the verified 44-item
+quickstart-PDF accepted goldset (5 PDF documents, ~1.2 MB markdown, 1139 chunks at 800/120 --
+the recall spread is finally NON-saturated at both cutoffs):
 
-Winner for the 16 GB host: `intfloat/multilingual-e5-base` (the current default) -- the three
-retrieval-tuned encoders all saturate recall@10 and MRR on this tiny fixture, so the paraphrase/STS
-`lang-uk` model is the only one that drops MRR (0.917), confirming the hypothesis that a paraphrase
-objective can lose to retrieval-tuned encoders; among the tied three, e5-base wins the throughput
-tie-break at the smallest index. Caveat: recall saturates on a 10-chunk fixture and the reported
-`chunks/s` is load-dominated (cold SentenceTransformer load over 10 chunks), so re-run the bake-off
-on a real full corpus to separate steady-state throughput and to let recall@k discriminate.
+| model | recall@10 | MRR@10 | recall@20 | MRR@20 | dim | chunks/s (GPU) | index MB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `intfloat/multilingual-e5-base` | **0.955** | 0.740 | 0.977 | 0.742 | 768 | 69 | 4.99 |
+| `intfloat/multilingual-e5-large` | 0.932 | **0.795** | 0.977 | 0.798 | 1024 | 38 | 6.10 |
+| `BAAI/bge-m3` | 0.932 | 0.753 | 0.955 | 0.755 | 1024 | 38 | 6.10 |
+| `lang-uk/ukr-paraphrase-multilingual-mpnet-base` | 0.455 | 0.307 | 0.500 | 0.311 | 768 | 122 | 4.99 |
+
+Winner for the 16 GB host: `intfloat/multilingual-e5-base` (the current default) -- it holds the
+highest recall@10 (the gate metric; the score an operator's answers are capped by), embeds ~1.8x
+faster than the 1024-dim pair, and builds the smallest index. e5-large trades a small recall@10
+loss (-0.023) for the best early ranking (MRR 0.795 vs 0.740) and ties e5-base at recall@20 --
+pick it only when a downstream reranker or a small `top_k` makes first-hit rank the binding
+constraint. bge-m3 trails e5-large on both axes at the same cost, and the paraphrase/STS
+`lang-uk` model collapses to 0.455/0.500 recall on a real corpus (the tiny-fixture 1.000 was
+saturation, not quality) -- the "paraphrase objective loses to retrieval-tuned encoders"
+hypothesis is now demonstrated, not assumed. Embed VRAM peaked ~4 GB (sequential model loads),
+so every candidate fits the 16 GB host with a co-resident judge stopped; steady-state GPU
+throughput at 1139 chunks is no longer cold-load-dominated. Reports:
+`$DATA_DIR/compare-embeddings/20260710T044652*/report.md` (k=20) and
+`.../20260710T044914*/report.md` (k=10).
 
 ## Retrieval Metrics
 

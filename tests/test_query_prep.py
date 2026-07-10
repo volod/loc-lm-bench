@@ -91,6 +91,54 @@ def test_nearest_vocab_token_is_deterministic_under_ties():
 
 
 # --------------------------------------------------------------------------------------------
+# typos morphology guard (morphology-aware-typo-guard): a valid inflection is not a misspelling
+# --------------------------------------------------------------------------------------------
+
+
+def test_typo_guard_skips_known_word_form_but_still_corrects_misspelling():
+    vocab = qp.build_vocabulary(["документа поділяти наказ"])
+    known = {"документами"}.__contains__  # fake probe: the inflection is a known word form
+    # unguarded: the valid inflection is "corrected" to the corpus surface form
+    unguarded, _ = qp.apply_typos("документами", vocab)
+    assert unguarded == "документа"
+    # guarded: the known inflection stays; lemmatization is the lane that matches it
+    guarded, edits = qp.apply_typos("документами", vocab, known_word=known)
+    assert guarded == "документами"
+    assert edits == []
+    # a genuine misspelling stays unknown to the probe and is still corrected
+    corrected, edits = qp.apply_typos("накза", vocab, known_word=known)
+    assert corrected == "наказ"
+    assert [(e.original, e.replacement) for e in edits] == [("накза", "наказ")]
+
+
+def test_typo_guard_with_real_pymorphy_probe():
+    pytest.importorskip("pymorphy3")
+    from llb.rag.lexical import load_uk_word_probe
+
+    known = load_uk_word_probe()
+    vocab = qp.build_vocabulary(["поділяти документа"])
+    # both plan examples: grammatically valid inflections survive the guard
+    assert qp.apply_typos("поділяють документами", vocab, known_word=known)[0] == (
+        "поділяють документами"
+    )
+    # the misspelling "поділяяти" is unknown to pymorphy3 and is still corrected
+    assert qp.apply_typos("поділяяти", vocab, known_word=known)[0] == "поділяти"
+
+
+def test_typo_guard_requires_typos_step():
+    with pytest.raises(ValueError, match="typo morphology guard"):
+        qp.QueryPrep.build(("normalize",), known_word=lambda token: True)
+
+
+def test_pipeline_threads_typo_guard_probe():
+    vocab = qp.build_vocabulary(["документа наказ"])
+    pipeline = qp.QueryPrep.build(
+        ("typos",), vocabulary=vocab, known_word={"документами"}.__contains__
+    )
+    assert pipeline.process("документами").processed == "документами"
+
+
+# --------------------------------------------------------------------------------------------
 # glossary: deterministic alias expansion + builder
 # --------------------------------------------------------------------------------------------
 

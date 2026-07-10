@@ -45,7 +45,18 @@ board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
 prep = ["litellm>=1.40"]
 telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
-finetune = ["peft>=0.12", "trl>=0.9", "accelerate>=0.33", "datasets>=2.19", "optuna>=3.6"]
+# gguf backs the serve-adapter merge lane (convert_hf_to_gguf.py runs in this venv); prefer the
+# llama.cpp checkout's own gguf-py (`make build-llamacpp` env) when versions ever disagree.
+# bitsandbytes backs the trainer's default QLoRA 4-bit load path on CUDA hosts.
+finetune = [
+    "peft>=0.12",
+    "trl>=0.9",
+    "accelerate>=0.33",
+    "datasets>=2.19",
+    "optuna>=3.6",
+    "gguf>=0.10",
+    "bitsandbytes>=0.46.1",
+]
 goldset = ["datasets>=2.19"]  # only needed for `ingest_squad --hf-dataset`
 mcp = ["mcp>=1.2", "anyio>=4.0"]  # only needed for `serve-tools-mcp` (tooling benchmark MCP transport)
 # Optional high-quality PDF OCR/layout stack for CUDA transform hosts. Marker is intentionally
