@@ -1,0 +1,5 @@
+{
+  "id": "bench.chain_context.summary",
+  "kind": "text",
+  "template": "summary.txt"
+}

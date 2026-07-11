@@ -1,0 +1,5 @@
+{
+  "id": "bench.chain_context.recommendation",
+  "kind": "text",
+  "template": "recommendation.txt"
+}

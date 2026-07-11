@@ -49,6 +49,62 @@
         "sha256": "1c1ce2ece5b7ecc9be9988da6d65f97980d4fcb46f928903848ba04d4229df9f"
       }
     },
+    "bench.chain_context.instruction_default": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/instruction_default.prompt.json",
+      "template": {
+        "path": "bench/chain_context/instruction_default.txt",
+        "sha256": "d4b865c486505efbc3fa8b08f1ec27cbeb199327d0c31da3e519b787ad18aad0"
+      }
+    },
+    "bench.chain_context.recommendation": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/recommendation.prompt.json",
+      "template": {
+        "path": "bench/chain_context/recommendation.txt",
+        "sha256": "8cdc197462a0e69bd42935b689b2e1a1229f375c11d20351a380863b67aea151"
+      }
+    },
+    "bench.chain_context.role_analyst": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/role_analyst.prompt.json",
+      "template": {
+        "path": "bench/chain_context/role_analyst.txt",
+        "sha256": "c359b3b9a3420cf796817e1593ed0eaf01efb6d6d63788468aff38d0e60358ab"
+      }
+    },
+    "bench.chain_context.role_answerer": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/role_answerer.prompt.json",
+      "template": {
+        "path": "bench/chain_context/role_answerer.txt",
+        "sha256": "1201f36d982155cfdbd77518c8f8cc10ea4a946afffa8698154f2f7084e0c4f7"
+      }
+    },
+    "bench.chain_context.role_librarian": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/role_librarian.prompt.json",
+      "template": {
+        "path": "bench/chain_context/role_librarian.txt",
+        "sha256": "27eb3bf44ca4a28ca534c21aae274d14937642b6f44fc88381ece555e351d41c"
+      }
+    },
+    "bench.chain_context.step": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/step.prompt.json",
+      "template": {
+        "path": "bench/chain_context/step.txt",
+        "sha256": "136740e7d700d82ea55a373574763ef29e74d410e17101dee7b016368edfc5e3"
+      }
+    },
+    "bench.chain_context.summary": {
+      "kind": "text",
+      "descriptor": "bench/chain_context/summary.prompt.json",
+      "template": {
+        "path": "bench/chain_context/summary.txt",
+        "sha256": "92e439592997014020f97e0fdf8cb892cd551de3058858eeac35bbc1daea2c93"
+      }
+    },
     "bench.harness.crewai.agent": {
       "kind": "text_map",
       "descriptor": "bench/harness/crewai/agent.prompt.json",

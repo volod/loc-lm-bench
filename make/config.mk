@@ -259,6 +259,20 @@ SECURITY_MAX_MODEL_LEN ?=
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
+
+# Context-policy benchmark (bench-chain-context): rank context-management policies for one model
+# over a verified chain set. CHAIN_CONTEXT_CHAINS/CORPUS default to the committed fixture.
+CHAIN_CONTEXT_CHAINS ?= $(PROJECT_ROOT)/samples/goldsets/chain_context_uk_v1/chains.jsonl
+CHAIN_CONTEXT_CORPUS ?= $(PROJECT_ROOT)/samples/goldsets/chain_context_uk_v1/corpus
+CHAIN_CONTEXT_POLICIES ?= fresh,history,summary,roles
+CHAIN_CONTEXT_TOP_K ?= 4
+CHAIN_CONTEXT_MODEL ?= $(MODEL)
+CHAIN_CONTEXT_BACKEND ?= $(BACKEND)
+CHAIN_CONTEXT_BASE_URL ?=
+CHAIN_CONTEXT_MAX_MODEL_LEN ?=
+CHAIN_CONTEXT_INDEX_DIR ?=
+CHAIN_CONTEXT_DATA_VERIFIED ?=
+CHAIN_CONTEXT_VERIFICATION_REF ?=
 LLB_EMBED_DEVICE ?= cpu
 export LLB_EMBED_DEVICE
 APT_PROFILE ?= production

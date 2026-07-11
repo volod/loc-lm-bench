@@ -38,43 +38,12 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 ## Agent Implementation Tasks
 
-These land to `make ci` green with fixtures, fakes, and deterministic harnesses. One agent task
-remains; its acceptance includes a deterministic real-model run on the CUDA host.
-
-### 8. context-policy-bench
-
-- Agent status: **RUN NEEDED** -- build the context-policy harness and run its acceptance benchmark
-  on the current CUDA host.
-- Dependencies: none. Use the verified chain fixture indexed in
-  [current data prep](current/data-prep.md#chain-of-questions-artifacts).
-- User-visible outcome: for one model and a verified chain set, a ranked comparison of
-  context-management policies -- fresh retrieval per step, accumulated full history, summarized
-  history, and staged role/system-prompt sequences (for example librarian -> analyst ->
-  answerer built from prompt-system packages) -- with per-step and final-answer correctness,
-  ending in a written recommendation on which harness and context policy improves scores and
-  how to sequence system prompts for better answers.
-- Scope boundary: in scope -- `src/llb/bench/chain_context.py` reusing the multi-hop
-  retrieve/controller/answer substrate (`src/llb/eval/multi_hop.py`), prompt-system packages
-  for role prompts (see [extended workflows](current/extended-workflows.md)), and the category
-  persistence and board machinery; the policy is the row label and the model is fixed,
-  mirroring the harness-comparison discipline; a recommendation block sourced from prompt
-  templates naming the winning policy and its per-step evidence. Out of scope -- new agentic
-  frameworks (settled in [product decisions](current/scope-boundaries.md)), cross-model
-  blending in one board.
-- Data and artifact paths: run bundles under `$DATA_DIR/chain-context/<timestamp>/`; board
-  section rows beside the harness comparison; recommend summary gains a context-policy line
-  when bundles exist.
-- Execution path:
-  `llb bench-chain-context --chains <chains.jsonl> --model <m> --backend <b>
-  --policies fresh,history,summary,roles`; a make target with the standard MODEL/BACKEND
-  variables; unit tests over a fake endpoint asserting the exact context assembled per policy
-  per step.
-- Acceptance gates: context-assembly unit tests pass for all four policies; a run over the
-  committed chain fixture produces per-step and final scores with bootstrap CIs and ranks
-  policies for the fixed model; provenance records policy, prompt-system ids, and chain set
-  digest; verified-data stamping matches the category suite rules; `make ci` green.
-- Documentation target: [extended workflows](current/extended-workflows.md);
-  [`docs/guides/benchmarking/prompt-system-rag.md`](../guides/benchmarking/prompt-system-rag.md).
+No agent implementation tasks remain: every task that could land to `make ci` green with
+fixtures, fakes, and deterministic CUDA-host runs is complete. The most recent, the
+context-policy benchmark (`bench-chain-context`), shipped with its acceptance run on the CUDA
+host and now lives in [extended workflows](current/extended-workflows.md#context-policy-comparison)
+and [the prompt-system-RAG guide](../guides/benchmarking/prompt-system-rag.md). Add new
+agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
 ## Human-Assisted Tasks
 

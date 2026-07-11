@@ -1,0 +1,5 @@
+{
+  "id": "bench.chain_context.instruction_default",
+  "kind": "text",
+  "template": "instruction_default.txt"
+}

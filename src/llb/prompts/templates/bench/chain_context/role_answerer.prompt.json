@@ -1,0 +1,5 @@
+{
+  "id": "bench.chain_context.role_answerer",
+  "kind": "text",
+  "template": "role_answerer.txt"
+}
