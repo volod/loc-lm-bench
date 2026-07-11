@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from llb.core.contracts import ValidationReport
+from llb.goldset.chains import load_chains, validate_chains
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 
 _LOG = logging.getLogger(__name__)
@@ -75,21 +76,37 @@ def validate_items(items: list[GoldItem], corpus_root: Path) -> ValidationReport
     return {"n": len(items), "splits": splits, "errors": errors}
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate a gold set against its corpus.")
-    parser.add_argument("--goldset", required=True, type=Path, help="gold set JSONL")
-    parser.add_argument("--corpus-root", required=True, type=Path, help="corpus root dir")
-    args = parser.parse_args(argv)
-
-    items = load_goldset(args.goldset)
-    report = validate_items(items, args.corpus_root)
-    _LOG.info("[validate] items=%s splits=%s", report["n"], report["splits"])
+def _log_report(label: str, report: ValidationReport) -> None:
+    _LOG.info("[validate] %s items=%s splits=%s", label, report["n"], report["splits"])
     if report["errors"]:
         for err in report["errors"][:50]:
             _LOG.error("[validate] ERROR: %s", err)
-        _LOG.error("[validate] FAIL (%d errors)", len(report["errors"]))
+        _LOG.error("[validate] %s FAIL (%d errors)", label, len(report["errors"]))
+        return
+    _LOG.info("[validate] %s PASS", label)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate gold data against its corpus.")
+    parser.add_argument("--goldset", type=Path, help="gold set JSONL")
+    parser.add_argument("--chains", type=Path, help="chain-of-questions JSONL")
+    parser.add_argument("--corpus-root", required=True, type=Path, help="corpus root dir")
+    args = parser.parse_args(argv)
+
+    if args.goldset is None and args.chains is None:
+        parser.error("provide --goldset, --chains, or both")
+
+    reports: list[ValidationReport] = []
+    if args.goldset is not None:
+        report = validate_items(load_goldset(args.goldset), args.corpus_root)
+        _log_report("goldset", report)
+        reports.append(report)
+    if args.chains is not None:
+        report = validate_chains(load_chains(args.chains), args.corpus_root)
+        _log_report("chains", report)
+        reports.append(report)
+    if any(report["errors"] for report in reports):
         return 1
-    _LOG.info("[validate] PASS")
     return 0
 
 

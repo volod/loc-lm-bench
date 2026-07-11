@@ -173,9 +173,35 @@ def test_llm_extraction_adapter_swallows_endpoint_error():
     assert extraction.facts == [] and extraction.entities == []
 
 
+def test_llm_extraction_adapter_retries_malformed_response():
+    responses = iter(
+        [
+            "not json",
+            json.dumps(
+                {
+                    "facts": [
+                        {
+                            "subject": "Київ",
+                            "relation": "столиця",
+                            "object": "України",
+                            "evidence": "Київ є столицею України",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    extraction = LLMExtractionAdapter(complete=lambda _p: next(responses)).extract(
+        DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))
+    )
+    assert len(extraction.facts) == 1
+
+
 def test_llm_extraction_adapter_rejects_invalid_concurrency():
     with pytest.raises(ValueError, match="concurrency"):
         LLMExtractionAdapter(complete=lambda _p: "{}", concurrency=0)
+    with pytest.raises(ValueError, match="parse_retries"):
+        LLMExtractionAdapter(complete=lambda _p: "{}", parse_retries=-1)
 
 
 def test_llm_extraction_adapter_parallel_windows_match_sequential_order():
@@ -498,14 +524,15 @@ def test_build_complete_local_records_tokens_and_raises_on_error(monkeypatch):
         ep, "chat_once", lambda *a, **k: ChatResult(text="OK", prompt_tokens=5, completion_tokens=2)
     )
     log = ProvenanceLog()
-    complete = build_complete(EndpointConfig(kind="local", model="m"), log)
+    cfg = EndpointConfig(kind="local", model="m", backend="openai")
+    complete = build_complete(cfg, log)
     assert complete("hi") == "OK"
     summary = log.summary()
     assert summary["calls"] == 1 and summary["total_prompt_tokens"] == 5
 
     monkeypatch.setattr(ep, "chat_once", lambda *a, **k: ChatResult(text="", error="timeout"))
     with pytest.raises(RuntimeError, match="local endpoint error"):
-        build_complete(EndpointConfig(kind="local", model="m"), ProvenanceLog())("hi")
+        build_complete(cfg, ProvenanceLog())("hi")
 
 
 def test_native_chat_url_maps_v1_to_api_chat():
@@ -530,6 +557,7 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
     def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
         captured["url"] = url
         captured["think"] = json["think"]
+        captured["format"] = json["format"]
         captured["num_predict"] = json["options"]["num_predict"]
         return _Resp()
 
@@ -542,6 +570,7 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
     assert build_complete(cfg, log)("hi") == "OK"
     assert captured["url"].endswith("/api/chat")
     assert captured["think"] is False and captured["num_predict"] == 4096
+    assert captured["format"] == "json"
     assert log.summary()["total_prompt_tokens"] == 7
 
 
@@ -618,28 +647,32 @@ def test_num_ctx_routes_through_native_endpoint_and_bounds_context(monkeypatch):
     assert isinstance(options, dict) and options["num_ctx"] == 16384
 
 
-def test_default_config_keeps_endpoint_context_untouched(monkeypatch):
-    # without think/num_ctx the /v1 OpenAI-compatible path stays in use and no num_ctx is sent
-    sentinel = object()
-    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
+def test_default_ollama_config_uses_native_json_mode(monkeypatch):
+    monkeypatch.setattr(
+        ep, "make_client", lambda *a, **k: pytest.fail("Ollama must use native JSON mode")
+    )
     seen: dict[str, object] = {}
 
-    def fake_chat_once(client, model, messages, **kwargs):
-        seen["client"] = client
+    class _Resp:
+        def raise_for_status(self) -> None: ...
 
-        class _Result:
-            text = "OK"
-            prompt_tokens = 1
-            completion_tokens = 1
-            error = None
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": "{}"}, "prompt_eval_count": 1, "eval_count": 1}
 
-        return _Result()
+    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
+        seen["url"] = url
+        seen["payload"] = json
+        return _Resp()
 
-    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", fake_post)
     cfg = EndpointConfig(kind="local", model="any:model")
     assert "num_ctx" not in cfg.provenance()
-    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
-    assert seen["client"] is sentinel
+    assert build_complete(cfg, ProvenanceLog())("hi") == "{}"
+    assert str(seen["url"]).endswith("/api/chat")
+    payload = seen["payload"]
+    assert isinstance(payload, dict) and payload["format"] == "json"
 
 
 # --- stage 7: full flow over a fake local endpoint -------------------------------------------

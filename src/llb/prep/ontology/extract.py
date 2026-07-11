@@ -21,6 +21,7 @@ from llb.prep.ontology.constants import (
     EXTRACT_CHUNK_OVERLAP,
     EXTRACT_CONCURRENCY,
     EXTRACT_MAX_CHARS,
+    EXTRACT_PARSE_RETRIES,
 )
 from llb.prep.ontology.entity_types import entity_types_prompt_block, normalize_entity_type
 from llb.prep.ontology.grounding import ground_quote
@@ -200,23 +201,54 @@ class LLMExtractionAdapter:
     max_chars: int = EXTRACT_MAX_CHARS
     chunk_overlap: int = EXTRACT_CHUNK_OVERLAP
     concurrency: int = EXTRACT_CONCURRENCY
+    parse_retries: int = EXTRACT_PARSE_RETRIES
     journal: ExtractionJournal | None = None
 
     def __post_init__(self) -> None:
         if self.concurrency < 1:
             raise ValueError("concurrency must be >= 1")
+        if self.parse_retries < 0:
+            raise ValueError("parse_retries must be >= 0")
 
-    def _call_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction:
-        try:
-            payload = parse_json_block(self.complete(extraction_prompt(doc_id, window_text)))
-        except json.JSONDecodeError:
-            _LOG.warning("[ontology] unparseable extraction for %s; empty", doc_id)
-            return DocExtraction(doc_id=doc_id)
-        except Exception as exc:  # endpoint/transport error -> skip this window, keep going
-            _LOG.warning("[ontology] extraction call failed for %s: %s", doc_id, exc)
-            return DocExtraction(doc_id=doc_id)
-        # ground against the FULL original text so offsets are exact even for a windowed call
-        return parse_extraction(doc_id, full_text, payload)
+    def _call_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction | None:
+        attempts = self.parse_retries + 1
+        prompt = extraction_prompt(doc_id, window_text)
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = parse_json_block(self.complete(prompt))
+            except json.JSONDecodeError:
+                _LOG.warning(
+                    "[ontology] unparseable extraction for %s (attempt %d/%d)",
+                    doc_id,
+                    attempt,
+                    attempts,
+                )
+                continue
+            except Exception as exc:  # endpoint/transport error -> retry, then skip the window
+                _LOG.warning(
+                    "[ontology] extraction call failed for %s (attempt %d/%d): %s",
+                    doc_id,
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+            if not isinstance(payload, dict):
+                _LOG.warning(
+                    "[ontology] extraction for %s is not a JSON object (attempt %d/%d)",
+                    doc_id,
+                    attempt,
+                    attempts,
+                )
+                continue
+            # Ground against the FULL original text so offsets stay exact for windowed calls.
+            return parse_extraction(doc_id, full_text, payload)
+        _LOG.warning(
+            "[ontology] extraction for %s failed after %d attempts; window remains resumable",
+            doc_id,
+            attempts,
+        )
+        return None
 
     def _extract_window(
         self, doc_id: str, full_text: str, window_text: str, window_index: int, window_total: int
@@ -226,6 +258,8 @@ class LLMExtractionAdapter:
             if cached is not None:
                 return cached
         extraction = self._call_window(doc_id, full_text, window_text)
+        if extraction is None:
+            return DocExtraction(doc_id=doc_id)
         if self.journal is not None:
             self.journal.record(doc_id, window_index, window_total, extraction)
         return extraction

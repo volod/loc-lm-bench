@@ -67,7 +67,7 @@ DRAFT_CONCURRENCY ?=
 DRAFT_MAX_TOKENS ?= 4096
 DRAFT_TEMPERATURE ?= 0
 DRAFT_TIMEOUT ?= 300
-DRAFT_NO_THINK ?= 0
+DRAFT_NO_THINK ?= 1
 DRAFT_NUM_CTX ?=
 DRAFT_VLLM_PORT ?= 8000
 DRAFT_VLLM_GPU_MEMORY_UTILIZATION ?= 0.85
@@ -85,9 +85,11 @@ DRAFT_RETRIEVAL_INDEX_DIR ?=
 DRAFT_RETRIEVAL_K ?= $(RAG_K)
 DRAFT_DROP_NONRETRIEVABLE_NEEDLES ?= 0
 DRAFT_REQUIRE_PASSED_GATES ?= 0
-# yield-max knobs: per-stratum coverage target, multi-hop chain drafting, prior-bundle dedup.
+# yield-max knobs: per-stratum coverage target, multi-hop drafting, chain fixtures,
+# and prior-bundle dedup.
 DRAFT_COVERAGE_TARGET ?=
 DRAFT_MULTI_HOP ?= 0
+DRAFT_CHAINS ?= 0
 DRAFT_MULTI_HOP_MAX_PATHS ?=
 DRAFT_DEDUP_AGAINST ?=
 DRAFT_GRAPH_DIR ?=
@@ -213,6 +215,7 @@ VERIFY_TOLERANCE ?= 0.05
 # verdict + retrieval rank decide the queue; the CSV row order never changes).
 VERIFY_MERGE ?=
 VERIFY_ORDER ?=
+VERIFY_KIND ?= auto
 # Multi-annotator gate: VERIFY_ANNOTATORS=k writes the SAME stratified sample as k per-reviewer
 # worksheets (verify_sample.r<i>.csv); verify-adjudicate then reports agreement (Cohen/Fleiss
 # kappa) and draws disagreements into adjudication.csv. VERIFY_ACCEPT_POLICY picks the acceptance
@@ -221,6 +224,13 @@ VERIFY_ORDER ?=
 VERIFY_ANNOTATORS ?=
 VERIFY_ACCEPT_POLICY ?=
 VERIFY_STRATUM_TOLERANCES ?=
+CHAIN_CORPUS ?=
+CHAIN_BUNDLE ?=
+CHAIN_WS ?= $(if $(CHAIN_BUNDLE),$(CHAIN_BUNDLE)/verify_chains.csv,)
+CHAIN_FIXTURE ?=
+CHAIN_VERIFY_N ?= 20
+CHAIN_MAX_PATHS ?= 80
+CHAIN_MIN_ACCEPTED ?= 10
 # Composite-headline pipeline knobs. Each verification ref must point at a reviewed
 # verify_sample.csv, a sample_manifest.json that points to one, or an accepted-ledger bundle.
 COMPOSITE_SAMPLE_VERIFICATION_ROOT ?= $(PROJECT_ROOT)/samples/verification/composite_samples

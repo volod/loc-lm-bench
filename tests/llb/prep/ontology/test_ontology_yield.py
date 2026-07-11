@@ -7,6 +7,7 @@ exercised deterministically with no server, key, or GPU.
 
 import json
 
+from llb.goldset.chains import load_chains, validate_chains
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
 from llb.graph.model import GraphEdge, GraphMention, GraphNode, KnowledgeGraph
@@ -20,7 +21,8 @@ from llb.prep.ontology.constants import (
 from llb.prep.ontology.coverage import coverage_report, select_seeds
 from llb.prep.ontology.dedup import NearDuplicateFilter, load_prior_questions
 from llb.prep.ontology.endpoint import EndpointConfig
-from llb.prep.ontology.graph_paths import walk_two_hop_paths
+from llb.prep.ontology.chains import build_chain_items
+from llb.prep.ontology.graph_paths import walk_chain_paths, walk_two_hop_paths
 from llb.prep.ontology.models import (
     DocExtraction,
     DocRecord,
@@ -163,6 +165,23 @@ def test_walk_two_hop_paths_skips_when_no_bridge_node():
     assert walk_two_hop_paths(graph, max_paths=10) == []
 
 
+def test_walk_chain_paths_fills_from_shared_topic_facts():
+    graph = _chain_graph()
+    graph.edges[1] = GraphEdge(
+        edge_id=1,
+        src=0,
+        dst=2,
+        relation="підтримує",
+        evidence=graph.edges[1].evidence,
+    )
+
+    assert walk_two_hop_paths(graph, max_paths=10) == []
+    seeds = walk_chain_paths(graph, max_paths=10)
+    assert len(seeds) == 1
+    assert seeds[0].bridge == "Alpha"
+    assert [step.relation for step in seeds[0].steps] == ["керує", "підтримує"]
+
+
 def test_build_multi_hop_items_carries_two_spans_and_validates(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
@@ -194,6 +213,25 @@ def test_build_multi_hop_items_drops_draft_without_question():
     seeds = walk_two_hop_paths(_chain_graph(), max_paths=10)
     items, labels = build_multi_hop_items(docs, seeds, [{"reference_answer": "Gamma"}])
     assert items == [] and labels == {}
+
+
+def test_build_chain_items_carries_ordered_grounded_steps(tmp_path):
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "chain.md").write_text(CHAIN_DOC, encoding="utf-8")
+    docs = [DocRecord(doc_id="chain.md", text=CHAIN_DOC, sha256="x", n_chars=len(CHAIN_DOC))]
+    seeds = walk_two_hop_paths(_chain_graph(), max_paths=10)
+
+    chains = build_chain_items(docs, seeds)
+
+    assert len(chains) == 1
+    chain = chains[0]
+    assert [step.order for step in chain.steps] == [1, 2]
+    assert chain.steps[0].dependency_note == ""
+    assert chain.steps[1].dependency_note
+    assert chain.steps[0].question.startswith("Який факт")
+    assert chain.steps[1].question.startswith("З урахуванням")
+    assert validate_chains(chains, corpus)["errors"] == []
 
 
 # --- near-duplicate suppression --------------------------------------------------------------
@@ -427,6 +465,7 @@ def test_full_flow_multi_hop_adds_multi_span_items_and_labels(tmp_path):
         max_items=50,
         coverage_target=2,
         multi_hop=True,
+        chains=True,
         out_dir=out,
     )
 
@@ -439,6 +478,8 @@ def test_full_flow_multi_hop_adds_multi_span_items_and_labels(tmp_path):
     # the emitted bundle self-validates (multi-hop spans are exact)
     loaded = load_goldset(out / "goldset.jsonl")
     assert validate_items(loaded, out / "corpus")["errors"] == []
+    loaded_chains = load_chains(out / "chains.jsonl")
+    assert validate_chains(loaded_chains, out / "corpus")["errors"] == []
 
     report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
     assert report["coverage_matrix"]["mode"] == "coverage-target"
@@ -446,6 +487,7 @@ def test_full_flow_multi_hop_adds_multi_span_items_and_labels(tmp_path):
 
     prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
     assert prov["stages"]["multi_hop_items"] >= 1
+    assert prov["stages"]["chains"] >= 1
     assert "seed_coverage" in prov
 
 

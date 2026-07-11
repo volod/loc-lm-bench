@@ -1,9 +1,9 @@
 # 03 -- Chain-of-questions draft (provisional, contract Artifact D)
 
 Drafts ordered 2-4 step question sequences in which each step supplies more specific context for
-the topic (topic overview -> narrowing detail -> exact fact). The import/scoring path is blocked
-on the `chain-goldset-generation` forward task; until it lands, treat the output as review
-material only -- do not feed it into scoring.
+the topic (topic overview -> narrowing detail -> exact fact). This prompt emits the provisional
+external quote-based form. Its curator re-grounds and filters rows but does not convert them into
+canonical `ChainItem` offsets, so do not feed these exports directly into scoring.
 
 Best seeds: the `cross_document` section and multi-relation entities from `01`'s inventory.
 

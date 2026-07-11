@@ -580,6 +580,11 @@ def prepare_goldset_draft_cmd(
         "--multi-hop",
         help="yield-max: also draft multi-span chain questions walked from the knowledge graph",
     ),
+    chains: bool = typer.Option(
+        False,
+        "--chains",
+        help="also write chains.jsonl with ordered chain-of-questions items from graph paths",
+    ),
     multi_hop_max_paths: int = typer.Option(
         DEFAULT_MULTI_HOP_MAX_PATHS,
         min=1,
@@ -733,6 +738,7 @@ def prepare_goldset_draft_cmd(
             drop_nonretrievable_needles=drop_nonretrievable_needles,
             coverage_target=coverage_target,
             multi_hop=multi_hop,
+            chains=chains,
             multi_hop_max_paths=multi_hop_max_paths,
             dedup_against=dedup_against_dirs,
             graph_dir=graph_dir,

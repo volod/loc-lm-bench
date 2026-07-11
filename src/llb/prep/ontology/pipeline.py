@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from llb.graph.model import KnowledgeGraph
 
+from llb.goldset.chains import ChainItem, dump_chains
 from llb.goldset.schema import GoldItem, Split, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.core.paths import resolve_data_dir
@@ -38,6 +39,7 @@ from llb.prep.ontology.artifacts import (
 )
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
+    CHAINS_FILENAME,
     DEFAULT_MAX_ITEMS,
     DEFAULT_MULTI_HOP_MAX_PATHS,
     EXTRACT_CHUNK_OVERLAP,
@@ -92,6 +94,7 @@ class PipelineResult:
     seeds: list[DraftSeed]
     items: list[GoldItem]
     corpus_root: Path
+    chains: list[ChainItem] = field(default_factory=list)
     elapsed_s: float = 0.0
     calibration_report: dict[str, object] | None = None
     item_labels: dict[str, ItemLabels] = field(default_factory=dict)
@@ -220,6 +223,24 @@ def _multi_hop_stage(
     return build_multi_hop_items(docs, seeds, raw)
 
 
+def _chain_stage(
+    docs: list[DocRecord],
+    extractions: list[DocExtraction],
+    ontology: OntologyCandidate,
+    *,
+    graph_dir: Path | str | None,
+    max_paths: int,
+    seed: int,
+) -> list[ChainItem]:
+    """Walk 2-hop graph paths and emit ordered chain-of-questions items."""
+    from llb.prep.ontology.chains import build_chain_items
+    from llb.prep.ontology.graph_paths import walk_chain_paths
+
+    graph = _load_path_graph(graph_dir, extractions, docs, ontology)
+    seeds = walk_chain_paths(graph, max_paths=max_paths, seed=seed)
+    return build_chain_items(docs, seeds)
+
+
 def _dedup_stage(
     items: list[GoldItem],
     labels: dict[str, ItemLabels],
@@ -298,6 +319,7 @@ def _provenance(
             "ontology_relation_types": len(result.ontology.relation_types),
             "seeds": len(result.seeds),
             "multi_hop_items": n_multi_hop,
+            "chains": len(result.chains),
             "items": len(result.items),
         },
         "labels": _label_counts(result),
@@ -335,6 +357,8 @@ def _write_bundle(
     out_dir = result.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     dump_goldset(result.items, out_dir / GOLDSET_FILENAME)
+    if result.chains:
+        dump_chains(result.chains, out_dir / CHAINS_FILENAME)
     _write_corpus_copy(result.corpus_root, out_dir / CORPUS_DIRNAME, result.docs)
     (out_dir / ONTOLOGY_FILENAME).write_text(
         json.dumps(result.ontology.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
@@ -362,8 +386,9 @@ def _write_bundle(
         dedup_report=result.dedup_report,
     )
     _LOG.info(
-        "[ontology] wrote %d drafts (verified=false) + provenance -> %s",
+        "[ontology] wrote %d drafts and %d chains (verified=false) + provenance -> %s",
         len(result.items),
+        len(result.chains),
         out_dir,
     )
     _log_calibration_gates(result.calibration_report, out_dir)
@@ -410,6 +435,7 @@ def draft_goldset(
     drop_nonretrievable_needles: bool = False,
     coverage_target: int | None = None,
     multi_hop: bool = False,
+    chains: bool = False,
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
     dedup_against: list[Path | str] | None = None,
     graph_dir: Path | str | None = None,
@@ -421,8 +447,9 @@ def draft_goldset(
     """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result.
 
     Yield-max knobs: `coverage_target` drafts up to N seeds per stratum bucket instead of the flat
-    `max_items` cap; `multi_hop` also drafts multi-span chain questions walked from the knowledge
-    graph (built in-run, or loaded from `graph_dir`); `dedup_against` drops questions that are pinned-E5
+    `max_items` cap; `multi_hop` also drafts multi-span questions walked from the knowledge
+    graph (built in-run, or loaded from `graph_dir`); `chains` emits ordered chain-of-questions
+    rows from the same graph paths; `dedup_against` drops questions that are pinned-E5
     near-duplicates of the listed prior bundles. `rejection_feedback`
     (draft-feedback-rejection-reasons) points at a verify-gate `rejection_reasons.json`; its
     dominant reject codes tighten the draft prompts deterministically, and the applied hints +
@@ -454,6 +481,7 @@ def draft_goldset(
         meta_coverage = meta.get("coverage_target", coverage_target)
         coverage_target = int(meta_coverage) if meta_coverage is not None else None
         multi_hop = bool(meta.get("multi_hop", multi_hop))
+        chains = bool(meta.get("chains", chains))
         multi_hop_max_paths = int(meta.get("multi_hop_max_paths", multi_hop_max_paths))
         meta_dedup = meta.get("dedup_against")
         dedup_against = list(meta_dedup) if meta_dedup is not None else dedup_against
@@ -499,6 +527,7 @@ def draft_goldset(
                     "drop_nonretrievable_needles": drop_nonretrievable_needles,
                     "coverage_target": coverage_target,
                     "multi_hop": multi_hop,
+                    "chains": chains,
                     "multi_hop_max_paths": multi_hop_max_paths,
                     "dedup_against": [str(path) for path in dedup_against]
                     if dedup_against
@@ -569,6 +598,17 @@ def draft_goldset(
         items = items + mh_items
         item_labels = {**item_labels, **mh_labels}
 
+    chain_items: list[ChainItem] = []
+    if chains:
+        chain_items = _chain_stage(
+            docs,
+            extractions,
+            ontology,
+            graph_dir=graph_dir,
+            max_paths=multi_hop_max_paths,
+            seed=seed,
+        )
+
     dedup_report: dict[str, object] | None = None
     if dedup_against:
         items, item_labels, dedup_report = _dedup_stage(
@@ -586,6 +626,7 @@ def draft_goldset(
         ontology=ontology,
         seeds=seeds,
         items=items,
+        chains=chain_items,
         corpus_root=resolved_corpus_root,
         elapsed_s=perf_counter() - started,
         item_labels=item_labels,
@@ -603,6 +644,7 @@ def draft_goldset(
         "extract_concurrency": resolved_concurrency,
         "coverage_target": coverage_target,
         "multi_hop": multi_hop,
+        "chains": chains,
         "multi_hop_max_paths": multi_hop_max_paths,
         "dedup_against": [str(path) for path in dedup_against] if dedup_against else None,
         "graph_dir": str(graph_dir) if graph_dir is not None else None,

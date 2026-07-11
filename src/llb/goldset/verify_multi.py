@@ -129,7 +129,13 @@ def _load_manifest(base_ws: Path) -> dict[str, object]:
 
 
 def build_multi_reviewer_worksheets(
-    bundle: Path, out_path: Path, *, n: int, annotators: int, seed: int = 13
+    bundle: Path,
+    out_path: Path,
+    *,
+    n: int,
+    annotators: int,
+    seed: int = 13,
+    kind: str = "auto",
 ) -> list[Path]:
     """Draw ONE stratified sample and write it as `annotators` per-reviewer worksheets.
 
@@ -139,16 +145,41 @@ def build_multi_reviewer_worksheets(
     single-`worksheet` key so a multi-reviewer bundle can only stamp `--data-verified`
     through its accepted ledger, never through one reviewer's sheet alone.
     """
-    from llb.goldset.verify import _sample_rows  # sampler internals stay in verify.py
+    from llb.goldset.chains import chain_stratum_key, load_chains
+    from llb.goldset.verify import (
+        KIND_CHAINS,
+        _sample_chain_rows,
+        _sample_rows,
+        draw_chain_sample,
+        find_chains,
+        resolve_sample_kind,
+    )
 
     if annotators < 2:
         raise ValueError("multi-reviewer sampling needs --annotators >= 2")
     bundle = Path(bundle)
     out_path = Path(out_path)
-    items = load_goldset(find_goldset(bundle))
-    synthetic = bundle_is_synthetic(bundle)
-    sample = draw_stratified_sample(items, n, seed=seed)
-    rows = _sample_rows(bundle, sample, synthetic=synthetic)
+    resolved_kind = resolve_sample_kind(bundle, kind)
+    synthetic = bundle_is_synthetic(bundle) if resolved_kind != KIND_CHAINS else False
+    if resolved_kind == KIND_CHAINS:
+        chains = load_chains(find_chains(bundle))
+        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        rows = _sample_chain_rows(bundle, chain_sample)
+        population = len(chains)
+        sample_size = len(chain_sample)
+        strata_sizes: dict[str, int] = {}
+        for chain in chain_sample:
+            key = chain_stratum_key(chain)
+            strata_sizes[key] = strata_sizes.get(key, 0) + 1
+    else:
+        items = load_goldset(find_goldset(bundle))
+        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        rows = _sample_rows(bundle, gold_sample, synthetic=synthetic)
+        population = len(items)
+        sample_size = len(gold_sample)
+        strata_sizes = {}
+        for it in gold_sample:
+            strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
 
     paths: list[Path] = []
     for i in range(1, annotators + 1):
@@ -157,18 +188,16 @@ def build_multi_reviewer_worksheets(
         write_worksheet_rows(ws_path, reviewer_rows)
         paths.append(ws_path)
 
-    strata_sizes: dict[str, int] = {}
-    for it in sample:
-        strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
     manifest = {
         "bundle": str(bundle),
+        "kind": resolved_kind,
         "annotators": annotators,
         "worksheets": [str(p) for p in paths],
         "synthetic": synthetic,
         "seed": seed,
         "requested": n,
-        "sample_size": len(sample),
-        "population": len(items),
+        "sample_size": sample_size,
+        "population": population,
         "strata": strata_sizes,
     }
     atomic_write_text(

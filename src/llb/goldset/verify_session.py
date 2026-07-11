@@ -20,6 +20,8 @@ without a terminal, model, endpoint, or GPU (it operates only on the CSV).
 
 import csv
 import json
+import os
+import shutil
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -33,6 +35,7 @@ from llb.goldset.verify import (
     CORPUS_DIRNAME,
     FAIL,
     HUMAN_COLS,
+    KIND_CHAINS,
     PASS,
     REJECT,
     REJECT_CODES,
@@ -49,6 +52,15 @@ from llb.goldset.verify import (
 
 SESSION_STATS_FILENAME = "verify_session_stats.json"
 _EDIT_CONFIRM_CTX_CHARS = 80  # corpus window rendered to confirm a re-grounded edit
+_CHAIN_SEPARATOR = "+" * 64
+_CHAIN_DEFAULT_WIDTH = 120
+_CHAIN_MIN_VALUE_WIDTH = 24
+_ANSI_RESET = "\033[0m"
+_ANSI_BOLD = "\033[1m"
+_ANSI_QUESTION = "\033[1;36m"
+_ANSI_ANSWER = "\033[1;32m"
+_ANSI_SOURCE = "\033[33m"
+_ANSI_DEPENDENCY = "\033[35m"
 
 # The four checks, in card order, mapped to the keystroke that marks them. Lowercase = PASS,
 # uppercase = FAIL. `planted` only applies to synthetic items (blank/N/A for real ones).
@@ -291,10 +303,134 @@ def _is_synthetic_row(row: dict[str, str]) -> bool:
     return (row.get("synthetic") or "").strip().lower() == "true"
 
 
+def _is_chain_row(row: dict[str, str]) -> bool:
+    return (row.get("item_kind") or "").strip() == KIND_CHAINS
+
+
 def _indent(text: str, prefix: str = "    ") -> str:
     if not text:
         return prefix.rstrip()
     return "\n".join(prefix + line for line in text.splitlines())
+
+
+def _one_line(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _truncate(value: object, limit: int, *, blank: str = "(none)") -> str:
+    text = _one_line(value) or blank
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 3)].rstrip() + "..."
+
+
+def _context_excerpt(value: object, limit: int) -> str:
+    text = _one_line(value) or "(missing)"
+    cited_start = text.find(">>>")
+    cited_end = text.find("<<<", cited_start + 3)
+    if cited_start < 0 or cited_end < 0:
+        return _truncate(text, limit, blank="(missing)")
+    cited_end += 3
+    cited = text[cited_start:cited_end]
+    if len(cited) >= limit:
+        return _truncate(cited, limit, blank="(missing)")
+    context_budget = max(0, limit - len(cited) - 6)
+    before = context_budget // 2
+    after = context_budget - before
+    start = max(0, cited_start - before)
+    end = min(len(text), cited_end + after)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return prefix + text[start:end] + suffix
+
+
+def _color(text: str, code: str, enabled: bool) -> str:
+    return f"{code}{text}{_ANSI_RESET}" if enabled else text
+
+
+def _chain_field(
+    label: str,
+    value: object,
+    *,
+    width: int,
+    color: str = "",
+    use_color: bool = False,
+    blank: str = "(none)",
+) -> str:
+    available = max(_CHAIN_MIN_VALUE_WIDTH, width - len(label) - 1)
+    line = f"{label} {_truncate(value, available, blank=blank)}"
+    return _color(line, color, use_color and bool(color))
+
+
+def _format_chain_steps(
+    row: dict[str, str], *, color: bool = False, width: int = _CHAIN_DEFAULT_WIDTH
+) -> list[str]:
+    raw = (row.get("chain_steps") or "").strip()
+    if not raw:
+        return []
+    try:
+        steps = json.loads(raw)
+    except json.JSONDecodeError:
+        return ["== chain_steps: (invalid JSON)"]
+    if not isinstance(steps, list):
+        return ["== chain_steps: (invalid JSON)"]
+    valid_steps = [step for step in steps if isinstance(step, dict)]
+    lines: list[str] = []
+    for index, step in enumerate(valid_steps, start=1):
+        order = str(step.get("order", ""))
+        page = str(step.get("page_citation") or "(none)")
+        doc = _truncate(step.get("span_doc_id"), max(_CHAIN_MIN_VALUE_WIDTH, width // 2))
+        header = f"STEP {order or index}/{len(valid_steps)} | doc={doc} | page={page}"
+        lines.append(_color(header, _ANSI_BOLD, color))
+        lines.append(
+            _chain_field(
+                "Q:", step.get("question"), width=width, color=_ANSI_QUESTION, use_color=color
+            )
+        )
+        lines.append(
+            _chain_field(
+                "A:",
+                step.get("reference_answer"),
+                width=width,
+                color=_ANSI_ANSWER,
+                use_color=color,
+            )
+        )
+        lines.append(
+            _chain_field(
+                "SOURCE:",
+                step.get("span_text"),
+                width=width,
+                color=_ANSI_SOURCE,
+                use_color=color,
+                blank="(missing)",
+            )
+        )
+        dependency = str(step.get("dependency_note") or "").strip()
+        if dependency:
+            lines.append(
+                _chain_field(
+                    "DEPENDENCY:",
+                    dependency,
+                    width=width,
+                    color=_ANSI_DEPENDENCY,
+                    use_color=color,
+                )
+            )
+        context = str(step.get("context") or "").strip()
+        if context:
+            available = max(_CHAIN_MIN_VALUE_WIDTH, width - len("CONTEXT:") - 1)
+            lines.append(f"CONTEXT: {_context_excerpt(context, available)}")
+    return lines
+
+
+def _chain_checks(row: dict[str, str]) -> str:
+    checks = [
+        f"{col.removeprefix('chk_')}={_field(row, col, '(unchecked)')}"
+        for col in CHECK_COLS
+        if col != "chk_planted"
+    ]
+    return "CHECKS: " + " | ".join(checks)
 
 
 def format_card(
@@ -304,14 +440,10 @@ def format_card(
     decided: int,
     *,
     show_crosscheck: bool = False,
+    color: bool = False,
+    width: int = _CHAIN_DEFAULT_WIDTH,
 ) -> str:
-    """Render the per-item card: the question/reference, the cited span inside its corpus window,
-    the four check states, and the decision. `cc_*` shown ONLY when `show_crosscheck` is set.
-
-    The layout mirrors the external-RAG review card (`external_rag_session.format_card`): a
-    `=====` banner, `== field:` labels, a BLANK line before `== question:` so consecutive cards
-    are visually delimited, and indented multi-line evidence blocks.
-    """
+    """Render a review card; chain rows use a dense one-line-per-field terminal layout."""
     remaining = total - decided
     rank = (row.get("retrieval_rank") or "").strip() or "(none)"
     page = (row.get("page_citation") or "").strip() or "(none)"
@@ -328,21 +460,34 @@ def format_card(
     priors = (row.get("prior_decisions") or "").strip()
     if priors:
         lines.append(f"== prior_decisions: {priors} -- decide independently, then compare")
-    lines += [
-        "",
-        f"== question: {row.get('question', '')}",
-        f"== reference_answer: {row.get('reference_answer', '')}",
-        f"== span: doc={row.get('span_doc_id', '')} page={page}",
-        "== context (cited span between >>> <<<)",
-        _indent(row.get("context", "") or "(missing)"),
-        "== checks:",
-    ]
-    synthetic = _is_synthetic_row(row)
-    for col in CHECK_COLS:
-        if col == "chk_planted" and not synthetic:
-            continue
-        lines.append(f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
-    lines.append(f"== decision: {_field(row, 'decision', '(undecided)')}")
+    is_chain = _is_chain_row(row)
+    if is_chain:
+        decision = _field(row, "decision", "(undecided)")
+        lines = [
+            _CHAIN_SEPARATOR,
+            f"CHAIN {position}/{total} | id={row.get('item_id', '')} | decided={decided} "
+            f"remaining={remaining} | decision={decision}",
+            "REVIEW: compare A with SOURCE; confirm Q is answered and later steps add context.",
+        ]
+        lines.extend(_format_chain_steps(row, color=color, width=width))
+        lines.append(_chain_checks(row))
+    else:
+        lines += [
+            "",
+            f"== question: {row.get('question', '')}",
+            f"== reference_answer: {row.get('reference_answer', '')}",
+            f"== span: doc={row.get('span_doc_id', '')} page={page}",
+            "== context (cited span between >>> <<<)",
+            _indent(row.get("context", "") or "(missing)"),
+            "== checks:",
+        ]
+    if not is_chain:
+        synthetic = _is_synthetic_row(row)
+        for col in CHECK_COLS:
+            if col == "chk_planted" and not synthetic:
+                continue
+            lines.append(f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
+        lines.append(f"== decision: {_field(row, 'decision', '(undecided)')}")
     edited = (row.get("edited_answer") or "").strip()
     if edited:
         lines.append(f"== edited_answer: {edited}")
@@ -702,6 +847,12 @@ def _handle_answer_edit(row: dict[str, str], ctx: "SessionContext") -> None:
     un-groundable edit is refused on the spot (and `emit_accepted_ledger` re-checks at accept
     time, so a hand-edited CSV cannot certify either).
     """
+    if _is_chain_row(row):
+        ctx.emit(
+            "[verify] chain answer edits are not supported; use o=note and reject the chain "
+            "if any step needs a different span."
+        )
+        return
     text = _read("edited reference answer (empty to clear): ", ctx.it, ctx.emit).strip()
     if not text:
         row["edited_answer"] = ""
@@ -772,13 +923,23 @@ class SessionContext:
     corpus_root: Path | None
     stats: SessionStats
     show_crosscheck: bool = False
+    color: bool = False
+    terminal_width: int = _CHAIN_DEFAULT_WIDTH
 
 
 def _handle_row_action(ctx: SessionContext, idx: int, total: int) -> int:
     rows = ctx.rows
     row = rows[idx]
     ctx.emit(
-        format_card(row, idx + 1, total, decided_count(rows), show_crosscheck=ctx.show_crosscheck)
+        format_card(
+            row,
+            idx + 1,
+            total,
+            decided_count(rows),
+            show_crosscheck=ctx.show_crosscheck,
+            color=ctx.color,
+            width=ctx.terminal_width,
+        )
     )
     cmd = parse_command(_read(f"{PROMPT_HINT}\nverify> ", ctx.it, ctx.emit))
 
@@ -844,6 +1005,13 @@ def run_session(
     path = Path(worksheet_path)
     emit = output or _default_output
     it: Iterator[str] | None = iter(inputs) if inputs is not None else None
+    interactive_terminal = output is None and sys.stdout.isatty()
+    use_color = interactive_terminal and "NO_COLOR" not in os.environ
+    terminal_width = (
+        shutil.get_terminal_size(fallback=(_CHAIN_DEFAULT_WIDTH, 24)).columns
+        if interactive_terminal
+        else _CHAIN_DEFAULT_WIDTH
+    )
 
     disk_rows, fieldnames = load_worksheet(path)
     if not disk_rows:
@@ -868,6 +1036,8 @@ def run_session(
         corpus_root=resolved_corpus,
         stats=stats,
         show_crosscheck=show_crosscheck,
+        color=use_color,
+        terminal_width=terminal_width,
     )
 
     total = len(rows)

@@ -191,9 +191,11 @@ Placed beside every exported artifact file. Without it the bundle is not importa
 
 ## 7. Artifact D -- chain-of-questions draft (provisional)
 
-Blocked on the `chain-goldset-generation` forward task (`ChainItem` schema). Until it lands,
-collect chain drafts as review material in this provisional shape (one chain per JSONL line) and
-do not import them into scoring paths:
+The canonical local `ChainItem` schema uses exact `SourceSpan` offsets. External services cannot
+author those offsets reliably, so collect their output in this provisional quote-based shape (one
+chain per JSONL line) and run `make curate-drafts CURATE_KIND=chains` to re-ground and filter it.
+The curator does not promote Artifact D into a scored fixture; canonical ontology-generated chains
+use the workflow in [current data prep](../impl/current/data-prep.md#chain-of-questions-artifacts).
 
 ```json
 {"chain_id": "ext-chain-20260703-001", "lang": "uk",
@@ -208,7 +210,7 @@ do not import them into scoring paths:
  ]}
 ```
 
-Rules mirror the planned schema: 2-4 steps, each step grounded by its own verbatim quote, steps
+Rules mirror the canonical schema: 2-4 steps, each step grounded by its own verbatim quote, steps
 cite distinct spans, and the final step must not be answerable from step-1 context alone.
 
 ## 8. Validation gates per artifact
@@ -218,4 +220,4 @@ cite distinct spans, and the final step must not be answerable from step-1 conte
 | A. SQuAD draft | `make ingest-squad SQUAD_JSON=` | `make validate-goldset GOLDSET= CORPUS=` | cross-check + `verify-*` |
 | B. Grounded JSONL | `make import-external-draft ARTIFACT= CORPUS= SIDECAR=` | span re-grounding + sidecar gate at import | cross-check + `verify-*` |
 | C. Security cases | `make bench-security SECURITY_CASES=` | schema check at load (closed families) | `verify-*` before headline |
-| D. Chains | blocked on `chain-goldset-generation` | extended `validate-goldset --chains` (forward) | chain verify cards (forward) |
+| D. Chains | `make curate-drafts CURATE_KIND=chains` (provisional external form) | canonical bundles: `make validate-goldset CHAINS= CORPUS=` | canonical bundles: chain `verify-*` workflow |

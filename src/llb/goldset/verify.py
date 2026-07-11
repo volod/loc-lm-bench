@@ -30,6 +30,13 @@ from pathlib import Path
 from typing import cast
 
 from llb.core.fsutil import atomic_write_text
+from llb.goldset.chains import (
+    CHAINS_FILENAME,
+    ChainItem,
+    chain_stratum_key,
+    dump_chains,
+    load_chains,
+)
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset, load_goldset
 from llb.rag.page_metadata import intersect_pages, load_page_citations
 
@@ -42,6 +49,10 @@ GOLDSET_FILENAME = "goldset.jsonl"
 GOLDSET_CANDIDATES = (GOLDSET_FILENAME, "planted_labels.jsonl")
 PROVENANCE_FILENAME = "provenance.json"
 CORPUS_DIRNAME = "corpus"
+KIND_AUTO = "auto"
+KIND_GOLDSET = "goldset"
+KIND_CHAINS = "chains"
+SAMPLE_KINDS = (KIND_AUTO, KIND_GOLDSET, KIND_CHAINS)
 CROSS_CHECK_SUFFIX = ".cross_check.json"
 SAMPLE_MANIFEST = "sample_manifest.json"
 REJECTION_REASONS_FILENAME = "rejection_reasons.json"
@@ -69,6 +80,7 @@ CROSS_CHECK_COLS = ["cc_grounded", "cc_non_circular", "cc_supported", "cc_answer
 REVIEWER_COL = "reviewer_id"
 
 WORKSHEET_COLS = [
+    "item_kind",
     "item_id",
     "provenance",
     "split",
@@ -82,6 +94,7 @@ WORKSHEET_COLS = [
     "context",
     "retrieval_rank",
     "page_citation",
+    "chain_steps",
     *CROSS_CHECK_COLS,
     *HUMAN_COLS,
     REVIEWER_COL,
@@ -141,6 +154,32 @@ def find_goldset(bundle: Path) -> Path:
     raise FileNotFoundError(
         f"no gold file in {bundle} (looked for {', '.join(GOLDSET_CANDIDATES)})"
     )
+
+
+def find_chains(bundle: Path) -> Path:
+    """The bundle's chain file (`chains.jsonl`)."""
+    path = Path(bundle) / CHAINS_FILENAME
+    if not path.is_file():
+        raise FileNotFoundError(f"no chain file in {bundle} (looked for {CHAINS_FILENAME})")
+    return path
+
+
+def resolve_sample_kind(bundle: Path, requested: str = KIND_AUTO) -> str:
+    """Resolve auto/goldset/chains to the concrete worksheet kind for this bundle."""
+    requested = requested.strip().lower() or KIND_AUTO
+    if requested not in SAMPLE_KINDS:
+        raise ValueError(f"unknown verification sample kind {requested!r}")
+    bundle = Path(bundle)
+    if requested == KIND_CHAINS:
+        find_chains(bundle)
+        return KIND_CHAINS
+    if requested == KIND_GOLDSET:
+        find_goldset(bundle)
+        return KIND_GOLDSET
+    if (bundle / CHAINS_FILENAME).is_file():
+        return KIND_CHAINS
+    find_goldset(bundle)
+    return KIND_GOLDSET
 
 
 def bundle_is_synthetic(bundle: Path) -> bool:
@@ -231,6 +270,26 @@ def draw_stratified_sample(items: Sequence[GoldItem], n: int, *, seed: int = 13)
         for it in order[: quotas[key]]:
             picked.add(index[id(it)])
     return [items[i] for i in sorted(picked)]
+
+
+def draw_chain_sample(chains: Sequence[ChainItem], n: int, *, seed: int = 13) -> list[ChainItem]:
+    """Draw exactly `min(n, population)` chain items spread across chain strata."""
+    total = len(chains)
+    if n >= total:
+        return list(chains)
+    strata: dict[str, list[ChainItem]] = {}
+    for chain in chains:
+        strata.setdefault(chain_stratum_key(chain), []).append(chain)
+    rng = random.Random(seed)
+    picked: set[int] = set()
+    index = {id(chain): i for i, chain in enumerate(chains)}
+    quotas = stratum_quotas({key: len(group) for key, group in strata.items()}, n)
+    for key, group in sorted(strata.items()):
+        order = list(group)
+        rng.shuffle(order)
+        for chain in order[: quotas[key]]:
+            picked.add(index[id(chain)])
+    return [chains[i] for i in sorted(picked)]
 
 
 # --- cross-check sidecar ------------------------------------------------------------------
@@ -486,6 +545,18 @@ def _worksheet_bundle_hint(path: Path) -> Path | None:
     return None
 
 
+def _worksheet_sample_kind(path: Path) -> str:
+    manifest = path.with_name(SAMPLE_MANIFEST)
+    if not manifest.is_file():
+        return KIND_GOLDSET
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return KIND_GOLDSET
+    kind = payload.get("kind")
+    return str(kind) if kind in (KIND_GOLDSET, KIND_CHAINS) else KIND_GOLDSET
+
+
 def _worksheet_instruction(path: Path, *, bundle: Path | None = None) -> str:
     bundle_arg = str(bundle) if bundle is not None else "<bundle>"
     return "\n".join(
@@ -577,6 +648,7 @@ def _format_verification_stats(stats: dict[str, object]) -> list[str]:
         "reject_rate",
         "tolerance",
         "items",
+        "chains",
         "verified",
         "unverified",
     ]
@@ -724,6 +796,44 @@ def _check_manifest_ref(path: Path, tolerance: float) -> VerificationRefStatus:
 def _check_accepted_ledger_ref(path: Path) -> VerificationRefStatus:
     ledger = path / GOLDSET_FILENAME if path.is_dir() else path
     instruction = _accepted_ledger_instruction(path)
+    chain_ledger = path / CHAINS_FILENAME if path.is_dir() else path
+    if not ledger.is_file() and chain_ledger.name == CHAINS_FILENAME and chain_ledger.is_file():
+        try:
+            chains = load_chains(chain_ledger)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            return VerificationRefStatus(
+                False,
+                chain_ledger,
+                "accepted_chain_ledger",
+                f"unreadable chain ledger: {exc}",
+                instruction=instruction,
+            )
+        unverified_ids = [chain.chain_id for chain in chains if not chain.verified]
+        chain_stats: dict[str, object] = {
+            "chains": len(chains),
+            "verified": len(chains) - len(unverified_ids),
+            "unverified": len(unverified_ids),
+            "unverified_item_ids": unverified_ids[:10],
+        }
+        if not chains:
+            return VerificationRefStatus(
+                False,
+                chain_ledger,
+                "accepted_chain_ledger",
+                "ledger has no chains",
+                stats=chain_stats,
+                instruction=instruction,
+            )
+        if unverified_ids:
+            return VerificationRefStatus(
+                False,
+                chain_ledger,
+                "accepted_chain_ledger",
+                "ledger contains unverified chain(s)",
+                stats=chain_stats,
+                instruction=instruction,
+            )
+        return VerificationRefStatus(True, chain_ledger, "accepted_chain_ledger", stats=chain_stats)
     try:
         items = load_goldset(ledger)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -787,6 +897,8 @@ def check_verification_ref(
     if path.is_dir():
         if (path / GOLDSET_FILENAME).is_file():
             return _check_accepted_ledger_ref(path)
+        if (path / CHAINS_FILENAME).is_file():
+            return _check_accepted_ledger_ref(path)
         if (path / SAMPLE_MANIFEST).is_file():
             return _check_manifest_ref(path / SAMPLE_MANIFEST, tolerance)
         if (path / "verify_sample.csv").is_file():
@@ -802,7 +914,7 @@ def check_verification_ref(
         return _check_manifest_ref(path, tolerance)
     if path.suffix.lower() == ".csv":
         return _check_worksheet_ref(path, tolerance)
-    if path.name == GOLDSET_FILENAME or path.suffix.lower() == ".jsonl":
+    if path.name in (GOLDSET_FILENAME, CHAINS_FILENAME) or path.suffix.lower() == ".jsonl":
         return _check_accepted_ledger_ref(path)
     return VerificationRefStatus(
         False,
@@ -853,6 +965,7 @@ def _row_for(
         return "" if value is None else ("true" if value else "false")
 
     return {
+        "item_kind": KIND_GOLDSET,
         "item_id": item.id,
         "provenance": item.provenance,
         "split": item.split,
@@ -866,11 +979,73 @@ def _row_for(
         "context": context,
         "retrieval_rank": "" if retrieval_rank is None else str(retrieval_rank),
         "page_citation": page,
+        "chain_steps": "",
         "cc_grounded": _flag("grounded"),
         "cc_non_circular": _flag("non_circular"),
         "cc_supported": _flag("supported"),
         "cc_answerable": _flag("answerable"),
         "cc_note": str(verdict.get("note", "")),
+    }
+
+
+def _chain_step_contexts(
+    chain: ChainItem,
+    corpus_root: Path,
+    cache: dict[str, str | None],
+    page_cache: dict[str, tuple[str | None, list[dict[str, object]]] | None],
+) -> list[dict[str, str]]:
+    steps: list[dict[str, str]] = []
+    for step in chain.steps:
+        span = step.source_spans[0]
+        text = _corpus_text(corpus_root, span.doc_id, cache)
+        context = (
+            corpus_window(text, span.char_start, span.char_end)
+            if text is not None
+            else "(missing doc)"
+        )
+        page = page_citation_for_span(
+            corpus_root, span.doc_id, span.char_start, span.char_end, page_cache
+        )
+        steps.append(
+            {
+                "order": str(step.order),
+                "question": step.question,
+                "reference_answer": step.reference_answer,
+                "dependency_note": step.dependency_note,
+                "span_doc_id": span.doc_id,
+                "span_text": span.text,
+                "context": context,
+                "page_citation": page,
+            }
+        )
+    return steps
+
+
+def _row_for_chain(
+    chain: ChainItem,
+    corpus_root: Path,
+    cache: dict[str, str | None],
+    page_cache: dict[str, tuple[str | None, list[dict[str, object]]] | None],
+) -> dict[str, str]:
+    steps = _chain_step_contexts(chain, corpus_root, cache, page_cache)
+    final = steps[-1] if steps else {}
+    first_doc = chain.steps[0].source_doc_id if chain.steps else ""
+    return {
+        "item_kind": KIND_CHAINS,
+        "item_id": chain.chain_id,
+        "provenance": chain.provenance,
+        "split": chain.split,
+        "source_doc_id": first_doc,
+        "synthetic": "false",
+        "stratum": chain_stratum_key(chain),
+        "question": " -> ".join(step.question for step in chain.steps),
+        "reference_answer": chain.steps[-1].reference_answer if chain.steps else "",
+        "span_doc_id": final.get("span_doc_id", ""),
+        "span_text": final.get("span_text", ""),
+        "context": final.get("context", ""),
+        "retrieval_rank": "",
+        "page_citation": final.get("page_citation", ""),
+        "chain_steps": json.dumps(steps, ensure_ascii=False),
     }
 
 
@@ -897,6 +1072,14 @@ def _sample_rows(
     ]
 
 
+def _sample_chain_rows(bundle: Path, sample: Sequence[ChainItem]) -> list[dict[str, str]]:
+    """Build worksheet rows for chain samples, with every step rendered into chain_steps JSON."""
+    corpus_root = bundle / CORPUS_DIRNAME
+    cache: dict[str, str | None] = {}
+    page_cache: dict[str, tuple[str | None, list[dict[str, object]]] | None] = {}
+    return [_row_for_chain(chain, corpus_root, cache, page_cache) for chain in sample]
+
+
 def _write_sample_manifest(
     out_path: Path,
     bundle: Path,
@@ -918,7 +1101,7 @@ def _write_sample_manifest(
 
 
 def build_sample_worksheet(
-    bundle: Path, out_path: Path, *, n: int, seed: int = 13
+    bundle: Path, out_path: Path, *, n: int, seed: int = 13, kind: str = KIND_AUTO
 ) -> tuple[int, dict[str, int]]:
     """Draw a stratified sample from a draft bundle and write the verification worksheet.
 
@@ -927,32 +1110,47 @@ def build_sample_worksheet(
     "document the size + strata" half of the procedure). Human columns are left blank.
     """
     bundle = Path(bundle)
-    items = load_goldset(find_goldset(bundle))
-    synthetic = bundle_is_synthetic(bundle)
-    sample = draw_stratified_sample(items, n, seed=seed)
-    rows = _sample_rows(bundle, sample, synthetic=synthetic)
+    resolved_kind = resolve_sample_kind(bundle, kind)
+    synthetic = bundle_is_synthetic(bundle) if resolved_kind == KIND_GOLDSET else False
+    if resolved_kind == KIND_CHAINS:
+        chains = load_chains(find_chains(bundle))
+        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        rows = _sample_chain_rows(bundle, chain_sample)
+        population = len(chains)
+        sample_size = len(chain_sample)
+        strata_sizes: dict[str, int] = {}
+        for chain in chain_sample:
+            key = chain_stratum_key(chain)
+            strata_sizes[key] = strata_sizes.get(key, 0) + 1
+    else:
+        items = load_goldset(find_goldset(bundle))
+        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        rows = _sample_rows(bundle, gold_sample, synthetic=synthetic)
+        population = len(items)
+        sample_size = len(gold_sample)
+        strata_sizes = {}
+        for it in gold_sample:
+            strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
     write_worksheet_rows(out_path, rows)
 
-    strata_sizes: dict[str, int] = {}
-    for it in sample:
-        strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
     _write_sample_manifest(
         out_path,
         bundle,
         {
+            "kind": resolved_kind,
             "synthetic": synthetic,
             "seed": seed,
             "requested": n,
-            "sample_size": len(sample),
-            "population": len(items),
+            "sample_size": sample_size,
+            "population": population,
             "strata": strata_sizes,
         },
     )
-    return len(sample), strata_sizes
+    return sample_size, strata_sizes
 
 
 def merge_sample_worksheet(
-    bundle: Path, out_path: Path, *, n: int, seed: int = 13
+    bundle: Path, out_path: Path, *, n: int, seed: int = 13, kind: str = KIND_AUTO
 ) -> tuple[int, int]:
     """Enlarge an existing worksheet ADDITIVELY to ~`n` rows; returns `(added, total)`.
 
@@ -963,29 +1161,44 @@ def merge_sample_worksheet(
     """
     out_path = Path(out_path)
     if not out_path.is_file():
-        size, _ = build_sample_worksheet(bundle, out_path, n=n, seed=seed)
+        size, _ = build_sample_worksheet(bundle, out_path, n=n, seed=seed, kind=kind)
         return size, size
     bundle = Path(bundle)
+    manifest_kind = _worksheet_sample_kind(out_path)
+    resolved_kind = resolve_sample_kind(bundle, manifest_kind if kind == KIND_AUTO else kind)
     existing_rows, fieldnames = load_worksheet(out_path)
     existing_ids = {(row.get("item_id") or "").strip() for row in existing_rows}
-    items = load_goldset(find_goldset(bundle))
-    synthetic = bundle_is_synthetic(bundle)
-    sample = draw_stratified_sample(items, n, seed=seed)
-    new_items = [it for it in sample if it.id not in existing_ids]
-    if not new_items:
+    synthetic = bundle_is_synthetic(bundle) if resolved_kind == KIND_GOLDSET else False
+    if resolved_kind == KIND_CHAINS:
+        chains = load_chains(find_chains(bundle))
+        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        new_chains = [chain for chain in chain_sample if chain.chain_id not in existing_ids]
+        if not new_chains:
+            return 0, len(existing_rows)
+        new_rows = _sample_chain_rows(bundle, new_chains)
+        population = len(chains)
+    else:
+        items = load_goldset(find_goldset(bundle))
+        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        new_items = [it for it in gold_sample if it.id not in existing_ids]
+        if not new_items:
+            return 0, len(existing_rows)
+        new_rows = _sample_rows(bundle, new_items, synthetic=synthetic)
+        population = len(items)
+    if not new_rows:
         return 0, len(existing_rows)
-    new_rows = _sample_rows(bundle, new_items, synthetic=synthetic)
     all_rows = [*existing_rows, *new_rows]
     write_worksheet_rows(out_path, all_rows, fieldnames)
     _write_sample_manifest(
         out_path,
         bundle,
         {
+            "kind": resolved_kind,
             "synthetic": synthetic,
             "seed": seed,
             "requested": n,
             "sample_size": len(all_rows),
-            "population": len(items),
+            "population": population,
             "merged_added": len(new_rows),
         },
         merge_existing=True,
@@ -1180,6 +1393,37 @@ def emit_accepted_ledger(
     return len(verified)
 
 
+def emit_accepted_chain_ledger(
+    bundle: Path,
+    accepted: Sequence[str],
+    out_dir: Path,
+) -> int:
+    """Write an accepted chain ledger (`chains.jsonl` verified=true + sibling `corpus/`)."""
+    bundle = Path(bundle)
+    out_dir = Path(out_dir)
+    keep = set(accepted)
+    src_corpus = bundle / CORPUS_DIRNAME
+    dst_corpus = out_dir / CORPUS_DIRNAME
+    verified: list[ChainItem] = []
+    doc_ids: set[str] = set()
+    for chain in load_chains(find_chains(bundle)):
+        if chain.chain_id not in keep:
+            continue
+        verified.append(chain.model_copy(update={"verified": True}))
+        for step in chain.steps:
+            doc_ids.add(step.source_doc_id)
+            doc_ids.update(span.doc_id for span in step.source_spans)
+    dump_chains(verified, out_dir / CHAINS_FILENAME)
+    for doc_id in sorted(doc_ids):
+        source = src_corpus / doc_id
+        if not source.is_file():
+            raise FileNotFoundError(f"corpus doc for accepted chain not found: {source}")
+        dest = dst_corpus / doc_id
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest)
+    return len(verified)
+
+
 def _log_report(report: dict[str, object]) -> None:
     _LOG.info(
         "[verify] policy=%s decided=%s accepted=%s rejected=%s reject_rate=%.3f tolerance=%s -> %s",
@@ -1266,16 +1510,23 @@ def run_accept(
     if not accepted:
         _LOG.info("[verify] no accepted items -- nothing to flip; resolve the sample first")
         return 0 if report["passed"] else 1
-    edits = {k: v for k, v in worksheet_edits(rows).items() if k in set(accepted)}
-    n = emit_accepted_ledger(bundle, accepted, out_dir, edits=edits)
-    if edits:
-        _LOG.info("[verify] applied %d accept-with-edit answer(s) through re-grounding", len(edits))
-    _LOG.info("[verify] wrote %d accepted item(s) -> %s", n, out_dir / GOLDSET_FILENAME)
-    _LOG.info(
-        "[verify] flip via the ledger: python -m llb.prep.ingest_squad "
-        "--squad-json <source> --verified-goldset %s",
-        out_dir / GOLDSET_FILENAME,
-    )
+    kind = _worksheet_sample_kind(Path(worksheet))
+    if kind == KIND_CHAINS:
+        n = emit_accepted_chain_ledger(bundle, accepted, out_dir)
+        _LOG.info("[verify] wrote %d accepted chain(s) -> %s", n, out_dir / CHAINS_FILENAME)
+    else:
+        edits = {k: v for k, v in worksheet_edits(rows).items() if k in set(accepted)}
+        n = emit_accepted_ledger(bundle, accepted, out_dir, edits=edits)
+        if edits:
+            _LOG.info(
+                "[verify] applied %d accept-with-edit answer(s) through re-grounding", len(edits)
+            )
+        _LOG.info("[verify] wrote %d accepted item(s) -> %s", n, out_dir / GOLDSET_FILENAME)
+        _LOG.info(
+            "[verify] flip via the ledger: python -m llb.prep.ingest_squad "
+            "--squad-json <source> --verified-goldset %s",
+            out_dir / GOLDSET_FILENAME,
+        )
     return 0 if report["passed"] else 1
 
 
@@ -1292,6 +1543,12 @@ def main(argv: list[str] | None = None) -> int:
     sa.add_argument("--out", required=True, type=Path, help="verification worksheet CSV to write")
     sa.add_argument("-n", "--size", type=int, default=30, help="target sample size")
     sa.add_argument("--seed", type=int, default=13)
+    sa.add_argument(
+        "--kind",
+        choices=SAMPLE_KINDS,
+        default=KIND_AUTO,
+        help="sample flat goldset rows, chain rows, or auto-select chains when present",
+    )
     sa.add_argument(
         "--merge",
         action="store_true",
@@ -1369,7 +1626,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.merge:
                 parser.error("--merge is not supported together with --annotators")
             paths = build_multi_reviewer_worksheets(
-                args.bundle, args.out, n=args.size, annotators=args.annotators, seed=args.seed
+                args.bundle,
+                args.out,
+                n=args.size,
+                annotators=args.annotators,
+                seed=args.seed,
+                kind=args.kind,
             )
             for path in paths:
                 _LOG.info("[verify] reviewer worksheet: make verify-review VERIFY_WS=%s", path)
@@ -1377,12 +1639,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.merge:
             added, total = merge_sample_worksheet(
-                args.bundle, args.out, n=args.size, seed=args.seed
+                args.bundle, args.out, n=args.size, seed=args.seed, kind=args.kind
             )
             _LOG.info("[verify] merged %d new item(s) -> %d total in %s", added, total, args.out)
         else:
             size, strata = build_sample_worksheet(
-                args.bundle, args.out, n=args.size, seed=args.seed
+                args.bundle, args.out, n=args.size, seed=args.seed, kind=args.kind
             )
             _LOG.info(
                 "[verify] sampled %d item(s) across %d strata -> %s", size, len(strata), args.out

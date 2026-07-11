@@ -20,13 +20,7 @@ The forward work is split into two sections by **who must act to complete it**:
   step** is what gates completion.
 
 Task numbers are stable ids and never change; every task carries an explicit `Dependencies` line,
-and the recommended build order within each section follows those lines. One dependency crosses the
-section boundary and is called out because it is **blocked by human work**:
-
-- **Agent task 8 (`context-policy-bench`) is BLOCKED BY human task 7 (`chain-goldset-generation`).**
-  Task 8 scores a *verified* chain fixture, and only the human review gate in task 7 can produce
-  one. Task 8's code (context-assembly + fake-endpoint tests) can be written earlier, but its
-  acceptance run cannot pass until task 7's human-accepted chains exist.
+and the recommended build order within each section follows those lines.
 
 For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
@@ -44,20 +38,15 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 ## Agent Implementation Tasks
 
-These land to `make ci` green with fixtures, fakes, and deterministic harnesses. One task
-remains, and it is the human-gated tail: task 8's code (context assembly + fake-endpoint tests)
-can be pre-built at any point, but its acceptance run stays last -- it is blocked by human
-task 7's verified chain fixture.
+These land to `make ci` green with fixtures, fakes, and deterministic harnesses. One agent task
+remains; its acceptance includes a deterministic real-model run on the CUDA host.
 
 ### 8. context-policy-bench
 
-- Agent status: **BLOCKED BY HUMAN task 7** -- the code is agent-buildable now, but the acceptance
-  run consumes the verified `chains.jsonl` fixture only task 7's human review gate can emit.
-- Dependencies: **BLOCKED BY human task 7 (`chain-goldset-generation`)** -- the acceptance run
-  needs the verified `chains.jsonl` committed fixture that only task 7's human review gate can
-  emit. The code (multi-hop substrate reuse, prompt-system role packages, context-assembly unit
-  tests over a fake endpoint) can be built ahead of task 7; it just cannot pass its acceptance run
-  until the verified chains exist.
+- Agent status: **RUN NEEDED** -- build the context-policy harness and run its acceptance benchmark
+  on the current CUDA host.
+- Dependencies: none. Use the verified chain fixture indexed in
+  [current data prep](current/data-prep.md#chain-of-questions-artifacts).
 - User-visible outcome: for one model and a verified chain set, a ranked comparison of
   context-management policies -- fresh retrieval per step, accumulated full history, summarized
   history, and staged role/system-prompt sequences (for example librarian -> analyst ->
@@ -90,14 +79,12 @@ task 7's verified chain fixture.
 ## Human-Assisted Tasks
 
 Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
-completion. Task 7 also gates agent work: finish its human review before agent task 8's
-acceptance run.
+completion.
 
-Recommended order for the human steps once the agent has pre-built each task's code: task 7's
-chain review first (it is the only human step blocking agent work -- task 8's acceptance run);
-then task 1's coverage-vs-cap review and task 5's derived-case review (both consume the same
-verify-gate muscle over agent-prepared bundles); task 2's egress consent + spend decision is
-independent and can happen whenever the operator is ready to authorize it.
+Recommended order for the human steps once the agent has pre-built each task's code: task 1's
+coverage-vs-cap review and task 5's derived-case review both consume the same verification gate
+over agent-prepared bundles. Task 2's egress consent and spend decision is independent and can
+happen whenever the operator is ready to authorize it.
 
 ### 1. draft-yield-quality-max -- residual empirical acceptance
 
@@ -201,38 +188,6 @@ independent and can happen whenever the operator is ready to authorize it.
   composite/headline paths.
 - Documentation target: [category suite](current/category-benchmark-suite.md) security section;
   [`docs/guides/learning-path/learning-path-security.md`](../guides/learning-path/learning-path-security.md).
-
-### 7. chain-goldset-generation
-
-- Agent status: **HUMAN-GATED** -- >= 10 chains must be human-reviewed and accepted into the
-  committed fixture; the schema, drafting, and validation code are CLEAR (agent-buildable now).
-  This human step is the single upstream blocker of agent task 8's acceptance run.
-- Dependencies: none (reuses the shipped graph-path walker `src/llb/prep/ontology/graph_paths.py`).
-  **Blocks agent task 8** (`context-policy-bench` scores this task's verified chain fixture). Human
-  step: >= 10 chains must be human-reviewed and accepted into the committed fixture; the schema,
-  drafting, and validation code are agent-buildable.
-- User-visible outcome: the draft pipeline also emits chain-of-questions test sets: ordered 2-4
-  step sequences in which each step supplies more specific context for the topic (topic
-  overview -> narrowing detail -> exact fact), every step carrying its own reference answer and
-  exact source spans, validated and human-verified with the same discipline as flat items.
-- Scope boundary: in scope -- a `ChainItem` schema in `src/llb/goldset/chains.py` whose steps
-  embed `GoldItem`-compatible question/answer/span fields plus a chain id, step order, and a
-  dependency note describing what the previous step establishes; chain drafting seeded from
-  knowledge-graph paths and heading hierarchies (reuses the shipped graph-path walker
-  `src/llb/prep/ontology/graph_paths.py`);
-  span-exact validation via an extended `validate-goldset`; verify-session support rendering a
-  chain as one card with per-step checks. Out of scope -- the scoring runner
-  (`context-policy-bench`), multi-annotator flows.
-- Data and artifact paths: draft bundles gain `chains.jsonl`; a committed fixture
-  `samples/goldsets/<name>/chains.jsonl` with verified chains for smoke tests.
-- Execution path: `make prepare-goldset-draft DRAFT_CHAINS=1`;
-  `llb validate-goldset --chains <chains.jsonl> --corpus <dir>`; chains flow through
-  `verify-sample`/`verify-review`/`verify-accept` unchanged at the command level.
-- Acceptance gates: every step of every chain passes span-exact validation; steps within a
-  chain reference distinct spans and the final step's answer is not answerable from step-1
-  context alone (checked by the retrieval-uniqueness filter applied per step); at least 10
-  chains reviewed and accepted into the committed fixture; `make ci` green.
-- Documentation target: [data prep](current/data-prep.md).
 
 ## Adding Future Tasks
 

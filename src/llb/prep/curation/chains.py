@@ -1,9 +1,9 @@
 """Curate merged chain-of-questions drafts (external-draft contract Artifact D, provisional).
 
-Chains stay review-only until the `chain-goldset-generation` forward task lands, but curation
-already pays: merging per-service JSONL exports, re-grounding step quotes to exact corpus text,
-dropping structurally broken chains (bad step counts, reused passages, final answers findable
-from step 1), and deduplicating chains that walk the same question sequence.
+The external form remains separate from canonical ``ChainItem`` rows because services provide
+quotes rather than trusted offsets. Curation merges exports, re-grounds step quotes to exact corpus
+text, drops structurally broken chains, and deduplicates chains that walk the same question
+sequence.
 """
 
 import logging

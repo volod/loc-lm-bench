@@ -11,6 +11,14 @@ import json
 import pytest
 
 from llb.bench.common import verified_data_config
+from llb.goldset.chains import (
+    CHAINS_FILENAME,
+    ChainItem,
+    ChainStep,
+    dump_chains,
+    load_chains,
+    validate_chains,
+)
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.verify import (
     WORKSHEET_COLS,
@@ -22,6 +30,7 @@ from llb.goldset.verify import (
     corpus_window,
     draw_stratified_sample,
     emit_accepted_ledger,
+    emit_accepted_chain_ledger,
     format_verification_status,
     ground_answer,
     infer_reject_code,
@@ -59,6 +68,8 @@ from llb.prep.verified_ledger import apply_verified_ledger, load_verified_ledger
 
 DOC = "squad/doc1.txt"
 TEXT = "Леся Українка народилася 1871 року в Новограді-Волинському. Вона була поетесою."
+CHAIN_DOC = "chains/doc.txt"
+CHAIN_TEXT = "Alpha керує Beta. Beta належить Gamma. Gamma має офіс у Києві."
 
 
 def _item(item_id, *, answer="1871", provenance="frontier-drafted", split="calibration", doc=DOC):
@@ -88,6 +99,56 @@ def _bundle(tmp_path, items, *, synthetic=False):
         (tmp_path / "provenance.json").write_text(
             json.dumps({"synthetic": True, "kind": "synthetic-planted"}), encoding="utf-8"
         )
+    return tmp_path
+
+
+def _chain(chain_id="c1", *, verified=False):
+    first = "Alpha керує Beta"
+    second = "Beta належить Gamma"
+    s1 = CHAIN_TEXT.index(first)
+    s2 = CHAIN_TEXT.index(second)
+    return ChainItem(
+        chain_id=chain_id,
+        steps=[
+            ChainStep(
+                order=1,
+                question="Що встановлено про Alpha і Beta?",
+                reference_answer=first,
+                source_doc_id=CHAIN_DOC,
+                source_spans=[
+                    SourceSpan(
+                        doc_id=CHAIN_DOC,
+                        char_start=s1,
+                        char_end=s1 + len(first),
+                        text=first,
+                    )
+                ],
+            ),
+            ChainStep(
+                order=2,
+                question="Що встановлено про Beta і Gamma?",
+                reference_answer=second,
+                source_doc_id=CHAIN_DOC,
+                source_spans=[
+                    SourceSpan(
+                        doc_id=CHAIN_DOC,
+                        char_start=s2,
+                        char_end=s2 + len(second),
+                        text=second,
+                    )
+                ],
+                dependency_note="Крок 1 встановлює зв'язок Alpha і Beta.",
+            ),
+        ],
+        verified=verified,
+    )
+
+
+def _chain_bundle(tmp_path, chains):
+    dump_chains(chains, tmp_path / CHAINS_FILENAME)
+    doc = tmp_path / "corpus" / CHAIN_DOC
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(CHAIN_TEXT, encoding="utf-8")
     return tmp_path
 
 
@@ -192,6 +253,94 @@ def test_build_sample_worksheet_reads_planted_labels_filename(tmp_path):
     out = tmp_path / "ws.csv"
     n, _ = build_sample_worksheet(tmp_path, out, n=1)
     assert n == 1
+
+
+def test_validate_chains_checks_spans_and_step_rules(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("ok")])
+    report = validate_chains(load_chains(bundle / CHAINS_FILENAME), bundle / "corpus")
+    assert report["errors"] == []
+
+    bad = _chain("bad")
+    bad.steps[1].source_spans = bad.steps[0].source_spans
+    dump_chains([bad], bundle / CHAINS_FILENAME)
+    report = validate_chains(load_chains(bundle / CHAINS_FILENAME), bundle / "corpus")
+    assert any("reuses span" in err for err in report["errors"])
+
+
+def test_build_sample_worksheet_auto_samples_chains_when_present(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("c1"), _chain("c2")])
+    out = tmp_path / "verify_sample.csv"
+    n, strata = build_sample_worksheet(bundle, out, n=1)
+    assert n == 1 and strata
+    rows, _ = load_worksheet(out)
+    assert rows[0]["item_kind"] == "chains"
+    assert rows[0]["chain_steps"]
+    manifest = json.loads((out.with_name("sample_manifest.json")).read_text(encoding="utf-8"))
+    assert manifest["kind"] == "chains"
+
+
+def test_chain_review_card_is_dense_and_marks_answer_source_comparison(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("c1")])
+    out = tmp_path / "verify_sample.csv"
+    build_sample_worksheet(bundle, out, n=1)
+    rows, _ = load_worksheet(out)
+    card = format_card(rows[0], 1, 1, 0)
+    assert card.startswith("+" * 64)
+    assert "\n\n" not in card
+    assert "CHAIN 1/1" in card
+    assert "STEP 1/2" in card and "STEP 2/2" in card
+    assert "\nQ:" in card and "\nA:" in card and "\nSOURCE:" in card
+    assert "compare A with SOURCE" in card
+    assert ">>>Alpha керує Beta<<<" in card
+
+
+def test_chain_review_card_truncates_multiline_text_and_colors_tty_fields(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("c1")])
+    out = tmp_path / "verify_sample.csv"
+    build_sample_worksheet(bundle, out, n=1)
+    rows, _ = load_worksheet(out)
+    steps = json.loads(rows[0]["chain_steps"])
+    steps[0]["question"] = ("довге питання з переносом\n" * 20).strip()
+    steps[0]["context"] = ("до " * 80) + ">>>точний доказ<<<" + (" після" * 80)
+    rows[0]["chain_steps"] = json.dumps(steps, ensure_ascii=False)
+
+    plain = format_card(rows[0], 1, 1, 0, width=72)
+    colored = format_card(rows[0], 1, 1, 0, color=True, width=72)
+    assert "..." in plain
+    assert ">>>точний доказ<<<" in plain
+    assert "\033[" not in plain
+    assert "\033[1;36mQ:" in colored
+    assert "\033[1;32mA:" in colored
+    assert "\033[33mSOURCE:" in colored
+
+
+def test_chain_session_reuses_navigation_and_blocks_answer_edit(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("c1")])
+    ws = bundle / "verify_sample.csv"
+    build_sample_worksheet(bundle, ws, n=1)
+    out: list[str] = []
+    run_session(ws, inputs=iter(["w", "new answer", "y", "q"]), output=out.append)
+    rows, _ = load_worksheet(ws)
+    assert rows[0]["decision"] == "accept"
+    assert rows[0]["edited_answer"] == ""
+    assert any("chain answer edits are not supported" in line for line in out)
+
+
+def test_emit_accepted_chain_ledger_and_accept_command(tmp_path):
+    bundle = _chain_bundle(tmp_path, [_chain("c1"), _chain("c2")])
+    ws = bundle / "verify_sample.csv"
+    build_sample_worksheet(bundle, ws, n=2)
+    rows, fields = load_worksheet(ws)
+    for row in rows:
+        row["decision"] = "accept"
+    write_worksheet_rows(ws, rows, fields)
+
+    assert emit_accepted_chain_ledger(bundle, ["c1"], tmp_path / "manual") == 1
+    assert load_chains(tmp_path / "manual" / CHAINS_FILENAME)[0].verified is True
+    assert run_accept(ws, bundle, None, tolerance=0.05) == 0
+    accepted = load_chains(bundle / "accepted" / CHAINS_FILENAME)
+    assert [chain.chain_id for chain in accepted] == ["c1", "c2"]
+    assert all(chain.verified for chain in accepted)
 
 
 def test_cross_check_sidecar_is_loaded(tmp_path):

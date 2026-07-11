@@ -131,7 +131,7 @@ benchmark exactly like locally drafted data:
 | --- | --- | --- | --- | --- |
 | Goldset (SQuAD) | `make ingest-squad SQUAD_JSON=<merged>` | `make validate-goldset` | cross-check + `verify-*` | `make build-index` -> `make run-eval` / `make sweep` -> `make recommend` |
 | Security cases | `make bench-security SECURITY_CASES=<merged>` | schema check at load | `verify-*` before headline | per-family ASR + over-refusal + bias consistency |
-| Chains | review-only until `chain-goldset-generation` lands | -- | -- | -- |
+| Chains | `make curate-drafts CURATE_KIND=chains` (provisional form) | no direct canonical importer | canonical chains use `validate-goldset` + `verify-*` | context-policy benchmark |
 | Inventory | steers prompts `02`-`04` (not scored) | quote grounding via curation | -- | -- |
 
 Step-by-step references:

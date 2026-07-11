@@ -6,7 +6,7 @@
 	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
 	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
 	verify-sample verify-review verify-adjudicate verify-accept judge-experiment ingest-uk-squad \
-	prepare-goldset-draft build-query-glossary
+	prepare-goldset-draft build-query-glossary chain-goldset-pipeline chain-goldset-finalize
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -31,9 +31,12 @@ ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus
 	if [ -n "$(CORPUS_ACL_LABEL)" ]; then args+=(--acl-label "$(CORPUS_ACL_LABEL)"); fi; \
 	$(PY) -m llb.main ingest-corpus "$${args[@]}"
 
-validate-goldset: ## Validate GOLDSET against CORPUS (defaults to the committed fixture)
+validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.goldset.validate --goldset "$(GOLDSET)" --corpus-root "$(CORPUS)"
+	@args=(--corpus-root "$(CORPUS)"); \
+	if [ -n "$(GOLDSET)" ] && { [ -z "$(CHAINS)" ] || [ "$(origin GOLDSET)" != "file" ]; }; then args+=(--goldset "$(GOLDSET)"); fi; \
+	if [ -n "$(CHAINS)" ]; then args+=(--chains "$(CHAINS)"); fi; \
+	$(PY) -m llb.goldset.validate "$${args[@]}"
 
 ingest-squad: ## Ingest local SQuAD QA; matching reviewed ids are verified (SQUAD_JSON=path)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -122,10 +125,10 @@ cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/suppo
 	@test -n "$(CROSS_CHECK_MODEL)" || { echo "ERROR: set CROSS_CHECK_MODEL=<second-frontier id, != the drafter>"; exit 1; }
 	$(PY) -m llb.main cross-check-goldset --goldset "$(BUNDLE)/goldset.jsonl" --corpus "$(BUNDLE)/corpus" --model "$(CROSS_CHECK_MODEL)"
 
-verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_N=, VERIFY_SEED=, VERIFY_MERGE=1 to enlarge additively, VERIFY_ANNOTATORS=k for per-reviewer worksheets)
+verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_KIND=auto|goldset|chains, VERIFY_N=, VERIFY_SEED=, VERIFY_MERGE=1, VERIFY_ANNOTATORS=k)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
-	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED) $(if $(VERIFY_MERGE),--merge) $(if $(VERIFY_ANNOTATORS),--annotators $(VERIFY_ANNOTATORS))
+	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED) --kind "$(VERIFY_KIND)" $(if $(VERIFY_MERGE),--merge) $(if $(VERIFY_ANNOTATORS),--annotators $(VERIFY_ANNOTATORS))
 
 verify-review: ## human verification gate: interactively verify the sampled items (VERIFY_WS=path, VERIFY_ORDER=confidence, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -140,6 +143,33 @@ verify-accept: ## human verification gate: acceptance report + emit the accepted
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the sample came from>"; exit 1; }
 	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE) $(if $(VERIFY_ACCEPT_POLICY),--policy $(VERIFY_ACCEPT_POLICY)) $(foreach t,$(VERIFY_STRATUM_TOLERANCES),--stratum-tolerance "$(t)")
+
+chain-goldset-pipeline: ## Draft, validate, gate, and sample chains (CHAIN_CORPUS=, CHAIN_BUNDLE=, CHAIN_WS=, CHAIN_MIN_ACCEPTED=10)
+	@test -n "$(CHAIN_CORPUS)" || { echo "ERROR: set CHAIN_CORPUS=<converted-corpus-dir>"; exit 1; }
+	@test -n "$(CHAIN_BUNDLE)" || { echo "ERROR: set CHAIN_BUNDLE=<new-draft-bundle-dir>"; exit 1; }
+	$(MAKE) --no-print-directory prepare-goldset-draft DRAFT_CORPUS="$(CHAIN_CORPUS)" \
+		DRAFT_OUT_DIR="$(CHAIN_BUNDLE)" DRAFT_CHAINS=1 \
+		DRAFT_MULTI_HOP_MAX_PATHS="$(CHAIN_MAX_PATHS)" DRAFT_REQUIRE_PASSED_GATES=1
+	$(MAKE) --no-print-directory validate-goldset CHAINS="$(CHAIN_BUNDLE)/chains.jsonl" \
+		CORPUS="$(CHAIN_BUNDLE)/corpus"
+	@chain_count="$$(wc -l < "$(CHAIN_BUNDLE)/chains.jsonl")"; \
+	if [ "$$chain_count" -lt "$(CHAIN_MIN_ACCEPTED)" ]; then \
+		echo "ERROR: generated chains $$chain_count is below review minimum $(CHAIN_MIN_ACCEPTED)" >&2; \
+		exit 1; \
+	fi; \
+	echo "[chain-goldset] candidate gate: $$chain_count >= $(CHAIN_MIN_ACCEPTED)"
+	$(MAKE) --no-print-directory verify-sample BUNDLE="$(CHAIN_BUNDLE)" VERIFY_KIND=chains \
+		VERIFY_N="$(CHAIN_VERIFY_N)" VERIFY_WS="$(CHAIN_WS)"
+	@echo "[chain-goldset] review: make verify-review VERIFY_WS=$(CHAIN_WS)"
+
+chain-goldset-finalize: ## Gate accepted chains and promote a compact fixture (CHAIN_BUNDLE=, CHAIN_FIXTURE=, CHAIN_MIN_ACCEPTED=10)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(CHAIN_BUNDLE)" || { echo "ERROR: set CHAIN_BUNDLE=<reviewed-draft-bundle-dir>"; exit 1; }
+	@test -n "$(CHAIN_FIXTURE)" || { echo "ERROR: set CHAIN_FIXTURE=<new-samples-fixture-dir>"; exit 1; }
+	$(PY) -m llb.goldset.promote_chains --bundle "$(CHAIN_BUNDLE)" \
+		--out "$(CHAIN_FIXTURE)" --min-chains "$(CHAIN_MIN_ACCEPTED)"
+	$(MAKE) --no-print-directory validate-goldset CHAINS="$(CHAIN_FIXTURE)/chains.jsonl" \
+		CORPUS="$(CHAIN_FIXTURE)/corpus"
 
 judge-experiment: ## Run fixed UA judge cases against a local OpenAI-compatible endpoint
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -167,6 +197,9 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 for PDF probe
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	if [ "$(origin DRAFT_RESUME)" = "command line" ] && [ -z "$(strip $(DRAFT_RESUME))" ]; then \
+	  echo "ERROR: DRAFT_RESUME is empty; set the shell variable or pass the bundle path" >&2; exit 2; \
+	fi; \
 	args=( \
 	  --corpus-root "$(DRAFT_CORPUS)" \
 	  --model "$(DRAFT_MODEL)" \
@@ -199,6 +232,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ "$(DRAFT_REQUIRE_PASSED_GATES)" = "1" ]; then args+=(--require-passed-gates); fi; \
 	if [ -n "$(DRAFT_COVERAGE_TARGET)" ]; then args+=(--coverage-target "$(DRAFT_COVERAGE_TARGET)"); fi; \
 	if [ "$(DRAFT_MULTI_HOP)" = "1" ]; then args+=(--multi-hop); fi; \
+	if [ "$(DRAFT_CHAINS)" = "1" ]; then args+=(--chains); fi; \
 	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \

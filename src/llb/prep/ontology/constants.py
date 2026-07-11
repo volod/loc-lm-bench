@@ -18,6 +18,8 @@ EXTRACT_MAX_CHARS = 12000
 EXTRACT_CHUNK_OVERLAP = 600  # overlap between extraction windows so a span on a seam survives
 # Extraction windows per document; 1 preserves deterministic sequential calls.
 EXTRACT_CONCURRENCY = 1
+# Retry malformed or non-object model output once before leaving a window for resume.
+EXTRACT_PARSE_RETRIES = 1
 
 # --- stage 3: ontology induction -------------------------------------------------------------
 # A "constrained" candidate: keep only the most-supported types, and drop hapax types.
@@ -80,6 +82,7 @@ NEAR_DUP_COSINE_THRESHOLD = 0.9
 # --- item id namespaces ----------------------------------------------------------------------
 ONTOLOGY_ID_PREFIX = "onto"  # flat single-span ontology-drafted items
 MULTI_HOP_ID_PREFIX = "mhop"  # multi-hop chain items
+CHAIN_ID_PREFIX = "chain"  # ordered chain-of-questions items
 
 # --- stage 5: drafting -----------------------------------------------------------------------
 # Window of context (chars on each side of the evidence span) handed to the drafter.
@@ -95,6 +98,7 @@ CORPUS_DIRNAME = "corpus"
 PDF_ONTOLOGY_REPORT_FILENAME = "pdf_ontology_report.json"
 PROMPT_DICTIONARY_FILENAME = "prompt_dictionary_candidates.jsonl"
 NEEDLE_GOLDSET_FILENAME = "needle_items.jsonl"
+CHAINS_FILENAME = "chains.jsonl"
 PROMPT_DICTIONARY_MAX_EXAMPLES = 5
 # Per-document, per-window extraction journal + its settings sidecar. The journal lets an
 # interrupted multi-hour draft resume the extraction stage instead of re-spending model calls;
