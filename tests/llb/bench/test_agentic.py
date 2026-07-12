@@ -162,6 +162,29 @@ def test_run_agentic_failing_model():
     assert run.result.objective_score == 0.0  # finishes immediately, no env changes
 
 
+def test_run_agentic_reports_meter_throughput(tmp_path):
+    import json
+    from pathlib import Path
+
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = agentic.run_agentic(
+        tasks,
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"finish","arguments":{"answer":"x"}}',
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
+
+
 def test_load_tasks_file_and_from_record_coerces_success():
     tasks = agentic.load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
     assert len(tasks) == 4 and all(t.success for t in tasks)

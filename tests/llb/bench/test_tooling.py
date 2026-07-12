@@ -196,6 +196,29 @@ def test_run_tooling_perfect_model_persists(tmp_path):
     assert run.paths is not None and "tooling" in run.paths["manifest"]
 
 
+def test_run_tooling_reports_meter_throughput(tmp_path):
+    import json
+    from pathlib import Path
+
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    run = bench_tool.run_tooling(
+        CATALOG,
+        [case("c", "погода", "get_weather", {"city": "Київ"})],
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"get_weather","arguments":{"city":"Київ"}}',
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
+
+
 def test_run_tooling_text_only_model_scores_low():
     catalog, cases = bench_tool.load_catalog_file("samples/benchmarks/tooling_cases_uk.json")
     # always answers in prose, never calls -> only the no-tool cases score

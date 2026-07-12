@@ -75,6 +75,28 @@ def test_run_structured_persists(tmp_path):
     assert run.paths is not None and "structured" in run.paths["manifest"]
 
 
+def test_run_structured_reports_meter_throughput(tmp_path):
+    import json
+    from pathlib import Path
+
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    run = bench_st.run_structured(
+        [case("a", {"name": "Олена", "age": 34})],
+        model="m",
+        backend="ollama",
+        complete=lambda _: '{"name":"Олена","age":34}',
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
+
+
 def test_run_structured_invalid_verification_ref_does_not_call_model(tmp_path):
     bad_ref = tmp_path / "verify_sample.csv"
     bad_ref.write_text("item_id,stratum,decision\nok,s,\n", encoding="utf-8")

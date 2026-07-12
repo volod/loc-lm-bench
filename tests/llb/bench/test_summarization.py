@@ -49,6 +49,29 @@ def test_run_summarization_persists(tmp_path):
     assert run.paths is not None and "summarization" in run.paths["manifest"]
 
 
+def test_run_summarization_reports_meter_throughput(tmp_path):
+    import json
+    from pathlib import Path
+
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    run = bench_sm.run_summarization(
+        [bench_sm.SummarizationCase("a", "doc", "ref")],
+        model="m",
+        backend="ollama",
+        complete=lambda _: "ref",
+        similarity=make_similarity({}),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
+
+
 def test_run_summarization_empty_output_is_unreliable():
     cases = [bench_sm.SummarizationCase("a", "doc", "ref")]
     run = bench_sm.run_summarization(

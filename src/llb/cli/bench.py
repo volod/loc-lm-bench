@@ -1,12 +1,23 @@
 """Benchmark category commands, each rendered under its own Tier."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import best_effort_gpu_readers, load_config
+
+
+def _echo_throughput(label: str, meter: Any) -> None:
+    """Echo the run's real generation throughput (mirrors bench-security); silent for a run whose
+    endpoint recorded no successful calls (e.g. the native tooling transport that bypasses the
+    metered `complete`)."""
+    if meter.calls:
+        typer.echo(
+            f"[{label}] throughput={meter.tokens_per_s:.1f} tok/s over {meter.calls} calls "
+            f"({meter.completion_tokens} completion tokens)"
+        )
 
 
 @app.command("bench-text-analysis")
@@ -45,11 +56,12 @@ def bench_text_analysis_cmd(
     ),
 ) -> None:
     """Score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
     from llb.bench.text_analysis import TextAnalysisRun, run_text_analysis
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     def run(complete: LLMComplete) -> TextAnalysisRun:
         return run_text_analysis(
@@ -65,11 +77,18 @@ def bench_text_analysis_cmd(
             synthetic=not real_corpus,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
+    _echo_throughput("bench-text-analysis", meter)
     typer.echo(result.table)
     if result.judged_quality is not None:
         typer.echo(
@@ -159,11 +178,7 @@ def bench_security_cmd(
             f"[bench-security] bias-pair-consistency={s.bias_pairs.consistency:.3f} "
             f"({s.bias_pairs.n_pairs} pairs)"
         )
-    if meter.calls:
-        typer.echo(
-            f"[bench-security] throughput={meter.tokens_per_s:.1f} tok/s over {meter.calls} calls "
-            f"({meter.completion_tokens} completion tokens)"
-        )
+    _echo_throughput("bench-security", meter)
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-security] manifest -> {result.paths['manifest']}")
@@ -196,7 +211,7 @@ def bench_tooling_cmd(
 ) -> None:
     """Score a model's call-only function-calling correctness under TIER_TOOLING."""
     from llb.backends.openai_client import make_client
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
     from llb.bench.tooling import (
         TOOL_PROTOCOL_NATIVE,
         ToolCaller,
@@ -209,6 +224,7 @@ def bench_tooling_cmd(
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     tool_catalog, cases = load_catalog_file(catalog)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     native_caller: Optional[ToolCaller] = None
     if tool_protocol == TOOL_PROTOCOL_NATIVE:
@@ -239,10 +255,16 @@ def bench_tooling_cmd(
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
     s = result.score
     typer.echo(
@@ -250,6 +272,7 @@ def bench_tooling_cmd(
         f"{s.tool_selection_accuracy:.3f} args-exact={s.argument_exactness:.3f} "
         f"no-hallucinated={s.no_hallucinated_tool_rate:.3f} well-formed={s.well_formed_rate:.3f}"
     )
+    _echo_throughput("bench-tooling", meter)
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-tooling] manifest -> {result.paths['manifest']}")
@@ -294,7 +317,7 @@ def bench_agentic_cmd(
 ) -> None:
     """Score a model's task completion in the deterministic tool-world under TIER_AGENTIC."""
     from llb.bench.agentic import HARNESS_NAMES, AgenticRun, load_tasks_file, run_agentic
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
 
     if harness not in HARNESS_NAMES:
         typer.echo(
@@ -305,6 +328,7 @@ def bench_agentic_cmd(
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     def run(complete: LLMComplete) -> AgenticRun:
         return run_agentic(
@@ -320,10 +344,16 @@ def bench_agentic_cmd(
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
     typer.echo(
         f"[bench-agentic] harness={harness} "
@@ -340,6 +370,7 @@ def bench_agentic_cmd(
             f"[bench-agentic] judge-diagnostics ok={diag['n_ok']} zero={diag['n_zero']} "
             f"reasons={diag['reasons'] or '{}'}"
         )
+    _echo_throughput("bench-agentic", meter)
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-agentic] manifest -> {result.paths['manifest']}")
@@ -402,12 +433,13 @@ def bench_summarization_cmd(
     ),
 ) -> None:
     """Score summaries by pinned-embedder reference coverage under TIER_SUMMARIZATION."""
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
     from llb.bench.summarization import SummarizationRun, load_cases_file, run_summarization
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     sum_cases = load_cases_file(cases)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     def run(complete: LLMComplete) -> SummarizationRun:
         return run_summarization(
@@ -421,14 +453,21 @@ def bench_summarization_cmd(
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
     typer.echo(f"[bench-summarization] reference-coverage={result.result.objective_score:.3f}")
     if result.faithfulness is not None:
         typer.echo(f"[bench-summarization] faithfulness (gated judge)={result.faithfulness:.3f}")
+    _echo_throughput("bench-summarization", meter)
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-summarization] manifest -> {result.paths['manifest']}")
@@ -456,12 +495,13 @@ def bench_structured_cmd(
     ),
 ) -> None:
     """Score JSON-schema conformance + field accuracy under TIER_STRUCTURED."""
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
     from llb.bench.structured import StructuredRun, load_cases_file, run_structured
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     st_cases = load_cases_file(cases)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     def run(complete: LLMComplete) -> StructuredRun:
         return run_structured(
@@ -472,15 +512,22 @@ def bench_structured_cmd(
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
     typer.echo(
         f"[bench-structured] field-accuracy={result.score.field_accuracy:.3f} "
         f"conformance={result.score.conformance_rate:.3f}"
     )
+    _echo_throughput("bench-structured", meter)
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-structured] manifest -> {result.paths['manifest']}")

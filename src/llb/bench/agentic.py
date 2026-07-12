@@ -30,6 +30,7 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
     mean,
     persist_category_run,
@@ -197,6 +198,7 @@ class _AgenticPersistInput:
     quality: _TrajectoryQualityResult
     judge_config: _JudgeConfig
     verification_cfg: dict[str, object]
+    tokens_per_s: float
     mirror: Mirror | None
 
 
@@ -406,11 +408,11 @@ def _run_trajectory_judge(
     return _TrajectoryQualityResult(outcome=outcome, value=None, ci=None)
 
 
-def _agentic_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+def _agentic_metrics(result: ModelResult, reliability: float, tokens_per_s: float) -> RunMetrics:
     return {
         "objective_score": result.objective_score,  # completion rate
         "reliability": reliability,
-        "tokens_per_s": 0.0,
+        "tokens_per_s": tokens_per_s,
     }
 
 
@@ -462,7 +464,7 @@ def _persist_agentic_run(request: _AgenticPersistInput) -> RunPaths | None:
         data_dir=request.data_dir,
         run_name=request.run_name,
         config=_agentic_config(request),
-        metrics=_agentic_metrics(request.result, request.scored.reliability),
+        metrics=_agentic_metrics(request.result, request.scored.reliability, request.tokens_per_s),
         case_rows=request.scored.rows,
         judge=_agentic_judge_status(request.judge_config, request.quality.outcome),
         mirror=request.mirror,
@@ -500,13 +502,15 @@ def run_agentic(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> AgenticRun:
     """Score one model's task-completion rate over the deterministic tool-world under TIER_AGENTIC.
 
     Objective completion-rate is the headline. When a judge is configured AND trusted
     (`judge_rho >= judge_threshold`), an opt-in trajectory-quality signal is recorded ALONGSIDE
     (per-case + mean + CI) but never folded into the headline; otherwise the judge is demoted and
-    completion-rate ranks alone. `judge_scorer` is injectable for tests.
+    completion-rate ranks alone. `judge_scorer` is injectable for tests. A `meter` (populated by the
+    endpoint `complete`) supplies the run's real generation tok/s.
     """
     if not tasks:
         raise SystemExit("no agentic tasks provided")
@@ -523,12 +527,14 @@ def run_agentic(
         base_url=judge_base_url,
     )
     quality = _run_trajectory_judge(tasks, episodes, scored.rows, judge_config)
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_AGENTIC,
         case_objectives=scored.case_success,
         reliability=scored.reliability,
+        tokens_per_s=tokens_per_s,
     )
     board, table = render_board([result])
     paths = (
@@ -547,6 +553,7 @@ def run_agentic(
                 quality=quality,
                 judge_config=judge_config,
                 verification_cfg=verification_cfg,
+                tokens_per_s=tokens_per_s,
                 mirror=mirror,
             )
         )

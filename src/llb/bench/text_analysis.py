@@ -24,6 +24,7 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
     mean,
     persist_category_run,
@@ -121,6 +122,7 @@ class _TextAnalysisPersistInput:
     judge_result: _JudgeQualityResult
     judge_config: _JudgeConfig
     verification_cfg: dict[str, object]
+    tokens_per_s: float
     mirror: Mirror | None
 
 
@@ -360,11 +362,13 @@ def _run_judged_quality(
     return _JudgeQualityResult(outcome=outcome, value=None, ci=None)
 
 
-def _text_analysis_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+def _text_analysis_metrics(
+    result: ModelResult, reliability: float, tokens_per_s: float
+) -> RunMetrics:
     return {
         "objective_score": result.objective_score,
         "reliability": reliability,
-        "tokens_per_s": 0.0,
+        "tokens_per_s": tokens_per_s,
     }
 
 
@@ -411,7 +415,7 @@ def _persist_text_analysis_run(request: _TextAnalysisPersistInput) -> RunPaths |
         data_dir=request.data_dir,
         run_name=request.run_name,
         config=_text_analysis_config(request),
-        metrics=_text_analysis_metrics(request.result, request.reliability),
+        metrics=_text_analysis_metrics(request.result, request.reliability, request.tokens_per_s),
         case_rows=request.rows,
         judge=_text_analysis_judge_status(
             request.judge_config.model,
@@ -452,6 +456,7 @@ def run_text_analysis(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> TextAnalysisRun:
     """Score one model over a text-analysis bundle and return its board under TIER_TEXT_ANALYSIS.
 
@@ -460,7 +465,8 @@ def run_text_analysis(
     (`judge_rho >= judge_threshold`), an opt-in JUDGED-QUALITY signal over the free-form sub-tasks
     (narrative / insight / long_doc) is recorded ALONGSIDE (per-doc + mean + CI), never folded into
     the objective headline; otherwise the judge is demoted. `synthetic` flags planted vs real corpus
-    so the two are never merged. `judge_scorer` / `similarity` are injectable for tests.
+    so the two are never merged. `judge_scorer` / `similarity` are injectable for tests. A `meter`
+    (populated by the endpoint `complete`) supplies the run's real generation tok/s.
     """
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
@@ -480,12 +486,14 @@ def run_text_analysis(
     judge_result = _run_judged_quality(scored_docs, judge_config)
 
     reliability = scored_docs.n_ok / len(scored_docs.doc_ids)
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_TEXT_ANALYSIS,
         case_objectives=scored_docs.case_objectives,
         reliability=reliability,
+        tokens_per_s=tokens_per_s,
     )
     board, table = render_board([result])
     paths = (
@@ -504,6 +512,7 @@ def run_text_analysis(
                 judge_result=judge_result,
                 judge_config=judge_config,
                 verification_cfg=verification_cfg,
+                tokens_per_s=tokens_per_s,
                 mirror=mirror,
             )
         )

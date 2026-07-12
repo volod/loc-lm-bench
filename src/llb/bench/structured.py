@@ -15,6 +15,7 @@ from typing import Any
 from llb.bench.common import (
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
     persist_category_run,
     render_board,
@@ -72,8 +73,12 @@ def run_structured(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> StructuredRun:
-    """Score one model's structured-output conformance + field accuracy under TIER_STRUCTURED."""
+    """Score one model's structured-output conformance + field accuracy under TIER_STRUCTURED.
+
+    A `meter` (populated by the endpoint `complete`) supplies the run's real generation tok/s.
+    """
     if not cases:
         raise SystemExit("no structured-output cases provided")
     verification_cfg = verified_data_config(
@@ -83,12 +88,14 @@ def run_structured(
     score = structured.score_structured(cases, outputs)
     rows = [_row(s) for s in score.cases]
 
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_STRUCTURED,
         case_objectives=score.case_score,
         reliability=score.conformance_rate,
+        tokens_per_s=tokens_per_s,
     )
     accuracy_ci = bootstrap_mean_ci(score.case_score)
     board, table = render_board([result])
@@ -98,7 +105,7 @@ def run_structured(
         metrics: RunMetrics = {
             "objective_score": result.objective_score,  # field accuracy
             "reliability": score.conformance_rate,
-            "tokens_per_s": 0.0,
+            "tokens_per_s": tokens_per_s,
         }
         config: dict[str, Any] = {
             "model": model,

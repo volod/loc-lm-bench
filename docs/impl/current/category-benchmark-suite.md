@@ -13,10 +13,33 @@ reliability. Each category has its own tier and is never cross-ranked with RAG o
 - `category_result`: wrap per-case scores as a `ModelResult` with a category tier;
 - `render_board`: rank within one tier through `rank_board`;
 - `persist_category_run`: write canonical run bundles under `$DATA_DIR/<category>/<timestamp>/`;
-- `run_gated_judge`: optional trusted-judge side signal, recorded alongside objective metrics.
+- `run_gated_judge`: optional trusted-judge side signal, recorded alongside objective metrics;
+- `ThroughputMeter`: accumulates REAL generation `tok/s` across a run's model calls (from each
+  backend `ChatResult`'s `completion_tokens` / `latency_s`; errored/empty calls skipped).
 
 The design keeps objective scoring as the headline floor. Judge signals can explain free-form
 quality, but they do not replace deterministic task success.
+
+### Real throughput on every board
+
+Every category runner (`text-analysis`, `security`, `tooling`, `agentic`, `summarization`,
+`structured`) threads a `ThroughputMeter` exactly as `bench-security` does: the CLI creates one
+meter, passes it to both `drive_with_backend` (which wires it into the endpoint `complete` so each
+call's tokens + latency are recorded) and the runner (which reads `meter.tokens_per_s` into the
+board `ModelResult` and the manifest `metrics.tokens_per_s`). So every category board shows a real
+`tok/s`, not a hardcoded `0.0`, and each CLI echoes a `[bench-<cat>] throughput=... tok/s over N
+calls` summary when the meter recorded any calls. Throughput and VRAM stay DISPLAY + Pareto only --
+they never change a category's within-tier ranking, which remains objective-quality-first.
+
+Two paths report `0.0` by construction, both expected: `bench-tooling --tool-protocol native`
+drives its own OpenAI `tools=` client that bypasses the metered `complete` (the text protocol is
+metered normally), and any run with no successful generation calls. `vram_mb` stays `-` on the
+Ollama / `--base-url` out-of-process path (not PID-attributable) exactly as documented for
+security; peak VRAM is captured only under the launched-backend isolation contract.
+
+Each runner carries a `test_run_<category>_reports_meter_throughput` unit test that seeds a meter
+and asserts its `tok/s` reaches both the board `ModelResult` and the persisted manifest, mirroring
+`test_run_security_reports_meter_throughput` -- so the wiring is proven from fakes with no GPU.
 
 ## Text Analysis
 
@@ -85,8 +108,9 @@ the 24-case derived set) rather than a hardcoded `0.0`; the first call includes 
 the aggregate is a conservative steady-state estimate. `vram_mb` stays `-` on the Ollama /
 `--base-url` path because the endpoint serves the model out-of-process (not PID-attributable to the
 run); VRAM is captured only under the launched-backend isolation contract. `ThroughputMeter` and
-`complete_all` live in `bench/common.py`, so the other category runners (which still report
-`tokens_per_s: 0.0`) can adopt the same metering.
+`complete_all` live in `bench/common.py`, and the SAME metering is now threaded through every
+category runner (see [Shared Substrate](#shared-substrate)), so no category board hardcodes
+`tokens_per_s: 0.0` any more.
 
 Two matched-group consistency axes ride alongside ASR, both built on one shared machinery
 (`_decision_variant_groups` + `_score_decision_groups`): a group is comparable only with >=2

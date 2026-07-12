@@ -1,6 +1,7 @@
 """text analysis scored text-analysis runner + richer planted-label emit."""
 
 import json
+from pathlib import Path
 
 from llb.bench import text_analysis as bench_ta
 from llb.prep.text_analysis_corpus import (
@@ -159,6 +160,27 @@ def test_run_text_analysis_scores_and_persists(tmp_path):
     # the board ranks under the text-analysis tier
     assert run.board[0]["tier"] == TIER_TEXT_ANALYSIS
     assert run.paths is not None and "text-analysis" in run.paths["manifest"]
+
+
+def test_run_text_analysis_reports_meter_throughput(tmp_path):
+    from llb.bench.common import ThroughputMeter
+
+    bundle = _write_bundle(tmp_path / "b")
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    run = bench_ta.run_text_analysis(
+        bundle,
+        model="m",
+        backend="ollama",
+        complete=lambda _: json.dumps({"entity": ["Київ"], "topic": ["економіка"]}),
+        similarity=ZERO_SIM,
+        data_dir=tmp_path / "data",
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
 
 
 def test_run_text_analysis_malformed_output(tmp_path):

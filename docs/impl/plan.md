@@ -38,29 +38,8 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 ## Agent Implementation Tasks
 
-Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
-
-### category-suite-throughput-vram
-
-- Agent status: **CLEAR** -- agent-buildable to `make ci` green; the shared `ThroughputMeter` +
-  `complete_all` already exist in `bench/common.py` (see
-  [category suite](current/category-benchmark-suite.md)).
-- Dependencies: none. `bench-security` already reports real generation `tok/s`; the other category
-  runners (`bench-tooling`, `bench-agentic`, `bench-summarization`, `bench-structured`,
-  `bench-text-analysis`) still hardcode `tokens_per_s: 0.0` and pass no VRAM.
-- User-visible outcome: every category board shows real throughput, not `0.0`, and (optionally) a
-  best-effort peak VRAM so the speed/VRAM columns and Pareto flag are meaningful across the suite.
-- Scope boundary: in scope -- thread a `ThroughputMeter` through each category runner exactly as
-  `bench-security` does (create in the CLI, pass to `drive_with_backend` + the runner, read
-  `tokens_per_s` into `category_result` + `RunMetrics`); optionally surface peak VRAM by returning
-  the isolate-cell VRAM sample from `drive_with_backend` for launched backends, and a single
-  best-effort GPU sample for the out-of-process Ollama path (clearly labelled non-PID-attributed).
-  Out of scope -- changing any category's RANKING (they rank on objective quality within their
-  tier; tok/s/VRAM stay display + Pareto only).
-- Acceptance gates: each category manifest carries a non-zero `tokens_per_s` on a real run; a unit
-  test per runner asserts a meter's throughput reaches the board row (mirroring
-  `test_run_security_reports_meter_throughput`).
-- Documentation target: [category suite](current/category-benchmark-suite.md) per-category notes.
+Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks). No open
+agent-implementation tasks.
 
 ## Human-Assisted Tasks
 
