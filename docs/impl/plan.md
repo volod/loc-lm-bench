@@ -45,39 +45,9 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
 completion.
 
-Recommended order for the human steps once the agent has pre-built each task's code: task 1's
-coverage-vs-cap review and task 5's derived-case review both consume the same verification gate
-over agent-prepared bundles. Task 2's egress consent and spend decision is independent and can
-happen whenever the operator is ready to authorize it.
-
-### 1. draft-yield-quality-max -- residual empirical acceptance
-
-- Agent status: **HUMAN-GATED** -- the coverage-vs-cap accept-rate evidence needs a human
-  `verify-sample` review pass; the optional multi-hop answer hardening is CLEAR (agent-buildable
-  now). The agent can run both draft passes on the current CUDA host so only the review gates.
-- Dependencies: none (uses the shipped drafting knobs). Human step: the acceptance evidence below
-  needs a local drafter model and a human reviewer and cannot run in CI; the optional multi-hop
-  hardening is agent-buildable and unit-tested.
-- Context: coverage-target sampling (`--coverage-target`), 2-hop graph-path multi-hop drafting
-  (`--multi-hop`), pinned-E5 prior-bundle near-duplicate suppression (`--dedup-against`), and the
-  closed question-type + difficulty labels are implementable and unit-covered (module map, report
-  fields, and command reference in
-  [robust backends and ontology drafting](current/robustness-ontology-backends.md) and
-  [data prep](current/data-prep.md)). What remains is the heavy manual acceptance evidence and one
-  optional quality hardening, both needing a local drafter model and human review (out of CI):
-- Acceptance evidence (human to-do): on the local quickstart PDF corpus, draft once with
-  `DRAFT_COVERAGE_TARGET=<n>` and once with the 180-cap default over the same corpus/model, run a
-  `make verify-sample VERIFY_N=40` review of each, and record in [data prep](current/data-prep.md)
-  whether the coverage-target bundle keeps more citation-valid needles at an equal-or-better accept
-  rate, with the retrieval-unique needle fraction per question type. This is the "keeps more needles
-  at equal-or-better accept rate" gate that cannot run in CI.
-- Optional quality hardening (agent-buildable): multi-hop items ground the two hop-evidence spans
-  but leave the reference answer free-text. Require the multi-hop reference answer to be (or
-  contain) the verbatim bridge/end-entity span so the answer itself is span-checkable, and extend
-  the multi-hop unit tests to assert it -- a free-text answer can drift from the chain even when the
-  evidence spans hold.
-- Documentation target: [data prep](current/data-prep.md) and
-  [robust backends and ontology drafting](current/robustness-ontology-backends.md).
+Recommended order for the remaining human steps: task 5's derived-case review consumes the
+verification gate over agent-prepared bundles. Task 2's egress consent and spend decision is
+independent and can happen whenever the operator is ready to authorize it.
 
 ### 2. frontier-ua-draft-lane
 

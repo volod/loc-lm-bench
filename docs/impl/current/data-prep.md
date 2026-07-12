@@ -328,6 +328,54 @@ with a `question_type` and `difficulty` label reviewers and the miss analyzer ca
 [robust backends and ontology drafting](robustness-ontology-backends.md) for the module map, report
 fields, and command reference.
 
+### Yield-max empirical acceptance
+
+The 2026-07-12 local acceptance preparation compares coverage-target sampling with the flat
+180-seed cap on the public one-document PDF quickstart corpus. Both lanes use `gemma4:e4b`, seed 13,
+the same 55-window extraction journal, a 16,384-token context, and the pinned-E5 store at
+`$DATA_DIR/llb/rag`; this holds extraction and retrieval constant while changing seed selection.
+Artifacts live under `$DATA_DIR/draft-yield-quality-max/20260712T102120Z/`.
+
+| Lane | Raw seeds | Grounded needles | Retrieval-unique needles | Unique fraction |
+| --- | ---: | ---: | ---: | ---: |
+| Coverage target 6, 240 safety ceiling | 240 | 215 | 194 | 0.9023 |
+| Flat cap | 180 | 165 | 149 | 0.9030 |
+
+Both bundles have parse rate 1.0, pass the PDF calibration gates, and pass `validate-goldset`.
+Coverage-target sampling therefore prepared 50 more citation-valid needles and 45 more
+retrieval-unique needles. Both deterministic 40-row human samples accepted 40/40 items, for equal
+1.0 accept rates and 0.0 reject rates at tolerance 0.05. The coverage-target lane therefore passes
+the "more citation-valid needles at an equal-or-better accept rate" gate. Both accepted ledgers
+pass `validate-goldset` and live under each bundle's `accepted/goldset.jsonl`.
+
+| Question type | Coverage-target unique fraction | Flat-cap unique fraction |
+| --- | ---: | ---: |
+| Comparative | 0.8889 | 0.8571 |
+| Definition | 1.0000 | 1.0000 |
+| Factoid | 0.9000 | 0.9123 |
+| Numeric | 0.8696 | 0.8500 |
+| Procedural | 0.9231 | 0.8889 |
+| All types | 0.9023 | 0.9030 |
+
+The drafting contract is Ukrainian-only for user-facing text, including bilingual source corpora:
+`question` and `reference_answer` must be Ukrainian, while `answer_span` remains an exact quote in
+the source language so evidence offsets stay verifiable. `prep.ontology.draft` and
+`prep.ontology.multi_hop` state that foreign evidence must be translated rather than copied into
+the reference answer. `src/llb/prep/ontology/language.py` applies a deterministic
+Ukrainian-marked, Cyrillic-dominant gate in both flat and multi-hop refinement. The current bundles,
+worksheets, and accepted ledgers have zero question/answer violations under that gate; the flat and
+coverage runs rejected one and two model outputs respectively for failing it.
+
+The final deterministic 40-row review worksheets are
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/coverage-target/verify_sample.csv` and
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/flat-cap-180/verify_sample.csv`. Their acceptance
+commands emitted 40-item verified ledgers under the corresponding `accepted/` directories.
+
+The first coverage worksheet review preceded the Ukrainian-only contract. Its 38 accepts and two
+rejects, along with both original bundles, are preserved for audit under
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/pre-ukrainian-output-gate/`. Those superseded
+decisions did not transfer to the regenerated questions and answers used for the final gate.
+
 ### Chain-of-questions artifacts
 
 `src/llb/goldset/chains.py` defines canonical `ChainItem` / `ChainStep` rows for ordered

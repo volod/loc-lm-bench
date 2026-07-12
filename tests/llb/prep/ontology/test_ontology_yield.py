@@ -191,7 +191,10 @@ def test_build_multi_hop_items_carries_two_spans_and_validates(tmp_path):
 
     drafts = draft_multi_hop(
         lambda _p: json.dumps(
-            {"question": "Кому належить компанія, якою керує Alpha?", "reference_answer": "Gamma"}
+            {
+                "question": "Кому належить компанія, якою керує Alpha?",
+                "reference_answer": "Кінцевою організацією є Gamma.",
+            }
         ),
         docs,
         seeds,
@@ -213,6 +216,38 @@ def test_build_multi_hop_items_drops_draft_without_question():
     seeds = walk_two_hop_paths(_chain_graph(), max_paths=10)
     items, labels = build_multi_hop_items(docs, seeds, [{"reference_answer": "Gamma"}])
     assert items == [] and labels == {}
+
+
+def test_build_multi_hop_items_drops_reference_without_bridge_or_end_entity():
+    docs = [DocRecord(doc_id="chain.md", text=CHAIN_DOC, sha256="x", n_chars=len(CHAIN_DOC))]
+    seeds = walk_two_hop_paths(_chain_graph(), max_paths=10)
+    drafts = [
+        {
+            "question": "Кому належить компанія, якою керує Alpha?",
+            "reference_answer": "Відповідь не називає сутність із ланцюжка.",
+        }
+    ]
+
+    items, labels = build_multi_hop_items(docs, seeds, drafts)
+
+    assert items == [] and labels == {}
+
+
+def test_build_multi_hop_items_accepts_reference_containing_bridge_entity():
+    docs = [DocRecord(doc_id="chain.md", text=CHAIN_DOC, sha256="x", n_chars=len(CHAIN_DOC))]
+    seeds = walk_two_hop_paths(_chain_graph(), max_paths=10)
+    drafts = [
+        {
+            "question": "Яка проміжна організація поєднує Alpha та Gamma?",
+            "reference_answer": "Проміжною організацією є Beta.",
+        }
+    ]
+
+    items, labels = build_multi_hop_items(docs, seeds, drafts)
+
+    assert len(items) == 1
+    assert items[0].reference_answer == "Проміжною організацією є Beta."
+    assert labels[items[0].id].question_type == QUESTION_TYPE_MULTI_HOP
 
 
 def test_build_chain_items_carries_ordered_grounded_steps(tmp_path):
@@ -304,7 +339,7 @@ def test_refine_labeled_tags_question_type_and_difficulty():
         {
             "doc_id": "a.md",
             "question": "Що таке ця організація?",
-            "reference_answer": "Gamma",
+            "reference_answer": "Організацією є Gamma.",
             "answer_span": "Gamma",
             "difficulty": "easy",
         }
@@ -439,13 +474,16 @@ def _chain_endpoint(prompt: str) -> str:
         return _chain_extraction_json()
     if "багатокрокових (multi-hop)" in prompt:
         return json.dumps(
-            {"question": "Кому належить компанія, якою керує Alpha?", "reference_answer": "Gamma"}
+            {
+                "question": "Кому належить компанія, якою керує Alpha?",
+                "reference_answer": "Кінцевою організацією є Gamma.",
+            }
         )
     if "укладач набору запитань" in prompt:
         return json.dumps(
             {
-                "question": "Що згадано поряд з Alpha?",
-                "reference_answer": "Beta",
+                "question": "Яка організація згадана поряд з Alpha?",
+                "reference_answer": "Згаданою організацією є Beta.",
                 "answer_span": "Beta",
             }
         )

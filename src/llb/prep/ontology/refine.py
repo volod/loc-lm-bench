@@ -19,6 +19,7 @@ from llb.goldset.schema import GoldItem, Split
 from llb.prep.frontier import build_drafted_items
 from llb.prep.ontology.constants import ONTOLOGY_ID_PREFIX, PROVENANCE_KIND
 from llb.prep.ontology.coverage import classify_difficulty
+from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.models import DocRecord, ItemLabels
 from llb.prep.ontology.question_types import classify_question_type
 
@@ -98,8 +99,9 @@ def refine_drafts_labeled(
             source = doc_drafts[idx] if idx is not None and 0 <= idx < len(doc_drafts) else {}
             labels[item.id] = _item_labels(item, source)
     _LOG.info(
-        "[ontology] stage 6: %d items kept (%d circular, %d duplicate rejected)",
+        "[ontology] stage 6: %d items kept (%d non-Ukrainian, %d circular, %d duplicate rejected)",
         len(tracker.kept),
+        tracker.n_non_ukrainian,
         tracker.n_circular,
         tracker.n_dup,
     )
@@ -111,6 +113,7 @@ class _RefineTracker:
 
     def __init__(self) -> None:
         self.kept: list[GoldItem] = []
+        self.n_non_ukrainian = 0
         self.n_circular = 0
         self.n_dup = 0
         self._seen_questions: set[tuple[str, str]] = set()
@@ -119,6 +122,9 @@ class _RefineTracker:
     def keep(self, item: GoldItem) -> bool:
         """Record and keep `item` unless it is circular or repeats a question/span."""
         span = item.source_spans[0]
+        if not all(is_ukrainian_dominant(text) for text in (item.question, item.reference_answer)):
+            self.n_non_ukrainian += 1
+            return False
         if is_circular(item.question, item.reference_answer, span.text):
             self.n_circular += 1
             return False

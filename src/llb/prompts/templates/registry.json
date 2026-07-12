@@ -820,7 +820,7 @@
       "descriptor": "prep/ontology/draft.prompt.json",
       "template": {
         "path": "prep/ontology/draft.txt",
-        "sha256": "0ccc3afdff3cb57a65425b73a2b16d975e32d895a995110cf8d7bc6a4c042a0a"
+        "sha256": "82fba0f2bc17380b01a3c1124f5be5121e0e8a61616c830a1641bb5954254c8c"
       }
     },
     "prep.ontology.extraction": {
@@ -836,7 +836,7 @@
       "descriptor": "prep/ontology/multi_hop.prompt.json",
       "template": {
         "path": "prep/ontology/multi_hop.txt",
-        "sha256": "f4f4551ccc1b6ba35805108e3abe3adda0bde57e9e5ee734684b670ffb300c02"
+        "sha256": "5c022a8807a5a333659b231c30d4cc17e0350275d72acc0c9140d33011575caa"
       }
     },
     "prep.text_analysis_corpus.doc": {

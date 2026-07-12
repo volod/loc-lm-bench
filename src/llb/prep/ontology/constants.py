@@ -87,6 +87,11 @@ CHAIN_ID_PREFIX = "chain"  # ordered chain-of-questions items
 # --- stage 5: drafting -----------------------------------------------------------------------
 # Window of context (chars on each side of the evidence span) handed to the drafter.
 DRAFT_CONTEXT_RADIUS = 600
+# Output-language gate: require an unambiguous Ukrainian letter and make Cyrillic the clear
+# majority. This rejects untranslated source quotations while allowing occasional Latin proper
+# names inside otherwise Ukrainian questions and answers.
+UKRAINIAN_SPECIFIC_LETTERS = frozenset("іїєґ")
+UKRAINIAN_MIN_CYRILLIC_FRACTION = 0.6
 
 # --- output ----------------------------------------------------------------------------------
 METHOD_DIR = "prepare-goldset"  # $DATA_DIR/prepare-goldset/<timestamp>/

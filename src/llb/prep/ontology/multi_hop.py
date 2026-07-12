@@ -1,11 +1,12 @@
 """Draft + ground multi-hop chain questions from graph-path seeds (yield-max).
 
 Each `MultiHopSeed` is a 2-hop `A -r1-> B -r2-> C` chain with an exact evidence span per hop. The
-drafter is shown both facts and asked for ONE question that needs both; the two evidence spans (not
-the model's free-text answer) become the item's grounded source spans, so a multi-hop item carries
->= MULTI_HOP_MIN_SPANS spans and passes span-exact validation by construction. Grounding reuses the
-same exact-then-normalized match as the flat drafter, so a span is re-verified against the copied
-corpus doc before it is emitted.
+drafter is shown both facts and asked for ONE question that needs both; the two evidence spans
+become the item's grounded source spans, so a multi-hop item carries >= MULTI_HOP_MIN_SPANS spans
+and passes span-exact validation by construction. The reference answer must also contain the
+verbatim bridge or end entity, which makes the answer itself span-checkable against the chain.
+Grounding reuses the same exact-then-normalized match as the flat drafter, so a span is re-verified
+against the copied corpus doc before it is emitted.
 """
 
 import json
@@ -23,6 +24,7 @@ from llb.prep.ontology.constants import (
     QUESTION_TYPE_MULTI_HOP,
 )
 from llb.prep.ontology.draft import context_window
+from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.models import DocRecord, ItemLabels, MultiHopSeed, MultiHopStep
 from llb.prompts import render_text
 
@@ -165,6 +167,10 @@ def _multi_hop_item(
     question = str(draft.get("question", "")).strip()
     reference = str(draft.get("reference_answer", "")).strip()
     if not question or not reference:
+        return None
+    if not all(is_ukrainian_dominant(text) for text in (question, reference)):
+        return None
+    if not any(entity and entity in reference for entity in (seed.bridge, seed.end)):
         return None
     spans = _distinct_step_spans(doc_texts, seed)
     if len(spans) < MULTI_HOP_MIN_SPANS:
