@@ -20,6 +20,22 @@ immutable run artifacts, and tier-separated leaderboards.
 - **Canonical artifacts first.** Run bundles write `manifest.json` and per-case scores before
   optional MLflow mirroring. MLflow is an analysis mirror, not the source of record.
 
+## Module Size & Structure
+
+Tracked `.py` / `.sh` files target a ~250-line SOFT limit (AGENTS.md "File-size soft limit"):
+split along clear functional seams, but keep a single cohesive structure whole rather than
+fragment it. `scripts/code_quality.sh` reports every tracked file over the limit
+(`LINE_SOFT_LIMIT`, default 250) so the backlog stays visible.
+
+CLI command modules follow a package-per-area shape: `llb/cli/<area>/__init__.py` imports its
+submodules purely to register their `@app.command` handlers on the shared Typer `app` (the same
+registration contract as a flat module), and the commands themselves live in intent-named
+submodules. The oversized flat modules `cli/prep.py`, `cli/rag.py`, `cli/bench.py`, `cli/eval.py`,
+`cli/models.py`, and `cli/finetune.py` are now such packages (e.g. `cli/prep/{corpus, goldset,
+security, benchmarks, draft, draft_support, curation}`, `cli/rag/{index, validate,
+compare_retrieval, compare_stores}`). Tests that exercised a former flat module's internals import
+them from the specific submodule now.
+
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires

@@ -355,7 +355,7 @@ def test_vllm_think_disabled_uses_openai_extra_body(monkeypatch):
 
 
 def test_vllm_host_for_port_rewrites_default_host():
-    from llb.cli.prep import _vllm_host_for_port
+    from llb.cli.prep.draft_support import _vllm_host_for_port
 
     assert _vllm_host_for_port("http://localhost:8000", 8010) == "http://localhost:8010"
 

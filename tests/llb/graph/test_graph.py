@@ -361,7 +361,7 @@ def test_build_graph_summarize_requires_a_model():
     # --summarize with no endpoint model is a clean CLI error, not a crash
     import typer
 
-    from llb.cli.rag import _summarize_graph
+    from llb.cli.rag.index import _summarize_graph
 
     with pytest.raises(typer.Exit) as excinfo:
         _summarize_graph(object(), None)
