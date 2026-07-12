@@ -78,10 +78,12 @@ def recommend_cmd(
         HostInfo,
         build_recommendation,
         format_config_detail_md,
+        format_chain_context_section_md,
         format_finetune_campaign_section_md,
         format_miss_section_md,
         format_self_improvement_section_md,
         format_summary_md,
+        latest_chain_context,
         latest_finetune_campaign,
         latest_self_improvement,
         load_config_cells,
@@ -119,10 +121,12 @@ def recommend_cmd(
     miss_md = format_miss_section_md(latest_analysis(data_dir))
     improve_md = format_self_improvement_section_md(latest_self_improvement(data_dir))
     campaign_md = format_finetune_campaign_section_md(latest_finetune_campaign(data_dir))
+    chain_ctx_md = format_chain_context_section_md(latest_chain_context(data_dir))
     full_md = summary_md + ("\n\n" + detail_md if detail_md else "")
     full_md += "\n\n" + miss_md if miss_md else ""
     full_md += "\n\n" + improve_md if improve_md else ""
     full_md += "\n\n" + campaign_md if campaign_md else ""
+    full_md += "\n\n" + chain_ctx_md if chain_ctx_md else ""
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(full_md + "\n", encoding="utf-8")

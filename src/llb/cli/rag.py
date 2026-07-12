@@ -286,8 +286,6 @@ def validate_retrieval(
     out: Optional[Path] = typer.Option(None, help="write the A/B JSON report here"),
 ) -> None:
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
-    import json
-
     from llb.executor.cases import spans_as_dicts
     from llb.executor.runner import _load_store
     from llb.goldset.schema import load_goldset
@@ -320,14 +318,16 @@ def validate_retrieval(
     vocabulary, glossary, known_word = _resolve_query_prep_deps(cfg, store, steps)
 
     if query_prep_ab:
-        stages = qp.cumulative_pipelines(
-            steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
+        _emit_query_prep_ab_report(
+            ab_items,
+            store,
+            k,
+            steps,
+            out,
+            vocabulary=vocabulary,
+            glossary=glossary,
+            known_word=known_word,
         )
-        report = qp.query_prep_ab_report(ab_items, store.retrieve, k, stages)
-        typer.echo(qp.format_query_prep_ab(report))
-        if out is not None:
-            out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")
         return
 
     pipeline = qp.QueryPrep.build(
@@ -344,6 +344,32 @@ def validate_retrieval(
         f"[validate-retrieval] n={metrics['n']} recall@{k}={metrics['recall_at_k']:.3f} "
         f"mrr={metrics['mrr']:.3f}{lane} -> {gate}"
     )
+
+
+def _emit_query_prep_ab_report(
+    ab_items: list[Any],
+    store: Any,
+    k: int,
+    steps: list[str],
+    out: Optional[Path],
+    *,
+    vocabulary: Any,
+    glossary: Any,
+    known_word: Any,
+) -> None:
+    """Print (and optionally write) the per-step cumulative query-prep A/B retrieval report."""
+    import json
+
+    from llb.rag import query_prep as qp
+
+    stages = qp.cumulative_pipelines(
+        steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
+    )
+    report = qp.query_prep_ab_report(ab_items, store.retrieve, k, stages)
+    typer.echo(qp.format_query_prep_ab(report))
+    if out is not None:
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")
 
 
 def _resolve_query_prep_deps(
@@ -471,14 +497,7 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import (
-        add_rerank_rows,
-        build_chunking_comparison,
-        build_hybrid_comparison,
-        compare_retrieval,
-        format_comparison,
-        load_compare_stores,
-    )
+    from llb.rag.compare import add_rerank_rows, compare_retrieval, format_comparison
 
     if strategies and hybrid:
         typer.echo("[error] --strategies and --hybrid are mutually exclusive", err=True)
@@ -493,6 +512,33 @@ def compare_retrieval_cmd(
     if split:
         items = [it for it in items if it.split == split]
     compare_items = [(it.question, spans_as_dicts(it)) for it in items]
+    stores = _build_compare_stores(cfg, strategies, hybrid, compare_items)
+    if reranker:
+        from llb.rag.rerank import DEFAULT_RERANK_CANDIDATES, CrossEncoderReranker
+
+        stores = add_rerank_rows(
+            stores,
+            CrossEncoderReranker(reranker),
+            rerank_candidates or DEFAULT_RERANK_CANDIDATES,
+        )
+    report = compare_retrieval(stores, compare_items, k)
+    typer.echo(format_comparison(report))
+    _echo_stage_latencies(stores)
+    if out is not None:
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        typer.echo(f"[compare-retrieval] wrote report -> {out}")
+
+
+def _build_compare_stores(
+    cfg: Any, strategies: Optional[str], hybrid: bool, compare_items: list[Any]
+) -> dict[str, Any]:
+    """The label -> store map to compare: per-strategy builds, hybrid rows, or built backends."""
+    from llb.rag.compare import (
+        build_chunking_comparison,
+        build_hybrid_comparison,
+        load_compare_stores,
+    )
+
     if strategies:
         selected = [s.strip() for s in strategies.split(",") if s.strip()]
         try:
@@ -511,16 +557,11 @@ def compare_retrieval_cmd(
             "[error] no retrieval backend is built (run build-index / build-graph)", err=True
         )
         raise typer.Exit(code=2)
-    if reranker:
-        from llb.rag.rerank import DEFAULT_RERANK_CANDIDATES, CrossEncoderReranker
+    return stores
 
-        stores = add_rerank_rows(
-            stores,
-            CrossEncoderReranker(reranker),
-            rerank_candidates or DEFAULT_RERANK_CANDIDATES,
-        )
-    report = compare_retrieval(stores, compare_items, k)
-    typer.echo(format_comparison(report))
+
+def _echo_stage_latencies(stores: dict[str, Any]) -> None:
+    """Print per-store retrieve/rerank stage latency when the store measured it."""
     for label, store in sorted(stores.items()):
         latency = getattr(store, "mean_stage_latency", None)
         if callable(latency):
@@ -529,9 +570,6 @@ def compare_retrieval_cmd(
                 f"[compare-retrieval] {label}: mean/query retrieve "
                 f"{stages['retrieve_s'] * 1000:.1f} ms + rerank {stages['rerank_s'] * 1000:.1f} ms"
             )
-    if out is not None:
-        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        typer.echo(f"[compare-retrieval] wrote report -> {out}")
 
 
 @app.command("compare-vector-stores")

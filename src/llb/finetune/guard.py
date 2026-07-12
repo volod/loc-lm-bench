@@ -36,24 +36,32 @@ def validate_adapter_for_eval(
     provenance = PROVENANCE_MANIFEST if recorded is None else PROVENANCE_REGISTRY
     source = recorded or manifest
 
+    _refuse_contaminated_adapter(source, items, provenance)
+    if judge_model is not None and judge_model == model:
+        raise SystemExit("[run-eval] tuned model is barred from judging its own answers")
+    return manifest
+
+
+def _refuse_contaminated_adapter(
+    source: JsonObject, items: list[GoldItem], provenance: str
+) -> None:
+    """SystemExit when training touched protected item ids or non-tuning splits."""
     dataset_ids = {str(item_id) for item_id in source.get("dataset_item_ids") or []}
     eval_protected = {item.id for item in items if item.split in PROTECTED_SPLITS}
     overlap = sorted(dataset_ids & eval_protected)
     split_counts = source.get("dataset_split_counts") or {}
     poisoned_splits = sorted(split for split in split_counts if split != TUNING_SPLIT)
-    if overlap or poisoned_splits:
-        details = []
-        if overlap:
-            details.append(f"offending ids: {', '.join(overlap)}")
-        if poisoned_splits:
-            details.append(f"dataset splits: {', '.join(poisoned_splits)}")
-        details.append(f"provenance: {provenance}")
-        raise SystemExit(
-            "[run-eval] adapter contamination guard refused this run; " + "; ".join(details)
-        )
-    if judge_model is not None and judge_model == model:
-        raise SystemExit("[run-eval] tuned model is barred from judging its own answers")
-    return manifest
+    if not overlap and not poisoned_splits:
+        return
+    details = []
+    if overlap:
+        details.append(f"offending ids: {', '.join(overlap)}")
+    if poisoned_splits:
+        details.append(f"dataset splits: {', '.join(poisoned_splits)}")
+    details.append(f"provenance: {provenance}")
+    raise SystemExit(
+        "[run-eval] adapter contamination guard refused this run; " + "; ".join(details)
+    )
 
 
 def _recorded_provenance(registry: Path | str | None, manifest: JsonObject) -> JsonObject | None:

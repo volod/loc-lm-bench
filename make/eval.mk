@@ -7,7 +7,7 @@
 	export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign distill \
 	register-adapter list-adapters serve-adapter gc-adapters \
 	prompt-system-compare bench-security bench-agentic agentic-harness-compare \
-	composite-headline platform-matrix
+	bench-chain-context composite-headline platform-matrix
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -270,6 +270,19 @@ agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compar
 	done
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
+
+bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-chain-context --chains "$(CHAIN_CONTEXT_CHAINS)" \
+		--model "$(CHAIN_CONTEXT_MODEL)" --backend "$(CHAIN_CONTEXT_BACKEND)" \
+		--corpus "$(CHAIN_CONTEXT_CORPUS)" --policies "$(CHAIN_CONTEXT_POLICIES)" \
+		--top-k "$(CHAIN_CONTEXT_TOP_K)" \
+		$(if $(CHAIN_CONTEXT_INDEX_DIR),--index-dir "$(CHAIN_CONTEXT_INDEX_DIR)",) \
+		$(if $(CHAIN_CONTEXT_BASE_URL),--base-url "$(CHAIN_CONTEXT_BASE_URL)",) \
+		$(if $(CHAIN_CONTEXT_MAX_MODEL_LEN),--max-model-len "$(CHAIN_CONTEXT_MAX_MODEL_LEN)",) \
+		$(if $(filter 1 true yes,$(CHAIN_CONTEXT_DATA_VERIFIED)),--data-verified,) \
+		$(if $(CHAIN_CONTEXT_VERIFICATION_REF),--verification-ref "$(CHAIN_CONTEXT_VERIFICATION_REF)",)
 
 composite-headline: ## Run the verified category suite for MODEL, then require a clean bench-composite preflight
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -1,12 +1,18 @@
 """Shared CLI helpers (config load, manifest, GPU readers, resolver probes)."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 import typer
 
 from llb.core.config import RunConfig
 from llb.core.contracts import ModelSpec
+
+
+def cli_error(message: str, *, code: int = 2) -> NoReturn:
+    """Print a one-line `[error] ...` and exit with the given code (default 2: bad usage)."""
+    typer.echo(f"[error] {message}", err=True)
+    raise typer.Exit(code=code)
 
 
 def load_config(config_path: Optional[Path], **overrides: Any) -> RunConfig:

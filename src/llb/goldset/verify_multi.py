@@ -129,7 +129,13 @@ def _load_manifest(base_ws: Path) -> dict[str, object]:
 
 
 def build_multi_reviewer_worksheets(
-    bundle: Path, out_path: Path, *, n: int, annotators: int, seed: int = 13
+    bundle: Path,
+    out_path: Path,
+    *,
+    n: int,
+    annotators: int,
+    seed: int = 13,
+    kind: str = "auto",
 ) -> list[Path]:
     """Draw ONE stratified sample and write it as `annotators` per-reviewer worksheets.
 
@@ -139,16 +145,41 @@ def build_multi_reviewer_worksheets(
     single-`worksheet` key so a multi-reviewer bundle can only stamp `--data-verified`
     through its accepted ledger, never through one reviewer's sheet alone.
     """
-    from llb.goldset.verify import _sample_rows  # sampler internals stay in verify.py
+    from llb.goldset.chains import chain_stratum_key, load_chains
+    from llb.goldset.verify import (
+        KIND_CHAINS,
+        _sample_chain_rows,
+        _sample_rows,
+        draw_chain_sample,
+        find_chains,
+        resolve_sample_kind,
+    )
 
     if annotators < 2:
         raise ValueError("multi-reviewer sampling needs --annotators >= 2")
     bundle = Path(bundle)
     out_path = Path(out_path)
-    items = load_goldset(find_goldset(bundle))
-    synthetic = bundle_is_synthetic(bundle)
-    sample = draw_stratified_sample(items, n, seed=seed)
-    rows = _sample_rows(bundle, sample, synthetic=synthetic)
+    resolved_kind = resolve_sample_kind(bundle, kind)
+    synthetic = bundle_is_synthetic(bundle) if resolved_kind != KIND_CHAINS else False
+    if resolved_kind == KIND_CHAINS:
+        chains = load_chains(find_chains(bundle))
+        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        rows = _sample_chain_rows(bundle, chain_sample)
+        population = len(chains)
+        sample_size = len(chain_sample)
+        strata_sizes: dict[str, int] = {}
+        for chain in chain_sample:
+            key = chain_stratum_key(chain)
+            strata_sizes[key] = strata_sizes.get(key, 0) + 1
+    else:
+        items = load_goldset(find_goldset(bundle))
+        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        rows = _sample_rows(bundle, gold_sample, synthetic=synthetic)
+        population = len(items)
+        sample_size = len(gold_sample)
+        strata_sizes = {}
+        for it in gold_sample:
+            strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
 
     paths: list[Path] = []
     for i in range(1, annotators + 1):
@@ -157,18 +188,16 @@ def build_multi_reviewer_worksheets(
         write_worksheet_rows(ws_path, reviewer_rows)
         paths.append(ws_path)
 
-    strata_sizes: dict[str, int] = {}
-    for it in sample:
-        strata_sizes[stratum_key(it)] = strata_sizes.get(stratum_key(it), 0) + 1
     manifest = {
         "bundle": str(bundle),
+        "kind": resolved_kind,
         "annotators": annotators,
         "worksheets": [str(p) for p in paths],
         "synthetic": synthetic,
         "seed": seed,
         "requested": n,
-        "sample_size": len(sample),
-        "population": len(items),
+        "sample_size": sample_size,
+        "population": population,
         "strata": strata_sizes,
     }
     atomic_write_text(
@@ -245,6 +274,61 @@ def _is_disagreement(decisions: Sequence[str], edits: Sequence[str]) -> bool:
     return decisions[0] == ACCEPT and len({e for e in edits}) > 1
 
 
+def _joint_decisions(
+    indexed: dict[str, dict[str, dict[str, str]]],
+    reviewers: Sequence[str],
+    joint: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    """Split the joint item ids into (jointly decided, disagreements)."""
+    jointly_decided: list[str] = []
+    disagreements: list[str] = []
+    for item_id in joint:
+        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
+        edits = [_edit(indexed[r][item_id]) for r in reviewers]
+        if all(d in (ACCEPT, REJECT) for d in decisions):
+            jointly_decided.append(item_id)
+            if _is_disagreement(decisions, edits):
+                disagreements.append(item_id)
+    return jointly_decided, disagreements
+
+
+def _joint_kappa(
+    indexed: dict[str, dict[str, dict[str, str]]],
+    reviewers: Sequence[str],
+    jointly_decided: Sequence[str],
+) -> float | None:
+    """Cohen's kappa for 2 reviewers, Fleiss' for 3+; None below 2 jointly decided rows."""
+    if len(reviewers) < 2 or len(jointly_decided) < 2:
+        return None
+    if len(reviewers) == 2:
+        a, b = reviewers
+        return cohen_kappa(
+            [_decision(indexed[a][i]) for i in jointly_decided],
+            [_decision(indexed[b][i]) for i in jointly_decided],
+        )
+    counts = [
+        [
+            sum(1 for r in reviewers if _decision(indexed[r][i]) == label)
+            for label in (ACCEPT, REJECT)
+        ]
+        for i in jointly_decided
+    ]
+    return fleiss_kappa(counts)
+
+
+def _per_reviewer_stats(
+    by_reviewer: dict[str, list[dict[str, str]]], reviewers: Sequence[str]
+) -> dict[str, dict[str, int]]:
+    return {
+        r: {
+            "decided": sum(1 for row in by_reviewer[r] if _decision(row) in (ACCEPT, REJECT)),
+            "accepted": sum(1 for row in by_reviewer[r] if _decision(row) == ACCEPT),
+            "rejected": sum(1 for row in by_reviewer[r] if _decision(row) == REJECT),
+        }
+        for r in reviewers
+    }
+
+
 def agreement_report(by_reviewer: dict[str, list[dict[str, str]]]) -> dict[str, object]:
     """Inter-annotator agreement over the jointly decided rows.
 
@@ -255,58 +339,21 @@ def agreement_report(by_reviewer: dict[str, list[dict[str, str]]]) -> dict[str, 
     reviewers = sorted(by_reviewer)
     indexed = {r: _rows_by_item(by_reviewer[r]) for r in reviewers}
     joint = _joint_item_ids(by_reviewer)
-
-    jointly_decided: list[str] = []
-    disagreements: list[str] = []
-    for item_id in joint:
-        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
-        edits = [_edit(indexed[r][item_id]) for r in reviewers]
-        if all(d in (ACCEPT, REJECT) for d in decisions):
-            jointly_decided.append(item_id)
-            if _is_disagreement(decisions, edits):
-                disagreements.append(item_id)
-
-    kappa: float | None = None
-    method = "cohen" if len(reviewers) == 2 else "fleiss"
-    if len(reviewers) >= 2 and len(jointly_decided) >= 2:
-        if len(reviewers) == 2:
-            a, b = reviewers
-            kappa = cohen_kappa(
-                [_decision(indexed[a][i]) for i in jointly_decided],
-                [_decision(indexed[b][i]) for i in jointly_decided],
-            )
-        else:
-            counts = [
-                [
-                    sum(1 for r in reviewers if _decision(indexed[r][i]) == label)
-                    for label in (ACCEPT, REJECT)
-                ]
-                for i in jointly_decided
-            ]
-            kappa = fleiss_kappa(counts)
-
+    jointly_decided, disagreements = _joint_decisions(indexed, reviewers, joint)
     observed = (
         (len(jointly_decided) - len(disagreements)) / len(jointly_decided)
         if jointly_decided
         else 0.0
     )
-    per_reviewer = {
-        r: {
-            "decided": sum(1 for row in by_reviewer[r] if _decision(row) in (ACCEPT, REJECT)),
-            "accepted": sum(1 for row in by_reviewer[r] if _decision(row) == ACCEPT),
-            "rejected": sum(1 for row in by_reviewer[r] if _decision(row) == REJECT),
-        }
-        for r in reviewers
-    }
     return {
         "annotators": reviewers,
         "joint_items": len(joint),
         "jointly_decided": len(jointly_decided),
         "observed_agreement": observed,
-        "kappa": kappa,
-        "kappa_method": method,
+        "kappa": _joint_kappa(indexed, reviewers, jointly_decided),
+        "kappa_method": "cohen" if len(reviewers) == 2 else "fleiss",
         "disagreements": disagreements,
-        "per_reviewer": per_reviewer,
+        "per_reviewer": _per_reviewer_stats(by_reviewer, reviewers),
     }
 
 
@@ -445,17 +492,24 @@ def consensus_rows(
         if adj_row is not None and _decision(adj_row) in (ACCEPT, REJECT):
             merged.append(dict(adj_row))
             continue
-        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
-        edits = [_edit(indexed[r][item_id]) for r in reviewers]
-        row = dict(indexed[reviewers[0]][item_id])
-        unanimous = all(d in (ACCEPT, REJECT) for d in decisions) and not _is_disagreement(
-            decisions, edits
-        )
-        if not unanimous:
-            for col in HUMAN_COLS:
-                row[col] = ""
-        merged.append(row)
+        merged.append(_reviewer_consensus_row(indexed, reviewers, item_id))
     return merged
+
+
+def _reviewer_consensus_row(
+    indexed: dict[str, dict[str, dict[str, str]]], reviewers: list[str], item_id: str
+) -> dict[str, str]:
+    """A unanimous decision row (first reviewer's columns), else an UNDECIDED (blanked) row."""
+    decisions = [_decision(indexed[r][item_id]) for r in reviewers]
+    edits = [_edit(indexed[r][item_id]) for r in reviewers]
+    row = dict(indexed[reviewers[0]][item_id])
+    unanimous = all(d in (ACCEPT, REJECT) for d in decisions) and not _is_disagreement(
+        decisions, edits
+    )
+    if not unanimous:
+        for col in HUMAN_COLS:
+            row[col] = ""
+    return row
 
 
 def resolve_multi_reviewer_rows(worksheet: Path) -> list[dict[str, str]] | None:

@@ -135,6 +135,29 @@ def curate_security(
     cases = _load_cases(inputs, report)
     report.loaded = len(cases)
 
+    valid = _valid_grounded_cases(cases, corpus_texts, report)
+    valid = _dedup_cases(valid, embedder, dedup_threshold, report, prior_questions)
+    valid = _drop_orphan_pair_variants(valid, report)
+    out = _finalize_cases(valid, report)
+    report.kept = len(out)
+    _LOG.info(
+        "[curate] security: kept %d/%d (%d invalid, %d flabby, %d exact-dup, %d near-dup)",
+        report.kept,
+        report.loaded,
+        len(report.invalid),
+        len(report.flabby),
+        len(report.exact_duplicates),
+        len(report.near_duplicates),
+    )
+    return out, report
+
+
+def _valid_grounded_cases(
+    cases: list[dict[str, Any]],
+    corpus_texts: dict[str, str] | None,
+    report: CurationReport,
+) -> list[dict[str, Any]]:
+    """Cases that pass schema validation AND whose corpus hint grounds (rejects go to report)."""
     valid: list[dict[str, Any]] = []
     for i, case in enumerate(cases):
         case_id = _case_id(case, i)
@@ -143,7 +166,17 @@ def curate_security(
         if not _ground_hint(case, case_id, corpus_texts, report):
             continue
         valid.append(case)
+    return valid
 
+
+def _dedup_cases(
+    valid: list[dict[str, Any]],
+    embedder: QuestionEmbedder | None,
+    dedup_threshold: float,
+    report: CurationReport,
+    prior_questions: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Drop exact then near prompt duplicates (pair variants stay protected as a group)."""
     ids = [_case_id(c, i) for i, c in enumerate(valid)]
     sources = [c["_source"] for c in valid]
     keep = drop_exact_duplicates(
@@ -160,9 +193,11 @@ def curate_security(
         protected_groups=[_protection_key(c) for c in valid],
         prior_texts=prior_questions,
     )
-    valid = [valid[i] for i in keep]
-    valid = _drop_orphan_pair_variants(valid, report)
+    return [valid[i] for i in keep]
 
+
+def _finalize_cases(valid: list[dict[str, Any]], report: CurationReport) -> list[dict[str, Any]]:
+    """Assign unique ids and strip the internal `_source` bookkeeping field."""
     final_ids = unique_ids(
         [_case_id(c, i) for i, c in enumerate(valid)], report, [c["_source"] for c in valid]
     )
@@ -171,14 +206,4 @@ def curate_security(
         cleaned = {k: v for k, v in case.items() if k != "_source"}
         cleaned["id"] = case_id
         out.append(cleaned)
-    report.kept = len(out)
-    _LOG.info(
-        "[curate] security: kept %d/%d (%d invalid, %d flabby, %d exact-dup, %d near-dup)",
-        report.kept,
-        report.loaded,
-        len(report.invalid),
-        len(report.flabby),
-        len(report.exact_duplicates),
-        len(report.near_duplicates),
-    )
-    return out, report
+    return out

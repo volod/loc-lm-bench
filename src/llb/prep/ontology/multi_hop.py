@@ -1,11 +1,12 @@
 """Draft + ground multi-hop chain questions from graph-path seeds (yield-max).
 
 Each `MultiHopSeed` is a 2-hop `A -r1-> B -r2-> C` chain with an exact evidence span per hop. The
-drafter is shown both facts and asked for ONE question that needs both; the two evidence spans (not
-the model's free-text answer) become the item's grounded source spans, so a multi-hop item carries
->= MULTI_HOP_MIN_SPANS spans and passes span-exact validation by construction. Grounding reuses the
-same exact-then-normalized match as the flat drafter, so a span is re-verified against the copied
-corpus doc before it is emitted.
+drafter is shown both facts and asked for ONE question that needs both; the two evidence spans
+become the item's grounded source spans, so a multi-hop item carries >= MULTI_HOP_MIN_SPANS spans
+and passes span-exact validation by construction. The reference answer must also contain the
+verbatim bridge or end entity, which makes the answer itself span-checkable against the chain.
+Grounding reuses the same exact-then-normalized match as the flat drafter, so a span is re-verified
+against the copied corpus doc before it is emitted.
 """
 
 import json
@@ -23,6 +24,7 @@ from llb.prep.ontology.constants import (
     QUESTION_TYPE_MULTI_HOP,
 )
 from llb.prep.ontology.draft import context_window
+from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.models import DocRecord, ItemLabels, MultiHopSeed, MultiHopStep
 from llb.prompts import render_text
 
@@ -124,41 +126,62 @@ def build_multi_hop_items(
     labels: dict[str, ItemLabels] = {}
     n_dropped = 0
     for i, (seed, draft) in enumerate(zip(seeds, drafts)):
-        if draft is None:
+        item = _multi_hop_item(doc_texts, seed, draft, i, split)
+        if item is None:
             n_dropped += 1
             continue
-        question = str(draft.get("question", "")).strip()
-        reference = str(draft.get("reference_answer", "")).strip()
-        if not question or not reference:
-            n_dropped += 1
-            continue
-        spans: list[SourceSpan] = []
-        span_keys: set[tuple[str, int, int]] = set()
-        for step in seed.steps:
-            span = _ground_step_span(doc_texts, step)
-            if span is None:
-                continue
-            key = (span.doc_id, span.char_start, span.char_end)
-            if key in span_keys:
-                continue
-            span_keys.add(key)
-            spans.append(span)
-        if len(spans) < MULTI_HOP_MIN_SPANS:
-            n_dropped += 1
-            continue
-        item = GoldItem(
-            id=f"{spans[0].doc_id}-{MULTI_HOP_ID_PREFIX}-{i}",
-            question=question,
-            reference_answer=reference,
-            source_doc_id=spans[0].doc_id,
-            source_spans=spans,
-            provenance=PROVENANCE_KIND,
-            verified=False,
-            split=split,
-        )
         items.append(item)
         labels[item.id] = ItemLabels(
             question_type=QUESTION_TYPE_MULTI_HOP, difficulty=MULTI_HOP_DIFFICULTY
         )
     _LOG.info("[ontology] multi-hop: %d chain items kept (%d dropped)", len(items), n_dropped)
     return items, labels
+
+
+def _distinct_step_spans(doc_texts: dict[str, str], seed: MultiHopSeed) -> list[SourceSpan]:
+    """The seed's hop spans that re-ground exactly, with byte-identical repeats removed."""
+    spans: list[SourceSpan] = []
+    span_keys: set[tuple[str, int, int]] = set()
+    for step in seed.steps:
+        span = _ground_step_span(doc_texts, step)
+        if span is None:
+            continue
+        key = (span.doc_id, span.char_start, span.char_end)
+        if key in span_keys:
+            continue
+        span_keys.add(key)
+        spans.append(span)
+    return spans
+
+
+def _multi_hop_item(
+    doc_texts: dict[str, str],
+    seed: MultiHopSeed,
+    draft: dict[str, Any] | None,
+    index: int,
+    split: Split,
+) -> GoldItem | None:
+    """One grounded multi-span GoldItem, or None when the draft/grounding is insufficient."""
+    if draft is None:
+        return None
+    question = str(draft.get("question", "")).strip()
+    reference = str(draft.get("reference_answer", "")).strip()
+    if not question or not reference:
+        return None
+    if not all(is_ukrainian_dominant(text) for text in (question, reference)):
+        return None
+    if not any(entity and entity in reference for entity in (seed.bridge, seed.end)):
+        return None
+    spans = _distinct_step_spans(doc_texts, seed)
+    if len(spans) < MULTI_HOP_MIN_SPANS:
+        return None
+    return GoldItem(
+        id=f"{spans[0].doc_id}-{MULTI_HOP_ID_PREFIX}-{index}",
+        question=question,
+        reference_answer=reference,
+        source_doc_id=spans[0].doc_id,
+        source_spans=spans,
+        provenance=PROVENANCE_KIND,
+        verified=False,
+        split=split,
+    )

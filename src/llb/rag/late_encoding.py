@@ -111,29 +111,49 @@ def encode_records_late(
     passage encoding, so the returned matrix is always complete.
     """
     out: "list[Vector | None]" = [None] * len(records)
+    _encode_per_document(records, read_text, encode_doc, out)
+    _fill_fallback_vectors(records, encode_fallback, out)
+    complete = [vec for vec in out if vec is not None]
+    if len(complete) != len(records):
+        raise ValueError("late encoding produced fewer vectors than chunk records")
+    return complete
+
+
+def _encode_per_document(
+    records: list[ChunkRecord],
+    read_text: Callable[[str], str],
+    encode_doc: DocEncoder,
+    out: "list[Vector | None]",
+) -> None:
+    """Late-encode records grouped per document into `out` (unreadable docs stay None)."""
     by_doc: dict[str, list[int]] = {}
     for i, record in enumerate(records):
         by_doc.setdefault(record["doc_id"], []).append(i)
     for doc_id, indices in by_doc.items():
         text = read_text(doc_id)
         if not text:
-            continue  # unreadable doc -> per-chunk fallback below
+            continue  # unreadable doc -> per-chunk fallback
         spans = [(records[i]["char_start"], records[i]["char_end"]) for i in indices]
         for i, vec in zip(indices, encode_doc(text, spans)):
             out[i] = vec
+
+
+def _fill_fallback_vectors(
+    records: list[ChunkRecord],
+    encode_fallback: Callable[[list[str]], Any],
+    out: "list[Vector | None]",
+) -> None:
+    """Plain per-chunk-encode every still-missing slot of `out` so the matrix is complete."""
     missing = [i for i, vec in enumerate(out) if vec is None]
-    if missing:
-        _LOG.info(
-            "[late-encoding] %d/%d chunks fell back to per-chunk encoding",
-            len(missing),
-            len(records),
-        )
-        for i, vec in zip(missing, encode_fallback([records[i]["text"] for i in missing])):
-            out[i] = [float(x) for x in vec]
-    complete = [vec for vec in out if vec is not None]
-    if len(complete) != len(records):
-        raise ValueError("late encoding produced fewer vectors than chunk records")
-    return complete
+    if not missing:
+        return
+    _LOG.info(
+        "[late-encoding] %d/%d chunks fell back to per-chunk encoding",
+        len(missing),
+        len(records),
+    )
+    for i, vec in zip(missing, encode_fallback([records[i]["text"] for i in missing])):
+        out[i] = [float(x) for x in vec]
 
 
 def encode_store_vectors(records: list[ChunkRecord], corpus_root: Path | str, embedder: Any) -> Any:

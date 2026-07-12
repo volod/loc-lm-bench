@@ -508,6 +508,77 @@ def serve_tools_mcp_cmd(
     serve_stdio(tool_catalog, name=name)
 
 
+@app.command("bench-chain-context")
+def bench_chain_context_cmd(
+    chains: Path = typer.Option(
+        Path("samples/goldsets/chain_context_uk_v1/chains.jsonl"),
+        help="verified chain set (JSONL)",
+    ),
+    model: str = typer.Option(..., help="candidate model id (Ollama tag or HF repo id)"),
+    backend: str = typer.Option("ollama", help="ollama | vllm | llamacpp"),
+    corpus: Path = typer.Option(
+        Path("samples/goldsets/chain_context_uk_v1/corpus"),
+        help="corpus dir; a RAG store is built in-process for per-step retrieval",
+    ),
+    index_dir: Optional[Path] = typer.Option(
+        None, help="load a prebuilt RAG store instead of building one from --corpus"
+    ),
+    policies: str = typer.Option(
+        "fresh,history,summary,roles", help="comma-separated context policies to compare"
+    ),
+    top_k: int = typer.Option(4, help="retrieved chunks per step"),
+    base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
+    ),
+    max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
+    data_verified: bool = typer.Option(
+        False,
+        help="stamp the run as human verification gate-verified for composite-headline eligibility",
+    ),
+    verification_ref: Optional[str] = typer.Option(
+        None,
+        help="path or label for the verification worksheet, sample manifest, or accepted ledger",
+    ),
+) -> None:
+    """Rank context-management policies for one fixed model over a verified chain set."""
+    from llb.bench.chain_context import ChainContextRun, load_chains_file, run_chain_context
+    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.rag.store import RagStore
+
+    cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
+    chain_set = load_chains_file(chains)
+    policy_list = [p.strip() for p in policies.split(",") if p.strip()]
+    retriever = (
+        RagStore.load(index_dir)
+        if index_dir is not None
+        else RagStore.build(corpus, embedding_model=cfg.embedding_model)
+    )
+    vram_reader, pid_reader = best_effort_gpu_readers()
+
+    def run(complete: LLMComplete) -> ChainContextRun:
+        return run_chain_context(
+            chain_set,
+            model=model,
+            backend=backend,
+            retriever=retriever,
+            complete=complete,
+            policies=policy_list,
+            k=top_k,
+            data_dir=cfg.data_dir,
+            data_verified=data_verified,
+            verification_ref=verification_ref,
+        )
+
+    result = drive_with_backend(
+        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+    )
+    typer.echo(result.table)
+    typer.echo(result.recommendation)
+    for report in result.reports:
+        if report.paths is not None:
+            typer.echo(f"[bench-chain-context]   {report.policy:<8} -> {report.paths['manifest']}")
+
+
 @app.command("bench-reliability")
 def bench_reliability_cmd(
     run_dir: Path = typer.Option(..., help="a run bundle dir (contains scores.jsonl)"),

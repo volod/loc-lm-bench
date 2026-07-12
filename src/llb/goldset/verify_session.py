@@ -5,6 +5,9 @@ A terminal session that walks a stratified sample item by item and writes the HU
 here, OUT of the pure `verify.py`; the two share the worksheet schema + atomic load/save. This
 mirrors how `judge/rate.py` pairs with `judge/calibration.py`.
 
+The card rendering and command parsing (the pure presentation half) live in `verify_card.py`,
+imported here; this module owns the session loop and its handlers.
+
 Design notes that matter for trust:
 - The second-frontier `cc_*` verdict is HIDDEN by default. The human must verify INDEPENDENTLY;
   seeing the cross-check first anchors them and defeats the point of the gate. `--show-crosscheck`
@@ -20,6 +23,8 @@ without a terminal, model, endpoint, or GPU (it operates only on the CSV).
 
 import csv
 import json
+import os
+import shutil
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -29,7 +34,6 @@ from pathlib import Path
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.verify import (
     ACCEPT,
-    CHECK_COLS,
     CORPUS_DIRNAME,
     FAIL,
     HUMAN_COLS,
@@ -46,136 +50,32 @@ from llb.goldset.verify import (
     load_worksheet,
     write_worksheet_rows,
 )
+from llb.goldset.verify_card import (
+    ACCEPT_CMD,
+    CHECK,
+    CLEAR,
+    EDIT,
+    HELP,
+    JUMP,
+    NEXT,
+    NOTE,
+    PREV,
+    PROMPT_HINT,
+    QUIT,
+    REJECT_CMD,
+    UNDECIDED,
+    _CHAIN_DEFAULT_WIDTH,
+    Command,
+    _is_chain_row,
+    _is_synthetic_row,
+    format_card,
+    help_text,
+    parse_command,
+)
 
 SESSION_STATS_FILENAME = "verify_session_stats.json"
 _EDIT_CONFIRM_CTX_CHARS = 80  # corpus window rendered to confirm a re-grounded edit
-
-# The four checks, in card order, mapped to the keystroke that marks them. Lowercase = PASS,
-# uppercase = FAIL. `planted` only applies to synthetic items (blank/N/A for real ones).
-CHECK_KEYS: dict[str, str] = {
-    "g": "chk_grounded",
-    "a": "chk_answerable",
-    "r": "chk_reference",
-    "p": "chk_planted",
-}
-CHECK_LABEL: dict[str, str] = {
-    "chk_grounded": "span grounded (offsets really support the answer/label)",
-    "chk_answerable": "answerable + non-circular (question doesn't leak its answer)",
-    "chk_reference": "reference answer correct",
-    "chk_planted": "planted labels match the doc (synthetic only)",
-}
-
-# Command kinds returned by `parse_command`.
-CHECK = "check"
-ACCEPT_CMD = "accept"
-REJECT_CMD = "reject"
-EDIT = "edit"
-NOTE = "note"
-NEXT = "next"
-PREV = "prev"
-JUMP = "jump"
-UNDECIDED = "undecided"
-CLEAR = "clear"
-HELP = "help"
-QUIT = "quit"
-UNKNOWN = "unknown"
-
 _ESC = "\x1b"
-_ARROWS = {f"{_ESC}[A": PREV, f"{_ESC}[D": PREV, f"{_ESC}[B": NEXT, f"{_ESC}[C": NEXT}
-# Command keys mirror the external-RAG review session (`llb.scoring.external_rag_session`) where
-# the two tools do the same thing: o=note and w=edit-the-answer are shared aliases, and the
-# navigation row (Enter/n, b, u, j<N>, ?, q) is identical. The decision keys necessarily differ:
-# here a/r/p mark CHECKS (answerable/reference/planted), so accept/reject are y/x.
-_SIMPLE_COMMANDS = {
-    "": NEXT,
-    "n": NEXT,
-    "b": PREV,
-    "u": UNDECIDED,
-    "c": CLEAR,
-    "y": ACCEPT_CMD,
-    "x": REJECT_CMD,
-    "e": EDIT,
-    "w": EDIT,
-    "q": QUIT,
-    "quit": QUIT,
-    "?": HELP,
-    "h": HELP,
-    "help": HELP,
-    "o": NOTE,
-    "note": NOTE,
-}
-
-PROMPT_HINT = (
-    "decide: y=accept, x=reject (code inferred), x <code>=coded reject; "
-    "checks: g/a/r/p=PASS, G/A/R/P=FAIL\n"
-    "edit/nav: e/w=edit answer, o=note, c=clear, Enter/n=next, b=prev, u=undecided, "
-    "j<N>=jump, ?=help, q=quit"
-)
-
-
-@dataclass(frozen=True)
-class Command:
-    """A parsed prompt line. For CHECK, `field` is the column and `value` is pass/fail; for JUMP,
-    `value` is the target; `raw` carries offending text for UNKNOWN so the loop can echo it."""
-
-    kind: str
-    field: str = ""
-    value: bool | int | None = None
-    raw: str = ""
-
-
-def _parse_simple_command(s: str) -> Command | None:
-    kind = _SIMPLE_COMMANDS.get(s.lower())
-    return Command(kind) if kind is not None else None
-
-
-def _parse_check_command(s: str) -> Command | None:
-    if s in CHECK_KEYS:
-        return Command(CHECK, field=CHECK_KEYS[s], value=True)
-    if s.lower() in CHECK_KEYS and s.isupper():
-        return Command(CHECK, field=CHECK_KEYS[s.lower()], value=False)
-    return None
-
-
-def _parse_jump_command(s: str) -> Command | None:
-    if not s.lower().startswith("j"):
-        return None
-    rest = s[1:].strip()
-    if rest.isdigit():
-        return Command(JUMP, value=int(rest))
-    return Command(UNKNOWN, raw=s)
-
-
-def _parse_reject_code_command(s: str) -> Command | None:
-    """`x <code>` -- reject with an explicit coded reason (bare `x` stays a simple command)."""
-    if not s.lower().startswith("x "):
-        return None
-    return Command(REJECT_CMD, field=s[2:].strip().lower())
-
-
-def parse_command(raw: str) -> Command:
-    """Parse one prompt line into a `Command` (pure; no I/O, no state).
-
-    Empty / `n` = next; `b`/up/left arrow = previous; `g/a/r/p` mark a check PASS, the uppercase
-    forms FAIL; `y` = accept, `x` = reject (code inferred from failed checks), `x <code>` = reject
-    with an explicit coded reason; `e` = edit the reference answer (re-grounded immediately);
-    `note` = edit a note; `j <N>`/`jN` = jump; `u` = next undecided; `c` = clear this item;
-    `?`/`h` = help; `q` = save + quit.
-    """
-    s = raw.strip()
-    if s in _ARROWS:
-        return Command(_ARROWS[s])
-    parsers = (
-        _parse_simple_command,
-        _parse_check_command,
-        _parse_reject_code_command,
-        _parse_jump_command,
-    )
-    for parser in parsers:
-        cmd = parser(s)
-        if cmd is not None:
-            return cmd
-    return Command(UNKNOWN, raw=s)
 
 
 def first_undecided_index(rows: Sequence[dict[str, str]]) -> int:
@@ -280,111 +180,6 @@ def save_human_columns(
         if overlay is not None:
             disk_row.update(overlay)
     write_worksheet_rows(path, disk_rows, disk_fields)
-
-
-def _field(row: dict[str, str], name: str, blank: str) -> str:
-    value = (row.get(name) or "").strip()
-    return value if value else blank
-
-
-def _is_synthetic_row(row: dict[str, str]) -> bool:
-    return (row.get("synthetic") or "").strip().lower() == "true"
-
-
-def _indent(text: str, prefix: str = "    ") -> str:
-    if not text:
-        return prefix.rstrip()
-    return "\n".join(prefix + line for line in text.splitlines())
-
-
-def format_card(
-    row: dict[str, str],
-    position: int,
-    total: int,
-    decided: int,
-    *,
-    show_crosscheck: bool = False,
-) -> str:
-    """Render the per-item card: the question/reference, the cited span inside its corpus window,
-    the four check states, and the decision. `cc_*` shown ONLY when `show_crosscheck` is set.
-
-    The layout mirrors the external-RAG review card (`external_rag_session.format_card`): a
-    `=====` banner, `== field:` labels, a BLANK line before `== question:` so consecutive cards
-    are visually delimited, and indented multi-line evidence blocks.
-    """
-    remaining = total - decided
-    rank = (row.get("retrieval_rank") or "").strip() or "(none)"
-    page = (row.get("page_citation") or "").strip() or "(none)"
-    lines = [
-        "===== goldset verification review =====",
-        f"item {position}/{total} (decided {decided}, remaining {remaining})",
-        f"== id: {row.get('item_id', '')}",
-        f"== meta: stratum={row.get('stratum', '')} synthetic={row.get('synthetic', '')} "
-        f"retrieval_rank={rank}",
-    ]
-    reviewer = (row.get("reviewer_id") or "").strip()
-    if reviewer:
-        lines.append(f"== reviewer: {reviewer}")
-    priors = (row.get("prior_decisions") or "").strip()
-    if priors:
-        lines.append(f"== prior_decisions: {priors} -- decide independently, then compare")
-    lines += [
-        "",
-        f"== question: {row.get('question', '')}",
-        f"== reference_answer: {row.get('reference_answer', '')}",
-        f"== span: doc={row.get('span_doc_id', '')} page={page}",
-        "== context (cited span between >>> <<<)",
-        _indent(row.get("context", "") or "(missing)"),
-        "== checks:",
-    ]
-    synthetic = _is_synthetic_row(row)
-    for col in CHECK_COLS:
-        if col == "chk_planted" and not synthetic:
-            continue
-        lines.append(f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
-    lines.append(f"== decision: {_field(row, 'decision', '(undecided)')}")
-    edited = (row.get("edited_answer") or "").strip()
-    if edited:
-        lines.append(f"== edited_answer: {edited}")
-    code = (row.get("reject_code") or "").strip()
-    if code:
-        lines.append(f"== reject_code: {code}")
-    note = (row.get("human_note") or "").strip()
-    if note:
-        lines.append(f"== human_note: {note}")
-    if show_crosscheck:
-        cc = "  ".join(
-            f"{key}={_field(row, f'cc_{key}', '?')}"
-            for key in ("grounded", "non_circular", "supported", "answerable")
-        )
-        lines.append(f"== crosscheck: {cc}  note={_field(row, 'cc_note', '')}")
-    return "\n".join(lines)
-
-
-def help_text() -> str:
-    """The command + check reference shown by `?`."""
-    checks = "\n".join(
-        f"  {key} / {key.upper()}  {CHECK_LABEL[CHECK_KEYS[key]]}" for key in CHECK_KEYS
-    )
-    return "\n".join(
-        [
-            "checks (lowercase = PASS, uppercase = FAIL):",
-            checks,
-            "decision:",
-            "  y        accept (within tolerance)",
-            "  x        reject (code inferred from failed checks)",
-            f"  x <code> reject with an explicit code: {', '.join(REJECT_CODES)}",
-            "edits:",
-            "  e / w    edit the reference answer (accept-with-edit; re-grounded immediately)",
-            "  o / note edit a note",
-            "  c        clear this item's marks",
-            "navigation:",
-            "  n/Enter  next                           b        previous",
-            "  j <N>    jump to item N                 u        next undecided",
-            "  ?/h      this help                      q        save + quit",
-            "verify INDEPENDENTLY against the corpus window -- do not anchor to the cross-check.",
-        ]
-    )
 
 
 def _default_output(text: str) -> None:
@@ -702,6 +497,12 @@ def _handle_answer_edit(row: dict[str, str], ctx: "SessionContext") -> None:
     un-groundable edit is refused on the spot (and `emit_accepted_ledger` re-checks at accept
     time, so a hand-edited CSV cannot certify either).
     """
+    if _is_chain_row(row):
+        ctx.emit(
+            "[verify] chain answer edits are not supported; use o=note and reject the chain "
+            "if any step needs a different span."
+        )
+        return
     text = _read("edited reference answer (empty to clear): ", ctx.it, ctx.emit).strip()
     if not text:
         row["edited_answer"] = ""
@@ -772,13 +573,23 @@ class SessionContext:
     corpus_root: Path | None
     stats: SessionStats
     show_crosscheck: bool = False
+    color: bool = False
+    terminal_width: int = _CHAIN_DEFAULT_WIDTH
 
 
 def _handle_row_action(ctx: SessionContext, idx: int, total: int) -> int:
     rows = ctx.rows
     row = rows[idx]
     ctx.emit(
-        format_card(row, idx + 1, total, decided_count(rows), show_crosscheck=ctx.show_crosscheck)
+        format_card(
+            row,
+            idx + 1,
+            total,
+            decided_count(rows),
+            show_crosscheck=ctx.show_crosscheck,
+            color=ctx.color,
+            width=ctx.terminal_width,
+        )
     )
     cmd = parse_command(_read(f"{PROMPT_HINT}\nverify> ", ctx.it, ctx.emit))
 
@@ -844,6 +655,7 @@ def run_session(
     path = Path(worksheet_path)
     emit = output or _default_output
     it: Iterator[str] | None = iter(inputs) if inputs is not None else None
+    use_color, terminal_width = _terminal_presentation(interactive=output is None)
 
     disk_rows, fieldnames = load_worksheet(path)
     if not disk_rows:
@@ -868,28 +680,51 @@ def run_session(
         corpus_root=resolved_corpus,
         stats=stats,
         show_crosscheck=show_crosscheck,
+        color=use_color,
+        terminal_width=terminal_width,
     )
 
     total = len(rows)
     idx = _get_idx(start, total, rows)
 
     _emit_intro(emit)
-
-    try:
-        while True:
-            idx, is_completion = _handle_completion_screen(idx, total, rows, emit, it)
-            if is_completion:
-                continue
-
-            idx = _handle_row_action(ctx, idx, total)
-    except (_Quit, EOFError):
-        pass
-    except KeyboardInterrupt:
-        emit("")
-
+    _review_until_done(ctx, idx, total, rows, emit, it)
     _save(path, rows, fieldnames)
     if stats.decisions:
         append_session_stats(path, _session_record(stats, rows))
     for line in summary_lines(rows, path, stats=stats):
         emit(line)
     return decided_count(rows)
+
+
+def _terminal_presentation(*, interactive: bool) -> tuple[bool, int]:
+    """`(use_color, terminal_width)` for a real terminal; plain defaults when injected."""
+    interactive_terminal = interactive and sys.stdout.isatty()
+    use_color = interactive_terminal and "NO_COLOR" not in os.environ
+    terminal_width = (
+        shutil.get_terminal_size(fallback=(_CHAIN_DEFAULT_WIDTH, 24)).columns
+        if interactive_terminal
+        else _CHAIN_DEFAULT_WIDTH
+    )
+    return use_color, terminal_width
+
+
+def _review_until_done(
+    ctx: "SessionContext",
+    idx: int,
+    total: int,
+    rows: list[dict[str, str]],
+    emit: Callable[[str], None],
+    it: Iterator[str] | None,
+) -> None:
+    """Advance through the review queue until quit / EOF / interrupt (never raises)."""
+    try:
+        while True:
+            idx, is_completion = _handle_completion_screen(idx, total, rows, emit, it)
+            if is_completion:
+                continue
+            idx = _handle_row_action(ctx, idx, total)
+    except (_Quit, EOFError):
+        pass
+    except KeyboardInterrupt:
+        emit("")

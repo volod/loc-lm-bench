@@ -11,10 +11,10 @@ is always the same text as long as the extraction settings are unchanged -- whic
 (`extraction_journal.meta.json`) pins and `--resume` reads back. A journaled `DocExtraction` is
 already grounded against the FULL original text, so replaying it needs no re-grounding.
 
-A window that raised inside the adapter (swallowed transport error -> empty extraction) IS
-journaled: that window is done-as-empty, matching the non-resumed run which would have written the
-same empty result. A hard interruption (process kill / KeyboardInterrupt) propagates and simply
-leaves the window un-journaled, so resume re-runs it.
+Only successfully parsed JSON objects are journaled. Malformed or failed calls remain absent so a
+resume can regenerate them. A valid parsed object may still produce an empty grounded extraction;
+new journal rows mark that distinction explicitly. Legacy empty rows without that marker are
+ignored because older code also journaled parse and transport failures as empty extractions.
 """
 
 import json
@@ -49,6 +49,7 @@ class ExtractionJournal:
         if not self.path.is_file():
             return 0
         loaded = 0
+        ignored_legacy_empty = 0
         with self.path.open(encoding="utf-8") as fh:
             for line_no, line in enumerate(fh, 1):
                 line = line.strip()
@@ -67,8 +68,18 @@ class ExtractionJournal:
                         exc,
                     )
                     continue
+                if not record.get("parsed") and not _has_content(extraction):
+                    ignored_legacy_empty += 1
+                    continue
                 self._done[(doc_id, window_index)] = extraction
                 loaded += 1
+        if ignored_legacy_empty:
+            _LOG.warning(
+                "[ontology] ignoring %d legacy empty extraction-journal rows in %s; "
+                "those windows will be regenerated",
+                ignored_legacy_empty,
+                self.path,
+            )
         if loaded:
             _LOG.info(
                 "[ontology] resuming: %d journaled extraction windows in %s", loaded, self.path
@@ -93,8 +104,13 @@ class ExtractionJournal:
                 "doc_id": doc_id,
                 "window_index": window_index,
                 "window_total": window_total,
+                "parsed": True,
                 "extraction": extraction.model_dump(),
             }
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
             self._done[key] = extraction
+
+
+def _has_content(extraction: DocExtraction) -> bool:
+    return bool(extraction.entities or extraction.events or extraction.claims or extraction.facts)

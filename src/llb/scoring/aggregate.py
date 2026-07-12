@@ -36,6 +36,9 @@ TIER_SUMMARIZATION = (
     "summarization"  # category expansion summarization (reference coverage + faithfulness)
 )
 TIER_STRUCTURED = "structured"  # structured output (schema conformance + field accuracy)
+TIER_CHAIN_CONTEXT = (
+    "chain_context"  # context-policy comparison for ONE model (policy is the ranked row label)
+)
 
 
 @dataclass

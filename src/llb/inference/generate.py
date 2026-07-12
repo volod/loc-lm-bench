@@ -137,37 +137,49 @@ def select_host_gemma4_target(
     manifest = load_manifest(manifest_path)
     entries = _tier_entries(manifest, tier_info.tier_gb)
     allow_cuda = tier_info.detected or gpu_gb is not None
-    rows: list[dict[str, Any]] = []
-    for target_id, entry in entries.items():
-        if not isinstance(entry, dict):
-            continue
-        if target_id != GEMMA4_TARGET_PREFIX and not target_id.startswith(
-            f"{GEMMA4_TARGET_PREFIX}-"
-        ):
-            continue
-        row: dict[str, Any] = {
-            "tier_gb": tier_info.tier_gb,
-            "gpu_total_mb": tier_info.total_mb,
-            "gpu_name": tier_info.gpu_name,
-            "gpu_detected": tier_info.detected,
-            "target": target_id,
-            "backend": str(entry["backend"]),
-            "model": str(entry["model"]),
-        }
-        if entry.get("gpu_memory_utilization") is not None:
-            row["gpu_memory_utilization"] = float(entry["gpu_memory_utilization"])
-        if entry.get("max_model_len") is not None:
-            row["max_model_len"] = int(entry["max_model_len"])
-        if entry.get("cpu_offload_gb") is not None:
-            row["cpu_offload_gb"] = float(entry["cpu_offload_gb"])
-        if entry.get("kv_offloading_size_gb") is not None:
-            row["kv_offloading_size_gb"] = float(entry["kv_offloading_size_gb"])
-        if _supports_min_context(row, min_context_tokens):
-            rows.append(row)
+    rows = [
+        row
+        for target_id, entry in entries.items()
+        if _is_gemma4_entry(target_id, entry)
+        for row in [_gemma4_row(tier_info, target_id, entry)]
+        if _supports_min_context(row, min_context_tokens)
+    ]
     if not rows:
         suffix = f" with context >= {min_context_tokens} tokens" if min_context_tokens else ""
         raise ValueError(f"tier {tier_info.tier_gb}: no Gemma 4 serving target{suffix}")
     return max(rows, key=lambda row: _gemma4_rank(row, allow_cuda))
+
+
+def _is_gemma4_entry(target_id: str, entry: Any) -> bool:
+    """True for well-formed manifest entries under the Gemma 4 target family."""
+    if not isinstance(entry, dict):
+        return False
+    return target_id == GEMMA4_TARGET_PREFIX or target_id.startswith(f"{GEMMA4_TARGET_PREFIX}-")
+
+
+_GEMMA4_OPTIONAL_FIELDS: tuple[tuple[str, Any], ...] = (
+    ("gpu_memory_utilization", float),
+    ("max_model_len", int),
+    ("cpu_offload_gb", float),
+    ("kv_offloading_size_gb", float),
+)
+
+
+def _gemma4_row(tier_info: Any, target_id: str, entry: dict[str, Any]) -> dict[str, Any]:
+    """One candidate serving row: tier context + the entry's backend/model + optional knobs."""
+    row: dict[str, Any] = {
+        "tier_gb": tier_info.tier_gb,
+        "gpu_total_mb": tier_info.total_mb,
+        "gpu_name": tier_info.gpu_name,
+        "gpu_detected": tier_info.detected,
+        "target": target_id,
+        "backend": str(entry["backend"]),
+        "model": str(entry["model"]),
+    }
+    for field, cast_fn in _GEMMA4_OPTIONAL_FIELDS:
+        if entry.get(field) is not None:
+            row[field] = cast_fn(entry[field])
+    return row
 
 
 def _render(template_text: str, ctx: dict[str, str]) -> str:

@@ -131,11 +131,10 @@ def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
     if cfg.backend == LOCAL_BACKEND_VLLM:
         return _openai_compatible_complete(cfg, log, extra_body=_vllm_extra_body(cfg))
 
-    # Disabling a reasoning model's thinking is honored only by Ollama's NATIVE /api/chat `think`
-    # field -- the OpenAI-compatible /v1 layer ignores it and the model burns the whole token budget
-    # on hidden reasoning, returning empty structured output. The same holds for `num_ctx`
-    # right-sizing. So route either case there.
-    if cfg.backend == LOCAL_BACKEND_OLLAMA and (cfg.think is not None or cfg.num_ctx is not None):
+    # Ontology completions are JSON at every model-driven stage. Ollama's native endpoint supports
+    # JSON mode as well as `think` and `num_ctx`, while its OpenAI-compatible layer cannot reliably
+    # enforce all three. Keep every Ollama ontology call on the native structured-output path.
+    if cfg.backend == LOCAL_BACKEND_OLLAMA:
         return _ollama_native_complete(cfg, log)
     if cfg.think is not None or cfg.num_ctx is not None:
         raise ValueError(f"backend {cfg.backend!r} does not support think/num_ctx controls")
@@ -151,7 +150,7 @@ def _native_chat_url(base_url: str) -> str:
 
 
 def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
-    """Completion via Ollama's native /api/chat, which honors `think` (reasoning on/off)."""
+    """Completion via Ollama native chat with JSON output and optional reasoning controls."""
     import httpx
 
     url = _native_chat_url(cfg.base_url)
@@ -162,11 +161,13 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
             options["num_ctx"] = cfg.num_ctx
         payload = {
             "model": cfg.model,
-            "think": cfg.think,
+            "format": "json",
             "stream": False,
             "messages": [{"role": "user", "content": prompt}],
             "options": options,
         }
+        if cfg.think is not None:
+            payload["think"] = cfg.think
         try:
             resp = httpx.post(url, json=payload, timeout=cfg.timeout)
             resp.raise_for_status()

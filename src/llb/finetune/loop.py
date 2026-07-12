@@ -65,6 +65,18 @@ class SelfImproveResult:
     verdict: str = "reject"
 
 
+@dataclass(frozen=True)
+class _LoopContext:
+    """Fixed collaborators + baseline shared by every self-improvement round."""
+
+    config: RunConfig
+    eval_fn: EvalFn
+    trainer_fn: TrainerFn
+    base_objective: float
+    base_ci: tuple[float, float] | None
+    min_gain: float
+
+
 def run_self_improve(
     config: RunConfig,
     *,
@@ -86,88 +98,108 @@ def run_self_improve(
     root.mkdir(parents=True, exist_ok=True)
     state = _load_state(root)
 
-    base_final_raw = state.get("base_final_run_dir")
-    base_final_dir = Path(str(base_final_raw)) if base_final_raw else None
-    if base_final_dir is None:
-        base_result = eval_fn(config, "final", root / "base-final")
-        base_final_dir = Path(base_result["paths"]["manifest"]).parent
-        state["base_final_run_dir"] = str(base_final_dir)
-        _write_state(root, state)
-    base_objective = _objective_from_run(base_final_dir)
-    base_ci = _ci_from_run(base_final_dir, seed=config.seed)
+    base_final_dir = _ensure_base_final(state, root, config, eval_fn)
+    ctx = _LoopContext(
+        config=config,
+        eval_fn=eval_fn,
+        trainer_fn=trainer_fn,
+        base_objective=_objective_from_run(base_final_dir),
+        base_ci=_ci_from_run(base_final_dir, seed=config.seed),
+        min_gain=min_gain,
+    )
     reports = [_report_from_state(row) for row in state.get("rounds", [])]
 
     current_cfg = config
     if reports:
-        latest_adapter = reports[-1].adapter_dir
-        current_cfg = current_cfg.with_overrides(adapter_path=latest_adapter)
+        current_cfg = current_cfg.with_overrides(adapter_path=reports[-1].adapter_dir)
     for round_index in range(len(reports) + 1, rounds + 1):
         round_dir = root / f"round-{round_index}"
         round_dir.mkdir(parents=True, exist_ok=True)
-        tuning = eval_fn(current_cfg, "tuning", round_dir / "run")
-        tuning_dir = Path(tuning["paths"]["manifest"]).parent
-        _publish_run_pointer(round_dir / "run", tuning_dir)
-        miss_dir = round_dir / "miss-analysis"
-        analysis = analyze_run(
-            tuning_dir,
-            load_goldset(config.goldset_path),
-            provenance=load_item_provenance(config.goldset_path),
-        )
-        miss_paths = write_analysis(analysis, miss_dir)
-        dataset_dir = round_dir / "dataset"
-        export_finetune_set(
-            run_dir=tuning_dir,
-            goldset_path=config.goldset_path,
-            out_dir=dataset_dir,
-            misses_path=miss_paths["misses"],
-        )
-        adapter_dir = round_dir / "adapter"
-        adapter_manifest = trainer_fn(dataset_dir, config.model, adapter_dir, config.seed)
-        tuned_cfg = config.with_overrides(adapter_path=adapter_dir)
-        final = eval_fn(tuned_cfg, "final", round_dir / "run-final")
-        final_dir = Path(final["paths"]["manifest"]).parent
-        _publish_run_pointer(round_dir / "run-final", final_dir)
-        tuned_objective = _objective_from_run(final_dir)
-        tuned_ci = _ci_from_run(final_dir, seed=config.seed + round_index)
-        delta = tuned_objective - base_objective
-        verdict = "accept" if delta > min_gain and not _ci_overlaps(base_ci, tuned_ci) else "reject"
-        register_round_adapter(
-            config,
-            adapter_dir=adapter_dir,
-            source_run=tuning_dir,
-            eval_summary={
-                "final_run_dir": str(final_dir),
-                "objective_score": tuned_objective,
-                "base_objective": base_objective,
-                "delta": delta,
-                "verdict": verdict,
-            },
-        )
-        report = RoundReport(
-            round_index=round_index,
-            dataset_dir=dataset_dir,
-            adapter_dir=adapter_dir,
-            final_run_dir=final_dir,
-            base_objective=base_objective,
-            tuned_objective=tuned_objective,
-            delta=delta,
-            verdict=verdict,
-            base_ci=base_ci,
-            tuned_ci=tuned_ci,
-        )
+        report, adapter_digest = _run_round(ctx, current_cfg, round_index, round_dir)
         reports.append(report)
         state["rounds"] = [row.as_dict() for row in reports]
-        state["last_adapter_digest"] = adapter_manifest.get("adapter_digest")
+        state["last_adapter_digest"] = adapter_digest
         _write_state(root, state)
         _write_report(root, base_final_dir, reports)
         _write_report(round_dir, base_final_dir, [report])
-        if verdict == "reject":
+        if report.verdict == "reject":
             break
-        current_cfg = tuned_cfg
+        current_cfg = config.with_overrides(adapter_path=report.adapter_dir)
 
     verdict = "accept" if reports and reports[-1].verdict == "accept" else "reject"
     _write_report(root, base_final_dir, reports)
     return SelfImproveResult(root, base_final_dir, reports, verdict)
+
+
+def _ensure_base_final(state: JsonObject, root: Path, config: RunConfig, eval_fn: EvalFn) -> Path:
+    """The base model's final-split run dir, evaluating (and recording) it on first call."""
+    base_final_raw = state.get("base_final_run_dir")
+    if base_final_raw:
+        return Path(str(base_final_raw))
+    base_result = eval_fn(config, "final", root / "base-final")
+    base_final_dir = Path(base_result["paths"]["manifest"]).parent
+    state["base_final_run_dir"] = str(base_final_dir)
+    _write_state(root, state)
+    return base_final_dir
+
+
+def _run_round(
+    ctx: _LoopContext, current_cfg: RunConfig, round_index: int, round_dir: Path
+) -> tuple[RoundReport, object]:
+    """One round: tuning eval -> miss analysis -> export -> train -> final eval -> verdict."""
+    config = ctx.config
+    tuning = ctx.eval_fn(current_cfg, "tuning", round_dir / "run")
+    tuning_dir = Path(tuning["paths"]["manifest"]).parent
+    _publish_run_pointer(round_dir / "run", tuning_dir)
+    analysis = analyze_run(
+        tuning_dir,
+        load_goldset(config.goldset_path),
+        provenance=load_item_provenance(config.goldset_path),
+    )
+    miss_paths = write_analysis(analysis, round_dir / "miss-analysis")
+    dataset_dir = round_dir / "dataset"
+    export_finetune_set(
+        run_dir=tuning_dir,
+        goldset_path=config.goldset_path,
+        out_dir=dataset_dir,
+        misses_path=miss_paths["misses"],
+    )
+    adapter_dir = round_dir / "adapter"
+    adapter_manifest = ctx.trainer_fn(dataset_dir, config.model, adapter_dir, config.seed)
+    tuned_cfg = config.with_overrides(adapter_path=adapter_dir)
+    final = ctx.eval_fn(tuned_cfg, "final", round_dir / "run-final")
+    final_dir = Path(final["paths"]["manifest"]).parent
+    _publish_run_pointer(round_dir / "run-final", final_dir)
+    tuned_objective = _objective_from_run(final_dir)
+    tuned_ci = _ci_from_run(final_dir, seed=config.seed + round_index)
+    delta = tuned_objective - ctx.base_objective
+    accepted = delta > ctx.min_gain and not _ci_overlaps(ctx.base_ci, tuned_ci)
+    verdict = "accept" if accepted else "reject"
+    register_round_adapter(
+        config,
+        adapter_dir=adapter_dir,
+        source_run=tuning_dir,
+        eval_summary={
+            "final_run_dir": str(final_dir),
+            "objective_score": tuned_objective,
+            "base_objective": ctx.base_objective,
+            "delta": delta,
+            "verdict": verdict,
+        },
+    )
+    report = RoundReport(
+        round_index=round_index,
+        dataset_dir=dataset_dir,
+        adapter_dir=adapter_dir,
+        final_run_dir=final_dir,
+        base_objective=ctx.base_objective,
+        tuned_objective=tuned_objective,
+        delta=delta,
+        verdict=verdict,
+        base_ci=ctx.base_ci,
+        tuned_ci=tuned_ci,
+    )
+    return report, adapter_manifest.get("adapter_digest")
 
 
 def register_round_adapter(

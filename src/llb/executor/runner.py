@@ -308,8 +308,6 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
     if not steps:
         return None
     vocabulary = None
-    glossary = None
-    rewriter = None
     known_word = None
     if qp.STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
@@ -318,15 +316,8 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             from llb.rag.lexical import load_uk_word_probe
 
             known_word = load_uk_word_probe()
-    if qp.STEP_GLOSSARY in steps:
-        if config.query_glossary_path is None:
-            raise SystemExit(
-                "[run-eval] query_prep 'glossary' step needs query_glossary_path "
-                "(build one with `llb build-query-glossary`)."
-            )
-        if not Path(config.query_glossary_path).is_file():
-            raise SystemExit(f"[run-eval] query glossary not found: {config.query_glossary_path}")
-        glossary = qp.Glossary.load(config.query_glossary_path)
+    glossary = _load_query_glossary(config) if qp.STEP_GLOSSARY in steps else None
+    rewriter = None
     if qp.STEP_REWRITE in steps:
         if launcher is None:
             raise SystemExit("[run-eval] query_prep 'rewrite' step needs a backend launcher")
@@ -341,6 +332,20 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None
+
+
+def _load_query_glossary(config: RunConfig) -> Any:
+    """The configured query glossary, with clear SystemExit errors for missing configuration."""
+    from llb.rag import query_prep as qp
+
+    if config.query_glossary_path is None:
+        raise SystemExit(
+            "[run-eval] query_prep 'glossary' step needs query_glossary_path "
+            "(build one with `llb build-query-glossary`)."
+        )
+    if not Path(config.query_glossary_path).is_file():
+        raise SystemExit(f"[run-eval] query glossary not found: {config.query_glossary_path}")
+    return qp.Glossary.load(config.query_glossary_path)
 
 
 def _judge_records(batch: CaseBatch) -> list[JudgeInputRecord]:
@@ -645,6 +650,95 @@ def _write_calibration_worksheet(
     return write_filled_worksheet(batch.answers, Path(worksheet), judge_ratings=judge_ratings)
 
 
+def _eval_config_payload(
+    config: RunConfig,
+    items: list[GoldItem],
+    prompt_system_provenance: Mapping[str, object] | None,
+) -> dict[str, Any]:
+    """Config fingerprint enriched with the adapter manifest and prompt-system id."""
+    adapter_manifest = None
+    if config.adapter_path is not None:
+        from llb.finetune.guard import validate_adapter_for_eval
+        from llb.finetune.registry import registry_path
+
+        adapter_manifest = validate_adapter_for_eval(
+            adapter_path=config.adapter_path,
+            items=items,
+            model=config.model,
+            judge_model=config.judge_model,
+            registry=registry_path(config.data_dir),
+        )
+    config_payload = config.fingerprint()
+    if adapter_manifest is not None:
+        config_payload["adapter"] = adapter_manifest
+        label = adapter_manifest.get("adapter_label")
+        if isinstance(label, str) and label:
+            config_payload["model"] = label
+    if prompt_system_provenance is not None:
+        config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
+    return config_payload
+
+
+def _resolve_run_target(
+    config: RunConfig,
+    resume: Path | str | None,
+    config_payload: dict[str, Any],
+    items: list[GoldItem],
+    split: str,
+) -> tuple[str, str, Path, Path]:
+    """Resume an interrupted run's staging dir, or start a fresh journaled one.
+
+    Returns (run_timestamp, run_id, run_dir, staging_dir).
+    """
+    if resume is not None:
+        run_timestamp, run_id, run_dir, staging_dir = durability.resume_target(
+            config.run_dir, config.run_staging_dir, resume
+        )
+        if run_dir.exists():
+            raise SystemExit(f"[run-eval] {run_dir} is already finalized; nothing to resume")
+        if not staging_dir.exists():
+            raise SystemExit(f"[run-eval] no interrupted run to resume at {staging_dir}")
+        durability.verify_resume_meta(
+            staging_dir, config_fingerprint=config_payload, items=items, split=split
+        )
+        return run_timestamp, run_id, run_dir, staging_dir
+    run_id = uuid.uuid4().hex[:12]
+    run_timestamp = _run_timestamp(run_id)
+    run_dir = config.run_dir(run_timestamp)
+    staging_dir = config.run_staging_dir(run_timestamp)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    durability.write_journal_meta(
+        staging_dir,
+        config_fingerprint=config_payload,
+        items=items,
+        run_id=run_id,
+        split=split,
+    )
+    return run_timestamp, run_id, run_dir, staging_dir
+
+
+def _preserve_failed_staging(
+    active_launcher: BackendLauncher | None,
+    config: RunConfig,
+    resume: Path | str | None,
+    run_dir: Path,
+    staging_dir: Path,
+    *,
+    interrupted: bool,
+) -> None:
+    """On failure: keep the backend log; keep staging only when it can seed a --resume."""
+    if active_launcher is not None:
+        _preserve_backend_log(active_launcher, config)
+    if interrupted:
+        _LOG.warning(
+            "[run-eval] interrupted; staging preserved -- resume with --resume %s", run_dir
+        )
+    elif resume is None:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    else:
+        _LOG.warning("[run-eval] resume failed; staging kept for another --resume %s", run_dir)
+
+
 def run_eval(
     config: RunConfig,
     *,
@@ -687,52 +781,10 @@ def run_eval(
             "(only items with verified=true are scored; public-reused sets ship "
             "verified=false pending human review)"
         )
-    adapter_manifest = None
-    if config.adapter_path is not None:
-        from llb.finetune.guard import validate_adapter_for_eval
-        from llb.finetune.registry import registry_path
-
-        adapter_manifest = validate_adapter_for_eval(
-            adapter_path=config.adapter_path,
-            items=items,
-            model=config.model,
-            judge_model=config.judge_model,
-            registry=registry_path(config.data_dir),
-        )
-
-    config_payload = config.fingerprint()
-    if adapter_manifest is not None:
-        config_payload["adapter"] = adapter_manifest
-        label = adapter_manifest.get("adapter_label")
-        if isinstance(label, str) and label:
-            config_payload["model"] = label
-    if prompt_system_provenance is not None:
-        config_payload["prompt_system"] = prompt_system_provenance["prompt_system_id"]
-
-    if resume is not None:
-        run_timestamp, run_id, run_dir, staging_dir = durability.resume_target(
-            config.run_dir, config.run_staging_dir, resume
-        )
-        if run_dir.exists():
-            raise SystemExit(f"[run-eval] {run_dir} is already finalized; nothing to resume")
-        if not staging_dir.exists():
-            raise SystemExit(f"[run-eval] no interrupted run to resume at {staging_dir}")
-        durability.verify_resume_meta(
-            staging_dir, config_fingerprint=config_payload, items=items, split=split
-        )
-    else:
-        run_id = uuid.uuid4().hex[:12]
-        run_timestamp = _run_timestamp(run_id)
-        run_dir = config.run_dir(run_timestamp)
-        staging_dir = config.run_staging_dir(run_timestamp)
-        staging_dir.mkdir(parents=True, exist_ok=True)
-        durability.write_journal_meta(
-            staging_dir,
-            config_fingerprint=config_payload,
-            items=items,
-            run_id=run_id,
-            split=split,
-        )
+    config_payload = _eval_config_payload(config, items, prompt_system_provenance)
+    run_timestamp, run_id, run_dir, staging_dir = _resolve_run_target(
+        config, resume, config_payload, items, split
+    )
 
     active_launcher: BackendLauncher | None = None
     counters = durability.DurabilityCounters()
@@ -776,19 +828,14 @@ def run_eval(
             telemetry_report = _collect_optional_telemetry(config, backend)
             probe_report = _maybe_run_probes(config, items, store, backend)
     except KeyboardInterrupt:
-        if active_launcher is not None:
-            _preserve_backend_log(active_launcher, config)
-        _LOG.warning(
-            "[run-eval] interrupted; staging preserved -- resume with --resume %s", run_dir
+        _preserve_failed_staging(
+            active_launcher, config, resume, run_dir, staging_dir, interrupted=True
         )
         raise
     except BaseException:
-        if active_launcher is not None:
-            _preserve_backend_log(active_launcher, config)
-        if resume is None:
-            shutil.rmtree(staging_dir, ignore_errors=True)
-        else:
-            _LOG.warning("[run-eval] resume failed; staging kept for another --resume %s", run_dir)
+        _preserve_failed_staging(
+            active_launcher, config, resume, run_dir, staging_dir, interrupted=False
+        )
         raise
 
     backend_telemetry: BackendMetadata = (

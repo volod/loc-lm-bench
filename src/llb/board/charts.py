@@ -8,6 +8,7 @@ missing.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from llb.board.recommend import Recommendation, _short
 
@@ -29,13 +30,8 @@ def render_comparison_chart(
 ) -> Path | None:
     """Render the model-comparison chart to `out_path` (PNG). Returns the path, or None if matplotlib
     is unavailable. Bars are ordered by accuracy; the recommended-for-host model is highlighted."""
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        _LOG.warning("[recommend] matplotlib missing; skipping chart (install the [viz] extra)")
+    plt = _load_pyplot()
+    if plt is None:
         return None
 
     summaries = sorted(rec.summaries, key=lambda s: s.result.objective_score)
@@ -50,31 +46,59 @@ def render_comparison_chart(
         sharey=True,
     )
     panel_axes = list(axes) if len(_PANELS) > 1 else [axes]
-    for col, (ax, (panel_title, unit, accessor)) in enumerate(zip(panel_axes, _PANELS)):
-        values = [float(accessor(s) or 0.0) for s in summaries]
-        ax.barh(labels, values, color=colors)
-        ax.set_title(panel_title, fontsize=10)
-        if col == 0:
-            ax.tick_params(axis="y", labelsize=8)  # labels only on the leftmost (shared) axis
-        top = max(values) if values else 1.0
-        for y, v in enumerate(values):
-            ax.text(v + top * 0.02, y, f"{v:.3g}{unit}", va="center", fontsize=7)
-        ax.set_xlim(0, top * 1.22 if top else 1.0)
-        ax.margins(y=0.04)
+    for col, (ax, panel) in enumerate(zip(panel_axes, _PANELS)):
+        _draw_panel(ax, panel, summaries, labels, colors, leftmost=col == 0)
 
+    fig.suptitle(title or _default_chart_title(rec), fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def _load_pyplot() -> Any | None:
+    """The Agg-backed pyplot module, or None (with a warning) when the [viz] extra is missing."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        _LOG.warning("[recommend] matplotlib missing; skipping chart (install the [viz] extra)")
+        return None
+    return plt
+
+
+def _draw_panel(
+    ax: Any,
+    panel: tuple[str, str, Any],
+    summaries: list[Any],
+    labels: list[str],
+    colors: list[str],
+    *,
+    leftmost: bool,
+) -> None:
+    """Draw one metric panel: horizontal bars + value annotations over the shared model axis."""
+    panel_title, unit, accessor = panel
+    values = [float(accessor(s) or 0.0) for s in summaries]
+    ax.barh(labels, values, color=colors)
+    ax.set_title(panel_title, fontsize=10)
+    if leftmost:
+        ax.tick_params(axis="y", labelsize=8)  # labels only on the leftmost (shared) axis
+    top = max(values) if values else 1.0
+    for y, v in enumerate(values):
+        ax.text(v + top * 0.02, y, f"{v:.3g}{unit}", va="center", fontsize=7)
+    ax.set_xlim(0, top * 1.22 if top else 1.0)
+    ax.margins(y=0.04)
+
+
+def _default_chart_title(rec: Recommendation) -> str:
+    """Default suptitle: the host GPU/tier plus the highlight legend."""
     host = rec.host
     host_label = (
         f"{host.gpu_name or 'GPU'} ({host.tier_gb} GiB)"
         if host.detected
         else f"{host.tier_gb} GiB tier"
     )
-    fig.suptitle(
-        title
-        or f"loc-lm-bench model comparison -- {host_label}  (blue = recommended for this host)",
-        fontsize=12,
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=130, bbox_inches="tight")
-    plt.close(fig)
-    return out_path
+    return f"loc-lm-bench model comparison -- {host_label}  (blue = recommended for this host)"

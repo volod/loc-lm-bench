@@ -84,6 +84,71 @@ class ProvenanceLog:
 # --- fuzzy-but-exact span grounding (frontier drafting) ------------------------------------------------
 
 
+# Curly quote folding applied during normalization (grounding treats them as ASCII quotes).
+_QUOTE_FOLD = {**{c: '"' for c in "“”„"}, **{c: "'" for c in "‘’‚‛"}}
+
+
+class _Normalizer:
+    """Char-by-char state machine behind `_normalize` (see its docstring for the rules)."""
+
+    def __init__(self, masked: str) -> None:
+        self.masked = masked
+        self.out: list[str] = []
+        self.index: list[int] = []
+        self.prev_space = False
+        self.i = 0
+
+    @staticmethod
+    def _is_dash(ch: str) -> bool:
+        return ch in _DASHES or ch == "-"
+
+    def _append_boundary_space(self, original_index: int) -> None:
+        if not self.prev_space and self.out:
+            self.out.append(" ")
+            self.index.append(original_index)
+            self.prev_space = True
+
+    def _consume_dashes(self) -> None:
+        """A single dash is kept; a `--` run (table rule / separator) becomes a word boundary."""
+        run = 1
+        while self.i + run < len(self.masked) and self._is_dash(self.masked[self.i + run]):
+            run += 1
+        if run >= 2:
+            self._append_boundary_space(self.i)
+            self.i += run
+            return
+        self.out.append("-")
+        self.index.append(self.i)
+        self.prev_space = False
+        self.i += 1
+
+    def _consume_char(self, ch: str) -> None:
+        if ch in _SPACE_BEFORE_PUNCT and self.prev_space:
+            self.out.pop()  # drop the space PDF extraction wedged before this punctuation
+            self.index.pop()
+        self.out.append(_QUOTE_FOLD.get(ch, ch).casefold())
+        self.index.append(self.i)
+        self.prev_space = False
+        self.i += 1
+
+    def run(self) -> tuple[str, list[int]]:
+        while self.i < len(self.masked):
+            ch = self.masked[self.i]
+            if self._is_dash(ch):
+                self._consume_dashes()
+            elif ch in _DROP_CHARS:
+                self.i += 1
+            elif ch.isspace():
+                self.i += 1
+                self._append_boundary_space(self.i - 1)
+            else:
+                self._consume_char(ch)
+        while self.out and self.out[-1] == " ":  # no trailing boundary space (offsets stay exact)
+            self.out.pop()
+            self.index.pop()
+        return "".join(self.out), self.index
+
+
 def _normalize(text: str) -> tuple[str, list[int]]:
     """Casefold, collapse whitespace, and drop markdown / PDF-extraction decoration, returning the
     normalized string and, for each normalized char, its index in the ORIGINAL text (so a match
@@ -94,53 +159,7 @@ def _normalize(text: str) -> tuple[str, list[int]]:
     # Blank out multi-char decoration first (keeping length so offsets stay aligned to the original).
     masked = _HTML_COMMENT.sub(lambda m: " " * len(m.group()), text)
     masked = _LINE_BREAK.sub(lambda m: " " * len(m.group()), masked)
-    out: list[str] = []
-    index: list[int] = []
-    prev_space = False
-    i, n = 0, len(masked)
-    while i < n:
-        ch = masked[i]
-        if ch in _DASHES or ch == "-":
-            run = 1
-            while i + run < n and (masked[i + run] in _DASHES or masked[i + run] == "-"):
-                run += 1
-            if run >= 2:  # table rule / separator -> word boundary
-                if not prev_space and out:
-                    out.append(" ")
-                    index.append(i)
-                    prev_space = True
-                i += run
-                continue
-            out.append("-")
-            index.append(i)
-            prev_space = False
-            i += 1
-            continue
-        if ch in _DROP_CHARS:
-            i += 1
-            continue
-        if ch.isspace():
-            i += 1
-            if not prev_space and out:
-                out.append(" ")
-                index.append(i - 1)
-                prev_space = True
-            continue
-        if ch in _SPACE_BEFORE_PUNCT and prev_space:
-            out.pop()  # drop the space PDF extraction wedged before this punctuation
-            index.pop()
-        if ch in "“”„":
-            ch = '"'
-        elif ch in "‘’‚‛":
-            ch = "'"
-        out.append(ch.casefold())
-        index.append(i)
-        prev_space = False
-        i += 1
-    while out and out[-1] == " ":  # no trailing boundary space (keeps offsets/length exact)
-        out.pop()
-        index.pop()
-    return "".join(out), index
+    return _Normalizer(masked).run()
 
 
 def ground_span(doc_text: str, span_text: str) -> tuple[int, str] | None:
@@ -371,14 +390,8 @@ def prepare_synthetic_corpus(
     items: list[GoldItem] = []
     for i, topic in enumerate(topics):
         doc_id = f"synth-{i:03d}"
-        raw = complete(synthetic_doc_prompt(topic, n_labels))
-        try:
-            payload = parse_json_block(raw)
-        except json.JSONDecodeError:
-            _LOG.warning("[prepare-corpus] unparseable completion for topic %r; skipping", topic)
-            continue
-        if not isinstance(payload, dict):
-            _LOG.warning("[prepare-corpus] expected a JSON object for topic %r; skipping", topic)
+        payload = _synthetic_doc_payload(complete, topic, n_labels)
+        if payload is None:
             continue
         document = str(payload.get("document", "")).strip()
         if not document:
@@ -394,25 +407,51 @@ def prepare_synthetic_corpus(
     for it in items:
         it.split = cast(Split, splits[it.id])
     if out_dir is not None:
-        dump_goldset(items, out_dir / "planted_labels.jsonl")
-        (out_dir / "provenance.json").write_text(
-            json.dumps(
-                {
-                    "kind": "synthetic-planted",
-                    "synthetic": True,  # planted docs, NOT real corpus -- tag every scored run
-                    "planter_model": planter_model,
-                    "judge_model": judge_model,
-                    "n_docs": len(docs),
-                    "n_items": len(items),
-                    "corpus_root": "corpus",
-                    "cost": log.summary(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        _LOG.info(
-            "[prepare-corpus] %d docs, %d planted items -> %s", len(docs), len(items), out_dir
-        )
+        _write_synthetic_bundle(out_dir, docs, items, planter_model, judge_model, log)
     return docs, items
+
+
+def _synthetic_doc_payload(
+    complete: LLMComplete, topic: str, n_labels: int
+) -> dict[str, Any] | None:
+    """The planter's parsed JSON object for one topic, or None (logged) when unusable."""
+    raw = complete(synthetic_doc_prompt(topic, n_labels))
+    try:
+        payload = parse_json_block(raw)
+    except json.JSONDecodeError:
+        _LOG.warning("[prepare-corpus] unparseable completion for topic %r; skipping", topic)
+        return None
+    if not isinstance(payload, dict):
+        _LOG.warning("[prepare-corpus] expected a JSON object for topic %r; skipping", topic)
+        return None
+    return payload
+
+
+def _write_synthetic_bundle(
+    out_dir: Path,
+    docs: dict[str, str],
+    items: list[GoldItem],
+    planter_model: str,
+    judge_model: str,
+    log: ProvenanceLog,
+) -> None:
+    """Persist the planted-labels goldset + `synthetic: true` provenance beside the corpus."""
+    dump_goldset(items, out_dir / "planted_labels.jsonl")
+    (out_dir / "provenance.json").write_text(
+        json.dumps(
+            {
+                "kind": "synthetic-planted",
+                "synthetic": True,  # planted docs, NOT real corpus -- tag every scored run
+                "planter_model": planter_model,
+                "judge_model": judge_model,
+                "n_docs": len(docs),
+                "n_items": len(items),
+                "corpus_root": "corpus",
+                "cost": log.summary(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    _LOG.info("[prepare-corpus] %d docs, %d planted items -> %s", len(docs), len(items), out_dir)

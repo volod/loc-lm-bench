@@ -79,14 +79,21 @@ def load_chat_conversations(path: Path | str) -> list[tuple[str, list[dict[str, 
         raw = [raw]
     conversations: list[tuple[str, list[dict[str, Any]]]] = []
     for i, convo in enumerate(raw if isinstance(raw, list) else []):
-        if not isinstance(convo, dict):
-            continue
-        messages = convo.get("messages", [])
-        if not isinstance(messages, list):
-            continue
-        chat_id = str(convo.get("id", convo.get("name", f"chat-{i:03d}")))
-        conversations.append((chat_id, [m for m in messages if isinstance(m, dict)]))
+        parsed = _conversation_from(i, convo)
+        if parsed is not None:
+            conversations.append(parsed)
     return conversations
+
+
+def _conversation_from(index: int, convo: Any) -> tuple[str, list[dict[str, Any]]] | None:
+    """`(chat_id, messages)` from one exported conversation record, or None if malformed."""
+    if not isinstance(convo, dict):
+        return None
+    messages = convo.get("messages", [])
+    if not isinstance(messages, list):
+        return None
+    chat_id = str(convo.get("id", convo.get("name", f"chat-{index:03d}")))
+    return chat_id, [m for m in messages if isinstance(m, dict)]
 
 
 def chat_doc_prompt(topic: str, n_per_kind: int, kinds: tuple[str, ...]) -> str:
@@ -139,45 +146,64 @@ def ingest_chat_corpus(
         if not document.strip():
             continue
         docs[doc_id] = document
-        raw = complete(chat_label_draft_prompt(chat_id, document, n_per_kind, kinds))
-        try:
-            parsed = parse_json_block(raw)
-        except json.JSONDecodeError:
-            _LOG.warning("[ingest-chat] unparseable labels for %s; doc kept, no labels", chat_id)
-            parsed = []
-        raw_labels = (
-            [entry for entry in parsed if isinstance(entry, dict)]
-            if isinstance(parsed, list)
-            else []
-        )
+        raw_labels = _draft_chat_labels(chat_id, document, complete, n_per_kind, kinds)
         records += plant_labels(doc_id, document, raw_labels)
         if corpus_dir is not None:
             corpus_dir.mkdir(parents=True, exist_ok=True)
             (corpus_dir / f"{doc_id}.md").write_text(document, encoding="utf-8")
 
     if out_dir is not None:
-        (out_dir / "text_analysis_labels.jsonl").write_text(
-            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
-        )
-        (out_dir / "provenance.json").write_text(
-            json.dumps(
-                {
-                    "kind": "real-chat-corpus",
-                    "synthetic": False,  # REAL chat logs -> reported separately from synthetic
-                    "egress": "none",  # drafted with a LOCAL completion (OQ-egress: no egress)
-                    "source": source,
-                    "n_docs": len(docs),
-                    "n_labels": len(records),
-                    "labels_by_kind": _count_by_kind(records),
-                    "corpus_root": "corpus",
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        _LOG.info("[ingest-chat] %d chat docs, %d labels -> %s", len(docs), len(records), out_dir)
+        _write_chat_bundle(out_dir, docs, records, source)
     return docs, records
+
+
+def _draft_chat_labels(
+    chat_id: str,
+    document: str,
+    complete: LLMComplete,
+    n_per_kind: int,
+    kinds: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Draft raw label dicts for one chat document; unparseable output keeps the doc unlabeled."""
+    raw = complete(chat_label_draft_prompt(chat_id, document, n_per_kind, kinds))
+    try:
+        parsed = parse_json_block(raw)
+    except json.JSONDecodeError:
+        _LOG.warning("[ingest-chat] unparseable labels for %s; doc kept, no labels", chat_id)
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [entry for entry in parsed if isinstance(entry, dict)]
+
+
+def _write_chat_bundle(
+    out_dir: Path,
+    docs: dict[str, str],
+    records: list[PlantedLabelRecord],
+    source: str,
+) -> None:
+    """Persist the labels JSONL + `synthetic: false` provenance beside the staged corpus."""
+    (out_dir / "text_analysis_labels.jsonl").write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+    (out_dir / "provenance.json").write_text(
+        json.dumps(
+            {
+                "kind": "real-chat-corpus",
+                "synthetic": False,  # REAL chat logs -> reported separately from synthetic
+                "egress": "none",  # drafted with a LOCAL completion (OQ-egress: no egress)
+                "source": source,
+                "n_docs": len(docs),
+                "n_labels": len(records),
+                "labels_by_kind": _count_by_kind(records),
+                "corpus_root": "corpus",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    _LOG.info("[ingest-chat] %d chat docs, %d labels -> %s", len(docs), len(records), out_dir)
 
 
 def prepare_synthetic_chat_corpus(

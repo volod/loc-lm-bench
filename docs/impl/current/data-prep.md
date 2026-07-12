@@ -328,6 +328,216 @@ with a `question_type` and `difficulty` label reviewers and the miss analyzer ca
 [robust backends and ontology drafting](robustness-ontology-backends.md) for the module map, report
 fields, and command reference.
 
+### Yield-max empirical acceptance
+
+The 2026-07-12 local acceptance preparation compares coverage-target sampling with the flat
+180-seed cap on the public one-document PDF quickstart corpus. Both lanes use `gemma4:e4b`, seed 13,
+the same 55-window extraction journal, a 16,384-token context, and the pinned-E5 store at
+`$DATA_DIR/llb/rag`; this holds extraction and retrieval constant while changing seed selection.
+Artifacts live under `$DATA_DIR/draft-yield-quality-max/20260712T102120Z/`.
+
+| Lane | Raw seeds | Grounded needles | Retrieval-unique needles | Unique fraction |
+| --- | ---: | ---: | ---: | ---: |
+| Coverage target 6, 240 safety ceiling | 240 | 215 | 194 | 0.9023 |
+| Flat cap | 180 | 165 | 149 | 0.9030 |
+
+Both bundles have parse rate 1.0, pass the PDF calibration gates, and pass `validate-goldset`.
+Coverage-target sampling therefore prepared 50 more citation-valid needles and 45 more
+retrieval-unique needles. Both deterministic 40-row human samples accepted 40/40 items, for equal
+1.0 accept rates and 0.0 reject rates at tolerance 0.05. The coverage-target lane therefore passes
+the "more citation-valid needles at an equal-or-better accept rate" gate. Both accepted ledgers
+pass `validate-goldset` and live under each bundle's `accepted/goldset.jsonl`.
+
+| Question type | Coverage-target unique fraction | Flat-cap unique fraction |
+| --- | ---: | ---: |
+| Comparative | 0.8889 | 0.8571 |
+| Definition | 1.0000 | 1.0000 |
+| Factoid | 0.9000 | 0.9123 |
+| Numeric | 0.8696 | 0.8500 |
+| Procedural | 0.9231 | 0.8889 |
+| All types | 0.9023 | 0.9030 |
+
+The drafting contract is Ukrainian-only for user-facing text, including bilingual source corpora:
+`question` and `reference_answer` must be Ukrainian, while `answer_span` remains an exact quote in
+the source language so evidence offsets stay verifiable. `prep.ontology.draft` and
+`prep.ontology.multi_hop` state that foreign evidence must be translated rather than copied into
+the reference answer. `src/llb/prep/ontology/language.py` applies a deterministic
+Ukrainian-marked, Cyrillic-dominant gate in both flat and multi-hop refinement. The current bundles,
+worksheets, and accepted ledgers have zero question/answer violations under that gate; the flat and
+coverage runs rejected one and two model outputs respectively for failing it.
+
+The final deterministic 40-row review worksheets are
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/coverage-target/verify_sample.csv` and
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/flat-cap-180/verify_sample.csv`. Their acceptance
+commands emitted 40-item verified ledgers under the corresponding `accepted/` directories.
+
+The first coverage worksheet review preceded the Ukrainian-only contract. Its 38 accepts and two
+rejects, along with both original bundles, are preserved for audit under
+`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/pre-ukrainian-output-gate/`. Those superseded
+decisions did not transfer to the regenerated questions and answers used for the final gate.
+
+### Chain-of-questions artifacts
+
+`src/llb/goldset/chains.py` defines canonical `ChainItem` / `ChainStep` rows for ordered
+2-4-step chain-of-questions fixtures. Each step carries a question, reference answer,
+dependency note, and exact `SourceSpan` list; `validate_chains` checks duplicate ids, step order,
+span offsets, span reuse within a chain, and final-answer leakage from the first step's passage.
+
+`make prepare-goldset-draft DRAFT_CHAINS=1` passes `--chains` to the ontology pipeline. The
+pipeline walks the same 2-hop knowledge-graph paths as multi-hop drafting, builds ordered chain
+rows in `src/llb/prep/ontology/chains.py`, records `stages.chains` in `provenance.json`, and writes
+`<bundle>/chains.jsonl` beside `goldset.jsonl`.
+
+Chain generation keeps strict directed `A -> B -> C` paths first. If that topology does not fill
+the requested path budget, it adds exact-grounded pairs of facts incident on the same topic node.
+This gives chain review enough candidates on sparse directed graphs without weakening the strict
+directed semantics used by flat multi-hop questions. Generated questions and dependency notes are
+Ukrainian, matching the chain artifact's `lang=uk` contract.
+
+The five-document PDF chain bundle contains 214 grounded facts. Its strict directed topology yields
+9 paths; the shared-topic fallback fills the configured 80-path budget, producing 80 unverified
+chains with no dropped rows. `make validate-goldset` passes all 80 chains, calibration gates pass,
+and every generated question uses Ukrainian wording. Human verification remains the authority for
+whether a shared-topic sequence provides useful progressive context.
+
+The public single-PDF literature corpus under `$DATA_DIR/quickstart-pdf-corpus` converts to one
+626,093-character Markdown document with a page-citation sidecar. A local Ollama `gemma4:e4b`
+chain draft with a 16,384-token context extracted 301 entities and 213 grounded facts, then wrote
+20 flat drafts and 32 unverified chains under
+`$DATA_DIR/prepare-goldset/chain-goldset-public-literature`. The extraction parse rate and PDF page
+citation coverage are both 1.0, every calibration gate passes, and `make validate-goldset` passes
+all 32 chains. The deterministic chain worksheet samples 20 of the 32 candidates at
+`$DATA_DIR/prepare-goldset/chain-goldset-public-literature/verify_chains.csv`; its manifest records
+`kind=chains`, seed 13, and a single source-document stratum. The converted source and bundle do
+not contain the prior restricted corpus markers.
+
+Human review accepted all 20 sampled chains. `make chain-goldset-finalize` enforced the minimum
+10-chain gate, required every row to carry `verified=true`, validated the accepted ledger, and
+promoted `samples/goldsets/chain_context_uk_v1`. The committed fixture contains 20 chains and a
+compact 36-span corpus rather than the complete copyrighted source publication; promotion remaps
+every span offset and validates the result before making the destination visible.
+
+#### Complete chain-goldset workflow
+
+Use shell variables once so every later command is short and paste-safe. Select a new bundle path
+for each draft run and a destination that does not already exist:
+
+```bash
+export DATA_DIR="${DATA_DIR:-$PWD/.data}"
+export CHAIN_CORPUS="$DATA_DIR/quickstart-pdf-corpus-md"
+export CHAIN_BUNDLE="$DATA_DIR/prepare-goldset/<run-name>"
+export CHAIN_WS="$CHAIN_BUNDLE/verify_chains.csv"
+export CHAIN_FIXTURE="$PWD/samples/goldsets/<fixture-name>"
+```
+
+1. Convert source PDFs to a normalized Markdown corpus. Skip this operation when the input is
+   already `.md` or `.txt`:
+
+   ```bash
+   make pdf-to-markdown \
+     PDF_DIR="$DATA_DIR/quickstart-pdf-corpus" \
+     PDF_OUT_DIR="$CHAIN_CORPUS" \
+     PDF_PARSER=auto
+   ```
+
+2. Run the non-human pipeline shortcut. It drafts chains, requires calibration to pass, validates
+   every generated chain against the copied corpus, requires at least `CHAIN_MIN_ACCEPTED`
+   candidates, and writes a deterministic review worksheet. A failed stage stops the target
+   immediately:
+
+   ```bash
+   make chain-goldset-pipeline \
+     CHAIN_CORPUS="$CHAIN_CORPUS" \
+     CHAIN_BUNDLE="$CHAIN_BUNDLE" \
+     CHAIN_WS="$CHAIN_WS" \
+     CHAIN_VERIFY_N=20 \
+     CHAIN_MAX_PATHS=80 \
+     CHAIN_MIN_ACCEPTED=10 \
+     DRAFT_MODEL=gemma4:e4b \
+     DRAFT_BACKEND=ollama \
+     DRAFT_MAX_ITEMS=20 \
+     DRAFT_NO_THINK=1 \
+     DRAFT_NUM_CTX=16384 \
+     DRAFT_TIMEOUT=900
+   ```
+
+3. Review the worksheet interactively:
+
+   ```bash
+   make verify-review VERIFY_WS="$CHAIN_WS"
+   ```
+
+   For every step, compare `A` with `SOURCE`, confirm that `Q` is answered, and confirm that later
+   steps use useful context from earlier steps. Reject a chain when its final answer is already
+   available from the first step, a cited span does not support its answer, or the dependency is
+   artificial. Press `y` to accept or `x` to reject; use `x <code>` for an explicit rejection code,
+   `o` for a note, `b`/`u`/`j<N>` to navigate, and `q` to save and quit. Re-running the same command
+   resumes at the first undecided row.
+
+4. Emit the accepted ledger after every worksheet row has a decision:
+
+   ```bash
+   make verify-accept \
+     BUNDLE="$CHAIN_BUNDLE" \
+     VERIFY_WS="$CHAIN_WS"
+   ```
+
+5. Run the final pipeline shortcut. This replaces any inline Python count check and manual copy:
+
+   ```bash
+   make chain-goldset-finalize \
+     CHAIN_BUNDLE="$CHAIN_BUNDLE" \
+     CHAIN_FIXTURE="$CHAIN_FIXTURE" \
+     CHAIN_MIN_ACCEPTED=10
+   ```
+
+   Finalization refuses a missing accepted ledger, fewer than the required chain count, any
+   `verified=false` row, a structural or span validation error, or an existing destination. On
+   success it creates `chains.jsonl`, `corpus/`, and `fixture_manifest.json`, then runs
+   `validate-goldset` once more against the promoted fixture.
+
+For an interrupted extraction, resume only the draft stage, then run validation and sampling again:
+
+```bash
+make prepare-goldset-draft \
+  DRAFT_RESUME="$CHAIN_BUNDLE" \
+  DRAFT_NO_THINK=1 \
+  DRAFT_NUM_CTX=16384
+make validate-goldset \
+  CHAINS="$CHAIN_BUNDLE/chains.jsonl" \
+  CORPUS="$CHAIN_BUNDLE/corpus"
+make verify-sample \
+  BUNDLE="$CHAIN_BUNDLE" \
+  VERIFY_KIND=chains \
+  VERIFY_N=20 \
+  VERIFY_WS="$CHAIN_WS"
+```
+
+The standard human verification target handles chains without a new command. `VERIFY_KIND=auto`
+selects `chains.jsonl` when present; use `VERIFY_KIND=goldset` or `VERIFY_KIND=chains` to force a
+mode. Each chain review card starts with 64 `+` characters and renders each step densely as
+single-line `Q`, `A`, `SOURCE`, optional `DEPENDENCY`, and truncated `CONTEXT` fields. Questions,
+answers, sources, and dependencies use distinct ANSI colors on an interactive TTY; redirected and
+test output stays uncolored, and `NO_COLOR` disables color explicitly. The reviewer compares `A`
+with `SOURCE`, then checks that `Q` is answered and later steps add context. The same navigation and
+note shortcuts remain (`Enter`/`n`, `b`, `u`, `j<N>`, `o`, `?`, `q`). Chain answer edits are
+blocked; reject and note the chain when a step needs a different span. `make verify-accept` writes
+accepted chain ledgers under `<bundle>/accepted/chains.jsonl` with copied corpus files and
+`verified=true`. `src/llb/goldset/promote_chains.py` implements the final acceptance-count,
+verification, compaction, offset-remapping, and atomic-promotion gate exposed by
+`make chain-goldset-finalize`.
+
+```bash
+make verify-sample BUNDLE=<bundle> VERIFY_KIND=chains VERIFY_N=<n>
+make verify-review VERIFY_WS=<bundle>/verify_sample.csv VERIFY_ORDER=confidence
+make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<bundle>
+```
+
+Unit coverage: `tests/llb/goldset/test_goldset_verify.py` (schema validation, chain worksheet
+cards, edit blocking, accepted chain ledger) and `tests/llb/prep/ontology/test_ontology_yield.py`
+(graph-path chain construction and draft-bundle emission). Promotion failure modes and compact
+corpus offset remapping are covered by `tests/llb/goldset/test_promote_chains.py`.
+
 The local `$DATA_DIR/quickstart-pdf-corpus` corpus run produced 19 markdown files, 19 citation
 sidecars, and zero skips under `.data/quickstart-pdf-corpus-md`. Sixteen born-digital PDFs used
 PyMuPDF4LLM. The three PDFs that had zero embedded text were recovered by Docling OCR:
@@ -415,11 +625,12 @@ overlap, retrieval options) plus the endpoint identity.
 `make quickstart-corpus QUICKSTART_CORPUS_RESUME=<bundle>`) re-enters an interrupted bundle: it
 reads the meta, reuses journaled windows instead of re-calling the model, re-extracts only the
 missing windows, and replays the deterministic seed/draft/emit stages. The result is byte-identical
-to an uninterrupted run (same seeds, same kept items). A window whose model call errored is
-journaled as an empty extraction (done-as-empty, matching the non-resumed run); only a hard process
-kill leaves a window un-journaled so resume re-runs it. A missing meta aborts the resume with a
-clear message. Transient per-case retry inside a single run is separate durability work
-(`durable-eval-runner` in [`plan.md`](../plan.md)).
+to an uninterrupted run (same seeds, same kept items). Only parsed JSON objects are journaled;
+failed calls remain resumable, while parsed empty objects carry an explicit marker. Legacy empty
+rows without that marker are regenerated because the older format could not distinguish a valid
+empty object from a parse or transport failure. A missing meta aborts the resume with a clear
+message. The make target also rejects an explicitly empty command-line `DRAFT_RESUME`, preventing
+an unset shell variable from silently starting a fresh default draft.
 
 ## Verification Gate
 
@@ -439,7 +650,8 @@ second verifier for support and answerability. A pass means the item is reviewab
 accepted-ledger emission. `src/llb/goldset/verify_session.py` owns the interactive terminal loop.
 The review session keeps command parsing, navigation, row edits, clear confirmation, and
 persistence in small helpers so the loop reads as worksheet orchestration.
-The accepted ledger writes copied corpus files plus canonical `verified=true` rows.
+The accepted ledger writes copied corpus files plus canonical `verified=true` rows; chain samples
+write `accepted/chains.jsonl`, while flat goldset samples write `accepted/goldset.jsonl`.
 `prepare-goldset-draft` can also write the first worksheet in the same run with
 `--verification-sample-size <n>`; the make wrapper exposes this as `DRAFT_VERIFY_N=<n>`.
 

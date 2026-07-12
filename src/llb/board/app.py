@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.board.categories import load_category_composite, load_category_records
+from llb.board.chain_context import chain_context_comparison, load_chain_context_records
 from llb.board.harnesses import harness_comparison, load_agentic_harness_records
 from llb.board.prompt_systems import (
     load_rag_prompt_system_records,
@@ -26,6 +27,7 @@ def render(run_root: Path | str | None = None, screen_root: Path | str | None = 
     _render_private_leaderboard(st, root)
     _render_category_boards(st, data_dir)
     _render_harness_comparison(st, data_dir)
+    _render_chain_context_comparison(st, data_dir)
     _render_prompt_system_comparison(st, data_dir)
     _render_category_composite(st, data_dir)
     _render_public_screens(st, screens)
@@ -74,6 +76,19 @@ def _render_harness_comparison(st: Any, data_dir: Path) -> None:
         rows, _table, harnesses = harness_comparison(data_dir, model)
         if rows:
             st.caption(f"**{model}** -- harnesses: {', '.join(sorted(set(harnesses)))}")
+            st.dataframe(rows, use_container_width=True)
+
+
+def _render_chain_context_comparison(st: Any, data_dir: Path) -> None:
+    policy_records = load_chain_context_records(data_dir)
+    if not policy_records:
+        return
+    st.subheader("Context-policy comparison (fresh vs history vs summary vs roles)")
+    st.caption("Per model, the chain set + scoring stay fixed; only the context policy varies.")
+    for model in sorted({r.model for r in policy_records}):
+        rows, _table, policies = chain_context_comparison(data_dir, model)
+        if rows:
+            st.caption(f"**{model}** -- policies: {', '.join(sorted(set(policies)))}")
             st.dataframe(rows, use_container_width=True)
 
 

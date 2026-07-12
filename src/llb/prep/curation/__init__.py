@@ -5,7 +5,7 @@ One entry point per external-draft contract artifact kind:
 - ``squad``     -- Artifact A goldset drafts   -> one SQuAD JSON for `make ingest-squad`;
 - ``grounded``  -- Artifact B grounded JSONL    -> one JSONL for `llb import-external-draft`;
 - ``security``  -- Artifact C security cases   -> one array for `make bench-security`;
-- ``chains``    -- Artifact D chain drafts     -> one JSONL (review-only until chains land);
+- ``chains``    -- provisional Artifact D chain drafts -> one curated quote-based JSONL;
 - ``inventory`` -- prompt-01 coverage plans    -> one merged inventory.json.
 
 `curate()` dispatches by kind and returns `(payload, CurationReport)`; the CLI command is

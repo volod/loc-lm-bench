@@ -169,7 +169,7 @@ prompts are in [`external-service-prompts/`](external-service-prompts/README.md)
 | Ontology / topic inventory | `01` | `make curate-drafts CURATE_KIND=inventory` | steers `02`-`04` (not scored) | works today |
 | Goldset draft (SQuAD JSON) | `02` | `make curate-drafts CURATE_KIND=squad` | `make ingest-squad SQUAD_JSON=` | works today |
 | Goldset draft (grounded JSONL) | `02` | `make curate-drafts CURATE_KIND=grounded` | `make import-external-draft ARTIFACT= CORPUS= SIDECAR=` | works today |
-| Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | blocked on `chain-goldset-generation` | review-only |
+| Chain-of-questions draft | `03` | `make curate-drafts CURATE_KIND=chains` | no direct canonical importer | provisional external form |
 | Security cases | `04` | `make curate-drafts CURATE_KIND=security` | `make bench-security SECURITY_CASES=` | works today |
 | Local run results | -- | -- | `make run-eval` / `make bench-security` | works today |
 | External RAG answer log | -- | -- | `make score-external-rag EXTERNAL_RAG_ANSWERS=` | diagnostic |
@@ -421,10 +421,13 @@ The loader rejects unknown families and malformed detector kinds at load. Benign
 the over-refusal metric; matched bias pairs feed decision-consistency; denial-guard asks feed
 attack-success rate. Run only against **local** models -- this is a local-inference safety probe.
 
-### 7d. Chains (Artifact D) -- review-only
+### 7d. Chains (Artifact D) -- provisional external form
 
-Keep chain drafts as review material until the `chain-goldset-generation` forward task lands;
-do not import them into scoring paths.
+`make curate-drafts CURATE_KIND=chains` merges, filters, and re-grounds the external quote-based
+form. It does not convert that form into canonical `ChainItem` rows with exact `SourceSpan`
+offsets. Keep those curated exports outside scoring paths. For canonical locally generated chains,
+use the complete pipeline, review, acceptance, and promotion workflow in
+[current data prep](../../impl/current/data-prep.md#chain-of-questions-artifacts).
 
 ## Step 8: Human verification gate
 

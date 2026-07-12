@@ -221,6 +221,41 @@ def drop_exact_duplicates(
     return kept
 
 
+def _note_near_duplicate(
+    report: CurationReport, item_id: str, source: str, duplicate_of: str, similarity: float
+) -> None:
+    report.near_duplicates.append(
+        {
+            "id": item_id,
+            "source": source,
+            "duplicate_of": duplicate_of,
+            "similarity": round(similarity, 4),
+        }
+    )
+
+
+def _best_kept_match(
+    vector: Vector,
+    group: str,
+    groups: list[str],
+    kept: list[int],
+    kept_vectors: list[Vector],
+    ids: list[str],
+    threshold: float,
+) -> tuple[str | None, float]:
+    """The most similar already-kept row at or above `threshold` (skipping protected twins)."""
+    duplicate_of: str | None = None
+    best = 0.0
+    for j, kept_vector in zip(kept, kept_vectors):
+        if group and group == groups[j]:
+            continue  # intentional twins (bias pair / cross-language group)
+        sim = _cosine(vector, kept_vector)
+        if sim >= threshold and sim > best:
+            best = sim
+            duplicate_of = ids[j]
+    return duplicate_of, best
+
+
 def drop_near_duplicates(
     texts: list[str],
     embedder: QuestionEmbedder | None,
@@ -251,33 +286,13 @@ def drop_near_duplicates(
     for i, vector in enumerate(vectors):
         prior_best = max((_cosine(vector, pv) for pv in prior_vectors), default=0.0)
         if prior_best >= threshold:
-            report.near_duplicates.append(
-                {
-                    "id": ids[i],
-                    "source": sources[i],
-                    "duplicate_of": "prior-bundle",
-                    "similarity": round(prior_best, 4),
-                }
-            )
+            _note_near_duplicate(report, ids[i], sources[i], "prior-bundle", prior_best)
             continue
-        duplicate_of: str | None = None
-        best = 0.0
-        for j, kept_vector in zip(kept, kept_vectors):
-            if groups[i] and groups[i] == groups[j]:
-                continue  # intentional twins (bias pair / cross-language group)
-            sim = _cosine(vector, kept_vector)
-            if sim >= threshold and sim > best:
-                best = sim
-                duplicate_of = ids[j]
+        duplicate_of, best = _best_kept_match(
+            vector, groups[i], groups, kept, kept_vectors, ids, threshold
+        )
         if duplicate_of is not None:
-            report.near_duplicates.append(
-                {
-                    "id": ids[i],
-                    "source": sources[i],
-                    "duplicate_of": duplicate_of,
-                    "similarity": round(best, 4),
-                }
-            )
+            _note_near_duplicate(report, ids[i], sources[i], duplicate_of, best)
             continue
         kept.append(i)
         kept_vectors.append(vector)

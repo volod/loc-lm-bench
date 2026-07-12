@@ -57,20 +57,22 @@ def test_generate_serving_configs_for_tier_12_uses_offloaded_long_context_12b(
     assert "--kv-offloading-size 32" in vllm_serve
 
 
-def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
-    out = generate_serving_configs(gpu_gb=16, output_root=tmp_path / "gpu-16gb")
-    assert out.is_dir()
-    tier = yaml.safe_load((out / "tier.json").read_text(encoding="utf-8"))
-    assert tier["tier_gb"] == 16
+def _assert_tier16_mamaylm(out: Path) -> None:
     assert (out / "serve_mamaylm.sh").exists()
     assert (out / "run_eval_mamaylm.yaml").exists()
     assert (out / "run_eval_mamaylm.sh").exists()
     cfg = (out / "run_eval_mamaylm.yaml").read_text(encoding="utf-8")
     assert "backend: ollama" in cfg
     assert "MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M" in cfg
+
+
+def _assert_tier16_lapa(out: Path) -> None:
     lapa = (out / "run_eval_lapa.yaml").read_text(encoding="utf-8")
     assert "hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M" in lapa
     assert "backend: ollama" in lapa
+
+
+def _assert_tier16_gemma4_vllm(out: Path) -> None:
     assert (out / "serve_gemma_4_12b_vllm.sh").exists()
     vllm_cfg = (out / "run_eval_gemma_4_12b_vllm.yaml").read_text(encoding="utf-8")
     assert "gpu_memory_utilization: 0.85" in vllm_cfg
@@ -82,15 +84,33 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     assert "--kv-offloading-size 32" in vllm_serve
     assert "${VLLM_USE_FLASHINFER_SAMPLER:-0}" in vllm_serve
     assert "${{" not in vllm_serve
+
+
+def _assert_tier16_gemma4_ollama(out: Path) -> None:
     serve = (out / "serve_gemma_4.sh").read_text(encoding="utf-8")
     assert "ollama pull" in serve
     gemma = (out / "run_eval_gemma_4.yaml").read_text(encoding="utf-8")
     assert "model: gemma4:31b" in gemma
+
+
+def _assert_tier16_mistral(out: Path) -> None:
     # Mistral is a primary family target: Ollama curated q4_k_m tag (offload) on the 16 GiB tier.
     mistral = (out / "run_eval_mistral.yaml").read_text(encoding="utf-8")
     assert "backend: ollama" in mistral
     assert "model: mistral-small3.1:24b" in mistral
     assert (out / "serve_mistral.sh").exists()
+
+
+def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
+    out = generate_serving_configs(gpu_gb=16, output_root=tmp_path / "gpu-16gb")
+    assert out.is_dir()
+    tier = yaml.safe_load((out / "tier.json").read_text(encoding="utf-8"))
+    assert tier["tier_gb"] == 16
+    _assert_tier16_mamaylm(out)
+    _assert_tier16_lapa(out)
+    _assert_tier16_gemma4_vllm(out)
+    _assert_tier16_gemma4_ollama(out)
+    _assert_tier16_mistral(out)
 
 
 def test_select_host_gemma4_target_prefers_cuda_12b_on_16gb() -> None:

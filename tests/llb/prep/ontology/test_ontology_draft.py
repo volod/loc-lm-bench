@@ -1,23 +1,19 @@
-"""ontology-assisted gold-set drafting: per-stage units + a fake-endpoint full flow.
+"""ontology-assisted gold-set drafting: the fake-endpoint full flow + needle/calibration artifacts.
 
-No server, no provider key, no GPU: every LLM call is an injected fake, so the inventory,
-extraction grounding, ontology induction, coverage sampling, drafting, refinement, endpoint
-adapter, and the end-to-end bundle are all exercised deterministically.
+No server, no provider key, no GPU: every LLM call is an injected fake, so the end-to-end bundle,
+the PDF citation artifacts, needle retrieval annotation, and the calibration roll-up gates are
+exercised deterministically. The per-stage units live in `test_ontology_extract.py`
+(inventory/extraction/induction) and `test_ontology_coverage.py` (coverage/draft/refine/endpoint).
+
+`DOC1`, `DOC2`, and `fake_endpoint` are re-exported here for `test_ontology_resume`.
 """
 
 import json
 import logging
-import threading
-import time
 from pathlib import Path
 
-import pytest
-
-from llb.backends.base import ChatResult
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
-from llb.prep.frontier import ProvenanceLog
-from llb.prep.ontology import endpoint as ep
 from llb.prep.ontology.artifacts import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
@@ -25,32 +21,18 @@ from llb.prep.ontology.constants import (
     PROMPT_DICTIONARY_FILENAME,
     PROVENANCE_KIND,
 )
-from llb.prep.ontology.coverage import build_seeds, classify_difficulty, sample_seeds
-from llb.prep.ontology.draft import context_window, draft_for_seed, draft_prompt
-from llb.prep.ontology.endpoint import EndpointConfig, build_complete
-from llb.prep.ontology.extract import LLMExtractionAdapter, parse_extraction
-from llb.prep.ontology.induce import induce_ontology
-from llb.prep.ontology.inventory import (
-    inventory_corpus,
-    section_at,
-    segment_sections,
-    sha256_text,
-)
+from llb.prep.ontology.endpoint import EndpointConfig
 from llb.prep.ontology.models import (
     Claim,
     DocExtraction,
     DocRecord,
-    DraftSeed,
     Entity,
     OntologyCandidate,
-    SROFact,
 )
 from llb.prep.ontology.needles import annotate_needle_retrieval
 from llb.prep.ontology.pipeline import draft_goldset
-from llb.prep.ontology.refine import is_circular, refine_drafts
 
-DOC1 = "# Київ\n\nКиїв є столицею України. Місто розташоване на річці Дніпро.\n"
-DOC2 = "# Львів\n\nЛьвів є культурним центром заходу. Місто засноване у 1256 році.\n"
+from tests.llb.prep.ontology._ontology_fixtures import DOC1, DOC2
 
 
 class FakeNeedleRetriever:
@@ -59,587 +41,6 @@ class FakeNeedleRetriever:
 
     def retrieve(self, question: str, k: int) -> list[dict[str, object]]:
         return self.hits_by_question.get(question, [])[:k]
-
-
-# --- stage 1: inventory ----------------------------------------------------------------------
-
-
-def test_segment_sections_markdown_headings_cover_text_with_exact_offsets():
-    sections = segment_sections(DOC1)
-    assert [s.title for s in sections] == ["Київ"]
-    sec = sections[0]
-    assert DOC1[sec.char_start : sec.char_end] == DOC1  # heading -> end, offsets exact
-    assert section_at(sections, DOC1.index("Дніпро")) == "Київ"
-
-
-def test_segment_sections_paragraph_fallback_when_no_headings():
-    text = "Перший абзац тут.\n\nДругий абзац тут."
-    sections = segment_sections(text)
-    assert len(sections) == 2
-    assert text[sections[0].char_start : sections[0].char_end] == "Перший абзац тут."
-
-
-def test_inventory_corpus_relative_ids_hash_and_empty_raises(tmp_path):
-    (tmp_path / "a.md").write_text(DOC1, encoding="utf-8")
-    sub = tmp_path / "nested"
-    sub.mkdir()
-    (sub / "b.txt").write_text(DOC2, encoding="utf-8")
-    docs = inventory_corpus(tmp_path)
-    assert [d.doc_id for d in docs] == ["a.md", "nested/b.txt"]
-    assert docs[0].sha256 == sha256_text(DOC1) and docs[0].n_chars == len(DOC1)
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    with pytest.raises(ValueError, match="no .* documents"):
-        inventory_corpus(empty)
-
-
-# --- stage 2: extraction ---------------------------------------------------------------------
-
-
-def test_parse_extraction_grounds_spans_and_drops_ungrounded():
-    payload = {
-        "entities": [
-            {"name": "Київ", "type": "LOC", "aliases": ["місто"], "mentions": ["Київ"]},
-            {"name": "Привид", "type": "MISC", "mentions": ["Лондон"]},  # ungrounded -> dropped
-        ],
-        "facts": [
-            {
-                "subject": "Київ",
-                "relation": "столиця",
-                "object": "України",
-                "evidence": "Київ є столицею України",
-            },
-            {"subject": "x", "relation": "y", "object": "z", "evidence": "absent"},  # dropped
-        ],
-        "claims": [{"text": "теза", "evidence": "столицею України"}],
-    }
-    extraction = parse_extraction("a.md", DOC1, payload)
-    assert [e.name for e in extraction.entities] == ["Київ"]  # ungrounded entity dropped
-    assert extraction.entities[0].aliases == ["місто"]
-    span = extraction.entities[0].mentions[0]
-    assert DOC1[span.char_start : span.char_end] == "Київ"  # offsets exact
-    assert len(extraction.facts) == 1 and extraction.facts[0].object == "України"
-    assert len(extraction.claims) == 1
-
-
-def test_parse_extraction_accepts_relations_synonym_when_evidenced():
-    payload = {
-        "relations": [
-            {
-                "source": "Київ",
-                "type": "столиця",
-                "target": "України",
-                "evidence": "Київ є столицею України",
-            }
-        ]
-    }
-    extraction = parse_extraction("a.md", DOC1, payload)
-    assert len(extraction.facts) == 1
-    assert extraction.facts[0].subject == "Київ"
-    assert extraction.facts[0].relation == "столиця"
-    assert extraction.facts[0].object == "України"
-
-
-def test_llm_extraction_adapter_grounds_against_full_text_when_truncated():
-    # truncate the call input, but evidence still grounds against the full doc
-    adapter = LLMExtractionAdapter(
-        complete=lambda _p: json.dumps(
-            {
-                "facts": [
-                    {
-                        "subject": "Місто",
-                        "relation": "на",
-                        "object": "Дніпро",
-                        "evidence": "Місто розташоване на річці Дніпро",
-                    }
-                ]
-            }
-        ),
-        max_chars=5,
-    )
-    extraction = adapter.extract(DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1)))
-    assert len(extraction.facts) == 1
-    span = extraction.facts[0].evidence
-    assert DOC1[span.char_start : span.char_end] == "Місто розташоване на річці Дніпро"
-
-
-def test_llm_extraction_adapter_swallows_endpoint_error():
-    def boom(_p):
-        raise RuntimeError("endpoint down")
-
-    extraction = LLMExtractionAdapter(complete=boom).extract(
-        DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))
-    )
-    assert extraction.facts == [] and extraction.entities == []
-
-
-def test_llm_extraction_adapter_rejects_invalid_concurrency():
-    with pytest.raises(ValueError, match="concurrency"):
-        LLMExtractionAdapter(complete=lambda _p: "{}", concurrency=0)
-
-
-def test_llm_extraction_adapter_parallel_windows_match_sequential_order():
-    markers = ("Alpha", "Beta", "Gamma", "Delta")
-    blocks = [
-        "Alpha fact about transit.",
-        "Beta fact about energy.",
-        "Gamma fact about water.",
-        "Delta fact about culture.",
-    ]
-    block_size = max(len(block) for block in blocks)
-    doc_text = "".join(block.ljust(block_size) for block in blocks).rstrip()
-    doc = DocRecord(doc_id="parallel.md", text=doc_text, sha256="x", n_chars=len(doc_text))
-
-    def payload_for(prompt: str) -> str:
-        facts = [
-            {
-                "subject": marker,
-                "relation": "mentions",
-                "object": "fact",
-                "evidence": f"{marker} fact",
-            }
-            for marker in markers
-            if marker in prompt
-        ]
-        entities = [
-            {"name": marker, "type": "MISC", "mentions": [marker]}
-            for marker in markers
-            if marker in prompt
-        ]
-        return json.dumps({"entities": entities, "facts": facts})
-
-    sequential = LLMExtractionAdapter(
-        complete=payload_for, max_chars=block_size, chunk_overlap=0, concurrency=1
-    ).extract(doc)
-
-    active = 0
-    max_active = 0
-    lock = threading.Lock()
-    delays = {"Alpha": 0.04, "Beta": 0.03, "Gamma": 0.02, "Delta": 0.01}
-
-    def delayed_payload(prompt: str) -> str:
-        nonlocal active, max_active
-        marker_delay = next((delay for marker, delay in delays.items() if marker in prompt), 0.0)
-        with lock:
-            active += 1
-            max_active = max(max_active, active)
-        try:
-            time.sleep(marker_delay)
-            return payload_for(prompt)
-        finally:
-            with lock:
-                active -= 1
-
-    parallel = LLMExtractionAdapter(
-        complete=delayed_payload,
-        max_chars=block_size,
-        chunk_overlap=0,
-        concurrency=len(markers),
-    ).extract(doc)
-
-    assert max_active > 1
-    assert parallel.model_dump() == sequential.model_dump()
-
-
-# --- stage 3: ontology induction -------------------------------------------------------------
-
-
-def test_induce_ontology_counts_confidence_and_deterministic_order():
-    e1 = parse_extraction(
-        "a.md",
-        DOC1,
-        {
-            "entities": [
-                {"name": "Київ", "type": "LOC", "mentions": ["Київ"]},
-                {"name": "Дніпро", "type": "LOC", "mentions": ["Дніпро"]},
-            ],
-            "facts": [
-                {
-                    "subject": "Київ",
-                    "relation": "столиця",
-                    "object": "України",
-                    "evidence": "Київ є столицею України",
-                },
-            ],
-        },
-    )
-    e2 = parse_extraction(
-        "b.md",
-        DOC2,
-        {
-            "entities": [{"name": "Львів", "type": "LOC", "mentions": ["Львів"]}],
-            "facts": [
-                {
-                    "subject": "Львів",
-                    "relation": "столиця",
-                    "object": "культурним центром",
-                    "evidence": "Львів є культурним центром заходу",
-                },
-            ],
-        },
-    )
-    ontology = induce_ontology([e1, e2])
-    loc = ontology.entity_types[0]
-    assert loc.name == "LOC" and loc.count == 3 and loc.confidence == 1.0
-    assert ontology.relation_types[0].name == "столиця" and ontology.relation_types[0].count == 2
-
-
-# --- stage 4: coverage sampling --------------------------------------------------------------
-
-
-def test_classify_difficulty_rare_long_short():
-    assert classify_difficulty(10, rare=True) == "hard"
-    assert classify_difficulty(500, rare=False) == "hard"
-    assert classify_difficulty(10, rare=False) == "easy"
-    assert classify_difficulty(120, rare=False) == "medium"
-
-
-def test_sample_seeds_is_deterministic_and_capped():
-    docs = [
-        DocRecord(
-            doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1), sections=segment_sections(DOC1)
-        )
-    ]
-    extraction = parse_extraction(
-        "a.md",
-        DOC1,
-        {
-            "entities": [{"name": "Київ", "type": "LOC", "mentions": ["Київ"]}],
-            "facts": [
-                {
-                    "subject": "Київ",
-                    "relation": "столиця",
-                    "object": "України",
-                    "evidence": "Київ є столицею України",
-                },
-                {
-                    "subject": "Місто",
-                    "relation": "на",
-                    "object": "Дніпро",
-                    "evidence": "Місто розташоване на річці Дніпро",
-                },
-            ],
-        },
-    )
-    seeds_a = sample_seeds(docs, [extraction], max_items=2, seed=7)
-    seeds_b = sample_seeds(docs, [extraction], max_items=2, seed=7)
-    assert len(seeds_a) == 2
-    assert [s.fact.relation if s.fact else s.entity.type for s in seeds_a] == [
-        s.fact.relation if s.fact else s.entity.type for s in seeds_b
-    ]
-
-
-def test_build_seeds_tags_section_and_difficulty():
-    docs = [
-        DocRecord(
-            doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1), sections=segment_sections(DOC1)
-        )
-    ]
-    extraction = parse_extraction(
-        "a.md",
-        DOC1,
-        {
-            "facts": [
-                {
-                    "subject": "Київ",
-                    "relation": "столиця",
-                    "object": "України",
-                    "evidence": "Київ є столицею України",
-                }
-            ]
-        },
-    )
-    seeds = build_seeds(docs, [extraction])
-    fact_seed = next(s for s in seeds if s.kind == "fact")
-    assert fact_seed.strata["section"] == "Київ"
-    assert fact_seed.strata["doc"] == "a.md"
-    assert fact_seed.strata["relation"] == "столиця"
-    assert fact_seed.difficulty == "hard"  # rare relation (count 1)
-
-
-def test_build_seeds_includes_claims_and_events():
-    docs = [
-        DocRecord(
-            doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1), sections=segment_sections(DOC1)
-        ),
-        DocRecord(
-            doc_id="b.md", text=DOC2, sha256="y", n_chars=len(DOC2), sections=segment_sections(DOC2)
-        ),
-    ]
-    extraction_a = parse_extraction(
-        "a.md",
-        DOC1,
-        {"claims": [{"text": "Київ є столицею", "evidence": "Київ є столицею України"}]},
-    )
-    extraction_b = parse_extraction(
-        "b.md",
-        DOC2,
-        {
-            "events": [
-                {"description": "заснування міста", "evidence": "Місто засноване у 1256 році"}
-            ]
-        },
-    )
-
-    seeds = build_seeds(docs, [extraction_a, extraction_b])
-    claim_seed = next(s for s in seeds if s.kind == "claim")
-    event_seed = next(s for s in seeds if s.kind == "event")
-
-    assert claim_seed.claim is not None and claim_seed.strata["doc"] == "a.md"
-    # the claim's distinguishing coverage bucket is the claim text (not the section, which the
-    # base strata already covers), so distinct claims in one section each get sampled
-    assert claim_seed.strata["claim"] == "Київ є столицею"
-    assert event_seed.event is not None and event_seed.strata["event"] == "заснування міста"
-    assert "Сфокусуйся на твердженні:" in draft_prompt(claim_seed, DOC1)
-    assert "Сфокусуйся на події:" in draft_prompt(event_seed, DOC2)
-
-
-# --- stage 5: drafting -----------------------------------------------------------------------
-
-
-def test_context_window_clamps_to_document():
-    assert context_window("0123456789", 4, 6, radius=2) == "23456789"[:6]  # [2:8]
-    assert context_window("abc", 0, 3, radius=100) == "abc"
-
-
-def test_draft_for_seed_parses_and_tags_doc_id():
-    seed = DraftSeed(
-        doc_id="a.md",
-        kind="fact",
-        section_title="Київ",
-        difficulty="hard",
-        strata={"relation": "столиця"},
-        evidence=SourceSpan(
-            doc_id="a.md", char_start=8, char_end=31, text="Київ є столицею України"
-        ),
-        fact=SROFact(
-            subject="Київ",
-            relation="столиця",
-            object="України",
-            evidence=SourceSpan(
-                doc_id="a.md", char_start=8, char_end=31, text="Київ є столицею України"
-            ),
-        ),
-    )
-    payload = json.dumps(
-        {"question": "Чим є Київ?", "reference_answer": "столицею", "answer_span": "столицею"}
-    )
-    draft = draft_for_seed(lambda _p: payload, DOC1, seed)
-    assert draft is not None and draft["doc_id"] == "a.md"
-    assert draft_for_seed(lambda _p: "not json", DOC1, seed) is None
-
-
-# --- stage 6: refine -------------------------------------------------------------------------
-
-
-def test_is_circular_rejects_answer_in_question_or_equal():
-    assert is_circular("Що таке столицею?", "столицею", "столицею") is True
-    assert is_circular("столицею", "столицею", "столицею") is True
-    assert is_circular("Чим є місто для держави?", "столицею", "столицею") is False
-
-
-def test_refine_grounds_dedups_and_rejects_circular():
-    docs = [DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))]
-    drafts = [
-        {
-            "doc_id": "a.md",
-            "question": "Що відомо про Київ?",
-            "reference_answer": "України",
-            "answer_span": "України",
-        },
-        {
-            "doc_id": "a.md",
-            "question": "Що відомо про Київ?",
-            "reference_answer": "України",
-            "answer_span": "України",
-        },  # duplicate question+span -> dropped
-        {
-            "doc_id": "a.md",
-            "question": "Назви Дніпро.",
-            "reference_answer": "Дніпро",
-            "answer_span": "Дніпро",
-        },  # circular (answer in question) -> dropped
-        {
-            "doc_id": "a.md",
-            "question": "Куди тече річка?",
-            "reference_answer": "Лондон",
-            "answer_span": "Лондон",
-        },  # ungrounded -> dropped
-    ]
-    items = refine_drafts(docs, drafts)
-    assert len(items) == 1
-    item = items[0]
-    assert item.provenance == PROVENANCE_KIND and item.verified is False
-    span = item.source_spans[0]
-    assert DOC1[span.char_start : span.char_end] == "України"
-
-
-# --- endpoint adapter ------------------------------------------------------------------------
-
-
-def test_endpoint_config_validates_kind_model_and_egress():
-    with pytest.raises(ValueError, match="endpoint kind"):
-        EndpointConfig(kind="cloud", model="m")
-    with pytest.raises(ValueError, match="model must be set"):
-        EndpointConfig(kind="local", model="")
-    with pytest.raises(ValueError, match="local backend"):
-        EndpointConfig(kind="local", model="m", backend="bad")
-    with pytest.raises(ValueError, match="local backend can only"):
-        EndpointConfig(kind="frontier", model="gpt", backend="vllm")
-    assert EndpointConfig(kind="local", model="m").egress is False
-    assert EndpointConfig(kind="local", model="m").provenance()["backend"] == "ollama"
-    frontier = EndpointConfig(kind="frontier", model="gpt")
-    assert frontier.egress is True and frontier.provenance()["egress"] is True
-
-
-def test_build_complete_local_records_tokens_and_raises_on_error(monkeypatch):
-    monkeypatch.setattr(ep, "make_client", lambda base_url, api_key="x": object())
-    monkeypatch.setattr(
-        ep, "chat_once", lambda *a, **k: ChatResult(text="OK", prompt_tokens=5, completion_tokens=2)
-    )
-    log = ProvenanceLog()
-    complete = build_complete(EndpointConfig(kind="local", model="m"), log)
-    assert complete("hi") == "OK"
-    summary = log.summary()
-    assert summary["calls"] == 1 and summary["total_prompt_tokens"] == 5
-
-    monkeypatch.setattr(ep, "chat_once", lambda *a, **k: ChatResult(text="", error="timeout"))
-    with pytest.raises(RuntimeError, match="local endpoint error"):
-        build_complete(EndpointConfig(kind="local", model="m"), ProvenanceLog())("hi")
-
-
-def test_native_chat_url_maps_v1_to_api_chat():
-    assert ep._native_chat_url("http://localhost:11434/v1") == "http://localhost:11434/api/chat"
-    assert ep._native_chat_url("http://h:8000/v1/") == "http://h:8000/api/chat"
-    assert ep._native_chat_url("http://h:11434") == "http://h:11434/api/chat"
-
-
-def test_think_disabled_routes_through_native_endpoint(monkeypatch):
-    # think is honored only by Ollama's native /api/chat, so a think-set config must NOT use /v1
-    monkeypatch.setattr(
-        ep, "make_client", lambda *a, **k: pytest.fail("must not use the /v1 client when think set")
-    )
-    captured: dict[str, object] = {}
-
-    class _Resp:
-        def raise_for_status(self) -> None: ...
-
-        def json(self) -> dict[str, object]:
-            return {"message": {"content": "OK"}, "prompt_eval_count": 7, "eval_count": 3}
-
-    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
-        captured["url"] = url
-        captured["think"] = json["think"]
-        captured["num_predict"] = json["options"]["num_predict"]
-        return _Resp()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    log = ProvenanceLog()
-    cfg = EndpointConfig(kind="local", model="gemma4:26b", think=False, max_tokens=4096)
-    assert cfg.provenance()["think"] is False
-    assert build_complete(cfg, log)("hi") == "OK"
-    assert captured["url"].endswith("/api/chat")
-    assert captured["think"] is False and captured["num_predict"] == 4096
-    assert log.summary()["total_prompt_tokens"] == 7
-
-
-def test_vllm_think_disabled_uses_openai_extra_body(monkeypatch):
-    sentinel = object()
-    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
-    captured: dict[str, object] = {}
-
-    def fake_chat_once(client, model, messages, **kwargs):
-        captured["client"] = client
-        captured["extra_body"] = kwargs.get("extra_body")
-
-        class _Result:
-            text = "OK"
-            prompt_tokens = 11
-            completion_tokens = 4
-            error = None
-
-        return _Result()
-
-    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
-    cfg = EndpointConfig(
-        kind="local",
-        backend="vllm",
-        model="hf/reasoning-model",
-        base_url="http://localhost:8000/v1",
-        think=False,
-    )
-    assert cfg.provenance()["backend"] == "vllm"
-    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
-    extra_body = captured["extra_body"]
-    assert isinstance(extra_body, dict)
-    assert extra_body["chat_template_kwargs"] == {"enable_thinking": False}
-    assert extra_body["include_reasoning"] is False
-    assert extra_body["reasoning_effort"] == "none"
-    assert captured["client"] is sentinel
-
-
-def test_vllm_host_for_port_rewrites_default_host():
-    from llb.cli.prep import _vllm_host_for_port
-
-    assert _vllm_host_for_port("http://localhost:8000", 8010) == "http://localhost:8010"
-
-
-def test_num_ctx_routes_through_native_endpoint_and_bounds_context(monkeypatch):
-    # num_ctx (like think) exists only on Ollama's native /api/chat; a num_ctx-set config must
-    # right-size the loaded context instead of inheriting the modelfile default (CPU offload).
-    monkeypatch.setattr(
-        ep,
-        "make_client",
-        lambda *a, **k: pytest.fail("must not use the /v1 client when num_ctx set"),
-    )
-    captured: dict[str, object] = {}
-
-    class _Resp:
-        def raise_for_status(self) -> None: ...
-
-        def json(self) -> dict[str, object]:
-            return {"message": {"content": "OK"}, "prompt_eval_count": 5, "eval_count": 2}
-
-    def fake_post(url, json, timeout):  # noqa: A002 - mirror httpx.post signature
-        captured["url"] = url
-        captured["options"] = json["options"]
-        return _Resp()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    cfg = EndpointConfig(kind="local", model="qwen3.6:35b", num_ctx=16384)
-    assert cfg.provenance()["num_ctx"] == 16384
-    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
-    assert captured["url"].endswith("/api/chat")
-    options = captured["options"]
-    assert isinstance(options, dict) and options["num_ctx"] == 16384
-
-
-def test_default_config_keeps_endpoint_context_untouched(monkeypatch):
-    # without think/num_ctx the /v1 OpenAI-compatible path stays in use and no num_ctx is sent
-    sentinel = object()
-    monkeypatch.setattr(ep, "make_client", lambda *a, **k: sentinel)
-    seen: dict[str, object] = {}
-
-    def fake_chat_once(client, model, messages, **kwargs):
-        seen["client"] = client
-
-        class _Result:
-            text = "OK"
-            prompt_tokens = 1
-            completion_tokens = 1
-            error = None
-
-        return _Result()
-
-    monkeypatch.setattr(ep, "chat_once", fake_chat_once)
-    cfg = EndpointConfig(kind="local", model="any:model")
-    assert "num_ctx" not in cfg.provenance()
-    assert build_complete(cfg, ProvenanceLog())("hi") == "OK"
-    assert seen["client"] is sentinel
 
 
 # --- stage 7: full flow over a fake local endpoint -------------------------------------------
@@ -718,6 +119,55 @@ def fake_endpoint(prompt: str) -> str:
     return "{}"
 
 
+def _assert_items_unverified_grounded(result) -> None:
+    # items: unverified, ontology-drafted, grounded, split-assigned
+    assert len(result.items) > 0
+    assert all(it.verified is False and it.provenance == PROVENANCE_KIND for it in result.items)
+    assert all(it.split in ("calibration", "tuning", "final") for it in result.items)
+
+
+def _assert_bundle_self_validates(out: Path) -> None:
+    # the emitted bundle self-validates against its copied corpus
+    loaded = load_goldset(out / "goldset.jsonl")
+    report = validate_items(loaded, out / "corpus")
+    assert report["errors"] == []
+
+
+def _assert_ontology_artifacts(out: Path) -> None:
+    # ontology + extraction artifacts written
+    ontology = json.loads((out / "ontology.json").read_text(encoding="utf-8"))
+    assert ontology["entity_types"] and ontology["relation_types"]
+    assert (out / "extraction.jsonl").exists()
+
+
+def _assert_provenance(out: Path, result) -> None:
+    # provenance links endpoint / prompts / document hashes / cost
+    prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
+    assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
+    assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
+    assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
+    assert prov["settings"]["extract_concurrency"] == 2
+    assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
+    assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
+    assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
+
+
+def _assert_ontology_report_and_gates(out: Path) -> None:
+    report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["grounded_facts"] == 4
+    assert report["grounded_claims"] == 1 and report["grounded_events"] == 1
+    assert report["dictionary_term_yield"] > 0
+    assert (out / PROMPT_DICTIONARY_FILENAME).is_file()
+    assert (out / NEEDLE_GOLDSET_FILENAME).is_file()
+    # non-PDF corpus: grounded extractions + a non-empty gold set pass; the citation-needle gate is
+    # not applicable (no page sidecars) and does not block.
+    gates = report["gates"]
+    assert gates["nonzero_grounded_extractions"] is True
+    assert gates["nonzero_draft_items"] is True
+    assert gates["pdf_citation_gate_applicable"] is False
+    assert gates["passed"] is True
+
+
 def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
@@ -734,43 +184,11 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
         extract_concurrency=2,
     )
 
-    # items: unverified, ontology-drafted, grounded, split-assigned
-    assert len(result.items) > 0
-    assert all(it.verified is False and it.provenance == PROVENANCE_KIND for it in result.items)
-    assert all(it.split in ("calibration", "tuning", "final") for it in result.items)
-
-    # the emitted bundle self-validates against its copied corpus
-    loaded = load_goldset(out / "goldset.jsonl")
-    report = validate_items(loaded, out / "corpus")
-    assert report["errors"] == []
-
-    # ontology + extraction artifacts written
-    ontology = json.loads((out / "ontology.json").read_text(encoding="utf-8"))
-    assert ontology["entity_types"] and ontology["relation_types"]
-    assert (out / "extraction.jsonl").exists()
-
-    # provenance links endpoint / prompts / document hashes / cost
-    prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
-    assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
-    assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
-    assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
-    assert prov["settings"]["extract_concurrency"] == 2
-    assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
-    assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
-    assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
-    report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
-    assert report["grounded_facts"] == 4
-    assert report["grounded_claims"] == 1 and report["grounded_events"] == 1
-    assert report["dictionary_term_yield"] > 0
-    assert (out / PROMPT_DICTIONARY_FILENAME).is_file()
-    assert (out / NEEDLE_GOLDSET_FILENAME).is_file()
-    # non-PDF corpus: grounded extractions + a non-empty gold set pass; the citation-needle gate is
-    # not applicable (no page sidecars) and does not block.
-    gates = report["gates"]
-    assert gates["nonzero_grounded_extractions"] is True
-    assert gates["nonzero_draft_items"] is True
-    assert gates["pdf_citation_gate_applicable"] is False
-    assert gates["passed"] is True
+    _assert_items_unverified_grounded(result)
+    _assert_bundle_self_validates(out)
+    _assert_ontology_artifacts(out)
+    _assert_provenance(out, result)
+    _assert_ontology_report_and_gates(out)
 
 
 def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):

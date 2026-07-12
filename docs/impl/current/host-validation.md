@@ -109,3 +109,17 @@ non-Python files. Root-file, markdown, shell, and complexity sections are quiet 
 appear only when they have findings, missing optional tools, or failures.
 
 `make test` is the full local precommit flow when slow tests are acceptable.
+
+### Complexity baseline (2026-07 refactor)
+
+A repository-wide refactor brought every `src/` function to cyclomatic grade C or better and
+cognitive complexity <= 15 (complexipy). The techniques used -- and expected for new code --
+are: extract nested loop bodies and validation blocks into named `_helper` functions, replace
+closures that capture many locals with module-level functions or small callable classes
+(e.g. `_SubprocessCellRunner`, `_WallClockBudget`), group 10+-parameter builders behind
+dataclasses (e.g. `DraftSettings`, `_LoopContext`, `_CampaignHooks`), and share near-identical
+branches through one parameterized helper (e.g. `_ledger_ref_status` for flat vs chain
+ledgers). Remaining known findings are two D-grade TEST functions
+(`test_ontology_draft.py`, `test_inference_generate.py`) and maintainability-index C grades on
+the largest files (`goldset/verify.py`, `prep/pdf_corpus.py`, `scoring/external_rag.py`,
+`goldset/verify_session.py`), which are size-driven and would need module splits to move.

@@ -124,3 +124,61 @@ The committed `graph/` directory is a curated tutorial graph in GraphRAG JSONL s
 `build-graph --extract-model gemma4:e4b --extract-no-think` run was attempted for this sample, but
 the model response was unparseable JSON, so the guide keeps the generated graph separate from the
 runtime extraction attempt.
+
+## Context-Policy Comparison (chain-context)
+
+The prompt-system idea extends past a single RAG prompt to the SEQUENCE of system prompts used
+across a multi-step question. `bench-chain-context` ranks four context-management policies for one
+fixed model over a verified chain-of-questions set, where each step's answer depends on the prior
+steps. The model, chain set, retrieval, and scoring stay fixed; only the policy -- the row label --
+varies (the same discipline as the agentic harness comparison).
+
+The four policies each retrieve fresh per step and differ only in the memory carried forward:
+
+- `fresh` -- no carryover (the naive baseline);
+- `history` -- the full prior (question, answer) transcript;
+- `summary` -- a running model-written summary of the prior steps;
+- `roles` -- a staged librarian -> analyst -> answerer system-prompt sequence built from the
+  `bench.chain_context.role_*` prompt-system templates, plus the transcript.
+
+Inputs (committed fixture): the 20 human-verified chains and compact corpus under
+`samples/goldsets/chain_context_uk_v1/`.
+
+```bash
+env DATA_DIR=.data .venv/bin/python -m llb.main bench-chain-context \
+  --chains samples/goldsets/chain_context_uk_v1/chains.jsonl \
+  --corpus samples/goldsets/chain_context_uk_v1/corpus \
+  --model <model> --backend ollama \
+  --policies fresh,history,summary,roles --top-k 4
+```
+
+Each policy writes its own run bundle under `$DATA_DIR/chain-context/<timestamp>/` tagged with the
+policy, the `prompt_system_ids`, and the `chain_set_digest`. The command prints a policy-ranked
+board (final-answer correctness with bootstrap CIs) and a recommendation naming the winning policy;
+`llb recommend` renders a "Context policy" section per model. Context assembly per policy per step
+is unit-tested over a fake endpoint (`tests/llb/bench/test_chain_context.py`), so the comparison is
+provable without a GPU.
+
+### CUDA evidence (RTX 4060 Ti 16 GB)
+
+Run of 2026-07-11 over the committed 20-chain fixture (40 steps) with
+`hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` on Ollama, all four policies in
+one invocation (~11 min wall clock, reliability 1.000 for every policy):
+
+| rank | policy | final objective | final CI | per-step objective |
+| --- | --- | ---: | --- | ---: |
+| 1 | roles | **0.789** | [0.635, 0.915] | 0.784 |
+| 2 | history | 0.625 | [0.49, 0.76] | 0.604 |
+| 3 | summary | 0.534 | [0.42, 0.66] | 0.564 |
+| 4 | fresh | 0.431 | [0.29, 0.56] | 0.508 |
+
+The ranking discriminates and matches the design intent: the naive `fresh` baseline (no carryover)
+is worst, any memory of the prior steps helps, and the staged `roles` sequence
+(librarian -> analyst -> answerer) wins with its CI resolved above the other three -- so for this
+model and chain set the recommendation is to sequence the system prompt rather than dump the raw
+transcript. Run bundles: `.data/chain-context/20260711T1938*` (one per policy); `llb recommend`
+renders the "Context policy" section naming `roles` as the best policy for this model.
+
+The same tuning caution applies as for the RAG prompt-system lane: treat a policy win as
+provisional until it holds on a set larger than one committed fixture, and keep the run bundles as
+the audit trail behind the recommendation.

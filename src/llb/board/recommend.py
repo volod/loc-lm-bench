@@ -603,6 +603,66 @@ def format_finetune_campaign_section_md(campaign: JsonObject | None) -> str:
     return "\n".join(lines)
 
 
+def latest_chain_context(data_dir: Path | str) -> JsonObject | None:
+    """Newest-per-policy context-policy comparison, grouped by model, or None when no bundles."""
+    from llb.board.chain_context import load_chain_context_records
+
+    records = load_chain_context_records(data_dir)
+    if not records:
+        return None
+    models: dict[str, list[JsonObject]] = {}
+    for record in records:
+        models.setdefault(record.model, []).append(
+            {
+                "policy": record.policy,
+                "final_objective": record.result.objective_score,
+                "per_step_objective": record.per_step_objective,
+            }
+        )
+    return {"models": models}
+
+
+def format_chain_context_section_md(payload: JsonObject | None) -> str:
+    """Render the context-policy ranking per model for `llb recommend` (best policy first)."""
+    if not payload:
+        return ""
+    models = payload.get("models")
+    if not isinstance(models, dict) or not models:
+        return ""
+    lines = [
+        "## Context policy",
+        "",
+        "Per model, the chain set + scoring stay fixed; only the context policy varies "
+        "(fresh / history / summary / roles).",
+        "",
+        "| model | best policy | final objective | per-step objective | ranking |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for model in sorted(models):
+        rows = [row for row in models[model] if isinstance(row, dict)]
+        if not rows:
+            continue
+        ranked = sorted(rows, key=lambda r: _float_for_sort(r.get("final_objective")), reverse=True)
+        best = ranked[0]
+        ranking = ", ".join(
+            f"{r.get('policy', '?')} {_fmt_float(r.get('final_objective'))}" for r in ranked
+        )
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _short(str(model)),
+                    str(best.get("policy", "?")),
+                    _fmt_float(best.get("final_objective")),
+                    _fmt_float(best.get("per_step_objective")),
+                    ranking,
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines)
+
+
 def _float_for_sort(value: object) -> float:
     try:
         return float(value)  # type: ignore[arg-type]
@@ -639,22 +699,24 @@ def format_config_detail_md(cells: list[RunSummary]) -> str:
     rows: list[list[str]] = []
     for model in ordered:
         group = sorted(by_model[model], key=lambda c: c.result.objective_score, reverse=True)
-        for rank, cell in enumerate(group):
-            config = cell.record.config if isinstance(cell.record.config, dict) else {}
-            recall = cell.recall_at_k
-            rows.append(
-                [
-                    _short(model),
-                    str(config.get("top_k", "?")),
-                    "*" if rank == 0 else "",
-                    f"{cell.result.objective_score:.3f}",
-                    f"{cell.result.tokens_per_s:.1f}",
-                    _vram(cell),
-                    f"{recall:.3f}" if recall is not None else "n/a",
-                ]
-            )
+        rows += [_config_detail_row(model, rank, cell) for rank, cell in enumerate(group)]
     table = _md_table(["model", "top_k", "best", "objective", "tok/s", "peak VRAM", "recall"], rows)
     lines = [_t("config_detail_heading"), "", _t("config_detail_intro"), "", table]
     if max(len(group) for group in by_model.values()) == 1:
         lines += ["", _t("config_detail_single")]
     return "\n".join(lines)
+
+
+def _config_detail_row(model: str, rank: int, cell: RunSummary) -> list[str]:
+    """One (model, top_k) table row; rank 0 within the model group is marked as best."""
+    config = cell.record.config if isinstance(cell.record.config, dict) else {}
+    recall = cell.recall_at_k
+    return [
+        _short(model),
+        str(config.get("top_k", "?")),
+        "*" if rank == 0 else "",
+        f"{cell.result.objective_score:.3f}",
+        f"{cell.result.tokens_per_s:.1f}",
+        _vram(cell),
+        f"{recall:.3f}" if recall is not None else "n/a",
+    ]

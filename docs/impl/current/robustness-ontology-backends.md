@@ -118,6 +118,14 @@ Pipeline stages:
    a `question_type`/`difficulty` label (`question_types.py`), optionally drop near-duplicates of
    prior bundles (`dedup.py`), split, and emit the bundle.
 
+For bilingual source material, `answer_span` preserves the exact source-language evidence while
+the user-facing `question` and `reference_answer` remain Ukrainian. Both ontology prompt templates
+require translation of foreign evidence into a Ukrainian reference answer. The shared
+`language.is_ukrainian_dominant` check rejects foreign or foreign-dominant questions and answers in
+flat refinement and multi-hop construction; a Latin-script proper name may remain inside an
+otherwise Ukrainian sentence. Unit coverage lives in `test_ontology_coverage.py` and
+`test_ontology_yield.py`.
+
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO_THINK=1
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<hf-vllm-model> \
@@ -183,8 +191,12 @@ meta pins them).
   extraction, or loaded from a persisted store via `--graph-dir`/`DRAFT_GRAPH_DIR`).
   `multi_hop.build_multi_hop_items` grounds each chain in the two hops' exact evidence spans, so a
   multi-hop item carries at least two grounded spans across sections or documents and passes
-  span-exact validation by construction. `--multi-hop-max-paths` caps the walk (default 40). Every
-  multi-hop item is labeled `multi-hop` / hard.
+  span-exact validation by construction. The reference answer must also contain the verbatim
+  bridge or end entity from the chain; `multi_hop.py` rejects free-text answers that do not, and the
+  `prep.ontology.multi_hop` prompt states the same contract. `--multi-hop-max-paths` caps the walk
+  (default 40). Every multi-hop item is labeled `multi-hop` / hard. Injected-fake coverage for
+  accepted and rejected answers lives in
+  `tests/llb/prep/ontology/test_ontology_yield.py`.
 - **Near-duplicate suppression** (`--dedup-against <bundle[,bundle]>`, `DRAFT_DEDUP_AGAINST=`).
   `dedup.NearDuplicateFilter` drops a drafted question whose pinned-E5 (`multilingual-e5-base`,
   the RAG store's embedder) cosine similarity to any prior-bundle question is `>= 0.9`, so a
@@ -200,6 +212,13 @@ numeric, comparative, multi-hop) and a **difficulty** label, recorded in item pr
 the retrieval-unique needle fraction per question type
 (`retrieval_unique_needle_fraction_by_question_type`), so reviewers and the miss analyzer can filter
 and compare by question type.
+
+The public-PDF empirical acceptance compares a coverage-target lane with the flat 180-seed cap
+while holding model, extraction, retrieval, and review size constant. Both 40-row Ukrainian-only
+samples achieved a 1.0 human accept rate. Coverage-target sampling retained 215 citation-valid and
+194 retrieval-unique needles versus 165 and 149 for the flat cap, so the broader lane clears the
+yield-at-equal-quality gate. Per-question-type fractions and accepted-ledger paths are recorded in
+[data prep](data-prep.md#yield-max-empirical-acceptance).
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \
@@ -242,8 +261,27 @@ parallel extraction (`DRAFT_CONCURRENCY=2`) wrote `.data/prepare-goldset/paralle
 model returned no grounded JSON (`parse_rate=0.0`, gates failed), so use the production drafter
 probe before accepting a real PDF bundle.
 
-Ollama reasoning models should use `--no-think`; the command routes through Ollama native
-`/api/chat` so `think=false` is honored and JSON extraction is not spent on hidden reasoning.
+Ontology drafting now routes every Ollama call through native `/api/chat` with `format=json`.
+`make prepare-goldset-draft` also defaults `DRAFT_NO_THINK=1`, so the default `gemma4:e4b`
+drafter spends its completion budget on the required JSON instead of hidden reasoning. Set
+`DRAFT_NO_THINK=0` explicitly only when testing a model that should retain reasoning.
+
+`LLMExtractionAdapter` retries malformed or non-object output once. It journals only calls that
+returned a parsed JSON object; transport errors and rejected responses stay absent and are retried
+on resume. Parsed empty objects remain cacheable. For compatibility with interrupted bundles from
+the older journal format, empty rows without the `parsed=true` marker are ignored while non-empty
+rows are reused. Recover such a bundle without deleting its useful extraction work:
+
+```bash
+make prepare-goldset-draft DRAFT_RESUME=<bundle> DRAFT_NUM_CTX=16384
+```
+
+A local `gemma4:e4b` one-document probe of the PDF corpus, written under
+`.data/prepare-goldset/structured-json-probe`, finished in 30.838 seconds with parse rate `1.0`,
+4 grounded entities, 4 events, 4 claims, 4 facts, 1 kept draft item, full page-span citation
+coverage, and all calibration gates passing. The interrupted chain bundle's legacy journal had 45
+rows; recovery identifies 2 non-empty rows as reusable and schedules the 43 ambiguous empty rows
+for regeneration.
 
 vLLM-backed drafting is still `--endpoint local` (no egress), but sets `--backend vllm`. If
 `--base-url` is omitted, `src/llb/cli/prep.py` starts `VllmLauncher` from

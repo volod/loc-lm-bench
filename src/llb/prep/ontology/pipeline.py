@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from llb.graph.model import KnowledgeGraph
 
+from llb.goldset.chains import ChainItem, dump_chains
 from llb.goldset.schema import GoldItem, Split, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.core.paths import resolve_data_dir
@@ -38,6 +39,7 @@ from llb.prep.ontology.artifacts import (
 )
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
+    CHAINS_FILENAME,
     DEFAULT_MAX_ITEMS,
     DEFAULT_MULTI_HOP_MAX_PATHS,
     EXTRACT_CHUNK_OVERLAP,
@@ -82,6 +84,139 @@ _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
 @dataclass
+class DraftSettings:
+    """All knobs of one draft run, journaled for `--resume` and echoed into provenance.
+
+    Collecting them in one object (instead of threading ~16 loose parameters through the
+    pipeline) keeps `draft_goldset` readable and gives resume/journal/provenance a single
+    source of truth.
+    """
+
+    corpus_root: str
+    max_items: int = DEFAULT_MAX_ITEMS
+    seed: int = 13
+    doc_limit: int | None = None
+    extract_max_chars: int | None = None
+    extract_chunk_overlap: int | None = None
+    extract_concurrency: int | None = None
+    retrieval_index_dir: Path | str | None = None
+    retrieval_k: int = 10
+    drop_nonretrievable_needles: bool = False
+    coverage_target: int | None = None
+    multi_hop: bool = False
+    chains: bool = False
+    multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS
+    dedup_against: list[Path | str] | None = None
+    graph_dir: Path | str | None = None
+    rejection_feedback: Path | str | None = None
+
+    def apply_resume_meta(self, meta: dict[str, Any]) -> None:
+        """Overwrite knobs with the pinned values of the interrupted run being resumed."""
+        self.corpus_root = str(meta.get("corpus_root", self.corpus_root))
+        self.seed = int(meta.get("seed", self.seed))
+        self.max_items = int(meta.get("max_items", self.max_items))
+        doc_limit = meta.get("doc_limit", self.doc_limit)
+        self.doc_limit = int(doc_limit) if doc_limit is not None else None
+        self.extract_max_chars = meta.get("extract_max_chars", self.extract_max_chars)
+        self.extract_chunk_overlap = meta.get("extract_chunk_overlap", self.extract_chunk_overlap)
+        self.extract_concurrency = meta.get("extract_concurrency", self.extract_concurrency)
+        self.retrieval_index_dir = meta.get("retrieval_index_dir") or self.retrieval_index_dir
+        self.retrieval_k = int(meta.get("retrieval_k", self.retrieval_k))
+        self.drop_nonretrievable_needles = bool(
+            meta.get("drop_nonretrievable_needles", self.drop_nonretrievable_needles)
+        )
+        coverage = meta.get("coverage_target", self.coverage_target)
+        self.coverage_target = int(coverage) if coverage is not None else None
+        self.multi_hop = bool(meta.get("multi_hop", self.multi_hop))
+        self.chains = bool(meta.get("chains", self.chains))
+        self.multi_hop_max_paths = int(meta.get("multi_hop_max_paths", self.multi_hop_max_paths))
+        dedup = meta.get("dedup_against")
+        self.dedup_against = list(dedup) if dedup is not None else self.dedup_against
+        self.graph_dir = meta.get("graph_dir") or self.graph_dir
+        self.rejection_feedback = meta.get("rejection_feedback") or self.rejection_feedback
+
+    def validate(self) -> None:
+        if self.doc_limit is not None and self.doc_limit < 1:
+            raise ValueError("doc_limit must be >= 1 when set")
+        if self.extract_concurrency is not None and self.extract_concurrency < 1:
+            raise ValueError("extract_concurrency must be >= 1 when set")
+        if self.retrieval_k < 1:
+            raise ValueError("retrieval_k must be >= 1")
+
+    @property
+    def resolved_extract_max_chars(self) -> int:
+        return self.extract_max_chars if self.extract_max_chars is not None else EXTRACT_MAX_CHARS
+
+    @property
+    def resolved_extract_overlap(self) -> int:
+        return (
+            self.extract_chunk_overlap
+            if self.extract_chunk_overlap is not None
+            else EXTRACT_CHUNK_OVERLAP
+        )
+
+    @property
+    def resolved_extract_concurrency(self) -> int:
+        return (
+            self.extract_concurrency
+            if self.extract_concurrency is not None
+            else EXTRACT_CONCURRENCY
+        )
+
+    def pinned_payload(self) -> dict[str, object]:
+        """Determinism-critical settings recorded in the journal meta sidecar for resume."""
+        return {
+            "corpus_root": self.corpus_root,
+            "seed": self.seed,
+            "max_items": self.max_items,
+            "doc_limit": self.doc_limit,
+            "extract_max_chars": self.resolved_extract_max_chars,
+            "extract_chunk_overlap": self.resolved_extract_overlap,
+            "extract_concurrency": self.resolved_extract_concurrency,
+            "retrieval_index_dir": _opt_str(self.retrieval_index_dir),
+            "retrieval_k": self.retrieval_k,
+            "drop_nonretrievable_needles": self.drop_nonretrievable_needles,
+            "coverage_target": self.coverage_target,
+            "multi_hop": self.multi_hop,
+            "chains": self.chains,
+            "multi_hop_max_paths": self.multi_hop_max_paths,
+            "dedup_against": [str(path) for path in self.dedup_against]
+            if self.dedup_against
+            else None,
+            "graph_dir": _opt_str(self.graph_dir),
+            "rejection_feedback": _opt_str(self.rejection_feedback),
+        }
+
+    def provenance_settings(self, resumed: bool) -> dict[str, object]:
+        """The `settings` block of the bundle provenance record."""
+        return {
+            "max_items": self.max_items,
+            "seed": self.seed,
+            "doc_limit": self.doc_limit,
+            "extract_max_chars": self.resolved_extract_max_chars,
+            "extract_chunk_overlap": self.resolved_extract_overlap,
+            "extract_concurrency": self.resolved_extract_concurrency,
+            "coverage_target": self.coverage_target,
+            "multi_hop": self.multi_hop,
+            "chains": self.chains,
+            "multi_hop_max_paths": self.multi_hop_max_paths,
+            "dedup_against": [str(path) for path in self.dedup_against]
+            if self.dedup_against
+            else None,
+            "graph_dir": _opt_str(self.graph_dir),
+            "rejection_feedback": _opt_str(self.rejection_feedback),
+            "needle_retrieval_index_dir": _opt_str(self.retrieval_index_dir),
+            "needle_retrieval_k": self.retrieval_k,
+            "drop_nonretrievable_needles": self.drop_nonretrievable_needles,
+            "resumed": resumed,
+        }
+
+
+def _opt_str(value: Path | str | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+@dataclass
 class PipelineResult:
     """Programmatic handle on a draft run (also the basis for the provenance record)."""
 
@@ -92,6 +227,7 @@ class PipelineResult:
     seeds: list[DraftSeed]
     items: list[GoldItem]
     corpus_root: Path
+    chains: list[ChainItem] = field(default_factory=list)
     elapsed_s: float = 0.0
     calibration_report: dict[str, object] | None = None
     item_labels: dict[str, ItemLabels] = field(default_factory=dict)
@@ -220,6 +356,24 @@ def _multi_hop_stage(
     return build_multi_hop_items(docs, seeds, raw)
 
 
+def _chain_stage(
+    docs: list[DocRecord],
+    extractions: list[DocExtraction],
+    ontology: OntologyCandidate,
+    *,
+    graph_dir: Path | str | None,
+    max_paths: int,
+    seed: int,
+) -> list[ChainItem]:
+    """Walk 2-hop graph paths and emit ordered chain-of-questions items."""
+    from llb.prep.ontology.chains import build_chain_items
+    from llb.prep.ontology.graph_paths import walk_chain_paths
+
+    graph = _load_path_graph(graph_dir, extractions, docs, ontology)
+    seeds = walk_chain_paths(graph, max_paths=max_paths, seed=seed)
+    return build_chain_items(docs, seeds)
+
+
 def _dedup_stage(
     items: list[GoldItem],
     labels: dict[str, ItemLabels],
@@ -298,6 +452,7 @@ def _provenance(
             "ontology_relation_types": len(result.ontology.relation_types),
             "seeds": len(result.seeds),
             "multi_hop_items": n_multi_hop,
+            "chains": len(result.chains),
             "items": len(result.items),
         },
         "labels": _label_counts(result),
@@ -335,6 +490,8 @@ def _write_bundle(
     out_dir = result.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     dump_goldset(result.items, out_dir / GOLDSET_FILENAME)
+    if result.chains:
+        dump_chains(result.chains, out_dir / CHAINS_FILENAME)
     _write_corpus_copy(result.corpus_root, out_dir / CORPUS_DIRNAME, result.docs)
     (out_dir / ONTOLOGY_FILENAME).write_text(
         json.dumps(result.ontology.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
@@ -362,8 +519,9 @@ def _write_bundle(
         dedup_report=result.dedup_report,
     )
     _LOG.info(
-        "[ontology] wrote %d drafts (verified=false) + provenance -> %s",
+        "[ontology] wrote %d drafts and %d chains (verified=false) + provenance -> %s",
         len(result.items),
+        len(result.chains),
         out_dir,
     )
     _log_calibration_gates(result.calibration_report, out_dir)
@@ -392,6 +550,107 @@ def _log_calibration_gates(report: dict[str, object] | None, out_dir: Path) -> N
     )
 
 
+def _prepare_bundle_dir(
+    resolved_out: Path, settings: DraftSettings, endpoint: EndpointConfig, resume: bool
+) -> ExtractionJournal:
+    """Create the bundle dir, pin settings (fresh run only), and open the extraction journal."""
+    resolved_out.mkdir(parents=True, exist_ok=True)
+    if not resume:
+        _clear_fresh_extraction_journal(resolved_out)
+        _write_journal_meta(resolved_out, settings.pinned_payload(), endpoint)
+    journal = ExtractionJournal(resolved_out / EXTRACTION_JOURNAL_FILENAME)
+    journal.load()
+    return journal
+
+
+def _feedback_adjusted_hint(
+    draft_hint: str, rejection_feedback: Path | str
+) -> tuple[str, dict[str, object]]:
+    """Tighten the draft prompt with verify-gate rejection feedback; return the applied block."""
+    from llb.prep.ontology.feedback import (
+        applied_feedback_block,
+        feedback_hint_text,
+        feedback_hints,
+        load_rejection_feedback,
+    )
+
+    hints = feedback_hints(load_rejection_feedback(rejection_feedback))
+    applied = applied_feedback_block(rejection_feedback, hints)
+    hint_text = feedback_hint_text(hints)
+    if hint_text:
+        draft_hint = f"{draft_hint}\n{hint_text}" if draft_hint else hint_text
+        _LOG.info(
+            "[ontology] applying rejection feedback (%d hint(s)) from %s",
+            len(hints),
+            rejection_feedback,
+        )
+    return draft_hint, applied
+
+
+def _draft_stage(
+    complete: LLMComplete,
+    docs: list[DocRecord],
+    extractions: list[DocExtraction],
+    ontology: OntologyCandidate,
+    settings: DraftSettings,
+) -> tuple[list[GoldItem], dict[str, ItemLabels], dict[str, object], dict[str, object] | None]:
+    """Stages 4-5: seed selection + QA drafting. Returns items, labels, coverage, feedback."""
+    pool = build_seeds(docs, extractions)
+    seeds = select_seeds(
+        pool,
+        max_items=settings.max_items,
+        seed=settings.seed,
+        coverage_target=settings.coverage_target,
+    )
+    cov_report = coverage_report(
+        pool, seeds, coverage_target=settings.coverage_target, max_items=settings.max_items
+    )
+    draft_hint = ontology_constraints(ontology)
+    applied_feedback: dict[str, object] | None = None
+    if settings.rejection_feedback is not None:
+        draft_hint, applied_feedback = _feedback_adjusted_hint(
+            draft_hint, settings.rejection_feedback
+        )
+    raw_drafts = draft_items(complete, docs, seeds, draft_hint)
+    items, item_labels = refine_drafts_labeled(docs, raw_drafts)
+    return items, item_labels, {"seeds": seeds, "coverage": cov_report}, applied_feedback
+
+
+def _graph_stages(
+    complete: LLMComplete,
+    docs: list[DocRecord],
+    extractions: list[DocExtraction],
+    ontology: OntologyCandidate,
+    settings: DraftSettings,
+    items: list[GoldItem],
+    item_labels: dict[str, ItemLabels],
+) -> tuple[list[GoldItem], dict[str, ItemLabels], list[ChainItem]]:
+    """Optional graph-walk stages: multi-hop items and ordered question chains."""
+    if settings.multi_hop:
+        mh_items, mh_labels = _multi_hop_stage(
+            complete,
+            docs,
+            extractions,
+            ontology,
+            graph_dir=settings.graph_dir,
+            max_paths=settings.multi_hop_max_paths,
+            seed=settings.seed,
+        )
+        items = items + mh_items
+        item_labels = {**item_labels, **mh_labels}
+    chain_items: list[ChainItem] = []
+    if settings.chains:
+        chain_items = _chain_stage(
+            docs,
+            extractions,
+            ontology,
+            graph_dir=settings.graph_dir,
+            max_paths=settings.multi_hop_max_paths,
+            seed=settings.seed,
+        )
+    return items, item_labels, chain_items
+
+
 def draft_goldset(
     corpus_root: Path | str,
     endpoint: EndpointConfig,
@@ -410,6 +669,7 @@ def draft_goldset(
     drop_nonretrievable_needles: bool = False,
     coverage_target: int | None = None,
     multi_hop: bool = False,
+    chains: bool = False,
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
     dedup_against: list[Path | str] | None = None,
     graph_dir: Path | str | None = None,
@@ -421,8 +681,9 @@ def draft_goldset(
     """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result.
 
     Yield-max knobs: `coverage_target` drafts up to N seeds per stratum bucket instead of the flat
-    `max_items` cap; `multi_hop` also drafts multi-span chain questions walked from the knowledge
-    graph (built in-run, or loaded from `graph_dir`); `dedup_against` drops questions that are pinned-E5
+    `max_items` cap; `multi_hop` also drafts multi-span questions walked from the knowledge
+    graph (built in-run, or loaded from `graph_dir`); `chains` emits ordered chain-of-questions
+    rows from the same graph paths; `dedup_against` drops questions that are pinned-E5
     near-duplicates of the listed prior bundles. `rejection_feedback`
     (draft-feedback-rejection-reasons) points at a verify-gate `rejection_reasons.json`; its
     dominant reject codes tighten the draft prompts deterministically, and the applied hints +
@@ -433,149 +694,66 @@ def draft_goldset(
     """
     started = perf_counter()
     resolved_out = Path(out_dir) if out_dir is not None else default_out_dir()
+    settings = DraftSettings(
+        corpus_root=str(corpus_root),
+        max_items=max_items,
+        seed=seed,
+        doc_limit=doc_limit,
+        extract_max_chars=extract_max_chars,
+        extract_chunk_overlap=extract_chunk_overlap,
+        extract_concurrency=extract_concurrency,
+        retrieval_index_dir=retrieval_index_dir,
+        retrieval_k=retrieval_k,
+        drop_nonretrievable_needles=drop_nonretrievable_needles,
+        coverage_target=coverage_target,
+        multi_hop=multi_hop,
+        chains=chains,
+        multi_hop_max_paths=multi_hop_max_paths,
+        dedup_against=dedup_against,
+        graph_dir=graph_dir,
+        rejection_feedback=rejection_feedback,
+    )
     if resume:
         if not write:
             raise ValueError("resume requires write=True (it re-enters an existing bundle)")
-        meta = cast(dict[str, Any], load_journal_meta(resolved_out))
-        corpus_root = str(meta.get("corpus_root", corpus_root))
-        seed = int(meta.get("seed", seed))
-        max_items = int(meta.get("max_items", max_items))
-        meta_doc_limit = meta.get("doc_limit", doc_limit)
-        doc_limit = int(meta_doc_limit) if meta_doc_limit is not None else None
-        extract_max_chars = meta.get("extract_max_chars", extract_max_chars)
-        extract_chunk_overlap = meta.get("extract_chunk_overlap", extract_chunk_overlap)
-        extract_concurrency = meta.get("extract_concurrency", extract_concurrency)
-        meta_index_dir = meta.get("retrieval_index_dir")
-        retrieval_index_dir = meta_index_dir if meta_index_dir is not None else retrieval_index_dir
-        retrieval_k = int(meta.get("retrieval_k", retrieval_k))
-        drop_nonretrievable_needles = bool(
-            meta.get("drop_nonretrievable_needles", drop_nonretrievable_needles)
-        )
-        meta_coverage = meta.get("coverage_target", coverage_target)
-        coverage_target = int(meta_coverage) if meta_coverage is not None else None
-        multi_hop = bool(meta.get("multi_hop", multi_hop))
-        multi_hop_max_paths = int(meta.get("multi_hop_max_paths", multi_hop_max_paths))
-        meta_dedup = meta.get("dedup_against")
-        dedup_against = list(meta_dedup) if meta_dedup is not None else dedup_against
-        meta_graph_dir = meta.get("graph_dir")
-        graph_dir = meta_graph_dir if meta_graph_dir is not None else graph_dir
-        meta_feedback = meta.get("rejection_feedback")
-        rejection_feedback = meta_feedback if meta_feedback is not None else rejection_feedback
-    if doc_limit is not None and doc_limit < 1:
-        raise ValueError("doc_limit must be >= 1 when set")
-    if extract_concurrency is not None and extract_concurrency < 1:
-        raise ValueError("extract_concurrency must be >= 1 when set")
-    if retrieval_k < 1:
-        raise ValueError("retrieval_k must be >= 1")
+        settings.apply_resume_meta(cast(dict[str, Any], load_journal_meta(resolved_out)))
+    settings.validate()
 
-    resolved_max_chars = extract_max_chars if extract_max_chars is not None else EXTRACT_MAX_CHARS
-    resolved_overlap = (
-        extract_chunk_overlap if extract_chunk_overlap is not None else EXTRACT_CHUNK_OVERLAP
-    )
-    resolved_concurrency = (
-        extract_concurrency if extract_concurrency is not None else EXTRACT_CONCURRENCY
-    )
-
-    resolved_corpus_root = Path(corpus_root)
     journal: ExtractionJournal | None = None
     if write:
-        resolved_out.mkdir(parents=True, exist_ok=True)
-        if not resume:
-            _clear_fresh_extraction_journal(resolved_out)
-            _write_journal_meta(
-                resolved_out,
-                {
-                    "corpus_root": str(resolved_corpus_root),
-                    "seed": seed,
-                    "max_items": max_items,
-                    "doc_limit": doc_limit,
-                    "extract_max_chars": resolved_max_chars,
-                    "extract_chunk_overlap": resolved_overlap,
-                    "extract_concurrency": resolved_concurrency,
-                    "retrieval_index_dir": str(retrieval_index_dir)
-                    if retrieval_index_dir is not None
-                    else None,
-                    "retrieval_k": retrieval_k,
-                    "drop_nonretrievable_needles": drop_nonretrievable_needles,
-                    "coverage_target": coverage_target,
-                    "multi_hop": multi_hop,
-                    "multi_hop_max_paths": multi_hop_max_paths,
-                    "dedup_against": [str(path) for path in dedup_against]
-                    if dedup_against
-                    else None,
-                    "graph_dir": str(graph_dir) if graph_dir is not None else None,
-                    "rejection_feedback": str(rejection_feedback)
-                    if rejection_feedback is not None
-                    else None,
-                },
-                endpoint,
-            )
-        journal = ExtractionJournal(resolved_out / EXTRACTION_JOURNAL_FILENAME)
-        journal.load()
+        journal = _prepare_bundle_dir(resolved_out, settings, endpoint, resume)
+    retrieval_store = _load_retrieval_store(settings.retrieval_index_dir) if write else None
 
-    retrieval_store = _load_retrieval_store(retrieval_index_dir) if write else None
+    # Stages 1-3: inventory -> extract -> induce ontology.
     log = ProvenanceLog()
     complete = complete if complete is not None else build_complete(endpoint, log)
     adapter = extraction_adapter or LLMExtractionAdapter(
         complete,
-        max_chars=resolved_max_chars,
-        chunk_overlap=resolved_overlap,
-        concurrency=resolved_concurrency,
+        max_chars=settings.resolved_extract_max_chars,
+        chunk_overlap=settings.resolved_extract_overlap,
+        concurrency=settings.resolved_extract_concurrency,
         journal=journal,
     )
-
-    docs = inventory_corpus(resolved_corpus_root)
-    if doc_limit is not None:
-        docs = docs[:doc_limit]
+    docs = inventory_corpus(Path(settings.corpus_root))
+    if settings.doc_limit is not None:
+        docs = docs[: settings.doc_limit]
     extractions = extract_corpus(docs, adapter)
     ontology = induce_ontology(extractions)
 
-    pool = build_seeds(docs, extractions)
-    seeds = select_seeds(pool, max_items=max_items, seed=seed, coverage_target=coverage_target)
-    cov_report = coverage_report(pool, seeds, coverage_target=coverage_target, max_items=max_items)
-    draft_hint = ontology_constraints(ontology)
-    applied_feedback: dict[str, object] | None = None
-    if rejection_feedback is not None:
-        from llb.prep.ontology.feedback import (
-            applied_feedback_block,
-            feedback_hint_text,
-            feedback_hints,
-            load_rejection_feedback,
-        )
-
-        hints = feedback_hints(load_rejection_feedback(rejection_feedback))
-        applied_feedback = applied_feedback_block(rejection_feedback, hints)
-        hint_text = feedback_hint_text(hints)
-        if hint_text:
-            draft_hint = f"{draft_hint}\n{hint_text}" if draft_hint else hint_text
-            _LOG.info(
-                "[ontology] applying rejection feedback (%d hint(s)) from %s",
-                len(hints),
-                rejection_feedback,
-            )
-    raw_drafts = draft_items(complete, docs, seeds, draft_hint)
-    items, item_labels = refine_drafts_labeled(docs, raw_drafts)
-
-    if multi_hop:
-        mh_items, mh_labels = _multi_hop_stage(
-            complete,
-            docs,
-            extractions,
-            ontology,
-            graph_dir=graph_dir,
-            max_paths=multi_hop_max_paths,
-            seed=seed,
-        )
-        items = items + mh_items
-        item_labels = {**item_labels, **mh_labels}
-
+    # Stages 4-6: seed/draft, optional graph walks, optional cross-bundle dedup.
+    items, item_labels, seed_info, applied_feedback = _draft_stage(
+        complete, docs, extractions, ontology, settings
+    )
+    items, item_labels, chain_items = _graph_stages(
+        complete, docs, extractions, ontology, settings, items, item_labels
+    )
     dedup_report: dict[str, object] | None = None
-    if dedup_against:
+    if settings.dedup_against:
         items, item_labels, dedup_report = _dedup_stage(
-            items, item_labels, dedup_against=dedup_against, embedder=dedup_embedder
+            items, item_labels, dedup_against=settings.dedup_against, embedder=dedup_embedder
         )
 
-    splits = assign_splits([it.id for it in items], seed=seed)
+    splits = assign_splits([it.id for it in items], seed=settings.seed)
     for it in items:
         it.split = cast(Split, splits[it.id])
 
@@ -584,44 +762,25 @@ def draft_goldset(
         docs=docs,
         extractions=extractions,
         ontology=ontology,
-        seeds=seeds,
+        seeds=cast(list[DraftSeed], seed_info["seeds"]),
         items=items,
-        corpus_root=resolved_corpus_root,
+        chains=chain_items,
+        corpus_root=Path(settings.corpus_root),
         elapsed_s=perf_counter() - started,
         item_labels=item_labels,
-        coverage_report=cov_report,
+        coverage_report=cast("dict[str, object] | None", seed_info["coverage"]),
         dedup_report=dedup_report,
         applied_feedback=applied_feedback,
         log=log,
     )
-    settings: dict[str, object] = {
-        "max_items": max_items,
-        "seed": seed,
-        "doc_limit": doc_limit,
-        "extract_max_chars": resolved_max_chars,
-        "extract_chunk_overlap": resolved_overlap,
-        "extract_concurrency": resolved_concurrency,
-        "coverage_target": coverage_target,
-        "multi_hop": multi_hop,
-        "multi_hop_max_paths": multi_hop_max_paths,
-        "dedup_against": [str(path) for path in dedup_against] if dedup_against else None,
-        "graph_dir": str(graph_dir) if graph_dir is not None else None,
-        "rejection_feedback": str(rejection_feedback) if rejection_feedback is not None else None,
-        "needle_retrieval_index_dir": str(retrieval_index_dir)
-        if retrieval_index_dir is not None
-        else None,
-        "needle_retrieval_k": retrieval_k,
-        "drop_nonretrievable_needles": drop_nonretrievable_needles,
-        "resumed": resume,
-    }
     if write:
         _write_bundle(
             result,
             endpoint,
-            seed,
-            settings,
+            settings.seed,
+            settings.provenance_settings(resumed=resume),
             retrieval_store=retrieval_store,
-            retrieval_k=retrieval_k,
-            drop_nonretrievable_needles=drop_nonretrievable_needles,
+            retrieval_k=settings.retrieval_k,
+            drop_nonretrievable_needles=settings.drop_nonretrievable_needles,
         )
     return result

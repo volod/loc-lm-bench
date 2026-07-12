@@ -13,6 +13,9 @@ DuckDB / store), so the base install still imports this module.
 
 import logging
 from collections import defaultdict
+from collections.abc import Iterator
+from itertools import combinations
+from typing import Any
 
 from llb.goldset.schema import SourceSpan
 from llb.graph.model import GraphEdge, GraphMention, KnowledgeGraph
@@ -45,6 +48,46 @@ def _step(edge: GraphEdge, subject: str, obj: str) -> MultiHopStep:
     )
 
 
+# A dedup key over the (sorted) evidence spans of a candidate 2-hop path.
+_SpanPair = tuple[tuple[str, int, int], tuple[str, int, int]]
+
+
+def _claim_span_pair(e1: GraphEdge, e2: GraphEdge, seen_pairs: set[_SpanPair]) -> bool:
+    """True when the two hops cite DISTINCT, not-yet-emitted evidence spans (marks them seen)."""
+    k1, k2 = _span_key(e1.evidence), _span_key(e2.evidence)
+    if k1 == k2:
+        return False
+    pair = (k1, k2) if k1 <= k2 else (k2, k1)
+    if pair in seen_pairs:
+        return False
+    seen_pairs.add(pair)
+    return True
+
+
+def _two_hop_seed(
+    e1: GraphEdge,
+    e2: GraphEdge,
+    mid: int,
+    by_id: dict[int, Any],
+    seen_pairs: set[_SpanPair],
+) -> MultiHopSeed | None:
+    """One `A -r1-> B -r2-> C` seed, or None when the endpoint/span constraints fail."""
+    a, c = e1.src, e2.dst
+    if a == c or a == mid or c == mid:
+        return None
+    if not _claim_span_pair(e1, e2, seen_pairs):
+        return None
+    return MultiHopSeed(
+        steps=[
+            _step(e1, by_id[a].name, by_id[mid].name),
+            _step(e2, by_id[mid].name, by_id[c].name),
+        ],
+        bridge=by_id[mid].name,
+        start=by_id[a].name,
+        end=by_id[c].name,
+    )
+
+
 def walk_two_hop_paths(
     graph: KnowledgeGraph, *, max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS, seed: int = 13
 ) -> list[MultiHopSeed]:
@@ -57,42 +100,118 @@ def walk_two_hop_paths(
     """
     del seed  # walk order is deterministic by node/edge id; kept for API symmetry
     by_id = graph.node_by_id()
+    seeds: list[MultiHopSeed] = []
+    seen_pairs: set[_SpanPair] = set()
+    candidates = _iter_two_hop_seeds(graph, by_id, seen_pairs)
+    if _extend_capped(seeds, candidates, max_paths):
+        _LOG.info("[ontology] multi-hop: %d 2-hop seeds (capped)", len(seeds))
+        return seeds
+    _LOG.info("[ontology] multi-hop: %d 2-hop seeds walked", len(seeds))
+    return seeds
+
+
+def _iter_two_hop_seeds(
+    graph: KnowledgeGraph, by_id: dict[int, Any], seen_pairs: set[_SpanPair]
+) -> "Iterator[MultiHopSeed]":
+    """Yield valid `A -r1-> B -r2-> C` seeds in deterministic bridge/edge order."""
     incoming: dict[int, list[GraphEdge]] = defaultdict(list)
     outgoing: dict[int, list[GraphEdge]] = defaultdict(list)
     for edge in graph.edges:  # edges are in ascending edge_id order -> stable
         incoming[edge.dst].append(edge)
         outgoing[edge.src].append(edge)
-
-    seeds: list[MultiHopSeed] = []
-    seen_pairs: set[tuple[tuple[str, int, int], tuple[str, int, int]]] = set()
-    for mid in sorted(set(incoming) & set(outgoing)):
-        if mid not in by_id:
-            continue
+    bridges = (mid for mid in sorted(set(incoming) & set(outgoing)) if mid in by_id)
+    for mid in bridges:
         for e1 in incoming[mid]:
             for e2 in outgoing[mid]:
-                a, c = e1.src, e2.dst
-                if a == c or a == mid or c == mid:
-                    continue
-                k1, k2 = _span_key(e1.evidence), _span_key(e2.evidence)
-                if k1 == k2:
-                    continue
-                pair = (k1, k2) if k1 <= k2 else (k2, k1)
-                if pair in seen_pairs:
-                    continue
-                seen_pairs.add(pair)
-                seeds.append(
-                    MultiHopSeed(
-                        steps=[
-                            _step(e1, by_id[a].name, by_id[mid].name),
-                            _step(e2, by_id[mid].name, by_id[c].name),
-                        ],
-                        bridge=by_id[mid].name,
-                        start=by_id[a].name,
-                        end=by_id[c].name,
-                    )
-                )
-                if len(seeds) >= max_paths:
-                    _LOG.info("[ontology] multi-hop: %d 2-hop seeds (capped)", len(seeds))
-                    return seeds
-    _LOG.info("[ontology] multi-hop: %d 2-hop seeds walked", len(seeds))
+                candidate = _two_hop_seed(e1, e2, mid, by_id, seen_pairs)
+                if candidate is not None:
+                    yield candidate
+
+
+def _extend_capped(
+    seeds: list[MultiHopSeed], candidates: "Iterator[MultiHopSeed]", max_paths: int
+) -> bool:
+    """Append candidates into `seeds` until `max_paths`; True when the cap was hit."""
+    for candidate in candidates:
+        seeds.append(candidate)
+        if len(seeds) >= max_paths:
+            return True
+    return False
+
+
+def _seed_pair_key(seed: MultiHopSeed) -> tuple[tuple[str, int, int], tuple[str, int, int]]:
+    keys = [
+        (step.evidence.doc_id, step.evidence.char_start, step.evidence.char_end)
+        for step in seed.steps
+    ]
+    first, second = sorted(keys)
+    return first, second
+
+
+def _other_endpoint(edge: GraphEdge, bridge: int) -> int:
+    return edge.dst if edge.src == bridge else edge.src
+
+
+def _bridge_pair_seed(
+    first: GraphEdge,
+    second: GraphEdge,
+    bridge: int,
+    by_id: dict[int, Any],
+    seen_pairs: set[_SpanPair],
+) -> MultiHopSeed | None:
+    """One shared-bridge fact-pair seed, or None when the endpoint/span constraints fail."""
+    start = _other_endpoint(first, bridge)
+    end = _other_endpoint(second, bridge)
+    if start == end or start not in by_id or end not in by_id:
+        return None
+    if not _claim_span_pair(first, second, seen_pairs):
+        return None
+    return MultiHopSeed(
+        steps=[
+            _step(first, by_id[first.src].name, by_id[first.dst].name),
+            _step(second, by_id[second.src].name, by_id[second.dst].name),
+        ],
+        bridge=by_id[bridge].name,
+        start=by_id[start].name,
+        end=by_id[end].name,
+    )
+
+
+def walk_chain_paths(
+    graph: KnowledgeGraph, *, max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS, seed: int = 13
+) -> list[MultiHopSeed]:
+    """Build chain-review seeds, filling sparse directed paths with shared-topic fact pairs.
+
+    Directed `A -> B -> C` paths remain first. When a graph has too few object-to-subject links,
+    two distinct facts incident on the same bridge node provide ordered topic context without
+    weakening the flat multi-hop runner's stricter directed-path semantics.
+    """
+    seeds = walk_two_hop_paths(graph, max_paths=max_paths, seed=seed)
+    if len(seeds) >= max_paths:
+        return seeds
+
+    by_id = graph.node_by_id()
+    seen_pairs = {_seed_pair_key(item) for item in seeds}
+    candidates = _iter_bridge_pair_seeds(graph, by_id, seen_pairs)
+    if _extend_capped(seeds, candidates, max_paths):
+        _LOG.info("[ontology] chains: %d graph-path seeds (capped)", len(seeds))
+        return seeds
+    _LOG.info("[ontology] chains: %d graph-path seeds walked", len(seeds))
     return seeds
+
+
+def _iter_bridge_pair_seeds(
+    graph: KnowledgeGraph, by_id: dict[int, Any], seen_pairs: set[_SpanPair]
+) -> "Iterator[MultiHopSeed]":
+    """Yield shared-bridge fact-pair seeds in deterministic bridge/edge order."""
+    incident: dict[int, list[GraphEdge]] = defaultdict(list)
+    for edge in graph.edges:
+        incident[edge.src].append(edge)
+        if edge.dst != edge.src:
+            incident[edge.dst].append(edge)
+    bridges = (bridge for bridge in sorted(incident) if bridge in by_id)
+    for bridge in bridges:
+        for first, second in combinations(incident[bridge], 2):
+            candidate = _bridge_pair_seed(first, second, bridge, by_id, seen_pairs)
+            if candidate is not None:
+                yield candidate

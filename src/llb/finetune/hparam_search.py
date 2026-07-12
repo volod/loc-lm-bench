@@ -417,6 +417,44 @@ def suggest_lora_hyperparameters(trial: Any) -> JsonObject:
     }
 
 
+def _carve_dev_slice(
+    dataset_manifest: JsonObject,
+    stratify_by_base_score: Path | str | None,
+    *,
+    seed: int,
+    dev_fraction: float,
+) -> Any:
+    """The frozen dev slice: base-score-stratified when a base run is given, plain otherwise."""
+    item_ids = [str(item_id) for item_id in dataset_manifest.get("item_ids") or []]
+    if stratify_by_base_score is not None:
+        return carve_stratified_dev_slice(
+            item_ids,
+            load_base_scores(stratify_by_base_score),
+            seed=seed,
+            dev_fraction=dev_fraction,
+            base_score_run=str(stratify_by_base_score),
+        )
+    return carve_dev_slice(item_ids, seed=seed, dev_fraction=dev_fraction)
+
+
+class _WallClockBudget:
+    """Between-trial wall-clock budget: an Optuna callback that stops the study past a deadline.
+
+    A trial is atomic (a whole fine-tune), so the budget is checked BETWEEN trials. One in-flight
+    trial may therefore overrun the deadline; it is never killed mid-training.
+    """
+
+    def __init__(self, now: Clock, max_hours: float | None) -> None:
+        self._now = now
+        self._deadline = now() + max_hours * SECONDS_PER_HOUR if max_hours else None
+        self.exhausted = self._deadline is not None and now() >= self._deadline
+
+    def __call__(self, running: Any, _trial: Any) -> None:
+        if self._deadline is not None and self._now() >= self._deadline:
+            self.exhausted = True
+            running.stop()
+
+
 def search_hyperparameters(
     config: RunConfig,
     *,
@@ -454,17 +492,9 @@ def search_hyperparameters(
     dataset_manifest = load_dataset_manifest(dataset_dir)
     goldset = _resolve_goldset(goldset_path, config)
     assert_tuning_only(dataset_manifest, goldset_path=goldset)
-    item_ids = [str(item_id) for item_id in dataset_manifest.get("item_ids") or []]
-    if stratify_by_base_score is not None:
-        dev_slice = carve_stratified_dev_slice(
-            item_ids,
-            load_base_scores(stratify_by_base_score),
-            seed=seed,
-            dev_fraction=dev_fraction,
-            base_score_run=str(stratify_by_base_score),
-        )
-    else:
-        dev_slice = carve_dev_slice(item_ids, seed=seed, dev_fraction=dev_fraction)
+    dev_slice = _carve_dev_slice(
+        dataset_manifest, stratify_by_base_score, seed=seed, dev_fraction=dev_fraction
+    )
 
     root = Path(resume) if resume is not None else Path(out_dir or _default_out_dir(config, model))
     root.mkdir(parents=True, exist_ok=True)
@@ -479,24 +509,14 @@ def search_hyperparameters(
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(seed=seed),
     )
-    finished = len(study.trials)
-    remaining = max(0, max_trials - finished)
-    deadline = now() + max_hours * SECONDS_PER_HOUR if max_hours else None
-    budget_exhausted = deadline is not None and now() >= deadline
-
-    def stop_when_over_budget(running: Any, _trial: Any) -> None:
-        # A trial is atomic (a whole fine-tune), so the wall-clock budget is checked BETWEEN trials.
-        # One in-flight trial may therefore overrun the deadline; it is never killed mid-training.
-        nonlocal budget_exhausted
-        if deadline is not None and now() >= deadline:
-            budget_exhausted = True
-            running.stop()
+    remaining = max(0, max_trials - len(study.trials))
+    budget = _WallClockBudget(now, max_hours)
 
     # A trial that fails for a reason the study cannot prune has still cost a fine-tune. The manifest
     # is written before the error propagates, so the study stays inspectable and resumable rather
     # than leaving only a `study.db` behind.
     failure: BaseException | None = None
-    if remaining and not budget_exhausted:
+    if remaining and not budget.exhausted:
         try:
             study.optimize(
                 _make_objective(
@@ -512,11 +532,11 @@ def search_hyperparameters(
                     vram_headroom_mib=vram_headroom_mib,
                 ),
                 n_trials=remaining,
-                callbacks=[stop_when_over_budget],
+                callbacks=[budget],
             )
         except BaseException as exc:
             failure = exc
-    elif budget_exhausted:
+    elif budget.exhausted:
         _LOG.warning("[finetune-hparams] time budget already exhausted; no trial started")
 
     trials = [_record_from_trial(trial) for trial in study.trials]
@@ -531,7 +551,7 @@ def search_hyperparameters(
         seed=seed,
         max_trials=max_trials,
         max_hours=max_hours,
-        budget_exhausted=budget_exhausted,
+        budget_exhausted=budget.exhausted,
     )
     _LOG.info(
         "[finetune-hparams] %s best=%s over %d trials (%d complete, budget_exhausted=%s)",

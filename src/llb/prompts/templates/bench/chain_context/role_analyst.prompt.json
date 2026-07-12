@@ -1,0 +1,5 @@
+{
+  "id": "bench.chain_context.role_analyst",
+  "kind": "text",
+  "template": "role_analyst.txt"
+}

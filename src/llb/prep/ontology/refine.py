@@ -19,6 +19,7 @@ from llb.goldset.schema import GoldItem, Split
 from llb.prep.frontier import build_drafted_items
 from llb.prep.ontology.constants import ONTOLOGY_ID_PREFIX, PROVENANCE_KIND
 from llb.prep.ontology.coverage import classify_difficulty
+from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.models import DocRecord, ItemLabels
 from llb.prep.ontology.question_types import classify_question_type
 
@@ -77,12 +78,8 @@ def refine_drafts_labeled(
     for draft in drafts:
         per_doc.setdefault(str(draft.get("doc_id", "")), []).append(draft)
 
-    seen_questions: set[tuple[str, str]] = set()
-    seen_spans: set[tuple[str, int, int]] = set()
-    kept: list[GoldItem] = []
+    tracker = _RefineTracker()
     labels: dict[str, ItemLabels] = {}
-    n_circular = 0
-    n_dup = 0
     for doc_id, doc_drafts in per_doc.items():
         doc = by_id.get(doc_id)
         if doc is None:
@@ -96,28 +93,50 @@ def refine_drafts_labeled(
             id_prefix=ONTOLOGY_ID_PREFIX,
         )
         for item in grounded:
-            span = item.source_spans[0]
-            if is_circular(item.question, item.reference_answer, span.text):
-                n_circular += 1
+            if not tracker.keep(item):
                 continue
-            q_key = (item.source_doc_id, _normalize_question(item.question))
-            s_key = (item.source_doc_id, span.char_start, span.char_end)
-            if q_key in seen_questions or s_key in seen_spans:
-                n_dup += 1
-                continue
-            seen_questions.add(q_key)
-            seen_spans.add(s_key)
-            kept.append(item)
             idx = _draft_index(item.id)
             source = doc_drafts[idx] if idx is not None and 0 <= idx < len(doc_drafts) else {}
             labels[item.id] = _item_labels(item, source)
     _LOG.info(
-        "[ontology] stage 6: %d items kept (%d circular, %d duplicate rejected)",
-        len(kept),
-        n_circular,
-        n_dup,
+        "[ontology] stage 6: %d items kept (%d non-Ukrainian, %d circular, %d duplicate rejected)",
+        len(tracker.kept),
+        tracker.n_non_ukrainian,
+        tracker.n_circular,
+        tracker.n_dup,
     )
-    return kept, labels
+    return tracker.kept, labels
+
+
+class _RefineTracker:
+    """Circularity + per-doc question/span duplicate rejection with running counters."""
+
+    def __init__(self) -> None:
+        self.kept: list[GoldItem] = []
+        self.n_non_ukrainian = 0
+        self.n_circular = 0
+        self.n_dup = 0
+        self._seen_questions: set[tuple[str, str]] = set()
+        self._seen_spans: set[tuple[str, int, int]] = set()
+
+    def keep(self, item: GoldItem) -> bool:
+        """Record and keep `item` unless it is circular or repeats a question/span."""
+        span = item.source_spans[0]
+        if not all(is_ukrainian_dominant(text) for text in (item.question, item.reference_answer)):
+            self.n_non_ukrainian += 1
+            return False
+        if is_circular(item.question, item.reference_answer, span.text):
+            self.n_circular += 1
+            return False
+        q_key = (item.source_doc_id, _normalize_question(item.question))
+        s_key = (item.source_doc_id, span.char_start, span.char_end)
+        if q_key in self._seen_questions or s_key in self._seen_spans:
+            self.n_dup += 1
+            return False
+        self._seen_questions.add(q_key)
+        self._seen_spans.add(s_key)
+        self.kept.append(item)
+        return True
 
 
 def refine_drafts(

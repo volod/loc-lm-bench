@@ -1,0 +1,16 @@
+{
+  "kind": "verified-chain-fixture",
+  "verified": true,
+  "chains": 20,
+  "minimum_required": 10,
+  "compact_corpus": true,
+  "documents": [
+    {
+      "doc_id": "pdf-bd10da80278f.md",
+      "original_sha256": "b5730de690ac492ff4370ffc3b1d5443cb5c709aedf4ee88411124c3a65141fb",
+      "original_chars": 626093,
+      "fixture_chars": 3533,
+      "reviewed_spans": 36
+    }
+  ]
+}

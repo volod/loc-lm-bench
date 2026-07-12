@@ -170,26 +170,34 @@ def run_probes(
         if k == source_top_k:
             _LOG.info("[analyze-misses] probe top_k=%d equals the run's top_k; skipping", k)
             continue
-        cfg = probe_config(manifest, k)
-        run_root = cfg.data_dir / RUN_EVAL_METHOD
-        reused = resumed = False
-        probe_dir = _find_finalized(run_root, cfg.run_name, len(subset))
-        if probe_dir is not None:
-            reused = True
-            _LOG.info("[analyze-misses] probe top_k=%d reuses %s", k, probe_dir)
-        else:
-            resume_dir = _find_resumable(run_root, cfg.fingerprint(), subset, split)
-            if resume_dir is not None:
-                resumed = True
-                _LOG.info("[analyze-misses] probe top_k=%d resumes %s", k, resume_dir)
-            result = run_eval_fn(cfg, items=subset, split=split, resume=resume_dir, emit=False)
-            probe_dir = run_root / result["run_timestamp"]
+        probe_dir, reused, resumed = _probe_run_dir(manifest, k, subset, split, run_eval_fn)
         outcomes.append(
             _probe_outcome(
                 probe_dir, k, retrieval_miss_ids, base_mean, reused=reused, resumed=resumed
             )
         )
     return outcomes
+
+
+def _probe_run_dir(
+    manifest: JsonObject,
+    k: int,
+    subset: list[GoldItem],
+    split: str,
+    run_eval_fn: Callable[..., Any],
+) -> tuple[Path, bool, bool]:
+    """`(probe run dir, reused, resumed)`: reuse a finalized run, else resume/launch one."""
+    cfg = probe_config(manifest, k)
+    run_root = cfg.data_dir / RUN_EVAL_METHOD
+    probe_dir = _find_finalized(run_root, cfg.run_name, len(subset))
+    if probe_dir is not None:
+        _LOG.info("[analyze-misses] probe top_k=%d reuses %s", k, probe_dir)
+        return probe_dir, True, False
+    resume_dir = _find_resumable(run_root, cfg.fingerprint(), subset, split)
+    if resume_dir is not None:
+        _LOG.info("[analyze-misses] probe top_k=%d resumes %s", k, resume_dir)
+    result = run_eval_fn(cfg, items=subset, split=split, resume=resume_dir, emit=False)
+    return run_root / result["run_timestamp"], False, resume_dir is not None
 
 
 def parse_probe_depths(spec: str) -> list[int]:

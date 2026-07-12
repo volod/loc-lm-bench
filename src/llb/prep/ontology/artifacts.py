@@ -88,24 +88,31 @@ def span_page_refs(span: SourceSpan, index: dict[str, dict[str, Any]]) -> list[d
     pages = payload.get("pages")
     refs: list[dict[str, object]] = []
     for page in pages if isinstance(pages, list) else []:
-        if not isinstance(page, dict):
+        page_no = _overlapping_page_no(page, span)
+        if page_no is None:
             continue
-        text_start = _int_or_none(page.get("text_start"))
-        text_end = _int_or_none(page.get("text_end"))
-        start = text_start if text_start is not None else _int_or_none(page.get("char_start"))
-        end = text_end if text_end is not None else _int_or_none(page.get("char_end"))
-        page_no = _int_or_none(page.get("page"))
-        if start is None or end is None or page_no is None:
-            continue
-        if span.char_start < end and span.char_end > start:
-            refs.append(
-                {
-                    "source": str(payload.get("source") or ""),
-                    "page": page_no,
-                    "parser": str(payload.get("parser") or ""),
-                }
-            )
+        refs.append(
+            {
+                "source": str(payload.get("source") or ""),
+                "page": page_no,
+                "parser": str(payload.get("parser") or ""),
+            }
+        )
     return refs
+
+
+def _overlapping_page_no(page: Any, span: SourceSpan) -> int | None:
+    """The page number when the page's corpus char range overlaps `span`, else None."""
+    if not isinstance(page, dict):
+        return None
+    text_start = _int_or_none(page.get("text_start"))
+    text_end = _int_or_none(page.get("text_end"))
+    start = text_start if text_start is not None else _int_or_none(page.get("char_start"))
+    end = text_end if text_end is not None else _int_or_none(page.get("char_end"))
+    page_no = _int_or_none(page.get("page"))
+    if start is None or end is None or page_no is None:
+        return None
+    return page_no if span.char_start < end and span.char_end > start else None
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -399,24 +406,13 @@ def write_calibration_artifacts(
     _write_jsonl(dictionary, root / PROMPT_DICTIONARY_FILENAME)
     _write_jsonl(needle_rows, root / NEEDLE_GOLDSET_FILENAME)
 
-    nonempty_docs = sum(
-        1
-        for extraction in extractions
-        if extraction.entities or extraction.facts or extraction.claims or extraction.events
-    )
+    stats = _extraction_stats(extractions)
     evidence_spans = _evidence_spans(extractions)
     item_spans = [span for item in items for span in item.source_spans]
-    facts_by_doc: dict[str, int] = defaultdict(int)
-    for extraction in extractions:
-        facts_by_doc[extraction.doc_id] += len(extraction.facts)
-
-    grounded_entities = sum(len(extraction.entities) for extraction in extractions)
-    grounded_events = sum(len(extraction.events) for extraction in extractions)
-    grounded_facts = sum(len(extraction.facts) for extraction in extractions)
-    grounded_claims = sum(len(extraction.claims) for extraction in extractions)
+    grounded_facts = int(stats["grounded_facts"])
 
     gates = _gates(
-        grounded_total=grounded_entities + grounded_events + grounded_facts + grounded_claims,
+        grounded_total=int(stats["grounded_total"]),
         grounded_facts=grounded_facts,
         n_items=len(items),
         has_dictionary=bool(dictionary),
@@ -429,6 +425,7 @@ def write_calibration_artifacts(
             retrievable_items > 0 if isinstance(retrievable_items, int) else False
         )
 
+    nonempty_docs = int(stats["nonempty_docs"])
     report: dict[str, object] = {
         "kind": "pdf-ontology-calibration",
         "settings": settings,
@@ -436,10 +433,10 @@ def write_calibration_artifacts(
         "documents": len(docs),
         "documents_with_nonempty_extraction": nonempty_docs,
         "parse_rate": _ratio(nonempty_docs, len(docs)),
-        "grounded_entities": grounded_entities,
-        "grounded_events": grounded_events,
+        "grounded_entities": stats["grounded_entities"],
+        "grounded_events": stats["grounded_events"],
         "grounded_facts": grounded_facts,
-        "grounded_claims": grounded_claims,
+        "grounded_claims": stats["grounded_claims"],
         "ontology_entity_types": len(ontology.entity_types),
         "ontology_relation_types": len(ontology.relation_types),
         "draft_items": len(items),
@@ -454,7 +451,7 @@ def write_calibration_artifacts(
         "dictionary_term_yield": len(dictionary),
         "question_type_distribution": question_type_distribution,
         "difficulty_distribution": difficulty_distribution,
-        "facts_by_doc": dict(sorted(facts_by_doc.items())),
+        "facts_by_doc": stats["facts_by_doc"],
         "artifacts": {
             "prompt_dictionary_candidates": PROMPT_DICTIONARY_FILENAME,
             "needle_items": NEEDLE_GOLDSET_FILENAME,
@@ -474,3 +471,28 @@ def write_calibration_artifacts(
         encoding="utf-8",
     )
     return report
+
+
+def _extraction_stats(extractions: list[DocExtraction]) -> dict[str, Any]:
+    """Grounded-object counts and per-doc fact tallies over all extractions."""
+    nonempty_docs = sum(
+        1
+        for extraction in extractions
+        if extraction.entities or extraction.facts or extraction.claims or extraction.events
+    )
+    facts_by_doc: dict[str, int] = defaultdict(int)
+    for extraction in extractions:
+        facts_by_doc[extraction.doc_id] += len(extraction.facts)
+    grounded_entities = sum(len(extraction.entities) for extraction in extractions)
+    grounded_events = sum(len(extraction.events) for extraction in extractions)
+    grounded_facts = sum(len(extraction.facts) for extraction in extractions)
+    grounded_claims = sum(len(extraction.claims) for extraction in extractions)
+    return {
+        "nonempty_docs": nonempty_docs,
+        "grounded_entities": grounded_entities,
+        "grounded_events": grounded_events,
+        "grounded_facts": grounded_facts,
+        "grounded_claims": grounded_claims,
+        "grounded_total": grounded_entities + grounded_events + grounded_facts + grounded_claims,
+        "facts_by_doc": dict(sorted(facts_by_doc.items())),
+    }
