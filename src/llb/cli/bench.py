@@ -111,12 +111,13 @@ def bench_security_cmd(
     ),
 ) -> None:
     """Score a model's objective ASR + refusal-appropriateness under TIER_SECURITY."""
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
     from llb.bench.security import SecurityRun, load_cases_file, run_security
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     security_cases = load_cases_file(cases)
     vram_reader, pid_reader = best_effort_gpu_readers()
+    meter = ThroughputMeter()
 
     def run(complete: LLMComplete) -> SecurityRun:
         return run_security(
@@ -130,10 +131,16 @@ def bench_security_cmd(
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
+            meter=meter,
         )
 
     result = drive_with_backend(
-        cfg, run, base_url=base_url, vram_reader=vram_reader, pid_usage_reader=pid_reader
+        cfg,
+        run,
+        base_url=base_url,
+        vram_reader=vram_reader,
+        pid_usage_reader=pid_reader,
+        meter=meter,
     )
     s = result.score
     typer.echo(
@@ -142,6 +149,21 @@ def bench_security_cmd(
     )
     for family, asr in sorted(s.asr_by_family.items()):
         typer.echo(f"[bench-security]   {family:<22} ASR={asr:.3f}")
+    if s.cross_language is not None:
+        typer.echo(
+            f"[bench-security] xlang-consistency={s.cross_language.consistency:.3f} "
+            f"({s.cross_language.n_groups} groups)"
+        )
+    if s.bias_pairs is not None:
+        typer.echo(
+            f"[bench-security] bias-pair-consistency={s.bias_pairs.consistency:.3f} "
+            f"({s.bias_pairs.n_pairs} pairs)"
+        )
+    if meter.calls:
+        typer.echo(
+            f"[bench-security] throughput={meter.tokens_per_s:.1f} tok/s over {meter.calls} calls "
+            f"({meter.completion_tokens} completion tokens)"
+        )
     typer.echo(result.table)
     if result.paths is not None:
         typer.echo(f"[bench-security] manifest -> {result.paths['manifest']}")

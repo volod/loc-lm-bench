@@ -21,7 +21,9 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
+    complete_all,
     mean,
     persist_category_run,
     render_board,
@@ -140,6 +142,9 @@ def _row(case: security.SecurityCase, output: str) -> SecurityCaseRow:
         row["lang"] = case.lang
     if case.xlang_group:
         row["xlang_group"] = case.xlang_group
+    pair_id = str(case.attrs.get(security.BIAS_PAIR_KEY, ""))
+    if pair_id:
+        row["pair_id"] = pair_id
     return row
 
 
@@ -178,7 +183,9 @@ def refusal_quality(score: JudgeScore) -> float:
 
 
 def _score_cases(cases: list[security.SecurityCase], complete: LLMComplete) -> _ScoredSecurityCases:
-    outputs = [complete(build_prompt(case)) for case in cases]
+    outputs = complete_all(
+        complete, [build_prompt(case) for case in cases], label=METHOD, logger=_LOG
+    )
     score = security.score_security(cases, outputs)
     rows = [_row(case, output) for case, output in zip(cases, outputs)]
     n_ok = sum(1 for r in rows if r["status"] not in _RELIABILITY_FAILURES)
@@ -234,21 +241,24 @@ def _run_refusal_judge(
     return _RefusalJudgeRun(outcome=outcome, quality=None, quality_ci=None)
 
 
-def _security_result(model: str, backend: str, scored: _ScoredSecurityCases) -> ModelResult:
+def _security_result(
+    model: str, backend: str, scored: _ScoredSecurityCases, tokens_per_s: float
+) -> ModelResult:
     return category_result(
         model=model,
         backend=backend,
         tier=TIER_SECURITY,
         case_objectives=scored.score.case_defended,  # per-attack-case defended -> defense-rate CI
         reliability=scored.reliability,
+        tokens_per_s=tokens_per_s,
     )
 
 
-def _security_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+def _security_metrics(result: ModelResult, reliability: float, tokens_per_s: float) -> RunMetrics:
     return {
         "objective_score": result.objective_score,  # defense rate (1 - ASR)
         "reliability": reliability,
-        "tokens_per_s": 0.0,
+        "tokens_per_s": tokens_per_s,
     }
 
 
@@ -273,6 +283,7 @@ def _score_config(
         "defense_ci": list(asr_ci) if asr_ci else None,
         "refusal_appropriateness_ci": list(refusal_ci) if refusal_ci else None,
         "cross_language": _cross_language_config(score.cross_language),
+        "bias_pairs": _bias_pair_config(score.bias_pairs),
     }
 
 
@@ -287,6 +298,21 @@ def _cross_language_config(
         "n_groups": xlang.n_groups,
         "consistency": xlang.consistency,
         "refusal_rate_by_lang": xlang.refusal_rate_by_lang,
+        "consistency_ci": list(ci) if ci else None,
+    }
+
+
+def _bias_pair_config(
+    bias: security.BiasPairConsistency | None,
+) -> dict[str, Any] | None:
+    """Persist the matched-pair bias-consistency block (None when the set has no matched pairs)."""
+    if bias is None:
+        return None
+    ci = bootstrap_mean_ci(bias.group_consistent)
+    return {
+        "n_pairs": bias.n_pairs,
+        "consistency": bias.consistency,
+        "refusal_rate_by_variant": bias.refusal_rate_by_variant,
         "consistency_ci": list(ci) if ci else None,
     }
 
@@ -318,21 +344,29 @@ def _log_persisted_run(
     score: security.SecurityScore,
     judge: _RefusalJudgeRun,
     paths: RunPaths,
+    tokens_per_s: float,
 ) -> None:
     xlang = (
         f"{score.cross_language.consistency:.3f} ({score.cross_language.n_groups}g)"
         if score.cross_language is not None
         else "n/a"
     )
+    bias = (
+        f"{score.bias_pairs.consistency:.3f} ({score.bias_pairs.n_pairs}p)"
+        if score.bias_pairs is not None
+        else "n/a"
+    )
     _LOG.info(
         "[security] %s ASR=%.3f defense=%.3f refusal-appropriateness=%.3f "
-        "xlang-consistency=%s quality=%s -> %s",
+        "xlang-consistency=%s bias-consistency=%s quality=%s tok/s=%.1f -> %s",
         model,
         score.asr,
         score.defense_rate,
         score.refusal_appropriateness,
         xlang,
+        bias,
         f"{judge.quality:.3f}" if judge.quality is not None else "n/a",
+        tokens_per_s,
         paths["manifest"],
     )
 
@@ -354,6 +388,7 @@ def run_security(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> SecurityRun:
     """Score one model's robustness over the planted cases and return its board under TIER_SECURITY.
 
@@ -361,6 +396,7 @@ def run_security(
     (`judge_rho >= judge_threshold`), an opt-in unsafe-content REFUSAL-QUALITY signal is recorded
     ALONGSIDE (per harmful-ask case + mean + CI) but never folded into the headline; otherwise the
     judge is demoted and the objective ASR ranks alone. `judge_scorer` is injectable for tests.
+    A `meter` (populated by the endpoint `complete`) supplies the run's real generation tok/s.
     """
     if not cases:
         raise SystemExit("no security cases provided")
@@ -368,6 +404,7 @@ def run_security(
         data_verified=data_verified, verification_ref=verification_ref
     )
     scored = _score_cases(cases, complete)
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     judge_cfg = _SecurityJudgeConfig(
         model=judge_model,
         rho=judge_rho,
@@ -376,7 +413,7 @@ def run_security(
         base_url=judge_base_url,
     )
     judge = _run_refusal_judge(cases, scored.outputs, scored.rows, judge_cfg)
-    result = _security_result(model, backend, scored)
+    result = _security_result(model, backend, scored, tokens_per_s)
     board, table = render_board([result])
 
     paths: RunPaths | None = None
@@ -391,12 +428,12 @@ def run_security(
             data_dir=data_dir,
             run_name=run_name,
             config=config,
-            metrics=_security_metrics(result, scored.reliability),
+            metrics=_security_metrics(result, scored.reliability, tokens_per_s),
             case_rows=scored.rows,
             judge=_judge_status(judge_cfg, judge),
             mirror=mirror,
         )
-        _log_persisted_run(model, scored.score, judge, paths)
+        _log_persisted_run(model, scored.score, judge, paths, tokens_per_s)
     return SecurityRun(
         result=result,
         score=scored.score,

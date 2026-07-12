@@ -40,14 +40,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
+### category-suite-throughput-vram
+
+- Agent status: **CLEAR** -- agent-buildable to `make ci` green; the shared `ThroughputMeter` +
+  `complete_all` already exist in `bench/common.py` (see
+  [category suite](current/category-benchmark-suite.md)).
+- Dependencies: none. `bench-security` already reports real generation `tok/s`; the other category
+  runners (`bench-tooling`, `bench-agentic`, `bench-summarization`, `bench-structured`,
+  `bench-text-analysis`) still hardcode `tokens_per_s: 0.0` and pass no VRAM.
+- User-visible outcome: every category board shows real throughput, not `0.0`, and (optionally) a
+  best-effort peak VRAM so the speed/VRAM columns and Pareto flag are meaningful across the suite.
+- Scope boundary: in scope -- thread a `ThroughputMeter` through each category runner exactly as
+  `bench-security` does (create in the CLI, pass to `drive_with_backend` + the runner, read
+  `tokens_per_s` into `category_result` + `RunMetrics`); optionally surface peak VRAM by returning
+  the isolate-cell VRAM sample from `drive_with_backend` for launched backends, and a single
+  best-effort GPU sample for the out-of-process Ollama path (clearly labelled non-PID-attributed).
+  Out of scope -- changing any category's RANKING (they rank on objective quality within their
+  tier; tok/s/VRAM stay display + Pareto only).
+- Acceptance gates: each category manifest carries a non-zero `tokens_per_s` on a real run; a unit
+  test per runner asserts a meter's throughput reaches the board row (mirroring
+  `test_run_security_reports_meter_throughput`).
+- Documentation target: [category suite](current/category-benchmark-suite.md) per-category notes.
+
 ## Human-Assisted Tasks
 
 Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
 completion.
 
-Recommended order for the remaining human steps: task 5's derived-case review consumes the
-verification gate over agent-prepared bundles. Task 2's egress consent and spend decision is
-independent and can happen whenever the operator is ready to authorize it.
+Remaining human step: task 2's egress consent and spend decision, whenever the operator is ready to
+authorize it.
 
 ### 2. frontier-ua-draft-lane
 
@@ -85,43 +106,6 @@ independent and can happen whenever the operator is ready to authorize it.
   on kept-yield and accept rate.
 - Documentation target: [data prep](current/data-prep.md) frontier lane notes;
   [`docs/guides/data-prep/goldset-from-scratch.md`](../guides/data-prep/goldset-from-scratch.md).
-
-### 5. security-corpus-probes
-
-- Agent status: **HUMAN-GATED** -- derived cases must clear the human verify gate before any
-  headline/composite use; the generator, unit tests, and the `bench-security` run itself are CLEAR
-  / agent-executable on the current CUDA host.
-- Dependencies: the shipped ontology artifacts (`ontology.json`, `extraction.jsonl`) from a
-  local-drafter bundle. Human step: derived security cases must clear the human
-  `verify-sample`/`verify-review`/`verify-accept` gate before any headline/composite use; the
-  generator and unit tests are agent-buildable.
-- User-visible outcome: the security tier gains corpus-specific cases derived from the target
-  corpus itself: prohibited-topic denial-guard probes built from the corpus ontology's
-  sensitive topics and entities, benign near-boundary controls that catch over-refusal on
-  legitimate corpus questions, and matched-pair bias probes (entity or group swapped, behavior
-  fixed) scored for decision consistency -- all flowing through the existing detectors,
-  cross-language grouping, and the human verification gate before any headline use.
-- Scope boundary: in scope -- `llb derive-security-cases --bundle <draft-bundle>` reading
-  `ontology.json` and `extraction.jsonl`, generating cases locally through the same drafter
-  endpoint seam; emitted cases reuse the committed case schema (`lang`, `attrs.vector`,
-  `xlang_group`) so `bench-security`, `cross_language_consistency`, and refusal-appropriateness
-  work unchanged (see [category suite](current/category-benchmark-suite.md) and the Ukrainian
-  security adaptation in [evaluation rigor](current/rigor-board-judge.md)); a bias-pair
-  consistency metric alongside ASR reusing the matched-group machinery. Out of scope -- new
-  detector kinds, safety classifiers, ranking unverified case sets.
-- Data and artifact paths: derived cases under `$DATA_DIR/security-derive/<timestamp>/cases.json`
-  with per-case grounding spans back to the corpus; a small derived-and-verified sample
-  committed under `samples/` for regression.
-- Execution path: `llb derive-security-cases --bundle <draft> --out <cases.json>`;
-  `make bench-security SECURITY_CASES=<cases.json> MODEL=<m> BACKEND=<b>`; verification through
-  the existing `verify-sample`/`verify-review`/`verify-accept` path.
-- Acceptance gates: every generated probe cites a corpus topic or entity with an exact span
-  (unit-tested); benign controls feed refusal-appropriateness only, never ASR; a full
-  `bench-security` run over derived quickstart-corpus cases reports per-family ASR plus
-  bias-pair consistency with bootstrap CIs; unverified derived sets are rejected from
-  composite/headline paths.
-- Documentation target: [category suite](current/category-benchmark-suite.md) security section;
-  [`docs/guides/learning-path/learning-path-security.md`](../guides/learning-path/learning-path-security.md).
 
 ## Adding Future Tasks
 

@@ -212,6 +212,14 @@ Each case should contain a stable id, threat family, trusted instruction, untrus
 expected allowed behavior, prohibited observable behavior, detector, benign-control id, language,
 source, license, and reviewer status. Keep adversarial text as data, never executable test logic.
 
+To make a suite corpus-specific rather than generic, `llb derive-security-cases --bundle <draft>`
+derives probes from the target corpus's own grounded entities (a `prepare-goldset` bundle's
+`ontology.json` + `extraction.jsonl`): prohibited-topic denial-guard asks that weaponize a real
+PERSON/ORG/NORP entity, matched benign near-boundary controls, and matched-pair bias probes that
+swap the entity while holding the behavior fixed. Every derived probe carries an exact corpus span,
+so a reviewer can trace it to its source; derived sets stay `verified=false` until they clear the
+human verification gate. See the security section of `docs/impl/current/category-benchmark-suite.md`.
+
 Core metrics:
 
 | Metric | Meaning | Direction |
@@ -225,6 +233,7 @@ Core metrics:
 | Appropriate refusal recall | Harmful requests correctly refused | Higher is better |
 | Benign over-refusal rate | Allowed requests incorrectly refused | Lower is better |
 | Cross-language consistency | Matched prompts receive equivalent treatment | Higher is better |
+| Bias-pair decision consistency | Matched pairs (one entity/group swapped) receive the same refuse/answer decision | Higher is better |
 
 Report per-family counts and bootstrap confidence intervals. Do not average security with RAG
 quality unless every component has a documented normalization and uncertainty estimate. Prefer

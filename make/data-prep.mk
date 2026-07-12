@@ -6,7 +6,8 @@
 	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
 	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
 	verify-sample verify-review verify-adjudicate verify-accept judge-experiment ingest-uk-squad \
-	prepare-goldset-draft build-query-glossary chain-goldset-pipeline chain-goldset-finalize
+	prepare-goldset-draft build-query-glossary derive-security-cases \
+	derive-security-worksheet chain-goldset-pipeline chain-goldset-finalize
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -118,6 +119,21 @@ build-query-glossary: ## uk-query-processing: build query_glossary.json from a d
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with prompt_dictionary_candidates.jsonl>"; exit 1; }
 	$(PY) -m llb.main build-query-glossary --bundle "$(BUNDLE)" \
 		--out "$(if $(QUERY_GLOSSARY_OUT),$(QUERY_GLOSSARY_OUT),$(BUNDLE)/query_glossary.json)"
+
+derive-security-cases: ## Security benchmark: derive corpus-specific content-safety cases from a draft BUNDLE (SECURITY_DERIVE_OUT=, SECURITY_DERIVE_MAX_DENIAL=, SECURITY_DERIVE_MAX_PAIRS=, SECURITY_DERIVE_MERGE_SEED=1)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with ontology.json + extraction.jsonl>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main derive-security-cases --bundle "$(BUNDLE)" \
+		$(if $(SECURITY_DERIVE_OUT),--out "$(SECURITY_DERIVE_OUT)",) \
+		$(if $(SECURITY_DERIVE_MAX_DENIAL),--max-denial-per-vector "$(SECURITY_DERIVE_MAX_DENIAL)",) \
+		$(if $(SECURITY_DERIVE_MAX_PAIRS),--max-bias-pairs "$(SECURITY_DERIVE_MAX_PAIRS)",) \
+		$(if $(filter 1 true yes,$(SECURITY_DERIVE_MERGE_SEED)),--merge-seed,)
+
+derive-security-worksheet: ## human verification gate: scaffold a review worksheet from derived security cases (SECURITY_DERIVE_CASES=, SECURITY_DERIVE_WORKSHEET=out.csv)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main derive-security-worksheet --cases "$(SECURITY_DERIVE_CASES)" \
+		$(if $(SECURITY_DERIVE_WORKSHEET),--out "$(SECURITY_DERIVE_WORKSHEET)",)
 
 cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/support on a draft BUNDLE (CROSS_CHECK_MODEL=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

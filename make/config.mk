@@ -256,6 +256,13 @@ SECURITY_MODEL ?= hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
 SECURITY_BACKEND ?= ollama
 SECURITY_BASE_URL ?=
 SECURITY_MAX_MODEL_LEN ?=
+
+# Corpus-specific derived security cases (derive-security-cases / derive-security-worksheet).
+# SECURITY_DERIVE_CASES defaults to the committed regression fixture so the worksheet + verified
+# bench run are runnable out of the box; point it at a fresh derive output for a real corpus.
+SECURITY_DERIVE_CASES ?= $(PROJECT_ROOT)/samples/benchmarks/security_cases_derived_uk.json
+SECURITY_DERIVE_WORKSHEET ?=
+
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
