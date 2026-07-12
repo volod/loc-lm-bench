@@ -38,27 +38,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 ## Agent Implementation Tasks
 
-### code-quality-module-splits (optional)
-
-- Agent status: **CLEAR** -- pure refactoring, lands to `make ci` green with the existing tests.
-- Dependencies: none. Baseline and refactoring conventions:
-  [host validation, Quality Gate](current/host-validation.md).
-- User-visible outcome: `scripts/code_quality.sh` reports no maintainability-index C grades in
-  `src/` and no D-grade cyclomatic findings in `tests/`.
-- Scope boundary: in scope -- split the four size-driven MI-C files into focused submodules with
-  unchanged public APIs (`goldset/verify.py` into sampling / acceptance / ledger-ref modules,
-  `prep/pdf_corpus.py` into per-parser extractor modules, `scoring/external_rag.py` into
-  summarize / report-render modules, `goldset/verify_session.py` into card-render / session-loop
-  modules), and decompose the two D-grade test functions
-  (`test_full_flow_drafts_grounded_unverified_bundle`, `test_generate_serving_configs_for_tier_16`)
-  into per-assertion helpers or parametrized cases. Out of scope -- behavior changes, new
-  features, renaming public entry points.
-- Data and artifact paths: none (code-only).
-- Execution path: `bash scripts/code_quality.sh` before/after; `make ci` for the gate.
-- Acceptance gates: full pytest suite green; the code-quality MI section lists no `src/` file;
-  the cyclomatic section lists no test function.
-- Documentation target: [host validation](current/host-validation.md) Quality Gate section.
-
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
 ## Human-Assisted Tasks
