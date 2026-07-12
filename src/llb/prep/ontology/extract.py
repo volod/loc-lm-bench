@@ -53,25 +53,32 @@ def _str(value: Any) -> str:
     return str(value).strip()
 
 
+def _grounded_mentions(doc_id: str, text: str, entry: dict[str, Any]) -> list[Any]:
+    """The entry's mention quotes that ground verbatim in the document."""
+    quotes = entry.get("mentions", []) if isinstance(entry.get("mentions"), list) else []
+    spans = (ground_quote(doc_id, text, _str(quote)) for quote in quotes)
+    return [span for span in spans if span is not None]
+
+
+def _entity_from(doc_id: str, text: str, entry: Any) -> Entity | None:
+    """One evidence-backed Entity from a raw entry, or None when unnamed/ungrounded."""
+    if not isinstance(entry, dict):
+        return None
+    name = _str(entry.get("name"))
+    if not name:
+        return None
+    mentions = _grounded_mentions(doc_id, text, entry)
+    if not mentions:  # entity must be evidence-backed
+        return None
+    etype = normalize_entity_type(_str(entry.get("type")))  # enforce the closed vocabulary
+    aliases = [_str(a) for a in entry.get("aliases", []) if _str(a)]
+    return Entity(name=name, type=etype, aliases=aliases, mentions=mentions)
+
+
 def _entities(doc_id: str, text: str, raw: Any) -> list[Entity]:
-    entities: list[Entity] = []
-    for entry in raw if isinstance(raw, list) else []:
-        if not isinstance(entry, dict):
-            continue
-        name = _str(entry.get("name"))
-        etype = normalize_entity_type(_str(entry.get("type")))  # enforce the closed vocabulary
-        if not name:
-            continue
-        aliases = [_str(a) for a in entry.get("aliases", []) if _str(a)]
-        mentions = []
-        for quote in entry.get("mentions", []) if isinstance(entry.get("mentions"), list) else []:
-            span = ground_quote(doc_id, text, _str(quote))
-            if span is not None:
-                mentions.append(span)
-        if not mentions:  # entity must be evidence-backed
-            continue
-        entities.append(Entity(name=name, type=etype, aliases=aliases, mentions=mentions))
-    return entities
+    entries = raw if isinstance(raw, list) else []
+    candidates = (_entity_from(doc_id, text, entry) for entry in entries)
+    return [entity for entity in candidates if entity is not None]
 
 
 def _evidenced(doc_id: str, text: str, raw: Any, build: Any) -> list[Any]:

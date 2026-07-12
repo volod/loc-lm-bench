@@ -294,6 +294,27 @@ _RAG_GRID_USAGE = (
 )
 
 
+def _parse_grid_axis(part: str, seen: set[str]) -> tuple[str, list[Any]]:
+    """Parse one `key=v1,v2,...` grid axis, validating the key, types, and value ranges."""
+    key, sep, raw = part.partition("=")
+    key = key.strip()
+    if key not in _RAG_GRID_AXES or not sep or not raw.strip():
+        raise typer.BadParameter(_RAG_GRID_USAGE)
+    if key in seen:
+        raise typer.BadParameter(f"--rag-grid axis '{key}' given twice")
+    cast, valid = _RAG_GRID_AXES[key]
+    try:
+        values = [cast(v) for v in raw.split(",") if v.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"--rag-grid {key} values must be {cast.__name__}s: {raw!r}"
+        ) from exc
+    values = list(dict.fromkeys(values))  # de-dupe, preserve order
+    if not values or not all(valid(v) for v in values):
+        raise typer.BadParameter(f"--rag-grid {key} values out of range: {raw!r}")
+    return key, values
+
+
 def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
     """Parse an opt-in RAG-config grid into per-cell override dicts (axes cross-multiplied).
 
@@ -307,23 +328,7 @@ def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
         return [{}]
     axes: list[tuple[str, list[Any]]] = []
     for part in spec.split(";"):
-        key, sep, raw = part.partition("=")
-        key = key.strip()
-        if key not in _RAG_GRID_AXES or not sep or not raw.strip():
-            raise typer.BadParameter(_RAG_GRID_USAGE)
-        if any(key == seen for seen, _ in axes):
-            raise typer.BadParameter(f"--rag-grid axis '{key}' given twice")
-        cast, valid = _RAG_GRID_AXES[key]
-        try:
-            values = [cast(v) for v in raw.split(",") if v.strip()]
-        except ValueError as exc:
-            raise typer.BadParameter(
-                f"--rag-grid {key} values must be {cast.__name__}s: {raw!r}"
-            ) from exc
-        values = list(dict.fromkeys(values))  # de-dupe, preserve order
-        if not values or not all(valid(v) for v in values):
-            raise typer.BadParameter(f"--rag-grid {key} values out of range: {raw!r}")
-        axes.append((key, values))
+        axes.append(_parse_grid_axis(part, {seen for seen, _ in axes}))
     points = [{}]  # type: list[dict[str, Any]]
     for key, values in axes:
         points = [{**point, key: value} for point in points for value in values]
@@ -351,27 +356,37 @@ def _grid_cells(
     cells: list[RunConfig] = []
     for point in rag_grid:
         cell = dict(overrides)
-        suffix = ""
-        for key, value in point.items():
-            suffix += (
-                f"-{_GRID_SUFFIX_PREFIX[key]}{value:g}"
-                if isinstance(value, float)
-                else (f"-{_GRID_SUFFIX_PREFIX[key]}{value}")
-            )
-            if key == "rerank_candidates":
-                if value == 0:
-                    cell["reranker"] = None
-                    continue
-                cell["reranker"] = reranker
-                cell["rerank_candidates"] = value
-                continue
-            cell[key] = value
-        if "fusion_weight" in point:
-            cell["retrieval_mode"] = "hybrid"
+        _apply_grid_point(cell, point, reranker)
+        suffix = _grid_point_suffix(point)
         if suffix:
             cell["run_name"] = f"{overrides['run_name']}{suffix}"
         cells.append(base.with_overrides(**cell))
     return cells
+
+
+def _grid_point_suffix(point: dict[str, Any]) -> str:
+    """Readable `-k8-w0.5` style run-name suffix for one grid point."""
+    return "".join(
+        f"-{_GRID_SUFFIX_PREFIX[key]}{value:g}"
+        if isinstance(value, float)
+        else f"-{_GRID_SUFFIX_PREFIX[key]}{value}"
+        for key, value in point.items()
+    )
+
+
+def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str | None) -> None:
+    """Translate one grid point into RunConfig overrides (rerank/hybrid implications included)."""
+    for key, value in point.items():
+        if key == "rerank_candidates":
+            if value == 0:
+                cell["reranker"] = None
+            else:
+                cell["reranker"] = reranker
+                cell["rerank_candidates"] = value
+            continue
+        cell[key] = value
+    if "fusion_weight" in point:
+        cell["retrieval_mode"] = "hybrid"
 
 
 def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:

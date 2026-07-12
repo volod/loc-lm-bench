@@ -84,6 +84,41 @@ def heading_breadcrumb(text: str, pos: int) -> dict[str, str]:
     return {f"h{lvl}": stack[lvl] for lvl in sorted(stack)}
 
 
+def _apply_page_fields(
+    meta: JsonObject, record: ChunkRecord, cite: tuple[str | None, list[JsonObject]]
+) -> bool:
+    """Set `pages` / `source_pdf` from the record's own span; returns True when paged.
+
+    When the span intersects no page, any page fields carried in from an inherited metadata
+    dict (parent_child children start from the parent's metadata) are dropped so `pages`
+    always reflects THIS record's span, never the parent's.
+    """
+    source, spans = cite
+    pages = intersect_pages(record["char_start"], record["char_end"], spans)
+    if not pages:
+        meta.pop("pages", None)
+        meta.pop("source_pdf", None)
+        return False
+    meta["pages"] = [pages[0], pages[-1]]
+    if source is not None:
+        meta["source_pdf"] = source
+    return True
+
+
+def _apply_heading_fields(
+    meta: JsonObject, record: ChunkRecord, corpus_root: Path, doc_texts: dict[str, str]
+) -> None:
+    """Fill `headers` from the source-document heading breadcrumb when absent."""
+    if meta.get("headers"):
+        return
+    doc_id = record["doc_id"]
+    if doc_id not in doc_texts:
+        doc_texts[doc_id] = _read_doc_text(corpus_root, doc_id)
+    breadcrumb = heading_breadcrumb(doc_texts[doc_id], record["char_start"])
+    if breadcrumb:
+        meta["headers"] = breadcrumb
+
+
 def annotate_page_metadata(records: list[ChunkRecord], corpus_root: Path | str) -> float:
     """Attach page/section provenance to `records` in place; return page-annotation coverage.
 
@@ -101,30 +136,10 @@ def annotate_page_metadata(records: list[ChunkRecord], corpus_root: Path | str) 
             citations[doc_id] = load_page_citations(corpus_root, doc_id)
         meta: JsonObject = dict(record.get("metadata") or {})
         record["metadata"] = meta
-
         cite = citations[doc_id]
-        if cite is not None:
-            source, spans = cite
-            pages = intersect_pages(record["char_start"], record["char_end"], spans)
-            if pages:
-                meta["pages"] = [pages[0], pages[-1]]
-                if source is not None:
-                    meta["source_pdf"] = source
-                n_paged += 1
-            else:
-                # This record's own span intersects no page. Drop any page fields carried in
-                # from an inherited metadata dict (parent_child children start from the parent's
-                # metadata) so `pages` always reflects THIS record's span, never the parent's.
-                meta.pop("pages", None)
-                meta.pop("source_pdf", None)
-
-        if not meta.get("headers"):
-            if doc_id not in doc_texts:
-                doc_texts[doc_id] = _read_doc_text(corpus_root, doc_id)
-            breadcrumb = heading_breadcrumb(doc_texts[doc_id], record["char_start"])
-            if breadcrumb:
-                meta["headers"] = breadcrumb
-
+        if cite is not None and _apply_page_fields(meta, record, cite):
+            n_paged += 1
+        _apply_heading_fields(meta, record, corpus_root, doc_texts)
     return n_paged / len(records) if records else 0.0
 
 

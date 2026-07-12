@@ -141,6 +141,60 @@ def _is_flabby_chain(
     return False
 
 
+def _chain_is_valid(
+    chain: dict[str, Any],
+    chain_id: str,
+    corpus_texts: dict[str, str] | None,
+    report: CurationReport,
+) -> bool:
+    """Structural checks + step grounding + flabbiness; sorts `chain['steps']` in place."""
+    source = chain["_source"]
+    steps = _sorted_steps(chain)
+    if steps is None:
+        report.reject_invalid(chain_id, source, "steps must be a list of objects")
+        return False
+    if not _validate_steps(chain_id, source, steps, report):
+        return False
+    if not _ground_steps(chain_id, source, steps, corpus_texts, report):
+        return False
+    if _is_flabby_chain(chain_id, source, steps, report):
+        return False
+    chain["steps"] = steps
+    return True
+
+
+def _chain_signature(chain: dict[str, Any]) -> str:
+    return " | ".join(normalize_text(str(s.get("question", ""))) for s in chain["steps"])
+
+
+def _dedup_chains(
+    valid: list[dict[str, Any]],
+    *,
+    embedder: QuestionEmbedder | None,
+    dedup_threshold: float,
+    prior_questions: list[str] | None,
+    report: CurationReport,
+) -> list[dict[str, Any]]:
+    """Exact question-sequence dedup, then embedding near-dup filtering."""
+    keep = drop_exact_duplicates(
+        [_chain_signature(c) for c in valid],
+        report,
+        [_chain_id(c, i) for i, c in enumerate(valid)],
+        [c["_source"] for c in valid],
+    )
+    valid = [valid[i] for i in keep]
+    keep = drop_near_duplicates(
+        [" ".join(str(s.get("question", "")) for s in c["steps"]) for c in valid],
+        embedder,
+        dedup_threshold,
+        report,
+        [_chain_id(c, i) for i, c in enumerate(valid)],
+        [c["_source"] for c in valid],
+        prior_texts=prior_questions,
+    )
+    return [valid[i] for i in keep]
+
+
 def curate_chains(
     inputs: list[Path],
     *,
@@ -154,40 +208,18 @@ def curate_chains(
     chains = _load_chains(inputs, report)
     report.loaded = len(chains)
 
-    valid: list[dict[str, Any]] = []
-    for i, chain in enumerate(chains):
-        chain_id = _chain_id(chain, i)
-        source = chain["_source"]
-        steps = _sorted_steps(chain)
-        if steps is None:
-            report.reject_invalid(chain_id, source, "steps must be a list of objects")
-            continue
-        if not _validate_steps(chain_id, source, steps, report):
-            continue
-        if not _ground_steps(chain_id, source, steps, corpus_texts, report):
-            continue
-        if _is_flabby_chain(chain_id, source, steps, report):
-            continue
-        chain["steps"] = steps
-        valid.append(chain)
-
-    def signature(chain: dict[str, Any]) -> str:
-        return " | ".join(normalize_text(str(s.get("question", ""))) for s in chain["steps"])
-
-    ids = [_chain_id(c, i) for i, c in enumerate(valid)]
-    sources = [c["_source"] for c in valid]
-    keep = drop_exact_duplicates([signature(c) for c in valid], report, ids, sources)
-    valid = [valid[i] for i in keep]
-    keep = drop_near_duplicates(
-        [" ".join(str(s.get("question", "")) for s in c["steps"]) for c in valid],
-        embedder,
-        dedup_threshold,
-        report,
-        [_chain_id(c, i) for i, c in enumerate(valid)],
-        [c["_source"] for c in valid],
-        prior_texts=prior_questions,
+    valid = [
+        chain
+        for i, chain in enumerate(chains)
+        if _chain_is_valid(chain, _chain_id(chain, i), corpus_texts, report)
+    ]
+    valid = _dedup_chains(
+        valid,
+        embedder=embedder,
+        dedup_threshold=dedup_threshold,
+        prior_questions=prior_questions,
+        report=report,
     )
-    valid = [valid[i] for i in keep]
 
     final_ids = unique_ids(
         [_chain_id(c, i) for i, c in enumerate(valid)], report, [c["_source"] for c in valid]

@@ -280,6 +280,23 @@ def _manifest(result: CorpusIngestResult) -> dict[str, object]:
     }
 
 
+def _unlink_if_file(path: Path, description: str) -> None:
+    """Best-effort delete of a staged output file; log (do not raise) on OS errors."""
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        _LOG.warning("[corpus] could not remove stale %s %s", description, path)
+
+
+def _remove_stale_doc_files(out_dir: Path, doc_id: str, payload: dict[str, Any]) -> None:
+    """Delete the staged document and its citation sidecar for one superseded manifest entry."""
+    _unlink_if_file(out_dir / doc_id, "staged document")
+    citation_path = payload.get("citation_path")
+    if isinstance(citation_path, str):
+        _unlink_if_file(out_dir / citation_path, "citation sidecar")
+
+
 def _cleanup_stale_outputs(
     out_dir: Path, previous: dict[str, dict[str, Any]], current: list[CorpusItem]
 ) -> list[str]:
@@ -297,20 +314,7 @@ def _cleanup_stale_outputs(
             or doc_id in current_doc_ids
         ):
             continue
-        target = out_dir / doc_id
-        try:
-            if target.is_file():
-                target.unlink()
-        except OSError:
-            _LOG.warning("[corpus] could not remove stale staged document %s", target)
-        citation_path = payload.get("citation_path")
-        if isinstance(citation_path, str):
-            try:
-                cite = out_dir / citation_path
-                if cite.is_file():
-                    cite.unlink()
-            except OSError:
-                _LOG.warning("[corpus] could not remove stale citation sidecar %s", citation_path)
+        _remove_stale_doc_files(out_dir, doc_id, payload)
     return removed_sources
 
 

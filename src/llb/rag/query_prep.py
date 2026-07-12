@@ -421,20 +421,26 @@ def build_glossary_from_candidates(
         term = str(row.get("term", "")).strip()
         if not term:
             continue
-        aliases: list[str] = []
-        seen: set[str] = {term.casefold()}
-        for alias in row.get("aliases", []) or []:
-            text = str(alias).strip()
-            if text and text.casefold() not in seen:
-                seen.add(text.casefold())
-                aliases.append(text)
-        if add_transliterations:
-            romanized = cyrillic_to_latin(term)
-            if romanized and romanized != term.casefold() and romanized not in seen:
-                aliases.append(romanized)
+        aliases = _candidate_aliases(term, row, add_transliterations=add_transliterations)
         entries.append(GlossaryEntry(canonical=term, aliases=tuple(aliases)))
     entries.sort(key=lambda entry: entry.canonical.casefold())
     return Glossary(tuple(entries))
+
+
+def _candidate_aliases(term: str, row: dict[str, Any], *, add_transliterations: bool) -> list[str]:
+    """Distinct recorded aliases for a term, optionally plus its romanized Latin variant."""
+    aliases: list[str] = []
+    seen: set[str] = {term.casefold()}
+    for alias in row.get("aliases", []) or []:
+        text = str(alias).strip()
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            aliases.append(text)
+    if add_transliterations:
+        romanized = cyrillic_to_latin(term)
+        if romanized and romanized != term.casefold() and romanized not in seen:
+            aliases.append(romanized)
+    return aliases
 
 
 # --------------------------------------------------------------------------------------------

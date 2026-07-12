@@ -294,38 +294,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.squad_json:
-        records = load_squad_json(resolve_project_path(args.squad_json))
-    elif args.pinned_development_source:
-        pinned_limit = args.max_items if args.max_items is not None else DEFAULT_ITEMS
-        records = load_hf(
-            DATASET_ID,
-            DATASET_SPLIT,
-            limit=pinned_limit,
-            revision=DATASET_REVISION,
-            context_diverse=True,
-        )
-    else:
-        records = load_hf(
-            args.hf_dataset,
-            args.hf_split,
-            limit=args.max_items,
-            revision=args.hf_revision,
-            context_diverse=args.context_diverse,
-        )
-
+    records = _load_source_records(args)
     docs, items, skipped = squad_to_gold(records, lang=args.lang, max_items=args.max_items)
-    adopted_documents: dict[str, Path] = {}
-    adopted_count = 0
-    if not args.no_verification_ledger:
-        ledger_paths = args.verified_goldset or [DEFAULT_VERIFIED_GOLDSET]
-        ledger = load_verified_ledger([resolve_project_path(path) for path in ledger_paths])
-        items, adopted_documents, adopted_count = apply_verified_ledger(items, ledger)
-        if items and ledger.items and adopted_count == 0:
-            _LOG.warning(
-                "[ingest_squad] no imported ids matched the verification ledger; "
-                "all generated items remain unverified"
-            )
+    items, adopted_documents, adopted_count = _apply_verification(args, items)
 
     out_dir = resolve_project_path(args.out_dir) if args.out_dir else resolve_data_dir(None) / "llb"
     corpus_root = out_dir / "corpus"
@@ -349,6 +320,45 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     _LOG.info("[ingest_squad] validation PASS")
     return 0
+
+
+def _load_source_records(args: argparse.Namespace) -> list[SquadRecord]:
+    """The raw QA records: local SQuAD JSON, the pinned development source, or a HF dataset."""
+    if args.squad_json:
+        return load_squad_json(resolve_project_path(args.squad_json))
+    if args.pinned_development_source:
+        pinned_limit = args.max_items if args.max_items is not None else DEFAULT_ITEMS
+        return load_hf(
+            DATASET_ID,
+            DATASET_SPLIT,
+            limit=pinned_limit,
+            revision=DATASET_REVISION,
+            context_diverse=True,
+        )
+    return load_hf(
+        args.hf_dataset,
+        args.hf_split,
+        limit=args.max_items,
+        revision=args.hf_revision,
+        context_diverse=args.context_diverse,
+    )
+
+
+def _apply_verification(
+    args: argparse.Namespace, items: list[GoldItem]
+) -> tuple[list[GoldItem], dict[str, Path], int]:
+    """Adopt human-verified rows from the ledger unless verification was disabled."""
+    if args.no_verification_ledger:
+        return items, {}, 0
+    ledger_paths = args.verified_goldset or [DEFAULT_VERIFIED_GOLDSET]
+    ledger = load_verified_ledger([resolve_project_path(path) for path in ledger_paths])
+    items, adopted_documents, adopted_count = apply_verified_ledger(items, ledger)
+    if items and ledger.items and adopted_count == 0:
+        _LOG.warning(
+            "[ingest_squad] no imported ids matched the verification ledger; "
+            "all generated items remain unverified"
+        )
+    return items, adopted_documents, adopted_count
 
 
 if __name__ == "__main__":

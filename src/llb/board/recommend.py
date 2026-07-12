@@ -699,22 +699,24 @@ def format_config_detail_md(cells: list[RunSummary]) -> str:
     rows: list[list[str]] = []
     for model in ordered:
         group = sorted(by_model[model], key=lambda c: c.result.objective_score, reverse=True)
-        for rank, cell in enumerate(group):
-            config = cell.record.config if isinstance(cell.record.config, dict) else {}
-            recall = cell.recall_at_k
-            rows.append(
-                [
-                    _short(model),
-                    str(config.get("top_k", "?")),
-                    "*" if rank == 0 else "",
-                    f"{cell.result.objective_score:.3f}",
-                    f"{cell.result.tokens_per_s:.1f}",
-                    _vram(cell),
-                    f"{recall:.3f}" if recall is not None else "n/a",
-                ]
-            )
+        rows += [_config_detail_row(model, rank, cell) for rank, cell in enumerate(group)]
     table = _md_table(["model", "top_k", "best", "objective", "tok/s", "peak VRAM", "recall"], rows)
     lines = [_t("config_detail_heading"), "", _t("config_detail_intro"), "", table]
     if max(len(group) for group in by_model.values()) == 1:
         lines += ["", _t("config_detail_single")]
     return "\n".join(lines)
+
+
+def _config_detail_row(model: str, rank: int, cell: RunSummary) -> list[str]:
+    """One (model, top_k) table row; rank 0 within the model group is marked as best."""
+    config = cell.record.config if isinstance(cell.record.config, dict) else {}
+    recall = cell.recall_at_k
+    return [
+        _short(model),
+        str(config.get("top_k", "?")),
+        "*" if rank == 0 else "",
+        f"{cell.result.objective_score:.3f}",
+        f"{cell.result.tokens_per_s:.1f}",
+        _vram(cell),
+        f"{recall:.3f}" if recall is not None else "n/a",
+    ]

@@ -96,6 +96,55 @@ def _is_flabby(item_id: str, source: str, row: dict[str, Any], report: CurationR
     return False
 
 
+def _row_is_valid(
+    item_id: str,
+    source: str,
+    row: dict[str, Any],
+    corpus_texts: dict[str, str] | None,
+    report: CurationReport,
+) -> bool:
+    """Reject rows with missing fields, then re-ground the quote and drop flabby questions."""
+    for field, reason in (
+        ("question", "empty question"),
+        ("quote", "empty quote"),
+        ("source_doc_id", "no source_doc_id"),
+    ):
+        if not str(row.get(field) or "").strip():
+            report.reject_invalid(item_id, source, reason)
+            return False
+    return _ground_quote(item_id, source, row, corpus_texts, report) and not _is_flabby(
+        item_id, source, row, report
+    )
+
+
+def _dedup_rows(
+    valid: list[dict[str, Any]],
+    *,
+    embedder: QuestionEmbedder | None,
+    dedup_threshold: float,
+    prior_questions: list[str] | None,
+    report: CurationReport,
+) -> list[dict[str, Any]]:
+    """Exact question dedup, then embedding near-dup filtering across services."""
+    keep = drop_exact_duplicates(
+        [normalize_text(str(r.get("question", ""))) for r in valid],
+        report,
+        [_row_id(r, i) for i, r in enumerate(valid)],
+        [r["_source"] for r in valid],
+    )
+    valid = [valid[i] for i in keep]
+    keep = drop_near_duplicates(
+        [str(r.get("question", "")) for r in valid],
+        embedder,
+        dedup_threshold,
+        report,
+        [_row_id(r, i) for i, r in enumerate(valid)],
+        [r["_source"] for r in valid],
+        prior_texts=prior_questions,
+    )
+    return [valid[i] for i in keep]
+
+
 def curate_grounded(
     inputs: list[Path],
     *,
@@ -109,41 +158,18 @@ def curate_grounded(
     rows = _load_rows(inputs, report)
     report.loaded = len(rows)
 
-    valid: list[dict[str, Any]] = []
-    for i, row in enumerate(rows):
-        item_id = _row_id(row, i)
-        source = row["_source"]
-        if not str(row.get("question") or "").strip():
-            report.reject_invalid(item_id, source, "empty question")
-            continue
-        if not str(row.get("quote") or "").strip():
-            report.reject_invalid(item_id, source, "empty quote")
-            continue
-        if not str(row.get("source_doc_id") or "").strip():
-            report.reject_invalid(item_id, source, "no source_doc_id")
-            continue
-        if not _ground_quote(item_id, source, row, corpus_texts, report):
-            continue
-        if _is_flabby(item_id, source, row, report):
-            continue
-        valid.append(row)
-
-    ids = [_row_id(r, i) for i, r in enumerate(valid)]
-    sources = [r["_source"] for r in valid]
-    keep = drop_exact_duplicates(
-        [normalize_text(str(r.get("question", ""))) for r in valid], report, ids, sources
+    valid = [
+        row
+        for i, row in enumerate(rows)
+        if _row_is_valid(_row_id(row, i), row["_source"], row, corpus_texts, report)
+    ]
+    valid = _dedup_rows(
+        valid,
+        embedder=embedder,
+        dedup_threshold=dedup_threshold,
+        prior_questions=prior_questions,
+        report=report,
     )
-    valid = [valid[i] for i in keep]
-    keep = drop_near_duplicates(
-        [str(r.get("question", "")) for r in valid],
-        embedder,
-        dedup_threshold,
-        report,
-        [_row_id(r, i) for i, r in enumerate(valid)],
-        [r["_source"] for r in valid],
-        prior_texts=prior_questions,
-    )
-    valid = [valid[i] for i in keep]
 
     final_ids = unique_ids(
         [_row_id(r, i) for i, r in enumerate(valid)], report, [r["_source"] for r in valid]

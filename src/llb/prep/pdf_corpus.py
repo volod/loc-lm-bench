@@ -2,74 +2,116 @@
 
 The rest of the RAG/goldset pipeline consumes `.md` and `.txt` files with stable character
 offsets. This module turns a local PDF directory into that canonical text corpus using
-PyMuPDF4LLM markdown extraction. The extracted `.md` files become the source of truth for later
-span validation; original PDFs are recorded only as provenance in the manifest.
+per-parser extractors. The extracted `.md` files become the source of truth for later span
+validation; original PDFs are recorded only as provenance in the manifest.
+
+The extraction backends live in the `llb.prep.pdf` package -- the shared data model in
+`pdf.model`, one module per parser (`pdf.pymupdf`, `pdf.docling`, `pdf.marker`,
+`pdf.unstructured`, `pdf.markitdown`), and the dispatcher in `pdf.dispatch`. This module keeps the
+orchestration (parser selection, page-furniture stripping, corpus rendering, quality scoring,
+manifest/citation I/O, and unchanged-source reuse) and re-exports the package's public names so
+`llb.prep.pdf_corpus.<name>` keeps working.
 """
 
 import hashlib
-import html
-import importlib
 import json
 import logging
 import re
 from collections import Counter
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any
 
-_LOG = logging.getLogger(__name__)
-
-PDF_CORPUS_MANIFEST = "pdf_corpus_manifest.json"
-PDF_CORPUS_QUALITY = "pdf_corpus_quality.json"
-PDF_CITATION_SUFFIX = ".citations.json"
-PDF_SUFFIX = ".pdf"
-DEFAULT_MARKDOWN_DIRNAME = "_md"
-PARSER_AUTO = "auto"
-PYMUPDF4LLM_TOOL = "pymupdf4llm"
-DOCLING_TOOL = "docling"
-MARKER_TOOL = "marker"
-UNSTRUCTURED_TOOL = "unstructured"
-MARKITDOWN_TOOL = "markitdown"
-PDF_PARSERS = (
-    PARSER_AUTO,
-    PYMUPDF4LLM_TOOL,
+from llb.prep.pdf.dispatch import _normalize_extraction, extract_pdf_markdown
+from llb.prep.pdf.model import (
+    _FURNITURE_DECORATION,
+    _FURNITURE_MAX_LEN,
+    _FURNITURE_REPEAT_FRACTION,
+    _HTML_COMMENT_BLOCK,
+    _MANY_BLANK_LINES,
+    _MARKDOWN_HEADING,
+    _PAGE_NUMBER_LINE,
+    _PICTURE_PLACEHOLDER,
+    DEFAULT_MARKDOWN_DIRNAME,
     DOCLING_TOOL,
     MARKER_TOOL,
-    UNSTRUCTURED_TOOL,
     MARKITDOWN_TOOL,
+    PARSER_AUTO,
+    PARSER_QUALITY_PRIORITY,
+    PDF_AUTO_IMAGE_CANDIDATES,
+    PDF_AUTO_TEXT_CANDIDATES,
+    PDF_CITATION_SUFFIX,
+    PDF_CORPUS_MANIFEST,
+    PDF_CORPUS_QUALITY,
+    PDF_PARSERS,
+    PDF_SUFFIX,
+    PYMUPDF4LLM_TOOL,
+    QUALITY_CHAR_DIVISOR,
+    QUALITY_CITATION_COVERAGE_WEIGHT,
+    QUALITY_HEADING_WEIGHT,
+    QUALITY_MAX_CHAR_SCORE,
+    QUALITY_MAX_HEADING_SCORE,
+    QUALITY_MAX_TABLE_SCORE,
+    QUALITY_PAGE_COVERAGE_WEIGHT,
+    QUALITY_SHORT_PENALTY,
+    QUALITY_TABLE_WEIGHT,
+    SHA256_READ_CHUNK_BYTES,
+    UNSTRUCTURED_TOOL,
+    PdfCorpusItem,
+    PdfCorpusResult,
+    PdfDiagnostics,
+    PdfExtraction,
+    PdfExtractionQuality,
+    PdfPageChunk,
+    PdfPageCitation,
+    PdfParserAttempt,
+    PdfTextExtractor,
+    RenderedPdfDoc,
+    _is_image_only_pdf,
+    clean_pdf_text,
+    inspect_pdf,
 )
-PDF_AUTO_IMAGE_CANDIDATES = (DOCLING_TOOL,)
-PDF_AUTO_TEXT_CANDIDATES = (PYMUPDF4LLM_TOOL,)
-QUALITY_CHAR_DIVISOR = 1000.0
-QUALITY_MAX_CHAR_SCORE = 1200.0
-QUALITY_PAGE_COVERAGE_WEIGHT = 500.0
-QUALITY_CITATION_COVERAGE_WEIGHT = 800.0
-QUALITY_HEADING_WEIGHT = 2.0
-QUALITY_MAX_HEADING_SCORE = 200.0
-QUALITY_TABLE_WEIGHT = 1.0
-QUALITY_MAX_TABLE_SCORE = 200.0
-QUALITY_SHORT_PENALTY = 10000.0
-SHA256_READ_CHUNK_BYTES = 1 << 20  # stream source PDFs in 1 MiB chunks when fingerprinting
-PARSER_QUALITY_PRIORITY = {
-    MARKER_TOOL: 50.0,
-    DOCLING_TOOL: 45.0,
-    UNSTRUCTURED_TOOL: 30.0,
-    PYMUPDF4LLM_TOOL: 25.0,
-    MARKITDOWN_TOOL: 10.0,
-}
-_MANY_BLANK_LINES = re.compile(r"\n{3,}")
-_MARKER_PAGE_ID = re.compile(r"/page/(\d+)(?:/|$)")
-_MARKDOWN_HEADING = re.compile(r"(?m)^\s{0,3}#{1,6}\s+")
-_HTML_TAG = re.compile(r"<[^>]+>")
+
+_LOG = logging.getLogger(__name__)
+
+__all__ = [
+    # data model + constants (re-exported from pdf.model)
+    "DEFAULT_MARKDOWN_DIRNAME",
+    "DOCLING_TOOL",
+    "MARKER_TOOL",
+    "MARKITDOWN_TOOL",
+    "PARSER_AUTO",
+    "PDF_CITATION_SUFFIX",
+    "PDF_CORPUS_MANIFEST",
+    "PDF_CORPUS_QUALITY",
+    "PDF_PARSERS",
+    "PDF_SUFFIX",
+    "PYMUPDF4LLM_TOOL",
+    "UNSTRUCTURED_TOOL",
+    "PdfCorpusItem",
+    "PdfCorpusResult",
+    "PdfDiagnostics",
+    "PdfExtraction",
+    "PdfExtractionQuality",
+    "PdfPageChunk",
+    "PdfPageCitation",
+    "PdfParserAttempt",
+    "PdfTextExtractor",
+    "RenderedPdfDoc",
+    "clean_pdf_text",
+    "inspect_pdf",
+    # extraction dispatch (re-exported from pdf.dispatch)
+    "extract_pdf_markdown",
+    # public orchestration
+    "default_markdown_out_dir",
+    "doc_id_for_pdf",
+    "ingest_pdf_corpus",
+    "iter_pdf_files",
+    "strip_page_furniture",
+]
+
 
 # --- page-furniture stripping (running headers/footers, page numbers, image/comment noise) --------
-_PICTURE_PLACEHOLDER = re.compile(r"\*\*==>.*?<==\*\*", re.DOTALL)  # extractor image stubs
-_HTML_COMMENT_BLOCK = re.compile(r"<!--.*?-->", re.DOTALL)
-_PAGE_NUMBER_LINE = re.compile(r"^\s*\**\s*\d{1,4}\s*\**\s*$")  # a bold-or-bare page number, alone
-_FURNITURE_DECORATION = re.compile(r"[*#>_|♆•]")
-_FURNITURE_MAX_LEN = 90  # running headers/footers are short; body paragraphs are not
-_FURNITURE_REPEAT_FRACTION = 0.30  # a short line on >=30% of pages is page furniture, not content
 
 
 def _furniture_key(line: str) -> str:
@@ -85,152 +127,43 @@ def strip_page_furniture(page_texts: list[str]) -> list[str]:
     WHOLE document, so this must see every page at once. Body content is preserved: only short,
     frequently repeating lines qualify. Returns one cleaned string per input page (possibly empty).
     """
+    counts = _furniture_line_counts(page_texts)
+    threshold = max(8, int(_FURNITURE_REPEAT_FRACTION * max(len(page_texts), 1)))
+    return [_strip_page(text, counts, threshold) for text in page_texts]
+
+
+def _furniture_line_counts(page_texts: list[str]) -> Counter[str]:
+    """How often each normalized line recurs across the whole document."""
     counts: Counter[str] = Counter()
     for text in page_texts:
         for line in text.split("\n"):
             key = _furniture_key(line)
             if key:
                 counts[key] += 1
-    threshold = max(8, int(_FURNITURE_REPEAT_FRACTION * max(len(page_texts), 1)))
-    cleaned: list[str] = []
-    for text in page_texts:
-        kept: list[str] = []
-        for line in text.split("\n"):
-            stripped = line.strip()
-            if not stripped:
-                kept.append(line)
-                continue
-            key = _furniture_key(line)
-            if key and len(stripped) <= _FURNITURE_MAX_LEN and counts[key] >= threshold:
-                continue  # running header / footer
-            if _PAGE_NUMBER_LINE.match(line):
-                continue  # standalone page number
-            kept.append(line)
-        body = _HTML_COMMENT_BLOCK.sub(" ", _PICTURE_PLACEHOLDER.sub(" ", "\n".join(kept)))
-        cleaned.append(_MANY_BLANK_LINES.sub("\n\n", body).strip())
-    return cleaned
+    return counts
 
 
-@dataclass(frozen=True)
-class PdfParserAttempt:
-    """One parser attempt over a source PDF."""
-
-    parser: str
-    status: str
-    n_chars: int = 0
-    error: str | None = None
-    quality: "PdfExtractionQuality | None" = None
-    selected: bool = False
+def _is_furniture_line(line: str, counts: Counter[str], threshold: int) -> bool:
+    """A short line repeating on many pages (running header/footer) or a bare page number."""
+    stripped = line.strip()
+    key = _furniture_key(line)
+    if key and len(stripped) <= _FURNITURE_MAX_LEN and counts[key] >= threshold:
+        return True
+    return bool(_PAGE_NUMBER_LINE.match(line))
 
 
-@dataclass(frozen=True)
-class PdfDiagnostics:
-    """PDF-level diagnostics used to explain skipped files."""
-
-    page_count: int | None = None
-    encrypted: bool | None = None
-    needs_password: bool | None = None
-    embedded_text_chars: int | None = None
-    image_pages: int | None = None
-    image_only_pages: int | None = None
-    error: str | None = None
+def _strip_page(text: str, counts: Counter[str], threshold: int) -> str:
+    """One page with furniture lines, placeholders, and comment blocks removed."""
+    kept = [
+        line
+        for line in text.split("\n")
+        if not line.strip() or not _is_furniture_line(line, counts, threshold)
+    ]
+    body = _HTML_COMMENT_BLOCK.sub(" ", _PICTURE_PLACEHOLDER.sub(" ", "\n".join(kept)))
+    return _MANY_BLANK_LINES.sub("\n\n", body).strip()
 
 
-@dataclass(frozen=True)
-class PdfExtractionQuality:
-    """Comparable extraction-quality features for parser selection and audit."""
-
-    n_chars: int
-    page_count: int | None
-    page_text_pages: int
-    page_coverage: float | None
-    citation_pages: int
-    citation_coverage: float | None
-    heading_count: int
-    table_marker_count: int
-    score: float
-
-
-@dataclass(frozen=True)
-class PdfPageChunk:
-    """Markdown extracted for one PDF page before final corpus rendering."""
-
-    page: int
-    text: str
-    blocks: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class PdfExtraction:
-    """A parser's markdown output plus optional page-local citation hints."""
-
-    text: str
-    parser: str
-    pages: list[PdfPageChunk] = field(default_factory=list)
-    attempts: list[PdfParserAttempt] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class PdfPageCitation:
-    """Mapping from a source PDF page to generated corpus character offsets."""
-
-    page: int
-    char_start: int
-    char_end: int
-    text_start: int
-    text_end: int
-    n_chars: int
-    parser: str
-    blocks: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class RenderedPdfDoc:
-    """Rendered corpus text and citation spans."""
-
-    text: str
-    citations: list[PdfPageCitation]
-
-
-PdfTextExtractor = Callable[[Path, str], str | PdfExtraction]
-
-
-@dataclass(frozen=True)
-class PdfCorpusItem:
-    """One PDF ingestion outcome recorded in the manifest."""
-
-    source: str
-    doc_id: str | None
-    n_chars: int
-    status: str
-    error: str | None = None
-    parser: str | None = None
-    citation_path: str | None = None
-    page_count: int | None = None
-    embedded_text_chars: int | None = None
-    image_only_pages: int | None = None
-    attempts: list[PdfParserAttempt] = field(default_factory=list)
-    diagnostics: PdfDiagnostics | None = None
-    quality: PdfExtractionQuality | None = None
-    source_sha256: str | None = None  # reuse key: skip reconversion when the source is unchanged
-    reused: bool = False
-
-
-@dataclass(frozen=True)
-class PdfCorpusResult:
-    """Summary of one PDF corpus ingestion run."""
-
-    pdf_root: Path
-    out_dir: Path
-    items: list[PdfCorpusItem]
-
-    @property
-    def n_docs(self) -> int:
-        return sum(1 for item in self.items if item.status == "ok")
-
-    @property
-    def n_skipped(self) -> int:
-        return sum(1 for item in self.items if item.status != "ok")
+# --- PDF discovery ------------------------------------------------------------------------
 
 
 def iter_pdf_files(pdf_root: Path | str) -> list[Path]:
@@ -255,13 +188,6 @@ def default_markdown_out_dir(pdf_root: Path | str) -> Path:
     return Path(pdf_root) / DEFAULT_MARKDOWN_DIRNAME
 
 
-def clean_pdf_text(text: str) -> str:
-    """Normalize extracted markdown enough for chunking while preserving readable content."""
-    text = text.replace("\x0c", "\n\n")
-    lines = [line.rstrip() for line in text.splitlines()]
-    return _MANY_BLANK_LINES.sub("\n\n", "\n".join(lines)).strip()
-
-
 def _attempt(
     parser: str,
     status: str,
@@ -280,425 +206,7 @@ def _attempt(
     )
 
 
-def _is_image_only_pdf(diagnostics: PdfDiagnostics) -> bool:
-    return bool(
-        diagnostics.page_count
-        and diagnostics.image_only_pages == diagnostics.page_count
-        and diagnostics.embedded_text_chars == 0
-    )
-
-
-def inspect_pdf(pdf_path: Path) -> PdfDiagnostics:
-    """Collect cheap diagnostics that explain parser failures and short extractions."""
-    try:
-        import fitz
-    except ImportError as exc:
-        return PdfDiagnostics(error=f"missing PyMuPDF dependency: {exc}")
-    try:
-        doc = fitz.open(pdf_path)
-    except Exception as exc:
-        return PdfDiagnostics(error=f"PyMuPDF could not open PDF: {type(exc).__name__}: {exc}")
-
-    embedded_text_chars = 0
-    image_pages = 0
-    image_only_pages = 0
-    for page in doc:
-        text_chars = len((page.get_text("text") or "").strip())
-        images = len(page.get_images(full=True))
-        embedded_text_chars += text_chars
-        if images:
-            image_pages += 1
-        if images and text_chars == 0:
-            image_only_pages += 1
-    return PdfDiagnostics(
-        page_count=doc.page_count,
-        encrypted=bool(doc.is_encrypted),
-        needs_password=bool(doc.needs_pass),
-        embedded_text_chars=embedded_text_chars,
-        image_pages=image_pages,
-        image_only_pages=image_only_pages,
-    )
-
-
-def _normalize_extraction(value: str | PdfExtraction, parser: str) -> PdfExtraction:
-    if isinstance(value, PdfExtraction):
-        return value
-    return PdfExtraction(text=clean_pdf_text(value), parser=parser)
-
-
-def extract_pdf_markdown(pdf_path: Path, parser: str = PYMUPDF4LLM_TOOL) -> PdfExtraction:
-    """Extract markdown from one PDF with a concrete parser."""
-    if parser == PYMUPDF4LLM_TOOL:
-        return _extract_with_pymupdf4llm(pdf_path)
-    if parser == DOCLING_TOOL:
-        return _extract_with_docling(pdf_path)
-    if parser == MARKER_TOOL:
-        return _extract_with_marker(pdf_path)
-    if parser == UNSTRUCTURED_TOOL:
-        return _extract_with_unstructured(pdf_path)
-    if parser == MARKITDOWN_TOOL:
-        return _extract_with_markitdown(pdf_path)
-    raise RuntimeError(f"unknown PDF parser: {parser!r}; choose one of {PDF_PARSERS}")
-
-
-def _extract_with_pymupdf4llm(pdf_path: Path) -> PdfExtraction:
-    """Extract markdown from one PDF with PyMuPDF4LLM, preserving page chunks when available."""
-    try:
-        import pymupdf4llm
-    except ImportError as exc:
-        raise RuntimeError("missing pymupdf4llm dependency") from exc
-    try:
-        use_ocr = _is_image_only_pdf(inspect_pdf(pdf_path))
-        chunks = pymupdf4llm.to_markdown(
-            str(pdf_path),
-            page_chunks=True,
-            use_ocr=use_ocr,
-            force_ocr=use_ocr,
-            ocr_language="ukr+eng",
-        )
-    except Exception as exc:
-        raise RuntimeError(f"pymupdf4llm failed for {pdf_path.name}: {exc}") from exc
-    if isinstance(chunks, list):
-        pages: list[PdfPageChunk] = []
-        for idx, chunk in enumerate(chunks):
-            if not isinstance(chunk, dict):
-                continue
-            metadata_obj = chunk.get("metadata")
-            metadata = metadata_obj if isinstance(metadata_obj, dict) else {}
-            page = int(metadata.get("page_number") or idx + 1)
-            page_text = clean_pdf_text(str(chunk.get("text") or ""))
-            blocks = _page_blocks(chunk.get("page_boxes"))
-            pages.append(PdfPageChunk(page=page, text=page_text, blocks=blocks))
-        text = clean_pdf_text("\n\n".join(page.text for page in pages if page.text))
-        return PdfExtraction(text=text, parser=PYMUPDF4LLM_TOOL, pages=pages)
-
-    if isinstance(chunks, str):
-        return PdfExtraction(text=clean_pdf_text(chunks), parser=PYMUPDF4LLM_TOOL)
-    raise RuntimeError(f"pymupdf4llm returned unsupported markdown for {pdf_path.name}")
-
-
-def _page_blocks(page_boxes: Any) -> list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    if not isinstance(page_boxes, list):
-        return blocks
-    for box in page_boxes:
-        if not isinstance(box, dict):
-            continue
-        pos = box.get("pos")
-        start: int | None = None
-        end: int | None = None
-        if isinstance(pos, (tuple, list)) and len(pos) == 2:
-            start = int(pos[0])
-            end = int(pos[1])
-        bbox_obj = box.get("bbox")
-        bbox = list(bbox_obj) if isinstance(bbox_obj, (tuple, list)) else None
-        blocks.append(
-            {
-                "class": str(box.get("class") or "unknown"),
-                "bbox": bbox,
-                "page_char_start": start,
-                "page_char_end": end,
-            }
-        )
-    return blocks
-
-
-def _extract_with_docling(pdf_path: Path) -> PdfExtraction:
-    """Extract with Docling when the optional CUDA-capable layout/OCR dependency is installed."""
-    try:
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions
-        from docling.document_converter import DocumentConverter
-        from docling.document_converter import PdfFormatOption
-    except ImportError as exc:
-        raise RuntimeError("missing docling dependency") from exc
-    diagnostics = inspect_pdf(pdf_path)
-    force_ocr = _is_image_only_pdf(diagnostics)
-    last_error: Exception | None = None
-    for ocr_options in _docling_ocr_option_candidates(force_ocr):
-        try:
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = force_ocr
-            pipeline_options.do_table_structure = True
-            pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
-            _configure_docling_accelerator(pipeline_options)
-            if force_ocr and ocr_options is not None:
-                pipeline_options.ocr_options = ocr_options
-            converter = DocumentConverter(
-                format_options={
-                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-                }
-            )
-            result = converter.convert(str(pdf_path))
-            document = result.document
-            pages = _docling_pages(document)
-            markdown = clean_pdf_text(
-                "\n\n".join(page.text for page in pages if page.text.strip())
-                or _docling_export_markdown(document)
-            )
-            return PdfExtraction(text=markdown, parser=DOCLING_TOOL, pages=pages)
-        except Exception as exc:
-            last_error = exc
-            continue
-    if last_error is not None:
-        raise RuntimeError(f"docling failed for {pdf_path.name}: {last_error}") from last_error
-    raise RuntimeError(f"docling failed for {pdf_path.name}: no OCR options available")
-
-
-def _configure_docling_accelerator(pipeline_options: Any) -> None:
-    try:
-        from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
-    except ImportError:
-        return
-    try:
-        device = AcceleratorDevice.CUDA if _torch_cuda_available() else AcceleratorDevice.AUTO
-        pipeline_options.accelerator_options = AcceleratorOptions(device=device)
-    except Exception:
-        return
-
-
-def _torch_cuda_available() -> bool:
-    try:
-        import torch
-    except ImportError:
-        return False
-    try:
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
-
-
-def _docling_ocr_option_candidates(force_full_page_ocr: bool) -> list[Any | None]:
-    if not force_full_page_ocr:
-        return [None]
-    try:
-        from docling.datamodel import pipeline_options as options
-    except ImportError:
-        return [None]
-
-    candidates = (
-        (
-            "TesseractCliOcrOptions",
-            {"force_full_page_ocr": force_full_page_ocr, "lang": ["ukr", "eng"]},
-        ),
-        ("RapidOcrOptions", {"force_full_page_ocr": force_full_page_ocr, "backend": "torch"}),
-        (
-            "EasyOcrOptions",
-            {"force_full_page_ocr": force_full_page_ocr, "lang": ["uk", "en"], "use_gpu": True},
-        ),
-        ("OcrAutoOptions", {"force_full_page_ocr": force_full_page_ocr, "lang": ["uk", "en"]}),
-    )
-    options_list: list[Any | None] = []
-    for name, kwargs in candidates:
-        cls = getattr(options, name, None)
-        if cls is None:
-            continue
-        for variant in (
-            kwargs,
-            {key: value for key, value in kwargs.items() if key != "backend"},
-            {key: value for key, value in kwargs.items() if key not in {"backend", "lang"}},
-            {"force_full_page_ocr": force_full_page_ocr},
-            {},
-        ):
-            try:
-                options_list.append(cls(**variant))
-                break
-            except Exception:
-                continue
-    options_list.append(None)
-    return options_list
-
-
-def _docling_pages(document: Any) -> list[PdfPageChunk]:
-    try:
-        page_count = int(document.num_pages())
-    except Exception:
-        page_count = 0
-
-    pages: list[PdfPageChunk] = []
-    for page_number in range(1, page_count + 1):
-        page_text = clean_pdf_text(_docling_export_markdown(document, page_number))
-        if page_text:
-            pages.append(PdfPageChunk(page=page_number, text=page_text))
-    return pages
-
-
-def _docling_export_markdown(document: Any, page_number: int | None = None) -> str:
-    kwargs: dict[str, Any] = {
-        "compact_tables": True,
-        "page_break_placeholder": None,
-    }
-    if page_number is not None:
-        kwargs["page_no"] = page_number
-    try:
-        return str(document.export_to_markdown(**kwargs))
-    except TypeError:
-        if page_number is not None:
-            return str(document.export_to_markdown(page_no=page_number))
-        return str(document.export_to_markdown())
-
-
-def _extract_with_marker(pdf_path: Path) -> PdfExtraction:
-    """Extract with Marker when its optional package and API are installed."""
-    try:
-        pdf_module = importlib.import_module("marker.converters.pdf")
-        models_module = importlib.import_module("marker.models")
-        PdfConverter = pdf_module.PdfConverter
-        create_model_dict = models_module.create_model_dict
-    except ImportError as exc:
-        raise RuntimeError("missing marker dependency") from exc
-    try:
-        force_ocr = _is_image_only_pdf(inspect_pdf(pdf_path))
-        try:
-            converter = PdfConverter(
-                artifact_dict=create_model_dict(),
-                config={"force_ocr": force_ocr, "paginate_output": True},
-            )
-        except TypeError:
-            converter = PdfConverter(artifact_dict=create_model_dict())
-        rendered = converter(str(pdf_path))
-        pages = _marker_pages(rendered)
-        markdown = getattr(rendered, "markdown", None)
-        if markdown is None:
-            markdown = "\n\n".join(page.text for page in pages if page.text) or str(rendered)
-    except Exception as exc:
-        raise RuntimeError(f"marker failed for {pdf_path.name}: {exc}") from exc
-    return PdfExtraction(text=clean_pdf_text(str(markdown)), parser=MARKER_TOOL, pages=pages)
-
-
-def _marker_pages(rendered: Any) -> list[PdfPageChunk]:
-    root = _object_to_mapping(rendered)
-    children = root.get("children") if root else getattr(rendered, "children", None)
-    if not isinstance(children, list):
-        return []
-
-    pages: list[PdfPageChunk] = []
-    for idx, child in enumerate(children):
-        item = _object_to_mapping(child)
-        block_type = str(item.get("block_type") or "").casefold()
-        if block_type != "page":
-            continue
-        page_number = _marker_page_number(item, idx + 1)
-        text = clean_pdf_text(_marker_block_text(item))
-        if text:
-            pages.append(
-                PdfPageChunk(page=page_number, text=text, blocks=_marker_block_boxes(item))
-            )
-    return pages
-
-
-def _object_to_mapping(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if hasattr(value, "model_dump"):
-        dumped = value.model_dump()
-        return dumped if isinstance(dumped, dict) else {}
-    if hasattr(value, "dict"):
-        dumped = value.dict()
-        return dumped if isinstance(dumped, dict) else {}
-    if hasattr(value, "__dict__"):
-        return dict(value.__dict__)
-    return {}
-
-
-def _marker_page_number(item: dict[str, Any], fallback: int) -> int:
-    item_id = str(item.get("id") or "")
-    match = _MARKER_PAGE_ID.search(item_id)
-    if match is None:
-        return fallback
-    return int(match.group(1)) + 1
-
-
-def _marker_block_text(item: dict[str, Any]) -> str:
-    children = item.get("children")
-    if isinstance(children, list) and children:
-        parts = [_marker_block_text(_object_to_mapping(child)) for child in children]
-        return "\n\n".join(part for part in parts if part.strip())
-    raw_html = str(item.get("html") or item.get("text") or "")
-    return _html_to_text(raw_html)
-
-
-def _marker_block_boxes(item: dict[str, Any]) -> list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    children = item.get("children")
-    if not isinstance(children, list):
-        return blocks
-    for child in children:
-        child_map = _object_to_mapping(child)
-        polygon = child_map.get("polygon")
-        blocks.append(
-            {
-                "class": str(child_map.get("block_type") or "unknown"),
-                "bbox": polygon if isinstance(polygon, list) else None,
-                "page_char_start": None,
-                "page_char_end": None,
-            }
-        )
-    return blocks
-
-
-def _html_to_text(value: str) -> str:
-    return html.unescape(_HTML_TAG.sub(" ", value)).strip()
-
-
-def _extract_with_unstructured(pdf_path: Path) -> PdfExtraction:
-    """Extract with Unstructured partition_pdf when the optional dependency is installed."""
-    try:
-        from unstructured.partition.pdf import partition_pdf
-    except ImportError as exc:
-        raise RuntimeError("missing unstructured dependency") from exc
-    try:
-        kwargs: dict[str, Any] = {
-            "filename": str(pdf_path),
-            "strategy": "hi_res",
-            "infer_table_structure": True,
-            "include_page_breaks": True,
-            "languages": ["ukr", "eng"],
-        }
-        try:
-            elements = partition_pdf(**kwargs)
-        except TypeError:
-            kwargs.pop("languages", None)
-            elements = partition_pdf(**kwargs)
-    except Exception as exc:
-        raise RuntimeError(f"unstructured failed for {pdf_path.name}: {exc}") from exc
-
-    by_page: dict[int, list[str]] = {}
-    for element in elements:
-        metadata = getattr(element, "metadata", None)
-        page_number = getattr(metadata, "page_number", None) if metadata is not None else None
-        page = int(page_number or 1)
-        text_as_html = getattr(metadata, "text_as_html", None) if metadata is not None else None
-        text = text_as_html or str(element)
-        if text.strip():
-            by_page.setdefault(page, []).append(text)
-    pages = [
-        PdfPageChunk(page=page, text=clean_pdf_text("\n\n".join(parts)))
-        for page, parts in sorted(by_page.items())
-    ]
-    return PdfExtraction(
-        text=clean_pdf_text("\n\n".join(page.text for page in pages)),
-        parser=UNSTRUCTURED_TOOL,
-        pages=pages,
-    )
-
-
-def _extract_with_markitdown(pdf_path: Path) -> PdfExtraction:
-    """Extract with MarkItDown as a broad-format sanity baseline."""
-    try:
-        from markitdown import MarkItDown
-    except ImportError as exc:
-        raise RuntimeError("missing markitdown dependency") from exc
-    try:
-        result = MarkItDown().convert(str(pdf_path))
-        text = (
-            getattr(result, "text_content", None)
-            or getattr(result, "markdown", None)
-            or str(result)
-        )
-    except Exception as exc:
-        raise RuntimeError(f"markitdown failed for {pdf_path.name}: {exc}") from exc
-    return PdfExtraction(text=clean_pdf_text(str(text)), parser=MARKITDOWN_TOOL)
+# --- corpus rendering ---------------------------------------------------------------------
 
 
 def _source_rel(pdf_root: Path, pdf_path: Path) -> str:
@@ -758,6 +266,9 @@ def _offset_blocks(blocks: list[dict[str, Any]], text_start: int) -> list[dict[s
             item["char_end"] = text_start + page_end
         shifted.append(item)
     return shifted
+
+
+# --- manifest, quality report, citation sidecars ------------------------------------------
 
 
 def _manifest(result: PdfCorpusResult) -> dict[str, object]:
@@ -821,6 +332,9 @@ def _write_citations(
     }
     (out_dir / rel).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return rel
+
+
+# --- quality scoring + parser selection ---------------------------------------------------
 
 
 def _extraction_quality(
@@ -1078,6 +592,9 @@ def _ingest_one_pdf(
         quality=quality,
         source_sha256=source_sha256,
     )
+
+
+# --- unchanged-source reuse ---------------------------------------------------------------
 
 
 def _sha256_file(path: Path) -> str:

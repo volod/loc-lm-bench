@@ -138,6 +138,35 @@ def _validate_span(item_id: str, span: SourceSpan, text: str, errors: list[str])
         errors.append(f"{item_id}: span mismatch ({got!r} != {span.text!r})")
 
 
+def _validate_chain_steps(
+    chain: ChainItem,
+    corpus_root: Path,
+    cache: dict[str, str | None],
+    errors: list[str],
+) -> None:
+    """Per-step checks: dependency notes, span reuse, and span grounding against the corpus."""
+    span_keys: set[tuple[str, int, int]] = set()
+    for step in chain.steps:
+        if step.order > 1 and not step.dependency_note.strip():
+            errors.append(f"{chain.chain_id}: step {step.order} missing dependency_note")
+        for span in step.source_spans:
+            key = _span_key(span)
+            if key in span_keys:
+                errors.append(f"{chain.chain_id}: step {step.order} reuses span {key}")
+            span_keys.add(key)
+            text = _get_corpus_text(corpus_root, span.doc_id, cache, errors, chain.chain_id)
+            if text is not None:
+                _validate_span(chain.chain_id, span, text, errors)
+
+
+def _validate_final_answer_progression(chain: ChainItem, errors: list[str]) -> None:
+    """The final answer must not already be findable from the step-1 passage."""
+    first_context = _normalize(" ".join(span.text for span in chain.steps[0].source_spans))
+    final_answer = _normalize(chain.steps[-1].reference_answer)
+    if final_answer and final_answer in first_context:
+        errors.append(f"{chain.chain_id}: final answer is findable from step-1 passage")
+
+
 def validate_chains(chains: list[ChainItem], corpus_root: Path) -> ValidationReport:
     """Return a report dict: {n, splits, errors}. Empty errors means PASS."""
     corpus_root = Path(corpus_root)
@@ -151,21 +180,7 @@ def validate_chains(chains: list[ChainItem], corpus_root: Path) -> ValidationRep
             errors.append(f"duplicate chain_id: {chain.chain_id}")
         seen.add(chain.chain_id)
         splits[chain.split] = splits.get(chain.split, 0) + 1
-        span_keys: set[tuple[str, int, int]] = set()
-        for step in chain.steps:
-            if step.order > 1 and not step.dependency_note.strip():
-                errors.append(f"{chain.chain_id}: step {step.order} missing dependency_note")
-            for span in step.source_spans:
-                key = _span_key(span)
-                if key in span_keys:
-                    errors.append(f"{chain.chain_id}: step {step.order} reuses span {key}")
-                span_keys.add(key)
-                text = _get_corpus_text(corpus_root, span.doc_id, cache, errors, chain.chain_id)
-                if text is not None:
-                    _validate_span(chain.chain_id, span, text, errors)
-        first_context = _normalize(" ".join(span.text for span in chain.steps[0].source_spans))
-        final_answer = _normalize(chain.steps[-1].reference_answer)
-        if final_answer and final_answer in first_context:
-            errors.append(f"{chain.chain_id}: final answer is findable from step-1 passage")
+        _validate_chain_steps(chain, corpus_root, cache, errors)
+        _validate_final_answer_progression(chain, errors)
 
     return {"n": len(chains), "splits": splits, "errors": errors}

@@ -39,67 +39,79 @@ def _span_key(span: SourceSpan) -> tuple[str, int, int, str]:
     return (span.doc_id, span.char_start, span.char_end, span.text)
 
 
-def _compact_corpus(
-    chains: list[ChainItem], source_root: Path, target_root: Path
-) -> tuple[list[ChainItem], list[dict[str, Any]]]:
+def _collect_spans_by_doc(
+    chains: list[ChainItem],
+) -> dict[str, dict[tuple[str, int, int, str], SourceSpan]]:
+    """Every distinct reviewed span, grouped per source document."""
     spans_by_doc: dict[str, dict[tuple[str, int, int, str], SourceSpan]] = {}
     for chain in chains:
         for step in chain.steps:
             for span in step.source_spans:
                 spans_by_doc.setdefault(span.doc_id, {})[_span_key(span)] = span
+    return spans_by_doc
 
-    remapped: dict[tuple[str, int, int, str], SourceSpan] = {}
-    documents: list[dict[str, Any]] = []
-    for doc_id, keyed_spans in sorted(spans_by_doc.items()):
-        source_path = _safe_doc_path(source_root, doc_id)
-        source_text = source_path.read_text(encoding="utf-8")
-        parts: list[str] = []
-        cursor = 0
-        ordered = sorted(keyed_spans.values(), key=lambda span: (span.char_start, span.char_end))
-        for index, span in enumerate(ordered):
-            if index:
-                parts.append(_SPAN_SEPARATOR)
-                cursor += len(_SPAN_SEPARATOR)
-            start = cursor
-            parts.append(span.text)
-            cursor += len(span.text)
-            remapped[_span_key(span)] = SourceSpan(
-                doc_id=doc_id,
-                char_start=start,
-                char_end=cursor,
-                text=span.text,
-            )
-        compact_text = "".join(parts)
-        target_path = _safe_doc_path(target_root, doc_id)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(compact_text, encoding="utf-8")
-        documents.append(
-            {
-                "doc_id": doc_id,
-                "original_sha256": hashlib.sha256(source_text.encode()).hexdigest(),
-                "original_chars": len(source_text),
-                "fixture_chars": len(compact_text),
-                "reviewed_spans": len(ordered),
-            }
+
+def _write_compact_doc(
+    doc_id: str,
+    spans: list[SourceSpan],
+    source_root: Path,
+    target_root: Path,
+    remapped: dict[tuple[str, int, int, str], SourceSpan],
+) -> dict[str, Any]:
+    """Write one span-only fixture doc; record each span's new offsets in `remapped`."""
+    source_text = _safe_doc_path(source_root, doc_id).read_text(encoding="utf-8")
+    parts: list[str] = []
+    cursor = 0
+    for index, span in enumerate(spans):
+        if index:
+            parts.append(_SPAN_SEPARATOR)
+            cursor += len(_SPAN_SEPARATOR)
+        start = cursor
+        parts.append(span.text)
+        cursor += len(span.text)
+        remapped[_span_key(span)] = SourceSpan(
+            doc_id=doc_id, char_start=start, char_end=cursor, text=span.text
         )
+    compact_text = "".join(parts)
+    target_path = _safe_doc_path(target_root, doc_id)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(compact_text, encoding="utf-8")
+    return {
+        "doc_id": doc_id,
+        "original_sha256": hashlib.sha256(source_text.encode()).hexdigest(),
+        "original_chars": len(source_text),
+        "fixture_chars": len(compact_text),
+        "reviewed_spans": len(spans),
+    }
 
+
+def _remap_chain_spans(
+    chains: list[ChainItem], remapped: dict[tuple[str, int, int, str], SourceSpan]
+) -> list[ChainItem]:
+    """The chains with every step span rewritten to its compact-corpus offsets."""
     compact_chains: list[ChainItem] = []
     for chain in chains:
         data = chain.model_dump()
         for step in data["steps"]:
             step["source_spans"] = [
                 remapped[
-                    (
-                        span["doc_id"],
-                        span["char_start"],
-                        span["char_end"],
-                        span["text"],
-                    )
+                    (span["doc_id"], span["char_start"], span["char_end"], span["text"])
                 ].model_dump()
                 for span in step["source_spans"]
             ]
         compact_chains.append(ChainItem.model_validate(data))
-    return compact_chains, documents
+    return compact_chains
+
+
+def _compact_corpus(
+    chains: list[ChainItem], source_root: Path, target_root: Path
+) -> tuple[list[ChainItem], list[dict[str, Any]]]:
+    remapped: dict[tuple[str, int, int, str], SourceSpan] = {}
+    documents: list[dict[str, Any]] = []
+    for doc_id, keyed_spans in sorted(_collect_spans_by_doc(chains).items()):
+        ordered = sorted(keyed_spans.values(), key=lambda span: (span.char_start, span.char_end))
+        documents.append(_write_compact_doc(doc_id, ordered, source_root, target_root, remapped))
+    return _remap_chain_spans(chains, remapped), documents
 
 
 def promote_chain_bundle(

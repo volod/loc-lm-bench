@@ -100,6 +100,41 @@ def _build_children(
     return children
 
 
+def _validate_build_params(mode: str, strategy: str, child_size: int) -> None:
+    """Reject retrieval mode / strategy / child-size combinations a store cannot support."""
+    if mode not in ("flat", "parent_child", MODE_HYBRID):
+        raise ValueError(f"unknown retrieval mode: {mode}")
+    if strategy == "late" and mode == "parent_child":
+        raise ValueError(
+            "the 'late' strategy supports flat mode only (children re-chunk parent "
+            "slices, so their vectors could not pool over whole-document tokens)"
+        )
+    if child_size <= 0:
+        raise ValueError("child_size must be > 0")
+
+
+def _indexed_units(
+    corpus_root: Path,
+    strategy: str,
+    size: int,
+    overlap: int,
+    mode: str,
+    child_size: int,
+    embedder: Any,
+) -> tuple[list[ChunkRecord], list[ChunkRecord] | None]:
+    """(indexed, parents): the units to embed, plus the parent docstore in parent_child mode."""
+    sem = embedder if strategy == "semantic" else None
+    units = chunk_corpus(corpus_root, strategy, size, overlap, sem)
+    if not units:
+        raise ValueError(f"no chunks produced from corpus at {corpus_root}")
+    if mode != "parent_child":
+        return units, None
+    children = _build_children(units, strategy, child_size, overlap, embedder)
+    if not children:
+        raise ValueError("parent_child mode produced no child chunks")
+    return children, units
+
+
 class RagStore:
     """In-process retrieval over one chunked + embedded corpus (flat or parent_child)."""
 
@@ -153,30 +188,12 @@ class RagStore:
         `lexical_lemmas` opts its tokenization into Ukrainian lemmatization (`lemmatizer`
         injects a fake for tests). The stored chunk text is byte-identical either way.
         """
-        if mode not in ("flat", "parent_child", MODE_HYBRID):
-            raise ValueError(f"unknown retrieval mode: {mode}")
-        if strategy == "late" and mode == "parent_child":
-            raise ValueError(
-                "the 'late' strategy supports flat mode only (children re-chunk parent "
-                "slices, so their vectors could not pool over whole-document tokens)"
-            )
-        if child_size <= 0:
-            raise ValueError("child_size must be > 0")
+        _validate_build_params(mode, strategy, child_size)
         embedder = embedder if embedder is not None else Embedder(embedding_model)
         embedding_model = getattr(embedder, "model_name", embedding_model)
-        sem = embedder if strategy == "semantic" else None
-        units = chunk_corpus(Path(corpus_root), strategy, size, overlap, sem)
-        if not units:
-            raise ValueError(f"no chunks produced from corpus at {corpus_root}")
-
-        parents = None
-        if mode == "parent_child":
-            parents = units
-            indexed = _build_children(parents, strategy, child_size, overlap, embedder)
-            if not indexed:
-                raise ValueError("parent_child mode produced no child chunks")
-        else:
-            indexed = units
+        indexed, parents = _indexed_units(
+            Path(corpus_root), strategy, size, overlap, mode, child_size, embedder
+        )
 
         # Attach page/section provenance from PDF citation sidecars (strategy-independent,
         # additive metadata only). Coverage is measured over the INDEXED units; parents are
@@ -232,9 +249,7 @@ class RagStore:
         base_k = k * 4 if self.parents else k
         search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), base_k)
         while True:
-            hits = self._search(query_vec, max(1, search_k))
-            if chunk_filter is not None:
-                hits = _renumber([hit for hit in hits if chunk_filter(hit)])
+            hits = self._filtered_search(query_vec, search_k, chunk_filter)
             if self.parents is None:
                 return hits[:k]
             parent_hits = _children_to_parents(hits, self._parent_by_id)
@@ -243,6 +258,15 @@ class RagStore:
             # Child hits can cluster under one parent. Expand until k unique parents are
             # found or the complete child index has been searched.
             search_k = min(len(self.chunks), max(search_k + 1, search_k * 2))
+
+    def _filtered_search(
+        self, query_vec: Any, search_k: int, chunk_filter: ChunkFilter | None
+    ) -> list[ChunkRecord]:
+        """Dense search, with candidates re-ranked/renumbered after the metadata cut."""
+        hits = self._search(query_vec, max(1, search_k))
+        if chunk_filter is not None:
+            hits = _renumber([hit for hit in hits if chunk_filter(hit)])
+        return hits
 
     def _retrieve_hybrid(
         self, question: str, query_vec: Any, k: int, chunk_filter: ChunkFilter | None

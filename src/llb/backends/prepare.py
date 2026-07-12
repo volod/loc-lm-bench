@@ -334,24 +334,32 @@ def _normalize_source_records(value: object) -> list[dict[str, object]]:
     return [_normalize_source_record(value)]  # type: ignore[arg-type]
 
 
+def _spec_row(
+    model: ModelSpec, backend: str, record: dict[str, object], *, multi: bool
+) -> ModelSpec | None:
+    """One concrete prep artifact for a source record, or None when the record has no source."""
+    source = record.get("source")
+    if not isinstance(source, str) or not source:
+        return None
+    row = {**model, **record, "backend": backend, "source": source}
+    if backend != model["backend"] or source != model["source"]:
+        # Several quants of one backend (e.g. vLLM fp8 + w4a16) need distinct prep names.
+        quant = record.get("quant")
+        suffix = f"-{quant}" if multi and quant else ""
+        row["name"] = f"{model['name']}-{backend}{suffix}"
+    return cast(ModelSpec, row)
+
+
 def _expand_model_spec(
     records: dict[str, list[dict[str, object]]], model: ModelSpec, expanded: list[ModelSpec]
 ) -> None:
     for backend, recs in records.items():
         if backend not in SUPPORTED_BACKENDS:
             continue
-        multi = len(recs) > 1
         for record in recs:
-            source = record.get("source")
-            if not isinstance(source, str) or not source:
-                continue
-            row = {**model, **record, "backend": backend, "source": source}
-            if backend != model["backend"] or source != model["source"]:
-                # Several quants of one backend (e.g. vLLM fp8 + w4a16) need distinct prep names.
-                quant = record.get("quant")
-                suffix = f"-{quant}" if multi and quant else ""
-                row["name"] = f"{model['name']}-{backend}{suffix}"
-            expanded.append(cast(ModelSpec, row))
+            row = _spec_row(model, backend, record, multi=len(recs) > 1)
+            if row is not None:
+                expanded.append(row)
 
 
 def _expand_prepare_sources(models: list[ModelSpec]) -> list[ModelSpec]:
@@ -545,10 +553,16 @@ def prepare_models(
             token=token,
             cache_dir=cache_dir,
         )
-        if disk_note:
-            detail = f"{detail}  [disk: {disk_note}]" if detail else f"[disk: {disk_note}]"
-        url = acceptance_url(row)
-        if url and "huggingface.co" not in detail:
-            detail = f"{detail}  [license: {url}]"
+        detail = _annotate_detail(detail, row, disk_note)
         results.append({**row, "status": status, "detail": detail})
     return {"gpus": gpus, "max_vram_mb": max_mb, "results": results}
+
+
+def _annotate_detail(detail: str, row: ModelSpec, disk_note: str | None) -> str:
+    """Append the disk headroom note and the license-acceptance URL to a row's detail."""
+    if disk_note:
+        detail = f"{detail}  [disk: {disk_note}]" if detail else f"[disk: {disk_note}]"
+    url = acceptance_url(row)
+    if url and "huggingface.co" not in detail:
+        detail = f"{detail}  [license: {url}]"
+    return detail

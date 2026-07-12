@@ -69,31 +69,39 @@ def feedback_hints(summary: dict[str, Any]) -> list[dict[str, Any]]:
     by_code = summary.get("by_code")
     if not isinstance(by_code, dict):
         return []
-    hints: list[dict[str, Any]] = []
-    for code, cell in by_code.items():
-        if not isinstance(cell, dict):
-            continue
-        hint = REJECT_CODE_HINTS.get(str(code))
-        if hint is None:
-            _LOG.warning("[ontology] unknown reject code in feedback: %s (skipped)", code)
-            continue
-        count = int(cell.get("count") or 0)
-        if count < 1:
-            continue
-        example = ""
-        items = cell.get("items")
-        if isinstance(items, list):
-            example = next(
-                (
-                    str(item.get("note") or "").strip()
-                    for item in items
-                    if isinstance(item, dict) and str(item.get("note") or "").strip()
-                ),
-                "",
-            )
-        hints.append({"code": str(code), "count": count, "hint": hint, "example": example})
+    candidates = (_hint_entry(code, cell) for code, cell in by_code.items())
+    hints = [entry for entry in candidates if entry is not None]
     hints.sort(key=lambda h: (-h["count"], h["code"]))
     return hints
+
+
+def _hint_entry(code: Any, cell: Any) -> dict[str, Any] | None:
+    """One hint record for a reject-code cell, or None for unknown/empty/malformed cells."""
+    if not isinstance(cell, dict):
+        return None
+    hint = REJECT_CODE_HINTS.get(str(code))
+    if hint is None:
+        _LOG.warning("[ontology] unknown reject code in feedback: %s (skipped)", code)
+        return None
+    count = int(cell.get("count") or 0)
+    if count < 1:
+        return None
+    return {"code": str(code), "count": count, "hint": hint, "example": _first_note(cell)}
+
+
+def _first_note(cell: dict[str, Any]) -> str:
+    """The first rejected item's non-empty note, or '' when none was recorded."""
+    items = cell.get("items")
+    if not isinstance(items, list):
+        return ""
+    return next(
+        (
+            str(item.get("note") or "").strip()
+            for item in items
+            if isinstance(item, dict) and str(item.get("note") or "").strip()
+        ),
+        "",
+    )
 
 
 def feedback_hint_text(hints: list[dict[str, Any]]) -> str:

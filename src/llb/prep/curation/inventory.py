@@ -160,6 +160,62 @@ def _merge_keyed_quotes(
     doc[field] = list(merged.values())
 
 
+_EMPTY_DOC_FIELDS = ("topics", "entities", "relations", "numeric_facts", "sensitive_topics")
+
+
+def _merge_document(
+    raw_doc: Any,
+    docs: dict[str, dict[str, Any]],
+    corpus_texts: dict[str, str] | None,
+    source: str,
+    report: CurationReport,
+) -> bool:
+    """Merge one exported document record into the accumulated plan; returns True when loaded."""
+    if not isinstance(raw_doc, dict) or not str(raw_doc.get("doc", "")).strip():
+        report.reject_invalid("document", source, "missing doc name")
+        return False
+    name = str(raw_doc["doc"]).strip()
+    doc_text = corpus_texts.get(name) if corpus_texts is not None else None
+    if corpus_texts is not None and doc_text is None:
+        report.reject_invalid(name, source, "document not in corpus")
+        return True  # counted as loaded, then rejected
+    doc = docs.setdefault(name, {"doc": name, **{field: [] for field in _EMPTY_DOC_FIELDS}})
+    _merge_labels(doc["topics"], raw_doc.get("topics", []))
+    _merge_labels(doc["sensitive_topics"], raw_doc.get("sensitive_topics", []))
+    _merge_entities(doc, raw_doc.get("entities", []), doc_text, source, report)
+    _merge_keyed_quotes(
+        doc,
+        "relations",
+        raw_doc.get("relations", []),
+        ("subject", "relation", "object"),
+        doc_text,
+        source,
+        report,
+    )
+    _merge_keyed_quotes(
+        doc, "numeric_facts", raw_doc.get("numeric_facts", []), ("fact",), doc_text, source, report
+    )
+    return True
+
+
+def _merge_cross_link(raw_link: Any, cross: dict[str, dict[str, Any]]) -> None:
+    """Merge one cross-document link keyed by its normalized entity/topic label."""
+    if not isinstance(raw_link, dict):
+        return
+    key = normalize_text(str(raw_link.get("entity_or_topic", "")))
+    if not key:
+        return
+    link = cross.setdefault(
+        key,
+        {
+            "entity_or_topic": str(raw_link["entity_or_topic"]).strip(),
+            "docs": [],
+            "note": str(raw_link.get("note", "")),
+        },
+    )
+    link["docs"] = _merge_labels(link["docs"], raw_link.get("docs", []))
+
+
 def curate_inventory(
     inputs: list[Path],
     *,
@@ -174,64 +230,11 @@ def curate_inventory(
         source = str(path)
         loaded = 0
         for value in load_json_documents(path):
-            for value in _iter_inventory_objects(value, source, report):
-                for raw_doc in value.get("documents", []):
-                    if not isinstance(raw_doc, dict) or not str(raw_doc.get("doc", "")).strip():
-                        report.reject_invalid("document", source, "missing doc name")
-                        continue
-                    loaded += 1
-                    name = str(raw_doc["doc"]).strip()
-                    doc_text = corpus_texts.get(name) if corpus_texts is not None else None
-                    if corpus_texts is not None and doc_text is None:
-                        report.reject_invalid(name, source, "document not in corpus")
-                        continue
-                    doc = docs.setdefault(
-                        name,
-                        {
-                            "doc": name,
-                            "topics": [],
-                            "entities": [],
-                            "relations": [],
-                            "numeric_facts": [],
-                            "sensitive_topics": [],
-                        },
-                    )
-                    _merge_labels(doc["topics"], raw_doc.get("topics", []))
-                    _merge_labels(doc["sensitive_topics"], raw_doc.get("sensitive_topics", []))
-                    _merge_entities(doc, raw_doc.get("entities", []), doc_text, source, report)
-                    _merge_keyed_quotes(
-                        doc,
-                        "relations",
-                        raw_doc.get("relations", []),
-                        ("subject", "relation", "object"),
-                        doc_text,
-                        source,
-                        report,
-                    )
-                    _merge_keyed_quotes(
-                        doc,
-                        "numeric_facts",
-                        raw_doc.get("numeric_facts", []),
-                        ("fact",),
-                        doc_text,
-                        source,
-                        report,
-                    )
-                for raw_link in value.get("cross_document", []):
-                    if not isinstance(raw_link, dict):
-                        continue
-                    key = normalize_text(str(raw_link.get("entity_or_topic", "")))
-                    if not key:
-                        continue
-                    link = cross.setdefault(
-                        key,
-                        {
-                            "entity_or_topic": str(raw_link["entity_or_topic"]).strip(),
-                            "docs": [],
-                            "note": str(raw_link.get("note", "")),
-                        },
-                    )
-                    link["docs"] = _merge_labels(link["docs"], raw_link.get("docs", []))
+            for inventory in _iter_inventory_objects(value, source, report):
+                for raw_doc in inventory.get("documents", []):
+                    loaded += _merge_document(raw_doc, docs, corpus_texts, source, report)
+                for raw_link in inventory.get("cross_document", []):
+                    _merge_cross_link(raw_link, cross)
         report.sources[source] = loaded
 
     report.loaded = sum(report.sources.values())

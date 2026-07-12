@@ -264,41 +264,60 @@ def cool_down(
     return {"waited_s": round(clock() - start, 1), "final_temp_c": temp, "capped": False}
 
 
-def _subprocess_cell_runner(
-    data_dir: Path, sweep_id: str, telemetry: bool, limit: int | None = None
-) -> CellRunner:
-    """Default cell runner: run `run-eval` as its own process and return its published run dir."""
-    run_eval_root = data_dir / "run-eval"
-    cfg_dir = data_dir / SWEEP_METHOD / sweep_id / "configs"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
+def _run_eval_command(cfg_path: Path, split: str, limit: int | None, telemetry: bool) -> list[str]:
+    """The `run-eval` subprocess argv for one sweep cell."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "llb.main",
+        "run-eval",
+        "--config",
+        str(cfg_path),
+        "--split",
+        split,
+    ]
+    if limit is not None:
+        cmd += ["--limit", str(limit)]
+    if telemetry:
+        cmd.append("--telemetry")
+    return cmd
 
-    def run(config: RunConfig, split: str) -> str:
-        cfg_path = cfg_dir / f"{cell_key(config)}.yaml"
+
+def _run_eval_dir_names(run_eval_root: Path) -> set[str]:
+    """Names of the published run dirs currently under the run-eval root."""
+    return {p.name for p in run_eval_root.glob("*")} if run_eval_root.exists() else set()
+
+
+class _SubprocessCellRunner:
+    """Default cell runner: run `run-eval` as its own process and return its published run dir."""
+
+    def __init__(
+        self, data_dir: Path, sweep_id: str, telemetry: bool, limit: int | None = None
+    ) -> None:
+        self._run_eval_root = data_dir / "run-eval"
+        self._cfg_dir = data_dir / SWEEP_METHOD / sweep_id / "configs"
+        self._cfg_dir.mkdir(parents=True, exist_ok=True)
+        self._telemetry = telemetry
+        self._limit = limit
+
+    def __call__(self, config: RunConfig, split: str) -> str:
+        cfg_path = self._cfg_dir / f"{cell_key(config)}.yaml"
         cfg_path.write_text(yaml.safe_dump(config.fingerprint(), sort_keys=True), encoding="utf-8")
-        before = {p.name for p in run_eval_root.glob("*")} if run_eval_root.exists() else set()
-        cmd = [
-            sys.executable,
-            "-m",
-            "llb.main",
-            "run-eval",
-            "--config",
-            str(cfg_path),
-            "--split",
-            split,
-        ]
-        if limit is not None:
-            cmd += ["--limit", str(limit)]
-        if telemetry:
-            cmd.append("--telemetry")
+        before = _run_eval_dir_names(self._run_eval_root)
+        cmd = _run_eval_command(cfg_path, split, self._limit, self._telemetry)
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
             raise RuntimeError(f"cell run-eval exited {proc.returncode}: {' | '.join(tail)}")
-        after = {p.name for p in run_eval_root.glob("*")} if run_eval_root.exists() else set()
-        new = sorted(after - before)
-        return str(run_eval_root / new[-1]) if new else ""
+        new = sorted(_run_eval_dir_names(self._run_eval_root) - before)
+        return str(self._run_eval_root / new[-1]) if new else ""
 
-    return run
+
+def _subprocess_cell_runner(
+    data_dir: Path, sweep_id: str, telemetry: bool, limit: int | None = None
+) -> CellRunner:
+    """Default cell runner factory (see `_SubprocessCellRunner`)."""
+    return _SubprocessCellRunner(data_dir, sweep_id, telemetry, limit)
 
 
 def run_sweep(

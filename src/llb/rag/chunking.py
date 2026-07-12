@@ -174,6 +174,9 @@ def recursive_spans(text: str, size: int, overlap: int) -> list[tuple[int, int]]
 
 _MD_HEADER = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.M)
 
+# One parsed markdown header: (line_start, line_end, level, title).
+_Header = tuple[int, int, int, str]
+
 
 def _trim(text: str, start: int, end: int) -> tuple[int, int]:
     while start < end and text[start].isspace():
@@ -181,6 +184,44 @@ def _trim(text: str, start: int, end: int) -> tuple[int, int]:
     while end > start and text[end - 1].isspace():
         end -= 1
     return start, end
+
+
+def _parse_headers(text: str) -> list[_Header]:
+    """Markdown header lines parsed from the SOURCE, so spans stay exact source substrings."""
+    return [
+        (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)
+    ]
+
+
+def _header_breadcrumbs(headers: list[_Header]) -> list[dict[str, str]]:
+    """Full enclosing-heading breadcrumb per header (h1..h6 stack rule)."""
+    crumbs: list[dict[str, str]] = []
+    stack: dict[int, str] = {}
+    for _, _, level, title in headers:
+        stack = {lvl: t for lvl, t in stack.items() if lvl < level}
+        stack[level] = title
+        crumbs.append({f"h{lvl}": stack[lvl] for lvl in sorted(stack)})
+    return crumbs
+
+
+def _emit_section(
+    out: list[tuple[int, int, JsonObject]],
+    text: str,
+    body_start: int,
+    body_end: int,
+    meta: JsonObject,
+    size: int,
+    overlap: int,
+) -> None:
+    """Append the trimmed section as one span, or recursive sub-spans when it exceeds `size`."""
+    bs, be = _trim(text, body_start, body_end)
+    if be <= bs:
+        return
+    if be - bs <= size:
+        out.append((bs, be, meta))
+    else:
+        for rs, re_end in recursive_spans(text[bs:be], size, overlap):
+            out.append((bs + rs, bs + re_end, meta))
 
 
 def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, JsonObject]]:
@@ -191,40 +232,19 @@ def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, J
     source-span metric.) Sections longer than `size` are sub-split with `recursive_spans`
     (the pinned langchain RecursiveCharacterTextSplitter).
     """
-    headers = [
-        (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)
-    ]
-
-    def emit(
-        out: list[tuple[int, int, JsonObject]],
-        body_start: int,
-        body_end: int,
-        meta: JsonObject,
-    ) -> None:
-        bs, be = _trim(text, body_start, body_end)
-        if be <= bs:
-            return
-        if be - bs <= size:
-            out.append((bs, be, meta))
-        else:
-            for rs, re_end in recursive_spans(text[bs:be], size, overlap):
-                out.append((bs + rs, bs + re_end, meta))
-
+    headers = _parse_headers(text)
     out: list[tuple[int, int, JsonObject]] = []
     if not headers:
-        emit(out, 0, len(text), {"headers": {}})
+        _emit_section(out, text, 0, len(text), {"headers": {}}, size, overlap)
         return out
 
     if headers[0][0] > 0:  # preamble before the first header
-        emit(out, 0, headers[0][0], {"headers": {}})
+        _emit_section(out, text, 0, headers[0][0], {"headers": {}}, size, overlap)
 
-    stack: dict[int, str] = {}
-    for i, (h_start, h_end, level, title) in enumerate(headers):
-        stack = {lvl: t for lvl, t in stack.items() if lvl < level}
-        stack[level] = title
+    crumbs = _header_breadcrumbs(headers)
+    for i, (_h_start, h_end, _level, _title) in enumerate(headers):
         body_end = headers[i + 1][0] if i + 1 < len(headers) else len(text)
-        meta = {"headers": {f"h{lvl}": stack[lvl] for lvl in sorted(stack)}}
-        emit(out, h_end, body_end, meta)
+        _emit_section(out, text, h_end, body_end, {"headers": crumbs[i]}, size, overlap)
     return out
 
 
@@ -265,6 +285,63 @@ def page_aligned_spans(
     return spans
 
 
+class _HeadingWalker:
+    """Recursive heading-subtree chunker behind `heading_spans`."""
+
+    def __init__(self, text: str, headers: list[_Header], size: int, overlap: int) -> None:
+        self.text = text
+        self.headers = headers
+        self.crumbs = _header_breadcrumbs(headers)
+        self.size = size
+        self.overlap = overlap
+        self.out: list[tuple[int, int, JsonObject]] = []
+
+    def _emit(self, body_start: int, body_end: int, meta: JsonObject) -> None:
+        _emit_section(self.out, self.text, body_start, body_end, meta, self.size, self.overlap)
+
+    def _subtree_end(self, i: int) -> int:
+        """Char offset where header i's subtree ends (the next heading at <= its level)."""
+        level = self.headers[i][2]
+        for j in range(i + 1, len(self.headers)):
+            if self.headers[j][2] <= level:
+                return self.headers[j][0]
+        return len(self.text)
+
+    def _next_after_subtree(self, i: int) -> int:
+        """Index of the first header NOT inside header i's subtree."""
+        end = self._subtree_end(i)
+        j = i + 1
+        while j < len(self.headers) and self.headers[j][0] < end:
+            j += 1
+        return j
+
+    def _emit_subtree(self, i: int) -> None:
+        h_start, h_end, _, _ = self.headers[i]
+        end = self._subtree_end(i)
+        meta: JsonObject = {"headers": self.crumbs[i]}
+        if end - h_start <= self.size:  # the whole subtree, heading line included, is one chunk
+            self._emit(h_start, end, meta)
+            return
+        j = i + 1
+        in_subtree = j < len(self.headers) and self.headers[j][0] < end
+        first_child = self.headers[j][0] if in_subtree else end
+        body_s, body_e = _trim(self.text, h_end, first_child)
+        if body_e > body_s:  # own section text (skip heading-only chunks; the breadcrumb
+            self._emit(h_start, first_child, meta)  # already carries the title to child chunks)
+        while j < len(self.headers) and self.headers[j][0] < end:
+            self._emit_subtree(j)
+            j = self._next_after_subtree(j)
+
+    def walk(self) -> list[tuple[int, int, JsonObject]]:
+        if self.headers[0][0] > 0:  # preamble before the first heading
+            self._emit(0, self.headers[0][0], {"headers": {}})
+        i = 0
+        while i < len(self.headers):
+            self._emit_subtree(i)
+            i = self._next_after_subtree(i)
+        return self.out
+
+
 def heading_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, JsonObject]]:
     """Heading-hierarchy (layout-aware) split: whole subtrees pack into one chunk when they fit.
 
@@ -276,69 +353,12 @@ def heading_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, Js
     child heading. Every chunk carries the full breadcrumb of enclosing headings in
     `metadata.headers`.
     """
-    headers = [
-        (m.start(), m.end(), len(m.group(1)), m.group(2).strip()) for m in _MD_HEADER.finditer(text)
-    ]
-    out: list[tuple[int, int, JsonObject]] = []
-
-    def emit(body_start: int, body_end: int, meta: JsonObject) -> None:
-        bs, be = _trim(text, body_start, body_end)
-        if be <= bs:
-            return
-        if be - bs <= size:
-            out.append((bs, be, meta))
-        else:
-            for rs, re_ in recursive_spans(text[bs:be], size, overlap):
-                out.append((bs + rs, bs + re_, meta))
-
+    headers = _parse_headers(text)
     if not headers:
-        emit(0, len(text), {"headers": {}})
+        out: list[tuple[int, int, JsonObject]] = []
+        _emit_section(out, text, 0, len(text), {"headers": {}}, size, overlap)
         return out
-    if headers[0][0] > 0:  # preamble before the first heading
-        emit(0, headers[0][0], {"headers": {}})
-
-    # Full breadcrumb per heading (same stack rule as markdown_spans / heading_breadcrumb).
-    crumbs: list[dict[str, str]] = []
-    stack: dict[int, str] = {}
-    for _, _, level, title in headers:
-        stack = {lvl: t for lvl, t in stack.items() if lvl < level}
-        stack[level] = title
-        crumbs.append({f"h{lvl}": stack[lvl] for lvl in sorted(stack)})
-
-    def subtree_end(i: int) -> int:
-        level = headers[i][2]
-        for j in range(i + 1, len(headers)):
-            if headers[j][2] <= level:
-                return headers[j][0]
-        return len(text)
-
-    def emit_subtree(i: int) -> None:
-        h_start, h_end, _, _ = headers[i]
-        end = subtree_end(i)
-        meta: JsonObject = {"headers": crumbs[i]}
-        if end - h_start <= size:  # the whole subtree, heading line included, is one chunk
-            emit(h_start, end, meta)
-            return
-        j = i + 1
-        first_child = headers[j][0] if j < len(headers) and headers[j][0] < end else end
-        body_s, body_e = _trim(text, h_end, first_child)
-        if body_e > body_s:  # own section text (skip heading-only chunks; the breadcrumb
-            emit(h_start, first_child, meta)  # already carries the title to child chunks)
-        while j < len(headers) and headers[j][0] < end:
-            emit_subtree(j)
-            child_end = subtree_end(j)
-            j += 1
-            while j < len(headers) and headers[j][0] < child_end:
-                j += 1  # skip the grandchildren emit_subtree(j) already covered
-
-    i = 0
-    while i < len(headers):
-        emit_subtree(i)
-        top_end = subtree_end(i)
-        i += 1
-        while i < len(headers) and headers[i][0] < top_end:
-            i += 1
-    return out
+    return _HeadingWalker(text, headers, size, overlap).walk()
 
 
 def doc_page_spans(corpus_root: Path, doc_id: str) -> list[tuple[int, int]] | None:
@@ -417,24 +437,37 @@ def chunk_spans(
     slice whose page coordinates are unknown -- `page` falls back to `recursive`.
     """
     validate_chunking(size, overlap)
-    if strategy == "fixed":
-        return [(s, e, {}) for s, e in fixed_spans(text, size, overlap)]
-    if strategy in ("sentence", "late"):  # late = sentence spans + late-pooled vectors
-        return [(s, e, {}) for s, e in sentence_chunk_spans(text, size)]
-    if strategy == "recursive":
-        return [(s, e, {}) for s, e in recursive_spans(text, size, overlap)]
     if strategy == "markdown":
         return markdown_spans(text, size, overlap)
     if strategy == "heading":
         return heading_spans(text, size, overlap)
+    plain = _plain_strategy_spans(text, strategy, size, overlap, embedder, page_spans)
+    return [(s, e, {}) for s, e in plain]
+
+
+def _plain_strategy_spans(
+    text: str,
+    strategy: str,
+    size: int,
+    overlap: int,
+    embedder: Any,
+    page_spans: list[tuple[int, int]] | None,
+) -> list[tuple[int, int]]:
+    """(start, end) spans for the metadata-less strategies."""
+    if strategy == "fixed":
+        return fixed_spans(text, size, overlap)
+    if strategy in ("sentence", "late"):  # late = sentence spans + late-pooled vectors
+        return sentence_chunk_spans(text, size)
+    if strategy == "recursive":
+        return recursive_spans(text, size, overlap)
     if strategy == "page":
         if page_spans:
-            return [(s, e, {}) for s, e in page_aligned_spans(text, size, overlap, page_spans)]
-        return [(s, e, {}) for s, e in recursive_spans(text, size, overlap)]
+            return page_aligned_spans(text, size, overlap, page_spans)
+        return recursive_spans(text, size, overlap)
     if strategy == "semantic":
         if embedder is None:
             raise SystemExit('ERROR: the "semantic" strategy needs an embedder (the [rag] extra).')
-        return [(s, e, {}) for s, e in semantic_spans(text, size, embedder)]
+        return semantic_spans(text, size, embedder)
     raise ValueError(f"unknown strategy: {strategy}")
 
 

@@ -239,6 +239,54 @@ def _load_retriever(index_dir: Path | str | None) -> NeedleRetriever | None:
     return RagStore.load(index_dir)
 
 
+def _build_items(
+    rows: list[Any], corpus_texts: dict[str, str], report: ImportReport
+) -> tuple[list[GoldItem], dict[str, ItemLabels]]:
+    """Ground every artifact row; drop (and count) rows that fail verbatim grounding."""
+    items: list[GoldItem] = []
+    item_labels: dict[str, ItemLabels] = {}
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            report.drop(f"row-{i}", "row is not a JSON object")
+            continue
+        report.loaded += 1
+        built = _row_to_item(row, corpus_texts, i, report)
+        if built is None:
+            continue
+        item, label = built
+        items.append(item)
+        item_labels[item.id] = label
+    return items, item_labels
+
+
+def _annotate_needles(
+    items: list[GoldItem],
+    item_labels: dict[str, ItemLabels],
+    retriever: NeedleRetriever | None,
+    retrieval_k: int,
+    drop_nonretrievable: bool,
+    report: ImportReport,
+) -> tuple[
+    list[GoldItem], dict[str, ItemLabels], dict[str, int | None] | None, dict[str, Any] | None
+]:
+    """Needle-parity lane: annotate gold-span retrieval ranks, optionally dropping rank-less items."""
+    if retriever is None or not items:
+        return items, item_labels, None, None
+    needle_rows, needle_report = annotate_needle_retrieval(
+        items, retriever, k=retrieval_k, drop_nonretrievable=drop_nonretrievable
+    )
+    retrieval_ranks = {
+        str(row["id"]): cast("int | None", row["retrieval_rank"]) for row in needle_rows
+    }
+    if drop_nonretrievable:
+        for item in items:
+            if item.id not in retrieval_ranks:
+                report.drop(item.id, f"gold span not retrieved within top-{retrieval_k}")
+        items = [item for item in items if item.id in retrieval_ranks]
+        item_labels = {item.id: item_labels[item.id] for item in items}
+    return items, item_labels, retrieval_ranks, needle_report
+
+
 def import_external_draft(
     artifact: Path,
     corpus_root: Path,
@@ -273,41 +321,13 @@ def import_external_draft(
     rows = load_jsonl_rows(load_json_documents(Path(artifact)))
 
     report = ImportReport()
-    items: list[GoldItem] = []
-    item_labels: dict[str, ItemLabels] = {}
-    for i, row in enumerate(rows):
-        if not isinstance(row, dict):
-            report.drop(f"row-{i}", "row is not a JSON object")
-            continue
-        report.loaded += 1
-        built = _row_to_item(row, corpus_texts, i, report)
-        if built is None:
-            continue
-        item, label = built
-        items.append(item)
-        item_labels[item.id] = label
-
+    items, item_labels = _build_items(rows, corpus_texts, report)
     resolved_retriever = (
         retriever if retriever is not None else _load_retriever(retrieval_index_dir)
     )
-    retrieval_ranks: dict[str, int | None] | None = None
-    needle_report: dict[str, Any] | None = None
-    if resolved_retriever is not None and items:
-        needle_rows, needle_report = annotate_needle_retrieval(
-            items,
-            resolved_retriever,
-            k=retrieval_k,
-            drop_nonretrievable=drop_nonretrievable_needles,
-        )
-        retrieval_ranks = {
-            str(row["id"]): cast("int | None", row["retrieval_rank"]) for row in needle_rows
-        }
-        if drop_nonretrievable_needles:
-            for item in items:
-                if item.id not in retrieval_ranks:
-                    report.drop(item.id, f"gold span not retrieved within top-{retrieval_k}")
-            items = [item for item in items if item.id in retrieval_ranks]
-            item_labels = {item.id: item_labels[item.id] for item in items}
+    items, item_labels, retrieval_ranks, needle_report = _annotate_needles(
+        items, item_labels, resolved_retriever, retrieval_k, drop_nonretrievable_needles, report
+    )
 
     if not items:
         raise SystemExit(

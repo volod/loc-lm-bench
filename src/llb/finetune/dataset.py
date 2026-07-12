@@ -56,42 +56,18 @@ def export_finetune_set(
         selected = scored_tuning
 
     weights = _miss_weights(misses)
+    cited = bool((manifest.get("config") or {}).get("cited_answers", False))
     sft_records: list[JsonObject] = []
     dpo_records: list[JsonObject] = []
     for row in sorted(selected, key=lambda rec: str(rec.get("item_id"))):
         item = gold_by_id[str(row["item_id"])]
         context = _context_for_item(item, retrieval.get(item.id))
-        messages = build_messages(
-            item.question,
-            context,
-            cited=bool((manifest.get("config") or {}).get("cited_answers", False)),
-        )
+        messages = build_messages(item.question, context, cited=cited)
         weight = weights.get(item.id, 1.0)
-        sft_records.append(
-            {
-                "item_id": item.id,
-                "split": item.split,
-                "weight": weight,
-                "messages": messages,
-                "response": item.reference_answer,
-                "reference_answer": item.reference_answer,
-                "source_run": str(run_dir),
-                "prompt_template": "eval.rag.chat",
-            }
-        )
-        rejected = str(row.get("answer_preview") or "").strip()
-        if rejected and float(row.get("objective_score", 0.0)) < MISS_THRESHOLD:
-            dpo_records.append(
-                {
-                    "item_id": item.id,
-                    "split": item.split,
-                    "weight": weight,
-                    "prompt": messages,
-                    "chosen": item.reference_answer,
-                    "rejected": rejected,
-                    "source_run": str(run_dir),
-                }
-            )
+        sft_records.append(_sft_record(item, messages, weight, run_dir))
+        dpo = _dpo_record(item, row, messages, weight, run_dir)
+        if dpo is not None:
+            dpo_records.append(dpo)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(out_dir / SFT_FILENAME, sft_records)
@@ -115,6 +91,38 @@ def export_finetune_set(
         json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n",
     )
     return manifest_payload
+
+
+def _sft_record(item: GoldItem, messages: object, weight: float, run_dir: Path) -> JsonObject:
+    """One supervised fine-tuning record for a scored tuning item."""
+    return {
+        "item_id": item.id,
+        "split": item.split,
+        "weight": weight,
+        "messages": messages,
+        "response": item.reference_answer,
+        "reference_answer": item.reference_answer,
+        "source_run": str(run_dir),
+        "prompt_template": "eval.rag.chat",
+    }
+
+
+def _dpo_record(
+    item: GoldItem, row: JsonObject, messages: object, weight: float, run_dir: Path
+) -> JsonObject | None:
+    """A DPO pair when the row has a below-threshold rejected answer preview, else None."""
+    rejected = str(row.get("answer_preview") or "").strip()
+    if not rejected or float(row.get("objective_score", 0.0)) >= MISS_THRESHOLD:
+        return None
+    return {
+        "item_id": item.id,
+        "split": item.split,
+        "weight": weight,
+        "prompt": messages,
+        "chosen": item.reference_answer,
+        "rejected": rejected,
+        "source_run": str(run_dir),
+    }
 
 
 def subset_dataset(

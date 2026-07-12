@@ -124,41 +124,58 @@ def build_multi_hop_items(
     labels: dict[str, ItemLabels] = {}
     n_dropped = 0
     for i, (seed, draft) in enumerate(zip(seeds, drafts)):
-        if draft is None:
+        item = _multi_hop_item(doc_texts, seed, draft, i, split)
+        if item is None:
             n_dropped += 1
             continue
-        question = str(draft.get("question", "")).strip()
-        reference = str(draft.get("reference_answer", "")).strip()
-        if not question or not reference:
-            n_dropped += 1
-            continue
-        spans: list[SourceSpan] = []
-        span_keys: set[tuple[str, int, int]] = set()
-        for step in seed.steps:
-            span = _ground_step_span(doc_texts, step)
-            if span is None:
-                continue
-            key = (span.doc_id, span.char_start, span.char_end)
-            if key in span_keys:
-                continue
-            span_keys.add(key)
-            spans.append(span)
-        if len(spans) < MULTI_HOP_MIN_SPANS:
-            n_dropped += 1
-            continue
-        item = GoldItem(
-            id=f"{spans[0].doc_id}-{MULTI_HOP_ID_PREFIX}-{i}",
-            question=question,
-            reference_answer=reference,
-            source_doc_id=spans[0].doc_id,
-            source_spans=spans,
-            provenance=PROVENANCE_KIND,
-            verified=False,
-            split=split,
-        )
         items.append(item)
         labels[item.id] = ItemLabels(
             question_type=QUESTION_TYPE_MULTI_HOP, difficulty=MULTI_HOP_DIFFICULTY
         )
     _LOG.info("[ontology] multi-hop: %d chain items kept (%d dropped)", len(items), n_dropped)
     return items, labels
+
+
+def _distinct_step_spans(doc_texts: dict[str, str], seed: MultiHopSeed) -> list[SourceSpan]:
+    """The seed's hop spans that re-ground exactly, with byte-identical repeats removed."""
+    spans: list[SourceSpan] = []
+    span_keys: set[tuple[str, int, int]] = set()
+    for step in seed.steps:
+        span = _ground_step_span(doc_texts, step)
+        if span is None:
+            continue
+        key = (span.doc_id, span.char_start, span.char_end)
+        if key in span_keys:
+            continue
+        span_keys.add(key)
+        spans.append(span)
+    return spans
+
+
+def _multi_hop_item(
+    doc_texts: dict[str, str],
+    seed: MultiHopSeed,
+    draft: dict[str, Any] | None,
+    index: int,
+    split: Split,
+) -> GoldItem | None:
+    """One grounded multi-span GoldItem, or None when the draft/grounding is insufficient."""
+    if draft is None:
+        return None
+    question = str(draft.get("question", "")).strip()
+    reference = str(draft.get("reference_answer", "")).strip()
+    if not question or not reference:
+        return None
+    spans = _distinct_step_spans(doc_texts, seed)
+    if len(spans) < MULTI_HOP_MIN_SPANS:
+        return None
+    return GoldItem(
+        id=f"{spans[0].doc_id}-{MULTI_HOP_ID_PREFIX}-{index}",
+        question=question,
+        reference_answer=reference,
+        source_doc_id=spans[0].doc_id,
+        source_spans=spans,
+        provenance=PROVENANCE_KIND,
+        verified=False,
+        split=split,
+    )

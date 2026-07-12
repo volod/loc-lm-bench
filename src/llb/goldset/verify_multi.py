@@ -274,6 +274,61 @@ def _is_disagreement(decisions: Sequence[str], edits: Sequence[str]) -> bool:
     return decisions[0] == ACCEPT and len({e for e in edits}) > 1
 
 
+def _joint_decisions(
+    indexed: dict[str, dict[str, dict[str, str]]],
+    reviewers: Sequence[str],
+    joint: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    """Split the joint item ids into (jointly decided, disagreements)."""
+    jointly_decided: list[str] = []
+    disagreements: list[str] = []
+    for item_id in joint:
+        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
+        edits = [_edit(indexed[r][item_id]) for r in reviewers]
+        if all(d in (ACCEPT, REJECT) for d in decisions):
+            jointly_decided.append(item_id)
+            if _is_disagreement(decisions, edits):
+                disagreements.append(item_id)
+    return jointly_decided, disagreements
+
+
+def _joint_kappa(
+    indexed: dict[str, dict[str, dict[str, str]]],
+    reviewers: Sequence[str],
+    jointly_decided: Sequence[str],
+) -> float | None:
+    """Cohen's kappa for 2 reviewers, Fleiss' for 3+; None below 2 jointly decided rows."""
+    if len(reviewers) < 2 or len(jointly_decided) < 2:
+        return None
+    if len(reviewers) == 2:
+        a, b = reviewers
+        return cohen_kappa(
+            [_decision(indexed[a][i]) for i in jointly_decided],
+            [_decision(indexed[b][i]) for i in jointly_decided],
+        )
+    counts = [
+        [
+            sum(1 for r in reviewers if _decision(indexed[r][i]) == label)
+            for label in (ACCEPT, REJECT)
+        ]
+        for i in jointly_decided
+    ]
+    return fleiss_kappa(counts)
+
+
+def _per_reviewer_stats(
+    by_reviewer: dict[str, list[dict[str, str]]], reviewers: Sequence[str]
+) -> dict[str, dict[str, int]]:
+    return {
+        r: {
+            "decided": sum(1 for row in by_reviewer[r] if _decision(row) in (ACCEPT, REJECT)),
+            "accepted": sum(1 for row in by_reviewer[r] if _decision(row) == ACCEPT),
+            "rejected": sum(1 for row in by_reviewer[r] if _decision(row) == REJECT),
+        }
+        for r in reviewers
+    }
+
+
 def agreement_report(by_reviewer: dict[str, list[dict[str, str]]]) -> dict[str, object]:
     """Inter-annotator agreement over the jointly decided rows.
 
@@ -284,58 +339,21 @@ def agreement_report(by_reviewer: dict[str, list[dict[str, str]]]) -> dict[str, 
     reviewers = sorted(by_reviewer)
     indexed = {r: _rows_by_item(by_reviewer[r]) for r in reviewers}
     joint = _joint_item_ids(by_reviewer)
-
-    jointly_decided: list[str] = []
-    disagreements: list[str] = []
-    for item_id in joint:
-        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
-        edits = [_edit(indexed[r][item_id]) for r in reviewers]
-        if all(d in (ACCEPT, REJECT) for d in decisions):
-            jointly_decided.append(item_id)
-            if _is_disagreement(decisions, edits):
-                disagreements.append(item_id)
-
-    kappa: float | None = None
-    method = "cohen" if len(reviewers) == 2 else "fleiss"
-    if len(reviewers) >= 2 and len(jointly_decided) >= 2:
-        if len(reviewers) == 2:
-            a, b = reviewers
-            kappa = cohen_kappa(
-                [_decision(indexed[a][i]) for i in jointly_decided],
-                [_decision(indexed[b][i]) for i in jointly_decided],
-            )
-        else:
-            counts = [
-                [
-                    sum(1 for r in reviewers if _decision(indexed[r][i]) == label)
-                    for label in (ACCEPT, REJECT)
-                ]
-                for i in jointly_decided
-            ]
-            kappa = fleiss_kappa(counts)
-
+    jointly_decided, disagreements = _joint_decisions(indexed, reviewers, joint)
     observed = (
         (len(jointly_decided) - len(disagreements)) / len(jointly_decided)
         if jointly_decided
         else 0.0
     )
-    per_reviewer = {
-        r: {
-            "decided": sum(1 for row in by_reviewer[r] if _decision(row) in (ACCEPT, REJECT)),
-            "accepted": sum(1 for row in by_reviewer[r] if _decision(row) == ACCEPT),
-            "rejected": sum(1 for row in by_reviewer[r] if _decision(row) == REJECT),
-        }
-        for r in reviewers
-    }
     return {
         "annotators": reviewers,
         "joint_items": len(joint),
         "jointly_decided": len(jointly_decided),
         "observed_agreement": observed,
-        "kappa": kappa,
-        "kappa_method": method,
+        "kappa": _joint_kappa(indexed, reviewers, jointly_decided),
+        "kappa_method": "cohen" if len(reviewers) == 2 else "fleiss",
         "disagreements": disagreements,
-        "per_reviewer": per_reviewer,
+        "per_reviewer": _per_reviewer_stats(by_reviewer, reviewers),
     }
 
 
@@ -474,17 +492,24 @@ def consensus_rows(
         if adj_row is not None and _decision(adj_row) in (ACCEPT, REJECT):
             merged.append(dict(adj_row))
             continue
-        decisions = [_decision(indexed[r][item_id]) for r in reviewers]
-        edits = [_edit(indexed[r][item_id]) for r in reviewers]
-        row = dict(indexed[reviewers[0]][item_id])
-        unanimous = all(d in (ACCEPT, REJECT) for d in decisions) and not _is_disagreement(
-            decisions, edits
-        )
-        if not unanimous:
-            for col in HUMAN_COLS:
-                row[col] = ""
-        merged.append(row)
+        merged.append(_reviewer_consensus_row(indexed, reviewers, item_id))
     return merged
+
+
+def _reviewer_consensus_row(
+    indexed: dict[str, dict[str, dict[str, str]]], reviewers: list[str], item_id: str
+) -> dict[str, str]:
+    """A unanimous decision row (first reviewer's columns), else an UNDECIDED (blanked) row."""
+    decisions = [_decision(indexed[r][item_id]) for r in reviewers]
+    edits = [_edit(indexed[r][item_id]) for r in reviewers]
+    row = dict(indexed[reviewers[0]][item_id])
+    unanimous = all(d in (ACCEPT, REJECT) for d in decisions) and not _is_disagreement(
+        decisions, edits
+    )
+    if not unanimous:
+        for col in HUMAN_COLS:
+            row[col] = ""
+    return row
 
 
 def resolve_multi_reviewer_rows(worksheet: Path) -> list[dict[str, str]] | None:

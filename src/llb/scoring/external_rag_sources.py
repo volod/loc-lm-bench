@@ -111,22 +111,27 @@ def _read_mapping_rows(path: Path) -> list[dict[str, Any]]:
         with path.open(encoding="utf-8") as fh:
             return [dict(row) for row in csv.DictReader(fh)]
     if path.suffix.lower() == ".jsonl":
-        rows: list[dict[str, Any]] = []
-        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if not isinstance(row, dict):
-                raise ValueError(f"{path}:{line_no}: expected a JSON object")
-            rows.append(row)
-        return rows
+        return _read_jsonl_mapping_rows(path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
         payload = payload.get("mappings", [])
     if not isinstance(payload, list):
         raise ValueError(f"{path}: expected a JSON list of mapping records")
     return [row for row in payload if isinstance(row, dict)]
+
+
+def _read_jsonl_mapping_rows(path: Path) -> list[dict[str, Any]]:
+    """One mapping dict per non-blank JSONL line (a non-object line is a hard error)."""
+    rows: list[dict[str, Any]] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+        if not isinstance(row, dict):
+            raise ValueError(f"{path}:{line_no}: expected a JSON object")
+        rows.append(row)
+    return rows
 
 
 def map_source(source: dict[str, Any], source_map: SourceMap) -> SourceMapEntry | None:
@@ -144,19 +149,8 @@ def map_source(source: dict[str, Any], source_map: SourceMap) -> SourceMapEntry 
     return None
 
 
-def audit_row_sources(
-    sources: Sequence[dict[str, Any]],
-    gold_spans: Sequence[dict[str, Any]],
-    source_map: SourceMap,
-) -> dict[str, object]:
-    """Audit one row's returned sources against its gold spans; returns the CSV column values.
-
-    A STRONG hit is a mapped source whose char range overlaps a gold span (rank in returned
-    order, the same `first_hit_rank` local retrieval uses). A WEAK hit is a span-less mapping
-    whose doc matches a gold span's doc -- reported with `source_hit_weak=true` and never
-    counted as span proof. Unmapped sources count separately.
-    """
-    spans: list[SourceSpanRecord] = [
+def _gold_span_records(gold_spans: Sequence[dict[str, Any]]) -> list[SourceSpanRecord]:
+    return [
         {
             "doc_id": str(span.get("doc_id") or ""),
             "char_start": int(span.get("char_start") or 0),
@@ -166,7 +160,22 @@ def audit_row_sources(
         for span in gold_spans
         if isinstance(span, dict)
     ]
-    gold_docs = {span["doc_id"] for span in spans}
+
+
+@dataclass
+class _MappedSources:
+    """The chunk view of one row's returned sources plus mapping/weak-hit bookkeeping."""
+
+    chunks: list[ChunkRecord]
+    weak_rank: int | None
+    mapped: int
+    unmapped: int
+
+
+def _map_row_sources(
+    sources: Sequence[dict[str, Any]], source_map: SourceMap, gold_docs: set[str]
+) -> _MappedSources:
+    """Translate returned sources into rank-preserving chunks; track weak doc-level matches."""
     chunks: list[ChunkRecord] = []
     weak_rank: int | None = None
     mapped = unmapped = 0
@@ -190,19 +199,40 @@ def audit_row_sources(
             chunks.append(_MISS_CHUNK)
             if weak_rank is None and entry.doc_id in gold_docs:
                 weak_rank = position
-    strong_rank = first_hit_rank(chunks, spans) if spans else None
+    return _MappedSources(chunks=chunks, weak_rank=weak_rank, mapped=mapped, unmapped=unmapped)
+
+
+def _hit_outcome(strong_rank: int | None, weak_rank: int | None) -> tuple[float, int | None, bool]:
+    """(hit, rank, weak): a strong span hit wins; a weak doc-level match is flagged as weak."""
     if strong_rank is not None:
-        hit, rank, weak = 1.0, strong_rank, False
-    elif weak_rank is not None:
-        hit, rank, weak = 1.0, weak_rank, True
-    else:
-        hit, rank, weak = 0.0, None, False
+        return 1.0, strong_rank, False
+    if weak_rank is not None:
+        return 1.0, weak_rank, True
+    return 0.0, None, False
+
+
+def audit_row_sources(
+    sources: Sequence[dict[str, Any]],
+    gold_spans: Sequence[dict[str, Any]],
+    source_map: SourceMap,
+) -> dict[str, object]:
+    """Audit one row's returned sources against its gold spans; returns the CSV column values.
+
+    A STRONG hit is a mapped source whose char range overlaps a gold span (rank in returned
+    order, the same `first_hit_rank` local retrieval uses). A WEAK hit is a span-less mapping
+    whose doc matches a gold span's doc -- reported with `source_hit_weak=true` and never
+    counted as span proof. Unmapped sources count separately.
+    """
+    spans = _gold_span_records(gold_spans)
+    resolved = _map_row_sources(sources, source_map, {span["doc_id"] for span in spans})
+    strong_rank = first_hit_rank(resolved.chunks, spans) if spans else None
+    hit, rank, weak = _hit_outcome(strong_rank, resolved.weak_rank)
     return {
         "source_hit": hit if sources else "",
         "source_first_hit_rank": rank if rank is not None else "",
         "source_hit_weak": ("true" if weak else "false") if sources else "",
-        "source_mapped_count": mapped,
-        "source_unmapped_count": unmapped,
+        "source_mapped_count": resolved.mapped,
+        "source_unmapped_count": resolved.unmapped,
         "_source_strong_rank": strong_rank,  # summary-only; stripped from the CSV
     }
 

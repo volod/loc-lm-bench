@@ -751,6 +751,55 @@ def fake_endpoint(prompt: str) -> str:
     return "{}"
 
 
+def _assert_items_unverified_grounded(result) -> None:
+    # items: unverified, ontology-drafted, grounded, split-assigned
+    assert len(result.items) > 0
+    assert all(it.verified is False and it.provenance == PROVENANCE_KIND for it in result.items)
+    assert all(it.split in ("calibration", "tuning", "final") for it in result.items)
+
+
+def _assert_bundle_self_validates(out: Path) -> None:
+    # the emitted bundle self-validates against its copied corpus
+    loaded = load_goldset(out / "goldset.jsonl")
+    report = validate_items(loaded, out / "corpus")
+    assert report["errors"] == []
+
+
+def _assert_ontology_artifacts(out: Path) -> None:
+    # ontology + extraction artifacts written
+    ontology = json.loads((out / "ontology.json").read_text(encoding="utf-8"))
+    assert ontology["entity_types"] and ontology["relation_types"]
+    assert (out / "extraction.jsonl").exists()
+
+
+def _assert_provenance(out: Path, result) -> None:
+    # provenance links endpoint / prompts / document hashes / cost
+    prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
+    assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
+    assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
+    assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
+    assert prov["settings"]["extract_concurrency"] == 2
+    assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
+    assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
+    assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
+
+
+def _assert_ontology_report_and_gates(out: Path) -> None:
+    report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["grounded_facts"] == 4
+    assert report["grounded_claims"] == 1 and report["grounded_events"] == 1
+    assert report["dictionary_term_yield"] > 0
+    assert (out / PROMPT_DICTIONARY_FILENAME).is_file()
+    assert (out / NEEDLE_GOLDSET_FILENAME).is_file()
+    # non-PDF corpus: grounded extractions + a non-empty gold set pass; the citation-needle gate is
+    # not applicable (no page sidecars) and does not block.
+    gates = report["gates"]
+    assert gates["nonzero_grounded_extractions"] is True
+    assert gates["nonzero_draft_items"] is True
+    assert gates["pdf_citation_gate_applicable"] is False
+    assert gates["passed"] is True
+
+
 def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
@@ -767,43 +816,11 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
         extract_concurrency=2,
     )
 
-    # items: unverified, ontology-drafted, grounded, split-assigned
-    assert len(result.items) > 0
-    assert all(it.verified is False and it.provenance == PROVENANCE_KIND for it in result.items)
-    assert all(it.split in ("calibration", "tuning", "final") for it in result.items)
-
-    # the emitted bundle self-validates against its copied corpus
-    loaded = load_goldset(out / "goldset.jsonl")
-    report = validate_items(loaded, out / "corpus")
-    assert report["errors"] == []
-
-    # ontology + extraction artifacts written
-    ontology = json.loads((out / "ontology.json").read_text(encoding="utf-8"))
-    assert ontology["entity_types"] and ontology["relation_types"]
-    assert (out / "extraction.jsonl").exists()
-
-    # provenance links endpoint / prompts / document hashes / cost
-    prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
-    assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
-    assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
-    assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
-    assert prov["settings"]["extract_concurrency"] == 2
-    assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
-    assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
-    assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
-    report = json.loads((out / PDF_ONTOLOGY_REPORT_FILENAME).read_text(encoding="utf-8"))
-    assert report["grounded_facts"] == 4
-    assert report["grounded_claims"] == 1 and report["grounded_events"] == 1
-    assert report["dictionary_term_yield"] > 0
-    assert (out / PROMPT_DICTIONARY_FILENAME).is_file()
-    assert (out / NEEDLE_GOLDSET_FILENAME).is_file()
-    # non-PDF corpus: grounded extractions + a non-empty gold set pass; the citation-needle gate is
-    # not applicable (no page sidecars) and does not block.
-    gates = report["gates"]
-    assert gates["nonzero_grounded_extractions"] is True
-    assert gates["nonzero_draft_items"] is True
-    assert gates["pdf_citation_gate_applicable"] is False
-    assert gates["passed"] is True
+    _assert_items_unverified_grounded(result)
+    _assert_bundle_self_validates(out)
+    _assert_ontology_artifacts(out)
+    _assert_provenance(out, result)
+    _assert_ontology_report_and_gates(out)
 
 
 def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
