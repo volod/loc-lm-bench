@@ -6,5 +6,6 @@ Importing each submodule registers its @app.command handlers on the shared Typer
 from llb.cli.bench import (  # noqa: F401
     category_analysis,
     category_tasks,
+    knowledge_cutoff,
     misc,
 )

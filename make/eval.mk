@@ -7,7 +7,7 @@
 	export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign distill \
 	register-adapter list-adapters serve-adapter gc-adapters \
 	prompt-system-compare bench-security bench-security-derived bench-agentic agentic-harness-compare \
-	bench-chain-context composite-headline platform-matrix
+	bench-chain-context bench-knowledge-cutoff composite-headline platform-matrix
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -280,6 +280,19 @@ bench-agentic: ## Run one agentic harness cell (AGENTIC_HARNESS=loop|langgraph|c
 		--harness "$(AGENTIC_HARNESS)" \
 		$(if $(AGENTIC_BASE_URL),--base-url "$(AGENTIC_BASE_URL)",) \
 		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),)
+
+bench-knowledge-cutoff: ## Estimate a local model's real knowledge cutoff and write JSON/Markdown reports (MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-knowledge-cutoff --model "$(MODEL)" --backend "$(BACKEND)" \
+		--dataset-id "$(KNOWLEDGE_CUTOFF_DATASET)" \
+		--dataset-revision "$(KNOWLEDGE_CUTOFF_REVISION)" \
+		--threshold "$(KNOWLEDGE_CUTOFF_THRESHOLD)" \
+		--optuna-trials "$(KNOWLEDGE_CUTOFF_TRIALS)" --seed "$(KNOWLEDGE_CUTOFF_SEED)" \
+		$(if $(KNOWLEDGE_CUTOFF_EVENTS),--events "$(KNOWLEDGE_CUTOFF_EVENTS)",) \
+		$(if $(KNOWLEDGE_CUTOFF_LIMIT),--limit "$(KNOWLEDGE_CUTOFF_LIMIT)",) \
+		$(if $(KNOWLEDGE_CUTOFF_BASE_URL),--base-url "$(KNOWLEDGE_CUTOFF_BASE_URL)",) \
+		$(if $(KNOWLEDGE_CUTOFF_MAX_MODEL_LEN),--max-model-len "$(KNOWLEDGE_CUTOFF_MAX_MODEL_LEN)",)
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

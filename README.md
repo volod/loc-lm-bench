@@ -21,6 +21,7 @@ confidence intervals, and reviewable data gates.
 | Prompt-system tuning | Generate reviewable prompt packages, tune on one split, and verify generalization on held-out final data. See [prompt-system guide](docs/guides/benchmarking/prompt-system-rag.md) and [RAG core](docs/guides/benchmarking/run-rag-core.md). | `make prompt-system-prepare PROMPT_SYSTEM_CORPUS=<dir>` -> `make prompt-system-review PROMPT_SYSTEM_RUN_DIR=<dir> PROMPT_SYSTEM_ACTION=pin PROMPT_SYSTEM_ID=<id>` -> `make run-eval PROMPT_SYSTEM_ID=<id> PROMPT_PACKAGE=<dir>` -> `make prompt-system-compare` |
 | Security robustness | Score jailbreak, prompt-injection, RAG-injection, exfiltration, and benign-control cases as a separate security tier. See [security learning path](docs/guides/learning-path/learning-path-security.md). | `make bench-security MODEL=<model> BACKEND=<backend>` |
 | Category benchmark suites | Score security, tooling, agentic, summarization, structured output, and text-analysis categories, then publish a guarded composite headline. See [composite headline guide](docs/guides/benchmarking/composite-headline.md) and [category learning path](docs/guides/learning-path/learning-path-evaluation-categories.md). | `make composite-headline` |
+| Real-world knowledge cutoff | Estimate the effective month where a local model's recall of unpredictable public events decays toward chance, using a revision-pinned Hugging Face event set, position-balanced MCQs, seeded Optuna fitting, controls, and JSON/Markdown/MLflow reports. See the [knowledge-cutoff guide](docs/guides/benchmarking/knowledge-cutoff.md). | `make bench-knowledge-cutoff MODEL=<model> BACKEND=<backend>` |
 | Agentic harness comparison | Run the same task set through loop, LangGraph, and CrewAI harnesses to separate model quality from orchestration effects. See [CrewAI harness guide](docs/guides/benchmarking/crewai-harness.md) and [category learning path](docs/guides/learning-path/learning-path-evaluation-categories.md). | `make agentic-harness-compare` |
 | Platform matrix telemetry | Compare a logical model base across serving backends with VRAM, throughput, power, and quality-per-watt telemetry. See [platform matrix guide](docs/guides/benchmarking/platform-matrix.md). | `make platform-matrix` |
 
@@ -216,6 +217,12 @@ Ready-to-use public fixtures and public-screen tasks keep their upstream data te
   [HellaSwag](https://huggingface.co/datasets/Rowan/hellaswag) and
   [MMLU](https://huggingface.co/datasets/cais/mmlu) are MIT;
   [PIQA](https://huggingface.co/datasets/piqa) is marked license-unknown on its dataset card.
+- The knowledge-cutoff benchmark does not vendor its default event set. It loads
+  [`apoorvumang/knowledge-cutoff-benchmark`](https://huggingface.co/datasets/apoorvumang/knowledge-cutoff-benchmark),
+  whose dataset card marks the data CC BY 4.0, and records the resolved revision. The method and
+  dataset choice are inspired by Apoorv Saxena's
+  [`knowledge-cutoff`](https://github.com/apoorvumang/knowledge-cutoff) project; no upstream
+  application source is copied. Preserve that attribution for downloaded or redistributed data.
 
 Other committed tutorial fixtures are repo-authored unless their local README or provenance file
 states otherwise. Preserve attribution and license notices when redistributing derived artifacts.

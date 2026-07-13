@@ -137,7 +137,11 @@ def _mlflow_metrics(manifest: RunManifest) -> dict[str, float]:
 
 
 def _log_canonical_artifacts(client: Any, run_id: str, out_dir: Path) -> None:
-    for path in (out_dir / "manifest.json", *sorted(out_dir.glob("scores.*"))):
+    for path in (
+        out_dir / "manifest.json",
+        *sorted(out_dir.glob("scores.*")),
+        *sorted(out_dir.glob("report.*")),
+    ):
         if path.is_file():
             client.log_artifact(run_id, str(path), artifact_path="canonical")
     backend_logs = out_dir / "vllm"

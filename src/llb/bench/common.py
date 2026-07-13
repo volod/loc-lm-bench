@@ -238,6 +238,7 @@ def drive_with_backend(
     run: Callable[[LLMComplete], _R],
     *,
     base_url: str | None = None,
+    max_tokens: int = 512,
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     meter: ThroughputMeter | None = None,
@@ -252,7 +253,15 @@ def drive_with_backend(
     """
     if base_url is not None or cfg.backend == "ollama":
         url = base_url or f"{cfg.ollama_host.rstrip('/')}/v1"
-        return run(local_complete(cfg.model, url, timeout=cfg.request_timeout_s, meter=meter))
+        return run(
+            local_complete(
+                cfg.model,
+                url,
+                max_tokens=max_tokens,
+                timeout=cfg.request_timeout_s,
+                meter=meter,
+            )
+        )
 
     from llb.executor.isolation import isolate_cell
     from llb.executor.runner_backend import _make_launcher
@@ -261,7 +270,14 @@ def drive_with_backend(
 
     def work() -> _R:
         with launcher:
-            return run(launcher_complete(launcher, timeout=cfg.request_timeout_s, meter=meter))
+            return run(
+                launcher_complete(
+                    launcher,
+                    max_tokens=max_tokens,
+                    timeout=cfg.request_timeout_s,
+                    meter=meter,
+                )
+            )
 
     result, _outcome = isolate_cell(
         work,
@@ -320,9 +336,13 @@ def persist_category_run(
     case_rows: Sequence[Mapping[str, object]],
     judge: JudgeStatus | None = None,
     mirror: Mirror | None = None,
+    artifacts: Mapping[str, str] | None = None,
 ) -> RunPaths:
-    """Write one category run bundle under `$DATA_DIR/<method>/<timestamp>/` (manifest + scores),
-    atomically published exactly like `run-eval`. `config` carries the category + tier provenance."""
+    """Write one category bundle under `$DATA_DIR/<method>/<timestamp>/` atomically.
+
+    The manifest and scores are mandatory; `artifacts` adds report files to the same transaction.
+    `config` carries the category and tier provenance.
+    """
     run_id, run_timestamp = new_run_timestamp()
     out_dir = Path(data_dir) / method / run_timestamp
     staging = out_dir.with_name(f".{out_dir.name}.tmp")
@@ -335,4 +355,11 @@ def persist_category_run(
         judge=judge,
         n_cases=len(case_rows),
     )
-    return persist_run(manifest, list(case_rows), out_dir, mirror=mirror, staging_dir=staging)
+    return persist_run(
+        manifest,
+        list(case_rows),
+        out_dir,
+        mirror=mirror,
+        staging_dir=staging,
+        artifacts=artifacts,
+    )

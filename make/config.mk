@@ -16,7 +16,7 @@ PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
 # (AGENTS.md) and installed by scripts/build_vllm.sh after the editable install on CUDA hosts.
 # CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,cutoff,dev
 VENV_INSTALL_VLLM ?= auto
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
@@ -165,6 +165,15 @@ AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
 AGENTIC_BASE_URL ?=
+KNOWLEDGE_CUTOFF_EVENTS ?=
+KNOWLEDGE_CUTOFF_DATASET ?= apoorvumang/knowledge-cutoff-benchmark
+KNOWLEDGE_CUTOFF_REVISION ?= main
+KNOWLEDGE_CUTOFF_THRESHOLD ?= 0.5
+KNOWLEDGE_CUTOFF_TRIALS ?= 200
+KNOWLEDGE_CUTOFF_SEED ?= 42
+KNOWLEDGE_CUTOFF_LIMIT ?=
+KNOWLEDGE_CUTOFF_BASE_URL ?=
+KNOWLEDGE_CUTOFF_MAX_MODEL_LEN ?=
 # `make demo-eval` end-to-end pipeline knobs (idempotent; CUDA-free defaults).
 ALL_GOLDSET ?= $(GOLDSET)
 ALL_CORPUS  ?= $(CORPUS)
