@@ -172,8 +172,7 @@ def test_auto_parser_selects_highest_quality_candidate(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -196,7 +195,7 @@ def test_auto_parser_selects_highest_quality_candidate(
             )
         raise RuntimeError(f"missing {tool}")
 
-    monkeypatch.setattr(pc, "extract_pdf_markdown", fake_extract)
+    monkeypatch.setattr("llb.prep.pdf.quality.extract_pdf_markdown", fake_extract)
 
     result = ingest_pdf_corpus(pdf_root, tmp_path / "corpus", parser=PARSER_AUTO, min_chars=10)
 
@@ -219,8 +218,7 @@ def test_short_image_only_pdf_reports_clean_diagnostic(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -255,8 +253,7 @@ def test_image_only_auto_attempts_ocr_layout_candidates(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -267,8 +264,7 @@ def test_image_only_auto_attempts_ocr_layout_candidates(
         ),
     )
     monkeypatch.setattr(
-        pc,
-        "extract_pdf_markdown",
+        "llb.prep.pdf.quality.extract_pdf_markdown",
         lambda _path, tool: PdfExtraction(text="", parser=tool),
     )
 

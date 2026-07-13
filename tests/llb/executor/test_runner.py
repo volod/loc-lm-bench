@@ -422,7 +422,7 @@ def test_run_eval_scores_only_verified_items(tmp_path):
 def test_failed_eval_removes_unpublished_staging_directory(tmp_path, monkeypatch):
     item = gold_item("failure", "q", "Київ", "Київ")
     cfg = RunConfig(data_dir=tmp_path, run_name="failed", model="fake-uk")
-    monkeypatch.setattr(runner_module, "_run_timestamp", lambda run_id: "fixed-run")
+    monkeypatch.setattr("llb.executor.runner_target._run_timestamp", lambda run_id: "fixed-run")
     staging_dir = cfg.run_staging_dir("fixed-run")
     staging_dir.mkdir(parents=True)
     (staging_dir / "backend.log").write_text("partial", encoding="utf-8")

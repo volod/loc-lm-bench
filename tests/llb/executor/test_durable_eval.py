@@ -215,7 +215,7 @@ def test_kill_then_resume_matches_uninterrupted(tmp_path, monkeypatch):
 
     # Pin the run timestamp so the resume can name the same staging dir.
     monkeypatch.setattr(
-        "llb.executor.runner._run_timestamp", lambda run_id: "20260101T000000.0Z-abc"
+        "llb.executor.runner_target._run_timestamp", lambda run_id: "20260101T000000.0Z-abc"
     )
     cfg = RunConfig(data_dir=tmp_path / "killed", run_name="dur", top_k=3, model="fake-uk")
 
@@ -280,7 +280,7 @@ def test_resume_refuses_mismatched_goldset(tmp_path, monkeypatch):
         raise KeyboardInterrupt  # kill before the only case completes
 
     monkeypatch.setattr(
-        "llb.executor.runner._run_timestamp", lambda run_id: "20260101T000000.0Z-xyz"
+        "llb.executor.runner_target._run_timestamp", lambda run_id: "20260101T000000.0Z-xyz"
     )
     cfg = RunConfig(data_dir=tmp_path, run_name="dur", top_k=3, model="fake-uk")
     launcher = FakeLauncher(responder)

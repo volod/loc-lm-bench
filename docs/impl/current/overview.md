@@ -36,6 +36,31 @@ security, benchmarks, draft, draft_support, curation}`, `cli/rag/{index, validat
 compare_retrieval, compare_stores}`). Tests that exercised a former flat module's internals import
 them from the specific submodule now.
 
+The same seam-based split has been applied to the largest core-path modules. Each keeps its public
+import path stable -- a former flat module either becomes a package whose `__init__` re-exports the
+public API, or a thin module that re-exports from sibling submodules -- so callers and tests are
+unchanged except for a few monkeypatch targets repointed at the new call-site module:
+
+- `executor/runner.py` (910 lines) is now the `run_eval` orchestrator plus sibling modules
+  `runner_setup` (eval inputs / store / query-prep / probes), `runner_backend` (launcher lifecycle
+  + VRAM guard + runner resolution), `runner_judge` (judge scoring + calibration worksheet),
+  `runner_metrics` (aggregation + telemetry), and `runner_target` (run-target/config payload).
+- `board/miss_analysis.py` (859) -> package `board/miss_analysis/{model, load, classify,
+  recommendations, rec_retrieval, report}`.
+- `finetune/hparam_search.py` (845) -> package `finetune/hparam_search/{model, dev_slice, space,
+  objective, search, manifest_io}`.
+- `prep/ontology/pipeline.py` (786) -> package `prep/ontology/pipeline/{settings, journaling,
+  stages, bundle, run}`.
+- `prep/pdf_corpus.py` (739) -> orchestration moved into the existing `prep/pdf` package
+  (`furniture, render, quality, manifest, reuse, ingest`); `pdf_corpus.py` re-exports.
+- `goldset/verify_session.py` (730) -> package `goldset/verify_session/{report, commands,
+  decision, loop}` (presentation half already in `verify_card.py`).
+- `board/recommend.py` (722) -> package `board/recommend/{model, build, render, sections}`.
+
+`core/contracts.py` stays whole as the plan's justified cohesive exception (one dataclass/TypedDict
+family). A backlog of ~77 more `src/` modules and ~36 test modules still sits over the soft limit;
+`scripts/code_quality.sh` lists them largest-first.
+
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires

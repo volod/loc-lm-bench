@@ -43,19 +43,21 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 ### module-size-soft-limit-refactor
 
 - Agent status: **CLEAR** -- agent-buildable to `make ci` green; a mechanical, test-guarded split
-  per file. The convention, tooling, and CLI exemplar already landed (see
-  [overview](current/overview.md#module-size--structure)).
+  per file. The convention, tooling, CLI exemplar, the four core-path modules, and the next three
+  largest `src/` modules already landed (see
+  [overview](current/overview.md#module-size--structure) for the delivered package layout).
 - Dependencies: none. The ~250-line soft limit is documented in AGENTS.md and reported by
-  `scripts/code_quality.sh`; the six oversized `cli/*.py` modules are already split into packages.
+  `scripts/code_quality.sh`; the six `cli/*.py` modules and the seven largest core-path modules
+  (`executor/runner`, `board/miss_analysis`, `finetune/hparam_search`, `prep/ontology/pipeline`,
+  `prep/pdf_corpus`, `goldset/verify_session`, `board/recommend`) are already split.
 - User-visible outcome: every tracked `.py`/`.sh` file sits at or under ~250 lines unless a single
   cohesive structure reads better whole, so review and comprehension improve.
-- Scope boundary: in scope -- split the remaining ~117 tracked files over the soft limit along
-  clear functional seams (extract helper clusters into intent-named submodules; keep public import
-  paths stable or update the referencing tests). Prioritize by size; the core-path modules
-  (`executor/runner.py`, `board/miss_analysis.py`, `finetune/hparam_search.py`,
-  `prep/ontology/pipeline.py`) each need per-file dependency tracing and their own reviewable
-  commit. Out of scope -- behavior changes; fragmenting a cohesive lookup table / dataclass family
-  / exhaustive match just to hit the count (e.g. `core/contracts.py` may stay whole).
+- Scope boundary: in scope -- split the remaining over-limit files (~77 `src/` modules and ~36
+  test modules, plus `scripts/quickstart.sh`) along clear functional seams (extract helper
+  clusters into intent-named submodules; keep public import paths stable or update the referencing
+  tests). Prioritize by size; `scripts/code_quality.sh` lists them largest-first. Out of scope --
+  behavior changes; fragmenting a cohesive lookup table / dataclass family / exhaustive match just
+  to hit the count (`core/contracts.py` stays whole as the justified exception).
 - Acceptance gates: `scripts/code_quality.sh` shows no tracked file over the soft limit (or only
   the explicitly-justified cohesive exceptions), `make ci` stays green, and no behavior test
   changes except import-path updates.
