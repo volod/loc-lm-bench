@@ -333,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_sample_cmd(args, parser)
 
     if args.cmd == "review":
-        from llb.goldset.verify_session import run_session
+        from llb.goldset.verify_session.loop import run_session
 
         run_session(
             args.worksheet,

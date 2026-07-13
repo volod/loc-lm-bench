@@ -255,7 +255,7 @@ def drive_with_backend(
         return run(local_complete(cfg.model, url, timeout=cfg.request_timeout_s, meter=meter))
 
     from llb.executor.isolation import isolate_cell
-    from llb.executor.runner import _make_launcher
+    from llb.executor.runner_backend import _make_launcher
 
     launcher = _make_launcher(cfg)
 

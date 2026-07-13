@@ -38,7 +38,8 @@ from llb.goldset.verify_multi import (
     reviewer_worksheet_path,
     run_adjudicate,
 )
-from llb.goldset.verify_session import format_card, run_session
+from llb.goldset.verify_card import format_card
+from llb.goldset.verify_session.loop import run_session
 
 DOC = "squad/doc1.txt"
 TEXT = "Леся Українка народилася 1871 року в Новограді-Волинському. Вона була поетесою."

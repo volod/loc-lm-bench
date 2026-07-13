@@ -23,7 +23,7 @@ from llb.prep.ontology.constants import (
 )
 from llb.prep.ontology.models import DocExtraction, DocRecord, ItemLabels, OntologyCandidate
 from llb.prep.ontology.needles import NeedleRetriever, annotate_needle_retrieval
-from llb.prep.pdf_corpus import PDF_CITATION_SUFFIX, PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX, PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY
 
 _CITATION_META_FILES = (PDF_CORPUS_MANIFEST, PDF_CORPUS_QUALITY)
 

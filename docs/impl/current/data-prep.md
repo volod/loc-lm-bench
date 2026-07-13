@@ -823,7 +823,7 @@ live under `$DATA_DIR/llb/calibration/` unless deliberately promoted.
 
 ## Chunking
 
-`src/llb/rag/chunking.py` keeps every chunk offset-exact. Strategies:
+The `src/llb/rag/chunking/` package keeps every chunk offset-exact. Strategies:
 
 - `fixed`: dependency-free fixed windows;
 - `sentence`: dependency-free sentence-aware chunks;
@@ -849,7 +849,7 @@ Production RAG indexes are built through `llb build-index` or `make build-index`
 
 `llb build-query-glossary --bundle <draft>` (or `make build-query-glossary BUNDLE=<draft>`) turns a
 draft bundle's `prompt_dictionary_candidates.jsonl` into a `query_glossary.json` for the query-side
-`glossary` step (`src/llb/rag/query_prep.py` `build_glossary_from_candidates`). Each candidate
+`glossary` step (`src/llb/rag/query_prep/glossary.py` `build_glossary_from_candidates`). Each candidate
 `term` becomes a canonical entry carrying its recorded aliases plus a romanized Latin variant
 (`--no-transliterations` disables the seeding); entries are sorted by canonical term for a
 deterministic artifact. Hand-add more surzhyk / transliteration aliases by editing the emitted JSON

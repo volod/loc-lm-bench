@@ -24,8 +24,18 @@ immutable run artifacts, and tier-separated leaderboards.
 
 Tracked `.py` / `.sh` files target a ~250-line SOFT limit (AGENTS.md "File-size soft limit"):
 split along clear functional seams, but keep a single cohesive structure whole rather than
-fragment it. `scripts/code_quality.sh` reports every tracked file over the limit
-(`LINE_SOFT_LIMIT`, default 250) so the backlog stays visible.
+fragment it. `scripts/code_quality.sh` surfaces the backlog two ways: a top-`LONGEST_TOP_K`
+(default 20) longest-code-files-by-lines report covering `.py`/`.sh`/`.mk`/`.awk`/`Makefile`, and
+the full list of `.py`/`.sh` files over the limit (`LINE_SOFT_LIMIT`, default 250), both
+largest-first.
+
+**Split convention.** When a module is split into a package, callers and tests import from the
+specific submodule the symbol now lives in (`from llb.rag.chunking.corpus import chunk_corpus`);
+the package `__init__.py` carries only the package docstring. There is no public release, so a
+re-export shim that preserves the old flat import path is obsolete indirection and is not added --
+every split below now follows this, and no package `__init__` re-exports a former flat module's
+API. (A package meant to be run keeps its idiomatic `__main__`, and `cli/<area>/__init__.py` still
+imports its submodules purely to register commands -- neither is a re-export shim.)
 
 CLI command modules follow a package-per-area shape: `llb/cli/<area>/__init__.py` imports its
 submodules purely to register their `@app.command` handlers on the shared Typer `app` (the same
@@ -36,10 +46,8 @@ security, benchmarks, draft, draft_support, curation}`, `cli/rag/{index, validat
 compare_retrieval, compare_stores}`). Tests that exercised a former flat module's internals import
 them from the specific submodule now.
 
-The same seam-based split has been applied to the largest core-path modules. Each keeps its public
-import path stable -- a former flat module either becomes a package whose `__init__` re-exports the
-public API, or a thin module that re-exports from sibling submodules -- so callers and tests are
-unchanged except for a few monkeypatch targets repointed at the new call-site module:
+The same seam-based split has been applied to the largest core-path modules (callers and tests
+import each symbol from the submodule it lives in):
 
 - `executor/runner.py` (910 lines) is now the `run_eval` orchestrator plus sibling modules
   `runner_setup` (eval inputs / store / query-prep / probes), `runner_backend` (launcher lifecycle
@@ -52,14 +60,37 @@ unchanged except for a few monkeypatch targets repointed at the new call-site mo
 - `prep/ontology/pipeline.py` (786) -> package `prep/ontology/pipeline/{settings, journaling,
   stages, bundle, run}`.
 - `prep/pdf_corpus.py` (739) -> orchestration moved into the existing `prep/pdf` package
-  (`furniture, render, quality, manifest, reuse, ingest`); `pdf_corpus.py` re-exports.
+  (`furniture, render, quality, manifest, reuse, ingest`); the flat `pdf_corpus.py` module is
+  removed and callers import from the `prep/pdf/*` submodules.
 - `goldset/verify_session.py` (730) -> package `goldset/verify_session/{report, commands,
   decision, loop}` (presentation half already in `verify_card.py`).
 - `board/recommend.py` (722) -> package `board/recommend/{model, build, render, sections}`.
 
+The next largest `src/` modules were split the same way:
+
+- `rag/chunking.py` (652) -> package `rag/chunking/{spans, recursive, structure, semantic,
+  dispatch, corpus, build}` plus a `__main__` that keeps `python -m llb.rag.chunking` working.
+- `scoring/external_rag_session.py` (644) -> package `scoring/external_rag_session/{commands,
+  cards, records, prompt, handlers, session}`.
+- `finetune/distill.py` (636) -> package `finetune/distill/{model, gate, dataset_io, defaults,
+  artifacts, run}`.
+- `rag/query_prep.py` (633) -> package `rag/query_prep/{base, normalize, typos, glossary, rewrite,
+  pipeline, report}`.
+- `finetune/campaign.py` (609) -> package `finetune/campaign/{coerce, model, entry, defaults,
+  state, report, run}`.
+
+The largest tracked shell script got the same treatment: `scripts/quickstart.sh` (970) is now a
+138-line entrypoint (process setup + the `QS_*` config block + the logging `main`) that sources
+functional fragments under `scripts/quickstart/` (`helpers`, `model_select`, `pdf_draft`, `serving`,
+`track_a`, `track_b`, `track_c`, `dispatch`). Each fragment carries a `# shellcheck shell=bash`
+directive; the entrypoint and `track_c` carry a scoped `SC2034` disable because their `QS_*` globals
+are consumed by the other sourced fragments.
+
 `core/contracts.py` stays whole as the plan's justified cohesive exception (one dataclass/TypedDict
-family). A backlog of ~77 more `src/` modules and ~36 test modules still sits over the soft limit;
-`scripts/code_quality.sh` lists them largest-first.
+family). A backlog of ~70 more `src/` modules and ~36 test modules still sits over the soft limit;
+`scripts/code_quality.sh` lists them largest-first (both a top-20 longest-by-lines report and the
+full over-limit list), and the limit is soft, so a genuinely cohesive module may stay whole with a
+note.
 
 ## Setup Surface
 

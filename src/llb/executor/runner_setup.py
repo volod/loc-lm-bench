@@ -150,28 +150,30 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
     the corpus vocabulary from the loaded store's chunks; the glossary step loads
     `config.query_glossary_path`; the rewrite step wraps the backend launcher. Missing
     dependencies raise a clear SystemExit rather than a bare error mid-run."""
-    from llb.rag import query_prep as qp
+    from llb.rag.query_prep.base import STEP_GLOSSARY, STEP_REWRITE, STEP_TYPOS
+    from llb.rag.query_prep.pipeline import QueryPrep
+    from llb.rag.query_prep.typos import build_vocabulary
 
     steps = list(config.query_prep)
     if not steps:
         return None
     vocabulary = None
     known_word = None
-    if qp.STEP_TYPOS in steps:
+    if STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
-        vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+        vocabulary = build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
         if config.query_prep_typo_guard:
             from llb.rag.lexical import load_uk_word_probe
 
             known_word = load_uk_word_probe()
-    glossary = _load_query_glossary(config) if qp.STEP_GLOSSARY in steps else None
+    glossary = _load_query_glossary(config) if STEP_GLOSSARY in steps else None
     rewriter = None
-    if qp.STEP_REWRITE in steps:
+    if STEP_REWRITE in steps:
         if launcher is None:
             raise SystemExit("[run-eval] query_prep 'rewrite' step needs a backend launcher")
         rewriter = _launcher_rewriter(config, launcher)
     try:
-        return qp.QueryPrep.build(
+        return QueryPrep.build(
             steps,
             vocabulary=vocabulary,
             glossary=glossary,
@@ -184,7 +186,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
 
 def _load_query_glossary(config: RunConfig) -> Any:
     """The configured query glossary, with clear SystemExit errors for missing configuration."""
-    from llb.rag import query_prep as qp
+    from llb.rag.query_prep.glossary import Glossary
 
     if config.query_glossary_path is None:
         raise SystemExit(
@@ -193,7 +195,7 @@ def _load_query_glossary(config: RunConfig) -> Any:
         )
     if not Path(config.query_glossary_path).is_file():
         raise SystemExit(f"[run-eval] query glossary not found: {config.query_glossary_path}")
-    return qp.Glossary.load(config.query_glossary_path)
+    return Glossary.load(config.query_glossary_path)
 
 
 def _load_store(config: RunConfig) -> Any:

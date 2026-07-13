@@ -235,7 +235,7 @@ def default_gpu_reader() -> tuple[int, int] | None:
 
 
 def _spec_for(model_source: str, manifest: Path) -> "dict[str, Any] | None":
-    from llb.backends.prepare import load_manifest
+    from llb.backends.prepare.manifest import load_manifest
 
     for spec in load_manifest(manifest):
         if spec.get("source") == model_source or spec.get("name") == model_source:

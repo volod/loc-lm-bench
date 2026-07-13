@@ -8,11 +8,8 @@ import pytest
 from llb.backends.vllm import build_vllm_command, served_lora_rank
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult
-from llb.finetune.campaign import (
-    COMPLETE_VERDICT,
-    SKIP_VERDICT,
-    run_finetune_campaign,
-)
+from llb.finetune.campaign.model import COMPLETE_VERDICT, SKIP_VERDICT
+from llb.finetune.campaign.run import run_finetune_campaign
 from llb.finetune.dataset import export_finetune_set
 from llb.finetune.guard import validate_adapter_for_eval
 from llb.finetune.loop import run_self_improve

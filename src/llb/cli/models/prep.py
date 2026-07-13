@@ -46,7 +46,7 @@ def prep_models_cmd(
     cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
 ) -> None:
     """Detect the GPU, pull Ollama tags, and cache vLLM (HF) weights once."""
-    from llb.backends.prepare import prepare_models
+    from llb.backends.prepare.run import prepare_models
 
     models = load_models(manifest)
 
@@ -93,7 +93,8 @@ def prep_serving_targets_cmd(
     cache_dir: Optional[Path] = typer.Option(None, help="HF cache dir for vLLM weights"),
 ) -> None:
     """Pull/cache the concrete models referenced by a generated CUDA-tier serving config."""
-    from llb.backends.prepare import load_serving_targets, prepare_models
+    from llb.backends.prepare.manifest import load_serving_targets
+    from llb.backends.prepare.run import prepare_models
 
     models = load_serving_targets(tier_json)
 

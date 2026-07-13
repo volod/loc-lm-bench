@@ -29,7 +29,7 @@ from typing import Any, Callable, cast
 from llb.goldset.schema import GoldItem, Provenance, SourceSpan, Split, dump_goldset
 from llb.goldset.splits import assign_splits
 from llb.prompts import render_text
-from llb.rag.chunking import iter_docs
+from llb.rag.chunking.corpus import iter_docs
 
 _LOG = logging.getLogger(__name__)
 

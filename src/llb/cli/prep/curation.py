@@ -133,7 +133,7 @@ def import_external_draft_cmd(
     emitted bundle through the usual validate-goldset -> cross-check-goldset -> verify-* chain.
     """
     from llb.prep.external_draft import import_external_draft
-    from llb.prep.ontology.pipeline import default_out_dir
+    from llb.prep.ontology.pipeline.journaling import default_out_dir
 
     if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
         typer.echo(f"[error] retrieval index dir not found: {retrieval_index_dir}", err=True)

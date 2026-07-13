@@ -14,7 +14,7 @@ import pytest
 
 from llb.core.config import RunConfig
 from llb.goldset.schema import load_goldset
-from llb.rag.chunking import chunk_corpus
+from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.compare import OracleDocFilter
 from llb.rag.filters import metadata_filter
 from llb.rag.lexical import LexicalIndex
@@ -105,18 +105,18 @@ def test_load_refuses_hybrid_store_without_lexical_file(tmp_path):
 
 
 def test_run_eval_refuses_hybrid_config_over_dense_store(monkeypatch, tmp_path):
-    from llb.executor import runner
+    from llb.executor import runner_setup
     from llb.rag import store as store_mod
 
     cfg = RunConfig(retrieval_mode="hybrid", data_dir=tmp_path)
     fake = SimpleNamespace(meta={"embedding_model": cfg.embedding_model}, lexical=None)
     monkeypatch.setattr(store_mod.RagStore, "load", classmethod(lambda cls, d: fake))
     with pytest.raises(SystemExit, match="retrieval-mode hybrid"):
-        runner._load_store(cfg)
+        runner_setup._load_store(cfg)
 
 
 def test_run_eval_applies_fusion_knobs_from_the_config(monkeypatch, tmp_path):
-    from llb.executor import runner
+    from llb.executor import runner_setup
     from llb.rag import store as store_mod
 
     cfg = RunConfig(
@@ -129,7 +129,7 @@ def test_run_eval_applies_fusion_knobs_from_the_config(monkeypatch, tmp_path):
         fusion_candidates=50,
     )
     monkeypatch.setattr(store_mod.RagStore, "load", classmethod(lambda cls, d: fake))
-    store = runner._load_store(cfg)
+    store = runner_setup._load_store(cfg)
     assert store.fusion_weight == 0.7 and store.fusion_candidates == 30
 
 

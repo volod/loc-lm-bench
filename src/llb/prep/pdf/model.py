@@ -2,7 +2,7 @@
 
 Constants, the extraction/citation dataclasses, markdown normalization (`clean_pdf_text`), and the
 cheap PyMuPDF diagnostics (`inspect_pdf`) that the per-parser extractor modules and the parent
-`llb.prep.pdf_corpus` orchestration both build on. Depends on nothing else in the package, so it
+the `llb.prep.pdf` orchestration modules both build on. Depends on nothing else in the package, so it
 carries no import cycle.
 """
 

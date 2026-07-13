@@ -75,7 +75,7 @@ def _validate_query_prep(steps: list[str]) -> None:
     """Reject unknown or duplicated query-prep step names (uk-query-processing)."""
     if not steps:
         return
-    from llb.rag.query_prep import QUERY_PREP_STEPS
+    from llb.rag.query_prep.base import QUERY_PREP_STEPS
 
     unknown = [step for step in steps if step not in QUERY_PREP_STEPS]
     if unknown:

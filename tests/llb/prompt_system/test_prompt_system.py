@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from llb.bench import agentic
+from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic.run import run_agentic
 from llb.board.prompt_systems import load_prompt_system_records, prompt_system_comparison
 from llb.prompt_system import budget as bud
 from llb.prompt_system import corpus as cp
@@ -290,14 +291,14 @@ def test_resolve_prompt_package_from_compact_path(tmp_path):
 
 def _two_tasks():
     return [
-        agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
-        agentic.AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
     ]
 
 
 def test_run_agentic_records_prompt_system_and_board_compares(tmp_path):
     # ps1: both succeed (answer contains x); ps2: fails (empty answer)
-    agentic.run_agentic(
+    run_agentic(
         _two_tasks(),
         model="m",
         backend="ollama",
@@ -306,7 +307,7 @@ def test_run_agentic_records_prompt_system_and_board_compares(tmp_path):
         data_dir=tmp_path,
         mirror=lambda *_: None,
     )
-    agentic.run_agentic(
+    run_agentic(
         _two_tasks(),
         model="m",
         backend="ollama",

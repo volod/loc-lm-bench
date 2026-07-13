@@ -18,7 +18,7 @@ from llb.prep.ontology.endpoint import EndpointConfig
 from llb.prep.ontology.extract import LLMExtractionAdapter
 from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.models import DocRecord
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 
 # reuse the trusted fake endpoint + docs from the full-flow test
 from tests.llb.prep.ontology.test_ontology_draft import DOC1, DOC2, fake_endpoint

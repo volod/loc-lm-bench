@@ -45,7 +45,7 @@ from llb.eval.common import EMPTY, MALFORMED, OK
 from llb.eval.map_reduce import run_map_reduce_text
 from llb.prep.frontier import parse_json_block
 from llb.prompts import render_text, render_text_map
-from llb.rag.chunking import iter_docs
+from llb.rag.chunking.corpus import iter_docs
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS, ModelResult, bootstrap_mean_ci
 from llb.scoring.judge import JudgeOutcome

@@ -4,14 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from llb.rag.chunking import (
-    STRATEGIES,
-    chunk_corpus,
-    chunk_text,
-    doc_page_spans,
-    heading_spans,
-    recursive_spans,
-)
+from llb.rag.chunking.corpus import chunk_corpus, chunk_text
+from llb.rag.chunking.dispatch import STRATEGIES
+from llb.rag.chunking.recursive import recursive_spans
+from llb.rag.chunking.structure import doc_page_spans, heading_spans
 from llb.rag.late_encoding import (
     encode_records_late,
     pool_span_vectors,

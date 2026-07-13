@@ -33,7 +33,7 @@ from llb.prep.frontier import (
     parse_json_block,
 )
 from llb.prompts import render_text
-from llb.rag.chunking import iter_docs
+from llb.rag.chunking.corpus import iter_docs
 from llb.scoring.text_analysis import normalize_surface
 
 _LOG = logging.getLogger(__name__)

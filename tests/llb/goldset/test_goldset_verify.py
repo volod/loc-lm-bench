@@ -36,7 +36,7 @@ from llb.goldset.verify import (
     stratify,
     write_worksheet_rows,
 )
-from llb.goldset.verify_session import format_card
+from llb.goldset.verify_card import format_card
 from llb.prep.verified_ledger import apply_verified_ledger, load_verified_ledger
 
 from tests.llb.goldset._verify_helpers import (

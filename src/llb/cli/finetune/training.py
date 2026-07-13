@@ -56,7 +56,7 @@ def finetune_adapter_cmd(
     ),
 ) -> None:
     """Fine-tune a LoRA/QLoRA adapter behind the training seam."""
-    from llb.finetune.hparam_search import trainer_defaults
+    from llb.finetune.hparam_search.manifest_io import trainer_defaults
     from llb.finetune.trainer import train_adapter
 
     cfg = load_config(config)
@@ -117,7 +117,7 @@ def finetune_hparams_cmd(
     ),
 ) -> None:
     """Search the LoRA space for one model on a held-out dev slice of the tuning split."""
-    from llb.finetune.hparam_search import search_hyperparameters
+    from llb.finetune.hparam_search.search import search_hyperparameters
 
     cfg = load_config(config, model=model, backend=backend, goldset_path=goldset)
     result = search_hyperparameters(

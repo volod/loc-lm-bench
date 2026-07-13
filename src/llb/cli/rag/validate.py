@@ -47,10 +47,11 @@ def validate_retrieval(
 ) -> None:
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
     from llb.executor.cases import spans_as_dicts
-    from llb.executor.runner import _load_store
+    from llb.executor.runner_setup import _load_store
     from llb.goldset.schema import load_goldset
-    from llb.rag import query_prep as qp
     from llb.rag import retrieval
+    from llb.rag.query_prep.base import STEP_REWRITE
+    from llb.rag.query_prep.pipeline import QueryPrep
 
     steps = [s.strip() for s in query_prep.split(",") if s.strip()] if query_prep else []
     cfg = load_config(
@@ -68,7 +69,7 @@ def validate_retrieval(
         items = [it for it in items if it.split == split]
     ab_items = [(it.question, spans_as_dicts(it)) for it in items]
 
-    if qp.STEP_REWRITE in steps:
+    if STEP_REWRITE in steps:
         typer.echo(
             "[error] validate-retrieval does not run the 'rewrite' step (it needs a model); "
             "use run-eval --query-prep for the LLM rewrite",
@@ -90,7 +91,7 @@ def validate_retrieval(
         )
         return
 
-    pipeline = qp.QueryPrep.build(
+    pipeline = QueryPrep.build(
         steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
     )
     pairs = [
@@ -120,13 +121,17 @@ def _emit_query_prep_ab_report(
     """Print (and optionally write) the per-step cumulative query-prep A/B retrieval report."""
     import json
 
-    from llb.rag import query_prep as qp
+    from llb.rag.query_prep.report import (
+        cumulative_pipelines,
+        format_query_prep_ab,
+        query_prep_ab_report,
+    )
 
-    stages = qp.cumulative_pipelines(
+    stages = cumulative_pipelines(
         steps, vocabulary=vocabulary, glossary=glossary, known_word=known_word
     )
-    report = qp.query_prep_ab_report(ab_items, store.retrieve, k, stages)
-    typer.echo(qp.format_query_prep_ab(report))
+    report = query_prep_ab_report(ab_items, store.retrieve, k, stages)
+    typer.echo(format_query_prep_ab(report))
     if out is not None:
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")
@@ -136,26 +141,28 @@ def _resolve_query_prep_deps(
     cfg: "RunConfig", store: "Any", steps: list[str]
 ) -> "tuple[Any, Any, Any]":
     """Resolve the (vocabulary, glossary, known-word probe) the query-prep steps need."""
-    from llb.rag import query_prep as qp
+    from llb.rag.query_prep.base import STEP_GLOSSARY, STEP_TYPOS
+    from llb.rag.query_prep.glossary import Glossary
+    from llb.rag.query_prep.typos import build_vocabulary
 
     vocabulary = None
     glossary = None
     known_word = None
-    if qp.STEP_TYPOS in steps:
+    if STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
-        vocabulary = qp.build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+        vocabulary = build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
         if cfg.query_prep_typo_guard:
             from llb.rag.lexical import load_uk_word_probe
 
             known_word = load_uk_word_probe()
-    if qp.STEP_GLOSSARY in steps:
+    if STEP_GLOSSARY in steps:
         if cfg.query_glossary_path is None:
             typer.echo(
                 "[error] the 'glossary' step needs --query-glossary (build-query-glossary)",
                 err=True,
             )
             raise typer.Exit(code=2)
-        glossary = qp.Glossary.load(cfg.query_glossary_path)
+        glossary = Glossary.load(cfg.query_glossary_path)
     return vocabulary, glossary, known_word
 
 
@@ -183,7 +190,7 @@ def build_query_glossary_cmd(
     import json
 
     from llb.prep.ontology.constants import PROMPT_DICTIONARY_FILENAME
-    from llb.rag.query_prep import build_glossary_from_candidates
+    from llb.rag.query_prep.glossary import build_glossary_from_candidates
 
     source = (
         candidates

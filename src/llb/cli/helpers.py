@@ -38,7 +38,7 @@ def resolve_registered_adapter(data_dir: Path, adapter: str) -> Path:
 
 def load_models(manifest: Path) -> list[ModelSpec]:
     """Load a models manifest, reporting a YAML/schema error as a clean one-liner."""
-    from llb.backends.prepare import load_manifest
+    from llb.backends.prepare.manifest import load_manifest
 
     try:
         return load_manifest(manifest)

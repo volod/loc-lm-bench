@@ -105,7 +105,7 @@ def format_self_improvement_section_md(campaign: JsonObject | None) -> str:
 
 def latest_finetune_campaign(data_dir: Path | str) -> JsonObject | None:
     """Newest multi-model fine-tune campaign payload, or None when no campaign exists."""
-    from llb.finetune.campaign import latest_campaign
+    from llb.finetune.campaign.report import latest_campaign
 
     return latest_campaign(data_dir)
 

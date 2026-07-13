@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from llb.board.recommend import Recommendation, _short
+from llb.board.recommend.model import Recommendation, _short
 
 _LOG = logging.getLogger(__name__)
 

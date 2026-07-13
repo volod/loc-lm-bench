@@ -115,7 +115,7 @@ def _run_pdf_markdown_ingest(
     limit: Optional[int],
     refresh: bool = False,
 ) -> None:
-    from llb.prep.pdf_corpus import ingest_pdf_corpus
+    from llb.prep.pdf.ingest import ingest_pdf_corpus
 
     try:
         result = ingest_pdf_corpus(

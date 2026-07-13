@@ -40,7 +40,8 @@ def probe_context_position_cmd(
         run_probe,
         write_probe,
     )
-    from llb.executor.runner import _load_store, _make_launcher
+    from llb.executor.runner_backend import _make_launcher
+    from llb.executor.runner_setup import _load_store
     from llb.goldset.schema import load_goldset
 
     cfg = load_config(
@@ -110,14 +111,11 @@ def analyze_misses_cmd(
     """Explain one run's wrong answers: classify every miss (retrieval / generation / refusal /
     format artifact / judge disagreement), cluster by document, topic, and question type, and
     write ranked, evidence-backed recommendations that `llb recommend` folds into its summary."""
-    from llb.board.miss_analysis import (
-        DEFAULT_MISS_THRESHOLD,
-        analysis_out_dir,
-        analyze_run,
-        load_item_provenance,
-        refresh_recommendations,
-        write_analysis,
-    )
+    from llb.board.miss_analysis.classify import analyze_run
+    from llb.board.miss_analysis.load import load_item_provenance
+    from llb.board.miss_analysis.model import DEFAULT_MISS_THRESHOLD
+    from llb.board.miss_analysis.recommendations import refresh_recommendations
+    from llb.board.miss_analysis.report import analysis_out_dir, write_analysis
     from llb.board.miss_probe import parse_probe_depths, run_probes
     from llb.board.runs import load_run_records
     from llb.core.paths import resolve_data_dir
@@ -215,7 +213,7 @@ def score_external_rag_cmd(
     ),
 ) -> None:
     """Interactively score an external RAG JSONL; finalize CSV + report when complete."""
-    from llb.scoring.external_rag_session import run_external_rag_session
+    from llb.scoring.external_rag_session.session import run_external_rag_session
 
     try:
         run_external_rag_session(

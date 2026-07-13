@@ -14,7 +14,7 @@ from llb.goldset.verify import (
     load_worksheet,
     write_worksheet_rows,
 )
-from llb.goldset.verify_session import (
+from llb.goldset.verify_card import (
     ACCEPT_CMD,
     CHECK,
     HELP,
@@ -23,16 +23,17 @@ from llb.goldset.verify_session import (
     PREV,
     QUIT,
     REJECT_CMD,
-    SESSION_STATS_FILENAME,
     Command,
-    SessionStats,
-    _go_forward,
-    _go_undecided,
-    decided_count,
-    first_undecided_index,
     format_card,
     parse_command,
-    run_session,
+)
+from llb.goldset.verify_session.commands import _go_forward, _go_undecided
+from llb.goldset.verify_session.loop import run_session
+from llb.goldset.verify_session.report import (
+    SESSION_STATS_FILENAME,
+    SessionStats,
+    decided_count,
+    first_undecided_index,
     throughput_line,
 )
 

@@ -11,7 +11,7 @@ from llb.core.contracts import ChunkRecord
 from llb.eval import common as eval_common
 from llb.eval.graph import make_retrieve_node
 from llb.executor.cases import score_case
-from llb.executor.runner import _stage_latency
+from llb.executor.runner_metrics import _stage_latency
 from llb.rag.rerank import RerankingRetriever, maybe_wrap_reranker, rerank_chunks
 
 

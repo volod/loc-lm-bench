@@ -3,7 +3,16 @@
 import json
 
 
-from llb.bench import agentic
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.model import (
+    STATUS_COMPLETED,
+    STATUS_INCOMPLETE,
+    AgenticTask,
+    Episode,
+)
+from llb.bench.agentic.run import load_tasks_file, run_agentic
+from llb.bench.agentic.success import check_assertion, check_success
+from llb.bench.agentic.trajectory import _trajectory_records, trajectory_quality
 from llb.bench import tool_world as tw
 from llb.scoring.aggregate import TIER_AGENTIC
 
@@ -52,26 +61,18 @@ def test_tool_world_bad_args():
 
 def test_check_assertions():
     world = tw.ToolWorld(files={"r.txt": "84"}, db={"capital": "Київ"})
-    assert agentic.check_assertion(
-        {"kind": "file_equals", "path": "r.txt", "value": "84"}, world, ""
-    )
-    assert agentic.check_assertion(
-        {"kind": "db_equals", "key": "capital", "value": "київ"}, world, ""
-    )
-    assert agentic.check_assertion(
-        {"kind": "answer_contains", "value": "15"}, world, "зросло на 15%"
-    )
-    assert not agentic.check_assertion(
-        {"kind": "file_equals", "path": "r.txt", "value": "0"}, world, ""
-    )
+    assert check_assertion({"kind": "file_equals", "path": "r.txt", "value": "84"}, world, "")
+    assert check_assertion({"kind": "db_equals", "key": "capital", "value": "київ"}, world, "")
+    assert check_assertion({"kind": "answer_contains", "value": "15"}, world, "зросло на 15%")
+    assert not check_assertion({"kind": "file_equals", "path": "r.txt", "value": "0"}, world, "")
 
 
 def test_check_success_requires_all_and_nonempty():
     world = tw.ToolWorld(db={"k": "v"})
-    task = agentic.AgenticTask("t", "p", success=[{"kind": "db_equals", "key": "k", "value": "v"}])
-    assert agentic.check_success(task, world, "") is True
-    empty = agentic.AgenticTask("t", "p", success=[])
-    assert agentic.check_success(empty, world, "") is False  # no assertions never passes
+    task = AgenticTask("t", "p", success=[{"kind": "db_equals", "key": "k", "value": "v"}])
+    assert check_success(task, world, "") is True
+    empty = AgenticTask("t", "p", success=[])
+    assert check_success(empty, world, "") is False  # no assertions never passes
 
 
 # --- episode loop -------------------------------------------------------------------------
@@ -83,7 +84,7 @@ def scripted(outputs):
 
 
 def test_run_episode_success_with_tools():
-    task = agentic.AgenticTask(
+    task = AgenticTask(
         "t",
         "обчисли і запиши",
         setup={},
@@ -96,18 +97,18 @@ def test_run_episode_success_with_tools():
             '{"name":"finish","arguments":{"answer":"готово"}}',
         ]
     )
-    ep = agentic.run_episode(task, complete)
+    ep = run_episode(task, complete)
     assert ep.success is True
-    assert ep.status == agentic.STATUS_COMPLETED
+    assert ep.status == STATUS_COMPLETED
     assert ep.n_tool_calls == 2 and ep.n_steps == 3
 
 
 def test_run_episode_budget_exhausted_is_incomplete():
-    task = agentic.AgenticTask("t", "p", success=[{"kind": "answer_contains", "value": "x"}])
+    task = AgenticTask("t", "p", success=[{"kind": "answer_contains", "value": "x"}])
     # always calls a tool, never finishes
     complete = lambda _: '{"name":"db_get","arguments":{"key":"k"}}'  # noqa: E731
-    ep = agentic.run_episode(task, complete, max_steps=3)
-    assert ep.status == agentic.STATUS_INCOMPLETE
+    ep = run_episode(task, complete, max_steps=3)
+    assert ep.status == STATUS_INCOMPLETE
     assert ep.n_steps == 3 and ep.success is False
 
 
@@ -116,14 +117,12 @@ def test_run_episode_budget_exhausted_is_incomplete():
 
 def test_run_agentic_completion_rate_and_persist(tmp_path):
     tasks = [
-        agentic.AgenticTask(
+        AgenticTask(
             "a",
             "calc+write",
             success=[{"kind": "file_equals", "path": "result.txt", "value": "84"}],
         ),
-        agentic.AgenticTask(
-            "b", "db", success=[{"kind": "db_equals", "key": "capital", "value": "Київ"}]
-        ),
+        AgenticTask("b", "db", success=[{"kind": "db_equals", "key": "capital", "value": "Київ"}]),
     ]
     # global sequence of complete() calls across both episodes, in order
     complete = scripted(
@@ -135,7 +134,7 @@ def test_run_agentic_completion_rate_and_persist(tmp_path):
             '{"name":"finish","arguments":{"answer":"done"}}',
         ]
     )
-    run = agentic.run_agentic(
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",
@@ -151,8 +150,8 @@ def test_run_agentic_completion_rate_and_persist(tmp_path):
 
 
 def test_run_agentic_failing_model():
-    tasks = agentic.load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
-    run = agentic.run_agentic(
+    tasks = load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",
@@ -170,8 +169,8 @@ def test_run_agentic_reports_meter_throughput(tmp_path):
 
     meter = ThroughputMeter()
     meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
-    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
-    run = agentic.run_agentic(
+    tasks = [AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",
@@ -186,17 +185,17 @@ def test_run_agentic_reports_meter_throughput(tmp_path):
 
 
 def test_load_tasks_file_and_from_record_coerces_success():
-    tasks = agentic.load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
+    tasks = load_tasks_file("samples/benchmarks/agentic_tasks_uk.json")
     assert len(tasks) == 4 and all(t.success for t in tasks)
-    one = agentic.AgenticTask.from_record(
+    one = AgenticTask.from_record(
         {"id": "x", "prompt": "p", "success": {"kind": "answer_contains", "value": "y"}}
     )
     assert isinstance(one.success, list) and len(one.success) == 1
 
 
 def test_agentic_case_row_shape():
-    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "hi"}])]
-    run = agentic.run_agentic(
+    tasks = [AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "hi"}])]
+    run = run_agentic(
         tasks, model="m", backend="ollama", complete=lambda _: "hi there", persist=False
     )
     row = run.rows[0]
@@ -216,21 +215,21 @@ def fake_judge(faith=0.8, relevancy=0.6):
 
 
 def test_trajectory_quality_averages_the_two_signals():
-    assert agentic.trajectory_quality({"faithfulness": 0.8, "answer_relevancy": 0.6}) == 0.7
+    assert trajectory_quality({"faithfulness": 0.8, "answer_relevancy": 0.6}) == 0.7
 
 
 def test_trajectory_records_carry_observations_as_context():
-    task = agentic.AgenticTask("t", "обчисли", success=[])
-    episode = agentic.Episode(
+    task = AgenticTask("t", "обчисли", success=[])
+    episode = Episode(
         success=False,
-        status=agentic.STATUS_COMPLETED,
+        status=STATUS_COMPLETED,
         n_steps=1,
         n_tool_calls=1,
         answer="готово",
         world=tw.ToolWorld(),
         transcript=[("calculator", {"expression": "2+2"}, "4")],
     )
-    recs = agentic._trajectory_records([task], [episode])
+    recs = _trajectory_records([task], [episode])
     assert recs[0]["answer"] == "готово"
     assert "обчисли" in recs[0]["question"]
     assert recs[0]["contexts"] == ['calculator({"expression": "2+2"}) -> 4']
@@ -238,11 +237,11 @@ def test_trajectory_records_carry_observations_as_context():
 
 def test_agentic_gated_judge_trusted_records_quality(tmp_path):
     tasks = [
-        agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
-        agentic.AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
     ]
     # the model finishes with an empty answer -> objective completion stays 0
-    run = agentic.run_agentic(
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",
@@ -261,8 +260,8 @@ def test_agentic_gated_judge_trusted_records_quality(tmp_path):
 
 
 def test_agentic_gated_judge_below_threshold_is_demoted():
-    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
-    run = agentic.run_agentic(
+    tasks = [AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",
@@ -277,8 +276,8 @@ def test_agentic_gated_judge_below_threshold_is_demoted():
 
 
 def test_agentic_no_judge_is_objective_only():
-    tasks = [agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
-    run = agentic.run_agentic(
+    tasks = [AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}])]
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",

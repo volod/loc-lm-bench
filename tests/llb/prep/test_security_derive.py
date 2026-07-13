@@ -179,7 +179,7 @@ def test_scaffolded_worksheet_drives_shared_review_session(tmp_path):
     # The derived worksheet must drive the SAME interactive review session as goldset/chain
     # verification: feeding `y` (accept) per row + `q` decides every row through the shared UI.
     from llb.goldset.verify_base import load_worksheet, worksheet_fieldnames, write_worksheet_rows
-    from llb.goldset.verify_session import run_session
+    from llb.goldset.verify_session.loop import run_session
 
     cases = sd.derive_security_cases(_extractions())
     path = tmp_path / "verify_sample.csv"

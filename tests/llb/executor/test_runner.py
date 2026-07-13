@@ -14,7 +14,7 @@ from llb.backends.base import BackendLauncher, ChatResult
 from llb.core.config import RunConfig
 from llb.eval import common
 from llb.eval import graph
-from llb.executor import runner as runner_module
+from llb.executor import runner_setup
 from llb.executor.runner import run_eval
 from llb.goldset.schema import GoldItem
 from llb.prompt_system.template import PromptPackage, TemplateFields
@@ -356,7 +356,7 @@ def test_score_case_records_semantic_with_embedder():
 
 def test_make_launcher_resolves_vllm():
     from llb.backends.vllm import VllmLauncher
-    from llb.executor.runner import _make_launcher
+    from llb.executor.runner_backend import _make_launcher
 
     cfg = RunConfig(
         backend="vllm",
@@ -453,7 +453,7 @@ def test_load_store_refuses_embedder_mismatch(tmp_path, monkeypatch):
     monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
     cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
     with pytest.raises(SystemExit, match="embedder mismatch"):
-        runner_module._load_store(cfg)
+        runner_setup._load_store(cfg)
 
 
 def test_load_store_accepts_matching_embedder(tmp_path, monkeypatch):
@@ -462,4 +462,4 @@ def test_load_store_accepts_matching_embedder(tmp_path, monkeypatch):
 
     monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
     cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
-    assert isinstance(runner_module._load_store(cfg), _FakeStore)
+    assert isinstance(runner_setup._load_store(cfg), _FakeStore)

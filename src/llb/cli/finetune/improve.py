@@ -33,7 +33,7 @@ def distill_cmd(
     ),
 ) -> None:
     """Distill tuning-split teacher answers into a student LoRA adapter."""
-    from llb.finetune.distill import run_distillation
+    from llb.finetune.distill.run import run_distillation
 
     cfg = load_config(
         config, model=student, backend=backend, goldset_path=goldset, corpus_root=corpus
@@ -115,7 +115,7 @@ def finetune_campaign_cmd(
     ),
 ) -> None:
     """Run the local self-improvement loop across a roster and rank tunability."""
-    from llb.finetune.campaign import run_finetune_campaign
+    from llb.finetune.campaign.run import run_finetune_campaign
 
     cfg = load_config(config, backend=backend, goldset_path=goldset, corpus_root=corpus)
     specs = planning_models(manifest) if manifest is not None else None

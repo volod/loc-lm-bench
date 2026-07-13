@@ -142,7 +142,7 @@ def plant_from_corpus(
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """Load a corpus dir (`.md`/`.txt`) and plant corpus-specific security cases over it."""
-    from llb.rag.chunking import iter_docs
+    from llb.rag.chunking.corpus import iter_docs
 
     docs = dict(iter_docs(Path(corpus_root)))
     if not docs:

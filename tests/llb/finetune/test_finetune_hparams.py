@@ -8,19 +8,23 @@ import pytest
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject
 from llb.finetune.dataset import subset_dataset
-from llb.finetune.hparam_search import (
+from llb.finetune.hparam_search.dev_slice import (
+    carve_dev_slice,
+    carve_stratified_dev_slice,
+    load_base_scores,
+)
+from llb.finetune.hparam_search.manifest_io import (
+    latest_hparams_manifest,
+    trainer_defaults,
+)
+from llb.finetune.hparam_search.model import (
     HPARAMS_MANIFEST,
     HPARAMS_METHOD,
     STATE_COMPLETE,
     STATE_PRUNED,
-    assert_tuning_only,
-    carve_dev_slice,
-    carve_stratified_dev_slice,
-    latest_hparams_manifest,
-    load_base_scores,
-    search_hyperparameters,
-    trainer_defaults,
 )
+from llb.finetune.hparam_search.search import search_hyperparameters
+from llb.finetune.hparam_search.space import assert_tuning_only
 from llb.finetune.loop import run_self_improve
 from llb.finetune.naming import model_slug
 from llb.finetune.trainer import fake_train_adapter, load_adapter_manifest
@@ -230,7 +234,7 @@ FIXTURE_ARCH = {"hidden_size": 4096, "n_layers": 32}
 
 
 def test_adapter_footprint_estimate_is_hand_computable():
-    from llb.finetune.hparam_search import adapter_param_estimate, estimated_adapter_train_mib
+    from llb.finetune.hparam_search.space import adapter_param_estimate, estimated_adapter_train_mib
 
     params = {"lora_r": 8, "target_modules": ["q_proj", "v_proj"]}
     # 32 layers x 2 modules x 2 matrices x 4096 hidden x rank 8 = 4,194,304 params
@@ -412,7 +416,7 @@ def test_study_is_deterministic_for_a_seed(tmp_path: Path):
 @pytest.mark.slow
 def test_sampled_effective_batch_is_the_product_of_its_geometry(tmp_path: Path):
     """finetune-hparams-effective-batch-axis: the two batch knobs are never independently drawn."""
-    from llb.finetune.hparam_search import BATCH_GEOMETRY_CHOICES, MAX_LENGTH_CHOICES
+    from llb.finetune.hparam_search.model import BATCH_GEOMETRY_CHOICES, MAX_LENGTH_CHOICES
 
     dataset = _dataset(tmp_path)
     config = _config(tmp_path)

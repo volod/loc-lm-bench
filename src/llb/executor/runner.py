@@ -10,8 +10,9 @@ Ollama, or GPU. The default path wires the real components and uses the compiled
 LangGraph app.
 
 The run's building blocks live in sibling modules -- inputs (`runner_setup`), backend
-lifecycle (`runner_backend`), judge scoring (`runner_judge`), and metrics
-(`runner_metrics`) -- re-exported below so their stable import paths are unchanged.
+lifecycle (`runner_backend`), judge scoring (`runner_judge`), metrics (`runner_metrics`),
+and run-target resolution (`runner_target`). Import each helper from the module it lives in;
+this module owns only `run_eval`.
 """
 
 import logging
@@ -28,38 +29,27 @@ from llb.executor import durability
 from llb.executor.cases import batch_retrieval_records
 from llb.executor.reporting import emit_summary
 from llb.executor.runner_backend import (
-    _guard_vllm_contention,  # noqa: F401  (re-exported: stable import path)
-    _make_launcher,  # noqa: F401  (re-exported: llb.bench.common, cli.eval.analysis, tests)
-    _preserve_backend_log,  # noqa: F401  (re-exported: stable import path)
     _preserve_failed_staging,
-    _resolve_eval_runner,  # re-exported: llb.finetune.distill
-    _vram_reader,  # noqa: F401  (re-exported: stable import path)
+    _resolve_eval_runner,
 )
 from llb.executor.runner_judge import (
     JudgeScorer,
     _build_judge_metadata,
     _judge_cases,
-    _judge_ratings,  # noqa: F401  (re-exported: stable import path)
     _write_calibration_worksheet,
 )
 from llb.executor.runner_metrics import (
     _aggregate,
-    _attach_answer_side_metrics,  # noqa: F401  (re-exported: tests)
     _collect_optional_telemetry,
-    _stage_latency,  # noqa: F401  (re-exported: tests)
 )
 from llb.executor.runner_setup import (
-    _load_eval_items,  # noqa: F401  (re-exported: stable import path)
-    _load_store,  # noqa: F401  (re-exported: cli.eval.analysis, cli.rag.validate, rag.compare)
     _maybe_run_probes,
     _score_options,
     _select_eval_items,
-    build_query_prep,  # noqa: F401  (re-exported: tests)
 )
 from llb.executor.runner_target import (
     _eval_config_payload,
     _resolve_run_target,
-    _run_timestamp,  # noqa: F401  (re-exported: tests monkeypatch this name)
 )
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval

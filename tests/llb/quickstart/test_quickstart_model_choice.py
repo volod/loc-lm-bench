@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from llb.board.recommend import HostInfo, build_recommendation, recommendation_payload
+from llb.board.recommend.build import build_recommendation
+from llb.board.recommend.model import HostInfo
+from llb.board.recommend.render import recommendation_payload
 from llb.quickstart import model_choice
 from tests.llb.board.test_recommend import COHORT, MAMAYLM_V2_12B, MAMAYLM_V2_27B, _summary
 

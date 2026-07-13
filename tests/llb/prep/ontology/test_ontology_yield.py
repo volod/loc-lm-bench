@@ -32,7 +32,7 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
 )
 from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 from llb.prep.ontology.question_types import classify_question_type
 from llb.prep.ontology.refine import refine_drafts_labeled
 

@@ -14,22 +14,8 @@ verified -- a frontier cross-check and a human sample-verify (human verification
 `complete` and `extraction_adapter` are injectable, so the whole flow is unit-tested with a
 fake endpoint and never needs a server or a provider key.
 
-The implementation is split into `settings` (the DraftSettings/PipelineResult data objects),
-`journaling` (resumable bundle setup), `stages` (the seed/draft/graph/dedup stages), `bundle`
-(emit + provenance), and `run` (the `draft_goldset` orchestrator); the public API is re-exported
-here so callers keep importing `llb.prep.ontology.pipeline`.
+Submodules (import from the specific one you need -- there is no re-export surface): `settings`
+(the DraftSettings/PipelineResult data objects), `journaling` (resumable bundle setup), `stages`
+(the seed/draft/graph/dedup stages), `bundle` (emit + provenance), and `run` (the `draft_goldset`
+orchestrator).
 """
-
-from llb.prep.ontology.pipeline.bundle import _log_calibration_gates
-from llb.prep.ontology.pipeline.journaling import default_out_dir, load_journal_meta
-from llb.prep.ontology.pipeline.run import draft_goldset
-from llb.prep.ontology.pipeline.settings import DraftSettings, PipelineResult
-
-__all__ = [
-    "DraftSettings",
-    "PipelineResult",
-    "_log_calibration_gates",
-    "default_out_dir",
-    "draft_goldset",
-    "load_journal_meta",
-]

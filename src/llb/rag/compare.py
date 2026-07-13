@@ -161,7 +161,7 @@ def build_chunking_comparison(
     """
     from pathlib import Path
 
-    from llb.rag.chunking import STRATEGIES
+    from llb.rag.chunking.dispatch import STRATEGIES
     from llb.rag.store import RagStore
 
     unknown = [s for s in strategies if s not in STRATEGIES]
@@ -283,7 +283,7 @@ def load_compare_stores(config: Any) -> dict[str, Retriever]:
     """
     import logging
 
-    from llb.executor.runner import _load_store
+    from llb.executor.runner_setup import _load_store
     from llb.graph.constants import (
         BACKEND_GRAPH,
         STRATEGY_GLOBAL_COMMUNITY,

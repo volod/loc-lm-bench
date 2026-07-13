@@ -163,7 +163,7 @@ def test_prep_models_exits_nonzero_on_failed_rows(monkeypatch, tmp_path: Path) -
             ],
         }
 
-    monkeypatch.setattr("llb.backends.prepare.prepare_models", fake_prepare_models)
+    monkeypatch.setattr("llb.backends.prepare.run.prepare_models", fake_prepare_models)
 
     with pytest.raises(SystemExit) as exc:
         prep.prep_models_cmd(manifest=tmp_path / "models.yaml")
@@ -172,7 +172,7 @@ def test_prep_models_exits_nonzero_on_failed_rows(monkeypatch, tmp_path: Path) -
 
 
 def test_prep_serving_targets_exits_nonzero_on_failed_rows(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("llb.backends.prepare.load_serving_targets", lambda _path: [])
+    monkeypatch.setattr("llb.backends.prepare.manifest.load_serving_targets", lambda _path: [])
 
     def fake_prepare_models(*_args, **_kwargs):
         return {
@@ -188,7 +188,7 @@ def test_prep_serving_targets_exits_nonzero_on_failed_rows(monkeypatch, tmp_path
             ],
         }
 
-    monkeypatch.setattr("llb.backends.prepare.prepare_models", fake_prepare_models)
+    monkeypatch.setattr("llb.backends.prepare.run.prepare_models", fake_prepare_models)
 
     with pytest.raises(SystemExit) as exc:
         prep.prep_serving_targets_cmd(tier_json=tmp_path / "tier.json")

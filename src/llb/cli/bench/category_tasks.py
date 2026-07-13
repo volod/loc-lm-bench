@@ -48,7 +48,8 @@ def bench_agentic_cmd(
     ),
 ) -> None:
     """Score a model's task completion in the deterministic tool-world under TIER_AGENTIC."""
-    from llb.bench.agentic import HARNESS_NAMES, AgenticRun, load_tasks_file, run_agentic
+    from llb.bench.agentic.model import HARNESS_NAMES, AgenticRun
+    from llb.bench.agentic.run import load_tasks_file, run_agentic
     from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
 
     if harness not in HARNESS_NAMES:

@@ -12,7 +12,7 @@ from llb.prep.ontology.feedback import (
     feedback_hints,
     load_rejection_feedback,
 )
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 
 DOC = "Alpha керує Beta. Beta належить Gamma. Alpha заснована 1991 року в Києві."
 

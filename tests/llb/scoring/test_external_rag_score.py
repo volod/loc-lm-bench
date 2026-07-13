@@ -10,7 +10,9 @@ from llb.scoring.external_rag import (
     load_jsonl,
     score_external_rag_file,
 )
-from llb.scoring.external_rag_session import PROMPT_HINT, format_card, run_external_rag_session
+from llb.scoring.external_rag_session.cards import format_card
+from llb.scoring.external_rag_session.commands import PROMPT_HINT
+from llb.scoring.external_rag_session.session import run_external_rag_session
 
 
 def test_clean_answer_strips_source_footer_before_scoring():

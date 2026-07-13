@@ -30,7 +30,7 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
 )
 from llb.prep.ontology.needles import annotate_needle_retrieval
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 
 from tests.llb.prep.ontology._ontology_fixtures import DOC1, DOC2
 
@@ -473,7 +473,7 @@ def test_calibration_gates_fail_on_empty_draft(tmp_path):
 def test_pipeline_warns_and_names_the_blocking_gate(caplog):
     # the pipeline acts on the roll-up: a failing required gate is a WARNING that names it, so a
     # PDF run with no citation-valid needle is flagged (informational gates never appear here)
-    from llb.prep.ontology.pipeline import _log_calibration_gates
+    from llb.prep.ontology.pipeline.bundle import _log_calibration_gates
 
     report = {
         "gates": {

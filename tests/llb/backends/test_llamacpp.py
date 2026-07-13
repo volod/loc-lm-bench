@@ -177,7 +177,7 @@ def test_collect_telemetry_records_n_gpu_layers_and_served_context():
 
 def test_make_launcher_builds_llamacpp_from_config(tmp_path):
     from llb.core.config import RunConfig
-    from llb.executor.runner import _make_launcher
+    from llb.executor.runner_backend import _make_launcher
 
     cfg = RunConfig(
         model="hf.co/org/Repo-GGUF:Q4_K_M",

@@ -174,7 +174,7 @@ and their parents are annotated, so the fields surface on retrieval hits either 
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
 "file X, page N, section Y" without re-deriving the join.
 
-Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking.py`, and
+Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking/corpus.py`, and
 `src/llb/rag/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
 `metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
 `metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
@@ -430,7 +430,7 @@ retrieval query is transformed -- and every step is honest: an A/B report attrib
 recall@k / MRR delta before anyone turns the lane on by default. Off by default (`query_prep`
 empty is an exact no-op).
 
-`src/llb/rag/query_prep.py` is a pure, unit-testable pipeline of NAMED steps (no store, model,
+The `src/llb/rag/query_prep/` package is a pure, unit-testable pipeline of NAMED steps (no store, model,
 or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 
 - `normalize` -- matching-side casefold, apostrophe-variant unification (U+2019 / U+02BC / `'`),
@@ -525,7 +525,7 @@ the `typos` step is in use.
 
 ## Chunking Strategies
 
-`src/llb/rag/chunking.py` implements every strategy behind one seam
+The `src/llb/rag/chunking/` package implements every strategy behind one seam in `dispatch.py`
 (`chunk_spans -> (start, end, metadata)`), each anchored to `doc_id` + exact character offsets so
 `validate-goldset` and source-span scoring work identically across strategies:
 

@@ -4,17 +4,18 @@ import json
 
 import pytest
 
-from llb.board.recommend import (
-    HostInfo,
-    RunSummary,
+from llb.board.recommend.build import (
     build_recommendation,
-    format_config_detail_md,
-    format_finetune_campaign_section_md,
-    format_summary_md,
     load_config_cells,
     load_run_summaries,
+)
+from llb.board.recommend.model import HostInfo, RunSummary
+from llb.board.recommend.render import (
+    format_config_detail_md,
+    format_summary_md,
     recommendation_payload,
 )
+from llb.board.recommend.sections import format_finetune_campaign_section_md
 from llb.board.runs import RunRecord
 from llb.scoring.aggregate import ModelResult
 
@@ -140,7 +141,7 @@ def test_recommendation_ranks_only_dominant_cohort():
 
 
 def test_select_cohort_breaks_ties_on_larger_n_cases():
-    from llb.board.recommend import select_cohort
+    from llb.board.recommend.build import select_cohort
 
     # Two cohorts of equal model count (2 each): the larger-n cohort is the more robust comparison.
     summaries = [

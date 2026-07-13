@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Callable
 
 from llb.bench.common import new_run_timestamp
-from llb.board.miss_analysis import analyze_run, load_item_provenance, write_analysis
+from llb.board.miss_analysis.classify import analyze_run
+from llb.board.miss_analysis.load import load_item_provenance
+from llb.board.miss_analysis.report import write_analysis
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject
 from llb.core.fsutil import atomic_write_text
@@ -227,7 +229,7 @@ def register_round_adapter(
 
 def _default_trainer_fn(config: RunConfig, trainer: str) -> TrainerFn:
     """Train through the seam, defaulting hyperparameters to this model's recorded search."""
-    from llb.finetune.hparam_search import trainer_defaults
+    from llb.finetune.hparam_search.manifest_io import trainer_defaults
 
     def train(dataset: Path, model: str, adapter: Path, seed: int) -> JsonObject:
         return train_adapter(
