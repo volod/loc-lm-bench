@@ -1,6 +1,7 @@
 """judge diagnostics judge diagnostics -- classifier, summary, gated wiring, strict-JSON smoke."""
 
-from llb.bench import agentic
+from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic.run import run_agentic
 from llb.bench.common import run_gated_judge
 from llb.judge.experiment import judge_smoke_check
 from llb.scoring import judge_diag as jd
@@ -112,10 +113,10 @@ def test_run_gated_judge_demoted_has_no_diagnostics():
 
 def test_run_agentic_records_judge_diagnostics(tmp_path):
     tasks = [
-        agentic.AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
-        agentic.AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("a", "p", success=[{"kind": "answer_contains", "value": "x"}]),
+        AgenticTask("b", "p", success=[{"kind": "answer_contains", "value": "x"}]),
     ]
-    run = agentic.run_agentic(
+    run = run_agentic(
         tasks,
         model="m",
         backend="ollama",

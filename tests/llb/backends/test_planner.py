@@ -1,22 +1,25 @@
 import json
 
-import llb.backends.planner as planner
+import llb.backends.planner.architecture as architecture
 from llb.backends.hardware import parse_meminfo
-from llb.backends.planner import (
+from llb.backends.planner.architecture import arch_from_config, enrich_arch
+from llb.backends.planner.constants import (
     VERDICT_GPU,
     VERDICT_NO,
     VERDICT_OFFLOAD,
     VERDICT_UNKNOWN,
-    arch_from_config,
+)
+from llb.backends.planner.kv import (
     attention_layer_split,
-    embedding_params,
-    enrich_arch,
-    hi_precision_params,
     kv_mib_at_context,
     kv_mib_per_token,
     max_context,
     max_context_for_kv,
-    plan_model,
+)
+from llb.backends.planner.plan import plan_model
+from llb.backends.planner.weights import (
+    embedding_params,
+    hi_precision_params,
     resolve_bpw,
     weights_mib,
     weights_mib_detailed,
@@ -215,7 +218,7 @@ def test_enrich_arch_fills_missing_from_cache(tmp_path, monkeypatch):
             }
         )
     )
-    monkeypatch.setattr(planner, "cached_config_path", lambda _repo: cfg)
+    monkeypatch.setattr(architecture, "cached_config_path", lambda _repo: cfg)
     spec = {"name": "g", "backend": "vllm", "source": "org/model", "params_b": 12, "quant": "w4a16"}
     out = enrich_arch(spec)
     assert out["vocab_size"] == 262144 and out["hidden_size"] == 3840
@@ -226,7 +229,7 @@ def test_enrich_arch_fills_missing_from_cache(tmp_path, monkeypatch):
 
 def test_enrich_arch_skips_non_hf_sources(monkeypatch):
     seen: list[str] = []
-    monkeypatch.setattr(planner, "cached_config_path", lambda r: seen.append(r))  # type: ignore[func-returns-value]
+    monkeypatch.setattr(architecture, "cached_config_path", lambda r: seen.append(r))  # type: ignore[func-returns-value]
     ollama = enrich_arch({"name": "m", "backend": "ollama", "source": "llama3.2:3b"})
     gguf = enrich_arch({"name": "m", "backend": "ollama", "source": "hf.co/org/x-GGUF:Q4_K_M"})
     assert ollama.get("vocab_size") is None and gguf.get("vocab_size") is None
@@ -288,7 +291,7 @@ def test_arch_from_config_derives_pattern_from_layer_types():
 def test_enrich_arch_override_replaces_curated(tmp_path, monkeypatch):
     cfg = tmp_path / "config.json"
     cfg.write_text(json.dumps({"num_hidden_layers": 48, "sliding_window": 1024}))
-    monkeypatch.setattr(planner, "cached_config_path", lambda _repo: cfg)
+    monkeypatch.setattr(architecture, "cached_config_path", lambda _repo: cfg)
     spec = {"name": "g", "backend": "vllm", "source": "org/model", "n_layers": 99}
     # default fill-gaps keeps the curated (wrong) n_layers
     assert enrich_arch(spec)["n_layers"] == 99

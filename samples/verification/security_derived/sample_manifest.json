@@ -1,0 +1,15 @@
+{
+  "kind": "committed-sample-fixture-review",
+  "artifact": "../../benchmarks/security_cases_derived_uk.json",
+  "worksheet": "verify_sample.csv",
+  "sample_size": 24,
+  "population": 24,
+  "strata": {
+    "derived|security|benign_control": 8,
+    "derived|security|bias_pair": 8,
+    "derived|security|defamation": 3,
+    "derived|security|group_hate": 2,
+    "derived|security|pii_doxxing": 3
+  },
+  "note": "Human-reviewed derived security cases (denial-guard + benign controls + bias pairs). Repository verification reference for smoke/demo + regression only."
+}

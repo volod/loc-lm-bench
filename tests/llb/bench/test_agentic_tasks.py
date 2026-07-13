@@ -1,7 +1,8 @@
 """agentic benchmark real-UA-corpus agentic search-task generation (count + locate), deterministic."""
 
 from llb.bench import agentic_tasks as at
-from llb.bench.agentic import AgenticTask, run_episode
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.model import AgenticTask
 
 CORPUS = {
     "energy": "Звіт про відновлювану енергетику України. Сонячні станції зросли.",

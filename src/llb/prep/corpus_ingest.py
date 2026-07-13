@@ -20,13 +20,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.prep.pdf_corpus import (
-    PDF_SUFFIX,
-    PdfTextExtractor,
-    _sha256_file,
-    default_markdown_out_dir,
-    ingest_pdf_corpus,
-)
+from llb.prep.pdf.ingest import ingest_pdf_corpus
+from llb.prep.pdf.model import PDF_SUFFIX, PdfTextExtractor
+from llb.prep.pdf.render import default_markdown_out_dir
+from llb.prep.pdf.reuse import _sha256_file
 from llb.prep.corpus_governance import (
     DEFAULT_SOURCE_SYSTEM,
     manifest_items_fingerprint,

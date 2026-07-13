@@ -7,7 +7,7 @@ from llb.goldset.schema import load_goldset
 from llb.goldset.validate import validate_items
 from llb.prep.published_goldset import SOURCE_SHA256, build_fixture, select_context_diverse
 from llb.prep.ua_squad_source import DATASET_ID, DATASET_REVISION, DATASET_SPLIT
-from llb.rag.chunking import chunk_corpus
+from llb.rag.chunking.corpus import chunk_corpus
 from llb.core.paths import PROJECT_ROOT
 
 FIXTURE_ROOT = PROJECT_ROOT / "samples" / "goldsets" / "ua_squad_postedited_v1"

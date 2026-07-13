@@ -6,12 +6,8 @@ and the CrewAI crew. It adds NO behavior: it just forwards to `run_episode` with
 catalog, so the loop's results are unchanged by the agentic harness comparison refactor.
 """
 
-from llb.bench.agentic import (
-    DEFAULT_MAX_STEPS,
-    AgenticTask,
-    Episode,
-    run_episode,
-)
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask, Episode
 from llb.bench.common import LLMComplete
 from llb.core.contracts import ToolDef
 

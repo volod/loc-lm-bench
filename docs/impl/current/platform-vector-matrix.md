@@ -137,7 +137,7 @@ the right quant per host -- so the sweep/host-fit path matches the per-tier serv
 Model-prep expansion (`_expand_prepare_sources`) mirrors the shape: each listed quant becomes its
 own prep artifact (`<name>-vllm-<quant>`), so `prep-models` caches every quant that fits the card.
 `make list-models` likewise expands a multi-quant entry into one fit row per quant
-(`_expand_quant_variants` in `src/llb/cli/models.py`), so the host-fit table shows the fp8 row the
+(`_expand_quant_variants` in `src/llb/cli/models/prep.py`), so the host-fit table shows the fp8 row the
 resolver would pick on a big card -- not just the parent quant -- while `resolve-models` still
 prints the single chosen backend. Single-source entries are unchanged throughout.
 
@@ -145,7 +145,7 @@ prints the single chosen backend. Single-source entries are unchanged throughout
 
 `prep-models` / `prep-serving-targets` reuse any artifact already in its backend store and refuse a
 download up front when the destination filesystem cannot hold it, so a multi-GiB pull never fails an
-hour in (`src/llb/backends/prepare.py`). The check is reuse-aware: a vLLM repo whose `config.json`
+hour in (`src/llb/backends/prepare/stores.py`). The check is reuse-aware: a vLLM repo whose `config.json`
 is already in the HF hub cache, or an Ollama tag the running daemon serves, skips the precheck and
 re-uses the cache. The Ollama reuse signal is authoritative -- it asks the daemon via the same
 `/api/tags` probe the resolver uses, so a tag in any store the daemon is configured with counts,

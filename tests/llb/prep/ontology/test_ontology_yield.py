@@ -11,7 +11,7 @@ from llb.goldset.chains import load_chains, validate_chains
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
 from llb.graph.model import GraphEdge, GraphMention, GraphNode, KnowledgeGraph
-from llb.prep.ontology.artifacts import write_calibration_artifacts
+from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,
@@ -20,7 +20,7 @@ from llb.prep.ontology.constants import (
 )
 from llb.prep.ontology.coverage import coverage_report, select_seeds
 from llb.prep.ontology.dedup import NearDuplicateFilter, load_prior_questions
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig, EndpointPlan
 from llb.prep.ontology.chains import build_chain_items
 from llb.prep.ontology.graph_paths import walk_chain_paths, walk_two_hop_paths
 from llb.prep.ontology.models import (
@@ -32,7 +32,7 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
 )
 from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 from llb.prep.ontology.question_types import classify_question_type
 from llb.prep.ontology.refine import refine_drafts_labeled
 
@@ -496,10 +496,11 @@ def test_full_flow_multi_hop_adds_multi_span_items_and_labels(tmp_path):
     (corpus / "chain.md").write_text(CHAIN_DOC, encoding="utf-8")
     out = tmp_path / "bundle"
 
+    config = EndpointConfig(kind="local", model="fake")
     result = draft_goldset(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=_chain_endpoint,
+        EndpointPlan.single(config),
+        completers=EndpointCompleters.single(_chain_endpoint),
         max_items=50,
         coverage_target=2,
         multi_hop=True,
@@ -536,17 +537,20 @@ def test_full_flow_dedup_against_prior_bundle_drops_repeats(tmp_path):
     first = tmp_path / "first"
     second = tmp_path / "second"
 
+    config = EndpointConfig(kind="local", model="fake")
+    plan = EndpointPlan.single(config)
+    completers = EndpointCompleters.single(_chain_endpoint)
     draft_goldset(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=_chain_endpoint,
+        plan,
+        completers=completers,
         max_items=50,
         out_dir=first,
     )
     result = draft_goldset(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=_chain_endpoint,
+        plan,
+        completers=completers,
         max_items=50,
         out_dir=second,
         dedup_against=[first],

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from llb.prep.ontology.constants import SUPPORTED_SUFFIXES
 from llb.prep.ontology.models import DocRecord, Section
-from llb.rag.chunking import iter_docs
+from llb.rag.chunking.corpus import iter_docs
 
 _LOG = logging.getLogger(__name__)
 

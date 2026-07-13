@@ -27,6 +27,13 @@
   small number of input parameters into well-named, self-contained functions. Maximally reuse
   existing code and avoid repeating yourself (DRY). You must proactively evaluate your work
   against these principles after completing any sizable feature implementation.
+- **File-size soft limit (~250 lines):** Aim to keep every tracked `.py` and `.sh` file at or
+  under ~250 lines. This is a SOFT target, not a hard gate: split a file only along a clear
+  functional seam that improves readability (e.g. a CLI module into per-command submodules, a
+  runner into phase helpers). Functionality beats the formal count -- when a single cohesive,
+  regular structure (one lookup table, one dataclass family, one exhaustive match) reads better
+  whole, keep it whole even past 250 lines rather than fragmenting it. `scripts/code_quality.sh`
+  reports files over the soft limit so the list stays visible.
 - **Artifacts:** Runtime data and run artifacts belong under
   `$DATA_DIR/<method_name>/<run_timestamp>/`. Never write to a module-local data inside `src/`.
 - **Shell Scripts:** Reuse `scripts/shared/common.sh` for shared shell root/env/bootstrap

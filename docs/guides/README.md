@@ -34,6 +34,7 @@ docs/guides/
 | Review and accept AI-drafted data (the human gate) | [Verification tooling](human-tooling/verification-tooling.md) |
 | Decide whether to trust the LLM judge | [Calibration tooling](human-tooling/calibration-tooling.md) |
 | Run one model through the RAG core | [Run RAG core](benchmarking/run-rag-core.md) |
+| Estimate a local model's real-world knowledge cutoff | [Knowledge cutoff](benchmarking/knowledge-cutoff.md) |
 | Compare serving backends or hardware tiers | [Platform matrix](benchmarking/platform-matrix.md), [vLLM backend](benchmarking/vllm-backend.md) |
 | Compare retrieval strategies (FAISS vs GraphRAG) | [Graph vs FAISS](benchmarking/graph-vs-faiss-comparison.md) |
 | Tune and compare prompt systems | [Prompt-system lane](benchmarking/prompt-system-rag.md) |
@@ -104,6 +105,8 @@ corpus-specific walkthroughs.
 
 - [Run RAG core](benchmarking/run-rag-core.md) -- retrieve -> generate -> score for one local
   model; the smallest complete scored run.
+- [Knowledge cutoff](benchmarking/knowledge-cutoff.md) -- fit a local model's effective public-event
+  knowledge horizon with reproducible Optuna and MLflow reports.
 - [vLLM backend + telemetry](benchmarking/vllm-backend.md) -- install vLLM, cache weights, and
   run the eval on a real GPU backend with throughput/VRAM/power telemetry.
 - [Platform matrix](benchmarking/platform-matrix.md) -- same logical model base across Ollama /

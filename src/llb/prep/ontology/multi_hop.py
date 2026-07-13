@@ -14,7 +14,8 @@ import logging
 from typing import Any
 
 from llb.goldset.schema import GoldItem, SourceSpan, Split
-from llb.prep.frontier import LLMComplete, ground_span, parse_json_block
+from llb.prep.frontier import ground_span, parse_json_block
+from llb.prep.frontier_telemetry import DraftBudgetExceeded, LLMComplete
 from llb.prep.ontology.constants import (
     DRAFT_CONTEXT_RADIUS,
     MULTI_HOP_DIFFICULTY,
@@ -80,6 +81,8 @@ def draft_multi_hop(
             _LOG.warning("[ontology] unparseable multi-hop draft; skipping")
             drafts.append(None)
             continue
+        except DraftBudgetExceeded:
+            raise
         except Exception as exc:  # endpoint/transport error -> skip this seed, keep going
             _LOG.warning("[ontology] multi-hop draft call failed: %s", exc)
             drafts.append(None)

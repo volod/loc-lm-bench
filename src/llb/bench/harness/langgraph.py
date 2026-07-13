@@ -12,15 +12,15 @@ from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.bench.agentic import (
+from llb.bench.agentic.episode import build_agent_prompt
+from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     STATUS_COMPLETED,
     STATUS_INCOMPLETE,
     AgenticTask,
     Episode,
-    build_agent_prompt,
-    check_success,
 )
+from llb.bench.agentic.success import check_success
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
 from llb.core.contracts import ToolDef

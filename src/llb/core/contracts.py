@@ -249,6 +249,7 @@ class SecurityCaseRow(TypedDict):
     refusal_quality: NotRequired[float]  # gated-judge refusal quality (only when judge is trusted)
     lang: NotRequired[str]  # prompt language (uk | ru | en); present for cross-language cases
     xlang_group: NotRequired[str]  # matched-prompt group id (same behavior across languages)
+    pair_id: NotRequired[str]  # matched bias-pair id (same behavior, entity/group swapped)
     answer_preview: str
 
 

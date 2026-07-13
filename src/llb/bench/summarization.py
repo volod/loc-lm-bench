@@ -23,6 +23,7 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
     mean,
     persist_category_run,
@@ -43,7 +44,7 @@ from llb.eval.common import EMPTY, OK
 from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_SUMMARIZATION, ModelResult, bootstrap_mean_ci
-from llb.scoring.judge import JudgeOutcome
+from llb.scoring.judge.model import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ class _SummarizationPersistInput:
     faithfulness: _FaithfulnessResult
     judge_config: _JudgeConfig
     verification_cfg: dict[str, object]
+    tokens_per_s: float
     mirror: Mirror | None
 
 
@@ -222,11 +224,13 @@ def _run_faithfulness_judge(
     return _FaithfulnessResult(outcome=outcome, value=None, ci=None)
 
 
-def _summarization_metrics(result: ModelResult, reliability: float) -> RunMetrics:
+def _summarization_metrics(
+    result: ModelResult, reliability: float, tokens_per_s: float
+) -> RunMetrics:
     return {
         "objective_score": result.objective_score,  # mean reference coverage
         "reliability": reliability,
-        "tokens_per_s": 0.0,
+        "tokens_per_s": tokens_per_s,
     }
 
 
@@ -273,7 +277,9 @@ def _persist_summarization_run(request: _SummarizationPersistInput) -> RunPaths 
         data_dir=request.data_dir,
         run_name=request.run_name,
         config=_summarization_config(request),
-        metrics=_summarization_metrics(request.result, request.scored.reliability),
+        metrics=_summarization_metrics(
+            request.result, request.scored.reliability, request.tokens_per_s
+        ),
         case_rows=request.scored.rows,
         judge=_summarization_judge_status(request.judge_config, request.faithfulness.outcome),
         mirror=request.mirror,
@@ -306,13 +312,15 @@ def run_summarization(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> SummarizationRun:
     """Score one model's summaries by reference coverage under TIER_SUMMARIZATION.
 
     Objective reference coverage is the headline. When a judge is configured AND trusted
     (`judge_rho >= judge_threshold`), an opt-in faithfulness signal is recorded ALONGSIDE (per-case
     + mean + CI) but never folded into the headline; otherwise the judge is demoted and coverage
-    ranks alone. `judge_scorer` is injectable for tests.
+    ranks alone. `judge_scorer` is injectable for tests. A `meter` (populated by the endpoint
+    `complete`) supplies the run's real generation tok/s.
     """
     if not cases:
         raise SystemExit("no summarization cases provided")
@@ -330,12 +338,14 @@ def run_summarization(
     )
     faithfulness = _run_faithfulness_judge(cases, scored, judge_config)
 
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_SUMMARIZATION,
         case_objectives=scored.coverages,
         reliability=scored.reliability,
+        tokens_per_s=tokens_per_s,
     )
     board, table = render_board([result])
     paths = (
@@ -351,6 +361,7 @@ def run_summarization(
                 faithfulness=faithfulness,
                 judge_config=judge_config,
                 verification_cfg=verification_cfg,
+                tokens_per_s=tokens_per_s,
                 mirror=mirror,
             )
         )

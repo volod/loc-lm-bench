@@ -7,23 +7,23 @@ import pytest
 from typer.testing import CliRunner
 
 from llb.cli import app
-from llb.prep import pdf_corpus as pc
-
-from llb.prep.pdf_corpus import (
+from llb.prep.pdf import ingest as pdf_ingest
+from llb.prep.pdf.furniture import strip_page_furniture
+from llb.prep.pdf.ingest import ingest_pdf_corpus
+from llb.prep.pdf.model import (
     DOCLING_TOOL,
     PARSER_AUTO,
     PDF_CORPUS_MANIFEST,
     PDF_CORPUS_QUALITY,
     PYMUPDF4LLM_TOOL,
+    PdfCorpusItem,
+    PdfCorpusResult,
     PdfDiagnostics,
     PdfExtraction,
     PdfPageChunk,
     clean_pdf_text,
-    doc_id_for_pdf,
-    ingest_pdf_corpus,
-    iter_pdf_files,
-    strip_page_furniture,
 )
+from llb.prep.pdf.render import default_markdown_out_dir, doc_id_for_pdf, iter_pdf_files
 
 RUNNER = CliRunner()
 
@@ -172,8 +172,7 @@ def test_auto_parser_selects_highest_quality_candidate(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -196,7 +195,7 @@ def test_auto_parser_selects_highest_quality_candidate(
             )
         raise RuntimeError(f"missing {tool}")
 
-    monkeypatch.setattr(pc, "extract_pdf_markdown", fake_extract)
+    monkeypatch.setattr("llb.prep.pdf.quality.extract_pdf_markdown", fake_extract)
 
     result = ingest_pdf_corpus(pdf_root, tmp_path / "corpus", parser=PARSER_AUTO, min_chars=10)
 
@@ -219,8 +218,7 @@ def test_short_image_only_pdf_reports_clean_diagnostic(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -255,8 +253,7 @@ def test_image_only_auto_attempts_ocr_layout_candidates(
     source.write_bytes(b"%PDF")
 
     monkeypatch.setattr(
-        pc,
-        "inspect_pdf",
+        "llb.prep.pdf.ingest.inspect_pdf",
         lambda _path: PdfDiagnostics(
             page_count=2,
             encrypted=False,
@@ -267,8 +264,7 @@ def test_image_only_auto_attempts_ocr_layout_candidates(
         ),
     )
     monkeypatch.setattr(
-        pc,
-        "extract_pdf_markdown",
+        "llb.prep.pdf.quality.extract_pdf_markdown",
         lambda _path, tool: PdfExtraction(text="", parser=tool),
     )
 
@@ -379,20 +375,20 @@ def test_pdf_to_markdown_cli_defaults_out_dir(
         parser: str,
         limit: int | None,
         refresh: bool,
-    ) -> pc.PdfCorpusResult:
+    ) -> PdfCorpusResult:
         seen["pdf_root"] = pdf_root_arg
         seen["out_dir"] = out_dir_arg
         seen["min_chars"] = min_chars
         seen["parser"] = parser
         seen["limit"] = limit
         seen["refresh"] = refresh
-        return pc.PdfCorpusResult(
+        return PdfCorpusResult(
             pdf_root=pdf_root_arg,
-            out_dir=pc.default_markdown_out_dir(pdf_root_arg),
-            items=[pc.PdfCorpusItem(source="a.pdf", doc_id="pdf-a.md", n_chars=500, status="ok")],
+            out_dir=default_markdown_out_dir(pdf_root_arg),
+            items=[PdfCorpusItem(source="a.pdf", doc_id="pdf-a.md", n_chars=500, status="ok")],
         )
 
-    monkeypatch.setattr(pc, "ingest_pdf_corpus", fake_ingest_pdf_corpus)
+    monkeypatch.setattr(pdf_ingest, "ingest_pdf_corpus", fake_ingest_pdf_corpus)
 
     result = RUNNER.invoke(app, ["pdf-to-markdown", str(pdf_root), "--limit", "1"])
 

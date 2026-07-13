@@ -15,7 +15,7 @@ INJECTED as a `similarity(a, b) -> float` callable, so scoring is unit-testable 
 embedder; `embedder_similarity()` supplies the production default over the pinned embedder.
 
 Free-form sub-tasks (narrative / insight / long-doc) carry an objective floor here but their
-headline quality is the GATED judge (`llb.scoring.judge`), entering only when trusted.
+headline quality is the GATED judge (`llb.scoring.judge.model`), entering only when trusted.
 """
 
 from dataclasses import dataclass, field

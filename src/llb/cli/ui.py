@@ -73,22 +73,26 @@ def recommend_cmd(
     model-comparison chart (needs the [viz] extra). The recommended-for-host pick is the
     highest-accuracy model that is Pareto-optimal and fits the GPU tier's VRAM budget with headroom.
     """
-    from llb.board.miss_analysis import latest_analysis
-    from llb.board.recommend import (
-        HostInfo,
+    from llb.board.miss_analysis.report import latest_analysis
+    from llb.board.recommend.build import (
         build_recommendation,
+        load_config_cells,
+        load_run_summaries,
+    )
+    from llb.board.recommend.model import HostInfo
+    from llb.board.recommend.render import (
         format_config_detail_md,
+        format_summary_md,
+        recommendation_payload,
+    )
+    from llb.board.recommend.sections import (
         format_chain_context_section_md,
         format_finetune_campaign_section_md,
         format_miss_section_md,
         format_self_improvement_section_md,
-        format_summary_md,
         latest_chain_context,
         latest_finetune_campaign,
         latest_self_improvement,
-        load_config_cells,
-        load_run_summaries,
-        recommendation_payload,
     )
     from llb.inference.generate import resolve_tier
     from llb.core.paths import resolve_data_dir

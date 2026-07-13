@@ -1,14 +1,10 @@
 import pytest
 
-from llb.rag.chunking import (
-    chunk_text,
-    fixed_spans,
-    markdown_spans,
-    recursive_spans,
-    semantic_spans,
-    sentence_chunk_spans,
-    sentence_spans,
-)
+from llb.rag.chunking.corpus import chunk_text
+from llb.rag.chunking.recursive import recursive_spans
+from llb.rag.chunking.semantic import semantic_spans
+from llb.rag.chunking.spans import fixed_spans, sentence_chunk_spans, sentence_spans
+from llb.rag.chunking.structure import markdown_spans
 
 TEXT = "Перше речення. Друге речення! Третє речення?\n\nНовий абзац тут. І ще одне."
 
@@ -113,7 +109,7 @@ def test_recursive_spans_offsets_in_range():
 def test_recursive_spans_fails_loudly_on_version_drift(monkeypatch):
     # The recursive splitter is version-pinned so chunk boundaries stay reproducible; an
     # unexpected version must fail early instead of silently producing different chunks.
-    import llb.rag.chunking as ch
+    import llb.rag.chunking.recursive as ch
 
     monkeypatch.setattr(ch, "_recursive_splitter_cls", None)
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.0.0")

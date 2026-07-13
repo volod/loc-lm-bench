@@ -26,7 +26,8 @@ from llb.core.config import (
     DEFAULT_FUSION_WEIGHT,
 )
 from llb.core.contracts import ChunkRecord, RagStoreMeta
-from llb.rag.chunking import chunk_corpus, chunk_spans
+from llb.rag.chunking.corpus import chunk_corpus
+from llb.rag.chunking.dispatch import chunk_spans
 from llb.rag.embedding import Embedder
 from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors

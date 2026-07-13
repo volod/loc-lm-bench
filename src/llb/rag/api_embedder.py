@@ -14,7 +14,7 @@ unit-tested without any network or key.
 
 from typing import Any, Callable
 
-from llb.prep.frontier import ProvenanceLog
+from llb.prep.frontier_telemetry import ProvenanceLog
 
 # Cohere `input_type` values -- the API analogue of the local query/passage seam.
 COHERE_QUERY_INPUT_TYPE = "search_query"

@@ -91,7 +91,7 @@ def _verification_error(config: JsonObject, verification_ref: object, run_dir: P
         return None
     if not verification_ref:
         return "missing verification_ref"
-    from llb.goldset.verify import check_verification_ref
+    from llb.goldset.verify_refcheck import check_verification_ref
 
     status = check_verification_ref(str(verification_ref), base_dir=run_dir)
     return status.reason if not status.valid else None

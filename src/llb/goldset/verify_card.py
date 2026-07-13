@@ -9,7 +9,7 @@ session loop) builds on these; both share the worksheet schema from `verify.py`.
 import json
 from dataclasses import dataclass
 
-from llb.goldset.verify import CHECK_COLS, KIND_CHAINS, REJECT_CODES
+from llb.goldset.verify_base import CHECK_COLS, KIND_CHAINS, REJECT_CODES
 
 _CHAIN_SEPARATOR = "+" * 64
 _CHAIN_DEFAULT_WIDTH = 120

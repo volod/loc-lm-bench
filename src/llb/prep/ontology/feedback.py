@@ -1,7 +1,7 @@
 """Rejection-feedback loop for the drafting pipeline (draft-feedback-rejection-reasons).
 
 The verify gate exports WHY items were rejected (`rejection_reasons.json`, written by
-`llb.goldset.verify.write_rejection_reasons` from the closed reject-code set). This module
+`llb.goldset.verify_acceptance.write_rejection_reasons` from the closed reject-code set). This module
 closes the loop: `prepare-goldset-draft --rejection-feedback <file>` maps each dominant reject
 code to a deterministic draft-prompt hint, so a re-draft after a failed acceptance does not get
 the same prompts that produced the rejected items. The applied hints and the feedback file's
@@ -21,7 +21,7 @@ from typing import Any
 
 _LOG = logging.getLogger(__name__)
 
-# One prompt hint per closed reject code (`llb.goldset.verify.REJECT_CODES`). The hints speak
+# One prompt hint per closed reject code (`llb.goldset.verify_base.REJECT_CODES`). The hints speak
 # the drafter's language (Ukrainian, like the draft prompt) and each names the failure the
 # reviewers actually rejected for.
 REJECT_CODE_HINTS: dict[str, str] = {

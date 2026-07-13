@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from llb.bench.agentic import ASSERT_ANSWER_CONTAINS
+from llb.bench.agentic.model import ASSERT_ANSWER_CONTAINS
 from llb.prompts import render_text
 
 _LOG = logging.getLogger(__name__)
@@ -165,7 +165,7 @@ def build_from_corpus(
     corpus_root: Path | str, *, top_k: int = 8, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """Load a corpus dir (`.md`/`.txt`) and build deterministic real-corpus search tasks."""
-    from llb.rag.chunking import iter_docs
+    from llb.rag.chunking.corpus import iter_docs
 
     corpus = dict(iter_docs(Path(corpus_root)))
     if not corpus:

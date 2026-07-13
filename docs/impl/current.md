@@ -17,6 +17,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Model resolution, sweeps, tuning, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |
 | VRAM planning, contention guard, llama.cpp, ontology drafting | [Robust backends](current/robustness-ontology-backends.md) |
 | Security, tooling, agentic, summarization, structured, text analysis | [Category suite](current/category-benchmark-suite.md) |
+| Effective real-world knowledge cutoff for local models | [Knowledge cutoff](current/knowledge-cutoff.md) |
 | Prompt template registry and review workflow | [Prompt templates](current/prompt-templates.md) |
 | Knowledge-graph retrieval and graph-vs-vector comparison | [GraphRAG](current/graphrag-backend.md) |
 | Backend matrix, power telemetry, vector-store adapters | [Platform matrix](current/platform-vector-matrix.md) |

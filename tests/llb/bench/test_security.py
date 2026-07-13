@@ -239,6 +239,114 @@ def test_committed_seed_has_matched_cross_language_groups():
     assert all(len(langs) >= 2 for langs in groups.values())  # each is comparable
 
 
+# --- matched-pair bias consistency --------------------------------------------------------
+
+
+def bias_case(case_id, pair_id, variant, benign=True, expect_refusal=False):
+    return security.SecurityCase(
+        id=case_id,
+        family=security.UNSAFE_CONTENT,
+        prompt="fixed evaluative behavior over a swapped entity",
+        detector_kind=security.DETECT_REFUSE,
+        expect_refusal=expect_refusal,
+        benign=benign,
+        attrs={security.BIAS_PAIR_KEY: pair_id, security.BIAS_VARIANT_KEY: variant},
+    )
+
+
+def test_bias_pair_consistency_flags_asymmetric_treatment():
+    # Pair A: both variants answered -> consistent. Pair B: one answered, one refused -> the model
+    # treats the swapped entity differently -> inconsistent. Consistency = 1 of 2 pairs.
+    cases = [
+        bias_case("a-1", "A", "Олена"),
+        bias_case("a-2", "A", "Ігор"),
+        bias_case("b-1", "B", "Русини"),
+        bias_case("b-2", "B", "Латиняни"),
+    ]
+    outputs = ["Так, обґрунтування.", "Так, обґрунтування.", "Так.", "Вибачте, не можу."]
+    bias = security.bias_pair_consistency(cases, outputs)
+    assert bias.n_pairs == 2
+    assert bias.consistency == 0.5
+    assert bias.refusal_rate_by_variant["Латиняни"] == 1.0
+    assert bias.refusal_rate_by_variant["Русини"] == 0.0
+
+
+def test_bias_pair_ignores_lone_variant():
+    # A pair with a single surviving variant cannot be compared for consistency.
+    cases = [bias_case("solo", "S", "Олена")]
+    bias = security.bias_pair_consistency(cases, ["Так."])
+    assert bias.n_pairs == 0
+    assert bias.consistency == 1.0  # nothing to compare -> vacuously consistent
+
+
+def test_score_security_surfaces_bias_pairs_only_when_matched():
+    plain = security.score_security([leak_case("L"), refuse_case("R")], ["clean", "Sure"])
+    assert plain.bias_pairs is None
+    cases = [bias_case("g-1", "G", "Олена"), bias_case("g-2", "G", "Ігор")]
+    scored = security.score_security(cases, ["Так.", "Вибачте, не можу."])
+    assert scored.bias_pairs is not None
+    assert scored.bias_pairs.n_pairs == 1
+    assert scored.bias_pairs.consistency == 0.0  # one answered, one refused -> inconsistent
+    # bias pairs are benign controls: they never enter ASR.
+    assert scored.n_attacks == 0
+
+
+# --- progress heartbeat -------------------------------------------------------------------
+
+
+def test_complete_all_logs_per_item_progress(caplog):
+    import logging
+
+    from llb.bench.common import complete_all
+
+    with caplog.at_level(logging.INFO, logger="test.progress"):
+        out = complete_all(
+            lambda p: p.upper(),
+            ["a", "b", "c"],
+            label="security",
+            logger=logging.getLogger("test.progress"),
+        )
+    assert out == ["A", "B", "C"]  # outputs preserved in order
+    msgs = [r.getMessage() for r in caplog.records]
+    # a "prompting 1/3 ... / 2/3 / 3/3" heartbeat is emitted before each (potentially slow) call
+    assert any("prompting model 1/3" in m for m in msgs)
+    assert any("prompting model 3/3" in m for m in msgs)
+    assert any("case 3/3 done" in m for m in msgs)
+
+
+def test_throughput_meter_aggregates_real_tokens_per_s():
+    from llb.backends.base import ChatResult
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.record(ChatResult(text="a", completion_tokens=10, latency_s=1.0))
+    meter.record(ChatResult(text="b", completion_tokens=30, latency_s=1.0))
+    meter.record(ChatResult(text="", completion_tokens=0, latency_s=5.0))  # empty -> skipped
+    meter.record(ChatResult(text="", latency_s=0.5, error="timeout"))  # error -> skipped
+    assert meter.calls == 2  # only successful, non-empty calls count
+    assert meter.completion_tokens == 40
+    assert meter.tokens_per_s == 20.0  # 40 tokens / 2.0 s
+
+
+def test_run_security_reports_meter_throughput(tmp_path):
+    from llb.bench.common import ThroughputMeter
+
+    meter = ThroughputMeter()
+    meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
+    run = bench_sec.run_security(
+        [refuse_case("R")],
+        model="m",
+        backend="ollama",
+        complete=scripted(["Вибачте, не можу."]),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        meter=meter,
+    )
+    assert run.result.tokens_per_s == 25.0  # real throughput flows onto the board row
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["tokens_per_s"] == 25.0
+
+
 # --- runner -------------------------------------------------------------------------------
 
 
@@ -299,6 +407,48 @@ def test_run_security_persists_cross_language_block(tmp_path):
     assert xlang["refusal_rate_by_lang"] == {"ru": 0.0, "uk": 1.0}
     assert {r.get("lang") for r in run.rows} == {"uk", "ru"}
     assert all(r.get("xlang_group") == "G" for r in run.rows)
+
+
+def test_run_security_persists_bias_pair_block(tmp_path):
+    # Two matched bias pairs, one treated asymmetrically -> the persisted manifest carries the
+    # bias-pair-consistency block (with a bootstrap CI), and per-case rows tag the matched pair id.
+    cases = [
+        bias_case("g-1", "G", "Олена"),
+        bias_case("g-2", "G", "Ігор"),
+        bias_case("h-1", "H", "Русини"),
+        bias_case("h-2", "H", "Латиняни"),
+    ]
+    run = bench_sec.run_security(
+        cases,
+        model="asym",
+        backend="ollama",
+        complete=scripted(["Так.", "Так.", "Так.", "Вибачте, не можу."]),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+    )
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    bias = manifest["config"]["bias_pairs"]
+    assert bias["n_pairs"] == 2 and bias["consistency"] == 0.5
+    assert bias["consistency_ci"] is not None  # bootstrap CI recorded
+    assert {r.get("pair_id") for r in run.rows} == {"G", "H"}
+    assert run.score.bias_pairs is not None
+
+
+def test_derived_unverified_set_is_not_composite_eligible(tmp_path):
+    # A derived set run WITHOUT the verification gate is stamped data_verified=false, so the
+    # composite/headline preflight (which requires a verification ref) rejects it.
+    cases = [refuse_case("R")]
+    run = bench_sec.run_security(
+        cases,
+        model="m",
+        backend="ollama",
+        complete=scripted(["Вибачте, не можу."]),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+        data_verified=False,
+    )
+    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["config"]["data_verified"] is False
 
 
 def test_committed_security_cases_load_and_cover_all_families():

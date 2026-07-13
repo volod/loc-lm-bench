@@ -1,7 +1,7 @@
 """Attach page/section provenance to chunks, strategy-independent and additive.
 
 `build-index` chunks a corpus into offset-exact `(doc_id, char_start, char_end)` spans. When a
-document was produced by the PDF lane (`llb.prep.pdf_corpus`), a `*.citations.json` sidecar sits
+document was produced by the PDF lane (`llb.prep.pdf`), a `*.citations.json` sidecar sits
 beside it mapping each source-PDF page to a character span in the rendered `.md`. This module
 joins the two: every chunk whose char span intersects a page span gains
 
@@ -20,8 +20,8 @@ import logging
 from pathlib import Path
 
 from llb.core.contracts import ChunkRecord, JsonObject
-from llb.prep.pdf_corpus import PDF_CITATION_SUFFIX
-from llb.rag.chunking import _MD_HEADER
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX
+from llb.rag.chunking.structure import _MD_HEADER
 
 _LOG = logging.getLogger(__name__)
 

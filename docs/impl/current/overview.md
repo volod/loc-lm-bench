@@ -20,11 +20,41 @@ immutable run artifacts, and tier-separated leaderboards.
 - **Canonical artifacts first.** Run bundles write `manifest.json` and per-case scores before
   optional MLflow mirroring. MLflow is an analysis mirror, not the source of record.
 
+## Code Organization
+
+Tracked Python and shell files target the ~250-line soft limit in `AGENTS.md`. Split only at a
+clear functional boundary; a cohesive schema or lookup family may remain whole. Run
+`scripts/code_quality.sh` to see file size and complexity findings.
+
+Callers import symbols from their concrete owner module. Package `__init__.py` files contain only
+the package docstring, except CLI area packages whose imports register Typer commands. Runnable
+packages may provide `__main__.py`; compatibility re-exports are not part of the package design.
+
+Current focused package boundaries:
+
+| Concern | Modules |
+| --- | --- |
+| CLI registration | `src/llb/cli/<area>/` with command-specific submodules |
+| Host feasibility | `backends/planner/` for architecture, weights, KV sizing, plans, and formatting |
+| Evaluation execution | `executor/runner.py`, `runner_setup.py`, `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_target.py` |
+| Board analysis | `board/miss_analysis/` and `board/recommend/` |
+| Fine-tuning workflows | `finetune/campaign/`, `distill/`, `hparam_search/`, `registry/`, and `serving/` |
+| Gold verification | `goldset/verify/`, `verify_sampling/`, `verify_multi/`, and `verify_session/` |
+| Ontology and PDF preparation | `prep/ontology/pipeline/`, `prep/ontology/artifacts/`, and `prep/pdf/` |
+| RAG preparation | `rag/chunking/` and `rag/query_prep/` |
+| External RAG review | `scoring/external_rag/` and `scoring/external_rag_session/` |
+| Judge scoring and rating | `scoring/judge/` and `judge/rate/` |
+| Text-analysis benchmark | `bench/text_analysis/` |
+
+`scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
+from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,
+`track_c`, and `dispatch`.
+
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
-Python `>=3.12`; pytest has no legacy interpreter-specific warning filters, and build-helper tests
-derive fake wheel ABI tags from the running supported interpreter.
+Python `>=3.12`; pytest and build-helper tests derive their behavior and fake wheel ABI tags from
+the running supported interpreter.
 
 ```bash
 make
@@ -78,22 +108,8 @@ The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_
 it estimates and confirms the full draft runtime. Benchmark, manual local, and `frontier`
 `litellm` routes remain explicit overrides.
 
-Latest validated goldset quickstart evidence on the 16 GiB RTX 4060 Ti host:
-`$DATA_DIR/llb/logs/quickstart/quickstart-goldset-20260630-142055.log`. The run detected
-`gpu_tier=16`, built 311 FAISS chunks, passed retrieval with `recall@10=0.980` and `mrr=0.847`,
-prepared MamayLM, Lapa, Gemma 4, and Qwen 3.6 serving targets from the generated tier config,
-resumed four completed default-family sweep cells (Qwen 3.6, MamayLM 12B, MamayLM 27B, and Lapa),
-ran one platform-matrix Ollama row for `gemma4:e4b` with quality `0.420` and `61.37` tok/s,
-skipped missing vLLM and llama.cpp serving binaries with actionable log lines, ran
-`bench-security` on MamayLM 27B, and created 18 prompt-system candidates.
-
-Latest 12 GiB CUDA-host quickstart evidence on the RTX PRO 3000 Blackwell laptop: the setup wrapper
-detected `gpu_tier=12` and selected `.data/quickstart-leaderboard/llb/serving/gpu-12gb/tier.json`
-despite a stale `gpu-16gb` directory. `make build-vllm` installed/reused vLLM 0.24.0 and recorded
-the native sampler fallback for driver 610.43.02. The PDF quickstart now selects
-`google/gemma-4-12B-it-qat-w4a16-ct` at `max_model_len=16384`, `gpu_memory_utilization=0.90`,
-`cpu_offload_gb=16`, and `kv_offloading_size_gb=32`; a bounded drafter probe confirmed vLLM served
-the long-context target with CPU/KV offload on this 12 GiB GPU.
+Host-specific acceptance procedures and current compatibility notes live in
+[Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.

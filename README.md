@@ -11,6 +11,7 @@ confidence intervals, and reviewable data gates.
 |---|---|---|
 | Corpus-grounded gold sets | Convert local PDFs to markdown, then build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/data-prep/goldset-from-scratch.md) and [data prep](docs/guides/data-prep/data-prep.md). | `make pdf-to-markdown PDF_DIR=<pdf-dir>` -> `make ingest-uk-squad` -> `make validate-goldset` |
 | Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/human-tooling/verification-tooling.md) and [human evaluation](docs/guides/human-tooling/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
+| Adaptive local draft comparison | Detect the CUDA VRAM tier, run a fitting Qwen baseline and Gemma probe sequentially over exact shared seeds, unload each model between lanes, and inspect machine/human quality deltas. See [Gold-set guide](docs/guides/data-prep/goldset-from-scratch.md#finish-the-bounded-ukrainian-local-comparison). | `make local-ua-draft-probe` -> `make local-ua-draft-complete` -> `make local-ua-draft-analyze` |
 | FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/benchmarking/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
 | Ukrainian query-side processing | Improve Ukrainian queries before retrieval without touching the corpus: casefold/apostrophe/transliteration normalization, corpus-vocabulary typo tolerance, alias/glossary expansion, and an opt-in logged LLM rewrite -- with an A/B report proving each step's recall/MRR delta. See [RAG core](docs/impl/current/rag-core.md) query-side processing. | `make build-query-glossary BUNDLE=<draft>` -> `make validate-retrieval QUERY_PREP=normalize,typos,glossary QUERY_PREP_AB=1` -> `make run-eval QUERY_PREP=normalize,typos,glossary` |
 | Groundedness and citation metrics | Score answer-side RAG quality beyond reference overlap: deterministic groundedness fraction, `[i]` citation validity + hallucinated-citation rate, and insufficient-context abstention probes (gold evidence removed -> the model should decline). Additive columns that never change the headline. See [RAG core](docs/impl/current/rag-core.md) groundedness and citation metrics. | `make run-eval CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=20` |
@@ -20,6 +21,7 @@ confidence intervals, and reviewable data gates.
 | Prompt-system tuning | Generate reviewable prompt packages, tune on one split, and verify generalization on held-out final data. See [prompt-system guide](docs/guides/benchmarking/prompt-system-rag.md) and [RAG core](docs/guides/benchmarking/run-rag-core.md). | `make prompt-system-prepare PROMPT_SYSTEM_CORPUS=<dir>` -> `make prompt-system-review PROMPT_SYSTEM_RUN_DIR=<dir> PROMPT_SYSTEM_ACTION=pin PROMPT_SYSTEM_ID=<id>` -> `make run-eval PROMPT_SYSTEM_ID=<id> PROMPT_PACKAGE=<dir>` -> `make prompt-system-compare` |
 | Security robustness | Score jailbreak, prompt-injection, RAG-injection, exfiltration, and benign-control cases as a separate security tier. See [security learning path](docs/guides/learning-path/learning-path-security.md). | `make bench-security MODEL=<model> BACKEND=<backend>` |
 | Category benchmark suites | Score security, tooling, agentic, summarization, structured output, and text-analysis categories, then publish a guarded composite headline. See [composite headline guide](docs/guides/benchmarking/composite-headline.md) and [category learning path](docs/guides/learning-path/learning-path-evaluation-categories.md). | `make composite-headline` |
+| Real-world knowledge cutoff | Estimate the effective month where a local model's recall of unpredictable public events decays toward chance, using a revision-pinned Hugging Face event set, position-balanced MCQs, seeded Optuna fitting, controls, and JSON/Markdown/MLflow reports. See the [knowledge-cutoff guide](docs/guides/benchmarking/knowledge-cutoff.md). | `make bench-knowledge-cutoff MODEL=<model> BACKEND=<backend>` |
 | Agentic harness comparison | Run the same task set through loop, LangGraph, and CrewAI harnesses to separate model quality from orchestration effects. See [CrewAI harness guide](docs/guides/benchmarking/crewai-harness.md) and [category learning path](docs/guides/learning-path/learning-path-evaluation-categories.md). | `make agentic-harness-compare` |
 | Platform matrix telemetry | Compare a logical model base across serving backends with VRAM, throughput, power, and quality-per-watt telemetry. See [platform matrix guide](docs/guides/benchmarking/platform-matrix.md). | `make platform-matrix` |
 
@@ -141,8 +143,8 @@ QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus
 QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
   make quickstart-pdf-corpus
 
-# Opt into an external provider through litellm. This sends corpus text
-# off-box and needs the provider API key in the environment.
+# Opt into an external provider through litellm. The workflow names the corpus and
+# destination in its consent prompt and applies the quickstart 1000-call guard.
 QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
   make quickstart-pdf-corpus
 ```
@@ -215,6 +217,12 @@ Ready-to-use public fixtures and public-screen tasks keep their upstream data te
   [HellaSwag](https://huggingface.co/datasets/Rowan/hellaswag) and
   [MMLU](https://huggingface.co/datasets/cais/mmlu) are MIT;
   [PIQA](https://huggingface.co/datasets/piqa) is marked license-unknown on its dataset card.
+- The knowledge-cutoff benchmark does not vendor its default event set. It loads
+  [`apoorvumang/knowledge-cutoff-benchmark`](https://huggingface.co/datasets/apoorvumang/knowledge-cutoff-benchmark),
+  whose dataset card marks the data CC BY 4.0, and records the resolved revision. The method and
+  dataset choice are inspired by Apoorv Saxena's
+  [`knowledge-cutoff`](https://github.com/apoorvumang/knowledge-cutoff) project; no upstream
+  application source is copied. Preserve that attribution for downloaded or redistributed data.
 
 Other committed tutorial fixtures are repo-authored unless their local README or provenance file
 states otherwise. Preserve attribution and license notices when redistributing derived artifacts.

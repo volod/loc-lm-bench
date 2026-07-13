@@ -16,7 +16,7 @@ PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
 # (AGENTS.md) and installed by scripts/build_vllm.sh after the editable install on CUDA hosts.
 # CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,cutoff,dev
 VENV_INSTALL_VLLM ?= auto
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
@@ -56,6 +56,10 @@ GOLDSET_MODE ?= development
 # Ontology-assisted draft mode (GOLDSET_MODE=draft over CORPUS).
 DRAFT_MODEL ?= gemma4:e4b
 DRAFT_ENDPOINT ?= local
+DRAFT_FRONTIER_MODEL ?=
+DRAFT_FRONTIER_STAGE ?= both
+DRAFT_LOCAL_MODEL ?=
+DRAFT_EGRESS_CONSENT ?= 0
 DRAFT_BACKEND ?= ollama
 DRAFT_BASE_URL ?=
 DRAFT_MAX_ITEMS ?= 60
@@ -67,6 +71,8 @@ DRAFT_CONCURRENCY ?=
 DRAFT_MAX_TOKENS ?= 4096
 DRAFT_TEMPERATURE ?= 0
 DRAFT_TIMEOUT ?= 300
+DRAFT_MAX_USD ?=
+DRAFT_MAX_CALLS ?= 100
 DRAFT_NO_THINK ?= 1
 DRAFT_NUM_CTX ?=
 DRAFT_VLLM_PORT ?= 8000
@@ -95,6 +101,34 @@ DRAFT_DEDUP_AGAINST ?=
 DRAFT_GRAPH_DIR ?=
 COVERAGE_JSON ?=
 COVERAGE_TEXT ?=
+# Exact shared-seed local/frontier drafting comparison.
+DRAFT_COMPARE_CORPUS ?= $(DRAFT_CORPUS)
+DRAFT_COMPARE_SEEDS ?= 20
+DRAFT_COMPARE_FRONTIER_MODEL ?=
+DRAFT_COMPARE_LOCAL_MODEL ?= $(DRAFT_MODEL)
+DRAFT_COMPARE_LOCAL_BACKEND ?= $(DRAFT_BACKEND)
+DRAFT_COMPARE_LOCAL_BASE_URL ?= $(DRAFT_BASE_URL)
+DRAFT_COMPARE_MAX_USD ?=
+DRAFT_COMPARE_MAX_CALLS ?= 100
+DRAFT_COMPARE_OUT_DIR ?=
+DRAFT_COMPARE_LOCAL_VERIFICATION ?=
+DRAFT_COMPARE_FRONTIER_VERIFICATION ?=
+# Bounded real-provider probe over the committed two-document synthetic UA corpus.
+FRONTIER_UA_PROBE_CORPUS := $(PROJECT_ROOT)/samples/text_analysis_bundle_uk/corpus
+FRONTIER_UA_PROBE_SEEDS ?= 12
+FRONTIER_UA_PROBE_LOCAL_MODEL ?= $(DRAFT_COMPARE_LOCAL_MODEL)
+FRONTIER_UA_PROBE_FRONTIER_MODEL ?=
+FRONTIER_UA_PROBE_MAX_USD ?=
+FRONTIER_UA_PROBE_MAX_CALLS ?= $(FRONTIER_UA_PROBE_SEEDS)
+FRONTIER_UA_PROBE_OUT_DIR ?=
+# Sequential local Qwen/Gemma comparison; blank models select from the detected GPU tier.
+LOCAL_DRAFT_COMPARE_CORPUS := $(PROJECT_ROOT)/samples/text_analysis_bundle_uk/corpus
+LOCAL_DRAFT_COMPARE_SEEDS ?= 12
+LOCAL_DRAFT_COMPARE_BASELINE_MODEL ?=
+LOCAL_DRAFT_COMPARE_PROBE_MODEL ?=
+LOCAL_DRAFT_COMPARE_OUT_DIR ?=
+COMPARE_ANALYZE_JSON ?=
+COMPARE_REQUIRE_GATES ?=
 
 # RAG/vLLM eval knobs (override on the command line). SMOKE_MODEL is intentionally small
 # and should be used for connectivity checks only, not leaderboard or extended tests.
@@ -131,6 +165,15 @@ AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
 AGENTIC_BASE_URL ?=
+KNOWLEDGE_CUTOFF_EVENTS ?=
+KNOWLEDGE_CUTOFF_DATASET ?= apoorvumang/knowledge-cutoff-benchmark
+KNOWLEDGE_CUTOFF_REVISION ?= main
+KNOWLEDGE_CUTOFF_THRESHOLD ?= 0.5
+KNOWLEDGE_CUTOFF_TRIALS ?= 200
+KNOWLEDGE_CUTOFF_SEED ?= 42
+KNOWLEDGE_CUTOFF_LIMIT ?=
+KNOWLEDGE_CUTOFF_BASE_URL ?=
+KNOWLEDGE_CUTOFF_MAX_MODEL_LEN ?=
 # `make demo-eval` end-to-end pipeline knobs (idempotent; CUDA-free defaults).
 ALL_GOLDSET ?= $(GOLDSET)
 ALL_CORPUS  ?= $(CORPUS)
@@ -256,6 +299,13 @@ SECURITY_MODEL ?= hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
 SECURITY_BACKEND ?= ollama
 SECURITY_BASE_URL ?=
 SECURITY_MAX_MODEL_LEN ?=
+
+# Corpus-specific derived security cases (derive-security-cases / derive-security-worksheet).
+# SECURITY_DERIVE_CASES defaults to the committed regression fixture so the worksheet + verified
+# bench run are runnable out of the box; point it at a fresh derive output for a real corpus.
+SECURITY_DERIVE_CASES ?= $(PROJECT_ROOT)/samples/benchmarks/security_cases_derived_uk.json
+SECURITY_DERIVE_WORKSHEET ?=
+
 JUDGE_MODEL ?= gemma3:27b
 JUDGE_BASE_URL ?= http://localhost:11434/v1
 JUDGE_RHO ?=
@@ -332,6 +382,8 @@ QUICKSTART_DRAFT_BASE_URL ?=
 QUICKSTART_DRAFT_MAX_ITEMS ?= 180
 QUICKSTART_DRAFT_VERIFY_N ?= 40
 QUICKSTART_DRAFT_TIMEOUT ?= 900
+QUICKSTART_DRAFT_MAX_USD ?=
+QUICKSTART_DRAFT_MAX_CALLS ?= 1000
 QUICKSTART_DRAFT_MAX_TOKENS ?= 4096
 QUICKSTART_DRAFT_TEMPERATURE ?= 0
 # Right-sized Ollama context for drafting: extraction windows are bounded (12k chars), so the
@@ -374,6 +426,7 @@ export QUICKSTART_PDF_LEADERBOARD_DATA QUICKSTART_PDF_MODEL_BENCH_DATA QUICKSTAR
 export QUICKSTART_PDF_DRAFT_DOCS QUICKSTART_DRAFT_MODEL QUICKSTART_DRAFT_ENDPOINT
 export QUICKSTART_DRAFT_BACKEND QUICKSTART_DRAFT_BASE_URL QUICKSTART_DRAFT_MAX_ITEMS QUICKSTART_DRAFT_VERIFY_N
 export QUICKSTART_DRAFT_TIMEOUT QUICKSTART_DRAFT_MAX_TOKENS QUICKSTART_DRAFT_TEMPERATURE
+export QUICKSTART_DRAFT_MAX_USD QUICKSTART_DRAFT_MAX_CALLS
 export QUICKSTART_DRAFT_NUM_CTX
 export QUICKSTART_DRAFT_VLLM_PORT QUICKSTART_DRAFT_VLLM_GPU_MEMORY_UTILIZATION
 export QUICKSTART_DRAFT_VLLM_MAX_MODEL_LEN QUICKSTART_DRAFT_VLLM_CPU_OFFLOAD_GB

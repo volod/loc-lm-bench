@@ -3,17 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from llb.scoring.judge import (
+from llb.scoring.judge.deepeval_adapter import measure_judge_metric
+from llb.scoring.judge.endpoint import judge_experiment_metadata, resolve_judge_endpoint
+from llb.scoring.judge.model import judge_is_trusted, run_judge
+from llb.scoring.judge.scorer import deepeval_scorer, extract_scores
+from llb.scoring.judge.template import (
     UA_ANSWER_RELEVANCY_STEPS,
     UA_FAITHFULNESS_STEPS,
     UkrainianGEvalTemplate,
-    deepeval_scorer,
-    extract_scores,
-    judge_experiment_metadata,
-    judge_is_trusted,
-    resolve_judge_endpoint,
-    run_judge,
-    _measure_judge_metric,
 )
 
 
@@ -97,7 +94,7 @@ def test_measure_judge_metric_zeroes_malformed_judge_response():
             raise ValueError("invalid json")
 
     assert (
-        _measure_judge_metric(
+        measure_judge_metric(
             BadMetric(),
             object(),
             metric_name="faithfulness",
@@ -144,7 +141,7 @@ def test_judge_experiment_metadata_has_no_secret():
 
 
 def test_deepeval_scorer_requires_explicit_local_endpoint(monkeypatch):
-    monkeypatch.setattr("llb.scoring.judge.load_project_env", lambda: None)
+    monkeypatch.setattr("llb.scoring.judge.endpoint.load_project_env", lambda: None)
     monkeypatch.delenv("DEEPEVAL_JUDGE_BASE_URL", raising=False)
     with pytest.raises(SystemExit, match="a local judge endpoint is required"):
         deepeval_scorer([], "plain-model")

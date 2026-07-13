@@ -22,18 +22,18 @@ without any network or key.
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+import time
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from llb.goldset.schema import GoldItem, Provenance, SourceSpan, Split, dump_goldset
 from llb.goldset.splits import assign_splits
+from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 from llb.prompts import render_text
-from llb.rag.chunking import iter_docs
+from llb.rag.chunking.corpus import iter_docs
 
 _LOG = logging.getLogger(__name__)
 
-LLMComplete = Callable[[str], str]  # prompt -> raw completion text
 PROVENANCE_DRAFTED: Provenance = "frontier-drafted"
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -44,41 +44,6 @@ _LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)  # inline table `<br>` -> 
 _DROP_CHARS = set("*_#|•")  # bold/italic/heading/table-pipe/bullet markers
 _DASHES = "–—―"  # en/em/horizontal-bar dashes -> ascii hyphen
 _SPACE_BEFORE_PUNCT = ".,;:)"  # PDF extraction often inserts a space before these
-
-
-# --- per-call cost / model provenance (frontier drafting) ----------------------------------------------
-
-
-@dataclass
-class CallRecord:
-    model: str
-    prompt_tokens: int
-    completion_tokens: int
-    cost_usd: float
-
-
-@dataclass
-class ProvenanceLog:
-    """Accumulates one record per frontier call so a draft carries its provider/model/cost."""
-
-    calls: list[CallRecord] = field(default_factory=list)
-
-    def record(
-        self, model: str, prompt_tokens: int, completion_tokens: int, cost_usd: float
-    ) -> None:
-        self.calls.append(CallRecord(model, prompt_tokens, completion_tokens, cost_usd))
-
-    def summary(self) -> dict[str, Any]:
-        by_model: dict[str, int] = {}
-        for call in self.calls:
-            by_model[call.model] = by_model.get(call.model, 0) + 1
-        return {
-            "calls": len(self.calls),
-            "models": sorted(by_model),
-            "total_prompt_tokens": sum(c.prompt_tokens for c in self.calls),
-            "total_completion_tokens": sum(c.completion_tokens for c in self.calls),
-            "total_cost_usd": round(sum(c.cost_usd for c in self.calls), 6),
-        }
 
 
 # --- fuzzy-but-exact span grounding (frontier drafting) ------------------------------------------------
@@ -207,11 +172,17 @@ def litellm_complete(
     def complete(prompt: str) -> str:
         from litellm import completion, completion_cost
 
-        resp = completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-        )
+        started = time.monotonic()
+        try:
+            resp = completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+            )
+        except Exception as exc:
+            if log is not None:
+                log.record(model, 0, 0, 0.0, latency_s=time.monotonic() - started, error=str(exc))
+            raise
         if log is not None:
             usage = resp.get("usage", {}) or {}
             try:
@@ -223,6 +194,7 @@ def litellm_complete(
                 int(usage.get("prompt_tokens", 0)),
                 int(usage.get("completion_tokens", 0)),
                 cost,
+                latency_s=time.monotonic() - started,
             )
         return str(resp["choices"][0]["message"]["content"])
 

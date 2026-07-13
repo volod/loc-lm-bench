@@ -29,7 +29,7 @@ rank **objective-only** (recall@k / MRR / objective correctness rank regardless 
 - Executable form -- the graph backend:
   [`src/llb/graph/`](../../src/llb/graph/) (`build.py`, `community.py`, `retrieval.py`, `store.py`)
   + the `retrieval_backend` / `retrieval_strategy` / `graph_khop_depth` fields in
-  [`src/llb/config.py`](../../src/llb/config.py).
+  [`src/llb/core/config.py`](../../src/llb/core/config.py).
 - Tests: [`tests/llb/graph/test_graph.py`](../../tests/llb/graph/test_graph.py).
 - Spec basis: `docs/design/spec.md` (GraphRAG / knowledge-graph retrieval), the ontology-assisted drafting
   extraction-reuse constraint, and the source-span grounding premise (source-span metric).
@@ -133,8 +133,7 @@ IP-regulation document (`llb build-graph` over its `extraction.jsonl`) yields:
   патент, винахід, корисна модель, промисловий зразок, торговельна марка), `LAW` (count 4,
   confidence 0.9: Цивільний кодекс України, Бернська/Паризька конвенція, Угода TRIPS), `DURATION`
   (count 2: двадцять років, десять років), `ORG` (count 2), `MISC` (count 2: авторське право,
-  комерційна таємниця), `LOC` (count 1). The same corpus under the OLD flat set produced one
-  undifferentiated `MISC` (count 10) -- the new types are what make the facts granular.
+  комерційна таємниця), `LOC` (count 1).
 - **Relationship types induced:** `охороняє` (3), `діє` (2), `стосується` (2), then `видає`,
   `виникає з`, `відповідає`, `зупиняють`, `є учасницею` (1 each) -- all under the caps.
 - **A coherent, typed community** (the patent cluster): `патент[WORK], винахід[WORK], корисна

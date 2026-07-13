@@ -91,7 +91,7 @@ def make_retrieve_node(
     A reranking store (`llb.rag.rerank.RerankingRetriever`) exposes its per-stage wall-clock,
     recorded as `retrieve_latency_s` / `rerank_latency_s`.
 
-    `query_prep` (`llb.rag.query_prep.QueryPrep`) is the opt-in query-side lane: when set, the
+    `query_prep` (`llb.rag.query_prep.pipeline.QueryPrep`) is the opt-in query-side lane: when set, the
     question is processed BEFORE retrieval (the raw question stays in state for generation), and
     the processed form + correction count are recorded (uk-query-processing).
     """

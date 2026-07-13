@@ -1,9 +1,25 @@
 import pytest
 
-from llb.backends import prepare
 from llb.backends import hardware
 from llb.backends import resolver
 from llb.backends.hardware import Gpu, detect_gpus, max_vram_mb, parse_smi
+from llb.backends.prepare.base import (
+    ACTION_CACHE,
+    ACTION_PULL,
+    ACTION_SKIP,
+    MIN_DOWNLOAD_MB,
+)
+from llb.backends.prepare.fetch import _looks_gated
+from llb.backends.prepare.manifest import load_manifest, load_serving_targets
+from llb.backends.prepare.planning import acceptance_url, decide, plan
+from llb.backends.prepare.run import prepare_models
+from llb.backends.prepare.stores import (
+    _default_present_check,
+    _ollama_store_dir,
+    disk_precheck,
+    estimate_download_mb,
+    store_dir_for,
+)
 
 
 def test_load_manifest_bad_yaml_raises_clean_error(tmp_path):
@@ -11,14 +27,14 @@ def test_load_manifest_bad_yaml_raises_clean_error(tmp_path):
     # inconsistent indent under the list item (name at col 5, backend at col 6) -> YAML error
     bad.write_text("models:\n  - name: a\n     backend: vllm\n", encoding="utf-8")
     with pytest.raises(ValueError, match="invalid YAML"):
-        prepare.load_manifest(bad)
+        load_manifest(bad)
 
 
 def test_load_manifest_non_mapping_entry_raises(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("models:\n  - just-a-string\n", encoding="utf-8")
     with pytest.raises(ValueError, match="must be a mapping"):
-        prepare.load_manifest(bad)
+        load_manifest(bad)
 
 
 def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
@@ -38,7 +54,7 @@ def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
         encoding="utf-8",
     )
 
-    models = prepare.load_serving_targets(tier_json)
+    models = load_serving_targets(tier_json)
 
     assert models == [
         {
@@ -59,18 +75,18 @@ def test_load_serving_targets_extracts_generated_tier_json(tmp_path):
 
 
 def test_acceptance_url_explicit_derived_and_none():
-    assert prepare.acceptance_url({"license_url": "https://hf.co/x"}) == "https://hf.co/x"
+    assert acceptance_url({"license_url": "https://hf.co/x"}) == "https://hf.co/x"
     assert (
-        prepare.acceptance_url({"gated": True, "backend": "vllm", "source": "org/m"})
+        acceptance_url({"gated": True, "backend": "vllm", "source": "org/m"})
         == "https://huggingface.co/org/m"
     )
-    assert prepare.acceptance_url({"backend": "vllm", "source": "org/m"}) is None  # ungated
+    assert acceptance_url({"backend": "vllm", "source": "org/m"}) is None  # ungated
 
 
 def test_looks_gated_detects_access_errors_not_404():
-    assert prepare._looks_gated(Exception("Access to model X is restricted (gated)"))
-    assert prepare._looks_gated(Exception("401 Client Error: Unauthorized"))
-    assert not prepare._looks_gated(Exception("404 Client Error: Not Found"))
+    assert _looks_gated(Exception("Access to model X is restricted (gated)"))
+    assert _looks_gated(Exception("401 Client Error: Unauthorized"))
+    assert not _looks_gated(Exception("404 Client Error: Not Found"))
 
 
 def test_prepare_models_surfaces_license_link_for_gated():
@@ -84,9 +100,7 @@ def test_prepare_models_surfaces_license_link_for_gated():
             "license_url": "https://huggingface.co/org/Gated",
         }
     ]
-    report = prepare.prepare_models(
-        models, dry_run=True, gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")]
-    )
+    report = prepare_models(models, dry_run=True, gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")])
     assert "huggingface.co/org/Gated" in report["results"][0]["detail"]
 
 
@@ -127,22 +141,20 @@ def test_detect_gpus_falls_back_to_absolute_nvidia_smi(monkeypatch):
 
 
 def test_decide_ollama_pulls_even_when_oversized():
-    action, reason = prepare.decide(
-        "ollama", need_mb=20000, max_mb=16000, has_gpu=True, force=False
-    )
-    assert action == prepare.ACTION_PULL and "CPU" in reason
+    action, reason = decide("ollama", need_mb=20000, max_mb=16000, has_gpu=True, force=False)
+    assert action == ACTION_PULL and "CPU" in reason
 
 
 def test_decide_vllm_skips_oversized_unless_forced():
-    action, _ = prepare.decide("vllm", need_mb=20000, max_mb=16000, has_gpu=True, force=False)
-    assert action == prepare.ACTION_SKIP
-    action, _ = prepare.decide("vllm", need_mb=20000, max_mb=16000, has_gpu=True, force=True)
-    assert action == prepare.ACTION_CACHE
+    action, _ = decide("vllm", need_mb=20000, max_mb=16000, has_gpu=True, force=False)
+    assert action == ACTION_SKIP
+    action, _ = decide("vllm", need_mb=20000, max_mb=16000, has_gpu=True, force=True)
+    assert action == ACTION_CACHE
 
 
 def test_decide_vllm_needs_gpu():
-    action, reason = prepare.decide("vllm", need_mb=8000, max_mb=0, has_gpu=False, force=False)
-    assert action == prepare.ACTION_SKIP and "CUDA GPU" in reason
+    action, reason = decide("vllm", need_mb=8000, max_mb=0, has_gpu=False, force=False)
+    assert action == ACTION_SKIP and "CUDA GPU" in reason
 
 
 def test_plan_filters_by_backend():
@@ -150,7 +162,7 @@ def test_plan_filters_by_backend():
         {"name": "a", "backend": "ollama", "source": "a:1", "min_vram_gb": 4},
         {"name": "b", "backend": "vllm", "source": "org/b", "min_vram_gb": 8},
     ]
-    rows = prepare.plan(models, max_mb=16000, has_gpu=True, backend_filter="vllm", force=False)
+    rows = plan(models, max_mb=16000, has_gpu=True, backend_filter="vllm", force=False)
     assert [r["name"] for r in rows] == ["b"]
 
 
@@ -171,11 +183,11 @@ def test_plan_expands_per_backend_sources():
         }
     ]
 
-    rows = prepare.plan(models, max_mb=16000, has_gpu=True, backend_filter="all", force=False)
+    rows = plan(models, max_mb=16000, has_gpu=True, backend_filter="all", force=False)
 
     by_name = {r["name"]: r for r in rows}
-    assert by_name["mamaylm-v2-12b"]["action"] == prepare.ACTION_SKIP
-    assert by_name["mamaylm-v2-12b-ollama"]["action"] == prepare.ACTION_PULL
+    assert by_name["mamaylm-v2-12b"]["action"] == ACTION_SKIP
+    assert by_name["mamaylm-v2-12b-ollama"]["action"] == ACTION_PULL
     assert (
         by_name["mamaylm-v2-12b-ollama"]["source"]
         == "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M"
@@ -203,14 +215,14 @@ def test_plan_expands_multi_quant_vllm_list():
         }
     ]
 
-    rows = prepare.plan(models, max_mb=24000, has_gpu=True, backend_filter="all", force=False)
+    rows = plan(models, max_mb=24000, has_gpu=True, backend_filter="all", force=False)
     by_name = {r["name"]: r for r in rows}
 
     # fp8 (~30 GiB floor) is skipped on a 24 GiB card; the w4a16 parent caches; the GGUF pulls.
-    assert by_name["mistral-vllm-fp8"]["action"] == prepare.ACTION_SKIP
+    assert by_name["mistral-vllm-fp8"]["action"] == ACTION_SKIP
     assert by_name["mistral-vllm-fp8"]["source"] == "org/mistral-fp8"
-    assert by_name["mistral"]["action"] == prepare.ACTION_CACHE  # w4a16 parent (source matches)
-    assert by_name["mistral-ollama"]["action"] == prepare.ACTION_PULL
+    assert by_name["mistral"]["action"] == ACTION_CACHE  # w4a16 parent (source matches)
+    assert by_name["mistral-ollama"]["action"] == ACTION_PULL
 
 
 def test_prepare_models_dispatches_and_skips():
@@ -220,7 +232,7 @@ def test_prepare_models_dispatches_and_skips():
         {"name": "huge", "backend": "vllm", "source": "org/huge", "min_vram_gb": 80},
     ]
     pulled, cached = [], []
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
         ollama_pull=lambda src: pulled.append(src) or (True, "pulled"),
@@ -237,7 +249,7 @@ def test_prepare_models_dispatches_and_skips():
 def test_prepare_models_dry_run_touches_nothing():
     models = [{"name": "small", "backend": "ollama", "source": "small:1", "min_vram_gb": 4}]
     calls = []
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         dry_run=True,
         gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
@@ -269,32 +281,29 @@ def test_estimate_download_prices_fp8_embedding_and_floors():
         "quant": "q4_k_m",
     }
     # fp8 (with bf16 embedding premium) is a much bigger download than the q4_k_m GGUF
-    assert prepare.estimate_download_mb(fp8) > prepare.estimate_download_mb(gguf) > 0
+    assert estimate_download_mb(fp8) > estimate_download_mb(gguf) > 0
     # no size hints -> falls back to the min_vram_gb floor, then the hard floor
     assert (
-        prepare.estimate_download_mb(
-            {"name": "x", "backend": "vllm", "source": "o/x", "min_vram_gb": 8}
-        )
+        estimate_download_mb({"name": "x", "backend": "vllm", "source": "o/x", "min_vram_gb": 8})
         == 8 * 1024
     )
     assert (
-        prepare.estimate_download_mb({"name": "x", "backend": "vllm", "source": "o/x"})
-        == prepare.MIN_DOWNLOAD_MB
+        estimate_download_mb({"name": "x", "backend": "vllm", "source": "o/x"}) == MIN_DOWNLOAD_MB
     )
 
 
 def test_disk_precheck_blocks_only_when_provably_too_small():
-    ok, _ = prepare.disk_precheck(required_mb=10_000, free_mb=50_000)
+    ok, _ = disk_precheck(required_mb=10_000, free_mb=50_000)
     assert ok
-    blocked, reason = prepare.disk_precheck(required_mb=24_000, free_mb=5_000)
+    blocked, reason = disk_precheck(required_mb=24_000, free_mb=5_000)
     assert not blocked and "insufficient disk" in reason
     # free_mb == 0 means "unknown" (probe failed) and must never block
-    assert prepare.disk_precheck(required_mb=24_000, free_mb=0)[0]
+    assert disk_precheck(required_mb=24_000, free_mb=0)[0]
 
 
 def test_store_dir_for_routes_ollama_vs_hf(tmp_path):
-    assert prepare.store_dir_for("vllm", tmp_path / "hf") == tmp_path / "hf"
-    assert prepare.store_dir_for("ollama", None).name == "models"
+    assert store_dir_for("vllm", tmp_path / "hf") == tmp_path / "hf"
+    assert store_dir_for("ollama", None).name == "models"
 
 
 def test_ollama_present_check_scans_configured_store(tmp_path, monkeypatch):
@@ -306,11 +315,11 @@ def test_ollama_present_check_scans_configured_store(tmp_path, monkeypatch):
     manifest.mkdir(parents=True)
     (manifest / "Q4_K_M").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("OLLAMA_MODELS", str(store))
-    assert prepare._ollama_store_dir() == store
-    assert prepare._default_present_check(
+    assert _ollama_store_dir() == store
+    assert _default_present_check(
         {"backend": "ollama", "source": "hf.co/lmstudio-community/Foo-GGUF:Q4_K_M"}
     )
-    assert not prepare._default_present_check(
+    assert not _default_present_check(
         {"backend": "ollama", "source": "hf.co/lmstudio-community/Foo-GGUF:Q8_0"}  # other quant
     )
 
@@ -323,13 +332,13 @@ def test_ollama_present_check_trusts_running_daemon(tmp_path, monkeypatch):
         resolver, "_make_ollama_probe", lambda _host: lambda s: s == "mistral-small3.1:24b"
     )
     monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path / "empty"))  # nothing on disk to scan
-    assert prepare._default_present_check({"backend": "ollama", "source": "mistral-small3.1:24b"})
+    assert _default_present_check({"backend": "ollama", "source": "mistral-small3.1:24b"})
     # a daemon-served tag skips the precheck, so a near-full disk still reuses it
     models = [
         {"name": "m", "backend": "ollama", "source": "mistral-small3.1:24b", "min_vram_gb": 8}
     ]
     pulled = []
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         gpus=[Gpu(0, "Fake", 16000, 15000, "1.0")],
         ollama_pull=lambda src: pulled.append(src) or (True, "reused"),
@@ -352,7 +361,7 @@ def test_prepare_fails_fast_when_store_too_small():
         }
     ]
     cached = []
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         gpus=[Gpu(0, "Fake", 40000, 39000, "1.0")],  # fits VRAM, so it would otherwise cache
         hf_cache=lambda src, tok, cd: cached.append(src) or (True, "/cache"),
@@ -376,7 +385,7 @@ def test_prepare_reuses_cached_artifact_despite_low_disk():
         }
     ]
     cached = []
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         gpus=[Gpu(0, "Fake", 40000, 39000, "1.0")],
         hf_cache=lambda src, tok, cd: cached.append(src) or (True, "/cache"),
@@ -399,7 +408,7 @@ def test_prepare_dry_run_previews_disk_shortfall_without_blocking():
             "quant": "fp8",
         }
     ]
-    report = prepare.prepare_models(
+    report = prepare_models(
         models,
         dry_run=True,
         gpus=[Gpu(0, "Fake", 40000, 39000, "1.0")],

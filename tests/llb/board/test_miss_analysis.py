@@ -12,9 +12,21 @@ from pathlib import Path
 
 import pytest
 
-from llb.board import miss_analysis as ma
+from llb.board.miss_analysis.classify import analyze_run, topic_of
+from llb.board.miss_analysis.model import (
+    MISS_ARTIFACT,
+    MISS_CLASSES,
+    MISS_GENERATION,
+    MISS_JUDGE,
+    MISS_REFUSAL,
+    MISS_RETRIEVAL,
+    MissAnalysis,
+    MissRecord,
+)
+from llb.board.miss_analysis.recommendations import refresh_recommendations
+from llb.board.miss_analysis.report import latest_analysis, write_analysis
 from llb.board import miss_probe as mp
-from llb.board.recommend import format_miss_section_md
+from llb.board.recommend.sections import format_miss_section_md
 from llb.core.config import RunConfig
 from llb.executor import durability
 from llb.executor.cases import CaseBatch, batch_retrieval_records
@@ -156,10 +168,10 @@ def _all_class_rows() -> tuple[list[dict], list[dict]]:
     return rows, retrieval
 
 
-def _analyze(tmp_path: Path, **kwargs) -> ma.MissAnalysis:
+def _analyze(tmp_path: Path, **kwargs) -> MissAnalysis:
     rows, retrieval = _all_class_rows()
     run_dir = _write_bundle(tmp_path, rows, retrieval)
-    return ma.analyze_run(run_dir, _goldset(), **kwargs)
+    return analyze_run(run_dir, _goldset(), **kwargs)
 
 
 # --------------------------------------------------------------------------- classification
@@ -169,37 +181,37 @@ def test_classifier_separates_every_class_with_zero_leakage(tmp_path):
     analysis = _analyze(tmp_path)
     by_id = {m.item_id: m.miss_class for m in analysis.misses}
     assert by_id == {
-        "m-retr": ma.MISS_RETRIEVAL,
-        "m-gen": ma.MISS_GENERATION,
-        "m-refuse": ma.MISS_REFUSAL,
-        "m-empty": ma.MISS_ARTIFACT,
-        "m-judge": ma.MISS_JUDGE,
+        "m-retr": MISS_RETRIEVAL,
+        "m-gen": MISS_GENERATION,
+        "m-refuse": MISS_REFUSAL,
+        "m-empty": MISS_ARTIFACT,
+        "m-judge": MISS_JUDGE,
     }
     assert "hit" not in by_id
-    assert analysis.class_counts == {cls: 1 for cls in ma.MISS_CLASSES}
+    assert analysis.class_counts == {cls: 1 for cls in MISS_CLASSES}
 
 
 def test_span_overlap_beats_scored_hit_flag(tmp_path):
     """The persisted retrieved spans, not the scored retrieval_hit float, decide the class."""
     rows = [_score_row("m-retr", "ok", 0.1, 1.0)]  # scored flag LIES (says hit)
     run_dir = _write_bundle(tmp_path, rows, [_miss_retrieval("m-retr")])
-    analysis = ma.analyze_run(run_dir, _goldset())
-    assert analysis.misses[0].miss_class == ma.MISS_RETRIEVAL
+    analysis = analyze_run(run_dir, _goldset())
+    assert analysis.misses[0].miss_class == MISS_RETRIEVAL
 
 
 def test_legacy_bundle_without_retrieval_jsonl_falls_back_to_hit_flag(tmp_path):
     rows = [_score_row("m-retr", "ok", 0.1, 0.0), _score_row("m-gen", "ok", 0.2, 1.0)]
     run_dir = _write_bundle(tmp_path, rows, None)
-    analysis = ma.analyze_run(run_dir, _goldset())
+    analysis = analyze_run(run_dir, _goldset())
     by_id = {m.item_id: m.miss_class for m in analysis.misses}
-    assert by_id == {"m-retr": ma.MISS_RETRIEVAL, "m-gen": ma.MISS_GENERATION}
+    assert by_id == {"m-retr": MISS_RETRIEVAL, "m-gen": MISS_GENERATION}
 
 
 def test_retrieval_miss_status_maps_directly(tmp_path):
     rows = [_score_row("m-retr", "retrieval_miss", 0.0, 0.0)]
     run_dir = _write_bundle(tmp_path, rows, None)
-    analysis = ma.analyze_run(run_dir, _goldset())
-    assert analysis.misses[0].miss_class == ma.MISS_RETRIEVAL
+    analysis = analyze_run(run_dir, _goldset())
+    assert analysis.misses[0].miss_class == MISS_RETRIEVAL
 
 
 def test_transport_statuses_classify_as_artifacts(tmp_path):
@@ -208,8 +220,8 @@ def test_transport_statuses_classify_as_artifacts(tmp_path):
         _score_row("m-gen", "backend_error", 0.0, 0.0),
     ]
     run_dir = _write_bundle(tmp_path, rows, None)
-    analysis = ma.analyze_run(run_dir, _goldset())
-    assert {m.miss_class for m in analysis.misses} == {ma.MISS_ARTIFACT}
+    analysis = analyze_run(run_dir, _goldset())
+    assert {m.miss_class for m in analysis.misses} == {MISS_ARTIFACT}
 
 
 # --------------------------------------------------------------------------- clusters + labels
@@ -234,8 +246,8 @@ def test_topic_of_collapses_case_forms_via_best_effort_lemma(monkeypatch):
 
     lemmas = {"начальника": "начальник"}
     monkeypatch.setattr(lexical, "_BEST_EFFORT_LEMMATIZER", lambda t: lemmas.get(t, t))
-    genitive = ma.topic_of("Хто виконує обов'язки начальника?", None)
-    nominative = ma.topic_of("Що робить начальник установи щодня?", None)
+    genitive = topic_of("Хто виконує обов'язки начальника?", None)
+    nominative = topic_of("Що робить начальник установи щодня?", None)
     assert genitive == nominative == "начальник"
 
 
@@ -243,7 +255,7 @@ def test_provenance_sidecar_labels_win_over_heuristics(tmp_path):
     rows, retrieval = _all_class_rows()
     run_dir = _write_bundle(tmp_path, rows, retrieval)
     provenance = {"m-retr": {"id": "m-retr", "question_type": "multi_hop", "topic": "ip-law"}}
-    analysis = ma.analyze_run(run_dir, _goldset(), provenance=provenance)
+    analysis = analyze_run(run_dir, _goldset(), provenance=provenance)
     miss = next(m for m in analysis.misses if m.item_id == "m-retr")
     assert miss.question_type == "multi_hop"
     assert miss.topic == "ip-law"
@@ -284,15 +296,15 @@ def test_recommendations_are_ranked_by_miss_weight(tmp_path):
 def test_write_analysis_emits_report_misses_and_payload(tmp_path):
     analysis = _analyze(tmp_path)
     out_dir = tmp_path / "miss-analysis" / "20260101T000000Z"
-    paths = ma.write_analysis(analysis, out_dir)
+    paths = write_analysis(analysis, out_dir)
     report = Path(paths["report"]).read_text(encoding="utf-8")
     assert "## Miss classes" in report and "## Recommendations" in report
     misses = [json.loads(line) for line in Path(paths["misses"]).read_text().splitlines()]
-    assert {m["miss_class"] for m in misses} == set(ma.MISS_CLASSES)
+    assert {m["miss_class"] for m in misses} == set(MISS_CLASSES)
     payload = json.loads(Path(paths["analysis"]).read_text(encoding="utf-8"))
-    assert payload["n_misses"] == 5 and payload["class_counts"][ma.MISS_RETRIEVAL] == 1
+    assert payload["n_misses"] == 5 and payload["class_counts"][MISS_RETRIEVAL] == 1
 
-    latest = ma.latest_analysis(tmp_path)
+    latest = latest_analysis(tmp_path)
     assert latest is not None and latest["n_misses"] == 5
     assert latest["report_path"] == paths["report"]
 
@@ -300,8 +312,8 @@ def test_write_analysis_emits_report_misses_and_payload(tmp_path):
 def test_recommend_summary_gains_miss_section_only_when_analysis_exists(tmp_path):
     assert format_miss_section_md(None) == ""
     analysis = _analyze(tmp_path)
-    ma.write_analysis(analysis, tmp_path / "miss-analysis" / "20260101T000000Z")
-    section = format_miss_section_md(ma.latest_analysis(tmp_path))
+    write_analysis(analysis, tmp_path / "miss-analysis" / "20260101T000000Z")
+    section = format_miss_section_md(latest_analysis(tmp_path))
     assert section.startswith("## Miss analysis")
     assert "5 of 6" in section
     assert re.search(r"\d\. ", section)  # ranked recommendation lines are quoted
@@ -354,7 +366,7 @@ def _probe_manifest(tmp_path: Path) -> dict:
     return json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
 
 
-def _probe_subset(analysis_misses: list[ma.MissRecord]) -> list[GoldItem]:
+def _probe_subset(analysis_misses: list[MissRecord]) -> list[GoldItem]:
     items_by_id = {item.id: item for item in _goldset()}
     return sorted((items_by_id[m.item_id] for m in analysis_misses), key=lambda item: item.id)
 
@@ -381,7 +393,7 @@ def _write_probe_bundle(tmp_path: Path, name: str, run_name: str, subset: list[G
 
 def test_probe_runs_miss_subset_and_confirms_retrieval_hypothesis(tmp_path):
     manifest = _probe_manifest(tmp_path)
-    analysis = ma.analyze_run(
+    analysis = analyze_run(
         tmp_path / "run-eval" / ("20260101T000000.000000Z-" + RUN_ID), _goldset()
     )
     calls: list[dict] = []
@@ -402,7 +414,7 @@ def test_probe_runs_miss_subset_and_confirms_retrieval_hypothesis(tmp_path):
     assert outcome["n_retrieval_misses"] == 1 and not outcome["reused"]
 
     analysis.probes = outcomes
-    ma.refresh_recommendations(analysis)
+    refresh_recommendations(analysis)
     raise_line = next(
         rec["line"] for rec in analysis.recommendations if rec["action"] == "raise_top_k"
     )
@@ -411,7 +423,7 @@ def test_probe_runs_miss_subset_and_confirms_retrieval_hypothesis(tmp_path):
 
 def test_probe_reuses_finalized_bundle_without_rerunning(tmp_path):
     manifest = _probe_manifest(tmp_path)
-    analysis = ma.analyze_run(
+    analysis = analyze_run(
         tmp_path / "run-eval" / ("20260101T000000.000000Z-" + RUN_ID), _goldset()
     )
     subset = _probe_subset(analysis.misses)
@@ -426,7 +438,7 @@ def test_probe_reuses_finalized_bundle_without_rerunning(tmp_path):
 
 def test_probe_resumes_interrupted_staging_via_journal_meta(tmp_path):
     manifest = _probe_manifest(tmp_path)
-    analysis = ma.analyze_run(
+    analysis = analyze_run(
         tmp_path / "run-eval" / ("20260101T000000.000000Z-" + RUN_ID), _goldset()
     )
     subset = _probe_subset(analysis.misses)
@@ -449,7 +461,7 @@ def test_probe_resumes_interrupted_staging_via_journal_meta(tmp_path):
 
 def test_probe_skips_depth_equal_to_run_top_k(tmp_path):
     manifest = _probe_manifest(tmp_path)
-    analysis = ma.analyze_run(
+    analysis = analyze_run(
         tmp_path / "run-eval" / ("20260101T000000.000000Z-" + RUN_ID), _goldset()
     )
 
@@ -474,7 +486,7 @@ def test_lower_top_k_recommendation_requires_measured_gain(tmp_path):
             "resumed": False,
         }
     ]
-    ma.refresh_recommendations(analysis)
+    refresh_recommendations(analysis)
     line = next(rec["line"] for rec in analysis.recommendations if rec["action"] == "lower_top_k")
     assert "0.400" in line and "0.080" in line
 

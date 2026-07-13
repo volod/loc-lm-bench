@@ -1,6 +1,6 @@
 """AvailabilityResolver: pick the backend that actually serves a model on THIS host (backend resolver).
 
-The feasibility planner (`planner.plan_model`) answers "does the model fit the VRAM+RAM
+The feasibility planner (`planner.plan.plan_model`) answers "does the model fit the VRAM+RAM
 budget, and at what context". The resolver adds the two things on top of that:
 
   1. DISCOVERY -- does each backend's source actually exist / can it be served?
@@ -25,7 +25,9 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
-from llb.backends import planner
+from llb.backends.planner.constants import VERDICT_GPU, VERDICT_NO, VERDICT_OFFLOAD
+from llb.backends.planner.plan import plan_model
+from llb.backends.planner.weights import resolve_bpw
 from llb.core.config import DEFAULT_OLLAMA_HOST
 from llb.core.contracts import (
     BackendCandidate,
@@ -78,9 +80,9 @@ def backend_can_run(backend: str, verdict: str) -> bool:
     spec lacks the architecture fields to size a KV cache; otherwise `backend_fits` is sharper.
     """
     if backend == "vllm":
-        return verdict == planner.VERDICT_GPU
+        return verdict == VERDICT_GPU
     if backend in ("ollama", "llamacpp"):
-        return verdict in (planner.VERDICT_GPU, planner.VERDICT_OFFLOAD)
+        return verdict in (VERDICT_GPU, VERDICT_OFFLOAD)
     return False
 
 
@@ -116,7 +118,7 @@ def normalize_source_list(value: Any) -> list[dict[str, Any]]:
 
 def _quant_quality(spec: ModelSpec, record: dict[str, Any]) -> float:
     """Rank key for competing same-backend quants: higher bits-per-weight = higher quality."""
-    bpw = planner.resolve_bpw(_priced_spec(spec, "vllm", record))
+    bpw = resolve_bpw(_priced_spec(spec, "vllm", record))
     return bpw if bpw is not None else -1.0
 
 
@@ -194,7 +196,7 @@ def resolve(
         source = overrides["source"]
         available = _probe_available(backend, source, probes)
         backend_plan_kwargs = _plan_kwargs_for_backend(backend, dict(plan_kwargs))
-        row = planner.plan_model(
+        row = plan_model(
             _priced_spec(spec, backend, overrides),
             _plan_vram_for_backend(backend, vram_mib),
             ram_mib,
@@ -224,7 +226,7 @@ def resolve(
         "chosen_source": chosen["source"] if chosen else None,
         # vLLM is only ever chosen when a serving window fits fully on GPU, so report `gpu`
         # there rather than the planner's max-context verdict (which may say `offload`).
-        "verdict": _serving_verdict(chosen) if chosen else planner.VERDICT_NO,
+        "verdict": _serving_verdict(chosen) if chosen else VERDICT_NO,
         "candidates": candidates,
         "note": "" if chosen else "no available backend can serve this model on the host",
     }
@@ -232,7 +234,7 @@ def resolve(
 
 def _serving_verdict(chosen: BackendCandidate) -> str:
     if chosen["backend"] == "vllm":
-        return planner.VERDICT_GPU
+        return VERDICT_GPU
     return chosen["verdict"]
 
 
@@ -244,7 +246,7 @@ def llamacpp_offload_split(resolved: ResolvedModel) -> int | None:
     the launcher default (-1 == every layer on GPU), which would OOM an oversized model. Returns
     None when the chosen backend is not llama.cpp, when all layers fit on the GPU (the default -1
     is correct), or when the planner could not size a split (no arch fields)."""
-    if resolved["chosen_backend"] != "llamacpp" or resolved["verdict"] != planner.VERDICT_OFFLOAD:
+    if resolved["chosen_backend"] != "llamacpp" or resolved["verdict"] != VERDICT_OFFLOAD:
         return None
     chosen = next((c for c in resolved["candidates"] if c["backend"] == "llamacpp"), None)
     if chosen is None:

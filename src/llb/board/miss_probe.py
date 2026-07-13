@@ -23,7 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llb.board.miss_analysis import MISS_RETRIEVAL, MissRecord
+from llb.board.miss_analysis.model import MISS_RETRIEVAL, MissRecord
 from llb.core.config import RUN_EVAL_METHOD, RunConfig
 from llb.core.contracts import JsonObject
 from llb.executor import durability

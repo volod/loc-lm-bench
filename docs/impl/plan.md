@@ -40,88 +40,62 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
+### module-size-soft-limit-refactor
+
+- Agent status: **CLEAR** -- agent-buildable to `make ci` green through mechanical,
+  behavior-preserving, test-guarded splits.
+- Dependencies: none. Use the package convention and current backlog recorded in
+  [Code Organization](current/overview.md#code-organization).
+- User-visible outcome: every tracked `.py`/`.sh` file sits at or under ~250 lines unless a single
+  cohesive structure reads better whole, so review and comprehension improve.
+- Scope boundary: split the remaining over-limit production and test modules along clear
+  functional seams; extract helper clusters into intent-named submodules and use sourced sibling
+  fragments for shell. Repoint every caller and test to the concrete owner, keep package
+  `__init__.py` files docstring-only, and retain `__main__` only for an actual module CLI. Do not
+  add compatibility facades or re-export layers. Prioritize largest-first from
+  `scripts/code_quality.sh`. Exclude behavior changes and avoid fragmenting a cohesive lookup
+  table, dataclass family, or exhaustive match solely to meet the target; keep
+  `core/contracts.py` as the justified cohesive exception.
+- Acceptance gates: each remaining split must leave its replacement modules under the soft limit,
+  keep `make ci` green, and avoid behavior-test changes except import repointing; remove this task
+  when the live report contains only explicitly justified cohesive exceptions.
+- Documentation target: [overview](current/overview.md#code-organization).
+
 ## Human-Assisted Tasks
 
-Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
-completion.
+Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
+requires human judgment or authorization.
 
-Recommended order for the remaining human steps: task 5's derived-case review consumes the
-verification gate over agent-prepared bundles. Task 2's egress consent and spend decision is
-independent and can happen whenever the operator is ready to authorize it.
+### knowledge-cutoff-ua-bilingual-calibration
 
-### 2. frontier-ua-draft-lane
-
-- Agent status: **HUMAN-GATED** -- human egress consent + API spend authorization gate the real
-  2-document frontier probe; all code and fake-completer tests are CLEAR (agent-buildable now, no
-  network).
-- Dependencies: none (code reuses `src/llb/prep/frontier.py`). Human step: the real-frontier
-  2-document probe requires **human egress consent and API spend** under the recorded egress policy;
-  the code and all fake-completer tests are agent-buildable without any network call.
-- User-visible outcome: for the best Ukrainian question quality and completeness, an operator
-  can opt a draft run into a best-of-breed external API (litellm-routed) for extraction,
-  drafting, or both, with an explicit consent gate, a hard budget cap, per-call cost telemetry
-  in provenance, and a side-by-side local-vs-frontier yield and quality report over the same
-  seeds. Frontier cross-check exists (`make cross-check-goldset CROSS_CHECK_MODEL=`); the draft
-  lane does not.
-- Scope boundary: in scope -- a frontier endpoint option for the ontology pipeline reusing the
-  litellm conventions in `src/llb/prep/frontier.py` behind the same endpoint seam as Ollama and
-  vLLM drafting (`src/llb/prep/ontology/endpoint.py`); `--max-usd` and `--max-calls` guards
-  that abort cleanly and record the reason; an interactive egress consent prompt naming the
-  corpus and destination (policy stays as recorded in
-  [product decisions](current/scope-boundaries.md)); a `llb draft-compare` command that drafts
-  the same bounded seed subset locally and via frontier and reports kept-yield, gate results,
-  and verify-sample accept rate. Out of scope -- making frontier the default, egress for
-  scoring or judging, retries of the egress policy discussion.
-- Data and artifact paths: `provenance.json` gains `endpoint.cost_usd`, call counts, and
-  latency; comparison reports under `$DATA_DIR/draft-compare/<timestamp>/`.
-- Execution path:
-  `make prepare-goldset-draft DRAFT_ENDPOINT=frontier DRAFT_FRONTIER_MODEL=<litellm-id>
-  DRAFT_MAX_USD=<n>`; `llb draft-compare --corpus-root <dir> --seeds <n> --frontier-model <id>
-  --local-model <model>`; unit tests use an injected fake litellm completer.
-- Acceptance gates: no network call happens without the flag plus consent (unit-tested via the
-  injected completer); the budget guard aborts mid-draft and the bundle remains inspectable
-  with the abort recorded; a 2-document probe against a real frontier model passes bundle gates
-  with parse rate at least matching the local drafter; the comparison report ranks both lanes
-  on kept-yield and accept rate.
-- Documentation target: [data prep](current/data-prep.md) frontier lane notes;
-  [`docs/guides/data-prep/goldset-from-scratch.md`](../guides/data-prep/goldset-from-scratch.md).
-
-### 5. security-corpus-probes
-
-- Agent status: **HUMAN-GATED** -- derived cases must clear the human verify gate before any
-  headline/composite use; the generator, unit tests, and the `bench-security` run itself are CLEAR
-  / agent-executable on the current CUDA host.
-- Dependencies: the shipped ontology artifacts (`ontology.json`, `extraction.jsonl`) from a
-  local-drafter bundle. Human step: derived security cases must clear the human
-  `verify-sample`/`verify-review`/`verify-accept` gate before any headline/composite use; the
-  generator and unit tests are agent-buildable.
-- User-visible outcome: the security tier gains corpus-specific cases derived from the target
-  corpus itself: prohibited-topic denial-guard probes built from the corpus ontology's
-  sensitive topics and entities, benign near-boundary controls that catch over-refusal on
-  legitimate corpus questions, and matched-pair bias probes (entity or group swapped, behavior
-  fixed) scored for decision consistency -- all flowing through the existing detectors,
-  cross-language grouping, and the human verification gate before any headline use.
-- Scope boundary: in scope -- `llb derive-security-cases --bundle <draft-bundle>` reading
-  `ontology.json` and `extraction.jsonl`, generating cases locally through the same drafter
-  endpoint seam; emitted cases reuse the committed case schema (`lang`, `attrs.vector`,
-  `xlang_group`) so `bench-security`, `cross_language_consistency`, and refusal-appropriateness
-  work unchanged (see [category suite](current/category-benchmark-suite.md) and the Ukrainian
-  security adaptation in [evaluation rigor](current/rigor-board-judge.md)); a bias-pair
-  consistency metric alongside ASR reusing the matched-group machinery. Out of scope -- new
-  detector kinds, safety classifiers, ranking unverified case sets.
-- Data and artifact paths: derived cases under `$DATA_DIR/security-derive/<timestamp>/cases.json`
-  with per-case grounding spans back to the corpus; a small derived-and-verified sample
-  committed under `samples/` for regression.
-- Execution path: `llb derive-security-cases --bundle <draft> --out <cases.json>`;
-  `make bench-security SECURITY_CASES=<cases.json> MODEL=<m> BACKEND=<b>`; verification through
-  the existing `verify-sample`/`verify-review`/`verify-accept` path.
-- Acceptance gates: every generated probe cites a corpus topic or entity with an exact span
-  (unit-tested); benign controls feed refusal-appropriateness only, never ASR; a full
-  `bench-security` run over derived quickstart-corpus cases reports per-family ASR plus
-  bias-pair consistency with bootstrap CIs; unverified derived sets are rejected from
-  composite/headline paths.
-- Documentation target: [category suite](current/category-benchmark-suite.md) security section;
-  [`docs/guides/learning-path/learning-path-security.md`](../guides/learning-path/learning-path-security.md).
+- Agent status: **BLOCKED BY HUMAN** -- the paired runner and worksheet tooling are agent-buildable,
+  but publication-quality Ukrainian translations require bilingual human review.
+- Dependencies: use the baseline command, schema, and report contract in
+  [knowledge cutoff](current/knowledge-cutoff.md). Human step: review every translated question and
+  choice for factual equivalence, answer preservation, fluency, and absence of new temporal clues.
+- User-visible outcome: a paired English/Ukrainian cutoff report distinguishes temporal knowledge
+  decay from language-comprehension loss for Ukrainian-specialized local models.
+- Scope boundary: translate the exact revision-pinned event questions and answer choices without
+  adding facts, randomize both lanes with the same source-choice mapping, add paired language-delta
+  statistics and a bootstrap interval, and gate the Ukrainian lane on a complete accepted
+  worksheet. Do not create new events, translate source articles, or mix rejected/undecided rows
+  into a cutoff claim.
+- Data and artifact paths: keep translation drafts and review state under
+  `$DATA_DIR/knowledge-cutoff-ua/<dataset-revision>/`; write paired model runs under
+  `$DATA_DIR/knowledge-cutoff-bilingual/<run_timestamp>/`; if a reviewed translation fixture is
+  redistributed, include its CC BY 4.0 attribution, exact upstream revision, and accepted worksheet
+  under `samples/verification/knowledge_cutoff_ua/`.
+- Execution path: add a Make target that drafts the pinned translation bundle locally, opens the
+  shared verification session, freezes accepted rows, runs both language lanes through the same
+  local backend, and emits one paired report. Keep drafting and human review separate from the
+  model-scoring command so partial review is resumable and cannot be mistaken for accepted data.
+- Acceptance gates: every translated row is decided and accepted or excluded; answer keys and
+  source-choice identities match mechanically; a bilingual reviewer signs off the worksheet; unit
+  tests cover alignment and gate failures; the paired report includes per-month language deltas and
+  a seeded bootstrap interval; focused tests, type/lint checks, and `make lint-md` pass.
+- Documentation target: extend
+  [the knowledge-cutoff guide](../guides/benchmarking/knowledge-cutoff.md) and
+  [current behavior](current/knowledge-cutoff.md) with the bilingual workflow and reviewed revision.
 
 ## Adding Future Tasks
 

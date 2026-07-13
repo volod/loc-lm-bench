@@ -4,7 +4,7 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 (no FAISS, no DuckDB, no GPU). The CLI wiring (`compare-retrieval`) layers real stores on top.
 """
 
-from llb.cli.rag import _compare_vector_corpus_root
+from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 from llb.core.contracts import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
 

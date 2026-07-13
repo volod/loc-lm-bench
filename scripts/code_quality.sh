@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 llb_load_env  # resolve + export DATA_DIR (default $PROJECT_ROOT/.data)
 
 TOP_K="${1:-10}"
+LONGEST_TOP_K="${LONGEST_TOP_K:-20}"
 RADON="${PROJECT_ROOT}/.venv/bin/radon"
 COMPLEXIPY="${PROJECT_ROOT}/.venv/bin/complexipy"
 PYMARKDOWN="${PROJECT_ROOT}/.venv/bin/pymarkdown"
@@ -90,6 +91,43 @@ llb_largest_tracked_files() {
   llb_print_block "$label" "$output"
 }
 
+llb_files_over_line_limit() {
+  # Soft limit: tracked .py/.sh files should stay at or under $LINE_SOFT_LIMIT lines (AGENTS.md).
+  # Reports offenders largest-first; informational only (never fails the run).
+  local label="$1"
+  local limit="${LINE_SOFT_LIMIT:-250}"
+  local output
+  output="$(
+    set +o pipefail
+    git -C "$PROJECT_ROOT" ls-files -z '*.py' '*.sh' \
+      | (cd "$PROJECT_ROOT" && xargs -0 wc -l 2>/dev/null) \
+      | awk -v limit="$limit" '$2 != "total" && $1 > limit {printf "%-8s %s\n", $1, $2}' \
+      | sort -k 1 -n -r
+  )"
+  if [ -n "$output" ]; then
+    llb_print_block "$label" "$output"
+  fi
+}
+
+llb_longest_code_files() {
+  # Top-N longest tracked code files by line count (py/sh/mk/awk/Makefile), largest-first. The
+  # ~$LINE_SOFT_LIMIT-line soft limit (AGENTS.md) applies to .py/.sh; make/awk rows are context.
+  local label="$1"
+  local top="${LONGEST_TOP_K:-20}"
+  local output
+  output="$(
+    set +o pipefail
+    git -C "$PROJECT_ROOT" ls-files -z '*.py' '*.sh' '*.mk' '*.awk' 'Makefile' \
+      | (cd "$PROJECT_ROOT" && xargs -0 wc -l 2>/dev/null) \
+      | awk '$2 != "total" {printf "%-8s %s\n", $1, $2}' \
+      | sort -k 1 -n -r \
+      | sed -n "1,${top}p"
+  )"
+  if [ -n "$output" ]; then
+    llb_print_block "$label" "$output"
+  fi
+}
+
 llb_check_root_files() {
   llb_report_if_output \
     "project root files (pyproject.toml, Makefile, root markdown)" \
@@ -155,6 +193,10 @@ llb_check_shell_scripts() {
 
 llb_largest_tracked_files "top ${TOP_K} largest tracked Python files (bytes, path)" yes
 llb_largest_tracked_files "top ${TOP_K} largest tracked non-Python files (bytes, path)" no
+
+llb_longest_code_files "top ${LONGEST_TOP_K} longest tracked code files (lines, path; py/sh/mk/awk/Makefile)"
+
+llb_files_over_line_limit "tracked .py/.sh files over the ${LINE_SOFT_LIMIT:-250}-line soft limit"
 
 if [ ! -x "$RADON" ] || [ ! -x "$COMPLEXIPY" ] || [ ! -x "$PYMARKDOWN" ] || [ ! -x "$PYTHON" ]; then
   echo "ERROR: dev tools missing in .venv -- run 'make venv EXTRAS=dev' first" >&2

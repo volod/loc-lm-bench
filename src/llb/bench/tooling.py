@@ -22,6 +22,7 @@ from typing import Any
 from llb.bench.common import (
     LLMComplete,
     Mirror,
+    ThroughputMeter,
     category_result,
     persist_category_run,
     render_board,
@@ -157,12 +158,15 @@ def run_tooling(
     mirror: Mirror | None = None,
     data_verified: bool = False,
     verification_ref: str | None = None,
+    meter: ThroughputMeter | None = None,
 ) -> ToolingRun:
     """Score one model's call correctness over the catalog + cases under TIER_TOOLING.
 
     Pass `caller` to select the transport (text-in-prompt vs native OpenAI tools=); by default the
     text caller is built over `complete`. `capability` is recorded so native-FC and text runs are
-    comparable but never cross-ranked.
+    comparable but never cross-ranked. A `meter` (populated by the endpoint `complete`) supplies the
+    run's real generation tok/s -- it accumulates on the text transport, whose calls flow through
+    `complete`; the native transport drives its own client, so its meter stays at 0.0.
     """
     if not cases:
         raise SystemExit("no tooling cases provided")
@@ -181,12 +185,14 @@ def run_tooling(
 
     n_responding = sum(1 for s in score.cases if s.attempted or s.expected_tool is None)
     reliability = n_responding / len(cases) if cases else 0.0
+    tokens_per_s = meter.tokens_per_s if meter is not None else 0.0
     result = category_result(
         model=model,
         backend=backend,
         tier=TIER_TOOLING,
         case_objectives=score.case_correct,
         reliability=reliability,
+        tokens_per_s=tokens_per_s,
     )
     accuracy_ci = bootstrap_mean_ci(score.case_correct)
     board, table = render_board([result])
@@ -196,7 +202,7 @@ def run_tooling(
         metrics: RunMetrics = {
             "objective_score": result.objective_score,  # call accuracy
             "reliability": reliability,
-            "tokens_per_s": 0.0,
+            "tokens_per_s": tokens_per_s,
         }
         config = {
             "model": model,

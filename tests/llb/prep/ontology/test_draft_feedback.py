@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig, EndpointPlan
 from llb.prep.ontology.feedback import (
     REJECT_CODE_HINTS,
     applied_feedback_block,
@@ -12,7 +12,7 @@ from llb.prep.ontology.feedback import (
     feedback_hints,
     load_rejection_feedback,
 )
-from llb.prep.ontology.pipeline import draft_goldset
+from llb.prep.ontology.pipeline.run import draft_goldset
 
 DOC = "Alpha керує Beta. Beta належить Gamma. Alpha заснована 1991 року в Києві."
 
@@ -28,7 +28,7 @@ def _summary(**codes):
 
 
 def test_every_closed_reject_code_has_a_hint():
-    from llb.goldset.verify import REJECT_CODES
+    from llb.goldset.verify_base import REJECT_CODES
 
     assert set(REJECT_CODE_HINTS) == set(REJECT_CODES)
 
@@ -126,10 +126,11 @@ def test_draft_prompts_carry_the_feedback_and_provenance_records_it(tmp_path):
     prompts: list[str] = []
     out = tmp_path / "bundle"
 
+    config = EndpointConfig(kind="local", model="fake")
     draft_goldset(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=_fake_endpoint(prompts),
+        EndpointPlan.single(config),
+        completers=EndpointCompleters.single(_fake_endpoint(prompts)),
         max_items=4,
         out_dir=out,
         rejection_feedback=feedback,
@@ -153,10 +154,11 @@ def test_draft_without_feedback_is_unchanged(tmp_path):
     (corpus / "doc.md").write_text(DOC, encoding="utf-8")
     prompts: list[str] = []
 
+    config = EndpointConfig(kind="local", model="fake")
     draft_goldset(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=_fake_endpoint(prompts),
+        EndpointPlan.single(config),
+        completers=EndpointCompleters.single(_fake_endpoint(prompts)),
         max_items=4,
         out_dir=tmp_path / "bundle",
     )

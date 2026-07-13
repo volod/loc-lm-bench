@@ -90,10 +90,14 @@ def persist_run(
     mirror: Callable[[RunManifest, Path], None] | None = None,
     staging_dir: Path | str | None = None,
     retrieval_rows: Sequence[Mapping[str, object]] | None = None,
+    artifacts: Mapping[str, str] | None = None,
 ) -> RunPaths:
-    """Atomically publish manifest + scores (+ optional per-case retrieved spans) as one
-    directory, then mirror best-effort. `retrieval_rows` is the additive `retrieval.jsonl`
-    record (miss analysis); omitting it keeps the legacy bundle shape."""
+    """Atomically publish manifest, scores, and optional artifacts as one directory.
+
+    `retrieval_rows` is the additive `retrieval.jsonl` record used by miss analysis. `artifacts`
+    adds named UTF-8 report files to the same staging transaction. The external mirror remains
+    best-effort and starts only after the complete canonical bundle is visible.
+    """
     out_dir = Path(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     if out_dir.exists():
@@ -122,6 +126,15 @@ def persist_run(
             if retrieval_rows is not None
             else None
         )
+        for name, content in (artifacts or {}).items():
+            artifact_path = staging / name
+            if (
+                Path(name).name != name
+                or name in {"manifest.json", staged_scores.name}
+                or artifact_path.exists()
+            ):
+                raise ValueError(f"invalid additional artifact name: {name!r}")
+            _atomic_write_text(artifact_path, content)
         staging.replace(out_dir)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)

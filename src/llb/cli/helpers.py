@@ -26,7 +26,8 @@ def load_config(config_path: Optional[Path], **overrides: Any) -> RunConfig:
 
 def resolve_registered_adapter(data_dir: Path, adapter: str) -> Path:
     """Resolve an adapter id / prefix / label to its directory, reporting a clean CLI error."""
-    from llb.finetune.registry import load_registry, registry_path, resolve_adapter
+    from llb.finetune.registry.io import load_registry, registry_path
+    from llb.finetune.registry.resolve import resolve_adapter
 
     try:
         entry = resolve_adapter(load_registry(registry_path(data_dir)), adapter)
@@ -38,7 +39,7 @@ def resolve_registered_adapter(data_dir: Path, adapter: str) -> Path:
 
 def load_models(manifest: Path) -> list[ModelSpec]:
     """Load a models manifest, reporting a YAML/schema error as a clean one-liner."""
-    from llb.backends.prepare import load_manifest
+    from llb.backends.prepare.manifest import load_manifest
 
     try:
         return load_manifest(manifest)
@@ -53,7 +54,7 @@ def planning_models(manifest: Path, *, trust_config: bool = False) -> list[Model
     Offline + best-effort: it sharpens the embedding-aware VRAM estimate when weights are
     already cached, and is a no-op otherwise. With `trust_config` the cached config OVERRIDES the
     curated arch fields (the real served architecture wins over hand-curated guesses)."""
-    from llb.backends.planner import enrich_arch
+    from llb.backends.planner.architecture import enrich_arch
 
     return [enrich_arch(m, override=trust_config) for m in load_models(manifest)]
 

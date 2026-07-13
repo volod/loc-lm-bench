@@ -16,7 +16,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from llb.prep.frontier import LLMComplete, parse_json_block
+from llb.prep.frontier import parse_json_block
+from llb.prep.frontier_telemetry import DraftBudgetExceeded, LLMComplete
 from llb.prep.ontology.constants import (
     EXTRACT_CHUNK_OVERLAP,
     EXTRACT_CONCURRENCY,
@@ -231,6 +232,8 @@ class LLMExtractionAdapter:
                     attempts,
                 )
                 continue
+            except DraftBudgetExceeded:
+                raise
             except Exception as exc:  # endpoint/transport error -> retry, then skip the window
                 _LOG.warning(
                     "[ontology] extraction call failed for %s (attempt %d/%d): %s",

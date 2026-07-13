@@ -19,29 +19,29 @@ from llb.finetune.lifecycle import (
     gc_rows,
     plan_gc,
 )
-from llb.finetune.registry import (
+from llb.finetune.registry.io import append_event, load_registry, registry_path
+from llb.finetune.registry.model import (
     VERDICT_CURRENT,
     VERDICT_STALE,
     VERDICT_UNKNOWN,
     AdapterEntry,
-    append_event,
-    load_registry,
-    register_adapter,
-    registry_path,
-    resolve_adapter,
-    staleness,
 )
-from llb.finetune.serving import (
-    ADAPTER_LORA_NAME,
-    MergeArtifacts,
-    MergeRequest,
-    ServePlan,
+from llb.finetune.registry.register import register_adapter
+from llb.finetune.registry.resolve import resolve_adapter
+from llb.finetune.registry.staleness import staleness
+from llb.finetune.serving.merge import (
     copy_base_tokenizer_assets,
     modelfile_text,
     ollama_tag,
     read_chat_template,
-    serve_adapter,
 )
+from llb.finetune.serving.model import (
+    ADAPTER_LORA_NAME,
+    MergeArtifacts,
+    MergeRequest,
+    ServePlan,
+)
+from llb.finetune.serving.run import serve_adapter
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import GoldItem, dump_goldset
 

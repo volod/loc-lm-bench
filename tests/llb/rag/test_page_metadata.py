@@ -2,7 +2,8 @@
 
 import pytest
 
-from llb.rag.chunking import STRATEGIES, chunk_corpus, chunk_text
+from llb.rag.chunking.corpus import chunk_corpus, chunk_text
+from llb.rag.chunking.dispatch import STRATEGIES
 from llb.rag.page_metadata import (
     annotate_page_metadata,
     heading_breadcrumb,

@@ -145,9 +145,10 @@ recorded in the manifest. The engine, prompts, gate, and worksheet are handled b
 
 ### In this repo
 `src/llb/judge/calibration.py` (rho + CI + trust decision + worksheet I/O),
-`src/llb/judge/rate.py` (the interactive rater), `src/llb/scoring/judge.py` (the gate + bias
-note). The operator walkthrough for all three commands -- and the new-goldset / text-corpus-draft
-cases -- is the [calibration-tooling manual](calibration-tooling.md); see also the
+`src/llb/judge/rate/` (the interactive rater), `src/llb/scoring/judge/model.py` (the runtime gate +
+bias note), and `src/llb/scoring/judge/deepeval_adapter.py` (local G-Eval). The operator walkthrough
+for all three commands -- and the new-goldset / text-corpus-draft cases -- is the
+[calibration-tooling manual](calibration-tooling.md); see also the
 [data-prep guide](../data-prep/data-prep.md) and [judge-experiments guide](judge-experiments.md).
 
 ---
@@ -330,8 +331,9 @@ A documented stratified sample passes the four checks and the accepted items are
   `build_drafted_items`) so you know what "grounded" already guarantees before you sample.
 
 ### In this repo
-`src/llb/goldset/verify.py` + `src/llb/goldset/verify_session.py` (the `make verify-*` sample /
-review / accept tooling), `src/llb/goldset/validate.py` (the structural gate),
+`src/llb/goldset/verify/`, `src/llb/goldset/verify_sampling/`, and
+`src/llb/goldset/verify_session/` (the `make verify-*` sample / review / accept tooling),
+`src/llb/goldset/validate.py` (the structural gate),
 `src/llb/prep/frontier.py` + `src/llb/prep/ontology/` (the drafting + grounding the human sample
 verifies), `src/llb/prep/verified_ledger.py` (the adoption mechanism). The operator walkthrough for
 all three commands -- real-corpus and synthetic bundles -- is the

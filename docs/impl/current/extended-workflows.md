@@ -10,7 +10,8 @@ tools, world state, objective checks, and optional judge fixed.
 
 Core locations:
 
-- `src/llb/bench/agentic.py`: `Harness` protocol, harness names, runner integration;
+- `src/llb/bench/agentic/model.py`: `Harness` protocol and harness names;
+- `src/llb/bench/agentic/run.py`: runner integration;
 - `src/llb/bench/harness/base.py`: pure loop harness;
 - `src/llb/bench/harness/langgraph.py`: LangGraph agent/tool graph;
 - `src/llb/bench/harness/crewai.py`: CrewAI adapter;
@@ -170,16 +171,16 @@ candidate row. It is file-driven and split-guarded:
 - `src/llb/finetune/loop.py` orchestrates base final eval, per-round tuning eval, miss analysis,
   dataset export, adapter training, adapter final eval, stop/accept logic, `state.json`, and
   `report.md`.
-- `src/llb/finetune/campaign.py` schedules the loop ingredients across a `--models` roster with
+- `src/llb/finetune/campaign/run.py` schedules the loop ingredients across a `--models` roster with
   planner skip reasons, a shared campaign SFT export, per-model preference exports, VRAM reclaim
   between roster entries, `campaign.progress.jsonl` resume, and a tunability `report.md`.
-- `src/llb/finetune/distill.py` runs local text-level distillation: a teacher answers verified
+- `src/llb/finetune/distill/run.py` runs local text-level distillation: a teacher answers verified
   tuning items through the normal RAG backend seam, deterministic correctness gates decide which
   answers become SFT targets, the same student is trained on teacher targets and reference targets,
   and the report compares the two adapters over the same held-out items.
-- `src/llb/finetune/registry.py`, `lifecycle.py`, and `serving.py` make adapters first-class,
+- `src/llb/finetune/registry/`, `lifecycle.py`, and `serving.py` make adapters first-class,
   traceable artifacts (see [Adapter Registry And Lifecycle](#adapter-registry-and-lifecycle)).
-- `src/llb/finetune/hparam_search.py` searches the LoRA space per model and feeds the winning
+- `src/llb/finetune/hparam_search/search.py` searches the LoRA space per model and feeds the winning
   config back as the trainer's defaults (see
   [Hyperparameter Search](#hyperparameter-search)).
 - `src/llb/finetune/naming.py` holds `model_slug`, the one filesystem name a model gets across the
@@ -240,7 +241,7 @@ registry registration, and contamination-guard compatibility.
 
 ## Hyperparameter Search
 
-`src/llb/finetune/hparam_search.py` searches the LoRA configuration space for one model with a
+`src/llb/finetune/hparam_search/search.py` searches the LoRA configuration space for one model with a
 bounded budget, so fine-tuning stops guessing rank, alpha, learning rate, epochs, target modules,
 or batch geometry.
 
@@ -386,10 +387,9 @@ win, which is the whole reason to measure rather than guess.
 
 Two caveats the numbers carry:
 
-- The dev slice is drawn uniformly, and this base model answers only a minority of items. A first
-  attempt on a 12-item dataset produced a 3-item dev slice holding ONE answerable item, and all
-  trials tied at `0.0000` -- the objective was a constant. The full 82-item tuning split fixed it;
-  a stratified slice would fix it properly (see the forward task in `plan.md`).
+- The dev slice can use a seeded plain split or base-score stratification. Supplying
+  `--stratify-by-base-score <run>` represents every non-empty score bucket and guarantees
+  answerable items; an all-zero base run is rejected because it cannot discriminate trials.
 - Trial 5 lands exactly on the base objective `0.2056`: a tuned adapter is not automatically better
   than no adapter, and the search records that honestly.
 
@@ -475,11 +475,15 @@ be reassigned to different weights.
 
 Modules:
 
-- `src/llb/finetune/registry.py`: `AdapterEntry`, the event log, `register_adapter` (idempotent --
-  an unchanged re-registration appends nothing), `resolve_adapter` (id / unique prefix / label /
-  directory), and `staleness`;
+- `src/llb/finetune/registry/`: `model.py` owns `AdapterEntry`; `io.py` folds the event log;
+  `register.py` performs idempotent registration and lifecycle writes; `resolve.py` handles id /
+  unique prefix / label / directory lookup; `staleness.py` compares benchmark fingerprints; and
+  `rows.py` renders CLI/board rows;
 - `src/llb/finetune/lifecycle.py`: run-bundle citation scan, supersession, and garbage collection;
-- `src/llb/finetune/serving.py`: the serve plan, the cached merge lane, and the backend seam.
+- `src/llb/finetune/serving/model.py`: immutable serve and merge contracts;
+- `src/llb/finetune/serving/run.py`: serve-plan construction and launcher lifecycle;
+- `src/llb/finetune/serving/merge.py`: cached merges, GGUF conversion, and Ollama Modelfiles;
+- `src/llb/finetune/serving/launcher.py`: backend-specific launcher construction.
 
 ```bash
 llb register-adapter --adapter-dir <dir> [--goldset <g>] [--corpus <c>] [--source-run <run>]

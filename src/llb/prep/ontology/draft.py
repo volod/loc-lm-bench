@@ -10,7 +10,8 @@ import json
 import logging
 from typing import Any
 
-from llb.prep.frontier import LLMComplete, parse_json_block
+from llb.prep.frontier import parse_json_block
+from llb.prep.frontier_telemetry import DraftBudgetExceeded, LLMComplete
 from llb.prep.ontology.constants import DRAFT_CONTEXT_RADIUS
 from llb.prep.ontology.models import DocRecord, DraftSeed
 from llb.prompts import render_text
@@ -66,6 +67,8 @@ def draft_for_seed(
     except json.JSONDecodeError:
         _LOG.warning("[ontology] unparseable draft for %s seed; skipping", seed.doc_id)
         return None
+    except DraftBudgetExceeded:
+        raise
     except Exception as exc:  # endpoint/transport error -> skip this seed, keep going
         _LOG.warning("[ontology] draft call failed for %s: %s", seed.doc_id, exc)
         return None

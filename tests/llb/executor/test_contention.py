@@ -160,14 +160,14 @@ def test_model_weight_floor_uses_embedding_aware_estimate():
 def test_runner_guard_applies_derate_and_aborts(monkeypatch):
     from llb.backends.vllm import VllmLauncher
     from llb.core.config import RunConfig
-    from llb.executor import contention, runner
+    from llb.executor import contention, runner_backend
 
     launcher = VllmLauncher("google/gemma-4-E4B-it-qat-w4a16-ct", gpu_memory_utilization=0.85)
     cfg = RunConfig(model="google/gemma-4-E4B-it-qat-w4a16-ct", backend="vllm")
 
     derate = plan_guard(TOTAL, 13000, 0.85, E4B_FLOOR)
     monkeypatch.setattr(contention, "apply_contention_guard", lambda **_kw: derate)
-    report = runner._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
+    report = runner_backend._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
     assert report is not None and report["derated"]
     assert launcher.gpu_memory_utilization == derate["safe_util"]  # launcher actually adjusted
     assert launcher.meta["gpu_memory_utilization"] == derate["safe_util"]
@@ -175,7 +175,7 @@ def test_runner_guard_applies_derate_and_aborts(monkeypatch):
     abort = plan_guard(TOTAL, 3000, 0.85, E4B_FLOOR)
     monkeypatch.setattr(contention, "apply_contention_guard", lambda **_kw: abort)
     with pytest.raises(SystemExit):
-        runner._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
+        runner_backend._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
 
 
 # --- VRAM contention guard multi-GPU read + arch-derived KV headroom ----------------------------------------

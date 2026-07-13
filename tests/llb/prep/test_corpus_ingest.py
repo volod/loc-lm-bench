@@ -10,7 +10,7 @@ import json
 import pytest
 
 from llb.prep.corpus_ingest import CORPUS_MANIFEST, ingest_corpus
-from llb.rag.chunking import chunk_corpus
+from llb.rag.chunking.corpus import chunk_corpus
 
 MD_DOC = "# Розділ\n\n" + ("Це достатньо довгий український документ. " * 20)
 TXT_DOC = "Це текстовий документ про кругообіг води у природі. " * 20

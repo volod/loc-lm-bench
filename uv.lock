@@ -3641,6 +3641,10 @@ board = [
 crewai = [
     { name = "crewai" },
 ]
+cutoff = [
+    { name = "datasets" },
+    { name = "optuna" },
+]
 dev = [
     { name = "complexipy" },
     { name = "mypy" },
@@ -3721,6 +3725,7 @@ requires-dist = [
     { name = "chromadb", marker = "extra == 'rag-chroma'", specifier = "==1.5.9" },
     { name = "complexipy", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15,<2" },
+    { name = "datasets", marker = "extra == 'cutoff'", specifier = ">=2.19" },
     { name = "datasets", marker = "extra == 'finetune'", specifier = ">=2.19" },
     { name = "datasets", marker = "extra == 'goldset'", specifier = ">=2.19" },
     { name = "deepeval", marker = "extra == 'rag'", specifier = ">=4.0.6,<5" },
@@ -3741,6 +3746,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "nvidia-ml-py", marker = "extra == 'telemetry'", specifier = ">=12.0" },
     { name = "openai", specifier = ">=1.40" },
+    { name = "optuna", marker = "extra == 'cutoff'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'finetune'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'track'", specifier = ">=3.6" },
@@ -3763,7 +3769,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.18" },
 ]
-provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "lex", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "mcp", "pdf-quality", "dev"]
+provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "lex", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
 
 [[package]]
 name = "llvmlite"

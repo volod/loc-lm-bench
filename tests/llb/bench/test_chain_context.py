@@ -328,7 +328,7 @@ def test_chain_set_digest_is_content_sensitive():
 
 def test_board_and_recommend_load_persisted_policies(tmp_path):
     from llb.board.chain_context import chain_context_comparison, load_chain_context_records
-    from llb.board.recommend import format_chain_context_section_md, latest_chain_context
+    from llb.board.recommend.sections import format_chain_context_section_md, latest_chain_context
 
     chains = [_two_step_chain("chain-0"), _two_step_chain("chain-1")]
     cc.run_chain_context(
@@ -355,7 +355,7 @@ def test_board_and_recommend_load_persisted_policies(tmp_path):
 
 
 def test_recommend_section_empty_without_bundles(tmp_path):
-    from llb.board.recommend import format_chain_context_section_md, latest_chain_context
+    from llb.board.recommend.sections import format_chain_context_section_md, latest_chain_context
 
     assert latest_chain_context(tmp_path) is None
     assert format_chain_context_section_md(None) == ""

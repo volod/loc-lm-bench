@@ -1,7 +1,7 @@
 """Markdown report rendering for external-RAG scoring: estimate tables + tuning recommendations.
 
 Turns a scored-row list plus the summary dict into the operator-facing Markdown report. Pure over
-its inputs apart from the final atomic write. `external_rag.py` re-exports `write_report`.
+its inputs apart from the final atomic write.
 """
 
 from collections.abc import Sequence

@@ -241,7 +241,7 @@ def test_score_case_records_groundedness_and_citations_when_enabled():
 
 
 def test_manifest_metrics_carry_mean_citation_coverage():
-    from llb.executor.runner import _attach_answer_side_metrics
+    from llb.executor.runner_metrics import _attach_answer_side_metrics
 
     rows = [
         {"citation_validity": 0.0, "citation_coverage": 1.0},

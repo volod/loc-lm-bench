@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from llb.bench.agentic import HARNESS_LOOP
+from llb.bench.agentic.model import HARNESS_LOOP
 from llb.core.contracts import BoardRow, JsonObject
 from llb.scoring.aggregate import (
     TIER_AGENTIC,

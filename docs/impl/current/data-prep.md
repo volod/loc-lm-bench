@@ -632,6 +632,129 @@ empty object from a parse or transport failure. A missing meta aborts the resume
 message. The make target also rejects an explicitly empty command-line `DRAFT_RESUME`, preventing
 an unset shell variable from silently starting a fresh default draft.
 
+### Frontier ontology draft lane
+
+The ontology pipeline has explicit extraction and drafting endpoint routes. The route types and
+phase telemetry live in `src/llb/prep/ontology/endpoint_config.py`; local and Litellm transports
+live in `endpoint.py`; spend/call enforcement lives in `src/llb/prep/frontier_telemetry.py`.
+`prepare-goldset-draft` keeps both phases local by default. A frontier run requires all of:
+
+- `DRAFT_ENDPOINT=frontier` (or `--endpoint frontier`);
+- an interactive confirmation that names the corpus path and Litellm destination;
+- at least one guard (`DRAFT_MAX_USD` or `DRAFT_MAX_CALLS`); the CLI supplies a 100-call guard
+  when neither is given explicitly.
+
+The default frontier route covers both phases. `DRAFT_FRONTIER_STAGE=extraction` or `drafting`
+routes only that phase off-box and requires `DRAFT_LOCAL_MODEL` for the other phase. Example:
+
+```bash
+make prepare-goldset-draft \
+  DRAFT_CORPUS=<corpus-dir> \
+  DRAFT_ENDPOINT=frontier \
+  DRAFT_FRONTIER_MODEL=<litellm-model-id> \
+  DRAFT_FRONTIER_STAGE=both \
+  DRAFT_MAX_USD=<usd-cap> \
+  DRAFT_MAX_CALLS=<call-cap>
+```
+
+`provenance.json` records the configured extraction/drafting routes plus aggregate and per-phase
+call counts, measured cost, latency, and per-call telemetry. A call cap is checked before dispatch.
+Provider cost is only knowable after a response, so the spend guard stops immediately after the
+call that crosses the cap. A budget stop exits nonzero but leaves `provenance.json` with
+`status: aborted`, the reason, telemetry, and the extraction journal so the bundle remains
+inspectable and resumable.
+
+`make draft-compare` (`src/llb/prep/ontology/compare.py`) runs local extraction once, selects a
+bounded deterministic seed set, and drafts those exact seed objects through the local and frontier
+routes. It writes self-contained lane bundles, verification worksheets, and
+`$DATA_DIR/draft-compare/<timestamp>/comparison.json`. The report includes seed fingerprints,
+parse rate, kept yield, calibration gates, and separate rankings for kept yield and verify-sample
+accept rate. Accept rate is `pending-human-review` until reviewed worksheets are supplied with
+`make draft-compare-report`; that report-only target updates `comparison.json` without calling or
+spending on either model again.
+
+The bounded `frontier-ua-draft-lane` probe reuses the committed, repo-authored synthetic
+two-document corpus at `samples/text_analysis_bundle_uk/corpus`. Its adjacent `provenance.json`
+records the data classification and document hashes. `make frontier-ua-draft-probe` pins this
+input, requires an explicit Litellm model, USD cap, call cap, and output root, then presents the
+normal corpus-and-destination egress prompt before any provider call.
+
+Human comparison decisions use the same resumable terminal cards as gold-set verification:
+`make draft-compare-review DRAFT_COMPARE_OUT_DIR=<comparison-root>` walks the local worksheet and
+then the frontier worksheet, saves every decision atomically, and resumes at the first undecided
+row. Cross-check/model verdicts remain hidden. `make draft-compare-finalize` refreshes reviewed
+accept rates without model calls, records a `finalization` block in `comparison.json`, prints one
+`[ok]` or `[fail]` line per acceptance gate, and exits nonzero unless all worksheets, calibration,
+parse-rate, ranking, call-cap, and spend-cap checks pass. The lower-level
+`make draft-compare-report` remains useful when worksheets live outside their generated paths.
+
+```bash
+make draft-compare \
+  DRAFT_COMPARE_CORPUS=<corpus-dir> \
+  DRAFT_COMPARE_SEEDS=<n> \
+  DRAFT_COMPARE_LOCAL_MODEL=<local-model> \
+  DRAFT_COMPARE_FRONTIER_MODEL=<litellm-model-id> \
+  DRAFT_COMPARE_MAX_USD=<usd-cap>
+
+make draft-compare-report \
+  DRAFT_COMPARE_OUT_DIR=<comparison-root> \
+  DRAFT_COMPARE_LOCAL_VERIFICATION=<reviewed-local-csv> \
+  DRAFT_COMPARE_FRONTIER_VERIFICATION=<reviewed-frontier-csv>
+
+make draft-compare-review DRAFT_COMPARE_OUT_DIR=<comparison-root>
+make draft-compare-finalize DRAFT_COMPARE_OUT_DIR=<comparison-root>
+```
+
+Deterministic coverage is in
+`tests/llb/prep/ontology/test_frontier_lane.py`: refusal occurs before completer construction,
+fake-provider spend aborts preserve provenance, mixed phase routes use distinct callables, and the
+comparison report fingerprints the shared seeds. No test needs network access or a provider key.
+
+### Sequential local Qwen/Gemma draft comparison
+
+`make local-ua-draft-probe` runs an exact-seed local comparison without data egress. The adaptive
+selection policy in `src/llb/prep/ontology/local_compare_models.py` uses the benchmark GPU-tier
+detector and selects Qwen/Gemma Ollama pairs for 12, 16, 24, and 32 GiB hosts. Explicit model flags
+remain available, but the selected tags must already be installed. The resolved tier, GPU name,
+models, context, and override/profile source are recorded under
+`comparison.json.execution.resource_selection`.
+
+`src/llb/prep/ontology/local_compare.py` enforces sequential residency: unload all Ollama models,
+run the Qwen baseline extraction and drafts, unload Qwen and wait until absent, run Gemma over the
+same seed objects, then unload again. `ollama_lifecycle.py` turns unload failure into an error rather
+than permitting overlapping model residency. The comparison uses `baseline` and `probe` lane names;
+it does not reuse the frontier names or provenance.
+
+The reviewed 16 GiB comparison selected `qwen3:14b` then `gemma4:e4b` with an 8192-token
+context. Both parsed 12/12 drafts and passed calibration. Qwen kept 7/12 items (58.3%) in 71.9
+seconds of drafting; Gemma kept 5/12 (41.7%) in 31.1 seconds. Gemma matched parse rate, reduced
+kept yield by 16.7 percentage points, and was about 2.3 times faster in drafting latency. Human
+review accepted every kept item: 7/7 Qwen items and 5/5 Gemma items, both 100%. Finalization passed
+all worksheet, calibration, ranking, sequential-execution, and unload checks. This supports Qwen as
+the higher-yield baseline and Gemma as the faster probe on this small fixture; reviewed accept rate
+does not distinguish them. `ollama ps` was empty after the run, confirming final unload. Runtime
+artifacts follow `<comparison-root>/{comparison.json,baseline/,probe/}`.
+
+`make draft-compare-analyze DRAFT_COMPARE_OUT_DIR=<comparison-root>` reads `comparison.json`, both
+lane provenance files, and the live worksheets. It prints model order, shared-seed counts, parsed
+and kept ratios, calibration, calls, latency, review progress, human accept rates, and lane deltas.
+`COMPARE_ANALYZE_JSON=1` emits normalized JSON and `COMPARE_REQUIRE_GATES=1` exits nonzero when a
+calibration gate fails. `make draft-compare-review` and `make draft-compare-finalize` accept either
+the frontier lane schema or the local `baseline`/`probe` schema.
+
+The dedicated operator aliases keep this workflow on one variable:
+
+```bash
+make local-ua-draft-probe LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>
+make local-ua-draft-complete LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>
+make local-ua-draft-analyze LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root> \
+  COMPARE_ANALYZE_JSON=1
+```
+
+`local-ua-draft-complete` runs the resumable human review, finalization, and final table in order.
+The individual `local-ua-draft-review` and `local-ua-draft-finalize` aliases remain available for
+operators who prefer one explicit gate at a time.
+
 ## Verification Gate
 
 The verification path has a mechanical half and a human half.
@@ -646,8 +769,11 @@ make verify-accept VERIFY_WS=<worksheet> BUNDLE=<draft>
 `src/llb/prep/cross_check.py` checks grounding and non-circularity before calling an injectable
 second verifier for support and answerability. A pass means the item is reviewable, not verified.
 
-`src/llb/goldset/verify.py` handles stratified sampling, worksheet IO, acceptance arithmetic, and
-accepted-ledger emission. `src/llb/goldset/verify_session.py` owns the interactive terminal loop.
+`src/llb/goldset/verify_sampling/` handles stratification, reviewer context, confidence ordering,
+row construction, and worksheet persistence. `verify_base.py`, `verify_acceptance.py`, and
+`verify_refcheck.py` own the schema/I/O, acceptance/ledger, and reference-checking seams;
+`src/llb/goldset/verify/cli.py` orchestrates the commands. `verify_session/` owns the interactive
+terminal loop.
 The review session keeps command parsing, navigation, row edits, clear confirmation, and
 persistence in small helpers so the loop reads as worksheet orchestration.
 The accepted ledger writes copied corpus files plus canonical `verified=true` rows; chain samples
@@ -667,7 +793,8 @@ with the measured human review-pass evidence recorded at the end of this section
 - **Confidence-ordered queue** -- `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`
   reviews least-confident items first: each cross-check verdict flag contributes +1/-1 and a
   needle `retrieval_rank` contributes `1/rank` (`row_confidence`/`confidence_order` in
-  `verify.py`). Only the session queue is reordered; the CSV row order never changes.
+  `verify_sampling/confidence.py`). Only the session queue is reordered; the CSV row order never
+  changes.
 - **On-card evidence** -- worksheet rows (new optional columns `retrieval_rank`,
   `page_citation`) carry the item's needle retrieval rank (joined from `needle_items.jsonl` /
   `item_provenance.jsonl`) and a `<source.pdf> p.N[-M]` citation resolved through the PDF lane's
@@ -750,7 +877,7 @@ summary, prompt + provenance round-trip over a fake endpoint).
 ### Multi-annotator gate and adjudication
 
 The verification gate supports more than one annotator plus configurable acceptance arithmetic
-(`src/llb/goldset/verify_multi.py` + policy extensions in `verify.py`; tests in
+(`src/llb/goldset/verify_multi/` + policy extensions in `verify_acceptance.py`; tests in
 `tests/llb/goldset/test_verify_adjudication.py`):
 
 ```bash
@@ -801,8 +928,9 @@ the judge remains diagnostic.
 Modules:
 
 - `src/llb/judge/calibration.py`: worksheet IO, Spearman rho, bootstrap CI, trust decision;
-- `src/llb/judge/rate.py`: interactive human rater;
-- `src/llb/scoring/judge.py`: runtime gated judge scoring.
+- `src/llb/judge/rate/`: command parsing, worksheet state, presentation, and the interactive rater;
+- `src/llb/scoring/judge/model.py`: runtime trust gate and judge outcome policy;
+- `src/llb/scoring/judge/scorer.py`: score normalization and empty-answer handling.
 
 ```bash
 make calibration-run
@@ -823,7 +951,7 @@ live under `$DATA_DIR/llb/calibration/` unless deliberately promoted.
 
 ## Chunking
 
-`src/llb/rag/chunking.py` keeps every chunk offset-exact. Strategies:
+The `src/llb/rag/chunking/` package keeps every chunk offset-exact. Strategies:
 
 - `fixed`: dependency-free fixed windows;
 - `sentence`: dependency-free sentence-aware chunks;
@@ -849,7 +977,7 @@ Production RAG indexes are built through `llb build-index` or `make build-index`
 
 `llb build-query-glossary --bundle <draft>` (or `make build-query-glossary BUNDLE=<draft>`) turns a
 draft bundle's `prompt_dictionary_candidates.jsonl` into a `query_glossary.json` for the query-side
-`glossary` step (`src/llb/rag/query_prep.py` `build_glossary_from_candidates`). Each candidate
+`glossary` step (`src/llb/rag/query_prep/glossary.py` `build_glossary_from_candidates`). Each candidate
 `term` becomes a canonical entry carrying its recorded aliases plus a romanized Latin variant
 (`--no-transliterations` disables the seeding); entries are sorted by canonical term for a
 deterministic artifact. Hand-add more surzhyk / transliteration aliases by editing the emitted JSON

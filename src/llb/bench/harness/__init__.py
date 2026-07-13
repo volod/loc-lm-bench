@@ -6,7 +6,7 @@ OPT-IN, lazy extras (`[eval]` for LangGraph, `[crewai]` for CrewAI), so the base
 light; the loop harness is always available and needs no extra.
 """
 
-from llb.bench.agentic import (
+from llb.bench.agentic.model import (
     HARNESS_CREWAI,
     HARNESS_LANGGRAPH,
     HARNESS_LOOP,

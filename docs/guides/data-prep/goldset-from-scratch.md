@@ -87,13 +87,104 @@ make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<corpus-dir> DRAFT_MODEL=<tag>
 ```
 
 The endpoint is LOCAL by default (an OpenAI-compatible server such as Ollama; no corpus leaves the
-box); opt into a frontier endpoint with `DRAFT_ENDPOINT=frontier` (egress; needs a provider key).
-CLI form: `llb prepare-goldset-draft --corpus-root <dir> --model <id> [--endpoint local|frontier]
-[--base-url <url>] [--max-items N]`. It writes a self-contained bundle under
+box). A frontier route needs a provider key, `DRAFT_ENDPOINT=frontier`, an interactive consent
+prompt that names the corpus and destination, and a call or spend cap:
+
+```bash
+make prepare-goldset-draft \
+  DRAFT_CORPUS=<corpus-dir> \
+  DRAFT_ENDPOINT=frontier \
+  DRAFT_FRONTIER_MODEL=<litellm-model-id> \
+  DRAFT_MAX_USD=<usd-cap> \
+  DRAFT_MAX_CALLS=<call-cap>
+```
+
+Use `DRAFT_FRONTIER_STAGE=extraction|drafting|both`; either mixed route also needs
+`DRAFT_LOCAL_MODEL=<local-model>`. The CLI equivalents are `--frontier-stage`, `--local-model`,
+`--max-usd`, and `--max-calls`. It writes a self-contained bundle under
 `$DATA_DIR/prepare-goldset/<ts>/`: `goldset.jsonl` (every item `verified=false`,
 `provenance=ontology-drafted`, spans exact), a verbatim `corpus/`, the induced `ontology.json`,
 per-doc `extraction.jsonl`, and `provenance.json` (endpoint, prompt fingerprints, per-doc hashes,
-stage counts, cost). A synthetic-planted bundle (`llb prepare-synthetic-corpus`) is the same shape
+stage counts, per-call cost/latency telemetry). Budget exhaustion leaves an inspectable aborted
+provenance record and extraction journal rather than deleting partial work.
+
+For an exact shared-seed local/frontier comparison, run:
+
+```bash
+make draft-compare \
+  DRAFT_COMPARE_CORPUS=<corpus-dir> \
+  DRAFT_COMPARE_SEEDS=<n> \
+  DRAFT_COMPARE_LOCAL_MODEL=<local-model> \
+  DRAFT_COMPARE_FRONTIER_MODEL=<litellm-model-id> \
+  DRAFT_COMPARE_MAX_USD=<usd-cap>
+```
+
+The comparison root under `$DATA_DIR/draft-compare/<ts>/` contains both bundles, both verification
+worksheets, and `comparison.json` with shared seed fingerprints, parse rate, kept yield, gate
+results, and yield/accept-rate rankings. Accept rates remain pending until a human reviews the
+worksheets. After review, update only the report (no provider calls or spend) with:
+
+```bash
+make draft-compare-report \
+  DRAFT_COMPARE_OUT_DIR=<comparison-root> \
+  DRAFT_COMPARE_LOCAL_VERIFICATION=<reviewed-local-csv> \
+  DRAFT_COMPARE_FRONTIER_VERIFICATION=<reviewed-frontier-csv>
+```
+
+### Finish the bounded Ukrainian local comparison
+
+`make local-ua-draft-probe` uses the committed synthetic two-document fixture at
+`samples/text_analysis_bundle_uk/corpus`. It detects the GPU tier through the same hardware path as
+benchmark serving, selects a Qwen baseline and Gemma probe that fit individually, and requires both
+Ollama tags to exist before starting.
+
+| GPU tier | Qwen baseline | Gemma probe | context |
+| --- | --- | --- | ---: |
+| 12 GiB | `qwen3:8b` | `gemma4:e2b` | 8192 |
+| 16 GiB | `qwen3:14b` | `gemma4:e4b` | 8192 |
+| 24 GiB | `qwen3:30b` | `gemma4:26b` | 8192 |
+| 32 GiB | `qwen3:30b` | `gemma4:31b` | 16384 |
+
+The runner unloads all resident Ollama models before starting, runs Qwen extraction and drafting,
+strictly unloads Qwen, runs Gemma on the exact shared seed objects, and unloads Gemma before exit.
+An unload timeout aborts the workflow instead of allowing the models to overlap in VRAM.
+
+For any generated artifact, use one abstract root consistently:
+
+```bash
+source scripts/shared/common.sh
+llb_load_env
+export COMPARISON_ROOT=<comparison-root>
+make local-ua-draft-analyze LOCAL_DRAFT_COMPARE_OUT_DIR="$COMPARISON_ROOT"
+make local-ua-draft-complete LOCAL_DRAFT_COMPARE_OUT_DIR="$COMPARISON_ROOT"
+```
+
+Use `y` to accept, `x` to reject, `h` for help, and `q` to save and pause. Re-run the review command
+to resume. Finalization reads both completed worksheets and updates `comparison.json` without any
+model call.
+
+For a new CUDA host, install the two tags named by any missing-model error and run:
+
+```bash
+make local-ua-draft-probe LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>
+make local-ua-draft-complete LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>
+```
+
+Use the analytics command for a compact table, a machine-readable normalized view, or a gate check:
+
+```bash
+make local-ua-draft-analyze LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>
+make local-ua-draft-analyze LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root> \
+  COMPARE_ANALYZE_JSON=1
+make local-ua-draft-analyze LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root> \
+  COMPARE_REQUIRE_GATES=1
+```
+
+The table reports model order, unload policy, shared seeds, parsed drafts, kept yield, calibration,
+calls, drafting latency, live worksheet progress, human accept rate, and probe-minus-baseline
+deltas. Preserve a failing artifact and its output; do not change human decisions to force a pass.
+
+A synthetic-planted bundle (`llb prepare-synthetic-corpus`) is the same shape
 with `planted_labels.jsonl` + `provenance.json` carrying `synthetic: true`.
 
 For the rest of this guide, `BUNDLE=$DATA_DIR/prepare-goldset/<ts>` is the drafted bundle.

@@ -25,13 +25,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.core.contracts import PlantedLabelRecord
-from llb.prep.frontier import (
-    LLMComplete,
-    ProvenanceLog,
-    ground_span,
-    litellm_complete,
-    parse_json_block,
-)
+from llb.prep.frontier import ground_span, litellm_complete, parse_json_block
+from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 
