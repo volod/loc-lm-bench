@@ -6,7 +6,10 @@
 	external-squad-rag curate-drafts import-external-draft coverage-plan-text \
 	calibration-worksheet calibration-run calibration-rate calibration-score cross-check-goldset \
 	verify-sample verify-review verify-adjudicate verify-accept judge-experiment ingest-uk-squad \
-	prepare-goldset-draft build-query-glossary derive-security-cases \
+	prepare-goldset-draft draft-compare draft-compare-review draft-compare-report \
+	draft-compare-finalize frontier-ua-draft-probe build-query-glossary derive-security-cases \
+	draft-compare-local draft-compare-analyze local-ua-draft-probe local-ua-draft-review \
+	local-ua-draft-finalize local-ua-draft-analyze local-ua-draft-complete \
 	derive-security-worksheet chain-goldset-pipeline chain-goldset-finalize
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
@@ -218,8 +221,9 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	fi; \
 	args=( \
 	  --corpus-root "$(DRAFT_CORPUS)" \
-	  --model "$(DRAFT_MODEL)" \
+	  --model "$(if $(DRAFT_FRONTIER_MODEL),$(DRAFT_FRONTIER_MODEL),$(DRAFT_MODEL))" \
 	  --endpoint "$(DRAFT_ENDPOINT)" \
+	  --frontier-stage "$(DRAFT_FRONTIER_STAGE)" \
 	  --backend "$(DRAFT_BACKEND)" \
 	  --max-items "$(DRAFT_MAX_ITEMS)" \
 	  --extractor "$(DRAFT_EXTRACTOR)" \
@@ -229,6 +233,10 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
 	); \
 	if [ -n "$(DRAFT_BASE_URL)" ]; then args+=(--base-url "$(DRAFT_BASE_URL)"); fi; \
+	if [ -n "$(DRAFT_LOCAL_MODEL)" ]; then args+=(--local-model "$(DRAFT_LOCAL_MODEL)"); fi; \
+	if [ "$(DRAFT_ENDPOINT)" = "frontier" ] && [ -n "$(DRAFT_MAX_USD)" ]; then args+=(--max-usd "$(DRAFT_MAX_USD)"); fi; \
+	if [ "$(DRAFT_ENDPOINT)" = "frontier" ] && [ -n "$(DRAFT_MAX_CALLS)" ]; then args+=(--max-calls "$(DRAFT_MAX_CALLS)"); fi; \
+	if [ "$(DRAFT_ENDPOINT)" = "frontier" ] && [ "$(DRAFT_EGRESS_CONSENT)" = "1" ]; then args+=(--egress-consent); fi; \
 	if [ -n "$(DRAFT_VLLM_PORT)" ]; then args+=(--vllm-port "$(DRAFT_VLLM_PORT)"); fi; \
 	if [ -n "$(DRAFT_VLLM_GPU_MEMORY_UTILIZATION)" ]; then args+=(--vllm-gpu-memory-utilization "$(DRAFT_VLLM_GPU_MEMORY_UTILIZATION)"); fi; \
 	if [ -n "$(DRAFT_VLLM_MAX_MODEL_LEN)" ]; then args+=(--vllm-max-model-len "$(DRAFT_VLLM_MAX_MODEL_LEN)"); fi; \
@@ -256,6 +264,97 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
+
+draft-compare: ## Compare exact shared seeds locally vs frontier (DRAFT_COMPARE_FRONTIER_MODEL=, DRAFT_COMPARE_SEEDS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DRAFT_COMPARE_FRONTIER_MODEL)" || { echo "ERROR: set DRAFT_COMPARE_FRONTIER_MODEL=<litellm-id>"; exit 2; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	args=( \
+	  --corpus-root "$(DRAFT_COMPARE_CORPUS)" \
+	  --seeds "$(DRAFT_COMPARE_SEEDS)" \
+	  --frontier-model "$(DRAFT_COMPARE_FRONTIER_MODEL)" \
+	  --local-model "$(DRAFT_COMPARE_LOCAL_MODEL)" \
+	  --local-backend "$(DRAFT_COMPARE_LOCAL_BACKEND)" \
+	  --max-calls "$(DRAFT_COMPARE_MAX_CALLS)" \
+	); \
+	if [ -n "$(DRAFT_COMPARE_LOCAL_BASE_URL)" ]; then args+=(--local-base-url "$(DRAFT_COMPARE_LOCAL_BASE_URL)"); fi; \
+	if [ -n "$(DRAFT_COMPARE_MAX_USD)" ]; then args+=(--max-usd "$(DRAFT_COMPARE_MAX_USD)"); fi; \
+	if [ -n "$(DRAFT_COMPARE_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_COMPARE_OUT_DIR)"); fi; \
+	if [ -n "$(DRAFT_COMPARE_LOCAL_VERIFICATION)" ]; then args+=(--local-verification "$(DRAFT_COMPARE_LOCAL_VERIFICATION)"); fi; \
+	if [ -n "$(DRAFT_COMPARE_FRONTIER_VERIFICATION)" ]; then args+=(--frontier-verification "$(DRAFT_COMPARE_FRONTIER_VERIFICATION)"); fi; \
+	$(PY) -m llb.main draft-compare "$${args[@]}"
+
+draft-compare-report: ## Refresh comparison accept rates without model calls (DRAFT_COMPARE_OUT_DIR=, verification worksheets required)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	@test -n "$(DRAFT_COMPARE_LOCAL_VERIFICATION)" || { echo "ERROR: set DRAFT_COMPARE_LOCAL_VERIFICATION=<reviewed-local-csv>"; exit 2; }
+	@test -n "$(DRAFT_COMPARE_FRONTIER_VERIFICATION)" || { echo "ERROR: set DRAFT_COMPARE_FRONTIER_VERIFICATION=<reviewed-frontier-csv>"; exit 2; }
+	$(PY) -m llb.main draft-compare-report \
+	  --report "$(DRAFT_COMPARE_OUT_DIR)/comparison.json" \
+	  --local-verification "$(DRAFT_COMPARE_LOCAL_VERIFICATION)" \
+	  --frontier-verification "$(DRAFT_COMPARE_FRONTIER_VERIFICATION)"
+
+draft-compare-review: ## Interactively review both comparison worksheets (DRAFT_COMPARE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(PY) -m llb.main draft-compare-review --comparison-root "$(DRAFT_COMPARE_OUT_DIR)" $(if $(VERIFY_ORDER),--order "$(VERIFY_ORDER)")
+
+draft-compare-finalize: ## Refresh metrics and check every comparison gate (DRAFT_COMPARE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(PY) -m llb.main draft-compare-finalize --comparison-root "$(DRAFT_COMPARE_OUT_DIR)"
+
+frontier-ua-draft-probe: ## Run the bounded committed two-document UA probe (FRONTIER_UA_PROBE_FRONTIER_MODEL=, MAX_USD=, OUT_DIR=)
+	@test -n "$(FRONTIER_UA_PROBE_FRONTIER_MODEL)" || { echo "ERROR: set FRONTIER_UA_PROBE_FRONTIER_MODEL=<litellm-id>"; exit 2; }
+	@test -n "$(FRONTIER_UA_PROBE_MAX_USD)" || { echo "ERROR: set FRONTIER_UA_PROBE_MAX_USD=<authorized-usd-cap>"; exit 2; }
+	@test -n "$(FRONTIER_UA_PROBE_OUT_DIR)" || { echo "ERROR: set FRONTIER_UA_PROBE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory draft-compare \
+	  DRAFT_COMPARE_CORPUS="$(FRONTIER_UA_PROBE_CORPUS)" \
+	  DRAFT_COMPARE_SEEDS="$(FRONTIER_UA_PROBE_SEEDS)" \
+	  DRAFT_COMPARE_LOCAL_MODEL="$(FRONTIER_UA_PROBE_LOCAL_MODEL)" \
+	  DRAFT_COMPARE_FRONTIER_MODEL="$(FRONTIER_UA_PROBE_FRONTIER_MODEL)" \
+	  DRAFT_COMPARE_MAX_USD="$(FRONTIER_UA_PROBE_MAX_USD)" \
+	  DRAFT_COMPARE_MAX_CALLS="$(FRONTIER_UA_PROBE_MAX_CALLS)" \
+	  DRAFT_COMPARE_OUT_DIR="$(FRONTIER_UA_PROBE_OUT_DIR)"
+
+draft-compare-local: ## Sequential local Qwen/Gemma exact-seed comparison (LOCAL_DRAFT_COMPARE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	args=(--corpus-root "$(LOCAL_DRAFT_COMPARE_CORPUS)" --seeds "$(LOCAL_DRAFT_COMPARE_SEEDS)"); \
+	if [ -n "$(LOCAL_DRAFT_COMPARE_BASELINE_MODEL)" ]; then args+=(--baseline-model "$(LOCAL_DRAFT_COMPARE_BASELINE_MODEL)"); fi; \
+	if [ -n "$(LOCAL_DRAFT_COMPARE_PROBE_MODEL)" ]; then args+=(--probe-model "$(LOCAL_DRAFT_COMPARE_PROBE_MODEL)"); fi; \
+	if [ -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" ]; then args+=(--out-dir "$(LOCAL_DRAFT_COMPARE_OUT_DIR)"); fi; \
+	$(PY) -m llb.main draft-compare-local "$${args[@]}"
+
+local-ua-draft-probe: ## Adaptive two-document Qwen/Gemma run (LOCAL_DRAFT_COMPARE_OUT_DIR= required)
+	@test -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory draft-compare-local
+
+draft-compare-analyze: ## Print comparison.json metrics and deltas (DRAFT_COMPARE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(PY) -m llb.main draft-compare-analyze --report "$(DRAFT_COMPARE_OUT_DIR)/comparison.json" $(if $(COMPARE_ANALYZE_JSON),--json) $(if $(COMPARE_REQUIRE_GATES),--require-passed-gates)
+
+local-ua-draft-review: ## Review both adaptive local comparison lanes (LOCAL_DRAFT_COMPARE_OUT_DIR=)
+	@test -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory draft-compare-review DRAFT_COMPARE_OUT_DIR="$(LOCAL_DRAFT_COMPARE_OUT_DIR)"
+
+local-ua-draft-finalize: ## Finalize reviewed local comparison gates (LOCAL_DRAFT_COMPARE_OUT_DIR=)
+	@test -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory draft-compare-finalize DRAFT_COMPARE_OUT_DIR="$(LOCAL_DRAFT_COMPARE_OUT_DIR)"
+
+local-ua-draft-analyze: ## Analyze local comparison metrics (LOCAL_DRAFT_COMPARE_OUT_DIR=, COMPARE_ANALYZE_JSON=1)
+	@test -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory draft-compare-analyze \
+	  DRAFT_COMPARE_OUT_DIR="$(LOCAL_DRAFT_COMPARE_OUT_DIR)" \
+	  COMPARE_ANALYZE_JSON="$(COMPARE_ANALYZE_JSON)" \
+	  COMPARE_REQUIRE_GATES="$(COMPARE_REQUIRE_GATES)"
+
+local-ua-draft-complete: ## Human review -> finalize -> analyze for an existing local comparison
+	@test -n "$(LOCAL_DRAFT_COMPARE_OUT_DIR)" || { echo "ERROR: set LOCAL_DRAFT_COMPARE_OUT_DIR=<comparison-root>"; exit 2; }
+	$(MAKE) --no-print-directory local-ua-draft-review
+	$(MAKE) --no-print-directory local-ua-draft-finalize
+	$(MAKE) --no-print-directory local-ua-draft-analyze
 
 coverage-plan-text: ## Convert a coverage JSON slice into a NotebookLM-friendly text source
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

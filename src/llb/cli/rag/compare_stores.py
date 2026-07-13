@@ -10,7 +10,7 @@ from llb.cli.helpers import load_config
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
-    from llb.prep.frontier import ProvenanceLog
+    from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.rag.embedding_bakeoff import StoreBuilder
 
 
@@ -194,7 +194,7 @@ def compare_embeddings_cmd(
     from llb.bench.common import new_run_timestamp
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.prep.frontier import ProvenanceLog
+    from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.rag.embedding_bakeoff import (
         DEFAULT_LOCAL_CANDIDATES,
         format_report,

@@ -11,6 +11,7 @@ confidence intervals, and reviewable data gates.
 |---|---|---|
 | Corpus-grounded gold sets | Convert local PDFs to markdown, then build or ingest Ukrainian eval data with exact source spans, verified splits, and reusable corpus bundles. See [Gold-set guide](docs/guides/data-prep/goldset-from-scratch.md) and [data prep](docs/guides/data-prep/data-prep.md). | `make pdf-to-markdown PDF_DIR=<pdf-dir>` -> `make ingest-uk-squad` -> `make validate-goldset` |
 | Human verification gates | Cross-check AI-drafted data, review a stratified sample, and emit accepted ledgers before real model scoring. See [verification tooling](docs/guides/human-tooling/verification-tooling.md) and [human evaluation](docs/guides/human-tooling/human-in-the-loop-evaluation.md). | `make verify-sample` -> `make verify-review` -> `make verify-accept` |
+| Adaptive local draft comparison | Detect the CUDA VRAM tier, run a fitting Qwen baseline and Gemma probe sequentially over exact shared seeds, unload each model between lanes, and inspect machine/human quality deltas. See [Gold-set guide](docs/guides/data-prep/goldset-from-scratch.md#finish-the-bounded-ukrainian-local-comparison). | `make local-ua-draft-probe` -> `make local-ua-draft-complete` -> `make local-ua-draft-analyze` |
 | FAISS and GraphRAG retrieval | Build vector and graph stores, validate recall/MRR, and compare retrieval strategies before blaming the model. See [retrieval comparison](docs/guides/benchmarking/graph-vs-faiss-comparison.md). | `make build-index` -> `make build-graph` -> `make validate-retrieval` -> `make compare-retrieval` |
 | Ukrainian query-side processing | Improve Ukrainian queries before retrieval without touching the corpus: casefold/apostrophe/transliteration normalization, corpus-vocabulary typo tolerance, alias/glossary expansion, and an opt-in logged LLM rewrite -- with an A/B report proving each step's recall/MRR delta. See [RAG core](docs/impl/current/rag-core.md) query-side processing. | `make build-query-glossary BUNDLE=<draft>` -> `make validate-retrieval QUERY_PREP=normalize,typos,glossary QUERY_PREP_AB=1` -> `make run-eval QUERY_PREP=normalize,typos,glossary` |
 | Groundedness and citation metrics | Score answer-side RAG quality beyond reference overlap: deterministic groundedness fraction, `[i]` citation validity + hallucinated-citation rate, and insufficient-context abstention probes (gold evidence removed -> the model should decline). Additive columns that never change the headline. See [RAG core](docs/impl/current/rag-core.md) groundedness and citation metrics. | `make run-eval CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=20` |
@@ -141,8 +142,8 @@ QUICKSTART_MODEL_SELECTION=benchmark make quickstart-pdf-corpus
 QUICKSTART_DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
   make quickstart-pdf-corpus
 
-# Opt into an external provider through litellm. This sends corpus text
-# off-box and needs the provider API key in the environment.
+# Opt into an external provider through litellm. The workflow names the corpus and
+# destination in its consent prompt and applies the quickstart 1000-call guard.
 QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
   make quickstart-pdf-corpus
 ```

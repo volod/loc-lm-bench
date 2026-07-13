@@ -11,7 +11,7 @@ from llb.cli.helpers import load_config
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
-    from llb.prep.frontier import LLMComplete
+    from llb.prep.frontier_telemetry import LLMComplete
     from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 
 
@@ -185,8 +185,9 @@ def _local_complete(
     output budget and `think=False` disables a reasoning model's hidden thinking (Ollama native),
     so a calibrated reasoning model emits JSON directly.
     """
-    from llb.prep.frontier import ProvenanceLog
-    from llb.prep.ontology.endpoint import ENDPOINT_LOCAL, EndpointConfig, build_complete
+    from llb.prep.frontier_telemetry import ProvenanceLog
+    from llb.prep.ontology.endpoint import build_complete
+    from llb.prep.ontology.endpoint_config import ENDPOINT_LOCAL, EndpointConfig
 
     cfg = EndpointConfig(kind=ENDPOINT_LOCAL, model=model, think=think)
     if base_url is not None:

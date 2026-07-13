@@ -174,7 +174,9 @@ it exists, then falls back to the host-fit Gemma 4 target. If `QUICKSTART_DRAFT_
 the draft command starts and stops `vllm serve` itself; set
 `QUICKSTART_DRAFT_BASE_URL=http://host:port/v1` to use an already-running server.
 
-To opt into an external provider, set the provider API key expected by `litellm`, then run:
+To opt into an external provider, set the provider API key expected by `litellm`. The draft command
+then asks for corpus-and-destination-specific consent and applies the quickstart 1000-call guard
+(`QUICKSTART_DRAFT_MAX_CALLS` overrides it):
 
 ```sh
 QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \

@@ -25,13 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from llb.goldset.schema import GoldItem
-from llb.prep.frontier import (
-    LLMComplete,
-    ProvenanceLog,
-    ground_span,
-    litellm_complete,
-    parse_json_block,
-)
+from llb.prep.frontier import ground_span, litellm_complete, parse_json_block
+from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 from llb.prompts import render_text
 from llb.rag.chunking.corpus import iter_docs
 from llb.scoring.text_analysis import normalize_surface

@@ -38,7 +38,7 @@ track_c_draft() {
   result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
 
   heading "2/3" "confirm full ontology and goldset draft"
-  local stats
+  local stats draft_egress_consent
   stats="$(pdf_draft_stats)"
   result "estimated draft workload: $stats"
   if [ -n "$QS_CORPUS_RESUME" ]; then
@@ -54,11 +54,27 @@ track_c_draft() {
     exit 2
   fi
 
+  draft_egress_consent=0
+  if [ "$QS_DRAFT_ENDPOINT" = "frontier" ]; then
+    if ! prompt_yes_no \
+      "Send corpus '$QS_CORPUS_MD' to Litellm destination '$QS_DRAFT_MODEL' (max calls: $QUICKSTART_DRAFT_MAX_CALLS)?" \
+      "no" \
+      "Set QUICKSTART_ASSUME_YES=1 only after approving this corpus egress and provider spend." \
+    ; then
+      echo "ERROR: frontier corpus egress was not approved" >&2
+      exit 2
+    fi
+    draft_egress_consent=1
+  fi
+
   heading "3/3" "draft unverified goldset and ontology"
   make_cmd prepare-goldset-draft \
     DRAFT_CORPUS="$QS_CORPUS_MD" \
     DRAFT_MODEL="$QS_DRAFT_MODEL" \
     DRAFT_ENDPOINT="$QS_DRAFT_ENDPOINT" \
+    DRAFT_EGRESS_CONSENT="$draft_egress_consent" \
+    DRAFT_MAX_USD="$QUICKSTART_DRAFT_MAX_USD" \
+    DRAFT_MAX_CALLS="$QUICKSTART_DRAFT_MAX_CALLS" \
     DRAFT_BACKEND="$QS_DRAFT_BACKEND" \
     DRAFT_BASE_URL="$QS_DRAFT_BASE_URL" \
     DRAFT_MAX_ITEMS="$QS_DRAFT_MAX_ITEMS" \
@@ -98,4 +114,3 @@ track_c_all() {
   printf '[next] an interrupted draft resumes with QUICKSTART_CORPUS_RESUME=%s make quickstart-corpus-draft\n' "$(rel_path "$QS_CORPUS_DRAFT")"
   printf '[next] make quickstart-pdf-corpus-review QUICKSTART_PDF_DRAFT=%s\n' "$(rel_path "$QS_CORPUS_DRAFT")"
 }
-

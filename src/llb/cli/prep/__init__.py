@@ -9,6 +9,8 @@ from llb.cli.prep import (  # noqa: F401
     corpus,
     curation,
     draft,
+    draft_compare,
+    draft_compare_local,
     goldset,
     security,
 )

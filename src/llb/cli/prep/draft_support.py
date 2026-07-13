@@ -1,28 +1,11 @@
-"""Helpers for the prepare-goldset-draft command: vLLM launch, endpoint setup, resume
-overrides, input validation, verification-sample scaffolding, and calibration gating."""
+"""Resume, validation, verification-sample, and gate helpers for ontology drafting."""
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, cast
-from urllib.parse import urlsplit
 
 import typer
 
 from llb.cli.helpers import cli_error
-
-
-@dataclass
-class _VllmLaunchOptions:
-    """The `--vllm-*` server knobs, grouped so launch logic takes one argument."""
-
-    port: int
-    gpu_memory_utilization: float
-    max_model_len: Optional[int]
-    cpu_offload_gb: Optional[float]
-    kv_offloading_size_gb: Optional[float]
-    dtype: str
-    quantization: Optional[str]
-    startup_timeout: float
 
 
 def _resume_overrides(
@@ -31,28 +14,62 @@ def _resume_overrides(
     model: Optional[str],
     endpoint: str,
     backend: str,
+    frontier_stage: str,
+    local_model: Optional[str],
+    max_usd: Optional[float],
+    max_calls: Optional[int],
     out_dir: Optional[Path],
-) -> tuple[Optional[Path], str, str, str, Path]:
+) -> tuple[Optional[Path], str, str, str, str, Optional[str], Optional[float], Optional[int], Path]:
     """Fill unset CLI values from the resumed bundle's journal meta.
 
     The bundle's journal meta is authoritative for the corpus and endpoint identity; the
     extraction/seed/retrieval settings are re-read inside draft_goldset(resume=True). The
     base URL is intentionally NOT restored so a vLLM resume relaunches a fresh server.
     """
-    from llb.prep.ontology import load_journal_meta
+    from llb.prep.ontology.pipeline.journaling import load_journal_meta
 
     try:
         meta = load_journal_meta(resume)
     except ValueError as exc:
         cli_error(str(exc))
     ep_meta = cast(dict[str, Any], meta.get("endpoint") or {})
+    stages = cast(dict[str, Any], ep_meta.get("stages") or {})
+    extraction = cast(dict[str, Any], stages.get("extraction") or {})
+    drafting = cast(dict[str, Any], stages.get("drafting") or {})
     if corpus_root is None:
         corpus_root = Path(str(meta.get("corpus_root")))
-    if not model:
-        model = str(ep_meta.get("model") or "")
-    endpoint = str(ep_meta.get("kind") or endpoint)
-    backend = str(ep_meta.get("backend") or backend)
-    return corpus_root, model, endpoint, backend, out_dir or resume
+    frontier_phases = [
+        phase
+        for phase, config in (("extraction", extraction), ("drafting", drafting))
+        if config.get("kind") == "frontier"
+    ]
+    if frontier_phases:
+        endpoint = "frontier"
+        frontier_stage = "both" if len(frontier_phases) == 2 else frontier_phases[0]
+        frontier_config = extraction if extraction.get("kind") == "frontier" else drafting
+        local_config = drafting if frontier_stage == "extraction" else extraction
+        model = model or str(frontier_config.get("model") or "")
+        if max_usd is None and frontier_config.get("max_usd") is not None:
+            max_usd = float(frontier_config["max_usd"])
+        if max_calls is None and frontier_config.get("max_calls") is not None:
+            max_calls = int(frontier_config["max_calls"])
+        local_model = local_model or str(local_config.get("model") or "") or None
+        backend = str(local_config.get("backend") or backend)
+    else:
+        endpoint = "local"
+        model = model or str(extraction.get("model") or "")
+        backend = str(extraction.get("backend") or backend)
+    return (
+        corpus_root,
+        model,
+        endpoint,
+        backend,
+        frontier_stage,
+        local_model,
+        max_usd,
+        max_calls,
+        out_dir or resume,
+    )
 
 
 def _validate_draft_inputs(
@@ -72,32 +89,6 @@ def _validate_draft_inputs(
         cli_error(f"rejection feedback file not found: {rejection_feedback}")
 
 
-def _launch_draft_vllm(model: str, options: _VllmLaunchOptions, log_dir: Path) -> tuple[Any, str]:
-    """Start a vLLM server for the draft run; returns (launcher, base_url)."""
-    from llb.backends.vllm import VllmLauncher
-    from llb.core.config import DEFAULT_VLLM_HOST
-
-    host = _vllm_host_for_port(DEFAULT_VLLM_HOST, options.port)
-    launcher = VllmLauncher(
-        model,
-        host=host,
-        port=options.port,
-        gpu_memory_utilization=options.gpu_memory_utilization,
-        max_model_len=options.max_model_len,
-        cpu_offload_gb=options.cpu_offload_gb,
-        kv_offloading_size_gb=options.kv_offloading_size_gb,
-        dtype=options.dtype,
-        quantization=options.quantization,
-        startup_timeout=options.startup_timeout,
-        log_dir=log_dir,
-    )
-    typer.echo(
-        f"[prepare-goldset-draft] starting vLLM model={model} host={host} port={options.port}"
-    )
-    launcher.start()
-    return launcher, f"{host}/v1"
-
-
 def _extraction_adapter(extractor: str, spacy_model: str) -> Any:
     """The opt-in spaCy extraction adapter, or None for the default LLM extractor."""
     if extractor != "spacy":
@@ -112,58 +103,6 @@ def _split_dir_list(value: Optional[str]) -> Optional[list[Path | str]]:
     if not value:
         return None
     return [Path(part.strip()) for part in value.split(",") if part.strip()]
-
-
-def _draft_endpoint_setup(
-    model: str,
-    endpoint: str,
-    backend: str,
-    base_url: Optional[str],
-    out_dir: Optional[Path],
-    num_ctx: Optional[int],
-    vllm_options: _VllmLaunchOptions,
-    *,
-    max_tokens: int,
-    temperature: float,
-    timeout: float,
-    no_think: bool,
-) -> tuple[Any, Any, Optional[Path]]:
-    """Launch vLLM when this command owns the server, then build the endpoint config.
-
-    Returns (endpoint_config, launched_vllm_or_None, resolved_out_dir).
-    """
-    from llb.prep.ontology import EndpointConfig, default_out_dir
-    from llb.prep.ontology.endpoint import (
-        DEFAULT_LOCAL_BASE_URL,
-        ENDPOINT_LOCAL,
-        LOCAL_BACKEND_VLLM,
-    )
-
-    resolved_out_dir = out_dir
-    base_url_value = base_url or DEFAULT_LOCAL_BASE_URL
-    launched_vllm = None
-    if endpoint == ENDPOINT_LOCAL and backend == LOCAL_BACKEND_VLLM and base_url is None:
-        resolved_out_dir = resolved_out_dir or default_out_dir()
-        launched_vllm, base_url_value = _launch_draft_vllm(
-            model, vllm_options, resolved_out_dir / "vllm"
-        )
-    try:
-        cfg = EndpointConfig(
-            kind=endpoint,
-            model=model,
-            backend=backend,
-            base_url=base_url_value,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout,
-            think=False if no_think else None,
-            num_ctx=None if backend == LOCAL_BACKEND_VLLM else num_ctx,
-        )
-    except ValueError as exc:
-        if launched_vllm is not None:
-            launched_vllm.stop()
-        cli_error(str(exc))
-    return cfg, launched_vllm, resolved_out_dir
 
 
 def _write_verification_sample(out_dir: Path, n: int, seed: int) -> None:
@@ -192,10 +131,3 @@ def _enforce_calibration_gates(calibration_report: Any, out_dir: Path) -> None:
         f"({detail}); inspect {out_dir / PDF_ONTOLOGY_REPORT_FILENAME}",
         code=1,
     )
-
-
-def _vllm_host_for_port(default_host: str, port: int) -> str:
-    parsed = urlsplit(default_host)
-    scheme = parsed.scheme or "http"
-    hostname = parsed.hostname or "localhost"
-    return f"{scheme}://{hostname}:{port}"

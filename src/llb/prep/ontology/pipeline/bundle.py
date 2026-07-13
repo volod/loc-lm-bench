@@ -10,6 +10,7 @@ the human verification gate remains the real block on scoring).
 import hashlib
 import json
 import logging
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from llb.goldset.chains import dump_chains
@@ -30,13 +31,42 @@ from llb.prep.ontology.constants import (
     PROVENANCE_KIND,
 )
 from llb.prep.ontology.draft import draft_prompt
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointPlan, endpoint_provenance
 from llb.prep.ontology.extract import extraction_prompt
 from llb.prep.ontology.models import DocRecord, DraftSeed
 from llb.prep.ontology.needles import NeedleRetriever
 from llb.prep.ontology.pipeline.settings import PipelineResult
 
+if TYPE_CHECKING:
+    from llb.prep.ontology.endpoint_config import EndpointLogs
+
 _LOG = logging.getLogger(__name__)
+
+
+def write_budget_abort(
+    out_dir: Path,
+    endpoints: EndpointPlan,
+    logs: "EndpointLogs",
+    settings: dict[str, object],
+    reason: str,
+    *,
+    elapsed_s: float,
+) -> None:
+    """Leave a machine-readable abort record beside the resumable extraction state."""
+    payload = {
+        "kind": PROVENANCE_KIND,
+        "synthetic": False,
+        "status": "aborted",
+        "abort": {"reason": reason, "resumable": True},
+        "endpoint": endpoint_provenance(endpoints, logs),
+        "settings": settings,
+        "elapsed_s": round(elapsed_s, 3),
+        "cost": logs.summary(),
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / PROVENANCE_FILENAME).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _prompt_fingerprints() -> dict[str, str]:
@@ -98,7 +128,7 @@ def _label_counts(result: PipelineResult) -> dict[str, dict[str, int]]:
 
 
 def _provenance(
-    result: PipelineResult, endpoint: EndpointConfig, seed: int, settings: dict[str, object]
+    result: PipelineResult, endpoints: EndpointPlan, seed: int, settings: dict[str, object]
 ) -> dict[str, object]:
     n_multi_hop = sum(
         1
@@ -108,7 +138,7 @@ def _provenance(
     provenance: dict[str, object] = {
         "kind": PROVENANCE_KIND,
         "synthetic": False,  # drafted FROM a real corpus (vs planted synthetic docs)
-        "endpoint": endpoint.provenance(),
+        "endpoint": endpoint_provenance(endpoints, result.endpoint_logs),
         "prompts": _prompt_fingerprints(),
         "seed": seed,
         "settings": settings,
@@ -126,6 +156,11 @@ def _provenance(
             "ontology_entity_types": len(result.ontology.entity_types),
             "ontology_relation_types": len(result.ontology.relation_types),
             "seeds": len(result.seeds),
+            "draft_attempts": result.draft_attempts,
+            "draft_parsed": result.draft_parsed,
+            "draft_parse_rate": (
+                result.draft_parsed / result.draft_attempts if result.draft_attempts else 0.0
+            ),
             "multi_hop_items": n_multi_hop,
             "chains": len(result.chains),
             "items": len(result.items),
@@ -133,7 +168,7 @@ def _provenance(
         "labels": _label_counts(result),
         "ontology": result.ontology.model_dump(),
         "n_items": len(result.items),
-        "cost": result.log.summary(),
+        "cost": result.endpoint_logs.summary(),
     }
     if result.coverage_report is not None:
         provenance["seed_coverage"] = result.coverage_report
@@ -154,7 +189,7 @@ def _load_retrieval_store(index_dir: Path | str | None) -> NeedleRetriever | Non
 
 def _write_bundle(
     result: PipelineResult,
-    endpoint: EndpointConfig,
+    endpoints: EndpointPlan,
     seed: int,
     settings: dict[str, object],
     *,
@@ -175,7 +210,7 @@ def _write_bundle(
         for extraction in result.extractions:
             fh.write(json.dumps(extraction.model_dump(), ensure_ascii=False) + "\n")
     (out_dir / PROVENANCE_FILENAME).write_text(
-        json.dumps(_provenance(result, endpoint, seed, settings), ensure_ascii=False, indent=2),
+        json.dumps(_provenance(result, endpoints, seed, settings), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     result.calibration_report = write_calibration_artifacts(

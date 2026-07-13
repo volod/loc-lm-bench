@@ -7,9 +7,12 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import cli_error
-from llb.cli.prep.draft_support import (
+from llb.cli.prep.draft_endpoints import (
     _VllmLaunchOptions,
-    _draft_endpoint_setup,
+    _confirm_frontier_egress,
+    _endpoint_plan_setup,
+)
+from llb.cli.prep.draft_support import (
     _enforce_calibration_gates,
     _extraction_adapter,
     _resume_overrides,
@@ -35,6 +38,18 @@ def prepare_goldset_draft_cmd(
     ),
     endpoint: str = typer.Option(
         "local", help="local (OpenAI-compatible, no egress) | frontier (litellm, opt-in egress)"
+    ),
+    egress_consent: bool = typer.Option(
+        False,
+        "--egress-consent",
+        help="parent workflow already collected corpus-and-destination-specific consent",
+    ),
+    frontier_stage: str = typer.Option(
+        "both",
+        help="frontier routing when --endpoint frontier: extraction | drafting | both",
+    ),
+    local_model: Optional[str] = typer.Option(
+        None, help="local model for the non-frontier phase when --frontier-stage is mixed"
     ),
     backend: str = typer.Option(
         "ollama",
@@ -77,6 +92,12 @@ def prepare_goldset_draft_cmd(
     ),
     timeout: float = typer.Option(
         300.0, min=1.0, help="per-call local/frontier endpoint timeout in seconds"
+    ),
+    max_usd: Optional[float] = typer.Option(
+        None, min=0.000001, help="hard measured-spend guard for all frontier calls in this run"
+    ),
+    max_calls: Optional[int] = typer.Option(
+        None, min=1, help="hard cap on frontier calls across extraction and drafting (default: 100)"
     ),
     no_think: bool = typer.Option(
         False,
@@ -188,12 +209,32 @@ def prepare_goldset_draft_cmd(
     ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
-    from llb.prep.ontology import draft_goldset
+    from llb.prep.frontier_telemetry import DraftBudgetExceeded
+    from llb.prep.ontology.pipeline.run import draft_goldset
 
     resuming = resume is not None
     if resume is not None:
-        corpus_root, model, endpoint, backend, out_dir = _resume_overrides(
-            resume, corpus_root, model, endpoint, backend, out_dir
+        (
+            corpus_root,
+            model,
+            endpoint,
+            backend,
+            frontier_stage,
+            local_model,
+            max_usd,
+            max_calls,
+            out_dir,
+        ) = _resume_overrides(
+            resume,
+            corpus_root,
+            model,
+            endpoint,
+            backend,
+            frontier_stage,
+            local_model,
+            max_usd,
+            max_calls,
+            out_dir,
         )
     if corpus_root is None or not model:
         cli_error("provide --corpus-root and --model, or --resume <bundle>")
@@ -203,6 +244,13 @@ def prepare_goldset_draft_cmd(
         drop_nonretrievable_needles, retrieval_index_dir, graph_dir, rejection_feedback
     )
     dedup_against_dirs = _split_dir_list(dedup_against)
+    if endpoint == "frontier":
+        if not egress_consent:
+            _confirm_frontier_egress(corpus_root, model)
+            egress_consent = True
+        max_calls = max_calls or 100
+    elif max_usd is not None or max_calls is not None:
+        cli_error("--max-usd and --max-calls are frontier-only guards")
 
     vllm_options = _VllmLaunchOptions(
         port=vllm_port,
@@ -214,7 +262,7 @@ def prepare_goldset_draft_cmd(
         quantization=vllm_quantization,
         startup_timeout=vllm_startup_timeout,
     )
-    cfg, launched_vllm, resolved_out_dir = _draft_endpoint_setup(
+    endpoints, launched_vllm, resolved_out_dir = _endpoint_plan_setup(
         model,
         endpoint,
         backend,
@@ -222,15 +270,20 @@ def prepare_goldset_draft_cmd(
         out_dir,
         num_ctx,
         vllm_options,
+        frontier_stage=frontier_stage,
+        local_model=local_model,
         max_tokens=max_tokens,
         temperature=temperature,
         timeout=timeout,
         no_think=no_think,
+        egress_consent=egress_consent,
+        max_usd=max_usd,
+        max_calls=max_calls,
     )
     try:
         result = draft_goldset(
             corpus_root,
-            cfg,
+            endpoints,
             extraction_adapter=adapter,
             max_items=max_items,
             seed=seed,
@@ -251,6 +304,9 @@ def prepare_goldset_draft_cmd(
             rejection_feedback=rejection_feedback,
             resume=resuming,
         )
+    except DraftBudgetExceeded as exc:
+        target = resolved_out_dir or out_dir or resume
+        cli_error(f"{exc.reason}; partial bundle and abort provenance: {target}", code=1)
     finally:
         if launched_vllm is not None:
             launched_vllm.stop()
@@ -258,7 +314,7 @@ def prepare_goldset_draft_cmd(
         _write_verification_sample(result.out_dir, verification_sample_size, seed)
     typer.echo(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
-        f"endpoint={endpoint}, egress={cfg.egress}) -> {result.out_dir}"
+        f"endpoint={endpoint}, egress={endpoints.egress}) -> {result.out_dir}"
     )
     if require_passed_gates:
         _enforce_calibration_gates(result.calibration_report, result.out_dir)

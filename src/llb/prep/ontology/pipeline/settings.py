@@ -11,7 +11,6 @@ from typing import Any
 
 from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
-from llb.prep.frontier import ProvenanceLog
 from llb.prep.ontology.constants import (
     DEFAULT_MAX_ITEMS,
     DEFAULT_MULTI_HOP_MAX_PATHS,
@@ -26,6 +25,7 @@ from llb.prep.ontology.models import (
     ItemLabels,
     OntologyCandidate,
 )
+from llb.prep.ontology.endpoint_config import EndpointLogs
 
 
 def _opt_str(value: Path | str | None) -> str | None:
@@ -174,9 +174,11 @@ class PipelineResult:
     corpus_root: Path
     chains: list[ChainItem] = field(default_factory=list)
     elapsed_s: float = 0.0
+    draft_attempts: int = 0
+    draft_parsed: int = 0
     calibration_report: dict[str, object] | None = None
     item_labels: dict[str, ItemLabels] = field(default_factory=dict)
     coverage_report: dict[str, object] | None = None
     dedup_report: dict[str, object] | None = None
     applied_feedback: dict[str, object] | None = None
-    log: ProvenanceLog = field(default_factory=ProvenanceLog)
+    endpoint_logs: EndpointLogs = field(default_factory=EndpointLogs)

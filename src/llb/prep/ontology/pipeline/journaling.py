@@ -16,7 +16,7 @@ from llb.prep.ontology.constants import (
     EXTRACTION_JOURNAL_META_KIND,
     METHOD_DIR,
 )
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointPlan
 from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.pipeline.settings import DraftSettings
 
@@ -43,7 +43,7 @@ def _clear_fresh_extraction_journal(out_dir: Path) -> None:
             path.unlink()
 
 
-def _write_journal_meta(out_dir: Path, pinned: dict[str, object], endpoint: EndpointConfig) -> None:
+def _write_journal_meta(out_dir: Path, pinned: dict[str, object], endpoints: EndpointPlan) -> None:
     """Record the determinism-critical settings + endpoint identity so a resume reproduces the run.
 
     Written once at the start of a fresh run (before any model call) so the sidecar survives a kill
@@ -51,7 +51,7 @@ def _write_journal_meta(out_dir: Path, pinned: dict[str, object], endpoint: Endp
     """
     payload = {
         "kind": EXTRACTION_JOURNAL_META_KIND,
-        "endpoint": endpoint.provenance(),
+        "endpoint": endpoints.config_provenance(),
         **pinned,
     }
     _journal_meta_path(out_dir).write_text(
@@ -74,13 +74,13 @@ def load_journal_meta(out_dir: Path | str) -> dict[str, object]:
 
 
 def _prepare_bundle_dir(
-    resolved_out: Path, settings: DraftSettings, endpoint: EndpointConfig, resume: bool
+    resolved_out: Path, settings: DraftSettings, endpoints: EndpointPlan, resume: bool
 ) -> ExtractionJournal:
     """Create the bundle dir, pin settings (fresh run only), and open the extraction journal."""
     resolved_out.mkdir(parents=True, exist_ok=True)
     if not resume:
         _clear_fresh_extraction_journal(resolved_out)
-        _write_journal_meta(resolved_out, settings.pinned_payload(), endpoint)
+        _write_journal_meta(resolved_out, settings.pinned_payload(), endpoints)
     journal = ExtractionJournal(resolved_out / EXTRACTION_JOURNAL_FILENAME)
     journal.load()
     return journal

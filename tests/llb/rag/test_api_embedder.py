@@ -7,7 +7,7 @@ round-trip runs only where numpy is installed (the full test extra).
 
 import pytest
 
-from llb.prep.frontier import ProvenanceLog
+from llb.prep.frontier_telemetry import ProvenanceLog
 from llb.rag.api_embedder import (
     COHERE_PASSAGE_INPUT_TYPE,
     COHERE_QUERY_INPUT_TYPE,

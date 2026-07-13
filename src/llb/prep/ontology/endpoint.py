@@ -14,74 +14,28 @@ fake `complete` and never needs a server or a provider key.
 """
 
 import logging
-from dataclasses import dataclass
+from time import monotonic
 
 from llb.backends.openai_client import chat_once, make_client
-from llb.core.config import DEFAULT_OLLAMA_HOST
 from llb.core.contracts import ChatMessage
-from llb.prep.frontier import LLMComplete, ProvenanceLog, litellm_complete
+from llb.prep.frontier import litellm_complete
+from llb.prep.frontier_telemetry import (
+    DraftBudget,
+    LLMComplete,
+    ProvenanceLog,
+    budgeted_complete,
+)
+from llb.prep.ontology.endpoint_config import (
+    ENDPOINT_FRONTIER,
+    LOCAL_BACKEND_OLLAMA,
+    LOCAL_BACKEND_VLLM,
+    EndpointCompleters,
+    EndpointConfig,
+    EndpointLogs,
+    EndpointPlan,
+)
 
 _LOG = logging.getLogger(__name__)
-
-ENDPOINT_LOCAL = "local"
-ENDPOINT_FRONTIER = "frontier"
-ENDPOINT_KINDS = (ENDPOINT_LOCAL, ENDPOINT_FRONTIER)
-LOCAL_BACKEND_OLLAMA = "ollama"
-LOCAL_BACKEND_VLLM = "vllm"
-LOCAL_BACKEND_OPENAI = "openai"
-LOCAL_BACKENDS = (LOCAL_BACKEND_OLLAMA, LOCAL_BACKEND_VLLM, LOCAL_BACKEND_OPENAI)
-
-DEFAULT_LOCAL_BASE_URL = f"{DEFAULT_OLLAMA_HOST}/v1"
-
-
-@dataclass(frozen=True)
-class EndpointConfig:
-    """Where (and how) the pipeline runs its LLM calls."""
-
-    kind: str = ENDPOINT_LOCAL
-    model: str = ""
-    backend: str = LOCAL_BACKEND_OLLAMA
-    base_url: str = DEFAULT_LOCAL_BASE_URL  # local only
-    api_key: str = "not-needed"  # local only
-    temperature: float = 0.2
-    max_tokens: int = 1024
-    timeout: float = 120.0
-    # Local reasoning models (gemma4, deepseek-r1, qwen3) spend the token budget on hidden thinking
-    # before any JSON, so structured extraction comes back empty. `think=False` disables it (Ollama
-    # `think`); None leaves the endpoint's own default. Pair with a larger `max_tokens`.
-    think: bool | None = None
-    # Ollama loads a model with its modelfile context length (often 128k+), which can force CPU
-    # offload on VRAM-bound hosts even though drafting prompts are bounded and small. `num_ctx`
-    # right-sizes the context (native /api/chat only); None keeps the endpoint default. Prompts
-    # longer than `num_ctx` would be silently truncated by Ollama, so keep headroom over
-    # `extract_max_chars` + completion budget.
-    num_ctx: int | None = None
-
-    def __post_init__(self) -> None:
-        if self.kind not in ENDPOINT_KINDS:
-            raise ValueError(f"endpoint kind must be one of {ENDPOINT_KINDS}, got {self.kind!r}")
-        if not self.model:
-            raise ValueError("endpoint model must be set")
-        if self.backend not in LOCAL_BACKENDS:
-            raise ValueError(f"local backend must be one of {LOCAL_BACKENDS}, got {self.backend!r}")
-        if self.kind != ENDPOINT_LOCAL and self.backend != LOCAL_BACKEND_OLLAMA:
-            raise ValueError("local backend can only be set when endpoint kind is local")
-
-    @property
-    def egress(self) -> bool:
-        """True when this endpoint sends the corpus off-box (frontier)."""
-        return self.kind == ENDPOINT_FRONTIER
-
-    def provenance(self) -> dict[str, object]:
-        rec: dict[str, object] = {"kind": self.kind, "model": self.model, "egress": self.egress}
-        if self.kind == ENDPOINT_LOCAL:
-            rec["backend"] = self.backend
-            rec["base_url"] = self.base_url
-        if self.think is not None:
-            rec["think"] = self.think
-        if self.num_ctx is not None:
-            rec["num_ctx"] = self.num_ctx
-        return rec
 
 
 def _openai_compatible_complete(
@@ -90,6 +44,7 @@ def _openai_compatible_complete(
     client = make_client(cfg.base_url, api_key=cfg.api_key)
 
     def complete(prompt: str) -> str:
+        started = monotonic()
         messages: list[ChatMessage] = [{"role": "user", "content": prompt}]
         result = chat_once(
             client,
@@ -100,7 +55,14 @@ def _openai_compatible_complete(
             timeout=cfg.timeout,
             extra_body=extra_body,
         )
-        log.record(cfg.model, result.prompt_tokens, result.completion_tokens, 0.0)
+        log.record(
+            cfg.model,
+            result.prompt_tokens,
+            result.completion_tokens,
+            0.0,
+            latency_s=getattr(result, "latency_s", 0.0) or monotonic() - started,
+            error=result.error,
+        )
         if result.error:
             raise RuntimeError(f"local endpoint error ({cfg.base_url}): {result.error}")
         return result.text
@@ -156,6 +118,7 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
     url = _native_chat_url(cfg.base_url)
 
     def complete(prompt: str) -> str:
+        started = monotonic()
         options: dict[str, object] = {"temperature": cfg.temperature, "num_predict": cfg.max_tokens}
         if cfg.num_ctx is not None:
             options["num_ctx"] = cfg.num_ctx
@@ -172,6 +135,7 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
             resp = httpx.post(url, json=payload, timeout=cfg.timeout)
             resp.raise_for_status()
         except httpx.HTTPError as exc:
+            log.record(cfg.model, 0, 0, 0.0, latency_s=monotonic() - started, error=str(exc))
             raise RuntimeError(f"local endpoint error ({url}): {exc}") from exc
         data = resp.json()
         log.record(
@@ -179,6 +143,7 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
             int(data.get("prompt_eval_count", 0) or 0),
             int(data.get("eval_count", 0) or 0),
             0.0,
+            latency_s=monotonic() - started,
         )
         message = data.get("message") or {}
         return str(message.get("content") or "")
@@ -186,11 +151,15 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
     return complete
 
 
-def build_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
+def build_complete(
+    cfg: EndpointConfig, log: ProvenanceLog, *, budget: DraftBudget | None = None
+) -> LLMComplete:
     """Return the injectable completion callable for `cfg`, recording cost into `log`."""
     if cfg.kind == ENDPOINT_FRONTIER:
         _LOG.info("[ontology] endpoint=frontier model=%s (CORPUS EGRESS)", cfg.model)
-        return litellm_complete(cfg.model, temperature=cfg.temperature, log=log)
+        raw = litellm_complete(cfg.model, temperature=cfg.temperature, log=log)
+        active_budget = budget or DraftBudget(max_calls=cfg.max_calls, max_usd=cfg.max_usd)
+        return budgeted_complete(raw, log, active_budget)
     _LOG.info(
         "[ontology] endpoint=local backend=%s model=%s base_url=%s",
         cfg.backend,
@@ -198,3 +167,19 @@ def build_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:
         cfg.base_url,
     )
     return _local_complete(cfg, log)
+
+
+def build_completers(plan: EndpointPlan, logs: EndpointLogs) -> EndpointCompleters:
+    """Build the two phase callables, sharing one frontier budget across the run."""
+    frontier = next(
+        (cfg for cfg in (plan.extraction, plan.drafting) if cfg.kind == ENDPOINT_FRONTIER), None
+    )
+    budget = (
+        DraftBudget(max_calls=frontier.max_calls, max_usd=frontier.max_usd)
+        if frontier is not None
+        else None
+    )
+    return EndpointCompleters(
+        extraction=build_complete(plan.extraction, logs.extraction, budget=budget),
+        drafting=build_complete(plan.drafting, logs.drafting, budget=budget),
+    )

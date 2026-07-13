@@ -12,12 +12,13 @@ import pytest
 
 from llb.backends.base import ChatResult
 from llb.goldset.schema import SourceSpan
-from llb.prep.frontier import ProvenanceLog
-from llb.prep.ontology import endpoint as ep
+from llb.prep.frontier_telemetry import ProvenanceLog
+import llb.prep.ontology.endpoint as ep
 from llb.prep.ontology.constants import PROVENANCE_KIND
 from llb.prep.ontology.coverage import build_seeds, classify_difficulty, sample_seeds
 from llb.prep.ontology.draft import context_window, draft_for_seed, draft_prompt
-from llb.prep.ontology.endpoint import EndpointConfig, build_complete
+from llb.prep.ontology.endpoint import build_complete
+from llb.prep.ontology.endpoint_config import EndpointConfig
 from llb.prep.ontology.extract import parse_extraction
 from llb.prep.ontology.inventory import segment_sections
 from llb.prep.ontology.language import is_ukrainian_dominant
@@ -256,10 +257,16 @@ def test_endpoint_config_validates_kind_model_and_egress():
     with pytest.raises(ValueError, match="local backend"):
         EndpointConfig(kind="local", model="m", backend="bad")
     with pytest.raises(ValueError, match="local backend can only"):
-        EndpointConfig(kind="frontier", model="gpt", backend="vllm")
+        EndpointConfig(
+            kind="frontier", model="gpt", backend="vllm", egress_consent=True, max_calls=10
+        )
+    with pytest.raises(ValueError, match="explicit egress consent"):
+        EndpointConfig(kind="frontier", model="gpt")
+    with pytest.raises(ValueError, match="egress consent can only"):
+        EndpointConfig(kind="local", model="m", egress_consent=True)
     assert EndpointConfig(kind="local", model="m").egress is False
     assert EndpointConfig(kind="local", model="m").provenance()["backend"] == "ollama"
-    frontier = EndpointConfig(kind="frontier", model="gpt")
+    frontier = EndpointConfig(kind="frontier", model="gpt", egress_consent=True, max_calls=10)
     assert frontier.egress is True and frontier.provenance()["egress"] is True
 
 
@@ -355,7 +362,7 @@ def test_vllm_think_disabled_uses_openai_extra_body(monkeypatch):
 
 
 def test_vllm_host_for_port_rewrites_default_host():
-    from llb.cli.prep.draft_support import _vllm_host_for_port
+    from llb.cli.prep.draft_endpoints import _vllm_host_for_port
 
     assert _vllm_host_for_port("http://localhost:8000", 8010) == "http://localhost:8010"
 

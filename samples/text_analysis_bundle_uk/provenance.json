@@ -2,7 +2,19 @@
   "kind": "committed-text-analysis-sample",
   "synthetic": true,
   "source": "repo-authored fixture",
+  "egress_classification": "synthetic-repo-fixture",
+  "frontier_ua_probe": true,
   "n_docs": 2,
   "n_labels": 11,
+  "documents": [
+    {
+      "path": "corpus/sample-001.md",
+      "sha256": "299bea7b22f36858a9ae5da20b29ed160318589595efc5c2bddfa3275c1c957a"
+    },
+    {
+      "path": "corpus/sample-002.md",
+      "sha256": "61d00d4da7ff63dafc9ce79d64f2adbb0fae5a6966f642be0dc1ed3ff2d84ce1"
+    }
+  ],
   "note": "Small committed Ukrainian text-analysis fixture for smoke tests and composite demo runs."
 }

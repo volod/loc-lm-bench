@@ -45,7 +45,7 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 - Agent status: **CLEAR** -- agent-buildable to `make ci` green; a mechanical, test-guarded split
   per file. The convention, tooling, CLI exemplar, and the largest ~13 core-path/`rag`/`finetune`
   modules plus the largest shell script already landed (see
-  [overview](current/overview.md#module-size--structure) for the delivered package layout). This
+  [overview](current/overview.md#module-size--structure) for the current package layout). This
   is a long soft-limit tail, not a single deliverable: it advances module by module and the limit
   is soft, so a genuinely cohesive module may stay whole with a note.
 - Dependencies: none. The ~250-line soft limit is documented in AGENTS.md; `scripts/code_quality.sh`
@@ -76,48 +76,8 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 
 ## Human-Assisted Tasks
 
-Each task's code and unit tests are agent-buildable; the marked **human step** is what gates
-completion.
-
-Remaining human step: task 2's egress consent and spend decision, whenever the operator is ready to
-authorize it.
-
-### 2. frontier-ua-draft-lane
-
-- Agent status: **HUMAN-GATED** -- human egress consent + API spend authorization gate the real
-  2-document frontier probe; all code and fake-completer tests are CLEAR (agent-buildable now, no
-  network).
-- Dependencies: none (code reuses `src/llb/prep/frontier.py`). Human step: the real-frontier
-  2-document probe requires **human egress consent and API spend** under the recorded egress policy;
-  the code and all fake-completer tests are agent-buildable without any network call.
-- User-visible outcome: for the best Ukrainian question quality and completeness, an operator
-  can opt a draft run into a best-of-breed external API (litellm-routed) for extraction,
-  drafting, or both, with an explicit consent gate, a hard budget cap, per-call cost telemetry
-  in provenance, and a side-by-side local-vs-frontier yield and quality report over the same
-  seeds. Frontier cross-check exists (`make cross-check-goldset CROSS_CHECK_MODEL=`); the draft
-  lane does not.
-- Scope boundary: in scope -- a frontier endpoint option for the ontology pipeline reusing the
-  litellm conventions in `src/llb/prep/frontier.py` behind the same endpoint seam as Ollama and
-  vLLM drafting (`src/llb/prep/ontology/endpoint.py`); `--max-usd` and `--max-calls` guards
-  that abort cleanly and record the reason; an interactive egress consent prompt naming the
-  corpus and destination (policy stays as recorded in
-  [product decisions](current/scope-boundaries.md)); a `llb draft-compare` command that drafts
-  the same bounded seed subset locally and via frontier and reports kept-yield, gate results,
-  and verify-sample accept rate. Out of scope -- making frontier the default, egress for
-  scoring or judging, retries of the egress policy discussion.
-- Data and artifact paths: `provenance.json` gains `endpoint.cost_usd`, call counts, and
-  latency; comparison reports under `$DATA_DIR/draft-compare/<timestamp>/`.
-- Execution path:
-  `make prepare-goldset-draft DRAFT_ENDPOINT=frontier DRAFT_FRONTIER_MODEL=<litellm-id>
-  DRAFT_MAX_USD=<n>`; `llb draft-compare --corpus-root <dir> --seeds <n> --frontier-model <id>
-  --local-model <model>`; unit tests use an injected fake litellm completer.
-- Acceptance gates: no network call happens without the flag plus consent (unit-tested via the
-  injected completer); the budget guard aborts mid-draft and the bundle remains inspectable
-  with the abort recorded; a 2-document probe against a real frontier model passes bundle gates
-  with parse rate at least matching the local drafter; the comparison report ranks both lanes
-  on kept-yield and accept rate.
-- Documentation target: [data prep](current/data-prep.md) frontier lane notes;
-  [`docs/guides/data-prep/goldset-from-scratch.md`](../guides/data-prep/goldset-from-scratch.md).
+Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
+requires human judgment or authorization.
 
 ## Adding Future Tasks
 

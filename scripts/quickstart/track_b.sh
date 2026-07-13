@@ -31,7 +31,7 @@ track_b_draft() {
   stage_pdf_draft_corpus
 
   heading "3/4" "confirm full ontology and goldset draft"
-  local stats
+  local stats draft_egress_consent
   stats="$(pdf_draft_stats)"
   result "estimated draft workload: $stats"
   result "draft outputs include goldset.jsonl, needle_items.jsonl, ontology.json, extraction.jsonl, pdf_ontology_report.json, prompt_dictionary_candidates.jsonl"
@@ -45,11 +45,27 @@ track_b_draft() {
     exit 2
   fi
 
+  draft_egress_consent=0
+  if [ "$QS_DRAFT_ENDPOINT" = "frontier" ]; then
+    if ! prompt_yes_no \
+      "Send corpus '$QS_PDF_DRAFT_MD' to Litellm destination '$QS_DRAFT_MODEL' (max calls: $QUICKSTART_DRAFT_MAX_CALLS)?" \
+      "no" \
+      "Set QUICKSTART_ASSUME_YES=1 only after approving this corpus egress and provider spend." \
+    ; then
+      echo "ERROR: frontier corpus egress was not approved" >&2
+      exit 2
+    fi
+    draft_egress_consent=1
+  fi
+
   heading "4/4" "draft unverified goldset and ontology"
   make_cmd prepare-goldset-draft \
     DRAFT_CORPUS="$QS_PDF_DRAFT_MD" \
     DRAFT_MODEL="$QS_DRAFT_MODEL" \
     DRAFT_ENDPOINT="$QS_DRAFT_ENDPOINT" \
+    DRAFT_EGRESS_CONSENT="$draft_egress_consent" \
+    DRAFT_MAX_USD="$QUICKSTART_DRAFT_MAX_USD" \
+    DRAFT_MAX_CALLS="$QUICKSTART_DRAFT_MAX_CALLS" \
     DRAFT_BACKEND="$QS_DRAFT_BACKEND" \
     DRAFT_BASE_URL="$QS_DRAFT_BASE_URL" \
     DRAFT_MAX_ITEMS="$QS_DRAFT_MAX_ITEMS" \

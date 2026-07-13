@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
-from llb.prep.frontier import LLMComplete
+from llb.prep.frontier_telemetry import LLMComplete
 from llb.prep.ontology.coverage import build_seeds, coverage_report, select_seeds
 from llb.prep.ontology.dedup import QuestionEmbedder
 from llb.prep.ontology.draft import draft_items
@@ -159,7 +159,12 @@ def _draft_stage(
         )
     raw_drafts = draft_items(complete, docs, seeds, draft_hint)
     items, item_labels = refine_drafts_labeled(docs, raw_drafts)
-    return items, item_labels, {"seeds": seeds, "coverage": cov_report}, applied_feedback
+    return (
+        items,
+        item_labels,
+        {"seeds": seeds, "coverage": cov_report, "draft_parsed": len(raw_drafts)},
+        applied_feedback,
+    )
 
 
 def _graph_stages(

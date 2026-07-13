@@ -21,7 +21,7 @@ from llb.prep.ontology.constants import (
     PROMPT_DICTIONARY_FILENAME,
     PROVENANCE_KIND,
 )
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig, EndpointPlan
 from llb.prep.ontology.models import (
     Claim,
     DocExtraction,
@@ -119,6 +119,16 @@ def fake_endpoint(prompt: str) -> str:
     return "{}"
 
 
+def _draft(corpus: Path, complete, **kwargs):
+    config = EndpointConfig(kind="local", model="fake")
+    return draft_goldset(
+        corpus,
+        EndpointPlan.single(config),
+        completers=EndpointCompleters.single(complete),
+        **kwargs,
+    )
+
+
 def _assert_items_unverified_grounded(result) -> None:
     # items: unverified, ontology-drafted, grounded, split-assigned
     assert len(result.items) > 0
@@ -144,7 +154,8 @@ def _assert_provenance(out: Path, result) -> None:
     # provenance links endpoint / prompts / document hashes / cost
     prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
     assert prov["kind"] == PROVENANCE_KIND and prov["synthetic"] is False
-    assert prov["endpoint"]["kind"] == "local" and prov["endpoint"]["egress"] is False
+    assert prov["endpoint"]["egress"] is False
+    assert prov["endpoint"]["stages"]["extraction"]["kind"] == "local"
     assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
     assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
@@ -175,10 +186,9 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     (corpus / "doc2.md").write_text(DOC2, encoding="utf-8")
     out = tmp_path / "bundle"
 
-    result = draft_goldset(
+    result = _draft(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=fake_endpoint,
+        fake_endpoint,
         max_items=20,
         out_dir=out,
         extract_concurrency=2,
@@ -259,10 +269,9 @@ def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
             )
         return "{}"
 
-    result = draft_goldset(
+    result = _draft(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=pdf_endpoint,
+        pdf_endpoint,
         max_items=3,
         out_dir=out,
         doc_limit=1,
@@ -497,10 +506,9 @@ def test_full_flow_does_not_write_when_write_false(tmp_path):
     corpus.mkdir()
     (corpus / "doc1.md").write_text(DOC1, encoding="utf-8")
     out = tmp_path / "bundle"
-    result = draft_goldset(
+    result = _draft(
         corpus,
-        EndpointConfig(kind="local", model="fake"),
-        complete=fake_endpoint,
+        fake_endpoint,
         out_dir=out,
         write=False,
     )

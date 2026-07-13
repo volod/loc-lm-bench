@@ -13,10 +13,11 @@ from typing import Any, cast
 
 from llb.goldset.schema import Split
 from llb.goldset.splits import assign_splits
-from llb.prep.frontier import LLMComplete, ProvenanceLog
+from llb.prep.frontier_telemetry import DraftBudgetExceeded
 from llb.prep.ontology.constants import DEFAULT_MAX_ITEMS, DEFAULT_MULTI_HOP_MAX_PATHS
 from llb.prep.ontology.dedup import QuestionEmbedder
-from llb.prep.ontology.endpoint import EndpointConfig, build_complete
+from llb.prep.ontology.endpoint import build_completers
+from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointLogs, EndpointPlan
 from llb.prep.ontology.extract import (
     ExtractionAdapter,
     LLMExtractionAdapter,
@@ -26,7 +27,11 @@ from llb.prep.ontology.induce import induce_ontology
 from llb.prep.ontology.inventory import inventory_corpus
 from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.models import DraftSeed
-from llb.prep.ontology.pipeline.bundle import _load_retrieval_store, _write_bundle
+from llb.prep.ontology.pipeline.bundle import (
+    _load_retrieval_store,
+    _write_bundle,
+    write_budget_abort,
+)
 from llb.prep.ontology.pipeline.journaling import (
     _prepare_bundle_dir,
     default_out_dir,
@@ -38,9 +43,9 @@ from llb.prep.ontology.pipeline.stages import _dedup_stage, _draft_stage, _graph
 
 def draft_goldset(
     corpus_root: Path | str,
-    endpoint: EndpointConfig,
+    endpoints: EndpointPlan,
     *,
-    complete: LLMComplete | None = None,
+    completers: EndpointCompleters | None = None,
     extraction_adapter: ExtractionAdapter | None = None,
     max_items: int = DEFAULT_MAX_ITEMS,
     seed: int = 13,
@@ -106,14 +111,59 @@ def draft_goldset(
 
     journal: ExtractionJournal | None = None
     if write:
-        journal = _prepare_bundle_dir(resolved_out, settings, endpoint, resume)
+        journal = _prepare_bundle_dir(resolved_out, settings, endpoints, resume)
     retrieval_store = _load_retrieval_store(settings.retrieval_index_dir) if write else None
 
-    # Stages 1-3: inventory -> extract -> induce ontology.
-    log = ProvenanceLog()
-    complete = complete if complete is not None else build_complete(endpoint, log)
+    endpoint_logs = EndpointLogs()
+    active = completers if completers is not None else build_completers(endpoints, endpoint_logs)
+    try:
+        result = _execute_pipeline(
+            settings,
+            active,
+            endpoint_logs,
+            resolved_out,
+            journal,
+            extraction_adapter,
+            dedup_embedder,
+            started,
+        )
+    except DraftBudgetExceeded as exc:
+        if write:
+            write_budget_abort(
+                resolved_out,
+                endpoints,
+                endpoint_logs,
+                settings.provenance_settings(resumed=resume),
+                exc.reason,
+                elapsed_s=perf_counter() - started,
+            )
+        raise
+    if write:
+        _write_bundle(
+            result,
+            endpoints,
+            settings.seed,
+            settings.provenance_settings(resumed=resume),
+            retrieval_store=retrieval_store,
+            retrieval_k=settings.retrieval_k,
+            drop_nonretrievable_needles=settings.drop_nonretrievable_needles,
+        )
+    return result
+
+
+def _execute_pipeline(
+    settings: DraftSettings,
+    completers: EndpointCompleters,
+    endpoint_logs: EndpointLogs,
+    out_dir: Path,
+    journal: ExtractionJournal | None,
+    extraction_adapter: ExtractionAdapter | None,
+    dedup_embedder: QuestionEmbedder | None,
+    started: float,
+) -> PipelineResult:
+    """Run the model stages after resumability and budget artifacts are ready."""
     adapter = extraction_adapter or LLMExtractionAdapter(
-        complete,
+        completers.extraction,
         max_chars=settings.resolved_extract_max_chars,
         chunk_overlap=settings.resolved_extract_overlap,
         concurrency=settings.resolved_extract_concurrency,
@@ -124,26 +174,25 @@ def draft_goldset(
         docs = docs[: settings.doc_limit]
     extractions = extract_corpus(docs, adapter)
     ontology = induce_ontology(extractions)
-
-    # Stages 4-6: seed/draft, optional graph walks, optional cross-bundle dedup.
     items, item_labels, seed_info, applied_feedback = _draft_stage(
-        complete, docs, extractions, ontology, settings
+        completers.drafting, docs, extractions, ontology, settings
     )
     items, item_labels, chain_items = _graph_stages(
-        complete, docs, extractions, ontology, settings, items, item_labels
+        completers.drafting, docs, extractions, ontology, settings, items, item_labels
     )
     dedup_report: dict[str, object] | None = None
     if settings.dedup_against:
         items, item_labels, dedup_report = _dedup_stage(
-            items, item_labels, dedup_against=settings.dedup_against, embedder=dedup_embedder
+            items,
+            item_labels,
+            dedup_against=settings.dedup_against,
+            embedder=dedup_embedder,
         )
-
-    splits = assign_splits([it.id for it in items], seed=settings.seed)
-    for it in items:
-        it.split = cast(Split, splits[it.id])
-
-    result = PipelineResult(
-        out_dir=resolved_out,
+    splits = assign_splits([item.id for item in items], seed=settings.seed)
+    for item in items:
+        item.split = cast(Split, splits[item.id])
+    return PipelineResult(
+        out_dir=out_dir,
         docs=docs,
         extractions=extractions,
         ontology=ontology,
@@ -152,20 +201,11 @@ def draft_goldset(
         chains=chain_items,
         corpus_root=Path(settings.corpus_root),
         elapsed_s=perf_counter() - started,
+        draft_attempts=len(cast(list[DraftSeed], seed_info["seeds"])),
+        draft_parsed=cast(int, seed_info["draft_parsed"]),
         item_labels=item_labels,
         coverage_report=cast("dict[str, object] | None", seed_info["coverage"]),
         dedup_report=dedup_report,
         applied_feedback=applied_feedback,
-        log=log,
+        endpoint_logs=endpoint_logs,
     )
-    if write:
-        _write_bundle(
-            result,
-            endpoint,
-            settings.seed,
-            settings.provenance_settings(resumed=resume),
-            retrieval_store=retrieval_store,
-            retrieval_k=settings.retrieval_k,
-            drop_nonretrievable_needles=settings.drop_nonretrievable_needles,
-        )
-    return result

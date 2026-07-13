@@ -14,7 +14,7 @@ from llb.prep.ontology.constants import (
     EXTRACTION_JOURNAL_FILENAME,
     EXTRACTION_JOURNAL_META_FILENAME,
 )
-from llb.prep.ontology.endpoint import EndpointConfig
+from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig, EndpointPlan
 from llb.prep.ontology.extract import LLMExtractionAdapter
 from llb.prep.ontology.journal import ExtractionJournal
 from llb.prep.ontology.models import DocRecord
@@ -29,6 +29,15 @@ LONG_DOC = (
     "Одеса є великим портовим містом на півдні. "
     "Харків є значним науковим осередком сходу. "
 ) * 3
+
+
+def _run(corpus, config, complete, **kwargs):
+    return draft_goldset(
+        corpus,
+        EndpointPlan.single(config),
+        completers=EndpointCompleters.single(complete),
+        **kwargs,
+    )
 
 
 def test_extraction_journal_skips_recorded_windows(tmp_path):
@@ -128,7 +137,7 @@ def test_kill_mid_extraction_then_resume_matches_uninterrupted(tmp_path):
 
     # 1) uninterrupted reference run
     bundle_a = tmp_path / "bundle_a"
-    draft_goldset(corpus, cfg, complete=fake_endpoint, max_items=20, out_dir=bundle_a)
+    _run(corpus, cfg, fake_endpoint, max_items=20, out_dir=bundle_a)
 
     # 2) interrupted run: raise on the SECOND extraction call (doc1 journaled, doc2 killed)
     bundle_b = tmp_path / "bundle_b"
@@ -142,7 +151,7 @@ def test_kill_mid_extraction_then_resume_matches_uninterrupted(tmp_path):
         return fake_endpoint(prompt)
 
     with pytest.raises(KeyboardInterrupt):
-        draft_goldset(corpus, cfg, complete=killing, max_items=20, out_dir=bundle_b)
+        _run(corpus, cfg, killing, max_items=20, out_dir=bundle_b)
 
     # the bundle exists with the meta sidecar and a partial (non-empty) journal
     assert (bundle_b / EXTRACTION_JOURNAL_META_FILENAME).is_file()
@@ -153,8 +162,8 @@ def test_kill_mid_extraction_then_resume_matches_uninterrupted(tmp_path):
     assert not (bundle_b / "goldset.jsonl").exists()  # never finished
 
     # 3) resume: reuse the journaled window, re-extract the rest, replay deterministic stages
-    result = draft_goldset(corpus, cfg, complete=fake_endpoint, out_dir=bundle_b, resume=True)
-    assert result.log.summary()  # resumed run recorded its own (fewer) calls
+    result = _run(corpus, cfg, fake_endpoint, out_dir=bundle_b, resume=True)
+    assert result.endpoint_logs.summary()
 
     # the resumed bundle is byte-identical to the uninterrupted one on the deterministic artifacts
     for name in ("goldset.jsonl", "extraction.jsonl", "ontology.json"):
@@ -172,17 +181,15 @@ def test_resume_reads_settings_from_meta(tmp_path):
     corpus = _corpus(tmp_path)
     cfg = EndpointConfig(kind="local", model="fake")
     bundle = tmp_path / "bundle"
-    draft_goldset(corpus, cfg, complete=fake_endpoint, max_items=7, seed=99, out_dir=bundle)
+    _run(corpus, cfg, fake_endpoint, max_items=7, seed=99, out_dir=bundle)
     meta = json.loads((bundle / EXTRACTION_JOURNAL_META_FILENAME).read_text(encoding="utf-8"))
     assert meta["kind"] == "extraction-journal-meta"
     assert meta["max_items"] == 7 and meta["seed"] == 99
     assert meta["corpus_root"] == str(corpus)
-    assert meta["endpoint"]["model"] == "fake"
+    assert meta["endpoint"]["stages"]["extraction"]["model"] == "fake"
 
     # a resume that passes different max_items/seed is overridden by the pinned meta
-    result = draft_goldset(
-        corpus, cfg, complete=fake_endpoint, max_items=999, seed=1, out_dir=bundle, resume=True
-    )
+    result = _run(corpus, cfg, fake_endpoint, max_items=999, seed=1, out_dir=bundle, resume=True)
     reloaded = json.loads((bundle / EXTRACTION_JOURNAL_META_FILENAME).read_text(encoding="utf-8"))
     assert reloaded["max_items"] == 7 and reloaded["seed"] == 99  # meta untouched by resume
     assert result.items or result.items == []
@@ -192,7 +199,7 @@ def test_fresh_run_clears_prior_extraction_journal(tmp_path):
     corpus = _corpus(tmp_path)
     cfg = EndpointConfig(kind="local", model="fake")
     bundle = tmp_path / "bundle"
-    draft_goldset(corpus, cfg, complete=fake_endpoint, max_items=7, out_dir=bundle)
+    _run(corpus, cfg, fake_endpoint, max_items=7, out_dir=bundle)
     assert (bundle / EXTRACTION_JOURNAL_FILENAME).is_file()
 
     def killing(prompt: str) -> str:
@@ -201,7 +208,7 @@ def test_fresh_run_clears_prior_extraction_journal(tmp_path):
         return fake_endpoint(prompt)
 
     with pytest.raises(KeyboardInterrupt, match="fresh run"):
-        draft_goldset(corpus, cfg, complete=killing, max_items=7, out_dir=bundle)
+        _run(corpus, cfg, killing, max_items=7, out_dir=bundle)
     assert (bundle / EXTRACTION_JOURNAL_META_FILENAME).is_file()
     assert not (bundle / EXTRACTION_JOURNAL_FILENAME).exists()
 
@@ -210,4 +217,4 @@ def test_resume_without_meta_raises(tmp_path):
     corpus = _corpus(tmp_path)
     cfg = EndpointConfig(kind="local", model="fake")
     with pytest.raises(ValueError, match="cannot resume"):
-        draft_goldset(corpus, cfg, complete=fake_endpoint, out_dir=tmp_path / "empty", resume=True)
+        _run(corpus, cfg, fake_endpoint, out_dir=tmp_path / "empty", resume=True)
