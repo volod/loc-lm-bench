@@ -10,12 +10,12 @@ from typing import Any
 
 from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb.core.paths import resolve_data_dir
-from llb.scoring.judge import (
+from llb.scoring.judge.endpoint import judge_experiment_metadata
+from llb.scoring.judge.scorer import deepeval_scorer
+from llb.scoring.judge.template import (
     UA_ANSWER_RELEVANCY_STEPS,
     UA_FAITHFULNESS_STEPS,
     UkrainianGEvalTemplate,
-    deepeval_scorer,
-    judge_experiment_metadata,
 )
 from llb.scoring.judge_diag import summarize_judge_diagnostics
 

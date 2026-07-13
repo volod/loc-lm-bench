@@ -1,7 +1,7 @@
 """Headline aggregation for external-RAG scoring: per-run and per-split summary estimates.
 
 The `summarize` step turns scored rows into the summary dict that `external_rag_report.py` renders.
-Pure over the CSV-ready rows; no I/O. `external_rag.py` re-exports `summarize`.
+Pure over the CSV-ready rows; no I/O.
 """
 
 from collections import Counter, defaultdict

@@ -1,10 +1,9 @@
 """Shared schema + bundle layout + worksheet I/O for the human verification gate.
 
-The leaf module of the `verify.py` family: the worksheet schema (constants +
+The leaf module of the verification family: the worksheet schema (constants +
 `VerificationRefStatus`), the draft-bundle layout helpers, and the atomic CSV-as-state worksheet
-I/O. It depends on nothing else in the family, so the functional halves (`verify_sampling.py`,
-`verify_acceptance.py`, `verify_refcheck.py`) and `verify.py` can all build on it without an import
-cycle. `verify.py` re-exports every public name here so `llb.goldset.verify.<name>` keeps working.
+I/O. It depends on nothing else in the family, so sampling, acceptance, reference checking, and
+the CLI can all build on it without an import cycle.
 """
 
 import csv

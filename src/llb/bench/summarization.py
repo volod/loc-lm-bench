@@ -44,7 +44,7 @@ from llb.eval.common import EMPTY, OK
 from llb.prompts import render_text
 from llb.scoring import text_analysis as ta
 from llb.scoring.aggregate import TIER_SUMMARIZATION, ModelResult, bootstrap_mean_ci
-from llb.scoring.judge import JudgeOutcome
+from llb.scoring.judge.model import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 

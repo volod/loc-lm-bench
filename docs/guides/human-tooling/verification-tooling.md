@@ -354,12 +354,14 @@ A multi-reviewer bundle's `sample_manifest.json` deliberately cannot serve as a
 
 ## In this repo
 
-- `src/llb/goldset/verify.py` -- stratification, deterministic sampling, the acceptance arithmetic
-  (global / per-stratum / confidence-weighted policies), worksheet I/O, and accepted-ledger
-  emission; the `sample` / `review` / `adjudicate` / `accept` subcommands.
-- `src/llb/goldset/verify_multi.py` -- the multi-annotator lane: per-reviewer worksheets,
+- `src/llb/goldset/verify_sampling/` -- stratification, deterministic sampling, evidence context,
+  confidence ordering, row building, and worksheet persistence.
+- `src/llb/goldset/verify_base.py`, `verify_acceptance.py`, and `verify_refcheck.py` -- worksheet
+  schema/I/O, acceptance policies plus accepted-ledger emission, and verification-ref checks.
+- `src/llb/goldset/verify/cli.py` -- the `sample` / `review` / `adjudicate` / `accept` subcommands.
+- `src/llb/goldset/verify_multi/` -- the multi-annotator lane: per-reviewer worksheets,
   Cohen's/Fleiss' kappa agreement report, the adjudication worksheet, and consensus resolution.
-- `src/llb/goldset/verify_session.py` -- the interactive reviewer (`run_session` + the pure
+- `src/llb/goldset/verify_session/` -- the interactive reviewer (`run_session` + the pure
   `parse_command` / `format_card` / `first_undecided_index` pieces).
 - `src/llb/goldset/validate.py` -- the structural gate (`make validate-goldset`).
 - `src/llb/prep/verified_ledger.py` -- the adoption-by-replacement mechanism behind the flip.

@@ -1,11 +1,7 @@
-"""Acceptance arithmetic + accepted-ledger emission for the human verification gate.
+"""Acceptance arithmetic and accepted-ledger emission for the human verification gate.
 
-The acceptance half of `verify.py`: coded rejection reasons, accept-with-edit re-grounding, the
-acceptance-sampling arithmetic (global / per-stratum / confidence-weighted policies), and emitting
-the accepted-ledger bundle that `ingest_squad --verified-goldset` re-adopts by replacement (the
-flip to `verified=true` is an ADOPTION, never a hand-edited boolean). Pure -- no model, endpoint,
-or GPU -- so it stays fully unit-tested. Shared constants and worksheet I/O live in `verify.py`,
-which re-exports these names so `llb.goldset.verify.<name>` keeps working.
+Coded rejection reasons, accept-with-edit re-grounding, the global/per-stratum/weighted policies,
+and ledger emission live here. Shared constants and worksheet I/O live in `verify_base.py`.
 """
 
 import json
@@ -39,7 +35,7 @@ from llb.goldset.verify_base import (
     find_goldset,
     load_worksheet,
 )
-from llb.goldset.verify_sampling import row_confidence
+from llb.goldset.verify_sampling.confidence import row_confidence
 
 _LOG = logging.getLogger(__name__)
 
@@ -391,7 +387,7 @@ def write_rejection_reasons(rows: Sequence[dict[str, str]], out_dir: Path) -> Pa
 def _accept_rows(worksheet: Path) -> list[dict[str, str]]:
     """The row set acceptance scores: multi-reviewer consensus when the sibling manifest
     records reviewer worksheets (see `verify_multi.py`), else the single worksheet as-is."""
-    from llb.goldset.verify_multi import resolve_multi_reviewer_rows
+    from llb.goldset.verify_multi.consensus import resolve_multi_reviewer_rows
 
     consensus = resolve_multi_reviewer_rows(worksheet)
     if consensus is not None:

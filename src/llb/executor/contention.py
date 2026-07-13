@@ -246,7 +246,8 @@ def _spec_for(model_source: str, manifest: Path) -> "dict[str, Any] | None":
 def model_weight_floor_mb(model_source: str, manifest: Path = DEFAULT_MANIFEST) -> float:
     """Embedding-aware weights estimate (MiB, memory planner) for a model by source/name. 0.0 if unknown."""
     try:
-        from llb.backends.planner import enrich_arch, plan_model
+        from llb.backends.planner.architecture import enrich_arch
+        from llb.backends.planner.plan import plan_model
 
         spec = _spec_for(model_source, manifest)
         if spec is None:
@@ -268,7 +269,8 @@ def model_kv_headroom_mb(
     floor, so a model with a heavy KV per token is judged un-launchable at the right threshold.
     Falls back to the fixed floor when the arch is unknown."""
     try:
-        from llb.backends.planner import enrich_arch, kv_mib_at_context
+        from llb.backends.planner.architecture import enrich_arch
+        from llb.backends.planner.kv import kv_mib_at_context
 
         spec = _spec_for(model_source, manifest)
         if spec is None:

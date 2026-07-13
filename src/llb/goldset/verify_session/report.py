@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.core.fsutil import atomic_write_text
-from llb.goldset.verify import (
+from llb.goldset.verify_base import (
     ACCEPT,
     HUMAN_COLS,
     REJECT,

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
-from llb.prep.ontology.artifacts import write_calibration_artifacts
+from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,

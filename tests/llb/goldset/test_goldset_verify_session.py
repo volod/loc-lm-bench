@@ -8,12 +8,8 @@ checked directly. Shared factories live in `_verify_helpers.py`; the pure verify
 
 import json
 
-from llb.goldset.verify import (
-    WORKSHEET_COLS,
-    build_sample_worksheet,
-    load_worksheet,
-    write_worksheet_rows,
-)
+from llb.goldset.verify_base import WORKSHEET_COLS, load_worksheet, write_worksheet_rows
+from llb.goldset.verify_sampling.worksheet import build_sample_worksheet
 from llb.goldset.verify_card import (
     ACCEPT_CMD,
     CHECK,

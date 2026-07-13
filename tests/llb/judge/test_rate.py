@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.judge.calibration import WORKSHEET_COLS, load_worksheet, write_worksheet_rows
-from llb.judge.rate import (
+from llb.judge.rate.commands import (
     ANSWER,
     CLEAR,
     HELP,
@@ -21,18 +21,16 @@ from llb.judge.rate import (
     RATE,
     UNKNOWN,
     UNRATED,
-    _advanced_index,
-    _go_forward,
-    _go_unrated,
-    clear_human_columns,
-    completion_panel,
-    first_unrated_index,
-    format_card,
     parse_command,
+)
+from llb.judge.rate.presentation import completion_panel, format_card, summary_lines
+from llb.judge.rate.session import _go_forward, _go_unrated, run_session
+from llb.judge.rate.state import (
+    advanced_index,
+    clear_human_columns,
+    first_unrated_index,
     rating_histogram,
-    run_session,
     save_human_columns,
-    summary_lines,
 )
 
 
@@ -202,10 +200,10 @@ def test_session_clear_command_resets_rating(tmp_path):
 
 def test_advanced_index_transitions():
     rated = [_row("a", human_rating="5"), _row("b", human_rating="5")]
-    assert _advanced_index(0, 2, rated) == 1  # not last -> next item
-    assert _advanced_index(1, 2, rated) == 2  # last + all rated -> completion screen (==total)
+    assert advanced_index(0, 2, rated) == 1  # not last -> next item
+    assert advanced_index(1, 2, rated) == 2  # last + all rated -> completion screen (==total)
     gap = [_row("a"), _row("b", human_rating="5")]  # index 0 still unrated
-    assert _advanced_index(1, 2, gap) == 0  # last + gap -> wrap to the first unrated
+    assert advanced_index(1, 2, gap) == 0  # last + gap -> wrap to the first unrated
 
 
 def test_go_forward_returns_next_index_and_reports_gap():

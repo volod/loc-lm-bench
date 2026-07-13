@@ -42,37 +42,24 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 
 ### module-size-soft-limit-refactor
 
-- Agent status: **CLEAR** -- agent-buildable to `make ci` green; a mechanical, test-guarded split
-  per file. The convention, tooling, CLI exemplar, and the largest ~13 core-path/`rag`/`finetune`
-  modules plus the largest shell script already landed (see
-  [overview](current/overview.md#module-size--structure) for the current package layout). This
-  is a long soft-limit tail, not a single deliverable: it advances module by module and the limit
-  is soft, so a genuinely cohesive module may stay whole with a note.
-- Dependencies: none. The ~250-line soft limit is documented in AGENTS.md; `scripts/code_quality.sh`
-  now surfaces it both as a top-20 longest-code-files report (`.py`/`.sh`/`.mk`/`.awk`/`Makefile`)
-  and the full over-limit `.py`/`.sh` list. Already split: the six `cli/*.py` modules; the core-path
-  modules (`executor/runner`, `board/miss_analysis`, `finetune/hparam_search`,
-  `prep/ontology/pipeline`, `prep/pdf_corpus`, `goldset/verify_session`, `board/recommend`);
-  `rag/query_prep`, `rag/chunking`, `scoring/external_rag_session`, `finetune/distill`,
-  `finetune/campaign`; and `scripts/quickstart.sh` (now an entrypoint + `scripts/quickstart/*`
-  fragments).
+- Agent status: **CLEAR** -- agent-buildable to `make ci` green through mechanical,
+  behavior-preserving, test-guarded splits.
+- Dependencies: none. Use the package convention and current backlog recorded in
+  [Code Organization](current/overview.md#code-organization).
 - User-visible outcome: every tracked `.py`/`.sh` file sits at or under ~250 lines unless a single
   cohesive structure reads better whole, so review and comprehension improve.
-- Scope boundary: in scope -- split the remaining over-limit files (~70 `src/` modules and ~36
-  test modules) along clear functional seams (extract helper clusters into intent-named submodules;
-  for shell, sourced fragments under a sibling dir). New splits follow the no-shim convention:
-  repoint every caller and test at the specific submodule and keep `__init__.py` to just the
-  package docstring --
-  there is no public release, so a re-export layer is obsolete indirection (a package CLI keeps its
-  idiomatic `__main__` entry). Prioritize by size; `scripts/code_quality.sh` lists them
-  largest-first. Out of scope -- behavior changes; fragmenting a cohesive lookup table / dataclass
-  family / exhaustive match just to hit the count (`core/contracts.py` stays whole as the justified
-  exception).
-- Acceptance gates: each landed split leaves `scripts/code_quality.sh` with that file no longer over
-  the soft limit, `make ci` green, and no behavior test changes except import repointing to the new
-  submodules; the task leaves this file when the over-limit list holds only explicitly-justified
-  cohesive exceptions.
-- Documentation target: [overview](current/overview.md#module-size--structure).
+- Scope boundary: split the remaining over-limit production and test modules along clear
+  functional seams; extract helper clusters into intent-named submodules and use sourced sibling
+  fragments for shell. Repoint every caller and test to the concrete owner, keep package
+  `__init__.py` files docstring-only, and retain `__main__` only for an actual module CLI. Do not
+  add compatibility facades or re-export layers. Prioritize largest-first from
+  `scripts/code_quality.sh`. Exclude behavior changes and avoid fragmenting a cohesive lookup
+  table, dataclass family, or exhaustive match solely to meet the target; keep
+  `core/contracts.py` as the justified cohesive exception.
+- Acceptance gates: each remaining split must leave its replacement modules under the soft limit,
+  keep `make ci` green, and avoid behavior-test changes except import repointing; remove this task
+  when the live report contains only explicitly justified cohesive exceptions.
+- Documentation target: [overview](current/overview.md#code-organization).
 
 ## Human-Assisted Tasks
 

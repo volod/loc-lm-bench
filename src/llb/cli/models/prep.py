@@ -151,7 +151,9 @@ def list_models_cmd(
 ) -> None:
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.backends.planner import VERDICT_NO, format_plan, plan_models
+    from llb.backends.planner.constants import VERDICT_NO
+    from llb.backends.planner.format import format_plan
+    from llb.backends.planner.plan import plan_models
 
     models = _expand_quant_variants(planning_models(manifest, trust_config=trust_config))
     gpus = detect_gpus()

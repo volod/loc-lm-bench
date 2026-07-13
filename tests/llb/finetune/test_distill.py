@@ -10,7 +10,7 @@ from llb.core.contracts import JsonObject
 from llb.finetune.distill.model import DistillComparison, TeacherResponse
 from llb.finetune.distill.run import run_distillation
 from llb.finetune.guard import validate_adapter_for_eval
-from llb.finetune.registry import load_registry, registry_path
+from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
 

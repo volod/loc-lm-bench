@@ -106,7 +106,7 @@ def _split_dir_list(value: Optional[str]) -> Optional[list[Path | str]]:
 
 
 def _write_verification_sample(out_dir: Path, n: int, seed: int) -> None:
-    from llb.goldset.verify import build_sample_worksheet
+    from llb.goldset.verify_sampling.worksheet import build_sample_worksheet
 
     worksheet = out_dir / "verify_sample.csv"
     sample_size, _strata = build_sample_worksheet(out_dir, worksheet, n=n, seed=seed)
@@ -115,7 +115,7 @@ def _write_verification_sample(out_dir: Path, n: int, seed: int) -> None:
 
 def _enforce_calibration_gates(calibration_report: Any, out_dir: Path) -> None:
     """Exit 1 when the required ontology calibration gates failed (--require-passed-gates)."""
-    from llb.prep.ontology.artifacts import required_gate_names
+    from llb.prep.ontology.artifacts.report import required_gate_names
     from llb.prep.ontology.constants import PDF_ONTOLOGY_REPORT_FILENAME
 
     gates = calibration_report.get("gates") if isinstance(calibration_report, dict) else None

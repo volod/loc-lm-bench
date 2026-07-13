@@ -3,7 +3,8 @@
 from collections.abc import Sequence
 from typing import Any
 
-from llb.scoring.external_rag import (
+from llb.scoring.external_rag.records import human_reviewed_count, is_human_scored
+from llb.scoring.external_rag_common import (
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_FIELD,
     HUMAN_DECISION_PARTIAL,
@@ -12,8 +13,6 @@ from llb.scoring.external_rag import (
     HUMAN_SCORE_FIELD,
     HUMAN_STATUS_FIELD,
     HUMAN_STATUS_SCORED,
-    human_reviewed_count,
-    is_human_scored,
 )
 
 ACCEPT_SCORE = 1.0

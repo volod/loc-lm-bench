@@ -9,7 +9,7 @@ import json
 
 from llb.goldset.chains import CHAINS_FILENAME, ChainItem, ChainStep, dump_chains
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
-from llb.goldset.verify import WORKSHEET_COLS, write_worksheet_rows
+from llb.goldset.verify_base import WORKSHEET_COLS, write_worksheet_rows
 
 DOC = "squad/doc1.txt"
 TEXT = "Леся Українка народилася 1871 року в Новограді-Волинському. Вона була поетесою."

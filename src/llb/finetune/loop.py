@@ -18,7 +18,8 @@ from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import export_finetune_set
-from llb.finetune.registry import registry_path, try_register_adapter
+from llb.finetune.registry.io import registry_path
+from llb.finetune.registry.register import try_register_adapter
 from llb.finetune.trainer import train_adapter
 from llb.goldset.schema import load_goldset
 from llb.scoring.aggregate import bootstrap_mean_ci

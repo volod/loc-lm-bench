@@ -4,7 +4,7 @@ from pathlib import Path
 
 from llb.core.contracts import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT
-from llb.finetune.registry import find_by_digest
+from llb.finetune.registry.resolve import find_by_digest
 from llb.finetune.trainer import load_adapter_manifest
 from llb.goldset.schema import GoldItem
 

@@ -21,13 +21,9 @@ from pathlib import Path
 from llb.core.config import RUN_EVAL_METHOD
 from llb.core.contracts import JsonObject
 from llb.core.paths import resolve_project_path
-from llb.finetune.registry import (
-    AdapterEntry,
-    load_registry,
-    merged_root,
-    record_delete,
-    registry_path,
-)
+from llb.finetune.registry.io import load_registry, merged_root, registry_path
+from llb.finetune.registry.model import AdapterEntry
+from llb.finetune.registry.register import record_delete
 
 _LOG = logging.getLogger(__name__)
 

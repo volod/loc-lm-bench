@@ -66,7 +66,7 @@ def adapter_param_estimate(params: JsonObject, *, hidden_size: int, n_layers: in
 
 def estimated_adapter_train_mib(params: JsonObject, *, hidden_size: int, n_layers: int) -> float:
     """The adapter's TRAINING footprint in MiB (weights + grads + optimizer states)."""
-    from llb.backends.planner import MIB
+    from llb.backends.planner.constants import MIB
 
     count = adapter_param_estimate(params, hidden_size=hidden_size, n_layers=n_layers)
     return count * ADAPTER_TRAIN_BYTES_PER_PARAM / MIB
@@ -74,7 +74,7 @@ def estimated_adapter_train_mib(params: JsonObject, *, hidden_size: int, n_layer
 
 def _cached_model_arch(model: str) -> JsonObject | None:
     """`hidden_size` / `n_layers` from the model's locally cached HF config, or None."""
-    from llb.backends.planner import arch_from_config, cached_config_path
+    from llb.backends.planner.architecture import arch_from_config, cached_config_path
 
     path = cached_config_path(model)
     if path is None:

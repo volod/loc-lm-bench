@@ -13,12 +13,9 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
-from llb.goldset.verify import (
-    CORPUS_DIRNAME,
-    _worksheet_bundle_hint,
-    confidence_order,
-    load_worksheet,
-)
+from llb.goldset.verify_base import CORPUS_DIRNAME, load_worksheet
+from llb.goldset.verify_refcheck import _worksheet_bundle_hint
+from llb.goldset.verify_sampling.confidence import confidence_order
 from llb.goldset.verify_card import (
     PROMPT_HINT,
     QUIT,

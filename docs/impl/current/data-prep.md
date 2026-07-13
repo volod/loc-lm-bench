@@ -769,8 +769,11 @@ make verify-accept VERIFY_WS=<worksheet> BUNDLE=<draft>
 `src/llb/prep/cross_check.py` checks grounding and non-circularity before calling an injectable
 second verifier for support and answerability. A pass means the item is reviewable, not verified.
 
-`src/llb/goldset/verify.py` handles stratified sampling, worksheet IO, acceptance arithmetic, and
-accepted-ledger emission. `src/llb/goldset/verify_session.py` owns the interactive terminal loop.
+`src/llb/goldset/verify_sampling/` handles stratification, reviewer context, confidence ordering,
+row construction, and worksheet persistence. `verify_base.py`, `verify_acceptance.py`, and
+`verify_refcheck.py` own the schema/I/O, acceptance/ledger, and reference-checking seams;
+`src/llb/goldset/verify/cli.py` orchestrates the commands. `verify_session/` owns the interactive
+terminal loop.
 The review session keeps command parsing, navigation, row edits, clear confirmation, and
 persistence in small helpers so the loop reads as worksheet orchestration.
 The accepted ledger writes copied corpus files plus canonical `verified=true` rows; chain samples
@@ -790,7 +793,8 @@ with the measured human review-pass evidence recorded at the end of this section
 - **Confidence-ordered queue** -- `make verify-review VERIFY_WS=<ws> VERIFY_ORDER=confidence`
   reviews least-confident items first: each cross-check verdict flag contributes +1/-1 and a
   needle `retrieval_rank` contributes `1/rank` (`row_confidence`/`confidence_order` in
-  `verify.py`). Only the session queue is reordered; the CSV row order never changes.
+  `verify_sampling/confidence.py`). Only the session queue is reordered; the CSV row order never
+  changes.
 - **On-card evidence** -- worksheet rows (new optional columns `retrieval_rank`,
   `page_citation`) carry the item's needle retrieval rank (joined from `needle_items.jsonl` /
   `item_provenance.jsonl`) and a `<source.pdf> p.N[-M]` citation resolved through the PDF lane's
@@ -873,7 +877,7 @@ summary, prompt + provenance round-trip over a fake endpoint).
 ### Multi-annotator gate and adjudication
 
 The verification gate supports more than one annotator plus configurable acceptance arithmetic
-(`src/llb/goldset/verify_multi.py` + policy extensions in `verify.py`; tests in
+(`src/llb/goldset/verify_multi/` + policy extensions in `verify_acceptance.py`; tests in
 `tests/llb/goldset/test_verify_adjudication.py`):
 
 ```bash
@@ -924,8 +928,9 @@ the judge remains diagnostic.
 Modules:
 
 - `src/llb/judge/calibration.py`: worksheet IO, Spearman rho, bootstrap CI, trust decision;
-- `src/llb/judge/rate.py`: interactive human rater;
-- `src/llb/scoring/judge.py`: runtime gated judge scoring.
+- `src/llb/judge/rate/`: command parsing, worksheet state, presentation, and the interactive rater;
+- `src/llb/scoring/judge/model.py`: runtime trust gate and judge outcome policy;
+- `src/llb/scoring/judge/scorer.py`: score normalization and empty-answer handling.
 
 ```bash
 make calibration-run

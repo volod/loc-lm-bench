@@ -17,18 +17,17 @@ non-standalone contract; the older `_FakeApp` (which raises `Exit`) cannot expre
 
 ## Memory Planner
 
-`src/llb/backends/planner.py` estimates whether a model can run on the host. The estimate is
+`src/llb/backends/planner/plan.py` estimates whether a model can run on the host. The estimate is
 architecture-aware because simple `params * bpw` math is wrong for partial quantization.
 
 Key logic:
 
-- `weights_mib_detailed` prices high-precision embedding/norm mass separately from quantized
-  linear weights;
-- `hi_precision_params` derives that mass from vocab and hidden size when possible;
-- `arch_from_config` reads cached Hugging Face `config.json` files without downloading;
-- `enrich_arch` fills or, when explicitly requested, overrides curated architecture fields;
-- sliding-window KV helpers keep Gemma-style long context estimates from assuming full attention in
-  every layer.
+- `planner/weights.py` prices high-precision embedding/norm mass separately from quantized linear
+  weights and derives that mass from vocab and hidden size;
+- `planner/architecture.py` reads cached Hugging Face `config.json` files without downloading and
+  fills or overrides curated architecture fields;
+- `planner/kv.py` sizes full- and sliding-window KV caches and GPU layer allocation;
+- `planner/format.py` renders host-plan tables independently of the planning logic.
 
 The rationale is practical fit prediction. A quantized checkpoint can still carry a large
 high-precision embedding table, and vLLM startup failures are expensive compared with a conservative
@@ -36,11 +35,11 @@ pre-flight estimate.
 
 ## Model Preparation Contracts
 
-`src/llb/backends/prepare.py` expands `ModelSpec.sources` into backend-specific `PreparedModel`
-rows using the `SourceRecord` metadata from `src/llb/contracts.py`, matching resolver source
-normalization. `prep-models` and `prep-serving-targets` progress callbacks receive those typed
-rows before backend dispatch. `make ci` covers formatting, ruff, mypy, and non-slow pytest for this
-path.
+`src/llb/backends/prepare/planning.py` expands `ModelSpec.sources` into backend-specific
+`PreparedModel` rows using the `SourceRecord` metadata from `src/llb/core/contracts.py`, matching
+resolver source normalization. `prep-models` and `prep-serving-targets` progress callbacks receive
+those typed rows before backend dispatch. `make ci` covers formatting, ruff, mypy, and non-slow
+pytest for this path.
 
 `src/llb/backends/hardware.py` detects CUDA hosts through `nvidia-smi`. Detection first tries the
 resolved executable from `PATH`, then falls back to common absolute locations such as
@@ -284,7 +283,7 @@ rows; recovery identifies 2 non-empty rows as reusable and schedules the 43 ambi
 for regeneration.
 
 vLLM-backed drafting is still `--endpoint local` (no egress), but sets `--backend vllm`. If
-`--base-url` is omitted, `src/llb/cli/prep.py` starts `VllmLauncher` from
+`--base-url` is omitted, `src/llb/cli/prep/draft_endpoints.py` starts `VllmLauncher` from
 `src/llb/backends/vllm.py`, waits for `/v1/models`, writes vLLM logs under the draft bundle's
 `vllm/` directory, and points the endpoint at `http://localhost:<port>/v1`. If `--base-url` is set,
 the command uses that already-running OpenAI-compatible server. `--num-ctx` maps to vLLM

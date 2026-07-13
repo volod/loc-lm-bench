@@ -313,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "rate":
-        from llb.judge.rate import run_session
+        from llb.judge.rate.session import run_session
 
         run_session(
             args.worksheet,

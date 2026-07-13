@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-from llb.bench import text_analysis as bench_ta
+from llb.bench.text_analysis.constants import TEXT_ANALYSIS_LABELS
+from llb.bench.text_analysis.prompts import parse_predictions
+from llb.bench.text_analysis.run import run_text_analysis
 from llb.prep.text_analysis_corpus import (
     GROUNDED_REQUIRED_KINDS,
     plant_labels,
@@ -128,7 +130,7 @@ def _write_bundle(tmp_path, doc_id="synth-000"):
         # a judged kind that must stay OUT of the objective headline
         {"label_id": f"{doc_id}-insight-0", "kind": "insight", "value": "ринок", "doc_id": doc_id},
     ]
-    (tmp_path / bench_ta.TEXT_ANALYSIS_LABELS).write_text(
+    (tmp_path / TEXT_ANALYSIS_LABELS).write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
     )
     return tmp_path
@@ -143,7 +145,7 @@ def test_run_text_analysis_scores_and_persists(tmp_path):
             {"entity": ["Київ", "Львів"], "topic": ["економіка"], "insight": ["ринок"]}
         )
 
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -168,7 +170,7 @@ def test_run_text_analysis_reports_meter_throughput(tmp_path):
     bundle = _write_bundle(tmp_path / "b")
     meter = ThroughputMeter()
     meter.completion_tokens, meter.generation_s, meter.calls = 100, 4.0, 4  # 25 tok/s
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -185,7 +187,7 @@ def test_run_text_analysis_reports_meter_throughput(tmp_path):
 
 def test_run_text_analysis_malformed_output(tmp_path):
     bundle = _write_bundle(tmp_path / "b")
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -201,7 +203,7 @@ def test_run_text_analysis_malformed_output(tmp_path):
 def test_run_text_analysis_hallucination_penalizes_precision(tmp_path):
     bundle = _write_bundle(tmp_path / "b")
     # recover the entities but also hallucinate an extra one -> precision < 1
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -216,7 +218,7 @@ def test_run_text_analysis_hallucination_penalizes_precision(tmp_path):
 
 
 def test_parse_predictions_coerces_scalar_and_missing():
-    preds = bench_ta.parse_predictions(json.dumps({"entity": "Київ"}), [ta.ENTITY, ta.TOPIC])
+    preds = parse_predictions(json.dumps({"entity": "Київ"}), [ta.ENTITY, ta.TOPIC])
     assert preds[ta.ENTITY] == ["Київ"]  # scalar coerced to a one-item list
     assert preds[ta.TOPIC] == []  # missing kind -> empty
 
@@ -234,7 +236,7 @@ def fake_judge(faith, relevancy):
 def test_gated_judge_scores_narrative_insight_alongside_objective(tmp_path):
     bundle = _write_bundle(tmp_path / "b")  # plants entity/topic objective + insight judged
 
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -255,7 +257,7 @@ def test_gated_judge_scores_narrative_insight_alongside_objective(tmp_path):
 
 def test_gated_judge_demoted_below_threshold(tmp_path):
     bundle = _write_bundle(tmp_path / "b")
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",
@@ -286,7 +288,7 @@ def _write_long_doc_bundle(tmp_path):
             "attrs": {"question": "На скільки зріс бюджет?"},
         }
     ]
-    (tmp_path / bench_ta.TEXT_ANALYSIS_LABELS).write_text(
+    (tmp_path / TEXT_ANALYSIS_LABELS).write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
     )
     return tmp_path
@@ -301,7 +303,7 @@ def test_long_doc_driven_through_map_reduce(tmp_path):
         # the reduce/map prompts ask the comprehension question -> answer with the fact
         return "Бюджет зріс на 15 відсотків."
 
-    run = bench_ta.run_text_analysis(
+    run = run_text_analysis(
         bundle,
         model="m",
         backend="ollama",

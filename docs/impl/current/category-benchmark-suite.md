@@ -46,7 +46,7 @@ and asserts its `tok/s` reaches both the board `ModelResult` and the persisted m
 Modules:
 
 - `src/llb/scoring/text_analysis.py`;
-- `src/llb/bench/text_analysis.py`;
+- `src/llb/bench/text_analysis/`;
 - `src/llb/prep/text_analysis_corpus.py`;
 - `src/llb/prep/chat_corpus.py`.
 
@@ -243,7 +243,7 @@ Argument matching supports exact, contains, fuzzy, numeric tolerance, and one-of
 Modules:
 
 - `src/llb/bench/tool_world.py`;
-- `src/llb/bench/agentic.py`;
+- `src/llb/bench/agentic/`;
 - `src/llb/bench/agentic_tasks.py`;
 - `src/llb/bench/harness/`.
 

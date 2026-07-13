@@ -43,7 +43,7 @@ from llb.eval.common import EMPTY, is_refusal
 from llb.prompts import render_text
 from llb.scoring import security
 from llb.scoring.aggregate import TIER_SECURITY, ModelResult, bootstrap_mean_ci
-from llb.scoring.judge import JudgeOutcome
+from llb.scoring.judge.model import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)
 

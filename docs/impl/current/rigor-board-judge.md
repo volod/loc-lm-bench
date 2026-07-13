@@ -107,7 +107,8 @@ make board
 implies but does not state, plus a comparison chart. It reuses the board loaders
 (`load_run_records` -> `best_per_model`) and the `aggregate` ranking (`rank_board`, `pareto_front`),
 adding the host-efficiency + retrieval fields the `ModelResult` omits (`quality_per_watt`,
-`mean_power_w`, `recall@k`, `MRR`); the logic lives in `src/llb/board/recommend.py` and the
+`mean_power_w`, `recall@k`, `MRR`); recommendation construction lives in
+`src/llb/board/recommend/build.py` and the
 matplotlib chart in `src/llb/board/charts.py` (guarded `[viz]` extra).
 
 Picks:
@@ -163,8 +164,8 @@ multilingual Mistral Small 3.1 (0.399) and Qwen baselines on Ukrainian RAG.
 ## Miss Analysis (analyze-misses)
 
 `llb analyze-misses --run-dir <run>` (`make analyze-misses RUN_DIR=<run>`) explains a finalized
-run's wrong answers. Classifier, clustering, and recommendations live in
-`src/llb/board/miss_analysis.py`; the probe orchestration in `src/llb/board/miss_probe.py`;
+run's wrong answers. Classification, clustering, and recommendations live in
+`src/llb/board/miss_analysis/`; probe orchestration lives in `src/llb/board/miss_probe.py`;
 tests in `tests/llb/board/test_miss_analysis.py` (a synthetic scored bundle with one case per miss class
 proves zero cross-class leakage and that every recommendation line names numeric evidence).
 
@@ -175,10 +176,10 @@ knowledge), `retrieval_miss` (typed status, or the gold span never overlaps a re
 >= 0.7 -- a scoring conflict for a human to look at), else `generation_miss` (evidence present,
 answer wrong). A scoreable case is a miss when `objective_score < 0.5`
 (`--miss-threshold` / `MISS_THRESHOLD=` overrides). Span overlap reads the additive per-case
-`retrieval.jsonl` record every run bundle now persists beside `scores.jsonl`
+`retrieval.jsonl` records persist beside `scores.jsonl`
 (`batch_retrieval_records` in `src/llb/executor/cases.py`; doc id + char offsets + rank +
-score + bounded 160-char text preview + the gold spans); bundles that predate the record fall
-back to the scored `retrieval_hit` flag with a logged warning.
+score + bounded 160-char text preview + the gold spans). When detailed retrieval evidence is
+absent, classification uses the scored `retrieval_hit` flag and logs a warning.
 
 Misses are clustered by document (`source_doc_id`), topic, and question type, with per-key miss
 rates computed over ALL scored cases of that key. Labels come from the goldset's
@@ -206,15 +207,16 @@ never pollute the board headline (tiny `n_cases` -> cohort exclusion).
 Artifacts land at `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`;
 `llb recommend` appends a `## Miss analysis` section (intro + top 5 ranked lines) from the
 latest `analysis.json` when one exists (`format_miss_section_md` in
-`src/llb/board/recommend.py`). Run bundles are never mutated. Automatic re-tuning stays out of
-scope -- the Optuna tuner owns search.
+`src/llb/board/recommend/sections.py`). Run bundles are never mutated. Automatic re-tuning stays
+out of scope -- the Optuna tuner owns search.
 
 ## Context-Position Probe (probe-context-position)
 
 `llb probe-context-position --model <m> --backend <b> --k <k>`
 (`make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5`) measures a model's
 lost-in-the-middle sensitivity and names its `context_order` recommendation with evidence
-(rerank-context-order). Core in `src/llb/eval/position_probe.py`; CLI in `src/llb/cli/eval.py`;
+(rerank-context-order). Core in `src/llb/eval/position_probe.py`; CLI in
+`src/llb/cli/eval/analysis.py`;
 tests in `tests/llb/eval/test_position_probe.py` (a fake store + a fake chat that answers correctly only
 when the gold chunk leads the prompt prove case construction, exact gold placement, per-position
 scoring, the recommendation rule, and the artifacts -- no backend, no GPU).
@@ -325,12 +327,11 @@ Seed cases are tagged with `lang` (`uk` / `ru` / `en`) and, for attacks, `attrs.
 
 ## Local Judge
 
-`src/llb/scoring/judge.py` uses a local OpenAI-compatible endpoint for DeepEval G-Eval metrics.
-The judge is gated by calibration rho. If it is not trusted, objective correctness ranks alone and
-judge output remains diagnostic.
-The DeepEval scorer separates empty-answer short-circuiting, injected-evaluator scoring, default
-DeepEval scoring, and diagnostics merging so zero-valued candidate failures remain distinct from
-local judge failures.
+`src/llb/scoring/judge/endpoint.py` resolves the local OpenAI-compatible endpoint;
+`src/llb/scoring/judge/deepeval_adapter.py` supplies Ukrainian DeepEval G-Eval metrics; and
+`src/llb/scoring/judge/model.py` applies the calibration-rho gate. If the judge is not trusted,
+objective correctness ranks alone and judge output remains diagnostic. The scorer keeps empty
+candidate answers distinct from malformed or unreachable local-judge responses.
 
 ```bash
 llb judge-experiment --judge-model <model> --judge-base-url <url>

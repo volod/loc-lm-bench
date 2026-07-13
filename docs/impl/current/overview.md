@@ -20,83 +20,41 @@ immutable run artifacts, and tier-separated leaderboards.
 - **Canonical artifacts first.** Run bundles write `manifest.json` and per-case scores before
   optional MLflow mirroring. MLflow is an analysis mirror, not the source of record.
 
-## Module Size & Structure
+## Code Organization
 
-Tracked `.py` / `.sh` files target a ~250-line SOFT limit (AGENTS.md "File-size soft limit"):
-split along clear functional seams, but keep a single cohesive structure whole rather than
-fragment it. `scripts/code_quality.sh` surfaces the backlog two ways: a top-`LONGEST_TOP_K`
-(default 20) longest-code-files-by-lines report covering `.py`/`.sh`/`.mk`/`.awk`/`Makefile`, and
-the full list of `.py`/`.sh` files over the limit (`LINE_SOFT_LIMIT`, default 250), both
-largest-first.
+Tracked Python and shell files target the ~250-line soft limit in `AGENTS.md`. Split only at a
+clear functional boundary; a cohesive schema or lookup family may remain whole. Run
+`scripts/code_quality.sh` to see file size and complexity findings.
 
-**Split convention.** When a module is split into a package, callers and tests import from the
-specific submodule the symbol now lives in (`from llb.rag.chunking.corpus import chunk_corpus`);
-the package `__init__.py` carries only the package docstring. There is no public release, so a
-re-export shim that preserves the old flat import path is obsolete indirection and is not added --
-every split below now follows this, and no package `__init__` re-exports a former flat module's
-API. (A package meant to be run keeps its idiomatic `__main__`, and `cli/<area>/__init__.py` still
-imports its submodules purely to register commands -- neither is a re-export shim.)
+Callers import symbols from their concrete owner module. Package `__init__.py` files contain only
+the package docstring, except CLI area packages whose imports register Typer commands. Runnable
+packages may provide `__main__.py`; compatibility re-exports are not part of the package design.
 
-CLI command modules follow a package-per-area shape: `llb/cli/<area>/__init__.py` imports its
-submodules purely to register their `@app.command` handlers on the shared Typer `app` (the same
-registration contract as a flat module), and the commands themselves live in intent-named
-submodules. The oversized flat modules `cli/prep.py`, `cli/rag.py`, `cli/bench.py`, `cli/eval.py`,
-`cli/models.py`, and `cli/finetune.py` are now such packages (e.g. `cli/prep/{corpus, goldset,
-security, benchmarks, draft, draft_support, curation}`, `cli/rag/{index, validate,
-compare_retrieval, compare_stores}`). Tests that exercised a former flat module's internals import
-them from the specific submodule now.
+Current focused package boundaries:
 
-The same seam-based split has been applied to the largest core-path modules (callers and tests
-import each symbol from the submodule it lives in):
+| Concern | Modules |
+| --- | --- |
+| CLI registration | `src/llb/cli/<area>/` with command-specific submodules |
+| Host feasibility | `backends/planner/` for architecture, weights, KV sizing, plans, and formatting |
+| Evaluation execution | `executor/runner.py`, `runner_setup.py`, `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_target.py` |
+| Board analysis | `board/miss_analysis/` and `board/recommend/` |
+| Fine-tuning workflows | `finetune/campaign/`, `distill/`, `hparam_search/`, `registry/`, and `serving/` |
+| Gold verification | `goldset/verify/`, `verify_sampling/`, `verify_multi/`, and `verify_session/` |
+| Ontology and PDF preparation | `prep/ontology/pipeline/`, `prep/ontology/artifacts/`, and `prep/pdf/` |
+| RAG preparation | `rag/chunking/` and `rag/query_prep/` |
+| External RAG review | `scoring/external_rag/` and `scoring/external_rag_session/` |
+| Judge scoring and rating | `scoring/judge/` and `judge/rate/` |
+| Text-analysis benchmark | `bench/text_analysis/` |
 
-- `executor/runner.py` (910 lines) is now the `run_eval` orchestrator plus sibling modules
-  `runner_setup` (eval inputs / store / query-prep / probes), `runner_backend` (launcher lifecycle
-  + VRAM guard + runner resolution), `runner_judge` (judge scoring + calibration worksheet),
-  `runner_metrics` (aggregation + telemetry), and `runner_target` (run-target/config payload).
-- `board/miss_analysis.py` (859) -> package `board/miss_analysis/{model, load, classify,
-  recommendations, rec_retrieval, report}`.
-- `finetune/hparam_search.py` (845) -> package `finetune/hparam_search/{model, dev_slice, space,
-  objective, search, manifest_io}`.
-- `prep/ontology/pipeline.py` (786) -> package `prep/ontology/pipeline/{settings, journaling,
-  stages, bundle, run}`.
-- `prep/pdf_corpus.py` (739) -> orchestration moved into the existing `prep/pdf` package
-  (`furniture, render, quality, manifest, reuse, ingest`); the flat `pdf_corpus.py` module is
-  removed and callers import from the `prep/pdf/*` submodules.
-- `goldset/verify_session.py` (730) -> package `goldset/verify_session/{report, commands,
-  decision, loop}` (presentation half already in `verify_card.py`).
-- `board/recommend.py` (722) -> package `board/recommend/{model, build, render, sections}`.
-
-The next largest `src/` modules were split the same way:
-
-- `rag/chunking.py` (652) -> package `rag/chunking/{spans, recursive, structure, semantic,
-  dispatch, corpus, build}` plus a `__main__` that keeps `python -m llb.rag.chunking` working.
-- `scoring/external_rag_session.py` (644) -> package `scoring/external_rag_session/{commands,
-  cards, records, prompt, handlers, session}`.
-- `finetune/distill.py` (636) -> package `finetune/distill/{model, gate, dataset_io, defaults,
-  artifacts, run}`.
-- `rag/query_prep.py` (633) -> package `rag/query_prep/{base, normalize, typos, glossary, rewrite,
-  pipeline, report}`.
-- `finetune/campaign.py` (609) -> package `finetune/campaign/{coerce, model, entry, defaults,
-  state, report, run}`.
-
-The largest tracked shell script got the same treatment: `scripts/quickstart.sh` (970) is now a
-138-line entrypoint (process setup + the `QS_*` config block + the logging `main`) that sources
-functional fragments under `scripts/quickstart/` (`helpers`, `model_select`, `pdf_draft`, `serving`,
-`track_a`, `track_b`, `track_c`, `dispatch`). Each fragment carries a `# shellcheck shell=bash`
-directive; the entrypoint and `track_c` carry a scoped `SC2034` disable because their `QS_*` globals
-are consumed by the other sourced fragments.
-
-`core/contracts.py` stays whole as the plan's justified cohesive exception (one dataclass/TypedDict
-family). A backlog of ~70 more `src/` modules and ~36 test modules still sits over the soft limit;
-`scripts/code_quality.sh` lists them largest-first (both a top-20 longest-by-lines report and the
-full over-limit list), and the limit is soft, so a genuinely cohesive module may stay whole with a
-note.
+`scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
+from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,
+`track_c`, and `dispatch`.
 
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
-Python `>=3.12`; pytest has no legacy interpreter-specific warning filters, and build-helper tests
-derive fake wheel ABI tags from the running supported interpreter.
+Python `>=3.12`; pytest and build-helper tests derive their behavior and fake wheel ABI tags from
+the running supported interpreter.
 
 ```bash
 make
@@ -150,22 +108,8 @@ The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_
 it estimates and confirms the full draft runtime. Benchmark, manual local, and `frontier`
 `litellm` routes remain explicit overrides.
 
-Latest validated goldset quickstart evidence on the 16 GiB RTX 4060 Ti host:
-`$DATA_DIR/llb/logs/quickstart/quickstart-goldset-20260630-142055.log`. The run detected
-`gpu_tier=16`, built 311 FAISS chunks, passed retrieval with `recall@10=0.980` and `mrr=0.847`,
-prepared MamayLM, Lapa, Gemma 4, and Qwen 3.6 serving targets from the generated tier config,
-resumed four completed default-family sweep cells (Qwen 3.6, MamayLM 12B, MamayLM 27B, and Lapa),
-ran one platform-matrix Ollama row for `gemma4:e4b` with quality `0.420` and `61.37` tok/s,
-skipped missing vLLM and llama.cpp serving binaries with actionable log lines, ran
-`bench-security` on MamayLM 27B, and created 18 prompt-system candidates.
-
-Latest 12 GiB CUDA-host quickstart evidence on the RTX PRO 3000 Blackwell laptop: the setup wrapper
-detected `gpu_tier=12` and selected `.data/quickstart-leaderboard/llb/serving/gpu-12gb/tier.json`
-despite a stale `gpu-16gb` directory. `make build-vllm` installed/reused vLLM 0.24.0 and recorded
-the native sampler fallback for driver 610.43.02. The PDF quickstart now selects
-`google/gemma-4-12B-it-qat-w4a16-ct` at `max_model_len=16384`, `gpu_memory_utilization=0.90`,
-`cpu_offload_gb=16`, and `kv_offloading_size_gb=32`; a bounded drafter probe confirmed vLLM served
-the long-context target with CPU/KV offload on this 12 GiB GPU.
+Host-specific acceptance procedures and current compatibility notes live in
+[Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.
 Generated artifacts must stay under `DATA_DIR`.

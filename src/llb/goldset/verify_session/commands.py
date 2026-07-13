@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
-from llb.goldset.verify import (
+from llb.goldset.verify_base import (
     ACCEPT,
     FAIL,
     HUMAN_COLS,

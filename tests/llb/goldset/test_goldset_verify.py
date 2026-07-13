@@ -13,28 +13,28 @@ import pytest
 from llb.bench.common import verified_data_config
 from llb.goldset.chains import CHAINS_FILENAME, dump_chains, load_chains, validate_chains
 from llb.goldset.schema import load_goldset
-from llb.goldset.verify import (
+from llb.goldset.verify_acceptance import (
     acceptance_report,
     accepted_ids,
-    build_sample_worksheet,
-    check_verification_ref,
-    confidence_order,
-    corpus_window,
-    draw_stratified_sample,
     emit_accepted_chain_ledger,
     emit_accepted_ledger,
-    format_verification_status,
     ground_answer,
     infer_reject_code,
+    rejection_reasons_summary,
+    run_accept,
+)
+from llb.goldset.verify_base import load_worksheet, write_worksheet_rows
+from llb.goldset.verify_refcheck import check_verification_ref, format_verification_status
+from llb.goldset.verify_sampling.confidence import confidence_order, row_confidence
+from llb.goldset.verify_sampling.context import (
+    corpus_window,
     load_cross_check,
     load_retrieval_ranks,
-    load_worksheet,
+)
+from llb.goldset.verify_sampling.strata import draw_stratified_sample, stratify
+from llb.goldset.verify_sampling.worksheet import (
+    build_sample_worksheet,
     merge_sample_worksheet,
-    rejection_reasons_summary,
-    row_confidence,
-    run_accept,
-    stratify,
-    write_worksheet_rows,
 )
 from llb.goldset.verify_card import format_card
 from llb.prep.verified_ledger import apply_verified_ledger, load_verified_ledger
@@ -95,7 +95,7 @@ def test_sample_draws_exactly_n_when_proportional_rounding_undershoots():
 
 
 def test_stratum_quotas_sum_exactly_and_respect_sizes():
-    from llb.goldset.verify import stratum_quotas
+    from llb.goldset.verify_sampling.strata import stratum_quotas
 
     quotas = stratum_quotas({"a": 7, "b": 7, "c": 6}, 4)
     assert sum(quotas.values()) == 4

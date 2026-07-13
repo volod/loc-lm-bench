@@ -47,7 +47,8 @@ def bench_text_analysis_cmd(
 ) -> None:
     """Score a model's planted-label recovery under TIER_TEXT_ANALYSIS."""
     from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
-    from llb.bench.text_analysis import TextAnalysisRun, run_text_analysis
+    from llb.bench.text_analysis.model import TextAnalysisRun
+    from llb.bench.text_analysis.run import run_text_analysis
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     vram_reader, pid_reader = best_effort_gpu_readers()

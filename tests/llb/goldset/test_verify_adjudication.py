@@ -11,33 +11,35 @@ import json
 import pytest
 
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset, load_goldset
-from llb.goldset.verify import (
+from llb.goldset.verify_acceptance import (
+    acceptance_report,
+    confidence_weighted_reject_rate,
+    run_accept,
+)
+from llb.goldset.verify_base import (
     POLICY_GLOBAL,
     POLICY_PER_STRATUM,
     POLICY_WEIGHTED,
     WORKSHEET_COLS,
-    acceptance_report,
-    confidence_weighted_reject_rate,
     load_worksheet,
-    run_accept,
     write_worksheet_rows,
 )
-from llb.goldset.verify_multi import (
+from llb.goldset.verify_multi.adjudication import build_adjudication_worksheet, run_adjudicate
+from llb.goldset.verify_multi.agreement import (
+    agreement_report,
+    cohen_kappa,
+    fleiss_kappa,
+)
+from llb.goldset.verify_multi.common import (
     ADJUDICATION_FILENAME,
     ADJUDICATOR_ID,
     AGREEMENT_FILENAME,
     PRIOR_DECISIONS_COL,
-    agreement_report,
-    build_adjudication_worksheet,
-    build_multi_reviewer_worksheets,
-    cohen_kappa,
-    consensus_rows,
-    fleiss_kappa,
     load_reviewer_worksheets,
-    resolve_multi_reviewer_rows,
     reviewer_worksheet_path,
-    run_adjudicate,
 )
+from llb.goldset.verify_multi.consensus import consensus_rows, resolve_multi_reviewer_rows
+from llb.goldset.verify_multi.sampling import build_multi_reviewer_worksheets
 from llb.goldset.verify_card import format_card
 from llb.goldset.verify_session.loop import run_session
 
@@ -326,7 +328,7 @@ def test_multi_reviewer_accept_scores_consensus_and_emits_ledger(tmp_path, caplo
 
 def test_resolve_multi_reviewer_rows_is_none_for_single_worksheet(tmp_path):
     bundle = _bundle(tmp_path, [_item("a")])
-    from llb.goldset.verify import build_sample_worksheet
+    from llb.goldset.verify_sampling.worksheet import build_sample_worksheet
 
     ws = bundle / "verify_sample.csv"
     build_sample_worksheet(bundle, ws, n=1)

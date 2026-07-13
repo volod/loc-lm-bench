@@ -1,10 +1,4 @@
-"""Shared constants, result dataclasses, and value coercions for external-RAG scoring (leaf).
-
-The scoring core (`external_rag.py`), the summary aggregation (`external_rag_summary.py`), and the
-Markdown report renderer (`external_rag_report.py`) all build on this module. It depends on nothing
-else in the family, so it carries no import cycle. `external_rag.py` re-exports the public names
-here so `llb.scoring.external_rag.<name>` keeps working.
-"""
+"""Shared constants, result dataclasses, and value coercions for external-RAG scoring."""
 
 import json
 import re

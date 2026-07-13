@@ -13,7 +13,7 @@ from llb.finetune.campaign.run import run_finetune_campaign
 from llb.finetune.dataset import export_finetune_set
 from llb.finetune.guard import validate_adapter_for_eval
 from llb.finetune.loop import run_self_improve
-from llb.finetune.registry import load_registry, registry_path
+from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.trainer import adapter_lora_rank, fake_train_adapter, load_adapter_manifest
 from llb.goldset.schema import GoldItem, dump_goldset, load_goldset
 

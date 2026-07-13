@@ -3,7 +3,7 @@
 A terminal session that walks a stratified sample item by item and writes the HUMAN columns
 (the four checks, the accept/reject decision, a note, a status) in place. Interactive I/O lives
 here, OUT of the pure `verify.py`; the two share the worksheet schema + atomic load/save. This
-mirrors how `judge/rate.py` pairs with `judge/calibration.py`.
+mirrors how the `judge/rate/` package pairs with `judge/calibration.py`.
 
 The card rendering and command parsing (the pure presentation half) live in `verify_card.py`; this
 package owns the session loop, split into `report` (pure worksheet summaries + throughput stats),

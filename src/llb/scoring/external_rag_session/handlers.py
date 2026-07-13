@@ -4,12 +4,11 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from llb.scoring.external_rag import (
+from llb.scoring.external_rag.records import clear_human_fields, write_jsonl
+from llb.scoring.external_rag_common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_NOTES_FIELD,
     ExternalRagResult,
-    clear_human_fields,
-    write_jsonl,
 )
 from llb.scoring.external_rag_session.cards import _float_text, completion_panel, format_card
 from llb.scoring.external_rag_session.commands import (

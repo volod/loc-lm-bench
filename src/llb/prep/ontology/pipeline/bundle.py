@@ -15,11 +15,8 @@ from pathlib import Path
 
 from llb.goldset.chains import dump_chains
 from llb.goldset.schema import dump_goldset
-from llb.prep.ontology.artifacts import (
-    copy_pdf_citation_sidecars,
-    required_gate_names,
-    write_calibration_artifacts,
-)
+from llb.prep.ontology.artifacts.citations import copy_pdf_citation_sidecars
+from llb.prep.ontology.artifacts.report import required_gate_names, write_calibration_artifacts
 from llb.prep.ontology.constants import (
     CHAINS_FILENAME,
     CORPUS_DIRNAME,

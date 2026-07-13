@@ -10,7 +10,7 @@ from llb.cli.app import app
 from llb.cli.helpers import load_config
 
 if TYPE_CHECKING:
-    from llb.finetune.serving import ServeResult
+    from llb.finetune.serving.model import ServeResult
 
 
 @app.command("register-adapter")
@@ -34,7 +34,8 @@ def register_adapter_cmd(
     `self-improve` and `finetune-campaign` register their adapters automatically; a bare
     `finetune-adapter` does not, and an unregistered adapter never renders on the board.
     """
-    from llb.finetune.registry import register_adapter, registry_path
+    from llb.finetune.registry.io import registry_path
+    from llb.finetune.registry.register import register_adapter
 
     cfg = load_config(config, goldset_path=goldset, corpus_root=corpus)
     registry = registry_path(cfg.data_dir)
@@ -61,7 +62,8 @@ def list_adapters_cmd(
     json_out: bool = typer.Option(False, "--json", help="emit the rows as JSON"),
 ) -> None:
     """List registered adapters with base model, evidence, and staleness verdict."""
-    from llb.finetune.registry import adapter_rows, load_registry, registry_path
+    from llb.finetune.registry.io import load_registry, registry_path
+    from llb.finetune.registry.rows import adapter_rows
 
     cfg = load_config(config)
     rows = adapter_rows(load_registry(registry_path(cfg.data_dir)))
@@ -92,7 +94,7 @@ def serve_adapter_cmd(
     ),
 ) -> None:
     """Serve a registered adapter: vLLM loads the LoRA directly, GGUF backends serve a merge."""
-    from llb.finetune.serving import serve_adapter
+    from llb.finetune.serving.run import serve_adapter
 
     cfg = load_config(config, backend=backend)
     try:

@@ -8,7 +8,8 @@ size, and decides whether a store filesystem has room for it.
 import os
 from pathlib import Path
 
-from llb.backends import planner
+from llb.backends.planner.architecture import cached_config_path
+from llb.backends.planner.weights import hi_precision_params, resolve_bpw, weights_mib_detailed
 from llb.backends.prepare.base import (
     DOWNLOAD_HEADROOM_MB,
     DOWNLOAD_SAFETY_FACTOR,
@@ -27,12 +28,10 @@ def estimate_download_mb(spec: ModelSpec) -> int:
     packaging files. Falls back to `min_vram_gb`, then a small floor, when the spec carries no
     size hints -- an unsized entry never blocks on a bogus estimate.
     """
-    bpw = planner.resolve_bpw(spec)
+    bpw = resolve_bpw(spec)
     params_b = spec.get("params_b")
     if bpw is not None and params_b is not None:
-        weights = planner.weights_mib_detailed(
-            float(params_b), bpw, planner.hi_precision_params(spec)
-        )
+        weights = weights_mib_detailed(float(params_b), bpw, hi_precision_params(spec))
         return max(MIN_DOWNLOAD_MB, int(weights * DOWNLOAD_SAFETY_FACTOR))
     floor = int(spec.get("min_vram_gb", 0)) * 1024
     return max(MIN_DOWNLOAD_MB, floor)
@@ -121,7 +120,7 @@ def _default_present_check(spec: ModelSpec) -> bool:
     backend = spec.get("backend")
     source = str(spec.get("source", ""))
     if backend == "vllm":
-        return planner.cached_config_path(source) is not None
+        return cached_config_path(source) is not None
     if backend == "ollama":
         return _ollama_present(source)
     return False

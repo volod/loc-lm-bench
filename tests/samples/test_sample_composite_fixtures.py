@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from llb.bench.text_analysis import run_text_analysis
-from llb.goldset.verify import check_verification_ref
+from llb.bench.text_analysis.run import run_text_analysis
+from llb.goldset.verify_refcheck import check_verification_ref
 
 
 SAMPLE_VERIFICATION_ROOT = Path("samples/verification/composite_samples")

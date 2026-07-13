@@ -3,7 +3,13 @@
 from collections.abc import Sequence
 from typing import Any
 
-from llb.scoring.external_rag import (
+from llb.scoring.external_rag.score import (
+    clean_answer_for_scoring,
+    field_value,
+    score_records,
+    source_list,
+)
+from llb.scoring.external_rag_common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_FIELD,
@@ -11,10 +17,6 @@ from llb.scoring.external_rag import (
     HUMAN_DECISION_REJECT,
     HUMAN_NOTES_FIELD,
     HUMAN_SCORE_FIELD,
-    clean_answer_for_scoring,
-    score_records,
-    _field_value,
-    _source_list,
     _string,
 )
 
@@ -44,13 +46,13 @@ def format_card(
         source_limit=source_limit,
         strip_source_footer=strip_source_footer,
     )[0]
-    raw_answer, _answer_field_used = _field_value(
+    raw_answer, _answer_field_used = field_value(
         record,
         answer_field,
         ("llm_answer", "predicted_answer", "model_answer", "answer"),
     )
-    raw_error, _error_field_used = _field_value(record, error_field, ("llm_error", "error"))
-    raw_sources, _sources_field_used = _field_value(
+    raw_error, _error_field_used = field_value(record, error_field, ("llm_error", "error"))
+    raw_sources, _sources_field_used = field_value(
         record, sources_field, ("llm_sources", "sources", "retrieved_sources")
     )
     remaining = total - reviewed
@@ -119,7 +121,7 @@ def _source_span_lines(record: dict[str, Any]) -> list[str]:
 def _returned_source_lines(raw_sources: object, limit: int) -> list[str]:
     if limit <= 0:
         return ["  (source display disabled)"]
-    sources = _source_list(raw_sources)
+    sources = source_list(raw_sources)
     if not sources:
         return ["  (none)"]
     lines: list[str] = []

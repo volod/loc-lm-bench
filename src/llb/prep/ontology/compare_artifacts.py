@@ -8,7 +8,7 @@ from typing import cast
 
 from llb.goldset.schema import Split
 from llb.goldset.splits import assign_splits
-from llb.goldset.verify import build_sample_worksheet
+from llb.goldset.verify_sampling.worksheet import build_sample_worksheet
 from llb.goldset.verify_acceptance import acceptance_report
 from llb.goldset.verify_base import load_worksheet
 from llb.prep.frontier_telemetry import LLMComplete

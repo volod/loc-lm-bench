@@ -22,7 +22,7 @@ with RAG, GPU serving, Optuna, or LLM-as-judge evaluation -- those are what this
 ## Syllabus at a glance
 
 - **Stage 0 -- Prerequisites** (--): Python, git, CLI, basic ML/LLM vocabulary
-- **Stage 1 -- Project tooling** (`main.py`, `config.py`): uv, Typer, Pydantic, pytest
+- **Stage 1 -- Project tooling** (`main.py`, `core/config.py`): uv, Typer, Pydantic, pytest
 - **Stage 2 -- Retrieval + RAG** (`rag/`): embeddings, FAISS, chunking, recall@k / MRR
 - - **Stage 3 -- Serving LLMs locally** (`backends/`): Ollama, vLLM, llama.cpp, quantization,
 - OpenAI-compatible API, KV cache / VRAM
@@ -58,7 +58,7 @@ What turns scripts into a reproducible package and a typed CLI.
 - [Pydantic](https://docs.pydantic.dev/latest/) -- typed, validated config (`RunConfig`).
 - [pytest](https://docs.pytest.org/) -- the test runner (`make test`).
 
-In this repo: `src/llb/main.py` (CLI), `src/llb/config.py` (the canonical `RunConfig`),
+In this repo: `src/llb/main.py` (CLI), `src/llb/core/config.py` (the canonical `RunConfig`),
 `pyproject.toml` (deps + extras).
 
 ## Stage 2 -- Retrieval and RAG foundations

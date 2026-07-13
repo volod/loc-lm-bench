@@ -13,7 +13,7 @@ from pathlib import Path
 from llb.core.config import RunConfig
 from llb.core.contracts import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
-from llb.scoring.judge import judge_is_trusted, run_judge
+from llb.scoring.judge.model import judge_is_trusted, run_judge
 
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
 _LOG = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _configured_judge_scorer(config: RunConfig, scorer: JudgeScorer | None) -> J
     """Bind the configured endpoint while preserving the injectable scorer seam."""
     if scorer is not None:
         return scorer
-    from llb.scoring.judge import deepeval_scorer
+    from llb.scoring.judge.scorer import deepeval_scorer
 
     def score(records: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
         return deepeval_scorer(records, model, base_url=config.judge_base_url)
@@ -102,7 +102,7 @@ def _build_judge_metadata(config: RunConfig, judge_rho: float | None) -> JudgeSt
     }
     if config.judge_model is None:
         return judge_metadata
-    from llb.scoring.judge import judge_experiment_metadata
+    from llb.scoring.judge.endpoint import judge_experiment_metadata
 
     experiment_metadata = judge_experiment_metadata(config.judge_model, config.judge_base_url)
     judge_metadata["provider"] = experiment_metadata["provider"]

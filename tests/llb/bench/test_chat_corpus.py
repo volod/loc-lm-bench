@@ -2,7 +2,7 @@
 
 import json
 
-from llb.bench.text_analysis import run_text_analysis
+from llb.bench.text_analysis.run import run_text_analysis
 from llb.prep import chat_corpus as cc
 from llb.scoring import text_analysis as ta
 

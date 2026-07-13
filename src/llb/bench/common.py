@@ -39,7 +39,7 @@ from llb.scoring.aggregate import (
     rank_board,
     ranking_policy_note,
 )
-from llb.scoring.judge import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
+from llb.scoring.judge.model import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
 
 LLMComplete = Callable[[str], str]  # prompt -> raw completion text
@@ -71,10 +71,8 @@ def verified_data_config(*, data_verified: bool, verification_ref: str | None) -
     if not data_verified:
         return {"data_verified": False, "verification_ref": verification_ref}
     if not verification_ref:
-        from llb.goldset.verify import (
-            VerificationRefStatus,
-            format_verification_status,
-        )
+        from llb.goldset.verify_base import VerificationRefStatus
+        from llb.goldset.verify_refcheck import format_verification_status
 
         status = VerificationRefStatus(
             False,
@@ -83,7 +81,7 @@ def verified_data_config(*, data_verified: bool, verification_ref: str | None) -
             "--data-verified requires --verification-ref",
         )
         raise ValueError(format_verification_status(status))
-    from llb.goldset.verify import check_verification_ref, format_verification_status
+    from llb.goldset.verify_refcheck import check_verification_ref, format_verification_status
 
     status = check_verification_ref(verification_ref)
     if not status.valid:
@@ -120,7 +118,7 @@ def run_gated_judge(
     precise_reasons: list[str | None] = []
 
     def _default(recs: list[JudgeInputRecord], model: str) -> list[JudgeScore]:
-        from llb.scoring.judge import deepeval_scorer
+        from llb.scoring.judge.scorer import deepeval_scorer
 
         return deepeval_scorer(recs, model, base_url=base_url, diagnostics_out=precise_reasons)
 

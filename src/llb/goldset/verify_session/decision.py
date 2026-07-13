@@ -9,14 +9,9 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.goldset.verify import (
-    ACCEPT,
-    REJECT,
-    REJECT_CODES,
-    corpus_window,
-    ground_answer,
-    infer_reject_code,
-)
+from llb.goldset.verify_acceptance import ground_answer, infer_reject_code
+from llb.goldset.verify_base import ACCEPT, REJECT, REJECT_CODES
+from llb.goldset.verify_sampling.context import corpus_window
 from llb.goldset.verify_card import (
     ACCEPT_CMD,
     CHECK,

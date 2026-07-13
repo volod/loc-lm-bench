@@ -29,7 +29,8 @@ from llb.finetune.distill.model import (
     TrainerFn,
 )
 from llb.finetune.dataset import TUNING_SPLIT
-from llb.finetune.registry import registry_path, try_register_adapter
+from llb.finetune.registry.io import registry_path
+from llb.finetune.registry.register import try_register_adapter
 
 
 def run_distillation(

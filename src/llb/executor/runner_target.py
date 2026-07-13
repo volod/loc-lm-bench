@@ -32,7 +32,7 @@ def _eval_config_payload(
     adapter_manifest = None
     if config.adapter_path is not None:
         from llb.finetune.guard import validate_adapter_for_eval
-        from llb.finetune.registry import registry_path
+        from llb.finetune.registry.io import registry_path
 
         adapter_manifest = validate_adapter_for_eval(
             adapter_path=config.adapter_path,

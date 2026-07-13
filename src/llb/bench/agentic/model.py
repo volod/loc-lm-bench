@@ -19,7 +19,7 @@ from llb.core.contracts import (
     ToolDef,
 )
 from llb.scoring.aggregate import ModelResult
-from llb.scoring.judge import JudgeOutcome
+from llb.scoring.judge.model import JudgeOutcome
 
 METHOD = "agentic"
 DEFAULT_MAX_STEPS = 6

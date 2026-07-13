@@ -28,7 +28,7 @@ def _summary(**codes):
 
 
 def test_every_closed_reject_code_has_a_hint():
-    from llb.goldset.verify import REJECT_CODES
+    from llb.goldset.verify_base import REJECT_CODES
 
     assert set(REJECT_CODE_HINTS) == set(REJECT_CODES)
 

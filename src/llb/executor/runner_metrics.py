@@ -13,7 +13,7 @@ from llb.core.contracts import CaseScoreRow, LeaderboardRow, RunMetrics, Telemet
 from llb.eval import common as eval_common
 from llb.executor.runner_backend import _vram_reader
 from llb.scoring.aggregate import ModelResult, rank_results
-from llb.scoring.judge import judge_is_trusted
+from llb.scoring.judge.model import judge_is_trusted
 
 
 def _aggregate(

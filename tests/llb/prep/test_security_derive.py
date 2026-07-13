@@ -192,7 +192,7 @@ def test_scaffolded_worksheet_drives_shared_review_session(tmp_path):
 def test_committed_verified_sample_passes_the_gate_and_matches_cases():
     # The human-reviewed derived worksheet is committed as a durable verification reference; it must
     # keep passing the verification-ref checker and stay aligned with the committed derived cases.
-    from llb.goldset.verify import check_verification_ref
+    from llb.goldset.verify_refcheck import check_verification_ref
     from llb.goldset.verify_base import load_worksheet
 
     manifest = Path("samples/verification/security_derived/sample_manifest.json")

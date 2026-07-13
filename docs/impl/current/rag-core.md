@@ -11,11 +11,11 @@ OpenAI-compatible chat endpoint and receives normalized response classes.
 
 ## Configuration
 
-`src/llb/config.py` defines `RunConfig`, the typed object that flows through retrieval,
+`src/llb/core/config.py` defines `RunConfig`, the typed object that flows through retrieval,
 generation, scoring, telemetry, and the manifest. YAML configs and CLI overrides share the same
 validation path. Unknown keys and invalid ranges fail before work starts.
 
-`src/llb/paths.py` loads `.env`, honors `DATA_DIR`, and resolves relative paths from the project
+`src/llb/core/paths.py` loads `.env`, honors `DATA_DIR`, and resolves relative paths from the project
 root instead of the caller's current directory.
 
 ## Command Path
@@ -80,8 +80,10 @@ remote service shape, or set `RAG_SERVICE_URL`, `RAG_SERVICE_NAME`, `RAG_API_KEY
 answers from an external or closed RAG system. It does not launch the local RAG backend. It reads
 the gold fields plus an answer field (`llm_answer`, `predicted_answer`, `model_answer`, or
 `answer`), computes the same objective answer-correctness signals as `run-eval`, and opens an
-interactive human scoring loop. The scoring/report core is in `src/llb/scoring/external_rag.py`;
-the terminal session loop is in `src/llb/scoring/external_rag_session.py`; coverage lives in
+interactive human scoring loop. Record state, objective scoring, CSV rendering, and orchestration
+live in `src/llb/scoring/external_rag/{records,score,worksheet,run}.py`; aggregation, Markdown
+reporting, and source mapping are explicit `external_rag_*` sibling modules. The terminal loop is
+in `src/llb/scoring/external_rag_session/`; coverage lives in
 `tests/llb/scoring/test_external_rag_score.py`.
 
 The JSONL answer log is the session state. Each edit atomically writes `human_score_0_1`,
@@ -254,7 +256,7 @@ row restricting candidates to each gold item's `source_doc_id` through the filte
 quantifying the recall headroom a PERFECT document router would buy (never a scoring config).
 
 The lemma normalizer is reused by the miss analysis: `topic_of` in
-`src/llb/board/miss_analysis.py` lemmatizes its heuristic topic key best-effort, so Ukrainian
+`src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key best-effort, so Ukrainian
 case forms of one topic collapse into a single cluster instead of splitting across inflections
 (identity fallback when `[lex]` is absent).
 
@@ -461,7 +463,7 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 Wiring: `src/llb/eval/graph.py`'s retrieve node processes the question BEFORE `store.retrieve`
 (the raw question stays in state for generation) and records `query_processed` /
 `query_corrections` into the case state, carried into `scores.jsonl` rows so both query forms are
-recoverable per case. `src/llb/executor/runner.py` `build_query_prep` resolves each step's
+recoverable per case. `src/llb/executor/runner_setup.py` resolves each step's
 dependency (vocabulary from the loaded store, glossary from `query_glossary_path`, rewriter from
 the launcher) and raises a clear message on a missing one.
 
@@ -680,8 +682,8 @@ The default store retrieves dense-only (cosine over the pinned E5 embedding). Me
 the gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the
 real full-corpus PDF index (`recall@10=0.729`, see the quickstart note above), so dense-only has
 NOT been proven sufficient for a real Ukrainian corpus. Hybrid retrieval (see Hybrid Retrieval
-above) and cross-encoder reranking (see Reranking And Context Order above) are the shipped
-levers; query processing is forward task 15 in [`plan.md`](../plan.md).
+above), cross-encoder reranking (see Reranking And Context Order above), and the ordered
+`rag/query_prep/` pipeline are the available retrieval levers.
 
 ## Generation Graph
 
@@ -699,9 +701,11 @@ exact and contains helpers. `--score-semantic` records a pinned-embedder cosine 
 paraphrases and morphology; it is kept separate from the objective unless a ranking policy
 explicitly uses it.
 
-`src/llb/scoring/judge.py` runs the local judge only when configured. The judge enters ranking only
-when the caller supplies a calibration rho that clears the trust threshold. Otherwise it is
-diagnostic and objective correctness ranks alone.
+`src/llb/scoring/judge/model.py` owns the calibration gate and outcome policy;
+`src/llb/scoring/judge/scorer.py` normalizes scores and handles empty answers; and
+`src/llb/scoring/judge/deepeval_adapter.py` runs the optional local DeepEval integration. The judge
+enters ranking only when the caller supplies a calibration rho that clears the trust threshold.
+Otherwise it is diagnostic and objective correctness ranks alone.
 
 `src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
 throughput, then lower VRAM when telemetry is available.
@@ -783,17 +787,17 @@ preserved on failure.
 $DATA_DIR/run-eval/<timestamp>-<run-id>/
   manifest.json
   scores.jsonl
+  retrieval.jsonl
 ```
 
 Parquet is used when `pyarrow` is available; JSONL is the portable fallback. The bundle is staged
 in a hidden sibling directory and atomically renamed when canonical files are complete. MLflow
 mirroring runs after canonical persistence and is best-effort.
 
-Per-case rows record `retrieval_hit` and `first_hit_rank`, but the retrieved chunk records
-themselves are not persisted in the bundle -- `retrieval_pairs` stay in-process
-(`src/llb/executor/cases.py`) for aggregate retrieval metrics and judge records. Adding an
-additive per-case retrieved-spans record is part of forward task 6 (`miss-analysis-recommendations`
-in [`plan.md`](../plan.md)), which needs it for span-overlap miss classification.
+Per-case score rows record `retrieval_hit` and `first_hit_rank`. `retrieval.jsonl` stores bounded
+retrieved chunk text plus source-span coordinates for miss analysis and observability;
+`src/llb/executor/cases.py` constructs both the persisted records and the in-process retrieval
+pairs used by aggregate metrics and judge records.
 
 ## Executor
 

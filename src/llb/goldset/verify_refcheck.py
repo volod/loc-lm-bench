@@ -1,12 +1,10 @@
-"""Verification-reference validation for `--data-verified` (the ledger-ref half of `verify.py`).
+"""Verification-reference validation for `--data-verified`.
 
 Validates the artifact an operator points `--verification-ref` at before it may stamp a category
 run as data-verified: a reviewed `verify_sample.csv` whose rows are all decided within tolerance,
 a `sample_manifest.json` that points to such a worksheet, or an accepted-ledger dir / `goldset.jsonl`
 / `chains.jsonl` whose entries are all `verified=true`. Renders a failing check with stats and the
-operator's next steps. Pure -- no model, endpoint, or GPU. Shared constants, `VerificationRefStatus`,
-and the ref-path/stat helpers live in `verify.py`, which re-exports these names so
-`llb.goldset.verify.<name>` keeps working.
+operator's next steps. Shared constants and `VerificationRefStatus` live in `verify_base.py`.
 """
 
 import csv

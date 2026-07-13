@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-from llb.backends.planner import VERDICT_NO
+from llb.backends.planner.constants import VERDICT_NO
 from llb.board.miss_analysis.classify import analyze_run
 from llb.board.miss_analysis.load import load_item_provenance
 from llb.board.miss_analysis.report import write_analysis

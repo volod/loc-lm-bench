@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from llb.backends.planner import enrich_arch, plan_model
+from llb.backends.planner.architecture import enrich_arch
+from llb.backends.planner.plan import plan_model
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, JsonObject, ModelPlanRow, ModelSpec

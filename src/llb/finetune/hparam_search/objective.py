@@ -27,7 +27,7 @@ from llb.finetune.hparam_search.model import (
     TrialTrainerFn,
 )
 from llb.finetune.hparam_search.space import suggest_lora_hyperparameters
-from llb.finetune.serving import BACKEND_VLLM
+from llb.finetune.serving.model import BACKEND_VLLM
 from llb.finetune.trainer import train_adapter
 from llb.optimize.tuner import is_oom
 from llb.core.config import RunConfig
