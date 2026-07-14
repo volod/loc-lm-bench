@@ -3627,6 +3627,8 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-3-llb-crewai'" },
     { name = "pydantic", version = "2.13.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-3-llb-dev' or extra == 'extra-3-llb-rag' or extra == 'extra-3-llb-rag-chroma' or extra == 'extra-3-llb-rag-lancedb' or extra != 'extra-3-llb-crewai'" },
+    { name = "pymorphy3" },
+    { name = "pymorphy3-dicts-uk" },
     { name = "pymupdf4llm" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -3671,10 +3673,6 @@ goldset = [
 ]
 graph = [
     { name = "duckdb" },
-]
-lex = [
-    { name = "pymorphy3" },
-    { name = "pymorphy3-dicts-uk" },
 ]
 mcp = [
     { name = "anyio" },
@@ -3754,8 +3752,8 @@ requires-dist = [
     { name = "psutil", marker = "extra == 'telemetry'", specifier = ">=5.9" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pymarkdownlnt", marker = "extra == 'dev'", specifier = ">=0.9.32" },
-    { name = "pymorphy3", marker = "extra == 'lex'", specifier = ">=2.0" },
-    { name = "pymorphy3-dicts-uk", marker = "extra == 'lex'", specifier = ">=2.4" },
+    { name = "pymorphy3", specifier = ">=2.0" },
+    { name = "pymorphy3-dicts-uk", specifier = ">=2.4" },
     { name = "pymupdf4llm" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -3769,7 +3767,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.18" },
 ]
-provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "lex", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
+provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
 
 [[package]]
 name = "llvmlite"

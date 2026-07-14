@@ -102,8 +102,7 @@ class RunConfigFields(BaseModel):
     # the sweep cell fingerprint). `fusion_weight` is the dense share of the weighted RRF
     # (1.0 == dense order, 0.0 == lexical order); `fusion_candidates` is the per-side candidate
     # depth fed into the fusion. `lexical_lemmas` opts the lexical side into Ukrainian
-    # lemmatization at index AND query time (pymorphy3, the [lex] extra); the stored chunk
-    # text is never altered.
+    # lemmatization at index AND query time (pymorphy3); the stored chunk text is never altered.
     fusion_weight: float = Field(default=DEFAULT_FUSION_WEIGHT, ge=0, le=1)
     fusion_candidates: int = Field(default=DEFAULT_FUSION_CANDIDATES, ge=1)
     lexical_lemmas: bool = False
@@ -128,7 +127,7 @@ class RunConfigFields(BaseModel):
     # Morphology guard for the 'typos' step (morphology-aware-typo-guard): when on, an
     # out-of-vocabulary query token pymorphy3 recognizes as a valid Ukrainian word form is left
     # unchanged (it is an inflection for the lemmatization lane, not a misspelling). Off by
-    # default so the pure edit-distance behavior stands when the [lex] extra is absent.
+    # default so the pure edit-distance behavior remains explicitly selectable.
     query_prep_typo_guard: bool = False
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG

@@ -75,8 +75,8 @@ def _endpoint_config_setup(
         ENDPOINT_LOCAL,
         LOCAL_BACKEND_OLLAMA,
         LOCAL_BACKEND_VLLM,
-        EndpointConfig,
     )
+    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
     from llb.prep.ontology.pipeline.journaling import default_out_dir
 
     resolved_out = out_dir
@@ -86,7 +86,7 @@ def _endpoint_config_setup(
         resolved_out = resolved_out or default_out_dir()
         launcher, resolved_url = _launch_draft_vllm(model, vllm_options, resolved_out / "vllm")
     try:
-        config = EndpointConfig(
+        config = EndpointConfigBuilder(
             kind=endpoint,
             model=model,
             backend=LOCAL_BACKEND_OLLAMA if endpoint == ENDPOINT_FRONTIER else backend,
@@ -99,7 +99,7 @@ def _endpoint_config_setup(
             egress_consent=egress_consent,
             max_usd=max_usd,
             max_calls=max_calls,
-        )
+        ).build()
     except ValueError as exc:
         if launcher is not None:
             launcher.stop()

@@ -5,27 +5,31 @@ from llb.backends.base import ChatResult
 from llb.prep.frontier_telemetry import ProvenanceLog
 import llb.prep.ontology.endpoint as ep
 from llb.prep.ontology.endpoint import build_complete
+from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
 from llb.prep.ontology.endpoint_config import EndpointConfig
 
 
-def test_endpoint_config_validates_kind_model_and_egress():
+def test_endpoint_routing_and_egress_rules():
     with pytest.raises(ValueError, match="endpoint kind"):
-        EndpointConfig(kind="cloud", model="m")
+        EndpointConfigBuilder(kind="cloud", model="m").build()
     with pytest.raises(ValueError, match="model must be set"):
-        EndpointConfig(kind="local", model="")
+        EndpointConfigBuilder(kind="local", model="").build()
     with pytest.raises(ValueError, match="local backend"):
-        EndpointConfig(kind="local", model="m", backend="bad")
+        EndpointConfigBuilder(kind="local", model="m", backend="bad").build()
     with pytest.raises(ValueError, match="local backend can only"):
-        EndpointConfig(
+        EndpointConfigBuilder(
             kind="frontier", model="gpt", backend="vllm", egress_consent=True, max_calls=10
-        )
+        ).build()
     with pytest.raises(ValueError, match="explicit egress consent"):
-        EndpointConfig(kind="frontier", model="gpt")
+        EndpointConfigBuilder(kind="frontier", model="gpt").build()
     with pytest.raises(ValueError, match="egress consent can only"):
-        EndpointConfig(kind="local", model="m", egress_consent=True)
-    assert EndpointConfig(kind="local", model="m").egress is False
-    assert EndpointConfig(kind="local", model="m").provenance()["backend"] == "ollama"
-    frontier = EndpointConfig(kind="frontier", model="gpt", egress_consent=True, max_calls=10)
+        EndpointConfigBuilder(kind="local", model="m", egress_consent=True).build()
+    local = EndpointConfigBuilder(kind="local", model="m").build()
+    assert local.egress is False
+    assert local.provenance()["backend"] == "ollama"
+    frontier = EndpointConfigBuilder(
+        kind="frontier", model="gpt", egress_consent=True, max_calls=10
+    ).build()
     assert frontier.egress is True and frontier.provenance()["egress"] is True
 
 

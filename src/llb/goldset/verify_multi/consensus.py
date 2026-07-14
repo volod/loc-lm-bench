@@ -1,6 +1,7 @@
 """Consensus resolution consumed by verification acceptance."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from llb.goldset.verify_base import ACCEPT, HUMAN_COLS, REJECT, load_worksheet
@@ -16,32 +17,52 @@ from llb.goldset.verify_multi.common import (
 )
 
 
-def consensus_rows(
-    by_reviewer: dict[str, list[dict[str, str]]],
-    adjudication: Sequence[dict[str, str]] = (),
-) -> list[dict[str, str]]:
-    reviewers = sorted(by_reviewer)
-    if not reviewers:
-        return []
-    indexed = {reviewer: rows_by_item(by_reviewer[reviewer]) for reviewer in reviewers}
-    adjudicated = rows_by_item(adjudication)
-    merged: list[dict[str, str]] = []
-    for item_id in joint_item_ids(by_reviewer):
-        adjudicated_row = adjudicated.get(item_id)
-        if adjudicated_row is not None and decision(adjudicated_row) in (ACCEPT, REJECT):
-            merged.append(dict(adjudicated_row))
-            continue
-        decisions = [decision(indexed[reviewer][item_id]) for reviewer in reviewers]
-        edits = [edit(indexed[reviewer][item_id]) for reviewer in reviewers]
-        row = dict(indexed[reviewers[0]][item_id])
-        unanimous = all(value in (ACCEPT, REJECT) for value in decisions) and not is_disagreement(
+ReviewerRows = dict[str, list[dict[str, str]]]
+
+
+@dataclass(slots=True)
+class ConsensusBuilder:
+    """Merge reviewer rows, preferring decisions from an adjudication worksheet."""
+
+    by_reviewer: ReviewerRows
+    adjudication: Sequence[dict[str, str]] = ()
+    reviewers: list[str] = field(init=False)
+    indexed: dict[str, dict[str, dict[str, str]]] = field(init=False)
+    adjudicated: dict[str, dict[str, str]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.reviewers = sorted(self.by_reviewer)
+        self.indexed = {
+            reviewer: rows_by_item(self.by_reviewer[reviewer]) for reviewer in self.reviewers
+        }
+        self.adjudicated = rows_by_item(self.adjudication)
+
+    def build(self) -> list[dict[str, str]]:
+        if not self.reviewers:
+            return []
+        return [self._merge_item(item_id) for item_id in joint_item_ids(self.by_reviewer)]
+
+    def _merge_item(self, item_id: str) -> dict[str, str]:
+        adjudicated = self.adjudicated.get(item_id)
+        if adjudicated is not None and decision(adjudicated) in (ACCEPT, REJECT):
+            return dict(adjudicated)
+        row = dict(self.indexed[self.reviewers[0]][item_id])
+        if not self._is_unanimous(item_id):
+            self._clear_human_decision(row)
+        return row
+
+    def _is_unanimous(self, item_id: str) -> bool:
+        rows = [self.indexed[reviewer][item_id] for reviewer in self.reviewers]
+        decisions = [decision(row) for row in rows]
+        edits = [edit(row) for row in rows]
+        return all(value in (ACCEPT, REJECT) for value in decisions) and not is_disagreement(
             decisions, edits
         )
-        if not unanimous:
-            for column in HUMAN_COLS:
-                row[column] = ""
-        merged.append(row)
-    return merged
+
+    @staticmethod
+    def _clear_human_decision(row: dict[str, str]) -> None:
+        for column in HUMAN_COLS:
+            row[column] = ""
 
 
 def resolve_multi_reviewer_rows(worksheet: Path) -> list[dict[str, str]] | None:
@@ -53,4 +74,4 @@ def resolve_multi_reviewer_rows(worksheet: Path) -> list[dict[str, str]] | None:
     adjudication: list[dict[str, str]] = []
     if adjudication_path.is_file():
         adjudication, _ = load_worksheet(adjudication_path)
-    return consensus_rows(by_reviewer, adjudication)
+    return ConsensusBuilder(by_reviewer, adjudication).build()

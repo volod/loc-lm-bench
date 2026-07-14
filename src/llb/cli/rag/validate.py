@@ -35,7 +35,7 @@ def validate_retrieval(
         False,
         "--query-prep-typo-guard",
         help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
-        "unchanged (an inflection is not a misspelling; needs the [lex] extra)",
+        "unchanged (an inflection is not a misspelling)",
     ),
     query_prep_ab: bool = typer.Option(
         False,

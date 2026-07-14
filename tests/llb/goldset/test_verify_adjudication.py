@@ -16,11 +16,8 @@ from llb.goldset.verify_base import (
     load_worksheet,
     write_worksheet_rows,
 )
-from llb.goldset.verify_multi.agreement import (
-    agreement_report,
-    cohen_kappa,
-    fleiss_kappa,
-)
+from llb.goldset.verify_multi.agreement_metrics import cohen_kappa, fleiss_kappa
+from llb.goldset.verify_multi.agreement_report import AgreementReportBuilder
 from llb.goldset.verify_multi.common import (
     load_reviewer_worksheets,
 )
@@ -137,7 +134,7 @@ def test_agreement_report_two_reviewers_matches_cohen():
     by_reviewer = _two_reviewers(
         ["accept", "accept", "reject", "accept"], ["accept", "reject", "reject", "accept"]
     )
-    report = agreement_report(by_reviewer)
+    report = AgreementReportBuilder(by_reviewer).build()
     assert report["kappa_method"] == "cohen"
     assert report["kappa"] == pytest.approx(0.5)
     assert report["jointly_decided"] == 4
@@ -157,7 +154,7 @@ def test_agreement_report_three_reviewers_uses_fleiss():
         rid: [_ws_row(i, d, reviewer_id=rid) for i, d in zip(ids, decisions[rid])]
         for rid in decisions
     }
-    report = agreement_report(by_reviewer)
+    report = AgreementReportBuilder(by_reviewer).build()
     assert report["kappa_method"] == "fleiss"
     # counts per item over (accept, reject): [3,0], [2,1], [1,2], [3,0] -> kappa = 1/9
     assert report["kappa"] == pytest.approx(1.0 / 9.0)
@@ -166,7 +163,7 @@ def test_agreement_report_three_reviewers_uses_fleiss():
 
 def test_agreement_report_undecided_rows_do_not_count():
     by_reviewer = _two_reviewers(["accept", ""], ["accept", "reject"])
-    report = agreement_report(by_reviewer)
+    report = AgreementReportBuilder(by_reviewer).build()
     assert report["jointly_decided"] == 1  # i1 is not decided by r1 -> not a disagreement
     assert report["disagreements"] == []
     assert report["kappa"] is None  # fewer than 2 jointly decided rows
@@ -175,7 +172,7 @@ def test_agreement_report_undecided_rows_do_not_count():
 def test_agreement_flags_unanimous_accept_with_differing_edits():
     by_reviewer = _two_reviewers(["accept", "accept"], ["accept", "accept"])
     by_reviewer["r1"][1]["edited_answer"] = "1871 року"
-    report = agreement_report(by_reviewer)
+    report = AgreementReportBuilder(by_reviewer).build()
     assert report["disagreements"] == ["i1"]  # the edit changes what the ledger would certify
 
 

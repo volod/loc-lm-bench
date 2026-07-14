@@ -214,12 +214,12 @@ stop losing to semantic-only search.
 
 Modules:
 
-- `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo, no new required dep)
+- `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo)
   over the SAME offset-exact chunks the vector index holds; Ukrainian-aware token normalization
   on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`'`,
-  punctuation strip); opt-in lemmatization via `pymorphy3` + `pymorphy3-dicts-uk` (the new
-  `[lex]` optional extra) collapsing cases/inflection to lemmas at index AND query time -- the
-  stored chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
+  punctuation strip); opt-in lemmatization via the base dependencies `pymorphy3` +
+  `pymorphy3-dicts-uk`, collapsing cases/inflection to lemmas at index AND query time -- the stored
+  chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
 - `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
   heading_contains, page_range, acl_label)` builds a predicate over `doc_id` plus the
@@ -251,14 +251,13 @@ llb tune ...    # the Optuna space samples retrieval_mode=hybrid + both fusion k
 
 `compare-retrieval --hybrid` embeds the corpus ONCE and scores four rows sharing that dense
 index: `dense`, `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second, lemmatized lexical
-index; skipped with a log line when `[lex]` is absent), and `dense+oracle-doc` -- a diagnostic
-row restricting candidates to each gold item's `source_doc_id` through the filter seam,
-quantifying the recall headroom a PERFECT document router would buy (never a scoring config).
+index), and `dense+oracle-doc` -- a diagnostic row restricting candidates to each gold item's
+`source_doc_id` through the filter seam, quantifying the recall headroom a PERFECT document router
+would buy (never a scoring config).
 
 The lemma normalizer is reused by the miss analysis: `topic_of` in
-`src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key best-effort, so Ukrainian
-case forms of one topic collapse into a single cluster instead of splitting across inflections
-(identity fallback when `[lex]` is absent).
+`src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key, so Ukrainian case
+forms of one topic collapse into a single cluster instead of splitting across inflections.
 
 Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukrainian orders
 registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
@@ -446,11 +445,10 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   token (article/law number, code) is never "corrected" into a different one. Every correction is
   logged. An opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
-  recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`, the `[lex]`
-  extra): a grammatically valid inflection (`настанові`, `документами`) is not a misspelling and is
-  left for the index+query lemmatization lane to match, while genuine misspellings stay unknown to
-  the probe and are still corrected. Off by default so the pure edit-distance behavior stands when
-  the extra is absent.
+  recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
+  valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
+  lemmatization lane to match, while genuine misspellings stay unknown to the probe and are still
+  corrected. Off by default so the pure edit-distance behavior remains explicitly selectable.
 - `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
   transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
   so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
@@ -522,8 +520,7 @@ Unguarded, the edit-distance step "corrected" valid inflections to the corpus su
 (`настанові` -> `настанова`) and paid -0.012 MRR; guarded, those known word forms pass through
 untouched (the lemmatization lane is the right tool for them) while genuine out-of-vocabulary
 typos -- including the mixed-script `wеб` (Latin `w`) -> `веб` -- are still corrected, and the
-step becomes MRR-neutral. Verdict: turn the guard on whenever the `[lex]` extra is installed and
-the `typos` step is in use.
+step becomes MRR-neutral. Verdict: turn the guard on whenever the `typos` step is in use.
 
 ## Chunking Strategies
 

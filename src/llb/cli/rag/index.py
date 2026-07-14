@@ -33,7 +33,7 @@ def build_index(
         False,
         "--lemmatize",
         help="hybrid mode: collapse Ukrainian inflection to lemmas on the LEXICAL side "
-        "(pymorphy3, the [lex] extra); stored chunk text is never altered",
+        "with pymorphy3; stored chunk text is never altered",
     ),
     vector_store: str = typer.Option(
         "faiss",

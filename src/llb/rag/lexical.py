@@ -8,8 +8,8 @@ text is never altered.
 
 Normalization (always on): casefold, apostrophe-variant unification (U+2019 / U+02BC / `'` all
 become U+0027), punctuation strip via word-token extraction. Opt-in lemmatization collapses
-Ukrainian cases/inflection to lemmas at index AND query time (`pymorphy3` + `pymorphy3-dicts-uk`
-behind the `[lex]` optional extra; the lemmatizer callable is injectable for tests).
+Ukrainian cases/inflection to lemmas at index AND query time (`pymorphy3` +
+`pymorphy3-dicts-uk`; the lemmatizer callable is injectable for tests).
 
 `rrf_fuse` implements weighted reciprocal-rank fusion over the dense + lexical rankings; it is
 pure and backend-neutral, so every `VectorIndex` backend gains hybrid identically.
@@ -25,7 +25,7 @@ from pathlib import Path
 
 _LOG = logging.getLogger(__name__)
 
-# One token -> its lemma (identity when lemmatization is off or unavailable).
+# One token -> its lemma (identity when lemmatization is off).
 Lemmatizer = Callable[[str], str]
 
 # Apostrophe variants unified to U+0027 so "м’яч" / "мʼяч" / "м'яч" index as one token.
@@ -39,10 +39,6 @@ BM25_B = 0.75
 # Standard RRF rank damping constant (Cormack et al. 2009).
 RRF_K = 60
 LEXICAL_INDEX_VERSION = "bm25-uk-v1"
-LEXICAL_EXTRA_HINT = (
-    "lemmatization needs the [lex] optional extra: uv pip install -e '.[lex]' "
-    "(pymorphy3 + pymorphy3-dicts-uk)"
-)
 
 
 def normalize_token(token: str) -> str:
@@ -60,15 +56,9 @@ def tokenize(text: str, lemmatizer: Lemmatizer | None = None) -> list[str]:
 
 
 def load_uk_lemmatizer() -> Lemmatizer:
-    """The pymorphy3 Ukrainian lemmatizer (first-parse normal form), memoized per token.
+    """The pymorphy3 Ukrainian lemmatizer (first-parse normal form), memoized per token."""
+    import pymorphy3
 
-    Raises SystemExit with an install hint when the `[lex]` extra is absent, so callers fail
-    with a clear message instead of a bare ImportError.
-    """
-    try:
-        import pymorphy3
-    except ImportError:
-        raise SystemExit(f"[lexical] {LEXICAL_EXTRA_HINT}") from None
     analyzer = pymorphy3.MorphAnalyzer(lang="uk")
     cache: dict[str, str] = {}
 
@@ -89,12 +79,10 @@ def load_uk_word_probe() -> Callable[[str], bool]:
     Backs the opt-in morphology guard of the query-prep `typos` step: a grammatically valid
     inflected query form (`поділяють`, `документами`) is NOT a misspelling and must not be
     "corrected" to a different corpus surface form -- the index+query lemmatization already
-    matches valid inflections. Same missing-extra contract as `load_uk_lemmatizer`.
+    matches valid inflections.
     """
-    try:
-        import pymorphy3
-    except ImportError:
-        raise SystemExit(f"[lexical] {LEXICAL_EXTRA_HINT}") from None
+    import pymorphy3
+
     analyzer = pymorphy3.MorphAnalyzer(lang="uk")
     cache: dict[str, bool] = {}
 
@@ -108,26 +96,15 @@ def load_uk_word_probe() -> Callable[[str], bool]:
     return known
 
 
-def best_effort_lemma(token: str) -> str:
-    """Lemmatize one normalized token when pymorphy3 is installed; identity otherwise.
-
-    Shared with the miss analysis so heuristic topic keys collapse across Ukrainian case
-    forms instead of splitting one topic into "начальник" / "начальника" clusters.
-    """
-    global _BEST_EFFORT_LEMMATIZER
-    if _BEST_EFFORT_LEMMATIZER is None:
-        try:
-            _BEST_EFFORT_LEMMATIZER = load_uk_lemmatizer()
-        except SystemExit:
-            _BEST_EFFORT_LEMMATIZER = _identity
-    return _BEST_EFFORT_LEMMATIZER(normalize_token(token))
+def ukrainian_lemma(token: str) -> str:
+    """Normalize and lemmatize a token for morphology-aware topic grouping."""
+    global _UK_LEMMATIZER
+    if _UK_LEMMATIZER is None:
+        _UK_LEMMATIZER = load_uk_lemmatizer()
+    return _UK_LEMMATIZER(normalize_token(token))
 
 
-def _identity(token: str) -> str:
-    return token
-
-
-_BEST_EFFORT_LEMMATIZER: Lemmatizer | None = None
+_UK_LEMMATIZER: Lemmatizer | None = None
 
 
 class LexicalIndex:

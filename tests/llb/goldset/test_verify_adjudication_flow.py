@@ -23,7 +23,7 @@ from llb.goldset.verify_multi.common import (
     PRIOR_DECISIONS_COL,
     reviewer_worksheet_path,
 )
-from llb.goldset.verify_multi.consensus import consensus_rows, resolve_multi_reviewer_rows
+from llb.goldset.verify_multi.consensus import ConsensusBuilder, resolve_multi_reviewer_rows
 from llb.goldset.verify_multi.sampling import build_multi_reviewer_worksheets
 from llb.goldset.verify_card import format_card
 from llb.goldset.verify_session.loop import run_session
@@ -70,14 +70,14 @@ def test_consensus_unanimous_stands_disagreement_blocks_adjudication_overrides()
     )
     # i1 disagreement adjudicated to reject; i2 unanimous accept; i3 half-undecided.
     adjudication = [_ws_row("i1", "reject", reviewer_id=ADJUDICATOR_ID)]
-    merged = consensus_rows(by_reviewer, adjudication)
+    merged = ConsensusBuilder(by_reviewer, adjudication).build()
     decisions = {r["item_id"]: r["decision"] for r in merged}
     assert decisions == {"i0": "accept", "i1": "reject", "i2": "accept", "i3": ""}
 
 
 def test_consensus_unadjudicated_disagreement_stays_undecided():
     by_reviewer = _two_reviewers(["reject"], ["accept"])
-    merged = consensus_rows(by_reviewer)
+    merged = ConsensusBuilder(by_reviewer).build()
     assert merged[0]["decision"] == ""
     report = acceptance_report(merged)
     assert report["undecided"] == 1 and report["passed"] is False

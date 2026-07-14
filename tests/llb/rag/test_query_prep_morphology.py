@@ -1,6 +1,5 @@
 """Tests for query prep morphology."""
 
-import pytest
 from llb.rag.query_prep.typos import (
     apply_typos,
     build_vocabulary,
@@ -8,7 +7,6 @@ from llb.rag.query_prep.typos import (
 
 
 def test_typo_guard_with_real_pymorphy_probe():
-    pytest.importorskip("pymorphy3")
     from llb.rag.lexical import load_uk_word_probe
 
     known = load_uk_word_probe()

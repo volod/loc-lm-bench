@@ -1,6 +1,5 @@
 """Focused graph index implementation."""
 
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 import typer
@@ -104,13 +103,15 @@ def _local_complete(
     """
     from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.prep.ontology.endpoint import build_complete
-    from llb.prep.ontology.endpoint_config import ENDPOINT_LOCAL, EndpointConfig
+    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
+    from llb.prep.ontology.endpoint_config import ENDPOINT_LOCAL
 
-    cfg = EndpointConfig(kind=ENDPOINT_LOCAL, model=model, think=think)
-    if base_url is not None:
-        cfg = replace(cfg, base_url=base_url)
-    if max_tokens is not None:
-        cfg = replace(cfg, max_tokens=max_tokens)
+    cfg = (
+        EndpointConfigBuilder(kind=ENDPOINT_LOCAL, model=model, think=think)
+        .override_base_url(base_url)
+        .override_max_tokens(max_tokens)
+        .build()
+    )
     return build_complete(cfg, ProvenanceLog())
 
 

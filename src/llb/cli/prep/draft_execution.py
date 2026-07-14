@@ -9,10 +9,10 @@ from llb.cli.prep.draft_endpoints import (
     _endpoint_plan_setup,
 )
 from llb.cli.prep.draft_request import DraftRequest
+from llb.cli.prep.draft_resume import DraftResumeBuilder
 from llb.cli.prep.draft_support import (
     _enforce_calibration_gates,
     _extraction_adapter,
-    _resume_overrides,
     _split_dir_list,
     _validate_draft_inputs,
     _write_verification_sample,
@@ -25,28 +25,7 @@ def run_draft(request: DraftRequest) -> None:
 
     resuming = request.resume is not None
     if request.resume is not None:
-        (
-            request.corpus_root,
-            request.model,
-            request.endpoint,
-            request.backend,
-            request.frontier_stage,
-            request.local_model,
-            request.max_usd,
-            request.max_calls,
-            request.out_dir,
-        ) = _resume_overrides(
-            request.resume,
-            request.corpus_root,
-            request.model,
-            request.endpoint,
-            request.backend,
-            request.frontier_stage,
-            request.local_model,
-            request.max_usd,
-            request.max_calls,
-            request.out_dir,
-        )
+        request = DraftResumeBuilder.load(request).build()
     if request.corpus_root is None or not request.model:
         cli_error("provide --corpus-root and --model, or --resume <bundle>")
 

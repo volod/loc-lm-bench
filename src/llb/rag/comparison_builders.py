@@ -112,18 +112,16 @@ def build_hybrid_comparison(
     One hybrid store is built (corpus embedded once); the rows share its chunks + dense index
     and differ only in the query path: `dense` (fusion disabled), `hybrid` (BM25 + weighted
     RRF with the config's fusion knobs), `hybrid+lemmas` (a second lexical index with
-    Ukrainian lemmatization; skipped with a log line when the `[lex]` extra is absent), and
+    Ukrainian lemmatization), and
     `dense+oracle-doc` (candidates restricted to each gold item's source doc -- the recall
     headroom a perfect document router would buy). When `stores_root` is given the hybrid
     store persists under `<stores_root>/hybrid/`. Real path: needs the `[rag]` extra.
     """
-    import logging
     from pathlib import Path
 
     from llb.rag.lexical import LexicalIndex, load_uk_lemmatizer
     from llb.rag.store import MODE_HYBRID, RagStore
 
-    log = logging.getLogger(__name__)
     hybrid = RagStore.build(
         config.corpus_root,
         config.strategy,
@@ -147,11 +145,7 @@ def build_hybrid_comparison(
         ROW_HYBRID: hybrid,
         ROW_ORACLE_DOC: OracleDocFilter(dense, items),
     }
-    try:
-        lemmatizer = load_uk_lemmatizer()
-    except SystemExit as exc:
-        log.warning("[compare-retrieval] skip %s: %s", ROW_HYBRID_LEMMAS, exc)
-        return stores
+    lemmatizer = load_uk_lemmatizer()
     lemma_index = LexicalIndex.build(
         [c["text"] for c in hybrid.chunks], lemmatize=True, lemmatizer=lemmatizer
     )

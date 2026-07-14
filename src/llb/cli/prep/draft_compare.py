@@ -127,7 +127,7 @@ def draft_compare_cmd(
     """Draft identical local-extracted seeds locally and through a consented frontier route."""
     from llb.prep.frontier_telemetry import DraftBudgetExceeded
     from llb.prep.ontology.compare import compare_drafters
-    from llb.prep.ontology.endpoint_config import EndpointConfig
+    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
 
     if not corpus_root.is_dir():
         cli_error(f"corpus root not found: {corpus_root}")
@@ -158,7 +158,7 @@ def draft_compare_cmd(
         timeout=timeout,
         no_think=no_think,
     )
-    frontier = EndpointConfig(
+    frontier = EndpointConfigBuilder(
         kind="frontier",
         model=frontier_model,
         temperature=temperature,
@@ -167,7 +167,7 @@ def draft_compare_cmd(
         egress_consent=True,
         max_usd=max_usd,
         max_calls=max_calls,
-    )
+    ).build()
     try:
         report = compare_drafters(
             corpus_root,

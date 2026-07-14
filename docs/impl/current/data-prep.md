@@ -632,11 +632,18 @@ empty object from a parse or transport failure. A missing meta aborts the resume
 message. The make target also rejects an explicitly empty command-line `DRAFT_RESUME`, preventing
 an unset shell variable from silently starting a fresh default draft.
 
+Resume option restoration lives in `src/llb/cli/prep/draft_resume.py`.
+`DraftResumeBuilder` starts from the parsed `DraftRequest`, applies the journal's authoritative
+corpus and phase routes, preserves explicit CLI overrides, and returns one resolved request. The
+execution path consumes that object directly; there is no positional override tuple or
+compatibility wrapper.
+
 ### Frontier ontology draft lane
 
-The ontology pipeline has explicit extraction and drafting endpoint routes. The route types and
-phase telemetry live in `src/llb/prep/ontology/endpoint_config.py`; local and Litellm transports
-live in `endpoint.py`; spend/call enforcement lives in `src/llb/prep/frontier_telemetry.py`.
+The ontology pipeline has explicit extraction and drafting endpoint routes. Immutable route data
+and phase telemetry live in `src/llb/prep/ontology/endpoint_config.py`; validation and construction
+live in `endpoint_builder.py`; local and Litellm transports live in `endpoint.py`; spend/call
+enforcement lives in `src/llb/prep/frontier_telemetry.py`.
 `prepare-goldset-draft` keeps both phases local by default. A frontier run requires all of:
 
 - `DRAFT_ENDPOINT=frontier` (or `--endpoint frontier`);
@@ -898,7 +905,9 @@ make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<draft> \
   observed agreement plus Cohen's kappa (2 reviewers) or Fleiss' kappa (3+) over the jointly
   decided rows, per-reviewer decided/accept/reject counts, and the disagreement item ids. A
   unanimous accept whose accept-with-edit answers differ counts as a disagreement (the edit
-  changes what the ledger would certify).
+  changes what the ledger would certify). Metric arithmetic is isolated in
+  `verify_multi/agreement_metrics.py`; `AgreementReportBuilder` in `agreement_report.py` indexes
+  the worksheets once and builds the report sections.
 - **Adjudication pass** -- disagreements are drawn into `adjudication.csv` (exactly those rows),
   human columns blank for an independent decision, prior verdicts carried forward in a read-only
   `prior_decisions` column (`r1=reject:bad_question;r2=accept`) shown on the review card.
@@ -907,7 +916,9 @@ make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<draft> \
 - **Consensus acceptance** -- `verify-accept` on a multi-reviewer bundle scores the consensus:
   unanimous decisions stand, adjudicated decisions override disagreements, and anything else
   (a reviewer still undecided, an unadjudicated disagreement) stays undecided and blocks
-  acceptance. The accepted ledger and adoption-through-ledger invariant are unchanged.
+  acceptance. `ConsensusBuilder` in `verify_multi/consensus.py` owns adjudication preference,
+  unanimity checks, and clearing blocked human fields. The accepted ledger and
+  adoption-through-ledger invariant are unchanged.
 - **Acceptance policies** -- `--policy` (make: `VERIFY_ACCEPT_POLICY=`) selects the arithmetic:
   `global` (the original single-tolerance rule, still the default), `per-stratum` (EVERY stratum
   within its own tolerance; `VERIFY_STRATUM_TOLERANCES="<stratum>=<tol> ..."` overrides cells),

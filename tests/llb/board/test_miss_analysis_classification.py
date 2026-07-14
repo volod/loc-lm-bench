@@ -69,13 +69,7 @@ def test_clusters_by_document_topic_and_question_type(tmp_path):
     assert analysis.clusters["topic"]  # topic dimension always materializes
 
 
-def test_topic_of_collapses_case_forms_via_best_effort_lemma(monkeypatch):
-    # hybrid-retrieval-uk: the heuristic topic key is lemmatized (best-effort), so a genitive
-    # question form and a nominative one land in the SAME topic cluster.
-    import llb.rag.lexical as lexical
-
-    lemmas = {"начальника": "начальник"}
-    monkeypatch.setattr(lexical, "_BEST_EFFORT_LEMMATIZER", lambda t: lemmas.get(t, t))
+def test_topic_of_collapses_ukrainian_case_forms():
     genitive = topic_of("Хто виконує обов'язки начальника?", None)
     nominative = topic_of("Що робить начальник установи щодня?", None)
     assert genitive == nominative == "начальник"
