@@ -53,12 +53,15 @@ def _stdin_reader(prompt: str) -> str:
     return input(prompt)
 
 
-def _emit_intro(emit: Callable[[str], None]) -> None:
-    emit(
-        "human verification gate data verification -- verify each sampled item against the "
-        "corpus, then accept/reject."
-    )
-    emit(help_text())
+def _emit_intro(emit: Callable[[str], None], profile: str = "") -> None:
+    if profile == "knowledge-cutoff-translation":
+        emit("bilingual translation gate -- compare the English and Ukrainian question/choices.")
+    else:
+        emit(
+            "human verification gate data verification -- verify each sampled item against the "
+            "corpus, then accept/reject."
+        )
+    emit(help_text(profile))
 
 
 def _read(prompt: str, it: Iterator[str] | None, emit: Callable[[str], None]) -> str:
@@ -183,9 +186,10 @@ def _handle_navigation_action(
     total: int,
     rows: Sequence[dict[str, str]],
     emit: Callable[[str], None],
+    profile: str = "",
 ) -> tuple[int, bool]:
     if cmd.kind == HELP:
-        emit(help_text())
+        emit(help_text(profile))
     elif cmd.kind == NEXT:
         idx = _go_forward(idx, total, rows, emit)
     elif cmd.kind == PREV:
