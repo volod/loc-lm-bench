@@ -41,11 +41,12 @@ def curate_drafts_cmd(
     ),
 ) -> None:
     """Merge, deduplicate, and filter externally drafted artifacts into ONE importable file."""
-    from llb.prep import curation
+    from llb.prep.curation import dispatcher as curation
+    from llb.prep.curation.common import resolve_embedder
 
     if kind not in curation.KINDS:
         raise SystemExit(f"[curate] unknown --kind {kind!r} (expected one of {curation.KINDS})")
-    embedder = curation.resolve_embedder(semantic_dedup) if kind != "inventory" else None
+    embedder = resolve_embedder(semantic_dedup) if kind != "inventory" else None
     prior = curation.load_prior_bundle_questions(list(dedup_against)) if dedup_against else None
     kwargs: dict[str, Any] = {}
     if dedup_threshold is not None:

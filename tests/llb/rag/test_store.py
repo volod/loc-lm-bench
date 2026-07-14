@@ -2,12 +2,14 @@
 
 import pytest
 
-from llb.core.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
 from llb.prep.corpus_ingest import ingest_corpus
-from llb.rag.store import (
-    RagStore,
+from llb.rag.store import RagStore
+from llb.rag.store_build import (
     _build_children,
     _children_to_parents,
+)
+from llb.rag.store_validation import (
     stale_store_message,
     store_embedder_mismatch,
 )

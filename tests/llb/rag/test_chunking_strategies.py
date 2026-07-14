@@ -205,7 +205,7 @@ def test_store_refuses_late_with_parent_child():
 
 
 def test_build_chunking_comparison_rejects_unknown_strategy():
-    from llb.rag.compare import build_chunking_comparison
+    from llb.rag.comparison_builders import build_chunking_comparison
 
     with pytest.raises(ValueError, match="unknown chunking strategy"):
         build_chunking_comparison(object(), ["markdown", "nope"])
@@ -213,7 +213,7 @@ def test_build_chunking_comparison_rejects_unknown_strategy():
 
 def test_build_chunking_comparison_builds_flat_store_per_strategy(monkeypatch, tmp_path):
     import llb.rag.store as store_mod
-    from llb.rag.compare import build_chunking_comparison
+    from llb.rag.comparison_builders import build_chunking_comparison
 
     class FakeConfig:
         corpus_root = tmp_path

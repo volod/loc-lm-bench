@@ -35,7 +35,7 @@ def validate_retrieval(
         False,
         "--query-prep-typo-guard",
         help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
-        "unchanged (an inflection is not a misspelling; needs the [lex] extra)",
+        "unchanged (an inflection is not a misspelling)",
     ),
     query_prep_ab: bool = typer.Option(
         False,
@@ -47,7 +47,7 @@ def validate_retrieval(
 ) -> None:
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
     from llb.executor.cases import spans_as_dicts
-    from llb.executor.runner_setup import _load_store
+    from llb.executor.runner_retrieval import _load_store
     from llb.goldset.schema import load_goldset
     from llb.rag import retrieval
     from llb.rag.query_prep.base import STEP_REWRITE

@@ -10,120 +10,31 @@ weights are cached by `prep-models`.
 unit-testable by injecting the process factory + HTTP probe (no vLLM/CUDA needed for tests).
 """
 
-import json
-import os
-import shutil
 import subprocess
-import sys
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Protocol, TextIO, cast
+from typing import Any, Callable, TextIO, cast
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
 from llb.core.contracts import BackendMetadata, ChatMessage
 from llb.core import env
-
-
-class _Process(Protocol):
-    returncode: int | None
-
-    def poll(self) -> int | None: ...
-
-    def terminate(self) -> None: ...
-
-    def wait(self, timeout: float | None = None) -> int: ...
-
-    def kill(self) -> None: ...
-
-
-class _HttpGetter(Protocol):
-    def __call__(self, url: str, timeout: float = 3.0) -> tuple[int, str] | None: ...
+from llb.backends.vllm_command import (
+    _HttpGetter,
+    _Process,
+    _http_get,
+    build_vllm_command,
+    launch_env,
+    parse_served_context,
+    served_lora_rank,
+    vllm_executable,
+)
 
 
 # `--max-lora-rank` only accepts these values, and it defaults to 16: an adapter trained at a higher
 # rank makes `add_lora` fail at startup ("LoRA rank 64 is greater than max_lora_rank 16"), so the
 # launcher sizes the flag from the adapter it is about to serve, rounding UP to the nearest value.
-VLLM_MAX_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
-
-
-def served_lora_rank(rank: int) -> int:
-    """The smallest `--max-lora-rank` vLLM accepts that can still hold `rank`."""
-    for allowed in VLLM_MAX_LORA_RANKS:
-        if rank <= allowed:
-            return allowed
-    raise SystemExit(
-        f"[vllm] LoRA rank {rank} exceeds the largest servable rank {VLLM_MAX_LORA_RANKS[-1]}"
-    )
-
-
-def build_vllm_command(
-    model: str,
-    *,
-    executable: str = "vllm",
-    port: int = 8000,
-    gpu_memory_utilization: float = 0.85,
-    max_model_len: int | None = None,
-    cpu_offload_gb: float | None = None,
-    kv_offloading_size_gb: float | None = None,
-    dtype: str = "auto",
-    quantization: str | None = None,
-    adapter_path: str | None = None,
-    adapter_name: str = "adapter",
-    max_lora_rank: int | None = None,
-    served_model_name: str | None = None,
-    extra_args: list[str] | None = None,
-) -> list[str]:
-    """The `vllm serve ...` argv. `gpu_memory_utilization` is recorded so peak VRAM is
-    comparable across runs (vLLM pre-reserves a KV-cache fraction)."""
-    cmd = [
-        executable,
-        "serve",
-        model,
-        "--port",
-        str(port),
-        "--gpu-memory-utilization",
-        f"{gpu_memory_utilization}",
-    ]
-    if max_model_len:
-        cmd += ["--max-model-len", str(max_model_len)]
-    if cpu_offload_gb:
-        cmd += ["--cpu-offload-gb", f"{cpu_offload_gb:g}"]
-    if kv_offloading_size_gb:
-        cmd += ["--kv-offloading-size", f"{kv_offloading_size_gb:g}"]
-    if dtype and dtype != "auto":
-        cmd += ["--dtype", dtype]
-    if quantization:
-        cmd += ["--quantization", quantization]
-    if adapter_path:
-        cmd += ["--enable-lora", "--lora-modules", f"{adapter_name}={adapter_path}"]
-        if max_lora_rank:
-            cmd += ["--max-lora-rank", str(served_lora_rank(max_lora_rank))]
-    if served_model_name:
-        cmd += ["--served-model-name", served_model_name]
-    if extra_args:
-        cmd += list(extra_args)
-    return cmd
-
-
-def vllm_executable() -> str | None:
-    """Resolve the vLLM CLI installed in the active venv, then fall back to PATH."""
-    venv_cli = Path(sys.executable).with_name("vllm")
-    if venv_cli.exists():
-        return str(venv_cli)
-    return shutil.which("vllm")
-
-
-def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
-    """GET -> (status, body) or None on connection error."""
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return int(resp.status), resp.read().decode("utf-8", "replace")
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
 
 
 # vLLM JIT-compiles flashinfer's sampling kernel at engine startup. flashinfer's
@@ -133,35 +44,6 @@ def _http_get(url: str, timeout: float = 3.0) -> tuple[int, str] | None:
 # `build-vllm` preflight (vLLM serving preflight): it is enabled ONLY when the recorded verdict confirms the
 # kernel builds on this host, else kept OFF (greedy / temperature-0 decoding, the eval default,
 # does not need it). An explicit VLLM_USE_FLASHINFER_SAMPLER in the environment always wins.
-
-
-def launch_env(
-    base: Mapping[str, str] | None = None, *, flashinfer_sampler: bool | None = None
-) -> dict[str, str]:
-    """Subprocess environment for `vllm serve`: inherit the caller's environment, then set the
-    flashinfer-sampler flag from the build-vllm preflight verdict only when the caller has not
-    set it explicitly (an explicit value always wins). `flashinfer_sampler` overrides the
-    verdict lookup (used in tests)."""
-    out = dict(os.environ if base is None else base)
-    if env.VLLM_USE_FLASHINFER_SAMPLER not in out:
-        if flashinfer_sampler is None:
-            from llb.backends.preflight import flashinfer_sampler_ok
-
-            flashinfer_sampler = flashinfer_sampler_ok()
-        out[env.VLLM_USE_FLASHINFER_SAMPLER] = "1" if flashinfer_sampler else "0"
-    return out
-
-
-def parse_served_context(models_body: str) -> int | None:
-    """Pull `max_model_len` from a vLLM /v1/models response (best-effort)."""
-    try:
-        data = json.loads(models_body).get("data") or []
-    except (ValueError, AttributeError):
-        return None
-    for entry in data:
-        if isinstance(entry, dict) and entry.get("max_model_len"):
-            return int(entry["max_model_len"])
-    return None
 
 
 class VllmLauncher(BackendLauncher):
@@ -250,7 +132,11 @@ class VllmLauncher(BackendLauncher):
 
     def _record_sampler(self, run_env: Mapping[str, str]) -> None:
         """Record which sampler this launch uses (vLLM serving preflight) so the manifest captures it."""
-        from llb.backends.preflight import SAMPLER_FLASHINFER, SAMPLER_NATIVE, load_verdict
+        from llb.backends.preflight_verdict import (
+            SAMPLER_FLASHINFER,
+            SAMPLER_NATIVE,
+            load_verdict,
+        )
 
         use_flashinfer = run_env.get(env.VLLM_USE_FLASHINFER_SAMPLER) == "1"
         self.meta["sampler"] = SAMPLER_FLASHINFER if use_flashinfer else SAMPLER_NATIVE

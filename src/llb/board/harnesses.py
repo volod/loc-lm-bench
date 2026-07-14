@@ -9,11 +9,10 @@ from llb.bench.agentic.model import HARNESS_LOOP
 from llb.core.contracts import BoardRow, JsonObject
 from llb.scoring.aggregate import (
     TIER_AGENTIC,
-    ModelResult,
-    format_board,
     rank_board,
-    ranking_policy_note,
 )
+from llb.scoring.board_format import format_board, ranking_policy_note
+from llb.scoring.leaderboard import ModelResult
 
 from llb.board.categories import AGENTIC_METHOD, category_case_objectives
 

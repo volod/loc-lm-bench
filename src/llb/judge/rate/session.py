@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
-from llb.judge.calibration import load_worksheet
+from llb.judge.calibration_worksheet import load_worksheet
 from llb.judge.rate.commands import (
     ANSWER,
     CLEAR,

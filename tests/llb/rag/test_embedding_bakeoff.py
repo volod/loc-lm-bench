@@ -14,12 +14,11 @@ from llb.rag.embedding_bakeoff import (
     BuiltStore,
     api_lane_enabled,
     best_recall,
-    format_report,
-    render_markdown,
     run_bakeoff,
     score_candidate,
     slugify_model,
 )
+from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
 
 class _FakeStore:

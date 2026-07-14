@@ -21,7 +21,8 @@ from llb.scoring.external_rag_common import (
     _as_int,
     _string,
 )
-from llb.scoring.external_rag_sources import SourceMap, audit_row_sources
+from llb.scoring.external_rag_source_map import SourceMap
+from llb.scoring.external_rag_sources import audit_row_sources
 
 
 def score_records(

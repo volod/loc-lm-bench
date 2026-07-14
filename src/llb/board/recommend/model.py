@@ -11,8 +11,8 @@ from dataclasses import dataclass
 
 from llb.board.runs import RunRecord
 from llb.core.contracts import BoardRow, JsonObject
-from llb.prompts import render_text
-from llb.scoring.aggregate import ModelResult
+from llb.prompts.registry import render_text
+from llb.scoring.leaderboard import ModelResult
 
 _LOG = logging.getLogger(__name__)
 

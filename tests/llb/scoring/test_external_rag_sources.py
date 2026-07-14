@@ -6,12 +6,14 @@ import json
 import pytest
 
 from llb.scoring.external_rag.run import score_external_rag_file
-from llb.scoring.external_rag_sources import (
+from llb.scoring.external_rag_source_map import (
     SourceMap,
     SourceMapEntry,
-    audit_row_sources,
     load_source_map,
     map_source,
+)
+from llb.scoring.external_rag_sources import (
+    audit_row_sources,
     summarize_source_audit,
 )
 

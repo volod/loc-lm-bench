@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from llb.core.contracts import JsonObject
-from llb.finetune.trainer import DEFAULT_TARGET_MODULES
+from llb.finetune.adapter_manifest import DEFAULT_TARGET_MODULES
 
 HPARAMS_METHOD = "finetune-hparams"
 HPARAMS_MANIFEST = "hparams_manifest.json"

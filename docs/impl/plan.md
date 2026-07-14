@@ -40,27 +40,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### module-size-soft-limit-refactor
-
-- Agent status: **CLEAR** -- agent-buildable to `make ci` green through mechanical,
-  behavior-preserving, test-guarded splits.
-- Dependencies: none. Use the package convention and current backlog recorded in
-  [Code Organization](current/overview.md#code-organization).
-- User-visible outcome: every tracked `.py`/`.sh` file sits at or under ~250 lines unless a single
-  cohesive structure reads better whole, so review and comprehension improve.
-- Scope boundary: split the remaining over-limit production and test modules along clear
-  functional seams; extract helper clusters into intent-named submodules and use sourced sibling
-  fragments for shell. Repoint every caller and test to the concrete owner, keep package
-  `__init__.py` files docstring-only, and retain `__main__` only for an actual module CLI. Do not
-  add compatibility facades or re-export layers. Prioritize largest-first from
-  `scripts/code_quality.sh`. Exclude behavior changes and avoid fragmenting a cohesive lookup
-  table, dataclass family, or exhaustive match solely to meet the target; keep
-  `core/contracts.py` as the justified cohesive exception.
-- Acceptance gates: each remaining split must leave its replacement modules under the soft limit,
-  keep `make ci` green, and avoid behavior-test changes except import repointing; remove this task
-  when the live report contains only explicitly justified cohesive exceptions.
-- Documentation target: [overview](current/overview.md#code-organization).
-
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance

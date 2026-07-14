@@ -147,7 +147,7 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
 def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
     """Return whether the local serving binary needed by a resolved backend is installed."""
     if backend == "vllm":
-        from llb.backends.vllm import vllm_executable
+        from llb.backends.vllm_command import vllm_executable
 
         if vllm_executable():
             return True, ""

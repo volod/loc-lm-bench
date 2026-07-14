@@ -5,14 +5,11 @@ import pytest
 from llb.core.config import RunConfig
 from llb.core.contracts import GpuSample
 from llb.executor.isolation import (
-    cell_key,
-    cool_down,
-    isolate_cell,
-    parse_smi_samples,
     run_sweep,
-    sample_gpu,
 )
-from llb.executor.vram import VERDICT_BASELINE_SHIFT, VERDICT_RECLAIMED, VramNotReclaimed
+from llb.executor.isolation_thermal import cool_down, parse_smi_samples, sample_gpu
+from llb.executor.sweep_cells import cell_key
+from llb.executor.vram import VramNotReclaimed
 
 
 def cfg(tmp_path, model="a:1", backend="ollama", run_name="r"):
@@ -62,10 +59,10 @@ def test_cool_down_caps_when_stays_hot():
 
 
 def test_sample_gpu_no_driver(monkeypatch):
-    import llb.executor.isolation as iso
+    import llb.executor.isolation_thermal as thermal
 
     monkeypatch.setattr(
-        iso.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
+        thermal.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
     )
     assert sample_gpu() == []
 
@@ -94,7 +91,7 @@ def test_run_sweep_runs_each_cell_and_writes_markers(tmp_path):
 
 
 def test_subprocess_cell_runner_passes_limit_and_telemetry(tmp_path, monkeypatch):
-    import llb.executor.isolation as iso
+    import llb.executor.sweep_cells as cells
 
     calls = []
 
@@ -108,8 +105,8 @@ def test_subprocess_cell_runner_passes_limit_and_telemetry(tmp_path, monkeypatch
         (tmp_path / "run-eval" / "new-run").mkdir(parents=True)
         return Result()
 
-    monkeypatch.setattr(iso.subprocess, "run", fake_run)
-    runner = iso._subprocess_cell_runner(tmp_path, "s1", telemetry=True, limit=7)
+    monkeypatch.setattr(cells.subprocess, "run", fake_run)
+    runner = cells._subprocess_cell_runner(tmp_path, "s1", telemetry=True, limit=7)
 
     run_dir = runner(cfg(tmp_path, model="a:1"), "final")
 
@@ -222,98 +219,4 @@ def test_run_sweep_does_not_gate_ollama_keepalive(tmp_path):
     assert report["results"][0]["vram_residual_mb"] is None  # gate skipped for Ollama
 
 
-def test_run_sweep_records_cell_failure_and_continues(tmp_path):
-    def runner(config, split):
-        if config.model == "bad:1":
-            raise RuntimeError("boom")
-        return "dir"
-
-    report = run_sweep(
-        [cfg(tmp_path, model="bad:1"), cfg(tmp_path, model="ok:1")],
-        sweep_id="s4",
-        data_dir=tmp_path,
-        cell_runner=runner,
-        vram_reader=lambda: 0,
-        gpu_sampler=lambda: gpu(40),
-        sleep=lambda _s: None,
-    )
-    assert report["failed"] == 1 and report["completed"] == 1
-    bad = next(r for r in report["results"] if r["model"] == "bad:1")
-    assert bad["status"] == "failed" and "boom" in bad["detail"]
-
-
 # --- isolation reclaim isolate_cell + live PID attribution ---------------------------------------------
-
-
-def test_isolate_cell_reclaimed_runs_work_and_cools_down():
-    out, iso = isolate_cell(
-        lambda: "result",
-        backend="vllm",
-        vram_reader=lambda: 1000,  # constant -> reclaimed within tolerance
-        pid_usage_reader=lambda: {100: 500},
-        gpu_sampler=lambda: gpu(40),
-        sleep=lambda _s: None,
-    )
-    assert out == "result"
-    assert iso["vram_verdict"] == VERDICT_RECLAIMED and iso["vram_residual_mb"] == 0
-
-
-def test_isolate_cell_aborts_on_attributed_leak():
-    reads = iter([1000] + [9000] * 100)  # baseline 1000, then stuck high -> residual 8000
-    usage = iter([{100: 500}, {100: 500, 200: 3000}])  # a NEW pid (200) still holds VRAM
-    with pytest.raises(VramNotReclaimed, match="leaked"):
-        isolate_cell(
-            lambda: "x",
-            backend="vllm",
-            vram_reader=lambda: next(reads),
-            pid_usage_reader=lambda: next(usage),
-            gpu_sampler=lambda: gpu(40),
-            sleep=lambda _s: None,
-        )
-
-
-def test_isolate_cell_tolerates_baseline_shift():
-    reads = iter([1000] + [9000] * 100)  # residual 8000
-    usage = iter([{100: 500}, {100: 8500}])  # only the PRE-EXISTING pid 100 grew (no new pid)
-    out, iso = isolate_cell(
-        lambda: "done",
-        backend="vllm",
-        vram_reader=lambda: next(reads),
-        pid_usage_reader=lambda: next(usage),
-        gpu_sampler=lambda: gpu(40),
-        sleep=lambda _s: None,
-    )
-    assert out == "done"
-    assert iso["vram_verdict"] == VERDICT_BASELINE_SHIFT and iso["vram_residual_mb"] == 8000
-
-
-def test_run_sweep_aborts_on_attributed_leak(tmp_path):
-    reads = iter([1000] + [9000] * 200)
-    usage = iter([{100: 500}, {100: 500, 200: 4000}])  # leaked launched pid 200
-    with pytest.raises(VramNotReclaimed):
-        run_sweep(
-            [cfg(tmp_path, backend="vllm")],
-            sweep_id="leak",
-            data_dir=tmp_path,
-            cell_runner=lambda c, s: "dir",
-            vram_reader=lambda: next(reads),
-            pid_usage_reader=lambda: next(usage),
-            gpu_sampler=lambda: gpu(40),
-            sleep=lambda _s: None,
-        )
-
-
-def test_run_sweep_completes_through_baseline_shift(tmp_path):
-    reads = iter([1000] + [9000] * 200)
-    usage = iter([{100: 500}, {100: 8500}])  # unrelated process grew -> not a leak
-    report = run_sweep(
-        [cfg(tmp_path, backend="vllm")],
-        sweep_id="bshift",
-        data_dir=tmp_path,
-        cell_runner=lambda c, s: str(tmp_path / "d"),
-        vram_reader=lambda: next(reads),
-        pid_usage_reader=lambda: next(usage),
-        gpu_sampler=lambda: gpu(40),
-        sleep=lambda _s: None,
-    )
-    assert report["completed"] == 1 and report["results"][0]["vram_residual_mb"] == 8000

@@ -17,7 +17,8 @@ from typing_extensions import TypedDict
 
 from llb.core.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
 from llb.eval import common as eval_common
-from llb.prompts import PromptAugmentation, render_chat, render_text
+from llb.prompts.engine import PromptAugmentation
+from llb.prompts.registry import render_chat, render_text
 
 __all__ = [
     "RagState",

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.config_validation import DEFAULT_OLLAMA_HOST
 from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 
 ENDPOINT_LOCAL = "local"
@@ -34,28 +34,6 @@ class EndpointConfig:
     egress_consent: bool = False
     max_usd: float | None = None
     max_calls: int | None = None
-
-    def __post_init__(self) -> None:
-        if self.kind not in ENDPOINT_KINDS:
-            raise ValueError(f"endpoint kind must be one of {ENDPOINT_KINDS}, got {self.kind!r}")
-        if not self.model:
-            raise ValueError("endpoint model must be set")
-        if self.backend not in LOCAL_BACKENDS:
-            raise ValueError(f"local backend must be one of {LOCAL_BACKENDS}, got {self.backend!r}")
-        if self.kind != ENDPOINT_LOCAL and self.backend != LOCAL_BACKEND_OLLAMA:
-            raise ValueError("local backend can only be set when endpoint kind is local")
-        if self.kind == ENDPOINT_FRONTIER and not self.egress_consent:
-            raise ValueError("frontier endpoint requires explicit egress consent")
-        if self.kind == ENDPOINT_FRONTIER and self.max_usd is None and self.max_calls is None:
-            raise ValueError("frontier endpoint requires --max-usd or --max-calls")
-        if self.max_usd is not None and self.max_usd <= 0:
-            raise ValueError("max_usd must be > 0 when set")
-        if self.max_calls is not None and self.max_calls < 1:
-            raise ValueError("max_calls must be >= 1 when set")
-        if self.kind == ENDPOINT_LOCAL and (self.max_usd is not None or self.max_calls is not None):
-            raise ValueError("frontier budgets can only be set when endpoint kind is frontier")
-        if self.kind == ENDPOINT_LOCAL and self.egress_consent:
-            raise ValueError("egress consent can only be set when endpoint kind is frontier")
 
     @property
     def egress(self) -> bool:

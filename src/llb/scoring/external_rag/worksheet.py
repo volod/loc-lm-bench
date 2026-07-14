@@ -20,7 +20,7 @@ from llb.scoring.external_rag_common import (
     _round,
     _string,
 )
-from llb.scoring.external_rag_sources import SOURCE_AUDIT_COLUMNS
+from llb.scoring.external_rag_source_map import SOURCE_AUDIT_COLUMNS
 
 
 def write_csv(

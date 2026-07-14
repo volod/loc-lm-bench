@@ -3,12 +3,8 @@
 import pytest
 
 from llb.backends.base import ChatResult
-from llb.backends.vllm import (
-    VllmLauncher,
-    build_vllm_command,
-    launch_env,
-    parse_served_context,
-)
+from llb.backends.vllm import VllmLauncher
+from llb.backends.vllm_command import build_vllm_command, launch_env, parse_served_context
 
 
 def test_build_command_includes_serving_flags():

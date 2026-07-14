@@ -2,8 +2,10 @@
 
 from llb.bench import mcp_server
 from llb.bench import tooling as bench_tooling
+from llb.bench import tooling_protocol
 from llb.prep import tooling_sources
 from llb.scoring import tooling
+from llb.scoring import tool_calls
 
 CATALOG = {
     "get_weather": {
@@ -32,30 +34,30 @@ CATALOG = {
 
 def test_arguments_match_contains():
     spec = {"query": {"mode": "contains"}}
-    assert tooling.arguments_match({"query": "енерг"}, {"query": "відновлювана енергія"}, spec)
-    assert not tooling.arguments_match({"query": "енерг"}, {"query": "погода"}, spec)
+    assert tool_calls.arguments_match({"query": "енерг"}, {"query": "відновлювана енергія"}, spec)
+    assert not tool_calls.arguments_match({"query": "енерг"}, {"query": "погода"}, spec)
 
 
 def test_arguments_match_numeric_tolerance():
     spec = {"amount": {"mode": "numeric", "tol": 0.5}}
-    assert tooling.arguments_match({"amount": 100}, {"amount": 99.99}, spec)
-    assert not tooling.arguments_match({"amount": 100}, {"amount": 90}, spec)
+    assert tool_calls.arguments_match({"amount": 100}, {"amount": 99.99}, spec)
+    assert not tool_calls.arguments_match({"amount": 100}, {"amount": 90}, spec)
 
 
 def test_arguments_match_oneof():
     spec = {"city": {"mode": "oneof", "values": ["Дніпро", "Dnipro"]}}
-    assert tooling.arguments_match({"city": "Дніпро"}, {"city": "dnipro"}, spec)
-    assert not tooling.arguments_match({"city": "Дніпро"}, {"city": "Київ"}, spec)
+    assert tool_calls.arguments_match({"city": "Дніпро"}, {"city": "dnipro"}, spec)
+    assert not tool_calls.arguments_match({"city": "Дніпро"}, {"city": "Київ"}, spec)
 
 
 def test_arguments_match_fuzzy():
     spec = {"expression": {"mode": "fuzzy", "threshold": 0.6}}
-    assert tooling.arguments_match({"expression": "100 / 4"}, {"expression": "100/4"}, spec)
+    assert tool_calls.arguments_match({"expression": "100 / 4"}, {"expression": "100/4"}, spec)
 
 
 def test_arguments_match_default_exact_unchanged():
-    assert tooling.arguments_match({"city": "Київ"}, {"city": "київ"})  # casefold exact
-    assert not tooling.arguments_match({"city": "Київ"}, {"city": "Львів"})
+    assert tool_calls.arguments_match({"city": "Київ"}, {"city": "київ"})  # casefold exact
+    assert not tool_calls.arguments_match({"city": "Київ"}, {"city": "Львів"})
 
 
 def test_committed_cases_exercise_tolerance():
@@ -111,14 +113,14 @@ class _FakeClient:
 
 
 def test_openai_tools_schema():
-    specs = bench_tooling.openai_tools(CATALOG)
+    specs = tooling_protocol.openai_tools(CATALOG)
     assert specs[0]["type"] == "function"
     assert specs[0]["function"]["name"] == "get_weather"
 
 
 def test_native_tool_caller_parses_native_response():
     client = _FakeClient(_FakeMessage([_FakeToolCall("get_weather", '{"city": "Київ"}')]))
-    caller = bench_tooling.native_tool_caller(client, "m")
+    caller = tooling_protocol.native_tool_caller(client, "m")
     call = caller("Яка погода у Києві?", CATALOG)
     assert call is not None and call.name == "get_weather"
     assert call.arguments == {"city": "Київ"}
@@ -126,13 +128,13 @@ def test_native_tool_caller_parses_native_response():
 
 
 def test_native_tool_caller_no_call():
-    caller = bench_tooling.native_tool_caller(_FakeClient(_FakeMessage(None)), "m")
+    caller = tooling_protocol.native_tool_caller(_FakeClient(_FakeMessage(None)), "m")
     assert caller("just chatting", CATALOG) is None
 
 
 def test_run_tooling_with_native_caller():
     client = _FakeClient(_FakeMessage([_FakeToolCall("get_weather", '{"city": "Київ"}')]))
-    caller = bench_tooling.native_tool_caller(client, "m")
+    caller = tooling_protocol.native_tool_caller(client, "m")
     cases = [
         tooling.ToolingCase(
             id="c1",
@@ -147,7 +149,7 @@ def test_run_tooling_with_native_caller():
         model="m",
         backend="vllm",
         caller=caller,
-        capability=bench_tooling.TOOL_PROTOCOL_NATIVE,
+        capability=tooling_protocol.TOOL_PROTOCOL_NATIVE,
         persist=False,
     )
     assert run.score.call_accuracy == 1.0
@@ -198,7 +200,7 @@ def test_from_bfcl_builds_bundle_with_oneof_tolerance():
     assert case["arg_match"]["city"]["mode"] == "oneof"
     # round-trips into ToolingCases and scores the acceptable variant
     cases = [tooling.ToolingCase.from_record(c) for c in bundle["cases"]]
-    call = tooling.ToolCall(name="get_weather", arguments={"city": "Kiev"}, well_formed=True)
+    call = tool_calls.ToolCall(name="get_weather", arguments={"city": "Kiev"}, well_formed=True)
     catalog = {t["name"]: t for t in bundle["tools"]}
     assert tooling.score_case(cases[0], call, catalog).correct == 1.0
 

@@ -5,11 +5,11 @@ from llb.executor.contention import (
     ACTION_DERATE,
     ACTION_OK,
     apply_contention_guard,
-    evict_ollama,
-    model_weight_floor_mb,
     plan_guard,
     resident_users,
 )
+from llb.executor.contention_memory import model_weight_floor_mb
+from llb.executor.ollama_eviction import evict_ollama
 
 # A 16 GB card with the configured gpu-memory-utilization default.
 TOTAL = 16000
@@ -204,7 +204,7 @@ def test_select_target_gpu_honors_cuda_visible_devices():
 
 
 def test_model_kv_headroom_is_arch_derived(monkeypatch):
-    from llb.executor import contention as ct
+    from llb.executor import contention_memory as ct
 
     # A heavy KV-per-token model needs more abort headroom than the fixed floor.
     monkeypatch.setattr(
@@ -214,7 +214,7 @@ def test_model_kv_headroom_is_arch_derived(monkeypatch):
 
 
 def test_model_kv_headroom_falls_back_without_arch(monkeypatch):
-    from llb.executor import contention as ct
+    from llb.executor import contention_memory as ct
 
     monkeypatch.setattr(ct, "_spec_for", lambda _src, _manifest: {"name": "m"})
     assert ct.model_kv_headroom_mb("m") == ct.DEFAULT_MIN_KV_HEADROOM_MB

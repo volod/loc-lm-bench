@@ -10,7 +10,8 @@ import logging
 from llb.bench.agentic.model import METHOD, _AgenticPersistInput, _JudgeConfig
 from llb.bench.common import persist_category_run
 from llb.core.contracts import JudgeStatus, RunMetrics, RunPaths
-from llb.scoring.aggregate import TIER_AGENTIC, ModelResult
+from llb.scoring.aggregate import TIER_AGENTIC
+from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
 
 _LOG = logging.getLogger(__name__)

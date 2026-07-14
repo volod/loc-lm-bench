@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass
 
-from llb.inference.generate import GpuTierInfo, detect_gpu_tier
+from llb.inference.serving_selection import GpuTierInfo, detect_gpu_tier
 from llb.prep.ontology.ollama_lifecycle import ollama_native_root
 
 

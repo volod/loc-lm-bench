@@ -22,8 +22,8 @@ from llb.eval.position_probe import (
     position_index,
     recommend_order,
     run_probe,
-    write_probe,
 )
+from llb.eval.position_probe_report import write_probe
 from llb.goldset.schema import GoldItem
 
 GOLD_TEXT = "Київ є столицею України."

@@ -4,7 +4,7 @@ import json
 
 from llb.bench.text_analysis.run import run_text_analysis
 from llb.prep import chat_corpus as cc
-from llb.scoring import text_analysis as ta
+from llb.scoring import text_analysis_labels as ta
 
 
 def test_render_chat_log_speaker_text_lines():

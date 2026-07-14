@@ -5,7 +5,7 @@ from pathlib import Path
 
 from llb.bench.common import JudgeScorer, Mirror
 from llb.core.contracts import BoardRow, JudgeInputRecord, RunPaths, TextAnalysisCaseRow
-from llb.scoring.aggregate import ModelResult
+from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
 
 

@@ -3,7 +3,7 @@
 from llb.core.contracts import JsonObject
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
-from llb.finetune.trainer import ADAPTER_DIGEST_SHORT_CHARS
+from llb.finetune.adapter_manifest import ADAPTER_DIGEST_SHORT_CHARS
 
 
 def adapter_rows(entries: dict[str, AdapterEntry]) -> list[JsonObject]:

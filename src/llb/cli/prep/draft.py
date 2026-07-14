@@ -6,20 +6,6 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.cli.helpers import cli_error
-from llb.cli.prep.draft_endpoints import (
-    _VllmLaunchOptions,
-    _confirm_frontier_egress,
-    _endpoint_plan_setup,
-)
-from llb.cli.prep.draft_support import (
-    _enforce_calibration_gates,
-    _extraction_adapter,
-    _resume_overrides,
-    _split_dir_list,
-    _validate_draft_inputs,
-    _write_verification_sample,
-)
 from llb.prep.ontology.constants import DEFAULT_MULTI_HOP_MAX_PATHS, EXTRACT_CONCURRENCY
 
 
@@ -209,112 +195,7 @@ def prepare_goldset_draft_cmd(
     ),
 ) -> None:
     """ontology-assisted drafting: ontology-assisted DRAFT gold set from a corpus (verified=false; review before scoring)."""
-    from llb.prep.frontier_telemetry import DraftBudgetExceeded
-    from llb.prep.ontology.pipeline.run import draft_goldset
+    from llb.cli.prep.draft_execution import run_draft
+    from llb.cli.prep.draft_request import DraftRequest
 
-    resuming = resume is not None
-    if resume is not None:
-        (
-            corpus_root,
-            model,
-            endpoint,
-            backend,
-            frontier_stage,
-            local_model,
-            max_usd,
-            max_calls,
-            out_dir,
-        ) = _resume_overrides(
-            resume,
-            corpus_root,
-            model,
-            endpoint,
-            backend,
-            frontier_stage,
-            local_model,
-            max_usd,
-            max_calls,
-            out_dir,
-        )
-    if corpus_root is None or not model:
-        cli_error("provide --corpus-root and --model, or --resume <bundle>")
-
-    adapter = _extraction_adapter(extractor, spacy_model)
-    _validate_draft_inputs(
-        drop_nonretrievable_needles, retrieval_index_dir, graph_dir, rejection_feedback
-    )
-    dedup_against_dirs = _split_dir_list(dedup_against)
-    if endpoint == "frontier":
-        if not egress_consent:
-            _confirm_frontier_egress(corpus_root, model)
-            egress_consent = True
-        max_calls = max_calls or 100
-    elif max_usd is not None or max_calls is not None:
-        cli_error("--max-usd and --max-calls are frontier-only guards")
-
-    vllm_options = _VllmLaunchOptions(
-        port=vllm_port,
-        gpu_memory_utilization=vllm_gpu_memory_utilization,
-        max_model_len=vllm_max_model_len or num_ctx,
-        cpu_offload_gb=vllm_cpu_offload_gb,
-        kv_offloading_size_gb=vllm_kv_offloading_size_gb,
-        dtype=vllm_dtype,
-        quantization=vllm_quantization,
-        startup_timeout=vllm_startup_timeout,
-    )
-    endpoints, launched_vllm, resolved_out_dir = _endpoint_plan_setup(
-        model,
-        endpoint,
-        backend,
-        base_url,
-        out_dir,
-        num_ctx,
-        vllm_options,
-        frontier_stage=frontier_stage,
-        local_model=local_model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        timeout=timeout,
-        no_think=no_think,
-        egress_consent=egress_consent,
-        max_usd=max_usd,
-        max_calls=max_calls,
-    )
-    try:
-        result = draft_goldset(
-            corpus_root,
-            endpoints,
-            extraction_adapter=adapter,
-            max_items=max_items,
-            seed=seed,
-            out_dir=resolved_out_dir,
-            doc_limit=doc_limit,
-            extract_max_chars=extract_max_chars,
-            extract_chunk_overlap=extract_chunk_overlap,
-            extract_concurrency=concurrency,
-            retrieval_index_dir=retrieval_index_dir,
-            retrieval_k=retrieval_k,
-            drop_nonretrievable_needles=drop_nonretrievable_needles,
-            coverage_target=coverage_target,
-            multi_hop=multi_hop,
-            chains=chains,
-            multi_hop_max_paths=multi_hop_max_paths,
-            dedup_against=dedup_against_dirs,
-            graph_dir=graph_dir,
-            rejection_feedback=rejection_feedback,
-            resume=resuming,
-        )
-    except DraftBudgetExceeded as exc:
-        target = resolved_out_dir or out_dir or resume
-        cli_error(f"{exc.reason}; partial bundle and abort provenance: {target}", code=1)
-    finally:
-        if launched_vllm is not None:
-            launched_vllm.stop()
-    if verification_sample_size:
-        _write_verification_sample(result.out_dir, verification_sample_size, seed)
-    typer.echo(
-        f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
-        f"endpoint={endpoint}, egress={endpoints.egress}) -> {result.out_dir}"
-    )
-    if require_passed_gates:
-        _enforce_calibration_gates(result.calibration_report, result.out_dir)
+    run_draft(DraftRequest.from_mapping(locals()))

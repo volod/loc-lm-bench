@@ -40,41 +40,21 @@ from llb.graph.constants import (
     SUMMARIES_FILE,
 )
 from llb.graph.model import GraphEdge, GraphNode, KnowledgeGraph
-from llb.graph.retrieval import (
+from llb.graph.linking import (
     link_communities,
     link_seed_nodes,
     node_link_scores,
-    serialize_subgraph,
 )
 from llb.core.contracts import ChunkRecord
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
+from llb.graph.retrieval import serialize_subgraph
+from llb.graph.store_io import _connect, _read_jsonl, _write_jsonl
 
 _LOG = logging.getLogger(__name__)
 
 # global_community ranks matched nodes by link score; this tiny floor still serializes the rest of
 # the community (corpus-level context) below the matched members.
 _UNMATCHED_MEMBER_FLOOR = 0.001
-
-
-def _connect(graph: KnowledgeGraph) -> Any:
-    """Build an in-memory DuckDB engine over the graph's edges + node community ids."""
-    try:
-        import duckdb
-    except ImportError as exc:  # pragma: no cover - exercised only without the extra
-        raise SystemExit(
-            'ERROR: the graph backend needs the [graph] extra. Run: uv pip install -e ".[graph]"'
-        ) from exc
-    con = duckdb.connect(":memory:")
-    con.execute("CREATE TABLE node(node_id INTEGER, community_id INTEGER)")
-    con.execute("CREATE TABLE edge(src INTEGER, dst INTEGER)")
-    if graph.nodes:
-        con.executemany(
-            "INSERT INTO node VALUES (?, ?)",
-            [(n.node_id, n.community_id) for n in graph.nodes],
-        )
-    if graph.edges:
-        con.executemany("INSERT INTO edge VALUES (?, ?)", [(e.src, e.dst) for e in graph.edges])
-    return con
 
 
 # Undirected k-hop neighborhood of the seed nodes: a recursive CTE bounded by `depth`, returning
@@ -240,15 +220,3 @@ class GraphStore:
             n_communities=n_communities,
             community_summaries=summaries,
         )
-
-
-def _write_jsonl(rows: Any, path: Path) -> None:
-    with path.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]

@@ -9,19 +9,19 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.goldset.verify_acceptance import ground_answer, infer_reject_code
+from llb.goldset.verify_acceptance import ground_answer
+from llb.goldset.verify_acceptance_report import infer_reject_code
 from llb.goldset.verify_base import ACCEPT, REJECT, REJECT_CODES
 from llb.goldset.verify_sampling.context import corpus_window
-from llb.goldset.verify_card import (
+from llb.goldset.verify_card import _CHAIN_DEFAULT_WIDTH, _is_chain_row
+from llb.goldset.verify_commands import (
     ACCEPT_CMD,
     CHECK,
     CLEAR,
     EDIT,
     NOTE,
     REJECT_CMD,
-    _CHAIN_DEFAULT_WIDTH,
     Command,
-    _is_chain_row,
 )
 from llb.goldset.verify_session.commands import (
     _clear_row,

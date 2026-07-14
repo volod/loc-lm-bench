@@ -86,7 +86,7 @@ def goldset_digest_for(goldset_path: Path | str | None) -> str | None:
     path = resolve_project_path(goldset_path)
     if not path.is_file():
         return None
-    from llb.executor.durability import goldset_digest
+    from llb.executor.durability_journal import goldset_digest
     from llb.goldset.schema import load_goldset
 
     try:

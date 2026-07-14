@@ -9,8 +9,8 @@ from llb.scoring.aggregate import (
     TIER_SUMMARIZATION,
     TIER_TEXT_ANALYSIS,
     TIER_TOOLING,
-    ModelResult,
 )
+from llb.scoring.leaderboard import ModelResult
 
 CATEGORY_COMPOSITE_RAW_WEIGHTS: dict[str, float] = {
     TIER_TEXT_ANALYSIS: 20.0,

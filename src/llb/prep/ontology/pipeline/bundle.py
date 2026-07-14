@@ -9,21 +9,19 @@ the human verification gate remains the real block on scoring).
 
 import hashlib
 import json
-import logging
 from typing import TYPE_CHECKING
 from pathlib import Path
 
 from llb.goldset.chains import dump_chains
 from llb.goldset.schema import dump_goldset
 from llb.prep.ontology.artifacts.citations import copy_pdf_citation_sidecars
-from llb.prep.ontology.artifacts.report import required_gate_names, write_calibration_artifacts
+from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     CHAINS_FILENAME,
     CORPUS_DIRNAME,
     EXTRACTION_FILENAME,
     GOLDSET_FILENAME,
     ONTOLOGY_FILENAME,
-    PDF_ONTOLOGY_REPORT_FILENAME,
     PROVENANCE_FILENAME,
     PROVENANCE_KIND,
 )
@@ -36,8 +34,7 @@ from llb.prep.ontology.pipeline.settings import PipelineResult
 
 if TYPE_CHECKING:
     from llb.prep.ontology.endpoint_config import EndpointLogs
-
-_LOG = logging.getLogger(__name__)
+from llb.prep.ontology.pipeline.bundle_logging import _LOG, _log_calibration_gates
 
 
 def write_budget_abort(
@@ -232,26 +229,3 @@ def _write_bundle(
         out_dir,
     )
     _log_calibration_gates(result.calibration_report, out_dir)
-
-
-def _log_calibration_gates(report: dict[str, object] | None, out_dir: Path) -> None:
-    """Surface the calibration roll-up so `prepare-goldset-draft` (and the quickstart wrapper) act
-    on the gate, not just record it. A failing gate is a WARNING, never fatal: the bundle is always
-    written for inspection, and the human verification gate remains the real block on scoring."""
-    gates = report.get("gates") if isinstance(report, dict) else None
-    if not isinstance(gates, dict):
-        return
-    if gates.get("passed"):
-        _LOG.info(
-            "[ontology] calibration gates passed -> %s", out_dir / PDF_ONTOLOGY_REPORT_FILENAME
-        )
-        return
-    # name only the REQUIRED gates that blocked the roll-up (informational gates like
-    # nonzero_grounded_facts, and the needle gate on a non-PDF corpus, never appear here)
-    required = required_gate_names(bool(gates.get("pdf_citation_gate_applicable")))
-    failed = [name for name in required if not gates.get(name)]
-    _LOG.warning(
-        "[ontology] calibration gates NOT passed (%s); inspect %s before accepting this bundle",
-        ", ".join(failed) or "see report",
-        out_dir / PDF_ONTOLOGY_REPORT_FILENAME,
-    )

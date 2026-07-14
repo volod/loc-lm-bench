@@ -33,7 +33,8 @@ def bench_knowledge_cutoff_cmd(
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
 ) -> None:
     """Estimate a local model's effective knowledge cutoff and generate MLOps reports."""
-    from llb.bench.common import LLMComplete, ThroughputMeter, drive_with_backend
+    from llb.bench.common import LLMComplete
+    from llb.bench.common_backend import ThroughputMeter, drive_with_backend
     from llb.bench.knowledge_cutoff.data import LoadedEvents, load_events, select_events
     from llb.bench.knowledge_cutoff.run import KnowledgeCutoffRun, run_knowledge_cutoff
 

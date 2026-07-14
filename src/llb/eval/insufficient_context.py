@@ -31,7 +31,7 @@ from llb.executor.cases import spans_as_dicts
 from llb.goldset.schema import GoldItem
 from llb.rag.filters import ChunkFilter
 from llb.rag.retrieval import chunk_hits_any
-from llb.scoring.aggregate import bootstrap_mean_ci
+from llb.scoring.leaderboard import bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)
 

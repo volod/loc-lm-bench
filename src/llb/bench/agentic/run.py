@@ -26,11 +26,11 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
-    ThroughputMeter,
     category_result,
     render_board,
     verified_data_config,
 )
+from llb.bench.common_backend import ThroughputMeter
 from llb.scoring.aggregate import TIER_AGENTIC
 
 

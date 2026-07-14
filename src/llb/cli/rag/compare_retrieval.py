@@ -95,7 +95,7 @@ def _build_compare_stores(
     cfg: Any, strategies: Optional[str], hybrid: bool, compare_items: list[Any]
 ) -> dict[str, Any]:
     """The label -> store map to compare: per-strategy builds, hybrid rows, or built backends."""
-    from llb.rag.compare import (
+    from llb.rag.comparison_builders import (
         build_chunking_comparison,
         build_hybrid_comparison,
         load_compare_stores,

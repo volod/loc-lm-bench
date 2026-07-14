@@ -119,7 +119,7 @@ def _write_calibration_worksheet(
     worksheet: Path | str,
     judge_scorer: JudgeScorer | None,
 ) -> int:
-    from llb.judge.calibration import write_filled_worksheet
+    from llb.judge.calibration_worksheet import write_filled_worksheet
 
     judge_ratings: list[float] | None = None
     if config.judge_model is not None:

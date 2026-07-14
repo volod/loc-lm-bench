@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
-from llb.executor.runner_setup import _default_runner_fn, _load_store
+from llb.executor.runner_retrieval import _load_store
+from llb.executor.runner_setup import _default_runner_fn
 from llb.goldset.schema import GoldItem
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
         return OllamaLauncher(config.model, host=config.ollama_host)
     if config.backend == "vllm":
         from llb.backends.vllm import VllmLauncher
-        from llb.finetune.trainer import adapter_lora_rank
+        from llb.finetune.adapter_manifest import adapter_lora_rank
 
         return VllmLauncher(
             config.model,
@@ -74,7 +75,8 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":
-        from llb.backends.llamacpp import LlamaCppLauncher, resolve_llama_server_binary
+        from llb.backends.llamacpp import LlamaCppLauncher
+        from llb.backends.llamacpp_command import resolve_llama_server_binary
 
         return LlamaCppLauncher(
             config.model,
@@ -117,9 +119,8 @@ def _guard_vllm_contention(
         ACTION_ABORT,
         apply_contention_guard,
         default_gpu_reader,
-        model_kv_headroom_mb,
-        model_weight_floor_mb,
     )
+    from llb.executor.contention_memory import model_kv_headroom_mb, model_weight_floor_mb
 
     report = apply_contention_guard(
         requested_util=config.gpu_memory_utilization,

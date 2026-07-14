@@ -34,14 +34,10 @@ def probe_context_position_cmd(
     position, and recommend a per-model `context_order` with bootstrap CIs."""
     from llb.bench.common import new_run_timestamp
     from llb.core.contracts import ChatMessage
-    from llb.eval.position_probe import (
-        DEFAULT_CANDIDATE_DEPTH,
-        render_report,
-        run_probe,
-        write_probe,
-    )
+    from llb.eval.position_probe import DEFAULT_CANDIDATE_DEPTH, run_probe
+    from llb.eval.position_probe_report import render_report, write_probe
     from llb.executor.runner_backend import _make_launcher
-    from llb.executor.runner_setup import _load_store
+    from llb.executor.runner_retrieval import _load_store
     from llb.goldset.schema import load_goldset
 
     cfg = load_config(

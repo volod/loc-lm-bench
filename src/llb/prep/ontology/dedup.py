@@ -34,7 +34,7 @@ class E5QuestionEmbedder:
     """Adapts the pinned RAG `Embedder` (multilingual-e5) to the `QuestionEmbedder` seam."""
 
     def __init__(self, model_name: str | None = None):
-        from llb.core.config import DEFAULT_EMBEDDING_MODEL
+        from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
         from llb.rag.embedding import Embedder
 
         self._embedder = Embedder(model_name or DEFAULT_EMBEDDING_MODEL)

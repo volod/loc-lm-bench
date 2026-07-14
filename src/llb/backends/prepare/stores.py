@@ -16,7 +16,7 @@ from llb.backends.prepare.base import (
     MIN_DOWNLOAD_MB,
 )
 from llb.core import env
-from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.config_validation import DEFAULT_OLLAMA_HOST
 from llb.core.contracts import ModelSpec
 
 

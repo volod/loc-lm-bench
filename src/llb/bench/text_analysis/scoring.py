@@ -17,14 +17,15 @@ from llb.core.contracts import JudgeInputRecord, JudgeScore, TextAnalysisCaseRow
 from llb.eval.common import EMPTY, MALFORMED, OK
 from llb.eval.map_reduce import run_map_reduce_text
 from llb.scoring import text_analysis as ta
-from llb.scoring.aggregate import bootstrap_mean_ci
+from llb.scoring import text_analysis_labels as labels
+from llb.scoring.leaderboard import bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)
 
 
 def score_doc_batch(
     doc_ids: list[str],
-    labels_by_doc: dict[str, list[ta.PlantedLabel]],
+    labels_by_doc: dict[str, list[labels.PlantedLabel]],
     docs: dict[str, str],
     complete: LLMComplete,
     similarity: ta.Similarity,
@@ -85,10 +86,10 @@ def judged_quality(score: JudgeScore) -> float:
 def _predict_doc_extractions(
     doc_id: str,
     doc_text: str,
-    labels: list[ta.PlantedLabel],
+    planted: list[labels.PlantedLabel],
     complete: LLMComplete,
 ) -> tuple[str, dict[str, list[str]]]:
-    kinds = sorted({label.kind for label in labels if label.kind != ta.LONG_DOC})
+    kinds = sorted({label.kind for label in planted if label.kind != labels.LONG_DOC})
     raw = complete(analysis_prompt(doc_id, doc_text, kinds)) if kinds else ""
     if kinds and not raw.strip():
         return EMPTY, {}
@@ -115,9 +116,9 @@ def _case_row(
 
 
 def _long_doc_judge_record(
-    labels: list[ta.PlantedLabel], doc_text: str, complete: LLMComplete
+    planted: list[labels.PlantedLabel], doc_text: str, complete: LLMComplete
 ) -> tuple[str, JudgeInputRecord] | None:
-    question = long_doc_question(labels)
+    question = long_doc_question(planted)
     if question is None:
         return None
     answer = run_map_reduce_text(complete, question, doc_text)

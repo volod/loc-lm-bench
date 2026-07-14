@@ -13,11 +13,10 @@ from llb.bench.chain_context import METHOD
 from llb.core.contracts import BoardRow, JsonObject
 from llb.scoring.aggregate import (
     TIER_CHAIN_CONTEXT,
-    ModelResult,
-    format_board,
     rank_board,
-    ranking_policy_note,
 )
+from llb.scoring.board_format import format_board, ranking_policy_note
+from llb.scoring.leaderboard import ModelResult
 
 from llb.board.io import read_case_series
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from llb.core.contracts import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT
 from llb.finetune.registry.resolve import find_by_digest
-from llb.finetune.trainer import load_adapter_manifest
+from llb.finetune.adapter_manifest import load_adapter_manifest
 from llb.goldset.schema import GoldItem
 
 PROTECTED_SPLITS = frozenset({"calibration", "final"})

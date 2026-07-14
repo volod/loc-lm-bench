@@ -18,8 +18,8 @@ from llb.bench.agentic.model import (
 )
 from llb.bench.common import mean, run_gated_judge
 from llb.core.contracts import AgenticCaseRow, JudgeInputRecord, JudgeScore
-from llb.prompts import render_text
-from llb.scoring.aggregate import bootstrap_mean_ci
+from llb.prompts.registry import render_text
+from llb.scoring.leaderboard import bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)
 

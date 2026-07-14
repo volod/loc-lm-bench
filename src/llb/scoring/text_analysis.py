@@ -18,40 +18,35 @@ Free-form sub-tasks (narrative / insight / long-doc) carry an objective floor he
 headline quality is the GATED judge (`llb.scoring.judge.model`), entering only when trusted.
 """
 
-from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from llb.core.contracts import PlantedLabelRecord, SubtaskScore
+from llb.core.contracts import SubtaskScore
+from llb.scoring.text_analysis_labels import (
+    CONTRADICTION,
+    DIRECTION_CONFLICT_CREDIT,
+    OBJECTIVE_KINDS,
+    PARTIAL_CREDIT,
+    PlantedLabel,
+    TAU_FULL,
+    TAU_PARTIAL,
+    TREND,
+    direction_of,
+    normalize_surface,
+)
 
 Similarity = Callable[[str, str], float]
 
 # --- sub-task taxonomy (units of credit; spec Appendix D "Text Analysis") -----------------
 
-KEY_FACT = "key_fact"  # a planted atomic fact the answer must recover
-ENTITY = "entity"  # a named entity present in the doc
-TOPIC = "topic"  # a planted topic/theme of the doc
-TREND = "trend"  # a planted directional trend (attrs: subject, direction)
-RISK = "risk"  # a planted risk/problem
-DECISION = "decision"  # a planted decision/action item
-CONTRADICTION = "contradiction"  # a planted internal contradiction (attrs: span ids)
-NARRATIVE = "narrative"  # the doc's overarching narrative (free-form quality -> judged)
-INSIGHT = "insight"  # a non-stated inference (free-form quality -> judged)
-LONG_DOC = "long_doc"  # long-doc comprehension answer (map-reduce; correctness/judge)
 
 # Recovery of these is scored OBJECTIVELY by planted-label matching (set precision/recall/F1).
-OBJECTIVE_KINDS = frozenset({KEY_FACT, ENTITY, TOPIC, TREND, RISK, DECISION, CONTRADICTION})
 # These are scored by the GATED judge for free-form quality (objective match is a floor only).
-JUDGED_KINDS = frozenset({NARRATIVE, INSIGHT, LONG_DOC})
-ALL_KINDS = OBJECTIVE_KINDS | JUDGED_KINDS
 
 # --- matching thresholds (PROPOSAL values; signed off / tuned via text-analysis sign-off) --------------------
 
 # Exact or normalized surface match -> full credit (1.0). Otherwise the pinned-embedder cosine
 # decides: at/above TAU_FULL is a paraphrase/morphology match (full credit); in the partial band
 # [TAU_PARTIAL, TAU_FULL) earns PARTIAL_CREDIT; below TAU_PARTIAL is no match.
-TAU_FULL = 0.85
-TAU_PARTIAL = 0.70
-PARTIAL_CREDIT = 0.5
 
 # Direction-aware trend credit (text analysis residual). A `trend` label carries a planted
 # `attrs.direction` (up | down | flat); a candidate that names the right subject but the WRONG
@@ -59,113 +54,8 @@ PARTIAL_CREDIT = 0.5
 # (the label stays unrecovered AND the prediction is an unmatched false positive). A prediction
 # whose direction cannot be detected keeps its surface credit (we never penalize what we cannot
 # read), and a matching direction keeps it too.
-DIRECTION_CONFLICT_CREDIT = 0.0
-DIRECTION_UP = "up"
-DIRECTION_DOWN = "down"
-DIRECTION_FLAT = "flat"
 # Casefolded stems scanned as substrings of a normalized prediction (UA + EN). Ordered so the
 # first matching direction wins; stems are deliberately morphology-tolerant prefixes.
-_DIRECTION_STEMS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        DIRECTION_UP,
-        (
-            "зрос",
-            "зріс",
-            "виріс",
-            "збільш",
-            "підвищ",
-            "поліпш",
-            "increase",
-            "rose",
-            "grow",
-            "rise",
-            "rising",
-            "higher",
-            "uptrend",
-        ),
-    ),
-    (
-        DIRECTION_DOWN,
-        (
-            "зниж",
-            "зменш",
-            "спад",
-            "погірш",
-            "пад",
-            "впа",
-            "скороч",
-            "decrease",
-            "decline",
-            "fall",
-            "fell",
-            "drop",
-            "lower",
-            "down",
-            "shrink",
-        ),
-    ),
-    (DIRECTION_FLAT, ("стаб", "незмін", "сталий", "flat", "stable", "unchanged", "plateau")),
-)
-
-_PUNCT_STRIP = " \t\r\n.,;:!?\"'`«»“”()[]{}-–—"
-
-
-def normalize_surface(text: str) -> str:
-    """Casefold, collapse whitespace, and strip surrounding punctuation -- the canonical form
-    used for exact label-ID surface matching (deliberately NOT lemmatization, per text-analysis sign-off)."""
-    return " ".join(text.casefold().split()).strip(_PUNCT_STRIP)
-
-
-def direction_of(text: str) -> str | None:
-    """Infer a trend DIRECTION (up | down | flat) from free text via the UA/EN stem lexicon, or
-    None when no direction word is present. Used only for direction-aware `trend` credit."""
-    low = text.casefold()
-    for direction, stems in _DIRECTION_STEMS:
-        if any(stem in low for stem in stems):
-            return direction
-    return None
-
-
-@dataclass(frozen=True)
-class PlantedLabel:
-    """A planted ground-truth label for one text-analysis sub-task (see `PlantedLabelRecord`)."""
-
-    label_id: str
-    kind: str
-    value: str
-    aliases: tuple[str, ...] = ()
-    attrs: dict[str, Any] = field(default_factory=dict)
-    scoring: str = ""
-
-    @property
-    def surfaces(self) -> tuple[str, ...]:
-        """All accepted surface forms (value + aliases)."""
-        return (self.value, *self.aliases)
-
-    @property
-    def is_objective(self) -> bool:
-        if self.scoring:
-            return self.scoring == "objective"
-        return self.kind in OBJECTIVE_KINDS
-
-    @classmethod
-    def from_record(cls, record: PlantedLabelRecord) -> "PlantedLabel":
-        kind = record["kind"]
-        if kind not in ALL_KINDS:
-            raise ValueError(f"unknown text-analysis label kind: {kind!r}")
-        return cls(
-            label_id=record["label_id"],
-            kind=kind,
-            value=record["value"],
-            aliases=tuple(record.get("aliases", []) or ()),
-            attrs=dict(record.get("attrs", {}) or {}),
-            scoring=record.get("scoring", ""),
-        )
-
-
-def load_planted_labels(records: list[PlantedLabelRecord]) -> list[PlantedLabel]:
-    """Build `PlantedLabel`s from the planter's emitted records, rejecting unknown kinds."""
-    return [PlantedLabel.from_record(r) for r in records]
 
 
 # --- matching + per-sub-task scoring -------------------------------------------------------
@@ -339,29 +229,3 @@ def score_document(
 
 
 # --- default production similarity (pinned embedder cosine) --------------------------------
-
-
-def embedder_similarity(embedder: Any = None) -> Similarity:
-    """Production `similarity`: cosine over the PINNED embedder (the text-analysis sign-off matching basis).
-
-    Vectors are L2-normalized by the `Embedder`, so cosine is their dot product. Heavy imports
-    (the embedder, numpy) stay lazy; the returned callable caches encodings per surface string so
-    a label's surfaces are embedded once across many predictions.
-    """
-    if embedder is None:
-        from llb.rag.embedding import Embedder
-
-        embedder = Embedder()
-    cache: dict[str, Any] = {}
-
-    def _vec(text: str) -> Any:
-        if text not in cache:
-            cache[text] = embedder.encode_queries([text])[0]
-        return cache[text]
-
-    def similarity(a: str, b: str) -> float:
-        import numpy as np
-
-        return float(np.dot(_vec(a), _vec(b)))
-
-    return similarity

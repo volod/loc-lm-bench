@@ -13,7 +13,10 @@ from llb.goldset.verify_base import (
     worksheet_fieldnames,
     write_worksheet_rows,
 )
-from llb.goldset.verify_multi.agreement import agreement_report, write_agreement_report
+from llb.goldset.verify_multi.agreement_report import (
+    AgreementReportBuilder,
+    write_agreement_report,
+)
 from llb.goldset.verify_multi.common import (
     ADJUDICATION_FILENAME,
     ADJUDICATOR_ID,
@@ -87,7 +90,7 @@ def run_adjudicate(bundle: Path, base_ws: Path | None = None) -> int:
         _LOG.error("[verify] no multi-reviewer worksheets recorded beside %s", base)
         return 1
     by_reviewer = load_reviewer_worksheets(worksheets)
-    report = agreement_report(by_reviewer)
+    report = AgreementReportBuilder(by_reviewer).build()
     report_path = write_agreement_report(base, report)
     kappa = report["kappa"]
     _LOG.info(

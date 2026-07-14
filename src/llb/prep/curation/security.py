@@ -15,15 +15,17 @@ from typing import Any
 from llb.prep.frontier import ground_span
 from llb.prep.curation.common import (
     CurationReport,
-    DEFAULT_DEDUP_THRESHOLD,
     QuestionEmbedder,
     drop_exact_duplicates,
     drop_near_duplicates,
+    unique_ids,
+)
+from llb.prep.curation.input import (
+    DEFAULT_DEDUP_THRESHOLD,
     load_json_documents,
     load_jsonl_rows,
     normalize_text,
     question_too_vague,
-    unique_ids,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -48,7 +50,7 @@ def _case_id(case: dict[str, Any], index: int) -> str:
 
 
 def _validate(case: dict[str, Any], case_id: str, report: CurationReport) -> bool:
-    from llb.scoring.security import SecurityCase
+    from llb.scoring.security_cases import SecurityCase
 
     source = case["_source"]
     try:

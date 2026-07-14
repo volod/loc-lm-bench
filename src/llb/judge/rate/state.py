@@ -4,7 +4,7 @@ import csv
 from collections.abc import Sequence
 from pathlib import Path
 
-from llb.judge.calibration import HUMAN_COLS, load_worksheet, write_worksheet_rows
+from llb.judge.calibration_worksheet import HUMAN_COLS, load_worksheet, write_worksheet_rows
 from llb.judge.rate.commands import RATING_MAX, RATING_MIN
 
 STATUS_PENDING = "pending"

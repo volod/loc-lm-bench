@@ -16,7 +16,8 @@ from llb.board.recommend.model import (
     RunSummary,
 )
 from llb.board.runs import RunRecord, best_per_model, load_run_records
-from llb.scoring.aggregate import pareto_front, rank_board, ranking_policy_note
+from llb.scoring.aggregate import pareto_front, rank_board
+from llb.scoring.board_format import ranking_policy_note
 
 
 def _manifest_extras(

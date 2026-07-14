@@ -1,5 +1,6 @@
 from llb.backends.base import ERR_TIMEOUT, ChatResult
 from llb.eval import map_reduce as mr
+from llb.eval import map_reduce_prompts as prompts
 from llb.eval.common import EMPTY, OK
 
 
@@ -16,12 +17,12 @@ class SeqLauncher:
 
 
 def test_split_document_overlapping_windows():
-    segs = mr.split_document("abcdefghij", max_chars=4, overlap=1)
+    segs = prompts.split_document("abcdefghij", max_chars=4, overlap=1)
     assert segs == ["abcd", "defg", "ghij", "j"]
 
 
 def test_split_document_empty():
-    assert mr.split_document("   ", max_chars=10, overlap=0) == []
+    assert prompts.split_document("   ", max_chars=10, overlap=0) == []
 
 
 def test_split_node_flags_empty_document():
@@ -39,16 +40,16 @@ def test_split_node_counts_segments():
 
 
 def test_is_no_info():
-    assert mr.is_no_info(mr.NO_INFO_MARKER)
-    assert mr.is_no_info("   ")
-    assert not mr.is_no_info("Київ")
+    assert prompts.is_no_info(prompts.NO_INFO_MARKER)
+    assert prompts.is_no_info("   ")
+    assert not prompts.is_no_info("Київ")
 
 
 def test_map_node_collects_nonempty_partials():
     launcher = SeqLauncher(
         [
             ChatResult(text="Київ - столиця", completion_tokens=4),
-            ChatResult(text=mr.NO_INFO_MARKER, completion_tokens=2),
+            ChatResult(text=prompts.NO_INFO_MARKER, completion_tokens=2),
         ]
     )
     node = mr.make_map_node(launcher, max_tokens=64, temperature=0.0, timeout=10)
@@ -133,6 +134,6 @@ def test_run_map_reduce_text_single_segment_no_reduce():
 
 def test_run_map_reduce_text_all_no_info_returns_empty():
     answer = mr.run_map_reduce_text(
-        lambda _p: mr.NO_INFO_MARKER, "q", "doc " * 100, max_chars=100, overlap=0
+        lambda _p: prompts.NO_INFO_MARKER, "q", "doc " * 100, max_chars=100, overlap=0
     )
     assert answer == ""

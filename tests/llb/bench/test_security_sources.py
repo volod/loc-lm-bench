@@ -6,7 +6,7 @@ import pytest
 
 from llb.bench import security as bench_sec
 from llb.prep import security_sources as ss
-from llb.scoring import security
+from llb.scoring import security_cases as security
 
 
 def test_from_advbench_normalizes_goal():

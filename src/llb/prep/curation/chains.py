@@ -13,15 +13,17 @@ from typing import Any
 from llb.prep.frontier import ground_span
 from llb.prep.curation.common import (
     CurationReport,
-    DEFAULT_DEDUP_THRESHOLD,
     QuestionEmbedder,
     drop_exact_duplicates,
     drop_near_duplicates,
+    unique_ids,
+)
+from llb.prep.curation.input import (
+    DEFAULT_DEDUP_THRESHOLD,
     load_json_documents,
     load_jsonl_rows,
     normalize_text,
     question_too_vague,
-    unique_ids,
 )
 from llb.prep.ontology.refine import is_circular
 

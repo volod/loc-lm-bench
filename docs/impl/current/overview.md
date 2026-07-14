@@ -30,21 +30,42 @@ Callers import symbols from their concrete owner module. Package `__init__.py` f
 the package docstring, except CLI area packages whose imports register Typer commands. Runnable
 packages may provide `__main__.py`; compatibility re-exports are not part of the package design.
 
+The repository-wide module-size pass is complete. Production procedures now live in focused
+owner modules for command construction, resolver feasibility/reporting, executor durability and
+retrieval, benchmark scoring/persistence, curation input/dispatch, fine-tuning manifests/runtime,
+RAG store construction/validation, and report formatting. Oversized tests were split by behavior,
+with shared factories in intent-named helper modules. The only Python or shell file above the
+soft limit is `src/llb/core/contracts.py`: its schema aliases and `TypedDict` contract family stay
+together because splitting that single vocabulary would make the contracts harder to discover.
+
+Validation result (2026-07-14): `scripts/code_quality.sh` reports only that cohesive exception;
+its cyclomatic and cognitive-complexity sections are empty. Mutation-heavy construction now uses
+objects instead of branch-heavy procedures: `DraftResumeBuilder` restores a draft request,
+`EndpointConfigBuilder` validates and creates endpoint data, `AgreementReportBuilder` assembles
+review statistics, and `ConsensusBuilder` resolves reviewer rows. The old tuple/facade functions
+were removed rather than retained as compatibility layers.
+
+`make ci` passes Ruff formatting/lint, mypy over 508 source files, and the lightweight suite with
+1,401 passed and 36 slow tests deselected.
+
 Current focused package boundaries:
 
 | Concern | Modules |
 | --- | --- |
 | CLI registration | `src/llb/cli/<area>/` with command-specific submodules |
+| Draft request construction | `cli/prep/draft_request.py`, `draft_resume.py`, `draft_endpoints.py`, and `draft_execution.py` |
 | Host feasibility | `backends/planner/` for architecture, weights, KV sizing, plans, and formatting |
-| Evaluation execution | `executor/runner.py`, `runner_setup.py`, `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_target.py` |
+| Evaluation execution | `executor/runner.py` plus `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_retrieval.py`, `runner_setup.py`, and `runner_target.py` |
 | Board analysis | `board/miss_analysis/` and `board/recommend/` |
 | Fine-tuning workflows | `finetune/campaign/`, `distill/`, `hparam_search/`, `registry/`, and `serving/` |
-| Gold verification | `goldset/verify/`, `verify_sampling/`, `verify_multi/`, and `verify_session/` |
+| Gold verification | `goldset/verify_acceptance*.py`, `verify_card*.py`, `verify_commands.py`, `verify_ref*.py`, `verify_sampling/`, `verify_multi/agreement_metrics.py`, `verify_multi/agreement_report.py`, `verify_multi/consensus.py`, and `verify_session/` |
 | Ontology and PDF preparation | `prep/ontology/pipeline/`, `prep/ontology/artifacts/`, and `prep/pdf/` |
+| Ontology endpoint construction | `prep/ontology/endpoint_config.py` for immutable data and `endpoint_builder.py` for validation/construction |
 | RAG preparation | `rag/chunking/` and `rag/query_prep/` |
 | External RAG review | `scoring/external_rag/` and `scoring/external_rag_session/` |
 | Judge scoring and rating | `scoring/judge/` and `judge/rate/` |
 | Text-analysis benchmark | `bench/text_analysis/` |
+| Prompt rendering and harness lookup | `prompts/engine.py`, `prompts/registry.py`, `prompts/registry_generation.py`, and `bench/harness/registry.py` |
 
 `scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,
@@ -196,3 +217,7 @@ Optuna or fine-tune campaign simulations, optional chart rendering, real embedde
 DeepEval, or subprocess build helpers. The lightweight suite keeps pure span math, fake-backed
 retrieval/fusion, hparam slice and guard checks, and small manifest integrations in CI; the full
 suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus regressions.
+
+Tests target durable specifications and business rules. Internal builders, helper splits, and
+deterministic intermediate values do not get dedicated tests when workflow or domain tests already
+guard the observable behavior.

@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.prompts import render_text
-from llb.scoring.security import (
+from llb.prompts.registry import render_text
+from llb.scoring.security_cases import (
     ALL_FAMILIES,
     DETECT_REFUSE,
     JAILBREAK,

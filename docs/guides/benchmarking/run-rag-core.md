@@ -79,9 +79,9 @@ make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"
 ```
 
 Run the comparison FIRST: it embeds the corpus once and reports per corpus whether hybrid beats
-dense-only, what lemmatization adds (`LEMMATIZE`/`hybrid+lemmas` need the `[lex]` extra:
-`uv pip install -e ".[lex]"`), and the `dense+oracle-doc` diagnostic row -- the recall headroom
-a perfect document router would buy. `FUSION_WEIGHT` is the dense share of the fusion (1.0 ==
+dense-only, what lemmatization adds (`LEMMATIZE`/`hybrid+lemmas` use the base-installed Ukrainian
+morphology runtime), and the `dense+oracle-doc` diagnostic row -- the recall headroom a perfect
+document router would buy. `FUSION_WEIGHT` is the dense share of the fusion (1.0 ==
 dense order, 0.0 == lexical order); a run against a store built without the lexical index
 refuses with a rebuild message.
 

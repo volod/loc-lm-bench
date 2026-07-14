@@ -18,7 +18,8 @@ from llb.goldset.verify_base import (
     STATUS_DECIDED,
     STATUS_PENDING,
 )
-from llb.goldset.verify_card import (
+from llb.goldset.verify_card import _is_synthetic_row
+from llb.goldset.verify_commands import (
     HELP,
     JUMP,
     NEXT,
@@ -26,7 +27,6 @@ from llb.goldset.verify_card import (
     QUIT,
     UNDECIDED,
     Command,
-    _is_synthetic_row,
     help_text,
     parse_command,
 )

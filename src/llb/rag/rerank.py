@@ -18,7 +18,7 @@ the precision gain against the reranker's latency cost.
 import time
 from typing import Any, Callable, Protocol, cast
 
-from llb.core.config import DEFAULT_RERANK_CANDIDATES
+from llb.core.config_validation import DEFAULT_RERANK_CANDIDATES
 from llb.core.contracts import ChunkRecord
 
 # Pinned default cross-encoder (multilingual; scores Ukrainian question/passage pairs).

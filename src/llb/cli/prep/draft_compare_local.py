@@ -23,6 +23,7 @@ def draft_compare_local_cmd(
     timeout: float = typer.Option(900.0, min=1.0),
 ) -> None:
     """Compare GPU-adaptive Qwen and Gemma models sequentially on one Ollama host."""
+    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
     from llb.prep.ontology.endpoint_config import DEFAULT_LOCAL_BASE_URL, EndpointConfig
     from llb.prep.ontology.local_compare import compare_local_drafters
     from llb.prep.ontology.local_compare_models import select_local_compare_models
@@ -38,7 +39,7 @@ def draft_compare_local_cmd(
         )
 
         def endpoint(model: str) -> EndpointConfig:
-            return EndpointConfig(
+            return EndpointConfigBuilder(
                 kind="local",
                 model=model,
                 backend="ollama",
@@ -48,7 +49,7 @@ def draft_compare_local_cmd(
                 timeout=timeout,
                 think=False,
                 num_ctx=num_ctx,
-            )
+            ).build()
 
         report = compare_local_drafters(
             corpus_root,

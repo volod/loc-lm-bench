@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier_telemetry import LLMComplete
-from llb.prep.ontology.coverage import build_seeds, coverage_report, select_seeds
+from llb.prep.ontology.coverage import build_seeds, select_seeds
+from llb.prep.ontology.coverage_report import coverage_report
 from llb.prep.ontology.dedup import QuestionEmbedder
 from llb.prep.ontology.draft import draft_items
 from llb.prep.ontology.induce import ontology_constraints

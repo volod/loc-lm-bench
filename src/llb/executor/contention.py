@@ -15,19 +15,15 @@ resident-PID attribution uses NVML when present (best-effort). Readers, the Olla
 sleep are injectable, so the logic is unit-testable without a GPU.
 """
 
-import json
-import logging
 import math
 import os
-import urllib.error
-import urllib.request
-from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Callable
 
-from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.config_validation import DEFAULT_OLLAMA_HOST
 from llb.core.contracts import ContentionReport, ResidentProc
+from llb.executor.contention_memory import DEFAULT_MIN_KV_HEADROOM_MB, DEFAULT_VLLM_OVERHEAD_MB
+from llb.executor.ollama_eviction import evict_ollama
 
-_LOG = logging.getLogger(__name__)
 
 # Headroom (MiB) kept free below the reserved fraction: vLLM needs a sliver outside its
 # gpu-memory-utilization budget for the CUDA context, and free VRAM jitters a little.
@@ -37,15 +33,11 @@ DEFAULT_MARGIN_MB = 512
 # RTX 4060 Ti (VRAM contention guard live validation: at a 11793 MB budget, weights ~10035 MB left 0 for KV and
 # vLLM aborted with "No available memory for the cache blocks"). The abort check must include it,
 # or the guard derates into a doomed launch.
-DEFAULT_VLLM_OVERHEAD_MB = 2048
 # Minimal KV working set beyond weights + overhead for the abort check (room for >=1 KV block).
-DEFAULT_MIN_KV_HEADROOM_MB = 512
 # Tokens of KV the abort check requires a launch to be able to serve (VRAM contention guard): the arch-derived
 # headroom is the KV cache at this context, so a model that cannot hold even this much is aborted.
-DEFAULT_MIN_SERVING_CTX = 2048
 DEFAULT_WAIT_TIMEOUT_S = 120.0
 DEFAULT_WAIT_POLL_S = 3.0
-DEFAULT_MANIFEST = Path("samples/configs/models_uk.yaml")
 
 ACTION_OK = "ok"  # requested gpu-memory-utilization already fits the free VRAM
 ACTION_DERATE = "derate"  # lowered gpu-memory-utilization to the free fraction
@@ -232,101 +224,3 @@ def default_gpu_reader() -> tuple[int, int] | None:
 
     gpu = select_target_gpu(detect_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES"))
     return (gpu.total_mb, gpu.free_mb) if gpu is not None else None
-
-
-def _spec_for(model_source: str, manifest: Path) -> "dict[str, Any] | None":
-    from llb.backends.prepare.manifest import load_manifest
-
-    for spec in load_manifest(manifest):
-        if spec.get("source") == model_source or spec.get("name") == model_source:
-            return cast("dict[str, Any]", spec)
-    return None
-
-
-def model_weight_floor_mb(model_source: str, manifest: Path = DEFAULT_MANIFEST) -> float:
-    """Embedding-aware weights estimate (MiB, memory planner) for a model by source/name. 0.0 if unknown."""
-    try:
-        from llb.backends.planner.architecture import enrich_arch
-        from llb.backends.planner.plan import plan_model
-
-        spec = _spec_for(model_source, manifest)
-        if spec is None:
-            return 0.0
-        row = plan_model(enrich_arch(cast(Any, spec)), vram_mib=1_000_000, ram_mib=1_000_000)
-        return float(row["weights_mib"] or 0.0)
-    except Exception:
-        return 0.0
-
-
-def model_kv_headroom_mb(
-    model_source: str,
-    manifest: Path = DEFAULT_MANIFEST,
-    *,
-    min_serving_ctx: int = DEFAULT_MIN_SERVING_CTX,
-) -> int:
-    """Arch-derived minimal KV working set (MiB, VRAM contention guard): the KV the model needs to serve at least
-    `min_serving_ctx` tokens, sliding-window-aware. The abort check uses this instead of a fixed
-    floor, so a model with a heavy KV per token is judged un-launchable at the right threshold.
-    Falls back to the fixed floor when the arch is unknown."""
-    try:
-        from llb.backends.planner.architecture import enrich_arch
-        from llb.backends.planner.kv import kv_mib_at_context
-
-        spec = _spec_for(model_source, manifest)
-        if spec is None:
-            return DEFAULT_MIN_KV_HEADROOM_MB
-        enriched = cast("dict[str, Any]", enrich_arch(cast(Any, spec)))
-        n_layers = enriched.get("n_layers")
-        kv_dim = enriched.get("kv_dim")
-        if not (n_layers and kv_dim):
-            return DEFAULT_MIN_KV_HEADROOM_MB
-        kv = kv_mib_at_context(
-            int(n_layers),
-            int(kv_dim),
-            min_serving_ctx,
-            sliding_window=enriched.get("sliding_window"),
-            sliding_window_pattern=enriched.get("sliding_window_pattern"),
-        )
-        return max(DEFAULT_MIN_KV_HEADROOM_MB, int(kv))
-    except Exception:
-        return DEFAULT_MIN_KV_HEADROOM_MB
-
-
-def evict_ollama(
-    host: str = DEFAULT_OLLAMA_HOST,
-    *,
-    http_get: Callable[[str], dict[str, Any] | None] | None = None,
-    http_post: Callable[[str, dict[str, Any]], None] | None = None,
-) -> None:
-    """Ask Ollama to unload every resident model (`keep_alive: 0`). Best-effort; never raises."""
-    get = http_get or _http_get_json
-    post = http_post or _http_post_json
-    base = host.rstrip("/")
-    try:
-        running = get(f"{base}/api/ps")
-    except Exception:
-        return
-    for entry in (running or {}).get("models", []):
-        name = entry.get("name") or entry.get("model")
-        if not name:
-            continue
-        try:
-            post(f"{base}/api/generate", {"model": name, "keep_alive": 0})
-            _LOG.info("[contention] requested Ollama unload of %s (keep_alive=0)", name)
-        except Exception:
-            continue
-
-
-def _http_get_json(url: str, timeout: float = 3.0) -> dict[str, Any] | None:
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return cast(dict[str, Any], json.loads(resp.read().decode("utf-8", "replace")))
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
-
-
-def _http_post_json(url: str, payload: dict[str, Any], timeout: float = 10.0) -> None:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout):
-        return

@@ -101,7 +101,7 @@ def run_eval_cmd(
         False,
         "--query-prep-typo-guard",
         help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
-        "unchanged (an inflection is not a misspelling; needs the [lex] extra)",
+        "unchanged (an inflection is not a misspelling)",
     ),
     score_semantic: Optional[bool] = typer.Option(
         None,
