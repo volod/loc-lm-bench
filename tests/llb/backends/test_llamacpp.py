@@ -4,8 +4,8 @@ the reclaim gate -- all driven by fakes (no llama.cpp / GPU / subprocess)."""
 import pytest
 
 from llb.backends.base import ChatResult
-from llb.backends.llamacpp import (
-    LlamaCppLauncher,
+from llb.backends.llamacpp import LlamaCppLauncher
+from llb.backends.llamacpp_command import (
     build_llamacpp_command,
     llamacpp_source_args,
     parse_served_context,

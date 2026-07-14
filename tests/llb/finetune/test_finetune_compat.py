@@ -4,18 +4,20 @@ import json
 from pathlib import Path
 
 from llb.finetune.compat import (
-    COMPAT_REPORT,
-    VERDICT_NOT_TRAINABLE,
-    VERDICT_TRAINABLE,
-    VERDICT_UNKNOWN,
-    assess_quantization,
     config_compat_probe,
-    inspect_quantization,
     linear_class_summary,
     probe_trainability,
     select_target_modules,
     unsupported_linear_classes,
 )
+from llb.finetune.compat_quantization import (
+    VERDICT_NOT_TRAINABLE,
+    VERDICT_TRAINABLE,
+    VERDICT_UNKNOWN,
+    assess_quantization,
+    inspect_quantization,
+)
+from llb.finetune.compat_runtime import COMPAT_REPORT
 
 
 # --- fake linear module classes: the CLASS NAME is what introspection matches on ---

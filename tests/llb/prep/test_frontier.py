@@ -9,8 +9,8 @@ from llb.prep.frontier import (
     ground_span,
     parse_json_block,
     prepare_goldset,
-    prepare_synthetic_corpus,
 )
+from llb.prep.frontier_synthetic import prepare_synthetic_corpus
 from llb.prep.frontier_telemetry import ProvenanceLog
 
 DOC = "Київ є столицею України. Дніпро тече через місто."

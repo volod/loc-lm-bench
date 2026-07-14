@@ -18,7 +18,7 @@ def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:
     inherits the parent arch and overrides source/quant; single-source entries pass through. This is
     display-only and does not affect `resolve-models` / `sweep`, which own backend selection.
     """
-    from llb.backends.resolver import normalize_source_list
+    from llb.backends.resolver_sources import normalize_source_list
 
     out: list[ModelSpec] = []
     for spec in specs:
@@ -226,7 +226,8 @@ def resolve_models_cmd(
 ) -> None:
     """Pick the backend that can actually serve each model (discovery + vLLM>Ollama priority)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.backends.resolver import format_resolution, resolve_all
+    from llb.backends.resolver import resolve_all
+    from llb.backends.resolver_report import format_resolution
 
     models = planning_models(manifest)
     gpus = detect_gpus()

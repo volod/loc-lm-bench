@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from llb.inference.generate import GpuTierInfo
+from llb.inference.serving_selection import GpuTierInfo
 from llb.prep.ontology.compare_analysis import comparison_statistics, format_comparison_statistics
 from llb.prep.ontology.compare_gate import finalize_comparison
 from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig

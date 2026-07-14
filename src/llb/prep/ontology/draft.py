@@ -14,7 +14,7 @@ from llb.prep.frontier import parse_json_block
 from llb.prep.frontier_telemetry import DraftBudgetExceeded, LLMComplete
 from llb.prep.ontology.constants import DRAFT_CONTEXT_RADIUS
 from llb.prep.ontology.models import DocRecord, DraftSeed
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 
 _LOG = logging.getLogger(__name__)
 

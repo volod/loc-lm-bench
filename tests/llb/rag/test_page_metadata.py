@@ -10,7 +10,7 @@ from llb.rag.page_metadata import (
     intersect_pages,
     load_page_citations,
 )
-from llb.rag.store import _build_children
+from llb.rag.store_build import _build_children
 from llb.core.paths import PROJECT_ROOT
 
 FIXTURE = PROJECT_ROOT / "samples" / "pdf_pages"

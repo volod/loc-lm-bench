@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from llb.core.config import DEFAULT_OLLAMA_HOST
+from llb.core.config_validation import DEFAULT_OLLAMA_HOST
 from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 
 ENDPOINT_LOCAL = "local"

@@ -47,7 +47,7 @@ def validate_retrieval(
 ) -> None:
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
     from llb.executor.cases import spans_as_dicts
-    from llb.executor.runner_setup import _load_store
+    from llb.executor.runner_retrieval import _load_store
     from llb.goldset.schema import load_goldset
     from llb.rag import retrieval
     from llb.rag.query_prep.base import STEP_REWRITE

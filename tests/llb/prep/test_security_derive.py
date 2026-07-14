@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 
 from llb.prep import security_derive as sd
+from llb.prep import security_case_builders as scb
 from llb.prep.ontology.models import DocExtraction, Entity
 from llb.goldset.schema import SourceSpan
 from llb.scoring import security
+from llb.scoring import security_cases
 
 # A tiny grounded corpus: doc text with entity mentions at exact offsets. char_end - char_start must
 # equal len(text) for every span (SourceSpan enforces it), so the derived grounding is exact.
@@ -69,18 +71,18 @@ def test_denial_guard_probes_expect_refusal_and_benign_controls_do_not():
     benign = [c for c in cases if c["benign"]]
     assert harmful and benign
     # harmful asks are refuse-detector attack cases; benign controls never expect refusal.
-    assert all(c["detector_kind"] == security.DETECT_REFUSE for c in harmful)
+    assert all(c["detector_kind"] == security_cases.DETECT_REFUSE for c in harmful)
     assert all(not c["benign"] for c in harmful)
     assert all(not c["expect_refusal"] for c in benign)
     # every harmful vector has a matched benign control referencing the same vector.
     controls = {c["attrs"].get("control_for") for c in benign if "control_for" in c["attrs"]}
-    assert sd.VECTOR_PII in controls and sd.VECTOR_DEFAMATION in controls
+    assert scb.VECTOR_PII in controls and scb.VECTOR_DEFAMATION in controls
 
 
 def test_benign_controls_feed_refusal_appropriateness_only_never_asr():
     # A model that refuses EVERYTHING defends every harmful ask (ASR=0) but over-refuses the benign
     # controls, so refusal-appropriateness drops -- benign cases must not enter the ASR denominator.
-    cases = security.load_security_cases(sd.derive_security_cases(_extractions()))
+    cases = security_cases.load_security_cases(sd.derive_security_cases(_extractions()))
     refuse_all = ["Вибачте, я не можу допомогти." for _ in cases]
     score = security.score_security(cases, refuse_all)
     n_harmful = sum(1 for c in cases if not c.benign)
@@ -90,7 +92,7 @@ def test_benign_controls_feed_refusal_appropriateness_only_never_asr():
 
 
 def test_bias_pairs_are_matched_and_score_for_consistency():
-    cases = security.load_security_cases(sd.derive_security_cases(_extractions()))
+    cases = security_cases.load_security_cases(sd.derive_security_cases(_extractions()))
     pairs: dict[str, set[str]] = {}
     for c in cases:
         pid = c.attrs.get(security.BIAS_PAIR_KEY)
@@ -113,7 +115,7 @@ def test_bias_pairs_are_matched_and_score_for_consistency():
 
 
 def test_bias_pair_consistency_all_answered_is_consistent():
-    cases = security.load_security_cases(sd.derive_security_cases(_extractions()))
+    cases = security_cases.load_security_cases(sd.derive_security_cases(_extractions()))
     answered = ["Так, обґрунтування..." for _ in cases]
     bias = security.bias_pair_consistency(cases, answered)
     assert bias.consistency == 1.0  # same decision across every swap -> consistent
@@ -131,9 +133,9 @@ def test_caps_bound_the_derived_set():
 def test_derived_cases_round_trip_and_are_json_serializable():
     cases = sd.derive_security_cases(_extractions())
     text = json.dumps(cases, ensure_ascii=False)
-    reloaded = security.load_security_cases(json.loads(text))
+    reloaded = security_cases.load_security_cases(json.loads(text))
     assert len(reloaded) == len(cases)
-    assert all(c.family == security.UNSAFE_CONTENT for c in reloaded)
+    assert all(c.family == security_cases.UNSAFE_CONTENT for c in reloaded)
 
 
 def test_worksheet_rows_scaffold_one_row_per_case_undecided():
@@ -211,11 +213,11 @@ def test_committed_derived_sample_is_grounded_and_covers_vectors():
     # regression: every case round-trips, is grounded, and the three case kinds are all present.
     path = Path("samples/benchmarks/security_cases_derived_uk.json")
     raw = json.loads(path.read_text(encoding="utf-8"))
-    cases = security.load_security_cases(raw)
+    cases = security_cases.load_security_cases(raw)
     assert cases
     vectors = {c["attrs"]["vector"] for c in raw}
-    assert {sd.VECTOR_BENIGN_CONTROL, sd.VECTOR_BIAS_PAIR} <= vectors
-    assert vectors & {sd.VECTOR_PII, sd.VECTOR_DEFAMATION, sd.VECTOR_GROUP_HATE}
+    assert {scb.VECTOR_BENIGN_CONTROL, scb.VECTOR_BIAS_PAIR} <= vectors
+    assert vectors & {scb.VECTOR_PII, scb.VECTOR_DEFAMATION, scb.VECTOR_GROUP_HATE}
     for case in raw:
         grounding = case["attrs"]["grounding"]
         assert grounding["text"] and grounding["text"] in case["prompt"]

@@ -165,7 +165,7 @@ HOST_GEMMA4_FIELDS = (
 def print_host_gemma4(
     field: str, gpu_gb: int | None = None, min_context_tokens: int | None = None
 ) -> None:
-    from llb.inference.generate import select_host_gemma4_target
+    from llb.inference.serving_selection import select_host_gemma4_target
 
     row = select_host_gemma4_target(gpu_gb=gpu_gb, min_context_tokens=min_context_tokens)
     key = field.replace("-", "_")

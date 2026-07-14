@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
 from llb.core.contracts import JsonObject
 from llb.eval import common as eval_common
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 
 # Miss classes (each miss lands in exactly ONE, decided in precedence order; see classify_case).
 MISS_RETRIEVAL = "retrieval_miss"

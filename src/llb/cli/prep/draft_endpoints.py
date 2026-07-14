@@ -29,7 +29,7 @@ def _vllm_host_for_port(default_host: str, port: int) -> str:
 
 def _launch_draft_vllm(model: str, options: _VllmLaunchOptions, log_dir: Path) -> tuple[Any, str]:
     from llb.backends.vllm import VllmLauncher
-    from llb.core.config import DEFAULT_VLLM_HOST
+    from llb.core.config_validation import DEFAULT_VLLM_HOST
 
     host = _vllm_host_for_port(DEFAULT_VLLM_HOST, options.port)
     launcher = VllmLauncher(

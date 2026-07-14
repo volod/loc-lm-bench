@@ -1,6 +1,6 @@
 """Ukrainian prompt templates for DeepEval G-Eval metrics."""
 
-from llb.prompts import render_text, render_text_list, render_text_map
+from llb.prompts.registry import render_text, render_text_list, render_text_map
 
 UA_FAITHFULNESS_STEPS = render_text_list("scoring.judge.faithfulness_steps")
 UA_ANSWER_RELEVANCY_STEPS = render_text_list("scoring.judge.relevancy_steps")

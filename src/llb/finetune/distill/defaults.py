@@ -15,7 +15,7 @@ from llb.finetune.distill.model import (
 )
 from llb.finetune.trainer import train_adapter
 from llb.goldset.schema import GoldItem
-from llb.scoring.aggregate import bootstrap_mean_ci
+from llb.scoring.leaderboard import bootstrap_mean_ci
 
 
 def _default_trainer_fn(config: RunConfig, trainer: str) -> TrainerFn:

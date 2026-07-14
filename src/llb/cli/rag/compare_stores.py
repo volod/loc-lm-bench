@@ -42,7 +42,8 @@ def compare_vector_stores_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import build_vector_store_comparison, compare_retrieval, format_comparison
+    from llb.rag.compare import compare_retrieval, format_comparison
+    from llb.rag.comparison_builders import build_vector_store_comparison
 
     cfg = load_config(
         config,
@@ -197,10 +198,9 @@ def compare_embeddings_cmd(
     from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.rag.embedding_bakeoff import (
         DEFAULT_LOCAL_CANDIDATES,
-        format_report,
-        render_markdown,
         run_bakeoff,
     )
+    from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
     cfg = load_config(
         config,

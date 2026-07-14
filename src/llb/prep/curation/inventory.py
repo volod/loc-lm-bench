@@ -17,11 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from llb.prep.frontier import ground_span
-from llb.prep.curation.common import (
-    CurationReport,
-    load_json_documents,
-    normalize_text,
-)
+from llb.prep.curation.common import CurationReport
+from llb.prep.curation.input import load_json_documents, normalize_text
 from llb.prep.ontology.entity_types import normalize_entity_type
 
 _LOG = logging.getLogger(__name__)

@@ -1,6 +1,7 @@
 import pytest
 
 from llb.scoring import text_analysis as ta
+from llb.scoring import text_analysis_labels as ta_labels
 
 
 def make_similarity(table):
@@ -15,15 +16,15 @@ def make_similarity(table):
 ZERO_SIM = make_similarity({})
 
 
-def label(label_id, value, kind=ta.TOPIC, aliases=(), scoring=""):
-    return ta.PlantedLabel(
+def label(label_id, value, kind=ta_labels.TOPIC, aliases=(), scoring=""):
+    return ta_labels.PlantedLabel(
         label_id=label_id, kind=kind, value=value, aliases=tuple(aliases), scoring=scoring
     )
 
 
 def test_normalize_surface():
-    assert ta.normalize_surface("  Київ,  Столиця.  ") == "київ, столиця"
-    assert ta.normalize_surface("«Україна»") == "україна"
+    assert ta_labels.normalize_surface("  Київ,  Столиця.  ") == "київ, столиця"
+    assert ta_labels.normalize_surface("«Україна»") == "україна"
 
 
 def test_exact_match_full_credit():
@@ -43,7 +44,7 @@ def test_alias_match():
 
 def test_cosine_full_credit_band():
     sim = make_similarity({("прибуток зріс", "Зростання доходу"): 0.9})
-    labels = [label("L1", "Зростання доходу", kind=ta.TREND)]
+    labels = [label("L1", "Зростання доходу", kind=ta_labels.TREND)]
     score = ta.score_subtask(["прибуток зріс"], labels, sim)
     assert score["matched"] == [("L1", 1.0)]
     assert score["f1"] == 1.0
@@ -51,17 +52,17 @@ def test_cosine_full_credit_band():
 
 def test_cosine_partial_credit_band():
     sim = make_similarity({("прибуток", "Зростання доходу"): 0.75})
-    labels = [label("L1", "Зростання доходу", kind=ta.TREND)]
+    labels = [label("L1", "Зростання доходу", kind=ta_labels.TREND)]
     score = ta.score_subtask(["прибуток"], labels, sim)
-    assert score["matched"] == [("L1", ta.PARTIAL_CREDIT)]
-    assert score["recall"] == ta.PARTIAL_CREDIT
-    assert score["precision"] == ta.PARTIAL_CREDIT
-    assert score["f1"] == ta.PARTIAL_CREDIT
+    assert score["matched"] == [("L1", ta_labels.PARTIAL_CREDIT)]
+    assert score["recall"] == ta_labels.PARTIAL_CREDIT
+    assert score["precision"] == ta_labels.PARTIAL_CREDIT
+    assert score["f1"] == ta_labels.PARTIAL_CREDIT
 
 
 def test_below_partial_threshold_no_match():
     sim = make_similarity({("щось", "Зростання доходу"): 0.5})
-    labels = [label("L1", "Зростання доходу", kind=ta.TREND)]
+    labels = [label("L1", "Зростання доходу", kind=ta_labels.TREND)]
     score = ta.score_subtask(["щось"], labels, sim)
     assert score["matched"] == []
     assert score["f1"] == 0.0
@@ -87,21 +88,21 @@ def test_hallucinated_prediction_penalizes_precision():
 
 def test_score_document_objective_headline_excludes_judged():
     labels = [
-        label("T1", "економіка", kind=ta.TOPIC),
-        label("I1", "ринок перегрітий", kind=ta.INSIGHT),
+        label("T1", "економіка", kind=ta_labels.TOPIC),
+        label("I1", "ринок перегрітий", kind=ta_labels.INSIGHT),
     ]
-    preds = {ta.TOPIC: ["економіка"], ta.INSIGHT: ["ринок перегрітий"]}
+    preds = {ta_labels.TOPIC: ["економіка"], ta_labels.INSIGHT: ["ринок перегрітий"]}
     result = ta.score_document(preds, labels, ZERO_SIM)
     assert result["objective_score"] == 1.0  # only the topic sub-task feeds the headline
     assert result["n_objective_subtasks"] == 1
-    assert set(result["subtasks"]) == {ta.TOPIC, ta.INSIGHT}
-    assert result["subtasks"][ta.INSIGHT]["objective"] is False
+    assert set(result["subtasks"]) == {ta_labels.TOPIC, ta_labels.INSIGHT}
+    assert result["subtasks"][ta_labels.INSIGHT]["objective"] is False
 
 
 def test_contradiction_paired_spans_require_both_sides():
-    label = ta.PlantedLabel(
+    label = ta_labels.PlantedLabel(
         label_id="c0",
-        kind=ta.CONTRADICTION,
+        kind=ta_labels.CONTRADICTION,
         value="суперечність про дохід",
         attrs={"spans": ["дохід зріс", "дохід впав"]},
     )
@@ -113,7 +114,9 @@ def test_contradiction_paired_spans_require_both_sides():
 
 
 def test_contradiction_without_spans_falls_back_to_surface():
-    label = ta.PlantedLabel(label_id="c1", kind=ta.CONTRADICTION, value="внутрішня суперечність")
+    label = ta_labels.PlantedLabel(
+        label_id="c1", kind=ta_labels.CONTRADICTION, value="внутрішня суперечність"
+    )
     sim = lambda _a, _b: 0.0  # noqa: E731
     assert ta._credit("внутрішня суперечність", label, sim) == 1.0
 
@@ -121,13 +124,13 @@ def test_contradiction_without_spans_falls_back_to_surface():
 def test_from_record_round_trip():
     record = {
         "label_id": "L1",
-        "kind": ta.TREND,
+        "kind": ta_labels.TREND,
         "value": "Зростання доходу",
         "aliases": ["дохід зріс"],
         "attrs": {"subject": "дохід", "direction": "up"},
         "scoring": "objective",
     }
-    planted = ta.PlantedLabel.from_record(record)
+    planted = ta_labels.PlantedLabel.from_record(record)
     assert planted.surfaces == ("Зростання доходу", "дохід зріс")
     assert planted.attrs["direction"] == "up"
     assert planted.is_objective is True
@@ -135,20 +138,20 @@ def test_from_record_round_trip():
 
 def test_load_planted_labels_rejects_unknown_kind():
     with pytest.raises(ValueError, match="unknown text-analysis label kind"):
-        ta.load_planted_labels([{"label_id": "x", "kind": "bogus", "value": "v"}])
+        ta_labels.load_planted_labels([{"label_id": "x", "kind": "bogus", "value": "v"}])
 
 
 def test_judged_kind_objective_floor_still_scored():
-    labels = [label("N1", "піднесення і занепад", kind=ta.NARRATIVE)]
+    labels = [label("N1", "піднесення і занепад", kind=ta_labels.NARRATIVE)]
     score = ta.score_subtask(["піднесення і занепад"], labels, ZERO_SIM)
     assert score["objective"] is False
     assert score["recall"] == 1.0  # objective floor is computed even for judged kinds
 
 
 def trend_label(label_id, value, direction, aliases=()):
-    return ta.PlantedLabel(
+    return ta_labels.PlantedLabel(
         label_id=label_id,
-        kind=ta.TREND,
+        kind=ta_labels.TREND,
         value=value,
         aliases=tuple(aliases),
         attrs={"direction": direction},
@@ -156,10 +159,10 @@ def trend_label(label_id, value, direction, aliases=()):
 
 
 def test_direction_of_lexicon():
-    assert ta.direction_of("частка ВДЕ зросла") == ta.DIRECTION_UP
-    assert ta.direction_of("ціни впали") == ta.DIRECTION_DOWN
-    assert ta.direction_of("показник стабільний") == ta.DIRECTION_FLAT
-    assert ta.direction_of("просто текст") is None
+    assert ta_labels.direction_of("частка ВДЕ зросла") == ta_labels.DIRECTION_UP
+    assert ta_labels.direction_of("ціни впали") == ta_labels.DIRECTION_DOWN
+    assert ta_labels.direction_of("показник стабільний") == ta_labels.DIRECTION_FLAT
+    assert ta_labels.direction_of("просто текст") is None
 
 
 def test_trend_direction_conflict_zeroes_surface_match():

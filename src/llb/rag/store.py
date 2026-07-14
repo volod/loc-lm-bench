@@ -1,33 +1,20 @@
-"""RAG store: chunked corpus + pinned embedding + FAISS index, retrievable by question.
+"""Chunked dense, parent-child, and hybrid retrieval over source-span-preserving records.
 
-Three retrieval modes:
-  - flat:          index `chunk_size` chunks; retrieve returns those chunks.
-  - parent_child:  index small `child_chunk_size` children for precise matching, but return
-                   their larger PARENT chunk for generation context (retrieve a child ->
-                   surface its parent). Precision from the child, context from the parent.
-  - hybrid:        index like `flat`, but ALSO build a lexical BM25 index over the same
-                   offset-exact chunks and fuse the dense + lexical rankings with weighted
-                   reciprocal-rank fusion at query time (hybrid-retrieval-uk). Fusion happens
-                   inside `retrieve`, so every dense `VectorIndex` backend gains hybrid
-                   identically.
-
-`retrieve` returns chunk dicts (doc_id + char offsets) in every mode, so recall@k / MRR by
-SOURCE-SPAN overlap score directly against the gold labels. The optional `chunk_filter`
-predicate (see `llb.rag.filters`) restricts candidates BEFORE fusion/ranking.
+Every mode returns offset-exact chunks. Parent-child retrieval indexes precise children and
+surfaces their generation-sized parents; hybrid retrieval fuses dense and lexical rankings before
+an optional candidate filter.
 """
 
 import json
 from pathlib import Path
 from typing import Any, cast
 
-from llb.core.config import (
+from llb.core.config_validation import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_FUSION_CANDIDATES,
     DEFAULT_FUSION_WEIGHT,
 )
 from llb.core.contracts import ChunkRecord, RagStoreMeta
-from llb.rag.chunking.corpus import chunk_corpus
-from llb.rag.chunking.dispatch import chunk_spans
 from llb.rag.embedding import Embedder
 from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
@@ -41,99 +28,17 @@ from llb.rag.vector_index import (
     load_vector_index,
     save_vector_index,
 )
-
-CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
-PARENTS_FILE = "parents.jsonl"  # the parent docstore (parent_child mode only)
-META_FILE = "store_meta.json"
-LEXICAL_FILE = "lexical_index.json"  # BM25 postings beside the vector index (hybrid mode)
-MODE_HYBRID = "hybrid"
-
-
-def _children_to_parents(
-    child_hits: list[ChunkRecord], parent_by_id: dict[str, ChunkRecord]
-) -> list[ChunkRecord]:
-    """Map ranked child hits to their unique parents (preserving rank). Pure + testable."""
-    out: list[ChunkRecord] = []
-    seen: set[str] = set()
-    for child in child_hits:
-        pid = child.get("parent_id")
-        if pid is None or pid in seen or pid not in parent_by_id:
-            continue
-        seen.add(pid)
-        parent = cast(ChunkRecord, dict(parent_by_id[pid]))
-        parent["retrieval_score"] = child.get("retrieval_score")
-        parent["rank"] = len(out) + 1
-        child_id = child.get("chunk_id")
-        if child_id is not None:
-            parent["matched_child_id"] = child_id
-        out.append(parent)
-    return out
-
-
-def _build_children(
-    parents: list[ChunkRecord],
-    strategy: str,
-    child_size: int,
-    overlap: int,
-    embedder: Any,
-) -> list[ChunkRecord]:
-    sem = embedder if strategy == "semantic" else None
-    children: list[ChunkRecord] = []
-    for parent in parents:
-        text = parent["text"]
-        for j, (start, end, meta) in enumerate(
-            chunk_spans(text, strategy, child_size, overlap, sem)
-        ):
-            metadata = {**(parent.get("metadata") or {}), **(meta or {})}
-            children.append(
-                {
-                    "doc_id": parent["doc_id"],
-                    "chunk_id": f"{parent['chunk_id']}::c{j:03d}",
-                    "char_start": parent["char_start"] + start,
-                    "char_end": parent["char_start"] + end,
-                    "text": text[start:end],
-                    "parent_id": parent["chunk_id"],
-                    "strategy": strategy,
-                    "size": child_size,
-                    "metadata": metadata,
-                }
-            )
-    return children
-
-
-def _validate_build_params(mode: str, strategy: str, child_size: int) -> None:
-    """Reject retrieval mode / strategy / child-size combinations a store cannot support."""
-    if mode not in ("flat", "parent_child", MODE_HYBRID):
-        raise ValueError(f"unknown retrieval mode: {mode}")
-    if strategy == "late" and mode == "parent_child":
-        raise ValueError(
-            "the 'late' strategy supports flat mode only (children re-chunk parent "
-            "slices, so their vectors could not pool over whole-document tokens)"
-        )
-    if child_size <= 0:
-        raise ValueError("child_size must be > 0")
-
-
-def _indexed_units(
-    corpus_root: Path,
-    strategy: str,
-    size: int,
-    overlap: int,
-    mode: str,
-    child_size: int,
-    embedder: Any,
-) -> tuple[list[ChunkRecord], list[ChunkRecord] | None]:
-    """(indexed, parents): the units to embed, plus the parent docstore in parent_child mode."""
-    sem = embedder if strategy == "semantic" else None
-    units = chunk_corpus(corpus_root, strategy, size, overlap, sem)
-    if not units:
-        raise ValueError(f"no chunks produced from corpus at {corpus_root}")
-    if mode != "parent_child":
-        return units, None
-    children = _build_children(units, strategy, child_size, overlap, embedder)
-    if not children:
-        raise ValueError("parent_child mode produced no child chunks")
-    return children, units
+from llb.rag.store_build import (
+    CHUNKS_FILE,
+    LEXICAL_FILE,
+    META_FILE,
+    MODE_HYBRID,
+    PARENTS_FILE,
+    _children_to_parents,
+    _indexed_units,
+    _validate_build_params,
+)
+from llb.rag.store_io import _read_jsonl, _renumber, _write_jsonl
 
 
 class RagStore:
@@ -339,51 +244,3 @@ class RagStore:
         if meta.get("mode") == "parent_child":
             parents = _read_jsonl(index_dir / PARENTS_FILE)
         return cls(chunks, index, embedder, meta, parents=parents, lexical=lexical)
-
-
-def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | None:
-    """Return the store's built embedder id when it differs from `expected_model`, else None.
-
-    A store is embedded and queried by the SAME encoder (recorded in `store_meta.json`), so a
-    config that names a different `embedding_model` than the store on disk would silently score
-    the wrong encoder. Callers refuse the run with this signal (embedding bake-off fingerprint).
-    """
-    built = str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
-    return built if built != expected_model else None
-
-
-def stale_store_message(
-    meta: RagStoreMeta, corpus_root: Path | str, index_dir: Path | str
-) -> str | None:
-    """Return a rebuild message when the store fingerprint differs from the current corpus."""
-    built = meta.get("corpus_fingerprint")
-    if not isinstance(built, str):
-        return None
-    current = corpus_fingerprint(corpus_root)
-    if built == current:
-        return None
-    return (
-        f"[rag] stale store at {index_dir}: corpus manifest fingerprint changed. "
-        "Rebuild with `llb build-index --corpus-root <corpus-dir>` so removed sources and "
-        "governance metadata propagate into chunks."
-    )
-
-
-def _renumber(hits: list[ChunkRecord]) -> list[ChunkRecord]:
-    """Reassign contiguous 1-based ranks after a filter removed candidates."""
-    for rank, hit in enumerate(hits, 1):
-        hit["rank"] = rank
-    return hits
-
-
-def _write_jsonl(rows: list[ChunkRecord], path: Path) -> None:
-    with path.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def _read_jsonl(path: Path) -> list[ChunkRecord]:
-    rows = [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
-    return cast(list[ChunkRecord], rows)

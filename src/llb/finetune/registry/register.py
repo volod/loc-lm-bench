@@ -11,7 +11,7 @@ from llb.finetune.registry.staleness import (
     goldset_digest_for,
     retrieval_fingerprint_for,
 )
-from llb.finetune.trainer import adapter_label, load_adapter_manifest
+from llb.finetune.adapter_manifest import adapter_label, load_adapter_manifest
 
 _LOG = logging.getLogger(__name__)
 

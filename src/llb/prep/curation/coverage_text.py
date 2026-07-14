@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from llb.core.fsutil import atomic_write_text
-from llb.prep.curation.common import load_json_documents
+from llb.prep.curation.input import load_json_documents
 
 Formatter = Callable[[Any], list[str]]
 

@@ -12,7 +12,7 @@ from llb.core.config import RunConfig
 from llb.core.contracts import CaseScoreRow, LeaderboardRow, RunMetrics, TelemetryReport
 from llb.eval import common as eval_common
 from llb.executor.runner_backend import _vram_reader
-from llb.scoring.aggregate import ModelResult, rank_results
+from llb.scoring.leaderboard import ModelResult, rank_results
 from llb.scoring.judge.model import judge_is_trusted
 
 
@@ -111,7 +111,8 @@ def _collect_optional_telemetry(
 ) -> TelemetryReport | None:
     if not config.measure_telemetry:
         return None
-    from llb.backends.telemetry import collect_telemetry, nvidia_smi_power_reader
+    from llb.backends.telemetry import collect_telemetry
+    from llb.backends.telemetry_samplers import nvidia_smi_power_reader
 
     return collect_telemetry(
         launcher,

@@ -18,7 +18,7 @@ from llb.core.contracts import (
     RunPaths,
     ToolDef,
 )
-from llb.scoring.aggregate import ModelResult
+from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
 
 METHOD = "agentic"

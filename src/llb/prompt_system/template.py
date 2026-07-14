@@ -20,7 +20,7 @@ from llb.prompt_system.budget import (
     fit_sections,
 )
 from llb.prompt_system.corpus import CorpusPackage, DocMetadata, Passage
-from llb.prompts import render_text, render_text_map
+from llb.prompts.registry import render_text, render_text_map
 
 # Metadata density: how much per-document summary the attached context carries.
 METADATA_NONE = "none"

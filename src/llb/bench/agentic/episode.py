@@ -21,9 +21,9 @@ from llb.bench.agentic.success import check_success
 from llb.bench.common import LLMComplete, mean
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
 from llb.core.contracts import AgenticCaseRow, ToolDef
-from llb.prompts import render_text
-from llb.scoring.aggregate import bootstrap_mean_ci
-from llb.scoring.tooling import parse_tool_call
+from llb.prompts.registry import render_text
+from llb.scoring.leaderboard import bootstrap_mean_ci
+from llb.scoring.tool_calls import parse_tool_call
 
 
 def build_agent_prompt(
@@ -110,7 +110,7 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
 def _resolve_harness(harness_name: str, harness: Harness | None) -> Harness:
     if harness is not None:
         return harness
-    from llb.bench.harness import get_harness
+    from llb.bench.harness.registry import get_harness
 
     return get_harness(harness_name)
 

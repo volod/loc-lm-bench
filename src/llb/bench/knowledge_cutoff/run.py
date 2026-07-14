@@ -8,10 +8,9 @@ from typing import Any
 from llb.bench.common import (
     LLMComplete,
     Mirror,
-    ThroughputMeter,
-    complete_all,
     persist_category_run,
 )
+from llb.bench.common_backend import ThroughputMeter, complete_all
 from llb.bench.knowledge_cutoff.data import UPSTREAM_PROJECT, LoadedEvents
 from llb.bench.knowledge_cutoff.fit import DEFAULT_SEED, DEFAULT_TRIALS, DecayFit, fit_decay
 from llb.bench.knowledge_cutoff.probe import parse_answer, prepare_probe

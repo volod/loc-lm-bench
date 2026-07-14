@@ -14,7 +14,7 @@ def default_launcher(plan: ServePlan, config: RunConfig) -> BackendLauncher:
     """Build a backend launcher from a direct-LoRA or merged-artifact plan."""
     if plan.backend == BACKEND_VLLM:
         from llb.backends.vllm import VllmLauncher
-        from llb.finetune.trainer import adapter_lora_rank
+        from llb.finetune.adapter_manifest import adapter_lora_rank
 
         return VllmLauncher(
             plan.served_model,
@@ -34,7 +34,8 @@ def default_launcher(plan: ServePlan, config: RunConfig) -> BackendLauncher:
         from llb.backends.ollama import OllamaLauncher
 
         return OllamaLauncher(plan.served_model, host=config.ollama_host)
-    from llb.backends.llamacpp import LlamaCppLauncher, resolve_llama_server_binary
+    from llb.backends.llamacpp import LlamaCppLauncher
+    from llb.backends.llamacpp_command import resolve_llama_server_binary
 
     return LlamaCppLauncher(
         plan.served_model,

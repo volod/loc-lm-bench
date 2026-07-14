@@ -5,7 +5,7 @@ from pathlib import Path
 
 from llb.core.contracts import JsonObject
 from llb.core.paths import resolve_project_path
-from llb.finetune.trainer import ADAPTER_DIGEST_SHORT_CHARS
+from llb.finetune.adapter_manifest import ADAPTER_DIGEST_SHORT_CHARS
 
 ADAPTERS_METHOD = "adapters"
 REGISTRY_FILENAME = "registry.jsonl"

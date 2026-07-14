@@ -15,16 +15,17 @@ from typing import Any
 from llb.bench.common import (
     LLMComplete,
     Mirror,
-    ThroughputMeter,
     category_result,
     persist_category_run,
     render_board,
     verified_data_config,
 )
+from llb.bench.common_backend import ThroughputMeter
 from llb.core.contracts import BoardRow, RunMetrics, RunPaths, StructuredCaseRow
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 from llb.scoring import structured
-from llb.scoring.aggregate import TIER_STRUCTURED, ModelResult, bootstrap_mean_ci
+from llb.scoring.aggregate import TIER_STRUCTURED
+from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)
 

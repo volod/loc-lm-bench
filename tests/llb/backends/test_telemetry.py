@@ -1,13 +1,8 @@
 """Telemetry: throughput protocol, tokenizer efficiency, VRAM peak (fakes; no GPU)."""
 
 from llb.backends.base import ChatResult
-from llb.backends.telemetry import (
-    PowerSampler,
-    VramSampler,
-    collect_telemetry,
-    measure_throughput,
-    tokens_per_char,
-)
+from llb.backends.telemetry import collect_telemetry, measure_throughput, tokens_per_char
+from llb.backends.telemetry_samplers import PowerSampler, VramSampler
 
 
 def test_tokens_per_char():

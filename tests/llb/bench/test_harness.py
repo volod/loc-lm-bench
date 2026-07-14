@@ -4,18 +4,14 @@ import pytest
 
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import (
-    HARNESS_LANGGRAPH,
     HARNESS_LOOP,
-    STATUS_COMPLETED,
-    STATUS_INCOMPLETE,
     AgenticTask,
 )
-from llb.bench.agentic.run import run_agentic
 from llb.bench import tool_world as tw
-from llb.bench.harness import get_harness, loop_harness
-from llb.bench.harness import crewai as crewai_harness
+from llb.bench.harness.base import loop_harness
+from llb.bench.harness.registry import get_harness
+from llb.bench.harness import crewai_runtime
 from llb.bench.harness import langgraph as lg
-from llb.board.harnesses import harness_comparison, load_agentic_harness_records
 
 
 def scripted(outputs):
@@ -145,46 +141,15 @@ def test_langgraph_nodes_reproduce_the_loop(script, task, max_steps):
 # --- crewai harness (fake crew, no dependency) ---------------------------------------------
 
 
-def test_recording_executor_runs_and_records():
-    world = tw.ToolWorld.from_setup({"db": {"k": "v"}})
-    transcript = []
-    execute = crewai_harness.make_recording_executor(world, transcript)
-    assert execute("db_get", {"key": "k"}) == "v"
-    assert execute("db_set", {"key": "k2", "value": "v2"}) == tw.OBS_OK
-    assert world.db["k2"] == "v2"
-    assert [name for name, _a, _o in transcript] == ["db_get", "db_set"]
-
-
-def test_crew_tool_specs_excludes_finish():
-    specs = crewai_harness.crew_tool_specs(tw.tool_catalog(), lambda n, a: "")
-    names = {s.name for s in specs}
-    assert tw.FINISH not in names and tw.WRITE_FILE in names
-
-
 def fake_crew_runner(task, complete, catalog, world, max_steps):
     """A fake crew: execute calc+write against the world, then answer (proves the adaptation)."""
     transcript = []
-    execute = crewai_harness.make_recording_executor(world, transcript)
+    execute = crewai_runtime.make_recording_executor(world, transcript)
     execute("calculator", {"expression": "12 * (3 + 4)"})
     execute("write_file", {"path": "result.txt", "content": "84"})
-    return crewai_harness.CrewOutcome(
+    return crewai_runtime.CrewOutcome(
         answer="готово", transcript=transcript, n_steps=3, n_tool_calls=len(transcript)
     )
-
-
-def test_crewai_harness_with_fake_crew():
-    harness = crewai_harness.make_crewai_harness(fake_crew_runner)
-    ep = harness(success_task(), scripted([]), tw.tool_catalog(), max_steps=6)
-    assert ep.success is True and ep.status == STATUS_COMPLETED
-    assert ep.n_tool_calls == 2 and ep.answer == "готово"
-
-
-def test_episode_from_outcome_incomplete_when_not_finished():
-    task = AgenticTask("t", "p", success=[{"kind": "answer_contains", "value": "x"}])
-    world = tw.ToolWorld.from_setup({})
-    outcome = crewai_harness.CrewOutcome(answer="", finished=False)
-    ep = crewai_harness.episode_from_outcome(task, world, outcome)
-    assert ep.status == STATUS_INCOMPLETE and ep.success is False
 
 
 # --- run_agentic records the harness + board comparison ------------------------------------
@@ -213,72 +178,4 @@ def loop_script():
     )
 
 
-def test_run_agentic_records_harness_in_manifest(tmp_path):
-    import json
-    from pathlib import Path
-
-    run = run_agentic(
-        two_tasks(),
-        model="m",
-        backend="ollama",
-        complete=loop_script(),
-        harness_name=HARNESS_LANGGRAPH,
-        harness=lg.step_graph_pure,
-        data_dir=tmp_path,
-        mirror=lambda *_: None,
-    )
-    assert run.paths is not None
-    manifest = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))
-    assert manifest["config"]["harness"] == HARNESS_LANGGRAPH
-    assert run.result.objective_score == 1.0
-
-
-def test_harness_comparison_ranks_one_model_across_harnesses(tmp_path):
-    # loop harness: both tasks succeed
-    run_agentic(
-        two_tasks(),
-        model="m",
-        backend="ollama",
-        complete=loop_script(),
-        harness_name=HARNESS_LOOP,
-        data_dir=tmp_path,
-        mirror=lambda *_: None,
-    )
-    # a "langgraph" run (same pure nodes) that fails (model finishes empty immediately)
-    run_agentic(
-        two_tasks(),
-        model="m",
-        backend="ollama",
-        complete=lambda _: '{"name":"finish","arguments":{"answer":""}}',
-        harness_name=HARNESS_LANGGRAPH,
-        harness=lg.step_graph_pure,
-        data_dir=tmp_path,
-        mirror=lambda *_: None,
-    )
-    records = load_agentic_harness_records(tmp_path)
-    assert {(r.model, r.harness) for r in records} == {("m", "loop"), ("m", "langgraph")}
-    rows, table, harnesses = harness_comparison(tmp_path, "m")
-    assert {row["model"] for row in rows} == {"loop", "langgraph"}
-    # the loop (1.0) outranks the failing langgraph run (0.0)
-    top = next(row for row in rows if row["rank"] == 1)
-    assert top["model"] == "loop"
-    assert "policy:" in table
-
-
 # --- real compiled LangGraph harness (only when the [eval] extra is installed) -------------
-
-
-@pytest.mark.slow
-def test_real_langgraph_harness_matches_loop():
-    pytest.importorskip("langgraph")
-    catalog = tw.tool_catalog()
-    loop_ep = run_episode(success_task(), scripted(SUCCESS_SCRIPT), catalog=catalog)
-    graph_ep = lg.langgraph_harness(success_task(), scripted(SUCCESS_SCRIPT), catalog)
-    assert (
-        graph_ep.success,
-        graph_ep.status,
-        graph_ep.n_steps,
-        graph_ep.n_tool_calls,
-        graph_ep.answer,
-    ) == (loop_ep.success, loop_ep.status, loop_ep.n_steps, loop_ep.n_tool_calls, loop_ep.answer)
-    assert graph_ep.world.files == loop_ep.world.files

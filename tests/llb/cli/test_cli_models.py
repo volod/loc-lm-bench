@@ -5,7 +5,7 @@ import typer
 
 from llb.cli.models import grid, prep
 from llb.cli.helpers import load_config
-from llb.executor.isolation import cell_key
+from llb.executor.sweep_cells import cell_key
 
 
 def test_parse_rag_grid_default_and_values() -> None:
@@ -92,9 +92,9 @@ def test_grid_cells_rerank_candidates_toggle_reranker() -> None:
 def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> None:
     # patch the resolver itself: it prefers the venv-local `vllm` CLI over PATH, so patching
     # shutil.which alone still finds the real binary on CUDA hosts
-    import llb.backends.vllm as vllm_backend
+    import llb.backends.vllm_command as vllm_command
 
-    monkeypatch.setattr(vllm_backend, "vllm_executable", lambda: None)
+    monkeypatch.setattr(vllm_command, "vllm_executable", lambda: None)
 
     ready, reason = grid._local_backend_ready("vllm", tmp_path)
 

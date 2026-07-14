@@ -9,7 +9,7 @@ from llb.core.contracts import JsonObject, ScreenReport
 from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
-from llb.scoring.aggregate import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
+from llb.scoring.leaderboard import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
 from llb.board.io import mean_or_none, read_case_objectives, read_case_series, read_case_splits
 

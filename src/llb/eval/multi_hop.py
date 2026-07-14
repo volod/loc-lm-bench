@@ -19,25 +19,21 @@ from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
-from llb.eval.common import RETRIEVAL_MISS, classify_response, format_context
-from llb.prompts import render_chat, render_text
+from llb.core.contracts import ChunkRecord, SourceSpanRecord, UsageRecord
+from llb.eval.common import RETRIEVAL_MISS, classify_response
+from llb.eval.multi_hop_prompts import (
+    CONTINUE,
+    DEFAULT_MAX_HOPS,
+    STOP,
+    _chunk_key,
+    build_answer_messages,
+    build_controller_messages,
+    parse_controller,
+)
 
 # Controller decisions.
-CONTINUE = "continue"
-STOP = "stop"
 
 # Controller protocol markers (UA). The controller replies with one of these on its first line.
-DONE_MARKER = "ГОТОВО"  # enough gathered -> synthesize the answer
-NEXT_MARKER = "ДАЛІ:"  # need more -> the text after the colon is the next sub-query
-
-DEFAULT_MAX_HOPS = 3
-
-CONTROLLER_SYSTEM_PROMPT = render_text(
-    "eval.multi_hop.controller_system",
-    {"done_marker": DONE_MARKER, "next_marker": NEXT_MARKER},
-)
-ANSWER_SYSTEM_PROMPT = render_text("eval.multi_hop.answer_system")
 
 
 class MultiHopState(TypedDict, total=False):
@@ -56,55 +52,6 @@ class MultiHopState(TypedDict, total=False):
     n_hops: int
     n_model_calls: int
     total_completion_tokens: int
-
-
-def parse_controller(text: str) -> tuple[str, str]:
-    """Map a controller reply to (decision, next_subquery).
-
-    `DONE_MARKER` -> (STOP, ""); `NEXT_MARKER <q>` -> (CONTINUE, q). Anything else (including an
-    empty reply) is treated as STOP so a malformed controller turn ends the loop safely rather
-    than spinning; `max_hops` is the hard bound regardless.
-    """
-    stripped = (text or "").strip()
-    if not stripped:
-        return STOP, ""
-    upper = stripped.upper()
-    idx = upper.find(NEXT_MARKER)
-    if idx >= 0:
-        remainder = stripped[idx + len(NEXT_MARKER) :].strip().splitlines()
-        subquery = remainder[0].strip() if remainder else ""
-        if subquery:
-            return CONTINUE, subquery
-    return STOP, ""
-
-
-def _chunk_key(chunk: ChunkRecord) -> str:
-    """Stable identity for de-duplicating chunks gathered across hops."""
-    chunk_id = chunk.get("chunk_id")
-    if chunk_id:
-        return str(chunk_id)
-    return f"{chunk.get('doc_id', '?')}:{chunk.get('char_start')}:{chunk.get('char_end')}"
-
-
-def build_controller_messages(question: str, gathered: list[ChunkRecord]) -> list[ChatMessage]:
-    facts = format_context(gathered) if gathered else "(поки що нічого не знайдено)"
-    return render_chat(
-        "eval.multi_hop.controller_chat",
-        {
-            "done_marker": DONE_MARKER,
-            "next_marker": NEXT_MARKER,
-            "question": question,
-            "facts": facts,
-        },
-    )
-
-
-def build_answer_messages(question: str, gathered: list[ChunkRecord]) -> list[ChatMessage]:
-    facts = format_context(gathered)
-    return render_chat(
-        "eval.multi_hop.answer_chat",
-        {"question": question, "facts": facts},
-    )
 
 
 def make_retrieve_node(store: Any, k: int) -> Callable[[MultiHopState], MultiHopState]:

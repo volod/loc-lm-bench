@@ -11,7 +11,8 @@ from llb.scoring.external_rag_common import (
     ExternalRagResult,
 )
 from llb.scoring.external_rag_report import write_report
-from llb.scoring.external_rag_sources import load_source_map, summarize_source_audit
+from llb.scoring.external_rag_source_map import load_source_map
+from llb.scoring.external_rag_sources import summarize_source_audit
 from llb.scoring.external_rag_summary import summarize
 
 

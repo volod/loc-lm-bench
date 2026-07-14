@@ -27,7 +27,7 @@ from llb.prep.ontology.constants import (
 from llb.prep.ontology.draft import context_window
 from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.models import DocRecord, ItemLabels, MultiHopSeed, MultiHopStep
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 
 _LOG = logging.getLogger(__name__)
 

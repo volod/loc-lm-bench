@@ -46,15 +46,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import os
-import sys
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO, cast
+from llb.standalone.rag_squad_client import (
+    NOT_FOUND,
+    RAG_SERVICE_URL,
+    RETRY_ATTEMPTS,
+    SERVICE_NAME,
+    log,
+    query_rag_service,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG — remote operators edit here.
@@ -62,24 +68,17 @@ from typing import Any, TextIO, cast
 # ─────────────────────────────────────────────────────────────────────────────
 
 # URL of the RAG service that answers questions directly (retrieval + generation inside).
-RAG_SERVICE_URL = os.environ.get("RAG_SERVICE_URL", "http://localhost:8000/query")
 
 # Name recorded in each output row (for provenance when comparing runs / services).
-SERVICE_NAME = os.environ.get("RAG_SERVICE_NAME", "rag-service")
 
 # Optional auth. If the service sits behind a gateway needing a bearer token,
 # set RAG_API_KEY in the environment; leave unset for an open local service.
-RAG_API_KEY = os.environ.get("RAG_API_KEY", "")
 
 # Per-request timeout in seconds.
-REQUEST_TIMEOUT_S = float(os.environ.get("RAG_TIMEOUT_S", "120"))
 
 # Transient-failure retries: total attempts and linear backoff base (seconds).
-RETRY_ATTEMPTS = int(os.environ.get("RAG_RETRIES", "3"))
-RETRY_BACKOFF_S = float(os.environ.get("RAG_RETRY_BACKOFF_S", "2"))
 
 # Sentinel the service should return when the answer is absent from its corpus.
-NOT_FOUND = "НЕВІДОМО"
 
 # Default input goldset used when no path is given on the CLI (dev convenience).
 DEFAULT_INPUT = Path(
@@ -95,88 +94,18 @@ DEFAULT_INPUT = Path(
 # a service with a fixed internal prompt will simply ignore this field.
 # ─────────────────────────────────────────────────────────────────────────────
 
-INSTRUCTIONS = (
-    "Відповідай на запитання виключно за знайденим контекстом.\n"
-    "1. Використовуй ЛИШЕ знайдений контекст, не додавай зовнішніх знань і нічого не вигадуй.\n"
-    "2. Дай найкоротшу точну відповідь — дослівний фрагмент із контексту, без пояснень.\n"
-    f"3. Якщо відповіді немає в контексті — не відповідай, поверни рівно одне слово: {NOT_FOUND}.\n"
-    "4. Відповідай українською мовою."
-)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Wire format — request/response shape lives here so it is easy to swap.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_request(question: str) -> urllib.request.Request:
-    """Build the HTTP request sent to the RAG service. ADJUST field names to your API.
-
-    Default assumes a JSON service of the shape:
-        request : {"query": <question>, "instructions": <guidance>}
-        response: {"answer": <text>}                      (see `parse_answer`)
-    Drop "instructions" if your service does not accept per-request guidance.
-    """
-    body = json.dumps({"query": question, "instructions": INSTRUCTIONS}).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    if RAG_API_KEY:
-        headers["Authorization"] = f"Bearer {RAG_API_KEY}"
-    return urllib.request.Request(RAG_SERVICE_URL, data=body, headers=headers, method="POST")
-
-
-def parse_answer(payload: dict[str, Any]) -> str:
-    """Extract the answer text from the service response. ADJUST to your API.
-
-    Common shapes:
-        {"answer": "..."}                            -> payload["answer"]
-        {"result": {"text": "..."}}                  -> payload["result"]["text"]
-        {"choices": [{"message": {"content": ...}}]} -> OpenAI-compatible chat
-    """
-    return cast(str, payload["answer"])
-
-
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-
-
-def clean_answer(text: str) -> str:
-    """Strip reasoning-model <think> blocks and surrounding whitespace."""
-    return _THINK_RE.sub("", text).strip()
-
-
 # Errors worth retrying: network hiccups, timeouts, transient 5xx.
-RETRYABLE = (urllib.error.URLError, TimeoutError, ConnectionError)
-
-
-def query_rag_service(question: str) -> str:
-    """Ask the RAG service one question and return the cleaned answer, retrying transient errors."""
-    last_exc: Exception | None = None
-    for attempt in range(1, RETRY_ATTEMPTS + 1):
-        try:
-            req = build_request(question)
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
-                payload = cast(dict[str, Any], json.loads(resp.read().decode("utf-8")))
-            return clean_answer(parse_answer(payload))
-        except RETRYABLE as exc:
-            last_exc = exc
-            if attempt < RETRY_ATTEMPTS:
-                wait = RETRY_BACKOFF_S * attempt
-                log(
-                    f"  transient error (attempt {attempt}/{RETRY_ATTEMPTS}): {exc} — retrying in {wait:.0f}s"
-                )
-                time.sleep(wait)
-    if last_exc is not None:
-        raise last_exc  # exhausted retries
-    raise RuntimeError("RAG service query failed without an attempt")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging + statistics
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def log(msg: str) -> None:
-    """Progress logging to stderr so it never pollutes the JSONL on stdout redirection."""
-    print(msg, file=sys.stderr, flush=True)
 
 
 @dataclass

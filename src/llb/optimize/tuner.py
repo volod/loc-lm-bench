@@ -21,183 +21,37 @@ the search-space + fit helpers are pure and unit-testable, and the heavy per-tri
 is injectable.
 """
 
-import logging
-from dataclasses import dataclass
 from typing import Any, Callable
 
-from llb.backends.planner.plan import plan_model
 from llb.core.config import RunConfig
 from llb.core.contracts import EvalResult, ModelSpec
+from llb.optimize.tuning_space import (
+    FINAL_SPLIT,
+    Objective,
+    estimate_prompt_tokens,
+    fits_context,
+    is_oom,
+    suggest_overrides,
+    with_isolation,
+)
+from llb.optimize.tuner_runtime import TrialCallback, _LOG, _run_eval_final, _run_eval_quality
+from llb.optimize.tuner_models import TuneResult, TwoStageResult
 
-_LOG = logging.getLogger(__name__)
 
-TUNING_SPLIT = "tuning"
-FINAL_SPLIT = "final"
 OPTUNA_METHOD = "optuna"
 
-STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
 # The corpus-chunking additions (page / heading / late) join the search space only behind an
 # explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per trial and
 # `page` only differs from `recursive` on sidecar-bearing PDF corpora, so they are opt-in.
-EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late"]
-RETRIEVAL_MODES = ["flat", "parent_child", "hybrid"]
 # Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
 # the per-side candidate depth, sampled only when the trial picked hybrid mode.
-FUSION_WEIGHT_RANGE = (0.2, 0.8)
-FUSION_CANDIDATES_RANGE = (20, 80)
 # Rerank search range (rerank-context-order): the candidate pool depth fed into the
 # cross-encoder, sampled only when the trial turned the opt-in reranker on.
-RERANK_CANDIDATES_RANGE = (15, 60)
-CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
-PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
 # config -> quality on the tuning split, OR (quality, throughput) for the latency tie-break.
-Objective = Callable[[RunConfig], "float | tuple[float, float]"]
-TrialCallback = Callable[[dict[str, Any]], None]  # per-completed-trial hook (e.g. MLflow child)
-
-
-def with_isolation(
-    evaluate: Objective,
-    *,
-    vram_reader: Callable[[], int] | None = None,
-    pid_usage_reader: Callable[[], dict[int, int]] | None = None,
-    gpu_sampler: Callable[[], list[Any]] | None = None,
-    sleep: Callable[[float], None] | None = None,
-) -> Objective:
-    """Wrap a trial `evaluate` so each Optuna trial runs through the SAME `isolate_cell` contract
-    as a sweep cell (isolation reclaim): VRAM baseline -> trial -> PID-attributed reclaim gate (a leaked trial
-    aborts the study) -> capped thermal cooldown. This reuses the executor's cell isolation for
-    tuning, so a trial that leaks VRAM cannot bias later trials' fit/throughput."""
-    import functools
-
-    from llb.executor.isolation import isolate_cell
-
-    def run(config: RunConfig) -> "float | tuple[float, float]":
-        out, _outcome = isolate_cell(
-            functools.partial(evaluate, config),
-            backend=config.backend,
-            vram_reader=vram_reader,
-            pid_usage_reader=pid_usage_reader,
-            gpu_sampler=gpu_sampler,
-            sleep=sleep,
-        )
-        return out
-
-    return run
 
 
 # Substrings that mark a measured out-of-memory / capacity failure -> prune, do not crash.
-_OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memory", "kv cache")
-
-
-SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]
-
-
-def suggest_overrides(
-    trial: Any,
-    backend: str = "ollama",
-    strategies: list[str] | None = None,
-    reranker: str | None = None,
-) -> dict[str, Any]:
-    """Sample one config from an Optuna trial (embedding is pinned, never sampled).
-
-    RAG params are always sampled; `strategies` overrides the chunking-strategy choices
-    (`EXTENDED_STRATEGIES` behind `tune --extended-chunkers`). `reranker` (a cross-encoder id,
-    `tune --reranker`) adds the opt-in rerank-context-order axes: reranker on/off plus the
-    candidate depth, sampled only when on (dead parameters otherwise). BACKEND-AWARE serving
-    knobs are sampled only when the resolved backend actually exposes them:
-    `gpu_memory_utilization` / `max_model_len` are vLLM concepts, so sampling them for Ollama
-    would tune dead parameters (llama.cpp knobs land with that launcher).
-    """
-    strategy = trial.suggest_categorical("strategy", list(strategies or STRATEGIES))
-    chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
-    overlap_frac = trial.suggest_float("overlap_frac", 0.0, 0.4)
-    mode = trial.suggest_categorical("retrieval_mode", RETRIEVAL_MODES)
-    top_k = trial.suggest_int("top_k", 3, 12)
-    overrides: dict[str, Any] = {
-        "strategy": strategy,
-        "chunk_size": chunk_size,
-        "chunk_overlap": int(chunk_size * overlap_frac),
-        "top_k": top_k,
-        "retrieval_mode": mode,
-    }
-    if mode == "parent_child":
-        # child must stay below chunk_size (and the validator wants overlap < child_size).
-        ceiling = max(128, chunk_size - 64)
-        child = trial.suggest_int("child_chunk_size", 128, 640, step=32)
-        overrides["child_chunk_size"] = min(child, ceiling)
-    if mode == "hybrid":
-        # Fusion knobs only exist in hybrid mode (dead parameters otherwise).
-        overrides["fusion_weight"] = trial.suggest_float(
-            "fusion_weight", *FUSION_WEIGHT_RANGE, step=0.1
-        )
-        overrides["fusion_candidates"] = trial.suggest_int(
-            "fusion_candidates", *FUSION_CANDIDATES_RANGE, step=20
-        )
-    if reranker is not None and trial.suggest_categorical("use_reranker", [False, True]):
-        overrides["reranker"] = reranker
-        overrides["rerank_candidates"] = trial.suggest_int(
-            "rerank_candidates", *RERANK_CANDIDATES_RANGE, step=15
-        )
-    if backend == "vllm":
-        overrides["gpu_memory_utilization"] = trial.suggest_float(
-            "gpu_memory_utilization", 0.70, 0.90, step=0.05
-        )
-        overrides["max_model_len"] = trial.suggest_categorical(
-            "max_model_len", SERVING_MAX_MODEL_LEN
-        )
-    return overrides
-
-
-def estimate_prompt_tokens(config: RunConfig) -> int:
-    """Rough tokens consumed by the retrieved context + headroom + the requested completion."""
-    retrieved_chars = config.top_k * config.chunk_size
-    return int(retrieved_chars / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS + config.max_tokens
-
-
-def effective_max_context(
-    config: RunConfig, model_spec: ModelSpec, vram_mib: int, ram_mib: int
-) -> int:
-    """The smallest of: the planner's max context for the host, the model window, and the
-    served `max_model_len` cap. 0 means "cannot bound" (so the caller should not prune)."""
-    row = plan_model(model_spec, vram_mib, ram_mib)
-    ctx = row["ctx_max"] or int(model_spec.get("max_context") or 0)
-    if config.max_model_len:
-        ctx = min(ctx, config.max_model_len) if ctx else config.max_model_len
-    return ctx
-
-
-def fits_context(
-    config: RunConfig, model_spec: ModelSpec | None, vram_mib: int, ram_mib: int
-) -> bool:
-    """True if the retrieved prompt fits the effective context. No spec -> cannot judge -> True."""
-    if model_spec is None:
-        return True
-    ctx = effective_max_context(config, model_spec, vram_mib, ram_mib)
-    return ctx <= 0 or estimate_prompt_tokens(config) <= ctx
-
-
-@dataclass
-class TuneResult:
-    best_config: RunConfig
-    best_value: float
-    n_trials: int
-    n_complete: int
-    n_pruned: int
-    study_name: str
-    storage: str | None
-
-
-@dataclass
-class TwoStageResult:
-    tune: TuneResult
-    final: EvalResult  # the stage-2 run on the full final split -- the leaderboard entry
-
-
-def is_oom(exc: BaseException) -> bool:
-    """True for a MEASURED capacity failure, which every Optuna study prunes instead of crashing."""
-    blob = f"{type(exc).__name__} {exc}".lower()
-    return any(marker in blob for marker in _OOM_MARKERS)
 
 
 def make_objective(
@@ -388,65 +242,3 @@ def two_stage(
         "[tune] %s stage-2 scoring the winning config on the '%s' split", study_name, FINAL_SPLIT
     )
     return TwoStageResult(tune=result, final=runner(result.best_config))
-
-
-def _build_store(config: RunConfig) -> Any:
-    from llb.rag.rerank import maybe_wrap_reranker
-    from llb.rag.store import RagStore
-
-    store = RagStore.build(
-        config.corpus_root,
-        config.strategy,
-        config.chunk_size,
-        config.chunk_overlap,
-        config.embedding_model,
-        mode=config.retrieval_mode,
-        child_size=config.child_chunk_size,
-        lexical_lemmas=config.lexical_lemmas,
-    )
-    # The store is injected into run_eval directly (no _load_store pass), so the trial's
-    # fusion + rerank knobs must be applied here to take effect.
-    store.fusion_weight = config.fusion_weight
-    store.fusion_candidates = config.fusion_candidates
-    return maybe_wrap_reranker(store, config)
-
-
-def _run_eval_quality(config: RunConfig) -> tuple[float, float]:
-    """Default stage-1 objective: build the config's store, score the tuning split, and return
-    (quality, throughput) so the tuner can tie-break equal-quality configs by speed."""
-    from llb.executor.runner import run_eval
-
-    result = run_eval(config, store=_build_store(config), split=TUNING_SPLIT, emit=False)
-    rows = result["rows"]
-    if not rows:
-        return 0.0, 0.0
-    return float(rows[0]["quality"]), float(rows[0].get("tokens_per_s", 0.0))
-
-
-def _run_eval_final(config: RunConfig) -> EvalResult:
-    """Default stage-2 run: score the winning config on the full final split (the entry)."""
-    from llb.executor.runner import run_eval
-
-    return run_eval(config, store=_build_store(config), split=FINAL_SPLIT, emit=True)
-
-
-def mlflow_trial_logger(study_name: str) -> TrialCallback:
-    """A best-effort `on_trial` hook that mirrors each Optuna trial as a NESTED MLflow run under
-    a `<study_name>` parent, so the stage-1 search is inspectable alongside the stage-2 entry.
-    Any MLflow error is swallowed (tuning never fails because tracking is unavailable)."""
-
-    def log(record: dict[str, Any]) -> None:
-        try:
-            import mlflow
-
-            if mlflow.active_run() is None:
-                mlflow.start_run(run_name=f"{study_name}-search")
-            with mlflow.start_run(run_name=f"trial-{record['number']}", nested=True):
-                mlflow.log_metric("quality", float(record.get("quality", 0.0)))
-                mlflow.log_metric("throughput", float(record.get("throughput", 0.0)))
-                params = {k: v for k, v in record.items() if k not in ("quality", "throughput")}
-                mlflow.log_params(params)
-        except Exception:  # pragma: no cover - tracking is best-effort
-            _LOG.debug("[tune] MLflow trial logging skipped for trial %s", record.get("number"))
-
-    return log

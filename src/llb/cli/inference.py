@@ -11,7 +11,7 @@ from llb.cli.app import app
 @app.command("detect-gpu-vram")
 def detect_gpu_vram_cmd() -> None:
     """Print the supported GPU VRAM tier (12/16/24/32 GiB) for this host."""
-    from llb.inference.generate import detect_gpu_tier, format_detect_line
+    from llb.inference.serving_selection import detect_gpu_tier, format_detect_line
 
     typer.echo(format_detect_line(detect_gpu_tier()))
 

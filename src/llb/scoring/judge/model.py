@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 
 DEFAULT_THRESHOLD = 0.6
 JUDGE_BIAS_NOTE = render_text("scoring.judge.bias_note")

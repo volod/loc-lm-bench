@@ -1,5 +1,6 @@
 from llb.backends.base import ERR_TIMEOUT, ChatResult
 from llb.eval import multi_hop as mh
+from llb.eval import multi_hop_prompts as prompts
 from llb.eval.common import OK, RETRIEVAL_MISS
 
 
@@ -30,24 +31,27 @@ def _chunk(doc, start, end, text):
 
 
 def test_parse_controller_done():
-    assert mh.parse_controller("ГОТОВО") == (mh.STOP, "")
+    assert prompts.parse_controller("ГОТОВО") == (prompts.STOP, "")
 
 
 def test_parse_controller_next():
-    assert mh.parse_controller("ДАЛІ: хто був президентом") == (mh.CONTINUE, "хто був президентом")
+    assert prompts.parse_controller("ДАЛІ: хто був президентом") == (
+        prompts.CONTINUE,
+        "хто був президентом",
+    )
 
 
 def test_parse_controller_empty_is_stop():
-    assert mh.parse_controller("") == (mh.STOP, "")
-    assert mh.parse_controller("   ") == (mh.STOP, "")
+    assert prompts.parse_controller("") == (prompts.STOP, "")
+    assert prompts.parse_controller("   ") == (prompts.STOP, "")
 
 
 def test_parse_controller_unparseable_is_stop():
-    assert mh.parse_controller("незрозуміла відповідь без маркера") == (mh.STOP, "")
+    assert prompts.parse_controller("незрозуміла відповідь без маркера") == (prompts.STOP, "")
 
 
 def test_parse_controller_next_without_query_is_stop():
-    assert mh.parse_controller("ДАЛІ:") == (mh.STOP, "")
+    assert prompts.parse_controller("ДАЛІ:") == (prompts.STOP, "")
 
 
 def test_retrieve_node_merges_and_dedupes_across_hops():
@@ -66,17 +70,17 @@ def test_retrieve_node_merges_and_dedupes_across_hops():
 
 
 def test_route_after_controller_continues_within_budget():
-    state = {"decision": mh.CONTINUE, "hop": 1, "max_hops": 3}
+    state = {"decision": prompts.CONTINUE, "hop": 1, "max_hops": 3}
     assert mh.route_after_controller(state) == "retrieve"
 
 
 def test_route_after_controller_stops_when_budget_exhausted():
-    state = {"decision": mh.CONTINUE, "hop": 3, "max_hops": 3}
+    state = {"decision": prompts.CONTINUE, "hop": 3, "max_hops": 3}
     assert mh.route_after_controller(state) == "answer"
 
 
 def test_route_after_controller_stops_on_stop_decision():
-    state = {"decision": mh.STOP, "hop": 1, "max_hops": 3}
+    state = {"decision": prompts.STOP, "hop": 1, "max_hops": 3}
     assert mh.route_after_controller(state) == "answer"
 
 
@@ -84,7 +88,7 @@ def test_controller_node_parses_and_counts():
     launcher = SeqLauncher([ChatResult(text="ДАЛІ: наступне питання", completion_tokens=5)])
     node = mh.make_controller_node(launcher, max_tokens=32, temperature=0.0, timeout=10)
     update = node({"question": "q", "gathered": []})
-    assert update["decision"] == mh.CONTINUE
+    assert update["decision"] == prompts.CONTINUE
     assert update["subquery"] == "наступне питання"
     assert update["n_model_calls"] == 1
     assert update["total_completion_tokens"] == 5
@@ -94,7 +98,7 @@ def test_controller_node_transport_error_stops():
     launcher = SeqLauncher([ChatResult(text="", error=ERR_TIMEOUT)])
     node = mh.make_controller_node(launcher, max_tokens=32, temperature=0.0, timeout=10)
     update = node({"question": "q", "gathered": []})
-    assert update["decision"] == mh.STOP
+    assert update["decision"] == prompts.STOP
     assert update["subquery"] == ""
     assert update["n_model_calls"] == 1
 

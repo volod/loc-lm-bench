@@ -2,16 +2,17 @@ import pytest
 
 from llb.scoring.aggregate import (
     TIER_SCREEN,
-    ModelResult,
     average_ranks,
+    pareto_front,
+    rank_board,
+)
+from llb.scoring.board_format import format_board, ranking_policy_note
+from llb.scoring.leaderboard import (
+    ModelResult,
     bootstrap_mean_ci,
-    format_board,
     format_table,
     headline_quality,
-    pareto_front,
     per_case_quality,
-    rank_board,
-    ranking_policy_note,
     rank_results,
 )
 

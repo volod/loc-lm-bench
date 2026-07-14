@@ -25,7 +25,7 @@ from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
 from llb.core.contracts import BackendMetadata, EvalResult
 from llb.eval import graph as eval_graph
-from llb.executor import durability
+from llb.executor import durability, durability_journal
 from llb.executor.cases import batch_retrieval_records
 from llb.executor.reporting import emit_summary
 from llb.executor.runner_backend import (
@@ -53,7 +53,7 @@ from llb.executor.runner_target import (
 )
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
-from llb.scoring.aggregate import format_table
+from llb.scoring.leaderboard import format_table
 from llb.tracking.manifest import RunManifest, persist_run
 
 RagState = eval_graph.RagState
@@ -108,7 +108,7 @@ def run_eval(
     )
 
     active_launcher: BackendLauncher | None = None
-    counters = durability.DurabilityCounters()
+    counters = durability_journal.DurabilityCounters()
     try:
         active_launcher, runner_fn, store, contention = _resolve_eval_runner(
             config,
@@ -124,7 +124,7 @@ def run_eval(
             store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
         )
         score_options = _score_options(config)
-        policy = durability.RetryPolicy(
+        policy = durability_journal.RetryPolicy(
             max_case_retries=max_case_retries,
             retry_backoff_s=retry_backoff_s,
             max_backend_relaunches=max_backend_relaunches,
@@ -139,7 +139,9 @@ def run_eval(
                 items,
                 runner_fn,
                 embedder,
-                journal=durability.CaseJournal(durability.journal_path(staging_dir)),
+                journal=durability_journal.CaseJournal(
+                    durability_journal.journal_path(staging_dir)
+                ),
                 policy=policy,
                 relaunch=relaunch,
                 sleep=sleep if sleep is not None else time.sleep,
@@ -186,7 +188,7 @@ def run_eval(
         else None,
         n_cases=len(batch.rows),
     )
-    durability.drop_journal(staging_dir)
+    durability_journal.drop_journal(staging_dir)
     paths = persist_run(
         manifest,
         batch.rows,

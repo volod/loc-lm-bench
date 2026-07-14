@@ -3,15 +3,10 @@ import json
 import pytest
 
 from llb.backends import telemetry
-from llb.prompts import (
-    PromptAugmentation,
-    generate_registry,
-    render_chat,
-    render_template,
-    render_text,
-    render_text_list,
-)
+from llb.prompts.engine import PromptAugmentation, render_template
 from llb.prompts.registry import DEFAULT_TEMPLATE_ROOT
+from llb.prompts.registry import render_chat, render_text, render_text_list
+from llb.prompts.registry_generation import generate_registry
 
 
 def test_render_template_substitutes_and_fails_fast():

@@ -6,8 +6,10 @@ import pytest
 import yaml
 
 from llb.inference.generate import (
-    bucket_vram_mb_to_tier,
     generate_serving_configs,
+)
+from llb.inference.serving_selection import (
+    bucket_vram_mb_to_tier,
     load_manifest,
     select_host_gemma4_target,
 )

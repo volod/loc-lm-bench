@@ -7,11 +7,11 @@ from llb.bench.common import (
     JudgeScorer,
     LLMComplete,
     Mirror,
-    ThroughputMeter,
     category_result,
     render_board,
     verified_data_config,
 )
+from llb.bench.common_backend import ThroughputMeter
 from llb.bench.text_analysis.bundle import load_corpus_docs, load_planted_by_doc, matching_doc_ids
 from llb.bench.text_analysis.model import (
     JudgeConfig,
@@ -21,6 +21,7 @@ from llb.bench.text_analysis.model import (
 from llb.bench.text_analysis.persist import persist_text_analysis_run
 from llb.bench.text_analysis.scoring import run_judged_quality, score_doc_batch
 from llb.scoring import text_analysis as ta
+from llb.scoring.text_analysis_similarity import embedder_similarity
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS
 
 
@@ -53,7 +54,7 @@ def run_text_analysis(
     labels_by_doc = load_planted_by_doc(bundle)
     docs = load_corpus_docs(bundle)
     doc_ids = matching_doc_ids(bundle, labels_by_doc, docs, limit)
-    similarity_fn = similarity if similarity is not None else ta.embedder_similarity()
+    similarity_fn = similarity if similarity is not None else embedder_similarity()
     scored = score_doc_batch(doc_ids, labels_by_doc, docs, complete, similarity_fn)
     judge_config = JudgeConfig(
         judge_model, judge_rho, judge_threshold, judge_scorer, judge_base_url

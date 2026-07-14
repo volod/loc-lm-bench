@@ -142,7 +142,8 @@ def tune_cmd(
 ) -> None:
     """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.optimize.tuner import EXTENDED_STRATEGIES, two_stage
+    from llb.optimize.tuner import two_stage
+    from llb.optimize.tuning_space import EXTENDED_STRATEGIES
 
     cfg = load_config(
         None, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len

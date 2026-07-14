@@ -12,7 +12,8 @@ from llb.board.prompt_systems import (
 )
 from llb.board.runs import best_per_model, config_summary, load_run_records, load_screen_reports
 from llb.core.paths import resolve_data_dir
-from llb.scoring.aggregate import rank_board, ranking_policy_note
+from llb.scoring.aggregate import rank_board
+from llb.scoring.board_format import ranking_policy_note
 
 
 def render(run_root: Path | str | None = None, screen_root: Path | str | None = None) -> None:

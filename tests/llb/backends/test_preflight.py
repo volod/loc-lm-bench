@@ -8,13 +8,15 @@ import typer
 import pytest
 
 from llb.backends.preflight import (
-    SAMPLER_FLASHINFER,
-    SAMPLER_NATIVE,
     auto_pin_flashinfer,
-    flashinfer_sampler_ok,
-    load_verdict,
     probe_sampler,
     run_preflight,
+)
+from llb.backends.preflight_verdict import (
+    SAMPLER_FLASHINFER,
+    SAMPLER_NATIVE,
+    flashinfer_sampler_ok,
+    load_verdict,
     save_verdict,
     verdict_is_current,
     verdict_path,

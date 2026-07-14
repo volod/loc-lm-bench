@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.agentic.model import ASSERT_ANSWER_CONTAINS
-from llb.prompts import render_text
+from llb.prompts.registry import render_text
 
 _LOG = logging.getLogger(__name__)
 

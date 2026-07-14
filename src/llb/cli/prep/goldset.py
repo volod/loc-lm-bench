@@ -81,7 +81,7 @@ def prepare_synthetic_corpus_cmd(
         )
         return
 
-    from llb.prep.frontier import prepare_synthetic_corpus
+    from llb.prep.frontier_synthetic import prepare_synthetic_corpus
 
     docs, items = prepare_synthetic_corpus(
         topics, planter_model=planter, judge_model=judge, n_labels=n_labels, out_dir=out_dir
@@ -112,7 +112,7 @@ def ingest_chat_corpus_cmd(
     ),
 ) -> None:
     """category expansion chat-period: ingest a REAL chat corpus, draft grounded labels LOCALLY (no egress)."""
-    from llb.bench.common import local_complete
+    from llb.bench.common_backend import local_complete
     from llb.prep.chat_corpus import ingest_chat_corpus, load_chat_conversations
     from llb.prep.text_analysis_corpus import DEFAULT_KINDS
 

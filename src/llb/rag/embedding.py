@@ -21,7 +21,7 @@ import os
 from typing import Any
 
 from llb.core import env
-from llb.core.config import DEFAULT_EMBEDDING_MODEL
+from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
 
 # Per-family query/passage conventions. Retrieval-tuned encoders expect an asymmetric
 # instruction on the QUERY side (and, for e5, a "passage:" tag on the passage side); applying

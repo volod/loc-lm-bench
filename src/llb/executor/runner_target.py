@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.core.config import RunConfig
-from llb.executor import durability
+from llb.executor import durability, durability_journal
 from llb.goldset.schema import GoldItem
 
 _RUN_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S.%fZ"
@@ -71,7 +71,7 @@ def _resolve_run_target(
             raise SystemExit(f"[run-eval] {run_dir} is already finalized; nothing to resume")
         if not staging_dir.exists():
             raise SystemExit(f"[run-eval] no interrupted run to resume at {staging_dir}")
-        durability.verify_resume_meta(
+        durability_journal.verify_resume_meta(
             staging_dir, config_fingerprint=config_payload, items=items, split=split
         )
         return run_timestamp, run_id, run_dir, staging_dir
@@ -80,7 +80,7 @@ def _resolve_run_target(
     run_dir = config.run_dir(run_timestamp)
     staging_dir = config.run_staging_dir(run_timestamp)
     staging_dir.mkdir(parents=True, exist_ok=True)
-    durability.write_journal_meta(
+    durability_journal.write_journal_meta(
         staging_dir,
         config_fingerprint=config_payload,
         items=items,

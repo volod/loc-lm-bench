@@ -87,7 +87,8 @@ def bench_chain_context_cmd(
 ) -> None:
     """Rank context-management policies for one fixed model over a verified chain set."""
     from llb.bench.chain_context import ChainContextRun, load_chains_file, run_chain_context
-    from llb.bench.common import LLMComplete, drive_with_backend
+    from llb.bench.common import LLMComplete
+    from llb.bench.common_backend import drive_with_backend
     from llb.rag.store import RagStore
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)

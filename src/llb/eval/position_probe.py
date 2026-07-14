@@ -13,11 +13,9 @@ and a `chat` callable, so the whole probe is unit-testable with fakes -- no back
 Artifacts land under `$DATA_DIR/context-position/<timestamp>/{report.md,cases.jsonl}`.
 """
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from llb.core.contracts import ChatMessage, ChunkRecord, JsonObject
@@ -27,7 +25,7 @@ from llb.executor.cases import spans_as_dicts
 from llb.goldset.schema import GoldItem
 from llb.rag.retrieval import chunk_hits_any
 from llb.scoring import correctness
-from llb.scoring.aggregate import bootstrap_mean_ci
+from llb.scoring.leaderboard import bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)
 
@@ -225,40 +223,3 @@ def run_probe(
         recommendation_note=note,
         rows=rows,
     )
-
-
-def render_report(report: ProbeReport) -> str:
-    """ASCII Markdown report (AGENTS.md: no box-drawing, no emojis)."""
-    lines = [
-        "# Context-position probe (lost-in-the-middle)",
-        "",
-        f"- model: `{report.model}` (backend: {report.backend})",
-        f"- k: {report.k} (gold chunk at head/middle/tail among real retrieved distractors)",
-        f"- items probed: {report.n_items}"
-        + (f" (skipped: {report.skipped})" if report.skipped else ""),
-        "",
-        "| position | n | mean objective | 95% CI |",
-        "| --- | --- | --- | --- |",
-    ]
-    for p in report.positions:
-        ci = f"[{p.ci[0]:.3f}, {p.ci[1]:.3f}]" if p.ci else "n/a"
-        lines.append(f"| {p.position} | {p.n} | {p.mean_score:.3f} | {ci} |")
-    lines += [
-        "",
-        f"Recommended `context_order` for `{report.model}`: **{report.recommendation}**",
-        f"({report.recommendation_note})",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def write_probe(report: ProbeReport, out_dir: Path) -> dict[str, str]:
-    """Persist `report.md` + `cases.jsonl` under the probe run dir; returns their paths."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = out_dir / "report.md"
-    cases_path = out_dir / "cases.jsonl"
-    report_path.write_text(render_report(report), encoding="utf-8")
-    with cases_path.open("w", encoding="utf-8") as fh:
-        for row in report.rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return {"report": str(report_path), "cases": str(cases_path)}
