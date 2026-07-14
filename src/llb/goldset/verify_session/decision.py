@@ -11,7 +11,7 @@ from pathlib import Path
 
 from llb.goldset.verify_acceptance import ground_answer
 from llb.goldset.verify_acceptance_report import infer_reject_code
-from llb.goldset.verify_base import ACCEPT, REJECT, REJECT_CODES
+from llb.goldset.verify_base import ACCEPT, CHECK_COLS, FAIL, PASS, REJECT, REJECT_CODES
 from llb.goldset.verify_sampling.context import corpus_window
 from llb.goldset.verify_card import _CHAIN_DEFAULT_WIDTH, _is_chain_row
 from llb.goldset.verify_commands import (
@@ -21,6 +21,7 @@ from llb.goldset.verify_commands import (
     EDIT,
     NOTE,
     REJECT_CMD,
+    TRANSLATION_PROFILE,
     Command,
 )
 from llb.goldset.verify_session.commands import (
@@ -102,6 +103,17 @@ def _handle_decision_action(
     ctx: "SessionContext",
 ) -> tuple[int, bool]:
     if cmd.kind == ACCEPT_CMD:
+        if row.get("review_profile", "") == TRANSLATION_PROFILE:
+            failed = [column for column in CHECK_COLS if row.get(column, "") == FAIL]
+            if failed:
+                ctx.emit(
+                    "[verify] BLOCKED: translation acceptance conflicts with failed checks: "
+                    + ", ".join(failed)
+                )
+                return idx, True
+            for column in CHECK_COLS:
+                if not row.get(column, ""):
+                    row[column] = PASS
         if not _edit_still_grounds(ctx.corpus_root, row):
             ctx.emit(
                 "[verify] BLOCKED: the edited answer no longer matches a verbatim span of "

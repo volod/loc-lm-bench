@@ -66,7 +66,9 @@ def _handle_row_action(ctx: SessionContext, idx: int, total: int) -> int:
 
     if cmd.kind == QUIT:
         raise _Quit
-    idx, handled = _handle_navigation_action(cmd, idx, total, rows, ctx.emit)
+    idx, handled = _handle_navigation_action(
+        cmd, idx, total, rows, ctx.emit, row.get("review_profile", "")
+    )
     if handled:
         return idx
 
@@ -158,7 +160,7 @@ def run_session(
     total = len(rows)
     idx = _get_idx(start, total, rows)
 
-    _emit_intro(emit)
+    _emit_intro(emit, rows[0].get("review_profile", ""))
     _review_until_done(ctx, idx, total, rows, emit, it)
     _save(path, rows, fieldnames)
     if stats.decisions:

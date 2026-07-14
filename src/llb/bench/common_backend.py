@@ -144,7 +144,7 @@ def drive_with_backend(
     from llb.executor.isolation import isolate_cell
     from llb.executor.runner_backend import _make_launcher
 
-    launcher = _make_launcher(cfg)
+    launcher = _make_launcher(cfg, log_dir=cfg.data_dir / "llb" / "logs")
 
     def work() -> _R:
         with launcher:

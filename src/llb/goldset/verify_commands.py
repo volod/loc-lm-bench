@@ -17,6 +17,21 @@ CHECK_LABEL: dict[str, str] = {
     "chk_planted": "planted labels match the doc (synthetic only)",
 }
 
+TRANSLATION_PROFILE = "knowledge-cutoff-translation"
+TRANSLATION_CHECK_LABEL: dict[str, str] = {
+    "chk_grounded": "factual meaning matches the English source",
+    "chk_answerable": "Ukrainian is fluent, clear, and answerable",
+    "chk_reference": "the correct source-choice identity is preserved",
+    "chk_planted": "no fact, date, or temporal clue was added",
+}
+
+
+def check_label(column: str, profile: str = "") -> str:
+    if profile == TRANSLATION_PROFILE:
+        return TRANSLATION_CHECK_LABEL[column]
+    return CHECK_LABEL[column]
+
+
 CHECK = "check"
 
 ACCEPT_CMD = "accept"
@@ -139,10 +154,10 @@ def parse_command(raw: str) -> Command:
     return Command(UNKNOWN, raw=s)
 
 
-def help_text() -> str:
+def help_text(profile: str = "") -> str:
     """The command + check reference shown by `?`."""
     checks = "\n".join(
-        f"  {key} / {key.upper()}  {CHECK_LABEL[CHECK_KEYS[key]]}" for key in CHECK_KEYS
+        f"  {key} / {key.upper()}  {check_label(CHECK_KEYS[key], profile)}" for key in CHECK_KEYS
     )
     return "\n".join(
         [
@@ -160,6 +175,11 @@ def help_text() -> str:
             "  n/Enter  next                           b        previous",
             "  j <N>    jump to item N                 u        next undecided",
             "  ?/h      this help                      q        save + quit",
-            "verify INDEPENDENTLY against the corpus window -- do not anchor to the cross-check.",
+            (
+                "compare every English/Ukrainian field; accept only after all four checks pass."
+                if profile == TRANSLATION_PROFILE
+                else "verify INDEPENDENTLY against the corpus window -- do not anchor to the "
+                "cross-check."
+            ),
         ]
     )

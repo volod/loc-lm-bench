@@ -9,7 +9,7 @@ session loop) builds on these; both share the worksheet schema from `verify.py`.
 import json
 
 from llb.goldset.verify_base import CHECK_COLS, KIND_CHAINS
-from llb.goldset.verify_commands import CHECK_LABEL
+from llb.goldset.verify_commands import check_label
 from llb.goldset.verify_card_text import (
     _ANSI_ANSWER,
     _ANSI_BOLD,
@@ -21,6 +21,7 @@ from llb.goldset.verify_card_text import (
     _indent,
     _truncate,
 )
+from llb.goldset.verify_card_translation import is_translation_row, translation_card_lines
 
 _CHAIN_SEPARATOR = "+" * 64
 _CHAIN_DEFAULT_WIDTH = 120
@@ -181,7 +182,10 @@ def _standard_card_lines(row: dict[str, str], position: int, total: int, decided
     for col in CHECK_COLS:
         if col == "chk_planted" and not synthetic:
             continue
-        lines.append(f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- {CHECK_LABEL[col]}")
+        lines.append(
+            f"    {col:<15}: {_field(row, col, '(unchecked)')}  -- "
+            f"{check_label(col, row.get('review_profile', ''))}"
+        )
     lines.append(f"== decision: {_field(row, 'decision', '(undecided)')}")
     return lines
 
@@ -217,7 +221,9 @@ def format_card(
     width: int = _CHAIN_DEFAULT_WIDTH,
 ) -> str:
     """Render a review card; chain rows use a dense one-line-per-field terminal layout."""
-    if _is_chain_row(row):
+    if is_translation_row(row):
+        lines = translation_card_lines(row, position, total, decided)
+    elif _is_chain_row(row):
         lines = _chain_card_lines(row, position, total, decided, color=color, width=width)
     else:
         lines = _standard_card_lines(row, position, total, decided)

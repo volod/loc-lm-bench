@@ -45,37 +45,6 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
 
-### knowledge-cutoff-ua-bilingual-calibration
-
-- Agent status: **BLOCKED BY HUMAN** -- the paired runner and worksheet tooling are agent-buildable,
-  but publication-quality Ukrainian translations require bilingual human review.
-- Dependencies: use the baseline command, schema, and report contract in
-  [knowledge cutoff](current/knowledge-cutoff.md). Human step: review every translated question and
-  choice for factual equivalence, answer preservation, fluency, and absence of new temporal clues.
-- User-visible outcome: a paired English/Ukrainian cutoff report distinguishes temporal knowledge
-  decay from language-comprehension loss for Ukrainian-specialized local models.
-- Scope boundary: translate the exact revision-pinned event questions and answer choices without
-  adding facts, randomize both lanes with the same source-choice mapping, add paired language-delta
-  statistics and a bootstrap interval, and gate the Ukrainian lane on a complete accepted
-  worksheet. Do not create new events, translate source articles, or mix rejected/undecided rows
-  into a cutoff claim.
-- Data and artifact paths: keep translation drafts and review state under
-  `$DATA_DIR/knowledge-cutoff-ua/<dataset-revision>/`; write paired model runs under
-  `$DATA_DIR/knowledge-cutoff-bilingual/<run_timestamp>/`; if a reviewed translation fixture is
-  redistributed, include its CC BY 4.0 attribution, exact upstream revision, and accepted worksheet
-  under `samples/verification/knowledge_cutoff_ua/`.
-- Execution path: add a Make target that drafts the pinned translation bundle locally, opens the
-  shared verification session, freezes accepted rows, runs both language lanes through the same
-  local backend, and emits one paired report. Keep drafting and human review separate from the
-  model-scoring command so partial review is resumable and cannot be mistaken for accepted data.
-- Acceptance gates: every translated row is decided and accepted or excluded; answer keys and
-  source-choice identities match mechanically; a bilingual reviewer signs off the worksheet; unit
-  tests cover alignment and gate failures; the paired report includes per-month language deltas and
-  a seeded bootstrap interval; focused tests, type/lint checks, and `make lint-md` pass.
-- Documentation target: extend
-  [the knowledge-cutoff guide](../guides/benchmarking/knowledge-cutoff.md) and
-  [current behavior](current/knowledge-cutoff.md) with the bilingual workflow and reviewed revision.
-
 ## Adding Future Tasks
 
 Add a task only when there is concrete forward work with enough detail for an engineer or an

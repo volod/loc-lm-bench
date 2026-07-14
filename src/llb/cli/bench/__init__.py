@@ -9,5 +9,6 @@ from llb.cli.bench import (  # noqa: F401
     category_tasks,
     category_tooling,
     knowledge_cutoff,
+    knowledge_cutoff_ua,
     misc,
 )

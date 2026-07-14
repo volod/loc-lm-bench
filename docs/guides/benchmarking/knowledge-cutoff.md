@@ -84,6 +84,108 @@ dataset identity and revision, license context, Optuna controls and best fit, ag
 parse reliability, and throughput. The shared MLflow mirror logs both canonical and report
 artifacts after the local bundle exists.
 
+## Calibrate English against Ukrainian
+
+The bilingual workflow translates the exact revision-pinned English questions and choices, keeps
+their source answer identities and deterministic choice permutations aligned, and requires a
+complete review worksheet before either lane can support a claim. Drafting is local and resumable;
+it does not make a translation accepted.
+
+First pin the upstream commit and draft the translation bundle with a local model:
+
+```sh
+make knowledge-cutoff-ua-draft \
+  KNOWLEDGE_CUTOFF_REVISION=<40-character-hf-commit> \
+  KNOWLEDGE_CUTOFF_UA_TRANSLATOR_MODEL=<local-model> \
+  KNOWLEDGE_CUTOFF_UA_TRANSLATOR_BACKEND=vllm \
+  KNOWLEDGE_CUTOFF_MAX_MODEL_LEN=1024
+```
+
+The draft gate rejects non-Ukrainian output, changed numeric clues, malformed JSON, missing choices,
+and duplicate choices. It retries one invalid model response and saves each valid row immediately,
+so repeating the target resumes rather than retranslating valid drafts.
+
+Review every row in the shared terminal session:
+
+```sh
+make knowledge-cutoff-ua-review \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle>
+```
+
+The worksheet shows both questions and both ordered choice lists. Lowercase `g`, `a`, `r`, and `p`
+mark factual equivalence, Ukrainian fluency, source-answer preservation, and absence of added
+temporal clues as passing; uppercase marks failure. On this translation profile, `y` records the
+aggregate acceptance and fills any unchecked criteria as passing; it refuses acceptance if a check
+is explicitly failed. Use `x` to exclude a row, `o` to record a revision note, and `q` to save and
+resume later.
+
+Worksheets reviewed with the earlier aggregate-accept behavior can safely record those implied
+passes without replaying every row:
+
+```sh
+make knowledge-cutoff-ua-confirm-accepted \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle>
+```
+
+To repair rejected model wording without hand-editing the stateful worksheet, put replacements in a
+JSONL file. Each row contains `item_id`, `question_uk`, and the four-element `choices_uk` array, then
+apply it through the same automatic gates:
+
+```sh
+make knowledge-cutoff-ua-revise \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle> \
+  KNOWLEDGE_CUTOFF_UA_REVISIONS=<revisions-jsonl>
+```
+
+Repeat the draft target afterward. A complete draft skips model startup and refreshes the
+worksheet; unchanged rows retain their decisions, while revised rows return to pending review.
+
+Check mechanical alignment and review progress at any point; this exits nonzero until the bundle is
+ready to freeze:
+
+```sh
+make knowledge-cutoff-ua-validate \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle>
+```
+
+After every row is accepted or excluded, freeze the accepted lanes with a bilingual reviewer
+sign-off:
+
+```sh
+make knowledge-cutoff-ua-freeze \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle> \
+  KNOWLEDGE_CUTOFF_UA_REVIEWER=<reviewer-name-or-id>
+```
+
+The freeze fails on an undecided row, an accepted row without all four passing checks, changed
+source identity, an empty accepted set, or an English/Ukrainian answer-key mismatch. It writes
+aligned `events.en.reviewed.jsonl`, `events.uk.reviewed.jsonl`, the accepted worksheet snapshot,
+and `review_summary.json` inside the translation bundle.
+
+Run both lanes through one local backend lifecycle and emit the paired report:
+
+```sh
+make bench-knowledge-cutoff-bilingual \
+  MODEL=<model> BACKEND=vllm \
+  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle>
+```
+
+The output under `$DATA_DIR/knowledge-cutoff-bilingual/<run_timestamp>/` contains both event-level
+lanes, both cutoff reports, per-month Ukrainian-minus-English accuracy deltas, and a seeded paired
+95% bootstrap interval. The source-choice mapping is checked again from the scored rows. Rejected
+translations never enter either lane.
+
+For a new bundle, the interactive umbrella target runs draft, review, freeze, and paired scoring in
+order:
+
+```sh
+make knowledge-cutoff-bilingual \
+  MODEL=<model> BACKEND=vllm \
+  KNOWLEDGE_CUTOFF_REVISION=<40-character-hf-commit> \
+  KNOWLEDGE_CUTOFF_UA_TRANSLATOR_MODEL=<local-model> \
+  KNOWLEDGE_CUTOFF_UA_REVIEWER=<reviewer-name-or-id>
+```
+
 Read the result as an estimate of effective recall on this event distribution. It is not proof of
 the model's training-data boundary. Benchmark contamination, later fine-tuning, quantization,
 event selection, sparse months, forced-choice guessing, and English comprehension for a
