@@ -2,7 +2,7 @@
 
 import json
 
-from llb.board.io import read_case_objectives, read_case_splits
+from llb.board.io import read_case_objectives
 from llb.board.prompt_systems import (
     load_rag_prompt_system_records,
     rag_prompt_system_comparison,
@@ -75,7 +75,6 @@ def _write_run(
 def test_read_case_objectives_jsonl(tmp_path):
     run = _write_run(tmp_path, "20260101T000000Z-aaa", "m:1", 0.7, [1.0, 0.0, 1.0])
     assert read_case_objectives(run) == [1.0, 0.0, 1.0]
-    assert read_case_splits(run) == {"final"}
 
 
 def test_record_from_manifest_builds_model_result(tmp_path):
@@ -106,21 +105,6 @@ def test_load_run_records_excludes_tuning_and_calibration_runs(tmp_path):
     _write_run(tmp_path, "calibration", "m:1", 1.0, [1.0], split="calibration")
     records = load_run_records(tmp_path)
     assert [(r.result.objective_score, r.split) for r in records] == [(0.6, "final")]
-
-
-def test_record_from_legacy_manifest_infers_non_final_split_from_scores(tmp_path):
-    run = _write_run(tmp_path, "legacy", "m:1", 0.99, [0.99], split="tuning")
-    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    manifest.pop("split")
-    assert record_from_manifest(manifest, run) is None
-
-
-def test_record_from_legacy_manifest_accepts_final_split_from_scores(tmp_path):
-    run = _write_run(tmp_path, "legacy-final", "m:1", 0.7, [0.7], split="final")
-    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    manifest.pop("split")
-    record = record_from_manifest(manifest, run)
-    assert record is not None and record.split == "final"
 
 
 def test_best_per_model_keeps_highest_objective(tmp_path):

@@ -12,9 +12,8 @@ is always the same text as long as the extraction settings are unchanged -- whic
 already grounded against the FULL original text, so replaying it needs no re-grounding.
 
 Only successfully parsed JSON objects are journaled. Malformed or failed calls remain absent so a
-resume can regenerate them. A valid parsed object may still produce an empty grounded extraction;
-new journal rows mark that distinction explicitly. Legacy empty rows without that marker are
-ignored because older code also journaled parse and transport failures as empty extractions.
+resume can regenerate them. Every row carries `parsed=true`, including a valid parsed object that
+produces an empty grounded extraction.
 """
 
 import json
@@ -49,7 +48,6 @@ class ExtractionJournal:
         if not self.path.is_file():
             return 0
         loaded = 0
-        ignored_legacy_empty = 0
         with self.path.open(encoding="utf-8") as fh:
             for line_no, line in enumerate(fh, 1):
                 line = line.strip()
@@ -59,6 +57,8 @@ class ExtractionJournal:
                     record = json.loads(line)
                     doc_id = str(record["doc_id"])
                     window_index = int(record["window_index"])
+                    if record["parsed"] is not True:
+                        raise ValueError("parsed must be true")
                     extraction = DocExtraction.model_validate(record["extraction"])
                 except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
                     _LOG.warning(
@@ -68,18 +68,8 @@ class ExtractionJournal:
                         exc,
                     )
                     continue
-                if not record.get("parsed") and not _has_content(extraction):
-                    ignored_legacy_empty += 1
-                    continue
                 self._done[(doc_id, window_index)] = extraction
                 loaded += 1
-        if ignored_legacy_empty:
-            _LOG.warning(
-                "[ontology] ignoring %d legacy empty extraction-journal rows in %s; "
-                "those windows will be regenerated",
-                ignored_legacy_empty,
-                self.path,
-            )
         if loaded:
             _LOG.info(
                 "[ontology] resuming: %d journaled extraction windows in %s", loaded, self.path
@@ -110,7 +100,3 @@ class ExtractionJournal:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
             self._done[key] = extraction
-
-
-def _has_content(extraction: DocExtraction) -> bool:
-    return bool(extraction.entities or extraction.events or extraction.claims or extraction.facts)

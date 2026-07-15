@@ -119,14 +119,6 @@ aggregate acceptance and fills any unchecked criteria as passing; it refuses acc
 is explicitly failed. Use `x` to exclude a row, `o` to record a revision note, and `q` to save and
 resume later.
 
-Worksheets reviewed with the earlier aggregate-accept behavior can safely record those implied
-passes without replaying every row:
-
-```sh
-make knowledge-cutoff-ua-confirm-accepted \
-  KNOWLEDGE_CUTOFF_UA_BUNDLE=<translation-bundle>
-```
-
 To repair rejected model wording without hand-editing the stateful worksheet, put replacements in a
 JSONL file. Each row contains `item_id`, `question_uk`, and the four-element `choices_uk` array, then
 apply it through the same automatic gates:

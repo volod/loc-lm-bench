@@ -371,11 +371,6 @@ The final deterministic 40-row review worksheets are
 `$DATA_DIR/draft-yield-quality-max/20260712T102120Z/flat-cap-180/verify_sample.csv`. Their acceptance
 commands emitted 40-item verified ledgers under the corresponding `accepted/` directories.
 
-The first coverage worksheet review preceded the Ukrainian-only contract. Its 38 accepts and two
-rejects, along with both original bundles, are preserved for audit under
-`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/pre-ukrainian-output-gate/`. Those superseded
-decisions did not transfer to the regenerated questions and answers used for the final gate.
-
 ### Chain-of-questions artifacts
 
 `src/llb/goldset/chains.py` defines canonical `ChainItem` / `ChainStep` rows for ordered
@@ -563,14 +558,14 @@ born-digital.
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
 `QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
-`QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=gemma4` resolves the
+`QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=auto` resolves the
 most capable Gemma 4 target from the CUDA serving-tier manifest, filtering out vLLM rows whose
-configured `max_model_len` is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB hosts the PDF drafter now
+configured `max_model_len` is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB hosts the PDF drafter
 uses the offloaded vLLM target `google/gemma-4-12B-it-qat-w4a16-ct` with `max_model_len=16384`,
 `gpu_memory_utilization=0.90`, `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`. On 16 GB hosts
 the same 12B target uses `gpu_memory_utilization=0.85` plus the same context, CPU-offload, and
-KV-offload settings. `legacy-auto` still consumes existing `llb recommend` JSON when present, and
-`benchmark`, `choose`, and `frontier` remain explicit operator modes. A vLLM pick sets
+KV-offload settings. `benchmark`, `choose`, and `frontier` are explicit operator modes when the
+host-fit Gemma 4 default is not appropriate. A vLLM pick sets
 `QUICKSTART_DRAFT_BACKEND=vllm`; `prepare-goldset-draft` starts `VllmLauncher`, points the local
 draft endpoint at `http://localhost:<port>/v1`, and records `endpoint.backend` plus
 `endpoint.base_url` in provenance. `--no-think` still works for reasoning models: Ollama uses
@@ -582,18 +577,20 @@ step prints an estimated hour count (character-based, `wc -m`, since Cyrillic UT
 double it) and requires confirmation before the full ontology/goldset generation starts. The logged
 make wrapper cannot prompt inside the tee'd child
 process, so unattended full-draft runs require `QUICKSTART_ASSUME_YES=1`; the non-interactive error
-now prints the exact rerun command instead of suggesting a model pin. The PDF and mixed-corpus
+prints the exact rerun command. The PDF and mixed-corpus
 quickstart wrappers pass `DRAFT_REQUIRE_PASSED_GATES=1`, so a zero-item or ungrounded draft writes
 its inspection bundle and then exits non-zero instead of continuing to graph/validation. The wrapper
 passes the full PDF RAG store at
 `$QUICKSTART_PDF_RAG_DATA/llb/rag` into the needle retrieval-rank annotator. Model scoring remains
 gated on `verify-review` and `verify-accept`.
 
-The host Gemma 4 selector ranks CUDA/vLLM rows ahead of larger Ollama/offload rows, then chooses
-the largest Gemma 4 parameter count within that backend class. Long-context callers pass a minimum
-context requirement so short-context smoke cells cannot be selected for PDF drafting. The 12/16 GB
-tiers therefore use the extra `gemma-4-12b-vllm` target, while 24/32 GB tiers use the primary 31B
-vLLM Gemma 4 target.
+The host selector reads the curated serving manifest for the detected 12/16/24/32 GiB tier. It
+considers `gemma-4` and `gemma-4-*` entries, ranks CUDA/vLLM rows ahead of Ollama/offload rows, then
+chooses the largest parameter count in that backend class. Long-context callers pass a minimum
+context requirement so short-context vLLM cells cannot be selected for PDF drafting. The 12/16 GiB
+tiers therefore use the extra `gemma-4-12b-vllm` target with CPU weight/KV offload, while 24/32 GiB
+tiers use the primary 31B vLLM target. The complete selection contract and override precedence are
+in [the inference configuration guide](../../inference/config-example.md#automatic-cuda-host-draft-model-selection).
 
 The accepted ledger emitted by `verify-accept` contains only the rows a human explicitly accepted
 in the worksheet; the complete drafted set (all `goldset.jsonl` rows and the citation-valid
@@ -626,17 +623,15 @@ overlap, retrieval options) plus the endpoint identity.
 reads the meta, reuses journaled windows instead of re-calling the model, re-extracts only the
 missing windows, and replays the deterministic seed/draft/emit stages. The result is byte-identical
 to an uninterrupted run (same seeds, same kept items). Only parsed JSON objects are journaled;
-failed calls remain resumable, while parsed empty objects carry an explicit marker. Legacy empty
-rows without that marker are regenerated because the older format could not distinguish a valid
-empty object from a parse or transport failure. A missing meta aborts the resume with a clear
+failed calls remain resumable, while parsed empty objects carry the required `parsed=true` marker.
+A row without that marker is malformed and is regenerated. A missing meta aborts the resume with a clear
 message. The make target also rejects an explicitly empty command-line `DRAFT_RESUME`, preventing
 an unset shell variable from silently starting a fresh default draft.
 
 Resume option restoration lives in `src/llb/cli/prep/draft_resume.py`.
 `DraftResumeBuilder` starts from the parsed `DraftRequest`, applies the journal's authoritative
 corpus and phase routes, preserves explicit CLI overrides, and returns one resolved request. The
-execution path consumes that object directly; there is no positional override tuple or
-compatibility wrapper.
+execution path consumes that object directly, so request validation has one entry point.
 
 ### Frontier ontology draft lane
 
@@ -828,8 +823,9 @@ with the measured human review-pass evidence recorded at the end of this section
   (draft-feedback-rejection-reasons, below) to tighten its prompts on a re-draft.
 
 All of it is unit-tested with injected input/output/clock in `tests/llb/goldset/test_goldset_verify.py`
-(golden-path session tests included); the worksheet CSV stays backward compatible -- the new
-columns are optional and appended on load for older worksheets.
+(golden-path session tests included). The loader supplies the shared verification columns and
+preserves profile-specific columns used by translation and adjudication, so one review engine can
+serve each current worksheet profile without separate parsers.
 
 The review card and controls are unified with the external-RAG human review session
 (`llb.scoring.external_rag_session`, the origin interface): a `=====` banner, `== field:` labels,
@@ -847,22 +843,20 @@ rejects concentrated in the corpus's one long-manual document, one of them a TOC
 page-number question whose row also carried no `retrieval_rank` (the signal the confidence queue
 sorts on). Two advisory per-stratum FAIL warnings were small-sample artifacts: at tolerance 0.05
 a stratum needs >= 20 decided rows to absorb a single reject, and the flagged cells held 7 and 5.
-Operational notes from the pass: the stratified draw undershot the requested `VERIFY_N` at the
-time (40 -> 39; the additive `VERIFY_MERGE=1` lane topped it up), and a bare
-`x` reject with no failed checks exports `code: other` -- marking the failing check first (or
-`x <code>`) keeps `rejection_reasons.json` actionable.
+A bare `x` reject with no failed checks exports `code: other`; marking the failing check first (or
+using `x <code>`) keeps `rejection_reasons.json` actionable.
 
-The undershoot itself is fixed (verify-sample-exact-allocation): `draw_stratified_sample` now
-allocates through `stratum_quotas` -- a floor of one per non-empty stratum (largest strata first
-when `n` cannot cover them all) plus a deterministic largest-remainder top-up, each stratum
+`draw_stratified_sample` allocates through `stratum_quotas`: a floor of one per non-empty stratum
+(largest strata first when `n` cannot cover them all) plus a deterministic largest-remainder
+top-up, each stratum
 capped at its own size -- so `verify-sample VERIFY_N=<n>` draws exactly `min(n, population)`
 rows at every seed while staying seeded-reproducible. The sibling `sample_manifest.json`
-records the final per-stratum allocation as before. Unit-tested against the undershooting
-7/7/6-strata fixture in `tests/llb/goldset/test_goldset_verify.py`.
+records the final per-stratum allocation. The allocation invariants are covered in
+`tests/llb/goldset/test_goldset_verify.py`.
 
 ### Rejection feedback into re-drafting
 
-The feedback loop no longer ends at the JSON file (draft-feedback-rejection-reasons):
+Rejection feedback can directly guide a new draft:
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> \
@@ -898,7 +892,7 @@ make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<draft> \
 
 - **Multi-reviewer sampling** -- `VERIFY_ANNOTATORS=<k>` draws ONE stratified sample and writes
   it as `k` identical per-reviewer worksheets (`verify_sample.r<i>.csv`), each row stamped with
-  a `reviewer_id` (a new optional column, appended last so older worksheets stay compatible).
+  a `reviewer_id` column, left blank for single-reviewer worksheets.
   The manifest records the reviewer worksheets and intentionally omits the single-`worksheet`
   key, so a multi-reviewer bundle can only stamp `--data-verified` through its accepted ledger.
 - **Agreement report** -- `verify-adjudicate` writes `agreement.json` beside the worksheets:

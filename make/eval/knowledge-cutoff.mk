@@ -1,7 +1,7 @@
 ## Knowledge-cutoff evaluation and Ukrainian bilingual calibration.
 
 .PHONY: bench-knowledge-cutoff knowledge-cutoff-ua-draft knowledge-cutoff-ua-review \
-	knowledge-cutoff-ua-revise knowledge-cutoff-ua-confirm-accepted \
+	knowledge-cutoff-ua-revise \
 	knowledge-cutoff-ua-validate knowledge-cutoff-ua-freeze \
 	bench-knowledge-cutoff-bilingual knowledge-cutoff-bilingual
 
@@ -43,11 +43,6 @@ knowledge-cutoff-ua-revise: ## Apply JSONL translation corrections and rerun aut
 	@test -n "$(KNOWLEDGE_CUTOFF_UA_REVISIONS)" || { echo "ERROR: set KNOWLEDGE_CUTOFF_UA_REVISIONS=<revisions.jsonl>"; exit 1; }
 	$(PY) -m llb.main knowledge-cutoff-ua-revise --bundle "$(KNOWLEDGE_CUTOFF_UA_BUNDLE)" \
 		--revisions "$(KNOWLEDGE_CUTOFF_UA_REVISIONS)"
-
-knowledge-cutoff-ua-confirm-accepted: ## Confirm aggregate accepts imply all four translation checks (KNOWLEDGE_CUTOFF_UA_BUNDLE=)
-	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main knowledge-cutoff-ua-confirm-accepted \
-		--bundle "$(KNOWLEDGE_CUTOFF_UA_BUNDLE)"
 
 knowledge-cutoff-ua-validate: ## Validate translation alignment and report review progress (KNOWLEDGE_CUTOFF_UA_BUNDLE=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -93,36 +93,6 @@ def test_failed_parse_is_not_journaled_and_resume_retries_it(tmp_path):
     assert record["parsed"] is True
 
 
-def test_legacy_empty_journal_row_is_regenerated(tmp_path):
-    journal_path = tmp_path / EXTRACTION_JOURNAL_FILENAME
-    journal_path.write_text(
-        json.dumps(
-            {
-                "doc_id": "a.md",
-                "window_index": 1,
-                "window_total": 1,
-                "extraction": {
-                    "doc_id": "a.md",
-                    "entities": [],
-                    "events": [],
-                    "claims": [],
-                    "facts": [],
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    journal = ExtractionJournal(journal_path)
-    assert journal.load() == 0
-
-    doc = DocRecord(doc_id="a.md", text=DOC1, sha256="x", n_chars=len(DOC1))
-    extraction = LLMExtractionAdapter(
-        complete=fake_endpoint, parse_retries=0, journal=journal
-    ).extract(doc)
-    assert extraction.entities
-
-
 def _corpus(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()

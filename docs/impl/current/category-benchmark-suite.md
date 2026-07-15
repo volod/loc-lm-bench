@@ -208,9 +208,7 @@ defense rate `0.400`, refusal appropriateness `0.917`, with verified-data metada
 `samples/verification/composite_samples/security/sample_manifest.json`. Per family the model
 defends the refusal-based attacks (jailbreak, unsafe-content, instruction-hierarchy ASR `0.000`)
 but is breached by the leak-based ones (prompt-injection, RAG-injection, tool-abuse,
-data-exfiltration ASR `1.000`) -- it emits the planted marker rather than declining. The earlier
-run reported ASR `1.000` across every family because `is_refusal` missed the model's first-person
-Ukrainian refusals and the leak detector counted a canary named inside a refusal.
+data-exfiltration ASR `1.000`) -- it emits the planted marker rather than declining.
 
 ## Tooling
 

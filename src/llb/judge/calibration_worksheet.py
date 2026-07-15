@@ -28,26 +28,18 @@ WORKSHEET_COLS = [
 ]
 
 
-def worksheet_fieldnames(existing: Sequence[str] | None = None) -> list[str]:
-    """Canonical column order: keep any columns already in the header, then append any
-    `WORKSHEET_COLS` that are missing. With no header yet, the order is `WORKSHEET_COLS`."""
-    names = list(existing) if existing else []
-    for col in WORKSHEET_COLS:
-        if col not in names:
-            names.append(col)
-    return names
+def worksheet_fieldnames() -> list[str]:
+    """Return the canonical worksheet column order."""
+    return list(WORKSHEET_COLS)
 
 
 def load_worksheet(path: Path) -> tuple[list[dict[str, str]], list[str]]:
-    """Load a worksheet CSV into `(rows, fieldnames)`.
-
-    Any `WORKSHEET_COLS` column missing from the header is added blank, so callers can rely on
-    every column being present; any extra columns are preserved in `fieldnames` so a round-trip
-    never drops data.
-    """
+    """Load a worksheet CSV that matches the current schema exactly."""
     text = Path(path).read_text(encoding="utf-8")
     reader = csv.DictReader(text.splitlines())
-    fieldnames = worksheet_fieldnames(reader.fieldnames)
+    fieldnames = list(reader.fieldnames or [])
+    if fieldnames != WORKSHEET_COLS:
+        raise ValueError(f"worksheet header must be exactly: {','.join(WORKSHEET_COLS)}")
     rows = [{name: (raw.get(name) or "") for name in fieldnames} for raw in reader]
     return rows, fieldnames
 

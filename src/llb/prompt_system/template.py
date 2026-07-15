@@ -199,9 +199,9 @@ def render_package(
 def wrap_complete(complete: Callable[[str], str], package: PromptPackage) -> Callable[[str], str]:
     """Wrap a candidate `complete` (prompt -> text) so the prompt system is prepended to EVERY call.
 
-    This is the harness-compatibility hook (RAG prompt-system comparison sub-part 7): the SAME `PromptPackage` can drive the
-    baseline RAG path and the agentic harness lane (loop / langgraph / crewai) without touching the
-    objective scorer -- it only adds grounding context to the prompt the harness already builds."""
+    The same `PromptPackage` drives the baseline RAG path and agentic harnesses without touching the
+    objective scorer; it only adds grounding context to the prompt each harness builds.
+    """
 
     def wrapped(prompt: str) -> str:
         return complete(package.apply(prompt))

@@ -1,8 +1,8 @@
 # External-Service Draft Contract
 
-Status: **ACTIVE data contract** (documentation artifact, 2026-07-03). Every artifact kind now
-imports through an existing command -- Artifact B's grounded-JSONL lane (`llb import-external-draft`)
-is shipped; see [data prep](../impl/current/data-prep.md) grounded-JSONL import.
+Status: **ACTIVE data contract**. Every artifact kind imports through an existing command;
+Artifact B uses the grounded-JSONL lane (`llb import-external-draft`). See
+[data prep](../impl/current/data-prep.md) for the import workflow.
 
 This contract defines the exact shapes an operator must obtain when drafting benchmark artifacts
 **outside** this repository with an AI provider service (claude.ai Projects, NotebookLM /

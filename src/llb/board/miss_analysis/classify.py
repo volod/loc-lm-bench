@@ -46,15 +46,9 @@ def retrieval_hit_from_record(record: JsonObject) -> bool:
     )
 
 
-def _case_retrieval_hit(row: JsonObject, record: JsonObject | None) -> bool:
-    if record is not None:
-        return retrieval_hit_from_record(record)
-    return float(row.get("retrieval_hit", 0.0) or 0.0) > 0.0
-
-
 def classify_case(
     row: JsonObject,
-    retrieval_record: JsonObject | None,
+    retrieval_record: JsonObject,
     *,
     threshold: float = DEFAULT_MISS_THRESHOLD,
     judge_agreement_min: float = JUDGE_AGREEMENT_MIN,
@@ -74,7 +68,7 @@ def classify_case(
         return MISS_RETRIEVAL
     if float(row.get("objective_score", 0.0)) >= threshold:
         return None
-    if not _case_retrieval_hit(row, retrieval_record):
+    if not retrieval_hit_from_record(retrieval_record):
         return MISS_RETRIEVAL
     judge = row.get("judge_score")
     if judge is not None and float(judge) >= judge_agreement_min:
@@ -179,7 +173,7 @@ def analyze_run(
         item = items_by_id.get(item_id)
         provenance_row = provenance.get(item_id)
         keys_by_item[item_id] = _cluster_keys(item, provenance_row)
-        record = retrieval.get(item_id)
+        record = retrieval[item_id]
         miss_class = classify_case(
             row, record, threshold=threshold, judge_agreement_min=judge_agreement_min
         )
@@ -194,7 +188,7 @@ def analyze_run(
                 status=str(row.get("status", "")),
                 objective_score=float(row.get("objective_score", 0.0)),
                 judge_score=float(judge) if judge is not None else None,
-                retrieval_hit=_case_retrieval_hit(row, record),
+                retrieval_hit=retrieval_hit_from_record(record),
                 first_hit_rank=int(rank) if rank is not None else None,
                 question=item.question if item else "",
                 source_doc_id=keys_by_item[item_id]["document"],

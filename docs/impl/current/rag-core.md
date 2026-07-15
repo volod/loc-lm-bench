@@ -564,11 +564,6 @@ Tests: `tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-bou
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
 
-Durable evidence, tiny fixture (2026-07-08, CUDA host, outside quick CI): on the committed
-`samples/goldsets/ip_regulation_uk` fixture (8 items, single `.md` corpus, no PDF sidecars)
-recall@10 saturates at 1.000 for all seven strategies and only `late` drops at k=3 -- too small
-to discriminate; superseded by the full-corpus run below.
-
 Durable evidence, full corpus (2026-07-10, chunking-comparison-full-corpus on the CUDA host,
 outside quick CI): all seven strategies over the verified 44-item quickstart-PDF accepted goldset
 (5 PDF documents WITH `*.citations.json` sidecars, so `page` is genuinely page-aligned here;
@@ -585,8 +580,8 @@ pinned e5-base, k=10, non-saturated):
 | `markdown` | 0.818 | 0.703 |
 
 Winner for this corpus: `sentence` (+0.022 recall@10 over the `recursive` default at equal MRR)
--- apply with `make build-index CHUNK_STRATEGY=sentence`. The two headline deltas the tiny
-fixture could not measure are now measured honestly: `page` vs `recursive` is -0.046 recall --
+-- apply with `make build-index CHUNK_STRATEGY=sentence`. Important comparisons are `page` vs
+`recursive` at -0.046 recall --
 page-aligned packing LOSES to plain recursive splitting even on a sidecar-bearing corpus (page
 boundaries cut mid-topic in these scanned-manual PDFs), so `page`'s value is page-provenance
 display, not retrieval quality; `late` vs `sentence` (identical spans, late document-context
@@ -636,11 +631,6 @@ lazily imported and the embed callable is injectable, so the consent gate + budg
 unit-tested with a fake client, no network in CI. The drafting-side pinned-E5 seams (ontology dedup,
 semantic scoring, retrieval-uniqueness annotation) are deliberately NOT switched by this task.
 
-Durable evidence, tiny fixture (2026-07-04, heavy build on the CUDA host, outside quick CI): the
-four local candidates over the committed `samples/goldsets/ip_regulation_uk` fixture (8 items,
-10 chunks, `k=10`) all saturate recall@10 at 1.000 except the paraphrase/STS `lang-uk` model
-(MRR 0.917) -- too small to discriminate; superseded by the full-corpus run below.
-
 Durable evidence, full corpus (2026-07-10, embedding-bakeoff-full-corpus on the CUDA host,
 `LLB_EMBED_DEVICE=cuda`, outside quick CI): the four local candidates over the verified 44-item
 quickstart-PDF accepted goldset (5 PDF documents, ~1.2 MB markdown, 1139 chunks at 800/120 --
@@ -661,7 +651,7 @@ pick it only when a downstream reranker or a small `top_k` makes first-hit rank 
 constraint. bge-m3 trails e5-large on both axes at the same cost, and the paraphrase/STS
 `lang-uk` model collapses to 0.455/0.500 recall on a real corpus (the tiny-fixture 1.000 was
 saturation, not quality) -- the "paraphrase objective loses to retrieval-tuned encoders"
-hypothesis is now demonstrated, not assumed. Embed VRAM peaked ~4 GB (sequential model loads),
+hypothesis is supported by this corpus. Embed VRAM peaked ~4 GB (sequential model loads),
 so every candidate fits the 16 GB host with a co-resident judge stopped; steady-state GPU
 throughput at 1139 chunks is no longer cold-load-dominated. Reports:
 `$DATA_DIR/compare-embeddings/20260710T044652*/report.md` (k=20) and

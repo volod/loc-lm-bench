@@ -251,7 +251,7 @@ categorical (`1x4` the trainer default, `1x8`, `2x4`, `2x8`) rather than two ind
 independent draws would mostly differ only in a VRAM/wall-clock trade at the same effective batch,
 wasting budget on gradient-equivalent points -- and `max_length` (512/1024/2048) is sampled beside
 it. Effective batch size interacts strongly with the learning rate, so the recorded best config is
-now self-consistent: `hparams_manifest.json` carries the batch geometry the learning rate was
+internally consistent: `hparams_manifest.json` carries the batch geometry the learning rate was
 chosen under, and an operator changing the batch size knows they left the searched optimum. The
 sampled record always satisfies `effective_batch_size == per_device * grad_accum` (unit-tested).
 
@@ -417,7 +417,7 @@ top trials all ride the largest geometry (`2x8`). The honest caveats: the traine
 geometry was never drawn in this 6-trial budget (TPE explored the wider geometries), so the
 comparison to the pinned default is indirect (via `2x4`/`1x8` at effective batch 8, both of which
 lose), and a 20-item dev slice carries wide uncertainty per point. The operational win stands
-regardless of ranking noise: `hparams_manifest.json` now records the batch geometry every
+regardless of ranking noise: `hparams_manifest.json` records the batch geometry every
 learning rate was chosen under, so the recorded best config
 (`2x8`, lr 2.63e-05, rank 16, `attn_mlp`, `max_length` 2048) is self-consistent and
 `trainer_defaults` feeds all of it -- geometry included -- to later rounds.
@@ -517,9 +517,9 @@ store's `store_meta.json` (`register_adapter --index-dir` on the CLI; `self-impr
 `finetune-campaign` rounds record the config's index dir automatically), and `staleness()`
 compares it per knob against the store's present meta -- a rebuilt store flips the entry `stale`
 with the changed knob named in the reason (for example
-`retrieval embedding_model changed since training (a -> b)`). The field is additive: an entry
-registered before it exists reads `unknown` on the retrieval axis (reason
-`retrieval fingerprint unavailable`), never `current`.
+`retrieval embedding_model changed since training (a -> b)`). An adapter registered without an
+index directory reads `unknown` on the retrieval axis (reason `retrieval fingerprint unavailable`),
+never `current`.
 
 `board/runs.py` resolves every adapter-backed bundle through the registry before it can rank:
 
@@ -559,27 +559,26 @@ backends without CUDA, llama.cpp, or a running Ollama daemon. `serve-adapter` pr
 with one generation -- an empty completion FAILS the probe (a served-but-mute endpoint is not
 serving) -- and then holds it in the foreground until Ctrl-C; there is no serving daemon.
 
-Chat-template preservation (found by the first real CUDA merge run): llama.cpp's server applies
+Chat-template preservation is required because llama.cpp's server applies
 the `tokenizer.chat_template` GGUF metadata natively, but **Ollama ignores it** when a model is
 created from a bare `FROM <gguf>` Modelfile -- the tag serves raw completions and a merged
 instruct model degrades to gibberish or empty chat answers. `modelfile_text` therefore reads the
-merged tokenizer's chat template (`chat_template.jinja` under transformers >= 5, else the legacy
-`tokenizer_config.json` field), detects the template family by its unambiguous marker (ChatML
+merged tokenizer's `chat_template.jinja`, detects the template family by its unambiguous marker
+(ChatML
 `<|im_start|>`, Gemma `<start_of_turn>`, Llama 3 `<|start_header_id|>`), and writes the
 equivalent Go `TEMPLATE` plus its `PARAMETER stop` tokens into the Modelfile; an unrecognized
 template stays a bare FROM with a loud warning naming the fix. Family detection, the bare-FROM
 fallback, and the empty-probe failure are unit-tested with fixtures.
 
-Pristine tokenizer files (found by the Gemma-3 merge run): a LoRA never changes the tokenizer,
-but the merge used to re-save it through `AutoTokenizer.save_pretrained`, and the
-transformers >= 5 resave is LOSSY for GGUF conversion -- it drops the sentencepiece
+Pristine tokenizer files are copied from the base model because a LoRA never changes the tokenizer,
+while `AutoTokenizer.save_pretrained` can be lossy for GGUF conversion: it drops the sentencepiece
 `tokenizer.model` (the converter's GPT-2-style fallback then asserts on vocabularies whose added
 tokens sit past `config.vocab_size`) and rewrites `tokenizer_config.json` so the control-token
 markings are lost: `<start_of_turn>`/`<end_of_turn>` exported as NORMAL instead of CONTROL token
 types, Ollama then never matched the template's turn markers as specials, and the merged Gemma
 answered every non-trivial prompt with an immediate `<end_of_turn>` (final-split objective 0.199
 vs 0.410 served properly -- while the SAME safetensors answered correctly in transformers).
-`copy_base_tokenizer_assets` now overwrites the resaved files with the base repo's originals
+`copy_base_tokenizer_assets` overwrites the resaved files with the base repo's originals
 (`tokenizer.model`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`),
 best-effort per file so repos without a given file (Qwen has no sentencepiece model) keep the
 resaved copy that already converts fine. Unit-tested with an injected downloader.
@@ -636,25 +635,17 @@ the first time the real merge lane ran end to end):
   so the merged artifact answers as the ADAPTER, not the base model. Run bundles:
   `.data/run-eval/20260710T075222*` (base), `...075718*` (LoRA), `...081359*` (merged, fixed
   template).
-- Merge-fidelity finding the run surfaced (now fixed + unit-tested): the FIRST merged eval
-  collapsed to objective **0.0191** -- every answer empty -- because the bare `FROM <gguf>`
-  Modelfile lost the chat template (see chat-template preservation above). The llamacpp GGUF
-  carries `tokenizer.chat_template` and llama-server applies it natively; only the Ollama create
-  path needed the explicit TEMPLATE. The smoke probe was also hardened to fail on an empty
-  completion, which would have caught this before the eval did.
-- Real-path dependency gaps closed by this run: `gguf` (the converter import) and `bitsandbytes`
-  (the trainer's default QLoRA load) are now part of the `finetune` extra, and the trainer's
-  early dependency check covers bitsandbytes instead of failing mid-load.
+- The Ollama Modelfile carries the explicit chat template described above, while the smoke probe
+  rejects an empty completion. The `finetune` extra includes both the converter's `gguf` import and
+  the trainer's `bitsandbytes` dependency so failures occur during dependency validation.
 
 Second cohort model, `google/gemma-3-1b-it` (2026-07-10, same host; adapter `db80e8440b7d` from
 one `self-improve` round trained with the effective-batch search's best config, campaign
 `.data/self-improve/merge-evidence-gemma-3-1b/`):
 
-- Merge cost: ~24 s (ollama) / ~18 s (llamacpp) wall-clock per backend, 1.9 GB f16 GGUF; the
-  converter needed the base repo's pristine tokenizer files (see the two merge-fidelity findings
-  above -- both surfaced BY this model and are now fixed and unit-tested: the Gemma-3 vocab
-  assert without `tokenizer.model`, and the control-token loss that made the served merge answer
-  every real prompt with an immediate `<end_of_turn>`).
+- Merge cost: ~24 s (Ollama) / ~18 s (llama.cpp) wall-clock per backend, 1.9 GB f16 GGUF. The
+  converter uses the base repository's pristine tokenizer files to preserve the sentencepiece
+  vocabulary and control-token types.
 - Three-way final-split objective (n=82): base (vLLM) **0.3872** [0.299, 0.480]; vLLM LoRA row
   **0.4103** [0.326, 0.498]; merged tag on ollama **0.3427** [0.260, 0.428] -- inside the LoRA
   row's CI, so the merge passes the fidelity gate, with the honest caveat that the point

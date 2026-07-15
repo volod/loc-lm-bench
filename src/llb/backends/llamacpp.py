@@ -1,7 +1,7 @@
-"""llama.cpp launcher: serve a GGUF behind the OpenAI-compatible HTTP API (Premise 1).
+"""llama.cpp launcher for serving a GGUF behind the OpenAI-compatible HTTP API.
 
-The third backend the backend resolver resolver routes to: an oversized model that vLLM cannot hold in
-VRAM (no CPU offload) resolves to its GGUF, which `llama-server` runs by splitting layers
+The resolver uses this backend when a GGUF with layer offload is the host-fit choice.
+`llama-server` splits layers
 between the GPU (`-ngl`) and system RAM. `llama-server` exposes an OpenAI-compatible endpoint,
 so -- exactly like the Ollama and vLLM launchers -- only this launcher + its telemetry are
 backend-specific; the eval/RAG/judge code is unchanged.

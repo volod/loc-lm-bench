@@ -30,11 +30,10 @@ Callers import symbols from their concrete owner module. Package `__init__.py` f
 the package docstring, except CLI area packages whose imports register Typer commands. Runnable
 packages may provide `__main__.py`; compatibility re-exports are not part of the package design.
 
-The repository-wide module-size pass is complete. Production procedures now live in focused
-owner modules for command construction, resolver feasibility/reporting, executor durability and
-retrieval, benchmark scoring/persistence, curation input/dispatch, fine-tuning manifests/runtime,
-RAG store construction/validation, and report formatting. Oversized tests were split by behavior,
-with shared factories in intent-named helper modules.
+Production procedures live in focused owner modules for command construction, resolver
+feasibility/reporting, executor durability and retrieval, benchmark scoring/persistence, curation
+input/dispatch, fine-tuning manifests/runtime, RAG store construction/validation, and report
+formatting. Tests are grouped by behavior with shared factories in intent-named helper modules.
 
 Cross-package `TypedDict` contracts live in `src/llb/core/contracts/`, split into concrete owner
 modules: `common`, `rag`, `benchmarks`, `results`, `runs`, `models`, `judging`, `hardware`, and
@@ -42,14 +41,14 @@ modules: `common`, `rag`, `benchmarks`, `results`, `runs`, `models`, `judging`, 
 its docstring and provides no compatibility re-exports.
 
 Validation result (2026-07-15): `make ci` passes Ruff formatting/lint, mypy over 524 source files,
-and the lightweight suite with 1,421 passed and 38 slow tests deselected; `make lint-md` also
+and the lightweight suite with 1,414 passed and 38 slow tests deselected; `make lint-md` also
 passes. Every contract owner module is at most 132 lines, below the 250-line soft target.
 
-Mutation-heavy construction now uses objects instead of branch-heavy procedures:
+Mutation-heavy construction uses objects instead of branch-heavy procedures:
 `DraftResumeBuilder` restores a draft request,
 `EndpointConfigBuilder` validates and creates endpoint data, `AgreementReportBuilder` assembles
-review statistics, and `ConsensusBuilder` resolves reviewer rows. The old tuple/facade functions
-were removed rather than retained as compatibility layers.
+review statistics, and `ConsensusBuilder` resolves reviewer rows. This keeps validation and state
+transitions with the data they govern and avoids parallel procedural entry points.
 
 Current focused package boundaries:
 
@@ -76,6 +75,24 @@ Current focused package boundaries:
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,
 `track_c`, and `dispatch`.
 
+## Current-Schema Policy
+
+Persisted artifacts are interpreted through one current schema:
+
+- board manifests declare `split`; score rows are not consulted to infer it;
+- miss analysis requires `manifest.json`, `scores.jsonl`, and complete per-item
+  `retrieval.jsonl` evidence;
+- ontology extraction-journal rows require `parsed=true`;
+- calibration worksheet headers match their canonical column list exactly;
+- merged tokenizer chat templates come from the Transformers 5 `chat_template.jinja` file.
+
+These boundaries fail visibly when state is incomplete, which keeps the core readers compact and
+prevents an inferred artifact meaning from entering a leaderboard or human-review workflow.
+
+The project README stays at capability and navigation level. End-to-end commands live in
+`docs/guides/quickstart/quick-start.md`, and focused citation-preserving conversion lives in
+`docs/guides/data-prep/pdf-corpus-prep.md`.
+
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
@@ -93,7 +110,7 @@ make ci
 `.env.example`. GitHub CI uses the lighter dev dependency set and does not require GPU services.
 `scripts/shared/common.sh` resolves `UV_LINK_MODE` adaptively: when uv's cache and this checkout
 are on different devices it exports `copy`, otherwise it leaves uv's default link mode in place.
-The README Quick Start keeps each Make wrapper annotated with command purpose, default inputs,
+The Quick Start guide keeps each Make wrapper annotated with command purpose, default inputs,
 outputs or artifacts, and the expected result. Descriptive quickstart wrappers provide both
 all-in-one and grouped execution:
 
@@ -128,9 +145,9 @@ Each fragment owns its `.PHONY` declarations. `make help` scans the complete inc
 `$(MAKEFILE_LIST)` and uses the `##@` section markers plus `make/help.awk` to print the same grouped,
 standard CLI-style target list.
 
-The split preserves every target body and public help entry. Validation runs `make -qp`, dry-runs
-representative targets from every functional group, and confirms the pre/post `make help` output
-checksum is unchanged. The largest resulting functional fragment is 107 lines.
+This layout keeps target ownership local while `make help` remains the single discoverable command
+surface. Make parsing, representative dry-runs, and the help listing validate the complete include
+graph.
 
 The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
 only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. On CUDA hosts,
@@ -142,11 +159,12 @@ quickstart root. The goldset quickstart passes `QUICKSTART_SWEEP_LIMIT` to each 
 (defaulting to the Make `LIMIT`, currently 20) so the all-in-one path is bounded on offload-heavy
 hosts; set `QUICKSTART_SWEEP_LIMIT=` to run every item in each cell.
 The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_MODEL=auto` with
-`QUICKSTART_MODEL_SELECTION=gemma4`, which resolves the strongest Gemma 4 CUDA-tier target before
-it estimates and confirms the full draft runtime. Benchmark, manual local, and `frontier`
-`litellm` routes remain explicit overrides.
+`QUICKSTART_MODEL_SELECTION=auto`, which resolves the strongest context-capable Gemma 4 CUDA-tier
+target before it estimates and confirms the full draft runtime. Model selection itself does not
+prompt, so an approved unattended run proceeds with `QUICKSTART_ASSUME_YES=1`. Benchmark, manual
+local, and `frontier` `litellm` routes remain explicit overrides.
 
-Host-specific acceptance procedures and current compatibility notes live in
+Host-specific acceptance procedures and serving constraints live in
 [Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
 
 Runtime paths resolve from the project root and honor `DATA_DIR`; the default is `.data`.

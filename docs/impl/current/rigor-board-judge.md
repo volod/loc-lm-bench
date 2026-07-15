@@ -238,7 +238,7 @@ bundles, the board, or correctness aggregates.
 
 Durable evidence (2026-07-10, rerank-order-full-cohort on the CUDA host, outside quick CI):
 full-final-split probes (`ua_squad_postedited_v1`, 82 final items, k=5, no LIMIT cap) per
-roster model on ollama, superseding the earlier n=20 llama run:
+roster model on Ollama:
 
 - `llama3.2:3b`: head 0.448 [0.360, 0.526], middle 0.419 [0.331, 0.498],
   tail 0.433 [0.351, 0.511] -- the mild best-first slope survives at n=82 but the head/tail CIs

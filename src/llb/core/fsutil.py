@@ -31,10 +31,3 @@ def atomic_write_text(path: Path, content: str) -> None:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
         raise
-
-
-def coverage_json_to_text(input_json_file_name: str, output_text_file_name: str) -> None:
-    """Compatibility wrapper for the coverage-plan text renderer."""
-    from llb.prep.curation.coverage_text import write_coverage_plan_text
-
-    write_coverage_plan_text(Path(input_json_file_name), Path(output_text_file_name))

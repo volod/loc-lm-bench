@@ -7,9 +7,9 @@ miss (evidence present, answer wrong), refusal, format/scoring artifact, or judg
 recommendations (raise or lower `top_k`, change chunking, add prompt-system dictionary terms,
 try the named alternative model). Every recommendation line names its numeric evidence.
 
-Classification is span-overlap based: it reads the additive per-case `retrieval.jsonl` record
-the runner persists beside `scores.jsonl` (falling back to the scored `retrieval_hit` for
-legacy bundles). Everything here is pure and file-driven -- no endpoint, GPU, or store -- so the
+Classification is span-overlap based: it reads the per-case `retrieval.jsonl` record
+the runner persists beside `scores.jsonl`. Everything here is pure and file-driven -- no endpoint,
+GPU, or store -- so the
 whole classifier is unit-testable over a synthetic scored bundle. The bounded probe mode that
 re-runs the miss subset at alternative retrieval depths lives in `miss_probe.py`; run bundles
 are never mutated.

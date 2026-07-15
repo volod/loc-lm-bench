@@ -122,7 +122,7 @@ export HF_HUB_OFFLINE=1
 
 The wrapper draft target is the normal path. It stages all converted markdown documents, selects a
 drafter, estimates the full draft duration, asks for confirmation, and writes the review bundle.
-With the default `QUICKSTART_DRAFT_MODEL=auto` and `QUICKSTART_MODEL_SELECTION=gemma4`, the selector
+With the default `QUICKSTART_DRAFT_MODEL=auto` and `QUICKSTART_MODEL_SELECTION=auto`, the selector
 uses the most capable Gemma 4 serving target for the resolved CUDA tier and filters out vLLM rows
 whose configured context is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB CUDA hosts this resolves to
 `google/gemma-4-12B-it-qat-w4a16-ct` via vLLM with `max_model_len=16384`,
@@ -169,9 +169,7 @@ QUICKSTART_DRAFT_BACKEND=vllm \
   make quickstart-pdf-corpus-draft
 ```
 
-With `QUICKSTART_MODEL_SELECTION=legacy-auto`, the selector uses existing recommendation JSON when
-it exists, then falls back to the host-fit Gemma 4 target. If `QUICKSTART_DRAFT_BASE_URL` is unset,
-the draft command starts and stops `vllm serve` itself; set
+If `QUICKSTART_DRAFT_BASE_URL` is unset, the draft command starts and stops `vllm serve` itself; set
 `QUICKSTART_DRAFT_BASE_URL=http://host:port/v1` to use an already-running server.
 
 To opt into an external provider, set the provider API key expected by `litellm`. The draft command
@@ -182,6 +180,9 @@ then asks for corpus-and-destination-specific consent and applies the quickstart
 QUICKSTART_DRAFT_ENDPOINT=frontier QUICKSTART_DRAFT_MODEL=<litellm-model-id> \
   make quickstart-pdf-corpus-draft
 ```
+
+See [Automatic CUDA-host draft model selection](../../inference/config-example.md#automatic-cuda-host-draft-model-selection)
+for the exact VRAM buckets, ranking rules, tier matrix, and override precedence.
 
 Expected artifacts:
 
@@ -199,7 +200,7 @@ Default full-draft knobs:
 
 - `QUICKSTART_PDF_DRAFT_DOCS=all`
 - `QUICKSTART_DRAFT_MODEL=auto`
-- `QUICKSTART_MODEL_SELECTION=gemma4`
+- `QUICKSTART_MODEL_SELECTION=auto`
 - `QUICKSTART_DRAFT_MAX_ITEMS=180`
 - `QUICKSTART_DRAFT_VERIFY_N=40`
 - `QUICKSTART_DRAFT_TIMEOUT=900`

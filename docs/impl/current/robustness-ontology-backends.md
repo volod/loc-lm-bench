@@ -13,7 +13,7 @@ exited 0 and a failing command looked successful to `make` and CI.
 
 `--help` returns 0 through the same path and stays exit 0.
 `tests/llb/core/test_runtime.py` pins both with a `_ReturningApp` fake that models click's real
-non-standalone contract; the older `_FakeApp` (which raises `Exit`) cannot express it.
+non-standalone contract.
 
 ## Memory Planner
 
@@ -46,7 +46,7 @@ pytest for this path.
 resolved executable from `PATH`, then falls back to common absolute locations such as
 `/usr/bin/nvidia-smi`, so planner commands still see the GPU when an execution environment has a
 minimal `PATH`. On the local RTX 4060 Ti host, `detect-gpu-vram`, `list-models`, and
-`resolve-models --offline` now report a 16,380 MiB GPU tier.
+`resolve-models --offline` reports a 16,380 MiB GPU tier.
 
 ## VRAM Contention Guard
 
@@ -261,27 +261,19 @@ parallel extraction (`DRAFT_CONCURRENCY=2`) wrote `.data/prepare-goldset/paralle
 model returned no grounded JSON (`parse_rate=0.0`, gates failed), so use the production drafter
 probe before accepting a real PDF bundle.
 
-Ontology drafting now routes every Ollama call through native `/api/chat` with `format=json`.
+Ontology drafting routes every Ollama call through native `/api/chat` with `format=json`.
 `make prepare-goldset-draft` also defaults `DRAFT_NO_THINK=1`, so the default `gemma4:e4b`
 drafter spends its completion budget on the required JSON instead of hidden reasoning. Set
 `DRAFT_NO_THINK=0` explicitly only when testing a model that should retain reasoning.
 
 `LLMExtractionAdapter` retries malformed or non-object output once. It journals only calls that
 returned a parsed JSON object; transport errors and rejected responses stay absent and are retried
-on resume. Parsed empty objects remain cacheable. For compatibility with interrupted bundles from
-the older journal format, empty rows without the `parsed=true` marker are ignored while non-empty
-rows are reused. Recover such a bundle without deleting its useful extraction work:
+on resume. Every journal row requires `parsed=true`, and parsed empty objects remain cacheable.
+Resume an interrupted current-schema bundle with:
 
 ```bash
 make prepare-goldset-draft DRAFT_RESUME=<bundle> DRAFT_NUM_CTX=16384
 ```
-
-A local `gemma4:e4b` one-document probe of the PDF corpus, written under
-`.data/prepare-goldset/structured-json-probe`, finished in 30.838 seconds with parse rate `1.0`,
-4 grounded entities, 4 events, 4 claims, 4 facts, 1 kept draft item, full page-span citation
-coverage, and all calibration gates passing. The interrupted chain bundle's legacy journal had 45
-rows; recovery identifies 2 non-empty rows as reusable and schedules the 43 ambiguous empty rows
-for regeneration.
 
 vLLM-backed drafting is still `--endpoint local` (no egress), but sets `--backend vllm`. If
 `--base-url` is omitted, `src/llb/cli/prep/draft_endpoints.py` starts `VllmLauncher` from

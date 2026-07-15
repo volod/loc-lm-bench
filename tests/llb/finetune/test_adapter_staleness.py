@@ -89,8 +89,8 @@ def test_staleness_flips_when_the_store_embedder_changes(tmp_path: Path):
     assert any("chunk_size" in reason for reason in rechunked.reasons)
 
 
-def test_staleness_legacy_entry_without_fingerprint_reads_unknown(tmp_path: Path):
-    """An entry registered before the retrieval fingerprint existed can never read current."""
+def test_staleness_without_an_index_fingerprint_reads_unknown(tmp_path: Path):
+    """An entry without an index cannot claim that its retrieval evidence is current."""
     goldset = _goldset(tmp_path, _item("tune-1", "tuning"))
     corpus = _corpus(tmp_path)
     entry = register_adapter(
