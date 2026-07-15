@@ -31,7 +31,7 @@ from llb.board.miss_analysis.model import (
     MissRecord,
 )
 from llb.board.miss_analysis.recommendations import build_recommendations
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.eval import common as eval_common
 from llb.goldset.schema import GoldItem
 from llb.rag.retrieval import chunk_hits_any

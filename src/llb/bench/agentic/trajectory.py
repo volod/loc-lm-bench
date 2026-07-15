@@ -17,7 +17,8 @@ from llb.bench.agentic.model import (
     _TrajectoryQualityResult,
 )
 from llb.bench.common import mean, run_gated_judge
-from llb.core.contracts import AgenticCaseRow, JudgeInputRecord, JudgeScore
+from llb.core.contracts.benchmarks import AgenticCaseRow
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
 from llb.prompts.registry import render_text
 from llb.scoring.leaderboard import bootstrap_mean_ci
 

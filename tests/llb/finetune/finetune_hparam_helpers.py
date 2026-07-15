@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.hparam_search.model import (
     HPARAMS_MANIFEST,
     HPARAMS_METHOD,

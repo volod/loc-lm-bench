@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 def _parse_models(models: list[str]) -> list[str]:

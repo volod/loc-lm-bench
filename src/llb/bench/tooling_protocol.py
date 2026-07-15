@@ -6,7 +6,7 @@ from typing import Any
 from llb.bench.common import (
     LLMComplete,
 )
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.prompts.registry import render_text
 from llb.scoring import tool_calls
 

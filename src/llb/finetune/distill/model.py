@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ChatMessage, ChunkRecord, JsonObject
+from llb.core.contracts.common import ChatMessage, JsonObject
+from llb.core.contracts.rag import ChunkRecord
 from llb.eval import common as eval_common
 from llb.goldset.schema import GoldItem
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import load_dataset_manifest
 from llb.finetune.hparam_search.dev_slice import _carve_dev_slice
 from llb.finetune.hparam_search.manifest_io import _finish

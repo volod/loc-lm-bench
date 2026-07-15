@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import DATASET_MANIFEST, load_dataset_manifest
 from llb.finetune.adapter_manifest import (
     _adapter_manifest,

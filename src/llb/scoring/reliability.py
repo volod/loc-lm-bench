@@ -11,7 +11,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from llb.core.contracts import ReliabilityReport
+from llb.core.contracts.benchmarks import ReliabilityReport
 from llb.eval.common import OK
 
 # The known typed failure statuses (documentation; the aggregator counts whatever appears).

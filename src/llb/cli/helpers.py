@@ -6,7 +6,7 @@ from typing import Any, NoReturn, Optional
 import typer
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 def cli_error(message: str, *, code: int = 2) -> NoReturn:

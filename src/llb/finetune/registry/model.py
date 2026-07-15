@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.paths import resolve_project_path
 from llb.finetune.adapter_manifest import ADAPTER_DIGEST_SHORT_CHARS
 

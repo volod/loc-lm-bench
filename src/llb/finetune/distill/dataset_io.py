@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.dataset import (
     DATASET_MANIFEST,

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 from llb.finetune.dataset import subset_dataset
 from llb.finetune.hparam_search.manifest_io import (
     latest_hparams_manifest,

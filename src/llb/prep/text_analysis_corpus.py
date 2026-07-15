@@ -23,7 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from llb.core.contracts import PlantedLabelRecord
+from llb.core.contracts.benchmarks import PlantedLabelRecord
 from llb.prep.frontier import litellm_complete, parse_json_block
 from llb.prep.frontier_telemetry import LLMComplete, ProvenanceLog
 from llb.scoring import text_analysis_labels as ta

@@ -1,6 +1,6 @@
 """ASCII rendering for model feasibility plans."""
 
-from llb.core.contracts import ModelPlanRow
+from llb.core.contracts.models import ModelPlanRow
 
 HEADERS = [
     "model",

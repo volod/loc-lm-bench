@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from typing import Any
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.prep.frontier import parse_json_block
 
 _TYPE_MAP: dict[str, tuple[type, ...]] = {

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
+from llb.core.contracts.judging import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb.prompts.registry import render_text
 
 DEFAULT_THRESHOLD = 0.6

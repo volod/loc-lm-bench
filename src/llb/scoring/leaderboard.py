@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import dataclass, field
-from llb.core.contracts import LeaderboardRow
+from llb.core.contracts.results import LeaderboardRow
 
 DEFAULT_WEIGHT_JUDGE = 0.5
 

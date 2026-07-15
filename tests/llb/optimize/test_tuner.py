@@ -3,7 +3,7 @@
 import pytest
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 from llb.optimize.tuner import make_objective
 from llb.optimize.tuning_space import (
     EXTENDED_STRATEGIES,

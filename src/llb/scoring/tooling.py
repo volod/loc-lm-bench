@@ -20,7 +20,7 @@ the structured-output category).
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.scoring.tool_calls import ToolCall, arguments_match, validate_arguments
 
 # JSON-schema primitive type -> accepted Python types.

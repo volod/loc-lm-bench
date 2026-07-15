@@ -1,6 +1,6 @@
 """Focused map reduce prompts implementation."""
 
-from llb.core.contracts import ChatMessage
+from llb.core.contracts.common import ChatMessage
 
 from llb.prompts.registry import render_chat, render_text
 

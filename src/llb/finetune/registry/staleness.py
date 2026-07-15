@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.paths import resolve_project_path
 from llb.finetune.registry.model import (
     RETRIEVAL_FINGERPRINT_KEYS,

@@ -7,7 +7,7 @@ from typing import Any
 import typer
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ResolvedModel
+from llb.core.contracts.models import ResolvedModel
 
 
 def _sweep_cell_overrides(

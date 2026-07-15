@@ -14,7 +14,7 @@ separately, never collapsed into a single "reliability failure".
 import re
 import unicodedata
 
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 
 # Terminal case statuses (shared across all templates).
 OK = "ok"

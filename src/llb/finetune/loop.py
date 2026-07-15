@@ -13,7 +13,8 @@ from llb.board.miss_analysis.classify import analyze_run
 from llb.board.miss_analysis.load import load_item_provenance
 from llb.board.miss_analysis.report import write_analysis
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult, JsonObject
+from llb.core.contracts.runs import EvalResult
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import export_finetune_set
 from llb.finetune.registry.io import registry_path
 from llb.finetune.registry.register import try_register_adapter

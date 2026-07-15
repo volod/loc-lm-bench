@@ -7,7 +7,8 @@ import logging
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
-from llb.core.contracts import JsonObject, SquadAnswers, SquadRecord
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.rag import SquadAnswers, SquadRecord
 from llb.goldset.schema import GoldItem, Provenance
 from llb.goldset.splits import assign_splits
 

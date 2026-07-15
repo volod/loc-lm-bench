@@ -3,7 +3,7 @@
 from typing import Any, Callable
 from llb.backends.planner.plan import plan_model
 from llb.core.config import RunConfig
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 TUNING_SPLIT = "tuning"
 

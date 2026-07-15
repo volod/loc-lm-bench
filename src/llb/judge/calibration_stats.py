@@ -1,7 +1,7 @@
 """Focused calibration stats implementation."""
 
 import random
-from llb.core.contracts import CalibrationResult
+from llb.core.contracts.judging import CalibrationResult
 
 DEFAULT_THRESHOLD = 0.6
 

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ChatMessage
+from llb.core.contracts.common import ChatMessage
 from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.resolve import resolve_adapter

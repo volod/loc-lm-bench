@@ -25,11 +25,9 @@ from llb.bench.common import (
     verified_data_config,
 )
 from llb.bench.common_backend import ThroughputMeter
-from llb.core.contracts import (
-    BoardRow,
-    RunPaths,
-    SecurityCaseRow,
-)
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.runs import RunPaths
+from llb.core.contracts.benchmarks import SecurityCaseRow
 from llb.scoring import security
 from llb.scoring.security_cases import load_security_cases
 from llb.scoring.leaderboard import ModelResult

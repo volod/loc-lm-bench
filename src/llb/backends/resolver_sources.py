@@ -2,10 +2,7 @@
 
 from typing import Any
 from llb.backends.planner.weights import resolve_bpw
-from llb.core.contracts import (
-    ModelSpec,
-    SourceRecord,
-)
+from llb.core.contracts.models import ModelSpec, SourceRecord
 
 BACKEND_PRIORITY = ("vllm", "ollama", "llamacpp")
 

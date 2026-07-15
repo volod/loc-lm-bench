@@ -16,7 +16,7 @@ from llb.board.recommend.model import (
     _t,
     _vram,
 )
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 
 def _top_k_note(summary: RunSummary) -> str:

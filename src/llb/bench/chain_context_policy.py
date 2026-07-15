@@ -5,7 +5,8 @@ from typing import Any, Protocol
 from llb.bench.common import (
     category_result,
 )
-from llb.core.contracts import ChunkRecord, RunPaths
+from llb.core.contracts.rag import ChunkRecord
+from llb.core.contracts.runs import RunPaths
 from llb.eval.common import classify_response, format_context
 from llb.goldset.chains import ChainItem
 from llb.prompts.registry import render_text

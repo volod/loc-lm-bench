@@ -7,7 +7,7 @@ from llb.backends.resolver import (
 )
 from llb.backends.resolver_feasibility import backend_can_run
 from llb.backends.resolver_sources import candidate_sources
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 ALL_AVAILABLE = ResolverProbes(
     hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True

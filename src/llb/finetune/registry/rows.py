@@ -1,6 +1,6 @@
 """Adapter-registry rows for CLI and board presentation."""
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
 from llb.finetune.adapter_manifest import ADAPTER_DIGEST_SHORT_CHARS

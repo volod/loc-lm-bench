@@ -3,7 +3,8 @@
 from pathlib import Path
 from typing import cast
 
-from llb.core.contracts import ChatMessage, ChunkRecord
+from llb.core.contracts.common import ChatMessage
+from llb.core.contracts.rag import ChunkRecord
 from llb.eval import common as eval_common
 from llb.eval.graph import build_messages
 from llb.finetune.distill.model import GatedTeacherRecord, TeacherResponse

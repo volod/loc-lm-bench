@@ -3,14 +3,14 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from llb.core.contracts import (
+from llb.core.contracts.rag import (
     CaseRetrievalRecord,
-    CaseScoreRow,
     ChunkRecord,
     RetrievalPair,
     RetrievedSpanRecord,
     SourceSpanRecord,
 )
+from llb.core.contracts.results import CaseScoreRow
 from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.goldset.schema import GoldItem

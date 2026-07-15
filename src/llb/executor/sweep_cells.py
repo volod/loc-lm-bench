@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, cast
 import yaml
 from llb.core.config import RunConfig
-from llb.core.contracts import CellResult, CoolDownReport, GpuSample, SweepReport
+from llb.core.contracts.hardware import CellResult, CoolDownReport, GpuSample, SweepReport
 from llb.executor.isolation_thermal import (
     _LOG,
 )

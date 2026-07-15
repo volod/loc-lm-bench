@@ -9,7 +9,7 @@ the FAISS path uses -- the un-grounded abstraction (an LLM community summary) is
 entirely and recorded only as a tagged diagnostic.
 """
 
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.graph.constants import (
     KIND_EDGE_FACT,
     KIND_NODE_MENTION,

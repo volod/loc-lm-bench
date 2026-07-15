@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from llb.core.contracts import ValidationReport
+from llb.core.contracts.common import ValidationReport
 from llb.goldset.schema import GoldItem, Provenance, SourceSpan
 from llb.prep.frontier import ground_span
 from llb.prep.ontology.constants import DEFAULT_QUESTION_TYPE, QUESTION_TYPES

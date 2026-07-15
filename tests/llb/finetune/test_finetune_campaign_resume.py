@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 from llb.finetune.campaign.run import run_finetune_campaign
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import dump_goldset, load_goldset

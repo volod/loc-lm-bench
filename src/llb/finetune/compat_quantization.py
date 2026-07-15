@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Any
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 VERDICT_TRAINABLE = "trainable"
 

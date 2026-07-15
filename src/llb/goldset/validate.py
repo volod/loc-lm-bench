@@ -10,7 +10,7 @@ import logging
 import sys
 from pathlib import Path
 
-from llb.core.contracts import ValidationReport
+from llb.core.contracts.common import ValidationReport
 from llb.goldset.chains import load_chains, validate_chains
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 

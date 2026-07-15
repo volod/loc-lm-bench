@@ -9,7 +9,8 @@ from llb.board.miss_analysis.classify import analyze_run
 from llb.board.miss_analysis.load import load_item_provenance
 from llb.board.miss_analysis.report import write_analysis
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject, ModelPlanRow
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.models import ModelPlanRow
 from llb.finetune.campaign.model import (
     COMPLETE_VERDICT,
     SHARED_DATASET_DIRNAME,

@@ -5,7 +5,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.core.contracts import JsonObject, ScreenReport
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.screening import ScreenReport
 from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness

@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 from pydantic import model_validator
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.paths import resolve_data_dir, resolve_project_path
 from llb.core.config_validation import (
     RUN_EVAL_METHOD,

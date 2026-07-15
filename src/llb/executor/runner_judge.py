@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.core.contracts import JudgeInputRecord, JudgeScore, JudgeStatus
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
 from llb.scoring.judge.model import judge_is_trusted, run_judge
 

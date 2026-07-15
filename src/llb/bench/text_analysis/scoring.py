@@ -13,7 +13,8 @@ from llb.bench.text_analysis.prompts import (
     long_doc_question,
     parse_predictions,
 )
-from llb.core.contracts import JudgeInputRecord, JudgeScore, TextAnalysisCaseRow
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
+from llb.core.contracts.benchmarks import TextAnalysisCaseRow
 from llb.eval.common import EMPTY, MALFORMED, OK
 from llb.eval.map_reduce import run_map_reduce_text
 from llb.scoring import text_analysis as ta

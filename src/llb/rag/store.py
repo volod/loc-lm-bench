@@ -14,7 +14,7 @@ from llb.core.config_validation import (
     DEFAULT_FUSION_CANDIDATES,
     DEFAULT_FUSION_WEIGHT,
 )
-from llb.core.contracts import ChunkRecord, RagStoreMeta
+from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.rag.embedding import Embedder
 from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors

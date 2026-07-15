@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.composite_builder import build_category_composite_rows
 from llb.scoring.composite_types import CompositeComponent, CompositeIssue

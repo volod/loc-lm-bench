@@ -16,7 +16,7 @@ from llb.board.recommend.model import (
     _short,
     _t,
 )
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 
 def format_miss_section_md(analysis: JsonObject | None) -> str:

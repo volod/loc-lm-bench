@@ -6,7 +6,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from llb.bench.agentic.model import HARNESS_LOOP
-from llb.core.contracts import BoardRow, JsonObject
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.common import JsonObject
 from llb.scoring.aggregate import (
     TIER_AGENTIC,
     rank_board,

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 
 
 @dataclass

@@ -45,7 +45,7 @@ from llb.graph.linking import (
     link_seed_nodes,
     node_link_scores,
 )
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 from llb.graph.retrieval import serialize_subgraph
 from llb.graph.store_io import _connect, _read_jsonl, _write_jsonl

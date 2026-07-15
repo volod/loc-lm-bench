@@ -23,7 +23,7 @@ from typing import Any, Callable
 
 from typing_extensions import NotRequired, TypedDict
 
-from llb.core.contracts import SourceSpanRecord
+from llb.core.contracts.rag import SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
 
 _LOG = logging.getLogger(__name__)

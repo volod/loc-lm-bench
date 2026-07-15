@@ -7,7 +7,7 @@ sub-split oversized sections with the pinned `recursive_spans`.
 import re
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.rag.chunking.recursive import recursive_spans
 from llb.rag.chunking.spans import _trim, validate_chunking
 

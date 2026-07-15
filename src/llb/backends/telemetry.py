@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from llb.backends.base import ChatResult
-from llb.core.contracts import ChatMessage, GpuSummary, TelemetryReport
+from llb.core.contracts.common import ChatMessage
+from llb.core.contracts.hardware import GpuSummary, TelemetryReport
 from llb.prompts.registry import render_text_list
 from llb.backends.telemetry_samplers import PowerSampler, VramSampler
 

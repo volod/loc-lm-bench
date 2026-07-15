@@ -1,6 +1,6 @@
 """Focused board format implementation."""
 
-from llb.core.contracts import BoardRow
+from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import quality_signals
 from llb.scoring.leaderboard import DEFAULT_WEIGHT_JUDGE, ModelResult
 

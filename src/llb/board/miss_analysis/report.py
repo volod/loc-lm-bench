@@ -19,7 +19,7 @@ from llb.board.miss_analysis.model import (
     MissAnalysis,
     _t,
 )
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 
 def _fmt_rate(value: float) -> str:

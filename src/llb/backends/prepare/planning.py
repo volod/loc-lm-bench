@@ -12,7 +12,7 @@ from llb.backends.prepare.base import (
     ACTION_SKIP,
     SUPPORTED_BACKENDS,
 )
-from llb.core.contracts import ModelSpec, PreparedModel, SourceRecord
+from llb.core.contracts.models import ModelSpec, PreparedModel, SourceRecord
 
 
 def decide(backend: str, need_mb: int, max_mb: int, has_gpu: bool, force: bool) -> tuple[str, str]:

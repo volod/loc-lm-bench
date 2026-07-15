@@ -10,7 +10,8 @@ import logging
 from dataclasses import dataclass
 
 from llb.board.runs import RunRecord
-from llb.core.contracts import BoardRow, JsonObject
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.common import JsonObject
 from llb.prompts.registry import render_text
 from llb.scoring.leaderboard import ModelResult
 

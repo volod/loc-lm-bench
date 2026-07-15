@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT, subset_dataset
 from llb.finetune.hparam_search.dev_slice import _dev_items
 from llb.finetune.hparam_search.model import (

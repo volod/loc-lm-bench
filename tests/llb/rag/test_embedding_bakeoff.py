@@ -7,7 +7,7 @@ lightweight CI install (no GPU, no FAISS, no numpy, no network).
 
 import pytest
 
-from llb.core.contracts import ChunkRecord, SourceSpanRecord
+from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.embedding_bakeoff import (
     KIND_API,
     KIND_LOCAL,

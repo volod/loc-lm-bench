@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult, JsonObject, ModelPlanRow
+from llb.core.contracts.runs import EvalResult
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.models import ModelPlanRow
 from llb.finetune.campaign.coerce import _path_or_none
 
 PROGRESS_FILENAME = "campaign.progress.jsonl"

@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.bench.common import JudgeScorer, Mirror
-from llb.core.contracts import BoardRow, JudgeInputRecord, RunPaths, TextAnalysisCaseRow
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.judging import JudgeInputRecord
+from llb.core.contracts.runs import RunPaths
+from llb.core.contracts.benchmarks import TextAnalysisCaseRow
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
 

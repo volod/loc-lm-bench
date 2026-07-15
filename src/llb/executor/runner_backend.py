@@ -21,7 +21,7 @@ from llb.executor.runner_setup import _default_runner_fn
 from llb.goldset.schema import GoldItem
 
 if TYPE_CHECKING:
-    from llb.core.contracts import ContentionReport
+    from llb.core.contracts.hardware import ContentionReport
 
 RagState = eval_graph.RagState
 _LOG = logging.getLogger(__name__)

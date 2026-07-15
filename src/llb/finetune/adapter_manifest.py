@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 
 ADAPTER_MANIFEST = "adapter_manifest.json"

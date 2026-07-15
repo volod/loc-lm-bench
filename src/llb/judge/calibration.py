@@ -14,7 +14,8 @@ import json
 import sys
 from pathlib import Path
 
-from llb.core.contracts import JsonObject, WorksheetItem
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.judging import WorksheetItem
 from llb.judge.calibration_stats import DEFAULT_THRESHOLD, calibrate
 from llb.judge.calibration_worksheet import _LOG, emit_worksheet
 

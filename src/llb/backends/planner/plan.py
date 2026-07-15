@@ -15,7 +15,7 @@ from llb.backends.planner.constants import (
 )
 from llb.backends.planner.kv import gpu_layers, kv_mib_at_context, max_context_for_kv
 from llb.backends.planner.weights import hi_precision_params, resolve_bpw, weights_mib_detailed
-from llb.core.contracts import ModelPlanRow, ModelSpec
+from llb.core.contracts.models import ModelPlanRow, ModelSpec
 
 
 def _base_row(spec: ModelSpec) -> ModelPlanRow:

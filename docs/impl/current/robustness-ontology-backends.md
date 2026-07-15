@@ -36,7 +36,8 @@ pre-flight estimate.
 ## Model Preparation Contracts
 
 `src/llb/backends/prepare/planning.py` expands `ModelSpec.sources` into backend-specific
-`PreparedModel` rows using the `SourceRecord` metadata from `src/llb/core/contracts.py`, matching
+`PreparedModel` rows using the `SourceRecord` metadata from
+`src/llb/core/contracts/models.py`, matching
 resolver source normalization. `prep-models` and `prep-serving-targets` progress callbacks receive
 those typed rows before backend dispatch. `make ci` covers formatting, ruff, mypy, and non-slow
 pytest for this path.

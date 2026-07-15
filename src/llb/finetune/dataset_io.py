@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import Counter
 from pathlib import Path
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 
 DATASET_MANIFEST = "dataset_manifest.json"

@@ -22,17 +22,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from llb.core.contracts import (
-    ContentionReport,
-    DurabilityStatus,
-    JsonObject,
-    JudgeStatus,
-    RetrievalMetrics,
-    RunEnvironment,
-    RunMetrics,
-    RunPaths,
-    TelemetryReport,
-)
+from llb.core.contracts.hardware import ContentionReport, TelemetryReport
+from llb.core.contracts.runs import DurabilityStatus, RunEnvironment, RunMetrics, RunPaths
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.judging import JudgeStatus
+from llb.core.contracts.rag import RetrievalMetrics
 from llb.core.fsutil import atomic_write_text as _atomic_write_text
 
 _LOG = logging.getLogger(__name__)

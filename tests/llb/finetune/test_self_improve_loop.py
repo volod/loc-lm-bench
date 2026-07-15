@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 from llb.finetune.loop import run_self_improve
 from llb.finetune.registry.io import load_registry, registry_path
 from llb.goldset.schema import dump_goldset, load_goldset

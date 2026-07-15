@@ -34,24 +34,29 @@ The repository-wide module-size pass is complete. Production procedures now live
 owner modules for command construction, resolver feasibility/reporting, executor durability and
 retrieval, benchmark scoring/persistence, curation input/dispatch, fine-tuning manifests/runtime,
 RAG store construction/validation, and report formatting. Oversized tests were split by behavior,
-with shared factories in intent-named helper modules. The only Python or shell file above the
-soft limit is `src/llb/core/contracts.py`: its schema aliases and `TypedDict` contract family stay
-together because splitting that single vocabulary would make the contracts harder to discover.
+with shared factories in intent-named helper modules.
 
-Validation result (2026-07-14): `scripts/code_quality.sh` reports only that cohesive exception;
-its cyclomatic and cognitive-complexity sections are empty. Mutation-heavy construction now uses
-objects instead of branch-heavy procedures: `DraftResumeBuilder` restores a draft request,
+Cross-package `TypedDict` contracts live in `src/llb/core/contracts/`, split into concrete owner
+modules: `common`, `rag`, `benchmarks`, `results`, `runs`, `models`, `judging`, `hardware`, and
+`screening`. Callers import from those modules directly. The package `__init__.py` contains only
+its docstring and provides no compatibility re-exports.
+
+Validation result (2026-07-15): `make ci` passes Ruff formatting/lint, mypy over 524 source files,
+and the lightweight suite with 1,421 passed and 38 slow tests deselected; `make lint-md` also
+passes. Every contract owner module is at most 132 lines, below the 250-line soft target.
+
+Mutation-heavy construction now uses objects instead of branch-heavy procedures:
+`DraftResumeBuilder` restores a draft request,
 `EndpointConfigBuilder` validates and creates endpoint data, `AgreementReportBuilder` assembles
 review statistics, and `ConsensusBuilder` resolves reviewer rows. The old tuple/facade functions
 were removed rather than retained as compatibility layers.
-
-`make ci` passes Ruff formatting/lint, mypy over 508 source files, and the lightweight suite with
-1,401 passed and 36 slow tests deselected.
 
 Current focused package boundaries:
 
 | Concern | Modules |
 | --- | --- |
+| Make workflows | `make/eval/` and `make/data-prep/` grouped by functional target family |
+| Shared typed contracts | `core/contracts/` with domain-specific owner modules and no package-level facade |
 | CLI registration | `src/llb/cli/<area>/` with command-specific submodules |
 | Draft request construction | `cli/prep/draft_request.py`, `draft_resume.py`, `draft_endpoints.py`, and `draft_execution.py` |
 | Host feasibility | `backends/planner/` for architecture, weights, KV sizing, plans, and formatting |
@@ -110,10 +115,22 @@ and `[result]` artifact summaries.
 The top-level `Makefile` is the public entry point: it sets root variables, includes grouped make
 fragments, and defines `help`. Target implementations live under `make/`: `config.mk` for shared
 defaults and exported environment, `quickstart.mk` for grouped quickstarts, `dev.mk` for local
-development and tests, `data-prep.mk` for corpus/goldset/verification work, `eval.mk` for
-RAG/evaluation/pipeline targets, and `models.mk` for model and serving setup. `make help` scans
-all included fragments through `$(MAKEFILE_LIST)` and uses the `##@` section markers plus
-`make/help.awk` to print a grouped, standard CLI-style target list.
+development and tests, and `models.mk` for model and serving setup. `data-prep.mk` and `eval.mk`
+are ordered include manifests that retain the public help sections while delegating target bodies
+to functional fragments:
+
+- `make/data-prep/`: corpus ingestion, curation/calibration, verification, draft generation, and
+  draft comparison;
+- `make/eval/`: RAG evaluation, fine-tuning, orchestration, prompt systems, security/agentic
+  benchmarks, knowledge cutoff, and category/platform runs.
+
+Each fragment owns its `.PHONY` declarations. `make help` scans the complete include graph through
+`$(MAKEFILE_LIST)` and uses the `##@` section markers plus `make/help.awk` to print the same grouped,
+standard CLI-style target list.
+
+The split preserves every target body and public help entry. Validation runs `make -qp`, dry-runs
+representative targets from every functional group, and confirms the pre/post `make help` output
+checksum is unchanged. The largest resulting functional fragment is 107 lines.
 
 The goldset quickstart uses `QUICKSTART_SETUP_VENV=auto`, so it reuses an existing `.venv` and
 only syncs dependencies when the venv is missing or `QUICKSTART_SETUP_VENV=1` is set. On CUDA hosts,

@@ -18,15 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypeVar
 
-from llb.core.contracts import (
-    JsonObject,
-    JudgeInputRecord,
-    JudgeScore,
-    JudgeStatus,
-    RunMetrics,
-    RunPaths,
-)
-from llb.core.contracts import BoardRow
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
+from llb.core.contracts.runs import RunMetrics, RunPaths
+from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import rank_board
 from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult

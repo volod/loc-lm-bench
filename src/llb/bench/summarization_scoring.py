@@ -9,11 +9,8 @@ from llb.bench.common import (
     mean,
     run_gated_judge,
 )
-from llb.core.contracts import (
-    JudgeInputRecord,
-    JudgeScore,
-    SummarizationCaseRow,
-)
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
+from llb.core.contracts.benchmarks import SummarizationCaseRow
 from llb.eval.common import EMPTY, OK
 from llb.prompts.registry import render_text
 from llb.scoring import text_analysis as ta

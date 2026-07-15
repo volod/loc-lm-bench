@@ -6,7 +6,7 @@ from pathlib import Path
 
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.registry.model import AdapterEntry, StalenessReport
 
 BACKEND_VLLM = "vllm"

@@ -24,7 +24,8 @@ is injectable.
 from typing import Any, Callable
 
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult, ModelSpec
+from llb.core.contracts.runs import EvalResult
+from llb.core.contracts.models import ModelSpec
 from llb.optimize.tuning_space import (
     FINAL_SPLIT,
     Objective,

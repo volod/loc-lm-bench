@@ -11,7 +11,7 @@ sweep in later current-state topics reuses it unchanged.
 
 from collections import Counter
 
-from llb.core.contracts import BoardRow
+from llb.core.contracts.results import BoardRow
 from llb.scoring.leaderboard import (
     DEFAULT_WEIGHT_JUDGE,
     ModelResult,

@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 from llb.core import env
-from llb.core.contracts import JudgeInputRecord, JudgeScore
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
 from llb.core.paths import resolve_data_dir
 from llb.scoring.judge.endpoint import resolve_judge_endpoint
 from llb.scoring.judge.template import (

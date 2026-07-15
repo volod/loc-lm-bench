@@ -9,7 +9,8 @@ page range (`metadata.pages`), and governance ACL label (`metadata.acl_label`).
 
 from collections.abc import Callable
 
-from llb.core.contracts import ChunkRecord, JsonObject
+from llb.core.contracts.rag import ChunkRecord
+from llb.core.contracts.common import JsonObject
 
 ChunkFilter = Callable[[ChunkRecord], bool]
 

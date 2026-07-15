@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import ChatMessage
+from llb.core.contracts.common import ChatMessage
 from llb.prompts.engine import PromptAugmentation, render_template
 from llb.prompts.registry_generation import (
     DEFAULT_TEMPLATE_ROOT,

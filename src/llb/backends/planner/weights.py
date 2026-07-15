@@ -1,7 +1,7 @@
 """Quantization-aware model-weight estimates."""
 
 from llb.backends.planner.constants import EMBED_BPW, MIB, PARTIAL_QUANT_FORMATS, QUANT_BPW
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 def resolve_bpw(spec: ModelSpec) -> float | None:

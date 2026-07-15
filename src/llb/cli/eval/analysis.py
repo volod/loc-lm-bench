@@ -33,7 +33,7 @@ def probe_context_position_cmd(
     head, middle, and tail of a fixed-k context of real retrieved distractors, score every
     position, and recommend a per-model `context_order` with bootstrap CIs."""
     from llb.bench.common import new_run_timestamp
-    from llb.core.contracts import ChatMessage
+    from llb.core.contracts.common import ChatMessage
     from llb.eval.position_probe import DEFAULT_CANDIDATE_DEPTH, run_probe
     from llb.eval.position_probe_report import render_report, write_probe
     from llb.executor.runner_backend import _make_launcher

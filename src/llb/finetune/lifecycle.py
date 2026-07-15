@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from llb.core.config import RUN_EVAL_METHOD
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.registry.io import load_registry, merged_root, registry_path
 from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.register import record_delete

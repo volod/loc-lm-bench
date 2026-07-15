@@ -23,7 +23,8 @@ from typing import Any
 
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
-from llb.core.contracts import BackendMetadata, EvalResult
+from llb.core.contracts.hardware import BackendMetadata
+from llb.core.contracts.runs import EvalResult
 from llb.eval import graph as eval_graph
 from llb.executor import durability, durability_journal
 from llb.executor.cases import batch_retrieval_records

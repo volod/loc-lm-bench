@@ -14,7 +14,7 @@ from llb.bench.agentic.model import (
 from llb.bench.agentic.success import check_success
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.prompts.registry import render_text_map
 
 _LOG = logging.getLogger(__name__)

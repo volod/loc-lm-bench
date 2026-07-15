@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from llb.board.miss_analysis.model import ITEM_PROVENANCE_FILENAME, RETRIEVAL_FILENAME
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 _LOG = logging.getLogger(__name__)
 

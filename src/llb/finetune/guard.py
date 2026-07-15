@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT
 from llb.finetune.registry.resolve import find_by_digest
 from llb.finetune.adapter_manifest import load_adapter_manifest

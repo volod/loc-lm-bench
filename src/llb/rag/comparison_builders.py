@@ -1,7 +1,7 @@
 """Focused comparison builders implementation."""
 
 from typing import Any
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.rag.filters import metadata_filter
 from llb.rag.compare import (
     CompareItem,

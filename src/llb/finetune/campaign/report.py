@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.campaign.coerce import _fmt
 from llb.finetune.campaign.model import (

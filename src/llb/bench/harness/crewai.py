@@ -19,7 +19,7 @@ from llb.bench.agentic.model import (
 )
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import ToolWorld
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.bench.harness.crewai_runtime import CrewRunner, episode_from_outcome, run_real_crew
 
 

@@ -11,7 +11,7 @@ from llb.backends.llamacpp_command import (
     parse_served_context,
     resolve_llama_server_binary,
 )
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 def test_source_args_maps_repo_path_and_ollama_style():
