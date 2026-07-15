@@ -16,7 +16,7 @@ from llb.bench.knowledge_cutoff.translation_review import (
     REVIEWED_UK_FILENAME,
     REVIEW_SUMMARY_FILENAME,
 )
-from llb.core.contracts import RunMetrics, RunPaths
+from llb.core.contracts.runs import RunMetrics, RunPaths
 
 METHOD = "knowledge-cutoff-bilingual"
 

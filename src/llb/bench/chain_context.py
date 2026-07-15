@@ -33,7 +33,8 @@ from llb.bench.common import (
     render_board,
     verified_data_config,
 )
-from llb.core.contracts import BoardRow, RunMetrics
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.runs import RunMetrics
 from llb.goldset.chains import ChainItem
 from llb.prompts.registry import render_text
 from llb.scoring.aggregate import TIER_CHAIN_CONTEXT

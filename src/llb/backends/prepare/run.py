@@ -27,7 +27,7 @@ from llb.backends.prepare.stores import (
     estimate_download_mb,
     store_dir_for,
 )
-from llb.core.contracts import ModelSpec, PreparationReport, PreparedModel
+from llb.core.contracts.models import ModelSpec, PreparationReport, PreparedModel
 
 
 def _disk_status(

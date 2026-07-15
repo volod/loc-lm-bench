@@ -19,7 +19,8 @@ from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts import ChunkRecord, SourceSpanRecord, UsageRecord
+from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
+from llb.core.contracts.common import UsageRecord
 from llb.eval.common import RETRIEVAL_MISS, classify_response
 from llb.eval.multi_hop_prompts import (
     CONTINUE,

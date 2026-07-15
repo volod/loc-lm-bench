@@ -7,7 +7,7 @@ from llb.backends.resolver import (
 )
 from llb.backends.resolver_report import format_resolution
 from llb.backends.resolver_sources import candidate_sources
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 from test_resolver import ALL_AVAILABLE, BIG, HOST_RAM, HOST_VRAM, MISTRAL_MULTI, SMALL
 
 

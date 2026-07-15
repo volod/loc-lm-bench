@@ -9,7 +9,7 @@ catalog, so the loop's results are unchanged by the agentic harness comparison r
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask, Episode
 from llb.bench.common import LLMComplete
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 
 
 def loop_harness(

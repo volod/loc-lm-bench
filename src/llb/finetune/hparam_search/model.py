@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.adapter_manifest import DEFAULT_TARGET_MODULES
 
 HPARAMS_METHOD = "finetune-hparams"

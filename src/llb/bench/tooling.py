@@ -27,7 +27,9 @@ from llb.bench.common import (
     verified_data_config,
 )
 from llb.bench.common_backend import ThroughputMeter
-from llb.core.contracts import BoardRow, RunMetrics, RunPaths, ToolDef, ToolingCaseRow
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.runs import RunMetrics, RunPaths
+from llb.core.contracts.benchmarks import ToolDef, ToolingCaseRow
 from llb.scoring import tooling
 from llb.scoring.aggregate import TIER_TOOLING
 from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci

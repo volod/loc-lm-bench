@@ -1,9 +1,7 @@
 """Focused resolver feasibility implementation."""
 
 from llb.backends.planner.constants import VERDICT_GPU, VERDICT_OFFLOAD
-from llb.core.contracts import (
-    ModelPlanRow,
-)
+from llb.core.contracts.models import ModelPlanRow
 
 MIN_SERVING_CTX = 2048
 

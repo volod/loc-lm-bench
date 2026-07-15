@@ -28,7 +28,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from llb.core.contracts import IsolationOutcome, ScreenReport, ScreenTaskResult
+from llb.core.contracts.hardware import IsolationOutcome
+from llb.core.contracts.screening import ScreenReport, ScreenTaskResult
 from llb.screen.public_report import _safe
 
 _LOG = logging.getLogger(__name__)

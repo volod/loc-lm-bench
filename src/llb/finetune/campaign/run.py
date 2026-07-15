@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 from llb.finetune.campaign.coerce import _parse_models
 from llb.finetune.campaign.defaults import (
     _default_compat_fn,

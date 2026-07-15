@@ -24,7 +24,7 @@ from typing import Callable, TypeVar
 
 
 from llb.core.config import RunConfig
-from llb.core.contracts import CellResult, IsolationOutcome, SweepReport
+from llb.core.contracts.hardware import CellResult, IsolationOutcome, SweepReport
 from llb.executor.vram import (
     DEFAULT_TOLERANCE_MB,
     VERDICT_LEAKED,

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.common import new_run_timestamp
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.finetune.hparam_search.model import (
     HPARAMS_MANIFEST,

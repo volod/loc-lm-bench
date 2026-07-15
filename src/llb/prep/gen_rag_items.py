@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from llb.core.contracts import RagDataSpec
+from llb.core.contracts.rag import RagDataSpec
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.validate import validate_items
 

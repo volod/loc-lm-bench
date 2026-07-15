@@ -158,7 +158,7 @@ objective floor.
 
 ### In this repo
 `src/llb/scoring/text_analysis.py` (the matcher), the `PlantedLabelRecord` / `SubtaskScore`
-contracts in `src/llb/core/contracts.py`, and the signed-off design at
+contracts in `src/llb/core/contracts/benchmarks.py`, and the signed-off design at
 [`docs/design/text-analysis-schema.md`](../../design/text-analysis-schema.md). The cosine similarity
 is injected, so the engine is pure and unit-tested without the embedder.
 

@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from llb.core.contracts import ChatMessage, ChunkRecord
+from llb.core.contracts.common import ChatMessage
+from llb.core.contracts.rag import ChunkRecord
 from llb.eval.position_probe import (
     POSITION_HEAD,
     POSITION_MIDDLE,

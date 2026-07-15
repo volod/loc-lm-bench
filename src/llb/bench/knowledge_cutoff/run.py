@@ -16,7 +16,7 @@ from llb.bench.knowledge_cutoff.fit import DEFAULT_SEED, DEFAULT_TRIALS, DecayFi
 from llb.bench.knowledge_cutoff.probe import parse_answer, prepare_probe
 from llb.bench.knowledge_cutoff.report import build_report, report_artifacts
 from llb.bench.knowledge_cutoff.score import DEFAULT_THRESHOLD, CutoffSummary, case_row, summarize
-from llb.core.contracts import RunMetrics, RunPaths
+from llb.core.contracts.runs import RunMetrics, RunPaths
 
 METHOD = "knowledge-cutoff"
 _LOG = logging.getLogger(__name__)

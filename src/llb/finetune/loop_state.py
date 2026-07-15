@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.scoring.leaderboard import bootstrap_mean_ci
 

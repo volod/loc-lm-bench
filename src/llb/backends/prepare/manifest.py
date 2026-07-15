@@ -9,7 +9,7 @@ from typing import cast
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 class _ModelSpecSchema(BaseModel):

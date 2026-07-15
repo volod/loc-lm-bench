@@ -5,7 +5,7 @@ import io
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from llb.core.contracts import WorksheetItem
+from llb.core.contracts.judging import WorksheetItem
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.schema import GoldItem
 

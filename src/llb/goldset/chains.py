@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from llb.core.contracts import ValidationReport
+from llb.core.contracts.common import ValidationReport
 from llb.goldset.schema import Provenance, SourceSpan, Split
 
 CHAINS_FILENAME = "chains.jsonl"

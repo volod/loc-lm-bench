@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from llb.bench.common import new_run_timestamp
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.compat_quantization import (
     FALLBACK_NOTE,
     PEFT_SUPPORTED_LINEAR_CLASSES,

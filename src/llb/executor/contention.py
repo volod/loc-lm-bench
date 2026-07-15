@@ -20,7 +20,7 @@ import os
 from typing import Callable
 
 from llb.core.config_validation import DEFAULT_OLLAMA_HOST
-from llb.core.contracts import ContentionReport, ResidentProc
+from llb.core.contracts.hardware import ContentionReport, ResidentProc
 from llb.executor.contention_memory import DEFAULT_MIN_KV_HEADROOM_MB, DEFAULT_VLLM_OVERHEAD_MB
 from llb.executor.ollama_eviction import evict_ollama
 

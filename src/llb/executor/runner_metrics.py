@@ -9,7 +9,9 @@ from collections.abc import Mapping
 
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
-from llb.core.contracts import CaseScoreRow, LeaderboardRow, RunMetrics, TelemetryReport
+from llb.core.contracts.results import CaseScoreRow, LeaderboardRow
+from llb.core.contracts.runs import RunMetrics
+from llb.core.contracts.hardware import TelemetryReport
 from llb.eval import common as eval_common
 from llb.executor.runner_backend import _vram_reader
 from llb.scoring.leaderboard import ModelResult, rank_results

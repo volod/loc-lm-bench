@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 from llb.finetune.campaign.model import COMPLETE_VERDICT, SKIP_VERDICT
 from llb.finetune.campaign.run import run_finetune_campaign
 from llb.finetune.registry.io import load_registry, registry_path

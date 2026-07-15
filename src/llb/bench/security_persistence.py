@@ -4,11 +4,8 @@ from typing import Any
 from llb.bench.common import (
     category_result,
 )
-from llb.core.contracts import (
-    JudgeStatus,
-    RunMetrics,
-    RunPaths,
-)
+from llb.core.contracts.judging import JudgeStatus
+from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.scoring import security
 from llb.scoring.aggregate import TIER_SECURITY
 from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci

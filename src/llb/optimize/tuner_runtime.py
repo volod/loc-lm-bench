@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Callable
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult
+from llb.core.contracts.runs import EvalResult
 from llb.optimize.tuning_space import (
     FINAL_SPLIT,
     TUNING_SPLIT,

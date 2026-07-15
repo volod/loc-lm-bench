@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Callable
-from llb.core.contracts import CoolDownReport, GpuSample
+from llb.core.contracts.hardware import CoolDownReport, GpuSample
 
 _LOG = logging.getLogger(__name__)
 

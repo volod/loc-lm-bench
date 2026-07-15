@@ -28,12 +28,7 @@ from typing import Callable
 from llb.backends.planner.constants import VERDICT_GPU, VERDICT_NO, VERDICT_OFFLOAD
 from llb.backends.planner.plan import plan_model
 from llb.core.config_validation import DEFAULT_OLLAMA_HOST
-from llb.core.contracts import (
-    BackendCandidate,
-    ModelPlanRow,
-    ModelSpec,
-    ResolvedModel,
-)
+from llb.core.contracts.models import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel
 from llb.backends.resolver_sources import _priced_spec, candidate_sources
 from llb.backends.resolver_feasibility import (
     MIN_SERVING_CTX,

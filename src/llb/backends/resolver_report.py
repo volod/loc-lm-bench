@@ -1,8 +1,6 @@
 """Focused resolver report implementation."""
 
-from llb.core.contracts import (
-    ResolvedModel,
-)
+from llb.core.contracts.models import ResolvedModel
 
 
 def format_resolution(rows: list[ResolvedModel]) -> str:

@@ -1,7 +1,7 @@
 """Focused public report implementation."""
 
 import re
-from llb.core.contracts import ScreenReport
+from llb.core.contracts.screening import ScreenReport
 
 
 def screen_score(report: ScreenReport) -> float:

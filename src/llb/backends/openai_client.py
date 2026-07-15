@@ -12,7 +12,7 @@ from typing import Any
 import openai
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, ChatResult
-from llb.core.contracts import ChatMessage
+from llb.core.contracts.common import ChatMessage
 
 
 def make_client(base_url: str, api_key: str = "not-needed") -> openai.OpenAI:

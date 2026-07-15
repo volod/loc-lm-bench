@@ -12,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus, summarize
 from llb.rag.chunking.dispatch import STRATEGIES
 

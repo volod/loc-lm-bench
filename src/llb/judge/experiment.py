@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
+from llb.core.contracts.judging import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 from llb.core.paths import resolve_data_dir
 from llb.scoring.judge.endpoint import judge_experiment_metadata
 from llb.scoring.judge.scorer import deepeval_scorer

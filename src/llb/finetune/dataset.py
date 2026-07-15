@@ -10,7 +10,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from llb.core.contracts import ChunkRecord, JsonObject
+from llb.core.contracts.rag import ChunkRecord
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.eval import common as eval_common
 from llb.eval.graph import build_messages

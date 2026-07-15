@@ -19,7 +19,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import SquadRecord
+from llb.core.contracts.rag import SquadRecord
 from llb.core import env
 from llb.goldset.schema import GoldItem, dump_goldset
 from llb.goldset.validate import validate_items

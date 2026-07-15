@@ -18,7 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.core.contracts import ChatMessage, ChunkRecord, JsonObject
+from llb.core.contracts.common import ChatMessage, JsonObject
+from llb.core.contracts.rag import ChunkRecord
 from llb.eval import common as eval_common
 from llb.eval.graph import build_messages
 from llb.executor.cases import spans_as_dicts

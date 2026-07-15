@@ -6,9 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.core.config import RunConfig
-from llb.core.contracts import (
-    ChatMessage,
-)
+from llb.core.contracts.common import ChatMessage
 from llb.bench.common import LLMComplete, _R
 
 

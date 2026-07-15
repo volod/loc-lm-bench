@@ -29,7 +29,7 @@ import re
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.scoring.correctness import normalize
 
 # A claim counts toward groundedness only when it carries at least this many content tokens; shorter

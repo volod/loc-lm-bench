@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 
 _LOG = logging.getLogger(__name__)
 

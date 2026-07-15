@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from llb.core.contracts import ChunkRecord, SourceSpanRecord
+from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.retrieval import first_hit_rank
 from llb.scoring.external_rag_source_map import SOURCE_RECALL_K, SourceMap, map_source
 

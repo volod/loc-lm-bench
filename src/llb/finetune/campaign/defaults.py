@@ -6,7 +6,9 @@ from llb.backends.planner.architecture import enrich_arch
 from llb.backends.planner.plan import plan_model
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult, JsonObject, ModelPlanRow, ModelSpec
+from llb.core.contracts.runs import EvalResult
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.models import ModelPlanRow, ModelSpec
 from llb.finetune.campaign.coerce import _model_key
 from llb.finetune.campaign.model import CompatFn, EvalFn, PlannerFn, ReclaimFn
 

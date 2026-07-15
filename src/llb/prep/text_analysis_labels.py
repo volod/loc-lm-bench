@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from typing import Any
-from llb.core.contracts import PlantedLabelRecord
+from llb.core.contracts.benchmarks import PlantedLabelRecord
 from llb.prep.frontier import ground_span
 from llb.prompts.registry import render_text
 from llb.scoring import text_analysis_labels as ta

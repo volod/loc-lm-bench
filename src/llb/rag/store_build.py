@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Any, cast
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.chunking.dispatch import chunk_spans
 

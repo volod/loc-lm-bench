@@ -22,7 +22,7 @@ from llb.finetune.hparam_search.model import (
     BUCKET_LOW,
     DevSlice,
 )
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.goldset.schema import GoldItem, load_goldset
 
 

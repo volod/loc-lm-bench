@@ -4,7 +4,8 @@ from pathlib import Path
 
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
-from llb.core.contracts import EvalResult, JsonObject
+from llb.core.contracts.runs import EvalResult
+from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.eval import common as eval_common
 from llb.finetune.distill.model import (

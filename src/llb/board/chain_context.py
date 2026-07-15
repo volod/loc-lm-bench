@@ -10,7 +10,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from llb.bench.chain_context import METHOD
-from llb.core.contracts import BoardRow, JsonObject
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.common import JsonObject
 from llb.scoring.aggregate import (
     TIER_CHAIN_CONTEXT,
     rank_board,

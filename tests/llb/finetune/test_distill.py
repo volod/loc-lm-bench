@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from llb.core.config import RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.distill.model import DistillComparison, TeacherResponse
 from llb.finetune.distill.run import run_distillation
 from llb.finetune.guard import validate_adapter_for_eval

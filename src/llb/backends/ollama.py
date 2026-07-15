@@ -21,7 +21,8 @@ import openai
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.openai_client import chat_once, make_client
-from llb.core.contracts import BackendMetadata, ChatMessage
+from llb.core.contracts.hardware import BackendMetadata
+from llb.core.contracts.common import ChatMessage
 
 
 class OllamaLauncher(BackendLauncher):

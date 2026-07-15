@@ -5,7 +5,8 @@ import logging
 from llb.bench.common import persist_category_run
 from llb.bench.text_analysis.constants import METHOD
 from llb.bench.text_analysis.model import TextAnalysisPersistInput
-from llb.core.contracts import JudgeStatus, RunMetrics, RunPaths
+from llb.core.contracts.judging import JudgeStatus
+from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS
 from llb.scoring.judge.model import JudgeOutcome
 

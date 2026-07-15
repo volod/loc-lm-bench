@@ -17,7 +17,7 @@ from llb.backends.prepare.base import (
 )
 from llb.core import env
 from llb.core.config_validation import DEFAULT_OLLAMA_HOST
-from llb.core.contracts import ModelSpec
+from llb.core.contracts.models import ModelSpec
 
 
 def estimate_download_mb(spec: ModelSpec) -> int:

@@ -20,7 +20,7 @@ from llb.bench.agentic.model import (
 from llb.bench.agentic.success import check_success
 from llb.bench.common import LLMComplete, mean
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
-from llb.core.contracts import AgenticCaseRow, ToolDef
+from llb.core.contracts.benchmarks import AgenticCaseRow, ToolDef
 from llb.prompts.registry import render_text
 from llb.scoring.leaderboard import bootstrap_mean_ci
 from llb.scoring.tool_calls import parse_tool_call

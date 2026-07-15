@@ -9,11 +9,8 @@ from llb.bench.common import (
     run_gated_judge,
 )
 from llb.bench.common_backend import complete_all
-from llb.core.contracts import (
-    JudgeInputRecord,
-    JudgeScore,
-    SecurityCaseRow,
-)
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
+from llb.core.contracts.benchmarks import SecurityCaseRow
 from llb.eval.common import EMPTY, is_refusal
 from llb.prompts.registry import render_text
 from llb.scoring import security, security_cases

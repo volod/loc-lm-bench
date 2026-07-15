@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 from typing import cast
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 
 
 def _renumber(hits: list[ChunkRecord]) -> list[ChunkRecord]:

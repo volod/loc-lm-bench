@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.scoring.composite_stats import ROUND_DIGITS, bootstrap_weighted_mean_ci, mean
 from llb.scoring.composite_types import (
     CATEGORY_COMPOSITE_RAW_WEIGHTS,

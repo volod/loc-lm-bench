@@ -27,7 +27,7 @@ from llb.board.miss_analysis.rec_retrieval import (
     _lower_top_k_recommendation,
     _retrieval_recommendations,
 )
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 
 
 def _generation_recommendations(

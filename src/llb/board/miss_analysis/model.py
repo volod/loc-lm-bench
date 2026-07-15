@@ -8,7 +8,7 @@ classifier, recommendation, and report modules build on it.
 from dataclasses import dataclass, field
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.eval import common as eval_common
 from llb.prompts.registry import render_text
 

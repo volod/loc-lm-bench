@@ -13,7 +13,8 @@ exceptions.
 from dataclasses import dataclass, field
 from typing import cast
 
-from llb.core.contracts import BackendMetadata, ChatMessage
+from llb.core.contracts.hardware import BackendMetadata
+from llb.core.contracts.common import ChatMessage
 
 # Normalized transport-level failure tokens (None == success).
 ERR_TIMEOUT = "timeout"

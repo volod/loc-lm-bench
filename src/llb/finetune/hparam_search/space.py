@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT
 from llb.finetune.guard import PROTECTED_SPLITS
 from llb.finetune.hparam_search.model import (

@@ -17,7 +17,7 @@ import logging
 from time import monotonic
 
 from llb.backends.openai_client import chat_once, make_client
-from llb.core.contracts import ChatMessage
+from llb.core.contracts.common import ChatMessage
 from llb.prep.frontier import litellm_complete
 from llb.prep.frontier_telemetry import (
     DraftBudget,

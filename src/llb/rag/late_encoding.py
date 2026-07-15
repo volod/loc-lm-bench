@@ -25,7 +25,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 
 _LOG = logging.getLogger(__name__)
 

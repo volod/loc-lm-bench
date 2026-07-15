@@ -4,7 +4,7 @@ from pathlib import Path
 from llb.core.config_validation import (
     DEFAULT_EMBEDDING_MODEL,
 )
-from llb.core.contracts import RagStoreMeta
+from llb.core.contracts.rag import RagStoreMeta
 from llb.prep.corpus_governance import corpus_fingerprint
 
 

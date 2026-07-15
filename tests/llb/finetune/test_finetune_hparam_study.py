@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 import pytest
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.hparam_search.model import (
     HPARAMS_MANIFEST,
     STATE_COMPLETE,

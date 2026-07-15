@@ -1,6 +1,7 @@
 """Focused multi hop prompts implementation."""
 
-from llb.core.contracts import ChatMessage, ChunkRecord
+from llb.core.contracts.common import ChatMessage
+from llb.core.contracts.rag import ChunkRecord
 
 from llb.eval.common import format_context
 

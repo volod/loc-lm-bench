@@ -24,7 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
-from llb.core.contracts import ChatMessage, ChunkRecord, JsonObject, SourceSpanRecord
+from llb.core.contracts.common import ChatMessage, JsonObject
+from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.eval import common as eval_common
 from llb.eval.graph import build_messages
 from llb.executor.cases import spans_as_dicts

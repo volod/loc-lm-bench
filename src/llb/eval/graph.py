@@ -15,7 +15,8 @@ from typing import Any, Callable, cast
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts import ChatMessage, ChunkRecord, SourceSpanRecord, UsageRecord
+from llb.core.contracts.common import ChatMessage, UsageRecord
+from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.eval import common as eval_common
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text

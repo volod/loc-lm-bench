@@ -8,7 +8,7 @@ No behavior lives here -- the manifest loader, store/disk probes, planner, fetch
 from pathlib import Path
 from typing import Callable
 
-from llb.core.contracts import ModelSpec, PreparedModel
+from llb.core.contracts.models import ModelSpec, PreparedModel
 
 ACTION_PULL = "pull"  # ollama pull
 ACTION_CACHE = "cache"  # hf snapshot download for vLLM

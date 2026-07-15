@@ -11,13 +11,10 @@ from typing import Any, Protocol
 
 from llb.bench.common import JudgeScorer, LLMComplete, Mirror
 from llb.bench.tool_world import ToolWorld
-from llb.core.contracts import (
-    AgenticCaseRow,
-    BoardRow,
-    JudgeDiagnostics,
-    RunPaths,
-    ToolDef,
-)
+from llb.core.contracts.benchmarks import AgenticCaseRow, ToolDef
+from llb.core.contracts.results import BoardRow
+from llb.core.contracts.judging import JudgeDiagnostics
+from llb.core.contracts.runs import RunPaths
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
 

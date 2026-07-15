@@ -7,7 +7,7 @@ exact prompt ordering per policy -- no sentence-transformers, no FAISS, no GPU.
 import pytest
 
 from llb.core.config import RunConfig
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 from llb.eval import common as eval_common
 from llb.eval.graph import make_retrieve_node
 from llb.executor.cases import score_case

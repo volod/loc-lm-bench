@@ -19,7 +19,7 @@ import time
 from typing import Any, Callable, Protocol, cast
 
 from llb.core.config_validation import DEFAULT_RERANK_CANDIDATES
-from llb.core.contracts import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord
 
 # Pinned default cross-encoder (multilingual; scores Ukrainian question/passage pairs).
 DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"

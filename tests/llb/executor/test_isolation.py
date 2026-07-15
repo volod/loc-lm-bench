@@ -3,7 +3,7 @@
 import pytest
 
 from llb.core.config import RunConfig
-from llb.core.contracts import GpuSample
+from llb.core.contracts.hardware import GpuSample
 from llb.executor.isolation import (
     run_sweep,
 )

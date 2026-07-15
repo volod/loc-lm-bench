@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts import ChunkRecord, RetrievalMetrics, SourceSpanRecord
+from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
 
 # (question, gold source spans) -- the per-item input shared across every compared backend.

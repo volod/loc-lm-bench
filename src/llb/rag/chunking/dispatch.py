@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.rag.chunking.recursive import recursive_spans
 from llb.rag.chunking.semantic import semantic_spans
 from llb.rag.chunking.spans import (

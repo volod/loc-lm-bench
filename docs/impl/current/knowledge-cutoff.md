@@ -6,7 +6,8 @@
 knowledge-cutoff benchmark against local Ollama, vLLM, llama.cpp, or an already running local
 OpenAI-compatible endpoint. The implementation lives in
 `src/llb/bench/knowledge_cutoff/`, with Typer wiring in
-`src/llb/cli/bench/knowledge_cutoff.py` and Make orchestration in `make/eval.mk`.
+`src/llb/cli/bench/knowledge_cutoff.py` and Make orchestration in
+`make/eval/knowledge-cutoff.mk`.
 
 The loader accepts an operator JSONL file or the `events`/`train` configuration of
 `apoorvumang/knowledge-cutoff-benchmark`. Moving Hugging Face revisions are resolved to an exact

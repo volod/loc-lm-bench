@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from llb.core.contracts import JudgeInputRecord, JudgeScore
+from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
 
 _EMPTY_ANSWER_SCORE: JudgeScore = {"faithfulness": 0.0, "answer_relevancy": 0.0}
 _EMPTY_ANSWER_REASON = "empty_answer"

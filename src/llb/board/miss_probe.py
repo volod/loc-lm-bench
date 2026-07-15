@@ -25,7 +25,7 @@ from typing import Any
 
 from llb.board.miss_analysis.model import MISS_RETRIEVAL, MissRecord
 from llb.core.config import RUN_EVAL_METHOD, RunConfig
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.executor import durability_journal as durability
 from llb.goldset.schema import GoldItem
 

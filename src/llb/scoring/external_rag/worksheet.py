@@ -5,7 +5,7 @@ import io
 from pathlib import Path
 from typing import Any
 
-from llb.core.contracts import CorrectnessScores
+from llb.core.contracts.rag import CorrectnessScores
 from llb.core.fsutil import atomic_write_text
 from llb.scoring.external_rag.score import field_value, source_list
 from llb.scoring.external_rag_common import (

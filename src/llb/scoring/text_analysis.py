@@ -20,7 +20,7 @@ headline quality is the GATED judge (`llb.scoring.judge.model`), entering only w
 
 from typing import Any, Callable
 
-from llb.core.contracts import SubtaskScore
+from llb.core.contracts.benchmarks import SubtaskScore
 from llb.scoring.text_analysis_labels import (
     CONTRADICTION,
     DIRECTION_CONFLICT_CREDIT,

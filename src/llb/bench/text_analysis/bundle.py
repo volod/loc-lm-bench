@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from llb.bench.text_analysis.constants import TEXT_ANALYSIS_LABELS
-from llb.core.contracts import PlantedLabelRecord
+from llb.core.contracts.benchmarks import PlantedLabelRecord
 from llb.rag.chunking.corpus import iter_docs
 from llb.scoring import text_analysis_labels as labels
 

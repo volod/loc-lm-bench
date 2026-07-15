@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from llb.core.contracts import JsonObject
+from llb.core.contracts.common import JsonObject
 from llb.finetune.registry.io import append_event, load_registry, utc_now
 from llb.finetune.registry.model import EVENT_DELETE, EVENT_MERGE, EVENT_REGISTER, AdapterEntry
 from llb.finetune.registry.staleness import (

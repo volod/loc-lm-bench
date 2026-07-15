@@ -7,7 +7,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import echo_gpus, load_models, planning_models, resolver_probes
-from llb.core.contracts import ModelSpec, PreparedModel
+from llb.core.contracts.models import ModelSpec, PreparedModel
 
 
 def _expand_quant_variants(specs: list[ModelSpec]) -> list[ModelSpec]:

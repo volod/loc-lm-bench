@@ -12,7 +12,7 @@ real judge path surfaced, so the wiring is provable from fake scorers with no De
 
 from collections import Counter
 
-from llb.core.contracts import JudgeDiagnostics, JudgeInputRecord, JudgeScore
+from llb.core.contracts.judging import JudgeDiagnostics, JudgeInputRecord, JudgeScore
 
 # Reason codes for a zero-valued judge score.
 JUDGE_DIAG_OK = "ok"  # not a zero -> a real, well-formed score
