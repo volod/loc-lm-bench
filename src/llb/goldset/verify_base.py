@@ -49,8 +49,7 @@ HUMAN_COLS = [*CHECK_COLS, "decision", "reject_code", "edited_answer", "human_no
 # HIDDEN from the card by default so it cannot anchor the human; `--show-crosscheck` reveals it.
 CROSS_CHECK_COLS = ["cc_grounded", "cc_non_circular", "cc_supported", "cc_answerable", "cc_note"]
 
-# Sampler-owned reviewer id for multi-annotator worksheets (see `verify_multi.py`). Appended
-# LAST so older worksheets stay column-compatible; blank on single-reviewer worksheets.
+# Sampler-owned reviewer id for multi-annotator worksheets. It is blank on single-reviewer rows.
 REVIEWER_COL = "reviewer_id"
 
 WORKSHEET_COLS = [
@@ -177,7 +176,7 @@ def bundle_is_synthetic(bundle: Path) -> bool:
 
 
 def worksheet_fieldnames(existing: Sequence[str] | None = None) -> list[str]:
-    """Canonical column order: keep any existing columns, then append missing `WORKSHEET_COLS`."""
+    """Complete a profile header with the shared verification columns."""
     names = list(existing) if existing else []
     for col in WORKSHEET_COLS:
         if col not in names:
@@ -186,7 +185,7 @@ def worksheet_fieldnames(existing: Sequence[str] | None = None) -> list[str]:
 
 
 def load_worksheet(path: Path) -> tuple[list[dict[str, str]], list[str]]:
-    """Load a verification worksheet CSV into `(rows, fieldnames)` with every column present."""
+    """Load a worksheet with shared and profile-specific verification columns."""
     text = Path(path).read_text(encoding="utf-8")
     reader = csv.DictReader(text.splitlines())
     fieldnames = worksheet_fieldnames(reader.fieldnames)

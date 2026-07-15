@@ -12,7 +12,7 @@ from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
 from llb.scoring.leaderboard import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
-from llb.board.io import mean_or_none, read_case_objectives, read_case_series, read_case_splits
+from llb.board.io import mean_or_none, read_case_objectives, read_case_series
 
 _LOG = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ def record_from_manifest(
     model = config.get("model")
     if not model:
         return None
-    split = _declared_or_legacy_split(manifest, run_dir)
-    if split != FINAL_SPLIT:
+    split = manifest.get("split")
+    if not isinstance(split, str) or split != FINAL_SPLIT:
         return None
     model = _adapter_model_label(str(model), config, registry or {}, run_dir)
     if model is None:
@@ -98,18 +98,6 @@ def _adapter_model_label(
         )
         return None
     return f"{model} [{STALE_STAMP}]" if staleness(entry).is_stale else model
-
-
-def _declared_or_legacy_split(manifest: JsonObject, run_dir: Path) -> str | None:
-    declared_split = manifest.get("split")
-    if declared_split is not None:
-        return str(declared_split)
-    legacy_splits = read_case_splits(run_dir)
-    if len(legacy_splits) > 1:
-        _LOG.warning("[board] mixed splits in legacy run bundle: %s", run_dir)
-    if legacy_splits == {FINAL_SPLIT}:
-        return FINAL_SPLIT
-    return None
 
 
 def load_run_records(

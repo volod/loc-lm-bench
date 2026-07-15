@@ -46,6 +46,63 @@ Output directory (example for 16 GiB):
 
 Read `tier.json` for the exact script names on your tier.
 
+### Automatic CUDA-host Draft Model Selection
+
+`QUICKSTART_DRAFT_MODEL=auto` and `QUICKSTART_MODEL_SELECTION=auto` activate the PDF/mixed-corpus
+drafter selector. This is deterministic host-profile selection, not a lookup of an old benchmark
+result:
+
+1. `detect-gpu-vram` reads total VRAM from `nvidia-smi` and selects the largest detected GPU.
+2. Total VRAM maps to a supported tier: below 14 GiB -> 12, below 20 GiB -> 16, below 28 GiB ->
+   24, otherwise 32. `QUICKSTART_GPU_GB=12|16|24|32` explicitly overrides detection.
+3. The selector reads that tier from
+   [`samples/config-example/manifest.yaml`](../../samples/config-example/manifest.yaml). It
+   considers the `gemma-4` family target and any `gemma-4-*` extra targets.
+4. For a CUDA tier, vLLM candidates rank ahead of Ollama/offload candidates. Within the same
+   backend class, the larger parameter count wins.
+5. A vLLM candidate is eligible only when its configured `max_model_len` meets
+   `QUICKSTART_DRAFT_NUM_CTX` (16,384 by default). Ollama rows use the requested draft context at
+   runtime and are not filtered by a manifest `max_model_len` field.
+6. The selected row supplies the model, backend, GPU-memory fraction, maximum context, CPU weight
+   offload, and CPU KV-offload settings to `prepare-goldset-draft`.
+
+The current long-context automatic choices are:
+
+| CUDA tier | Target | Model/backend | vLLM settings |
+| ---: | --- | --- | --- |
+| 12 GiB | `gemma-4-12b-vllm` | Gemma 4 12B w4a16 / vLLM | util 0.90, context 16384, CPU weights 16 GiB, CPU KV 32 GiB |
+| 16 GiB | `gemma-4-12b-vllm` | Gemma 4 12B w4a16 / vLLM | util 0.85, context 16384, CPU weights 16 GiB, CPU KV 32 GiB |
+| 24 GiB | `gemma-4` | Gemma 4 31B w4a16 / vLLM | util 0.90, context 16384 |
+| 32 GiB | `gemma-4` | Gemma 4 31B w4a16 / vLLM | util 0.90, context 16384 |
+
+If no GPU is detected, automatic selection does not prefer vLLM; it uses the 16 GiB manifest's
+Ollama Gemma 4 row, which can offload through system RAM. Supplying `QUICKSTART_GPU_GB` deliberately
+forces the corresponding CUDA profile even when detection is unavailable.
+
+This `auto` mode chooses a curated, context-capable Gemma 4 drafter without spending hours on a
+model comparison. Use `QUICKSTART_MODEL_SELECTION=benchmark` when the desired behavior is to run
+the local candidate roster and select the best measured drafter for this host. Use `choose` for an
+interactive local model, `frontier` for an explicitly authorized external route, or set
+`QUICKSTART_DRAFT_MODEL=<model-id>` to bypass selection entirely.
+
+Override precedence is explicit:
+
+1. A concrete `QUICKSTART_DRAFT_MODEL` bypasses model selection.
+2. `QUICKSTART_DRAFT_ENDPOINT=frontier` uses the external route and requires a concrete model.
+3. Otherwise, `QUICKSTART_MODEL_SELECTION` chooses `auto`, `benchmark`, `choose`, or `frontier`.
+4. Within `auto`, `QUICKSTART_GPU_GB` overrides detection and `QUICKSTART_DRAFT_NUM_CTX` filters
+   vLLM candidates that cannot provide the requested context.
+
+`auto` performs no model-choice prompt and does not depend on an existing benchmark artifact, so
+it is safe in an unattended quickstart. The full corpus draft still has its deliberate compute and
+data-egress confirmation gates; use `QUICKSTART_ASSUME_YES=1` in an already-approved unattended
+run. That approval also covers a requested `benchmark` run and its recommended local model.
+
+Automatic selection uses total VRAM and the curated manifest; it is not a live free-VRAM planner
+or a performance measurement. Runtime serving checks can still reject a host whose memory is
+occupied, and a selected vLLM profile requires the vLLM environment and model assets to be
+prepared.
+
 ### 3. Serve and benchmark
 
 From the repo root, after `make build-index` and `make prep-models` as needed:
@@ -108,7 +165,7 @@ Largest backend + model per target. Details and vLLM knobs:
 
 | Tier | MamayLM | Lapa | Gemma 4 family target | Qwen3.6 35B-A3B | Mistral Small 3.1 24B | Extra vLLM on tier |
 | ---- | ------- | ---- | -------------- | --------------- | --------------------- | ------------------ |
-| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.90, ctx 1024) |
+| 12 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.90, ctx 16384, CPU offload 16/32) |
 | 16 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B Ollama Q4_0 GGUF | Ollama `iq3` | Ollama Q4_K_M GGUF | 12B w4a16 (util 0.85, ctx 16384, CPU offload 16/32) |
 | 24 GiB | Ollama Q4_K_M GGUF | Ollama Q4_K_M GGUF | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM w4a16 (0.90, 16384) | -- |
 | 32 GiB | vLLM FP8 (0.90, 8192) | vLLM bf16 (0.90, 8192) | 31B vLLM w4a16 (0.90, 16384) | Ollama `iq4` | vLLM FP8 (0.90, 8192) | -- |

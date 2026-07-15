@@ -5,7 +5,9 @@ routes you from a high-level topic to the specific document.
 
 ## Start here
 
-- [Project README](../README.md) -- pitch, quick start, and product surface.
+- [Project README](../README.md) -- purpose, capabilities, documentation links, and project scope.
+- [Quick Start](guides/quickstart/quick-start.md) -- complete wrapper workflows for the committed
+  gold set and a local PDF corpus.
 - [Choose a scenario](guides/README.md#choose-a-scenario) -- "I want to..." routing table into
   the guides (benchmark my PDFs, build a gold set, verify drafted data, compare backends, ...).
 - [Learning path](guides/learning-path/learning-path.md) -- learn the whole stack from basics.
@@ -15,10 +17,10 @@ routes you from a high-level topic to the specific document.
 | Topic | Index | What lives there |
 | --- | --- | --- |
 | Design | [design/README.md](design/README.md) | Problem, wedge, architecture, decisions, prior art; [spec.md](design/spec.md) is the source of truth |
-| Implementation | [impl/current.md](impl/current.md) | Agent-facing map of delivered behavior under `impl/current/` |
+| Implementation | [impl/current.md](impl/current.md) | Agent-facing map of current behavior under `impl/current/` |
 | Forward plan | [impl/plan.md](impl/plan.md) | Future engineering tasks only |
 | Guides | [guides/README.md](guides/README.md) | Operator workflows and learning material, grouped by topic |
-| Inference | [inference/config-example.md](inference/config-example.md) | GPU tier detection and generated serve/run configs |
+| Inference | [inference/config-example.md](inference/config-example.md) | GPU tier detection, automatic CUDA-host draft selection, and generated serve/run configs |
 
 ## Guides by group
 

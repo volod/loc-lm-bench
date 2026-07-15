@@ -1,8 +1,8 @@
-"""Backend launcher interface + the uniform chat result.
+"""Backend launcher interface and uniform chat result.
 
-All v1 backends (Ollama now; vLLM / llama.cpp later) expose an OpenAI-compatible HTTP
-API, so the eval/RAG/judge code is backend-agnostic -- only the launcher and the
-telemetry hook are backend-specific (Premise 1). A launcher is a context manager: it
+Ollama, vLLM, and llama.cpp expose an OpenAI-compatible HTTP API, so evaluation, RAG, and judge
+code stay backend-neutral. Only launch and telemetry are backend-specific. A launcher context
+manager
 starts/verifies the serving process, hands out a chat callable, and reports telemetry.
 
 `ChatResult.error` carries a normalized failure token ("timeout" / "backend_error" /

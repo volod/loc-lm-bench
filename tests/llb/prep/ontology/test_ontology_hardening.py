@@ -42,7 +42,7 @@ def test_short_doc_stays_single_call():
 
     adapter = LLMExtractionAdapter(complete=complete, max_chars=10000)
     adapter.extract(DocRecord(doc_id="d", text="Київ є столицею.", sha256="x", n_chars=16))
-    assert len(calls) == 1  # below max_chars -> one call (legacy behavior unchanged)
+    assert len(calls) == 1  # below max_chars -> one extraction window
 
 
 def test_merge_extractions_dedups_entities_and_facts():

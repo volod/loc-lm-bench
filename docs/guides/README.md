@@ -26,7 +26,7 @@ docs/guides/
 
 | I want to... | Start here |
 | --- | --- |
-| Run the fastest model leaderboard on the committed fixture | [Quickstart: goldset commands](quickstart/quickstart-goldset-commands.md), or `make quickstart-goldset` in the [README](../../README.md#goldset-leaderboard-quickstart) |
+| Run the fastest model leaderboard on the committed fixture | [Quick Start](quickstart/quick-start.md), with [granular goldset commands](quickstart/quickstart-goldset-commands.md) when needed |
 | Benchmark models on my own PDFs | [Quickstart: PDF corpus](quickstart/quickstart-pdf-corpus.md) |
 | Benchmark models on a mixed txt/md/pdf directory | [Quickstart: any corpus](quickstart/quickstart-any-corpus.md) |
 | Build a gold set end to end (create -> verify -> score) | [Create a gold set](data-prep/goldset-from-scratch.md) |
@@ -57,16 +57,20 @@ docs/guides/
 
 ## quickstart/ -- end-to-end tracks
 
-The two `make quickstart-*` wrapper tracks are introduced in the
-[project README](../../README.md#quick-start); these guides carry the granular commands and the
-corpus-specific walkthroughs.
+Start with [Quick Start](quickstart/quick-start.md) for the two wrapper tracks. The remaining guides
+provide granular commands and corpus-specific detail.
 
+- [Quick Start](quickstart/quick-start.md) -- the complete committed-goldset and PDF-corpus wrapper
+  workflows.
 - [Goldset leaderboard: granular commands](quickstart/quickstart-goldset-commands.md) -- the
   committed-goldset leaderboard flow without the wrapper orchestration, one annotated command
   per stage.
 - [Quickstart PDF corpus](quickstart/quickstart-pdf-corpus.md) -- the corpus-prep track against
   a local PDF directory: OCR, corpus-specific RAG artifacts, graph artifacts, and the
   human-verification handoff before scoring.
+- [Automatic CUDA-host draft selection](../inference/config-example.md#automatic-cuda-host-draft-model-selection)
+  -- deterministic GPU-tier buckets, model ranking, context eligibility, unattended behavior,
+  and overrides for the PDF and mixed-corpus quickstarts.
 - [PDF corpus: granular commands](quickstart/quickstart-pdf-corpus-commands.md) -- the same
   operations without the wrapper orchestration.
 - [Quickstart any corpus](quickstart/quickstart-any-corpus.md) -- the same flow over a mixed
@@ -74,6 +78,8 @@ corpus-specific walkthroughs.
 
 ## data-prep/ -- create corpora and gold sets
 
+- [PDF corpus prep](data-prep/pdf-corpus-prep.md) -- citation-preserving PDF conversion before
+  indexing, ontology drafting, or GraphRAG.
 - [Data prep](data-prep/data-prep.md) -- the create-stage commands in brief: gold set modes,
   chunking, and judge calibration entry points.
 - [Create a gold set (end-to-end)](data-prep/goldset-from-scratch.md) -- the spine:
@@ -130,5 +136,5 @@ corpus-specific walkthroughs.
 ## See also
 
 - [Documentation index](../README.md) -- the docs entry point (design, implementation, guides).
-- [Project README](../../README.md) -- pitch, quick start, and the capability table.
+- [Project README](../../README.md) -- project purpose, capabilities, and documentation routes.
 - [AGENTS.md](../../AGENTS.md) -- contributor and agent guardrails.

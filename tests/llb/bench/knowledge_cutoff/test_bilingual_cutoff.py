@@ -14,7 +14,6 @@ from llb.bench.knowledge_cutoff.translation import (
 )
 from llb.bench.knowledge_cutoff.translation_review import (
     REVIEW_SUMMARY_FILENAME,
-    confirm_accepted_translation_checks,
     freeze_reviewed_bundle,
     review_bundle_status,
 )
@@ -143,19 +142,6 @@ def test_translation_accept_refuses_explicit_failed_check(tmp_path):
     assert any("conflicts with failed checks" in line for line in output)
 
 
-def test_confirm_prior_aggregate_translation_acceptance(tmp_path):
-    draft_translation_bundle(
-        loaded_events(1), complete=translation, out_dir=tmp_path, translator="local"
-    )
-    worksheet = tmp_path / WORKSHEET_FILENAME
-    rows, fields = load_worksheet(worksheet)
-    rows[0]["decision"] = "accept"
-    rows[0]["human_status"] = STATUS_DECIDED
-    write_worksheet_rows(worksheet, rows, fields)
-    assert confirm_accepted_translation_checks(tmp_path) == 1
-    assert review_bundle_status(tmp_path)["ready_to_freeze"] is True
-
-
 def test_explicit_revision_is_source_bound_and_revalidated(tmp_path):
     draft_translation_bundle(
         loaded_events(1), complete=translation, out_dir=tmp_path, translator="local"
@@ -273,7 +259,6 @@ def test_paired_statistics_detects_choice_mapping_drift():
         "knowledge-cutoff-ua-draft",
         "knowledge-cutoff-ua-review",
         "knowledge-cutoff-ua-revise",
-        "knowledge-cutoff-ua-confirm-accepted",
         "knowledge-cutoff-ua-validate",
         "knowledge-cutoff-ua-freeze",
         "bench-knowledge-cutoff-bilingual",

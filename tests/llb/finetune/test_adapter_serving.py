@@ -176,14 +176,9 @@ def test_merge_restores_the_base_repos_pristine_tokenizer_files(tmp_path: Path):
     assert not (merged / "tokenizer.json").exists()
 
 
-def test_read_chat_template_prefers_the_transformers5_jinja_file(tmp_path: Path):
-    (tmp_path / "tokenizer_config.json").write_text(
-        json.dumps({"chat_template": "legacy"}), encoding="utf-8"
-    )
-    assert read_chat_template(tmp_path) == "legacy"
-
-    (tmp_path / "chat_template.jinja").write_text("modern", encoding="utf-8")
-    assert read_chat_template(tmp_path) == "modern"
+def test_read_chat_template_uses_the_transformers_jinja_file(tmp_path: Path):
+    (tmp_path / "chat_template.jinja").write_text("template", encoding="utf-8")
+    assert read_chat_template(tmp_path) == "template"
 
     assert read_chat_template(tmp_path / "missing") == ""
 

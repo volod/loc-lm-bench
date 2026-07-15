@@ -109,10 +109,7 @@ first to confirm a model fits this host.
 
 ## What needs your GPU
 
-The launcher, telemetry, and build helper are built + unit-tested with fakes and now
-**validated on a real model** (real-model validation above). The from-source build path
-still runs only on a CUDA host. The real-model validation fit correction is already fed
-back into `samples/configs/models_uk.yaml`: w4a16 weights are under-estimated by `list-models`
-(`params_b x bpw` ignores the high-precision large-vocab embedding -- measured 9.8 GiB
-vs predicted ~4.2 GiB). An embedding-aware estimate is forward work
-(plan.md robust backend prep).
+The launcher, telemetry, and build helper are unit-tested with fakes and validated on a real model.
+The from-source build path runs only on a CUDA host. The serving manifest accounts for the fact
+that simple parameter math under-estimates w4a16 weights: `params_b x bpw` omits the
+high-precision large-vocabulary embedding, so the manifest uses host-validated fit data.

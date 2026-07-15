@@ -29,8 +29,8 @@ def infer_reject_code(row: dict[str, str]) -> str:
 def rejection_reasons_summary(rows: Sequence[dict[str, str]]) -> dict[str, object]:
     """Aggregate rejected rows by code for draft feedback (`rejection_reasons.json`).
 
-    Rows rejected before the code column existed fall back to the inferred code, so older
-    worksheets still export a useful summary.
+    A blank code is inferred from the first failed check. This makes the concise `x` review action
+    produce actionable feedback without requiring the reviewer to repeat the failed criterion.
     """
     by_code: dict[str, dict[str, object]] = {}
     rejected = 0

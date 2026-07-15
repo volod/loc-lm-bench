@@ -174,12 +174,7 @@ def _ollama_create(gguf_path: Path, out_dir: Path, entry: AdapterEntry) -> str:
 
 def read_chat_template(merged_dir: Path) -> str:
     jinja = merged_dir / "chat_template.jinja"
-    if jinja.is_file():
-        return jinja.read_text(encoding="utf-8")
-    config = merged_dir / "tokenizer_config.json"
-    if config.is_file():
-        return str(json.loads(config.read_text(encoding="utf-8")).get("chat_template") or "")
-    return ""
+    return jinja.read_text(encoding="utf-8") if jinja.is_file() else ""
 
 
 def modelfile_text(gguf_path: Path, chat_template: str) -> str:

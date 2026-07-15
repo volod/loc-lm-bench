@@ -200,8 +200,8 @@ def arguments_match(
 ) -> bool:
     """Argument match over the same key set, each value compared under its per-argument tolerance.
 
-    Without `arg_match` every value is exact (strings casefold/strip-insensitive, the legacy
-    behavior). `arg_match[name]` relaxes a single argument to contains / fuzzy / numeric / oneof.
+    Without `arg_match` every value is exact, with casefolded and stripped string comparison.
+    `arg_match[name]` relaxes a single argument to contains / fuzzy / numeric / oneof.
     """
     arg_match = arg_match or {}
     if set(expected) != set(provided):

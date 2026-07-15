@@ -90,8 +90,8 @@ and recommendation fixtures use `mamaylm-v2-*` labels. The family key `mamaylm` 
 stable target id and file stem.
 
 On a 12 GiB RTX PRO 3000 Blackwell laptop GPU (12227 MiB, driver 610.43.02), the quickstart setup
-generates and selects `$DATA_DIR/llb/serving/gpu-12gb/tier.json` even when stale tier directories
-exist from earlier runs. The 12 GiB extra vLLM target is `gemma-4-12b-vllm`:
+generates and selects `$DATA_DIR/llb/serving/gpu-12gb/tier.json` from current host detection rather
+than the presence of tier directories. The 12 GiB extra vLLM target is `gemma-4-12b-vllm`:
 `google/gemma-4-12B-it-qat-w4a16-ct`, `gpu_memory_utilization=0.90`, `max_model_len=16384`,
 `cpu_offload_gb=16`, and `kv_offloading_size_gb=32`. A bounded PDF-drafter launch probe on the same
 host confirmed vLLM started with CPU/KV offload, reported 78,115 GPU KV-cache tokens, and allowed

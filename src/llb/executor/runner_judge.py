@@ -2,8 +2,8 @@
 the calibration worksheet.
 
 `run_eval` calls `_judge_cases` (trusted per-case score) and `_build_judge_metadata`;
-`_write_calibration_worksheet` backs the `worksheet=` path. The judge scorer seam stays injectable
-via the `JudgeScorer` alias exported here.
+`_write_calibration_worksheet` backs the `worksheet=` path. `JudgeScorer` types the injectable
+scoring seam.
 """
 
 import logging

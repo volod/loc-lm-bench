@@ -1,49 +1,33 @@
-"""Read a finalized run bundle for miss analysis: manifest + score rows + per-item retrieval
-records, plus the optional draft-bundle provenance sidecar.
-
-Pure and file-driven -- no endpoint, GPU, or store -- so the classifier stays unit-testable over a
-synthetic bundle. Legacy bundles predating `retrieval.jsonl` yield an empty retrieval map and the
-classifier falls back to the scored `retrieval_hit` signal.
-"""
+"""Read finalized score and retrieval artifacts for miss analysis."""
 
 import json
-import logging
 from pathlib import Path
 
 from llb.board.miss_analysis.model import ITEM_PROVENANCE_FILENAME, RETRIEVAL_FILENAME
 from llb.core.contracts.common import JsonObject
 
-_LOG = logging.getLogger(__name__)
-
 
 def load_scored_bundle(
     run_dir: Path | str,
 ) -> tuple[JsonObject, list[JsonObject], dict[str, JsonObject]]:
-    """Read a finalized run bundle: (manifest, score rows, retrieval records by item id).
-
-    The retrieval map is empty for legacy bundles that predate `retrieval.jsonl`; the
-    classifier then falls back to the scored `retrieval_hit` signal.
-    """
+    """Read a finalized run bundle: (manifest, score rows, retrieval records by item id)."""
     run_dir = Path(run_dir)
     manifest_path = run_dir / "manifest.json"
     scores_path = run_dir / "scores.jsonl"
-    if not manifest_path.is_file() or not scores_path.is_file():
+    retrieval_path = run_dir / RETRIEVAL_FILENAME
+    if not manifest_path.is_file() or not scores_path.is_file() or not retrieval_path.is_file():
         raise SystemExit(
             f"[analyze-misses] {run_dir} is not a finalized run bundle "
-            "(manifest.json + scores.jsonl required)"
+            f"(manifest.json + scores.jsonl + {RETRIEVAL_FILENAME} required)"
         )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     rows = _read_jsonl(scores_path)
-    retrieval_path = run_dir / RETRIEVAL_FILENAME
-    retrieval: dict[str, JsonObject] = {}
-    if retrieval_path.is_file():
-        retrieval = {str(rec["item_id"]): rec for rec in _read_jsonl(retrieval_path)}
-    else:
-        _LOG.warning(
-            "[analyze-misses] %s has no %s (older bundle); span-overlap classification "
-            "falls back to the scored retrieval_hit signal",
-            run_dir,
-            RETRIEVAL_FILENAME,
+    retrieval = {str(rec["item_id"]): rec for rec in _read_jsonl(retrieval_path)}
+    missing = [str(row.get("item_id")) for row in rows if str(row.get("item_id")) not in retrieval]
+    if missing:
+        raise SystemExit(
+            f"[analyze-misses] {RETRIEVAL_FILENAME} is missing {len(missing)} scored item(s): "
+            + ", ".join(missing[:5])
         )
     return manifest, rows, retrieval
 

@@ -22,6 +22,9 @@ resolve_quickstart_gpu_tier() {
   fi
   line="$("$PROJECT_ROOT/.venv/bin/python" -m llb.main detect-gpu-vram 2>/dev/null || true)"
   case "$line" in
+    gpu_tier=*"(no GPU detected)"*)
+      return 0
+      ;;
     gpu_tier=*)
       tier="${line#gpu_tier=}"
       QS_GPU_GB="${tier%% *}"
@@ -69,7 +72,7 @@ run_pdf_model_benchmark() {
   if ! prompt_yes_no \
     "The local model benchmark can take roughly 1-4 hours. Proceed?" \
     "no" \
-    "Set QUICKSTART_ASSUME_YES=1 to run the benchmark unattended, or set QUICKSTART_MODEL_SELECTION=gemma4|choose." \
+    "Set QUICKSTART_ASSUME_YES=1 to run the benchmark unattended, or set QUICKSTART_MODEL_SELECTION=auto|choose." \
   ; then
     echo "ERROR: model benchmark was not approved" >&2
     echo "Provide QUICKSTART_DRAFT_MODEL=<local-model-id> or rerun with QUICKSTART_MODEL_SELECTION=choose." >&2
@@ -170,16 +173,7 @@ select_pdf_draft_model() {
   fi
 
   case "$QS_MODEL_SELECTION" in
-    auto|gemma4)
-      select_host_gemma4_model
-      return 0
-      ;;
-    legacy-auto)
-      if pdf_bench_has_runs; then
-        write_pdf_bench_recommendation
-        select_model_from_benchmark_json
-        return 0
-      fi
+    auto)
       select_host_gemma4_model
       return 0
       ;;
@@ -198,9 +192,8 @@ select_pdf_draft_model() {
       return 0
       ;;
     *)
-      echo "ERROR: QUICKSTART_MODEL_SELECTION must be gemma4, legacy-auto, benchmark, choose, or frontier" >&2
+      echo "ERROR: QUICKSTART_MODEL_SELECTION must be auto, benchmark, choose, or frontier" >&2
       exit 2
       ;;
   esac
 }
-

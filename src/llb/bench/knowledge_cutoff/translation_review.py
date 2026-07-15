@@ -9,7 +9,6 @@ from llb.bench.knowledge_cutoff.translation import (
     DRAFTS_FILENAME,
     MANIFEST_FILENAME,
     SOURCE_FILENAME,
-    TRANSLATION_PROFILE,
     WORKSHEET_FILENAME,
     load_translation_drafts,
     source_hash,
@@ -77,27 +76,6 @@ def review_bundle_status(bundle_dir: Path) -> dict[str, int | bool]:
         "incomplete_accepted_rows": incomplete_accepted,
         "ready_to_freeze": undecided == 0 and incomplete_accepted == 0 and accepted > 0,
     }
-
-
-def confirm_accepted_translation_checks(bundle_dir: Path) -> int:
-    """Record four implied passes for prior aggregate translation accept decisions."""
-    worksheet = bundle_dir / WORKSHEET_FILENAME
-    rows, fields = load_worksheet(worksheet)
-    changed = 0
-    for row in rows:
-        if row.get("review_profile") != TRANSLATION_PROFILE or row.get("decision") != ACCEPT:
-            continue
-        invalid = [column for column in CHECK_COLS if row.get(column) not in ("", PASS)]
-        if invalid:
-            raise ValueError(
-                f"{row['item_id']}: accepted row has explicit failed or invalid checks: {invalid}"
-            )
-        if any(not row.get(column) for column in CHECK_COLS):
-            row.update({column: PASS for column in CHECK_COLS})
-            changed += 1
-    if changed:
-        write_worksheet_rows(worksheet, rows, fields)
-    return changed
 
 
 def freeze_reviewed_bundle(bundle_dir: Path, *, reviewer: str) -> dict[str, Any]:

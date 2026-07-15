@@ -7,7 +7,6 @@ from llb.board.miss_analysis.classify import analyze_run, topic_of
 from llb.board.miss_analysis.model import (
     MISS_ARTIFACT,
     MISS_CLASSES,
-    MISS_GENERATION,
     MISS_RETRIEVAL,
 )
 from llb.board.miss_analysis.report import latest_analysis, write_analysis
@@ -18,6 +17,7 @@ from miss_analysis_helpers import (
     _all_class_rows,
     _analyze,
     _goldset,
+    _hit_retrieval,
     _miss_retrieval,
     _score_row,
     _write_bundle,
@@ -32,17 +32,9 @@ def test_span_overlap_beats_scored_hit_flag(tmp_path):
     assert analysis.misses[0].miss_class == MISS_RETRIEVAL
 
 
-def test_legacy_bundle_without_retrieval_jsonl_falls_back_to_hit_flag(tmp_path):
-    rows = [_score_row("m-retr", "ok", 0.1, 0.0), _score_row("m-gen", "ok", 0.2, 1.0)]
-    run_dir = _write_bundle(tmp_path, rows, None)
-    analysis = analyze_run(run_dir, _goldset())
-    by_id = {m.item_id: m.miss_class for m in analysis.misses}
-    assert by_id == {"m-retr": MISS_RETRIEVAL, "m-gen": MISS_GENERATION}
-
-
 def test_retrieval_miss_status_maps_directly(tmp_path):
     rows = [_score_row("m-retr", "retrieval_miss", 0.0, 0.0)]
-    run_dir = _write_bundle(tmp_path, rows, None)
+    run_dir = _write_bundle(tmp_path, rows, [_hit_retrieval("m-retr")])
     analysis = analyze_run(run_dir, _goldset())
     assert analysis.misses[0].miss_class == MISS_RETRIEVAL
 
@@ -52,7 +44,7 @@ def test_transport_statuses_classify_as_artifacts(tmp_path):
         _score_row("m-retr", "timeout", 0.0, 0.0),
         _score_row("m-gen", "backend_error", 0.0, 0.0),
     ]
-    run_dir = _write_bundle(tmp_path, rows, None)
+    run_dir = _write_bundle(tmp_path, rows, [_hit_retrieval("m-retr"), _hit_retrieval("m-gen")])
     analysis = analyze_run(run_dir, _goldset())
     assert {m.miss_class for m in analysis.misses} == {MISS_ARTIFACT}
 

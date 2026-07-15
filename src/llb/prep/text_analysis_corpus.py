@@ -1,10 +1,7 @@
-"""Synthetic text-analysis corpus planter (text analysis) -- richer per-kind planted labels.
+"""Synthetic corpus planter for the complete text-analysis label taxonomy.
 
-`prepare-synthetic-corpus` historically planted QA-style `key_fact` labels only (one
-question/answer/span triple per fact). This module extends the planter to the FULL text-analysis
-sub-task taxonomy -- key_fact / entity / topic / trend / risk / decision / contradiction, plus the
-judged narrative / insight -- each emitted as a structured `PlantedLabelRecord` the text analysis scorer
-(`llb.scoring.text_analysis`) consumes.
+Each key fact, entity, topic, trend, risk, decision, contradiction, narrative, or insight is
+emitted as a structured `PlantedLabelRecord` consumed by `llb.scoring.text_analysis`.
 
 Grounding discipline (so a label can never point at absent text): the planter quotes a verbatim
 `evidence` span per label, which is re-grounded against the doc for EXACT offsets (reusing

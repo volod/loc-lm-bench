@@ -141,22 +141,6 @@ def knowledge_cutoff_ua_freeze_cmd(
     )
 
 
-@app.command("knowledge-cutoff-ua-confirm-accepted")
-def knowledge_cutoff_ua_confirm_accepted_cmd(
-    bundle: Path = typer.Option(..., help="translation bundle directory"),
-) -> None:
-    """Confirm that prior aggregate accept decisions imply all four passing checks."""
-    from llb.bench.knowledge_cutoff.translation_review import (
-        confirm_accepted_translation_checks,
-    )
-
-    try:
-        changed = confirm_accepted_translation_checks(bundle)
-    except (OSError, ValueError) as exc:
-        cli_error(str(exc), code=1)
-    typer.echo(f"[knowledge-cutoff-ua-confirm-accepted] confirmed={changed} -> {bundle}")
-
-
 @app.command("knowledge-cutoff-ua-validate")
 def knowledge_cutoff_ua_validate_cmd(
     bundle: Path = typer.Option(..., help="translation bundle directory"),
