@@ -165,6 +165,14 @@ candidate row. It is file-driven and split-guarded:
 - `src/llb/finetune/trainer.py` trains LoRA/QLoRA adapters behind a trainer seam. `--trainer fake`
   writes deterministic CI artifacts; the real path lazy-imports PEFT, TRL, Transformers, and
   Datasets from the `[finetune]` extra and saves an adapter plus `adapter_manifest.json`.
+  `--trainer unsloth` selects the Unsloth-accelerated path (`unsloth_train_adapter`): same SFT
+  loop, dataset contract, and manifest, but the base model is loaded and LoRA-wrapped through
+  `FastLanguageModel` for roughly 2x faster single-GPU training. Unsloth is intentionally not a
+  project extra (it pins a hardware-matched torch/triton stack, same policy as marker); install
+  `unsloth` manually in the CUDA training environment. Unknown `--trainer` values exit with the
+  accepted list; the manifest records the concrete trainer that ran (`peft-trl`, `unsloth`, or
+  `fake`), never `auto`. Covered by dispatch/missing-dependency tests in
+  `tests/llb/finetune/test_finetune.py`.
 - `src/llb/finetune/guard.py` enforces the contamination invariant before `run-eval` launches a
   backend: adapter manifests may contain only tuning-split training ids, may not intersect
   calibration/final eval ids, and a tuned model cannot judge itself.
