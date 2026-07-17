@@ -6,6 +6,7 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
+from llb.cli.finetune.options import TRAINER_OPTION_HELP
 from llb.cli.helpers import load_config, planning_models
 
 
@@ -28,9 +29,7 @@ def distill_cmd(
         None, "--compare-limit", help="cap comparison items for smoke runs"
     ),
     out_dir: Optional[Path] = typer.Option(None, help="distillation output dir"),
-    trainer: str = typer.Option(
-        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
-    ),
+    trainer: str = typer.Option("auto", "--trainer", help=TRAINER_OPTION_HELP),
 ) -> None:
     """Distill tuning-split teacher answers into a student LoRA adapter."""
     from llb.finetune.distill.run import run_distillation
@@ -67,9 +66,7 @@ def self_improve_cmd(
     limit: Optional[int] = typer.Option(None, help="cap eval items per split for smoke runs"),
     out_dir: Optional[Path] = typer.Option(None, help="campaign output dir"),
     resume: Optional[Path] = typer.Option(None, help="resume a self-improve campaign dir"),
-    trainer: str = typer.Option(
-        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
-    ),
+    trainer: str = typer.Option("auto", "--trainer", help=TRAINER_OPTION_HELP),
     min_gain: float = typer.Option(
         0.0, "--min-gain", help="minimum final-split objective delta before accepting a round"
     ),
@@ -107,9 +104,7 @@ def finetune_campaign_cmd(
     limit: Optional[int] = typer.Option(None, help="cap eval items per split for smoke runs"),
     out_dir: Optional[Path] = typer.Option(None, help="campaign output dir"),
     resume: Optional[Path] = typer.Option(None, help="resume a finetune-campaign dir"),
-    trainer: str = typer.Option(
-        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
-    ),
+    trainer: str = typer.Option("auto", "--trainer", help=TRAINER_OPTION_HELP),
     manifest: Optional[Path] = typer.Option(
         None, "--manifest", help="optional model manifest for feasibility planning"
     ),

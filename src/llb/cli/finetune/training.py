@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
+from llb.cli.finetune.options import TRAINER_OPTION_HELP
 from llb.cli.helpers import load_config
 
 
@@ -46,9 +47,7 @@ def finetune_adapter_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config (locates DATA_DIR)"),
     out: Optional[Path] = typer.Option(None, "--out", help="adapter output dir"),
     seed: int = typer.Option(13, "--seed", help="training seed recorded in adapter manifest"),
-    trainer: str = typer.Option(
-        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
-    ),
+    trainer: str = typer.Option("auto", "--trainer", help=TRAINER_OPTION_HELP),
     searched_hparams: bool = typer.Option(
         True,
         "--searched-hparams/--default-hparams",
@@ -98,9 +97,7 @@ def finetune_hparams_cmd(
     dev_fraction: float = typer.Option(
         0.25, "--dev-fraction", help="share of the tuning split held out to score trials"
     ),
-    trainer: str = typer.Option(
-        "auto", "--trainer", help="auto (PEFT/TRL) | fake (CI/control-plane smoke)"
-    ),
+    trainer: str = typer.Option("auto", "--trainer", help=TRAINER_OPTION_HELP),
     out_dir: Optional[Path] = typer.Option(None, help="study output dir"),
     resume: Optional[Path] = typer.Option(None, help="resume a finetune-hparams study dir"),
     stratify_by_base_score: Optional[Path] = typer.Option(

@@ -169,6 +169,54 @@ def test_fake_trainer_records_adapter_provenance(tmp_path: Path):
     )
 
 
+def test_train_adapter_dispatches_unsloth_trainer(tmp_path: Path, monkeypatch):
+    import llb.finetune.trainer as trainer_mod
+
+    calls: list[dict[str, object]] = []
+
+    def _stub(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"trainer": "unsloth"}
+
+    monkeypatch.setattr(trainer_mod, "unsloth_train_adapter", _stub)
+    manifest = trainer_mod.train_adapter(
+        dataset_dir=tmp_path,
+        model="base-model",
+        out_dir=tmp_path / "adapter",
+        trainer="unsloth",
+    )
+
+    assert manifest == {"trainer": "unsloth"}
+    assert calls and calls[0]["model"] == "base-model"
+
+
+def test_train_adapter_rejects_unknown_trainer(tmp_path: Path):
+    from llb.finetune.trainer import train_adapter
+
+    with pytest.raises(SystemExit, match="unknown --trainer"):
+        train_adapter(
+            dataset_dir=tmp_path,
+            model="base-model",
+            out_dir=tmp_path / "adapter",
+            trainer="axolotl",
+        )
+
+
+def test_unsloth_trainer_requires_unsloth_package(tmp_path: Path):
+    import importlib.util
+
+    from llb.finetune.trainer import unsloth_train_adapter
+
+    if importlib.util.find_spec("unsloth") is not None:
+        pytest.skip("unsloth installed on this host; missing-dependency exit not reachable")
+    with pytest.raises(SystemExit, match="uv pip install unsloth"):
+        unsloth_train_adapter(
+            dataset_dir=tmp_path,
+            model="base-model",
+            out_dir=tmp_path / "adapter",
+        )
+
+
 def test_contamination_guard_refuses_protected_split_ids(tmp_path: Path):
     adapter = tmp_path / "adapter"
     adapter.mkdir()
