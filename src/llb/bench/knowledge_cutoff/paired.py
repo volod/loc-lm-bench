@@ -10,7 +10,7 @@ from llb.bench.common_backend import ThroughputMeter
 from llb.bench.knowledge_cutoff.data import EventSource, LoadedEvents, load_events
 from llb.bench.knowledge_cutoff.paired_report import paired_artifacts, paired_statistics
 from llb.bench.knowledge_cutoff.run import KnowledgeCutoffRun, run_knowledge_cutoff
-from llb.bench.knowledge_cutoff.translation import MANIFEST_FILENAME
+from llb.bench.knowledge_cutoff.translation_artifacts import MANIFEST_FILENAME
 from llb.bench.knowledge_cutoff.translation_review import (
     REVIEWED_EN_FILENAME,
     REVIEWED_UK_FILENAME,

@@ -5,11 +5,8 @@ import json
 import pytest
 
 from llb.prompt_system.budget import CharRatioTokenizer
-from llb.prompt_system.knowledge_tree import (
-    MAX_TREE_DEPTH,
-    load_knowledge_tree_source,
-    render_knowledge_tree,
-)
+from llb.prompt_system.knowledge_tree_render import MAX_TREE_DEPTH, render_knowledge_tree
+from llb.prompt_system.knowledge_tree_source import load_knowledge_tree_source
 from llb.prompt_system.pipeline import MANIFEST_FILE, prepare_prompt_system
 from llb.prompt_system.template import GRAPH_NONE, METADATA_NONE
 

@@ -1,53 +1,38 @@
 """Joint model + RAG-config search: screen -> successive-halving -> per-finalist tune."""
 
-import logging
-from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from llb.core.config import RunConfig
-from llb.core.contracts.models import ModelSpec, ResolvedModel
+from llb.core.contracts.models import ModelSpec
 from llb.optimize.joint_search.constants import (
     DEFAULT_ETA,
     DEFAULT_MIN_FINALISTS,
     DEFAULT_OBJECTIVES,
     DEFAULT_SCREEN_LIMIT,
 )
-from llb.optimize.joint_search.halving import (
-    HalvingLedger,
-    HalvingRound,
-    ScreenScore,
-    build_halving_round,
-    finalize_ledger,
-    screen_limit_for_round,
-)
+from llb.optimize.joint_search.halving import finalize_ledger
 from llb.optimize.joint_search.hooks import (
     ScreenEvaluate,
-    candidate_config,
     default_screen_evaluate,
     default_tune_finalist,
-    slug,
     wrap_screen_isolation,
 )
-from llb.optimize.joint_search.models import FinalistTuneResult, JointSearchResult
+from llb.optimize.joint_search.models import JointSearchResult
 from llb.optimize.joint_search.report import (
     joint_run_dir,
     write_ledger,
     write_manifest,
     write_scoreboard,
 )
-from llb.optimize.joint_search.resume import (
-    read_finalist_result,
-    read_screen_marker,
-    write_finalist_result,
-    write_screen_marker,
+from llb.optimize.joint_search.schedule_steps import (
+    FinalistTune,
+    partition_resolved,
+    run_halving_screen,
+    tune_finalists,
 )
 from llb.optimize.joint_search.scoreboard import scoreboard_entries
 from llb.optimize.objectives import parse_objectives
 from llb.optimize.tuning_space import FINAL_SPLIT, TUNING_SPLIT
-
-_LOG = logging.getLogger(__name__)
-
-FinalistTune = Callable[[RunConfig, ResolvedModel, Path], FinalistTuneResult]
 
 
 def run_joint_search(
@@ -86,7 +71,7 @@ def run_joint_search(
     goals = parse_objectives(objectives)
     run_dir = joint_run_dir(base_config.data_dir, run_id)
     resolved = resolve_all(list(candidates), vram_mib, ram_mib, probes=probes)
-    runnable, skipped = _partition_resolved(resolved)
+    runnable, skipped = partition_resolved(resolved)
     write_manifest(
         run_dir,
         {
@@ -125,7 +110,7 @@ def run_joint_search(
             evaluate, vram_reader=vram_reader, pid_usage_reader=pid_usage_reader
         )
 
-    ledger = _run_halving_screen(
+    ledger = run_halving_screen(
         base_config,
         runnable,
         run_dir=run_dir,
@@ -154,7 +139,7 @@ def run_joint_search(
             case_limit=case_limit,
         )
     )
-    finalist_results = _tune_finalists(
+    finalist_results = tune_finalists(
         base_config, ledger.finalists, by_name, run_dir=run_dir, tuner=tuner
     )
     entries, recommended = scoreboard_entries(finalist_results)
@@ -168,109 +153,3 @@ def run_joint_search(
         recommended=recommended,
         skipped=skipped,
     )
-
-
-def _partition_resolved(
-    resolved: Sequence[ResolvedModel],
-) -> tuple[list[ResolvedModel], list[dict[str, str]]]:
-    runnable: list[ResolvedModel] = []
-    skipped: list[dict[str, str]] = []
-    for row in resolved:
-        if row["chosen_backend"] and row["chosen_source"]:
-            runnable.append(row)
-        else:
-            skipped.append({"name": row["name"], "reason": row.get("note") or "not resolvable"})
-    return runnable, skipped
-
-
-def _run_halving_screen(
-    base: RunConfig,
-    runnable: Sequence[ResolvedModel],
-    *,
-    run_dir: Path,
-    evaluate: ScreenEvaluate,
-    screen_limit: int,
-    min_finalists: int,
-    eta: int,
-    max_model_len: int,
-) -> HalvingLedger:
-    active = {r["name"]: r for r in runnable}
-    rounds: list[HalvingRound] = []
-    round_index = 0
-    while True:
-        case_limit = screen_limit_for_round(screen_limit, round_index, eta=eta)
-        scores: list[ScreenScore] = []
-        for name, resolution in sorted(active.items()):
-            prior = read_screen_marker(run_dir, name, round_index)
-            if prior is not None:
-                _LOG.info("[joint-search] screen resume skip round=%d model=%s", round_index, name)
-                scores.append(prior)
-                continue
-            cfg = candidate_config(
-                base,
-                resolution,
-                max_model_len=max_model_len,
-                run_name=f"joint-screen-{slug(name)}-r{round_index}",
-            )
-            _LOG.info(
-                "[joint-search] screen round=%d model=%s limit=%d split=%s",
-                round_index,
-                name,
-                case_limit,
-                TUNING_SPLIT,
-            )
-            metrics = evaluate(cfg, case_limit)
-            score = ScreenScore(
-                name=name,
-                quality=metrics.quality,
-                latency_s=metrics.latency_s,
-                backend=resolution["chosen_backend"] or "",
-                source=resolution["chosen_source"] or "",
-            )
-            write_screen_marker(run_dir, score, round_index=round_index, case_limit=case_limit)
-            scores.append(score)
-        round_rec = build_halving_round(
-            scores,
-            round_index=round_index,
-            case_limit=case_limit,
-            eta=eta,
-            min_keep=min_finalists,
-        )
-        rounds.append(round_rec)
-        write_ledger(run_dir, finalize_ledger(rounds, eta=eta, min_finalists=min_finalists))
-        if not round_rec.eliminated or len(round_rec.kept) <= min_finalists:
-            break
-        active = {name: active[name] for name in round_rec.kept}
-        round_index += 1
-    return finalize_ledger(rounds, eta=eta, min_finalists=min_finalists)
-
-
-def _tune_finalists(
-    base: RunConfig,
-    finalist_names: Sequence[str],
-    by_name: dict[str, ResolvedModel],
-    *,
-    run_dir: Path,
-    tuner: FinalistTune,
-) -> list[FinalistTuneResult]:
-    results: list[FinalistTuneResult] = []
-    for name in finalist_names:
-        resolution = by_name[name]
-        cell_dir = run_dir / "finalists" / slug(name)
-        cell_dir.mkdir(parents=True, exist_ok=True)
-        prior = read_finalist_result(cell_dir)
-        if prior is not None:
-            _LOG.info("[joint-search] finalist resume skip %s (study=%s)", name, prior.study_name)
-            results.append(prior)
-        else:
-            _LOG.info(
-                "[joint-search] deep-tuning finalist %s (%s)",
-                name,
-                resolution["chosen_backend"],
-            )
-            result = tuner(base, resolution, cell_dir)
-            write_finalist_result(cell_dir, result)
-            results.append(result)
-        entries, recommended = scoreboard_entries(results)
-        write_scoreboard(run_dir, run_id=run_dir.name, entries=entries, recommended=recommended)
-    return results

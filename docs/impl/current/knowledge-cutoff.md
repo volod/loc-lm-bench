@@ -33,8 +33,10 @@ for any run that has them.
 
 ## Ukrainian bilingual calibration workflow
 
-The source-aligned Ukrainian workflow lives in `translation.py`, `translation_review.py`,
-`paired.py`, and `paired_report.py` beside the baseline implementation, with commands in
+The source-aligned Ukrainian workflow uses direct owner modules: `translation_models.py` for
+source-bound validation, `translation_artifacts.py` for draft/worksheet/manifest persistence, and
+`translation_workflow.py` for resumable drafting. Review/freeze and paired evaluation live in
+`translation_review.py`, `paired.py`, and `paired_report.py`, with commands in
 `src/llb/cli/bench/knowledge_cutoff_ua.py`. The Make entrypoints are
 `knowledge-cutoff-ua-draft`, `knowledge-cutoff-ua-review`, `knowledge-cutoff-ua-revise`,
 `knowledge-cutoff-ua-validate`, `knowledge-cutoff-ua-freeze`,
@@ -68,11 +70,11 @@ Hugging Face loading, exact revision provenance, prompt balancing/date blindness
 curve/control aggregation, seeded fitting, smoke sampling, CLI registration, and a persisted
 no-network/no-GPU run.
 
-`tests/llb/bench/knowledge_cutoff/test_bilingual_cutoff.py` covers invalid translations, resume
-without duplicate model calls, specialized review guidance, undecided and incomplete-acceptance
-gate failures, aligned freeze/load, choice-mapping drift, paired bootstrap persistence, and the six
-current CLI registrations. Together the tests prove the data contract, review gate, deterministic
-pair alignment, and report arithmetic without requiring a network endpoint or GPU.
+`tests/llb/bench/knowledge_cutoff/test_bilingual_cutoff.py` covers translation and review gates;
+`test_bilingual_cutoff_report.py` covers aligned freeze/load, choice-mapping drift, paired report
+persistence, and CLI registration. Shared event/translation builders live in
+`bilingual_cutoff_helpers.py`. Together the tests prove the data contract, review gate,
+deterministic pair alignment, and report arithmetic without requiring a network endpoint or GPU.
 
 ## Attribution boundary
 

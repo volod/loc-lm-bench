@@ -62,6 +62,7 @@ Current focused package boundaries:
 | Evaluation execution | `executor/runner.py` plus `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_retrieval.py`, `runner_setup.py`, and `runner_target.py` |
 | Board analysis | `board/miss_analysis/` and `board/recommend/` |
 | Fine-tuning workflows | `finetune/campaign/`, `distill/`, `hparam_search/`, `registry/`, and `serving/` |
+| Fine-tuning execution | `finetune/trainer.py` for backend orchestration and `training_runtime.py` for PEFT/TRL runtime helpers |
 | Gold verification | `goldset/verify_acceptance*.py`, `verify_card*.py`, `verify_commands.py`, `verify_ref*.py`, `verify_sampling/`, `verify_multi/agreement_metrics.py`, `verify_multi/agreement_report.py`, `verify_multi/consensus.py`, and `verify_session/` |
 | Ontology and PDF preparation | `prep/ontology/pipeline/`, `prep/ontology/artifacts/`, and `prep/pdf/` |
 | Ontology endpoint construction | `prep/ontology/endpoint_config.py` for immutable data and `endpoint_builder.py` for validation/construction |
@@ -70,6 +71,18 @@ Current focused package boundaries:
 | Judge scoring and rating | `scoring/judge/` and `judge/rate/` |
 | Text-analysis benchmark | `bench/text_analysis/` |
 | Prompt rendering and harness lookup | `prompts/engine.py`, `prompts/registry.py`, `prompts/registry_generation.py`, and `bench/harness/registry.py` |
+| Optimization internals | `optimize/multi_objective_{trial,runtime,study}.py` and `optimize/joint_search/{schedule,schedule_steps}.py` |
+
+The maintainability refactor validated on 2026-07-18 keeps the changed Python modules and tests
+below the 250-line soft target. It uses direct owner-module imports rather than compatibility
+facades: knowledge-tree callers select `knowledge_tree_source` or `knowledge_tree_render`, and the
+bilingual cutoff flow selects `translation_models`, `translation_artifacts`, or
+`translation_workflow`. Chain-context result/report projection lives in
+`bench/chain_context_report.py`; benchmark orchestration remains in `bench/chain_context.py`.
+Focused tests follow the same behavioral boundaries, including separate joint-search halving,
+schedule, finalist-resume, Optuna-resume, and pick-resume modules. Validation: `make ci` passes
+Ruff formatting/lint, mypy over 558 source files, and 1,477 lightweight tests with 42 slow tests
+deselected; `make lint-md` also passes.
 
 `scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,

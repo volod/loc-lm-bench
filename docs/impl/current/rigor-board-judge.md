@@ -68,8 +68,9 @@ SQLite studies live under `$DATA_DIR/optuna/`.
 ### Multi-objective RAG tuner
 
 `llb tune --objectives quality,latency[,cost]` switches stage 1 to Optuna multi-objective search
-(`NSGAIISampler` plus median-style early pruning on progressive case subsets) in
-`src/llb/optimize/multi_objective.py`. Objectives:
+(`NSGAIISampler` plus median-style early pruning on progressive case subsets) across
+`src/llb/optimize/multi_objective_trial.py`, `multi_objective_runtime.py`, and
+`multi_objective_study.py`. Objectives:
 
 | Goal | Direction | Source |
 | --- | --- | --- |
@@ -107,9 +108,9 @@ llb tune --model llama3.2:3b --backend ollama --objectives quality,latency \
   --corpus samples/goldsets/ua_squad_postedited_v1/corpus
 ```
 
-CI covers the plumbing with fake evaluate hooks in `tests/llb/optimize/test_multi_objective.py`
-(Pareto front size, per-goal picks, embedder rebuild tracking, cost pick) and store prewarm /
-fingerprint reuse in `tests/llb/optimize/test_store_registry.py`.
+CI covers vocabulary and trial policy in `tests/llb/optimize/test_multi_objective.py`, study and
+Pareto behavior in `test_multi_objective_studies.py`, and store prewarm/fingerprint reuse in
+`test_store_registry.py`.
 
 Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD postedited fixture,
 `--trials 40 --limit 20 --seed 21 --objectives quality,latency`):
@@ -171,11 +172,10 @@ Artifacts under `$DATA_DIR/joint-search/<run>/`: `manifest.json`, `ledger.json`,
 `finalists/<model>/{pareto.{json,md},picks/<goal>.json,result.json}`,
 `scoreboard.{json,md}`.
 
-CI drives the schedule with injectable screen/tune hooks in
-`tests/llb/optimize/test_joint_search.py` (halving ranks, two-round budget growth, ledger
-tuning-only, scoreboard final-only, kill-then-resume zero re-screen / zero re-tune of finished
-finalists, Optuna remaining-trial gate when `n_trials` are already complete, pick-scoring
-resume with zero re-eval of finished picks).
+CI drives the schedule with injectable screen/tune hooks in `test_joint_search.py`. Halving fences
+and resume behaviors are separated into adjacent `test_joint_search_halving.py`,
+`test_joint_search_resume.py`, `test_joint_search_optuna_resume.py`, and
+`test_joint_search_pick_resume.py` modules.
 
 Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, three
 `models_uk.yaml` candidates -- MamayLM-12B GGUF, Lapa-12B GGUF, Mistral-Small-3.1-24B --

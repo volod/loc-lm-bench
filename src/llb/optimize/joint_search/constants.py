@@ -26,5 +26,5 @@ FINALIST_RESULT_FILE = "result.json"
 PICKS_DIR = "picks"
 MARKER_STATUS_DONE = "done"
 
-# Optuna SQLite root (same as ``llb.optimize.multi_objective.OPTUNA_METHOD``).
+# Optuna SQLite root (same as ``llb.optimize.multi_objective_runtime.OPTUNA_METHOD``).
 OPTUNA_METHOD = "optuna"

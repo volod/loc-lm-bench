@@ -32,7 +32,7 @@ def run_multi_objective_tune(
 ) -> None:
     """Execute NSGA-II tune + stage-2 finals and print the Pareto / pick summary."""
     from llb.backends.hardware import detect_ram_mb, max_vram_mb
-    from llb.optimize.multi_objective import two_stage_multi
+    from llb.optimize.multi_objective_study import two_stage_multi
     from llb.optimize.objectives import OBJECTIVE_COST, parse_objectives
     from llb.optimize.store_registry import StoreRegistry, study_stores_dir
     from llb.optimize.tuner_runtime import _run_eval_metrics

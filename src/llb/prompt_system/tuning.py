@@ -12,11 +12,8 @@ from itertools import product
 
 from llb.prompt_system.budget import ContextBudget, Tokenizer
 from llb.prompt_system.corpus import CorpusPackage
-from llb.prompt_system.knowledge_tree import (
-    KnowledgeTreeRender,
-    KnowledgeTreeSource,
-    render_knowledge_tree,
-)
+from llb.prompt_system.knowledge_tree_render import KnowledgeTreeRender, render_knowledge_tree
+from llb.prompt_system.knowledge_tree_source import KnowledgeTreeSource
 from llb.prompt_system.manifest import prompt_system_id
 from llb.prompt_system.review import PromptCandidate, make_candidate
 from llb.prompt_system.template import (

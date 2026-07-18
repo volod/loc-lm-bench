@@ -27,11 +27,8 @@ from llb.prompt_system.manifest import (
     corpus_digest,
     mapping_digest,
 )
-from llb.prompt_system.knowledge_tree import (
-    DEFAULT_TREE_BUDGETS,
-    DEFAULT_TREE_DEPTHS,
-    load_knowledge_tree_source,
-)
+from llb.prompt_system.knowledge_tree_render import DEFAULT_TREE_BUDGETS, DEFAULT_TREE_DEPTHS
+from llb.prompt_system.knowledge_tree_source import load_knowledge_tree_source
 from llb.prompt_system.review import PromptCandidate, candidate_to_dict, save_candidates
 from llb.prompt_system.template import GRAPH_STYLES, TemplateFields
 from llb.prompt_system.tuning import (

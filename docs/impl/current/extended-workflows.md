@@ -48,8 +48,10 @@ answer depends on the prior steps.
 
 Core locations:
 
-- `src/llb/bench/chain_context.py`: the four policies, the pure per-step context-assembly seam,
-  the scored per-policy run, run-bundle persistence, and the recommendation block;
+- `src/llb/bench/chain_context_policy.py`: policy execution and per-step context assembly;
+- `src/llb/bench/chain_context.py`: run orchestration and persistence;
+- `src/llb/bench/chain_context_report.py`: result contract, provenance projection, digest, and
+  recommendation rendering;
 - `src/llb/board/chain_context.py`: one-model policy comparison board rows under
   `TIER_CHAIN_CONTEXT` (mirrors `board/harnesses.py`);
 - `src/llb/prompts/templates/bench/chain_context/`: the reviewable role/instruction prompt-system
@@ -124,8 +126,9 @@ Important modules:
 - `budget.py`: token-budget planning and section trimming;
 - `template.py`: prompt fields and `PromptPackage.apply`;
 - `tuning.py`: candidate grid and deduplication;
-- `knowledge_tree.py`: ontology/graph loading, deterministic community ordering, and strict
-  depth/token-budget rendering;
+- `knowledge_tree_source.py`: ontology/graph loading and source identity;
+- `knowledge_tree_render.py`: deterministic community ordering and strict depth/token-budget
+  rendering;
 - `review.py`: approve, pin, reject, and persist candidate review state;
 - `manifest.py`: corpus, mapping, template digests, and stable prompt-system ids;
 - `selection.py`: resolves a selected package for `run-eval`.
@@ -198,9 +201,11 @@ candidate row. It is file-driven and split-guarded:
   finalized tuning-split run bundle. The exporter renders `eval.rag.chat` messages through the
   same prompt path as `run-eval`, writes `sft.jsonl`, `dpo.jsonl`, and `dataset_manifest.json`,
   and records the item ids, split counts, source run, and dataset digest.
-- `src/llb/finetune/trainer.py` trains LoRA/QLoRA adapters behind a trainer seam. `--trainer fake`
-  writes deterministic CI artifacts; the real path lazy-imports PEFT, TRL, Transformers, and
-  Datasets from the `[finetune]` extra and saves an adapter plus `adapter_manifest.json`.
+- `src/llb/finetune/trainer.py` selects and orchestrates LoRA/QLoRA trainer backends, while
+  `training_runtime.py` owns dataset/tokenizer/model preparation and the shared TRL loop.
+  `--trainer fake` writes deterministic CI artifacts; the real path lazy-imports PEFT, TRL,
+  Transformers, and Datasets from the `[finetune]` extra and saves an adapter plus
+  `adapter_manifest.json`.
   `--trainer unsloth` selects the Unsloth-accelerated path (`unsloth_train_adapter`): same SFT
   loop, dataset contract, and manifest, but the base model is loaded and LoRA-wrapped through
   `FastLanguageModel` for roughly 2x faster single-GPU training. Unsloth is intentionally not a

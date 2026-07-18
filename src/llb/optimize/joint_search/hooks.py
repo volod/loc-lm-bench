@@ -80,7 +80,7 @@ def default_tune_finalist(
     case_limit: int | None = None,
 ) -> FinalistTuneResult:
     """Per-finalist multi-objective two-stage tune into ``cell_dir``."""
-    from llb.optimize.multi_objective import tune_multi
+    from llb.optimize.multi_objective_study import tune_multi
     from llb.optimize.objectives import TrialMetrics
     from llb.optimize.tuner_runtime import _run_eval_metrics
 

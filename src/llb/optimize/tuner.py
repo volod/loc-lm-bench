@@ -4,7 +4,7 @@ The split discipline keeps the leaderboard honest: STAGE 1 searches the RAG/back
 the disjoint `tuning` split (a proxy -- never the final gold items), STAGE 2 scores ONLY the
 winning config on the full `final` split, and only that stage-2 run is the leaderboard entry.
 Single-objective mode pins the embedding model; multi-objective mode (`llb tune --objectives`)
-may sample it from the bake-off shortlist (see `llb.optimize.multi_objective`).
+may sample it from the bake-off shortlist (see `llb.optimize.multi_objective_study`).
 
 Search space (the chunking machinery already exists in RAG core):
   strategy   {fixed, sentence, recursive, markdown, semantic}

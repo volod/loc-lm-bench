@@ -5,16 +5,18 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.knowledge_cutoff.data import CutoffEvent
-from llb.bench.knowledge_cutoff.translation import (
+from llb.bench.knowledge_cutoff.translation_artifacts import (
     DRAFTS_FILENAME,
     MANIFEST_FILENAME,
     SOURCE_FILENAME,
     WORKSHEET_FILENAME,
     load_translation_drafts,
+    write_models_jsonl,
+)
+from llb.bench.knowledge_cutoff.translation_models import (
     source_hash,
     translation_hash,
     validate_translation,
-    write_models_jsonl,
 )
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.verify_base import (

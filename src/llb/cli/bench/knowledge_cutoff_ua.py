@@ -27,7 +27,7 @@ def knowledge_cutoff_ua_draft_cmd(
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
     from llb.bench.knowledge_cutoff.data import LoadedEvents, load_events, select_events
-    from llb.bench.knowledge_cutoff.translation import (
+    from llb.bench.knowledge_cutoff.translation_workflow import (
         TRANSLATION_MAX_TOKENS,
         draft_translation_bundle,
         translation_progress,
@@ -98,7 +98,7 @@ def knowledge_cutoff_ua_review_cmd(
     start: Optional[int] = typer.Option(None, min=1, help="one-based row to open"),
 ) -> None:
     """Open the shared resumable terminal review over every translated row."""
-    from llb.bench.knowledge_cutoff.translation import WORKSHEET_FILENAME
+    from llb.bench.knowledge_cutoff.translation_artifacts import WORKSHEET_FILENAME
     from llb.goldset.verify_session.loop import run_session
 
     worksheet = bundle / WORKSHEET_FILENAME

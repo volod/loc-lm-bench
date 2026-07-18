@@ -19,25 +19,25 @@ per-step and final-answer correctness carry bootstrap CIs and the policies are r
 ``TIER_CHAIN_CONTEXT``.
 """
 
-import hashlib
-import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from llb.bench.common import (
     Mirror,
-    mean,
     persist_category_run,
     render_board,
     verified_data_config,
 )
-from llb.core.contracts.results import BoardRow
-from llb.core.contracts.runs import RunMetrics
 from llb.goldset.chains import ChainItem
-from llb.prompts.registry import render_text
-from llb.scoring.aggregate import TIER_CHAIN_CONTEXT
+from llb.bench.chain_context_report import (
+    METHOD,
+    ChainContextRun,
+    build_recommendation,
+    chain_set_digest,
+    policy_config,
+    policy_metrics,
+)
 from llb.bench.chain_context_policy import (
     DEFAULT_K,
     POLICY_FRESH,
@@ -45,15 +45,11 @@ from llb.bench.chain_context_policy import (
     POLICY_ROLES,
     POLICY_SUMMARY,
     PolicyReport,
-    RECOMMENDATION_TEMPLATE,
     Retriever,
-    prompt_system_ids,
     run_policy,
 )
 
 _LOG = logging.getLogger(__name__)
-
-METHOD = "chain-context"
 
 CONTEXT_POLICIES: tuple[str, ...] = (POLICY_FRESH, POLICY_HISTORY, POLICY_SUMMARY, POLICY_ROLES)
 
@@ -68,90 +64,6 @@ CONTEXT_POLICIES: tuple[str, ...] = (POLICY_FRESH, POLICY_HISTORY, POLICY_SUMMAR
 
 
 # --- run + persistence ---------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class ChainContextRun:
-    """Outcome of one context-policy comparison for a fixed model over a verified chain set."""
-
-    model: str
-    backend: str
-    reports: list[PolicyReport]
-    board: list[BoardRow]
-    table: str
-    recommendation: str
-    chain_digest: str
-
-
-def chain_set_digest(chains: list[ChainItem]) -> str:
-    """Stable digest of the chain set content (order-sensitive), recorded in provenance."""
-    payload = json.dumps([c.model_dump() for c in chains], ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def build_recommendation(model: str, reports: list[PolicyReport], ranked: list[BoardRow]) -> str:
-    """A template-sourced recommendation naming the winning policy and its per-step evidence."""
-    by_policy = {r.policy: r for r in reports}
-    order = [str(row["model"]) for row in ranked] or [r.policy for r in reports]
-    winner = order[0]
-    win = by_policy[winner]
-    ranking = ", ".join(
-        f"{policy} {mean(by_policy[policy].final_objectives):.3f}" for policy in order
-    )
-    advice = _advice(winner)
-    return render_text(
-        RECOMMENDATION_TEMPLATE,
-        {
-            "model": model,
-            "winner": winner,
-            "winner_final": f"{mean(win.final_objectives):.3f}",
-            "winner_step": f"{mean(win.step_objectives):.3f}",
-            "ranking": ranking,
-            "advice": advice,
-        },
-    )
-
-
-def _advice(winner: str) -> str:
-    if winner == POLICY_ROLES:
-        return (
-            "послідовність ролей librarian -> analyst -> answerer перемагає: розкладай крок "
-            "на пошук факту, встановлення зв'язку та остаточну відповідь окремими системними промптами"
-        )
-    if winner == POLICY_HISTORY:
-        return "накопичуй повну історію попередніх кроків у промпті наступного кроку"
-    if winner == POLICY_SUMMARY:
-        return "стискай історію попередніх кроків у короткий підсумок перед наступним кроком"
-    return "свіжий пошук на кожному кроці без переносу історії достатній для цього набору"
-
-
-def _policy_config(
-    report: PolicyReport, model: str, backend: str, chain_digest: str, policies: list[str]
-) -> dict[str, Any]:
-    return {
-        "model": model,
-        "backend": backend,
-        "tier": TIER_CHAIN_CONTEXT,
-        "category": METHOD,
-        "policy": report.policy,
-        "policies": policies,
-        "chain_set_digest": chain_digest,
-        "prompt_system_ids": prompt_system_ids(report.policy),
-        "n_chains": len(report.final_objectives),
-        "n_steps": len(report.step_rows),
-        "final_objective": round(mean(report.final_objectives), 6),
-        "per_step_objective": round(mean(report.step_objectives), 6),
-        "final_ci": list(report.final_ci) if report.final_ci else None,
-        "per_step_ci": list(report.step_ci) if report.step_ci else None,
-    }
-
-
-def _policy_metrics(report: PolicyReport) -> RunMetrics:
-    return {
-        "objective_score": round(mean(report.final_objectives), 6),
-        "reliability": report.reliability,
-        "tokens_per_s": 0.0,
-    }
 
 
 def run_chain_context(
@@ -206,7 +118,7 @@ def run_chain_context(
     if persist and data_dir is not None:
         for report in reports:
             config = {
-                **_policy_config(report, model, backend, digest, policies),
+                **policy_config(report, model, backend, digest, policies),
                 **verification_cfg,
             }
             report.paths = persist_category_run(
@@ -214,7 +126,7 @@ def run_chain_context(
                 data_dir=data_dir,
                 run_name=f"{run_name}-{report.policy}",
                 config=config,
-                metrics=_policy_metrics(report),
+                metrics=policy_metrics(report),
                 case_rows=report.step_rows,
                 mirror=mirror,
             )
@@ -237,8 +149,8 @@ def _log_run(model: str, reports: list[PolicyReport]) -> None:
             "[chain-context] %s policy=%s final=%.3f per-step=%.3f reliability=%.3f -> %s",
             model,
             report.policy,
-            mean(report.final_objectives),
-            mean(report.step_objectives),
+            sum(report.final_objectives) / len(report.final_objectives),
+            sum(report.step_objectives) / len(report.step_objectives),
             report.reliability,
             manifest,
         )
