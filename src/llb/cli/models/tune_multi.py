@@ -34,7 +34,8 @@ def run_multi_objective_tune(
     from llb.backends.hardware import detect_ram_mb, max_vram_mb
     from llb.optimize.multi_objective import two_stage_multi
     from llb.optimize.objectives import OBJECTIVE_COST, parse_objectives
-    from llb.optimize.tuner_runtime import StoreRegistry, _run_eval_metrics
+    from llb.optimize.store_registry import StoreRegistry, study_stores_dir
+    from llb.optimize.tuner_runtime import _run_eval_metrics
 
     goals = parse_objectives(objectives)
     if OBJECTIVE_COST in goals and cfg.scorer_policy != "frontier":
@@ -45,7 +46,9 @@ def run_multi_objective_tune(
         )
         raise typer.Exit(code=2)
     embedder_list = _parse_embedders(embedders)
-    stores = StoreRegistry()
+    cache_dir = study_stores_dir(cfg.data_dir, study_name)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    stores = StoreRegistry(cache_dir=cache_dir, embedders=embedder_list)
     case_limit = limit
 
     def evaluate(config: RunConfig, limit: int | None = None) -> TrialMetrics:
@@ -81,6 +84,8 @@ def run_multi_objective_tune(
         tune_context_budget=context_budget,
         prune_case_count=limit,
         accuracy_floor=accuracy_floor,
+        stores=stores,
+        prewarm_stores=True,
     )
     t = out.tune
     t.store_builds = list(stores.builds)
@@ -88,6 +93,11 @@ def run_multi_objective_tune(
         f"[tune] stage-1 Pareto front={len(t.front)} "
         f"({t.n_complete} complete, {t.n_pruned} pruned of {t.n_trials})"
     )
+    if stores.embed_calls:
+        typer.echo(
+            f"[tune] store embeds={stores.embed_calls} unique fingerprints={len(stores.builds)} "
+            f"(cache={cache_dir})"
+        )
     for pick in t.picks:
         point = pick.point
         typer.echo(

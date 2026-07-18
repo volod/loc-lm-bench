@@ -616,8 +616,10 @@ The store builder is an injectable seam, so scoring, ranking, the consent gate, 
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
 
 Multi-objective tune (`llb tune --objectives ...`) may sample that same shortlist as a categorical
-knob; the tuner `StoreRegistry` rebuilds the store when the embedder (or chunking fingerprint)
-changes and never reuses a store built under a different embedder. See
+knob; the tuner `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder
+or chunking fingerprint changes, prewarms the shortlist for the base chunking shape before the
+Optuna loop, fans out once per new chunking fingerprint, and may reload from
+`$DATA_DIR/optuna/<study>/stores/`. It never reuses a store built under a different embedder. See
 [evaluation rigor](rigor-board-judge.md#multi-objective-rag-tuner).
 
 ### Context budget

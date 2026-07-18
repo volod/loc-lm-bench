@@ -43,32 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### multi-obj-embedder-store-prewarm
-
-(Optional.) Pre-build bake-off shortlist stores once per chunking fingerprint before the Optuna
-loop so embedder-knob trials swap a cached store instead of re-embedding the corpus on every
-trial. Today `StoreRegistry` already avoids reuse across different embedders (correctness), but
-the first build of each `(embedding_model, strategy, chunk_*)` still pays a full embed pass
-inside the trial -- that dominates wall-clock when `--embedders` is enabled and makes large
-multi-objective studies expensive on the CUDA host.
-
-- Agent status: CLEAR
-- Dependencies: [multi-objective RAG tuner](current/rigor-board-judge.md#multi-objective-rag-tuner).
-  Reuse `StoreRegistry` in `src/llb/optimize/tuner_runtime.py` and the bake-off shortlist in
-  `src/llb/rag/embedding_bakeoff.py`.
-- User-visible outcome: `llb tune --objectives ...` with the default embedder shortlist completes
-  materially faster without changing Pareto semantics.
-- Scope boundary: in scope -- optional prewarm / disk-backed store cache keyed by fingerprint.
-  Out of scope -- changing the rebuild-when-embedder-changes invariant or the two-split
-  discipline.
-- Data and artifact paths: cache under `$DATA_DIR/optuna/<study>/stores/` or reuse
-  `$DATA_DIR/llb/rag/` generations; studies remain under `$DATA_DIR/optuna/`.
-- Execution path: unit test with a fake builder that counts embed calls; optional heavy timing
-  note on the UA fixture.
-- Acceptance gates: `make ci` green; with two embedders and fixed chunking, the second trial that
-  reuses a fingerprint issues zero new embeds.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) tuning section.
-
 ### frontier-ledger-case-checkpoint
 
 (Optional.) Persist per-case frontier judge scores keyed by case index in the scorer ledger so a

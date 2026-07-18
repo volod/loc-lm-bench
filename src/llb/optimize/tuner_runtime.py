@@ -1,13 +1,21 @@
-"""Focused tuner runtime: store build, default evaluate hooks, MLflow trial logging."""
+"""Focused tuner runtime: default evaluate hooks, MLflow trial logging.
+
+Store caching lives in ``llb.optimize.store_registry`` (re-exported here for callers).
+"""
 
 import logging
 import time
-from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from llb.core.config import RunConfig
 from llb.core.contracts.runs import EvalResult
 from llb.optimize.objectives import TrialMetrics
+from llb.optimize.store_registry import (
+    StoreRegistry,
+    chunking_fingerprint,
+    store_fingerprint,
+    study_stores_dir,
+)
 from llb.optimize.tuning_space import (
     FINAL_SPLIT,
     TUNING_SPLIT,
@@ -15,59 +23,32 @@ from llb.optimize.tuning_space import (
 
 _LOG = logging.getLogger(__name__)
 
+# Back-compat aliases used by older tests / imports.
+_store_fingerprint = store_fingerprint
+_chunking_fingerprint = chunking_fingerprint
+
 TrialCallback = Callable[[dict[str, Any]], None]  # per-completed-trial hook (e.g. MLflow child)
 
-
-def _store_fingerprint(config: RunConfig) -> tuple[Any, ...]:
-    """Key that forces a rebuild when the embedder or chunking shape changes."""
-    return (
-        config.embedding_model,
-        config.strategy,
-        config.chunk_size,
-        config.chunk_overlap,
-        config.retrieval_mode,
-        config.child_chunk_size,
-        config.lexical_lemmas,
-    )
-
-
-@dataclass
-class StoreRegistry:
-    """Per-study cache: rebuild when the embedder (or chunking) fingerprint changes."""
-
-    builds: list[tuple[Any, ...]] = field(default_factory=list)
-    _cache: dict[tuple[Any, ...], Any] = field(default_factory=dict, repr=False)
-
-    def get(self, config: RunConfig) -> Any:
-        key = _store_fingerprint(config)
-        cached = self._cache.get(key)
-        if cached is not None:
-            return cached
-        self.builds.append(key)
-        store = _build_store(config)
-        self._cache[key] = store
-        return store
+__all__ = [
+    "StoreRegistry",
+    "TrialCallback",
+    "_LOG",
+    "_build_store",
+    "_chunking_fingerprint",
+    "_run_eval_final",
+    "_run_eval_metrics",
+    "_run_eval_quality",
+    "_store_fingerprint",
+    "mlflow_trial_logger",
+    "study_stores_dir",
+]
 
 
 def _build_store(config: RunConfig) -> Any:
-    from llb.rag.rerank import maybe_wrap_reranker
-    from llb.rag.store import RagStore
+    """Build a store and apply the trial's fusion + rerank knobs (single-eval path)."""
+    from llb.optimize.store_registry import _apply_query_knobs, _build_bare_store
 
-    store = RagStore.build(
-        config.corpus_root,
-        config.strategy,
-        config.chunk_size,
-        config.chunk_overlap,
-        config.embedding_model,
-        mode=config.retrieval_mode,
-        child_size=config.child_chunk_size,
-        lexical_lemmas=config.lexical_lemmas,
-    )
-    # The store is injected into run_eval directly (no _load_store pass), so the trial's
-    # fusion + rerank knobs must be applied here to take effect.
-    store.fusion_weight = config.fusion_weight
-    store.fusion_candidates = config.fusion_candidates
-    return maybe_wrap_reranker(store, config)
+    return _apply_query_knobs(_build_bare_store(config), config)
 
 
 def _frontier_cost_usd(result: EvalResult) -> float:

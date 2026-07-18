@@ -19,8 +19,8 @@ from llb.optimize.objectives import (
 )
 from llb.optimize.pareto_report import tune_run_dir, write_pareto_report
 from llb.optimize.tuner_models import MultiObjectiveResult, MultiTwoStageResult
+from llb.optimize.store_registry import StoreRegistry, study_stores_dir
 from llb.optimize.tuner_runtime import (
-    StoreRegistry,
     TrialCallback,
     _LOG,
     _run_eval_final,
@@ -182,8 +182,16 @@ def tune_multi(
     accuracy_floor: float | None = None,
     report_dir: Any | None = None,
     write_report: bool = True,
+    stores: StoreRegistry | None = None,
+    prewarm_stores: bool = True,
 ) -> MultiObjectiveResult:
-    """Stage 1 multi-objective search: NSGA-II over quality/latency[/cost], emit Pareto picks."""
+    """Stage 1 multi-objective search: NSGA-II over quality/latency[/cost], emit Pareto picks.
+
+    When ``embedders`` is set and ``prewarm_stores`` is true, bake-off shortlist stores for the
+    base config's chunking fingerprint are built (or loaded from
+    ``$DATA_DIR/optuna/<study>/stores/``) before the Optuna loop so embedder-knob trials swap a
+    cached store instead of re-embedding.
+    """
     import optuna
 
     goals = parse_objectives(objectives)
@@ -193,7 +201,18 @@ def tune_multi(
             "evaluate hook supplies it",
             base_config.scorer_policy,
         )
-    stores = StoreRegistry()
+    shared_stores = stores is not None
+    if stores is None:
+        cache_dir = None
+        if study_name:
+            cache_dir = study_stores_dir(base_config.data_dir, study_name)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        stores = StoreRegistry(cache_dir=cache_dir, embedders=embedders)
+    elif embedders and stores.embedders is None:
+        stores.embedders = list(embedders)
+    # Prewarm only when this registry feeds evaluate (default hook or caller-shared registry).
+    if prewarm_stores and embedders and (evaluate is None or shared_stores):
+        stores.prewarm(base_config, embedders)
     evaluate = evaluate or (
         lambda config, limit=None: _run_eval_metrics(config, limit=limit, stores=stores)
     )
@@ -315,6 +334,8 @@ def two_stage_multi(
     accuracy_floor: float | None = None,
     report_dir: Path | None = None,
     write_report: bool = True,
+    stores: StoreRegistry | None = None,
+    prewarm_stores: bool = True,
 ) -> MultiTwoStageResult:
     """Stage 1 multi-obj tune; stage 2 scores each named pick on the final split."""
     result = tune_multi(
@@ -341,6 +362,8 @@ def two_stage_multi(
         accuracy_floor=accuracy_floor,
         report_dir=report_dir,
         write_report=write_report,
+        stores=stores,
+        prewarm_stores=prewarm_stores,
     )
     runner = final_runner or _run_eval_final
     finals: dict[str, EvalResult] = {}

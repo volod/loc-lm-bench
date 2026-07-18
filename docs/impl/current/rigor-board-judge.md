@@ -87,7 +87,15 @@ Additional search knobs in this mode:
 - **Embedder** -- categorical over the bake-off shortlist
   (`DEFAULT_LOCAL_CANDIDATES` in `src/llb/rag/embedding_bakeoff.py`); override with
   `--embedders a,b` or pass `--embedders ""` to keep the pinned model. The per-study
-  `StoreRegistry` rebuilds (does not reuse) when the embedder fingerprint changes.
+  `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder or
+  chunking fingerprint changes, and never reuses a store across different embedders.
+- **Store prewarm / disk cache** -- when `--embedders` is active, the shortlist is pre-built
+  for the base config's chunking fingerprint before the Optuna loop; the first sight of any
+  new chunking shape also fan-outs all shortlist embedders once. Bare stores persist under
+  `$DATA_DIR/optuna/<study>/stores/<fingerprint-slug>/` so a resumed study reloads instead of
+  re-embedding. Fusion and rerank knobs still apply from the current trial config on every
+  get. CI: `tests/llb/optimize/test_store_registry.py` (fake builder counts embeds; second
+  reuse of a fingerprint issues zero new embeds).
 - **Context budget** -- samples a token budget from `{2048, 4096, 8192, 16384}` that couples
   `top_k` / `chunk_size` / `max_model_len` (`RunConfig.context_budget`); disable with
   `--no-context-budget`.
@@ -100,7 +108,8 @@ llb tune --model llama3.2:3b --backend ollama --objectives quality,latency \
 ```
 
 CI covers the plumbing with fake evaluate hooks in `tests/llb/optimize/test_multi_objective.py`
-(Pareto front size, per-goal picks, embedder rebuild tracking, cost pick).
+(Pareto front size, per-goal picks, embedder rebuild tracking, cost pick) and store prewarm /
+fingerprint reuse in `tests/llb/optimize/test_store_registry.py`.
 
 Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD postedited fixture,
 `--trials 40 --limit 20 --seed 21 --objectives quality,latency`):
@@ -111,7 +120,7 @@ Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD po
 - Picks: `best_quality` trial 30 (tuning quality 0.386, generate latency 0.378 s) -> final
   quality 0.434; `best_quality_per_second` trial 8 (0.386 / 0.320 s) -> final quality 0.477
 - Context-budget knob active (sampled 8192 / 16384 on the picks); embedder rebuild invariant
-  covered by the unit test with a fake store registry
+  and store-prewarm zero-reuse-embed gate covered by unit tests with fake builders / registries
 
 ## Public Screen
 
