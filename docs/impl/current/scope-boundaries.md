@@ -18,15 +18,19 @@ Mitigations:
 
 ## Data Egress
 
-Default corpus processing is local. Frontier or Litellm calls are opt-in data-prep tools, not the
-default path for private material.
+Default corpus processing is local. Frontier or Litellm calls are opt-in tools, not the default
+path for private material.
 
 Current policy:
 
 - real chat-log corpora use local drafting or verification only;
 - real text-analysis corpora may use frontier cross-check when the operator explicitly approves it;
 - synthetic bundles may use the configured Litellm path;
-- every drafted bundle still needs human verification before headline scoring.
+- every drafted bundle still needs human verification before headline scoring;
+- frontier *scoring* (the `scorer_policy=frontier` lane on `run-eval`) is a separate opt-in: one
+  upfront egress consent plus a hard per-run USD and/or call budget enforced by the scorer cost
+  ledger under `$DATA_DIR/<method>/<run>/scorer/`. Over-cap aborts are resumable and never silent.
+  See [evaluation rigor](rigor-board-judge.md#scorer-policy-seam).
 
 ## Closed Graph Ontology
 

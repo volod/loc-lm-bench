@@ -346,6 +346,33 @@ The local-judge choice is deliberate: corpus data should not leave the host by d
 is model-family bias when the judge shares lineage with candidate models. That bias is disclosed in
 manifests and controlled by the calibration gate and judge-cohort guard.
 
+## Scorer Policy Seam
+
+`src/llb/scoring/policy/` selects the judge lane for `run-eval` via `--scorer-policy` /
+`RunConfig.scorer_policy`:
+
+| Lane | Behavior |
+| --- | --- |
+| `human` | Skip automated judging; objective scores rank alone; manifest records `provider=human`. |
+| `local` | Existing DeepEval path against `judge_model` / `judge_base_url` (default). |
+| `frontier` | Litellm frontier judge using the registered Ukrainian G-Eval step templates. |
+
+Frontier scoring requires one upfront `--scorer-egress-consent` plus a hard cap
+(`--frontier-max-usd` and/or `--frontier-max-calls`). Spend is tracked in
+`$DATA_DIR/run-eval/<run>/scorer/` (`consent.json`, `ledger.jsonl`, `ledger_state.json`). Hitting
+the cap aborts with `abort.json` (`resumable: true`); resume reloads the ledger so spend never
+silently exceeds the cap. Headline ranking is unchanged: judges remain diagnostic until
+calibration rho clears the trust threshold.
+
+```bash
+llb run-eval --scorer-policy local --judge-model <model> --judge-rho <rho>
+llb run-eval --scorer-policy human
+llb run-eval --scorer-policy frontier --judge-model openai/<model> \
+  --scorer-egress-consent --frontier-max-usd 2.00 --judge-rho <rho>
+```
+
+Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm completions; no network).
+
 ## Frontier Prep Utilities
 
 `src/llb/prep/frontier.py` contains GPU-free Litellm-backed utilities that emit unverified review

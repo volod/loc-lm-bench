@@ -28,6 +28,8 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
+# Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
+ScorerPolicy = Literal["human", "local", "frontier"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
 # Hybrid retrieval defaults (hybrid-retrieval-uk): dense-vs-lexical RRF weight and the
@@ -151,6 +153,13 @@ class RunConfigFields(BaseModel):
         default_factory=lambda: _optional_environment_value(env.DEEPEVAL_JUDGE_BASE_URL)
     )
     judge_threshold: float = Field(default=0.6, ge=-1, le=1)
+
+    # Scorer-policy seam: which judge lane run-eval uses. "local" keeps the DeepEval path;
+    # "frontier" requires egress consent + a hard budget cap; "human" skips automated judging.
+    scorer_policy: ScorerPolicy = "local"
+    scorer_egress_consent: bool = False
+    frontier_max_usd: float | None = Field(default=None, gt=0)
+    frontier_max_calls: int | None = Field(default=None, ge=1)
 
     # Add a semantic-similarity correctness signal (uses the pinned embedder; recorded,
     # not blended into the headline score). Off by default -- it embeds every answer.

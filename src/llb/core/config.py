@@ -30,6 +30,20 @@ from llb.core.config_validation import (
 from llb.core.config_fields import RunConfigFields
 
 
+def _validate_scorer_policy(config: RunConfigFields) -> None:
+    """Frontier lane needs a model and a budget; consent is checked at resolve time."""
+    if config.scorer_policy == "frontier":
+        if not config.judge_model:
+            raise ValueError("scorer_policy=frontier requires judge_model")
+        if config.frontier_max_usd is None and config.frontier_max_calls is None:
+            raise ValueError("scorer_policy=frontier requires frontier_max_usd or frontier_max_calls")
+        return
+    if config.scorer_egress_consent:
+        raise ValueError("scorer_egress_consent can only be set when scorer_policy is frontier")
+    if config.frontier_max_usd is not None or config.frontier_max_calls is not None:
+        raise ValueError("frontier budgets can only be set when scorer_policy is frontier")
+
+
 class RunConfig(RunConfigFields):
     """Validated behavior and artifact paths for one evaluation run."""
 
@@ -67,6 +81,7 @@ class RunConfig(RunConfigFields):
             raise ValueError("query_prep_typo_guard needs the 'typos' step in query_prep")
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
+        _validate_scorer_policy(self)
         if self.backend == "vllm":
             _validate_vllm_host_matches_port(self.vllm_host, self.vllm_port)
         return self
