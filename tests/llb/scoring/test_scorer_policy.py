@@ -1,7 +1,5 @@
 """Scorer-policy seam: lane routing, consent, cost ledger, and frontier judge."""
 
-import json
-
 import pytest
 
 from llb.core.config import RunConfig
@@ -41,14 +39,10 @@ def test_parse_scorer_lane_defaults_and_rejects():
 
 
 def test_policy_matrix_routes_human_local_frontier(tmp_path):
-    human = resolve_scorer(
-        ScorerPolicyRequest(lane="human", judge_model=None, run_dir=tmp_path)
-    )
+    human = resolve_scorer(ScorerPolicyRequest(lane="human", judge_model=None, run_dir=tmp_path))
     assert human.lane == "human"
     assert HUMAN_LANE_REASON in human.reason
-    assert human.scorer([_record()], "n/a") == [
-        {"faithfulness": 0.0, "answer_relevancy": 0.0}
-    ]
+    assert human.scorer([_record()], "n/a") == [{"faithfulness": 0.0, "answer_relevancy": 0.0}]
 
     local = resolve_scorer(
         ScorerPolicyRequest(
@@ -114,9 +108,7 @@ def test_ledger_enforces_spend_cap(tmp_path):
     ledger = CostLedger.open(tmp_path, max_usd=0.05, max_calls=10)
     ledger.reserve_call()
     with pytest.raises(BudgetExceeded, match="spend budget exceeded"):
-        ledger.record(
-            LedgerEntry(model="m", prompt_tokens=10, completion_tokens=5, cost_usd=0.06)
-        )
+        ledger.record(LedgerEntry(model="m", prompt_tokens=10, completion_tokens=5, cost_usd=0.06))
 
 
 def test_ledger_resume_restores_spend(tmp_path):

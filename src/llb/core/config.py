@@ -36,7 +36,9 @@ def _validate_scorer_policy(config: RunConfigFields) -> None:
         if not config.judge_model:
             raise ValueError("scorer_policy=frontier requires judge_model")
         if config.frontier_max_usd is None and config.frontier_max_calls is None:
-            raise ValueError("scorer_policy=frontier requires frontier_max_usd or frontier_max_calls")
+            raise ValueError(
+                "scorer_policy=frontier requires frontier_max_usd or frontier_max_calls"
+            )
         return
     if config.scorer_egress_consent:
         raise ValueError("scorer_egress_consent can only be set when scorer_policy is frontier")

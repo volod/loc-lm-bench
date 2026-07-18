@@ -97,9 +97,7 @@ def test_frontier_budget_abort_writes_artifact(tmp_path):
         )
     )
     with pytest.raises(SystemExit, match="budget exceeded"):
-        _judge_cases(
-            cfg, batch, judge_rho=0.9, scorer=resolved.scorer, staging_dir=staging
-        )
+        _judge_cases(cfg, batch, judge_rho=0.9, scorer=resolved.scorer, staging_dir=staging)
     abort = json.loads((staging / "scorer" / "abort.json").read_text(encoding="utf-8"))
     assert abort["resumable"] is True
     assert abort["status"] == "aborted"

@@ -48,7 +48,7 @@ def parse_scorer_lane(value: str | None) -> ScorerLane:
         return DEFAULT_SCORER_LANE
     if value not in SCORER_LANES:
         raise ScorerPolicyError(f"scorer_policy must be one of {SCORER_LANES}, got {value!r}")
-    return value  # type: ignore[return-value]
+    return value
 
 
 def resolve_scorer(request: ScorerPolicyRequest) -> ResolvedScorer:
@@ -111,14 +111,10 @@ def _resolve_frontier(request: ScorerPolicyRequest) -> ResolvedScorer:
         )
     else:
         consent = require_consent(request.run_dir, model=request.judge_model)
-    ledger = CostLedger.open(
-        request.run_dir, max_usd=consent.max_usd, max_calls=consent.max_calls
-    )
+    ledger = CostLedger.open(request.run_dir, max_usd=consent.max_usd, max_calls=consent.max_calls)
     return ResolvedScorer(
         lane="frontier",
-        scorer=frontier_scorer(
-            request.judge_model, ledger, complete=request.frontier_complete
-        ),
+        scorer=frontier_scorer(request.judge_model, ledger, complete=request.frontier_complete),
         reason="frontier judge under budget cap",
         ledger=ledger,
         metadata={

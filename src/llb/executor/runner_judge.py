@@ -59,7 +59,7 @@ def _policy_request(
     staging_dir: Path | None,
 ) -> ScorerPolicyRequest:
     return ScorerPolicyRequest(
-        lane=config.scorer_policy,  # type: ignore[arg-type]
+        lane=config.scorer_policy,
         judge_model=config.judge_model,
         judge_base_url=config.judge_base_url,
         egress_consent=config.scorer_egress_consent,
@@ -76,7 +76,7 @@ def _configured_judge_scorer(
     staging_dir: Path | None = None,
 ) -> tuple[JudgeScorer, dict[str, object]]:
     """Bind the scorer-policy lane; return (scorer, policy metadata)."""
-    lane: ScorerLane = config.scorer_policy  # type: ignore[assignment]
+    lane: ScorerLane = config.scorer_policy
     if lane == "human":
         return _noop_scorer, {"scorer_policy": "human", "provider": "human"}
     if lane == "local" and config.judge_model is None:
@@ -174,7 +174,7 @@ def _build_judge_metadata(
         judge_metadata["metrics"] = ["faithfulness", "answer_relevancy"]
         budget = meta.get("budget")
         if isinstance(budget, dict):
-            judge_metadata["budget"] = budget  # type: ignore[typeddict-item]
+            judge_metadata["budget"] = budget
         return judge_metadata
     from llb.scoring.judge.endpoint import judge_experiment_metadata
 
