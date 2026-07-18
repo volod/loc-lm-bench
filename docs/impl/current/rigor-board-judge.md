@@ -54,8 +54,8 @@ cells, while real cell execution errors are still recorded and counted as failur
 is a leaderboard candidate.
 
 The search space includes chunking strategy, chunk size, overlap fraction, `top_k`, retrieval mode,
-child chunk size, and vLLM serving knobs where relevant. The embedder is pinned and is not a search
-dimension.
+child chunk size, and vLLM serving knobs where relevant. In single-objective mode the embedder stays
+pinned. Multi-objective mode (below) may sample it.
 
 ```bash
 llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
@@ -64,6 +64,54 @@ llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
 
 Over-context configs are pruned before model calls. Measured OOMs can also prune trials. Persistent
 SQLite studies live under `$DATA_DIR/optuna/`.
+
+### Multi-objective RAG tuner
+
+`llb tune --objectives quality,latency[,cost]` switches stage 1 to Optuna multi-objective search
+(`NSGAIISampler` plus median-style early pruning on progressive case subsets) in
+`src/llb/optimize/multi_objective.py`. Objectives:
+
+| Goal | Direction | Source |
+| --- | --- | --- |
+| `quality` | maximize | tuning-split objective score |
+| `latency` | minimize | mean generate latency (falls back to trial wall-clock) |
+| `cost` | minimize | frontier ledger `cost_usd` (requires `scorer_policy=frontier`) |
+
+Instead of one winner, the study emits a Pareto front plus named picks: `best_quality`,
+`best_quality_per_second`, and (when cost is active) `cheapest_within_floor` (default floor =
+0.9 * best quality on the front, override with `--accuracy-floor`). Stage 2 scores each named pick
+on the final split. Reports land under `$DATA_DIR/tune/<run>/` as `pareto.json` + `pareto.md`.
+
+Additional search knobs in this mode:
+
+- **Embedder** -- categorical over the bake-off shortlist
+  (`DEFAULT_LOCAL_CANDIDATES` in `src/llb/rag/embedding_bakeoff.py`); override with
+  `--embedders a,b` or pass `--embedders ""` to keep the pinned model. The per-study
+  `StoreRegistry` rebuilds (does not reuse) when the embedder fingerprint changes.
+- **Context budget** -- samples a token budget from `{2048, 4096, 8192, 16384}` that couples
+  `top_k` / `chunk_size` / `max_model_len` (`RunConfig.context_budget`); disable with
+  `--no-context-budget`.
+
+```bash
+llb tune --model llama3.2:3b --backend ollama --objectives quality,latency \
+  --trials 40 --study mo1 --limit 12 \
+  --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+  --corpus samples/goldsets/ua_squad_postedited_v1/corpus
+```
+
+CI covers the plumbing with fake evaluate hooks in `tests/llb/optimize/test_multi_objective.py`
+(Pareto front size, per-goal picks, embedder rebuild tracking, cost pick).
+
+Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD postedited fixture,
+`--trials 40 --limit 20 --seed 21 --objectives quality,latency`):
+
+- Study: `$DATA_DIR/optuna/mo-ua-evidence-20260718c.db`
+- Report: `$DATA_DIR/tune/mo-ua-evidence-20260718c/pareto.{json,md}`
+- 11 complete / 29 median-pruned of 40; Pareto front size 4 (non-dominated)
+- Picks: `best_quality` trial 30 (tuning quality 0.386, generate latency 0.378 s) -> final
+  quality 0.434; `best_quality_per_second` trial 8 (0.386 / 0.320 s) -> final quality 0.477
+- Context-budget knob active (sampled 8192 / 16384 on the picks); embedder rebuild invariant
+  covered by the unit test with a fake store registry
 
 ## Public Screen
 

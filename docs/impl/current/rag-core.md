@@ -615,6 +615,19 @@ index size, dimension, and device -- ending in a written recommendation the oper
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
 
+Multi-objective tune (`llb tune --objectives ...`) may sample that same shortlist as a categorical
+knob; the tuner `StoreRegistry` rebuilds the store when the embedder (or chunking fingerprint)
+changes and never reuses a store built under a different embedder. See
+[evaluation rigor](rigor-board-judge.md#multi-objective-rag-tuner).
+
+### Context budget
+
+`RunConfig.context_budget` is an optional token budget that couples `top_k`, `chunk_size`, and
+(for vLLM) `max_model_len`. When set, `fits_context` prunes configs whose estimated retrieved
+prompt exceeds the budget, and multi-objective search samples the budget from
+`{2048, 4096, 8192, 16384}` then sets `max_model_len` to that value on vLLM backends. Single-objective
+`llb tune` leaves the budget unset unless the operator pins it in the run config.
+
 Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
 with, and `_load_store` refuses a run whose `config.embedding_model` differs
 (`store_embedder_mismatch` in `src/llb/rag/store.py`), because a store is embedded and queried by

@@ -117,6 +117,7 @@ def tune_cmd(
     trials: int = typer.Option(30, min=1, help="stage-1 Optuna trials on the tuning split"),
     study: Optional[str] = typer.Option(None, help="study name (persistent SQLite; resumes)"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL"),
+    corpus: Optional[Path] = typer.Option(None, help="corpus root (defaults with goldset bundle)"),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM context cap"),
     manifest: Path = typer.Option(
         Path("samples/configs/models_uk.yaml"),
@@ -139,14 +140,47 @@ def tune_cmd(
         "search space, using this local cross-encoder id (e.g. BAAI/bge-reranker-v2-m3); "
         "each on-trial reranks per case, so trials get slower",
     ),
+    objectives: Optional[str] = typer.Option(
+        None,
+        "--objectives",
+        help="multi-objective mode: comma list quality,latency[,cost] (NSGA-II + Pareto report); "
+        "omit for single-objective quality maximization",
+    ),
+    embedders: Optional[str] = typer.Option(
+        None,
+        "--embedders",
+        help="comma list of embedding models to sample (default: bake-off shortlist when "
+        "--objectives is set; pass empty string to keep the pinned embedder)",
+    ),
+    context_budget: bool = typer.Option(
+        True,
+        "--context-budget/--no-context-budget",
+        help="when --objectives is set, sample a token budget coupling top_k/chunk_size/"
+        "max_model_len (default: on)",
+    ),
+    accuracy_floor: Optional[float] = typer.Option(
+        None,
+        "--accuracy-floor",
+        help="quality floor for the cheapest-within-floor pick (cost objective only; default "
+        "0.9 * best quality on the front)",
+    ),
+    limit: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="cap stage-1 tuning-split cases per trial (also feeds MedianPruner subsets)",
+    ),
 ) -> None:
     """Two-stage tune: search RAG params on the tuning split, score the winner on final."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.optimize.tuner import two_stage
     from llb.optimize.tuning_space import EXTENDED_STRATEGIES
 
     cfg = load_config(
-        None, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
+        None,
+        model=model,
+        backend=backend,
+        goldset_path=goldset,
+        corpus_root=corpus,
+        max_model_len=max_model_len,
     )
     spec = next(
         (m for m in load_models(manifest) if m["source"] == model or m.get("name") == model),
@@ -155,6 +189,33 @@ def tune_cmd(
     gpus = detect_gpus()
     vram_reader, pid_reader = best_effort_gpu_readers() if isolate else (None, None)
     study_name = study or f"tune-{model.replace('/', '_').replace(':', '_')}"
+    strategies = EXTENDED_STRATEGIES if extended_chunkers else None
+    if objectives:
+        from llb.cli.models.tune_multi import run_multi_objective_tune
+
+        run_multi_objective_tune(
+            cfg,
+            objectives=objectives,
+            trials=trials,
+            study_name=study_name,
+            model=model,
+            backend=backend,
+            spec=spec,
+            gpus=gpus,
+            seed=seed,
+            isolate=isolate,
+            vram_reader=vram_reader,
+            pid_reader=pid_reader,
+            strategies=strategies,
+            tune_reranker=tune_reranker,
+            embedders=embedders,
+            context_budget=context_budget,
+            accuracy_floor=accuracy_floor,
+            limit=limit,
+        )
+        return
+    from llb.optimize.tuner import two_stage
+
     typer.echo(f"[tune] study={study_name} model={model} backend={backend} trials={trials}")
     out = two_stage(
         cfg,
@@ -167,7 +228,7 @@ def tune_cmd(
         isolate=isolate,
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
-        strategies=EXTENDED_STRATEGIES if extended_chunkers else None,
+        strategies=strategies,
         reranker=tune_reranker,
     )
     t = out.tune

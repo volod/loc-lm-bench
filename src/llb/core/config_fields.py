@@ -85,12 +85,14 @@ class RunConfigFields(BaseModel):
     # fixed prompt set and records it in the manifest (needs a running backend; telemetry hook).
     measure_telemetry: bool = False
 
-    # Retrieval (embedding pinned; chunking + top_k are tunable later via Optuna)
+    # Retrieval (embedding is pinned by default; multi-objective tune may sample it)
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     strategy: Strategy = "recursive"
     chunk_size: int = Field(default=800, ge=1)
     chunk_overlap: int = Field(default=120, ge=0)
     top_k: int = Field(default=5, ge=1)
+    # Explicit token budget coupling top_k / chunk_size / max_model_len (multi-objective tune).
+    context_budget: int | None = Field(default=None, ge=1)
 
     # Retrieval mode. "flat" indexes `chunk_size` chunks directly. "parent_child" indexes
     # small `child_chunk_size` children for precise matching but returns their larger parent
