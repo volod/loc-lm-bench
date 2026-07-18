@@ -1,5 +1,7 @@
 """Scorer-policy seam: lane routing, consent, cost ledger, and frontier judge."""
 
+import json
+
 import pytest
 
 from llb.core.config import RunConfig
@@ -134,13 +136,15 @@ def test_frontier_scorer_aborts_cleanly_at_cap(tmp_path):
             cost_usd=0.01,
         ),
     )
-    scorer([_record()], "openai/gpt-test")
     with pytest.raises(BudgetExceeded):
-        scorer([_record()], "openai/gpt-test")
+        scorer([_record(), _record()], "openai/gpt-test")
     abort = ledger.abort_payload("cap")
     assert abort["status"] == "aborted"
     assert abort["resumable"] is True
     assert abort["calls"] == 2
+    assert abort["scored_cases"] == 2
+    assert ledger.scored_case(0) is not None
+    assert ledger.scored_case(1) is not None
 
 
 def test_consent_round_trip(tmp_path):
@@ -211,3 +215,68 @@ def test_frontier_empty_answer_skips_spend(tmp_path):
     assert scores[1]["faithfulness"] == 1.0
     assert len(called) == 1
     assert ledger.calls == 1
+
+
+def test_frontier_resume_skips_already_scored_cases(tmp_path):
+    """Acceptance: after K scored cases and a mid-batch abort, resume issues N - K calls."""
+    n_cases = 5
+    k_scored = 2
+    records = [_record(f"answer-{i}") for i in range(n_cases)]
+    calls: list[str] = []
+
+    def complete(prompt: str):
+        calls.append(prompt)
+        # Distinct scores so resume can prove it replayed the checkpoint, not re-judged.
+        n = len(calls)
+        return (
+            json.dumps({"faithfulness": 0.1 * n, "answer_relevancy": 0.2 * n}),
+            0.01,
+            1,
+            1,
+        )
+
+    first = CostLedger.open(tmp_path, max_usd=None, max_calls=k_scored)
+    scorer = frontier_scorer("m", first, complete=complete)
+    with pytest.raises(BudgetExceeded, match="call budget exhausted"):
+        scorer(records, "m")
+    assert len(calls) == k_scored
+    assert first.summary()["scored_cases"] == k_scored
+    assert set(first.case_scores) == {0, 1}
+
+    calls.clear()
+    resumed = CostLedger.open(tmp_path, max_usd=None, max_calls=n_cases)
+    assert resumed.calls == k_scored
+    assert resumed.scored_case(0) == {"faithfulness": 0.1, "answer_relevancy": 0.2}
+    assert resumed.scored_case(1) == {"faithfulness": 0.2, "answer_relevancy": 0.4}
+    scorer2 = frontier_scorer("m", resumed, complete=complete)
+    scores = scorer2(records, "m")
+    assert len(calls) == n_cases - k_scored
+    assert len(scores) == n_cases
+    assert scores[0] == {"faithfulness": 0.1, "answer_relevancy": 0.2}
+    assert scores[1] == {"faithfulness": 0.2, "answer_relevancy": 0.4}
+    assert scores[2]["faithfulness"] == pytest.approx(0.1)  # first new call after clear
+    assert resumed.calls == n_cases
+    assert resumed.summary()["scored_cases"] == n_cases
+
+
+def test_ledger_jsonl_persists_case_scores(tmp_path):
+    ledger = CostLedger.open(tmp_path, max_usd=1.0, max_calls=5)
+    ledger.reserve_call()
+    ledger.record(
+        LedgerEntry(
+            model="m",
+            prompt_tokens=1,
+            completion_tokens=1,
+            cost_usd=0.01,
+            case_index=3,
+            faithfulness=0.55,
+            answer_relevancy=0.66,
+        )
+    )
+    line = (tmp_path / "scorer" / "ledger.jsonl").read_text(encoding="utf-8").strip()
+    payload = json.loads(line)
+    assert payload["case_index"] == 3
+    assert payload["faithfulness"] == 0.55
+    assert payload["answer_relevancy"] == 0.66
+    resumed = CostLedger.open(tmp_path, max_usd=1.0, max_calls=5)
+    assert resumed.scored_case(3) == {"faithfulness": 0.55, "answer_relevancy": 0.66}

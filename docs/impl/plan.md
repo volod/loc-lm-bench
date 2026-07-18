@@ -43,28 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### frontier-ledger-case-checkpoint
-
-(Optional.) Persist per-case frontier judge scores keyed by case index in the scorer ledger so a
-budget-abort resume skips already-scored cases instead of re-spending on them. Today the ledger
-resumes spend totals and the run journal resumes generation, but a mid-batch frontier abort
-re-judges from the start of the unscored batch.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `src/llb/scoring/policy/ledger.py` and the frontier scorer in
-  `src/llb/scoring/policy/frontier.py` (see
-  [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam)).
-- User-visible outcome: resuming after a frontier budget abort continues judging from the first
-  unscored case with no duplicate provider spend.
-- Scope boundary: in scope -- case-index checkpoint in the ledger, skip-already-scored in
-  `frontier_scorer`. Out of scope -- changing budget semantics or headline ranking.
-- Data and artifact paths: extend `$DATA_DIR/<method>/<run>/scorer/ledger.jsonl` entries; no new
-  roots.
-- Execution path: unit tests with fake completers that abort mid-batch then resume.
-- Acceptance gates: `make ci` green; resume test proves the second run issues N - K new calls
-  after K cases were already scored.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md#scorer-policy-seam).
-
 ### joint-model-config-search
 
 Fold model selection into the optimization loop with a successive-halving schedule: a cheap

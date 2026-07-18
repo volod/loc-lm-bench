@@ -418,8 +418,11 @@ Frontier scoring requires one upfront `--scorer-egress-consent` plus a hard cap
 (`--frontier-max-usd` and/or `--frontier-max-calls`). Spend is tracked in
 `$DATA_DIR/run-eval/<run>/scorer/` (`consent.json`, `ledger.jsonl`, `ledger_state.json`). Hitting
 the cap aborts with `abort.json` (`resumable: true`); resume reloads the ledger so spend never
-silently exceeds the cap. Headline ranking is unchanged: judges remain diagnostic until
-calibration rho clears the trust threshold.
+silently exceeds the cap. Each successful (or failed-but-attempted) frontier call also
+checkpoints `case_index` plus `faithfulness` / `answer_relevancy` in `ledger.jsonl`; on resume
+`frontier_scorer` replays those scores and issues provider calls only for unscored cases
+(`src/llb/scoring/policy/ledger.py`, `frontier.py`). Headline ranking is unchanged: judges remain
+diagnostic until calibration rho clears the trust threshold.
 
 ```bash
 llb run-eval --scorer-policy local --judge-model <model> --judge-rho <rho>
@@ -428,7 +431,9 @@ llb run-eval --scorer-policy frontier --judge-model openai/<model> \
   --scorer-egress-consent --frontier-max-usd 2.00 --judge-rho <rho>
 ```
 
-Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm completions; no network).
+Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm completions; no network),
+including a mid-batch abort/resume case-checkpoint test that proves the second pass issues
+`N - K` new calls after `K` cases were already scored.
 
 ## Frontier Prep Utilities
 

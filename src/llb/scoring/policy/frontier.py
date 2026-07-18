@@ -91,13 +91,21 @@ def frontier_scorer(
     *,
     complete: FrontierComplete | None = None,
 ) -> Callable[[list[JudgeInputRecord], str], list[JudgeScore]]:
-    """Build a JudgeScorer that scores one record at a time under the budget cap."""
+    """Build a JudgeScorer that scores one record at a time under the budget cap.
+
+    Cases already present in the ledger (from a prior budget-abort) are replayed from the
+    case-index checkpoint and do not issue a new provider call.
+    """
     completer = complete or litellm_frontier_complete(model)
 
     def score(records: list[JudgeInputRecord], judge_model: str) -> list[JudgeScore]:
         del judge_model  # the ledger-bound model is authoritative
         scores: list[JudgeScore] = []
         for index, record in enumerate(records):
+            cached = ledger.scored_case(index)
+            if cached is not None:
+                scores.append(cached)
+                continue
             if not str(record.get("answer", "")).strip():
                 scores.append({"faithfulness": 0.0, "answer_relevancy": 0.0})
                 continue
@@ -122,6 +130,7 @@ def _score_one(
     except BudgetExceeded:
         raise
     except Exception as exc:
+        zeros: JudgeScore = {"faithfulness": 0.0, "answer_relevancy": 0.0}
         ledger.record(
             LedgerEntry(
                 model=model,
@@ -130,10 +139,13 @@ def _score_one(
                 cost_usd=0.0,
                 case_index=case_index,
                 error=str(exc),
+                faithfulness=zeros["faithfulness"],
+                answer_relevancy=zeros["answer_relevancy"],
             )
         )
         _LOG.warning("[scorer-policy] frontier judge call failed: %s", exc)
-        return {"faithfulness": 0.0, "answer_relevancy": 0.0}
+        return zeros
+    parsed = parse_frontier_judge_response(text)
     ledger.record(
         LedgerEntry(
             model=model,
@@ -141,6 +153,8 @@ def _score_one(
             completion_tokens=completion_tokens,
             cost_usd=cost_usd,
             case_index=case_index,
+            faithfulness=parsed["faithfulness"],
+            answer_relevancy=parsed["answer_relevancy"],
         )
     )
-    return parse_frontier_judge_response(text)
+    return parsed
