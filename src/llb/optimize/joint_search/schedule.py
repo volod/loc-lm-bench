@@ -35,6 +35,12 @@ from llb.optimize.joint_search.report import (
     write_manifest,
     write_scoreboard,
 )
+from llb.optimize.joint_search.resume import (
+    read_finalist_result,
+    read_screen_marker,
+    write_finalist_result,
+    write_screen_marker,
+)
 from llb.optimize.joint_search.scoreboard import scoreboard_entries
 from llb.optimize.objectives import parse_objectives
 from llb.optimize.tuning_space import FINAL_SPLIT, TUNING_SPLIT
@@ -70,6 +76,10 @@ def run_joint_search(
 
     Screen and elimination scores always use ``TUNING_SPLIT``. The scoreboard is built
     exclusively from final-split pick scores (leak fence enforced in writers).
+
+    Re-entry with the same ``run_id`` resumes: completed screen markers are skipped, finished
+    finalist ``result.json`` files are reloaded, and Optuna studies under ``$DATA_DIR/optuna/``
+    only run remaining trials.
     """
     from llb.backends.resolver import resolve_all
 
@@ -118,6 +128,7 @@ def run_joint_search(
     ledger = _run_halving_screen(
         base_config,
         runnable,
+        run_dir=run_dir,
         evaluate=evaluate,
         screen_limit=screen_limit,
         min_finalists=min_finalists,
@@ -143,14 +154,9 @@ def run_joint_search(
             case_limit=case_limit,
         )
     )
-    finalist_results: list[FinalistTuneResult] = []
-    for name in ledger.finalists:
-        resolution = by_name[name]
-        _LOG.info("[joint-search] deep-tuning finalist %s (%s)", name, resolution["chosen_backend"])
-        cell_dir = run_dir / "finalists" / slug(name)
-        cell_dir.mkdir(parents=True, exist_ok=True)
-        finalist_results.append(tuner(base_config, resolution, cell_dir))
-
+    finalist_results = _tune_finalists(
+        base_config, ledger.finalists, by_name, run_dir=run_dir, tuner=tuner
+    )
     entries, recommended = scoreboard_entries(finalist_results)
     paths = write_scoreboard(run_dir, run_id=run_dir.name, entries=entries, recommended=recommended)
     return JointSearchResult(
@@ -181,6 +187,7 @@ def _run_halving_screen(
     base: RunConfig,
     runnable: Sequence[ResolvedModel],
     *,
+    run_dir: Path,
     evaluate: ScreenEvaluate,
     screen_limit: int,
     min_finalists: int,
@@ -194,6 +201,11 @@ def _run_halving_screen(
         case_limit = screen_limit_for_round(screen_limit, round_index, eta=eta)
         scores: list[ScreenScore] = []
         for name, resolution in sorted(active.items()):
+            prior = read_screen_marker(run_dir, name, round_index)
+            if prior is not None:
+                _LOG.info("[joint-search] screen resume skip round=%d model=%s", round_index, name)
+                scores.append(prior)
+                continue
             cfg = candidate_config(
                 base,
                 resolution,
@@ -208,15 +220,15 @@ def _run_halving_screen(
                 TUNING_SPLIT,
             )
             metrics = evaluate(cfg, case_limit)
-            scores.append(
-                ScreenScore(
-                    name=name,
-                    quality=metrics.quality,
-                    latency_s=metrics.latency_s,
-                    backend=resolution["chosen_backend"] or "",
-                    source=resolution["chosen_source"] or "",
-                )
+            score = ScreenScore(
+                name=name,
+                quality=metrics.quality,
+                latency_s=metrics.latency_s,
+                backend=resolution["chosen_backend"] or "",
+                source=resolution["chosen_source"] or "",
             )
+            write_screen_marker(run_dir, score, round_index=round_index, case_limit=case_limit)
+            scores.append(score)
         round_rec = build_halving_round(
             scores,
             round_index=round_index,
@@ -225,8 +237,40 @@ def _run_halving_screen(
             min_keep=min_finalists,
         )
         rounds.append(round_rec)
+        write_ledger(run_dir, finalize_ledger(rounds, eta=eta, min_finalists=min_finalists))
         if not round_rec.eliminated or len(round_rec.kept) <= min_finalists:
             break
         active = {name: active[name] for name in round_rec.kept}
         round_index += 1
     return finalize_ledger(rounds, eta=eta, min_finalists=min_finalists)
+
+
+def _tune_finalists(
+    base: RunConfig,
+    finalist_names: Sequence[str],
+    by_name: dict[str, ResolvedModel],
+    *,
+    run_dir: Path,
+    tuner: FinalistTune,
+) -> list[FinalistTuneResult]:
+    results: list[FinalistTuneResult] = []
+    for name in finalist_names:
+        resolution = by_name[name]
+        cell_dir = run_dir / "finalists" / slug(name)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        prior = read_finalist_result(cell_dir)
+        if prior is not None:
+            _LOG.info("[joint-search] finalist resume skip %s (study=%s)", name, prior.study_name)
+            results.append(prior)
+        else:
+            _LOG.info(
+                "[joint-search] deep-tuning finalist %s (%s)",
+                name,
+                resolution["chosen_backend"],
+            )
+            result = tuner(base, resolution, cell_dir)
+            write_finalist_result(cell_dir, result)
+            results.append(result)
+        entries, recommended = scoreboard_entries(results)
+        write_scoreboard(run_dir, run_id=run_dir.name, entries=entries, recommended=recommended)
+    return results

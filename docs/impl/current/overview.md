@@ -236,7 +236,7 @@ one `llb` package live under `tests/samples/`. The root of `tests/` should stay 
 | `$DATA_DIR/run-eval/<run>/` | RAG run bundle |
 | `$DATA_DIR/<category>/<run>/` | category-suite run bundle |
 | `$DATA_DIR/sweep/<id>/` | isolated sweep markers and reports |
-| `$DATA_DIR/joint-search/<run>/` | successive-halving ledger + joint scoreboard |
+| `$DATA_DIR/joint-search/<run>/` | successive-halving ledger, screen/finalist resume markers, joint scoreboard |
 | `$DATA_DIR/prompt-system/<run>/` | prompt-system candidates, manifest, review JSON |
 | `$DATA_DIR/mlflow/` | local MLflow mirror |
 | `$DATA_DIR/llb/serving/gpu-<tier>gb/` | generated serving scripts and run configs |

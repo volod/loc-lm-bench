@@ -236,23 +236,24 @@ def tune_multi(
         load_if_exists=bool(storage),
         sampler=sampler,
     )
-    study.optimize(
-        make_multi_objective(
-            base_config,
-            evaluate,
-            goals,
-            model_spec=model_spec,
-            vram_mib=vram_mib,
-            ram_mib=ram_mib,
-            on_trial=on_trial,
-            strategies=strategies,
-            reranker=reranker,
-            embedders=embedders,
-            tune_context_budget=tune_context_budget,
-            prune_case_count=prune_case_count,
-        ),
-        n_trials=n_trials,
-    )
+    if n_trials > 0:
+        study.optimize(
+            make_multi_objective(
+                base_config,
+                evaluate,
+                goals,
+                model_spec=model_spec,
+                vram_mib=vram_mib,
+                ram_mib=ram_mib,
+                on_trial=on_trial,
+                strategies=strategies,
+                reranker=reranker,
+                embedders=embedders,
+                tune_context_budget=tune_context_budget,
+                prune_case_count=prune_case_count,
+            ),
+            n_trials=n_trials,
+        )
 
     states = optuna.trial.TrialState
     complete = [t for t in study.trials if t.state == states.COMPLETE]

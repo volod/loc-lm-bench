@@ -20,6 +20,10 @@ from llb.optimize.joint_search.report import (
     write_manifest,
     write_scoreboard,
 )
+from llb.optimize.joint_search.resume import (
+    remaining_optuna_trials,
+    study_name_for,
+)
 from llb.optimize.joint_search.schedule import run_joint_search
 
 __all__ = [
@@ -36,8 +40,10 @@ __all__ = [
     "keep_count",
     "partition_survivors",
     "rank_scores",
+    "remaining_optuna_trials",
     "run_joint_search",
     "screen_limit_for_round",
+    "study_name_for",
     "write_ledger",
     "write_manifest",
     "write_scoreboard",

@@ -135,29 +135,43 @@ Schedule (`src/llb/optimize/joint_search/`):
    manifest.
 2. **Cheap screen** -- each runnable candidate is scored on the **tuning** split only with a small
    case cap (`--screen-limit`, growing by `--eta` each round). Screen cells reuse
-   `isolate_cell` for VRAM-owning backends.
+   `isolate_cell` for VRAM-owning backends. Each completed cell writes
+   `screen/<slug>-r<round>.json` so a resume skips re-evaluation.
 3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
    quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
-   never enter the ledger).
+   never enter the ledger). The ledger is rewritten after every round.
 4. **Per-finalist multi-objective tune** -- survivors run `two_stage_multi` in isolated cells
-   under `$DATA_DIR/joint-search/<run>/finalists/<model>/`.
+   under `$DATA_DIR/joint-search/<run>/finalists/<model>/`. Study ids are
+   `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the SQLite
+   study already has rows. A finished tune writes `finalists/<slug>/result.json` (study id +
+   final-split picks) so a resume reloads instead of re-tuning.
 5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
-   scores; the writer refuses any non-final split (tuning/final leak fence).
+   scores; the writer refuses any non-final split (tuning/final leak fence). The scoreboard is
+   rebuilt after each finalist so a partial run still shows whatever picks exist.
+
+**Resume:** re-run with the same `--run-id` / `JOINT_SEARCH_RUN_ID=<id>`. Completed screen markers
+and finalist `result.json` files are skipped; Optuna studies only enqueue
+`max(0, n_trials - len(study.trials))` new trials.
 
 ```bash
 make joint-search JOINT_SEARCH_TRIALS=20 JOINT_SEARCH_SCREEN_LIMIT=8
+# resume after kill:
+make joint-search JOINT_SEARCH_RUN_ID=<id> JOINT_SEARCH_TRIALS=20
 # or:
 llb joint-search --candidates samples/configs/models_uk.yaml --trials 20 \
+  --run-id <id> \
   --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
   --corpus samples/goldsets/ua_squad_postedited_v1/corpus
 ```
 
 Artifacts under `$DATA_DIR/joint-search/<run>/`: `manifest.json`, `ledger.json`,
-`finalists/<model>/pareto.{json,md}`, `scoreboard.{json,md}`.
+`screen/<slug>-r<round>.json`, `finalists/<model>/{pareto.{json,md},result.json}`,
+`scoreboard.{json,md}`.
 
 CI drives the schedule with injectable screen/tune hooks in
 `tests/llb/optimize/test_joint_search.py` (halving ranks, two-round budget growth, ledger
-tuning-only, scoreboard final-only).
+tuning-only, scoreboard final-only, kill-then-resume zero re-screen / zero re-tune of finished
+finalists, Optuna remaining-trial gate when `n_trials` are already complete).
 
 Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, three
 `models_uk.yaml` candidates -- MamayLM-12B GGUF, Lapa-12B GGUF, Mistral-Small-3.1-24B --

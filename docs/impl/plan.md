@@ -43,28 +43,22 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### joint-search-resume
+### joint-search-stage2-resume (optional)
 
-Make `llb joint-search` resumable after kill: persist per-candidate screen markers and per-finalist
-Optuna study ids under `$DATA_DIR/joint-search/<run>/`, skip completed screen cells and finished
-finalist tunes on re-entry with the same `--run-id`, and rebuild the scoreboard from whatever
-final-split pick results already exist. Helps long multi-model runs on a single GPU without
-replaying the cheap screen or completed studies. See [evaluation rigor](current/rigor-board-judge.md)
-joint-search section for the current artifact layout.
+Persist per-pick final-split eval markers under each finalist cell so a kill during stage-2 of
+`two_stage_multi` reuses completed pick scores instead of re-running every named pick when the
+Optuna study is already full but `result.json` was never written. See
+[evaluation rigor](current/rigor-board-judge.md) joint-search resume notes.
 
 - Agent status: CLEAR
-- Dependencies: joint-search layout in
+- Dependencies: joint-search resume in
   [evaluation rigor](current/rigor-board-judge.md).
-- User-visible outcome: re-running `joint-search --run-id <id>` continues from the last incomplete
-  phase instead of restarting the whole schedule.
-- Scope boundary: in scope -- screen cell markers, finalist study reuse, scoreboard rebuild. Out
-  of scope -- changing the successive-halving policy or adding new candidate families.
-- Data and artifact paths: reuse `$DATA_DIR/joint-search/<run>/` markers + existing Optuna DBs
-  under `$DATA_DIR/optuna/`.
-- Execution path: `llb joint-search --run-id <id> ...` twice with a kill between phases; CI covers
-  resume with fake screen/tune hooks.
-- Acceptance gates: `make ci` green; resume test proves zero re-screen of completed candidates and
-  zero new Optuna trials when the finalist study already has `n_trials` complete.
+- User-visible outcome: resume after a mid-stage-2 kill skips finished pick evals.
+- Scope boundary: in scope -- per-pick markers inside `finalists/<slug>/`. Out of scope --
+  changing Optuna sampling or the scoreboard schema.
+- Data and artifact paths: `$DATA_DIR/joint-search/<run>/finalists/<slug>/picks/<goal>.json`.
+- Execution path: CI with a fake final runner that fails on the second pick, then resumes.
+- Acceptance gates: `make ci` green; resume issues zero re-evals for picks with markers.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) joint-search section.
 
 ### knowledge-tree-prompt

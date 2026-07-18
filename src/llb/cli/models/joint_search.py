@@ -44,7 +44,9 @@ def joint_search_cmd(
     objectives: str = typer.Option(
         DEFAULT_OBJECTIVES, help="multi-objective goals for finalist tunes"
     ),
-    run_id: Optional[str] = typer.Option(None, help="artifact id (default: UTC timestamp)"),
+    run_id: Optional[str] = typer.Option(
+        None, help="artifact id (default: UTC timestamp); reuse to resume after kill"
+    ),
     offline: bool = typer.Option(False, help="resolver: assume declared sources exist"),
     isolate: bool = typer.Option(
         True, help="VRAM-reclaim isolation around screen cells and Optuna trials"

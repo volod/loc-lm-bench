@@ -18,3 +18,11 @@ MANIFEST_FILE = "manifest.json"
 LEDGER_FILE = "ledger.json"
 SCOREBOARD_JSON = "scoreboard.json"
 SCOREBOARD_MD = "scoreboard.md"
+
+# Resume markers: cheap-screen cells and finished finalist tunes.
+SCREEN_DIR = "screen"
+FINALIST_RESULT_FILE = "result.json"
+MARKER_STATUS_DONE = "done"
+
+# Optuna SQLite root (same as ``llb.optimize.multi_objective.OPTUNA_METHOD``).
+OPTUNA_METHOD = "optuna"

@@ -1,5 +1,6 @@
 """Default screen / tune hooks and isolation wrappers for joint-search."""
 
+import logging
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -7,6 +8,8 @@ from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
 from llb.optimize.joint_search.models import FinalistTuneResult
 from llb.optimize.objectives import TrialMetrics
+
+_LOG = logging.getLogger(__name__)
 
 ScreenEvaluate = Callable[[RunConfig, int | None], TrialMetrics]
 
@@ -81,6 +84,8 @@ def default_tune_finalist(
     from llb.optimize.objectives import TrialMetrics
     from llb.optimize.tuner_runtime import _run_eval_metrics
 
+    from llb.optimize.joint_search.resume import remaining_optuna_trials, study_name_for
+
     name = resolution["name"]
     cfg = candidate_config(
         base,
@@ -88,7 +93,17 @@ def default_tune_finalist(
         max_model_len=max_model_len,
         run_name=f"joint-tune-{slug(name)}",
     )
-    study_name = f"joint-{cell_dir.parent.parent.name}-{slug(name)}"
+    run_id = cell_dir.parent.parent.name
+    study_name = study_name_for(run_id, name)
+    trials_left = remaining_optuna_trials(base.data_dir, study_name, n_trials)
+    if trials_left < n_trials:
+        _LOG.info(
+            "[joint-search] reuse Optuna study %s (%d/%d trials already present; run %d more)",
+            study_name,
+            n_trials - trials_left,
+            n_trials,
+            trials_left,
+        )
 
     def evaluate(config: RunConfig, limit: int | None = None) -> TrialMetrics:
         if limit is None:
@@ -101,7 +116,7 @@ def default_tune_finalist(
 
     out = two_stage_multi(
         cfg,
-        n_trials=n_trials,
+        n_trials=trials_left,
         study_name=study_name,
         objectives=objectives,
         evaluate=evaluate,
