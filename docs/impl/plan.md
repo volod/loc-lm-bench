@@ -43,37 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### knowledge-tree-prompt
-
-Generate compact knowledge-tree system-prompt candidates from the induced ontology and graph
-communities: a token-budgeted tree of the corpus domain vocabulary, key entity clusters, and
-community summaries, rendered as a system-prompt block. Produce candidates inside the
-prompt-system package flow, expose tree depth and token budget as tunable knobs, and A/B each
-candidate against a no-tree baseline with the existing prompt-system comparison path.
-
-- Agent status: RUN NEEDED
-- Dependencies: none hard; pairs with `multi-objective-rag-tuner` if tree knobs join a study.
-  Reuse `src/llb/prep/ontology/` induction output, `src/llb/graph/community.py` and
-  `src/llb/graph/summary.py`, and the package flow in `src/llb/prompt_system/` documented in
-  [extended workflows](current/extended-workflows.md).
-- User-visible outcome: `prompt-system-prepare` emits knowledge-tree candidates next to existing
-  prompt candidates, and `prompt-system-compare` reports whether a tree measurably helps this
-  corpus before it is pinned.
-- Scope boundary: in scope -- tree rendering from existing ontology/graph artifacts, knob
-  plumbing, A/B wiring. Out of scope -- new extraction stages, ontology schema changes (the
-  closed vocabulary in `docs/design/graph-ontology-schema.md` stays fixed), and judge changes.
-- Data and artifact paths: candidates and comparison reports under the prompt-system run
-  directory `$DATA_DIR/prompt-system/<run>/`; requires an ontology bundle or graph store from an
-  existing draft/build run as input.
-- Execution path: `make prompt-system-prepare PROMPT_SYSTEM_CORPUS=<dir>` with tree generation
-  enabled, then `make run-eval PROMPT_SYSTEM_ID=<id>` and `make prompt-system-compare`; CI covers
-  rendering and budgeting with a committed miniature ontology fixture.
-- Acceptance gates: `make ci` green; rendered trees respect the token budget for every depth
-  setting; a heavy A/B run on the UA fixture records the tree-vs-baseline delta with CIs (the
-  delta itself is evidence, not a pass threshold).
-- Documentation target: [extended workflows](current/extended-workflows.md) prompt-system
-  section; [GraphRAG](current/graphrag-backend.md) for the community-summary reuse note.
-
 ### auto-rag-orchestrator
 
 Build the end-to-end autonomous pipeline `llb auto-rag` (plus a `make auto-rag` target): corpus in,
@@ -85,11 +54,12 @@ the pending records to the review workbench, then resumes. The run journal must 
 interruption at any stage, following the ontology pipeline journal pattern.
 
 - Agent status: RUN NEEDED
-- Dependencies: `multi-objective-rag-tuner`, `joint-model-config-search`,
-  `knowledge-tree-prompt`; gate policies reuse
+- Dependencies: `multi-objective-rag-tuner`, `joint-model-config-search`; gate policies reuse
   [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human-assisted gates
   additionally depend on `review-core-textual-workbench` (cross-section block for the `human`
   policy path only -- the `auto` path must land without it).
+- The knowledge-tree stage must call the existing
+  [prompt-system package flow](current/extended-workflows.md#prompt-system-packages).
 - User-visible outcome: one command takes a Ukrainian corpus directory and produces
   `rag_recommendation.yaml` (model, backend, serving knobs, chunking, retrieval mode, fusion,
   rerank, query prep, context budget, prompt-system id) plus a Markdown report with the score

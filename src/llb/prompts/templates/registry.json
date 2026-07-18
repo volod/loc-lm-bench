@@ -901,6 +901,14 @@
         }
       }
     },
+    "prompt_system.knowledge_tree_block": {
+      "kind": "text",
+      "descriptor": "prompt_system/knowledge_tree_block.prompt.json",
+      "template": {
+        "path": "prompt_system/knowledge_tree_block.txt",
+        "sha256": "33c613ca90c673001a8d9474ffadbac96476ac602bb0bcbf80c528cde9fe300a"
+      }
+    },
     "prompt_system.metadata_compact": {
       "kind": "text",
       "descriptor": "prompt_system/metadata_compact.prompt.json",

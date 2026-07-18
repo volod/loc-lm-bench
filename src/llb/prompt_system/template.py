@@ -52,6 +52,8 @@ class TemplateFields:
     metadata_density: str = METADATA_COMPACT
     graph_reference_style: str = GRAPH_INLINE
     anthology_size: int = 8
+    knowledge_tree_depth: int = 0
+    knowledge_tree_budget: int = 0
 
     def validate(self) -> None:
         if self.metadata_density not in METADATA_DENSITIES:
@@ -60,6 +62,9 @@ class TemplateFields:
             raise ValueError(f"unknown graph_reference_style: {self.graph_reference_style!r}")
         if self.anthology_size < 0:
             raise ValueError("anthology_size must be >= 0")
+        tree_enabled = self.knowledge_tree_depth > 0 or self.knowledge_tree_budget > 0
+        if tree_enabled and (self.knowledge_tree_depth <= 0 or self.knowledge_tree_budget <= 0):
+            raise ValueError("knowledge-tree depth and budget must both be > 0")
 
 
 @dataclass(slots=True)
@@ -177,22 +182,27 @@ def render_package(
     fields: TemplateFields,
     budget: ContextBudget,
     tokenizer: Tokenizer,
+    *,
+    knowledge_tree_text: str = "",
 ) -> PromptPackage:
     """Render a budget-fitted `PromptPackage` from the corpus inputs and editable template fields."""
     fields.validate()
     sections = build_sections(corpus, fields)
-    fit = fit_sections(sections, budget.prompt_budget, tokenizer)
+    tree_tokens = tokenizer.count(knowledge_tree_text)
+    fit = fit_sections(sections, max(0, budget.prompt_budget - tree_tokens), tokenizer)
     system_prompt = render_text(
         "prompt_system.system_prompt",
         {"role": fields.role, "instruction": fields.instruction},
     )
+    if knowledge_tree_text:
+        system_prompt = f"{system_prompt}\n\n{knowledge_tree_text}"
     additional_prompt = _render_additional_prompt(fit.kept, fields.graph_reference_style)
     return PromptPackage(
         system_prompt=system_prompt,
         additional_prompt=additional_prompt,
         fields=fields,
         dropped_context=fit.report,
-        used_tokens=fit.used_tokens,
+        used_tokens=fit.used_tokens + tree_tokens,
     )
 
 

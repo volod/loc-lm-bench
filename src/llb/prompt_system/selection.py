@@ -76,7 +76,7 @@ def _candidate_locations(
 
 def _provenance(run_dir: Path, candidate: PromptCandidate) -> PromptSystemProvenance:
     manifest = _read_manifest(run_dir)
-    return {
+    provenance: PromptSystemProvenance = {
         "prompt_system_id": candidate.prompt_system_id,
         "corpus_digest": str(manifest["corpus_digest"]),
         "mapping_digest": str(manifest["mapping_digest"]),
@@ -85,6 +85,9 @@ def _provenance(run_dir: Path, candidate: PromptCandidate) -> PromptSystemProven
         "context_window": _int_value(manifest["context_window"]),
         "prompt_budget_tokens": _int_value(manifest["prompt_budget_tokens"]),
     }
+    if candidate.knowledge_tree:
+        provenance["knowledge_tree"] = candidate.knowledge_tree
+    return provenance
 
 
 def _read_manifest(run_dir: Path) -> dict[str, Any]:

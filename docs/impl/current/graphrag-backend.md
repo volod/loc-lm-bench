@@ -42,6 +42,11 @@ Community ids are computed offline and stored. Query time only needs DuckDB tabl
 : Optional diagnostic community summaries. Summaries are stored separately and are not returned as
   retrieval context because they are abstractive and not span-scored.
 
+The prompt-system knowledge-tree lane may reuse those summaries as an explicitly experimental
+system-prompt candidate. This does not change GraphRAG retrieval or span scoring: the summary stays
+out of retrieved chunks, its graph-store digest and tree knobs are recorded in prompt-system
+provenance, and the candidate is evaluated against its exact no-tree control before pinning.
+
 `src/llb/rag/compare.py`
 : Compares FAISS and graph strategies through the shared `.retrieve` seam.
 

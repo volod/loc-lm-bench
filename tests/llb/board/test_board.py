@@ -4,6 +4,7 @@ import json
 
 from llb.board.io import read_case_objectives
 from llb.board.prompt_systems import (
+    knowledge_tree_ab_comparison,
     load_rag_prompt_system_records,
     rag_prompt_system_comparison,
 )
@@ -35,6 +36,7 @@ def _write_run(
     judge=None,
     semantic=None,
     prompt_system=None,
+    knowledge_tree=None,
 ):
     run_dir = root / name
     run_dir.mkdir(parents=True)
@@ -59,6 +61,8 @@ def _write_run(
             "context_window": 4096,
             "prompt_budget_tokens": 3000,
         }
+        if knowledge_tree is not None:
+            manifest["prompt_system_provenance"]["knowledge_tree"] = knowledge_tree
     (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     rows = []
     for i, c in enumerate(cases):
@@ -139,6 +143,33 @@ def test_rag_prompt_system_records_and_comparison_use_final_run_eval_bundles(tmp
     assert ids == ["ps1", "ps2"]
     assert rows[0]["model"] == "ps2"
     assert "policy:" in table
+
+
+def test_knowledge_tree_ab_comparison_reports_paired_delta_and_ci(tmp_path):
+    run_root = tmp_path / "run-eval"
+    _write_run(run_root, "baseline", "m:1", 0.25, [0.0, 0.0, 0.5, 0.5], prompt_system="base")
+    _write_run(run_root, "other-baseline", "m:1", 1.0, [1.0] * 4, prompt_system="other")
+    _write_run(
+        run_root,
+        "tree",
+        "m:1",
+        0.75,
+        [0.5, 0.5, 1.0, 1.0],
+        prompt_system="tree",
+        knowledge_tree={
+            "depth": 2,
+            "budget_tokens": 128,
+            "baseline_prompt_system_id": "base",
+        },
+    )
+
+    comparison = knowledge_tree_ab_comparison(tmp_path, "m:1")
+
+    assert comparison is not None
+    assert comparison.delta == 0.5
+    assert comparison.ci == (0.5, 0.5)
+    assert comparison.conclusion == "helps"
+    assert comparison.depth == 2 and comparison.budget_tokens == 128
 
 
 # --- Board completion: judge/semantic series, policy best-pick, Tier-1 separation -----------

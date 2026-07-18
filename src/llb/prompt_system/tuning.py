@@ -12,6 +12,12 @@ from itertools import product
 
 from llb.prompt_system.budget import ContextBudget, Tokenizer
 from llb.prompt_system.corpus import CorpusPackage
+from llb.prompt_system.knowledge_tree import (
+    KnowledgeTreeRender,
+    KnowledgeTreeSource,
+    render_knowledge_tree,
+)
+from llb.prompt_system.manifest import prompt_system_id
 from llb.prompt_system.review import PromptCandidate, make_candidate
 from llb.prompt_system.template import (
     METADATA_DENSITIES,
@@ -46,17 +52,71 @@ def variant_grid(
     return grid
 
 
+def with_knowledge_tree_variants(
+    baseline: list[TemplateFields],
+    *,
+    depths: list[int],
+    budgets: list[int],
+) -> list[TemplateFields]:
+    """Keep every no-tree control and add the depth/budget cartesian variants."""
+    grid = list(baseline)
+    for fields in baseline:
+        for depth, budget in product(depths, budgets):
+            variant = replace(
+                fields,
+                knowledge_tree_depth=depth,
+                knowledge_tree_budget=budget,
+            )
+            variant.validate()
+            grid.append(variant)
+    return grid
+
+
 def generate_candidates(
     corpus: CorpusPackage,
     grid: list[TemplateFields],
     budget: ContextBudget,
     tokenizer: Tokenizer,
+    *,
+    knowledge_tree_source: KnowledgeTreeSource | None = None,
 ) -> list[PromptCandidate]:
     """Render one budget-fitted candidate per grid point (deduped by prompt-system id)."""
     candidates: list[PromptCandidate] = []
     seen: set[str] = set()
+    tree_cache: dict[tuple[int, int], KnowledgeTreeRender] = {}
     for fields in grid:
-        candidate = make_candidate(corpus, fields, budget, tokenizer)
+        tree_text = ""
+        tree_report: dict[str, object] = {}
+        if fields.knowledge_tree_depth > 0:
+            if knowledge_tree_source is None:
+                raise ValueError("knowledge-tree fields need a loaded knowledge-tree source")
+            key = (fields.knowledge_tree_depth, fields.knowledge_tree_budget)
+            rendered = tree_cache.get(key)
+            if rendered is None:
+                rendered = render_knowledge_tree(
+                    knowledge_tree_source,
+                    depth=fields.knowledge_tree_depth,
+                    budget_tokens=min(fields.knowledge_tree_budget, budget.prompt_budget),
+                    tokenizer=tokenizer,
+                )
+                tree_cache[key] = rendered
+            tree_text = rendered.text
+            tree_report = rendered.report()
+            tree_report["requested_budget_tokens"] = fields.knowledge_tree_budget
+            control_fields = replace(
+                fields,
+                knowledge_tree_depth=0,
+                knowledge_tree_budget=0,
+            )
+            tree_report["baseline_prompt_system_id"] = prompt_system_id(corpus, control_fields)
+        candidate = make_candidate(
+            corpus,
+            fields,
+            budget,
+            tokenizer,
+            knowledge_tree_text=tree_text,
+            knowledge_tree_report=tree_report,
+        )
         if candidate.prompt_system_id in seen:
             continue
         seen.add(candidate.prompt_system_id)

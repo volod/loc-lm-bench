@@ -12,7 +12,11 @@ prompt-system-prepare: ## Generate reviewable RAG prompt-system candidates
 		--max-passages "$(PROMPT_SYSTEM_MAX_PASSAGES)" \
 		$(if $(PROMPT_SYSTEM_OUT_DIR),--out-dir "$(PROMPT_SYSTEM_OUT_DIR)",) \
 		$(if $(PROMPT_SYSTEM_ROLE),--role "$(PROMPT_SYSTEM_ROLE)",) \
-		$(if $(PROMPT_SYSTEM_INSTRUCTION),--instruction "$(PROMPT_SYSTEM_INSTRUCTION)",)
+		$(if $(PROMPT_SYSTEM_INSTRUCTION),--instruction "$(PROMPT_SYSTEM_INSTRUCTION)",) \
+		$(if $(PROMPT_SYSTEM_ONTOLOGY_BUNDLE),--ontology-bundle "$(PROMPT_SYSTEM_ONTOLOGY_BUNDLE)",) \
+		$(if $(PROMPT_SYSTEM_GRAPH_DIR),--graph-dir "$(PROMPT_SYSTEM_GRAPH_DIR)",) \
+		--tree-depths "$(PROMPT_SYSTEM_TREE_DEPTHS)" \
+		--tree-budgets "$(PROMPT_SYSTEM_TREE_BUDGETS)"
 
 prompt-system-review: ## Review prompt-system candidates (PROMPT_SYSTEM_RUN_DIR= PROMPT_SYSTEM_ACTION= PROMPT_SYSTEM_ID=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

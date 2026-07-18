@@ -1,0 +1,5 @@
+{
+  "id": "prompt_system.knowledge_tree_block",
+  "kind": "text",
+  "template": "knowledge_tree_block.txt"
+}

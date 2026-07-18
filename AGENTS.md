@@ -23,7 +23,7 @@
   machine (e.g. multi-objective RAG tune, joint search, auto-rag, host validation with real
   backends), pick the strongest local model that fits the host -- never use tiny smoke models
   under 7B parameters (no `llama3.2:3b`, `0.5B`, `1B`, `3B`, etc.) unless the user explicitly
-  asks for a tiny model. 
+  asks for a tiny model.
 - **Model selection order:** 1. Prefer UA-capable instruct models already on the
   host (Ollama / vLLM / llama.cpp). 2. Prefer the largest parameter count that fits the GPU with
   RAG headroom (KV cache + embedder + optional reranker). On a ~16 GiB GPU, prefer ~12B-14B class

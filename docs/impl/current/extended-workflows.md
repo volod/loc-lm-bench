@@ -124,6 +124,8 @@ Important modules:
 - `budget.py`: token-budget planning and section trimming;
 - `template.py`: prompt fields and `PromptPackage.apply`;
 - `tuning.py`: candidate grid and deduplication;
+- `knowledge_tree.py`: ontology/graph loading, deterministic community ordering, and strict
+  depth/token-budget rendering;
 - `review.py`: approve, pin, reject, and persist candidate review state;
 - `manifest.py`: corpus, mapping, template digests, and stable prompt-system ids;
 - `selection.py`: resolves a selected package for `run-eval`.
@@ -139,6 +141,40 @@ llb prompt-system-compare --lane rag --model <model>
 `run-eval` prepends the selected prompt package to the normal RAG generation prompt and records
 `prompt_system_provenance` in the manifest. Board loaders can rank one model across prompt-system
 ids for RAG or agentic lanes.
+
+Knowledge-tree generation is opt-in and consumes an existing ontology draft bundle, a persisted
+graph store, or both. It adds the corpus vocabulary, size-ranked entity communities, and optional
+community summaries as a system-prompt block. Every ordinary prompt candidate remains as a
+no-tree control; tree candidates record their exact control id plus the source digest, requested
+depth, requested/effective token budget, and rendered token count. Tree tokens consume the same
+overall prompt allowance as anthology/metadata/mapping context.
+
+```bash
+make prompt-system-prepare \
+  PROMPT_SYSTEM_CORPUS=<corpus-dir> \
+  PROMPT_SYSTEM_GRAPH_DIR=<graph-store> \
+  PROMPT_SYSTEM_TREE_DEPTHS=1,2,3 \
+  PROMPT_SYSTEM_TREE_BUDGETS=128,256
+make run-eval PROMPT_SYSTEM_ID=<control-id> PROMPT_PACKAGE=<review-dir>
+make run-eval PROMPT_SYSTEM_ID=<tree-id> PROMPT_PACKAGE=<review-dir>
+make prompt-system-compare MODEL=<model> PROMPT_SYSTEM_LANE=rag
+```
+
+`PROMPT_SYSTEM_ONTOLOGY_BUNDLE=<draft-bundle>` is the alternative source knob. When only that
+source is supplied, preparation reuses the existing graph builder and deterministic community
+detector in memory; it does not run extraction. `prompt-system-compare` ranks all evaluated ids and
+prints the best evaluated tree against its matched control, including the paired objective delta,
+bootstrap CI when per-case series align, and `helps`, `hurts`, or `inconclusive` conclusion.
+
+Local evidence on 2026-07-18 used the committed IP-regulation final split (n=4) and
+`MamayLM-Gemma-3-12B-IT-v2.0` Q4_K_M on the RTX 4060 Ti 16 GB host. Control `2af73c060984`
+scored 0.685; depth-2, 256-token tree `e6176121770b` scored 0.671. The paired delta was -0.0145
+with CI [-0.0339, +0.0000], so the comparison is inconclusive and does not support pinning the
+tree on this tiny fixture. Artifacts are under `.data/knowledge-tree-ab/`: prompt candidates in
+`prompt-system/evidence/`, control run
+`run-eval/20260718T170430.216852Z-20da112f09c7/`, and tree run
+`run-eval/20260718T170519.951424Z-cdfe1dc48c62/`. Retrieval held recall@5=1.000 and MRR=1.000
+for both. `make ci` passed with 1,477 tests and 42 slow tests deselected.
 
 ## Sample Prompt Assets
 
