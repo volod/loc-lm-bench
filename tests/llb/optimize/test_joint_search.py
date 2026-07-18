@@ -466,10 +466,10 @@ def test_default_tune_finalist_adds_zero_trials_when_study_complete(
     assert "best_quality" in result.finals or result.finals
 
 
-def test_stage2_resume_skips_completed_pick_evals(tmp_path: Path):
+def test_pick_scoring_resume_skips_completed_pick_evals(tmp_path: Path):
     """Kill on the second pick; resume must not re-eval the first pick marker."""
     from llb.optimize.objectives import GoalPick, ParetoPoint
-    from llb.optimize.joint_search.stage2 import score_finalist_picks
+    from llb.optimize.joint_search.pick_scoring import score_finalist_picks
     from llb.optimize.tuner_models import MultiObjectiveResult
 
     cell_dir = tmp_path / "finalists" / "bravo"
@@ -493,7 +493,7 @@ def test_stage2_resume_skips_completed_pick_evals(tmp_path: Path):
         ),
     ]
     tune = MultiObjectiveResult(
-        study_name="joint-ci-stage2-bravo",
+        study_name="joint-ci-pick-scoring-bravo",
         storage=None,
         objectives=("quality", "latency"),
         n_trials=2,
@@ -512,7 +512,7 @@ def test_stage2_resume_skips_completed_pick_evals(tmp_path: Path):
         goal = "best_quality" if config.top_k == 5 else "best_quality_per_second"
         eval_calls.append(goal)
         if goal == "best_quality_per_second" and eval_calls.count(goal) == 1:
-            raise RuntimeError("simulated kill mid-stage-2")
+            raise RuntimeError("simulated kill mid-pick-scoring")
         return {
             "rows": [{"model": "bravo", "quality": 0.6 if goal == "best_quality" else 0.55}],
             "metrics": {"objective_score": 0.6 if goal == "best_quality" else 0.55},
@@ -525,7 +525,7 @@ def test_stage2_resume_skips_completed_pick_evals(tmp_path: Path):
         }
 
     base = RunConfig(data_dir=tmp_path, model="bravo:tag", backend="ollama")
-    with pytest.raises(RuntimeError, match="simulated kill mid-stage-2"):
+    with pytest.raises(RuntimeError, match="simulated kill mid-pick-scoring"):
         score_finalist_picks(tune, base, cell_dir, final_runner=final_runner)
 
     assert eval_calls == ["best_quality", "best_quality_per_second"]

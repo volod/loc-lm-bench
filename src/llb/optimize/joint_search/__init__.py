@@ -13,6 +13,7 @@ from llb.optimize.joint_search.halving import (
     screen_limit_for_round,
 )
 from llb.optimize.joint_search.models import FinalistTuneResult, JointSearchResult
+from llb.optimize.joint_search.pick_scoring import score_finalist_picks
 from llb.optimize.joint_search.report import (
     assert_final_split,
     joint_run_dir,
@@ -25,7 +26,6 @@ from llb.optimize.joint_search.resume import (
     study_name_for,
 )
 from llb.optimize.joint_search.schedule import run_joint_search
-from llb.optimize.joint_search.stage2 import score_finalist_picks
 
 __all__ = [
     "JOINT_SEARCH_METHOD",

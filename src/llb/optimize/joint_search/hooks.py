@@ -84,8 +84,8 @@ def default_tune_finalist(
     from llb.optimize.objectives import TrialMetrics
     from llb.optimize.tuner_runtime import _run_eval_metrics
 
+    from llb.optimize.joint_search.pick_scoring import score_finalist_picks
     from llb.optimize.joint_search.resume import remaining_optuna_trials, study_name_for
-    from llb.optimize.joint_search.stage2 import score_finalist_picks
 
     name = resolution["name"]
     cfg = candidate_config(

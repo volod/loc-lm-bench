@@ -1,4 +1,4 @@
-"""Stage-2 final-split pick scoring with per-pick resume markers."""
+"""Final-split pick scoring with per-pick resume markers."""
 
 import logging
 from pathlib import Path
@@ -24,8 +24,8 @@ def score_finalist_picks(
 ) -> dict[str, EvalResult]:
     """Score each named pick on the final split; reuse ``picks/<goal>.json`` when present.
 
-    A kill mid-stage-2 leaves completed pick markers in place so a resume skips those evals
-    even when the Optuna study is already full and ``result.json`` was never written.
+    A kill mid-pick-scoring leaves completed pick markers in place so a resume skips those
+    evals even when the Optuna study is already full and ``result.json`` was never written.
     """
     from llb.optimize.tuner_runtime import _run_eval_final
 
@@ -34,12 +34,12 @@ def score_finalist_picks(
     for pick in tune.picks:
         prior = read_pick_marker(cell_dir, pick.goal)
         if prior is not None:
-            _LOG.info("[joint-search] stage-2 resume skip pick=%s", pick.goal)
+            _LOG.info("[joint-search] pick-scoring resume skip pick=%s", pick.goal)
             finals[pick.goal] = prior
             continue
         cfg = tune.config_for(base, pick.goal)
         _LOG.info(
-            "[joint-search] stage-2 scoring pick=%s on the '%s' split",
+            "[joint-search] pick-scoring pick=%s on the '%s' split",
             pick.goal,
             FINAL_SPLIT,
         )

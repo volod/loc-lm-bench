@@ -167,7 +167,7 @@ def pick_marker_path(cell_dir: Path, goal: str) -> Path:
 
 
 def write_pick_marker(cell_dir: Path, goal: str, result: EvalResult) -> Path:
-    """Atomically persist one finished stage-2 pick eval."""
+    """Atomically persist one finished final-split pick eval."""
     path = pick_marker_path(cell_dir, goal)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"status": MARKER_STATUS_DONE, "goal": goal, "result": result}
@@ -176,7 +176,7 @@ def write_pick_marker(cell_dir: Path, goal: str, result: EvalResult) -> Path:
 
 
 def read_pick_marker(cell_dir: Path, goal: str) -> EvalResult | None:
-    """Load a finished stage-2 pick marker, or None if missing / truncated / invalid."""
+    """Load a finished final-split pick marker, or None if missing / truncated / invalid."""
     path = pick_marker_path(cell_dir, goal)
     if not path.is_file():
         return None

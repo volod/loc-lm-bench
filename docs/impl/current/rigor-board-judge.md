@@ -140,19 +140,19 @@ Schedule (`src/llb/optimize/joint_search/`):
 3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
    quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
    never enter the ledger). The ledger is rewritten after every round.
-4. **Per-finalist multi-objective tune** -- survivors run stage-1 `tune_multi` then stage-2 pick
-   scoring in isolated cells under `$DATA_DIR/joint-search/<run>/finalists/<model>/`. Study ids
-   are `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the
+4. **Per-finalist multi-objective tune** -- survivors run Optuna `tune_multi` then final-split
+   pick scoring in isolated cells under `$DATA_DIR/joint-search/<run>/finalists/<model>/`. Study
+   ids are `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the
    SQLite study already has rows. Each finished final-split pick writes
-   `finalists/<slug>/picks/<goal>.json` so a mid-stage-2 kill skips completed picks on resume. A
-   finished finalist (all picks scored) writes `finalists/<slug>/result.json` (study id +
-   final-split picks) so a resume reloads instead of re-tuning.
+   `finalists/<slug>/picks/<goal>.json` so a kill mid-pick-scoring skips completed picks on
+   resume. A finished finalist (all picks scored) writes `finalists/<slug>/result.json` (study
+   id + final-split picks) so a resume reloads instead of re-tuning.
 5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
    scores; the writer refuses any non-final split (tuning/final leak fence). The scoreboard is
    rebuilt after each finalist so a partial run still shows whatever picks exist.
 
 **Resume:** re-run with the same `--run-id` / `JOINT_SEARCH_RUN_ID=<id>`. Completed screen markers,
-per-pick stage-2 markers, and finalist `result.json` files are skipped; Optuna studies only
+per-pick scoring markers, and finalist `result.json` files are skipped; Optuna studies only
 enqueue `max(0, n_trials - len(study.trials))` new trials.
 
 ```bash
@@ -174,7 +174,7 @@ Artifacts under `$DATA_DIR/joint-search/<run>/`: `manifest.json`, `ledger.json`,
 CI drives the schedule with injectable screen/tune hooks in
 `tests/llb/optimize/test_joint_search.py` (halving ranks, two-round budget growth, ledger
 tuning-only, scoreboard final-only, kill-then-resume zero re-screen / zero re-tune of finished
-finalists, Optuna remaining-trial gate when `n_trials` are already complete, stage-2 pick-marker
+finalists, Optuna remaining-trial gate when `n_trials` are already complete, pick-scoring
 resume with zero re-eval of finished picks).
 
 Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, three
