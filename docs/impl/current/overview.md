@@ -178,7 +178,7 @@ Generated artifacts must stay under `DATA_DIR`.
 | Verification | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-accept` |
 | Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score` |
 | RAG retrieval | `build-index`, `validate-retrieval`, `compare-retrieval`, `compare-vector-stores` |
-| RAG scoring | `run-eval`, `sweep`, `tune`, `pipeline`, `board` |
+| RAG scoring | `run-eval`, `sweep`, `tune`, `joint-search`, `pipeline`, `board` |
 | Backends | `prep-models`, `list-models`, `resolve-models`, `build-vllm`, `build-llamacpp` |
 | Category suites | `bench-security`, `bench-*`, `bench-composite`, `composite-headline` |
 | Prompt systems | `prompt-system-prepare`, `prompt-system-review`, `prompt-system-compare` |
@@ -236,6 +236,7 @@ one `llb` package live under `tests/samples/`. The root of `tests/` should stay 
 | `$DATA_DIR/run-eval/<run>/` | RAG run bundle |
 | `$DATA_DIR/<category>/<run>/` | category-suite run bundle |
 | `$DATA_DIR/sweep/<id>/` | isolated sweep markers and reports |
+| `$DATA_DIR/joint-search/<run>/` | successive-halving ledger + joint scoreboard |
 | `$DATA_DIR/prompt-system/<run>/` | prompt-system candidates, manifest, review JSON |
 | `$DATA_DIR/mlflow/` | local MLflow mirror |
 | `$DATA_DIR/llb/serving/gpu-<tier>gb/` | generated serving scripts and run configs |

@@ -122,6 +122,57 @@ Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD po
 - Context-budget knob active (sampled 8192 / 16384 on the picks); embedder rebuild invariant
   and store-prewarm zero-reuse-embed gate covered by unit tests with fake builders / registries
 
+## Joint model + config search
+
+`llb joint-search` (`make joint-search`) folds model selection into the optimization loop with a
+successive-halving schedule so the recommendation covers model + RAG config + serving knobs
+together instead of tuning RAG for one pre-chosen model.
+
+Schedule (`src/llb/optimize/joint_search/`):
+
+1. **Host-fit filter** -- `resolve_all` over `--candidates` (default
+   `samples/configs/models_uk.yaml`); unresolvable models are skipped and recorded in the run
+   manifest.
+2. **Cheap screen** -- each runnable candidate is scored on the **tuning** split only with a small
+   case cap (`--screen-limit`, growing by `--eta` each round). Screen cells reuse
+   `isolate_cell` for VRAM-owning backends.
+3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
+   quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
+   never enter the ledger).
+4. **Per-finalist multi-objective tune** -- survivors run `two_stage_multi` in isolated cells
+   under `$DATA_DIR/joint-search/<run>/finalists/<model>/`.
+5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
+   scores; the writer refuses any non-final split (tuning/final leak fence).
+
+```bash
+make joint-search JOINT_SEARCH_TRIALS=20 JOINT_SEARCH_SCREEN_LIMIT=8
+# or:
+llb joint-search --candidates samples/configs/models_uk.yaml --trials 20 \
+  --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+  --corpus samples/goldsets/ua_squad_postedited_v1/corpus
+```
+
+Artifacts under `$DATA_DIR/joint-search/<run>/`: `manifest.json`, `ledger.json`,
+`finalists/<model>/pareto.{json,md}`, `scoreboard.{json,md}`.
+
+CI drives the schedule with injectable screen/tune hooks in
+`tests/llb/optimize/test_joint_search.py` (halving ranks, two-round budget growth, ledger
+tuning-only, scoreboard final-only).
+
+Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, three
+`models_uk.yaml` candidates -- MamayLM-12B GGUF, Lapa-12B GGUF, Mistral-Small-3.1-24B --
+`--trials 10 --screen-limit 4 --limit 8 --seed 21 --objectives quality,latency`):
+
+- Run: `$DATA_DIR/joint-search/joint-ua-evidence-20260718/`
+- Ledger (`ledger.json`): `split=tuning`; round 0 eliminated `lapa-v0.1.2-instruct`
+  (screen quality 0.303); kept `mamaylm-v2-12b` (0.381) and `mistral-small-3.1-24b` (0.366)
+- Scoreboard (`scoreboard.json`): `split=final` only; MamayLM `best_quality` 0.488 /
+  `best_quality_per_second` 0.563; Mistral both picks 0.391
+- Recommended: `mamaylm-v2-12b` + `best_quality_per_second` (recursive, chunk 256, top_k 3,
+  context_budget 2048)
+- Final-split manifests under `$DATA_DIR/run-eval/` for each pick all record `split=final`;
+  no tuning rows on the scoreboard
+
 ## Public Screen
 
 `src/llb/screen/public.py` adapts `lm-eval-harness-uk` to a running local endpoint. It keeps

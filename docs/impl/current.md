@@ -14,7 +14,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Gold data, verification, calibration, ingestion, chunking | [Data prep](current/data-prep.md) |
 | RAG run path, retrieval, scoring, manifests, MLflow | [RAG core](current/rag-core.md) |
 | vLLM launcher, telemetry fields, backend build rules | [Backend telemetry](current/backend-telemetry.md) |
-| Model resolution, sweeps, tuning, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |
+| Model resolution, sweeps, tuning, joint-search, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |
 | VRAM planning, contention guard, llama.cpp, ontology drafting | [Robust backends](current/robustness-ontology-backends.md) |
 | Security, tooling, agentic, summarization, structured, text analysis | [Category suite](current/category-benchmark-suite.md) |
 | Effective real-world knowledge cutoff for local models | [Knowledge cutoff](current/knowledge-cutoff.md) |

@@ -24,14 +24,14 @@
   backends), pick the strongest local model that fits the host -- never use tiny smoke models
   under 7B parameters (no `llama3.2:3b`, `0.5B`, `1B`, `3B`, etc.) unless the user explicitly
   asks for a tiny model. 
-  **Model selection order:** 1. Prefer UA-capable instruct models already on the
+- **Model selection order:** 1. Prefer UA-capable instruct models already on the
   host (Ollama / vLLM / llama.cpp). 2. Prefer the largest parameter count that fits the GPU with
   RAG headroom (KV cache + embedder + optional reranker). On a ~16 GiB GPU, prefer ~12B-14B class
   over 24B+ GGUF that barely fits and thrash-swaps. 3. Floor: at least 7B parameters for any
   real-model evidence run recorded in `docs/impl/current/`. 4. CI / `make ci` fixtures and
   injected fakes stay unchanged -- this rule is for live local backend runs only.
-  **Model examples (12-16 GiB class):** Prefer: MamayLM / Lapa ~12B GGUF, `qwen3:14b`, `gemma4:e4b`
-  when present. Avoid for evidence: `llama3.2:3b` and other sub-7B tags.
+- **Model examples (12-16 GiB class):** Prefer: MamayLM-Gemma v2.0 GGUF, `gemma4:31b`,
+  `qwen3.6:27b`, when present. Avoid for evidence: `llama3.2:3b` and other sub-7B tags.
 
 ## Code Organization
 

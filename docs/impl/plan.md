@@ -43,34 +43,29 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### joint-model-config-search
+### joint-search-resume
 
-Fold model selection into the optimization loop with a successive-halving schedule: a cheap
-screen pass over the `samples/configs/models_uk.yaml` candidates on a small tuning subset, then a
-per-finalist multi-objective RAG tune in isolated sweep cells, then one comparable final-split
-scoreboard across finalists so the recommendation covers model + RAG config + serving knobs
-together instead of tuning RAG for one pre-chosen model.
+Make `llb joint-search` resumable after kill: persist per-candidate screen markers and per-finalist
+Optuna study ids under `$DATA_DIR/joint-search/<run>/`, skip completed screen cells and finished
+finalist tunes on re-entry with the same `--run-id`, and rebuild the scoreboard from whatever
+final-split pick results already exist. Helps long multi-model runs on a single GPU without
+replaying the cheap screen or completed studies. See [evaluation rigor](current/rigor-board-judge.md)
+joint-search section for the current artifact layout.
 
-- Agent status: RUN NEEDED
-- Dependencies: `multi-objective-rag-tuner`. Reuse `src/llb/executor/isolation.py` sweep cells,
-  the resolver in `src/llb/backends/resolver.py`, and the existing `pipeline` command's
-  screen-to-finalist handoff as the schedule skeleton.
-- User-visible outcome: one command produces "best model for this corpus and host, with its tuned
-  RAG configuration" rather than requiring the operator to pick the model before tuning.
-- Scope boundary: in scope -- the halving schedule, per-finalist tune orchestration, combined
-  scoreboard, host-fit filtering via the planner. Out of scope -- new backends, new candidate
-  families, and public-screen changes.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/` with per-cell bundles, halving ledger,
-  and the final scoreboard JSON + Markdown; candidate manifest stays
-  `samples/configs/models_uk.yaml`.
-- Execution path: `llb joint-search --candidates samples/configs/models_uk.yaml --trials <n>`
-  sequentially on the CUDA host (one heavyweight model at a time); CI drives the schedule with
-  fake eval results.
-- Acceptance gates: `make ci` green; a heavy deterministic run over at least three candidates
-  shows the halving ledger eliminating candidates on the tuning split only, and the final
-  scoreboard built exclusively from final-split runs; no tuning/final leakage in manifests.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) alongside sweep and
-  pipeline behavior.
+- Agent status: CLEAR
+- Dependencies: joint-search layout in
+  [evaluation rigor](current/rigor-board-judge.md).
+- User-visible outcome: re-running `joint-search --run-id <id>` continues from the last incomplete
+  phase instead of restarting the whole schedule.
+- Scope boundary: in scope -- screen cell markers, finalist study reuse, scoreboard rebuild. Out
+  of scope -- changing the successive-halving policy or adding new candidate families.
+- Data and artifact paths: reuse `$DATA_DIR/joint-search/<run>/` markers + existing Optuna DBs
+  under `$DATA_DIR/optuna/`.
+- Execution path: `llb joint-search --run-id <id> ...` twice with a kill between phases; CI covers
+  resume with fake screen/tune hooks.
+- Acceptance gates: `make ci` green; resume test proves zero re-screen of completed candidates and
+  zero new Optuna trials when the finalist study already has `n_trials` complete.
+- Documentation target: [evaluation rigor](current/rigor-board-judge.md) joint-search section.
 
 ### knowledge-tree-prompt
 
