@@ -80,11 +80,12 @@ def default_tune_finalist(
     case_limit: int | None = None,
 ) -> FinalistTuneResult:
     """Per-finalist multi-objective two-stage tune into ``cell_dir``."""
-    from llb.optimize.multi_objective import two_stage_multi
+    from llb.optimize.multi_objective import tune_multi
     from llb.optimize.objectives import TrialMetrics
     from llb.optimize.tuner_runtime import _run_eval_metrics
 
     from llb.optimize.joint_search.resume import remaining_optuna_trials, study_name_for
+    from llb.optimize.joint_search.stage2 import score_finalist_picks
 
     name = resolution["name"]
     cfg = candidate_config(
@@ -114,7 +115,7 @@ def default_tune_finalist(
             capped = min(limit, case_limit)
         return _run_eval_metrics(config, limit=capped)
 
-    out = two_stage_multi(
+    tune = tune_multi(
         cfg,
         n_trials=trials_left,
         study_name=study_name,
@@ -131,14 +132,15 @@ def default_tune_finalist(
         embedders=None,
         prune_case_count=case_limit,
     )
-    overrides_by_pick = {pick.goal: dict(pick.point.overrides) for pick in out.tune.picks}
+    finals = score_finalist_picks(tune, cfg, cell_dir)
+    overrides_by_pick = {pick.goal: dict(pick.point.overrides) for pick in tune.picks}
     return FinalistTuneResult(
         name=name,
         backend=resolution["chosen_backend"] or cfg.backend,
         source=resolution["chosen_source"] or cfg.model,
         study_name=study_name,
         overrides_by_pick=overrides_by_pick,
-        finals=dict(out.finals),
+        finals=dict(finals),
         report_dir=cell_dir,
     )
 

@@ -25,6 +25,7 @@ from llb.optimize.joint_search.resume import (
     study_name_for,
 )
 from llb.optimize.joint_search.schedule import run_joint_search
+from llb.optimize.joint_search.stage2 import score_finalist_picks
 
 __all__ = [
     "JOINT_SEARCH_METHOD",
@@ -42,6 +43,7 @@ __all__ = [
     "rank_scores",
     "remaining_optuna_trials",
     "run_joint_search",
+    "score_finalist_picks",
     "screen_limit_for_round",
     "study_name_for",
     "write_ledger",

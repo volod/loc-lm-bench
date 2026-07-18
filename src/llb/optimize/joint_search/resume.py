@@ -4,12 +4,14 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from llb.core.contracts.runs import EvalResult
 from llb.optimize.joint_search.constants import (
     FINALIST_RESULT_FILE,
     MARKER_STATUS_DONE,
     OPTUNA_METHOD,
+    PICKS_DIR,
     SCREEN_DIR,
 )
 from llb.optimize.joint_search.halving import ScreenScore
@@ -22,6 +24,7 @@ _SCREEN_REQUIRED = frozenset({"status", "name", "quality", "round_index", "case_
 _FINALIST_REQUIRED = frozenset(
     {"status", "name", "backend", "source", "study_name", "overrides_by_pick", "finals"}
 )
+_PICK_REQUIRED = frozenset({"status", "goal", "result"})
 
 
 def screen_marker_path(run_dir: Path, name: str, round_index: int) -> Path:
@@ -156,6 +159,42 @@ def remaining_optuna_trials(data_dir: Path, study_name: str, n_trials: int) -> i
 def study_name_for(run_id: str, model_name: str) -> str:
     """Stable Optuna study id for one finalist under a joint-search run."""
     return f"joint-{run_id}-{slug(model_name)}"
+
+
+def pick_marker_path(cell_dir: Path, goal: str) -> Path:
+    """``$DATA_DIR/joint-search/<run>/finalists/<slug>/picks/<goal>.json``."""
+    return cell_dir / PICKS_DIR / f"{slug(goal)}.json"
+
+
+def write_pick_marker(cell_dir: Path, goal: str, result: EvalResult) -> Path:
+    """Atomically persist one finished stage-2 pick eval."""
+    path = pick_marker_path(cell_dir, goal)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"status": MARKER_STATUS_DONE, "goal": goal, "result": result}
+    _atomic_write_json(path, payload)
+    return path
+
+
+def read_pick_marker(cell_dir: Path, goal: str) -> EvalResult | None:
+    """Load a finished stage-2 pick marker, or None if missing / truncated / invalid."""
+    path = pick_marker_path(cell_dir, goal)
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("[joint-search] ignore unreadable pick marker %s: %s", path, exc)
+        return None
+    if (
+        not isinstance(value, dict)
+        or value.get("status") != MARKER_STATUS_DONE
+        or not _PICK_REQUIRED.issubset(value)
+        or value.get("goal") != goal
+        or not isinstance(value.get("result"), dict)
+    ):
+        _LOG.warning("[joint-search] ignore invalid pick marker %s", path)
+        return None
+    return cast(EvalResult, value["result"])
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

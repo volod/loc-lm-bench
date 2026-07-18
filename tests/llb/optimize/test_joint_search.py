@@ -434,7 +434,7 @@ def test_default_tune_finalist_adds_zero_trials_when_study_complete(
         }
 
     monkeypatch.setattr("llb.optimize.tuner_runtime._run_eval_metrics", fake_metrics)
-    monkeypatch.setattr("llb.optimize.multi_objective._run_eval_final", fake_final)
+    monkeypatch.setattr("llb.optimize.tuner_runtime._run_eval_final", fake_final)
 
     cell_dir = tmp_path / "joint-search" / run_id / "finalists" / name
     cell_dir.mkdir(parents=True)
@@ -464,6 +464,79 @@ def test_default_tune_finalist_adds_zero_trials_when_study_complete(
     assert len(reloaded.trials) == before
     assert result.study_name == study_name
     assert "best_quality" in result.finals or result.finals
+
+
+def test_stage2_resume_skips_completed_pick_evals(tmp_path: Path):
+    """Kill on the second pick; resume must not re-eval the first pick marker."""
+    from llb.optimize.objectives import GoalPick, ParetoPoint
+    from llb.optimize.joint_search.stage2 import score_finalist_picks
+    from llb.optimize.tuner_models import MultiObjectiveResult
+
+    cell_dir = tmp_path / "finalists" / "bravo"
+    cell_dir.mkdir(parents=True)
+    front = [
+        ParetoPoint(
+            number=0,
+            quality=0.8,
+            latency_s=0.5,
+            cost_usd=0.0,
+            throughput=2.0,
+            overrides={"top_k": 5},
+        ),
+        ParetoPoint(
+            number=1,
+            quality=0.7,
+            latency_s=0.2,
+            cost_usd=0.0,
+            throughput=5.0,
+            overrides={"top_k": 3},
+        ),
+    ]
+    tune = MultiObjectiveResult(
+        study_name="joint-ci-stage2-bravo",
+        storage=None,
+        objectives=("quality", "latency"),
+        n_trials=2,
+        n_complete=2,
+        n_pruned=0,
+        front=front,
+        picks=[
+            GoalPick("best_quality", front[0]),
+            GoalPick("best_quality_per_second", front[1]),
+        ],
+    )
+    eval_calls: list[str] = []
+
+    def final_runner(config: RunConfig):
+        # Distinguish picks by the overridden top_k applied in config_for.
+        goal = "best_quality" if config.top_k == 5 else "best_quality_per_second"
+        eval_calls.append(goal)
+        if goal == "best_quality_per_second" and eval_calls.count(goal) == 1:
+            raise RuntimeError("simulated kill mid-stage-2")
+        return {
+            "rows": [{"model": "bravo", "quality": 0.6 if goal == "best_quality" else 0.55}],
+            "metrics": {"objective_score": 0.6 if goal == "best_quality" else 0.55},
+            "manifest": {"split": FINAL_SPLIT},
+            "table": "ok",
+            "retrieval": {},
+            "paths": {},
+            "telemetry": None,
+            "run_timestamp": "t",
+        }
+
+    base = RunConfig(data_dir=tmp_path, model="bravo:tag", backend="ollama")
+    with pytest.raises(RuntimeError, match="simulated kill mid-stage-2"):
+        score_finalist_picks(tune, base, cell_dir, final_runner=final_runner)
+
+    assert eval_calls == ["best_quality", "best_quality_per_second"]
+    assert (cell_dir / "picks" / "best_quality.json").is_file()
+    assert not (cell_dir / "picks" / "best_quality_per_second.json").is_file()
+
+    before = list(eval_calls)
+    finals = score_finalist_picks(tune, base, cell_dir, final_runner=final_runner)
+    assert eval_calls == before + ["best_quality_per_second"]
+    assert set(finals) == {"best_quality", "best_quality_per_second"}
+    assert finals["best_quality"]["rows"][0]["quality"] == 0.6
 
 
 def _name_from_source(source: str) -> str:

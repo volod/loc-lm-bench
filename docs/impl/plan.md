@@ -43,24 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### joint-search-stage2-resume (optional)
-
-Persist per-pick final-split eval markers under each finalist cell so a kill during stage-2 of
-`two_stage_multi` reuses completed pick scores instead of re-running every named pick when the
-Optuna study is already full but `result.json` was never written. See
-[evaluation rigor](current/rigor-board-judge.md) joint-search resume notes.
-
-- Agent status: CLEAR
-- Dependencies: joint-search resume in
-  [evaluation rigor](current/rigor-board-judge.md).
-- User-visible outcome: resume after a mid-stage-2 kill skips finished pick evals.
-- Scope boundary: in scope -- per-pick markers inside `finalists/<slug>/`. Out of scope --
-  changing Optuna sampling or the scoreboard schema.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/finalists/<slug>/picks/<goal>.json`.
-- Execution path: CI with a fake final runner that fails on the second pick, then resumes.
-- Acceptance gates: `make ci` green; resume issues zero re-evals for picks with markers.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) joint-search section.
-
 ### knowledge-tree-prompt
 
 Generate compact knowledge-tree system-prompt candidates from the induced ontology and graph

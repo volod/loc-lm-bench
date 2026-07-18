@@ -22,6 +22,8 @@ SCOREBOARD_MD = "scoreboard.md"
 # Resume markers: cheap-screen cells and finished finalist tunes.
 SCREEN_DIR = "screen"
 FINALIST_RESULT_FILE = "result.json"
+# Per-pick final-split markers under ``finalists/<slug>/picks/<goal>.json``.
+PICKS_DIR = "picks"
 MARKER_STATUS_DONE = "done"
 
 # Optuna SQLite root (same as ``llb.optimize.multi_objective.OPTUNA_METHOD``).
