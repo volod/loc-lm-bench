@@ -231,11 +231,21 @@ Incremental update (`src/llb/rag/refresh/store_refresh.py`): unchanged documents
 chunk records and embedding rows verbatim (`FaissIndex.vectors()` reconstructs the stored
 matrix; the adapter backends return their persisted `vectors.npy`), added/modified documents are
 re-chunked (`chunk_corpus(only_docs=...)`) and re-embedded, deleted documents drop out of the
-dense, lexical, and persisted-record paths. The merged store preserves the exact from-scratch
+dense, lexical, and persisted-record paths. Annotation-only fast path: a modified document whose
+re-chunked `(char_start, char_end, text)` grid reproduces the stored one exactly (sidecar-driven
+page-span regeneration, governance-only manifest changes) rewrites its chunk records -- carrying
+the re-annotated metadata -- but reuses every embedding row and its lexical postings instead of
+re-embedding (`_annotation_only_sources`); `refresh-index` reports those rows as reused, not
+embedded. The fast path applies only to the diff's modified class: added documents and the
+legacy no-`doc_fingerprints` full refresh always embed fresh rows, and any real text edit
+(including an equal-length in-place replacement, which keeps the span grid but changes chunk
+text) still re-embeds. The merged store preserves the exact from-scratch
 build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
 equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
 and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
-cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`. The
+cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`,
+plus annotation-only (sidecar regeneration) cases asserting zero embedder calls in flat,
+hybrid, and parent_child modes and a same-span text-edit guard. The
 hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
 postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
 or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed

@@ -166,11 +166,16 @@ addopts = "-q -p no:deepeval -p no:rerunfailures"
 filterwarnings = [
   "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
 ]
-# Two test groups (see Makefile `test` vs `ci`):
+# Three test groups (see Makefile `test` / `ci` / `ci-github`):
 #   default / `make test`  -- the FULL suite, run locally; includes `slow` tests.
-#   `make ci`              -- the lightweight suite (`-m "not slow"`); GitHub CI stays fast.
+#   `make ci`              -- the lightweight suite (`-m "not slow"`) for the full local install.
+#   `make ci-github`       -- the GitHub CI suite (`-m "not slow and not heavy_env"`); runs in
+#                            the base `[dev]`-only install with no optional-dependency skips.
 # Mark a test `@pytest.mark.slow` when it is intrinsically expensive (real Optuna sweeps,
 # embedder/model loads, deepeval, subprocess builds) -- not merely a first-import artifact.
+# Mark a test `@pytest.mark.heavy_env` when it is quick but needs an optional extra the base
+# `[dev]` install lacks (faiss via `[rag]`, duckdb via `[graph]`, vector-store adapters).
 markers = [
   "slow: long-running test, excluded from the lightweight `make ci` suite (run via `make test`)",
+  "heavy_env: needs optional extras beyond the base [dev] install; deselected by `make ci-github` (GitHub CI), runs in local `make ci` / `make test`",
 ]

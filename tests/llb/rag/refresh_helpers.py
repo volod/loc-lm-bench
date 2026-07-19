@@ -3,7 +3,9 @@
 The embedder is a deterministic hashed bag-of-words encoder (the curation-test pattern) that
 records every passage batch, so tests can assert the refresh embedded ONLY the changed
 documents' chunks. Corpora are tiny on-disk `.md` trees chunked with the pure `fixed` strategy,
-so every store kind builds in the lightweight CI install (no GPU, no sentence-transformers).
+so no GPU or sentence-transformers install is needed; the dense index still goes through the
+real vector-index seam, so store-building tests need the `[rag]` extra (FAISS) and skip in the
+base `[dev]`-only GitHub CI install.
 """
 
 import json

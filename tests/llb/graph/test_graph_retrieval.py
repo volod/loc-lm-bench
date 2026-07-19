@@ -13,6 +13,7 @@ from llb.rag import retrieval as span_metric
 from test_graph import TEXT, _answer_span, _build_store, _doc, _extraction, _graph, _span
 
 
+@pytest.mark.heavy_env
 def test_local_khop_recovers_the_answer_span():
     store = _build_store()
     store.strategy = STRATEGY_LOCAL_KHOP
@@ -23,6 +24,7 @@ def test_local_khop_recovers_the_answer_span():
     assert any(h["metadata"]["kind"] == KIND_EDGE_FACT for h in hits)
 
 
+@pytest.mark.heavy_env
 def test_global_community_serializes_member_spans():
     store = _build_store()
     store.strategy = STRATEGY_GLOBAL_COMMUNITY
@@ -33,6 +35,7 @@ def test_global_community_serializes_member_spans():
     assert any("Франко" in h["text"] for h in hits)
 
 
+@pytest.mark.heavy_env
 def test_khop_depth_bounds_expansion():
     store = _build_store()
     store.strategy = STRATEGY_LOCAL_KHOP
@@ -44,6 +47,7 @@ def test_khop_depth_bounds_expansion():
     assert near <= far  # a wider radius never returns fewer spans
 
 
+@pytest.mark.heavy_env
 def test_unlinked_question_returns_empty():
     store = _build_store()
     for strategy in (STRATEGY_LOCAL_KHOP, STRATEGY_GLOBAL_COMMUNITY):
@@ -51,6 +55,7 @@ def test_unlinked_question_returns_empty():
         assert store.retrieve("xyzzy недоречне питання 99", 5) == []
 
 
+@pytest.mark.heavy_env
 def test_save_load_roundtrip(tmp_path):
     store = _build_store()
     store.save(tmp_path)
@@ -62,6 +67,7 @@ def test_save_load_roundtrip(tmp_path):
     assert loaded.retrieve("Хто написав Кобзар?", 3)  # queryable after reload
 
 
+@pytest.mark.heavy_env
 def test_rejects_unknown_strategy():
     pytest.importorskip("duckdb")
     from llb.graph.store import GraphStore
@@ -114,6 +120,7 @@ def test_load_extractions_roundtrip(tmp_path):
     assert len(loaded) == 1 and loaded[0].doc_id == "d1"
 
 
+@pytest.mark.heavy_env
 def test_run_eval_with_graph_backend_records_strategy(tmp_path):
     pytest.importorskip("duckdb")
     from llb.backends.base import BackendLauncher, ChatResult

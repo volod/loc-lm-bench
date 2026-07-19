@@ -175,35 +175,6 @@ reference (a contamination / parametric-knowledge signal).
 - Documentation target: a new [RAG core](current/rag-core.md) subsection; a
   [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
 
-### refresh-annotation-only-fast-path
-
-Skip re-embedding when a document's refresh diff is annotation-only: a modified document whose
-chunk spans and chunk texts come out identical to the stored ones (the sidecar-driven page-span
-regeneration case, and governance-only manifest changes) needs its chunk `metadata` re-annotated
-but its embedding rows are unchanged by construction -- yet the refresh path re-embeds every
-chunk of a modified document. Detect the case after re-chunking (compare the fresh chunk
-records' `(char_start, char_end, text)` against the stored ones), reuse the old embedding rows,
-and rewrite only the records. Keeps refresh-vs-rebuild equivalence exactly (the reused rows are
-what the rebuild would produce). Optional -- the win is proportional to sidecar/governance churn
-on large PDF corpora.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse the merge plan in `src/llb/rag/refresh/store_refresh.py`
-  (`_assemble` / `row_sources`) where per-row reuse already exists; only the changed-doc
-  classification needs the new spans-unchanged check.
-- User-visible outcome: sidecar-only and governance-only refreshes stop paying the embedding
-  cost of the affected documents; `refresh-index` reports the rows as reused, not embedded.
-- Scope boundary: in scope -- the spans-unchanged detection and row reuse for modified docs.
-  Out of scope -- any fingerprint or diff-classification change (modified stays modified) and
-  the graph-store path.
-- Data and artifact paths: existing `$DATA_DIR/llb/rag/` layout; no new roots.
-- Execution path: `llb refresh-index` as shipped; CI extends
-  `tests/llb/rag/test_refresh_store.py` with an annotation-only case asserting zero embedder
-  calls plus rebuild equivalence.
-- Acceptance gates: `make ci` green; a sidecar-only edit refreshes with `n_embedded == 0` and
-  the refreshed store matches a from-scratch rebuild; a real text edit still re-embeds.
-- Documentation target: [RAG core](current/rag-core.md) dynamic-corpus-refresh section.
-
 ### review-core-textual-workbench
 
 Build a shared review core `src/llb/review/` and a unified Textual TUI workbench on top of it,

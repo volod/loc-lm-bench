@@ -6,9 +6,12 @@
 # sentence-transformers, torch/vLLM) and never runs an actual benchmark, model download, or GPU
 # work.
 #
-# `make ci` runs the LIGHTWEIGHT pytest group (`-m "not slow"`); the intrinsically expensive
-# tests (real Optuna sweeps, embedder/model loads, deepeval, subprocess builds) carry
-# `@pytest.mark.slow` and run only locally via `make test`. See docs/impl/current.md (Dev setup).
+# `make ci-github` runs the pytest group `-m "not slow and not heavy_env"`: intrinsically
+# expensive tests carry `@pytest.mark.slow` (run only locally via `make test`), and quick tests
+# that need optional extras absent here (faiss/duckdb/adapter stores) carry
+# `@pytest.mark.heavy_env` (run locally via `make ci` / `make test`). Both groups are deselected
+# explicitly, so this env runs with no optional-dependency skips. See docs/impl/current.md
+# (Dev setup).
 name: ci
 
 on:
@@ -38,4 +41,4 @@ jobs:
           uv pip install --python .venv/bin/python -e ".[dev]"
 
       - name: Format + lint + type checks + unit tests
-        run: make ci
+        run: make ci-github

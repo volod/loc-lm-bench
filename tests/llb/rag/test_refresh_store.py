@@ -5,6 +5,10 @@ Every test builds a v1 store with the fake hashed-BoW embedder, edits the corpus
 from-scratch rebuild on the same corpus state: chunk records, embedding matrices, lexical
 postings, and ranked retrieval must be identical, and only the changed documents' chunks may
 reach the embedder.
+
+Every test builds real FAISS-backed stores, so the module is marked `heavy_env`: quick, run by
+local `make ci` / `make test` (full install), deselected by `make ci-github` in the base
+`[dev]`-only GitHub env where faiss (the `[rag]` extra) is absent.
 """
 
 import json
@@ -29,6 +33,8 @@ from refresh_helpers import (
     write_citation_sidecar,
     write_corpus,
 )
+
+pytestmark = pytest.mark.heavy_env
 
 TS = "20990101T000000Z"
 
@@ -229,17 +235,44 @@ def test_sidecar_only_change_reannotates_the_documents_chunks(tmp_path):
     build_store(corpus, CountingEmbedder()).save(tmp_path / "rag")
     # regenerate the page spans only: the document text is untouched
     write_citation_sidecar(corpus, "a.md", page=7)
-    result = refresh_vector_store(
-        tmp_path / "rag", corpus, embedder=CountingEmbedder(), timestamp=TS
-    )
+    embedder = CountingEmbedder()
+    result = refresh_vector_store(tmp_path / "rag", corpus, embedder=embedder, timestamp=TS)
     assert result.refreshed
     assert result.diff.modified == ["a.md"] and not result.diff.added and not result.diff.deleted
+    # annotation-only fast path: records are rewritten, no chunk reaches the embedder
+    assert result.n_embedded == 0 and embedder.passage_calls == []
+    assert result.n_reused == len(result.new_store.chunks)
     a_chunks = [c for c in result.new_store.chunks if c["doc_id"] == "a.md"]
     assert a_chunks and all(c["metadata"]["pages"] == [7, 7] for c in a_chunks)
     _assert_equivalent(result.new_store, build_store(corpus, CountingEmbedder()))
     # the refreshed generation records the sidecar-aware fingerprints: a second pass is a no-op
     again = refresh_vector_store(tmp_path / "rag", corpus, embedder=CountingEmbedder())
     assert again.refreshed is False
+
+
+@pytest.mark.parametrize("mode", ["hybrid", "parent_child"])
+def test_annotation_only_fast_path_per_store_mode(tmp_path, mode):
+    corpus = write_corpus(tmp_path / "corpus", V1_DOCS)
+    write_citation_sidecar(corpus, "b.md", page=2)
+    build_store(corpus, CountingEmbedder(), mode=mode).save(tmp_path / "rag")
+    write_citation_sidecar(corpus, "b.md", page=9)
+    embedder = CountingEmbedder()
+    result = refresh_vector_store(tmp_path / "rag", corpus, embedder=embedder, timestamp=TS)
+    assert result.refreshed and result.n_embedded == 0 and embedder.passage_calls == []
+    _assert_equivalent(result.new_store, build_store(corpus, CountingEmbedder(), mode=mode))
+
+
+def test_same_span_text_edit_still_reembeds(tmp_path):
+    corpus = write_corpus(tmp_path / "corpus", V1_DOCS)
+    build_store(corpus, CountingEmbedder()).save(tmp_path / "rag")
+    # equal-length replacement keeps every chunk span identical; only the text differs
+    edited = {**V1_DOCS, "a.md": V1_DOCS["a.md"].replace("Кобзар", "Гайдам")}
+    write_corpus(corpus, edited)
+    embedder = CountingEmbedder()
+    result = refresh_vector_store(tmp_path / "rag", corpus, embedder=embedder, timestamp=TS)
+    assert result.diff.modified == ["a.md"]
+    assert result.n_embedded > 0 and embedder.embedded_texts
+    _assert_equivalent(result.new_store, build_store(corpus, CountingEmbedder()))
 
 
 def test_late_strategy_matches_rebuild(tmp_path):

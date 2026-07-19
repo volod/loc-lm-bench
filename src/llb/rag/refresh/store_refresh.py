@@ -2,7 +2,10 @@
 
 `refresh_vector_store` diffs the store's recorded per-doc fingerprints against the current
 corpus, keeps every unchanged document's chunk records and embedding rows verbatim, chunks and
-embeds only added/modified documents, and drops deleted ones. The merged store preserves the
+embeds only added/modified documents, and drops deleted ones. A modified document whose
+re-chunked span grid matches the stored one exactly (an annotation-only diff: sidecar page-span
+regeneration, governance-only manifest changes) rewrites its chunk records but reuses every
+embedding row instead of re-embedding. The merged store preserves the
 exact from-scratch build order (documents in sorted corpus order, chunks in per-doc order), so
 the refreshed store is identical to a rebuild on the same corpus state -- for the dense index
 (every `VectorIndex` backend rebuilds exactly from the merged matrix), the lexical BM25 side
@@ -138,6 +141,28 @@ def _records_by_doc(records: list[ChunkRecord]) -> dict[str, list[ChunkRecord]]:
     return out
 
 
+def _annotation_only_sources(
+    fresh: list[ChunkRecord], old_chunks: list[ChunkRecord], old_ordinals: list[int]
+) -> list[int | None]:
+    """Row sources for one changed doc's fresh units: old ordinals when the diff is
+    annotation-only, fresh embeds otherwise.
+
+    A modified document whose re-chunked `(char_start, char_end, text)` grid reproduces the
+    stored one exactly (sidecar-driven page-span regeneration, governance-only manifest
+    changes) has embedding rows unchanged by construction: the fresh records replace the
+    stored ones (carrying the re-annotated metadata) while every embedding row is reused.
+    """
+    if len(fresh) != len(old_ordinals):
+        return [None] * len(fresh)
+    spans_unchanged = all(
+        unit["char_start"] == old_chunks[ordinal]["char_start"]
+        and unit["char_end"] == old_chunks[ordinal]["char_end"]
+        and unit["text"] == old_chunks[ordinal]["text"]
+        for unit, ordinal in zip(fresh, old_ordinals)
+    )
+    return list(old_ordinals) if spans_unchanged else [None] * len(fresh)
+
+
 def _assemble(
     corpus_root: Path,
     changed: set[str],
@@ -145,8 +170,13 @@ def _assemble(
     old_parents: list[ChunkRecord] | None,
     new_by_doc: dict[str, list[ChunkRecord]],
     new_parents_by_doc: dict[str, list[ChunkRecord]] | None,
+    modified: set[str] | None = None,
 ) -> _MergedUnits:
-    """Interleave kept and fresh units in the exact from-scratch build order."""
+    """Interleave kept and fresh units in the exact from-scratch build order.
+
+    `modified` names the changed docs eligible for the annotation-only fast path (the diff's
+    modified class); added docs and legacy full refreshes always embed fresh rows.
+    """
     old_ordinals = _group_by_doc(old_chunks)
     old_parent_ordinals = _group_by_doc(old_parents) if old_parents is not None else {}
     indexed: list[ChunkRecord] = []
@@ -154,9 +184,13 @@ def _assemble(
     row_sources: list[int | None] = []
     for doc_id in iter_doc_paths(corpus_root):
         if doc_id in changed:
-            for unit in new_by_doc.get(doc_id, []):
-                indexed.append(unit)
-                row_sources.append(None)
+            fresh = new_by_doc.get(doc_id, [])
+            indexed.extend(fresh)
+            if modified and doc_id in modified:
+                sources = _annotation_only_sources(fresh, old_chunks, old_ordinals.get(doc_id, []))
+            else:
+                sources = [None] * len(fresh)
+            row_sources.extend(sources)
             if parents is not None and new_parents_by_doc is not None:
                 parents.extend(new_parents_by_doc.get(doc_id, []))
             continue
@@ -294,7 +328,13 @@ def refresh_vector_store(
 
     new_by_doc, new_parents_by_doc = _chunk_changed_docs(corpus_root, diff.changed, meta, embedder)
     merged = _assemble(
-        corpus_root, diff.changed, old_chunks, old_parents, new_by_doc, new_parents_by_doc
+        corpus_root,
+        diff.changed,
+        old_chunks,
+        old_parents,
+        new_by_doc,
+        new_parents_by_doc,
+        modified=set(diff.modified),
     )
     if not merged.indexed:
         raise SystemExit(f"[refresh] no chunks produced from corpus at {corpus_root}")

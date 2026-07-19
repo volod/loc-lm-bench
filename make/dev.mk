@@ -2,7 +2,7 @@
 ##@ Development
 
 .PHONY: \
-	demo-eval mlflow board recommend venv apt-deps test test-fast format ci lint-md
+	demo-eval mlflow board recommend venv apt-deps test test-fast format ci ci-checks ci-github lint-md
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -83,11 +83,15 @@ venv: ## Create/update .venv + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
 
-# Two test groups (markers registered in pyproject.toml):
+# Three test groups (markers registered in pyproject.toml):
 #   `make test`      -- FULL local suite: every test, including the `slow` ones (real Optuna
 #                       sweeps, embedder/model loads, deepeval, subprocess builds).
-#   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) so GitHub CI stays fast.
+#   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) for the full local install.
+#   `make ci-github` -- GitHub CI suite (`-m "not slow and not heavy_env"`): also deselects the
+#                       quick tests that need optional extras (faiss/duckdb/adapter stores), so
+#                       the base `[dev]`-only GitHub install runs with no dependency skips.
 NOT_SLOW := -m "not slow"
+GITHUB_SUITE := -m "not slow and not heavy_env"
 
 # Markdown docs linted by `make lint-md` (override to narrow scope, e.g. MD_PATHS=docs/design).
 MD_PATHS ?= README.md AGENTS.md CLAUDE.md GEMINI.md docs
@@ -105,12 +109,17 @@ format: ## Format Python sources and tests with Ruff
 	@test -x "$(VENV)/bin/ruff" || { echo "ERROR: ruff missing -- run 'make venv' first"; exit 1; }
 	$(VENV)/bin/ruff format src tests
 
-ci: ## Format check + lint + type check + LIGHTWEIGHT unit tests -- used by GitHub CI
+ci-checks:
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- create one + install '.[dev]' first"; exit 1; }
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
+
+ci: ci-checks ## Format check + lint + type check + LIGHTWEIGHT unit tests (full local install)
 	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
+
+ci-github: ci-checks ## `ci` for the base [dev]-only env: also deselects heavy_env tests -- used by GitHub CI
+	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(GITHUB_SUITE)
 
 # Fix findings BY HAND. Do NOT run `pymarkdown fix` -- it corrupts prose on this version (AGENTS.md).
 lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)

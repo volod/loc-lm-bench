@@ -2,8 +2,10 @@
 retrieval strategies, persistence, the tagged-diagnostic summaries, and the full vertical.
 
 The pure pieces (build / community / linking / serialize / ingest) run everywhere. The GraphStore
-tests use the DuckDB k-hop + community engine, so they `importorskip("duckdb")` (the `[graph]`
-extra) -- skipped in the base CI install, run locally via `make test`.
+tests (in `test_graph_retrieval.py`) use the DuckDB k-hop + community engine (the `[graph]`
+extra), so they are marked `heavy_env` -- deselected by `make ci-github` in the base
+`[dev]`-only GitHub env, run locally via `make ci` / `make test`; `importorskip("duckdb")`
+additionally guards partial local installs.
 """
 
 import pytest
