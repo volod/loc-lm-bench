@@ -11,6 +11,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Need | Read |
 | --- | --- |
 | System shape, setup, repo layout, artifact roots | [Overview](current/overview.md) |
+| Autonomous corpus-to-RAG orchestration, resume, verification, recommendation | [Auto-RAG](current/auto-rag.md) |
 | Gold data, verification, calibration, ingestion, chunking | [Data prep](current/data-prep.md) |
 | Unified terminal review UI, adapters, keys, ledger compatibility | [Review workbench](current/review-workbench.md) |
 | RAG run path, retrieval, scoring, manifests, MLflow | [RAG core](current/rag-core.md) |

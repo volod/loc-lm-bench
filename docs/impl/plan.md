@@ -43,46 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### auto-rag-orchestrator
-
-Build the end-to-end autonomous pipeline `llb auto-rag` (plus a `make auto-rag` target): corpus in,
-scored optimal RAG configuration out. Stages: ingest -> ontology goldset draft -> verification
-gate -> retrieval validation -> joint model + config tune -> knowledge-tree prompt candidate ->
-final-split eval -> recommendation bundle. Every gate consumes a policy: `auto` resolves through
-the `ScorerPolicy` seam (local judge or budget-capped frontier), `human` pauses the run and hands
-the pending records to the review workbench, then resumes. The run journal must be resumable after
-interruption at any stage, following the ontology pipeline journal pattern.
-
-- Agent status: RUN NEEDED
-- Dependencies: none open -- the multi-objective tune and joint model + config search stages it
-  chains are current behavior
-  ([multi-objective tuner](current/rigor-board-judge.md#multi-objective-rag-tuner),
-  [joint search](current/rigor-board-judge.md#joint-model--config-search)); gate policies reuse
-  [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human-assisted gates
-  use the [review workbench](current/review-workbench.md) for the `human` policy path only -- the
-  `auto` path must remain independent of it.
-- The knowledge-tree stage must call the existing
-  [prompt-system package flow](current/extended-workflows.md#prompt-system-packages).
-- User-visible outcome: one command takes a Ukrainian corpus directory and produces
-  `rag_recommendation.yaml` (model, backend, serving knobs, chunking, retrieval mode, fusion,
-  rerank, query prep, context budget, prompt-system id) plus a Markdown report with the score
-  evidence -- fully autonomous by default, human-gated per stage on request.
-- Scope boundary: in scope -- stage orchestration, gate policy plumbing, journal + resume,
-  recommendation rendering. Out of scope -- new stage implementations (every stage reuses an
-  existing command path) and any hosted-service behavior.
-- Data and artifact paths: `$DATA_DIR/auto-rag/<run>/` containing the journal, per-stage bundle
-  links, scorer ledger, `rag_recommendation.yaml`, and `report.md`; input is any corpus directory
-  accepted by `ingest-corpus`.
-- Execution path: `make auto-rag CORPUS=<dir> SCORER_POLICY=auto` for the autonomous lane;
-  `SCORER_POLICY=human` for gated runs; CI drives the full stage graph with fakes and a
-  miniature corpus fixture.
-- Acceptance gates: `make ci` green; journal tests prove resume-after-kill at every stage
-  boundary; a heavy deterministic run on the UA fixture corpus completes autonomously end-to-end
-  and emits a recommendation bundle whose final-split scores match a manually chained run of the
-  same stages.
-- Documentation target: new topic file `current/auto-rag.md` plus an index row in
-  [current.md](current.md); operator guide under `docs/guides/benchmarking/`.
-
 ### graph-vector-fusion-retrieval
 
 Fuse the GraphRAG lane into retrieval instead of keeping graph an either/or backend: a fused
@@ -349,8 +309,9 @@ twice -- once fully autonomous, once with human-assisted gates in the review wor
 the human judge both the reviewer experience and the recommendation quality.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `auto-rag-orchestrator`; assisted review uses the
-  [review workbench](current/review-workbench.md). Human step that gates completion: the operator
+- Dependencies: the autonomous lane is current behavior ([Auto-RAG](current/auto-rag.md));
+  assisted review uses the [review workbench](current/review-workbench.md). Human step that gates
+  completion: the operator
   performs both
   runs, reviews gated records in the workbench, measures their own throughput against the legacy
   per-flow sessions, and accepts or rejects the recommendation bundles.

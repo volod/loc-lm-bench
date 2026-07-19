@@ -1,6 +1,27 @@
 ## External scoring, isolated sweeps, and end-to-end evaluation orchestration.
 
-.PHONY: score-external-rag sweep pipeline joint-search
+.PHONY: score-external-rag sweep pipeline joint-search auto-rag
+
+auto-rag: ## Autonomous corpus -> verified goldset -> joint tune -> RAG recommendation (CORPUS= SCORER_POLICY=auto|human)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -d "$(CORPUS)" || { echo "ERROR: set CORPUS=<mixed-corpus-dir>"; exit 1; }
+	@set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main auto-rag --corpus "$(CORPUS)" \
+		--draft-model "$(AUTO_RAG_DRAFT_MODEL)" --candidates "$(AUTO_RAG_CANDIDATES)" \
+		--scorer-policy "$(SCORER_POLICY)" --max-items "$(AUTO_RAG_MAX_ITEMS)" \
+		--trials "$(AUTO_RAG_TRIALS)" --screen-limit "$(AUTO_RAG_SCREEN_LIMIT)" \
+		--min-finalists "$(AUTO_RAG_MIN_FINALISTS)" \
+		--max-model-len "$(AUTO_RAG_MAX_MODEL_LEN)" \
+		$(if $(AUTO_RAG_RUN_ID),--run-id "$(AUTO_RAG_RUN_ID)",) \
+		$(if $(AUTO_RAG_CANDIDATE_MODELS),--candidate-models "$(AUTO_RAG_CANDIDATE_MODELS)",) \
+		$(if $(AUTO_RAG_DOC_LIMIT),--doc-limit "$(AUTO_RAG_DOC_LIMIT)",) \
+		$(if $(AUTO_RAG_EVAL_LIMIT),--eval-limit "$(AUTO_RAG_EVAL_LIMIT)",) \
+		$(if $(AUTO_RAG_JUDGE_MODEL),--judge-model "$(AUTO_RAG_JUDGE_MODEL)",) \
+		$(if $(AUTO_RAG_JUDGE_BASE_URL),--judge-base-url "$(AUTO_RAG_JUDGE_BASE_URL)",) \
+		$(if $(SCORER_EGRESS_CONSENT),--egress-consent,) \
+		$(if $(SCORER_MAX_USD),--max-usd "$(SCORER_MAX_USD)",) \
+		$(if $(SCORER_MAX_CALLS),--max-calls "$(SCORER_MAX_CALLS)",) \
+		$(if $(AUTO_RAG_PARITY_CHECK),--parity-check,)
 
 score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=, EXTERNAL_RAG_SOURCE_MAP=<provider-to-doc_id sidecar> for the source-span audit)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
