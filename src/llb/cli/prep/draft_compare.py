@@ -27,13 +27,32 @@ def draft_compare_review_cmd(
     order: str = typer.Option("worksheet", help="worksheet | confidence"),
 ) -> None:
     """Interactively review both comparison lanes with the shared human verifier."""
-    from llb.goldset.verify_session.loop import run_session
+    from llb.review.launch import try_workbench
     from llb.prep.ontology.compare_gate import comparison_worksheets, worksheet_progress
 
     if order not in ("worksheet", "confidence"):
         cli_error("review order must be worksheet or confidence")
     report = _comparison_report(comparison_root)
     worksheets = comparison_worksheets(report)
+    if order == "worksheet" and try_workbench(comparison_root) is not None:
+        incomplete = [
+            lane
+            for lane, worksheet in worksheets.items()
+            if worksheet_progress(worksheet)[0] < worksheet_progress(worksheet)[1]
+        ]
+        if incomplete:
+            typer.echo(
+                f"[draft-compare-review] saved incomplete lanes: {', '.join(incomplete)}; "
+                "re-run this command to resume"
+            )
+            raise typer.Exit(code=1)
+        typer.echo(
+            "[draft-compare-review] both worksheets complete; run make draft-compare-finalize "
+            f"DRAFT_COMPARE_OUT_DIR={comparison_root}"
+        )
+        return
+    from llb.goldset.verify_session.loop import run_session
+
     for number, (lane, worksheet) in enumerate(worksheets.items(), start=1):
         decided, total = worksheet_progress(worksheet)
         typer.echo(

@@ -99,6 +99,16 @@ def knowledge_cutoff_ua_review_cmd(
 ) -> None:
     """Open the shared resumable terminal review over every translated row."""
     from llb.bench.knowledge_cutoff.translation_artifacts import WORKSHEET_FILENAME
+    from llb.review.launch import try_workbench
+
+    adapter = try_workbench(bundle, start=start)
+    if adapter is not None:
+        progress = adapter.progress(max(0, min((start or 1) - 1, len(adapter) - 1)))
+        typer.echo(
+            f"[knowledge-cutoff-ua-review] decided={progress.reviewed} -> "
+            f"{bundle / WORKSHEET_FILENAME}"
+        )
+        return
     from llb.goldset.verify_session.loop import run_session
 
     worksheet = bundle / WORKSHEET_FILENAME

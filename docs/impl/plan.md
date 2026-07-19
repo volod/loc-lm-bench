@@ -59,8 +59,8 @@ interruption at any stage, following the ontology pipeline journal pattern.
   ([multi-objective tuner](current/rigor-board-judge.md#multi-objective-rag-tuner),
   [joint search](current/rigor-board-judge.md#joint-model--config-search)); gate policies reuse
   [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human-assisted gates
-  additionally depend on `review-core-textual-workbench` (cross-section block for the `human`
-  policy path only -- the `auto` path must land without it).
+  use the [review workbench](current/review-workbench.md) for the `human` policy path only -- the
+  `auto` path must remain independent of it.
 - The knowledge-tree stage must call the existing
   [prompt-system package flow](current/extended-workflows.md#prompt-system-packages).
 - User-visible outcome: one command takes a Ukrainian corpus directory and produces
@@ -174,41 +174,6 @@ reference (a contamination / parametric-knowledge signal).
   roster models records the three-lane table and the contamination rate.
 - Documentation target: a new [RAG core](current/rag-core.md) subsection; a
   [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
-
-### review-core-textual-workbench
-
-Build a shared review core `src/llb/review/` and a unified Textual TUI workbench on top of it,
-then migrate the six existing terminal review flows (goldset verify, judge calibration rating,
-external-RAG scoring, draft-compare review, knowledge-cutoff UA review, prompt-system review)
-onto thin adapters over that core. The workbench gives every flow the same record model, verdict
-ledger, keyboard navigation, and a consistent color scheme that visually separates data panes
-(record content, evidence, metadata) from action elements (verdict keys, navigation, progress),
-with dataset/record/strata progress indicators.
-
-- Agent status: CLEAR
-- Dependencies: none; `auto-rag-orchestrator` human gates consume it. Reuse the session/ledger
-  logic in `src/llb/goldset/verify_session/`, `src/llb/judge/rate/session.py`,
-  `src/llb/scoring/external_rag_session/`, `src/llb/cli/prep/draft_compare.py`, the
-  knowledge-cutoff review chain, and `src/llb/prompt_system/review.py` as the behavior sources.
-- User-visible outcome: one `llb review <ledger-or-run-dir>` entry point opens the right adapter
-  automatically; reviewers learn one set of keys and one color language across every human gate,
-  and each flow keeps its exact verdict semantics and ledger format.
-- Scope boundary: in scope -- the review core (record model, verdict ledger API, navigation,
-  theming), the Textual app, six adapters, and CLI wiring that keeps the existing per-flow
-  commands working. Out of scope -- a web frontend, changes to any ledger file format, and new
-  verdict semantics.
-- Data and artifact paths: no new artifact roots; adapters read and write the existing per-flow
-  ledger paths. Add `review = ["textual>=0.60"]` as a new optional extra in `pyproject.toml`.
-- Execution path: `llb review <path>` or the existing flow commands; snapshot and interaction
-  tests run headless via Textual's pilot harness in `make ci`.
-- Acceptance gates: `make ci` green; per-adapter round-trip tests prove ledgers written through
-  the workbench are byte-compatible with the legacy sessions; pilot-harness tests cover
-  navigation, verdict entry, resume, and the data-vs-action color roles; ASCII-only output in
-  logs and ledgers.
-- Documentation target: [verification tooling guide](../guides/human-tooling/verification-tooling.md)
-  and a new workbench section in a `current/` topic (extend
-  [data prep](current/data-prep.md) verification section or add `current/review-workbench.md` if
-  the material outgrows it).
 
 ### table-aware-chunking
 
@@ -384,8 +349,9 @@ twice -- once fully autonomous, once with human-assisted gates in the review wor
 the human judge both the reviewer experience and the recommendation quality.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `auto-rag-orchestrator` and `review-core-textual-workbench` (Agent Implementation
-  section -- cross-section block). Human step that gates completion: the operator performs both
+- Dependencies: `auto-rag-orchestrator`; assisted review uses the
+  [review workbench](current/review-workbench.md). Human step that gates completion: the operator
+  performs both
   runs, reviews gated records in the workbench, measures their own throughput against the legacy
   per-flow sessions, and accepts or rejects the recommendation bundles.
 - User-visible outcome: recorded evidence that the autonomous lane produces an acceptable

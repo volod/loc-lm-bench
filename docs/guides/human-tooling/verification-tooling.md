@@ -25,6 +25,27 @@ draft bundle (verified=false)
   -> 4. flip via the ledger       ingest_squad --verified-goldset .../accepted/goldset.jsonl
 ```
 
+The normal review command opens the unified Textual workbench when the `review` extra is installed.
+Its content, evidence, and metadata panes have distinct cool-color roles, while verdict buttons,
+navigation, saved status, and dataset/record/stratum progress use the action role. Install and open
+it directly with:
+
+```bash
+source scripts/shared/common.sh
+llb_load_env
+uv pip install -e ".[review]"
+make review-workbench REVIEW_PATH=<ledger-or-run-dir>
+```
+
+The generic path can be a verification or calibration CSV, external-RAG JSONL, prompt-system run,
+draft-comparison run, or knowledge-cutoff translation bundle. It auto-detects the adapter and
+writes the original ledger in place. `n`/right, `b`/left, `u`, and `q` always mean next, previous,
+next pending, and save/quit; adapter-specific verdict keys are shown as buttons. The specialized
+legacy card loop remains available automatically when Textual is not installed and for advanced
+options such as confidence ordering, cross-check reveal, or clear-all confirmation. See the
+[delivered workbench architecture](../../impl/current/review-workbench.md) for the adapter and
+compatibility matrix.
+
 Step-by-step for a real-corpus bundle (details in
 [Case 1](#case-1-a-draft-from-a-real-corpus-the-common-case)):
 

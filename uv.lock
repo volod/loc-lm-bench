@@ -3655,6 +3655,7 @@ dev = [
     { name = "pytest" },
     { name = "radon" },
     { name = "ruff" },
+    { name = "textual" },
 ]
 eval = [
     { name = "langgraph" },
@@ -3701,6 +3702,9 @@ rag-lancedb = [
 ]
 rag-qdrant = [
     { name = "qdrant-client" },
+]
+review = [
+    { name = "textual" },
 ]
 telemetry = [
     { name = "nvidia-ml-py" },
@@ -3763,11 +3767,13 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3.0" },
     { name = "streamlit", marker = "extra == 'board'", specifier = ">=1.36" },
+    { name = "textual", marker = "extra == 'dev'", specifier = ">=0.60" },
+    { name = "textual", marker = "extra == 'review'", specifier = ">=0.60" },
     { name = "trl", marker = "extra == 'finetune'", specifier = ">=0.9" },
     { name = "typer", specifier = ">=0.12" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.18" },
 ]
-provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "track", "board", "viz", "prep", "telemetry", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
+provides-extras = ["rag", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "track", "board", "viz", "prep", "telemetry", "review", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
 
 [[package]]
 name = "llvmlite"
@@ -8361,7 +8367,7 @@ name = "textual"
 version = "8.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py", extra = ["linkify"], marker = "extra == 'extra-3-llb-crewai'" },
+    { name = "markdown-it-py", extra = ["linkify"] },
     { name = "mdit-py-plugins" },
     { name = "platformdirs" },
     { name = "pygments" },
