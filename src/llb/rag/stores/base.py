@@ -55,6 +55,10 @@ class VectorStoreAdapter:
     def _search_row(self, query: list[float], k: int) -> list[tuple[int, float]]:
         raise NotImplementedError
 
+    def vectors(self) -> Any:
+        """The stored float32 (n, dim) matrix in build order (refresh reuses these rows)."""
+        return self._vectors
+
     def search(self, query_vectors: Any, k: int) -> tuple[list[list[float]], list[list[int]]]:
         """Top-k per query row as (scores, ids); ids index into the build order (FAISS contract)."""
         rows = (

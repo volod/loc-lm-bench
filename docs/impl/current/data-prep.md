@@ -266,7 +266,17 @@ Deletion propagation is explicit: a source removed from the input root is remove
 `corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
 manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
 old staged outputs. The rollback unit is the immutable store directory built from a manifest
-fingerprint; keep a previous `$DATA_DIR/llb/rag` directory to roll back an index.
+fingerprint (`llb refresh-index` publishes each refresh as a new
+`$DATA_DIR/llb/rag/generations/<utc-ts>/` generation; deleting the newest one rolls back).
+
+Manifest-diff contract (dynamic-corpus-refresh): `corpus_doc_fingerprints` in
+`src/llb/prep/corpus_governance.py` maps `doc_id -> fingerprint` from the same two sources as
+`corpus_fingerprint` -- the canonical per-item row (content sha256 plus governance fields) when
+`corpus_manifest.json` exists, else the sha256 of each committed `.md`/`.txt` file keyed by its
+corpus-relative path. `build-index` records the map in `store_meta.json` as `doc_fingerprints`;
+`llb refresh-index` diffs it against the current corpus to re-chunk/re-embed only added or
+modified documents and to drop deleted ones (details in
+[RAG core](rag-core.md#store-lifecycle-dynamic-corpus-refresh)).
 
 ```bash
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500

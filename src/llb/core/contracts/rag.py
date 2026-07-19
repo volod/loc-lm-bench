@@ -44,6 +44,8 @@ class RagStoreMeta(TypedDict):
     corpus_fingerprint: NotRequired[str]
     corpus_manifest: NotRequired[str]
     governance_fields: NotRequired[list[str]]
+    doc_fingerprints: NotRequired[dict[str, str]]
+    refreshed_from: NotRequired[str]
 
 
 class RetrievalMetrics(TypedDict):

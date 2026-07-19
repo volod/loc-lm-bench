@@ -120,6 +120,22 @@ def manifest_governance_by_doc(corpus_root: Path | str) -> dict[str, dict[str, s
     return out
 
 
+def _manifest_item_row(item: dict[str, Any]) -> dict[str, Any]:
+    """The canonical fingerprint row for one ok manifest item (content + governance contract)."""
+    return {
+        "source": item.get("source"),
+        "doc_id": item.get("doc_id"),
+        "kind": item.get("kind"),
+        "n_chars": item.get("n_chars"),
+        "source_sha256": item.get("source_sha256"),
+        "language": item.get("language"),
+        "version": item.get("version"),
+        "effective_date": item.get("effective_date"),
+        "source_system": item.get("source_system"),
+        "acl_label": item.get("acl_label"),
+    }
+
+
 def corpus_fingerprint(corpus_root: Path | str) -> str:
     """Fingerprint the current corpus contract used by a store.
 
@@ -129,25 +145,12 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
     root = Path(corpus_root)
     manifest = _load_manifest(root)
     if manifest:
-        rows: list[dict[str, Any]] = []
         items = manifest.get("items")
-        for item in items if isinstance(items, list) else []:
-            if not isinstance(item, dict) or item.get("status") != "ok":
-                continue
-            rows.append(
-                {
-                    "source": item.get("source"),
-                    "doc_id": item.get("doc_id"),
-                    "kind": item.get("kind"),
-                    "n_chars": item.get("n_chars"),
-                    "source_sha256": item.get("source_sha256"),
-                    "language": item.get("language"),
-                    "version": item.get("version"),
-                    "effective_date": item.get("effective_date"),
-                    "source_system": item.get("source_system"),
-                    "acl_label": item.get("acl_label"),
-                }
-            )
+        rows = [
+            _manifest_item_row(item)
+            for item in (items if isinstance(items, list) else [])
+            if isinstance(item, dict) and item.get("status") == "ok"
+        ]
         return _json_fingerprint(sorted(rows, key=lambda row: str(row.get("doc_id"))))
     files = []
     for path in sorted(root.rglob("*")):
@@ -156,25 +159,36 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
     return _json_fingerprint(files)
 
 
+def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
+    """Per-document fingerprints keyed by `doc_id` (the manifest-diff contract).
+
+    Uses the same two sources as `corpus_fingerprint`: with `corpus_manifest.json` present each
+    ok item's canonical row (content hash + governance contract) is hashed per `doc_id`; for
+    hand-built corpora each committed `.md`/`.txt` file hashes to its sha256, keyed by its
+    corpus-relative path -- the same `doc_id` chunking assigns. `refresh-index` diffs a store's
+    recorded map against the current one to find added / modified / deleted documents.
+    """
+    root = Path(corpus_root)
+    manifest = _load_manifest(root)
+    if manifest:
+        out: dict[str, str] = {}
+        items = manifest.get("items")
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict) or item.get("status") != "ok":
+                continue
+            doc_id = item.get("doc_id")
+            if isinstance(doc_id, str):
+                out[doc_id] = _json_fingerprint(_manifest_item_row(item))
+        return out
+    return {
+        path.relative_to(root).as_posix(): _sha256_file(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in {".md", ".txt"}
+    }
+
+
 def manifest_items_fingerprint(items: list[dict[str, Any]]) -> str:
-    rows: list[dict[str, Any]] = []
-    for item in items:
-        if item.get("status") != "ok":
-            continue
-        rows.append(
-            {
-                "source": item.get("source"),
-                "doc_id": item.get("doc_id"),
-                "kind": item.get("kind"),
-                "n_chars": item.get("n_chars"),
-                "source_sha256": item.get("source_sha256"),
-                "language": item.get("language"),
-                "version": item.get("version"),
-                "effective_date": item.get("effective_date"),
-                "source_system": item.get("source_system"),
-                "acl_label": item.get("acl_label"),
-            }
-        )
+    rows = [_manifest_item_row(item) for item in items if item.get("status") == "ok"]
     return _json_fingerprint(sorted(rows, key=lambda row: str(row.get("doc_id"))))
 
 

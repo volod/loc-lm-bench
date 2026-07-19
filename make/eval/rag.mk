@@ -1,7 +1,7 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
-.PHONY: build-rag-store build-index build-graph validate-retrieval compare-retrieval \
-	compare-embeddings run-eval probe-context-position analyze-misses
+.PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
+	compare-retrieval compare-embeddings run-eval probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -20,6 +20,17 @@ build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assi
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
 	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
+
+refresh-index: ## Incrementally refresh built stores after corpus edits + drift report (CORPUS= GOLDSET= RETUNE_THRESHOLD= SKIP_GRAPH=1 GRAPH_EXTRACTION=<jsonl>)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main refresh-index \
+		$(if $(CORPUS),--corpus-root "$(CORPUS)",) \
+		$(if $(GOLDSET),--goldset "$(GOLDSET)",) \
+		--k $(RAG_K) \
+		$(if $(RETUNE_THRESHOLD),--retune-threshold $(RETUNE_THRESHOLD),) \
+		$(if $(SKIP_GRAPH),--skip-graph,) \
+		$(if $(GRAPH_EXTRACTION),--graph-extraction "$(GRAPH_EXTRACTION)",)
 
 validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the gold set; QUERY_PREP=normalize,typos,glossary QUERY_PREP_TYPO_GUARD=1 QUERY_PREP_AB=1 QUERY_GLOSSARY= for the query-side A/B (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

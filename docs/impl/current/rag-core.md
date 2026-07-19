@@ -183,8 +183,9 @@ Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking/
 The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
 `corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
 that fingerprint with the current corpus manifest before loading the vector store; a changed or
-deleted source refuses with a rebuild message instead of silently serving stale chunks. Immutable
-store directories are the rollback unit.
+deleted source refuses with a refresh/rebuild message instead of silently serving stale chunks
+(`llb refresh-index` applies the incremental path). Immutable store directories are the rollback
+unit (see Dynamic Corpus Refresh below).
 
 ACL scoping uses the same metadata-filter seam as page and heading filters:
 `metadata_filter(acl_label=...)` rejects any chunk whose `metadata.acl_label` differs, and
@@ -204,6 +205,57 @@ Retrieval modes:
 - `parent_child`: index smaller child chunks and return deduplicated larger parent chunks;
 - `hybrid`: index like `flat`, plus a lexical BM25 index fused with the dense ranking at query
   time (see Hybrid Retrieval below).
+
+## Store Lifecycle: Dynamic Corpus Refresh
+
+Shipped (dynamic-corpus-refresh): `llb refresh-index` (`make refresh-index CORPUS=<dir>
+[GOLDSET=<jsonl>] [RETUNE_THRESHOLD=] [SKIP_GRAPH=1] [GRAPH_EXTRACTION=<jsonl>]`) updates the
+built stores after corpus edits in time proportional to the changed documents instead of a full
+rebuild, and tells the operator when the corpus has drifted enough that the tuned configuration
+should be re-searched.
+
+Manifest diff: `store_meta.json` records `doc_fingerprints` -- per-document hashes from
+`corpus_doc_fingerprints` in `src/llb/prep/corpus_governance.py` (with `corpus_manifest.json`
+present, each ok item's canonical row: content sha plus governance fields; hand-built corpora
+hash each committed `.md`/`.txt` file, keyed by the same relative-path `doc_id` chunking uses).
+`src/llb/rag/refresh/diff.py` classifies every document as added / modified / deleted /
+unchanged; a governance-only change (for example a new `acl_label`) counts as modified so chunk
+metadata propagates.
+
+Incremental update (`src/llb/rag/refresh/store_refresh.py`): unchanged documents keep their
+chunk records and embedding rows verbatim (`FaissIndex.vectors()` reconstructs the stored
+matrix; the adapter backends return their persisted `vectors.npy`), added/modified documents are
+re-chunked (`chunk_corpus(only_docs=...)`) and re-embedded, deleted documents drop out of the
+dense, lexical, and persisted-record paths. The merged store preserves the exact from-scratch
+build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
+equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph)
+over add/modify/delete fixture cases in `tests/llb/rag/test_refresh_store.py` and
+`tests/llb/graph/test_graph_refresh.py`. The hybrid lexical side merges incrementally
+(`src/llb/rag/refresh/lexical_merge.py`): the old postings invert back to exact per-chunk term
+counts, so unchanged chunks are never re-tokenized or re-lemmatized.
+
+Immutable generations (`src/llb/core/store_generations.py`): a refresh never edits the live
+store. It stages the refreshed store and atomically publishes it as
+`$DATA_DIR/llb/rag/generations/<utc-ts>/` (`refreshed_from` recorded in its meta).
+`RagStore.load` / `GraphStore.load` resolve the live store as the candidate with the newest meta
+file among the base directory and its generations (ties prefer the generation), so a later
+`build-index` into the base takes over again. Rollback = delete the newest generation directory.
+
+GraphRAG refresh (`src/llb/graph/refresh.py`): `build-graph` persists its inputs
+(`extraction.jsonl`, `ontology.json`) beside the store and records per-doc sha256
+`doc_fingerprints` in the graph meta. A refresh keeps unchanged documents' extractions, takes
+updated rows for changed documents from `--graph-extraction <jsonl>` (deletion-only refreshes
+need none; missing rows refuse with the document list), rebuilds the graph deterministically,
+and publishes a generation carrying its merged inputs so the next refresh chains. Diagnostic
+community summaries are not carried over; re-run `build-graph --summarize` when needed.
+
+Drift report (`src/llb/rag/refresh/drift.py`): after a refresh the command re-runs retrieval
+validation (recall@k / MRR) over the configured gold set against the old and new stores and
+writes `$DATA_DIR/refresh/<run-ts>/{drift.json,report.md}` with the per-metric deltas and a
+`retune_recommended` flag when either absolute delta crosses `--retune-threshold` (default
+0.05). Re-tuning itself stays an operator or orchestrator decision. A store built before this
+feature has no `doc_fingerprints` and refreshes once as a full re-embed into a generation
+(logged); it refreshes incrementally afterwards.
 
 ## Hybrid Retrieval (Dense + BM25 + RRF)
 

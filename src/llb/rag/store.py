@@ -20,7 +20,12 @@ from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.lexical import Lemmatizer, LexicalIndex, rrf_fuse
 from llb.rag.page_metadata import annotate_page_metadata
-from llb.prep.corpus_governance import GOVERNANCE_FIELDS, corpus_fingerprint
+from llb.core.store_generations import resolve_store_dir
+from llb.prep.corpus_governance import (
+    GOVERNANCE_FIELDS,
+    corpus_doc_fingerprints,
+    corpus_fingerprint,
+)
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
     VectorIndex,
@@ -133,6 +138,7 @@ class RagStore:
             "backend": vector_store,
             "page_annotation_coverage": round(page_coverage, 4),
             "corpus_fingerprint": corpus_fingerprint(corpus_root),
+            "doc_fingerprints": corpus_doc_fingerprints(corpus_root),
             "corpus_manifest": "corpus_manifest.json",
             "governance_fields": list(GOVERNANCE_FIELDS),
         }
@@ -226,7 +232,8 @@ class RagStore:
 
     @classmethod
     def load(cls, index_dir: Path | str) -> "RagStore":
-        index_dir = Path(index_dir)
+        # A refresh publishes immutable `generations/<ts>/` children; resolve the live one.
+        index_dir = resolve_store_dir(index_dir, META_FILE)
         chunks = _read_jsonl(index_dir / CHUNKS_FILE)
         meta = json.loads((index_dir / META_FILE).read_text(encoding="utf-8"))
         lexical = None

@@ -83,34 +83,6 @@ interruption at any stage, following the ontology pipeline journal pattern.
 - Documentation target: new topic file `current/auto-rag.md` plus an index row in
   [current.md](current.md); operator guide under `docs/guides/benchmarking/`.
 
-### dynamic-corpus-refresh
-
-Support dynamic corpora: diff the content-hash corpus manifest against the indexed state, apply
-incremental chunk/embed/index updates for changed documents only across all store kinds (FAISS
-and alternative vector stores, the lexical BM25 index, and the graph store), and emit a drift
-report that re-runs retrieval validation on the gold set and recommends a re-tune when the
-recall/MRR delta crosses a configured threshold.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse the corpus manifest from ingest, the stale-store checks in
-  `src/llb/rag/store_validation.py`, and the immutable store-directory rollback behavior
-  documented in [RAG core](current/rag-core.md).
-- User-visible outcome: `llb refresh-index` updates stores in minutes proportional to the changed
-  documents instead of a full rebuild, and tells the operator when the corpus has drifted enough
-  that the tuned configuration should be re-searched.
-- Scope boundary: in scope -- manifest diff, per-document incremental update paths, drift report,
-  re-tune recommendation flag. Out of scope -- automatic re-tuning (the operator or the
-  orchestrator decides), gold-set regeneration, and file watching/daemon behavior.
-- Data and artifact paths: refreshed stores under the existing `$DATA_DIR/llb/rag/` layout with a
-  new immutable store generation per refresh; drift reports under `$DATA_DIR/refresh/<run>/`.
-- Execution path: `llb refresh-index --config <run-config>` after corpus edits; CI covers
-  add/modify/delete document cases against small fixture stores for every store kind.
-- Acceptance gates: `make ci` green; incremental refresh produces retrieval results identical to
-  a from-scratch rebuild on the same corpus state (equivalence test per store kind); deletion
-  propagation removes retired chunks from dense, lexical, and graph paths.
-- Documentation target: [RAG core](current/rag-core.md) store lifecycle section;
-  [data prep](current/data-prep.md) for the manifest-diff contract.
-
 ### graph-vector-fusion-retrieval
 
 Fuse the GraphRAG lane into retrieval instead of keeping graph an either/or backend: a fused
@@ -202,6 +174,35 @@ reference (a contamination / parametric-knowledge signal).
   roster models records the three-lane table and the contamination rate.
 - Documentation target: a new [RAG core](current/rag-core.md) subsection; a
   [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
+
+### refresh-extended-coverage
+
+Close three gaps the incremental refresh path (`llb refresh-index`) leaves open: (1) include the
+PDF citation sidecars (`pdf-<digest>.citations.json`) in the per-document fingerprint so a
+sidecar-only change (page spans regenerated while the text is unchanged) re-annotates that
+document's chunks instead of being invisible to the diff; (2) refresh the per-strategy comparison
+stores under `$DATA_DIR/llb/rag/<strategy>/` when they exist, so `compare-retrieval` reruns after
+corpus edits do not silently serve stale sibling stores; (3) add a `late`-strategy refresh
+equivalence test with a token-level fake embedder (the code path reuses `encode_store_vectors`
+per changed document but has no dedicated CI proof). Optional.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse `corpus_doc_fingerprints` and the refresh seams in
+  `src/llb/rag/refresh/` (see [RAG core](current/rag-core.md#store-lifecycle-dynamic-corpus-refresh)
+  for the current behavior).
+- User-visible outcome: refresh correctness extends to sidecar-driven page provenance, the
+  comparison-store layout, and the `late` chunking strategy without operator awareness.
+- Scope boundary: in scope -- fingerprint extension, sibling-store refresh loop, the late-strategy
+  test. Out of scope -- any new store kind and automatic re-tuning.
+- Data and artifact paths: existing `$DATA_DIR/llb/rag/` layout and generation directories; no
+  new roots.
+- Execution path: `llb refresh-index` as shipped; CI extends
+  `tests/llb/rag/test_refresh_store.py` with sidecar-change, sibling-store, and late-strategy
+  cases.
+- Acceptance gates: `make ci` green; a sidecar-only edit triggers a refresh that re-annotates the
+  affected document's chunks; refresh-vs-rebuild equivalence holds for a late-strategy store and
+  for each refreshed sibling store.
+- Documentation target: [RAG core](current/rag-core.md) dynamic-corpus-refresh section.
 
 ### review-core-textual-workbench
 
