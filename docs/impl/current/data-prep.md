@@ -273,10 +273,13 @@ Manifest-diff contract (dynamic-corpus-refresh): `corpus_doc_fingerprints` in
 `src/llb/prep/corpus_governance.py` maps `doc_id -> fingerprint` from the same two sources as
 `corpus_fingerprint` -- the canonical per-item row (content sha256 plus governance fields) when
 `corpus_manifest.json` exists, else the sha256 of each committed `.md`/`.txt` file keyed by its
-corpus-relative path. `build-index` records the map in `store_meta.json` as `doc_fingerprints`;
-`llb refresh-index` diffs it against the current corpus to re-chunk/re-embed only added or
-modified documents and to drop deleted ones (details in
-[RAG core](rag-core.md#store-lifecycle-dynamic-corpus-refresh)).
+corpus-relative path. In both modes a document's PDF citation sidecar
+(`pdf-<digest>.citations.json`) hash is folded into its fingerprint when one exists, so a
+sidecar-only regeneration (page spans rebuilt, text unchanged) reads as a modified document;
+sidecar-less docs keep the plain hash, so older stores stay refresh-compatible. `build-index`
+records the map in `store_meta.json` as `doc_fingerprints`; `llb refresh-index` diffs it against
+the current corpus to re-chunk/re-embed only added or modified documents and to drop deleted
+ones (details in [RAG core](rag-core.md#store-lifecycle-dynamic-corpus-refresh)).
 
 ```bash
 make ingest-corpus CORPUS_ROOT=<mixed-dir> CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=500

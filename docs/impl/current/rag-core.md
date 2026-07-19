@@ -218,9 +218,14 @@ Manifest diff: `store_meta.json` records `doc_fingerprints` -- per-document hash
 `corpus_doc_fingerprints` in `src/llb/prep/corpus_governance.py` (with `corpus_manifest.json`
 present, each ok item's canonical row: content sha plus governance fields; hand-built corpora
 hash each committed `.md`/`.txt` file, keyed by the same relative-path `doc_id` chunking uses).
-`src/llb/rag/refresh/diff.py` classifies every document as added / modified / deleted /
-unchanged; a governance-only change (for example a new `acl_label`) counts as modified so chunk
-metadata propagates.
+A document's PDF citation sidecar (`pdf-<digest>.citations.json`, the page-provenance source
+for `metadata.pages`) hashes into its fingerprint when one exists -- in both manifest and
+hand-built modes and in the aggregate `corpus_fingerprint` -- so a sidecar-only regeneration
+(page spans rebuilt while the text is unchanged) counts as a modified document and the refresh
+re-annotates that document's chunks; docs without a sidecar keep the plain hash, so stores built
+before this stay refresh-compatible. `src/llb/rag/refresh/diff.py` classifies every document as
+added / modified / deleted / unchanged; a governance-only change (for example a new `acl_label`)
+counts as modified so chunk metadata propagates.
 
 Incremental update (`src/llb/rag/refresh/store_refresh.py`): unchanged documents keep their
 chunk records and embedding rows verbatim (`FaissIndex.vectors()` reconstructs the stored
@@ -228,11 +233,22 @@ matrix; the adapter backends return their persisted `vectors.npy`), added/modifi
 re-chunked (`chunk_corpus(only_docs=...)`) and re-embedded, deleted documents drop out of the
 dense, lexical, and persisted-record paths. The merged store preserves the exact from-scratch
 build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
-equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph)
-over add/modify/delete fixture cases in `tests/llb/rag/test_refresh_store.py` and
-`tests/llb/graph/test_graph_refresh.py`. The hybrid lexical side merges incrementally
-(`src/llb/rag/refresh/lexical_merge.py`): the old postings invert back to exact per-chunk term
-counts, so unchanged chunks are never re-tokenized or re-lemmatized.
+equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
+and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
+cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`. The
+hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
+postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
+or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed
+documents only (whole-document token pooling per doc), so kept rows stay verbatim there too.
+
+Comparison-store refresh (`src/llb/rag/refresh/siblings.py`): `compare-retrieval` persists its
+per-strategy candidate stores under `$DATA_DIR/llb/rag/<strategy>/` (including `hybrid/`).
+`refresh-index` refreshes every such sibling through the same `refresh_vector_store` path --
+each sibling diffs its own recorded fingerprints, refreshes into its own
+`<strategy>/generations/<utc-ts>/`, and no-ops when already current (siblings refresh even when
+the main store is a no-op, since they may have been built at an older corpus state). The main
+store's `generations/` child is never treated as a sibling. A `compare-retrieval` rerun after
+corpus edits therefore never serves stale sibling stores.
 
 Immutable generations (`src/llb/core/store_generations.py`): a refresh never edits the live
 store. It stages the refreshed store and atomically publishes it as

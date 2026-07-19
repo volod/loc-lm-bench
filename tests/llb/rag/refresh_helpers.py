@@ -6,6 +6,8 @@ documents' chunks. Corpora are tiny on-disk `.md` trees chunked with the pure `f
 so every store kind builds in the lightweight CI install (no GPU, no sentence-transformers).
 """
 
+import json
+import re
 import zlib
 from pathlib import Path
 
@@ -79,6 +81,49 @@ class CountingEmbedder:
         return [text for batch in self.passage_calls for text in batch]
 
 
+_TOKEN = re.compile(r"\S+")
+
+
+class TokenLevelEmbedder(CountingEmbedder):
+    """CountingEmbedder plus the token-level hooks the `late` strategy pools over.
+
+    Tokens are whitespace runs with exact char offsets; each token embeds to the same hashed
+    bag-of-words vector `_vec` gives it, so pooling is deterministic on the build and refresh
+    paths alike. Encoded window texts are recorded so tests can assert late re-encoding touched
+    only the changed documents.
+    """
+
+    model_name = "fake-token-bow"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.token_windows: list[str] = []
+
+    def max_seq_tokens(self) -> int:
+        return 64
+
+    def passage_token_offsets(self, text: str) -> list[tuple[int, int]]:
+        return [(m.start(), m.end()) for m in _TOKEN.finditer(text)]
+
+    def encode_passage_tokens(self, text: str):
+        self.token_windows.append(text)
+        spans = self.passage_token_offsets(text)
+        return spans, [self._vec(text[s:e]).tolist() for s, e in spans]
+
+
+def write_citation_sidecar(corpus: Path, doc_id: str, page: int) -> Path:
+    """Write a `*.citations.json` sidecar mapping the whole doc text to one source-PDF page."""
+    stem = Path(doc_id).stem
+    text = (corpus / doc_id).read_text(encoding="utf-8")
+    payload = {
+        "source": f"{stem}.pdf",
+        "pages": [{"page": page, "char_start": 0, "char_end": len(text)}],
+    }
+    path = corpus / f"{stem}.citations.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
 def write_corpus(root: Path, docs: dict[str, str]) -> Path:
     """(Re)write `root` to contain exactly `docs`."""
     root.mkdir(parents=True, exist_ok=True)
@@ -93,14 +138,19 @@ def build_store(
     corpus: Path,
     embedder: CountingEmbedder,
     *,
+    strategy: str = "fixed",
     mode: str = "flat",
     backend: str = "faiss",
     lemmatizer=None,
 ) -> RagStore:
-    """Build a small store over `corpus` with the pure `fixed` chunker and the fake embedder."""
+    """Build a small store over `corpus` with a pure chunker and the fake embedder.
+
+    The default `fixed` strategy and the `sentence`/`late` strategies are all dependency-free
+    (`late` additionally needs the token hooks of `TokenLevelEmbedder`).
+    """
     return RagStore.build(
         corpus,
-        "fixed",
+        strategy,
         CHUNK_SIZE,
         CHUNK_OVERLAP,
         mode=mode,

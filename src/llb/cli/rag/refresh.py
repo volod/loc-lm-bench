@@ -51,6 +51,7 @@ def refresh_index(
     """
     from llb.core.store_generations import generation_timestamp
     from llb.rag.refresh.drift import DEFAULT_RETUNE_THRESHOLD, write_drift_report
+    from llb.rag.refresh.siblings import refresh_sibling_stores
     from llb.rag.refresh.store_refresh import refresh_vector_store
 
     cfg = load_config(config, corpus_root=corpus_root, goldset_path=goldset)
@@ -64,6 +65,19 @@ def refresh_index(
         )
     else:
         typer.echo(f"[refresh-index] corpus unchanged; store at {result.source_dir} is current")
+
+    # Per-strategy comparison stores under the index dir (compare-retrieval layout) diff their
+    # own recorded fingerprints, so they refresh even when the main store is current.
+    siblings = refresh_sibling_stores(cfg.index_dir(), cfg.corpus_root, timestamp=timestamp)
+    for name, sibling in siblings:
+        if sibling.refreshed:
+            typer.echo(
+                f"[refresh-index] comparison store {name}: {sibling.diff.summary()}; "
+                f"{sibling.n_reused} rows reused, {sibling.n_embedded} embedded "
+                f"-> {sibling.generation_dir}"
+            )
+        else:
+            typer.echo(f"[refresh-index] comparison store {name} is current")
 
     _refresh_graph_if_present(cfg, skip_graph, graph_extraction, timestamp)
 

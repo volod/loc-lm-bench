@@ -43,6 +43,33 @@ def test_file_fingerprints_track_content(tmp_path):
     assert second["b.txt"] == first["b.txt"]
 
 
+def test_citation_sidecar_is_part_of_the_doc_fingerprint(tmp_path):
+    (tmp_path / "a.md").write_text("alpha", encoding="utf-8")
+    (tmp_path / "b.md").write_text("beta", encoding="utf-8")
+    base_docs = corpus_doc_fingerprints(tmp_path)
+    base_corpus = corpus_fingerprint(tmp_path)
+
+    # a sidecar appearing moves that doc's fingerprint (and the aggregate) only
+    sidecar = tmp_path / "a.citations.json"
+    sidecar.write_text(json.dumps({"source": "a.pdf", "pages": []}), encoding="utf-8")
+    with_sidecar = corpus_doc_fingerprints(tmp_path)
+    assert with_sidecar["a.md"] != base_docs["a.md"]
+    assert with_sidecar["b.md"] == base_docs["b.md"]
+    assert corpus_fingerprint(tmp_path) != base_corpus
+
+    # regenerated page spans (text untouched) count as a modified document
+    sidecar.write_text(
+        json.dumps({"source": "a.pdf", "pages": [{"page": 2, "char_start": 0, "char_end": 5}]}),
+        encoding="utf-8",
+    )
+    assert corpus_doc_fingerprints(tmp_path)["a.md"] != with_sidecar["a.md"]
+
+    # sidecar-less docs keep the plain content hash, so removal restores the base fingerprint
+    sidecar.unlink()
+    assert corpus_doc_fingerprints(tmp_path) == base_docs
+    assert corpus_fingerprint(tmp_path) == base_corpus
+
+
 def _manifest_item(doc_id: str, sha: str, **governance):
     return {
         "status": "ok",
@@ -78,6 +105,18 @@ def test_manifest_fingerprints_cover_content_and_governance(tmp_path):
     items.append(_manifest_item("broken.md", "x") | {"status": "error"})
     (tmp_path / CORPUS_MANIFEST).write_text(json.dumps({"items": items}), encoding="utf-8")
     assert "broken.md" not in corpus_doc_fingerprints(tmp_path)
+
+
+def test_manifest_fingerprints_include_citation_sidecar(tmp_path):
+    items = [_manifest_item("a.md", "sha-a"), _manifest_item("b.md", "sha-b")]
+    (tmp_path / CORPUS_MANIFEST).write_text(json.dumps({"items": items}), encoding="utf-8")
+    base = corpus_doc_fingerprints(tmp_path)
+    (tmp_path / "a.citations.json").write_text(
+        json.dumps({"source": "a.pdf", "pages": []}), encoding="utf-8"
+    )
+    with_sidecar = corpus_doc_fingerprints(tmp_path)
+    assert with_sidecar["a.md"] != base["a.md"]
+    assert with_sidecar["b.md"] == base["b.md"]
 
 
 def test_unchanged_docs_keep_stable_fingerprints_alongside_corpus_fingerprint(tmp_path):

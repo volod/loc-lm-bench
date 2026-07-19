@@ -175,33 +175,33 @@ reference (a contamination / parametric-knowledge signal).
 - Documentation target: a new [RAG core](current/rag-core.md) subsection; a
   [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
 
-### refresh-extended-coverage
+### refresh-annotation-only-fast-path
 
-Close three gaps the incremental refresh path (`llb refresh-index`) leaves open: (1) include the
-PDF citation sidecars (`pdf-<digest>.citations.json`) in the per-document fingerprint so a
-sidecar-only change (page spans regenerated while the text is unchanged) re-annotates that
-document's chunks instead of being invisible to the diff; (2) refresh the per-strategy comparison
-stores under `$DATA_DIR/llb/rag/<strategy>/` when they exist, so `compare-retrieval` reruns after
-corpus edits do not silently serve stale sibling stores; (3) add a `late`-strategy refresh
-equivalence test with a token-level fake embedder (the code path reuses `encode_store_vectors`
-per changed document but has no dedicated CI proof). Optional.
+Skip re-embedding when a document's refresh diff is annotation-only: a modified document whose
+chunk spans and chunk texts come out identical to the stored ones (the sidecar-driven page-span
+regeneration case, and governance-only manifest changes) needs its chunk `metadata` re-annotated
+but its embedding rows are unchanged by construction -- yet the refresh path re-embeds every
+chunk of a modified document. Detect the case after re-chunking (compare the fresh chunk
+records' `(char_start, char_end, text)` against the stored ones), reuse the old embedding rows,
+and rewrite only the records. Keeps refresh-vs-rebuild equivalence exactly (the reused rows are
+what the rebuild would produce). Optional -- the win is proportional to sidecar/governance churn
+on large PDF corpora.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `corpus_doc_fingerprints` and the refresh seams in
-  `src/llb/rag/refresh/` (see [RAG core](current/rag-core.md#store-lifecycle-dynamic-corpus-refresh)
-  for the current behavior).
-- User-visible outcome: refresh correctness extends to sidecar-driven page provenance, the
-  comparison-store layout, and the `late` chunking strategy without operator awareness.
-- Scope boundary: in scope -- fingerprint extension, sibling-store refresh loop, the late-strategy
-  test. Out of scope -- any new store kind and automatic re-tuning.
-- Data and artifact paths: existing `$DATA_DIR/llb/rag/` layout and generation directories; no
-  new roots.
+- Dependencies: none. Reuse the merge plan in `src/llb/rag/refresh/store_refresh.py`
+  (`_assemble` / `row_sources`) where per-row reuse already exists; only the changed-doc
+  classification needs the new spans-unchanged check.
+- User-visible outcome: sidecar-only and governance-only refreshes stop paying the embedding
+  cost of the affected documents; `refresh-index` reports the rows as reused, not embedded.
+- Scope boundary: in scope -- the spans-unchanged detection and row reuse for modified docs.
+  Out of scope -- any fingerprint or diff-classification change (modified stays modified) and
+  the graph-store path.
+- Data and artifact paths: existing `$DATA_DIR/llb/rag/` layout; no new roots.
 - Execution path: `llb refresh-index` as shipped; CI extends
-  `tests/llb/rag/test_refresh_store.py` with sidecar-change, sibling-store, and late-strategy
-  cases.
-- Acceptance gates: `make ci` green; a sidecar-only edit triggers a refresh that re-annotates the
-  affected document's chunks; refresh-vs-rebuild equivalence holds for a late-strategy store and
-  for each refreshed sibling store.
+  `tests/llb/rag/test_refresh_store.py` with an annotation-only case asserting zero embedder
+  calls plus rebuild equivalence.
+- Acceptance gates: `make ci` green; a sidecar-only edit refreshes with `n_embedded == 0` and
+  the refreshed store matches a from-scratch rebuild; a real text edit still re-embeds.
 - Documentation target: [RAG core](current/rag-core.md) dynamic-corpus-refresh section.
 
 ### review-core-textual-workbench

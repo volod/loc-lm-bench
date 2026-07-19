@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX
+
 CORPUS_MANIFEST = "corpus_manifest.json"
 GOVERNANCE_FIELDS = (
     "language",
@@ -141,6 +143,8 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
 
     Prefer `corpus_manifest.json` when present so source deletion and governance changes are
     visible. For hand-built corpora without a manifest, hash committed `.md`/`.txt` files.
+    A document's `*.citations.json` sidecar (PDF page provenance) is part of its contract, so
+    a sidecar-only regeneration moves the fingerprint too.
     """
     root = Path(corpus_root)
     manifest = _load_manifest(root)
@@ -151,11 +155,16 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
             for item in (items if isinstance(items, list) else [])
             if isinstance(item, dict) and item.get("status") == "ok"
         ]
-        return _json_fingerprint(sorted(rows, key=lambda row: str(row.get("doc_id"))))
+        rows.sort(key=lambda row: str(row.get("doc_id")))
+        return _json_fingerprint(
+            [_with_citation_sidecar(root, str(row.get("doc_id")), row) for row in rows]
+        )
     files = []
     for path in sorted(root.rglob("*")):
         if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
-            files.append({"path": path.relative_to(root).as_posix(), "sha256": _sha256_file(path)})
+            doc_id = path.relative_to(root).as_posix()
+            row = {"path": doc_id, "sha256": _sha256_file(path)}
+            files.append(_with_citation_sidecar(root, doc_id, row))
     return _json_fingerprint(files)
 
 
@@ -165,8 +174,11 @@ def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
     Uses the same two sources as `corpus_fingerprint`: with `corpus_manifest.json` present each
     ok item's canonical row (content hash + governance contract) is hashed per `doc_id`; for
     hand-built corpora each committed `.md`/`.txt` file hashes to its sha256, keyed by its
-    corpus-relative path -- the same `doc_id` chunking assigns. `refresh-index` diffs a store's
-    recorded map against the current one to find added / modified / deleted documents.
+    corpus-relative path -- the same `doc_id` chunking assigns. A doc's `*.citations.json`
+    sidecar hash is folded in when one exists, so regenerated page spans count as a modified
+    document (its chunks need re-annotating) while sidecar-less docs keep their plain hash.
+    `refresh-index` diffs a store's recorded map against the current one to find added /
+    modified / deleted documents.
     """
     root = Path(corpus_root)
     manifest = _load_manifest(root)
@@ -178,13 +190,36 @@ def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
                 continue
             doc_id = item.get("doc_id")
             if isinstance(doc_id, str):
-                out[doc_id] = _json_fingerprint(_manifest_item_row(item))
+                out[doc_id] = _json_fingerprint(
+                    _with_citation_sidecar(root, doc_id, _manifest_item_row(item))
+                )
         return out
     return {
-        path.relative_to(root).as_posix(): _sha256_file(path)
+        path.relative_to(root).as_posix(): _plain_doc_fingerprint(root, path)
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.suffix.lower() in {".md", ".txt"}
     }
+
+
+def _citation_sidecar_sha(root: Path, doc_id: str) -> str | None:
+    """sha256 of the doc's PDF citation sidecar (`pdf-<digest>.citations.json`), or None."""
+    sidecar = root / Path(doc_id).with_suffix(PDF_CITATION_SUFFIX)
+    return _sha256_file(sidecar) if sidecar.is_file() else None
+
+
+def _with_citation_sidecar(root: Path, doc_id: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Fold the citation-sidecar hash into a fingerprint row when the doc has a sidecar."""
+    sidecar_sha = _citation_sidecar_sha(root, doc_id)
+    return row if sidecar_sha is None else {**row, "citations_sha256": sidecar_sha}
+
+
+def _plain_doc_fingerprint(root: Path, path: Path) -> str:
+    """Hand-built-corpus doc fingerprint: the file sha256, plus the sidecar hash if present."""
+    sha = _sha256_file(path)
+    sidecar_sha = _citation_sidecar_sha(root, path.relative_to(root).as_posix())
+    if sidecar_sha is None:
+        return sha
+    return _json_fingerprint({"sha256": sha, "citations_sha256": sidecar_sha})
 
 
 def manifest_items_fingerprint(items: list[dict[str, Any]]) -> str:
