@@ -5,14 +5,16 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from llb.bench.knowledge_cutoff.data import CutoffEvent
-from llb.bench.knowledge_cutoff.translation import (
+from llb.bench.knowledge_cutoff.translation_artifacts import (
     DRAFTS_FILENAME,
     SOURCE_FILENAME,
-    TranslationDraft,
     load_translation_drafts,
+    write_models_jsonl,
+)
+from llb.bench.knowledge_cutoff.translation_models import (
+    TranslationDraft,
     source_hash,
     validate_translation,
-    write_models_jsonl,
 )
 
 

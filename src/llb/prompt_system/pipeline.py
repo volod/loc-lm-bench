@@ -27,9 +27,15 @@ from llb.prompt_system.manifest import (
     corpus_digest,
     mapping_digest,
 )
+from llb.prompt_system.knowledge_tree_render import DEFAULT_TREE_BUDGETS, DEFAULT_TREE_DEPTHS
+from llb.prompt_system.knowledge_tree_source import load_knowledge_tree_source
 from llb.prompt_system.review import PromptCandidate, candidate_to_dict, save_candidates
 from llb.prompt_system.template import GRAPH_STYLES, TemplateFields
-from llb.prompt_system.tuning import generate_candidates, variant_grid
+from llb.prompt_system.tuning import (
+    generate_candidates,
+    variant_grid,
+    with_knowledge_tree_variants,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -72,6 +78,10 @@ def prepare_prompt_system(
     anthology_sizes: list[int] | None = None,
     graph_styles: list[str] | None = None,
     metadata_densities: list[str] | None = None,
+    ontology_bundle: Path | str | None = None,
+    graph_dir: Path | str | None = None,
+    knowledge_tree_depths: list[int] | None = None,
+    knowledge_tree_budgets: list[int] | None = None,
     persist: bool = True,
 ) -> PromptSystemRun:
     """Prepare + persist a reviewable prompt-system run from a corpus directory."""
@@ -91,7 +101,24 @@ def prepare_prompt_system(
         graph_styles=graph_styles or list(GRAPH_STYLES),
         metadata_densities=metadata_densities,
     )
-    candidates = generate_candidates(corpus, grid, budget, tok)
+    tree_source = None
+    if ontology_bundle is not None or graph_dir is not None:
+        tree_source = load_knowledge_tree_source(
+            ontology_bundle=ontology_bundle,
+            graph_dir=graph_dir,
+        )
+        grid = with_knowledge_tree_variants(
+            grid,
+            depths=knowledge_tree_depths or list(DEFAULT_TREE_DEPTHS),
+            budgets=knowledge_tree_budgets or list(DEFAULT_TREE_BUDGETS),
+        )
+    candidates = generate_candidates(
+        corpus,
+        grid,
+        budget,
+        tok,
+        knowledge_tree_source=tree_source,
+    )
 
     run_dir = (
         Path(out_dir)
@@ -136,6 +163,7 @@ def _write_run(
         "prompt_budget_tokens": budget.prompt_budget,
         "reserved_tokens": budget.reserved,
         "n_candidates": len(candidates),
+        "knowledge_tree_source": _knowledge_tree_source_manifest(candidates),
         "candidates": [
             {
                 "prompt_system_id": c.prompt_system_id,
@@ -143,12 +171,27 @@ def _write_run(
                 "metadata_density": c.fields.metadata_density,
                 "graph_reference_style": c.fields.graph_reference_style,
                 "used_tokens": c.used_tokens,
+                "knowledge_tree_depth": c.fields.knowledge_tree_depth,
+                "knowledge_tree_budget": c.fields.knowledge_tree_budget,
+                "knowledge_tree_used_tokens": c.knowledge_tree.get("used_tokens", 0),
                 "status": c.status,
             }
             for c in candidates
         ],
     }
     _write_json(run_dir / MANIFEST_FILE, manifest)
+
+
+def _knowledge_tree_source_manifest(candidates: list[PromptCandidate]) -> dict[str, object] | None:
+    tree = next(
+        (candidate.knowledge_tree for candidate in candidates if candidate.knowledge_tree), None
+    )
+    if tree is None:
+        return None
+    return {
+        "kind": tree["source_kind"],
+        "digest": tree["source_digest"],
+    }
 
 
 def _write_json(path: Path, payload: object) -> None:

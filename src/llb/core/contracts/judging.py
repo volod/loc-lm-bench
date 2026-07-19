@@ -42,6 +42,8 @@ class JudgeStatus(TypedDict):
     prompt_language: NotRequired[str]
     metrics: NotRequired[list[str]]
     diagnostics: NotRequired[JudgeDiagnostics | None]
+    scorer_policy: NotRequired[str]
+    budget: NotRequired[dict[str, object]]
 
 
 class WorksheetItem(TypedDict):

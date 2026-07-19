@@ -24,7 +24,10 @@ and the recommended build order within each section follows those lines.
 
 For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
 [RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
-[data prep](current/data-prep.md).
+[data prep](current/data-prep.md). For tasks that depend on scoring or judging, the calibrated
+local-judge baseline and tuning/sweep behavior live in
+[evaluation rigor](current/rigor-board-judge.md); the prompt-system package flow and other
+extended workflows live in [extended workflows](current/extended-workflows.md).
 
 Every task below carries an explicit `Agent status` line with one of four markers:
 
@@ -40,10 +43,167 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
+### auto-rag-orchestrator
+
+Build the end-to-end autonomous pipeline `llb auto-rag` (plus a `make auto-rag` target): corpus in,
+scored optimal RAG configuration out. Stages: ingest -> ontology goldset draft -> verification
+gate -> retrieval validation -> joint model + config tune -> knowledge-tree prompt candidate ->
+final-split eval -> recommendation bundle. Every gate consumes a policy: `auto` resolves through
+the `ScorerPolicy` seam (local judge or budget-capped frontier), `human` pauses the run and hands
+the pending records to the review workbench, then resumes. The run journal must be resumable after
+interruption at any stage, following the ontology pipeline journal pattern.
+
+- Agent status: RUN NEEDED
+- Dependencies: `multi-objective-rag-tuner`, `joint-model-config-search`; gate policies reuse
+  [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human-assisted gates
+  additionally depend on `review-core-textual-workbench` (cross-section block for the `human`
+  policy path only -- the `auto` path must land without it).
+- The knowledge-tree stage must call the existing
+  [prompt-system package flow](current/extended-workflows.md#prompt-system-packages).
+- User-visible outcome: one command takes a Ukrainian corpus directory and produces
+  `rag_recommendation.yaml` (model, backend, serving knobs, chunking, retrieval mode, fusion,
+  rerank, query prep, context budget, prompt-system id) plus a Markdown report with the score
+  evidence -- fully autonomous by default, human-gated per stage on request.
+- Scope boundary: in scope -- stage orchestration, gate policy plumbing, journal + resume,
+  recommendation rendering. Out of scope -- new stage implementations (every stage reuses an
+  existing command path) and any hosted-service behavior.
+- Data and artifact paths: `$DATA_DIR/auto-rag/<run>/` containing the journal, per-stage bundle
+  links, scorer ledger, `rag_recommendation.yaml`, and `report.md`; input is any corpus directory
+  accepted by `ingest-corpus`.
+- Execution path: `make auto-rag CORPUS=<dir> SCORER_POLICY=auto` for the autonomous lane;
+  `SCORER_POLICY=human` for gated runs; CI drives the full stage graph with fakes and a
+  miniature corpus fixture.
+- Acceptance gates: `make ci` green; journal tests prove resume-after-kill at every stage
+  boundary; a heavy deterministic run on the UA fixture corpus completes autonomously end-to-end
+  and emits a recommendation bundle whose final-split scores match a manually chained run of the
+  same stages.
+- Documentation target: new topic file `current/auto-rag.md` plus an index row in
+  [current.md](current.md); operator guide under `docs/guides/benchmarking/`.
+
+### dynamic-corpus-refresh
+
+Support dynamic corpora: diff the content-hash corpus manifest against the indexed state, apply
+incremental chunk/embed/index updates for changed documents only across all store kinds (FAISS
+and alternative vector stores, the lexical BM25 index, and the graph store), and emit a drift
+report that re-runs retrieval validation on the gold set and recommends a re-tune when the
+recall/MRR delta crosses a configured threshold.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse the corpus manifest from ingest, the stale-store checks in
+  `src/llb/rag/store_validation.py`, and the immutable store-directory rollback behavior
+  documented in [RAG core](current/rag-core.md).
+- User-visible outcome: `llb refresh-index` updates stores in minutes proportional to the changed
+  documents instead of a full rebuild, and tells the operator when the corpus has drifted enough
+  that the tuned configuration should be re-searched.
+- Scope boundary: in scope -- manifest diff, per-document incremental update paths, drift report,
+  re-tune recommendation flag. Out of scope -- automatic re-tuning (the operator or the
+  orchestrator decides), gold-set regeneration, and file watching/daemon behavior.
+- Data and artifact paths: refreshed stores under the existing `$DATA_DIR/llb/rag/` layout with a
+  new immutable store generation per refresh; drift reports under `$DATA_DIR/refresh/<run>/`.
+- Execution path: `llb refresh-index --config <run-config>` after corpus edits; CI covers
+  add/modify/delete document cases against small fixture stores for every store kind.
+- Acceptance gates: `make ci` green; incremental refresh produces retrieval results identical to
+  a from-scratch rebuild on the same corpus state (equivalence test per store kind); deletion
+  propagation removes retired chunks from dense, lexical, and graph paths.
+- Documentation target: [RAG core](current/rag-core.md) store lifecycle section;
+  [data prep](current/data-prep.md) for the manifest-diff contract.
+
+### review-core-textual-workbench
+
+Build a shared review core `src/llb/review/` and a unified Textual TUI workbench on top of it,
+then migrate the six existing terminal review flows (goldset verify, judge calibration rating,
+external-RAG scoring, draft-compare review, knowledge-cutoff UA review, prompt-system review)
+onto thin adapters over that core. The workbench gives every flow the same record model, verdict
+ledger, keyboard navigation, and a consistent color scheme that visually separates data panes
+(record content, evidence, metadata) from action elements (verdict keys, navigation, progress),
+with dataset/record/strata progress indicators.
+
+- Agent status: CLEAR
+- Dependencies: none; `auto-rag-orchestrator` human gates consume it. Reuse the session/ledger
+  logic in `src/llb/goldset/verify_session/`, `src/llb/judge/rate/session.py`,
+  `src/llb/scoring/external_rag_session/`, `src/llb/cli/prep/draft_compare.py`, the
+  knowledge-cutoff review chain, and `src/llb/prompt_system/review.py` as the behavior sources.
+- User-visible outcome: one `llb review <ledger-or-run-dir>` entry point opens the right adapter
+  automatically; reviewers learn one set of keys and one color language across every human gate,
+  and each flow keeps its exact verdict semantics and ledger format.
+- Scope boundary: in scope -- the review core (record model, verdict ledger API, navigation,
+  theming), the Textual app, six adapters, and CLI wiring that keeps the existing per-flow
+  commands working. Out of scope -- a web frontend, changes to any ledger file format, and new
+  verdict semantics.
+- Data and artifact paths: no new artifact roots; adapters read and write the existing per-flow
+  ledger paths. Add `review = ["textual>=0.60"]` as a new optional extra in `pyproject.toml`.
+- Execution path: `llb review <path>` or the existing flow commands; snapshot and interaction
+  tests run headless via Textual's pilot harness in `make ci`.
+- Acceptance gates: `make ci` green; per-adapter round-trip tests prove ledgers written through
+  the workbench are byte-compatible with the legacy sessions; pilot-harness tests cover
+  navigation, verdict entry, resume, and the data-vs-action color roles; ASCII-only output in
+  logs and ledgers.
+- Documentation target: [verification tooling guide](../guides/human-tooling/verification-tooling.md)
+  and a new workbench section in a `current/` topic (extend
+  [data prep](current/data-prep.md) verification section or add `current/review-workbench.md` if
+  the material outgrows it).
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### frontier-judge-authorization
+
+Authorize and calibrate the frontier scorer lane against real providers. An agent builds any
+missing report tooling; the human step is supplying provider keys, granting the egress consent,
+setting a real spend cap, and reviewing the resulting agreement evidence.
+
+- Agent status: HUMAN-GATED
+- Dependencies: [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human
+  step that gates completion: the operator provides Anthropic / OpenAI / Google keys in `.env`,
+  records the consent, approves the per-run budget cap, and signs off on the agreement report.
+- User-visible outcome: a decision record stating whether each frontier judge is trusted for
+  autonomous gates on Ukrainian data, plus calibrated default budget caps derived from measured
+  cost-per-item.
+- Scope boundary: in scope -- running the frontier lane on the committed UA fixture, computing
+  Spearman rho for frontier-vs-human and frontier-vs-local-judge agreement, and a cost-per-item
+  table per provider. Out of scope -- sending any private corpus to a provider and changing the
+  headline-ranking policy.
+- Data and artifact paths: agreement report and cost table under
+  `$DATA_DIR/frontier-judge/<run>/`; input ratings reuse the existing human calibration ledger;
+  fixture is `samples/goldsets/ua_squad_postedited_v1/`.
+- Execution path: run `llb run-eval --scorer-policy frontier ...` over the calibration worksheet
+  with each provider, then the agreement/cost report command; requires live provider access and
+  spend, so the run stays outside CI entirely.
+- Acceptance gates: report exists with rho per provider and cost-per-item with the cap math; the
+  human accepts or rejects each provider for autonomous use; default caps land in the sample
+  configs with the decision recorded.
+- Documentation target: [evaluation rigor](current/rigor-board-judge.md) judge section and
+  [product decisions](current/scope-boundaries.md) for the trust decision per provider.
+
+### autonomous-vs-assisted-acceptance
+
+Acceptance-test the full upgrade with a human operator: run `auto-rag` on a real Ukrainian corpus
+twice -- once fully autonomous, once with human-assisted gates in the review workbench -- and have
+the human judge both the reviewer experience and the recommendation quality.
+
+- Agent status: HUMAN-GATED
+- Dependencies: `auto-rag-orchestrator` and `review-core-textual-workbench` (Agent Implementation
+  section -- cross-section block). Human step that gates completion: the operator performs both
+  runs, reviews gated records in the workbench, measures their own throughput against the legacy
+  per-flow sessions, and accepts or rejects the recommendation bundles.
+- User-visible outcome: recorded evidence that the autonomous lane produces an acceptable
+  recommendation without human action, and that the assisted lane's unified workbench is at least
+  as fast and less error-prone than the legacy TUIs.
+- Scope boundary: in scope -- the two runs, reviewer-throughput measurement (records per minute,
+  correction rate), a comparison of the two recommendation bundles, and the acceptance decision.
+  Out of scope -- fixing findings (each finding becomes a new forward task).
+- Data and artifact paths: both run bundles under `$DATA_DIR/auto-rag/<run>/`; throughput notes
+  and the acceptance record under `$DATA_DIR/auto-rag/<run>/acceptance/`.
+- Execution path: `make auto-rag CORPUS=<dir> SCORER_POLICY=auto`, then
+  `make auto-rag CORPUS=<dir> SCORER_POLICY=human` with workbench review at each gate; both on
+  the CUDA host with a real corpus the operator owns.
+- Acceptance gates: the human signs the acceptance record; both bundles are complete and
+  reproducible from their manifests; throughput numbers and any usability findings are captured
+  as new forward tasks before this item leaves the file.
+- Documentation target: `current/auto-rag.md` acceptance evidence and
+  [human evaluation guide](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
 ## Adding Future Tasks
 

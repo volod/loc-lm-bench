@@ -3,7 +3,8 @@
 The split discipline keeps the leaderboard honest: STAGE 1 searches the RAG/backend space on
 the disjoint `tuning` split (a proxy -- never the final gold items), STAGE 2 scores ONLY the
 winning config on the full `final` split, and only that stage-2 run is the leaderboard entry.
-The embedding is PINNED (Premise 4) and is never a search dimension.
+Single-objective mode pins the embedding model; multi-objective mode (`llb tune --objectives`)
+may sample it from the bake-off shortlist (see `llb.optimize.multi_objective_study`).
 
 Search space (the chunking machinery already exists in RAG core):
   strategy   {fixed, sentence, recursive, markdown, semantic}
@@ -65,7 +66,7 @@ def make_objective(
     on_trial: TrialCallback | None = None,
     strategies: list[str] | None = None,
     reranker: str | None = None,
-) -> Callable[[Any], float]:
+) -> Callable[[Any], float | Any]:
     """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate.
 
     The estimate-based context prune happens BEFORE a trial runs; a MEASURED OOM during the
@@ -74,7 +75,7 @@ def make_objective(
     """
     import optuna
 
-    def objective(trial: Any) -> float:
+    def objective(trial: Any) -> float | Any:
         overrides = suggest_overrides(
             trial, backend=base_config.backend, strategies=strategies, reranker=reranker
         )

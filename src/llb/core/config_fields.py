@@ -28,6 +28,8 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
+# Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
+ScorerPolicy = Literal["human", "local", "frontier"]
 
 # Pinned UA-capable embedding (Premise 4: validated + pinned, never an Optuna knob).
 # Hybrid retrieval defaults (hybrid-retrieval-uk): dense-vs-lexical RRF weight and the
@@ -83,12 +85,14 @@ class RunConfigFields(BaseModel):
     # fixed prompt set and records it in the manifest (needs a running backend; telemetry hook).
     measure_telemetry: bool = False
 
-    # Retrieval (embedding pinned; chunking + top_k are tunable later via Optuna)
+    # Retrieval (embedding is pinned by default; multi-objective tune may sample it)
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     strategy: Strategy = "recursive"
     chunk_size: int = Field(default=800, ge=1)
     chunk_overlap: int = Field(default=120, ge=0)
     top_k: int = Field(default=5, ge=1)
+    # Explicit token budget coupling top_k / chunk_size / max_model_len (multi-objective tune).
+    context_budget: int | None = Field(default=None, ge=1)
 
     # Retrieval mode. "flat" indexes `chunk_size` chunks directly. "parent_child" indexes
     # small `child_chunk_size` children for precise matching but returns their larger parent
@@ -151,6 +155,13 @@ class RunConfigFields(BaseModel):
         default_factory=lambda: _optional_environment_value(env.DEEPEVAL_JUDGE_BASE_URL)
     )
     judge_threshold: float = Field(default=0.6, ge=-1, le=1)
+
+    # Scorer-policy seam: which judge lane run-eval uses. "local" keeps the DeepEval path;
+    # "frontier" requires egress consent + a hard budget cap; "human" skips automated judging.
+    scorer_policy: ScorerPolicy = "local"
+    scorer_egress_consent: bool = False
+    frontier_max_usd: float | None = Field(default=None, gt=0)
+    frontier_max_calls: int | None = Field(default=None, ge=1)
 
     # Add a semantic-similarity correctness signal (uses the pinned embedder; recorded,
     # not blended into the headline score). Off by default -- it embeds every answer.

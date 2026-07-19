@@ -46,10 +46,26 @@ def run_eval_cmd(
         None, help="calibration Spearman rho; judge stays demoted below the threshold"
     ),
     judge_model: Optional[str] = typer.Option(
-        None, help="local judge model id; enables the DeepEval judge (gated by --judge-rho)"
+        None, help="local or frontier judge model id (lane selected by --scorer-policy)"
     ),
     judge_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible judge endpoint, e.g. http://localhost:8000/v1"
+    ),
+    scorer_policy: Optional[str] = typer.Option(
+        None,
+        "--scorer-policy",
+        help="judge lane: human | local (default) | frontier (budget-capped litellm)",
+    ),
+    scorer_egress_consent: bool = typer.Option(
+        False,
+        "--scorer-egress-consent",
+        help="frontier lane: record explicit consent to send answers to the frontier judge",
+    ),
+    frontier_max_usd: Optional[float] = typer.Option(
+        None, help="frontier lane: hard USD spend cap for the scorer cost ledger"
+    ),
+    frontier_max_calls: Optional[int] = typer.Option(
+        None, help="frontier lane: hard call-count cap for the scorer cost ledger"
     ),
     retrieval_backend: Optional[str] = typer.Option(
         None, help="faiss (default vector store) | graph (GraphRAG knowledge-graph backend)"
@@ -181,6 +197,10 @@ def run_eval_cmd(
         n_gpu_layers=gpu_layers,
         judge_model=judge_model,
         judge_base_url=judge_base_url,
+        scorer_policy=scorer_policy,
+        scorer_egress_consent=scorer_egress_consent or None,
+        frontier_max_usd=frontier_max_usd,
+        frontier_max_calls=frontier_max_calls,
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
         retrieval_mode=retrieval_mode,

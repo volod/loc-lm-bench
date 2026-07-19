@@ -1,6 +1,7 @@
 """Focused tuning space implementation."""
 
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
+
 from llb.backends.planner.plan import plan_model
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
@@ -21,11 +22,15 @@ FUSION_CANDIDATES_RANGE = (20, 80)
 
 RERANK_CANDIDATES_RANGE = (15, 60)
 
+# Token budgets that couple top_k, chunk_size, and max_model_len in multi-objective search.
+CONTEXT_BUDGET_CHOICES = [2048, 4096, 8192, 16384]
+
 CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
 
 PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
-Objective = Callable[[RunConfig], "float | tuple[float, float]"]
+# float | (quality, throughput) | TrialMetrics-shaped outcomes from evaluate hooks.
+Objective = Callable[[RunConfig], Any]
 
 
 def with_isolation(
@@ -44,7 +49,7 @@ def with_isolation(
 
     from llb.executor.isolation import isolate_cell
 
-    def run(config: RunConfig) -> "float | tuple[float, float]":
+    def run(config: RunConfig) -> Any:
         out, _outcome = isolate_cell(
             functools.partial(evaluate, config),
             backend=config.backend,
@@ -68,16 +73,20 @@ def suggest_overrides(
     backend: str = "ollama",
     strategies: list[str] | None = None,
     reranker: str | None = None,
+    embedders: Sequence[str] | None = None,
+    tune_context_budget: bool = False,
 ) -> dict[str, Any]:
-    """Sample one config from an Optuna trial (embedding is pinned, never sampled).
+    """Sample one config from an Optuna trial.
 
     RAG params are always sampled; `strategies` overrides the chunking-strategy choices
     (`EXTENDED_STRATEGIES` behind `tune --extended-chunkers`). `reranker` (a cross-encoder id,
     `tune --reranker`) adds the opt-in rerank-context-order axes: reranker on/off plus the
-    candidate depth, sampled only when on (dead parameters otherwise). BACKEND-AWARE serving
-    knobs are sampled only when the resolved backend actually exposes them:
-    `gpu_memory_utilization` / `max_model_len` are vLLM concepts, so sampling them for Ollama
-    would tune dead parameters (llama.cpp knobs land with that launcher).
+    candidate depth, sampled only when on (dead parameters otherwise). `embedders` promotes the
+    embedding model from a pinned constant to a categorical knob (multi-objective-rag-tuner).
+    `tune_context_budget` samples a token budget that couples `top_k` / `chunk_size` /
+    `max_model_len`. BACKEND-AWARE serving knobs are sampled only when the resolved backend
+    actually exposes them: `gpu_memory_utilization` / `max_model_len` are vLLM concepts, so
+    sampling them for Ollama would tune dead parameters.
     """
     strategy = trial.suggest_categorical("strategy", list(strategies or STRATEGIES))
     chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
@@ -91,6 +100,8 @@ def suggest_overrides(
         "top_k": top_k,
         "retrieval_mode": mode,
     }
+    if embedders:
+        overrides["embedding_model"] = trial.suggest_categorical("embedding_model", list(embedders))
     if mode == "parent_child":
         # child must stay below chunk_size (and the validator wants overlap < child_size).
         ceiling = max(128, chunk_size - 64)
@@ -109,13 +120,23 @@ def suggest_overrides(
         overrides["rerank_candidates"] = trial.suggest_int(
             "rerank_candidates", *RERANK_CANDIDATES_RANGE, step=15
         )
+    context_budget: int | None = None
+    if tune_context_budget:
+        context_budget = int(
+            trial.suggest_categorical("context_budget", list(CONTEXT_BUDGET_CHOICES))
+        )
+        overrides["context_budget"] = context_budget
     if backend == "vllm":
         overrides["gpu_memory_utilization"] = trial.suggest_float(
             "gpu_memory_utilization", 0.70, 0.90, step=0.05
         )
-        overrides["max_model_len"] = trial.suggest_categorical(
-            "max_model_len", SERVING_MAX_MODEL_LEN
-        )
+        # Context-budget couples max_model_len to the sampled token budget.
+        if context_budget is not None:
+            overrides["max_model_len"] = context_budget
+        else:
+            overrides["max_model_len"] = trial.suggest_categorical(
+                "max_model_len", SERVING_MAX_MODEL_LEN
+            )
     return overrides
 
 
@@ -128,23 +149,28 @@ def estimate_prompt_tokens(config: RunConfig) -> int:
 def effective_max_context(
     config: RunConfig, model_spec: ModelSpec, vram_mib: int, ram_mib: int
 ) -> int:
-    """The smallest of: the planner's max context for the host, the model window, and the
-    served `max_model_len` cap. 0 means "cannot bound" (so the caller should not prune)."""
+    """The smallest of: the planner's max context for the host, the model window, the
+    served `max_model_len` cap, and an explicit `context_budget`. 0 means "cannot bound"."""
     row = plan_model(model_spec, vram_mib, ram_mib)
     ctx = row["ctx_max"] or int(model_spec.get("max_context") or 0)
     if config.max_model_len:
         ctx = min(ctx, config.max_model_len) if ctx else config.max_model_len
+    if config.context_budget:
+        ctx = min(ctx, config.context_budget) if ctx else config.context_budget
     return ctx
 
 
 def fits_context(
     config: RunConfig, model_spec: ModelSpec | None, vram_mib: int, ram_mib: int
 ) -> bool:
-    """True if the retrieved prompt fits the effective context. No spec -> cannot judge -> True."""
+    """True if the retrieved prompt fits the effective context / explicit budget."""
+    estimated = estimate_prompt_tokens(config)
+    if config.context_budget is not None and estimated > config.context_budget:
+        return False
     if model_spec is None:
         return True
     ctx = effective_max_context(config, model_spec, vram_mib, ram_mib)
-    return ctx <= 0 or estimate_prompt_tokens(config) <= ctx
+    return ctx <= 0 or estimated <= ctx
 
 
 def is_oom(exc: BaseException) -> bool:

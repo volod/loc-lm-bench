@@ -1,6 +1,6 @@
 ## External scoring, isolated sweeps, and end-to-end evaluation orchestration.
 
-.PHONY: score-external-rag sweep pipeline
+.PHONY: score-external-rag sweep pipeline joint-search
 
 score-external-rag: ## Human-score answered external RAG JSONL; final CSV/report after all rows are scored (EXTERNAL_RAG_ANSWERS=, EXTERNAL_RAG_SOURCE_MAP=<provider-to-doc_id sidecar> for the source-span audit)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -35,3 +35,17 @@ pipeline: ## Select public-screen finalists, tune, and print the final board
 	$(PY) -m llb.main pipeline --manifest "$(MODELS_MANIFEST)" --goldset "$(GOLDSET)" \
 		--top-n "$(PIPELINE_TOP_N)" --trials "$(PIPELINE_TRIALS)" \
 		$(if $(PIPELINE_OFFLINE),--offline,)
+
+joint-search: ## Successive-halving model+RAG search (JOINT_SEARCH_CANDIDATES= JOINT_SEARCH_TRIALS= JOINT_SEARCH_SCREEN_LIMIT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main joint-search --candidates "$(JOINT_SEARCH_CANDIDATES)" \
+		--goldset "$(GOLDSET)" --trials "$(JOINT_SEARCH_TRIALS)" \
+		--screen-limit "$(JOINT_SEARCH_SCREEN_LIMIT)" \
+		--min-finalists "$(JOINT_SEARCH_MIN_FINALISTS)" \
+		--objectives "$(JOINT_SEARCH_OBJECTIVES)" \
+		$(if $(JOINT_SEARCH_RUN_ID),--run-id "$(JOINT_SEARCH_RUN_ID)",) \
+		$(if $(JOINT_SEARCH_OFFLINE),--offline,) \
+		$(if $(JOINT_SEARCH_CORPUS),--corpus "$(JOINT_SEARCH_CORPUS)",) \
+		$(if $(JOINT_SEARCH_LIMIT),--limit "$(JOINT_SEARCH_LIMIT)",) \
+		$(if $(JOINT_SEARCH_NO_ISOLATE),--no-isolate,)

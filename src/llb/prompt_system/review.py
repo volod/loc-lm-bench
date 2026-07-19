@@ -43,6 +43,7 @@ class PromptCandidate:
     used_tokens: int
     status: str = STATUS_PENDING
     note: str = ""
+    knowledge_tree: dict[str, object] = field(default_factory=dict)
 
     def package(self) -> PromptPackage:
         """Reconstruct the harness-usable `PromptPackage` from this candidate."""
@@ -60,16 +61,26 @@ def make_candidate(
     fields: TemplateFields,
     budget: ContextBudget,
     tokenizer: Tokenizer,
+    *,
+    knowledge_tree_text: str = "",
+    knowledge_tree_report: dict[str, object] | None = None,
 ) -> PromptCandidate:
     """Render one candidate from template fields, fitting the attached context to the budget."""
-    package = render_package(corpus, fields, budget, tokenizer)
+    package = render_package(
+        corpus,
+        fields,
+        budget,
+        tokenizer,
+        knowledge_tree_text=knowledge_tree_text,
+    )
     return PromptCandidate(
-        prompt_system_id=prompt_system_id(corpus, fields),
+        prompt_system_id=prompt_system_id(corpus, fields, knowledge_tree_text=knowledge_tree_text),
         fields=fields,
         system_prompt=package.system_prompt,
         additional_prompt=package.additional_prompt,
         dropped_context=package.dropped_context,
         used_tokens=package.used_tokens,
+        knowledge_tree=knowledge_tree_report or {},
     )
 
 
@@ -121,6 +132,7 @@ def candidate_from_dict(data: dict[str, Any]) -> PromptCandidate:
         used_tokens=int(data["used_tokens"]),
         status=str(data.get("status", STATUS_PENDING)),
         note=str(data.get("note", "")),
+        knowledge_tree=dict(data.get("knowledge_tree") or {}),
     )
 
 

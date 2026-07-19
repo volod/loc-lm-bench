@@ -11,7 +11,7 @@ import hashlib
 import json
 from typing import Any
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.prompt_system.budget import ContextBudget
 from llb.prompt_system.corpus import CorpusPackage
@@ -44,20 +44,27 @@ def mapping_digest(corpus: CorpusPackage) -> str:
 
 def template_digest(fields: TemplateFields) -> str:
     """Digest over the editable template fields (the prompt template revision)."""
-    return _digest(
-        {
-            "role": fields.role,
-            "instruction": fields.instruction,
-            "metadata_density": fields.metadata_density,
-            "graph_reference_style": fields.graph_reference_style,
-            "anthology_size": fields.anthology_size,
-        }
-    )
+    payload = {
+        "role": fields.role,
+        "instruction": fields.instruction,
+        "metadata_density": fields.metadata_density,
+        "graph_reference_style": fields.graph_reference_style,
+        "anthology_size": fields.anthology_size,
+    }
+    if fields.knowledge_tree_depth > 0:
+        payload["knowledge_tree_depth"] = fields.knowledge_tree_depth
+        payload["knowledge_tree_budget"] = fields.knowledge_tree_budget
+    return _digest(payload)
 
 
-def prompt_system_id(corpus: CorpusPackage, fields: TemplateFields) -> str:
+def prompt_system_id(
+    corpus: CorpusPackage, fields: TemplateFields, *, knowledge_tree_text: str = ""
+) -> str:
     """The comparison key: same corpus + same template fields -> same prompt-system id."""
-    return _digest({"corpus": corpus_digest(corpus), "template": template_digest(fields)})
+    payload = {"corpus": corpus_digest(corpus), "template": template_digest(fields)}
+    if knowledge_tree_text:
+        payload["knowledge_tree"] = _digest(knowledge_tree_text)
+    return _digest(payload)
 
 
 class PromptSystemProvenance(TypedDict):
@@ -70,6 +77,7 @@ class PromptSystemProvenance(TypedDict):
     tokenizer: str
     context_window: int
     prompt_budget_tokens: int
+    knowledge_tree: NotRequired[dict[str, object]]
 
 
 def prompt_system_provenance(

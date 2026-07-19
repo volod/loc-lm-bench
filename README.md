@@ -26,14 +26,14 @@ and ranks results with reproducible telemetry, confidence intervals, and reviewa
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). 
+Start at the [documentation index](docs/README.md).
 Begin with the [Quick Start](docs/guides/quickstart/quick-start.md), or use
 [PDF Corpus Prep](docs/guides/data-prep/pdf-corpus-prep.md) when you only need citation-preserving
-PDF conversion. 
+PDF conversion.
 
 For task-oriented workflows -- benchmark my PDFs, build a gold set, verify drafted data, compare
-backends -- use the [guides index](docs/guides/README.md) and its 
-["Choose a scenario"](docs/guides/README.md#choose-a-scenario) table. 
+backends -- use the [guides index](docs/guides/README.md) and its
+["Choose a scenario"](docs/guides/README.md#choose-a-scenario) table.
 
 The main implementation reference is [current.md](docs/impl/current.md),
 and contributor guardrails live in [AGENTS.md](AGENTS.md).

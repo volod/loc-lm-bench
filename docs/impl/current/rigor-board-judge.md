@@ -54,8 +54,8 @@ cells, while real cell execution errors are still recorded and counted as failur
 is a leaderboard candidate.
 
 The search space includes chunking strategy, chunk size, overlap fraction, `top_k`, retrieval mode,
-child chunk size, and vLLM serving knobs where relevant. The embedder is pinned and is not a search
-dimension.
+child chunk size, and vLLM serving knobs where relevant. In single-objective mode the embedder stays
+pinned. Multi-objective mode (below) may sample it.
 
 ```bash
 llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
@@ -64,6 +64,132 @@ llb tune --model llama3.2:3b --backend ollama --trials 30 --study uk1 \
 
 Over-context configs are pruned before model calls. Measured OOMs can also prune trials. Persistent
 SQLite studies live under `$DATA_DIR/optuna/`.
+
+### Multi-objective RAG tuner
+
+`llb tune --objectives quality,latency[,cost]` switches stage 1 to Optuna multi-objective search
+(`NSGAIISampler` plus median-style early pruning on progressive case subsets) across
+`src/llb/optimize/multi_objective_trial.py`, `multi_objective_runtime.py`, and
+`multi_objective_study.py`. Objectives:
+
+| Goal | Direction | Source |
+| --- | --- | --- |
+| `quality` | maximize | tuning-split objective score |
+| `latency` | minimize | mean generate latency (falls back to trial wall-clock) |
+| `cost` | minimize | frontier ledger `cost_usd` (requires `scorer_policy=frontier`) |
+
+Instead of one winner, the study emits a Pareto front plus named picks: `best_quality`,
+`best_quality_per_second`, and (when cost is active) `cheapest_within_floor` (default floor =
+0.9 * best quality on the front, override with `--accuracy-floor`). Stage 2 scores each named pick
+on the final split. Reports land under `$DATA_DIR/tune/<run>/` as `pareto.json` + `pareto.md`.
+
+Additional search knobs in this mode:
+
+- **Embedder** -- categorical over the bake-off shortlist
+  (`DEFAULT_LOCAL_CANDIDATES` in `src/llb/rag/embedding_bakeoff.py`); override with
+  `--embedders a,b` or pass `--embedders ""` to keep the pinned model. The per-study
+  `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder or
+  chunking fingerprint changes, and never reuses a store across different embedders.
+- **Store prewarm / disk cache** -- when `--embedders` is active, the shortlist is pre-built
+  for the base config's chunking fingerprint before the Optuna loop; the first sight of any
+  new chunking shape also fan-outs all shortlist embedders once. Bare stores persist under
+  `$DATA_DIR/optuna/<study>/stores/<fingerprint-slug>/` so a resumed study reloads instead of
+  re-embedding. Fusion and rerank knobs still apply from the current trial config on every
+  get. CI: `tests/llb/optimize/test_store_registry.py` (fake builder counts embeds; second
+  reuse of a fingerprint issues zero new embeds).
+- **Context budget** -- samples a token budget from `{2048, 4096, 8192, 16384}` that couples
+  `top_k` / `chunk_size` / `max_model_len` (`RunConfig.context_budget`); disable with
+  `--no-context-budget`.
+
+```bash
+llb tune --model llama3.2:3b --backend ollama --objectives quality,latency \
+  --trials 40 --study mo1 --limit 12 \
+  --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+  --corpus samples/goldsets/ua_squad_postedited_v1/corpus
+```
+
+CI covers vocabulary and trial policy in `tests/llb/optimize/test_multi_objective.py`, study and
+Pareto behavior in `test_multi_objective_studies.py`, and store prewarm/fingerprint reuse in
+`test_store_registry.py`.
+
+Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, Ollama `llama3.2:3b`, UA-SQuAD postedited fixture,
+`--trials 40 --limit 20 --seed 21 --objectives quality,latency`):
+
+- Study: `$DATA_DIR/optuna/mo-ua-evidence-20260718c.db`
+- Report: `$DATA_DIR/tune/mo-ua-evidence-20260718c/pareto.{json,md}`
+- 11 complete / 29 median-pruned of 40; Pareto front size 4 (non-dominated)
+- Picks: `best_quality` trial 30 (tuning quality 0.386, generate latency 0.378 s) -> final
+  quality 0.434; `best_quality_per_second` trial 8 (0.386 / 0.320 s) -> final quality 0.477
+- Context-budget knob active (sampled 8192 / 16384 on the picks); embedder rebuild invariant
+  and store-prewarm zero-reuse-embed gate covered by unit tests with fake builders / registries
+
+## Joint model + config search
+
+`llb joint-search` (`make joint-search`) folds model selection into the optimization loop with a
+successive-halving schedule so the recommendation covers model + RAG config + serving knobs
+together instead of tuning RAG for one pre-chosen model.
+
+Schedule (`src/llb/optimize/joint_search/`):
+
+1. **Host-fit filter** -- `resolve_all` over `--candidates` (default
+   `samples/configs/models_uk.yaml`); unresolvable models are skipped and recorded in the run
+   manifest.
+2. **Cheap screen** -- each runnable candidate is scored on the **tuning** split only with a small
+   case cap (`--screen-limit`, growing by `--eta` each round). Screen cells reuse
+   `isolate_cell` for VRAM-owning backends. Each completed cell writes
+   `screen/<slug>-r<round>.json` so a resume skips re-evaluation.
+3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
+   quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
+   never enter the ledger). The ledger is rewritten after every round.
+4. **Per-finalist multi-objective tune** -- survivors run Optuna `tune_multi` then final-split
+   pick scoring in isolated cells under `$DATA_DIR/joint-search/<run>/finalists/<model>/`. Study
+   ids are `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the
+   SQLite study already has rows. Each finished final-split pick writes
+   `finalists/<slug>/picks/<goal>.json` so a kill mid-pick-scoring skips completed picks on
+   resume. A finished finalist (all picks scored) writes `finalists/<slug>/result.json` (study
+   id + final-split picks) so a resume reloads instead of re-tuning.
+5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
+   scores; the writer refuses any non-final split (tuning/final leak fence). The scoreboard is
+   rebuilt after each finalist so a partial run still shows whatever picks exist.
+
+**Resume:** re-run with the same `--run-id` / `JOINT_SEARCH_RUN_ID=<id>`. Completed screen markers,
+per-pick scoring markers, and finalist `result.json` files are skipped; Optuna studies only
+enqueue `max(0, n_trials - len(study.trials))` new trials.
+
+```bash
+make joint-search JOINT_SEARCH_TRIALS=20 JOINT_SEARCH_SCREEN_LIMIT=8
+# resume after kill:
+make joint-search JOINT_SEARCH_RUN_ID=<id> JOINT_SEARCH_TRIALS=20
+# or:
+llb joint-search --candidates samples/configs/models_uk.yaml --trials 20 \
+  --run-id <id> \
+  --goldset samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+  --corpus samples/goldsets/ua_squad_postedited_v1/corpus
+```
+
+Artifacts under `$DATA_DIR/joint-search/<run>/`: `manifest.json`, `ledger.json`,
+`screen/<slug>-r<round>.json`,
+`finalists/<model>/{pareto.{json,md},picks/<goal>.json,result.json}`,
+`scoreboard.{json,md}`.
+
+CI drives the schedule with injectable screen/tune hooks in `test_joint_search.py`. Halving fences
+and resume behaviors are separated into adjacent `test_joint_search_halving.py`,
+`test_joint_search_resume.py`, `test_joint_search_optuna_resume.py`, and
+`test_joint_search_pick_resume.py` modules.
+
+Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, three
+`models_uk.yaml` candidates -- MamayLM-12B GGUF, Lapa-12B GGUF, Mistral-Small-3.1-24B --
+`--trials 10 --screen-limit 4 --limit 8 --seed 21 --objectives quality,latency`):
+
+- Run: `$DATA_DIR/joint-search/joint-ua-evidence-20260718/`
+- Ledger (`ledger.json`): `split=tuning`; round 0 eliminated `lapa-v0.1.2-instruct`
+  (screen quality 0.303); kept `mamaylm-v2-12b` (0.381) and `mistral-small-3.1-24b` (0.366)
+- Scoreboard (`scoreboard.json`): `split=final` only; MamayLM `best_quality` 0.488 /
+  `best_quality_per_second` 0.563; Mistral both picks 0.391
+- Recommended: `mamaylm-v2-12b` + `best_quality_per_second` (recursive, chunk 256, top_k 3,
+  context_budget 2048)
+- Final-split manifests under `$DATA_DIR/run-eval/` for each pick all record `split=final`;
+  no tuning rows on the scoreboard
 
 ## Public Screen
 
@@ -345,6 +471,38 @@ score.
 The local-judge choice is deliberate: corpus data should not leave the host by default. The tradeoff
 is model-family bias when the judge shares lineage with candidate models. That bias is disclosed in
 manifests and controlled by the calibration gate and judge-cohort guard.
+
+## Scorer Policy Seam
+
+`src/llb/scoring/policy/` selects the judge lane for `run-eval` via `--scorer-policy` /
+`RunConfig.scorer_policy`:
+
+| Lane | Behavior |
+| --- | --- |
+| `human` | Skip automated judging; objective scores rank alone; manifest records `provider=human`. |
+| `local` | Existing DeepEval path against `judge_model` / `judge_base_url` (default). |
+| `frontier` | Litellm frontier judge using the registered Ukrainian G-Eval step templates. |
+
+Frontier scoring requires one upfront `--scorer-egress-consent` plus a hard cap
+(`--frontier-max-usd` and/or `--frontier-max-calls`). Spend is tracked in
+`$DATA_DIR/run-eval/<run>/scorer/` (`consent.json`, `ledger.jsonl`, `ledger_state.json`). Hitting
+the cap aborts with `abort.json` (`resumable: true`); resume reloads the ledger so spend never
+silently exceeds the cap. Each successful (or failed-but-attempted) frontier call also
+checkpoints `case_index` plus `faithfulness` / `answer_relevancy` in `ledger.jsonl`; on resume
+`frontier_scorer` replays those scores and issues provider calls only for unscored cases
+(`src/llb/scoring/policy/ledger.py`, `frontier.py`). Headline ranking is unchanged: judges remain
+diagnostic until calibration rho clears the trust threshold.
+
+```bash
+llb run-eval --scorer-policy local --judge-model <model> --judge-rho <rho>
+llb run-eval --scorer-policy human
+llb run-eval --scorer-policy frontier --judge-model openai/<model> \
+  --scorer-egress-consent --frontier-max-usd 2.00 --judge-rho <rho>
+```
+
+Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm completions; no network),
+including a mid-batch abort/resume case-checkpoint test that proves the second pass issues
+`N - K` new calls after `K` cases were already scored.
 
 ## Frontier Prep Utilities
 

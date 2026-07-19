@@ -8,6 +8,7 @@ Commands by area:
   resolve-models                                     backend resolver pick the backend that can serve a model
   sweep                                              hard-isolation cell-per-model sweep (resume)
   tune                                               two-stage Optuna (tuning -> final)
+  joint-search                                       successive-halving model + RAG-config search
   ingest-corpus / ingest-pdf-corpus                  mixed txt/md/pdf -> canonical .md/.txt corpus
   prepare-goldset / prepare-synthetic-corpus         frontier data-prep (litellm)
   prepare-goldset-draft                              ontology-assisted draft (local/frontier; --resume)

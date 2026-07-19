@@ -37,6 +37,7 @@ from llb.executor.runner_judge import (
     JudgeScorer,
     _build_judge_metadata,
     _judge_cases,
+    _publish_scorer_artifacts,
     _write_calibration_worksheet,
 )
 from llb.executor.runner_metrics import (
@@ -166,8 +167,10 @@ def run_eval(
         active_launcher.telemetry() if hasattr(active_launcher, "telemetry") else {}
     )
     effective_telemetry = {**backend_telemetry, **(telemetry_report or {})}
-    judge_score = _judge_cases(config, batch, judge_rho, judge_scorer)
-    rows, metrics = _aggregate(config, batch.rows, judge_rho, effective_telemetry, judge_score)
+    judge_result = _judge_cases(config, batch, judge_rho, judge_scorer, staging_dir)
+    rows, metrics = _aggregate(
+        config, batch.rows, judge_rho, effective_telemetry, judge_result.mean_score
+    )
     if probe_report is not None:
         metrics["abstention_accuracy"] = round(probe_report.abstention_accuracy, 4)
         metrics["n_probes"] = probe_report.n_probes
@@ -180,7 +183,7 @@ def run_eval(
         config=config_payload,
         metrics=metrics,
         retrieval=retrieval_metrics,
-        judge=_build_judge_metadata(config, judge_rho),
+        judge=_build_judge_metadata(config, judge_rho, judge_result.policy_metadata),
         telemetry=telemetry_report,
         contention=contention,
         durability=counters.as_status(),
@@ -198,10 +201,13 @@ def run_eval(
         staging_dir=staging_dir,
         retrieval_rows=batch_retrieval_records(batch),
     )
+    _publish_scorer_artifacts(staging_dir, run_dir)
 
     worksheet_rows = 0
     if worksheet is not None:
-        worksheet_rows = _write_calibration_worksheet(config, batch, worksheet, judge_scorer)
+        worksheet_rows = _write_calibration_worksheet(
+            config, batch, worksheet, judge_scorer, run_dir
+        )
         paths["worksheet"] = str(worksheet)
 
     if probe_report is not None:
