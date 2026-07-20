@@ -1053,7 +1053,7 @@ there. On the HR evidence run 10 of 11 findings narrowed exactly.
 
 ### What the semantic tier excludes, and why
 
-Two classes of chunk never pair, both learned from real corpora rather than anticipated:
+Three classes of chunk never pair, all learned from real corpora rather than anticipated:
 
 - **Front matter** -- every ingested document's governance block shares the same keys, so an
   archiving instruction and an appeals regulation match at cosine 0.9 on their `version:` and
@@ -1061,8 +1061,18 @@ Two classes of chunk never pair, both learned from real corpora rather than anti
 - **Low-content chunks** (`--min-claim-tokens`, default 25 content tokens, HTML comments stripped)
   -- a converted PDF corpus is full of `<!-- source_pdf ... -->` markers, bare page numbers, and
   stub headings. On the HR corpus these were the single largest source of findings before the
-  filter: the top-ranked "conflict" was one page marker against another. 88 of 2578 chunks are
-  excluded there.
+  filter: the top-ranked "conflict" was one page marker against another.
+- **Repeated structured metadata blocks** -- `semantic_filter.py` groups claim-sized body chunks
+  by their normalized deepest Markdown heading, requires that heading at most once per document,
+  then confirms each cross-document pair from corpus-derived shared-token coverage and numeric
+  field density. The detector has no language- or publisher-specific vocabulary. Repeated claim
+  prose under a shared heading stays comparable when it lacks that record-like structure.
+
+The current HR store excludes 90 of 2578 chunks: 88 low-content chunks plus two publication
+records. The goods store excludes 87 low-content chunks and no repeated metadata. `summary.json`
+retains `excluded_chunks` and breaks it down as `excluded_front_matter_chunks`,
+`excluded_low_content_chunks`, and `excluded_metadata_block_chunks`. The same filtered ordinal set
+feeds both null-distribution calibration and semantic candidate generation.
 
 ### Encoder anisotropy and centering (measured)
 
@@ -1121,8 +1131,8 @@ exhaustive distributions; the HR store is rebuilt with
 
 | budget | corpus | comparable pairs | resolved cosine | findings | vs. swept baseline |
 | --- | --- | --- | --- | --- | --- |
-| 12 | HR | 2,438,495 | 0.5959 | 12 | recovers **11/11** swept-0.6 pairs, adds 1 |
-| 50 | HR | 2,438,495 | 0.5413 | 50 | superset of the swept-0.6 pairs |
+| 12 | HR | 2,434,651 | 0.5790 | 12 | recovers **8/8** filtered swept-0.6 pairs, adds 4 |
+| 50 | HR | 2,434,651 | 0.5349 | 50 | superset of the filtered swept-0.6 pairs |
 | 12 | goods | 74,586 | 0.4617 | 12 | swept 0.6 found 0 |
 | 50 | goods | 74,586 | 0.3948 | 50 | swept 0.6 found 0 |
 
@@ -1158,9 +1168,10 @@ Consequences for reading a report:
 
 - No threshold on this corpus geometry can be justified as "statistically significant". The
   semantic tier is a recall-oriented **candidate generator** for the claim tier, and the claim
-  tier is what establishes whether a candidate pair is a real conflict. The documented HR evidence
-  behaves exactly that way: of the 11 pairs at cosine 0.6, the claim tier reclassified 7 as
-  `complementary` publication-metadata blocks.
+  tier is what establishes whether a candidate pair is a real conflict. In the original HR run,
+  three of 11 pairs touched publication-metadata blocks and four other claim-bearing pairs were
+  `complementary`. The structural filter removes the three metadata pairs; it does not relabel the
+  four honest non-conflicts as metadata.
 - Two swept operating points that look comparable are not. HR's useful 0.6 corresponds to a rank
   cutoff of ~12 pairs; goods' 0.6 corresponds to a rank cutoff of 0. No single budget reproduces
   both, and none can, because the budget is a rank and the two corpora have different amounts of
@@ -1215,16 +1226,23 @@ CUDA host, RTX 4060 Ti, real multilingual-E5 store, MamayLM-Gemma-3-12B-IT-v2.0 
 claim tier.
 
 - **HR corpus** (8 docs, 2.77 MB, 2578 chunks): no duplicate or near-duplicate documents at any
-  tier. At `--cos-threshold 0.6` the semantic tier surfaced 11 cross-document pairs; the claim tier
-  labelled them 1 `duplicate`, 3 `subsumed_by`, 7 `complementary` in 77 s. The substantive findings
-  were real: three separate documents covering the same "mass-edit personnel cards" procedure, with
-  the two standalone how-to guides correctly subsumed by the full user-manual section, and a
-  2008-versus-2022 military-service statute pair correctly ordered by specificity. The seven
-  `complementary` verdicts were publication-metadata blocks -- correctly *not* reported as
-  conflicts.
+  document tier. The original 11-pair claim run at `--cos-threshold 0.6` labelled 1 `duplicate`,
+  3 `subsumed_by`, and 7 `complementary` in 77 s. Three of those complementary pairs touched two
+  publication-record chunks; the other four were claim-bearing non-conflicts about personnel
+  authority, medical leave, and software error handling. With the structural filter, the same
+  threshold returns eight claim-bearing pairs and removes exactly those three metadata pairs.
+  All eight surviving pairs occur in both the 12- and 50-candidate calibrated runs. The substantive
+  findings remain: three documents cover the same "mass-edit personnel cards" procedure, and a
+  2008-versus-2022 military-service statute pair is ordered by specificity.
 - **Goods corpus** (5 docs, 1139 chunks) with its 19-item gold set: 0 cross-document duplicates and
   `non_unique_needle_fraction` 0.0. The two independent signals agree.
 
 The committed fixture at `samples/corpora/conflicts_uk_v1/` plants one instance of every relation
 (byte-identical copy, reformatted reissue, absorbed note, changed deadline, restated section, vague
-restatement, unrelated control) so each tier is asserted against a known answer in CI.
+restatement, unrelated control), plus repeated publication records and a single-occurrence prose
+control, so each tier and semantic exclusion reason is asserted against a known answer in CI.
+
+Post-filter CUDA-host evidence (RTX 4060 Ti, multilingual-E5 stores) is under
+`$DATA_DIR/corpus-conflicts/20260720T-semantic-metadata-filter-*`. The HR swept, budget-12, and
+budget-50 runs and the goods budget-12 and budget-50 runs are the source for the measurements
+above. `make ci` passes with 1665 tests passed, one skipped, and 42 slow tests deselected.

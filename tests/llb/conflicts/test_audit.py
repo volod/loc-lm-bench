@@ -123,6 +123,8 @@ def test_metadata_and_stub_chunks_are_excluded_from_semantic_pairing():
     result = audit(TIER_SEMANTIC)
     semantic = next(stat for stat in result.tiers if stat.tier == TIER_SEMANTIC)
     assert semantic.extra["excluded_chunks"] > 0
+    assert semantic.extra["excluded_metadata_block_chunks"] == 2
+    assert semantic.extra["excluded_front_matter_chunks"] > 0
 
 
 def test_effort_is_cumulative():

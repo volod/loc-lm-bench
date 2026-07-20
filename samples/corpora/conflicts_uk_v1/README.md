@@ -35,3 +35,8 @@ guards the blocking strategy against a regression back to sketch-based candidate
 Governance front matter (`version`, `effective_date`, `source_system`, `language`) is what lets the
 staleness ordering resolve, and is deliberately excluded from content hashing: two byte-identical
 documents carrying different `effective_date` values must still read as duplicates.
+
+**Repeated metadata is not a claim.** `archive-policy.md` and `deadline-note.md` each carry one
+number-heavy `Reiestr vydannia` publication record under the same structural heading. The semantic
+filter must exclude both blocks without a vocabulary-specific label, while preserving the ordinary
+archive-policy prose as a single-occurrence negative control.

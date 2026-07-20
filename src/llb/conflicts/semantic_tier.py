@@ -11,7 +11,6 @@ two spans agree". Distinguishing agreement from contradiction needs the claim ti
 `semantic`-tier run says so in its evidence field.
 """
 
-import re
 import time
 from collections.abc import Iterable
 
@@ -24,13 +23,19 @@ from llb.conflicts.constants import (
 )
 from llb.conflicts.governance import compare_editions
 from llb.conflicts.models import ClaimRef, Finding, TierStats
+from llb.conflicts.semantic_filter import claim_token_count as _claim_token_count
+from llb.conflicts.semantic_filter import select_content_chunks
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.conflicts.vectorops import VectorSet
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.lexical import tokenize
 
 EVIDENCE_COSINE = "cosine"
+
+
+def claim_token_count(text: str) -> int:
+    """Content tokens in text, ignoring HTML comments (compatibility helper)."""
+    return _claim_token_count(text)
 
 
 def chunk_claim_ref(chunk: ChunkRecord, governance: JsonObject) -> ClaimRef:
@@ -45,14 +50,6 @@ def chunk_claim_ref(chunk: ChunkRecord, governance: JsonObject) -> ClaimRef:
     )
 
 
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
-
-
-def claim_token_count(text: str) -> int:
-    """Content tokens in `text`, ignoring HTML comments (PDF page/provenance markers)."""
-    return len(tokenize(_HTML_COMMENT.sub(" ", text)))
-
-
 def content_ordinals(
     chunks: list[ChunkRecord],
     body_offsets: dict[str, int],
@@ -61,7 +58,7 @@ def content_ordinals(
 ) -> set[int]:
     """Ordinals of chunks that carry a comparable CLAIM, excluding metadata and conversion residue.
 
-    Two classes of chunk are dropped, both learned from real corpora rather than anticipated:
+    Three classes of chunk are dropped, all learned from real corpora rather than anticipated:
 
     Front matter -- every ingested document's governance block shares the same keys, so an
     archiving instruction and an appeals regulation match at cosine 0.9 on their `version:` and
@@ -71,13 +68,11 @@ def content_ordinals(
     bare page numbers, and stub headings. Two such chunks match each other trivially, and on the
     quickstart HR corpus they were the single largest source of findings: the top-ranked
     "conflict" was one page marker against another.
+
+    Repeated metadata blocks -- claim-sized publication/registry records under the same structural
+    heading in multiple documents, confirmed from shared tokens and numeric-field density.
     """
-    return {
-        ordinal
-        for ordinal, chunk in enumerate(chunks)
-        if int(chunk["char_end"]) > body_offsets.get(chunk["doc_id"], 0)
-        and claim_token_count(chunk["text"]) >= min_tokens
-    }
+    return select_content_chunks(chunks, body_offsets, min_tokens=min_tokens).ordinals
 
 
 def cross_document_pairs(
@@ -119,6 +114,7 @@ def detect_semantic_pairs(
     body_offsets: dict[str, int] | None = None,
     min_tokens: int = MIN_CLAIM_TOKENS,
     allowed: set[int] | None = None,
+    exclusion_counts: JsonObject | None = None,
 ) -> tuple[list[Finding], list[tuple[int, int, float]], TierStats]:
     """Provisional `duplicate` findings plus the raw pairs the claim tier adjudicates.
 
@@ -132,7 +128,9 @@ def detect_semantic_pairs(
     # The caller may pass the comparable set it already computed (the audit needs it to sample
     # the null distribution over exactly these pairs); otherwise derive it here.
     if allowed is None:
-        allowed = content_ordinals(chunks, body_offsets or {}, min_tokens=min_tokens)
+        selection = select_content_chunks(chunks, body_offsets or {}, min_tokens=min_tokens)
+        allowed = selection.ordinals
+        exclusion_counts = selection.stats()
     pairs = cross_document_pairs(
         vectors,
         chunks,
@@ -172,5 +170,6 @@ def detect_semantic_pairs(
         "exhaustive_pairs": total * (total - 1) // 2,
         "cross_document_pairs": len(pairs),
         "tree": tree.stats(),
+        **(exclusion_counts or {}),
     }
     return findings, pairs, stats

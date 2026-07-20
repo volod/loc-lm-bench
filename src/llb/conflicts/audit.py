@@ -36,7 +36,8 @@ from llb.conflicts.needles import analyze_needles
 from llb.conflicts.null_calibration import resolve_cos_threshold
 from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
 from llb.conflicts.null_sampling import estimate_null_distribution
-from llb.conflicts.semantic_tier import build_tree, content_ordinals, detect_semantic_pairs
+from llb.conflicts.semantic_filter import select_content_chunks
+from llb.conflicts.semantic_tier import build_tree, detect_semantic_pairs
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.conflicts.tree_refresh import tree_meta
@@ -214,9 +215,13 @@ def _run_semantic_tiers(
     active = tree if tree is not None else build_tree(vectors, leaf_size=params.leaf_size)
     body_offsets = {doc.doc_id: doc.body_offset for doc in docs}
     # The comparable set is computed here rather than left to the tier, because the null
-    # distribution must be sampled from exactly the pairs the scan will consider: front matter and
-    # PDF residue score high against each other and would inflate the estimated quantile.
-    allowed = content_ordinals(store.chunks, body_offsets, min_tokens=params.min_claim_tokens)
+    # distribution must be sampled from exactly the pairs the scan will consider: front matter,
+    # PDF residue, and repeated publication records score high against other chunks and would
+    # inflate the estimated quantile.
+    selection = select_content_chunks(
+        store.chunks, body_offsets, min_tokens=params.min_claim_tokens
+    )
+    allowed = selection.ordinals
     cos_threshold, null_payload = _calibrate_threshold(params, vectors, store.chunks, allowed)
     semantic_findings, pairs, semantic_stats = detect_semantic_pairs(
         active,
@@ -228,6 +233,7 @@ def _run_semantic_tiers(
         body_offsets=body_offsets,
         min_tokens=params.min_claim_tokens,
         allowed=allowed,
+        exclusion_counts=selection.stats(),
     )
     semantic_stats.extra.update(null_payload)
     result.tiers.append(semantic_stats)

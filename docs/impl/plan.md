@@ -43,39 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### semantic-tier-metadata-block-filter
-
-Stop publication-metadata blocks from entering the semantic tier's candidate pairs. The
-threshold-calibration evidence showed the HR corpus's 11 cross-document pairs at cosine 0.6 are
-not separable from the corpus's own null distribution (empirical FDR ~1.1), and the documented
-claim-tier adjudication explains why: 7 of those 11 were publication-metadata blocks that the
-claim tier had to reclassify as `complementary`. These blocks clear the existing front-matter and
-`--min-claim-tokens` filters because they are prose-length and sit in the document body, yet they
-carry no claim. Detect them structurally -- repeated near-identical blocks appearing once per
-document, keyed on the tokens they share corpus-wide rather than on a fixed vocabulary -- and
-exclude them from the comparable set the way front matter already is.
-
-- Agent status: RUN NEEDED
-- Dependencies: `corpus-conflict-detection` and the calibrated threshold are current behavior
-  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-false-flags)). Reuse
-  `content_ordinals` in `src/llb/conflicts/semantic_tier.py` and the corpus-wide document
-  frequency machinery in `src/llb/conflicts/lexical_tier.py`.
-- User-visible outcome: the semantic tier's candidate list is dominated by claim-bearing pairs, so
-  a calibrated threshold can be tightened without discarding real findings -- and the claim tier
-  spends its model calls on pairs that might actually conflict.
-- Scope boundary: in scope -- the structural detector, its exclusion in `content_ordinals`, and a
-  re-measured null distribution and FDR on both quickstart corpora. Out of scope -- changing the
-  relation vocabulary, the tier order, or the calibration knob itself.
-- Data and artifact paths: no new roots; the excluded-block count joins the existing
-  `excluded_chunks` accounting in `summary.json`.
-- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic MAX_FALSE_FLAGS=1`;
-  CI asserts the detector fires on a committed fixture carrying a repeated metadata block and
-  leaves single-occurrence prose untouched.
-- Acceptance gates: `make ci` green; on the HR corpus the substantive pairs survive while the
-  metadata pairs are excluded, and the re-measured FDR at the surviving pairs' cosine drops
-  materially below the ~1.1 recorded today.
-- Documentation target: the corpus-hygiene section of [data prep](current/data-prep.md).
-
 ### conflict-null-model-research
 
 **Research task** -- the answer is not known in advance, and a negative result is a valid outcome
@@ -114,8 +81,8 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
 - Dependencies: the calibrated threshold and the enumerated distribution are current behavior
   ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
   Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
-  fixture. Related: `semantic-tier-metadata-block-filter` removes a known contaminant and should
-  land first, since it changes the population any null is measured over.
+  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
+  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
 - User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
   recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
   would justify moving threshold selection to the claim tier's measured precision instead.
@@ -131,7 +98,7 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
 - Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
   labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
   only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
-  11 swept HR pairs without flooding goods. If none does, the negative result is recorded in
+  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
   [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
 - Documentation target: the corpus-hygiene known-limitation section of
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the

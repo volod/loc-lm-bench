@@ -78,6 +78,13 @@ DEFAULT_LEAF_SIZE = 32
 # chunk is PDF-conversion residue -- a page marker, a `<!-- source_pdf ... -->` comment, a bare
 # heading -- and matching such chunks to each other reports conversion artifacts, not knowledge.
 MIN_CLAIM_TOKENS = 25
+# Repeated publication/registry blocks are keyed by a normalized structural heading, then
+# confirmed without a language-specific vocabulary: they must share enough corpus-wide tokens
+# and each block must be dominated by variable numeric fields (dates, issue/page numbers, codes).
+MIN_METADATA_BLOCK_DOCUMENTS = 2
+MIN_METADATA_SHARED_TOKENS = 4
+MIN_METADATA_SHARED_COVERAGE = 0.35
+MIN_METADATA_NUMERIC_TOKEN_FRACTION = 0.25
 # Centering estimates the corpus mean direction, which needs enough vectors to be a real estimate.
 # Below this the "mean" is dominated by whichever few documents happen to be present, so centering
 # would distort similarities rather than correct them, and the raw space is used instead.
