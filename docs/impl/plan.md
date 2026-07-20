@@ -43,68 +43,69 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### corpus-conflict-detection
+### conflict-threshold-calibration
 
-Build `llb audit-corpus-conflicts` (`make audit-corpus-conflicts`): a tiered corpus-hygiene
-analyzer that reports duplicated, stale, and mutually inconsistent knowledge in a text corpus
-without editing a byte of it. Four cumulative `--effort` tiers trade cost for resolution --
-`hash` (exact and normalized-text duplicate documents straight from `corpus_doc_fingerprints`;
-one pass, no model), `lexical` (shingle/MinHash blocking over the existing BM25 postings for
-near-duplicate documents and boilerplate-only differences), `semantic` (a persisted semantic
-prefix tree over the store's chunk vectors, so candidate conflict groups come from tree descent
-instead of an O(n^2) pairwise cosine scan), and `claim` (a local-model adjudication pass over the
-candidate groups only). Every finding is a claim-level record carrying exact source offsets on
-both sides plus the governance fields (`effective_date`, `version`, `ingestion_time`) that make
-staleness decidable.
-
-The relation vocabulary is what makes the hard cases representable: `duplicate`, `subsumes` /
-`subsumed_by` (the vague-restatement case), `contradicts`, `superseded_by` (a dated replacement),
-and `complementary`. Relations are assigned per claim pair and never inferred at document level,
-so a new article that deprecates part of an older document while restating knowledge that is
-still current yields one record per claim pair instead of a single whole-document verdict.
-
-The semantic prefix tree is a centroid tree over the normalized chunk vectors read through the
-store's `vectors()` seam -- no re-embedding -- persisted beside the store, keyed by the embedder
-fingerprint, and updated through the manifest-diff classes so a corpus edit rebuilds only the
-affected branches. The needle lane corroborates it: a needle item whose gold answer is reachable
-from more than one non-overlapping document region is a duplication signal, so the audit reports
-the non-unique needle set beside the tree findings.
+Replace the fixed `--cos-threshold` with a corpus-calibrated one. The corpus-conflict audit
+measured that a threshold is not portable across corpora: in raw multilingual-E5 space two
+completely unrelated chunks already score 0.83, and even after mean-centering the useful operating
+point on the quickstart HR corpus was ~0.6 rather than the 0.9 that suits question dedup. An
+operator currently discovers that by sweeping. Instead, sample random chunk pairs to estimate the
+corpus's own null distribution of similarity, and express the knob as a quantile of that
+distribution (for example "flag pairs above the 99.9th percentile of unrelated pairs"), with the
+absolute cosine it resolves to recorded in the run summary.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `corpus_doc_fingerprints` and the governance fields in
-  `src/llb/prep/corpus_governance.py`, the added/modified/deleted classes in
-  `src/llb/rag/refresh/diff.py`, `LexicalIndex` in `src/llb/rag/lexical.py`, the store `vectors()`
-  seam in `src/llb/rag/stores/base.py`, the cosine and near-dup threshold conventions in
-  `src/llb/prep/ontology/dedup.py`, `annotate_needle_retrieval` in
-  `src/llb/prep/ontology/needles.py`, and the local scorer seam
-  ([evaluation rigor](current/rigor-board-judge.md#scorer-policy-seam)).
-- User-visible outcome: before tuning retrieval, the operator sees which documents are redundant,
-  which are stale, and which pairs of facts actually disagree -- with the effort dial deciding
-  whether that answer costs one hash pass over the corpus or a model pass over candidate claim
-  pairs.
-- Scope boundary: in scope -- the four tiers, the persisted tree and its refresh path, the
-  claim-relation vocabulary, the needle-ambiguity lane, and the report. Out of scope -- editing,
-  deleting, or merging any corpus document or index record (detection only;
-  `corpus-conflict-resolution` owns acting on findings), cross-lingual conflict pairing (UA/EN
-  pairs report as `complementary` pending a follow-up task), and any retrieval-ranking or
-  leaderboard change.
-- Data and artifact paths: `report.md`, `findings.jsonl`, and `tree_meta.json` under
-  `$DATA_DIR/corpus-conflicts/<run>/`; the tree persists beside the store as `semantic_tree/`
-  with its embedder fingerprint; corpus and store inputs are the existing quickstart pair
-  ([RAG core](current/rag-core.md)).
-- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=hash|lexical|semantic|claim
-  [STORE=<dir>] [GOLDSET=<gs>] [CONFLICT_MODEL=<m>]`; CI drives all four tiers over a committed
-  fixture corpus carrying planted duplicate / stale / contradictory / subsuming document pairs,
-  using the hashed-BoW embedder pattern from the curation tests and a fake adjudication endpoint.
-- Acceptance gates: `make ci` green; every planted fixture pair is recovered with its expected
-  relation at the expected tier (`hash` finds only exact duplicates, `claim` finds all four
-  classes); tier output is deterministic per seed and per fixed fake completion; the tree's
-  candidate groups are proven against an exhaustive pairwise scan on the fixture, so blocking
-  recall is measured rather than assumed; a heavy run over the quickstart PDF corpus on a local UA
-  model records per-tier finding counts, wall-clock per tier, and the non-unique needle fraction.
-- Documentation target: a new corpus-hygiene section in [data prep](current/data-prep.md), with
-  the tree/refresh interaction noted in
-  [RAG core](current/rag-core.md#store-lifecycle-dynamic-corpus-refresh).
+- Dependencies: `corpus-conflict-detection` is current behavior
+  ([data prep](current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection)).
+  Reuse `VectorSet.pairs_above` and the centering path in `src/llb/conflicts/vectorops.py`.
+- User-visible outcome: the audit's default finds real duplication on a corpus the operator did
+  not tune it for, instead of returning either nothing or thousands of rows depending on how that
+  corpus's encoder happens to distribute.
+- Scope boundary: in scope -- null-distribution sampling, the quantile knob, and recording the
+  resolved absolute threshold. Out of scope -- changing the relation vocabulary, the tier order,
+  or any resolution action.
+- Data and artifact paths: no new roots; the sampled null distribution is recorded in the existing
+  `summary.json` under `$DATA_DIR/corpus-conflicts/<run>/`.
+- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic COS_QUANTILE=0.999`;
+  CI asserts the sampler is deterministic per seed and that an explicit `--cos-threshold` still
+  overrides the calibrated value.
+- Acceptance gates: `make ci` green; on both the quickstart HR and goods corpora the calibrated
+  default recovers the pairs the manually-swept threshold found, with the resolved cosine recorded
+  per corpus.
+- Documentation target: the corpus-hygiene section of [data prep](current/data-prep.md).
+
+### conflict-blocking-for-large-corpora
+
+Give the semantic tier a blocking path that scales past an all-pairs scan. Today it compares every
+comparable chunk pair with an exact blocked matrix product -- 0.03s for 2578 chunks, but quadratic:
+a 100k-chunk corpus is 5e9 pairs. The semantic prefix tree was built to avoid exactly that and
+cannot: metric-tree pruning degrades to a full scan above roughly 30 intrinsic dimensions, and over
+768-dim E5 vectors it prunes nothing (measured; median leaf radius 63 degrees against a bound that
+needs 70). The fix that keeps exactness is to prune in a reduced space that lower-bounds the true
+one: for unit vectors a cosine threshold maps to a Euclidean threshold, and an orthogonal (PCA)
+projection can only shrink Euclidean distance, so a projected distance above the threshold proves
+the true one is too. Build the tree over the projection, use it as an exact filter, and confirm
+candidates in the full space.
+
+- Agent status: RUN NEEDED
+- Dependencies: `corpus-conflict-detection` is current behavior. Reuse `SemanticPrefixTree` and
+  its refresh path in `src/llb/conflicts/`, whose exact-pruning traversal is already tested.
+- User-visible outcome: the audit stays usable on a corpus an order of magnitude larger than the
+  quickstart ones, without trading the "same answer as a brute-force scan" guarantee for
+  approximate recall.
+- Scope boundary: in scope -- the PCA projection, the Euclidean-space bound, the two-stage filter,
+  and a measured pruning fraction per projected dimension. Out of scope -- approximate ANN
+  backends (they would break exactness), and any change to the relation vocabulary or tiers.
+- Data and artifact paths: no new roots; the projection is persisted beside the tree under the
+  store's `semantic_tree/` with its own fingerprint.
+- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic PROJECT_DIMS=32`; CI
+  asserts the projected filter returns a superset of the true matches on committed vectors and
+  that final output equals the unprojected scan exactly.
+- Acceptance gates: `make ci` green; output is identical to the current blocked scan on both
+  quickstart corpora; a heavy run on a synthetically enlarged corpus (>=50k chunks) records the
+  pruning fraction and wall-clock against the all-pairs baseline.
+- Documentation target: the semantic-prefix-tree part of the corpus-hygiene section in
+  [data prep](current/data-prep.md).
 
 ### corpus-conflict-resolution
 
@@ -117,11 +118,12 @@ refresh path so the retrieval effect is measured instead of assumed. Findings th
 decide autonomously become typed review-workbench records; deleting the overlay is the rollback.
 
 - Agent status: RUN NEEDED
-- Dependencies: `corpus-conflict-detection` (consumes its `findings.jsonl`). Reuse the governance
-  fields for the `prefer_newer` rule, `refresh_vector_store` plus the drift report in
-  `src/llb/rag/refresh/`, the immutable-generation publish path in
-  `src/llb/core/store_generations.py`, and the record adapters in
-  [review workbench](current/review-workbench.md).
+- Dependencies: `corpus-conflict-detection` is current behavior
+  ([data prep](current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection));
+  this consumes its `findings.jsonl`. Reuse the governance fields for the `prefer_newer` rule,
+  `refresh_vector_store` plus the drift report in `src/llb/rag/refresh/`, the
+  immutable-generation publish path in `src/llb/core/store_generations.py`, and the record
+  adapters in [review workbench](current/review-workbench.md).
 - User-visible outcome: a corpus whose redundant and superseded content stops competing for top-k
   slots, with a before/after recall@10 / MRR and answer-quality delta proving the cleanup helped
   -- and a one-command rollback when it did not.

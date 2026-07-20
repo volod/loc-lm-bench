@@ -249,6 +249,18 @@ def _sidecar_metadata(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def split_front_matter(text: str) -> tuple[str, int]:
+    """Split off any governance front matter: returns (body, body start offset).
+
+    Front matter is metadata, not content, so content-level comparisons (corpus-conflict hashing)
+    exclude it. Offsets stay anchored to the original text, which is never modified.
+    """
+    match = _FRONT_MATTER.match(text)
+    if not match:
+        return text, 0
+    return text[match.end() :], match.end()
+
+
 def _front_matter_metadata(text: str) -> dict[str, str]:
     match = _FRONT_MATTER.match(text)
     if not match:

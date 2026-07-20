@@ -1003,3 +1003,141 @@ deterministic artifact. Hand-add more surzhyk / transliteration aliases by editi
 mutating the stored corpus. A committed fixture lives at `samples/query-prep/` (dictionary
 candidates + the generated `query_glossary.json`). The lane's retrieval behavior, A/B report, and
 durable deltas live in the [RAG core](rag-core.md) query-side-processing section.
+
+## Corpus Hygiene: Conflict Detection (corpus-conflict-detection)
+
+`llb audit-corpus-conflicts` (`make audit-corpus-conflicts CORPUS=<dir> EFFORT=<tier>`) reports
+duplicated, stale, and mutually inconsistent knowledge in a corpus. It is **detection only**: no
+tier edits, deletes, or reorders a corpus byte, and a CI test asserts the corpus is unchanged after
+a run. Implementation lives in `src/llb/conflicts/`, Typer wiring in `src/llb/cli/prep/conflicts.py`,
+Make orchestration in `make/data-prep/corpus.mk`.
+
+### Effort tiers
+
+Four cumulative `--effort` tiers; each settles what it can so the next has less to look at.
+
+| tier | mechanism | needs | cost on the 8-doc / 2578-chunk HR corpus |
+| --- | --- | --- | --- |
+| `hash` | content sha, raw and Ukrainian-normalized | nothing | 0.26 s |
+| `lexical` | word 5-gram shingles: Jaccard + containment | nothing | 0.51 s |
+| `semantic` | chunk-vector pair search over a built store | a store | 1.5 s |
+| `claim` | local-model adjudication of surviving pairs | a store + a model | 77 s / 11 pairs |
+
+`hash` splits duplicates into `raw` (byte-identical) and `normalized` (identical after casefold,
+whitespace, punctuation, apostrophe unification, and front-matter removal) -- the second is the
+re-ingested-edition case. Content hashing is deliberately **not** `corpus_doc_fingerprints`, which
+folds the governance contract into each document's hash: that is right for refresh and wrong here,
+since two byte-identical documents carrying different `effective_date` values must still read as
+duplicates.
+
+Duplicate groups are transitive, so the tier reports `n-1` chained pairs for a group of `n` but
+marks the group's **full pair closure** as settled. Without that split the later tiers re-derive
+(and re-report) the pairs the chaining left implicit.
+
+### Relation vocabulary
+
+Relations are assigned per **claim pair**, never per document: `duplicate`, `subsumes` /
+`subsumed_by`, `contradicts`, `superseded_by`, `complementary`. That is what makes partial
+supersession representable -- a revision that changes one fact while restating another produces a
+`superseded_by` for the first and a `duplicate` for the second, from one document pair.
+
+`superseded_by` is **derived, never asked for**. The adjudication prompt shows the model two
+passages and no provenance, so it cannot rationalize a verdict from dates; a `contradicts` verdict
+is promoted to `superseded_by` only when the governance fields order the two sides, with side `a`
+always the deprecated claim. An undated contradiction stays an honest `contradicts` for a human.
+
+Every finding carries exact character offsets on both sides. The claim tier narrows a finding to
+the span the model quoted (via `ground_span`); a quote that cannot be located falls back to the
+enclosing chunk and is marked `offsets_exact: false` rather than pointing at text that is not
+there. On the HR evidence run 10 of 11 findings narrowed exactly.
+
+### What the semantic tier excludes, and why
+
+Two classes of chunk never pair, both learned from real corpora rather than anticipated:
+
+- **Front matter** -- every ingested document's governance block shares the same keys, so an
+  archiving instruction and an appeals regulation match at cosine 0.9 on their `version:` and
+  `language:` lines alone.
+- **Low-content chunks** (`--min-claim-tokens`, default 25 content tokens, HTML comments stripped)
+  -- a converted PDF corpus is full of `<!-- source_pdf ... -->` markers, bare page numbers, and
+  stub headings. On the HR corpus these were the single largest source of findings before the
+  filter: the top-ranked "conflict" was one page marker against another. 88 of 2578 chunks are
+  excluded there.
+
+### Encoder anisotropy and centering (measured)
+
+Sentence-encoder spaces are strongly anisotropic, and it changes what a threshold means. Measured
+over 2578 real multilingual-E5 chunk vectors:
+
+| | random unrelated pair | findings at cosine 0.9 |
+| --- | --- | --- |
+| raw E5 space | 0.83 (p95 0.88) | 5185 |
+| mean-centered | -0.02 (p95 0.26) | 0 cross-document |
+
+A 0.9 "near-duplicate" threshold in raw E5 space sits barely above the similarity of two completely
+unrelated chunks, which is why the uncentered run produced an unusable report. `--center-vectors`
+(default on) removes the corpus mean direction first. It is skipped automatically below
+`MIN_CENTERING_VECTORS` (50) chunks, where the "mean" is an accident of which few documents are
+present rather than an estimate -- the audit logs when it does so.
+
+Because centering rescales similarity, `--cos-threshold` is calibrated for the centered space. On
+the HR corpus the useful operating point is ~0.6, not the 0.9 that suits raw-space question dedup.
+
+### Semantic prefix tree
+
+`src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
+2-means (farthest-first seeding, no RNG). Each node stores its subtree centroid and its angular
+radius. Because angular distance is a metric, two nodes can be skipped whole whenever
+`theta(c1,c2) - r1 - r2` exceeds the query threshold -- an **exact** bound, so the tree returns
+precisely the pairs a brute-force scan would. CI asserts that equality rather than approximate
+recall.
+
+**Where that pruning pays, measured:** at low intrinsic dimension it skips 55-92% of the pair
+space. At real encoder dimensionality it skips **nothing**. Over 768-dim E5 vectors the median leaf
+radius is 63 degrees, so the bound only fires when two nodes are more than 70 degrees apart, and no
+two chunks in a single-language corpus ever are. That is the curse of dimensionality, not a defect
+in the bound: metric-tree pruning degrades to a full scan above roughly 30 intrinsic dimensions.
+
+The semantic tier therefore searches pairs with `VectorSet.pairs_above`, an exact blocked matrix
+product -- **0.03 s versus 54 s** for the tree traversal on that corpus, with identical output. The
+tree keeps two jobs it is genuinely good at: a persisted, inspectable semantic hierarchy over the
+corpus, and the unit of incremental refresh. Its exact pruning path stays tested and is the right
+choice for reduced-dimension spaces.
+
+### Needle ambiguity lane
+
+With `--goldset`, the audit adds a second, independent signal: for each gold item it locates the
+chunks overlapping the item's gold spans and asks whether any **other** document carries a
+near-duplicate of them. A needle answerable from two places is ambiguous -- retrieval has two
+defensible answers and whichever it ranks first is luck. The report gives
+`non_unique_needle_fraction`. This is derived from the gold set rather than from corpus geometry,
+so agreement with the tree's findings is corroboration rather than a restatement of one
+measurement.
+
+### Artifacts
+
+`$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
+sides with exact offsets -- the machine-readable input a resolution lane consumes), `report.md`
+(actionable relations first), `summary.json` (per-tier counts, timings, and parameters), and
+`tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
+only meaningful in the space that produced them).
+
+### Evidence run
+
+CUDA host, RTX 4060 Ti, real multilingual-E5 store, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M for the
+claim tier.
+
+- **HR corpus** (8 docs, 2.77 MB, 2578 chunks): no duplicate or near-duplicate documents at any
+  tier. At `--cos-threshold 0.6` the semantic tier surfaced 11 cross-document pairs; the claim tier
+  labelled them 1 `duplicate`, 3 `subsumed_by`, 7 `complementary` in 77 s. The substantive findings
+  were real: three separate documents covering the same "mass-edit personnel cards" procedure, with
+  the two standalone how-to guides correctly subsumed by the full user-manual section, and a
+  2008-versus-2022 military-service statute pair correctly ordered by specificity. The seven
+  `complementary` verdicts were publication-metadata blocks -- correctly *not* reported as
+  conflicts.
+- **Goods corpus** (5 docs, 1139 chunks) with its 19-item gold set: 0 cross-document duplicates and
+  `non_unique_needle_fraction` 0.0. The two independent signals agree.
+
+The committed fixture at `samples/corpora/conflicts_uk_v1/` plants one instance of every relation
+(byte-identical copy, reformatted reissue, absorbed note, changed deadline, restated section, vague
+restatement, unrelated control) so each tier is asserted against a known answer in CI.

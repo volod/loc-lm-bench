@@ -283,6 +283,18 @@ writes `$DATA_DIR/refresh/<run-ts>/{drift.json,report.md}` with the per-metric d
 feature has no `doc_fingerprints` and refreshes once as a full re-embed into a generation
 (logged); it refreshes incrementally afterwards.
 
+Semantic prefix tree (`src/llb/conflicts/tree_refresh.py`): the corpus-conflict audit persists a
+centroid tree over the store's chunk vectors, and it consumes the same `ManifestDiff` classes.
+Chunks of deleted and modified documents are removed, chunks of added and modified documents are
+re-inserted at their nearest leaf, and centroids and radii are recomputed only along the affected
+root-to-leaf paths -- nodes off those paths keep their exact geometry, so their bounds stay valid
+without being touched. A refresh answers queries identically to a rebuild on the same corpus state
+(asserted in CI); once more than `REBUILD_FRACTION` of the chunks have changed it rebuilds instead,
+because patching stops paying. The tree meta pins the embedder model and dimension: centroids are
+only meaningful in the space that produced them, so a store re-embedded with a different encoder
+rebuilds rather than patches. Full behavior in
+[data prep](data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection).
+
 ## Hybrid Retrieval (Dense + BM25 + RRF)
 
 Shipped (hybrid-retrieval-uk): retrieval has the full hybrid shape Ukrainian enterprise corpora
