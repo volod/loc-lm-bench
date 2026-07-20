@@ -23,6 +23,8 @@ from llb.conflicts.constants import (
 )
 from llb.conflicts.governance import compare_editions
 from llb.conflicts.models import ClaimRef, Finding, TierStats
+from llb.conflicts.projection import euclidean_threshold
+from llb.conflicts.projected_index import exact_projected_pairs
 from llb.conflicts.semantic_filter import claim_token_count as _claim_token_count
 from llb.conflicts.semantic_filter import select_content_chunks
 from llb.conflicts.tree import SemanticPrefixTree
@@ -82,11 +84,17 @@ def cross_document_pairs(
     cos_threshold: float,
     skip_doc_pairs: Iterable[tuple[str, str]] = (),
     allowed: set[int] | None = None,
+    candidates: list[tuple[int, int]] | None = None,
 ) -> list[tuple[int, int, float]]:
     """Matching chunk pairs that span two different, not-already-settled documents."""
     skip = set(skip_doc_pairs)
     out: list[tuple[int, int, float]] = []
-    for left, right, similarity in vectors.pairs_above(cos_threshold):
+    matches = (
+        vectors.pairs_above(cos_threshold)
+        if candidates is None
+        else vectors.pairs_above_candidates(candidates, cos_threshold)
+    )
+    for left, right, similarity in matches:
         if allowed is not None and (left not in allowed or right not in allowed):
             continue
         left_doc, right_doc = chunks[left]["doc_id"], chunks[right]["doc_id"]
@@ -115,6 +123,7 @@ def detect_semantic_pairs(
     min_tokens: int = MIN_CLAIM_TOKENS,
     allowed: set[int] | None = None,
     exclusion_counts: JsonObject | None = None,
+    projected_vectors: VectorSet | None = None,
 ) -> tuple[list[Finding], list[tuple[int, int, float]], TierStats]:
     """Provisional `duplicate` findings plus the raw pairs the claim tier adjudicates.
 
@@ -131,12 +140,23 @@ def detect_semantic_pairs(
         selection = select_content_chunks(chunks, body_offsets or {}, min_tokens=min_tokens)
         allowed = selection.ordinals
         exclusion_counts = selection.stats()
+    candidates = None
+    projected_backend = None
+    project_dims = None
+    if projected_vectors is not None:
+        project_dims = projected_vectors.dim
+        candidates, projected_backend = exact_projected_pairs(
+            tree,
+            projected_vectors,
+            euclidean_threshold(cos_threshold),
+        )
     pairs = cross_document_pairs(
         vectors,
         chunks,
         cos_threshold=cos_threshold,
         skip_doc_pairs=skip_doc_pairs,
         allowed=allowed,
+        candidates=candidates,
     )
     findings: list[Finding] = []
     for left, right, similarity in pairs:
@@ -161,15 +181,30 @@ def detect_semantic_pairs(
     stats.candidate_pairs = len(pairs)
     stats.findings = len(findings)
     stats.seconds = time.monotonic() - started
+    exhaustive = total * (total - 1) // 2
     stats.extra = {
         "cos_threshold": cos_threshold,
         "n_chunks": total,
         "comparable_chunks": len(allowed),
         "excluded_chunks": total - len(allowed),
         "min_claim_tokens": min_tokens,
-        "exhaustive_pairs": total * (total - 1) // 2,
+        "exhaustive_pairs": exhaustive,
         "cross_document_pairs": len(pairs),
         "tree": tree.stats(),
         **(exclusion_counts or {}),
     }
+    if candidates is not None:
+        stats.extra.update(
+            {
+                "blocking": "pca-euclidean",
+                "projected_backend": projected_backend,
+                "project_dims": project_dims,
+                "projected_candidate_pairs": len(candidates),
+                "projected_pruned_pairs": exhaustive - len(candidates),
+                "projected_pruning_fraction": (
+                    (exhaustive - len(candidates)) / exhaustive if exhaustive else 0.0
+                ),
+                "full_space_comparisons": len(candidates),
+            }
+        )
     return findings, pairs, stats

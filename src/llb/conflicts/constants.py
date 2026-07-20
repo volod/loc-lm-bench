@@ -91,6 +91,8 @@ MIN_METADATA_NUMERIC_TOKEN_FRACTION = 0.25
 MIN_CENTERING_VECTORS = 50
 # Bisecting-k-means refinement passes per split (deterministic; converges well before this).
 SPLIT_ITERATIONS = 8
+# Floating-point slack on exact metric-tree pruning bounds.
+TREE_BOUND_EPSILON = 1e-12
 
 # --- artifact names ---------------------------------------------------------------------------
 
@@ -101,3 +103,4 @@ TREE_META_FILE = "tree_meta.json"
 SUMMARY_FILE = "summary.json"
 TREE_DIR = "semantic_tree"
 TREE_FILE = "tree.json"
+PROJECTION_FILE = "projection.json"

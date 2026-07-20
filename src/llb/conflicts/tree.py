@@ -17,35 +17,36 @@ whole cross-product is skipped. Nothing above the threshold is ever missed, so t
 exactly the pairs an exhaustive scan would -- which is why `matching_pairs` can be checked against
 a brute-force scan for equality rather than for approximate recall.
 
-WHEN THAT PRUNING ACTUALLY PAYS, measured rather than assumed: at low intrinsic dimension it skips
-55-92% of the pair space. At real encoder dimensionality it skips NOTHING. Over 2578 chunks of
-768-dim multilingual-E5 vectors the median leaf radius is 63 degrees, so the bound only fires when
-two nodes are more than 70 degrees apart -- and no two chunks in a single-language corpus ever
-are. That is the curse of dimensionality, not a defect in the bound: metric-tree pruning degrades
-to a full scan above roughly 30 intrinsic dimensions. The semantic tier therefore searches pairs
-with `VectorSet.pairs_above` (an exact blocked matrix product, 1800x faster on that corpus) and
-keeps this tree for what it is genuinely good at: a persisted, inspectable semantic hierarchy over
-the corpus and the unit of incremental refresh. `matching_pairs` remains exact and tested, and is
-the right path for reduced-dimension spaces.
+At encoder dimensionality the angular bound degrades toward a full scan. The large-corpus path
+therefore builds this tree over a non-normalized PCA projection with Euclidean axis-aligned bounds;
+an epsilon-zero SciPy kd-tree supplies the accelerated exact traversal when available, and this
+persisted implementation remains its dependency-light exact fallback.
 """
 
 import json
 from pathlib import Path
 from typing import Any
 
-from llb.conflicts.constants import DEFAULT_LEAF_SIZE
+from llb.conflicts.constants import DEFAULT_LEAF_SIZE, TREE_BOUND_EPSILON
 from llb.conflicts.tree_build import NodeCounter, build_node
-from llb.conflicts.tree_node import TREE_VERSION, TreeNode, dot
-from llb.conflicts.vectorops import VectorSet, angular_distance
+from llb.conflicts.tree_node import TREE_VERSION, TreeNode
+from llb.conflicts.vectorops import (
+    METRIC_ANGULAR,
+    METRIC_EUCLIDEAN,
+    VectorSet,
+    angular_distance,
+    vector_distance,
+)
 
 
 class SemanticPrefixTree:
     """A persisted centroid tree over store chunk vectors."""
 
-    def __init__(self, nodes: dict[int, TreeNode], root_id: int, leaf_size: int):
+    def __init__(self, nodes: dict[int, TreeNode], root_id: int, leaf_size: int, metric: str):
         self.nodes = nodes
         self.root_id = root_id
         self.leaf_size = leaf_size
+        self.metric = metric
 
     # --- construction -------------------------------------------------------------------------
 
@@ -61,9 +62,9 @@ class SemanticPrefixTree:
         if len(vectors) == 0:
             root = TreeNode(node_id=counter.next(), members=[], centroid=[], radius=0.0)
             nodes[root.node_id] = root
-            return cls(nodes, root.node_id, leaf_size)
+            return cls(nodes, root.node_id, leaf_size, vectors.metric)
         root_id = build_node(list(range(len(vectors))), vectors, leaf_size, nodes, counter)
-        return cls(nodes, root_id, leaf_size)
+        return cls(nodes, root_id, leaf_size, vectors.metric)
 
     # --- querying -----------------------------------------------------------------------------
 
@@ -74,7 +75,16 @@ class SemanticPrefixTree:
         each pair's own similarity. `matching_pairs` applies that final filter. Needs no vectors
         -- the stored centroids and radii carry everything the pruning bound uses.
         """
-        theta = angular_distance(cos_threshold)
+        if self.metric != METRIC_ANGULAR:
+            raise ValueError("candidate_pairs(cosine) requires an angular tree")
+        return self.candidate_pairs_within(angular_distance(cos_threshold))
+
+    def candidate_pairs_within(
+        self, distance_threshold: float, vectors: VectorSet | None = None
+    ) -> list[tuple[int, int]]:
+        """Every pair a metric tree cannot prove farther apart than `distance_threshold`."""
+        if vectors is not None and vectors.metric != self.metric:
+            raise ValueError("tree and query vectors must use the same metric")
         pairs: set[tuple[int, int]] = set()
         stack: list[tuple[int, int]] = [(self.root_id, self.root_id)]
         while stack:
@@ -82,10 +92,17 @@ class SemanticPrefixTree:
             left, right = self.nodes[left_id], self.nodes[right_id]
             if not left.members or not right.members:
                 continue
-            if left_id != right_id and self._prune(left, right, theta):
+            if left_id != right_id and self._prune(left, right, distance_threshold):
                 continue
             if left.is_leaf and right.is_leaf:
-                pairs.update(_leaf_pairs(left, right, same_node=left_id == right_id))
+                leaf_pairs = _leaf_pairs(left, right, same_node=left_id == right_id)
+                if vectors is not None:
+                    leaf_pairs = {
+                        pair
+                        for pair in leaf_pairs
+                        if vectors.distance(*pair) <= distance_threshold + TREE_BOUND_EPSILON
+                    }
+                pairs.update(leaf_pairs)
                 continue
             stack.extend(self._descend(left, right))
         return sorted(pairs)
@@ -106,8 +123,10 @@ class SemanticPrefixTree:
 
     def _prune(self, left: TreeNode, right: TreeNode, theta: float) -> bool:
         """True when no member pair across these nodes can be within `theta`."""
-        separation = angular_distance(dot(left.centroid, right.centroid))
-        return separation - left.radius - right.radius > theta
+        if self.metric == METRIC_EUCLIDEAN and left.lower_bounds and right.lower_bounds:
+            return _box_distance(left, right) > theta + TREE_BOUND_EPSILON
+        separation = vector_distance(self.metric, left.centroid, right.centroid)
+        return separation - left.radius - right.radius > theta + TREE_BOUND_EPSILON
 
     def _descend(self, left: TreeNode, right: TreeNode) -> list[tuple[int, int]]:
         """Split the larger node (or both, when the pair is one node against itself)."""
@@ -141,6 +160,7 @@ class SemanticPrefixTree:
         sizes = [len(leaf.members) for leaf in leaves]
         return {
             "version": TREE_VERSION,
+            "metric": self.metric,
             "n_vectors": len(self.nodes[self.root_id].members),
             "n_nodes": len(self.nodes),
             "n_leaves": len(leaves),
@@ -152,6 +172,7 @@ class SemanticPrefixTree:
     def payload(self) -> dict[str, Any]:
         return {
             "version": TREE_VERSION,
+            "metric": self.metric,
             "root_id": self.root_id,
             "leaf_size": self.leaf_size,
             "nodes": [self.nodes[key].payload() for key in sorted(self.nodes)],
@@ -176,10 +197,17 @@ class SemanticPrefixTree:
                 centroid=[float(value) for value in row["centroid"]],
                 radius=float(row["radius"]),
                 children=[int(value) for value in row["children"]],
+                lower_bounds=[float(value) for value in row.get("lower_bounds", [])],
+                upper_bounds=[float(value) for value in row.get("upper_bounds", [])],
             )
             for row in payload["nodes"]
         }
-        return cls(nodes, int(payload["root_id"]), int(payload["leaf_size"]))
+        return cls(
+            nodes,
+            int(payload["root_id"]),
+            int(payload["leaf_size"]),
+            str(payload.get("metric", METRIC_ANGULAR)),
+        )
 
 
 def _leaf_pairs(left: TreeNode, right: TreeNode, *, same_node: bool) -> set[tuple[int, int]]:
@@ -192,3 +220,17 @@ def _leaf_pairs(left: TreeNode, right: TreeNode, *, same_node: bool) -> set[tupl
             for j in range(i + 1, len(members))
         }
     return {(min(a, b), max(a, b)) for a in left.members for b in right.members if a != b}
+
+
+def _box_distance(left: TreeNode, right: TreeNode) -> float:
+    """Minimum Euclidean distance between two axis-aligned node boxes."""
+    squared = 0.0
+    for left_low, left_high, right_low, right_high in zip(
+        left.lower_bounds,
+        left.upper_bounds,
+        right.lower_bounds,
+        right.upper_bounds,
+    ):
+        gap = max(left_low - right_high, right_low - left_high, 0.0)
+        squared += gap * gap
+    return float(squared**0.5)

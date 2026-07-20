@@ -7,8 +7,8 @@ tree, which a persisted structure has to guarantee.
 """
 
 from llb.conflicts.constants import SPLIT_ITERATIONS
-from llb.conflicts.tree_node import TreeNode, node_geometry
-from llb.conflicts.vectorops import Vector, VectorSet
+from llb.conflicts.tree_node import TreeNode, node_bounds, node_geometry
+from llb.conflicts.vectorops import METRIC_EUCLIDEAN, Vector, VectorSet
 
 
 class NodeCounter:
@@ -31,7 +31,15 @@ def build_node(
 ) -> int:
     """Create the node for `members`, splitting recursively until leaves fit `leaf_size`."""
     centroid, radius = node_geometry(members, vectors)
-    node = TreeNode(node_id=counter.next(), members=members, centroid=centroid, radius=radius)
+    lower, upper = node_bounds(members, vectors)
+    node = TreeNode(
+        node_id=counter.next(),
+        members=members,
+        centroid=centroid,
+        radius=radius,
+        lower_bounds=lower,
+        upper_bounds=upper,
+    )
     nodes[node.node_id] = node
     if len(members) <= leaf_size:
         return node.node_id
@@ -49,9 +57,11 @@ def build_node(
 
 def bisect(members: list[int], vectors: VectorSet) -> tuple[list[int], list[int]]:
     """Deterministic 2-means split: farthest-first seeding, then `SPLIT_ITERATIONS` refinements."""
+    if vectors.metric == METRIC_EUCLIDEAN:
+        return _bisect_axis_aligned(members, vectors)
     centroid = vectors.centroid(members)
-    first = members[_argmin(vectors.similarity_to(centroid, members))]
-    second = members[_argmin(vectors.similarity_to(vectors.row(first), members))]
+    first = members[_argmax(vectors.distances_to(centroid, members))]
+    second = members[_argmax(vectors.distances_to(vectors.row(first), members))]
     if first == second:
         return members, []
     left_seed, right_seed = vectors.row(first), vectors.row(second)
@@ -69,18 +79,27 @@ def bisect(members: list[int], vectors: VectorSet) -> tuple[list[int], list[int]
     return best
 
 
+def _bisect_axis_aligned(members: list[int], vectors: VectorSet) -> tuple[list[int], list[int]]:
+    """Median split on the widest PCA coordinate, producing tight non-overlapping boxes."""
+    lower, upper = node_bounds(members, vectors)
+    dimension = max(range(vectors.dim), key=lambda index: upper[index] - lower[index])
+    ordered = sorted(members, key=lambda member: (vectors.row(member)[dimension], member))
+    middle = len(ordered) // 2
+    return ordered[:middle], ordered[middle:]
+
+
 def _assign(
     members: list[int], vectors: VectorSet, left_seed: Vector, right_seed: Vector
 ) -> tuple[list[int], list[int]]:
     """Assign each member to the nearer seed; exact ties go left, keeping the split stable."""
-    left_similarity = vectors.similarity_to(left_seed, members)
-    right_similarity = vectors.similarity_to(right_seed, members)
+    left_distance = vectors.distances_to(left_seed, members)
+    right_distance = vectors.distances_to(right_seed, members)
     left: list[int] = []
     right: list[int] = []
-    for member, left_value, right_value in zip(members, left_similarity, right_similarity):
-        (left if left_value >= right_value else right).append(member)
+    for member, left_value, right_value in zip(members, left_distance, right_distance):
+        (left if left_value <= right_value else right).append(member)
     return left, right
 
 
-def _argmin(values: list[float]) -> int:
-    return min(range(len(values)), key=lambda index: values[index])
+def _argmax(values: list[float]) -> int:
+    return max(range(len(values)), key=lambda index: values[index])

@@ -14,15 +14,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.conflicts.claim_tier import adjudicate_pairs
 from llb.conflicts.constants import (
     DEFAULT_CONTAINMENT_THRESHOLD,
-    DEFAULT_COSINE_THRESHOLD,
     DEFAULT_JACCARD_THRESHOLD,
     DEFAULT_LEAF_SIZE,
-    MIN_CENTERING_VECTORS,
     MIN_CLAIM_TOKENS,
-    TIER_CLAIM,
     TIER_HASH,
     TIER_LEXICAL,
     TIER_SEMANTIC,
@@ -32,18 +28,11 @@ from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
 from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
-from llb.conflicts.needles import analyze_needles
-from llb.conflicts.null_calibration import resolve_cos_threshold
 from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
-from llb.conflicts.null_sampling import estimate_null_distribution
-from llb.conflicts.semantic_filter import select_content_chunks
-from llb.conflicts.semantic_tier import build_tree, detect_semantic_pairs
+from llb.conflicts.semantic_run import run_semantic_tiers
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
-from llb.conflicts.tree_refresh import tree_meta
-from llb.conflicts.vectorops import VectorSet
 from llb.core.contracts.common import JsonObject
-from llb.core.contracts.rag import ChunkRecord
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier_telemetry import LLMComplete
 
@@ -66,6 +55,7 @@ class AuditParams:
     max_claim_pairs: int = 0  # 0 == adjudicate every candidate pair
     min_claim_tokens: int = MIN_CLAIM_TOKENS
     center_vectors: bool = True
+    project_dims: int = 0
 
     def payload(self) -> JsonObject:
         return {
@@ -81,11 +71,8 @@ class AuditParams:
             "max_claim_pairs": self.max_claim_pairs,
             "min_claim_tokens": self.min_claim_tokens,
             "center_vectors": self.center_vectors,
+            "project_dims": self.project_dims,
         }
-
-
-def _governance_by_doc(docs: list[CorpusDoc]) -> dict[str, JsonObject]:
-    return {doc.doc_id: doc.governance for doc in docs}
 
 
 def _hash_stats(findings: list[Finding], docs: list[CorpusDoc], seconds: float) -> TierStats:
@@ -145,144 +132,5 @@ def run_audit(
             "[conflicts] the semantic tier needs a built store: pass --store or build one "
             "with `make build-index`."
         )
-    _run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+    run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
     return result
-
-
-def _calibrate_threshold(
-    params: AuditParams,
-    vectors: "VectorSet",
-    chunks: list[ChunkRecord],
-    allowed: set[int],
-) -> tuple[float, JsonObject]:
-    """Resolve the operating cosine and the null-distribution record that justifies it.
-
-    Sampling only runs when a quantile was asked for: it costs a pass over the sampled pairs, and
-    a run that names an absolute threshold has nothing to calibrate.
-    """
-    distribution = None
-    if params.cos_quantile is not None or params.max_candidate_pairs is not None:
-        distribution = estimate_null_distribution(
-            vectors,
-            chunks,
-            allowed,
-            sample_pairs=params.null_sample_pairs,
-            seed=params.null_seed,
-        )
-    threshold, source, resolved_quantile = resolve_cos_threshold(
-        explicit=params.cos_threshold,
-        quantile=params.cos_quantile,
-        default=DEFAULT_COSINE_THRESHOLD,
-        distribution=distribution,
-        max_candidate_pairs=params.max_candidate_pairs,
-    )
-    payload: dict[str, object] = {
-        "cos_threshold": threshold,
-        "cos_threshold_source": source,
-    }
-    if distribution is not None:
-        payload["null_distribution"] = distribution.payload(
-            resolved_quantile, params.max_candidate_pairs
-        )
-    return threshold, payload
-
-
-def _run_semantic_tiers(
-    result: AuditResult,
-    params: AuditParams,
-    docs: list[CorpusDoc],
-    store: StoreView,
-    goldset: list[GoldItem] | None,
-    complete: LLMComplete | None,
-    settled: set[tuple[str, str]],
-    tree: SemanticPrefixTree | None,
-) -> None:
-    """Build/reuse the tree, run the semantic tier, then adjudicate if the claim tier is on."""
-    governance = _governance_by_doc(docs)
-    # Encoder spaces are anisotropic, so an uncentered threshold sits barely above the similarity
-    # of two unrelated chunks. Centering is what makes `cos_threshold` mean the same thing on a
-    # real corpus that it means on a toy one -- but only once there are enough vectors for the
-    # mean to be an estimate rather than an accident of which few documents are present.
-    centered = params.center_vectors and len(store.vectors) >= MIN_CENTERING_VECTORS
-    if params.center_vectors and not centered:
-        _LOG.info(
-            "[conflicts] centering skipped: %d chunks is below the %d needed to estimate the "
-            "corpus mean; comparing in the raw encoder space",
-            len(store.vectors),
-            MIN_CENTERING_VECTORS,
-        )
-    vectors = store.vectors.centered() if centered else store.vectors
-    active = tree if tree is not None else build_tree(vectors, leaf_size=params.leaf_size)
-    body_offsets = {doc.doc_id: doc.body_offset for doc in docs}
-    # The comparable set is computed here rather than left to the tier, because the null
-    # distribution must be sampled from exactly the pairs the scan will consider: front matter,
-    # PDF residue, and repeated publication records score high against other chunks and would
-    # inflate the estimated quantile.
-    selection = select_content_chunks(
-        store.chunks, body_offsets, min_tokens=params.min_claim_tokens
-    )
-    allowed = selection.ordinals
-    cos_threshold, null_payload = _calibrate_threshold(params, vectors, store.chunks, allowed)
-    semantic_findings, pairs, semantic_stats = detect_semantic_pairs(
-        active,
-        vectors,
-        store.chunks,
-        governance,
-        cos_threshold=cos_threshold,
-        skip_doc_pairs=settled,
-        body_offsets=body_offsets,
-        min_tokens=params.min_claim_tokens,
-        allowed=allowed,
-        exclusion_counts=selection.stats(),
-    )
-    semantic_stats.extra.update(null_payload)
-    result.tiers.append(semantic_stats)
-    result.tree_meta = {
-        **tree_meta(
-            active,
-            embedding_model=store.embedding_model,
-            dim=store.dim,
-            corpus_fingerprint=str(store.meta.get("corpus_fingerprint", "")),
-            doc_fingerprints=store.doc_fingerprints,
-            cos_threshold=cos_threshold,
-        ),
-        "centered": centered,
-    }
-
-    if goldset:
-        _, needle_report = analyze_needles(
-            goldset, store.chunks, vectors, cos_threshold=cos_threshold
-        )
-        result.needles = needle_report
-        _LOG.info(
-            "[conflicts] needles: %s of %s gold items are answerable from more than one document",
-            needle_report.get("ambiguous_items"),
-            needle_report.get("items"),
-        )
-
-    if TIER_CLAIM not in tiers_up_to(params.effort):
-        result.findings.extend(semantic_findings)
-        return
-    if complete is None:
-        raise SystemExit(
-            "[conflicts] the claim tier needs a model endpoint: pass --conflict-model "
-            "(and --conflict-backend) so candidate pairs can be adjudicated."
-        )
-    cap = params.max_claim_pairs or len(pairs)
-    selected = pairs[:cap]
-    if len(selected) < len(pairs):
-        _LOG.warning(
-            "[conflicts] adjudicating %d of %d candidate pairs (--max-claim-pairs)",
-            len(selected),
-            len(pairs),
-        )
-    claim_findings, claim_stats = adjudicate_pairs(selected, store.chunks, governance, complete)
-    result.findings.extend(claim_findings)
-    # `semantic_findings` is parallel to `pairs`, so the tail beyond the cap is exactly the set of
-    # pairs the model never saw. Those keep their provisional semantic finding, which is why a
-    # capped run reports the same pairs as an uncapped one -- just fewer of them adjudicated.
-    # Matching on span keys instead would double-report: the claim tier narrows a finding to the
-    # quoted claim, so its span never equals the enclosing chunk's.
-    result.findings.extend(semantic_findings[len(selected) :])
-    result.tiers.append(claim_stats)
-    _LOG.info("[conflicts] tier=claim findings=%d", len(claim_findings))

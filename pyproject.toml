@@ -30,6 +30,7 @@ dependencies = [
 # install so `make venv` stays fast.
 rag = [
   "faiss-cpu>=1.8",
+  "scipy>=1.11",
   "sentence-transformers>=3.0",
   "deepeval>=4.0.6,<5",
 ]

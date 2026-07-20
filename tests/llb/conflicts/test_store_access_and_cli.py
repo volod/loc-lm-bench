@@ -101,6 +101,8 @@ def test_cli_semantic_effort_uses_the_built_store(built_store, tmp_path):
             str(built_store),
             "--cos-threshold",
             "0.85",
+            "--project-dims",
+            "8",
             "--out",
             str(out),
         ],
@@ -109,6 +111,9 @@ def test_cli_semantic_effort_uses_the_built_store(built_store, tmp_path):
     summary = json.loads((out / SUMMARY_FILE).read_text(encoding="utf-8"))
     assert summary["tree"]["n_vectors"] > 0
     assert summary["tree"]["embedding_model"] == "fake-hashed-bow"
+    assert summary["tree"]["project_dims"] == 8
+    assert summary["tiers"][-1]["blocking"] == "pca-euclidean"
+    assert (built_store / "semantic_tree" / "projection.json").is_file()
     rows = [
         json.loads(line)
         for line in (out / FINDINGS_FILE).read_text(encoding="utf-8").splitlines()

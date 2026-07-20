@@ -104,39 +104,6 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
-### conflict-blocking-for-large-corpora
-
-Give the semantic tier a blocking path that scales past an all-pairs scan. Today it compares every
-comparable chunk pair with an exact blocked matrix product -- 0.03s for 2578 chunks, but quadratic:
-a 100k-chunk corpus is 5e9 pairs. The semantic prefix tree was built to avoid exactly that and
-cannot: metric-tree pruning degrades to a full scan above roughly 30 intrinsic dimensions, and over
-768-dim E5 vectors it prunes nothing (measured; median leaf radius 63 degrees against a bound that
-needs 70). The fix that keeps exactness is to prune in a reduced space that lower-bounds the true
-one: for unit vectors a cosine threshold maps to a Euclidean threshold, and an orthogonal (PCA)
-projection can only shrink Euclidean distance, so a projected distance above the threshold proves
-the true one is too. Build the tree over the projection, use it as an exact filter, and confirm
-candidates in the full space.
-
-- Agent status: RUN NEEDED
-- Dependencies: `corpus-conflict-detection` is current behavior. Reuse `SemanticPrefixTree` and
-  its refresh path in `src/llb/conflicts/`, whose exact-pruning traversal is already tested.
-- User-visible outcome: the audit stays usable on a corpus an order of magnitude larger than the
-  quickstart ones, without trading the "same answer as a brute-force scan" guarantee for
-  approximate recall.
-- Scope boundary: in scope -- the PCA projection, the Euclidean-space bound, the two-stage filter,
-  and a measured pruning fraction per projected dimension. Out of scope -- approximate ANN
-  backends (they would break exactness), and any change to the relation vocabulary or tiers.
-- Data and artifact paths: no new roots; the projection is persisted beside the tree under the
-  store's `semantic_tree/` with its own fingerprint.
-- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic PROJECT_DIMS=32`; CI
-  asserts the projected filter returns a superset of the true matches on committed vectors and
-  that final output equals the unprojected scan exactly.
-- Acceptance gates: `make ci` green; output is identical to the current blocked scan on both
-  quickstart corpora; a heavy run on a synthetically enlarged corpus (>=50k chunks) records the
-  pruning fraction and wall-clock against the all-pairs baseline.
-- Documentation target: the semantic-prefix-tree part of the corpus-hygiene section in
-  [data prep](current/data-prep.md).
-
 ### corpus-conflict-resolution
 
 Act on `corpus-conflict-detection` findings: `llb resolve-corpus-conflicts` turns a

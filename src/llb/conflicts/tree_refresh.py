@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.conflicts.tree_build import bisect
-from llb.conflicts.tree_node import TREE_VERSION, TreeNode, node_geometry
+from llb.conflicts.tree_node import TREE_VERSION, TreeNode, node_bounds, node_geometry
 from llb.conflicts.vectorops import VectorSet
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.refresh.diff import ManifestDiff
@@ -59,14 +59,13 @@ def _path_to_root(node_id: int, parents: dict[int, int]) -> list[int]:
 def _descend_to_leaf(tree: SemanticPrefixTree, vectors: VectorSet, ordinal: int) -> int:
     """The leaf whose centroid is closest to `ordinal`, following the tree's own prefix path."""
     node = tree.nodes[tree.root_id]
-    row = vectors.row(ordinal)
     while not node.is_leaf:
         children = [tree.nodes[child] for child in node.children]
         populated = [child for child in children if child.members]
         if not populated:
             break
-        similarities = [sum(x * y for x, y in zip(row, child.centroid)) for child in populated]
-        node = populated[max(range(len(populated)), key=lambda i: similarities[i])]
+        distances = [vectors.distances_to(child.centroid, [ordinal])[0] for child in populated]
+        node = populated[min(range(len(populated)), key=lambda i: distances[i])]
     return node.node_id
 
 
@@ -81,8 +80,10 @@ def _recompute(tree: SemanticPrefixTree, node_ids: list[int], vectors: VectorSet
             node.members = sorted(members)
         if not node.members:
             node.centroid, node.radius = [], 0.0
+            node.lower_bounds, node.upper_bounds = [], []
             continue
         node.centroid, node.radius = node_geometry(node.members, vectors)
+        node.lower_bounds, node.upper_bounds = node_bounds(node.members, vectors)
 
 
 def _split_if_needed(
@@ -98,7 +99,15 @@ def _split_if_needed(
     next_id = counter_start
     for members in (left, right):
         centroid, radius = node_geometry(members, vectors)
-        child = TreeNode(node_id=next_id, members=members, centroid=centroid, radius=radius)
+        lower, upper = node_bounds(members, vectors)
+        child = TreeNode(
+            node_id=next_id,
+            members=members,
+            centroid=centroid,
+            radius=radius,
+            lower_bounds=lower,
+            upper_bounds=upper,
+        )
         tree.nodes[child.node_id] = child
         leaf.children.append(child.node_id)
         next_id += 1
@@ -193,12 +202,18 @@ def tree_meta(
     The embedder fingerprint is what stops a tree built under one encoder from being queried under
     another -- centroids and radii are only meaningful in the space they were computed in.
     """
+    maximum_radius = max((node.radius for node in tree.nodes.values()), default=0.0)
+    radius_payload: dict[str, object]
+    if tree.metric == "angular":
+        radius_payload = {"max_radius_rad": round(maximum_radius, 6)}
+    else:
+        radius_payload = {"max_radius_euclidean": round(maximum_radius, 6)}
     return {
         **tree.stats(),
         "embedding_model": embedding_model,
         "dim": dim,
         "cos_threshold": cos_threshold,
-        "max_radius_rad": round(max((node.radius for node in tree.nodes.values()), default=0.0), 6),
+        **radius_payload,
         "corpus_fingerprint": corpus_fingerprint,
         "doc_fingerprints": dict(doc_fingerprints),
     }

@@ -1184,23 +1184,30 @@ unrelated -- which the corpus alone cannot supply. That is open research, tracke
 ### Semantic prefix tree
 
 `src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
-2-means (farthest-first seeding, no RNG). Each node stores its subtree centroid and its angular
-radius. Because angular distance is a metric, two nodes can be skipped whole whenever
-`theta(c1,c2) - r1 - r2` exceeds the query threshold -- an **exact** bound, so the tree returns
-precisely the pairs a brute-force scan would. CI asserts that equality rather than approximate
-recall.
+2-means for angular vectors and axis-aligned median splits for projected Euclidean vectors. The
+angular tree retains the exact centroid/radius triangle-inequality path used by refresh and
+inspection. Select the large-corpus path with `--project-dims` (Make: `PROJECT_DIMS=32`); its PCA
+and persistence implementation lives in `projection.py` and `projected_index.py`.
 
-**Where that pruning pays, measured:** at low intrinsic dimension it skips 55-92% of the pair
-space. At real encoder dimensionality it skips **nothing**. Over 768-dim E5 vectors the median leaf
-radius is 63 degrees, so the bound only fires when two nodes are more than 70 degrees apart, and no
-two chunks in a single-language corpus ever are. That is the curse of dimensionality, not a defect
-in the bound: metric-tree pruning degrades to a full scan above roughly 30 intrinsic dimensions.
+The blocker is exact. Store vectors are unit length, so cosine cutoff `c` is Euclidean distance
+`sqrt(2 - 2c)`. PCA is an orthogonal projection and can only shrink pairwise distance. A projected
+distance above that cutoff therefore proves that the full-space pair cannot match. Surviving pairs
+are confirmed against the original vectors in bounded NumPy batches. Projected rows are
+deliberately not L2-normalized: normalization changes pairwise distance and invalidates the
+lower-bound proof. A regression test locks that behavior down.
 
-The semantic tier therefore searches pairs with `VectorSet.pairs_above`, an exact blocked matrix
-product -- **0.03 s versus 54 s** for the tree traversal on that corpus, with identical output. The
-tree keeps two jobs it is genuinely good at: a persisted, inspectable semantic hierarchy over the
-corpus, and the unit of incremental refresh. Its exact pruning path stays tested and is the right
-choice for reduced-dimension spaces.
+SciPy `cKDTree.query_pairs(..., eps=0)` performs the exact radius traversal in reduced space; this
+is not an approximate ANN index. The persisted `SemanticPrefixTree` supplies the same exact query
+as a dependency-light fallback. Its Euclidean nodes carry axis-aligned bounds, and leaves are
+checked in projected space before full-space confirmation. CI asserts that projected candidates
+contain every true match and that confirmed pair identities equal the unprojected blocked scan
+across several projection dimensions.
+
+`summary.json` reports `project_dims`, `projected_backend`, `projected_candidate_pairs`,
+`projected_pruned_pairs`, `projected_pruning_fraction`, and `full_space_comparisons`. A matching
+projection/tree is reused. The source, encoder, centering mode, dimensions, leaf size, and
+projection fingerprint control reuse, so incompatible store generations rebuild rather than
+querying foreign geometry.
 
 ### Needle ambiguity lane
 
@@ -1218,7 +1225,9 @@ measurement.
 sides with exact offsets -- the machine-readable input a resolution lane consumes), `report.md`
 (actionable relations first), `summary.json` (per-tier counts, timings, and parameters), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
-only meaningful in the space that produced them).
+only meaningful in the space that produced them). With projected blocking, the resolved store
+generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
+`semantic_tree/tree_meta.json`. The projection JSON carries its own SHA-256 fingerprint.
 
 ### Evidence run
 
@@ -1245,4 +1254,29 @@ control, so each tier and semantic exclusion reason is asserted against a known 
 Post-filter CUDA-host evidence (RTX 4060 Ti, multilingual-E5 stores) is under
 `$DATA_DIR/corpus-conflicts/20260720T-semantic-metadata-filter-*`. The HR swept, budget-12, and
 budget-50 runs and the goods budget-12 and budget-50 runs are the source for the measurements
-above. `make ci` passes with 1665 tests passed, one skipped, and 42 slow tests deselected.
+above. The current `make ci` passes with 1,673 tests, one skipped, and 42 slow tests deselected.
+
+### Large-corpus blocking evidence
+
+On 2026-07-20, the 32-dimensional exact blocker was compared with `VectorSet.pairs_above` on both
+real multilingual-E5 quickstart stores at cosine 0.9. Findings were byte-identical:
+
+- HR: 2,578 chunks and 3,321,753 possible pairs; 4,642 reached full-space confirmation, so the
+  projection pruned 99.8603%. The reused projected search took 0.150 s versus 0.073 s for the
+  all-pairs matrix scan. The small corpus remains below the crossover where tree setup pays.
+- Goods: 1,139 chunks and 648,091 possible pairs; 1,461 reached confirmation, so the projection
+  pruned 99.7746%. Search took 0.116 s versus 0.007 s for the small all-pairs scan.
+
+The required large run used 50,000 deterministic synthetic unit-vector chunks (64 source
+dimensions, 32 projected dimensions) on the RTX 4060 Ti CUDA host. It covered 1,249,975,000 pairs,
+sent 51 to confirmation, pruned 99.999996%, and returned the same zero matches as the actual
+all-pairs baseline. The cold path (PCA fit, persisted-tree build, exact query, confirmation) took
+9.306 s; the reusable search path took 7.571 s; the full blocked matrix baseline took 13.988 s.
+This evidence includes construction cost rather than reporting query time alone.
+
+Run the delivered path with:
+
+```bash
+make audit-corpus-conflicts CORPUS=<corpus-dir> STORE=<store-dir> \
+  EFFORT=semantic PROJECT_DIMS=32
+```

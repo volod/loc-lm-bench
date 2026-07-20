@@ -7,20 +7,22 @@ node without importing each other.
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.conflicts.vectorops import Vector, VectorSet, angular_distance
+from llb.conflicts.vectorops import Vector, VectorSet
 
-TREE_VERSION = "semantic-prefix-tree-v1"
+TREE_VERSION = "semantic-prefix-tree-v3"
 
 
 @dataclass
 class TreeNode:
-    """One node: its subtree members, centroid, angular radius, and child node ids."""
+    """One node: its subtree members, centroid, metric radius, and child node ids."""
 
     node_id: int
     members: list[int]
     centroid: Vector
     radius: float
     children: list[int] = field(default_factory=list)
+    lower_bounds: Vector = field(default_factory=list)
+    upper_bounds: Vector = field(default_factory=list)
 
     @property
     def is_leaf(self) -> bool:
@@ -33,6 +35,8 @@ class TreeNode:
             "centroid": self.centroid,
             "radius": self.radius,
             "children": self.children,
+            "lower_bounds": self.lower_bounds,
+            "upper_bounds": self.upper_bounds,
         }
 
 
@@ -41,12 +45,22 @@ def dot(a: Vector, b: Vector) -> float:
 
 
 def node_geometry(members: list[int], vectors: VectorSet) -> tuple[Vector, float]:
-    """The centroid of `members` and the maximum angular distance from it to any member.
+    """The centroid of `members` and maximum metric distance from it to a member.
 
     The radius is what makes the pruning bound sound: every member is guaranteed to lie within it
     of the centroid, so two nodes can be ruled out from their centroids and radii alone.
     """
     centroid = vectors.centroid(members)
-    similarities = vectors.similarity_to(centroid, members)
-    radius = max((angular_distance(value) for value in similarities), default=0.0)
+    radius = max(vectors.distances_to(centroid, members), default=0.0)
     return centroid, radius
+
+
+def node_bounds(members: list[int], vectors: VectorSet) -> tuple[Vector, Vector]:
+    """Axis-aligned bounds used by the projected Euclidean tree."""
+    if not members:
+        return [], []
+    rows = [vectors.row(member) for member in members]
+    return (
+        [min(column) for column in zip(*rows)],
+        [max(column) for column in zip(*rows)],
+    )

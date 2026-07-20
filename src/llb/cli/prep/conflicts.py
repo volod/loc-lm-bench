@@ -108,6 +108,11 @@ def audit_corpus_conflicts_cmd(
         help="remove the corpus mean direction before comparing; encoder spaces are anisotropic, "
         "so without it two unrelated chunks already score ~0.83 and the threshold means little",
     ),
+    project_dims: int = typer.Option(
+        0,
+        min=0,
+        help="PCA dimensions for exact Euclidean tree blocking (0 = blocked all-pairs scan)",
+    ),
 ) -> None:
     """Report duplicated, stale, and contradictory knowledge in a corpus. Never edits the corpus."""
     from llb.conflicts.audit import AuditParams, run_audit
@@ -154,6 +159,7 @@ def audit_corpus_conflicts_cmd(
             max_claim_pairs=max_claim_pairs,
             min_claim_tokens=min_claim_tokens,
             center_vectors=center_vectors,
+            project_dims=project_dims,
         ),
         store=view,
         goldset=items,
