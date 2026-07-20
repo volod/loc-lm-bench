@@ -156,16 +156,25 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
             if isinstance(item, dict) and item.get("status") == "ok"
         ]
         rows.sort(key=lambda row: str(row.get("doc_id")))
-        return _json_fingerprint(
+        fingerprint = _json_fingerprint(
             [_with_citation_sidecar(root, str(row.get("doc_id")), row) for row in rows]
         )
-    files = []
-    for path in sorted(root.rglob("*")):
-        if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
-            doc_id = path.relative_to(root).as_posix()
-            row = {"path": doc_id, "sha256": _sha256_file(path)}
-            files.append(_with_citation_sidecar(root, doc_id, row))
-    return _json_fingerprint(files)
+    else:
+        files = []
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
+                doc_id = path.relative_to(root).as_posix()
+                row = {"path": doc_id, "sha256": _sha256_file(path)}
+                files.append(_with_citation_sidecar(root, doc_id, row))
+        fingerprint = _json_fingerprint(files)
+    from llb.conflicts.overlay import load_applied_overlay, overlay_fingerprint
+
+    overlay_sha = overlay_fingerprint(load_applied_overlay(root))
+    return (
+        fingerprint
+        if overlay_sha is None
+        else _json_fingerprint({"corpus": fingerprint, "conflict_overlay": overlay_sha})
+    )
 
 
 def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
@@ -193,12 +202,22 @@ def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
                 out[doc_id] = _json_fingerprint(
                     _with_citation_sidecar(root, doc_id, _manifest_item_row(item))
                 )
-        return out
-    return {
-        path.relative_to(root).as_posix(): _plain_doc_fingerprint(root, path)
-        for path in sorted(root.rglob("*"))
-        if path.is_file() and path.suffix.lower() in {".md", ".txt"}
-    }
+    else:
+        out = {
+            path.relative_to(root).as_posix(): _plain_doc_fingerprint(root, path)
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and path.suffix.lower() in {".md", ".txt"}
+        }
+    from llb.conflicts.overlay import load_applied_overlay, overlay_fingerprint_for_doc
+
+    overlay = load_applied_overlay(root)
+    for doc_id, fingerprint in list(out.items()):
+        overlay_sha = overlay_fingerprint_for_doc(overlay, doc_id)
+        if overlay_sha is not None:
+            out[doc_id] = _json_fingerprint(
+                {"document": fingerprint, "conflict_overlay": overlay_sha}
+            )
+    return out
 
 
 def _citation_sidecar_sha(root: Path, doc_id: str) -> str | None:

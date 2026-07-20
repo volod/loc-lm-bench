@@ -104,44 +104,6 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
-### corpus-conflict-resolution
-
-Act on `corpus-conflict-detection` findings: `llb resolve-corpus-conflicts` turns a
-`findings.jsonl` into a reviewable resolution plan -- per finding one of `keep_both`,
-`drop_duplicate`, `prefer_newer` (decided by the governance `effective_date` / `version` pair), or
-`escalate` -- applies the accepted plan as an additive, reversible corpus overlay of per-document
-suppress/annotate directives rather than a destructive edit, and rebuilds through the existing
-refresh path so the retrieval effect is measured instead of assumed. Findings the policy cannot
-decide autonomously become typed review-workbench records; deleting the overlay is the rollback.
-
-- Agent status: RUN NEEDED
-- Dependencies: `corpus-conflict-detection` is current behavior
-  ([data prep](current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection));
-  this consumes its `findings.jsonl`. Reuse the governance fields for the `prefer_newer` rule,
-  `refresh_vector_store` plus the drift report in `src/llb/rag/refresh/`, the
-  immutable-generation publish path in `src/llb/core/store_generations.py`, and the record
-  adapters in [review workbench](current/review-workbench.md).
-- User-visible outcome: a corpus whose redundant and superseded content stops competing for top-k
-  slots, with a before/after recall@10 / MRR and answer-quality delta proving the cleanup helped
-  -- and a one-command rollback when it did not.
-- Scope boundary: in scope -- the resolution policy, the reversible overlay, workbench escalation,
-  and the before/after measurement. Out of scope -- rewriting or merging source document text (an
-  overlay suppresses, it never authors), making any resolution default-on, and auto-rag stage
-  integration (add a follow-up task once the policy carries measured evidence).
-- Data and artifact paths: `plan.json`, `conflict_overlay.json`, and `effect.md` under
-  `$DATA_DIR/corpus-conflicts/<run>/`; refreshed stores land in the existing
-  `generations/<utc-ts>/` layout; no new roots.
-- Execution path: `make resolve-corpus-conflicts FINDINGS=<jsonl>
-  [POLICY=conservative|prefer-newer] [APPLY=1]`, then `make refresh-index CORPUS=<dir>` and
-  `make validate-retrieval GOLDSET=<gs>`; CI drives plan generation, overlay application, and
-  rollback over the planted-conflict fixture with a fake store.
-- Acceptance gates: `make ci` green; an all-`keep_both` plan leaves retrieval identical to the
-  un-overlaid store; deleting the overlay restores the pre-resolution ranking exactly; a heavy run
-  over the quickstart corpus reports recall@10 / MRR and objective before vs. after with an
-  explicit adopt-or-revert verdict.
-- Documentation target: the [data prep](current/data-prep.md) corpus-hygiene section and
-  [review workbench](current/review-workbench.md) for the escalated record type.
-
 ### graph-vector-fusion-retrieval
 
 Fuse the GraphRAG lane into retrieval instead of keeping graph an either/or backend: a fused
@@ -371,6 +333,35 @@ assumed.
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### corpus-conflict-resolution-review
+
+Review the unresolved semantic conflict candidates through the workbench, then feed the accepted
+ledger back into the resolver and repeat the retrieval plus verified answer-quality comparison.
+The resolver behavior and the reason semantic candidates have no automatic suppression authority
+are current behavior in
+[data prep](current/data-prep.md#corpus-conflict-resolution-corpus-conflict-resolution).
+
+- Agent status: HUMAN-GATED
+- Dependencies: the resolution lane is current behavior. Human step that gates completion: an
+  authorized corpus reviewer chooses `keep_both`, `drop_a`, or `drop_b` for every escalated row
+  and signs off on the resulting suppression directives before application.
+- User-visible outcome: an accepted or rejected suppression policy backed by reviewed conflict
+  labels and a repeatable effect report, instead of adopting semantic similarity candidates as
+  deletions.
+- Scope boundary: in scope -- workbench review, accepted-ledger application, the same before/after
+  metrics, and an adopt-or-revert decision. Out of scope -- changing detector thresholds,
+  rewriting source text, or adding the resolver to auto-rag before the reviewed run supports it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/resolution_review.jsonl`,
+  `plan.json`, `conflict_overlay.json`, and `effect.md`; no new artifact root.
+- Execution path: `make review-workbench REVIEW_PATH=<resolution-review-jsonl>`, then
+  `make resolve-corpus-conflicts FINDINGS=<findings-jsonl> REVIEWED=<resolution-review-jsonl>
+  APPLY=1 STORE=<store-dir> GOLDSET=<goldset-jsonl>` and repeat the fixed verified objective run.
+- Acceptance gates: every review row has a decision; the regenerated plan has no unresolved
+  records; rollback still restores the exact baseline; the human accepts only if retrieval and
+  verified objective metrics do not regress.
+- Documentation target: the resolution evidence subsection of [data prep](current/data-prep.md)
+  and the conflict adapter notes in [review workbench](current/review-workbench.md).
 
 ### frontier-judge-authorization
 

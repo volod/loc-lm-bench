@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from llb.review.adapters import (
+    ConflictResolutionAdapter,
     DraftCompareAdapter,
     ExternalRagAdapter,
     GoldsetVerifyAdapter,
@@ -40,8 +41,11 @@ def open_review(path: Path | str) -> ReviewAdapter:
             if "review_profile" in fields and _translation_profile(value):
                 return KnowledgeCutoffAdapter(value)
             return GoldsetVerifyAdapter(value)
-    if value.suffix.lower() == ".jsonl" and _is_external_rag(value):
-        return ExternalRagAdapter(value)
+    if value.suffix.lower() == ".jsonl":
+        if _is_conflict_resolution(value):
+            return ConflictResolutionAdapter(value)
+        if _is_external_rag(value):
+            return ExternalRagAdapter(value)
     raise ValueError(f"unrecognized review ledger: {value}")
 
 
@@ -83,3 +87,12 @@ def _is_external_rag(path: Path) -> bool:
         and "question" in record
         and any(field in record for field in answer_fields)
     )
+
+
+def _is_conflict_resolution(path: Path) -> bool:
+    try:
+        line = next(line for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        record = json.loads(line)
+    except (OSError, StopIteration, json.JSONDecodeError):
+        return False
+    return isinstance(record, dict) and record.get("review_type") == "corpus_conflict_resolution"

@@ -12,7 +12,7 @@ from llb.conflicts.null_distribution import MIN_NULL_PAIRS, NullDistribution, _q
 from llb.conflicts.null_sampling import _cross_document_sample, estimate_null_distribution
 from llb.conflicts.semantic_tier import content_ordinals
 from llb.conflicts.vectorops import VectorSet
-from tests.llb.conflicts.conflict_helpers import FIXTURE_CORPUS, fake_store_view
+from conflict_helpers import FIXTURE_CORPUS, fake_store_view
 
 
 def _semantic_stats(result):

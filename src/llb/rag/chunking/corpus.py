@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from llb.conflicts.overlay import apply_to_chunks, directives_by_doc, load_applied_overlay
 from llb.core.contracts.rag import ChunkRecord, ChunkSummary
 from llb.prep.corpus_governance import manifest_governance_by_doc
 from llb.rag.chunking.dispatch import chunk_spans
@@ -63,6 +64,7 @@ def chunk_corpus(
     """Chunk the corpus (or, with `only_docs`, just those doc_ids -- the refresh subset path)."""
     chunks: list[ChunkRecord] = []
     governance_by_doc = manifest_governance_by_doc(corpus_root)
+    overlay_by_doc = directives_by_doc(load_applied_overlay(corpus_root))
     for doc_id, text in iter_docs(corpus_root):
         if only_docs is not None and doc_id not in only_docs:
             continue
@@ -74,7 +76,7 @@ def chunk_corpus(
         if governance:
             for chunk in doc_chunks:
                 chunk["metadata"] = {**(chunk.get("metadata") or {}), **governance}
-        chunks.extend(doc_chunks)
+        chunks.extend(apply_to_chunks(doc_chunks, overlay_by_doc.get(doc_id)))
     return chunks
 
 

@@ -1,7 +1,7 @@
 ## Corpus conversion, ingestion, validation, and SQuAD preparation.
 
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus validate-goldset ingest-squad \
-	external-squad-rag audit-corpus-conflicts
+	external-squad-rag audit-corpus-conflicts resolve-corpus-conflicts
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -45,6 +45,24 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(PROJECT_DIMS)" ]; then args+=(--project-dims "$(PROJECT_DIMS)"); fi; \
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
 	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
+
+resolve-corpus-conflicts: ## Plan/apply reversible conflict overlay (FINDINGS= POLICY=conservative|prefer-newer APPLY=1 CORPUS= STORE= GOLDSET= REVIEWED= ROLLBACK=1)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(); \
+	if [ -n "$(FINDINGS)" ]; then args+=(--findings "$(FINDINGS)"); fi; \
+	if [ -n "$(CORPUS)" ]; then args+=(--corpus "$(CORPUS)"); fi; \
+	if [ -n "$(CONFLICTS_OUT)" ]; then args+=(--out "$(CONFLICTS_OUT)"); fi; \
+	if [ -n "$(POLICY)" ]; then args+=(--policy "$(POLICY)"); fi; \
+	if [ -n "$(REVIEWED)" ]; then args+=(--reviewed "$(REVIEWED)"); fi; \
+	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
+	if [ -n "$(GOLDSET)" ]; then args+=(--goldset "$(GOLDSET)"); fi; \
+	if [ -n "$(BEFORE_RUN)" ]; then args+=(--before-run "$(BEFORE_RUN)"); fi; \
+	if [ -n "$(AFTER_RUN)" ]; then args+=(--after-run "$(AFTER_RUN)"); fi; \
+	if [ -n "$(APPLY)" ]; then args+=(--apply); fi; \
+	if [ -n "$(ROLLBACK)" ]; then args+=(--rollback); fi; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main resolve-corpus-conflicts "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
