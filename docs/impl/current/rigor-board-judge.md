@@ -504,6 +504,53 @@ Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm comple
 including a mid-batch abort/resume case-checkpoint test that proves the second pass issues
 `N - K` new calls after `K` cases were already scored.
 
+### Frontier Judge Agreement and Cost Report
+
+`src/llb/scoring/frontier_agreement/` produces the evidence an operator needs to decide whether a
+frontier judge may gate autonomously. It scores a filled calibration worksheet with each named
+provider through the scorer-policy seam (same consent, ledger, cap, and resume guarantees as a
+scored run), then reports two rank correlations per provider -- against the human `human_rating`
+and against the local judge's `judge_rating` -- plus measured cost per item.
+
+| Module | Responsibility |
+| --- | --- |
+| `items.py` | Worksheet rows -> judgeable records; contexts are windows of the gold source doc |
+| `provider.py` | One provider's run under `resolve_scorer(lane="frontier")` |
+| `agreement.py` | Spearman rho + bootstrap CI per metric; cost-per-item and cap math |
+| `report.py` | `report.md` including the operator's sign-off table |
+| `run.py` | Orchestration; writes the run bundle |
+
+Design points:
+
+- Grounding contexts come from the gold set's source spans (a `GOLD_CONTEXT_WINDOW_CHARS`-wide
+  window of the source document), not from retrieval. Judge agreement is measured with retrieval
+  held constant so a retrieval regression cannot masquerade as judge disagreement.
+- Correlation is rank-based, so the human 1..5 scale and the judge 0..1 scale are compared without
+  rescaling. The headline metric is `mean` -- the same scalar `judge_value` that a scored run
+  records per case (`src/llb/scoring/judge/scorer.py`, shared with `runner_judge`).
+- A recommended cap is `cost_per_item * n_items * CAP_SAFETY_FACTOR` (2.0), rounded up to the cent.
+  When litellm cannot price a model, `cost_usd` is 0; the report marks the provider unpriced and
+  recommends no cap rather than guessing one.
+- Providers are independent: each owns its ledger directory, so one provider's budget abort or
+  transport failure is recorded under `failures` while the others keep their evidence.
+- `recommendation` is a machine reading of the rho gate only. `human_decision` stays `pending`
+  until an operator records an accept or reject; the report says so explicitly.
+
+```bash
+make frontier-judge-agreement FRONTIER_JUDGE_MODELS=<litellm-id>[,<id>...] \
+  FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=<cap>
+```
+
+Artifacts land under `$DATA_DIR/frontier-judge/<run>/`: `report.md` and `agreement.json` at the
+root, and per provider a `<provider-slug>/` holding `scores.jsonl` plus the standard `scorer/`
+consent and ledger files. The lane refuses to run without both an explicit egress consent and a
+cap. Tests are `tests/llb/scoring/test_frontier_agreement.py` (injected fake completers; no
+network, no spend), covering the rho and cap math, the artifact bundle, per-provider failure
+isolation, and resume-after-abort.
+
+The provider keys, the spend approval, and the accept/reject decision per provider remain human
+steps; see the `frontier-judge-authorization` task in [plan.md](../plan.md).
+
 ## Frontier Prep Utilities
 
 `src/llb/prep/frontier.py` contains GPU-free Litellm-backed utilities that emit unverified review

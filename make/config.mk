@@ -284,6 +284,19 @@ CAL_NAME ?= ua_squad_postedited_v1
 CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
 CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
+
+# Frontier judge authorization (`make frontier-judge-agreement`). FRONTIER_JUDGE_MODELS is a
+# comma-separated list of litellm ids; each needs its provider key in .env. The lane SENDS the
+# worksheet answers to those providers and SPENDS money, so it refuses to run without
+# FRONTIER_EGRESS_CONSENT=1 and at least one of FRONTIER_MAX_USD / FRONTIER_MAX_CALLS. Keep the
+# worksheet on public/committed fixture data: private corpora must not leave the host.
+FRONTIER_JUDGE_MODELS ?=
+FRONTIER_EGRESS_CONSENT ?=
+FRONTIER_MAX_USD ?=
+FRONTIER_MAX_CALLS ?=
+FRONTIER_JUDGE_THRESHOLD ?= 0.6
+FRONTIER_JUDGE_LIMIT ?=
+FRONTIER_JUDGE_OUT ?=
 # Data-verification knobs (the new-goldset flow: cross-check -> human verification gate sample-verify). BUNDLE is a
 # draft dir (goldset.jsonl + corpus/) under $(DATA_DIR)/prepare-goldset/<ts>/; the sample worksheet
 # + accepted-ledger default beside it. CROSS_CHECK_MODEL is the SECOND-frontier verifier (must

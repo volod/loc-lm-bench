@@ -1,7 +1,7 @@
 ## External-draft curation, judge calibration, and query glossary preparation.
 
 .PHONY: curate-drafts import-external-draft calibration-worksheet calibration-run \
-	calibration-rate calibration-score build-query-glossary
+	calibration-rate calibration-score frontier-judge-agreement build-query-glossary
 
 curate-drafts: ## Merge/dedup/filter external drafts; CURATE_KIND= CURATE_INPUTS="a b" CURATE_OUT= CURATE_CORPUS= CURATE_DEDUP_AGAINST= CURATE_SEMANTIC=0|1
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -42,6 +42,20 @@ calibration-rate: ## Interactively fill human ratings/answers in CAL_WS (judge_r
 calibration-score: ## Score a filled worksheet: rho + bootstrap CI + trust decision (RATINGS=path, gate rho>=0.6)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.judge.calibration score --ratings "$(RATINGS)"
+
+frontier-judge-agreement: ## Frontier judge authorization: rho vs human + vs local judge and cost/item per provider (FRONTIER_JUDGE_MODELS= FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD= ; SPENDS MONEY + SENDS ANSWERS OFF-HOST)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(FRONTIER_JUDGE_MODELS)" || { echo "ERROR: set FRONTIER_JUDGE_MODELS=<litellm id>[,<id>...]"; exit 1; }
+	@test -n "$(FRONTIER_EGRESS_CONSENT)" || { echo "ERROR: set FRONTIER_EGRESS_CONSENT=1 to approve sending answers to the providers"; exit 1; }
+	@test -n "$(FRONTIER_MAX_USD)$(FRONTIER_MAX_CALLS)" || { echo "ERROR: set FRONTIER_MAX_USD and/or FRONTIER_MAX_CALLS"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main frontier-judge-agreement --worksheet "$(CAL_WS)" \
+		--models "$(FRONTIER_JUDGE_MODELS)" --goldset "$(GOLDSET)" \
+		--scorer-egress-consent --threshold $(FRONTIER_JUDGE_THRESHOLD) \
+		$(if $(FRONTIER_MAX_USD),--frontier-max-usd $(FRONTIER_MAX_USD),) \
+		$(if $(FRONTIER_MAX_CALLS),--frontier-max-calls $(FRONTIER_MAX_CALLS),) \
+		$(if $(FRONTIER_JUDGE_LIMIT),--limit $(FRONTIER_JUDGE_LIMIT),) \
+		$(if $(FRONTIER_JUDGE_OUT),--out-dir "$(FRONTIER_JUDGE_OUT)",)
 
 build-query-glossary: ## uk-query-processing: build query_glossary.json from a draft BUNDLE's dictionary candidates (QUERY_GLOSSARY_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

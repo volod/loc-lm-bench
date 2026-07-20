@@ -377,32 +377,64 @@ requires human judgment or authorization.
 
 ### frontier-judge-authorization
 
-Authorize and calibrate the frontier scorer lane against real providers. An agent builds any
-missing report tooling; the human step is supplying provider keys, granting the egress consent,
-setting a real spend cap, and reviewing the resulting agreement evidence.
+Authorize the frontier scorer lane against real providers. The report tooling is current behavior
+([frontier judge agreement and cost report](current/rigor-board-judge.md#frontier-judge-agreement-and-cost-report));
+what remains is entirely the human authorization and the judgment it produces.
 
-- Agent status: HUMAN-GATED
-- Dependencies: [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human
-  step that gates completion: the operator provides Anthropic / OpenAI / Google keys in `.env`,
-  records the consent, approves the per-run budget cap, and signs off on the agreement report.
+- Agent status: HUMAN-GATED human_decision: panding
+- Command:  once a real Anthropic key is in .env (~$0.40, 86 items)
+  `make frontier-judge-agreement FRONTIER_JUDGE_MODELS=anthropic/claude-sonnet-4-5 FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=1.00`
+- Dependencies: the agreement lane is current behavior; it runs on the 86-row calibration
+  worksheet `calibration/ua_squad_postedited_v1.csv` (every row carries both a human and a local
+  judge rating). Human step that gates completion: the operator puts a real Anthropic / OpenAI /
+  Google key in `.env` (all three are currently blank placeholders, so no live run is possible),
+  approves the per-run spend cap, and signs off on the resulting report.
 - User-visible outcome: a decision record stating whether each frontier judge is trusted for
-  autonomous gates on Ukrainian data, plus calibrated default budget caps derived from measured
-  cost-per-item.
-- Scope boundary: in scope -- running the frontier lane on the committed UA fixture, computing
-  Spearman rho for frontier-vs-human and frontier-vs-local-judge agreement, and a cost-per-item
-  table per provider. Out of scope -- sending any private corpus to a provider and changing the
-  headline-ranking policy.
-- Data and artifact paths: agreement report and cost table under
-  `$DATA_DIR/frontier-judge/<run>/`; input ratings reuse the existing human calibration ledger;
-  fixture is `samples/goldsets/ua_squad_postedited_v1/`.
-- Execution path: run `llb run-eval --scorer-policy frontier ...` over the calibration worksheet
-  with each provider, then the agreement/cost report command; requires live provider access and
-  spend, so the run stays outside CI entirely.
-- Acceptance gates: report exists with rho per provider and cost-per-item with the cap math; the
-  human accepts or rejects each provider for autonomous use; default caps land in the sample
-  configs with the decision recorded.
+  autonomous gates on Ukrainian data, plus default budget caps derived from measured
+  cost-per-item rather than from a guess.
+- Scope boundary: in scope -- running the existing lane on the committed UA fixture, reviewing
+  the rho and cost tables, recording an accept/reject per provider, and landing the resolved caps
+  in the sample configs. Out of scope -- sending any private corpus to a provider, changing the
+  headline-ranking policy, and any further report tooling.
+- Data and artifact paths: `$DATA_DIR/frontier-judge/<run>/`; fixture is
+  `samples/goldsets/ua_squad_postedited_v1/`.
+- Execution path: `make frontier-judge-agreement FRONTIER_JUDGE_MODELS=<id>[,<id>...]
+  FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=<cap>`; needs live provider access and spend, so it
+  stays outside CI entirely.
+- Acceptance gates: the report carries a non-`n/a` rho per provider against both references and a
+  priced cost-per-item with cap math; the human replaces `human_decision: pending` with an accept
+  or reject per provider; the accepted caps land in the sample configs with the decision recorded.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) judge section and
   [product decisions](current/scope-boundaries.md) for the trust decision per provider.
+
+### frontier-judge-retrieved-context-agreement
+
+Optional. Re-measure frontier-vs-human judge agreement with *retrieved* contexts instead of the
+gold-span windows the authorization lane uses. The current lane deliberately holds retrieval
+constant by grounding each item on a window of its gold source document, which isolates judge
+behavior but also hands the judge cleaner evidence than a scored run ever gives it. A judge that
+ranks well on oracle context may rank differently when the context contains distractors or misses
+the answer entirely -- exactly the cases where an autonomous gate matters most. Add a context
+source switch to `load_agreement_items` that pulls each item's top-k retrieved chunks from an
+existing store, then report both grounding modes side by side so the gap is visible.
+
+- Agent status: HUMAN-GATED
+- Dependencies: blocked by `frontier-judge-authorization` (needs the same provider keys and
+  spend). Reuse the agreement lane in `src/llb/scoring/frontier_agreement/` and the store-loading
+  seam used by the context-position probe.
+- User-visible outcome: evidence for whether frontier-judge trust measured on oracle context
+  transfers to the noisy contexts a real scored run produces.
+- Scope boundary: in scope -- the retrieved-context source, the two-mode comparison, and the
+  delta. Out of scope -- changing the default grounding of the authorization lane before the
+  comparison says it should.
+- Data and artifact paths: no new roots; a second grounding mode inside the existing
+  `$DATA_DIR/frontier-judge/<run>/` bundle.
+- Execution path: `make frontier-judge-agreement` with a grounding-mode knob plus a built store;
+  CI covers mode selection over a fake store and fake completers.
+- Acceptance gates: `make ci` green; the gold-span mode reproduces the current numbers exactly; a
+  live run reports rho under both modes with the delta called out.
+- Documentation target: the frontier-judge agreement subsection of
+  [evaluation rigor](current/rigor-board-judge.md).
 
 ### autonomous-vs-assisted-acceptance
 
