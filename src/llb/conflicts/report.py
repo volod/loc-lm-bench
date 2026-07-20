@@ -14,6 +14,7 @@ from llb.conflicts.constants import (
     REL_SUPERSEDED_BY,
     REPORT_FILE,
     SUMMARY_FILE,
+    TIER_SEMANTIC,
     TREE_META_FILE,
 )
 from llb.conflicts.models import AuditResult, Finding
@@ -65,6 +66,49 @@ def _relations_section(result: AuditResult) -> list[str]:
     return lines
 
 
+def _threshold_section(result: AuditResult) -> list[str]:
+    """How the semantic cosine cutoff was chosen, and the null distribution behind it.
+
+    An operator comparing two runs needs the ABSOLUTE cosine even when the knob was a quantile;
+    a quantile alone is not comparable across corpora, which is the whole reason it exists.
+    """
+    semantic = next((stat for stat in result.tiers if stat.tier == TIER_SEMANTIC), None)
+    if semantic is None or "cos_threshold" not in semantic.extra:
+        return []
+    source = semantic.extra.get("cos_threshold_source", "default")
+    lines = [
+        "## Semantic threshold",
+        "",
+        f"- cosine cutoff: **{float(semantic.extra['cos_threshold']):.4f}** ({source})",
+    ]
+    null = semantic.extra.get("null_distribution")
+    if not isinstance(null, dict):
+        lines.append("")
+        return lines
+    kind = "exhaustive" if null.get("exhaustive") else f"sampled (seed {null.get('seed')})"
+    lines += [
+        f"- measured over {null.get('n_pairs')} comparable cross-document pairs, {kind}, "
+        f"out of {null.get('total_pairs')} total",
+        f"- null quantile used: {null.get('resolved_quantile')}",
+        f"- rank cutoff: {null.get('selected_rank')}"
+        + (
+            f" (candidate budget {null['max_candidate_pairs']})"
+            if null.get("max_candidate_pairs") is not None
+            else ""
+        ),
+        "- this is a rank cutoff into the corpus's own similarity ordering, NOT a "
+        "false-positive rate (see the data-prep known limitation)",
+        f"- mean cosine of a comparable pair: {null.get('mean')}",
+        "",
+        "| quantile | cosine |",
+        "| --- | --- |",
+    ]
+    quantiles = null.get("quantiles") or {}
+    lines += [f"| {q} | {value} |" for q, value in quantiles.items()]
+    lines.append("")
+    return lines
+
+
 def _tiers_section(result: AuditResult) -> list[str]:
     if not result.tiers:
         return []
@@ -78,6 +122,8 @@ def _tiers_section(result: AuditResult) -> list[str]:
         lines.append(
             f"| `{stat.tier}` | {stat.candidate_pairs} | {stat.findings} | {stat.seconds:.2f} |"
         )
+    lines.append("")
+    lines += _threshold_section(result)
     lines.append("")
     semantic = next((s for s in result.tiers if "pruned_fraction" in s.extra), None)
     if semantic is not None:

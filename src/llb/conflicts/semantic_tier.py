@@ -118,6 +118,7 @@ def detect_semantic_pairs(
     skip_doc_pairs: Iterable[tuple[str, str]] = (),
     body_offsets: dict[str, int] | None = None,
     min_tokens: int = MIN_CLAIM_TOKENS,
+    allowed: set[int] | None = None,
 ) -> tuple[list[Finding], list[tuple[int, int, float]], TierStats]:
     """Provisional `duplicate` findings plus the raw pairs the claim tier adjudicates.
 
@@ -128,7 +129,10 @@ def detect_semantic_pairs(
     """
     started = time.monotonic()
     stats = TierStats(tier=TIER_SEMANTIC)
-    allowed = content_ordinals(chunks, body_offsets or {}, min_tokens=min_tokens)
+    # The caller may pass the comparable set it already computed (the audit needs it to sample
+    # the null distribution over exactly these pairs); otherwise derive it here.
+    if allowed is None:
+        allowed = content_ordinals(chunks, body_offsets or {}, min_tokens=min_tokens)
     pairs = cross_document_pairs(
         vectors,
         chunks,

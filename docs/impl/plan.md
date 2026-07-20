@@ -43,36 +43,99 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-threshold-calibration
+### semantic-tier-metadata-block-filter
 
-Replace the fixed `--cos-threshold` with a corpus-calibrated one. The corpus-conflict audit
-measured that a threshold is not portable across corpora: in raw multilingual-E5 space two
-completely unrelated chunks already score 0.83, and even after mean-centering the useful operating
-point on the quickstart HR corpus was ~0.6 rather than the 0.9 that suits question dedup. An
-operator currently discovers that by sweeping. Instead, sample random chunk pairs to estimate the
-corpus's own null distribution of similarity, and express the knob as a quantile of that
-distribution (for example "flag pairs above the 99.9th percentile of unrelated pairs"), with the
-absolute cosine it resolves to recorded in the run summary.
+Stop publication-metadata blocks from entering the semantic tier's candidate pairs. The
+threshold-calibration evidence showed the HR corpus's 11 cross-document pairs at cosine 0.6 are
+not separable from the corpus's own null distribution (empirical FDR ~1.1), and the documented
+claim-tier adjudication explains why: 7 of those 11 were publication-metadata blocks that the
+claim tier had to reclassify as `complementary`. These blocks clear the existing front-matter and
+`--min-claim-tokens` filters because they are prose-length and sit in the document body, yet they
+carry no claim. Detect them structurally -- repeated near-identical blocks appearing once per
+document, keyed on the tokens they share corpus-wide rather than on a fixed vocabulary -- and
+exclude them from the comparable set the way front matter already is.
 
 - Agent status: RUN NEEDED
-- Dependencies: `corpus-conflict-detection` is current behavior
-  ([data prep](current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection)).
-  Reuse `VectorSet.pairs_above` and the centering path in `src/llb/conflicts/vectorops.py`.
-- User-visible outcome: the audit's default finds real duplication on a corpus the operator did
-  not tune it for, instead of returning either nothing or thousands of rows depending on how that
-  corpus's encoder happens to distribute.
-- Scope boundary: in scope -- null-distribution sampling, the quantile knob, and recording the
-  resolved absolute threshold. Out of scope -- changing the relation vocabulary, the tier order,
-  or any resolution action.
-- Data and artifact paths: no new roots; the sampled null distribution is recorded in the existing
-  `summary.json` under `$DATA_DIR/corpus-conflicts/<run>/`.
-- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic COS_QUANTILE=0.999`;
-  CI asserts the sampler is deterministic per seed and that an explicit `--cos-threshold` still
-  overrides the calibrated value.
-- Acceptance gates: `make ci` green; on both the quickstart HR and goods corpora the calibrated
-  default recovers the pairs the manually-swept threshold found, with the resolved cosine recorded
-  per corpus.
+- Dependencies: `corpus-conflict-detection` and the calibrated threshold are current behavior
+  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-false-flags)). Reuse
+  `content_ordinals` in `src/llb/conflicts/semantic_tier.py` and the corpus-wide document
+  frequency machinery in `src/llb/conflicts/lexical_tier.py`.
+- User-visible outcome: the semantic tier's candidate list is dominated by claim-bearing pairs, so
+  a calibrated threshold can be tightened without discarding real findings -- and the claim tier
+  spends its model calls on pairs that might actually conflict.
+- Scope boundary: in scope -- the structural detector, its exclusion in `content_ordinals`, and a
+  re-measured null distribution and FDR on both quickstart corpora. Out of scope -- changing the
+  relation vocabulary, the tier order, or the calibration knob itself.
+- Data and artifact paths: no new roots; the excluded-block count joins the existing
+  `excluded_chunks` accounting in `summary.json`.
+- Execution path: `make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic MAX_FALSE_FLAGS=1`;
+  CI asserts the detector fires on a committed fixture carrying a repeated metadata block and
+  leaves single-occurrence prose untouched.
+- Acceptance gates: `make ci` green; on the HR corpus the substantive pairs survive while the
+  metadata pairs are excluded, and the re-measured FDR at the surviving pairs' cosine drops
+  materially below the ~1.1 recorded today.
 - Documentation target: the corpus-hygiene section of [data prep](current/data-prep.md).
+
+### conflict-null-model-research
+
+**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
+that must be recorded rather than worked around.
+
+Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
+a real false-positive rate instead of a rank cutoff. The current calibration measures the
+similarity distribution of the corpus's own comparable cross-document pairs, which contains
+whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
+the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
+and a budget of `N` returns exactly `N` pairs by construction (measured; see
+[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
+question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
+noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
+answer.
+
+Candidate approaches to evaluate, cheapest first; none is known to work:
+
+- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
+  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
+  shift makes the null too easy, understating the threshold.
+- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
+  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
+  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
+  lands too high.
+- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
+  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
+  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
+  problem already measured for chunk-pair sampling.
+- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
+  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
+  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
+  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
+
+- Agent status: RUN NEEDED
+- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
+  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
+  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
+  fixture. Related: `semantic-tier-metadata-block-filter` removes a known contaminant and should
+  land first, since it changes the population any null is measured over.
+- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
+  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
+  would justify moving threshold selection to the claim tier's measured precision instead.
+- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
+  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
+  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
+  a null demonstrably beats the rank cutoff.
+- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
+  no new committed fixtures unless an approach earns one.
+- Execution path: a research harness invoked per null model over both quickstart stores plus the
+  fixture; CI covers each null constructor deterministically over committed vectors, with the
+  heavy corpus comparison run on the CUDA host.
+- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
+  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
+  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
+  11 swept HR pairs without flooding goods. If none does, the negative result is recorded in
+  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
+- Documentation target: the corpus-hygiene known-limitation section of
+  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
+  adopt-or-reject verdict.
 
 ### conflict-blocking-for-large-corpora
 
@@ -382,8 +445,14 @@ Authorize the frontier scorer lane against real providers. The report tooling is
 what remains is entirely the human authorization and the judgment it produces.
 
 - Agent status: HUMAN-GATED human_decision: panding
-- Command:  once a real Anthropic key is in .env (~$0.40, 86 items)
-  `make frontier-judge-agreement FRONTIER_JUDGE_MODELS=anthropic/claude-sonnet-4-5 FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=1.00`
+- Command: once a real Anthropic key is in `.env` (~$0.40, 86 items):
+
+  ```bash
+  make frontier-judge-agreement \
+    FRONTIER_JUDGE_MODELS=anthropic/claude-sonnet-4-5 \
+    FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=1.00
+  ```
+
 - Dependencies: the agreement lane is current behavior; it runs on the 86-row calibration
   worksheet `calibration/ua_squad_postedited_v1.csv` (every row carries both a human and a local
   judge rating). Human step that gates completion: the operator puts a real Anthropic / OpenAI /

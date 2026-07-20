@@ -33,11 +33,16 @@ from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
 from llb.conflicts.needles import analyze_needles
-from llb.conflicts.semantic_tier import build_tree, detect_semantic_pairs
+from llb.conflicts.null_calibration import resolve_cos_threshold
+from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
+from llb.conflicts.null_sampling import estimate_null_distribution
+from llb.conflicts.semantic_tier import build_tree, content_ordinals, detect_semantic_pairs
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.conflicts.tree_refresh import tree_meta
+from llb.conflicts.vectorops import VectorSet
 from llb.core.contracts.common import JsonObject
+from llb.core.contracts.rag import ChunkRecord
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier_telemetry import LLMComplete
 
@@ -51,7 +56,11 @@ class AuditParams:
     effort: str
     jaccard_threshold: float = DEFAULT_JACCARD_THRESHOLD
     containment_threshold: float = DEFAULT_CONTAINMENT_THRESHOLD
-    cos_threshold: float = DEFAULT_COSINE_THRESHOLD
+    cos_threshold: float | None = None
+    cos_quantile: float | None = None
+    max_candidate_pairs: int | None = None
+    null_sample_pairs: int = DEFAULT_NULL_SAMPLE_PAIRS
+    null_seed: int = DEFAULT_NULL_SEED
     leaf_size: int = DEFAULT_LEAF_SIZE
     max_claim_pairs: int = 0  # 0 == adjudicate every candidate pair
     min_claim_tokens: int = MIN_CLAIM_TOKENS
@@ -63,6 +72,10 @@ class AuditParams:
             "jaccard_threshold": self.jaccard_threshold,
             "containment_threshold": self.containment_threshold,
             "cos_threshold": self.cos_threshold,
+            "cos_quantile": self.cos_quantile,
+            "max_candidate_pairs": self.max_candidate_pairs,
+            "null_sample_pairs": self.null_sample_pairs,
+            "null_seed": self.null_seed,
             "leaf_size": self.leaf_size,
             "max_claim_pairs": self.max_claim_pairs,
             "min_claim_tokens": self.min_claim_tokens,
@@ -135,6 +148,44 @@ def run_audit(
     return result
 
 
+def _calibrate_threshold(
+    params: AuditParams,
+    vectors: "VectorSet",
+    chunks: list[ChunkRecord],
+    allowed: set[int],
+) -> tuple[float, JsonObject]:
+    """Resolve the operating cosine and the null-distribution record that justifies it.
+
+    Sampling only runs when a quantile was asked for: it costs a pass over the sampled pairs, and
+    a run that names an absolute threshold has nothing to calibrate.
+    """
+    distribution = None
+    if params.cos_quantile is not None or params.max_candidate_pairs is not None:
+        distribution = estimate_null_distribution(
+            vectors,
+            chunks,
+            allowed,
+            sample_pairs=params.null_sample_pairs,
+            seed=params.null_seed,
+        )
+    threshold, source, resolved_quantile = resolve_cos_threshold(
+        explicit=params.cos_threshold,
+        quantile=params.cos_quantile,
+        default=DEFAULT_COSINE_THRESHOLD,
+        distribution=distribution,
+        max_candidate_pairs=params.max_candidate_pairs,
+    )
+    payload: dict[str, object] = {
+        "cos_threshold": threshold,
+        "cos_threshold_source": source,
+    }
+    if distribution is not None:
+        payload["null_distribution"] = distribution.payload(
+            resolved_quantile, params.max_candidate_pairs
+        )
+    return threshold, payload
+
+
 def _run_semantic_tiers(
     result: AuditResult,
     params: AuditParams,
@@ -161,16 +212,24 @@ def _run_semantic_tiers(
         )
     vectors = store.vectors.centered() if centered else store.vectors
     active = tree if tree is not None else build_tree(vectors, leaf_size=params.leaf_size)
+    body_offsets = {doc.doc_id: doc.body_offset for doc in docs}
+    # The comparable set is computed here rather than left to the tier, because the null
+    # distribution must be sampled from exactly the pairs the scan will consider: front matter and
+    # PDF residue score high against each other and would inflate the estimated quantile.
+    allowed = content_ordinals(store.chunks, body_offsets, min_tokens=params.min_claim_tokens)
+    cos_threshold, null_payload = _calibrate_threshold(params, vectors, store.chunks, allowed)
     semantic_findings, pairs, semantic_stats = detect_semantic_pairs(
         active,
         vectors,
         store.chunks,
         governance,
-        cos_threshold=params.cos_threshold,
+        cos_threshold=cos_threshold,
         skip_doc_pairs=settled,
-        body_offsets={doc.doc_id: doc.body_offset for doc in docs},
+        body_offsets=body_offsets,
         min_tokens=params.min_claim_tokens,
+        allowed=allowed,
     )
+    semantic_stats.extra.update(null_payload)
     result.tiers.append(semantic_stats)
     result.tree_meta = {
         **tree_meta(
@@ -179,14 +238,14 @@ def _run_semantic_tiers(
             dim=store.dim,
             corpus_fingerprint=str(store.meta.get("corpus_fingerprint", "")),
             doc_fingerprints=store.doc_fingerprints,
-            cos_threshold=params.cos_threshold,
+            cos_threshold=cos_threshold,
         ),
         "centered": centered,
     }
 
     if goldset:
         _, needle_report = analyze_needles(
-            goldset, store.chunks, vectors, cos_threshold=params.cos_threshold
+            goldset, store.chunks, vectors, cos_threshold=cos_threshold
         )
         result.needles = needle_report
         _LOG.info(

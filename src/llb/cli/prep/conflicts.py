@@ -19,6 +19,11 @@ from llb.conflicts.constants import (
     TIERS,
     tiers_up_to,
 )
+from llb.conflicts.null_distribution import (
+    SUGGESTED_MAX_CANDIDATE_PAIRS,
+    DEFAULT_NULL_SAMPLE_PAIRS,
+    DEFAULT_NULL_SEED,
+)
 
 if TYPE_CHECKING:
     from llb.conflicts.models import AuditResult
@@ -56,8 +61,35 @@ def audit_corpus_conflicts_cmd(
     containment_threshold: float = typer.Option(
         DEFAULT_CONTAINMENT_THRESHOLD, min=0.0, max=1.0, help="lexical subsumption cutoff"
     ),
-    cos_threshold: float = typer.Option(
-        DEFAULT_COSINE_THRESHOLD, min=0.0, max=1.0, help="semantic same-claim cosine cutoff"
+    cos_threshold: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        max=1.0,
+        help=f"semantic same-claim cosine cutoff, absolute (default {DEFAULT_COSINE_THRESHOLD}); "
+        "overrides --cos-quantile when both are given",
+    ),
+    max_candidate_pairs: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="calibrate the cosine cutoff from the corpus's OWN similarity distribution so the "
+        f"tier returns at most this many candidate pairs (try {SUGGESTED_MAX_CANDIDATE_PAIRS}); "
+        "portable across corpora and corpus sizes, unlike an absolute cosine or a bare quantile. "
+        "A rank cutoff, not a false-positive guarantee -- see the data-prep known limitation",
+    ),
+    cos_quantile: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        max=1.0,
+        help="advanced: set the per-PAIR quantile directly instead of a candidate budget; "
+        "note the flag count it admits grows with the corpus's pair count",
+    ),
+    null_sample_pairs: int = typer.Option(
+        DEFAULT_NULL_SAMPLE_PAIRS,
+        min=1,
+        help="pairs sampled to estimate the null distribution (--cos-quantile only)",
+    ),
+    null_seed: int = typer.Option(
+        DEFAULT_NULL_SEED, help="seed for null-distribution sampling; fixed for reproducibility"
     ),
     leaf_size: int = typer.Option(
         DEFAULT_LEAF_SIZE, min=1, help="semantic prefix tree leaf capacity"
@@ -114,6 +146,10 @@ def audit_corpus_conflicts_cmd(
             jaccard_threshold=jaccard_threshold,
             containment_threshold=containment_threshold,
             cos_threshold=cos_threshold,
+            cos_quantile=cos_quantile,
+            max_candidate_pairs=max_candidate_pairs,
+            null_sample_pairs=null_sample_pairs,
+            null_seed=null_seed,
             leaf_size=leaf_size,
             max_claim_pairs=max_claim_pairs,
             min_claim_tokens=min_claim_tokens,
@@ -154,6 +190,16 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
     typer.echo(
         f"[conflicts] effort={result.effort} docs={result.n_docs} findings={len(result.findings)}"
     )
+    semantic = next((t for t in result.tiers if t.tier == TIER_SEMANTIC), None)
+    if semantic is not None and "cos_threshold" in semantic.extra:
+        source = semantic.extra.get("cos_threshold_source", "default")
+        line = f"[conflicts] cos_threshold={semantic.extra['cos_threshold']:.4f} ({source})"
+        null = semantic.extra.get("null_distribution")
+        if isinstance(null, dict):
+            line += (
+                f" q={null.get('resolved_quantile')} over {null['total_pairs']} comparable pairs"
+            )
+        typer.echo(line)
     for relation, count in result.relation_counts().items():
         typer.echo(f"[conflicts]   {relation}: {count}")
     if result.needles:

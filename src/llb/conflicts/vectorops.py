@@ -60,6 +60,60 @@ class VectorSet:
             return [float(value) for value in block @ self._np.asarray(vector, dtype="float64")]
         return [_dot(vector, self._rows[index]) for index in indices]
 
+    def pair_similarities(self, pairs: list[tuple[int, int]]) -> list[float]:
+        """Cosine similarity for an arbitrary list of ordinal pairs, in the order given.
+
+        Unlike `pairs_above` this scores a chosen SUBSET rather than scanning every pair, which
+        is what null-distribution sampling needs: a few hundred thousand random pairs out of a
+        pair space too large to materialize. The numpy path gathers both sides and takes a
+        row-wise dot product, so cost is linear in the sample rather than quadratic in the corpus.
+        """
+        if not pairs:
+            return []
+        if self._np is not None and self._matrix is not None:
+            left = self._matrix[[pair[0] for pair in pairs]]
+            right = self._matrix[[pair[1] for pair in pairs]]
+            return [float(value) for value in (left * right).sum(axis=1)]
+        return [_dot(self._rows[left], self._rows[right]) for left, right in pairs]
+
+    def cross_group_similarities(self, indices: list[int], groups: list[int]) -> list[float]:
+        """Similarity of every pair of `indices` whose `groups` label differs, unordered.
+
+        `groups[i]` labels `indices[i]` (the conflict audit passes document ids), so this is the
+        exact set of pairs the cross-document scan considers -- which is what makes it usable as
+        an EXHAUSTIVE null distribution rather than a sample of one. The numpy path never
+        materializes the pair list, only one block of the similarity matrix at a time.
+        """
+        if len(indices) != len(groups):
+            raise ValueError("indices and groups must be the same length")
+        if self._np is not None and self._matrix is not None:
+            return self._cross_group_numpy(indices, groups)
+        return [
+            _dot(self._rows[indices[i]], self._rows[indices[j]])
+            for i in range(len(indices))
+            for j in range(i + 1, len(indices))
+            if groups[i] != groups[j]
+        ]
+
+    def _cross_group_numpy(
+        self, indices: list[int], groups: list[int], block: int = 512
+    ) -> list[float]:
+        numpy = self._np
+        if numpy is None or self._matrix is None:  # pragma: no cover - guarded by the caller
+            raise RuntimeError("numpy path requested without a numpy matrix")
+        matrix = self._matrix[indices]
+        labels = numpy.asarray(groups)
+        row_index = numpy.arange(len(indices))
+        out: list[float] = []
+        for start in range(0, len(indices), block):
+            stop = min(start + block, len(indices))
+            similarities = matrix[start:stop] @ matrix.T
+            # Upper triangle only (each unordered pair once) and different groups only.
+            rows = row_index[start:stop][:, None]
+            keep = (rows < row_index[None, :]) & (labels[start:stop][:, None] != labels[None, :])
+            out.extend(float(value) for value in similarities[keep])
+        return out
+
     def centered(self) -> "VectorSet":
         """This set with the corpus mean direction removed, then renormalized.
 

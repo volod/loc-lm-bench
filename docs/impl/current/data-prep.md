@@ -1083,6 +1083,93 @@ present rather than an estimate -- the audit logs when it does so.
 Because centering rescales similarity, `--cos-threshold` is calibrated for the centered space. On
 the HR corpus the useful operating point is ~0.6, not the 0.9 that suits raw-space question dedup.
 
+### Corpus-calibrated cosine threshold (`--max-candidate-pairs`)
+
+Even in the centered space a fixed cosine is not portable: the same row budget lands at ~0.60 on
+the HR corpus and ~0.46 on the goods corpus. `src/llb/conflicts/null_distribution.py` (the record),
+`null_sampling.py` (how it is measured), and `null_calibration.py` (which knob wins) derive the
+cutoff from the distribution of the corpus's own comparable cross-document chunk pairs instead of
+asking the operator to sweep for it.
+
+`--max-candidate-pairs N` resolves the per-pair quantile `1 - N/total_pairs`, which over an
+exhaustive distribution cuts at the N-th largest similarity. A bare `--cos-quantile` is the wrong
+dial to expose because it is a per-PAIR rate, so the rows it admits grow with the pair space: at
+the 99.9th percentile over the goods corpus's 74,586 comparable pairs it returned 84 rows, and the
+same quantile on a 100k-chunk corpus would return millions. `--cos-quantile` remains as the
+low-level escape hatch.
+
+Precedence is `--cos-threshold` > `--cos-quantile` > `--max-candidate-pairs` > the fixed default:
+an operator who names a cosine has usually swept for it and is never silently overridden.
+Calibration is opt-in; with no knob the fixed `DEFAULT_COSINE_THRESHOLD` still applies.
+
+The distribution is **enumerated exactly** whenever the comparable pair space fits
+`MAX_EXHAUSTIVE_PAIRS` (5M); sampling is only the fallback above that. That is not an
+optimization. Sampling puts a `1/N` floor under the estimable tail, and the HR corpus lands below
+it: against 2.4M comparable pairs, a 200k sample has just one pair above cosine 0.6, so the
+estimated tail rate stops moving and the threshold silently pins to the sample maximum (measured:
+0.7257 instead of 0.5959). A sampled estimate records `resolvable_quantile` and warns when the
+requested tail is finer than it can express. Enumerating 2.4M pairs costs ~2 s.
+
+`summary.json` records the basis under the semantic tier: `cos_threshold`, `cos_threshold_source`,
+and a `null_distribution` block with pair counts, the resolved quantile, the `selected_rank`, and
+the 0.5/0.9/0.99/0.999/0.9999 tail. `report.md` renders a **Semantic threshold** section, so a
+calibrated run is comparable against a swept one by absolute cosine.
+
+**Measured, both quickstart corpora** (recursive/800/120 multilingual-E5 stores, centered space,
+exhaustive distributions; the HR store is rebuilt with
+`DATA_DIR=<scratch> make build-index CORPUS=<hr-md-dir>` so the goods store survives):
+
+| budget | corpus | comparable pairs | resolved cosine | findings | vs. swept baseline |
+| --- | --- | --- | --- | --- | --- |
+| 12 | HR | 2,438,495 | 0.5959 | 12 | recovers **11/11** swept-0.6 pairs, adds 1 |
+| 50 | HR | 2,438,495 | 0.5413 | 50 | superset of the swept-0.6 pairs |
+| 12 | goods | 74,586 | 0.4617 | 12 | swept 0.6 found 0 |
+| 50 | goods | 74,586 | 0.3948 | 50 | swept 0.6 found 0 |
+
+What this buys: the knob **bounds output size on any corpus** while resolving a different absolute
+cosine per corpus, so the old failure mode -- 5185 rows on HR at a fixed 0.9 in raw space -- cannot
+recur, and an operator can size the candidate list to the claim-tier adjudication they can afford.
+
+### Known limitation: there is no independent null
+
+The knob above is a **rank selector, not a statistical guarantee**, and the distinction was
+measured rather than assumed. It is documented here because the naming of an earlier iteration
+(`--max-false-flags`, framed as a false-positive budget) was wrong, and the same mistake is easy to
+make again.
+
+The intent was to model "what do UNRELATED chunk pairs score on this corpus?" and flag pairs above
+that tail. The implementation samples random comparable cross-document pairs -- but that population
+*contains whatever genuine duplicates the corpus has*. It is therefore not an independent model of
+"unrelated"; it is the observed distribution itself. Once the pair space is enumerated exactly, the
+null and the observed population are literally the same set, and the consequences are exact:
+
+- Empirical FDR (`expected false / observed`) is **identically 1.000** at every threshold on both
+  corpora -- 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8 -- because the numerator and denominator are the
+  same count. The statistic carries no information.
+- A budget of `N` therefore returns **exactly `N`** pairs on every corpus and every budget
+  (verified in `test_candidate_budget_selects_exactly_n_pairs_over_an_exhaustive_distribution`).
+  That is a useful, predictable contract; it is just a rank cutoff, and no claim about how many of
+  those `N` pairs are real.
+
+The sampled fallback does not escape this: a random subsample of the same population has the same
+contamination, only noisier.
+
+Consequences for reading a report:
+
+- No threshold on this corpus geometry can be justified as "statistically significant". The
+  semantic tier is a recall-oriented **candidate generator** for the claim tier, and the claim
+  tier is what establishes whether a candidate pair is a real conflict. The documented HR evidence
+  behaves exactly that way: of the 11 pairs at cosine 0.6, the claim tier reclassified 7 as
+  `complementary` publication-metadata blocks.
+- Two swept operating points that look comparable are not. HR's useful 0.6 corresponds to a rank
+  cutoff of ~12 pairs; goods' 0.6 corresponds to a rank cutoff of 0. No single budget reproduces
+  both, and none can, because the budget is a rank and the two corpora have different amounts of
+  real duplication at every rank.
+
+Getting a real false-positive rate needs an independent null -- pairs known a priori to be
+unrelated -- which the corpus alone cannot supply. That is open research, tracked as
+`conflict-null-model-research` in [plan.md](../plan.md).
+
 ### Semantic prefix tree
 
 `src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
