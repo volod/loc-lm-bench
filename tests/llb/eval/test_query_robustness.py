@@ -6,6 +6,7 @@ import pytest
 
 from llb.backends.base import ChatResult
 from llb.core.config import RunConfig
+from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import evaluate_query_robustness
 from llb.eval.query_robustness_report import write_robustness_artifacts
 from llb.eval.query_robustness_run import load_clean_case_rows, make_query_executor
@@ -75,6 +76,38 @@ class FakeEndpoint:
         return ChatResult(text="відповідь", latency_s=0.01)
 
 
+class FakeGraphApp:
+    """Run the production graph's pure nodes without the optional LangGraph package."""
+
+    def __init__(self, retrieve, generate) -> None:
+        self.retrieve = retrieve
+        self.generate = generate
+
+    def invoke(self, state):
+        retrieved = {**state, **self.retrieve(state)}
+        return {**retrieved, **self.generate(retrieved)}
+
+
+def build_fake_graph(
+    store,
+    launcher,
+    k,
+    max_tokens,
+    temperature,
+    timeout,
+    prompt_package=None,
+    context_order="rank",
+    query_prep=None,
+    chunk_filter=None,
+    cited=False,
+):
+    retrieve = eval_graph.make_retrieve_node(store, k, context_order, query_prep, chunk_filter)
+    generate = eval_graph.make_generate_node(
+        launcher, max_tokens, temperature, timeout, prompt_package, cited
+    )
+    return FakeGraphApp(retrieve, generate)
+
+
 def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -86,6 +119,7 @@ def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
         return lambda _token: False
 
     monkeypatch.setattr("llb.rag.lexical.load_uk_word_probe", load_guard)
+    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
     executor = make_query_executor(RunConfig(top_k=1, max_tokens=16), FakeStore(), FakeEndpoint())
     clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
     result = evaluate_query_robustness([item], clean_rows, executor, seed=13, typo_rate=0.1)

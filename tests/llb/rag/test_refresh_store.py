@@ -6,9 +6,10 @@ from-scratch rebuild on the same corpus state: chunk records, embedding matrices
 postings, and ranked retrieval must be identical, and only the changed documents' chunks may
 reach the embedder.
 
-Every test builds real FAISS-backed stores, so the module is marked `heavy_env`: quick, run by
-local `make ci` / `make test` (full install), deselected by `make ci-github` in the base
-`[dev]`-only GitHub env where faiss (the `[rag]` extra) is absent.
+The module is marked `heavy_env`: these tests are quick and run in the default local environment,
+but are deselected by `make ci-github`, whose base `[dev]` environment lacks the store extras.
+The default local environment includes FAISS, Chroma, and Qdrant. The LanceDB parameter is marked
+`opt_in_env` because that adapter remains an explicitly installed lane.
 """
 
 import json
@@ -196,7 +197,11 @@ def test_parent_child_matches_rebuild(tmp_path):
 
 @pytest.mark.parametrize(
     "backend,module",
-    [("chroma", "chromadb"), ("qdrant", "qdrant_client"), ("lancedb", "lancedb")],
+    [
+        ("chroma", "chromadb"),
+        ("qdrant", "qdrant_client"),
+        pytest.param("lancedb", "lancedb", marks=pytest.mark.opt_in_env),
+    ],
 )
 def test_alternative_vector_backends_match_rebuild(tmp_path, backend, module):
     pytest.importorskip(module)

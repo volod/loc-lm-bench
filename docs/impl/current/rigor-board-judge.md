@@ -438,8 +438,10 @@ Implementation is split across `src/llb/eval/query_robustness_variants.py` (seed
 `query_robustness.py` (per-case joins and lane metrics), `query_robustness_run.py` (clean baseline,
 store, endpoint, and graph wiring), `query_robustness_report.py` (atomic report/JSONL publication),
 and `src/llb/cli/eval/query_robustness.py`. `tests/llb/eval/test_query_robustness.py` drives a fake
-endpoint and fake store through all six lanes, checks deterministic variants and morphology-guard
-wiring, and proves the probe directory never gains correctness scores. Shared query-prep tests
+endpoint and fake store through all six lanes using the graph module's pure-node seam, so the
+base `[dev]` GitHub environment does not need the optional LangGraph package. It checks
+deterministic variants and morphology-guard wiring and proves the probe directory never gains
+correctness scores. Shared query-prep tests
 cover the bugs found by CUDA acceptance: collision-safe romanization, preservation of uppercase
 Latin acronyms, keyboard grave normalization, embedded homoglyph repair, short-token protection,
 and alphabetic/numeric candidate separation.

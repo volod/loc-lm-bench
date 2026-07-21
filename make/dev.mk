@@ -83,15 +83,16 @@ venv: ## Create/update .venv + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
 
-# Three test groups (markers registered in pyproject.toml):
+# Test groups (markers registered in pyproject.toml):
 #   `make test`      -- FULL local suite: every test, including the `slow` ones (real Optuna
 #                       sweeps, embedder/model loads, deepeval, subprocess builds).
-#   `make ci` / `test-fast` -- LIGHTWEIGHT suite (`-m "not slow"`) for the full local install.
-#   `make ci-github` -- GitHub CI suite (`-m "not slow and not heavy_env"`): also deselects the
-#                       quick tests that need optional extras (faiss/duckdb/adapter stores), so
-#                       the base `[dev]`-only GitHub install runs with no dependency skips.
-NOT_SLOW := -m "not slow"
-GITHUB_SUITE := -m "not slow and not heavy_env"
+#   `make ci` / `test-fast` -- LIGHTWEIGHT suite for the default full local install; deselects
+#                       intrinsically slow tests and opt-in dependency lanes.
+#   `make ci-github` -- GitHub CI suite: also deselects quick tests that need optional extras
+#                       (faiss/duckdb/adapter stores), so the base `[dev]`-only install runs with
+#                       no dependency skips.
+NOT_SLOW := -m "not slow and not opt_in_env"
+GITHUB_SUITE := -m "not slow and not heavy_env and not opt_in_env"
 
 # Markdown docs linted by `make lint-md` (override to narrow scope, e.g. MD_PATHS=docs/design).
 MD_PATHS ?= README.md AGENTS.md CLAUDE.md GEMINI.md docs
@@ -101,7 +102,7 @@ test: ## FULL local precommit flow: pytest (incl. slow) + markdown lint (NOT run
 	$(PY) -m pytest $(PYTEST_CACHE_OPT)
 	$(MAKE) lint-md
 
-test-fast: ## Run the lightweight test suite (skips slow tests; mirrors CI)
+test-fast: ## Run the lightweight test suite (deselects slow and opt-in dependency tests)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
 

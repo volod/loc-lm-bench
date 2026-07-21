@@ -235,7 +235,8 @@ Adapters live under `src/llb/rag/stores/`:
 Optional extras pin validated client APIs: `[rag-chroma]`, `[rag-qdrant]`, and `[rag-lancedb]`.
 The default `make venv` installs the Chroma and Qdrant extras so the full local test suite
 exercises their live adapter round-trips without optional-dependency skips. LanceDB remains an
-opt-in adapter lane.
+opt-in adapter lane; its live refresh-equivalence parameter is marked `opt_in_env` and therefore
+deselected, rather than skipped, by regular CI.
 
 ## Vector-Store Commands
 
