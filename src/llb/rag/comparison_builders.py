@@ -165,9 +165,9 @@ def build_hybrid_comparison(
 
 
 def load_compare_stores(config: Any) -> dict[str, Retriever]:
-    """Load the three standard backends for `config`, skipping any whose store is not built.
+    """Load vector, graph, and fused rows, skipping any whose store is not built.
 
-    Returns `{faiss, graph/local_khop, graph/global_community}` -> store. A backend that has no
+    Returns vector, both graph strategies, and both fused strategy rows. A backend that has no
     built store on disk is skipped with a log line, so the comparison runs over whatever is present.
     """
     import logging
@@ -187,6 +187,12 @@ def load_compare_stores(config: Any) -> dict[str, Retriever]:
         ),
         f"{BACKEND_GRAPH}/{STRATEGY_GLOBAL_COMMUNITY}": config.with_overrides(
             retrieval_backend=BACKEND_GRAPH, retrieval_strategy=STRATEGY_GLOBAL_COMMUNITY
+        ),
+        f"fused/{STRATEGY_LOCAL_KHOP}": config.with_overrides(
+            retrieval_backend="fused", retrieval_strategy=STRATEGY_LOCAL_KHOP
+        ),
+        f"fused/{STRATEGY_GLOBAL_COMMUNITY}": config.with_overrides(
+            retrieval_backend="fused", retrieval_strategy=STRATEGY_GLOBAL_COMMUNITY
         ),
     }
     stores: dict[str, Retriever] = {}

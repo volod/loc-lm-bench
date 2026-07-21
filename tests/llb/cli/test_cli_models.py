@@ -67,6 +67,17 @@ def test_grid_cells_fusion_weight_implies_hybrid_mode() -> None:
     assert cell_key(cells[0]) != cell_key(cells[1])  # fusion knobs join the fingerprint
 
 
+def test_grid_cells_graph_weight_implies_fused_backend() -> None:
+    base = load_config(None)
+    overrides = {"model": "m", "backend": "ollama", "run_name": "sweep-x"}
+    points = grid._parse_rag_grid("graph_weight=0,0.3")
+    cells = grid._grid_cells(base, overrides, points)
+    assert [cell.graph_weight for cell in cells] == [0.0, 0.3]
+    assert all(cell.retrieval_backend == "fused" for cell in cells)
+    assert [cell.run_name for cell in cells] == ["sweep-x-gw0", "sweep-x-gw0.3"]
+    assert cell_key(cells[0]) != cell_key(cells[1])
+
+
 def test_grid_cells_rerank_candidates_toggle_reranker() -> None:
     # rerank-context-order: 0 == reranker-off cell; a positive depth enables the sweep-level
     # cross-encoder with that candidate pool -- and both land in the cell fingerprint.

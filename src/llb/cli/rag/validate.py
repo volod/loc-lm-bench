@@ -18,9 +18,14 @@ def validate_retrieval(
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
-    retrieval_backend: Optional[str] = typer.Option(None, help="faiss | graph (GraphRAG backend)"),
+    retrieval_backend: Optional[str] = typer.Option(
+        None, help="faiss | graph | fused (vector + GraphRAG)"
+    ),
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph strategy: local_khop | global_community"
+    ),
+    graph_weight: Optional[float] = typer.Option(
+        None, help="fused backend: graph share of weighted RRF, 0..1 (default 0.3)"
     ),
     query_prep: Optional[str] = typer.Option(
         None,
@@ -59,6 +64,7 @@ def validate_retrieval(
         goldset_path=goldset,
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
+        graph_weight=graph_weight,
         query_prep=steps or None,
         query_glossary_path=query_glossary,
         query_prep_typo_guard=query_prep_typo_guard or None,

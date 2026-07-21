@@ -77,7 +77,11 @@ def make_objective(
 
     def objective(trial: Any) -> float | Any:
         overrides = suggest_overrides(
-            trial, backend=base_config.backend, strategies=strategies, reranker=reranker
+            trial,
+            backend=base_config.backend,
+            strategies=strategies,
+            reranker=reranker,
+            retrieval_backend=base_config.retrieval_backend,
         )
         try:
             config = base_config.with_overrides(**overrides)

@@ -65,7 +65,13 @@ def _apply_query_knobs(store: Any, config: RunConfig) -> Any:
 
     store.fusion_weight = config.fusion_weight
     store.fusion_candidates = config.fusion_candidates
-    return maybe_wrap_reranker(store, config)
+    retriever = store
+    if config.retrieval_backend == "fused":
+        from llb.executor.runner_retrieval import _load_graph_store
+        from llb.rag.fusion import FusedRetriever
+
+        retriever = FusedRetriever(store, _load_graph_store(config), config.graph_weight)
+    return maybe_wrap_reranker(retriever, config)
 
 
 @dataclass

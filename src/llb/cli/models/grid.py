@@ -41,11 +41,12 @@ def _sweep_cell_overrides(
 _RAG_GRID_AXES: dict[str, tuple[Any, Any]] = {
     "top_k": (int, lambda v: v >= 1),
     "fusion_weight": (float, lambda v: 0.0 <= v <= 1.0),
+    "graph_weight": (float, lambda v: 0.0 <= v <= 1.0),
     "rerank_candidates": (int, lambda v: v >= 0),
 }
 _RAG_GRID_USAGE = (
     "--rag-grid must look like 'top_k=3,5,8', 'top_k=3,5;fusion_weight=0.4,0.6', "
-    "or 'rerank_candidates=0,30' (0 == reranker off)"
+    "'graph_weight=0,0.3', or 'rerank_candidates=0,30' (0 == reranker off)"
 )
 
 
@@ -90,7 +91,12 @@ def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
     return points
 
 
-_GRID_SUFFIX_PREFIX = {"top_k": "k", "fusion_weight": "w", "rerank_candidates": "r"}
+_GRID_SUFFIX_PREFIX = {
+    "top_k": "k",
+    "fusion_weight": "w",
+    "graph_weight": "gw",
+    "rerank_candidates": "r",
+}
 
 
 def _grid_cells(
@@ -142,6 +148,8 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
         cell[key] = value
     if "fusion_weight" in point:
         cell["retrieval_mode"] = "hybrid"
+    if "graph_weight" in point:
+        cell["retrieval_backend"] = "fused"
 
 
 def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:

@@ -5,6 +5,7 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 """
 
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
+from llb.cli.rag.compare_retrieval import _question_type_labels
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
 
@@ -73,6 +74,28 @@ def test_format_comparison_handles_no_backends():
     assert "no backends loaded" in text
 
 
+def test_compare_reports_question_type_slices_without_retrieving_twice():
+    store = _FakeStore([_chunk("d1", 0, 10)])
+    report = compare_retrieval(
+        {"fused/local_khop": store},
+        [*_items(), *_items()],
+        k=5,
+        slice_labels=["comparative", "multi-hop"],
+    )
+    assert report["slices"]["comparative"]["n"] == 1
+    assert report["slices"]["multi-hop"]["backends"]["fused/local_khop"]["mrr"] == 1.0
+    rendered = format_comparison(report)
+    assert "slice comparative (n=1)" in rendered
+    assert "slice multi-hop (n=1)" in rendered
+
+
+def test_compare_rejects_misaligned_slice_labels():
+    import pytest
+
+    with pytest.raises(ValueError, match="align"):
+        compare_retrieval({}, _items(), k=5, slice_labels=[])
+
+
 def test_add_rerank_rows_pairs_each_backend_and_skips_the_oracle():
     # rerank-context-order: the reranked twin scores the SAME store's candidates after the
     # cross-encoder cut, so the report shows the pre/post-rerank delta per backend. A scorer
@@ -101,3 +124,24 @@ def test_compare_vector_stores_infers_sibling_corpus(tmp_path):
     explicit = tmp_path / "other-corpus"
     assert _compare_vector_corpus_root(goldset, explicit) == explicit
     assert _compare_vector_corpus_root(tmp_path / "missing" / "goldset.jsonl", None) is None
+
+
+def test_question_type_labels_find_parent_sidecar_for_accepted_ledger(tmp_path):
+    import json
+
+    accepted = tmp_path / "accepted"
+    accepted.mkdir()
+    goldset = accepted / "goldset.jsonl"
+    goldset.write_text("", encoding="utf-8")
+    rows = [
+        {"id": "a", "question_type": "comparative"},
+        {"id": "b", "question_type": "multi-hop"},
+    ]
+    (tmp_path / "needle_items.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    assert _question_type_labels(goldset, ["b", "missing", "a"]) == [
+        "multi-hop",
+        None,
+        "comparative",
+    ]

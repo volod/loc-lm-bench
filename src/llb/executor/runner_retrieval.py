@@ -84,7 +84,7 @@ def _load_query_glossary(config: RunConfig) -> Any:
 
 
 def _load_store(config: RunConfig) -> Any:
-    """Load the configured retrieval store: the GraphRAG backend (GraphRAG backend) or the default FAISS store.
+    """Load the configured vector, graph, or graph-vector fused retrieval store.
 
     Both expose the same `.retrieve(question, k) -> list[ChunkRecord]` seam, so the eval graph,
     scoring, isolation, and board are unchanged regardless of backend. With `config.reranker`
@@ -92,17 +92,33 @@ def _load_store(config: RunConfig) -> Any:
     the wrapper honors the same retrieve seam, so every backend gains reranking identically."""
     from llb.rag.rerank import maybe_wrap_reranker
 
-    if config.retrieval_backend == "graph":
-        from llb.graph.store import GraphStore
+    graph = None
+    if config.retrieval_backend in {"graph", "fused"}:
+        graph = _load_graph_store(config)
+        if config.retrieval_backend == "graph":
+            return maybe_wrap_reranker(graph, config)
+    vector = _load_vector_store(config)
+    if config.retrieval_backend == "fused":
+        from llb.rag.fusion import FusedRetriever
 
-        return maybe_wrap_reranker(
-            GraphStore.load(
-                config.graph_dir(),
-                strategy=config.retrieval_strategy,
-                khop_depth=config.graph_khop_depth,
-            ),
-            config,
-        )
+        assert graph is not None
+        return maybe_wrap_reranker(FusedRetriever(vector, graph, config.graph_weight), config)
+    return maybe_wrap_reranker(vector, config)
+
+
+def _load_graph_store(config: RunConfig) -> Any:
+    """Load the configured span-preserving graph strategy."""
+    from llb.graph.store import GraphStore
+
+    return GraphStore.load(
+        config.graph_dir(),
+        strategy=config.retrieval_strategy,
+        khop_depth=config.graph_khop_depth,
+    )
+
+
+def _load_vector_store(config: RunConfig) -> Any:
+    """Load and validate the vector lane, including optional dense/BM25 fusion."""
     from llb.rag.store import RagStore
     from llb.rag.store_build import MODE_HYBRID
     from llb.rag.store_validation import stale_store_message, store_embedder_mismatch
@@ -135,4 +151,4 @@ def _load_store(config: RunConfig) -> Any:
             config.retrieval_mode,
         )
         store.lexical = None
-    return maybe_wrap_reranker(store, config)
+    return store

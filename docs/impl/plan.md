@@ -104,36 +104,27 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
-### graph-vector-fusion-retrieval
+### graph-vector-fusion-multihop-evidence
 
-Fuse the GraphRAG lane into retrieval instead of keeping graph an either/or backend: a fused
-retriever queries the vector store (dense or hybrid) and the graph store through the shared
-`.retrieve(question, k)` seam and merges the candidate lists with the existing weighted
-reciprocal-rank fusion generalized to n lists. A `graph_weight` `RunConfig` knob sets the graph
-share (`0.0` == vector-only), duplicate chunks returned by both lanes are deduplicated by span,
-and every fused chunk keeps its exact source offsets so recall@k / MRR score the fused ranking on
-unchanged rules.
+Create and human-accept a retrieval set with enough multi-hop questions to measure graph-vector
+fusion by graph strategy and weight. The available accepted evidence has no multi-hop labels; use
+the graph path seed lane to draft cross-span questions, run the verification gate, then compare
+vector, graph, and fused recall@10 / MRR without changing the opt-in default. See the current fused
+retrieval shape and evidence boundary in
+[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `GraphStore.retrieve` ([GraphRAG](current/graphrag-backend.md)),
-  `rrf_fuse` in `src/llb/rag/lexical.py`, and the any-backend wrapper shape of
-  `src/llb/rag/rerank.py`.
-- User-visible outcome: multi-hop and entity-linking questions draw on graph evidence without
-  giving up dense recall on factoid questions -- one retrieval configuration instead of a
-  per-question backend choice.
-- Scope boundary: in scope -- the fusion wrapper, the `graph_weight` knob (manifest + sweep/tuner
-  fingerprint), fused `compare-retrieval` rows, and span-level dedup. Out of scope -- graph
-  construction, community detection, and the closed ontology.
-- Data and artifact paths: no new artifact roots; a fused run needs an existing vector store plus
-  graph store (for example the quickstart pair in [RAG core](current/rag-core.md)).
-- Execution path: `llb run-eval --retrieval-backend fused --graph-weight 0.3 ...` plus a fused
-  row lane in `make compare-retrieval`; CI proves fusion order, weight extremes, and dedup over
-  fake vector/graph stores.
-- Acceptance gates: `make ci` green; `graph_weight=0.0` reproduces the vector-only ranking
-  exactly; a heavy run over the quickstart accepted goldset reports dense vs graph vs fused
-  recall@10 / MRR with the multi-hop and comparative question-type slices broken out.
-- Documentation target: [GraphRAG](current/graphrag-backend.md) and the hybrid-retrieval section
-  of [RAG core](current/rag-core.md).
+- Dependencies: a reviewed accepted ledger with multi-hop labels and a matched vector/graph store.
+- User-visible outcome: an evidence-backed graph-weight recommendation for multi-hop retrieval,
+  or a clear rejection if graph evidence costs factoid ranking without recovering multi-hop misses.
+- Scope boundary: in scope -- multi-hop drafting, human acceptance, per-type retrieval reports,
+  and graph-weight comparison. Out of scope -- graph schema and community-construction changes.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Acceptance gates: the accepted set has a non-empty multi-hop slice; fused retrieval beats or
+  matches vector recall on that slice without regressing overall recall, and the report includes
+  confidence intervals or item-level paired outcomes for the small slice.
+- Documentation target: the graph-vector fusion evidence section of
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### query-prep-hyde-decompose
 

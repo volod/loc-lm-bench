@@ -40,14 +40,17 @@ validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
 		$(if $(QUERY_PREP_AB),--query-prep-ab,)
 
-compare-retrieval: ## Compare faiss vs graph backends' recall@k/MRR on the gold set; CHUNK_STRATEGIES=... ranks chunkers, HYBRID=1 ranks dense vs hybrid(+lemmas) + oracle-doc headroom, RERANKER=<hf-id> adds reranked twin rows (RERANK_CANDIDATES=)
+compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER= are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main compare-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
+	$(PY) -m llb.main compare-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",) \
 		$(if $(HYBRID),--hybrid,) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
+		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
-		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),)
+		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -55,14 +58,18 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY= CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=n PROMPT_SYSTEM_ID= PROMPT_PACKAGE= RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
-	$(PY) -m llb.main run-eval --model "$(MODEL)" --backend "$(BACKEND)" \
+	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(RETRIEVAL_BACKEND),--retrieval-backend "$(RETRIEVAL_BACKEND)",) \
+		$(if $(RETRIEVAL_STRATEGY),--retrieval-strategy "$(RETRIEVAL_STRATEGY)",) \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
 		$(if $(ACL_LABEL),--acl "$(ACL_LABEL)",) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
+		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \

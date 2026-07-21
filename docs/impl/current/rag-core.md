@@ -311,6 +311,9 @@ Modules:
   `pymorphy3-dicts-uk`, collapsing cases/inflection to lemmas at index AND query time -- the stored
   chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
+  Its generalized `weighted_rrf_fuse` accepts n ranked lists and non-negative weights. A
+  zero-weight lane contributes neither score nor candidate membership, fixing endpoint weights
+  that previously appended disabled-lane candidates when the active lane returned fewer than k.
 - `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
   heading_contains, page_range, acl_label)` builds a predicate over `doc_id` plus the
   page-metadata join's `metadata.headers` breadcrumb, `metadata.pages` range, and governance
@@ -398,6 +401,30 @@ here. Operators who want hybrid for exact-term robustness (see the exact-term fi
 above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
 (`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
 decision hangs on it.
+
+## Graph-Vector Fusion Retrieval
+
+`retrieval_backend=fused` composes the configured vector lane (flat, parent-child, or hybrid) and
+the selected GraphRAG strategy behind one `.retrieve(question, k)` wrapper. The wrapper in
+`src/llb/rag/fusion.py` keys candidates by exact `(doc_id, char_start, char_end)` spans, fuses the
+two rankings through generalized weighted RRF, deduplicates shared spans, and keeps source offsets
+unchanged for recall@k and MRR. Reranking wraps the fused result once, rather than independently
+reranking each input lane.
+
+`graph_weight` is in `RunConfig`, run manifests, sweep cell keys, and fused Optuna trials. The Make
+aliases forward `RETRIEVAL_BACKEND`, `RETRIEVAL_STRATEGY`, and `GRAPH_WEIGHT`; the comparison alias
+also accepts `CONFIG`, `SPLIT`, and `COMPARE_RETRIEVAL_OUT` for a repeatable matched-store report.
+
+```bash
+make run-eval MODEL=<m> RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3
+make compare-retrieval CONFIG=<run-config.yaml> GRAPH_WEIGHT=0.3 \
+  GOLDSET=<answered-jsonl> COMPARE_RETRIEVAL_OUT=<report-json>
+make sweep SWEEP_RAG_GRID="graph_weight=0,0.3,0.5"
+```
+
+The CUDA-host accepted-set metrics, comparative slice, empty multi-hop slice, endpoint check, and
+artifact locations are recorded in
+[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence).
 
 ## Reranking And Context Order (rerank-context-order)
 

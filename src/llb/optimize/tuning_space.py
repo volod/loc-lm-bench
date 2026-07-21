@@ -20,6 +20,8 @@ FUSION_WEIGHT_RANGE = (0.2, 0.8)
 
 FUSION_CANDIDATES_RANGE = (20, 80)
 
+GRAPH_WEIGHT_RANGE = (0.1, 0.5)
+
 RERANK_CANDIDATES_RANGE = (15, 60)
 
 # Token budgets that couple top_k, chunk_size, and max_model_len in multi-objective search.
@@ -75,6 +77,7 @@ def suggest_overrides(
     reranker: str | None = None,
     embedders: Sequence[str] | None = None,
     tune_context_budget: bool = False,
+    retrieval_backend: str = "faiss",
 ) -> dict[str, Any]:
     """Sample one config from an Optuna trial.
 
@@ -114,6 +117,10 @@ def suggest_overrides(
         )
         overrides["fusion_candidates"] = trial.suggest_int(
             "fusion_candidates", *FUSION_CANDIDATES_RANGE, step=20
+        )
+    if retrieval_backend == "fused":
+        overrides["graph_weight"] = trial.suggest_float(
+            "graph_weight", *GRAPH_WEIGHT_RANGE, step=0.1
         )
     if reranker is not None and trial.suggest_categorical("use_reranker", [False, True]):
         overrides["reranker"] = reranker
