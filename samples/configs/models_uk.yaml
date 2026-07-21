@@ -2,8 +2,8 @@
 # `make prep-models` reads this: it detects the host GPU, pulls the Ollama tags, and
 # snapshot-caches the vLLM (Hugging Face) weights once. `make list-models` estimates fit.
 #
-#   backend:     ollama (Ollama manages its own store) | vllm (HF weights, cached once)
-#   source:      Ollama tag           | Hugging Face repo id
+#   backend:     ollama (managed store) | vllm (HF weights) | llamacpp (HF GGUF)
+#   source:      Ollama tag | Hugging Face repo id | hf.co/<GGUF-repo>:<quant>
 #   min_vram_gb: rough floor to SERVE the model at a sane context on this hardware class
 #                (used only to skip/flag oversized models; the real fit test is a launch)
 #
@@ -14,9 +14,9 @@
 #   MamayLM v2.0       https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
 #
 # Notes that shape these picks for a 16 GB RTX 4060 Ti:
-#  - LICENSE / GATING: none of the models below are gated (Gemma 4 ships UNGATED, unlike the
-#    gated Gemma 2/3, and the rest are open), so they download without HF_TOKEN -- though
-#    you still must comply with their Gemma/Apache licenses. To add a GATED model (e.g. a
+#  - LICENSE / GATING: none of the artifacts below are gated. Gemma 4, Qwen, and Mistral use
+#    Apache-2.0; the Ukrainian Gemma 3 derivatives use the Gemma license. Every logical model
+#    records `license` + `license_url`. To add a GATED model (e.g. a
 #    Gemma 2/3 or Llama repo) set `gated: true` + `license_url: <hf-page>` on the entry;
 #    `prep-models` then prints the acceptance link (and does so automatically when a download
 #    hits a gate). See the commented example at the end of this file.
@@ -44,7 +44,7 @@
 #     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
 
 models:
-  # --- Gemma 4 int4 (w4a16) via vLLM -- the candidates that FIT a 16 GB card. Gated. ---
+  # --- Gemma 4 int4 (w4a16) via vLLM -- candidates that fit a 16 GB card. ---
   - name: gemma-4-e4b-it-w4a16
     backend: vllm
     source: google/gemma-4-E4B-it-qat-w4a16-ct
@@ -59,10 +59,21 @@ models:
     # token embedding + Gemma 3n Per-Layer Embeddings stay bf16 under w4a16; this override is
     # anchored to the MEASURED 9.8 GiB weights (M2.4), not vocab-derived (PLE is not in vocab).
     hi_precision_params_b: 4.2
+    license: Apache-2.0
+    license_url: https://huggingface.co/google/gemma-4-E4B-it-qat-w4a16-ct
     # M2.4 validated on the RTX 4060 Ti (vLLM 0.23.0, flashinfer sampler off): weights 9.8 GiB,
     # ~64 tok/s steady, peak VRAM 15.7 GB at gpu-memory-utilization 0.80, served ctx 8192,
     # cold load ~112 s, tokenizer ~0.33 tok/UA-char. The M2 reference real-backend run.
     notes: Gemma 4 ~8B int4 (w4a16, for vLLM); the M2.4 reference run -- fits 16 GB, not 12 GB
+    sources:
+      ollama:
+        source: gemma4:e4b
+        quant: q4_k_m
+        min_vram_gb: 10
+      llamacpp:
+        source: hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:Q4_0
+        quant: q4_0
+        min_vram_gb: 10
 
   - name: gemma-4-12b-it-w4a16
     backend: vllm
@@ -76,9 +87,88 @@ models:
     vocab_size: 262144  # embedding-aware (M4.1): the 256k embedding stays bf16 under w4a16
     hidden_size: 3840
     tie_word_embeddings: true
+    license: Apache-2.0
+    license_url: https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct
     notes: Gemma 4 12B int4; 12 GB works only at short vLLM context, 16 GB supports 8192
+    sources:
+      ollama:
+        source: gemma4:12b
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
+        source: hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0
+        quant: q4_0
+        min_vram_gb: 8
+
+  # Gemma 4 26B-A4B is the strongest host-runnable addition backed by a public lang-uk result.
+  # vLLM can use bf16 on a large tier or Red Hat's FP8 conversion on 32 GiB; 12/16 GiB uses the
+  # first-party Ollama/GGUF Q4 artifact with CPU offload.
+  - name: gemma-4-26b-a4b
+    backend: vllm
+    source: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+    min_vram_gb: 30
+    params_b: 25.2
+    quant: fp8
+    n_layers: 30
+    kv_dim: 2048
+    max_context: 262144
+    vocab_size: 262144
+    hidden_size: 2816
+    tie_word_embeddings: true
+    license: Apache-2.0
+    license_url: https://huggingface.co/google/gemma-4-26B-A4B-it
+    notes: Gemma 4 26B-A4B (~3.8B active), multilingual; public lang-uk reasoning result; 16 GiB uses Q4 offload
+    sources:
+      vllm:
+        - source: google/gemma-4-26B-A4B-it
+          quant: bf16
+          min_vram_gb: 54
+        - source: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+          quant: fp8
+          min_vram_gb: 30
+      ollama:
+        source: gemma4:26b
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
+        source: hf.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0
+        quant: q4_0
+        min_vram_gb: 8
 
   # --- Larger current-gen candidates: offload or a bigger GPU on 16 GB (flagged by list-models). ---
+  - name: qwen3.6-27b
+    backend: vllm
+    source: Qwen/Qwen3.6-27B-FP8
+    min_vram_gb: 40
+    params_b: 27
+    quant: fp8
+    n_layers: 64
+    kv_layers: 16       # only every fourth layer has a growing full-attention KV cache
+    kv_dim: 1024
+    max_context: 262144
+    vocab_size: 248320
+    hidden_size: 5120
+    tie_word_embeddings: false
+    license: Apache-2.0
+    license_url: https://huggingface.co/Qwen/Qwen3.6-27B
+    notes: Qwen3.6 dense 27B, multilingual and Apache-2.0; official Q4 Ollama fallback is a 16 GiB offload target; FP8 needs more than 32 GiB after untied-embedding overhead
+    sources:
+      vllm:
+        - source: Qwen/Qwen3.6-27B
+          quant: bf16
+          min_vram_gb: 58
+        - source: Qwen/Qwen3.6-27B-FP8
+          quant: fp8
+          min_vram_gb: 40
+      ollama:
+        source: qwen3.6:27b
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
+        source: hf.co/unsloth/Qwen3.6-27B-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
+
   - name: qwen3.6-35b-a3b-fp8
     backend: vllm
     source: Qwen/Qwen3.6-35B-A3B-FP8
@@ -86,14 +176,34 @@ models:
     params_b: 36          # total weights held in memory; MoE activates ~3B per token
     quant: fp8
     n_layers: 40
+    kv_layers: 10         # hybrid linear/full attention: every fourth layer owns growing KV
     kv_dim: 512           # 2 KV heads * 256 head_dim
     max_context: 262144
+    vocab_size: 248320
+    hidden_size: 2048
+    tie_word_embeddings: false
+    license: Apache-2.0
+    license_url: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
     notes: Qwen3.6 MoE (36B total / ~3B active) FP8; Apache-2.0; 16 GB uses the IQ3 Ollama fallback
     sources:
+      vllm:
+        - source: Qwen/Qwen3.6-35B-A3B
+          quant: bf16
+          min_vram_gb: 76
+        - source: Qwen/Qwen3.6-35B-A3B-FP8
+          quant: fp8
+          min_vram_gb: 40
       ollama:
-        source: batiai/qwen3.6-35b:iq3
-        quant: iq3
-        bpw: 3.5
+        - source: qwen3.6:35b
+          quant: q4_k_m
+          min_vram_gb: 8
+        - source: batiai/qwen3.6-35b:iq3
+          quant: iq3
+          bpw: 3.5
+          min_vram_gb: 8
+      llamacpp:
+        source: hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+        quant: q4_k_m
         min_vram_gb: 8
 
   # --- Ollama-curated Qwen3 MoE baseline for the cross-tier best-model search: one tag that
@@ -108,7 +218,18 @@ models:
     n_layers: 48
     kv_dim: 512           # 4 KV heads * 128 head_dim
     max_context: 40960
+    license: Apache-2.0
+    license_url: https://huggingface.co/Qwen/Qwen3-30B-A3B
     notes: Qwen3 30B-A3B MoE q4_k_m (curated Ollama tag, Apache-2.0); hybrid thinking is ON by default -- disable it for scoring (Ollama native `think=false`), like gemma4
+    sources:
+      vllm:
+        source: Qwen/Qwen3-30B-A3B
+        quant: bf16
+        min_vram_gb: 64
+      llamacpp:
+        source: hf.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: mistral-small-3.1-24b
     backend: vllm
@@ -122,6 +243,8 @@ models:
     vocab_size: 131072    # embedding-aware (M4.1): the 131k embedding + UNTIED lm_head stay bf16
     hidden_size: 5120     # under w4a16, so a flat params_b x bpw under-counts the weights
     tie_word_embeddings: false
+    license: Apache-2.0
+    license_url: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
     notes: Mistral Small 3.1 (24B, Apache-2.0, multilingual); vLLM fp8/w4a16 on 32/24 GiB, q4 GGUF below
     # Multi-quant vLLM (resolver-multi-quant-vllm): the resolver prices each vLLM quant and picks
     # the highest-quality one that fits the host on GPU -- fp8 (~24 GiB) on a 32 GiB card, w4a16
@@ -142,6 +265,10 @@ models:
         source: mistral-small3.1:24b
         quant: q4_k_m
         min_vram_gb: 8
+      llamacpp:
+        source: hf.co/unsloth/Mistral-Small-3.1-24B-Instruct-2503-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
 
   - name: mamaylm-v2-12b
     backend: vllm
@@ -152,11 +279,17 @@ models:
     n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
     max_context: 131072
+    license: Gemma
+    license_url: https://huggingface.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0
     notes: Ukrainian-specialized (Gemma-3-12B); on 16 GB the resolver picks the q4 GGUF (offload)
     # Per-source records (M3.2): the resolver prices each artifact with its OWN quant -- the bf16
     # vLLM weights do not fit 16 GB, but the q4_k_m GGUF runs on Ollama via CPU offload.
     sources:
       ollama:
+        source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
         source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
         quant: q4_k_m
         min_vram_gb: 8
@@ -173,9 +306,15 @@ models:
     vocab_size: 262144  # embedding-aware (M4.1): embedding stays bf16 even in the fp8 checkpoint
     hidden_size: 5376
     tie_word_embeddings: true
+    license: Gemma
+    license_url: https://huggingface.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0
     notes: Ukrainian-specialized 27B FP8; also a local-judge candidate (Premise 2); bigger GPU
     sources:
       ollama:
+        source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
         source: hf.co/INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-GGUF:Q4_K_M
         quant: q4_k_m
         min_vram_gb: 8
@@ -189,9 +328,15 @@ models:
     n_layers: 48
     kv_dim: 2048        # 8 KV heads * 256 head_dim
     max_context: 131072
+    license: Gemma
+    license_url: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
     notes: Ukrainian-specialized (Gemma-3-12B, lang-uk); resolver picks the q4 GGUF (offload)
     sources:
       ollama:
+        source: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
         source: hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M
         quant: q4_k_m
         min_vram_gb: 8

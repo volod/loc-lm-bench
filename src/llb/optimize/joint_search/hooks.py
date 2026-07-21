@@ -132,7 +132,7 @@ def default_tune_finalist(
         embedders=None,
         prune_case_count=case_limit,
     )
-    finals = score_finalist_picks(tune, cfg, cell_dir)
+    finals = score_finalist_picks(tune, cfg, cell_dir, case_limit=case_limit)
     overrides_by_pick = {pick.goal: dict(pick.point.overrides) for pick in tune.picks}
     return FinalistTuneResult(
         name=name,

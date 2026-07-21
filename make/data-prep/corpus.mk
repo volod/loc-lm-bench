@@ -1,7 +1,7 @@
 ## Corpus conversion, ingestion, validation, and SQuAD preparation.
 
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus validate-goldset ingest-squad \
-	external-squad-rag
+	external-squad-rag audit-corpus-conflicts resolve-corpus-conflicts
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -25,6 +25,44 @@ ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus
 	if [ -n "$(CORPUS_SOURCE_SYSTEM)" ]; then args+=(--source-system "$(CORPUS_SOURCE_SYSTEM)"); fi; \
 	if [ -n "$(CORPUS_ACL_LABEL)" ]; then args+=(--acl-label "$(CORPUS_ACL_LABEL)"); fi; \
 	$(PY) -m llb.main ingest-corpus "$${args[@]}"
+
+audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=); never edits the corpus
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(--corpus "$(CORPUS)" --effort "$(or $(EFFORT),hash)"); \
+	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
+	if [ -n "$(GOLDSET)" ]; then args+=(--goldset "$(GOLDSET)"); fi; \
+	if [ -n "$(CONFLICTS_OUT)" ]; then args+=(--out "$(CONFLICTS_OUT)"); fi; \
+	if [ -n "$(CONFLICT_MODEL)" ]; then args+=(--conflict-model "$(CONFLICT_MODEL)"); fi; \
+	if [ -n "$(CONFLICT_BACKEND)" ]; then args+=(--conflict-backend "$(CONFLICT_BACKEND)"); fi; \
+	if [ -n "$(CONFLICT_BASE_URL)" ]; then args+=(--conflict-base-url "$(CONFLICT_BASE_URL)"); fi; \
+	if [ -n "$(COS_THRESHOLD)" ]; then args+=(--cos-threshold "$(COS_THRESHOLD)"); fi; \
+	if [ -n "$(COS_QUANTILE)" ]; then args+=(--cos-quantile "$(COS_QUANTILE)"); fi; \
+	if [ -n "$(MAX_CANDIDATE_PAIRS)" ]; then args+=(--max-candidate-pairs "$(MAX_CANDIDATE_PAIRS)"); fi; \
+	if [ -n "$(NULL_SAMPLE_PAIRS)" ]; then args+=(--null-sample-pairs "$(NULL_SAMPLE_PAIRS)"); fi; \
+	if [ -n "$(NULL_SEED)" ]; then args+=(--null-seed "$(NULL_SEED)"); fi; \
+	if [ -n "$(MAX_CLAIM_PAIRS)" ]; then args+=(--max-claim-pairs "$(MAX_CLAIM_PAIRS)"); fi; \
+	if [ -n "$(MIN_CLAIM_TOKENS)" ]; then args+=(--min-claim-tokens "$(MIN_CLAIM_TOKENS)"); fi; \
+	if [ -n "$(PROJECT_DIMS)" ]; then args+=(--project-dims "$(PROJECT_DIMS)"); fi; \
+	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
+	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
+
+resolve-corpus-conflicts: ## Plan/apply reversible conflict overlay (FINDINGS= POLICY=conservative|prefer-newer APPLY=1 CORPUS= STORE= GOLDSET= REVIEWED= ROLLBACK=1)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(); \
+	if [ -n "$(FINDINGS)" ]; then args+=(--findings "$(FINDINGS)"); fi; \
+	if [ -n "$(CORPUS)" ]; then args+=(--corpus "$(CORPUS)"); fi; \
+	if [ -n "$(CONFLICTS_OUT)" ]; then args+=(--out "$(CONFLICTS_OUT)"); fi; \
+	if [ -n "$(POLICY)" ]; then args+=(--policy "$(POLICY)"); fi; \
+	if [ -n "$(REVIEWED)" ]; then args+=(--reviewed "$(REVIEWED)"); fi; \
+	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
+	if [ -n "$(GOLDSET)" ]; then args+=(--goldset "$(GOLDSET)"); fi; \
+	if [ -n "$(BEFORE_RUN)" ]; then args+=(--before-run "$(BEFORE_RUN)"); fi; \
+	if [ -n "$(AFTER_RUN)" ]; then args+=(--after-run "$(AFTER_RUN)"); fi; \
+	if [ -n "$(APPLY)" ]; then args+=(--apply); fi; \
+	if [ -n "$(ROLLBACK)" ]; then args+=(--rollback); fi; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main resolve-corpus-conflicts "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

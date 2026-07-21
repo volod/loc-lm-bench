@@ -209,9 +209,19 @@ def score_external_rag_cmd(
     ),
 ) -> None:
     """Interactively score an external RAG JSONL; finalize CSV + report when complete."""
+    from llb.review.launch import try_workbench
     from llb.scoring.external_rag_session.session import run_external_rag_session
 
     try:
+        standard_view = (
+            answer_field is None
+            and sources_field is None
+            and error_field is None
+            and source_limit == 3
+            and strip_source_footer
+            and not clear
+        )
+        adapter = try_workbench(answers, start=start) if standard_view else None
         run_external_rag_session(
             answers,
             csv_out=csv_out,
@@ -225,6 +235,7 @@ def score_external_rag_cmd(
             start=start,
             clear=clear,
             source_map=source_map,
+            inputs=() if adapter is not None else None,
         )
     except ValueError as exc:
         typer.echo(f"[score-external-rag] {exc}", err=True)

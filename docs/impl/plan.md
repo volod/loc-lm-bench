@@ -43,139 +43,334 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### auto-rag-orchestrator
+### conflict-null-model-research
 
-Build the end-to-end autonomous pipeline `llb auto-rag` (plus a `make auto-rag` target): corpus in,
-scored optimal RAG configuration out. Stages: ingest -> ontology goldset draft -> verification
-gate -> retrieval validation -> joint model + config tune -> knowledge-tree prompt candidate ->
-final-split eval -> recommendation bundle. Every gate consumes a policy: `auto` resolves through
-the `ScorerPolicy` seam (local judge or budget-capped frontier), `human` pauses the run and hands
-the pending records to the review workbench, then resumes. The run journal must be resumable after
-interruption at any stage, following the ontology pipeline journal pattern.
+**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
+that must be recorded rather than worked around.
+
+Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
+a real false-positive rate instead of a rank cutoff. The current calibration measures the
+similarity distribution of the corpus's own comparable cross-document pairs, which contains
+whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
+the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
+and a budget of `N` returns exactly `N` pairs by construction (measured; see
+[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
+question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
+noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
+answer.
+
+Candidate approaches to evaluate, cheapest first; none is known to work:
+
+- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
+  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
+  shift makes the null too easy, understating the threshold.
+- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
+  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
+  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
+  lands too high.
+- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
+  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
+  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
+  problem already measured for chunk-pair sampling.
+- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
+  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
+  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
+  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
 
 - Agent status: RUN NEEDED
-- Dependencies: `multi-objective-rag-tuner`, `joint-model-config-search`; gate policies reuse
-  [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human-assisted gates
-  additionally depend on `review-core-textual-workbench` (cross-section block for the `human`
-  policy path only -- the `auto` path must land without it).
-- The knowledge-tree stage must call the existing
-  [prompt-system package flow](current/extended-workflows.md#prompt-system-packages).
-- User-visible outcome: one command takes a Ukrainian corpus directory and produces
-  `rag_recommendation.yaml` (model, backend, serving knobs, chunking, retrieval mode, fusion,
-  rerank, query prep, context budget, prompt-system id) plus a Markdown report with the score
-  evidence -- fully autonomous by default, human-gated per stage on request.
-- Scope boundary: in scope -- stage orchestration, gate policy plumbing, journal + resume,
-  recommendation rendering. Out of scope -- new stage implementations (every stage reuses an
-  existing command path) and any hosted-service behavior.
-- Data and artifact paths: `$DATA_DIR/auto-rag/<run>/` containing the journal, per-stage bundle
-  links, scorer ledger, `rag_recommendation.yaml`, and `report.md`; input is any corpus directory
-  accepted by `ingest-corpus`.
-- Execution path: `make auto-rag CORPUS=<dir> SCORER_POLICY=auto` for the autonomous lane;
-  `SCORER_POLICY=human` for gated runs; CI drives the full stage graph with fakes and a
-  miniature corpus fixture.
-- Acceptance gates: `make ci` green; journal tests prove resume-after-kill at every stage
-  boundary; a heavy deterministic run on the UA fixture corpus completes autonomously end-to-end
-  and emits a recommendation bundle whose final-split scores match a manually chained run of the
-  same stages.
-- Documentation target: new topic file `current/auto-rag.md` plus an index row in
-  [current.md](current.md); operator guide under `docs/guides/benchmarking/`.
+- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
+  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
+  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
+  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
+  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
+- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
+  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
+  would justify moving threshold selection to the claim tier's measured precision instead.
+- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
+  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
+  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
+  a null demonstrably beats the rank cutoff.
+- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
+  no new committed fixtures unless an approach earns one.
+- Execution path: a research harness invoked per null model over both quickstart stores plus the
+  fixture; CI covers each null constructor deterministically over committed vectors, with the
+  heavy corpus comparison run on the CUDA host.
+- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
+  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
+  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
+  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
+  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
+- Documentation target: the corpus-hygiene known-limitation section of
+  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
+  adopt-or-reject verdict.
 
-### dynamic-corpus-refresh
+### graph-vector-fusion-multihop-evidence
 
-Support dynamic corpora: diff the content-hash corpus manifest against the indexed state, apply
-incremental chunk/embed/index updates for changed documents only across all store kinds (FAISS
-and alternative vector stores, the lexical BM25 index, and the graph store), and emit a drift
-report that re-runs retrieval validation on the gold set and recommends a re-tune when the
-recall/MRR delta crosses a configured threshold.
+Create and human-accept a retrieval set with enough multi-hop questions to measure graph-vector
+fusion by graph strategy and weight. The available accepted evidence has no multi-hop labels; use
+the graph path seed lane to draft cross-span questions, run the verification gate, then compare
+vector, graph, and fused recall@10 / MRR without changing the opt-in default. See the current fused
+retrieval shape and evidence boundary in
+[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
-- Agent status: CLEAR
-- Dependencies: none. Reuse the corpus manifest from ingest, the stale-store checks in
-  `src/llb/rag/store_validation.py`, and the immutable store-directory rollback behavior
-  documented in [RAG core](current/rag-core.md).
-- User-visible outcome: `llb refresh-index` updates stores in minutes proportional to the changed
-  documents instead of a full rebuild, and tells the operator when the corpus has drifted enough
-  that the tuned configuration should be re-searched.
-- Scope boundary: in scope -- manifest diff, per-document incremental update paths, drift report,
-  re-tune recommendation flag. Out of scope -- automatic re-tuning (the operator or the
-  orchestrator decides), gold-set regeneration, and file watching/daemon behavior.
-- Data and artifact paths: refreshed stores under the existing `$DATA_DIR/llb/rag/` layout with a
-  new immutable store generation per refresh; drift reports under `$DATA_DIR/refresh/<run>/`.
-- Execution path: `llb refresh-index --config <run-config>` after corpus edits; CI covers
-  add/modify/delete document cases against small fixture stores for every store kind.
-- Acceptance gates: `make ci` green; incremental refresh produces retrieval results identical to
-  a from-scratch rebuild on the same corpus state (equivalence test per store kind); deletion
-  propagation removes retired chunks from dense, lexical, and graph paths.
-- Documentation target: [RAG core](current/rag-core.md) store lifecycle section;
-  [data prep](current/data-prep.md) for the manifest-diff contract.
+- Agent status: RUN NEEDED
+- Dependencies: a reviewed accepted ledger with multi-hop labels and a matched vector/graph store.
+- User-visible outcome: an evidence-backed graph-weight recommendation for multi-hop retrieval,
+  or a clear rejection if graph evidence costs factoid ranking without recovering multi-hop misses.
+- Scope boundary: in scope -- multi-hop drafting, human acceptance, per-type retrieval reports,
+  and graph-weight comparison. Out of scope -- graph schema and community-construction changes.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Acceptance gates: the accepted set has a non-empty multi-hop slice; fused retrieval beats or
+  matches vector recall on that slice without regressing overall recall, and the report includes
+  confidence intervals or item-level paired outcomes for the small slice.
+- Documentation target: the graph-vector fusion evidence section of
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
-### review-core-textual-workbench
+### rag-vs-long-context-ablation
 
-Build a shared review core `src/llb/review/` and a unified Textual TUI workbench on top of it,
-then migrate the six existing terminal review flows (goldset verify, judge calibration rating,
-external-RAG scoring, draft-compare review, knowledge-cutoff UA review, prompt-system review)
-onto thin adapters over that core. The workbench gives every flow the same record model, verdict
-ledger, keyboard navigation, and a consistent color scheme that visually separates data panes
-(record content, evidence, metadata) from action elements (verdict keys, navigation, progress),
-with dataset/record/strata progress indicators.
+Build `llb compare-context-strategies` (`make compare-context-strategies`): score one model on
+the final split under three context lanes -- `closed_book` (no retrieved context; the model
+answers from its weights), `rag` (the run configuration as-is), and `long_context` (the item's
+full source document laid into the prompt, budget-checked through `fits_context`; an item whose
+document exceeds the model's usable context is counted as a skip, never silently truncated). Each
+lane persists an ordinary run bundle; the comparison report renders per-lane objective plus two
+derived numbers -- retrieval uplift (`rag - closed_book`) and long-context delta
+(`long_context - rag`) -- and flags per item when the closed-book answer already matches the
+reference (a contamination / parametric-knowledge signal).
 
-- Agent status: CLEAR
-- Dependencies: none; `auto-rag-orchestrator` human gates consume it. Reuse the session/ledger
-  logic in `src/llb/goldset/verify_session/`, `src/llb/judge/rate/session.py`,
-  `src/llb/scoring/external_rag_session/`, `src/llb/cli/prep/draft_compare.py`, the
-  knowledge-cutoff review chain, and `src/llb/prompt_system/review.py` as the behavior sources.
-- User-visible outcome: one `llb review <ledger-or-run-dir>` entry point opens the right adapter
-  automatically; reviewers learn one set of keys and one color language across every human gate,
-  and each flow keeps its exact verdict semantics and ledger format.
-- Scope boundary: in scope -- the review core (record model, verdict ledger API, navigation,
-  theming), the Textual app, six adapters, and CLI wiring that keeps the existing per-flow
-  commands working. Out of scope -- a web frontend, changes to any ledger file format, and new
-  verdict semantics.
-- Data and artifact paths: no new artifact roots; adapters read and write the existing per-flow
-  ledger paths. Add `review = ["textual>=0.60"]` as a new optional extra in `pyproject.toml`.
-- Execution path: `llb review <path>` or the existing flow commands; snapshot and interaction
-  tests run headless via Textual's pilot harness in `make ci`.
-- Acceptance gates: `make ci` green; per-adapter round-trip tests prove ledgers written through
-  the workbench are byte-compatible with the legacy sessions; pilot-harness tests cover
-  navigation, verdict entry, resume, and the data-vs-action color roles; ASCII-only output in
-  logs and ledgers.
-- Documentation target: [verification tooling guide](../guides/human-tooling/verification-tooling.md)
-  and a new workbench section in a `current/` topic (extend
-  [data prep](current/data-prep.md) verification section or add `current/review-workbench.md` if
-  the material outgrows it).
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the `run-eval` seams, `fits_context` / `context_budget`
+  ([RAG core](current/rag-core.md#context-budget)), and the report shape of `compare-retrieval`.
+- User-visible outcome: the operator learns whether RAG pays for itself per model on their corpus
+  -- how much a Ukrainian-tuned model (MamayLM, Lapa) already answers closed-book, and whether
+  whole-document stuffing beats chunked retrieval within that model's usable context.
+- Scope boundary: in scope -- lane orchestration, prompt assembly for the two new lanes, the
+  report, and the contamination flag. Out of scope -- any ranking-policy change (the lanes are
+  diagnostics; the `rag` lane stays the leaderboard row) and context-window extension tricks.
+- Data and artifact paths: lane bundles under the standard `$DATA_DIR/run-eval/`; comparison
+  report under `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`.
+- Execution path: `make compare-context-strategies MODEL=<m> BACKEND=<b> GOLDSET=<gs>`; CI drives
+  all three lanes over a fake endpoint and the committed fixtures.
+- Acceptance gates: `make ci` green; the `rag` lane's per-case scores are identical to a plain
+  `run-eval` of the same configuration; a heavy run over the committed UA fixture on at least two
+  roster models records the three-lane table and the contamination rate.
+- Documentation target: a new [RAG core](current/rag-core.md) subsection; a
+  [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
+
+### table-aware-chunking
+
+Add a `table` strategy to `src/llb/rag/chunking/`: chunk boundaries never split a markdown table
+row, a table that fits `size` stays one chunk carrying its nearest heading breadcrumb, and an
+oversized table splits between row blocks with the header row's offsets recorded as additive
+`metadata.table_header_span` -- chunk text stays a verbatim corpus slice with exact offsets.
+Non-table text routes through the `recursive` splitter. Extend `compare-retrieval` with a
+per-question-type breakdown (joined from `item_provenance.jsonl` when the sidecar exists) so the
+numeric and comparative slices -- where tables carry the answers in converted Ukrainian PDF
+corpora -- are scored beside the aggregate.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the chunking dispatch seam (`chunk_spans`), the markdown table output
+  of the PDF conversion lane ([data prep](current/data-prep.md)), and the question-type taxonomy
+  in the draft sidecars.
+- User-visible outcome: numeric and comparative questions whose evidence lives in tables stop
+  losing recall to mid-table chunk cuts, and the per-type breakdown shows exactly which question
+  slice a chunking change helps or hurts.
+- Scope boundary: in scope -- the strategy, tuner registration behind `--extended-chunkers`, and
+  the per-type `compare-retrieval` breakdown. Out of scope -- cell-level table QA, corpus text
+  rewriting, and HTML tables.
+- Data and artifact paths: per-strategy stores under the existing comparison layout
+  `$DATA_DIR/llb/rag/<strategy>/`; no new roots.
+- Execution path: `make build-index CHUNK_STRATEGY=table`; `make compare-retrieval
+  CHUNK_STRATEGIES=table,recursive,sentence GOLDSET=<gs>`; CI covers offset round-trips and
+  row-boundary alignment on a committed markdown-table fixture.
+- Acceptance gates: `make ci` green; every chunk stays offset-exact under `validate-goldset`;
+  a heavy comparison over the quickstart accepted goldset reports aggregate plus numeric-slice
+  recall@10 / MRR against `recursive` and `sentence`.
+- Documentation target: [RAG core](current/rag-core.md) chunking strategies and the
+  [data prep](current/data-prep.md) chunking list.
+
+### ua-embedder-domain-finetune
+
+Fine-tune the pinned multilingual E5 embedder on the operator's corpus: export contrastive
+(question, gold-chunk) pairs from tuning-split gold items only (positives are chunks overlapping
+the item's gold spans; hard negatives come from the BM25 lexical index), train with a
+sentence-transformers contrastive objective behind lazy imports, and emit a tuned-embedder
+directory whose manifest records the base model, dataset digest, item ids, and split counts. A
+split guard refuses pairs from calibration or final ids (the `assert_tuning_only` discipline from
+the LoRA hparam search). `compare-embeddings` accepts the tuned directory as a candidate so
+uplift is measured by the standard source-span metric on the held-out final split, and the
+store/query embedder fingerprint guard keeps a tuned-embedder store from being queried by any
+other encoder.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the embedder conventions and bake-off in
+  [RAG core](current/rag-core.md#embedder-conventions-and-bake-off), the lexical index for hard
+  negatives, and the split-guard pattern in `src/llb/finetune/hparam_search/`.
+- User-visible outcome: a corpus-adapted Ukrainian retriever the operator can adopt with measured
+  final-split evidence, closing the recall gap on domain terms the general E5 encoder misses.
+- Scope boundary: in scope -- pair export, the trainer, the manifest, bake-off integration, and
+  the split guard. Out of scope -- cross-encoder (reranker) fine-tuning, generation-model
+  fine-tuning (owned by the existing finetune lane), and hosted training.
+- Data and artifact paths: pair datasets and tuned models under
+  `$DATA_DIR/finetune-embedder/<model-slug>/<timestamp>/`; evaluation through the existing
+  `$DATA_DIR/compare-embeddings/` layout.
+- Execution path: `make finetune-embedder GOLDSET=<gs> CORPUS=<dir>` then
+  `make compare-embeddings` with the tuned directory added as a candidate; CI uses a fake trainer
+  plus the hashed-BoW embedder pattern from the curation tests, no GPU.
+- Acceptance gates: `make ci` green; the guard refuses a pair set naming calibration/final ids;
+  a heavy CUDA run trains on the quickstart tuning split and reports tuned-vs-base recall@10 /
+  MRR on the held-out final split with an explicit adopt-or-keep-base verdict.
+- Documentation target: [RAG core](current/rag-core.md) embedder section and
+  [extended workflows](current/extended-workflows.md) for the trainer lane.
+
+### ua-model-roster-long-run (optional)
+
+Confirm the refreshed-roster ranking at research scale: run at least 10 multi-objective trials
+per viable addition, use a tuning screen of at least 8 cases, score the full held-out final split,
+and add the public Ukrainian screen tracks before making a default-model adoption decision. Report
+bootstrap uncertainty and quality/latency Pareto tradeoffs so a small-sample rank reversal cannot
+silently change the recommended model.
+
+- Agent status: RUN NEEDED
+- Dependencies: use the roster/runtime behavior in
+  [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh) and the
+  bounded baseline in [evaluation rigor](current/rigor-board-judge.md#joint-model--config-search).
+- User-visible outcome: a stable refreshed-roster recommendation with uncertainty, public-task
+  coverage, and an explicit adopt-or-retain verdict.
+- Scope boundary: in scope -- larger private joint search, public-screen lanes, uncertainty, and
+  the adoption verdict. Out of scope -- model fine-tuning and hosted/API-only candidates.
+- Data and artifact paths: `$DATA_DIR/joint-search/<run>/`, `$DATA_DIR/screen/`, and the matching
+  current-doc evidence section.
+- Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
+  final split, then run the public screen for both finalists.
+- Acceptance gates: `make ci` green; at least 10 trials per finalist; no final-split leakage into
+  tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
+- Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
+
+### query-prep-ambiguity-aware-restoration (optional)
+
+Constrain correction after lossy transliteration and dense keyboard noise so a nearest corpus
+surface cannot silently change the intended inflection or short function word. Carry the original
+noisy token and normalization edit provenance into typo candidate selection; compare candidates
+by reversible romanization compatibility, morphology, and local query context; and add separate
+`normalize`-only versus `normalize,typos` robustness lanes so normalization recovery is isolated
+from vocabulary correction risk. The benchmark contract and motivating evidence are in
+[evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+
+- Agent status: READY
+- Dependencies: the existing query-prep edit log, corpus vocabulary, morphology probe, and query
+  robustness fake/host fixtures.
+- User-visible outcome: safer recovery for lossy Latin typing and adjacent-key errors without
+  sacrificing the retrieval recall restored by normalization.
+- Scope boundary: in scope -- candidate constraints, provenance threading, isolated mitigation
+  lanes, tests, and two-model re-measurement. Out of scope -- model-generated correction and
+  hosted spell-check services.
+- Acceptance gates: `make ci` green; no alphabetic/numeric or acronym regressions; corrected tokens
+  remain compatible with the original noisy form; model-specific objective recovery is
+  non-negative or the `typos` step remains explicitly off for that model.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing and
+  [evaluation rigor](current/rigor-board-judge.md) robustness evidence.
 
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
 
-### frontier-judge-authorization
+### corpus-conflict-resolution-review
 
-Authorize and calibrate the frontier scorer lane against real providers. An agent builds any
-missing report tooling; the human step is supplying provider keys, granting the egress consent,
-setting a real spend cap, and reviewing the resulting agreement evidence.
+Review the unresolved semantic conflict candidates through the workbench, then feed the accepted
+ledger back into the resolver and repeat the retrieval plus verified answer-quality comparison.
+The resolver behavior and the reason semantic candidates have no automatic suppression authority
+are current behavior in
+[data prep](current/data-prep.md#corpus-conflict-resolution-corpus-conflict-resolution).
 
 - Agent status: HUMAN-GATED
-- Dependencies: [scorer policy seam](current/rigor-board-judge.md#scorer-policy-seam). Human
-  step that gates completion: the operator provides Anthropic / OpenAI / Google keys in `.env`,
-  records the consent, approves the per-run budget cap, and signs off on the agreement report.
+- Dependencies: the resolution lane is current behavior. Human step that gates completion: an
+  authorized corpus reviewer chooses `keep_both`, `drop_a`, or `drop_b` for every escalated row
+  and signs off on the resulting suppression directives before application.
+- User-visible outcome: an accepted or rejected suppression policy backed by reviewed conflict
+  labels and a repeatable effect report, instead of adopting semantic similarity candidates as
+  deletions.
+- Scope boundary: in scope -- workbench review, accepted-ledger application, the same before/after
+  metrics, and an adopt-or-revert decision. Out of scope -- changing detector thresholds,
+  rewriting source text, or adding the resolver to auto-rag before the reviewed run supports it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/resolution_review.jsonl`,
+  `plan.json`, `conflict_overlay.json`, and `effect.md`; no new artifact root.
+- Execution path: `make review-workbench REVIEW_PATH=<resolution-review-jsonl>`, then
+  `make resolve-corpus-conflicts FINDINGS=<findings-jsonl> REVIEWED=<resolution-review-jsonl>
+  APPLY=1 STORE=<store-dir> GOLDSET=<goldset-jsonl>` and repeat the fixed verified objective run.
+- Acceptance gates: every review row has a decision; the regenerated plan has no unresolved
+  records; rollback still restores the exact baseline; the human accepts only if retrieval and
+  verified objective metrics do not regress.
+- Documentation target: the resolution evidence subsection of [data prep](current/data-prep.md)
+  and the conflict adapter notes in [review workbench](current/review-workbench.md).
+
+### frontier-judge-authorization
+
+Authorize the frontier scorer lane against real providers. The report tooling is current behavior
+([frontier judge agreement and cost report](current/rigor-board-judge.md#frontier-judge-agreement-and-cost-report));
+what remains is entirely the human authorization and the judgment it produces.
+
+- Agent status: HUMAN-GATED human_decision: panding
+- Command: once a real Anthropic key is in `.env` (~$0.40, 86 items):
+
+  ```bash
+  make frontier-judge-agreement \
+    FRONTIER_JUDGE_MODELS=anthropic/claude-sonnet-4-5 \
+    FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=1.00
+  ```
+
+- Dependencies: the agreement lane is current behavior; it runs on the 86-row calibration
+  worksheet `calibration/ua_squad_postedited_v1.csv` (every row carries both a human and a local
+  judge rating). Human step that gates completion: the operator puts a real Anthropic / OpenAI /
+  Google key in `.env` (all three are currently blank placeholders, so no live run is possible),
+  approves the per-run spend cap, and signs off on the resulting report.
 - User-visible outcome: a decision record stating whether each frontier judge is trusted for
-  autonomous gates on Ukrainian data, plus calibrated default budget caps derived from measured
-  cost-per-item.
-- Scope boundary: in scope -- running the frontier lane on the committed UA fixture, computing
-  Spearman rho for frontier-vs-human and frontier-vs-local-judge agreement, and a cost-per-item
-  table per provider. Out of scope -- sending any private corpus to a provider and changing the
-  headline-ranking policy.
-- Data and artifact paths: agreement report and cost table under
-  `$DATA_DIR/frontier-judge/<run>/`; input ratings reuse the existing human calibration ledger;
-  fixture is `samples/goldsets/ua_squad_postedited_v1/`.
-- Execution path: run `llb run-eval --scorer-policy frontier ...` over the calibration worksheet
-  with each provider, then the agreement/cost report command; requires live provider access and
-  spend, so the run stays outside CI entirely.
-- Acceptance gates: report exists with rho per provider and cost-per-item with the cap math; the
-  human accepts or rejects each provider for autonomous use; default caps land in the sample
-  configs with the decision recorded.
+  autonomous gates on Ukrainian data, plus default budget caps derived from measured
+  cost-per-item rather than from a guess.
+- Scope boundary: in scope -- running the existing lane on the committed UA fixture, reviewing
+  the rho and cost tables, recording an accept/reject per provider, and landing the resolved caps
+  in the sample configs. Out of scope -- sending any private corpus to a provider, changing the
+  headline-ranking policy, and any further report tooling.
+- Data and artifact paths: `$DATA_DIR/frontier-judge/<run>/`; fixture is
+  `samples/goldsets/ua_squad_postedited_v1/`.
+- Execution path: `make frontier-judge-agreement FRONTIER_JUDGE_MODELS=<id>[,<id>...]
+  FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=<cap>`; needs live provider access and spend, so it
+  stays outside CI entirely.
+- Acceptance gates: the report carries a non-`n/a` rho per provider against both references and a
+  priced cost-per-item with cap math; the human replaces `human_decision: pending` with an accept
+  or reject per provider; the accepted caps land in the sample configs with the decision recorded.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) judge section and
   [product decisions](current/scope-boundaries.md) for the trust decision per provider.
+
+### frontier-judge-retrieved-context-agreement
+
+Optional. Re-measure frontier-vs-human judge agreement with *retrieved* contexts instead of the
+gold-span windows the authorization lane uses. The current lane deliberately holds retrieval
+constant by grounding each item on a window of its gold source document, which isolates judge
+behavior but also hands the judge cleaner evidence than a scored run ever gives it. A judge that
+ranks well on oracle context may rank differently when the context contains distractors or misses
+the answer entirely -- exactly the cases where an autonomous gate matters most. Add a context
+source switch to `load_agreement_items` that pulls each item's top-k retrieved chunks from an
+existing store, then report both grounding modes side by side so the gap is visible.
+
+- Agent status: HUMAN-GATED
+- Dependencies: blocked by `frontier-judge-authorization` (needs the same provider keys and
+  spend). Reuse the agreement lane in `src/llb/scoring/frontier_agreement/` and the store-loading
+  seam used by the context-position probe.
+- User-visible outcome: evidence for whether frontier-judge trust measured on oracle context
+  transfers to the noisy contexts a real scored run produces.
+- Scope boundary: in scope -- the retrieved-context source, the two-mode comparison, and the
+  delta. Out of scope -- changing the default grounding of the authorization lane before the
+  comparison says it should.
+- Data and artifact paths: no new roots; a second grounding mode inside the existing
+  `$DATA_DIR/frontier-judge/<run>/` bundle.
+- Execution path: `make frontier-judge-agreement` with a grounding-mode knob plus a built store;
+  CI covers mode selection over a fake store and fake completers.
+- Acceptance gates: `make ci` green; the gold-span mode reproduces the current numbers exactly; a
+  live run reports rho under both modes with the delta called out.
+- Documentation target: the frontier-judge agreement subsection of
+  [evaluation rigor](current/rigor-board-judge.md).
 
 ### autonomous-vs-assisted-acceptance
 
@@ -184,8 +379,10 @@ twice -- once fully autonomous, once with human-assisted gates in the review wor
 the human judge both the reviewer experience and the recommendation quality.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `auto-rag-orchestrator` and `review-core-textual-workbench` (Agent Implementation
-  section -- cross-section block). Human step that gates completion: the operator performs both
+- Dependencies: the autonomous lane is current behavior ([Auto-RAG](current/auto-rag.md));
+  assisted review uses the [review workbench](current/review-workbench.md). Human step that gates
+  completion: the operator
+  performs both
   runs, reviews gated records in the workbench, measures their own throughput against the legacy
   per-flow sessions, and accepts or rejects the recommendation bundles.
 - User-visible outcome: recorded evidence that the autonomous lane produces an acceptable

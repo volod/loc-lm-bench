@@ -22,14 +22,18 @@ class _ModelSpecSchema(BaseModel):
     source: str
     min_vram_gb: int | float = 0
     notes: str | None = None
+    license: str | None = None
     license_url: str | None = None
     gated: bool = False
     params_b: float | None = None
     quant: str | None = None
     bpw: float | None = None
     n_layers: int | None = None
+    kv_layers: int | None = None
     kv_dim: int | None = None
     max_context: int | None = None
+    sliding_window: int | None = None
+    sliding_window_pattern: int | None = None
     vocab_size: int | None = None
     hidden_size: int | None = None
     tie_word_embeddings: bool | None = None

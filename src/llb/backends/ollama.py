@@ -2,37 +2,33 @@
 
 Ollama ships as a prebuilt binary -- it uses the host GPU (CUDA) itself but needs no
 from-source build -- so it proves the whole eval loop before backend telemetry takes on the
-heavy vLLM/flash-attn source build. It runs as a host daemon exposing an OpenAI-compatible
-endpoint at `<host>/v1`; this launcher verifies the daemon is reachable, optionally pulls
-the model, and serves chat calls through `openai_client.chat_once`. Telemetry for RAG core is the
-steady-state tokens/sec observed on the last call; richer per-backend telemetry (served
-context, peak VRAM) lands in backend telemetry.
+heavy vLLM/flash-attn source build. It runs as a host daemon; this launcher verifies the daemon
+is reachable, optionally pulls the model, and uses native `/api/chat` so `think=false` is honored
+for bounded benchmark generations. Telemetry for RAG core is the steady-state tokens/sec observed
+on the last call; richer per-backend telemetry lands in backend telemetry.
 
-`urllib`/`subprocess` are stdlib; the `openai` client is a base dep. Nothing to compile.
+`urllib`/`subprocess` are stdlib; no backend-specific client is required. Nothing to compile.
 """
 
 import json
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from typing import cast
 
-import openai
-
-from llb.backends.base import BackendLauncher, ChatResult
-from llb.backends.openai_client import chat_once, make_client
+from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, BackendLauncher, ChatResult
 from llb.core.contracts.hardware import BackendMetadata
 from llb.core.contracts.common import ChatMessage
 
 
 class OllamaLauncher(BackendLauncher):
-    """Serve one Ollama model over its OpenAI-compatible endpoint."""
+    """Serve one Ollama model over its native chat endpoint."""
 
     def __init__(self, model: str, host: str = "http://localhost:11434", pull: bool = False):
         super().__init__(model=model, meta={"backend": "ollama", "host": host})
         self.host = host.rstrip("/")
         self.pull = pull
-        self._client: openai.OpenAI | None = None
         self._last: ChatResult | None = None
 
     def _reachable(self) -> bool:
@@ -49,20 +45,43 @@ class OllamaLauncher(BackendLauncher):
             )
         if self.pull:
             subprocess.run(["ollama", "pull", self.model], check=True)
-        self._client = make_client(f"{self.host}/v1", api_key="ollama")
 
     def chat(
         self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
     ) -> ChatResult:
-        if self._client is None:
-            self._client = make_client(f"{self.host}/v1", api_key="ollama")
-        self._last = chat_once(
-            self._client,
-            self.model,
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout,
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "think": False,
+            "messages": messages,
+            "options": {"num_predict": max_tokens, "temperature": temperature},
+        }
+        request = urllib.request.Request(
+            f"{self.host}/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data = json.loads(response.read().decode("utf-8", "replace"))
+        except TimeoutError:
+            self._last = ChatResult(
+                text="", latency_s=time.monotonic() - started, error=ERR_TIMEOUT
+            )
+            return self._last
+        except (urllib.error.URLError, OSError, ValueError):
+            self._last = ChatResult(
+                text="", latency_s=time.monotonic() - started, error=ERR_BACKEND
+            )
+            return self._last
+        message = data.get("message") or {}
+        self._last = ChatResult(
+            text=str(message.get("content") or ""),
+            prompt_tokens=int(data.get("prompt_eval_count", 0) or 0),
+            completion_tokens=int(data.get("eval_count", 0) or 0),
+            latency_s=time.monotonic() - started,
         )
         return self._last
 

@@ -101,3 +101,8 @@ def test_rrf_balanced_fusion_prefers_agreement():
 def test_rrf_rejects_out_of_range_weight():
     with pytest.raises(ValueError, match="fusion weight"):
         rrf_fuse([1], [2], 1.5)
+
+
+def test_rrf_zero_weight_side_does_not_append_disabled_candidates():
+    assert [cid for cid, _ in rrf_fuse([1], [2, 3], 1.0)] == [1]
+    assert [cid for cid, _ in rrf_fuse([1, 2], [3], 0.0)] == [3]

@@ -2,6 +2,7 @@
 
 from llb.backends.resolver import (
     ResolverProbes,
+    _hf_has_gguf,
     llamacpp_offload_split,
     resolve,
 )
@@ -62,6 +63,20 @@ def test_candidate_sources_priority_ordered():
         ("ollama", {"source": "m:tag"}),
         ("llamacpp", {"source": "org/m-gguf"}),
     ]
+
+
+def test_hf_gguf_probe_normalizes_ollama_style_source(monkeypatch):
+    seen: list[str] = []
+
+    class FakeApi:
+        def list_repo_files(self, repo_id: str) -> list[str]:
+            seen.append(repo_id)
+            return ["model-q4_k_m.gguf"]
+
+    monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
+
+    assert _hf_has_gguf("hf.co/org/Model-GGUF:Q4_K_M") is True
+    assert seen == ["org/Model-GGUF"]
 
 
 def test_per_source_quant_is_priced_independently():

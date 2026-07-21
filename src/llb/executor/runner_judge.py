@@ -15,6 +15,7 @@ from llb.core.config import RunConfig
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
 from llb.scoring.judge.model import judge_is_trusted, run_judge
+from llb.scoring.judge.scorer import judge_value
 from llb.scoring.policy import (
     BudgetExceeded,
     HUMAN_LANE_REASON,
@@ -46,11 +47,6 @@ def _judge_records(batch: CaseBatch) -> list[JudgeInputRecord]:
         }
         for (item, answer), (retrieved, _spans) in zip(batch.answers, batch.retrieval_pairs)
     ]
-
-
-def _judge_value(score: JudgeScore) -> float:
-    """One scalar judge rating per case: the mean of faithfulness + answer-relevancy."""
-    return (score["faithfulness"] + score["answer_relevancy"]) / 2.0
 
 
 def _policy_request(
@@ -127,7 +123,7 @@ def _judge_cases(
     if not outcome.trusted or not outcome.scores:
         _LOG.info("[run-eval] judge demoted (%s); objective ranks alone", outcome.reason)
         return JudgeCaseResult(None, policy_meta)
-    per_case = [_judge_value(s) for s in outcome.scores]
+    per_case = [judge_value(s) for s in outcome.scores]
     for row, value in zip(batch.rows, per_case):
         row["judge_score"] = round(value, 4)
     mean = sum(per_case) / len(per_case) if per_case else None
@@ -147,7 +143,7 @@ def _judge_ratings(
         return None
     score_fn, _ = _configured_judge_scorer(config, scorer, staging_dir)
     scores = score_fn(_judge_records(batch), config.judge_model)
-    return [_judge_value(s) for s in scores]
+    return [judge_value(s) for s in scores]
 
 
 def _build_judge_metadata(

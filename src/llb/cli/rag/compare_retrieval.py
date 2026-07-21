@@ -33,6 +33,9 @@ def compare_retrieval_cmd(
     fusion_weight: Optional[float] = typer.Option(
         None, help="hybrid rows: dense share of the weighted RRF (0..1; default 0.5)"
     ),
+    graph_weight: Optional[float] = typer.Option(
+        None, help="fused rows: graph share of weighted RRF (0..1; default 0.3)"
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="add a '<row>+rerank' twin per compared row: retrieve --rerank-candidates, "
@@ -69,6 +72,7 @@ def compare_retrieval_cmd(
         goldset_path=goldset,
         corpus_root=_compare_vector_corpus_root(goldset, None) if (strategies or hybrid) else None,
         fusion_weight=fusion_weight,
+        graph_weight=graph_weight,
     )
     items = load_goldset(cfg.goldset_path)
     if split:
@@ -83,7 +87,12 @@ def compare_retrieval_cmd(
             CrossEncoderReranker(reranker),
             rerank_candidates or DEFAULT_RERANK_CANDIDATES,
         )
-    report = compare_retrieval(stores, compare_items, k)
+    report = compare_retrieval(
+        stores,
+        compare_items,
+        k,
+        slice_labels=_question_type_labels(cfg.goldset_path, [it.id for it in items]),
+    )
     typer.echo(format_comparison(report))
     _echo_stage_latencies(stores)
     if out is not None:
@@ -132,3 +141,26 @@ def _echo_stage_latencies(stores: dict[str, Any]) -> None:
                 f"[compare-retrieval] {label}: mean/query retrieve "
                 f"{stages['retrieve_s'] * 1000:.1f} ms + rerank {stages['rerank_s'] * 1000:.1f} ms"
             )
+
+
+def _question_type_labels(goldset: Path, item_ids: list[str]) -> list[str | None] | None:
+    """Load aligned question types from an ontology bundle's needle sidecar when present."""
+    import json
+
+    candidates = [goldset.parent / "needle_items.jsonl"]
+    if goldset.parent.name == "accepted":
+        candidates.append(goldset.parent.parent / "needle_items.jsonl")
+    source = next((path for path in candidates if path.is_file()), None)
+    if source is None:
+        return None
+    labels: dict[str, str] = {}
+    with source.open(encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            item_id = row.get("id")
+            question_type = row.get("question_type")
+            if isinstance(item_id, str) and isinstance(question_type, str):
+                labels[item_id] = question_type
+    return [labels.get(item_id) for item_id in item_ids]

@@ -131,3 +131,21 @@ def test_plan_model_sliding_window_fits_longer_context():
     )
     assert 0 < full["ctx_gpu"] < base["max_context"]  # full attention is KV-bound below the cap
     assert sliding["ctx_gpu"] > full["ctx_gpu"]  # sliding-window frees room for more context
+
+
+def test_plan_model_hybrid_attention_only_prices_kv_bearing_layers():
+    base = {
+        "name": "hybrid",
+        "backend": "vllm",
+        "params_b": 8.0,
+        "quant": "q4_k_m",
+        "n_layers": 64,
+        "kv_dim": 1024,
+        "max_context": 262144,
+    }
+
+    all_attention = plan_model(base, vram_mib=16000, ram_mib=0)
+    hybrid = plan_model({**base, "kv_layers": 16}, vram_mib=16000, ram_mib=0)
+
+    assert hybrid["ctx_gpu"] > all_attention["ctx_gpu"]
+    assert hybrid["gpu_layers"] <= base["n_layers"]

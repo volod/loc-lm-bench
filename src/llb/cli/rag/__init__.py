@@ -8,5 +8,6 @@ from llb.cli.rag import (  # noqa: F401
     compare_stores,
     graph_index,
     index,
+    refresh,
     validate,
 )

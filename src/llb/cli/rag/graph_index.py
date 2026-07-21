@@ -56,6 +56,7 @@ def build_graph_cmd(
     config's graph dir; select it at eval time with `--retrieval-backend graph`. With --summarize it
     also writes the tagged-diagnostic community summaries (recorded, never returned by retrieval).
     """
+    from llb.graph.refresh import save_graph_inputs
     from llb.graph.store import GraphStore
 
     cfg = load_config(config, corpus_root=corpus_root, graph_khop_depth=khop_depth)
@@ -81,6 +82,9 @@ def build_graph_cmd(
         )
         summary_note = f", {len(store.community_summaries)} community summaries"
     store.save(cfg.graph_dir())
+    # Persist the build inputs beside the store so `llb refresh-index` can refresh it
+    # incrementally (changed documents only).
+    save_graph_inputs(cfg.graph_dir(), extractions, ontology)
     typer.echo(
         f"[build-graph] {store.meta['n_nodes']} nodes, {store.meta['n_edges']} edges, "
         f"{store.meta['n_communities']} communities{summary_note} -> {cfg.graph_dir()}"

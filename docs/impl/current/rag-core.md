@@ -183,8 +183,9 @@ Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking/
 The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
 `corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
 that fingerprint with the current corpus manifest before loading the vector store; a changed or
-deleted source refuses with a rebuild message instead of silently serving stale chunks. Immutable
-store directories are the rollback unit.
+deleted source refuses with a refresh/rebuild message instead of silently serving stale chunks
+(`llb refresh-index` applies the incremental path). Immutable store directories are the rollback
+unit (see Dynamic Corpus Refresh below).
 
 ACL scoping uses the same metadata-filter seam as page and heading filters:
 `metadata_filter(acl_label=...)` rejects any chunk whose `metadata.acl_label` differs, and
@@ -205,6 +206,95 @@ Retrieval modes:
 - `hybrid`: index like `flat`, plus a lexical BM25 index fused with the dense ranking at query
   time (see Hybrid Retrieval below).
 
+## Store Lifecycle: Dynamic Corpus Refresh
+
+Shipped (dynamic-corpus-refresh): `llb refresh-index` (`make refresh-index CORPUS=<dir>
+[GOLDSET=<jsonl>] [RETUNE_THRESHOLD=] [SKIP_GRAPH=1] [GRAPH_EXTRACTION=<jsonl>]`) updates the
+built stores after corpus edits in time proportional to the changed documents instead of a full
+rebuild, and tells the operator when the corpus has drifted enough that the tuned configuration
+should be re-searched.
+
+Manifest diff: `store_meta.json` records `doc_fingerprints` -- per-document hashes from
+`corpus_doc_fingerprints` in `src/llb/prep/corpus_governance.py` (with `corpus_manifest.json`
+present, each ok item's canonical row: content sha plus governance fields; hand-built corpora
+hash each committed `.md`/`.txt` file, keyed by the same relative-path `doc_id` chunking uses).
+A document's PDF citation sidecar (`pdf-<digest>.citations.json`, the page-provenance source
+for `metadata.pages`) hashes into its fingerprint when one exists -- in both manifest and
+hand-built modes and in the aggregate `corpus_fingerprint` -- so a sidecar-only regeneration
+(page spans rebuilt while the text is unchanged) counts as a modified document and the refresh
+re-annotates that document's chunks; docs without a sidecar keep the plain hash, so stores built
+before this stay refresh-compatible. `src/llb/rag/refresh/diff.py` classifies every document as
+added / modified / deleted / unchanged; a governance-only change (for example a new `acl_label`)
+counts as modified so chunk metadata propagates.
+
+Incremental update (`src/llb/rag/refresh/store_refresh.py`): unchanged documents keep their
+chunk records and embedding rows verbatim (`FaissIndex.vectors()` reconstructs the stored
+matrix; the adapter backends return their persisted `vectors.npy`), added/modified documents are
+re-chunked (`chunk_corpus(only_docs=...)`) and re-embedded, deleted documents drop out of the
+dense, lexical, and persisted-record paths. Annotation-only fast path: a modified document whose
+re-chunked `(char_start, char_end, text)` grid reproduces the stored one exactly (sidecar-driven
+page-span regeneration, governance-only manifest changes) rewrites its chunk records -- carrying
+the re-annotated metadata -- but reuses every embedding row and its lexical postings instead of
+re-embedding (`_annotation_only_sources`); `refresh-index` reports those rows as reused, not
+embedded. The fast path applies only to the diff's modified class: added documents and the
+legacy no-`doc_fingerprints` full refresh always embed fresh rows, and any real text edit
+(including an equal-length in-place replacement, which keeps the span grid but changes chunk
+text) still re-embeds. The merged store preserves the exact from-scratch
+build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
+equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
+and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
+cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`,
+plus annotation-only (sidecar regeneration) cases asserting zero embedder calls in flat,
+hybrid, and parent_child modes and a same-span text-edit guard. The
+hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
+postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
+or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed
+documents only (whole-document token pooling per doc), so kept rows stay verbatim there too.
+
+Comparison-store refresh (`src/llb/rag/refresh/siblings.py`): `compare-retrieval` persists its
+per-strategy candidate stores under `$DATA_DIR/llb/rag/<strategy>/` (including `hybrid/`).
+`refresh-index` refreshes every such sibling through the same `refresh_vector_store` path --
+each sibling diffs its own recorded fingerprints, refreshes into its own
+`<strategy>/generations/<utc-ts>/`, and no-ops when already current (siblings refresh even when
+the main store is a no-op, since they may have been built at an older corpus state). The main
+store's `generations/` child is never treated as a sibling. A `compare-retrieval` rerun after
+corpus edits therefore never serves stale sibling stores.
+
+Immutable generations (`src/llb/core/store_generations.py`): a refresh never edits the live
+store. It stages the refreshed store and atomically publishes it as
+`$DATA_DIR/llb/rag/generations/<utc-ts>/` (`refreshed_from` recorded in its meta).
+`RagStore.load` / `GraphStore.load` resolve the live store as the candidate with the newest meta
+file among the base directory and its generations (ties prefer the generation), so a later
+`build-index` into the base takes over again. Rollback = delete the newest generation directory.
+
+GraphRAG refresh (`src/llb/graph/refresh.py`): `build-graph` persists its inputs
+(`extraction.jsonl`, `ontology.json`) beside the store and records per-doc sha256
+`doc_fingerprints` in the graph meta. A refresh keeps unchanged documents' extractions, takes
+updated rows for changed documents from `--graph-extraction <jsonl>` (deletion-only refreshes
+need none; missing rows refuse with the document list), rebuilds the graph deterministically,
+and publishes a generation carrying its merged inputs so the next refresh chains. Diagnostic
+community summaries are not carried over; re-run `build-graph --summarize` when needed.
+
+Drift report (`src/llb/rag/refresh/drift.py`): after a refresh the command re-runs retrieval
+validation (recall@k / MRR) over the configured gold set against the old and new stores and
+writes `$DATA_DIR/refresh/<run-ts>/{drift.json,report.md}` with the per-metric deltas and a
+`retune_recommended` flag when either absolute delta crosses `--retune-threshold` (default
+0.05). Re-tuning itself stays an operator or orchestrator decision. A store built before this
+feature has no `doc_fingerprints` and refreshes once as a full re-embed into a generation
+(logged); it refreshes incrementally afterwards.
+
+Semantic prefix tree (`src/llb/conflicts/tree_refresh.py`): the corpus-conflict audit persists a
+centroid tree over the store's chunk vectors, and it consumes the same `ManifestDiff` classes.
+Chunks of deleted and modified documents are removed, chunks of added and modified documents are
+re-inserted at their nearest leaf, and centroids and radii are recomputed only along the affected
+root-to-leaf paths -- nodes off those paths keep their exact geometry, so their bounds stay valid
+without being touched. A refresh answers queries identically to a rebuild on the same corpus state
+(asserted in CI); once more than `REBUILD_FRACTION` of the chunks have changed it rebuilds instead,
+because patching stops paying. The tree meta pins the embedder model and dimension: centroids are
+only meaningful in the space that produced them, so a store re-embedded with a different encoder
+rebuilds rather than patches. Full behavior in
+[data prep](data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection).
+
 ## Hybrid Retrieval (Dense + BM25 + RRF)
 
 Shipped (hybrid-retrieval-uk): retrieval has the full hybrid shape Ukrainian enterprise corpora
@@ -221,6 +311,9 @@ Modules:
   `pymorphy3-dicts-uk`, collapsing cases/inflection to lemmas at index AND query time -- the stored
   chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
+  Its generalized `weighted_rrf_fuse` accepts n ranked lists and non-negative weights. A
+  zero-weight lane contributes neither score nor candidate membership, fixing endpoint weights
+  that previously appended disabled-lane candidates when the active lane returned fewer than k.
 - `src/llb/rag/filters.py` -- the chunk-metadata filter seam: `metadata_filter(doc_ids,
   heading_contains, page_range, acl_label)` builds a predicate over `doc_id` plus the
   page-metadata join's `metadata.headers` breadcrumb, `metadata.pages` range, and governance
@@ -308,6 +401,30 @@ here. Operators who want hybrid for exact-term robustness (see the exact-term fi
 above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
 (`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
 decision hangs on it.
+
+## Graph-Vector Fusion Retrieval
+
+`retrieval_backend=fused` composes the configured vector lane (flat, parent-child, or hybrid) and
+the selected GraphRAG strategy behind one `.retrieve(question, k)` wrapper. The wrapper in
+`src/llb/rag/fusion.py` keys candidates by exact `(doc_id, char_start, char_end)` spans, fuses the
+two rankings through generalized weighted RRF, deduplicates shared spans, and keeps source offsets
+unchanged for recall@k and MRR. Reranking wraps the fused result once, rather than independently
+reranking each input lane.
+
+`graph_weight` is in `RunConfig`, run manifests, sweep cell keys, and fused Optuna trials. The Make
+aliases forward `RETRIEVAL_BACKEND`, `RETRIEVAL_STRATEGY`, and `GRAPH_WEIGHT`; the comparison alias
+also accepts `CONFIG`, `SPLIT`, and `COMPARE_RETRIEVAL_OUT` for a repeatable matched-store report.
+
+```bash
+make run-eval MODEL=<m> RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3
+make compare-retrieval CONFIG=<run-config.yaml> GRAPH_WEIGHT=0.3 \
+  GOLDSET=<answered-jsonl> COMPARE_RETRIEVAL_OUT=<report-json>
+make sweep SWEEP_RAG_GRID="graph_weight=0,0.3,0.5"
+```
+
+The CUDA-host accepted-set metrics, comparative slice, empty multi-hop slice, endpoint check, and
+artifact locations are recorded in
+[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence).
 
 ## Reranking And Context Order (rerank-context-order)
 
@@ -434,16 +551,18 @@ empty is an exact no-op).
 The `src/llb/rag/query_prep/` package is a pure, unit-testable pipeline of NAMED steps (no store, model,
 or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 
-- `normalize` -- matching-side casefold, apostrophe-variant unification (U+2019 / U+02BC / `'`),
-  and a small transliteration table that maps Latin-typed Ukrainian tokens back to Cyrillic
-  (`zakon` -> `закон`). The romanization map is injective, so the Latin->Cyrillic inverse is
-  longest-match deterministic.
+- `normalize` -- matching-side casefold; apostrophe-variant unification (U+2018 / U+2019 /
+  U+02BC / grave / ASCII); Latin-typed Ukrainian back to Cyrillic; and safe Latin-look-alike
+  repair inside mixed Cyrillic tokens. Canonical romanization preserves existing uppercase Latin
+  acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
+  would otherwise collide.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`build_vocabulary` over `store.chunks`); a query token ABSENT from it is
   corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
-  tokens over 8 chars). A token the corpus already contains is NEVER altered, and a purely numeric
-  token (article/law number, code) is never "corrected" into a different one. Every correction is
-  logged. An opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
+  tokens over 8 chars). Tokens shorter than three characters are protected; candidate matching
+  cannot cross alphabetic/numeric kinds; a token the corpus already contains is NEVER altered;
+  and a numeric token is never "corrected" into a different one. Every correction is logged. An
+  opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
   recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
   valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
@@ -457,18 +576,25 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 - `rewrite` -- an optional local-LLM query rewrite through the run's backend endpoint seam
   (`eval.rag.query_rewrite` prompt). OFF by default and NEVER present unless explicitly requested;
   records both the original and rewritten query per case.
+- `hyde` -- generates a short hypothetical answer through the same local endpoint and embeds it
+  on the dense lane while retaining the processed user question for BM25 and graph linking. It
+  does not alter the question sent to answer generation.
+- `decompose` -- parses a bounded JSON or line-list response into at most five subqueries,
+  retrieves every subquery, and deduplicates exact source spans with weighted RRF. A 2x
+  original-query lane stabilizes ranking when the model over-decomposes a simple question.
 
-Wiring: `src/llb/eval/graph.py`'s retrieve node processes the question BEFORE `store.retrieve`
-(the raw question stays in state for generation) and records `query_processed` /
-`query_corrections` into the case state, carried into `scores.jsonl` rows so both query forms are
-recoverable per case. `src/llb/executor/runner_setup.py` resolves each step's
-dependency (vocabulary from the loaded store, glossary from `query_glossary_path`, rewriter from
-the launcher) and raises a clear message on a missing one.
+Wiring: `src/llb/eval/graph.py` processes the question before retrieval and hands the structured
+result to `query_prep/retrieval.py`. `RagStore.retrieve_queries` accepts separate dense and
+lexical text; graph, fused, and reranking wrappers preserve that contract. The raw question stays
+in state for generation. `scores.jsonl` and the durability journal carry `query_processed`,
+`query_corrections`, `query_hypothetical_answer`, `query_decomposition`, and
+`query_subqueries`, so normal and resumed runs preserve generated-query provenance. Journal
+inclusion also fixes the earlier loss of deterministic query-prep provenance on resume.
 
 Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
-`normalize` | `typos` | `glossary` | `rewrite`; unknown/duplicated steps rejected at config
-validation), `query_glossary_path`, and `query_prep_typo_guard` (refused at config validation
-unless the `typos` step is present).
+`normalize` | `typos` | `glossary` | `rewrite` | `hyde` | `decompose`;
+unknown/duplicated steps rejected at config validation), `query_glossary_path`, and
+`query_prep_typo_guard` (refused at config validation unless the `typos` step is present).
 
 Commands:
 
@@ -476,20 +602,31 @@ Commands:
 make build-query-glossary BUNDLE=<draft dir>            # -> <bundle>/query_glossary.json
 make run-eval MODEL=<m> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json>
 make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json> QUERY_PREP_AB=1
+make validate-retrieval CONFIG=<yaml> GOLDSET=<gs> QUERY_PREP=hyde,decompose \
+  QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 \
+  QUERY_PREP_OUT=<report.json>
+make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
-(`+normalize`, `+typos`, `+glossary`) with per-step recall@k / MRR deltas, so each step's marginal
-retrieval effect is attributable (the `rewrite` step needs a model, so it runs only in `run-eval`,
-not the A/B). `query_prep_ab_report` is pure over the `.retrieve` seam.
+with per-step recall@k / MRR deltas. Model steps use `--query-prep-model` and
+`--query-prep-backend`; their completions and parsed subqueries are embedded per case in the JSON
+report. Endpoint generators cache a question within one cumulative run, avoiding duplicate model
+calls while preserving fixed-temperature results.
 
-Tests: `tests/llb/rag/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
-Damerau-Levenshtein transposition, typo correction that never touches in-vocabulary or numeric
-tokens + long-token distance 2 + deterministic tie-break, deterministic alias expansion + glossary
+Tests: `tests/llb/rag/test_query_prep.py` (apostrophe and mixed-script repair, collision-safe
+romanization, Latin acronym preservation, Damerau-Levenshtein transposition, typo correction that
+never touches in-vocabulary, short, or cross-kind tokens + long-token distance 2 + deterministic
+tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
-processed-query wiring, runner resolver dependency wiring), plus config validation in
-`tests/llb/core/test_config.py`.
+processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
+deduplication, runner resolver dependency wiring), `tests/llb/rag/test_store.py` (split hybrid
+queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
+plus config validation in `tests/llb/core/test_config.py`.
+
+The end-to-end noise benchmark, model evidence, and model-specific default recommendation live in
+[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark).
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
@@ -521,6 +658,28 @@ Unguarded, the edit-distance step "corrected" valid inflections to the corpus su
 untouched (the lemmatization lane is the right tool for them) while genuine out-of-vocabulary
 typos -- including the mixed-script `wеб` (Latin `w`) -> `веб` -- are still corrected, and the
 step becomes MRR-neutral. Verdict: turn the guard on whenever the `typos` step is in use.
+
+### HyDE and decomposition evidence
+
+CUDA-host evidence (2026-07-21): `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` through Ollama,
+`intfloat/multilingual-e5-base`, hybrid FAISS, k=10, and the held-out final split (n=13) of the
+available verified 40-item accepted set against its full 1124-chunk store:
+
+| stage | recall@10 | MRR | d(MRR) |
+| --- | ---: | ---: | ---: |
+| baseline | 0.923 | 0.814 | -- |
+| +hyde | 0.923 | 0.833 | +0.019 |
+| +hyde +decompose | 0.923 | 0.833 | +0.000 |
+| baseline (isolated decomposition run) | 0.923 | 0.814 | -- |
+| +decompose | 0.923 | 0.827 | +0.013 |
+
+An initial equal-weight decomposition run regressed MRR to 0.699. Replaying its recorded
+subqueries showed that adding the original question at 2x weight changed the result from harmful
+to useful; the final independent run confirms +0.013 MRR, and the cumulative lane preserves the
+larger HyDE gain. Recall is unchanged. Both steps remain opt-in. Reports, including endpoint and
+per-case generated text, are under
+`$DATA_DIR/query-prep-hyde-decompose/<run>/query_prep_ab_improved.json` and
+`decompose_ab_improved.json`.
 
 ## Chunking Strategies
 

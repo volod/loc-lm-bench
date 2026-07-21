@@ -7,14 +7,14 @@ attributes a per-step marginal recall@k / MRR delta so nobody turns the lane on 
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from llb.rag.query_prep.base import STEP_TYPOS, KnownWordProbe, Rewriter
+from llb.rag.query_prep.base import STEP_TYPOS, KnownWordProbe, QueryGenerator, Rewriter
 from llb.rag.query_prep.glossary import Glossary
 from llb.rag.query_prep.pipeline import QueryPrep
 
 # (question, gold source spans) -- the per-item A/B input (matches `llb.rag.compare.CompareItem`).
 AbItem = tuple[str, list[Any]]
-# A retriever seam: processed query + k -> ranked chunk records (any RAG-store `.retrieve`).
-RetrieveFn = Callable[[str, int], list[Any]]
+# A prepared retriever seam: structured query plan + k -> ranked chunk records.
+RetrieveFn = Callable[[Any, int], list[Any]]
 
 AB_BASELINE_LABEL = "baseline"
 
@@ -25,6 +25,8 @@ def cumulative_pipelines(
     vocabulary: "frozenset[str] | None" = None,
     glossary: Glossary | None = None,
     rewriter: Rewriter | None = None,
+    hypothesizer: QueryGenerator | None = None,
+    decomposer: QueryGenerator | None = None,
     known_word: KnownWordProbe | None = None,
 ) -> list[tuple[str, "QueryPrep"]]:
     """`baseline` (no steps) then one pipeline per cumulative prefix (`+normalize`, `+typos`, ...).
@@ -42,6 +44,8 @@ def cumulative_pipelines(
             vocabulary=vocabulary,
             glossary=glossary,
             rewriter=rewriter,
+            hypothesizer=hypothesizer,
+            decomposer=decomposer,
             known_word=known_word if STEP_TYPOS in prefix else None,
         )
         stages.append((f"+{ordered[index - 1]}", pipeline))
@@ -64,9 +68,8 @@ def query_prep_ab_report(
     rows: list[dict[str, Any]] = []
     prev: dict[str, float] | None = None
     for label, pipeline in stages:
-        pairs = [
-            (retrieve(pipeline.process(question).processed, k), spans) for question, spans in items
-        ]
+        prepared = [(pipeline.process(question), spans) for question, spans in items]
+        pairs = [(retrieve(result, k), spans) for result, spans in prepared]
         metrics = evaluate_retrieval(pairs, k)
         row: dict[str, Any] = {
             "stage": label,
@@ -74,6 +77,9 @@ def query_prep_ab_report(
             "mrr": metrics["mrr"],
             "delta_recall": 0.0 if prev is None else metrics["recall_at_k"] - prev["recall_at_k"],
             "delta_mrr": 0.0 if prev is None else metrics["mrr"] - prev["mrr"],
+            "cases": [
+                {"question": result.raw, **result.provenance()} for result, _spans in prepared
+            ],
         }
         rows.append(row)
         prev = {"recall_at_k": metrics["recall_at_k"], "mrr": metrics["mrr"]}

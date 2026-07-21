@@ -30,6 +30,7 @@ dependencies = [
 # install so `make venv` stays fast.
 rag = [
   "faiss-cpu>=1.8",
+  "scipy>=1.11",
   "sentence-transformers>=3.0",
   "deepeval>=4.0.6,<5",
 ]
@@ -46,6 +47,7 @@ board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
 prep = ["litellm>=1.40"]
 telemetry = ["nvidia-ml-py>=12.0", "psutil>=5.9"]
+review = ["textual>=0.60"]  # unified terminal workbench for all human review ledgers
 # gguf backs the serve-adapter merge lane (convert_hf_to_gguf.py runs in this venv); prefer the
 # llama.cpp checkout's own gguf-py (`make build-llamacpp` env) when versions ever disagree.
 # bitsandbytes backs the trainer's default QLoRA 4-bit load path on CUDA hosts.
@@ -73,6 +75,7 @@ pdf-quality = ["docling[rapidocr]>=2.0", "markitdown[pdf]>=0.1", "unstructured[p
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",
+  "textual>=0.60",
   "ruff>=0.6",
   "radon>=6.0",
   "complexipy>=5.0",
@@ -166,11 +169,19 @@ addopts = "-q -p no:deepeval -p no:rerunfailures"
 filterwarnings = [
   "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
 ]
-# Two test groups (see Makefile `test` vs `ci`):
+# Test groups (see Makefile `test` / `ci` / `ci-github`):
 #   default / `make test`  -- the FULL suite, run locally; includes `slow` tests.
-#   `make ci`              -- the lightweight suite (`-m "not slow"`); GitHub CI stays fast.
+#   `make ci`              -- lightweight default-local suite; excludes `slow` and `opt_in_env`.
+#   `make ci-github`       -- also excludes `heavy_env`; runs in
+#                            the base `[dev]`-only install with no optional-dependency skips.
 # Mark a test `@pytest.mark.slow` when it is intrinsically expensive (real Optuna sweeps,
 # embedder/model loads, deepeval, subprocess builds) -- not merely a first-import artifact.
+# Mark a test `@pytest.mark.heavy_env` when it is quick but needs an optional extra the base
+# `[dev]` install lacks (faiss via `[rag]`, duckdb via `[graph]`, vector-store adapters).
+# Mark a test `@pytest.mark.opt_in_env` when it needs an extra deliberately omitted even from the
+# default local environment; regular CI deselects it instead of reporting a dependency skip.
 markers = [
   "slow: long-running test, excluded from the lightweight `make ci` suite (run via `make test`)",
+  "heavy_env: needs optional extras beyond the base [dev] install; deselected by `make ci-github` (GitHub CI), runs in local `make ci` / `make test`",
+  "opt_in_env: needs an explicitly installed dependency omitted from regular local and GitHub CI; deselected by both CI suites",
 ]

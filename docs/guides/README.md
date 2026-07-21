@@ -34,6 +34,7 @@ docs/guides/
 | Review and accept AI-drafted data (the human gate) | [Verification tooling](human-tooling/verification-tooling.md) |
 | Decide whether to trust the LLM judge | [Calibration tooling](human-tooling/calibration-tooling.md) |
 | Run one model through the RAG core | [Run RAG core](benchmarking/run-rag-core.md) |
+| Turn a corpus into a scored RAG recommendation | [Autonomous RAG recommendation](benchmarking/auto-rag.md) |
 | Estimate a local model's real-world knowledge cutoff | [Knowledge cutoff](benchmarking/knowledge-cutoff.md) |
 | Compare serving backends or hardware tiers | [Platform matrix](benchmarking/platform-matrix.md), [vLLM backend](benchmarking/vllm-backend.md) |
 | Compare retrieval strategies (FAISS vs GraphRAG) | [Graph vs FAISS](benchmarking/graph-vs-faiss-comparison.md) |
@@ -109,6 +110,8 @@ provide granular commands and corpus-specific detail.
 
 ## benchmarking/ -- run, compare, analyze
 
+- [Autonomous RAG recommendation](benchmarking/auto-rag.md) -- resumable corpus ingestion,
+  verification, joint model/config search, prompt selection, and final recommendation rendering.
 - [Run RAG core](benchmarking/run-rag-core.md) -- retrieve -> generate -> score for one local
   model; the smallest complete scored run.
 - [Knowledge cutoff](benchmarking/knowledge-cutoff.md) -- fit a local model's effective public-event

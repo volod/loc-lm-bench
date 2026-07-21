@@ -72,6 +72,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "rate":
+        from llb.review.launch import try_workbench
+
+        if (
+            not args.show_judge
+            and not args.clear
+            and try_workbench(args.worksheet, start=args.start) is not None
+        ):
+            return 0
         from llb.judge.rate.session import run_session
 
         run_session(

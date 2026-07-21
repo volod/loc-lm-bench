@@ -54,6 +54,21 @@ Tier mixing is out of scope for a single board. Public screens, private RAG resu
 category suite have separate metric semantics. Use side-by-side sections or explicit handoff
 commands rather than one blended leaderboard.
 
+## Corpus-Conflict Confidence
+
+The semantic tier reports a **ranked candidate list, not a set of statistically significant
+findings**, and the audit must not be presented as though it did. Threshold calibration measures
+the corpus's own comparable cross-document pair similarities, a population that contains the very
+duplicates it is meant to detect; enumerated exactly, the null and the observed set are identical,
+so empirical FDR is 1.000 at every threshold and a budget of N returns exactly N pairs. Detail and
+measurements: [data prep](data-prep.md#known-limitation-there-is-no-independent-null).
+
+Two consequences hold until `conflict-null-model-research` says otherwise. Confidence in a corpus
+conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so no
+autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. And no
+report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,
+significance level, or confidence -- name it a candidate budget or a rank cutoff.
+
 ## Agentic Framework Scope
 
 The maintained agentic harness axis is `loop`, `langgraph`, and `crewai`. Additional frameworks

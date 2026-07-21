@@ -1,13 +1,14 @@
 """Grid-expansion + backend-readiness helpers for the sweep command."""
 
-import shutil
-from pathlib import Path
 from typing import Any
 
 import typer
 
+from llb.backends.readiness import local_backend_ready
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
+
+_local_backend_ready = local_backend_ready
 
 
 def _sweep_cell_overrides(
@@ -41,11 +42,12 @@ def _sweep_cell_overrides(
 _RAG_GRID_AXES: dict[str, tuple[Any, Any]] = {
     "top_k": (int, lambda v: v >= 1),
     "fusion_weight": (float, lambda v: 0.0 <= v <= 1.0),
+    "graph_weight": (float, lambda v: 0.0 <= v <= 1.0),
     "rerank_candidates": (int, lambda v: v >= 0),
 }
 _RAG_GRID_USAGE = (
     "--rag-grid must look like 'top_k=3,5,8', 'top_k=3,5;fusion_weight=0.4,0.6', "
-    "or 'rerank_candidates=0,30' (0 == reranker off)"
+    "'graph_weight=0,0.3', or 'rerank_candidates=0,30' (0 == reranker off)"
 )
 
 
@@ -90,7 +92,12 @@ def _parse_rag_grid(spec: str | None) -> list[dict[str, Any]]:
     return points
 
 
-_GRID_SUFFIX_PREFIX = {"top_k": "k", "fusion_weight": "w", "rerank_candidates": "r"}
+_GRID_SUFFIX_PREFIX = {
+    "top_k": "k",
+    "fusion_weight": "w",
+    "graph_weight": "gw",
+    "rerank_candidates": "r",
+}
 
 
 def _grid_cells(
@@ -142,19 +149,5 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
         cell[key] = value
     if "fusion_weight" in point:
         cell["retrieval_mode"] = "hybrid"
-
-
-def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
-    """Return whether the local serving binary needed by a resolved backend is installed."""
-    if backend == "vllm":
-        from llb.backends.vllm_command import vllm_executable
-
-        if vllm_executable():
-            return True, ""
-        return False, "vllm executable not found (run make build-vllm)"
-    if backend == "llamacpp":
-        built = data_dir / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
-        if built.exists() or shutil.which("llama-server"):
-            return True, ""
-        return False, "llama-server not found (run make build-llamacpp)"
-    return True, ""
+    if "graph_weight" in point:
+        cell["retrieval_backend"] = "fused"

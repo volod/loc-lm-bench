@@ -20,16 +20,17 @@ import logging
 import math
 import re
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from pathlib import Path
+from typing import TypeVar
 
 _LOG = logging.getLogger(__name__)
 
 # One token -> its lemma (identity when lemmatization is off).
 Lemmatizer = Callable[[str], str]
 
-# Apostrophe variants unified to U+0027 so "м’яч" / "мʼяч" / "м'яч" index as one token.
-_APOSTROPHE_VARIANTS = str.maketrans({"’": "'", "ʼ": "'"})
+# Apostrophe variants unified to U+0027 so copied and keyboard-typed forms index as one token.
+_APOSTROPHE_VARIANTS = str.maketrans({"‘": "'", "’": "'", "ʼ": "'", "`": "'"})
 # Word tokens: letters/digits plus in-word apostrophes; everything else is punctuation.
 _TOKEN_RE = re.compile(r"[\w']+")
 
@@ -39,6 +40,8 @@ BM25_B = 0.75
 # Standard RRF rank damping constant (Cormack et al. 2009).
 RRF_K = 60
 LEXICAL_INDEX_VERSION = "bm25-uk-v1"
+
+RankedId = TypeVar("RankedId", bound=Hashable)
 
 
 def normalize_token(token: str) -> str:
@@ -202,22 +205,51 @@ def rrf_fuse(
 
     score(id) = weight * 1/(k_const + dense_rank) + (1 - weight) * 1/(k_const + lexical_rank),
     with an absent id contributing nothing from that side. `weight`=1 reproduces the dense
-    order; `weight`=0 the lexical order. Ties break on dense rank, then id, so the fusion is
-    deterministic for any dense backend.
+    order; `weight`=0 the lexical order. Ties prefer the dense lane and stable encounter order,
+    so the fusion is deterministic for any dense backend.
     """
     if not 0.0 <= weight <= 1.0:
         raise ValueError(f"fusion weight must be within [0, 1], got {weight}")
-    dense_rank = {cid: rank for rank, cid in enumerate(dense, 1)}
-    lexical_rank = {cid: rank for rank, cid in enumerate(lexical, 1)}
-    fused: dict[int, float] = {}
-    for cid in dense_rank.keys() | lexical_rank.keys():
-        score = 0.0
-        if cid in dense_rank:
-            score += weight / (k_const + dense_rank[cid])
-        if cid in lexical_rank:
-            score += (1.0 - weight) / (k_const + lexical_rank[cid])
-        fused[cid] = score
-    return sorted(
-        fused.items(),
-        key=lambda pair: (-pair[1], dense_rank.get(pair[0], len(dense) + 1), pair[0]),
-    )
+    return weighted_rrf_fuse([dense, lexical], [weight, 1.0 - weight], k_const=k_const)
+
+
+def weighted_rrf_fuse(
+    rankings: Sequence[Sequence[RankedId]],
+    weights: Sequence[float],
+    *,
+    k_const: int = RRF_K,
+) -> list[tuple[RankedId, float]]:
+    """Fuse any number of ranked lists using normalized weighted RRF.
+
+    Zero-weight lanes are ignored completely, including candidate membership. This makes a
+    weight endpoint an exact passthrough instead of appending zero-score candidates from a
+    disabled lane. Ties prefer the earliest lane, then the best rank in that lane, then stable
+    encounter order. Duplicate ids inside one lane keep their first rank.
+    """
+    if len(rankings) != len(weights):
+        raise ValueError("RRF rankings and weights must have the same length")
+    if k_const < 0:
+        raise ValueError(f"RRF k constant must be non-negative, got {k_const}")
+    if any(not math.isfinite(weight) or weight < 0.0 for weight in weights):
+        raise ValueError(f"RRF weights must be non-negative, got {list(weights)}")
+    total_weight = sum(weights)
+    if total_weight <= 0.0:
+        raise ValueError("RRF weights must contain at least one positive value")
+
+    scores: dict[RankedId, float] = {}
+    tie_keys: dict[RankedId, tuple[int, int, int]] = {}
+    encounter = 0
+    for lane, (ranking, raw_weight) in enumerate(zip(rankings, weights)):
+        if raw_weight == 0.0:
+            continue
+        weight = raw_weight / total_weight
+        seen: set[RankedId] = set()
+        for rank, item in enumerate(ranking, 1):
+            if item in seen:
+                continue
+            seen.add(item)
+            scores[item] = scores.get(item, 0.0) + weight / (k_const + rank)
+            if item not in tie_keys:
+                tie_keys[item] = (lane, rank, encounter)
+                encounter += 1
+    return sorted(scores.items(), key=lambda pair: (-pair[1], tie_keys[pair[0]]))

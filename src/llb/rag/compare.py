@@ -13,7 +13,7 @@ one `evaluate_retrieval` span metric, so graph and FAISS score on identical rule
 
 from typing import Any, Protocol
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
@@ -45,22 +45,51 @@ class ComparisonReport(TypedDict):
     n: int
     backends: dict[str, RetrievalMetrics]
     best_recall: str | None
+    slices: NotRequired[dict[str, "ComparisonSlice"]]
+
+
+class ComparisonSlice(TypedDict):
+    n: int
+    backends: dict[str, RetrievalMetrics]
 
 
 def compare_retrieval(
-    stores: dict[str, Retriever], items: list[CompareItem], k: int
+    stores: dict[str, Retriever],
+    items: list[CompareItem],
+    k: int,
+    slice_labels: list[str | None] | None = None,
 ) -> ComparisonReport:
-    """Score each labeled backend's top-k retrieval over the same items; rank by recall@k."""
+    """Score each backend over the same items, with optional aligned question-type slices."""
+    if slice_labels is not None and len(slice_labels) != len(items):
+        raise ValueError("retrieval slice labels must align one-to-one with items")
     per_backend: dict[str, RetrievalMetrics] = {}
+    pairs_by_backend: dict[str, list[Any]] = {}
     for label, store in stores.items():
         pairs = [(store.retrieve(question, k), spans) for question, spans in items]
+        pairs_by_backend[label] = pairs
         per_backend[label] = evaluate_retrieval(pairs, k)
-    return {
+    report: ComparisonReport = {
         "k": k,
         "n": len(items),
         "backends": per_backend,
         "best_recall": _best_recall(per_backend),
     }
+    if slice_labels is not None:
+        labels = sorted({label for label in slice_labels if label} | {"comparative", "multi-hop"})
+        report["slices"] = {
+            slice_label: {
+                "n": sum(label == slice_label for label in slice_labels),
+                "backends": {
+                    backend: evaluate_retrieval(
+                        [pair for pair, label in zip(pairs, slice_labels) if label == slice_label],
+                        k,
+                    )
+                    for backend, pairs in pairs_by_backend.items()
+                },
+            }
+            for slice_label in labels
+        }
+    return report
 
 
 def _best_recall(per_backend: dict[str, RetrievalMetrics]) -> str | None:
@@ -114,4 +143,11 @@ def format_comparison(report: ComparisonReport) -> str:
             f"  {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    for slice_label, slice_report in report.get("slices", {}).items():
+        lines.append(f"  slice {slice_label} (n={slice_report['n']}):")
+        for label in sorted(slice_report["backends"]):
+            metrics = slice_report["backends"][label]
+            lines.append(
+                f"    {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
+            )
     return "\n".join(lines)

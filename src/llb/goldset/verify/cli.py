@@ -103,6 +103,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "sample":
         return run_sample(args, parser)
     if args.cmd == "review":
+        from llb.review.launch import try_workbench
+
+        use_workbench = not args.show_crosscheck and not args.clear and args.order == "worksheet"
+        if use_workbench and try_workbench(args.worksheet, start=args.start) is not None:
+            return 0
         from llb.goldset.verify_session.loop import run_session
 
         run_session(

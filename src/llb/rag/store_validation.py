@@ -31,6 +31,7 @@ def stale_store_message(
         return None
     return (
         f"[rag] stale store at {index_dir}: corpus manifest fingerprint changed. "
-        "Rebuild with `llb build-index --corpus-root <corpus-dir>` so removed sources and "
+        "Refresh incrementally with `llb refresh-index` (changed documents only) or rebuild "
+        "with `llb build-index --corpus-root <corpus-dir>` so removed sources and "
         "governance metadata propagate into chunks."
     )

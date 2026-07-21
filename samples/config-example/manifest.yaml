@@ -38,9 +38,17 @@ tiers:
       backend: ollama
       model: gemma4:e4b
       request_timeout_s: 300
+    gemma-4-26b:
+      backend: ollama
+      model: gemma4:26b
+      request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    qwen3.6-27b:
+      backend: ollama
+      model: qwen3.6:27b
       request_timeout_s: 300
     qwen3-30b:
       backend: ollama
@@ -72,9 +80,17 @@ tiers:
       backend: ollama
       model: gemma4:31b
       request_timeout_s: 300
+    gemma-4-26b:
+      backend: ollama
+      model: gemma4:26b
+      request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
+      request_timeout_s: 300
+    qwen3.6-27b:
+      backend: ollama
+      model: qwen3.6:27b
       request_timeout_s: 300
     qwen3-30b:
       backend: ollama
@@ -108,9 +124,17 @@ tiers:
       gpu_memory_utilization: 0.90
       max_model_len: 16384
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
+    gemma-4-26b:
+      backend: ollama
+      model: gemma4:26b
+      request_timeout_s: 300
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
+      request_timeout_s: 300
+    qwen3.6-27b:
+      backend: ollama
+      model: qwen3.6:27b
       request_timeout_s: 300
     qwen3-30b:
       backend: ollama
@@ -142,9 +166,19 @@ tiers:
       gpu_memory_utilization: 0.90
       max_model_len: 16384
       limit_mm_per_prompt: '{"image": 0, "audio": 0}'
+    gemma-4-26b:
+      backend: vllm
+      model: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+      gpu_memory_utilization: 0.90
+      max_model_len: 8192
+      limit_mm_per_prompt: '{"image": 0}'
     qwen3.6:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
+      request_timeout_s: 300
+    qwen3.6-27b:
+      backend: ollama
+      model: qwen3.6:27b
       request_timeout_s: 300
     qwen3-30b:
       backend: ollama

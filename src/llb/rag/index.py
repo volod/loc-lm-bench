@@ -32,6 +32,12 @@ class FaissIndex:
         scores, ids = self._index.search(query_vectors, k)
         return scores.tolist(), ids.tolist()
 
+    def vectors(self) -> Any:
+        """The stored float32 (n, dim) matrix in build order (refresh reuses these rows)."""
+        if self._index is None:
+            raise RuntimeError("index is empty; build or load it first")
+        return self._index.reconstruct_n(0, self._index.ntotal)
+
     def save(self, path: Path | str) -> None:
         faiss = _import_faiss()
         path = Path(path)

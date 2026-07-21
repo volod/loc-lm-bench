@@ -108,11 +108,11 @@ def _run_eval_metrics(
     )
 
 
-def _run_eval_final(config: RunConfig) -> EvalResult:
-    """Default stage-2 run: score the winning config on the full final split (the entry)."""
+def _run_eval_final(config: RunConfig, *, limit: int | None = None) -> EvalResult:
+    """Default stage-2 run on the final split; ``limit`` is for explicit smoke/evidence runs."""
     from llb.executor.runner import run_eval
 
-    return run_eval(config, store=_build_store(config), split=FINAL_SPLIT, emit=True)
+    return run_eval(config, store=_build_store(config), split=FINAL_SPLIT, emit=True, limit=limit)
 
 
 def mlflow_trial_logger(study_name: str) -> TrialCallback:

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX
+
 CORPUS_MANIFEST = "corpus_manifest.json"
 GOVERNANCE_FIELDS = (
     "language",
@@ -120,61 +122,127 @@ def manifest_governance_by_doc(corpus_root: Path | str) -> dict[str, dict[str, s
     return out
 
 
+def _manifest_item_row(item: dict[str, Any]) -> dict[str, Any]:
+    """The canonical fingerprint row for one ok manifest item (content + governance contract)."""
+    return {
+        "source": item.get("source"),
+        "doc_id": item.get("doc_id"),
+        "kind": item.get("kind"),
+        "n_chars": item.get("n_chars"),
+        "source_sha256": item.get("source_sha256"),
+        "language": item.get("language"),
+        "version": item.get("version"),
+        "effective_date": item.get("effective_date"),
+        "source_system": item.get("source_system"),
+        "acl_label": item.get("acl_label"),
+    }
+
+
 def corpus_fingerprint(corpus_root: Path | str) -> str:
     """Fingerprint the current corpus contract used by a store.
 
     Prefer `corpus_manifest.json` when present so source deletion and governance changes are
     visible. For hand-built corpora without a manifest, hash committed `.md`/`.txt` files.
+    A document's `*.citations.json` sidecar (PDF page provenance) is part of its contract, so
+    a sidecar-only regeneration moves the fingerprint too.
     """
     root = Path(corpus_root)
     manifest = _load_manifest(root)
     if manifest:
-        rows: list[dict[str, Any]] = []
+        items = manifest.get("items")
+        rows = [
+            _manifest_item_row(item)
+            for item in (items if isinstance(items, list) else [])
+            if isinstance(item, dict) and item.get("status") == "ok"
+        ]
+        rows.sort(key=lambda row: str(row.get("doc_id")))
+        fingerprint = _json_fingerprint(
+            [_with_citation_sidecar(root, str(row.get("doc_id")), row) for row in rows]
+        )
+    else:
+        files = []
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
+                doc_id = path.relative_to(root).as_posix()
+                row = {"path": doc_id, "sha256": _sha256_file(path)}
+                files.append(_with_citation_sidecar(root, doc_id, row))
+        fingerprint = _json_fingerprint(files)
+    from llb.conflicts.overlay import load_applied_overlay, overlay_fingerprint
+
+    overlay_sha = overlay_fingerprint(load_applied_overlay(root))
+    return (
+        fingerprint
+        if overlay_sha is None
+        else _json_fingerprint({"corpus": fingerprint, "conflict_overlay": overlay_sha})
+    )
+
+
+def corpus_doc_fingerprints(corpus_root: Path | str) -> dict[str, str]:
+    """Per-document fingerprints keyed by `doc_id` (the manifest-diff contract).
+
+    Uses the same two sources as `corpus_fingerprint`: with `corpus_manifest.json` present each
+    ok item's canonical row (content hash + governance contract) is hashed per `doc_id`; for
+    hand-built corpora each committed `.md`/`.txt` file hashes to its sha256, keyed by its
+    corpus-relative path -- the same `doc_id` chunking assigns. A doc's `*.citations.json`
+    sidecar hash is folded in when one exists, so regenerated page spans count as a modified
+    document (its chunks need re-annotating) while sidecar-less docs keep their plain hash.
+    `refresh-index` diffs a store's recorded map against the current one to find added /
+    modified / deleted documents.
+    """
+    root = Path(corpus_root)
+    manifest = _load_manifest(root)
+    if manifest:
+        out: dict[str, str] = {}
         items = manifest.get("items")
         for item in items if isinstance(items, list) else []:
             if not isinstance(item, dict) or item.get("status") != "ok":
                 continue
-            rows.append(
-                {
-                    "source": item.get("source"),
-                    "doc_id": item.get("doc_id"),
-                    "kind": item.get("kind"),
-                    "n_chars": item.get("n_chars"),
-                    "source_sha256": item.get("source_sha256"),
-                    "language": item.get("language"),
-                    "version": item.get("version"),
-                    "effective_date": item.get("effective_date"),
-                    "source_system": item.get("source_system"),
-                    "acl_label": item.get("acl_label"),
-                }
+            doc_id = item.get("doc_id")
+            if isinstance(doc_id, str):
+                out[doc_id] = _json_fingerprint(
+                    _with_citation_sidecar(root, doc_id, _manifest_item_row(item))
+                )
+    else:
+        out = {
+            path.relative_to(root).as_posix(): _plain_doc_fingerprint(root, path)
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and path.suffix.lower() in {".md", ".txt"}
+        }
+    from llb.conflicts.overlay import load_applied_overlay, overlay_fingerprint_for_doc
+
+    overlay = load_applied_overlay(root)
+    for doc_id, fingerprint in list(out.items()):
+        overlay_sha = overlay_fingerprint_for_doc(overlay, doc_id)
+        if overlay_sha is not None:
+            out[doc_id] = _json_fingerprint(
+                {"document": fingerprint, "conflict_overlay": overlay_sha}
             )
-        return _json_fingerprint(sorted(rows, key=lambda row: str(row.get("doc_id"))))
-    files = []
-    for path in sorted(root.rglob("*")):
-        if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
-            files.append({"path": path.relative_to(root).as_posix(), "sha256": _sha256_file(path)})
-    return _json_fingerprint(files)
+    return out
+
+
+def _citation_sidecar_sha(root: Path, doc_id: str) -> str | None:
+    """sha256 of the doc's PDF citation sidecar (`pdf-<digest>.citations.json`), or None."""
+    sidecar = root / Path(doc_id).with_suffix(PDF_CITATION_SUFFIX)
+    return _sha256_file(sidecar) if sidecar.is_file() else None
+
+
+def _with_citation_sidecar(root: Path, doc_id: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Fold the citation-sidecar hash into a fingerprint row when the doc has a sidecar."""
+    sidecar_sha = _citation_sidecar_sha(root, doc_id)
+    return row if sidecar_sha is None else {**row, "citations_sha256": sidecar_sha}
+
+
+def _plain_doc_fingerprint(root: Path, path: Path) -> str:
+    """Hand-built-corpus doc fingerprint: the file sha256, plus the sidecar hash if present."""
+    sha = _sha256_file(path)
+    sidecar_sha = _citation_sidecar_sha(root, path.relative_to(root).as_posix())
+    if sidecar_sha is None:
+        return sha
+    return _json_fingerprint({"sha256": sha, "citations_sha256": sidecar_sha})
 
 
 def manifest_items_fingerprint(items: list[dict[str, Any]]) -> str:
-    rows: list[dict[str, Any]] = []
-    for item in items:
-        if item.get("status") != "ok":
-            continue
-        rows.append(
-            {
-                "source": item.get("source"),
-                "doc_id": item.get("doc_id"),
-                "kind": item.get("kind"),
-                "n_chars": item.get("n_chars"),
-                "source_sha256": item.get("source_sha256"),
-                "language": item.get("language"),
-                "version": item.get("version"),
-                "effective_date": item.get("effective_date"),
-                "source_system": item.get("source_system"),
-                "acl_label": item.get("acl_label"),
-            }
-        )
+    rows = [_manifest_item_row(item) for item in items if item.get("status") == "ok"]
     return _json_fingerprint(sorted(rows, key=lambda row: str(row.get("doc_id"))))
 
 
@@ -198,6 +266,18 @@ def _sidecar_metadata(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def split_front_matter(text: str) -> tuple[str, int]:
+    """Split off any governance front matter: returns (body, body start offset).
+
+    Front matter is metadata, not content, so content-level comparisons (corpus-conflict hashing)
+    exclude it. Offsets stay anchored to the original text, which is never modified.
+    """
+    match = _FRONT_MATTER.match(text)
+    if not match:
+        return text, 0
+    return text[match.end() :], match.end()
 
 
 def _front_matter_metadata(text: str) -> dict[str, str]:

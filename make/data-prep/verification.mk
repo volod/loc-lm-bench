@@ -1,8 +1,14 @@
 ## Derived security data, human verification gates, and chain promotion.
 
-.PHONY: derive-security-cases derive-security-worksheet cross-check-goldset verify-sample \
+
+.PHONY: review-workbench derive-security-cases derive-security-worksheet cross-check-goldset verify-sample \
 	verify-review verify-adjudicate verify-accept chain-goldset-pipeline \
 	chain-goldset-finalize judge-experiment
+
+review-workbench: ## Open any supported review ledger or run directory (REVIEW_PATH=, START=N)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(REVIEW_PATH)" || { echo "ERROR: set REVIEW_PATH=<ledger-or-run-dir>"; exit 2; }
+	$(PY) -m llb.main review "$(REVIEW_PATH)" $(if $(START),--start $(START))
 
 derive-security-cases: ## Security benchmark: derive corpus-specific content-safety cases from a draft BUNDLE (SECURITY_DERIVE_OUT=, SECURITY_DERIVE_MAX_DENIAL=, SECURITY_DERIVE_MAX_PAIRS=, SECURITY_DERIVE_MERGE_SEED=1)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

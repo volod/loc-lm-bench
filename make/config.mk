@@ -139,6 +139,10 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
+# Query robustness probe: full split by default, bounded answers, deterministic character noise.
+QUERY_ROBUSTNESS_LIMIT ?=
+QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
+QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml
@@ -232,6 +236,26 @@ JOINT_SEARCH_OFFLINE ?=
 JOINT_SEARCH_CORPUS ?=
 JOINT_SEARCH_LIMIT ?=
 JOINT_SEARCH_NO_ISOLATE ?=
+# Autonomous corpus-to-recommendation pipeline. The default drafter is a 12B Ukrainian model that
+# fits the 16 GiB development host; override it for another host tier or installed local tag.
+AUTO_RAG_DRAFT_MODEL ?= hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M
+AUTO_RAG_RUN_ID ?=
+AUTO_RAG_CANDIDATES ?= $(MODELS_MANIFEST)
+AUTO_RAG_CANDIDATE_MODELS ?=
+AUTO_RAG_JUDGE_MODEL ?=
+AUTO_RAG_JUDGE_BASE_URL ?=
+AUTO_RAG_MAX_ITEMS ?= 60
+AUTO_RAG_DOC_LIMIT ?=
+AUTO_RAG_TRIALS ?= 20
+AUTO_RAG_SCREEN_LIMIT ?= 8
+AUTO_RAG_MIN_FINALISTS ?= 2
+AUTO_RAG_EVAL_LIMIT ?=
+AUTO_RAG_MAX_MODEL_LEN ?= 8192
+AUTO_RAG_PARITY_CHECK ?=
+SCORER_POLICY ?= auto
+SCORER_EGRESS_CONSENT ?=
+SCORER_MAX_USD ?=
+SCORER_MAX_CALLS ?=
 FINETUNE_CAMPAIGN_MODELS ?= $(MODEL)
 FINETUNE_CAMPAIGN_ROUNDS ?= 1
 FINETUNE_CAMPAIGN_LIMIT ?=
@@ -264,6 +288,19 @@ CAL_NAME ?= ua_squad_postedited_v1
 CAL_DIR ?= $(if $(filter $(CAL_NAME),$(CAL_PERMANENT)),calibration,$(DATA_DIR)/llb/calibration)
 CAL_WS ?= $(CAL_DIR)/$(CAL_NAME).csv
 RATINGS ?= $(CAL_WS)
+
+# Frontier judge authorization (`make frontier-judge-agreement`). FRONTIER_JUDGE_MODELS is a
+# comma-separated list of litellm ids; each needs its provider key in .env. The lane SENDS the
+# worksheet answers to those providers and SPENDS money, so it refuses to run without
+# FRONTIER_EGRESS_CONSENT=1 and at least one of FRONTIER_MAX_USD / FRONTIER_MAX_CALLS. Keep the
+# worksheet on public/committed fixture data: private corpora must not leave the host.
+FRONTIER_JUDGE_MODELS ?=
+FRONTIER_EGRESS_CONSENT ?=
+FRONTIER_MAX_USD ?=
+FRONTIER_MAX_CALLS ?=
+FRONTIER_JUDGE_THRESHOLD ?= 0.6
+FRONTIER_JUDGE_LIMIT ?=
+FRONTIER_JUDGE_OUT ?=
 # Data-verification knobs (the new-goldset flow: cross-check -> human verification gate sample-verify). BUNDLE is a
 # draft dir (goldset.jsonl + corpus/) under $(DATA_DIR)/prepare-goldset/<ts>/; the sample worksheet
 # + accepted-ledger default beside it. CROSS_CHECK_MODEL is the SECOND-frontier verifier (must

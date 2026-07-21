@@ -71,7 +71,7 @@ def run_joint_search(
     goals = parse_objectives(objectives)
     run_dir = joint_run_dir(base_config.data_dir, run_id)
     resolved = resolve_all(list(candidates), vram_mib, ram_mib, probes=probes)
-    runnable, skipped = partition_resolved(resolved)
+    runnable, skipped = partition_resolved(resolved, data_dir=base_config.data_dir)
     write_manifest(
         run_dir,
         {

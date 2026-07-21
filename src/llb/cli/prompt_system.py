@@ -90,7 +90,7 @@ def _positive_ints(value: str, label: str) -> list[int]:
 def prompt_system_review_cmd(
     run_dir: Path = typer.Option(..., help="a prompt-system run dir (holds candidates.json)"),
     action: str = typer.Option(
-        "summary", help="summary | approve | pin | reject (the last three need --id)"
+        "summary", help="workbench | summary | approve | pin | reject (actions need --id)"
     ),
     candidate_id: Optional[str] = typer.Option(None, "--id", help="prompt-system id to act on"),
     note: str = typer.Option("", help="optional reviewer note"),
@@ -107,6 +107,13 @@ def prompt_system_review_cmd(
     )
 
     path = run_dir / CANDIDATES_FILE
+    if action == "workbench":
+        from llb.review.launch import try_workbench
+
+        if try_workbench(run_dir) is None:
+            typer.echo('[error] install the review extra: uv pip install -e ".[review]"', err=True)
+            raise typer.Exit(code=2)
+        return
     candidates = load_candidates(path)
     if action == "summary":
         summary = summarize_review(candidates)

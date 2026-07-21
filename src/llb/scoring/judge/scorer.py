@@ -16,6 +16,15 @@ class _NonEmptyJudgeRecords:
     positions: list[int]
 
 
+def judge_value(score: JudgeScore) -> float:
+    """One scalar judge rating per case: the mean of faithfulness + answer-relevancy.
+
+    Shared by the scored-run path and the frontier-agreement report so both correlate and
+    record the same number.
+    """
+    return (score["faithfulness"] + score["answer_relevancy"]) / 2.0
+
+
 def extract_scores(rows: list[dict[str, float]]) -> list[JudgeScore]:
     """Normalize both judge signals into the canonical score contract."""
     return [

@@ -113,6 +113,9 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     _assert_tier16_gemma4_vllm(out)
     _assert_tier16_gemma4_ollama(out)
     _assert_tier16_mistral(out)
+    targets = {item["target"]: item for item in tier["targets"]}
+    assert targets["gemma-4-26b"]["model"] == "gemma4:26b"
+    assert targets["qwen3.6-27b"]["model"] == "qwen3.6:27b"
 
 
 def test_select_host_gemma4_target_prefers_cuda_12b_on_16gb() -> None:
@@ -165,6 +168,11 @@ def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:
     serve_mistral = (out / "serve_mistral.sh").read_text(encoding="utf-8")
     assert "vllm serve" in serve_mistral
     assert "--quantization" not in serve_mistral  # fp8 compressed-tensors is auto-detected
+    tier = yaml.safe_load((out / "tier.json").read_text(encoding="utf-8"))
+    targets = {item["target"]: item for item in tier["targets"]}
+    assert targets["gemma-4-26b"]["backend"] == "vllm"
+    assert targets["gemma-4-26b"]["model"].endswith("FP8-dynamic")
+    assert targets["qwen3.6-27b"]["backend"] == "ollama"
     rel = out / "run_eval_mamaylm.sh"
     assert "../../../.." in rel.read_text(encoding="utf-8")
 

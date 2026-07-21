@@ -123,6 +123,15 @@ column. Everything is offline except generating the worksheet, which needs a run
    judge-cohort guard prevents mixing cohorts in one board. Listed only so you know it is *not* part
    of the human work.
 
+6. **(Your authorization, once per provider) frontier judge trust decision.** Once your ratings are
+   in, `make frontier-judge-agreement FRONTIER_JUDGE_MODELS=<id> FRONTIER_EGRESS_CONSENT=1
+   FRONTIER_MAX_USD=<cap>` re-scores the SAME worksheet with a frontier judge and reports its rho
+   against your ratings and against the local judge, plus measured cost per item. Three things stay
+   yours: putting a provider key in `.env`, approving the cap, and replacing `human_decision:
+   pending` in the report with an accept or reject. The tool never authorizes a provider on its own
+   -- a cleared rho threshold is evidence, not permission. Note that this sends the worksheet's
+   questions and answers to an external provider, so run it only on public fixture data.
+
 ### Completion check
 `make calibration-score` produces rho + CI + decision over YOUR ratings, and that decision is
 recorded in the manifest. The engine, prompts, gate, and worksheet are handled by the tooling.

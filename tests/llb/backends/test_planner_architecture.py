@@ -44,6 +44,51 @@ def test_enrich_arch_fills_missing_from_cache(tmp_path, monkeypatch):
     assert enrich_arch({**spec, "hidden_size": 9999})["hidden_size"] == 9999
 
 
+def test_enrich_arch_still_fills_optional_hybrid_fields(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "layer_types": ["linear_attention", "full_attention"] * 4,
+                "num_hidden_layers": 8,
+            }
+        )
+    )
+    monkeypatch.setattr(architecture, "cached_config_path", lambda _repo: cfg)
+    spec = {
+        "name": "hybrid",
+        "backend": "vllm",
+        "source": "org/model",
+        "vocab_size": 10,
+        "hidden_size": 16,
+        "n_layers": 8,
+        "kv_dim": 64,
+        "max_context": 8192,
+        "tie_word_embeddings": True,
+    }
+
+    assert enrich_arch(spec)["kv_layers"] == 4
+
+
+def test_arch_from_config_extracts_context_kv_and_hybrid_attention_layers():
+    layer_types = ["linear_attention", "linear_attention", "full_attention"] * 4
+    out = arch_from_config(
+        {
+            "text_config": {
+                "num_hidden_layers": 12,
+                "num_key_value_heads": 4,
+                "head_dim": 256,
+                "max_position_embeddings": 262144,
+                "layer_types": layer_types,
+            }
+        }
+    )
+
+    assert out["kv_dim"] == 1024
+    assert out["kv_layers"] == 4
+    assert out["max_context"] == 262144
+
+
 def test_enrich_arch_skips_non_hf_sources(monkeypatch):
     seen: list[str] = []
     monkeypatch.setattr(architecture, "cached_config_path", lambda r: seen.append(r))  # type: ignore[func-returns-value]

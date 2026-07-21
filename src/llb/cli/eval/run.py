@@ -68,7 +68,8 @@ def run_eval_cmd(
         None, help="frontier lane: hard call-count cap for the scorer cost ledger"
     ),
     retrieval_backend: Optional[str] = typer.Option(
-        None, help="faiss (default vector store) | graph (GraphRAG knowledge-graph backend)"
+        None,
+        help="faiss (default vector store) | graph (GraphRAG backend) | fused (vector + graph)",
     ),
     retrieval_strategy: Optional[str] = typer.Option(
         None, help="graph backend strategy: local_khop | global_community"
@@ -89,6 +90,9 @@ def run_eval_cmd(
     fusion_candidates: Optional[int] = typer.Option(
         None, help="hybrid mode: per-side candidate depth fed into the fusion (default 50)"
     ),
+    graph_weight: Optional[float] = typer.Option(
+        None, help="fused backend: graph share of weighted RRF, 0..1 (default 0.3)"
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
@@ -106,7 +110,8 @@ def run_eval_cmd(
         None,
         "--query-prep",
         help="opt-in query-side lane (uk-query-processing): comma-separated ordered steps "
-        "normalize,typos,glossary,rewrite (rewrite calls the local model; off by default). "
+        "normalize,typos,glossary,rewrite,hyde,decompose (last three call the local model; "
+        "off by default). "
         "The raw query is always preserved; only the retrieval query is transformed",
     ),
     query_glossary: Optional[Path] = typer.Option(
@@ -207,6 +212,7 @@ def run_eval_cmd(
         acl_label=acl,
         fusion_weight=fusion_weight,
         fusion_candidates=fusion_candidates,
+        graph_weight=graph_weight,
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,

@@ -46,6 +46,7 @@ from llb.graph.linking import (
     node_link_scores,
 )
 from llb.core.contracts.rag import ChunkRecord
+from llb.core.store_generations import resolve_store_dir
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 from llb.graph.retrieval import serialize_subgraph
 from llb.graph.store_io import _connect, _read_jsonl, _write_jsonl
@@ -136,6 +137,8 @@ class GraphStore:
             "n_communities": n_communities_found,
             "n_documents": len(docs),
             "khop_depth": khop_depth,
+            # per-doc content hashes: the manifest-diff contract `refresh-index` diffs against
+            "doc_fingerprints": {doc.doc_id: doc.sha256 for doc in docs},
         }
         return cls(
             graph,
@@ -151,6 +154,12 @@ class GraphStore:
         if self.strategy == STRATEGY_GLOBAL_COMMUNITY:
             return self._retrieve_global_community(question, k)
         return self._retrieve_local_khop(question, k)
+
+    def retrieve_queries(
+        self, dense_query: str, lexical_query: str, k: int, **_kwargs: Any
+    ) -> list[ChunkRecord]:
+        """Use the lexical/user query; graph linking has no dense embedding lane."""
+        return self.retrieve(lexical_query, k)
 
     def _retrieve_local_khop(self, question: str, k: int) -> list[ChunkRecord]:
         seeds = link_seed_nodes(self.graph, question, self.n_seeds)
@@ -196,7 +205,8 @@ class GraphStore:
         n_seeds: int = DEFAULT_N_SEED_NODES,
         n_communities: int = DEFAULT_N_COMMUNITIES,
     ) -> "GraphStore":
-        graph_dir = Path(graph_dir)
+        # A refresh publishes immutable `generations/<ts>/` children; resolve the live one.
+        graph_dir = resolve_store_dir(graph_dir, META_FILE)
         meta_path = graph_dir / META_FILE
         if not meta_path.exists():
             raise SystemExit(f"no graph store at {graph_dir} (run `llb build-graph` first)")

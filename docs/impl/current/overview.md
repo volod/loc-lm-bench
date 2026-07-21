@@ -259,13 +259,24 @@ the reproducible benchmark state. Generated worksheets stay under `$DATA_DIR/llb
 
 ## Test Split
 
-`make test-fast` runs the lightweight suite used by CI. `make test` runs the full local flow,
-including slow tests and markdown lint. A test should be marked slow only when its cost is
+Three suites, split by three markers (`slow`, `heavy_env`, `opt_in_env`; registered in
+`pyproject.toml`):
+`make test` runs the full local flow, including slow tests and markdown lint; `make ci` /
+`make test-fast` run the lightweight suite against the default full local install, deselecting
+both `slow` and `opt_in_env`; `make ci-github` (the GitHub workflow target) additionally deselects
+`heavy_env` so the base `[dev]`-only GitHub env runs every selected
+test with no optional-dependency skips. A test is marked `slow` only when its cost is
 intrinsic to the behavior being checked: recursive/langchain chunking integration, multi-trial
 Optuna or fine-tune campaign simulations, optional chart rendering, real embedder/model loading,
-DeepEval, or subprocess build helpers. The lightweight suite keeps pure span math, fake-backed
-retrieval/fusion, hparam slice and guard checks, and small manifest integrations in CI; the full
-suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus regressions.
+DeepEval, or subprocess build helpers. A test is marked `heavy_env` when it is quick but needs
+an optional extra the base `[dev]` install lacks -- real FAISS store builds (`[rag]`, the
+refresh-equivalence suite) or the DuckDB graph engine (`[graph]`). `opt_in_env` is reserved for a
+dependency deliberately omitted from the default local environment, such as the LanceDB adapter;
+regular CI deselects that lane instead of reporting a skip. `importorskip` inside test bodies
+still guards manual partial installs. The lightweight suite keeps pure span math,
+fake-backed retrieval/fusion, hparam slice and guard checks, and small manifest integrations;
+the full suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus
+regressions.
 
 Tests target durable specifications and business rules. Internal builders, helper splits, and
 deterministic intermediate values do not get dedicated tests when workflow or domain tests already

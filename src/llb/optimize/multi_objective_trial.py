@@ -46,6 +46,7 @@ def make_multi_objective(
             reranker=reranker,
             embedders=embedders,
             tune_context_budget=tune_context_budget,
+            retrieval_backend=base_config.retrieval_backend,
         )
         try:
             config = base_config.with_overrides(**overrides)

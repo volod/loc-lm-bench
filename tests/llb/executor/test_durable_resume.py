@@ -160,6 +160,11 @@ def test_journal_record_is_idempotent_and_trims_state(tmp_path):
         "status": "ok",
         "error": None,
         "usage": {"completion_tokens": 2},
+        "query_processed": "processed q",
+        "query_corrections": 1,
+        "query_hypothetical_answer": "hypothesis",
+        "query_decomposition": '{"subqueries":["part"]}',
+        "query_subqueries": ["part"],
         "context": "SHOULD NOT BE JOURNALED",
         "question": "q",
     }
@@ -170,6 +175,8 @@ def test_journal_record_is_idempotent_and_trims_state(tmp_path):
     payload = json.loads(lines[0])
     assert payload["item_id"] == "uk-1"
     assert "context" not in payload["state"] and "question" not in payload["state"]
+    assert payload["state"]["query_hypothetical_answer"] == "hypothesis"
+    assert payload["state"]["query_subqueries"] == ["part"]
 
     # A fresh journal reloads the record and skips a trailing malformed (killed-run) line.
     with (tmp_path / durability.JOURNAL_NAME).open("a", encoding="utf-8") as fh:

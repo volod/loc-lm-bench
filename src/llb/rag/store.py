@@ -20,7 +20,12 @@ from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.lexical import Lemmatizer, LexicalIndex, rrf_fuse
 from llb.rag.page_metadata import annotate_page_metadata
-from llb.prep.corpus_governance import GOVERNANCE_FIELDS, corpus_fingerprint
+from llb.core.store_generations import resolve_store_dir
+from llb.prep.corpus_governance import (
+    GOVERNANCE_FIELDS,
+    corpus_doc_fingerprints,
+    corpus_fingerprint,
+)
 from llb.rag.vector_index import (
     RAG_BACKEND_FAISS,
     VectorIndex,
@@ -133,6 +138,7 @@ class RagStore:
             "backend": vector_store,
             "page_annotation_coverage": round(page_coverage, 4),
             "corpus_fingerprint": corpus_fingerprint(corpus_root),
+            "doc_fingerprints": corpus_doc_fingerprints(corpus_root),
             "corpus_manifest": "corpus_manifest.json",
             "governance_fields": list(GOVERNANCE_FIELDS),
         }
@@ -149,9 +155,24 @@ class RagStore:
         `chunk_filter` (see `llb.rag.filters.metadata_filter`) restricts candidates BEFORE
         fusion/ranking; with a filter the whole index is scanned, so the cut is exact.
         """
-        query_vec = self.embedder.encode_queries([question])
+        return self.retrieve_queries(question, question, k, chunk_filter=chunk_filter)
+
+    def retrieve_queries(
+        self,
+        dense_query: str,
+        lexical_query: str,
+        k: int,
+        chunk_filter: ChunkFilter | None = None,
+    ) -> list[ChunkRecord]:
+        """Retrieve with independently selected dense and lexical query text.
+
+        The split is useful for HyDE: its hypothetical passage drives the embedding while the
+        user's processed question remains the BM25 query. Dense-only stores ignore
+        `lexical_query`.
+        """
+        query_vec = self.embedder.encode_queries([dense_query])
         if self.lexical is not None and self.meta.get("mode") == MODE_HYBRID:
-            return self._retrieve_hybrid(question, query_vec, k, chunk_filter)
+            return self._retrieve_hybrid(lexical_query, query_vec, k, chunk_filter)
         base_k = k * 4 if self.parents else k
         search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), base_k)
         while True:
@@ -226,7 +247,8 @@ class RagStore:
 
     @classmethod
     def load(cls, index_dir: Path | str) -> "RagStore":
-        index_dir = Path(index_dir)
+        # A refresh publishes immutable `generations/<ts>/` children; resolve the live one.
+        index_dir = resolve_store_dir(index_dir, META_FILE)
         chunks = _read_jsonl(index_dir / CHUNKS_FILE)
         meta = json.loads((index_dir / META_FILE).read_text(encoding="utf-8"))
         lexical = None

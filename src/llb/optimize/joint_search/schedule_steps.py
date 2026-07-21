@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from llb.backends.readiness import local_backend_ready
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
 from llb.optimize.joint_search.halving import (
@@ -33,12 +34,19 @@ FinalistTune = Callable[[RunConfig, ResolvedModel, Path], FinalistTuneResult]
 
 def partition_resolved(
     resolved: Sequence[ResolvedModel],
+    *,
+    data_dir: Path | None = None,
 ) -> tuple[list[ResolvedModel], list[dict[str, str]]]:
     """Separate runnable resolutions from candidates with no usable backend/source."""
     runnable: list[ResolvedModel] = []
     skipped: list[dict[str, str]] = []
     for row in resolved:
         if row["chosen_backend"] and row["chosen_source"]:
+            if data_dir is not None:
+                ready, reason = local_backend_ready(row["chosen_backend"], data_dir)
+                if not ready:
+                    skipped.append({"name": row["name"], "reason": reason})
+                    continue
             runnable.append(row)
         else:
             skipped.append({"name": row["name"], "reason": row.get("note") or "not resolvable"})

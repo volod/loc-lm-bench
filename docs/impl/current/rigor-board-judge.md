@@ -146,8 +146,10 @@ Schedule (`src/llb/optimize/joint_search/`):
    ids are `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the
    SQLite study already has rows. Each finished final-split pick writes
    `finalists/<slug>/picks/<goal>.json` so a kill mid-pick-scoring skips completed picks on
-   resume. A finished finalist (all picks scored) writes `finalists/<slug>/result.json` (study
-   id + final-split picks) so a resume reloads instead of re-tuning.
+   resume. An explicit `--limit` also bounds final pick scoring, and multiple goals selecting the
+   same config share one evaluation while retaining separate resume markers. A finished finalist
+   (all picks scored) writes `finalists/<slug>/result.json` (study id + final-split picks) so a
+   resume reloads instead of re-tuning.
 5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
    scores; the writer refuses any non-final split (tuning/final leak fence). The scoreboard is
    rebuilt after each finalist so a partial run still shows whatever picks exist.
@@ -190,6 +192,23 @@ Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, thre
   context_budget 2048)
 - Final-split manifests under `$DATA_DIR/run-eval/` for each pick all record `split=final`;
   no tuning rows on the scoreboard
+
+Roster-refresh acceptance evidence (2026-07-21, RTX 4060 Ti 16 GiB, focused Gemma 4 26B-A4B and
+Qwen3.6 27B slice from `models_uk.yaml`, UA-SQuAD postedited fixture,
+`--trials 2 --screen-limit 2 --min-finalists 2 --limit 4 --seed 13`):
+
+- Run: `$DATA_DIR/joint-search/ua-model-roster-refresh-native-bounded-20260721/`
+- Both entries resolved to Ollama CPU/GPU offload and reached the final board; tuning-screen
+  quality was 0.368 for Gemma and 0.333 for Qwen, with no elimination because two finalists were
+  required.
+- The single non-pruned trial for each model selected semantic flat retrieval, chunk size 704,
+  overlap 171, top_k 3, and context budget 8192. Identical quality and quality-per-second picks
+  shared one final evaluation per model and still produced both goal markers.
+- Final quality was 0.174 for Gemma and 0.243 for Qwen; both had reliability 1.0, recall@3 1.0,
+  and MRR 1.0. Gemma generated at 15.13 tokens/s versus Qwen at 2.61 tokens/s.
+- Recommended for this bounded acceptance sample: `qwen3.6-27b` + `best_quality`. The four-case
+  final cap is enough to validate the roster/runtime path, not enough for a research-grade model
+  adoption decision; a larger confirmation remains optional forward work.
 
 ## Public Screen
 
@@ -404,6 +423,56 @@ groundedness/citation metrics; the mechanism, the deterministic groundedness + c
 scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evidence live in
 [RAG core](rag-core.md) groundedness and citation metrics.
 
+## Ukrainian Query Robustness Benchmark
+
+`llb bench-query-robustness` / `make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>`
+measures end-to-end sensitivity to three deterministic noisy-query classes: Latin-typed
+transliteration, apostrophe plus mixed-script homoglyph substitutions, and keyboard-adjacent
+Cyrillic typos at a configured character rate. Each class runs with query preparation off and
+with `normalize,typos` plus the Ukrainian morphology guard. Clean cases are an ordinary
+`run-eval` bundle. The 6 x N variant rows are probe-only and publish atomically as
+`$DATA_DIR/query-robustness/<run>/{report.md,robustness.jsonl}`; no `scores.jsonl` exists in that
+probe directory.
+
+Implementation is split across `src/llb/eval/query_robustness_variants.py` (seeded generators),
+`query_robustness.py` (per-case joins and lane metrics), `query_robustness_run.py` (clean baseline,
+store, endpoint, and graph wiring), `query_robustness_report.py` (atomic report/JSONL publication),
+and `src/llb/cli/eval/query_robustness.py`. `tests/llb/eval/test_query_robustness.py` drives a fake
+endpoint and fake store through all six lanes using the graph module's pure-node seam, so the
+base `[dev]` GitHub environment does not need the optional LangGraph package. It checks
+deterministic variants and morphology-guard wiring and proves the probe directory never gains
+correctness scores. Shared query-prep tests
+cover the bugs found by CUDA acceptance: collision-safe romanization, preservation of uppercase
+Latin acronyms, keyboard grave normalization, embedded homoglyph repair, short-token protection,
+and alphabetic/numeric candidate separation.
+
+CUDA-host evidence (2026-07-21): RTX 4060 Ti 16 GiB, Ollama, the full committed
+`ua_squad_postedited_v1` final split (n=82), seed 13, 8 percent character noise, k=10,
+`intfloat/multilingual-e5-base`, and 64 answer tokens. Both model runs completed 492/492 probe
+cases with zero errors. Clean recall@10 was 0.9756 for both; raw recall deltas were identical
+because retrieval was pinned: transliteration -0.2561, mixed script -0.0122, keyboard typos
+-0.0488. The guarded mitigation restored every class to clean recall.
+
+- `hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M`: clean objective 0.4747.
+  Transliteration objective was 0.2499 raw and 0.3357 mitigated (recovery +0.0857); mixed script
+  was 0.4435 raw and 0.4935 mitigated (+0.0500); keyboard typos were 0.4451 raw and 0.4385
+  mitigated (-0.0066). Artifact:
+  `$DATA_DIR/query-robustness/20260721T202228.253486Z-490580bf07ec/`; clean baseline:
+  `$DATA_DIR/run-eval/20260721T200209.493968Z-c4ef7ec9c939/`.
+- `hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M`: clean objective 0.4976.
+  Transliteration objective was 0.3830 raw and 0.5095 mitigated (+0.1265); mixed script was
+  0.4943 raw and 0.5238 mitigated (+0.0295); keyboard typos were 0.4049 raw and 0.4376
+  mitigated (+0.0326). Artifact:
+  `$DATA_DIR/query-robustness/20260721T203719.294606Z-65cb5fdb6aa5/`; clean baseline:
+  `$DATA_DIR/run-eval/20260721T202301.566304Z-f912939787b0/`.
+
+Verdict: do not make the combined lane a universal default. It is a strong model-specific option:
+it recovered all retrieval loss and improved every noisy objective for Lapa, and improved
+transliteration plus mixed script for MamayLM. MamayLM's small keyboard-objective regression and
+the per-edit audit's ambiguous nearest-vocabulary choices show that typo correction still needs a
+model/corpus A/B before activation. The report's shared-hit generation delta separates that
+answer-side effect from missing evidence.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to
@@ -503,6 +572,53 @@ llb run-eval --scorer-policy frontier --judge-model openai/<model> \
 Tests live under `tests/llb/scoring/test_scorer_policy*.py` (fake litellm completions; no network),
 including a mid-batch abort/resume case-checkpoint test that proves the second pass issues
 `N - K` new calls after `K` cases were already scored.
+
+### Frontier Judge Agreement and Cost Report
+
+`src/llb/scoring/frontier_agreement/` produces the evidence an operator needs to decide whether a
+frontier judge may gate autonomously. It scores a filled calibration worksheet with each named
+provider through the scorer-policy seam (same consent, ledger, cap, and resume guarantees as a
+scored run), then reports two rank correlations per provider -- against the human `human_rating`
+and against the local judge's `judge_rating` -- plus measured cost per item.
+
+| Module | Responsibility |
+| --- | --- |
+| `items.py` | Worksheet rows -> judgeable records; contexts are windows of the gold source doc |
+| `provider.py` | One provider's run under `resolve_scorer(lane="frontier")` |
+| `agreement.py` | Spearman rho + bootstrap CI per metric; cost-per-item and cap math |
+| `report.py` | `report.md` including the operator's sign-off table |
+| `run.py` | Orchestration; writes the run bundle |
+
+Design points:
+
+- Grounding contexts come from the gold set's source spans (a `GOLD_CONTEXT_WINDOW_CHARS`-wide
+  window of the source document), not from retrieval. Judge agreement is measured with retrieval
+  held constant so a retrieval regression cannot masquerade as judge disagreement.
+- Correlation is rank-based, so the human 1..5 scale and the judge 0..1 scale are compared without
+  rescaling. The headline metric is `mean` -- the same scalar `judge_value` that a scored run
+  records per case (`src/llb/scoring/judge/scorer.py`, shared with `runner_judge`).
+- A recommended cap is `cost_per_item * n_items * CAP_SAFETY_FACTOR` (2.0), rounded up to the cent.
+  When litellm cannot price a model, `cost_usd` is 0; the report marks the provider unpriced and
+  recommends no cap rather than guessing one.
+- Providers are independent: each owns its ledger directory, so one provider's budget abort or
+  transport failure is recorded under `failures` while the others keep their evidence.
+- `recommendation` is a machine reading of the rho gate only. `human_decision` stays `pending`
+  until an operator records an accept or reject; the report says so explicitly.
+
+```bash
+make frontier-judge-agreement FRONTIER_JUDGE_MODELS=<litellm-id>[,<id>...] \
+  FRONTIER_EGRESS_CONSENT=1 FRONTIER_MAX_USD=<cap>
+```
+
+Artifacts land under `$DATA_DIR/frontier-judge/<run>/`: `report.md` and `agreement.json` at the
+root, and per provider a `<provider-slug>/` holding `scores.jsonl` plus the standard `scorer/`
+consent and ledger files. The lane refuses to run without both an explicit egress consent and a
+cap. Tests are `tests/llb/scoring/test_frontier_agreement.py` (injected fake completers; no
+network, no spend), covering the rho and cap math, the artifact bundle, per-provider failure
+isolation, and resume-after-abort.
+
+The provider keys, the spend approval, and the accept/reject decision per provider remain human
+steps; see the `frontier-judge-authorization` task in [plan.md](../plan.md).
 
 ## Frontier Prep Utilities
 

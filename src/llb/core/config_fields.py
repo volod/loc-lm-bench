@@ -22,7 +22,7 @@ from llb.core.config_validation import (
 Strategy = Literal[
     "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late"
 ]
-RetrievalBackend = Literal["faiss", "graph"]
+RetrievalBackend = Literal["faiss", "graph", "fused"]
 RetrievalStrategy = Literal["local_khop", "global_community"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
@@ -143,6 +143,9 @@ class RunConfigFields(BaseModel):
     retrieval_backend: RetrievalBackend = "faiss"
     retrieval_strategy: RetrievalStrategy = "local_khop"
     graph_khop_depth: int = Field(default=2, ge=1)
+    # Graph share of graph-vector RRF when retrieval_backend="fused". Zero is an exact vector
+    # passthrough; one is an exact graph passthrough. Recorded in every run/cell fingerprint.
+    graph_weight: float = Field(default=0.3, ge=0, le=1)
     acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default

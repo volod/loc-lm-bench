@@ -10,6 +10,7 @@ from llb.core.contracts.models import ModelSpec, ResolvedModel
 from llb.optimize.joint_search.halving import finalize_ledger
 from llb.optimize.joint_search.models import FinalistTuneResult
 from llb.optimize.joint_search.schedule import run_joint_search
+from llb.optimize.joint_search.schedule_steps import partition_resolved
 from llb.optimize.objectives import TrialMetrics
 from llb.optimize.tuning_space import FINAL_SPLIT, TUNING_SPLIT
 
@@ -188,6 +189,25 @@ def test_finalize_ledger_empty():
     ledger = finalize_ledger([])
     assert ledger.finalists == ()
     assert ledger.split == TUNING_SPLIT
+
+
+def test_partition_resolved_skips_missing_local_runtime(tmp_path: Path, monkeypatch) -> None:
+    row = ResolvedModel(
+        name="gguf-only",
+        chosen_backend="llamacpp",
+        chosen_source="hf.co/org/model-GGUF:Q4_K_M",
+        verdict="offload",
+        candidates=[],
+        note="ok",
+    )
+    monkeypatch.setattr("llb.backends.readiness.shutil.which", lambda _name: None)
+
+    runnable, skipped = partition_resolved([row], data_dir=tmp_path)
+
+    assert runnable == []
+    assert skipped == [
+        {"name": "gguf-only", "reason": "llama-server not found (run make build-llamacpp)"}
+    ]
 
 
 def _name_from_source(source: str) -> str:

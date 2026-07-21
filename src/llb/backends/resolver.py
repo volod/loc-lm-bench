@@ -206,7 +206,13 @@ def _hf_has_gguf(repo_id: str) -> bool:
     try:
         from huggingface_hub import HfApi
 
-        files = HfApi().list_repo_files(repo_id)
+        normalized = repo_id
+        for prefix in ("https://huggingface.co/", "huggingface.co/", "hf.co/"):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix) :]
+                break
+        normalized = normalized.split(":", 1)[0]
+        files = HfApi().list_repo_files(normalized)
         return any(f.lower().endswith(".gguf") for f in files)
     except Exception:
         return False

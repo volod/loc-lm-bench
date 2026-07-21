@@ -136,6 +136,23 @@ def test_suggest_overrides_flat_never_samples_fusion_knobs():
     assert "fusion_weight" not in over and "fusion_candidates" not in over
 
 
+def test_suggest_overrides_fused_backend_samples_graph_weight():
+    over = suggest_overrides(
+        FakeTrial(
+            {
+                "strategy": "recursive",
+                "chunk_size": 512,
+                "overlap_frac": 0.1,
+                "retrieval_mode": "flat",
+                "top_k": 5,
+                "graph_weight": 0.3,
+            }
+        ),
+        retrieval_backend="fused",
+    )
+    assert over["graph_weight"] == 0.3
+
+
 def test_suggest_overrides_rerank_axes_only_behind_the_flag():
     # rerank-context-order: no `--reranker` -> the axes are never sampled; with it, the on/off
     # categorical gates the candidate-depth axis (off-trial samples no dead depth parameter).
