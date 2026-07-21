@@ -151,9 +151,9 @@ def list_models_cmd(
 ) -> None:
     """List which candidate models can run here (GPU+RAM, KV-cache-aware, batch=1)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.backends.planner.constants import VERDICT_NO
     from llb.backends.planner.format import format_plan
     from llb.backends.planner.plan import plan_models
+    from llb.backends.resolver_feasibility import MIN_SERVING_CTX, backend_fits
 
     models = _expand_quant_variants(planning_models(manifest, trust_config=trust_config))
     gpus = detect_gpus()
@@ -172,13 +172,14 @@ def list_models_cmd(
         ram_reserve=ram_reserve,
     )
     if runnable_only:
-        rows = [r for r in rows if r["verdict"] != VERDICT_NO]
+        rows = [r for r in rows if backend_fits(r["backend"], r)]
     typer.echo(format_plan(rows, max(0, vram_mib - vram_reserve), max(0, ram_mib - ram_reserve)))
-    runnable = sum(1 for r in rows if r["verdict"] in ("gpu", "offload"))
+    runnable = sum(1 for r in rows if backend_fits(r["backend"], r))
     typer.echo(f"[list-models] runnable here: {runnable} of {len(rows)}")
     typer.echo(
-        "[list-models] verdict is at ctx_max; ctx_gpu = max context that fits fully "
-        "on GPU. gpu = no offload needed; offload = split layers GPU/CPU RAM."
+        f"[list-models] runnable is backend-aware at >={MIN_SERVING_CTX} tokens: "
+        "vLLM requires ctx_gpu; "
+        "Ollama/llama.cpp may use ctx_max with CPU offload. Verdict remains the ctx_max plan."
     )
 
 

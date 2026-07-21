@@ -89,6 +89,52 @@ Ollama GGUF or 32 GiB vLLM FP8 v2.0 source, prepare-model fixtures use the INSAI
 and recommendation fixtures use `mamaylm-v2-*` labels. The family key `mamaylm` remains only the
 stable target id and file stem.
 
+## Ukrainian Model Roster Refresh
+
+The 2026-07-21 roster survey used the public
+[lang-uk result set](https://huggingface.co/datasets/lang-uk/ukrainian-llm-leaderboard-results),
+the [MamayLM v2.0 collection](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3),
+and first-party model cards as the admission filter. The two useful additions are:
+
+- `gemma-4-26b-a4b`: the 25.2B-total / approximately 3.8B-active Gemma 4 MoE represented in the
+  public Ukrainian reasoning results. Its sources are Google bf16, Red Hat FP8 for vLLM,
+  first-party `gemma4:26b` for Ollama, and Google's Q4_0 GGUF for llama.cpp.
+- `qwen3.6-27b`: the official dense Qwen3.6 27B release, with bf16 and FP8 vLLM records,
+  `qwen3.6:27b` for Ollama, and the Unsloth Q4_K_M GGUF for llama.cpp. The
+  [official model card](https://huggingface.co/Qwen/Qwen3.6-27B-FP8) identifies the FP8 artifact
+  as vLLM-compatible and Apache-2.0.
+
+Every logical entry in `samples/configs/models_uk.yaml` now has structured `license` and
+`license_url` fields and resolves across vLLM, Ollama, and llama.cpp source records. Same-backend
+quant lists are quality-ordered by bits per weight, so an official Q4 Ollama tag is preferred over
+an IQ3 fallback when both are installed. `samples/config-example/manifest.yaml` adds concrete
+`gemma-4-26b` and `qwen3.6-27b` tier targets: both use Ollama offload on 12/16 GiB, while Gemma 26B
+uses FP8 vLLM on 32 GiB; Qwen 27B remains an Ollama target because its untied embedding overhead
+keeps FP8 above the supported 32 GiB serving budget.
+
+Planner and resolver fixes made the refreshed rows truthful:
+
+- cached Hugging Face configs now fill `kv_dim`, `max_context`, and `kv_layers`; Qwen3.6's hybrid
+  linear/full attention prices growing KV only on its full-attention layers;
+- `list-models` counts a vLLM row runnable only when at least 2,048 tokens fit fully in GPU VRAM,
+  while Ollama and llama.cpp may count a CPU-offloaded `ctx_max`;
+- GGUF discovery normalizes `hf.co/<repo>:<quant>` before probing Hugging Face;
+- sweep and joint search share an executable-readiness check, so a remote GGUF no longer becomes a
+  runnable llama.cpp cell when `llama-server` is absent;
+- Ollama benchmark calls use native `/api/chat` with `think=false`, keeping bounded scoring tokens
+  in the answer for Qwen/Gemma reasoning templates. The OpenAI-compatible endpoint was rejected
+  here because a live Qwen case spent 512 tokens on hidden reasoning and returned empty content;
+  the native-path probe returned the expected `Kyiv` answer in 1.35 seconds with 3 completion
+  tokens;
+- joint-search forwards an explicit case limit into final-split pick scoring and evaluates
+  identical goal configurations once, then writes the shared outcome to each goal's resume marker.
+
+On the 16 GiB RTX 4060 Ti, `make list-models` reports 3 backend-runnable declared artifacts out of
+14 quant-expanded vLLM/Ollama rows instead of the former misleading 9 of 9 hardware-only count.
+Live `resolve-models` resolves all 10 logical candidates; the two additions select
+`gemma4:26b` and `qwen3.6:27b` through Ollama offload. The official Qwen tag was prepared through
+`make prep-models`; Ollama reports a 43 percent CPU / 57 percent GPU split at 4,096-token context.
+
 On a 12 GiB RTX PRO 3000 Blackwell laptop GPU (12227 MiB, driver 610.43.02), the quickstart setup
 generates and selects `$DATA_DIR/llb/serving/gpu-12gb/tier.json` from current host detection rather
 than the presence of tier directories. The 12 GiB extra vLLM target is `gemma-4-12b-vllm`:

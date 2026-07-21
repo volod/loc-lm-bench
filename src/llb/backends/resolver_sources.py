@@ -21,9 +21,9 @@ def normalize_source_list(value: Any) -> list[dict[str, Any]]:
     return [normalize_source(value)]
 
 
-def _quant_quality(spec: ModelSpec, record: dict[str, Any]) -> float:
+def _quant_quality(spec: ModelSpec, backend: str, record: dict[str, Any]) -> float:
     """Rank key for competing same-backend quants: higher bits-per-weight = higher quality."""
-    bpw = resolve_bpw(_priced_spec(spec, "vllm", record))
+    bpw = resolve_bpw(_priced_spec(spec, backend, record))
     return bpw if bpw is not None else -1.0
 
 
@@ -33,7 +33,7 @@ def candidate_sources(spec: ModelSpec) -> list[tuple[str, dict[str, Any]]]:
     Each record carries at least `source` plus any per-artifact overrides (quant, arch, gating)
     so the planner prices the real artifact. The declared backend folds in the spec-level source
     (its quant/arch already live on the spec). A backend may declare a LIST of sources -- several
-    vLLM quants of one model -- in which case they are ordered highest-quality first, so the
+    quants of one model -- in which case they are ordered highest-quality first, so the
     "first runnable wins" rule below picks the best quant that fits the host on GPU (fp8 on a 32 GiB
     card, w4a16 on a 24 GiB card) before falling through to the Ollama/llama.cpp offload.
     """
@@ -46,8 +46,8 @@ def candidate_sources(spec: ModelSpec) -> list[tuple[str, dict[str, Any]]]:
         records = declared.get(backend)
         if not records:
             continue
-        if backend == "vllm" and len(records) > 1:
-            records = sorted(records, key=lambda r: _quant_quality(spec, r), reverse=True)
+        if len(records) > 1:
+            records = sorted(records, key=lambda r: _quant_quality(spec, backend, r), reverse=True)
         out.extend((backend, record) for record in records)
     return out
 

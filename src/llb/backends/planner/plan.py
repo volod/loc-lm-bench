@@ -81,16 +81,17 @@ def plan_model(
     cap = spec.get("max_context")
     if not (n_layers and kv_dim and cap):
         return _weight_only_verdict(row, weights, overhead_mib, vram_usable, total)
+    kv_layers = spec.get("kv_layers") or n_layers
 
     kv_kwargs = {
         "sliding_window": spec.get("sliding_window"),
         "sliding_window_pattern": spec.get("sliding_window_pattern"),
     }
     row["ctx_gpu"] = max_context_for_kv(
-        vram_usable, weights, overhead_mib, n_layers, kv_dim, cap, **kv_kwargs
+        vram_usable, weights, overhead_mib, kv_layers, kv_dim, cap, **kv_kwargs
     )
     row["ctx_max"] = max_context_for_kv(
-        total, weights, overhead_mib, n_layers, kv_dim, cap, **kv_kwargs
+        total, weights, overhead_mib, kv_layers, kv_dim, cap, **kv_kwargs
     )
     if target_ctx is not None and target_ctx > row["ctx_max"]:
         row["verdict"] = VERDICT_NO
@@ -102,7 +103,7 @@ def plan_model(
         return row
 
     planning_ctx = target_ctx if target_ctx is not None else row["ctx_max"]
-    kv_at = kv_mib_at_context(n_layers, kv_dim, planning_ctx, **kv_kwargs)
+    kv_at = kv_mib_at_context(kv_layers, kv_dim, planning_ctx, **kv_kwargs)
     row["gpu_layers"] = gpu_layers(vram_usable, overhead_mib, weights, kv_at, n_layers)
     row["verdict"] = VERDICT_GPU if row["gpu_layers"] >= n_layers else VERDICT_OFFLOAD
     row["note"] = f"plan @ ctx={planning_ctx}"

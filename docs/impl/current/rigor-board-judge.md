@@ -146,8 +146,10 @@ Schedule (`src/llb/optimize/joint_search/`):
    ids are `joint-<run_id>-<slug>` under `$DATA_DIR/optuna/`; only remaining trials run when the
    SQLite study already has rows. Each finished final-split pick writes
    `finalists/<slug>/picks/<goal>.json` so a kill mid-pick-scoring skips completed picks on
-   resume. A finished finalist (all picks scored) writes `finalists/<slug>/result.json` (study
-   id + final-split picks) so a resume reloads instead of re-tuning.
+   resume. An explicit `--limit` also bounds final pick scoring, and multiple goals selecting the
+   same config share one evaluation while retaining separate resume markers. A finished finalist
+   (all picks scored) writes `finalists/<slug>/result.json` (study id + final-split picks) so a
+   resume reloads instead of re-tuning.
 5. **Final scoreboard** -- `scoreboard.json` + `scoreboard.md` list only **final**-split pick
    scores; the writer refuses any non-final split (tuning/final leak fence). The scoreboard is
    rebuilt after each finalist so a partial run still shows whatever picks exist.
@@ -190,6 +192,23 @@ Host evidence (2026-07-18, RTX 4060 Ti 16 GiB, UA-SQuAD postedited fixture, thre
   context_budget 2048)
 - Final-split manifests under `$DATA_DIR/run-eval/` for each pick all record `split=final`;
   no tuning rows on the scoreboard
+
+Roster-refresh acceptance evidence (2026-07-21, RTX 4060 Ti 16 GiB, focused Gemma 4 26B-A4B and
+Qwen3.6 27B slice from `models_uk.yaml`, UA-SQuAD postedited fixture,
+`--trials 2 --screen-limit 2 --min-finalists 2 --limit 4 --seed 13`):
+
+- Run: `$DATA_DIR/joint-search/ua-model-roster-refresh-native-bounded-20260721/`
+- Both entries resolved to Ollama CPU/GPU offload and reached the final board; tuning-screen
+  quality was 0.368 for Gemma and 0.333 for Qwen, with no elimination because two finalists were
+  required.
+- The single non-pruned trial for each model selected semantic flat retrieval, chunk size 704,
+  overlap 171, top_k 3, and context budget 8192. Identical quality and quality-per-second picks
+  shared one final evaluation per model and still produced both goal markers.
+- Final quality was 0.174 for Gemma and 0.243 for Qwen; both had reliability 1.0, recall@3 1.0,
+  and MRR 1.0. Gemma generated at 15.13 tokens/s versus Qwen at 2.61 tokens/s.
+- Recommended for this bounded acceptance sample: `qwen3.6-27b` + `best_quality`. The four-case
+  final cap is enough to validate the roster/runtime path, not enough for a research-grade model
+  adoption decision; a larger confirmation remains optional forward work.
 
 ## Public Screen
 

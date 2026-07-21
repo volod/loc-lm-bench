@@ -47,6 +47,25 @@ def test_candidate_sources_ranks_vllm_quants_by_quality():
     assert order == [("vllm", "fp8"), ("vllm", "w4a16"), ("ollama", "q4_k_m")]
 
 
+def test_candidate_sources_ranks_ollama_fallback_quants_by_quality():
+    spec: ModelSpec = {
+        **MISTRAL_MULTI,
+        "sources": {
+            "ollama": [
+                {"source": "mistral:iq3", "quant": "iq3", "bpw": 3.5},
+                {"source": "mistral:q4", "quant": "q4_k_m"},
+            ]
+        },
+    }
+
+    order = [
+        (record["source"], record.get("quant"))
+        for backend, record in candidate_sources(spec)
+        if backend == "ollama"
+    ]
+    assert order == [("mistral:q4", "q4_k_m"), ("mistral:iq3", "iq3")]
+
+
 def test_multi_quant_vllm_picks_best_fit_per_host():
     # resolver-multi-quant-vllm acceptance: highest-quality quant that fits GPU wins per tier --
     # GGUF on 16 GiB, w4a16 on 24 GiB, fp8 on 32 GiB -- so the sweep path now agrees with the

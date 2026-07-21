@@ -223,36 +223,29 @@ other encoder.
 - Documentation target: [RAG core](current/rag-core.md) embedder section and
   [extended workflows](current/extended-workflows.md) for the trainer lane.
 
-### ua-model-roster-refresh
+### ua-model-roster-long-run (optional)
 
-Refresh the Ukrainian candidate roster: survey current UA-capable open-weight instruct releases
-(public UA benchmarks such as the lang-uk leaderboard and INSAIT releases are the candidate
-filter, per the spec), add each viable model to `samples/configs/models_uk.yaml` with per-backend
-`sources:` (Ollama tag, vLLM repo with multi-quant records, GGUF) plus license notes, extend the
-GPU-tier serving manifests where a new family earns a tier target, and place the additions on the
-scoreboard with a joint-search run over the committed fixture.
+Confirm the refreshed-roster ranking at research scale: run at least 10 multi-objective trials
+per viable addition, use a tuning screen of at least 8 cases, score the full held-out final split,
+and add the public Ukrainian screen tracks before making a default-model adoption decision. Report
+bootstrap uncertainty and quality/latency Pareto tradeoffs so a small-sample rank reversal cannot
+silently change the recommended model.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the resolver multi-quant conventions in
-  [platform matrix](current/platform-vector-matrix.md) and the joint-search schedule in
-  [evaluation rigor](current/rigor-board-judge.md).
-- User-visible outcome: recommendations compare against the current generation of UA-capable
-  models instead of a frozen roster; every new entry resolves, fit-plans, and sweeps exactly like
-  the existing ones.
-- Scope boundary: in scope -- registry entries, prep fixtures, resolver unit fixtures per new
-  entry, serving-tier additions, and one joint-search evidence run. Out of scope -- fine-tuning
-  the new models and hosted/API-only models (local serving only).
-- Data and artifact paths: `samples/configs/models_uk.yaml` and the serving-tier manifests;
-  joint-search evidence under `$DATA_DIR/joint-search/<run>/`.
-- Execution path: `make list-models`, `llb resolve-models`, then
-  `make joint-search JOINT_SEARCH_TRIALS=<n>` on the CUDA host; CI covers resolver and planner
-  fixtures for every added entry without downloads.
-- Acceptance gates: `make ci` green; every added entry resolves offline in fixtures and either
-  resolves to a runnable backend on the 16 GiB host or records an explicit larger-tier
-  requirement; the joint-search scoreboard covers each addition or names its host-fit skip
-  reason.
-- Documentation target: [platform matrix](current/platform-vector-matrix.md) roster and tier
-  notes; [evaluation rigor](current/rigor-board-judge.md) for the scoreboard evidence.
+- Dependencies: use the roster/runtime behavior in
+  [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh) and the
+  bounded baseline in [evaluation rigor](current/rigor-board-judge.md#joint-model--config-search).
+- User-visible outcome: a stable refreshed-roster recommendation with uncertainty, public-task
+  coverage, and an explicit adopt-or-retain verdict.
+- Scope boundary: in scope -- larger private joint search, public-screen lanes, uncertainty, and
+  the adoption verdict. Out of scope -- model fine-tuning and hosted/API-only candidates.
+- Data and artifact paths: `$DATA_DIR/joint-search/<run>/`, `$DATA_DIR/screen/`, and the matching
+  current-doc evidence section.
+- Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
+  final split, then run the public screen for both finalists.
+- Acceptance gates: `make ci` green; at least 10 trials per finalist; no final-split leakage into
+  tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
+- Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
 ### ua-query-robustness-bench
 

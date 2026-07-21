@@ -114,7 +114,7 @@ def test_local_backend_ready_skips_missing_vllm(monkeypatch, tmp_path: Path) -> 
 
 
 def test_local_backend_ready_accepts_project_llamacpp_binary(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(grid.shutil, "which", lambda _name: None)
+    monkeypatch.setattr("llb.backends.readiness.shutil.which", lambda _name: None)
     binary = tmp_path / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
     binary.parent.mkdir(parents=True)
     binary.write_text("#!/bin/sh\n", encoding="utf-8")

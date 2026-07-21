@@ -1,13 +1,14 @@
 """Grid-expansion + backend-readiness helpers for the sweep command."""
 
-import shutil
-from pathlib import Path
 from typing import Any
 
 import typer
 
+from llb.backends.readiness import local_backend_ready
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
+
+_local_backend_ready = local_backend_ready
 
 
 def _sweep_cell_overrides(
@@ -150,19 +151,3 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
         cell["retrieval_mode"] = "hybrid"
     if "graph_weight" in point:
         cell["retrieval_backend"] = "fused"
-
-
-def _local_backend_ready(backend: str, data_dir: Path) -> tuple[bool, str]:
-    """Return whether the local serving binary needed by a resolved backend is installed."""
-    if backend == "vllm":
-        from llb.backends.vllm_command import vllm_executable
-
-        if vllm_executable():
-            return True, ""
-        return False, "vllm executable not found (run make build-vllm)"
-    if backend == "llamacpp":
-        built = data_dir / "llb" / "llamacpp" / "build" / "bin" / "llama-server"
-        if built.exists() or shutil.which("llama-server"):
-            return True, ""
-        return False, "llama-server not found (run make build-llamacpp)"
-    return True, ""
