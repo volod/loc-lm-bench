@@ -247,41 +247,29 @@ silently change the recommended model.
   tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
-### ua-query-robustness-bench
+### query-prep-ambiguity-aware-restoration (optional)
 
-Benchmark end-to-end robustness to realistic Ukrainian input noise: for each verified gold item
-generate seeded deterministic query variants in three classes -- Latin-typed transliteration
-(inverting the injective romanization map), apostrophe-variant plus mixed-script homoglyph
-substitution (reusing the security suite's folding tables), and keyboard-adjacent Cyrillic typos
-at a configured rate -- and score each class end to end. Variant rows follow the probe pattern:
-they land in `robustness.jsonl` beside the run bundle and never enter `scores.jsonl` or the
-correctness aggregates. The report gives per-class objective and recall deltas against the clean
-run (separating retrieval degradation from generation degradation) and re-runs each class with
-the `query_prep` mitigation lane enabled, so the mitigation's recovery is measured rather than
-assumed.
+Constrain correction after lossy transliteration and dense keyboard noise so a nearest corpus
+surface cannot silently change the intended inflection or short function word. Carry the original
+noisy token and normalization edit provenance into typo candidate selection; compare candidates
+by reversible romanization compatibility, morphology, and local query context; and add separate
+`normalize`-only versus `normalize,typos` robustness lanes so normalization recovery is isolated
+from vocabulary correction risk. The benchmark contract and motivating evidence are in
+[evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
 
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the pure helpers in `src/llb/rag/query_prep/`, the normalization and
-  homoglyph tables in `src/llb/eval/common.py` and `src/llb/scoring/security.py`, and the probe
-  persistence pattern of the insufficient-context probe
-  ([evaluation rigor](current/rigor-board-judge.md)).
-- User-visible outcome: a per-model robustness profile for the messy queries real Ukrainian users
-  type (transliteration, mixed script, typos), plus measured evidence for when the query-prep
-  mitigation steps should be enabled by default.
-- Scope boundary: in scope -- deterministic variant generation, probe execution, the delta
-  report, and the mitigation on/off comparison. Out of scope -- model-generated surzhyk or
-  Russian-language paraphrase variants (they need a drafting plus human-verification lane; add
-  a follow-up task if the deterministic classes prove insufficient) and any headline-ranking
-  change.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/{report.md,robustness.jsonl}`;
-  clean baselines stay ordinary run bundles.
-- Execution path: `make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>`; CI drives
-  variant determinism and the report over a fake endpoint and fake store.
-- Acceptance gates: `make ci` green; variants are deterministic per seed and never leak into
-  correctness aggregates; a heavy run over the committed UA fixture on at least two roster
-  models records the per-class deltas and the mitigation recovery table.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) beside the other
-  probes, with a pointer from [RAG core](current/rag-core.md) query-side processing.
+- Agent status: READY
+- Dependencies: the existing query-prep edit log, corpus vocabulary, morphology probe, and query
+  robustness fake/host fixtures.
+- User-visible outcome: safer recovery for lossy Latin typing and adjacent-key errors without
+  sacrificing the retrieval recall restored by normalization.
+- Scope boundary: in scope -- candidate constraints, provenance threading, isolated mitigation
+  lanes, tests, and two-model re-measurement. Out of scope -- model-generated correction and
+  hosted spell-check services.
+- Acceptance gates: `make ci` green; no alphabetic/numeric or acronym regressions; corrected tokens
+  remain compatible with the original noisy form; model-specific objective recovery is
+  non-negative or the `typos` step remains explicitly off for that model.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing and
+  [evaluation rigor](current/rigor-board-judge.md) robustness evidence.
 
 ## Human-Assisted Tasks
 

@@ -139,6 +139,10 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
+# Query robustness probe: full split by default, bounded answers, deterministic character noise.
+QUERY_ROBUSTNESS_LIMIT ?=
+QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
+QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml

@@ -551,16 +551,18 @@ empty is an exact no-op).
 The `src/llb/rag/query_prep/` package is a pure, unit-testable pipeline of NAMED steps (no store, model,
 or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 
-- `normalize` -- matching-side casefold, apostrophe-variant unification (U+2019 / U+02BC / `'`),
-  and a small transliteration table that maps Latin-typed Ukrainian tokens back to Cyrillic
-  (`zakon` -> `закон`). The romanization map is injective, so the Latin->Cyrillic inverse is
-  longest-match deterministic.
+- `normalize` -- matching-side casefold; apostrophe-variant unification (U+2018 / U+2019 /
+  U+02BC / grave / ASCII); Latin-typed Ukrainian back to Cyrillic; and safe Latin-look-alike
+  repair inside mixed Cyrillic tokens. Canonical romanization preserves existing uppercase Latin
+  acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
+  would otherwise collide.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`build_vocabulary` over `store.chunks`); a query token ABSENT from it is
   corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
-  tokens over 8 chars). A token the corpus already contains is NEVER altered, and a purely numeric
-  token (article/law number, code) is never "corrected" into a different one. Every correction is
-  logged. An opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
+  tokens over 8 chars). Tokens shorter than three characters are protected; candidate matching
+  cannot cross alphabetic/numeric kinds; a token the corpus already contains is NEVER altered;
+  and a numeric token is never "corrected" into a different one. Every correction is logged. An
+  opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
   recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
   valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
@@ -603,6 +605,7 @@ make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize,typos,glossary QUERY_G
 make validate-retrieval CONFIG=<yaml> GOLDSET=<gs> QUERY_PREP=hyde,decompose \
   QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 \
   QUERY_PREP_OUT=<report.json>
+make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
@@ -611,15 +614,19 @@ with per-step recall@k / MRR deltas. Model steps use `--query-prep-model` and
 report. Endpoint generators cache a question within one cumulative run, avoiding duplicate model
 calls while preserving fixed-temperature results.
 
-Tests: `tests/llb/rag/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
-Damerau-Levenshtein transposition, typo correction that never touches in-vocabulary or numeric
-tokens + long-token distance 2 + deterministic tie-break, deterministic alias expansion + glossary
+Tests: `tests/llb/rag/test_query_prep.py` (apostrophe and mixed-script repair, collision-safe
+romanization, Latin acronym preservation, Damerau-Levenshtein transposition, typo correction that
+never touches in-vocabulary, short, or cross-kind tokens + long-token distance 2 + deterministic
+tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
 processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
 deduplication, runner resolver dependency wiring), `tests/llb/rag/test_store.py` (split hybrid
 queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
 plus config validation in `tests/llb/core/test_config.py`.
+
+The end-to-end noise benchmark, model evidence, and model-specific default recommendation live in
+[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark).
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):

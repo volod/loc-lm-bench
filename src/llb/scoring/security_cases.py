@@ -81,26 +81,25 @@ def load_security_cases(records: list[dict[str, Any]]) -> list[SecurityCase]:
     return [SecurityCase.from_record(r) for r in records]
 
 
-_CONFUSABLES = str.maketrans(
-    {
-        "а": "a",
-        "в": "b",
-        "е": "e",
-        "і": "i",
-        "ј": "j",
-        "к": "k",
-        "м": "m",
-        "н": "h",
-        "о": "o",
-        "р": "p",
-        "с": "c",
-        "т": "t",
-        "у": "y",
-        "х": "x",
-        "ѕ": "s",
-        "ԝ": "w",
-    }
-)
+CYRILLIC_TO_LATIN_CONFUSABLES = {
+    "а": "a",
+    "в": "b",
+    "е": "e",
+    "і": "i",
+    "ј": "j",
+    "к": "k",
+    "м": "m",
+    "н": "h",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "т": "t",
+    "у": "y",
+    "х": "x",
+    "ѕ": "s",
+    "ԝ": "w",
+}
+_CONFUSABLES = str.maketrans(CYRILLIC_TO_LATIN_CONFUSABLES)
 
 
 def _fold(text: str) -> str:

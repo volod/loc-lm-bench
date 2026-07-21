@@ -29,8 +29,8 @@ _LOG = logging.getLogger(__name__)
 # One token -> its lemma (identity when lemmatization is off).
 Lemmatizer = Callable[[str], str]
 
-# Apostrophe variants unified to U+0027 so "м’яч" / "мʼяч" / "м'яч" index as one token.
-_APOSTROPHE_VARIANTS = str.maketrans({"’": "'", "ʼ": "'"})
+# Apostrophe variants unified to U+0027 so copied and keyboard-typed forms index as one token.
+_APOSTROPHE_VARIANTS = str.maketrans({"‘": "'", "’": "'", "ʼ": "'", "`": "'"})
 # Word tokens: letters/digits plus in-word apostrophes; everything else is punctuation.
 _TOKEN_RE = re.compile(r"[\w']+")
 

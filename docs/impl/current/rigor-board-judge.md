@@ -423,6 +423,54 @@ groundedness/citation metrics; the mechanism, the deterministic groundedness + c
 scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evidence live in
 [RAG core](rag-core.md) groundedness and citation metrics.
 
+## Ukrainian Query Robustness Benchmark
+
+`llb bench-query-robustness` / `make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>`
+measures end-to-end sensitivity to three deterministic noisy-query classes: Latin-typed
+transliteration, apostrophe plus mixed-script homoglyph substitutions, and keyboard-adjacent
+Cyrillic typos at a configured character rate. Each class runs with query preparation off and
+with `normalize,typos` plus the Ukrainian morphology guard. Clean cases are an ordinary
+`run-eval` bundle. The 6 x N variant rows are probe-only and publish atomically as
+`$DATA_DIR/query-robustness/<run>/{report.md,robustness.jsonl}`; no `scores.jsonl` exists in that
+probe directory.
+
+Implementation is split across `src/llb/eval/query_robustness_variants.py` (seeded generators),
+`query_robustness.py` (per-case joins and lane metrics), `query_robustness_run.py` (clean baseline,
+store, endpoint, and graph wiring), `query_robustness_report.py` (atomic report/JSONL publication),
+and `src/llb/cli/eval/query_robustness.py`. `tests/llb/eval/test_query_robustness.py` drives a fake
+endpoint and fake store through all six lanes, checks deterministic variants and morphology-guard
+wiring, and proves the probe directory never gains correctness scores. Shared query-prep tests
+cover the bugs found by CUDA acceptance: collision-safe romanization, preservation of uppercase
+Latin acronyms, keyboard grave normalization, embedded homoglyph repair, short-token protection,
+and alphabetic/numeric candidate separation.
+
+CUDA-host evidence (2026-07-21): RTX 4060 Ti 16 GiB, Ollama, the full committed
+`ua_squad_postedited_v1` final split (n=82), seed 13, 8 percent character noise, k=10,
+`intfloat/multilingual-e5-base`, and 64 answer tokens. Both model runs completed 492/492 probe
+cases with zero errors. Clean recall@10 was 0.9756 for both; raw recall deltas were identical
+because retrieval was pinned: transliteration -0.2561, mixed script -0.0122, keyboard typos
+-0.0488. The guarded mitigation restored every class to clean recall.
+
+- `hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M`: clean objective 0.4747.
+  Transliteration objective was 0.2499 raw and 0.3357 mitigated (recovery +0.0857); mixed script
+  was 0.4435 raw and 0.4935 mitigated (+0.0500); keyboard typos were 0.4451 raw and 0.4385
+  mitigated (-0.0066). Artifact:
+  `$DATA_DIR/query-robustness/20260721T202228.253486Z-490580bf07ec/`; clean baseline:
+  `$DATA_DIR/run-eval/20260721T200209.493968Z-c4ef7ec9c939/`.
+- `hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M`: clean objective 0.4976.
+  Transliteration objective was 0.3830 raw and 0.5095 mitigated (+0.1265); mixed script was
+  0.4943 raw and 0.5238 mitigated (+0.0295); keyboard typos were 0.4049 raw and 0.4376
+  mitigated (+0.0326). Artifact:
+  `$DATA_DIR/query-robustness/20260721T203719.294606Z-65cb5fdb6aa5/`; clean baseline:
+  `$DATA_DIR/run-eval/20260721T202301.566304Z-f912939787b0/`.
+
+Verdict: do not make the combined lane a universal default. It is a strong model-specific option:
+it recovered all retrieval loss and improved every noisy objective for Lapa, and improved
+transliteration plus mixed script for MamayLM. MamayLM's small keyboard-objective regression and
+the per-edit audit's ambiguous nearest-vocabulary choices show that typo correction still needs a
+model/corpus A/B before activation. The report's shared-hit generation delta separates that
+answer-side effect from missing evidence.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to

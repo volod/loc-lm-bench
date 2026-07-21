@@ -31,11 +31,23 @@ def test_normalize_unifies_apostrophes_and_casefolds():
     assert edits == []  # silent normalization, no transliteration edit
 
 
+def test_normalize_unifies_keyboard_grave_and_repairs_mixed_script():
+    processed, edits = apply_normalize("П`ЯТЬ нaкaз")
+    assert processed == "п'ять наказ"
+    assert [(edit.kind, edit.replacement) for edit in edits] == [("homoglyph", "наказ")]
+
+
 def test_normalize_transliterates_latin_typed_tokens():
     processed, edits = apply_normalize("zakon про pravo")
     assert processed == "закон про право"
     kinds = {(e.original, e.replacement) for e in edits}
     assert ("zakon", "закон") in kinds and ("pravo", "право") in kinds
+
+
+def test_normalize_preserves_short_uppercase_latin_acronyms():
+    processed, edits = apply_normalize("NP та NTL")
+    assert processed == "np та ntl"
+    assert edits == []
 
 
 def test_normalize_leaves_cyrillic_tokens_untouched():
@@ -52,6 +64,15 @@ def test_transliteration_table_round_trips(word):
 
 def test_romanization_drops_soft_sign():
     assert "ь" not in cyrillic_to_latin("власність")
+
+
+@pytest.mark.parametrize("word", ["сг", "ие", "зх"])
+def test_romanization_escapes_greedy_digraph_collisions(word):
+    assert transliterate_latin_to_cyrillic(cyrillic_to_latin(word)) == word
+
+
+def test_romanization_preserves_existing_latin_terms_without_escape_noise():
+    assert cyrillic_to_latin("Клас NP складний") == "klas NP skladnyj"
 
 
 # --------------------------------------------------------------------------------------------
@@ -88,6 +109,12 @@ def test_typos_leave_numeric_codes_untouched():
     processed, edits = apply_typos("4822", vocab)  # a code one edit from 4821
     assert processed == "4822"
     assert edits == []
+
+
+def test_typos_leave_short_tokens_and_cross_kind_candidates_untouched():
+    vocab = frozenset({"0", "кіт"})
+    assert apply_typos("п", vocab) == ("п", [])
+    assert nearest_vocab_token("абв", frozenset({"123"}), 3) is None
 
 
 def test_typos_long_token_allows_distance_two():

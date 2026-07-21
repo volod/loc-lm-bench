@@ -19,6 +19,7 @@ _LOG = logging.getLogger(__name__)
 TYPO_MAX_DISTANCE_SHORT = 1
 TYPO_LONG_TOKEN_CHARS = 8
 TYPO_MAX_DISTANCE_LONG = 2
+TYPO_MIN_TOKEN_CHARS = 3
 
 
 def damerau_levenshtein(a: str, b: str, max_distance: int | None = None) -> int:
@@ -59,7 +60,10 @@ def nearest_vocab_token(token: str, vocabulary: "frozenset[str]", max_distance: 
     the result is independent of the (unordered) vocabulary iteration order.
     """
     best: tuple[int, str] | None = None
+    alphabetic = token.replace("'", "").isalpha()
     for candidate in vocabulary:
+        if candidate.replace("'", "").isalpha() != alphabetic:
+            continue
         if abs(len(candidate) - len(token)) > max_distance:
             continue
         distance = damerau_levenshtein(token, candidate, max_distance)
@@ -94,7 +98,12 @@ def apply_typos(
     def _replace(match: "re.Match[str]") -> str:
         raw = match.group(0)
         token = normalize_token(raw)
-        if not token or token.isdigit() or token in vocabulary:
+        if (
+            not token
+            or token.isdigit()
+            or len(token.replace("'", "")) < TYPO_MIN_TOKEN_CHARS
+            or token in vocabulary
+        ):
             return raw
         if known_word is not None and known_word(token):
             _LOG.debug("[query-prep] typo guard: %r is a known word form; left unchanged", token)
