@@ -126,36 +126,6 @@ retrieval shape and evidence boundary in
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
-### query-prep-hyde-decompose
-
-Add two model-backed steps to the `src/llb/rag/query_prep/` pipeline: `hyde` embeds a short
-local-model hypothetical answer in place of the raw question on the dense side (the lexical side
-keeps the raw query), and `decompose` splits a multi-part Ukrainian question into sub-queries,
-retrieves per sub-query, and fuses the per-sub-query candidate lists with weighted RRF. Both run
-through the same backend endpoint seam as the existing `rewrite` step, record their generated
-text per case, and never touch stored corpus text. Extend the `validate-retrieval
---query-prep-ab` report to accept an endpoint so model-backed steps get the same per-step
-recall/MRR delta attribution as the pure steps.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the query pipeline, A/B report, and step-dependency resolution in
-  [RAG core](current/rag-core.md#query-side-processing-uk-query-processing) plus `rrf_fuse`.
-- User-visible outcome: an evidence-backed answer to whether hypothetical-answer embedding or
-  sub-question fusion recovers the broadly-phrased-question recall misses that dense-only
-  retrieval leaves on real Ukrainian corpora.
-- Scope boundary: in scope -- the two steps, endpoint wiring in `runner_setup`, the A/B
-  extension, and per-case provenance fields in `scores.jsonl`. Out of scope -- multi-turn agentic
-  retrieval, corpus-side changes, and any default-on change (both steps stay opt-in).
-- Data and artifact paths: no new roots; A/B reports beside the existing `validate-retrieval`
-  output; generated queries recorded in the run bundle per case.
-- Execution path: `make validate-retrieval QUERY_PREP=normalize,hyde QUERY_PREP_AB=1` with new
-  endpoint knobs (`QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=<b>`); `make run-eval QUERY_PREP=...`;
-  CI drives both steps over a fake endpoint and fake store.
-- Acceptance gates: `make ci` green; an empty lane stays an exact no-op; output is deterministic
-  under a fixed fake completion; a heavy A/B over the quickstart accepted goldset against the
-  full-corpus store attributes each step's recall@10 / MRR delta and records the verdict.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
 ### rag-vs-long-context-ablation
 
 Build `llb compare-context-strategies` (`make compare-context-strategies`): score one model on

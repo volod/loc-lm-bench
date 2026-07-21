@@ -110,7 +110,8 @@ def run_eval_cmd(
         None,
         "--query-prep",
         help="opt-in query-side lane (uk-query-processing): comma-separated ordered steps "
-        "normalize,typos,glossary,rewrite (rewrite calls the local model; off by default). "
+        "normalize,typos,glossary,rewrite,hyde,decompose (last three call the local model; "
+        "off by default). "
         "The raw query is always preserved; only the retrieval query is transformed",
     ),
     query_glossary: Optional[Path] = typer.Option(

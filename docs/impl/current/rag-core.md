@@ -574,18 +574,25 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
 - `rewrite` -- an optional local-LLM query rewrite through the run's backend endpoint seam
   (`eval.rag.query_rewrite` prompt). OFF by default and NEVER present unless explicitly requested;
   records both the original and rewritten query per case.
+- `hyde` -- generates a short hypothetical answer through the same local endpoint and embeds it
+  on the dense lane while retaining the processed user question for BM25 and graph linking. It
+  does not alter the question sent to answer generation.
+- `decompose` -- parses a bounded JSON or line-list response into at most five subqueries,
+  retrieves every subquery, and deduplicates exact source spans with weighted RRF. A 2x
+  original-query lane stabilizes ranking when the model over-decomposes a simple question.
 
-Wiring: `src/llb/eval/graph.py`'s retrieve node processes the question BEFORE `store.retrieve`
-(the raw question stays in state for generation) and records `query_processed` /
-`query_corrections` into the case state, carried into `scores.jsonl` rows so both query forms are
-recoverable per case. `src/llb/executor/runner_setup.py` resolves each step's
-dependency (vocabulary from the loaded store, glossary from `query_glossary_path`, rewriter from
-the launcher) and raises a clear message on a missing one.
+Wiring: `src/llb/eval/graph.py` processes the question before retrieval and hands the structured
+result to `query_prep/retrieval.py`. `RagStore.retrieve_queries` accepts separate dense and
+lexical text; graph, fused, and reranking wrappers preserve that contract. The raw question stays
+in state for generation. `scores.jsonl` and the durability journal carry `query_processed`,
+`query_corrections`, `query_hypothetical_answer`, `query_decomposition`, and
+`query_subqueries`, so normal and resumed runs preserve generated-query provenance. Journal
+inclusion also fixes the earlier loss of deterministic query-prep provenance on resume.
 
 Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
-`normalize` | `typos` | `glossary` | `rewrite`; unknown/duplicated steps rejected at config
-validation), `query_glossary_path`, and `query_prep_typo_guard` (refused at config validation
-unless the `typos` step is present).
+`normalize` | `typos` | `glossary` | `rewrite` | `hyde` | `decompose`;
+unknown/duplicated steps rejected at config validation), `query_glossary_path`, and
+`query_prep_typo_guard` (refused at config validation unless the `typos` step is present).
 
 Commands:
 
@@ -593,20 +600,26 @@ Commands:
 make build-query-glossary BUNDLE=<draft dir>            # -> <bundle>/query_glossary.json
 make run-eval MODEL=<m> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json>
 make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json> QUERY_PREP_AB=1
+make validate-retrieval CONFIG=<yaml> GOLDSET=<gs> QUERY_PREP=hyde,decompose \
+  QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 \
+  QUERY_PREP_OUT=<report.json>
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
-(`+normalize`, `+typos`, `+glossary`) with per-step recall@k / MRR deltas, so each step's marginal
-retrieval effect is attributable (the `rewrite` step needs a model, so it runs only in `run-eval`,
-not the A/B). `query_prep_ab_report` is pure over the `.retrieve` seam.
+with per-step recall@k / MRR deltas. Model steps use `--query-prep-model` and
+`--query-prep-backend`; their completions and parsed subqueries are embedded per case in the JSON
+report. Endpoint generators cache a question within one cumulative run, avoiding duplicate model
+calls while preserving fixed-temperature results.
 
 Tests: `tests/llb/rag/test_query_prep.py` (apostrophe unification, transliteration-table round-trips,
 Damerau-Levenshtein transposition, typo correction that never touches in-vocabulary or numeric
 tokens + long-token distance 2 + deterministic tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
-processed-query wiring, runner resolver dependency wiring), plus config validation in
-`tests/llb/core/test_config.py`.
+processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
+deduplication, runner resolver dependency wiring), `tests/llb/rag/test_store.py` (split hybrid
+queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
+plus config validation in `tests/llb/core/test_config.py`.
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
@@ -638,6 +651,28 @@ Unguarded, the edit-distance step "corrected" valid inflections to the corpus su
 untouched (the lemmatization lane is the right tool for them) while genuine out-of-vocabulary
 typos -- including the mixed-script `wеб` (Latin `w`) -> `веб` -- are still corrected, and the
 step becomes MRR-neutral. Verdict: turn the guard on whenever the `typos` step is in use.
+
+### HyDE and decomposition evidence
+
+CUDA-host evidence (2026-07-21): `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` through Ollama,
+`intfloat/multilingual-e5-base`, hybrid FAISS, k=10, and the held-out final split (n=13) of the
+available verified 40-item accepted set against its full 1124-chunk store:
+
+| stage | recall@10 | MRR | d(MRR) |
+| --- | ---: | ---: | ---: |
+| baseline | 0.923 | 0.814 | -- |
+| +hyde | 0.923 | 0.833 | +0.019 |
+| +hyde +decompose | 0.923 | 0.833 | +0.000 |
+| baseline (isolated decomposition run) | 0.923 | 0.814 | -- |
+| +decompose | 0.923 | 0.827 | +0.013 |
+
+An initial equal-weight decomposition run regressed MRR to 0.699. Replaying its recorded
+subqueries showed that adding the original question at 2x weight changed the result from harmful
+to useful; the final independent run confirms +0.013 MRR, and the cumulative lane preserves the
+larger HyDE gain. Recall is unchanged. Both steps remain opt-in. Reports, including endpoint and
+per-case generated text, are under
+`$DATA_DIR/query-prep-hyde-decompose/<run>/query_prep_ab_improved.json` and
+`decompose_ab_improved.json`.
 
 ## Chunking Strategies
 

@@ -114,9 +114,27 @@ class RerankingRetriever:
         self._clock = clock
 
     def retrieve(self, question: str, k: int, **kwargs: Any) -> list[ChunkRecord]:
+        return self._retrieve_and_rerank(question, k, None, **kwargs)
+
+    def retrieve_queries(
+        self, dense_query: str, lexical_query: str, k: int, **kwargs: Any
+    ) -> list[ChunkRecord]:
+        """Preserve split dense/lexical retrieval and rerank against the user query."""
+        return self._retrieve_and_rerank(lexical_query, k, dense_query, **kwargs)
+
+    def _retrieve_and_rerank(
+        self,
+        question: str,
+        k: int,
+        dense_query: str | None,
+        **kwargs: Any,
+    ) -> list[ChunkRecord]:
         depth = max(self.candidates, k)
         started = self._clock()
-        pool = self.store.retrieve(question, depth, **kwargs)
+        if dense_query is None or not callable(getattr(self.store, "retrieve_queries", None)):
+            pool = self.store.retrieve(dense_query or question, depth, **kwargs)
+        else:
+            pool = self.store.retrieve_queries(dense_query, question, depth, **kwargs)
         retrieved_at = self._clock()
         kept = rerank_chunks(question, pool, k, self.scorer)
         self.stage_latency = {

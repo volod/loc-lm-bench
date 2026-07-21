@@ -3,7 +3,15 @@
 import json
 import pytest
 from llb.eval import graph
-from llb.rag.query_prep.base import STEP_GLOSSARY, STEP_NORMALIZE, STEP_REWRITE, STEP_TYPOS
+from llb.rag.query_prep.base import (
+    STEP_DECOMPOSE,
+    STEP_GLOSSARY,
+    STEP_HYDE,
+    STEP_NORMALIZE,
+    STEP_REWRITE,
+    STEP_TYPOS,
+)
+from llb.rag.query_prep.decompose import parse_subqueries
 from llb.rag.query_prep.glossary import (
     Glossary,
     apply_glossary,
@@ -16,6 +24,7 @@ from llb.rag.query_prep.report import (
     format_query_prep_ab,
     query_prep_ab_report,
 )
+from llb.rag.query_prep.retrieval import retrieve_prepared
 from llb.rag.query_prep.typos import (
     build_vocabulary,
 )
@@ -117,12 +126,74 @@ def test_pipeline_requires_dependencies():
         QueryPrep.build([STEP_GLOSSARY])
     with pytest.raises(ValueError, match="rewrite endpoint"):
         QueryPrep.build([STEP_REWRITE])
+    with pytest.raises(ValueError, match="hypothetical-answer"):
+        QueryPrep.build([STEP_HYDE])
+    with pytest.raises(ValueError, match="decomposition endpoint"):
+        QueryPrep.build([STEP_DECOMPOSE])
+
+
+def test_model_steps_record_generated_text_and_subqueries():
+    pipeline = QueryPrep.build(
+        [STEP_HYDE, STEP_DECOMPOSE],
+        hypothesizer=lambda _q: "hypothetical passage",
+        decomposer=lambda _q: '{"subqueries":["first", "second"]}',
+    )
+    result = pipeline.process("compound question")
+    assert result.processed == "compound question"
+    assert result.hypothetical_answer == "hypothetical passage"
+    assert result.subqueries == ("first", "second")
+    assert result.provenance()["query_corrections"] == 0
+    assert str(result.provenance()["query_decomposition"]).startswith("{")
+
+
+def test_decomposition_parser_accepts_fences_lines_and_bounds_output():
+    assert parse_subqueries('```json\n{"subqueries":["a","b","a"]}\n```') == ("a", "b")
+    assert parse_subqueries("1. a\n- b\n* c", limit=2) == ("a", "b")
+
+
+def test_prepared_retrieval_splits_hyde_dense_and_raw_lexical_queries():
+    class Store:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve_queries(self, dense, lexical, k, chunk_filter=None):
+            self.calls.append((dense, lexical, k, chunk_filter))
+            return [{"doc_id": "d", "char_start": 0, "char_end": 1, "text": "x"}]
+
+    store = Store()
+    result = QueryPrep.build([STEP_HYDE], hypothesizer=lambda _q: "hypothetical passage").process(
+        "raw question"
+    )
+    retrieve_prepared(store, result, 3)
+    assert store.calls == [("hypothetical passage", "raw question", 3, None)]
+
+
+def test_decomposition_retrieves_each_subquery_and_rrf_deduplicates_spans():
+    shared = {"doc_id": "d", "char_start": 0, "char_end": 1, "text": "shared"}
+
+    class Store:
+        def retrieve_queries(self, dense, lexical, k, chunk_filter=None):
+            unique = {"doc_id": dense, "char_start": 1, "char_end": 2, "text": dense}
+            return [shared, unique]
+
+    result = QueryPrep.build(
+        [STEP_DECOMPOSE], decomposer=lambda _q: '["part-a", "part-b"]'
+    ).process("compound")
+    hits = retrieve_prepared(Store(), result, 4)
+    assert [(hit["doc_id"], hit["char_start"]) for hit in hits] == [
+        ("d", 0),
+        ("compound", 1),
+        ("part-a", 1),
+        ("part-b", 1),
+    ]
 
 
 def test_ab_report_attributes_per_step_delta():
     # the fake store only "finds" the gold span when the query is transliterated to Cyrillic
-    def retrieve(query, k):
-        return [{"doc_id": "d", "char_start": 0, "char_end": 5}] if "закон" in query else []
+    def retrieve(result, k):
+        return (
+            [{"doc_id": "d", "char_start": 0, "char_end": 5}] if "закон" in result.processed else []
+        )
 
     items = [("zakon", [{"doc_id": "d", "char_start": 0, "char_end": 5}])]
     stages = cumulative_pipelines([STEP_NORMALIZE])
@@ -131,6 +202,7 @@ def test_ab_report_attributes_per_step_delta():
     assert report["stages"][0]["recall_at_k"] == 0.0
     assert report["stages"][1]["recall_at_k"] == 1.0
     assert report["stages"][1]["delta_recall"] == pytest.approx(1.0)
+    assert report["stages"][1]["cases"][0]["query_processed"] == "закон"
     assert "query-prep A/B" in format_query_prep_ab(report)
 
 

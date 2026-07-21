@@ -155,6 +155,12 @@ class GraphStore:
             return self._retrieve_global_community(question, k)
         return self._retrieve_local_khop(question, k)
 
+    def retrieve_queries(
+        self, dense_query: str, lexical_query: str, k: int, **_kwargs: Any
+    ) -> list[ChunkRecord]:
+        """Use the lexical/user query; graph linking has no dense embedding lane."""
+        return self.retrieve(lexical_query, k)
+
     def _retrieve_local_khop(self, question: str, k: int) -> list[ChunkRecord]:
         seeds = link_seed_nodes(self.graph, question, self.n_seeds)
         if not seeds:

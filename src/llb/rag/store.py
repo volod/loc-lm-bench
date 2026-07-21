@@ -155,9 +155,24 @@ class RagStore:
         `chunk_filter` (see `llb.rag.filters.metadata_filter`) restricts candidates BEFORE
         fusion/ranking; with a filter the whole index is scanned, so the cut is exact.
         """
-        query_vec = self.embedder.encode_queries([question])
+        return self.retrieve_queries(question, question, k, chunk_filter=chunk_filter)
+
+    def retrieve_queries(
+        self,
+        dense_query: str,
+        lexical_query: str,
+        k: int,
+        chunk_filter: ChunkFilter | None = None,
+    ) -> list[ChunkRecord]:
+        """Retrieve with independently selected dense and lexical query text.
+
+        The split is useful for HyDE: its hypothetical passage drives the embedding while the
+        user's processed question remains the BM25 query. Dense-only stores ignore
+        `lexical_query`.
+        """
+        query_vec = self.embedder.encode_queries([dense_query])
         if self.lexical is not None and self.meta.get("mode") == MODE_HYBRID:
-            return self._retrieve_hybrid(question, query_vec, k, chunk_filter)
+            return self._retrieve_hybrid(lexical_query, query_vec, k, chunk_filter)
         base_k = k * 4 if self.parents else k
         search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), base_k)
         while True:

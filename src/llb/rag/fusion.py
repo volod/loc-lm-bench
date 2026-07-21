@@ -35,15 +35,28 @@ class FusedRetriever:
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
         """Return top-k fused chunks; endpoint weights are exact lane passthroughs."""
+        return self._retrieve_lanes(question, question, k)
+
+    def retrieve_queries(
+        self, dense_query: str, lexical_query: str, k: int, **_kwargs: object
+    ) -> list[ChunkRecord]:
+        """Route HyDE text to vector dense search and the user query to graph/BM25."""
+        return self._retrieve_lanes(dense_query, lexical_query, k)
+
+    def _retrieve_lanes(self, dense_query: str, lexical_query: str, k: int) -> list[ChunkRecord]:
         if k < 1:
             return []
-        if self.graph_weight == 0.0:
-            return self.vector.retrieve(question, k)
         if self.graph_weight == 1.0:
-            return self.graph.retrieve(question, k)
-
-        vector_hits = self.vector.retrieve(question, k)
-        graph_hits = self.graph.retrieve(question, k)
+            return self.graph.retrieve(lexical_query, k)
+        vector_method = getattr(self.vector, "retrieve_queries", None)
+        vector_hits = (
+            vector_method(dense_query, lexical_query, k)
+            if callable(vector_method)
+            else self.vector.retrieve(dense_query, k)
+        )
+        if self.graph_weight == 0.0:
+            return vector_hits
+        graph_hits = self.graph.retrieve(lexical_query, k)
         records, lanes = _span_candidates(vector_hits, graph_hits)
         fused = weighted_rrf_fuse(
             lanes,

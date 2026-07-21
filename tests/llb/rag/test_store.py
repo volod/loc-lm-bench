@@ -108,6 +108,38 @@ def test_parent_child_retrieval_expands_until_k_unique_parents():
     assert index.search_sizes == [8, 10]
 
 
+def test_hybrid_retrieve_queries_keeps_dense_and_lexical_text_separate():
+    class FakeEmbedder:
+        def __init__(self):
+            self.seen = []
+
+        def encode_queries(self, texts):
+            self.seen.extend(texts)
+            return [[1.0]]
+
+    class FakeIndex:
+        def search(self, query, k):
+            return [[1.0]], [[0]]
+
+    class FakeLexical:
+        def __init__(self):
+            self.seen = []
+
+        def search(self, query, k, allowed):
+            self.seen.append(query)
+            return [(0, 1.0)]
+
+    embedder = FakeEmbedder()
+    lexical = FakeLexical()
+    chunks = [{"doc_id": "d", "char_start": 0, "char_end": 1, "text": "x"}]
+    store = RagStore(chunks, FakeIndex(), embedder, {"mode": "hybrid"}, lexical=lexical)
+
+    store.retrieve_queries("hypothetical", "raw question", 1)
+
+    assert embedder.seen == ["hypothetical"]
+    assert lexical.seen == ["raw question"]
+
+
 def test_stale_store_message_flags_changed_corpus_manifest(tmp_path):
     root = tmp_path / "src"
     root.mkdir()

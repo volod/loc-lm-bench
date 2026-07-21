@@ -12,12 +12,22 @@ STEP_NORMALIZE = "normalize"
 STEP_TYPOS = "typos"
 STEP_GLOSSARY = "glossary"
 STEP_REWRITE = "rewrite"
-QUERY_PREP_STEPS: tuple[str, ...] = (STEP_NORMALIZE, STEP_TYPOS, STEP_GLOSSARY, STEP_REWRITE)
+STEP_HYDE = "hyde"
+STEP_DECOMPOSE = "decompose"
+QUERY_PREP_STEPS: tuple[str, ...] = (
+    STEP_NORMALIZE,
+    STEP_TYPOS,
+    STEP_GLOSSARY,
+    STEP_REWRITE,
+    STEP_HYDE,
+    STEP_DECOMPOSE,
+)
 
 QUERY_GLOSSARY_VERSION = "query-glossary-v1"
 
 # Injected local-LLM rewrite seam: original query -> rewritten query (identity when absent).
 Rewriter = Callable[[str], str]
+QueryGenerator = Callable[[str], str]
 
 # Injected morphology probe for the typos step's opt-in guard: True when the token is a known
 # valid Ukrainian word form (pymorphy3 `word_is_known`; `llb.rag.lexical.load_uk_word_probe`).
@@ -47,7 +57,25 @@ class QueryPrepResult:
     steps: tuple[str, ...]
     edits: tuple[QueryEdit, ...] = ()
     rewrite: str | None = None
+    hypothetical_answer: str | None = None
+    decomposition: str | None = None
+    subqueries: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
-        return self.processed != self.raw
+        return bool(self.processed != self.raw or self.hypothetical_answer or self.subqueries)
+
+    def provenance(self) -> dict[str, object]:
+        """Per-case query text needed to reproduce and audit the retrieval call."""
+        out: dict[str, object] = {
+            "query_processed": self.processed,
+            "query_corrections": sum(
+                edit.step not in {STEP_HYDE, STEP_DECOMPOSE} for edit in self.edits
+            ),
+        }
+        if self.hypothetical_answer is not None:
+            out["query_hypothetical_answer"] = self.hypothetical_answer
+        if self.decomposition is not None:
+            out["query_decomposition"] = self.decomposition
+            out["query_subqueries"] = list(self.subqueries)
+        return out

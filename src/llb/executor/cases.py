@@ -123,6 +123,12 @@ def score_case(
     if "query_processed" in state:
         row["query_processed"] = str(state["query_processed"])
         row["query_corrections"] = int(state.get("query_corrections", 0))
+    if "query_hypothetical_answer" in state:
+        row["query_hypothetical_answer"] = str(state["query_hypothetical_answer"])
+    if "query_decomposition" in state:
+        row["query_decomposition"] = str(state["query_decomposition"])
+    if "query_subqueries" in state:
+        row["query_subqueries"] = [str(value) for value in state["query_subqueries"]]
     _score_answer_side(row, answer, retrieved, options)
     return row
 

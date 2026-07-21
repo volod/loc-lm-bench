@@ -52,6 +52,9 @@ class RagState(TypedDict, total=False):
     # forms are recoverable per case; absent when the lane is off.
     query_processed: str
     query_corrections: int
+    query_hypothetical_answer: str
+    query_decomposition: str
+    query_subqueries: list[str]
 
 
 # Generation prompt ids: the baseline RAG chat and the cited-answer variant that requires `[i]`
@@ -103,13 +106,13 @@ def make_retrieve_node(
         prep_update: RagState = {}
         if query_prep is not None:
             result = query_prep.process(question)
-            question = result.processed
-            prep_update = {
-                "query_processed": result.processed,
-                "query_corrections": len(result.edits),
-            }
+            prep_update = cast(RagState, result.provenance())
         started = time.perf_counter()
-        if chunk_filter is None:
+        if query_prep is not None:
+            from llb.rag.query_prep.retrieval import retrieve_prepared
+
+            chunks = retrieve_prepared(store, result, k, chunk_filter=chunk_filter)
+        elif chunk_filter is None:
             chunks = store.retrieve(question, k)
         else:
             chunks = store.retrieve(question, k, chunk_filter=chunk_filter)

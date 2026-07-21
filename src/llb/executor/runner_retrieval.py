@@ -11,21 +11,27 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger(__name__)
 
 
-def _launcher_rewriter(config: RunConfig, launcher: Any) -> Callable[[str], str]:
-    """Local-LLM query rewriter over the run's backend endpoint seam (uk-query-processing)."""
+def _launcher_generator(config: RunConfig, launcher: Any, prompt_id: str) -> Callable[[str], str]:
+    """Local-LLM query generator over the run's backend endpoint seam."""
     from llb.prompts.registry import render_chat
 
-    def rewrite(query: str) -> str:
-        messages = render_chat("eval.rag.query_rewrite", {"query": query})
+    cache: dict[str, str] = {}
+
+    def generate(query: str) -> str:
+        if query in cache:
+            return cache[query]
+        messages = render_chat(prompt_id, {"query": query})
         result = launcher.chat(
             messages,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             timeout=config.request_timeout_s,
         )
-        return result.text or ""
+        generated = result.text or ""
+        cache[query] = generated
+        return generated
 
-    return rewrite
+    return generate
 
 
 def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any | None:
@@ -35,7 +41,13 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
     the corpus vocabulary from the loaded store's chunks; the glossary step loads
     `config.query_glossary_path`; the rewrite step wraps the backend launcher. Missing
     dependencies raise a clear SystemExit rather than a bare error mid-run."""
-    from llb.rag.query_prep.base import STEP_GLOSSARY, STEP_REWRITE, STEP_TYPOS
+    from llb.rag.query_prep.base import (
+        STEP_DECOMPOSE,
+        STEP_GLOSSARY,
+        STEP_HYDE,
+        STEP_REWRITE,
+        STEP_TYPOS,
+    )
     from llb.rag.query_prep.pipeline import QueryPrep
     from llb.rag.query_prep.typos import build_vocabulary
 
@@ -53,16 +65,32 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             known_word = load_uk_word_probe()
     glossary = _load_query_glossary(config) if STEP_GLOSSARY in steps else None
     rewriter = None
-    if STEP_REWRITE in steps:
+    model_steps = {STEP_REWRITE, STEP_HYDE, STEP_DECOMPOSE}.intersection(steps)
+    if model_steps:
         if launcher is None:
-            raise SystemExit("[run-eval] query_prep 'rewrite' step needs a backend launcher")
-        rewriter = _launcher_rewriter(config, launcher)
+            joined = ",".join(sorted(model_steps))
+            raise SystemExit(f"[run-eval] query_prep '{joined}' needs a backend launcher")
+    rewriter = (
+        _launcher_generator(config, launcher, "eval.rag.query_rewrite")
+        if STEP_REWRITE in steps
+        else None
+    )
+    hypothesizer = (
+        _launcher_generator(config, launcher, "eval.rag.query_hyde") if STEP_HYDE in steps else None
+    )
+    decomposer = (
+        _launcher_generator(config, launcher, "eval.rag.query_decompose")
+        if STEP_DECOMPOSE in steps
+        else None
+    )
     try:
         return QueryPrep.build(
             steps,
             vocabulary=vocabulary,
             glossary=glossary,
             rewriter=rewriter,
+            hypothesizer=hypothesizer,
+            decomposer=decomposer,
             known_word=known_word,
         )
     except ValueError as exc:

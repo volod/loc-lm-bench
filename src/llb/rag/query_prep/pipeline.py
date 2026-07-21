@@ -5,16 +5,21 @@ from dataclasses import dataclass, field
 
 from llb.rag.query_prep.base import (
     QUERY_PREP_STEPS,
+    STEP_DECOMPOSE,
     STEP_GLOSSARY,
+    STEP_HYDE,
     STEP_NORMALIZE,
     STEP_REWRITE,
     STEP_TYPOS,
     KnownWordProbe,
     QueryEdit,
+    QueryGenerator,
     QueryPrepResult,
     Rewriter,
 )
+from llb.rag.query_prep.decompose import apply_decompose
 from llb.rag.query_prep.glossary import Glossary, apply_glossary
+from llb.rag.query_prep.hyde import apply_hyde
 from llb.rag.query_prep.normalize import apply_normalize
 from llb.rag.query_prep.rewrite import apply_rewrite
 from llb.rag.query_prep.typos import apply_typos
@@ -33,6 +38,8 @@ class QueryPrep:
     vocabulary: "frozenset[str]" = field(default_factory=frozenset)
     glossary: Glossary | None = None
     rewriter: Rewriter | None = None
+    hypothesizer: QueryGenerator | None = None
+    decomposer: QueryGenerator | None = None
     known_word: KnownWordProbe | None = None
 
     @classmethod
@@ -43,6 +50,8 @@ class QueryPrep:
         vocabulary: "frozenset[str] | None" = None,
         glossary: Glossary | None = None,
         rewriter: Rewriter | None = None,
+        hypothesizer: QueryGenerator | None = None,
+        decomposer: QueryGenerator | None = None,
         known_word: KnownWordProbe | None = None,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
@@ -62,11 +71,17 @@ class QueryPrep:
             raise ValueError("the 'glossary' step needs a query glossary")
         if STEP_REWRITE in ordered and rewriter is None:
             raise ValueError("the 'rewrite' step needs a rewrite endpoint callable")
+        if STEP_HYDE in ordered and hypothesizer is None:
+            raise ValueError("the 'hyde' step needs a hypothetical-answer endpoint callable")
+        if STEP_DECOMPOSE in ordered and decomposer is None:
+            raise ValueError("the 'decompose' step needs a decomposition endpoint callable")
         return cls(
             steps=ordered,
             vocabulary=vocabulary if vocabulary is not None else frozenset(),
             glossary=glossary,
             rewriter=rewriter,
+            hypothesizer=hypothesizer,
+            decomposer=decomposer,
             known_word=known_word,
         )
 
@@ -74,6 +89,9 @@ class QueryPrep:
         current = query
         edits: list[QueryEdit] = []
         rewrite_text: str | None = None
+        hypothetical_answer: str | None = None
+        decomposition: str | None = None
+        subqueries: tuple[str, ...] = ()
         for step in self.steps:
             if step == STEP_NORMALIZE:
                 current, step_edits = apply_normalize(current)
@@ -84,9 +102,15 @@ class QueryPrep:
             elif step == STEP_GLOSSARY:
                 assert self.glossary is not None  # guaranteed by build()
                 current, step_edits = apply_glossary(current, self.glossary)
-            else:  # STEP_REWRITE
+            elif step == STEP_REWRITE:
                 assert self.rewriter is not None  # guaranteed by build()
                 current, step_edits, rewrite_text = apply_rewrite(current, self.rewriter)
+            elif step == STEP_HYDE:
+                assert self.hypothesizer is not None  # guaranteed by build()
+                hypothetical_answer, step_edits = apply_hyde(current, self.hypothesizer)
+            else:  # STEP_DECOMPOSE
+                assert self.decomposer is not None  # guaranteed by build()
+                subqueries, step_edits, decomposition = apply_decompose(current, self.decomposer)
             edits.extend(step_edits)
         return QueryPrepResult(
             raw=query,
@@ -94,4 +118,7 @@ class QueryPrep:
             steps=self.steps,
             edits=tuple(edits),
             rewrite=rewrite_text,
+            hypothetical_answer=hypothetical_answer,
+            decomposition=decomposition,
+            subqueries=subqueries,
         )

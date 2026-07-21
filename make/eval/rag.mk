@@ -32,13 +32,20 @@ refresh-index: ## Incrementally refresh built stores after corpus edits + drift 
 		$(if $(SKIP_GRAPH),--skip-graph,) \
 		$(if $(GRAPH_EXTRACTION),--graph-extraction "$(GRAPH_EXTRACTION)",)
 
-validate-retrieval: ## RAG core: recall@k / MRR of the pinned embedding over the gold set; QUERY_PREP=normalize,typos,glossary QUERY_PREP_TYPO_GUARD=1 QUERY_PREP_AB=1 QUERY_GLOSSARY= for the query-side A/B (needs ".[rag]")
+validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 QUERY_PREP_OUT= for model-backed A/B
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main validate-retrieval --goldset "$(GOLDSET)" --k $(RAG_K) \
+	$(PY) -m llb.main validate-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(RETRIEVAL_BACKEND),--retrieval-backend "$(RETRIEVAL_BACKEND)",) \
+		$(if $(RETRIEVAL_STRATEGY),--retrieval-strategy "$(RETRIEVAL_STRATEGY)",) \
+		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
-		$(if $(QUERY_PREP_AB),--query-prep-ab,)
+		$(if $(QUERY_PREP_MODEL),--query-prep-model "$(QUERY_PREP_MODEL)",) \
+		$(if $(QUERY_PREP_BACKEND),--query-prep-backend "$(QUERY_PREP_BACKEND)",) \
+		$(if $(QUERY_PREP_AB),--query-prep-ab,) \
+		$(if $(QUERY_PREP_OUT),--out "$(QUERY_PREP_OUT)",)
 
 compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER= are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
