@@ -53,11 +53,12 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   also emits question-type slices, including explicit `comparative` and `multi-hop` rows.
 
 `src/llb/rag/fusion.py`
-: Implements `FusedRetriever`. It queries the vector store (dense or hybrid) and `GraphStore`,
-  fuses span ids with n-way weighted reciprocal-rank fusion, drops exact duplicate source spans,
-  and preserves the selected record's exact text and offsets. Fused metadata records which lanes
-  returned each span and the graph weight. The fusion itself is the standalone `fuse_lane_hits`,
-  so a weight sweep can reuse the production rule over cached lane rankings.
+: Implements `FusedRetriever`. It queries the vector store (dense or hybrid) and `GraphStore` for
+  `lane_depth(graph_fusion_candidates, k)` candidates each, fuses span ids with n-way weighted
+  reciprocal-rank fusion, drops exact duplicate source spans, cuts to `k`, and preserves the
+  selected record's exact text and offsets. Fused metadata records which lanes returned each span
+  and the graph weight. The fusion itself is the standalone `fuse_lane_hits`, so a weight/depth
+  sweep can reuse the production rule over cached lane rankings.
 
 `src/llb/rag/fusion_evidence/`
 : The graph-weight sweep and its multi-hop verdict (see Graph-Vector Fusion Evidence below).
@@ -92,11 +93,13 @@ llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 ```
 
-`RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, and
-`graph_weight` (default 0.3). These values are part of the config fingerprint and manifest. The
-sweep grid accepts `graph_weight=...` and selects the fused backend; the Optuna space samples the
-graph weight when its base config is fused. `graph_weight=0.0` is an exact vector passthrough and
-does not query the graph lane; `1.0` is an exact graph passthrough.
+`RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, `graph_weight`
+(default 0.3), and `graph_fusion_candidates` (default `None` == each lane asked for exactly
+`top_k`; see [RAG core](rag-core.md#fusion-candidate-depth-graph_fusion_candidates)). These values
+are part of the config fingerprint and manifest. The sweep grid accepts `graph_weight=...` and
+`graph_fusion_candidates=...` and selects the fused backend for either; the Optuna space samples
+the graph weight when its base config is fused. `graph_weight=0.0` is an exact vector passthrough
+and does not query the graph lane; `1.0` is an exact graph passthrough.
 
 Graph-vector fusion uses undamped reciprocal ranks (`k=0`) because graph evidence spans and vector
 chunks rarely share exact boundaries. With the standard hybrid damping constant of 60, a graph
@@ -149,15 +152,21 @@ Three things separate it from the flat comparison:
   bootstrap interval over shared resample index sets, plus the item-level win/loss/tie ledger and
   an exact two-sided sign test. The verdict gates on the INTERVAL: a positive mean whose interval
   still includes no difference is recorded as `inconclusive`, never as an adopt.
-- **One retrieval pass per lane.** Neither lane's ranking depends on the weight, so the sweep
-  caches each lane's top-k per question and re-fuses the same candidates through the production
-  `fuse_lane_hits` at every weight.
+- **One retrieval pass per lane.** Neither lane's ranking depends on the weight or on the
+  candidate depth, so the sweep retrieves each lane once at the DEEPEST compared pool and re-fuses
+  those same candidates through the production `fuse_lane_hits` at every (weight, depth) point.
+
+The lane sweeps both fusion knobs. `GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is the
+per-lane candidate depth grid, where `k` names the scored cutoff itself; each fused row is labeled
+`fused/<strategy>@<weight>/d<depth>`. Depths resolve against `k` and de-duplicate, endpoint weights
+carry no depth variants (they are lane passthroughs), and the verdict ranks across weights and
+depths together, preferring the shallower pool on a tie.
 
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
-  GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0
+  GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0 GRAPH_FUSION_CANDIDATES=k,50
 llb compare-graph-fusion --config <cfg> --k 10 --graph-weights 0,0.3,1.0 \
-  --focus-slice multi-hop --out-dir <dir>
+  --graph-fusion-candidates k,50 --focus-slice multi-hop --out-dir <dir>
 ```
 
 Artifacts per run: `report.md` (verdict, focus slice, overall, per-type slices, item ledger),
@@ -239,6 +248,40 @@ What the run establishes:
 - **Graph-only retrieval loses decisively overall** (-0.337 and -0.379 recall, sign test p=0.000),
   reproducing the accepted-ledger run's ordering on a second, multi-document corpus.
 - **Graph weight 0.0 is an exact vector passthrough**: 0 wins, 0 losses, 95 ties on every metric.
+
+### Candidate depth evidence
+
+CUDA-host evidence is under `$DATA_DIR/graph-vector-fusion-multihop/20260722T102219Z-depth/`. The
+same 95 items, matched stores, weight grid, and seed as the sweep above were re-scored at TWO
+per-lane candidate depths -- `k` (10, the historical pool) and 50 -- through
+`GRAPH_FUSION_CANDIDATES=k,50`. Fused rows are labeled `fused/<strategy>@<weight>/d<depth>`, so a
+depth sweep and a weight sweep are one table.
+
+Two reproduction checks passed before the comparison was read: every `d10` row equals the prior
+run's fused row on every metric, interval, and item-level outcome (17 of 17 rows, exact), and the
+lanes really do deepen (the vector lane returns 50 of 50 candidates; `local_khop` averages 32.1 and
+`global_community` 45.1 at depth 50).
+
+**Result: depth 50 is byte-identical to depth 10 on every row, at every weight, for both graph
+strategies.** Not "no significant gain" -- no difference at all: re-fusing the same lanes at depth
+50 changes the fused top-10 for **0 of 93 questions** at each of `graph_weight` 0.1 / 0.2 / 0.3 /
+0.5 / 0.7.
+
+The mechanism is measured, not incidental. Under undamped RRF a single-lane candidate below rank k
+can never enter the top-k (see
+[RAG core](rag-core.md#fusion-candidate-depth-graph_fusion_candidates) for the argument), so only
+spans BOTH lanes return can be promoted by a deeper pool. Across all 93 questions the two lanes
+share an exact `(doc_id, char_start, char_end)` span **twice at depth 50** (once at depth 10) per
+strategy -- graph evidence spans are entity mentions and edge evidence, whose boundaries essentially
+never coincide with an 800-character recursive chunk.
+
+Verdict: **reject as a default**. `graph_fusion_candidates` stays `None` (each lane asked for
+exactly `top_k`), and the operator's answer is that the fused rows are limited by the graph
+WEIGHT, not by candidate depth -- on this corpus depth is not a knob at all. The knob ships opt-in
+because it becomes live for any corpus whose lanes share exact spans, and because it is the
+prerequisite half of the span-identity work tracked in [`plan.md`](../plan.md)
+(`fusion-span-overlap-identity`): once fusion keys candidates by OVERLAP instead of exact
+boundaries, cross-lane agreement stops being a 2-in-93 event and depth starts to matter.
 
 Boundary: the 35 multi-hop items are DRAFTED, not human-accepted. They are span-exact, Ukrainian
 gated, and each names its bridge or end entity in the reference answer, but only a reviewer can

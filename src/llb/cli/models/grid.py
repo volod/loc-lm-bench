@@ -43,6 +43,7 @@ _RAG_GRID_AXES: dict[str, tuple[Any, Any]] = {
     "top_k": (int, lambda v: v >= 1),
     "fusion_weight": (float, lambda v: 0.0 <= v <= 1.0),
     "graph_weight": (float, lambda v: 0.0 <= v <= 1.0),
+    "graph_fusion_candidates": (int, lambda v: v >= 1),
     "rerank_candidates": (int, lambda v: v >= 0),
 }
 _RAG_GRID_USAGE = (
@@ -96,6 +97,7 @@ _GRID_SUFFIX_PREFIX = {
     "top_k": "k",
     "fusion_weight": "w",
     "graph_weight": "gw",
+    "graph_fusion_candidates": "gc",
     "rerank_candidates": "r",
 }
 
@@ -149,5 +151,5 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
         cell[key] = value
     if "fusion_weight" in point:
         cell["retrieval_mode"] = "hybrid"
-    if "graph_weight" in point:
+    if "graph_weight" in point or "graph_fusion_candidates" in point:
         cell["retrieval_backend"] = "fused"

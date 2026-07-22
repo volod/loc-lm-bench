@@ -104,32 +104,39 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
-### graph-lane-candidate-depth
+### fusion-span-overlap-identity
 
-Graph-vector fusion asks BOTH lanes for exactly `k` candidates, so at `k=10` a graph-only span can
-enter the fused result only when it is already in the graph lane's own top-10, and any graph
-candidate that does enter displaces a vector candidate one-for-one. The dense+BM25 hybrid lane
-already solves this with a separate `fusion_candidates` pool (default 50) that is deeper than `k`.
-Give graph-vector fusion the same knob: retrieve `graph_fusion_candidates` from each lane, fuse,
-then cut to `k`, so the graph share controls *influence on the ranking* rather than *seats in the
-result*. Measure whether a deeper pool converts the measured multi-hop coverage into a recall gain
-that the shallow pool cannot reach.
+Graph-vector fusion keys candidates by EXACT `(doc_id, char_start, char_end)`, so the two lanes can
+only reinforce each other when a graph evidence span and a vector chunk share both boundaries --
+measured at 2 shared spans across 93 questions, which is why the candidate-depth pool is provably
+inert on that corpus ([GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)). A graph
+mention of ~40 characters that sits INSIDE a retrieved 800-character chunk is currently two
+unrelated candidates competing for seats instead of one candidate both lanes vouch for. Replace the
+identity with a containment/overlap rule: fold a graph span into the vector chunk that contains it
+(and merge mutually overlapping spans otherwise), fuse the merged candidates, and keep the surviving
+record's exact text and offsets so span-level recall@k and MRR still score unchanged rules. Then
+re-measure the graph weight AND the candidate depth, since depth only becomes a live knob once
+cross-lane agreement is common.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `fuse_lane_hits` and `FusedRetriever`
-  ([RAG core](current/rag-core.md#graph-vector-fusion-retrieval)), the `fusion_candidates` pattern
-  of the hybrid store, and the sweep lane in
+- Dependencies: none. Reuse `span_key` / `fuse_lane_hits` / `lane_depth` in `src/llb/rag/fusion.py`
+  ([RAG core](current/rag-core.md#graph-vector-fusion-retrieval)) and the sweep lane in
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence) to measure it.
-- User-visible outcome: an answer to whether the current fused rows are limited by the fusion
-  weight or by candidate depth -- the operator learns which knob to turn.
-- Scope boundary: in scope -- the candidate-depth knob, its config/manifest fingerprint entry, and
-  a re-measured weight sweep at two depths. Out of scope -- changing the RRF damping constant and
-  any graph schema change.
+- User-visible outcome: the operator learns whether graph evidence helps most as a SEPARATE
+  candidate (today) or as a relevance vote on the chunk that contains it -- and if the latter, the
+  fused rows gain the cross-lane agreement signal that RRF is designed to exploit.
+- Scope boundary: in scope -- the span-identity rule behind a selectable policy (exact stays the
+  default until measured), which record survives a merge and what its metadata records, and a
+  re-measured weight-by-depth sweep. Out of scope -- changing the RRF damping constant, chunking
+  changes, and any graph schema change.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-graph-fusion GOLDSET=<gs> GRAPH_WEIGHTS=...` at each depth; CI
-  covers the depth knob over fake lane stores.
-- Acceptance gates: `make ci` green; depth equal to `k` reproduces the current fused rows exactly;
-  the sweep reports both depths with paired intervals and an explicit adopt-or-reject verdict.
+- Execution path: `make compare-graph-fusion GOLDSET=<gs> GRAPH_WEIGHTS=... GRAPH_FUSION_CANDIDATES=k,50`
+  under each identity policy; CI covers the merge rule (containment, partial overlap, disjoint,
+  offset preservation) over fake lane stores.
+- Acceptance gates: `make ci` green; the exact-identity policy reproduces the current fused rows
+  exactly; every fused chunk stays offset-exact; the sweep reports both policies with paired
+  intervals, states the measured cross-lane agreement rate under each, and carries an explicit
+  adopt-or-reject verdict.
 - Documentation target: the graph-vector fusion sections of
   [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
@@ -326,9 +333,11 @@ shared-bridge question genuinely needs both facts.
   human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
   genuine multi-hop questions and the slice must come from another source.
 - Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep on the
-  accepted ledger, and the adopt-or-reject verdict. Out of scope -- graph schema changes, the
-  candidate-depth knob (its own forward task), and changing the opt-in fusion default before the
-  accepted-ledger sweep supports it.
+  accepted ledger, and the adopt-or-reject verdict. Out of scope -- graph schema changes, fusion
+  mechanics (the candidate-depth verdict is current behavior in
+  [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence); span identity is its own
+  forward task), and changing the opt-in fusion default before the accepted-ledger sweep supports
+  it.
 - Data and artifact paths: the existing drafted bundle and worksheet plus a new
   `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl`.
 - Execution path: the stratified worksheet is already drawn beside the bundle, so start at

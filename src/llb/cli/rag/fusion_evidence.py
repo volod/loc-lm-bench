@@ -11,6 +11,9 @@ from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES,
 
 FUSION_EVIDENCE_METHOD = "graph-vector-fusion-multihop"
 DEFAULT_WEIGHT_GRID = "0,0.1,0.2,0.3,0.5,0.7,1.0"
+# Default to the historical single depth (each lane asked for exactly the scored `k`), so the
+# command's out-of-the-box row set is unchanged until an operator asks for a deeper pool.
+DEFAULT_CANDIDATE_GRID = "k"
 
 
 @app.command("compare-graph-fusion")
@@ -21,6 +24,11 @@ def compare_graph_fusion_cmd(
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
     graph_weights: str = typer.Option(
         DEFAULT_WEIGHT_GRID, help="comma-separated graph shares to sweep (each within [0, 1])"
+    ),
+    graph_fusion_candidates: str = typer.Option(
+        DEFAULT_CANDIDATE_GRID,
+        help="comma-separated per-lane candidate depths to sweep; 'k' == the scored cutoff "
+        "(the shallow pool), a larger number fuses a deeper pool and then cuts to k",
     ),
     graph_strategies: Optional[str] = typer.Option(
         None, help="comma-separated graph strategies (default: local_khop,global_community)"
@@ -53,6 +61,7 @@ def compare_graph_fusion_cmd(
         build_sweep_rows,
         evaluate_fusion_evidence,
         format_report,
+        parse_candidates,
         parse_weights,
     )
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
@@ -61,6 +70,7 @@ def compare_graph_fusion_cmd(
     cfg = load_config(config, goldset_path=goldset)
     try:
         weights = parse_weights(graph_weights)
+        candidates = parse_candidates(graph_fusion_candidates)
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -69,7 +79,9 @@ def compare_graph_fusion_cmd(
         typer.echo("[error] the gold set selection is empty", err=True)
         raise typer.Exit(code=2)
     vector, graphs = _load_lanes(cfg, graph_strategies)
-    rows = build_sweep_rows(vector, graphs, [item.question for item in items], k, weights)
+    rows = build_sweep_rows(
+        vector, graphs, [item.question for item in items], k, weights, candidates
+    )
     report = evaluate_fusion_evidence(
         rows,
         items,

@@ -70,7 +70,12 @@ def _apply_query_knobs(store: Any, config: RunConfig) -> Any:
         from llb.executor.runner_retrieval import _load_graph_store
         from llb.rag.fusion import FusedRetriever
 
-        retriever = FusedRetriever(store, _load_graph_store(config), config.graph_weight)
+        retriever = FusedRetriever(
+            store,
+            _load_graph_store(config),
+            config.graph_weight,
+            config.graph_fusion_candidates,
+        )
     return maybe_wrap_reranker(retriever, config)
 
 

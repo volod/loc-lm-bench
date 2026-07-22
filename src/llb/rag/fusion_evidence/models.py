@@ -27,7 +27,10 @@ OVERALL_RECALL_TOLERANCE = 0.0
 VECTOR_ROW = "vector"
 GRAPH_ROW_PREFIX = "graph/"
 FUSED_ROW_PREFIX = "fused/"
-FUSED_ROW_TEMPLATE = FUSED_ROW_PREFIX + "{strategy}@{weight:.2f}"
+# A fused row is identified by BOTH fusion knobs: the graph share and the per-lane candidate
+# depth the share is applied over (`/d<depth>`), so a depth sweep and a weight sweep are the same
+# table and the verdict ranks across both.
+FUSED_ROW_TEMPLATE = FUSED_ROW_PREFIX + "{strategy}@{weight:.2f}/d{depth}"
 
 METRIC_RECALL = "recall_at_k"
 METRIC_ALL_SPANS = "all_spans_at_k"

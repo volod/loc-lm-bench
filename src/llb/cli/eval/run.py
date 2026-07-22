@@ -93,6 +93,11 @@ def run_eval_cmd(
     graph_weight: Optional[float] = typer.Option(
         None, help="fused backend: graph share of weighted RRF, 0..1 (default 0.3)"
     ),
+    graph_fusion_candidates: Optional[int] = typer.Option(
+        None,
+        help="fused backend: per-lane candidate depth fused before the top_k cut "
+        "(default: top_k, i.e. each graph candidate that enters displaces a vector one)",
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
@@ -213,6 +218,7 @@ def run_eval_cmd(
         fusion_weight=fusion_weight,
         fusion_candidates=fusion_candidates,
         graph_weight=graph_weight,
+        graph_fusion_candidates=graph_fusion_candidates,
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,

@@ -140,9 +140,11 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
-# Graph-vector fusion evidence: the swept graph shares and the question type the verdict is
-# decided on (compare-graph-fusion). Empty knobs fall back to the command defaults.
+# Graph-vector fusion evidence: the swept graph shares, the swept per-lane candidate depths
+# ('k' == the scored cutoff), and the question type the verdict is decided on
+# (compare-graph-fusion). Empty knobs fall back to the command defaults.
 GRAPH_WEIGHTS ?=
+GRAPH_FUSION_CANDIDATES ?=
 GRAPH_STRATEGIES ?=
 FUSION_FOCUS_SLICE ?=
 FUSION_BOOTSTRAP_RESAMPLES ?=

@@ -32,7 +32,7 @@ lookup -- see the [reference result](#reference-factoid-corpus-result) before co
 | --- | --- | --- |
 | `llb build-graph` | Builds the GraphRAG store (node/edge JSONL + communities) from an ontology-assisted drafting extraction over the corpus. | a local endpoint when extracting fresh |
 | `llb compare-retrieval` | Scores recall@k / MRR for every BUILT backend on one gold set; skips a backend whose store is absent. | a built FAISS index and/or graph store |
-| `llb compare-graph-fusion` | Sweeps the fused graph weight and decides it on the multi-hop slice, with multi-span metrics and paired intervals. | both stores built, plus multi-hop-labeled gold items |
+| `llb compare-graph-fusion` | Sweeps the fused graph weight and per-lane candidate depth, and decides them on the multi-hop slice, with multi-span metrics and paired intervals. | both stores built, plus multi-hop-labeled gold items |
 
 `make compare-retrieval GOLDSET=... RAG_K=10` and `make compare-graph-fusion CONFIG=... GOLDSET=...`
 wrap the last two.
@@ -98,14 +98,16 @@ native speed. Pick the largest model that **fits**, or accept the offload penalt
 It prints an ASCII table and (with `--out`) writes the JSON report. A backend whose store is not
 built is skipped with a log line, so you can compare whatever is present.
 
-## Step 4 (optional) -- sweep the fusion weight on multi-hop questions
+## Step 4 (optional) -- sweep the fusion knobs on multi-hop questions
 
 `compare-retrieval` ranks backends at one graph weight. When the gold set has multi-hop items
 (drafted with `--multi-hop`, labeled in `needle_items.jsonl`), sweep the weight instead:
 
     llb compare-graph-fusion --config <run-config.yaml> --k 10 \
-      --graph-weights 0,0.1,0.2,0.3,0.5,0.7,1.0 --out-dir <artifact-dir>
-    # or: make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset> GRAPH_WEIGHTS=0,0.3,1.0
+      --graph-weights 0,0.1,0.2,0.3,0.5,0.7,1.0 \
+      --graph-fusion-candidates k,50 --out-dir <artifact-dir>
+    # or: make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset> GRAPH_WEIGHTS=0,0.3,1.0 \
+    #       GRAPH_FUSION_CANDIDATES=k,50
 
 It writes `report.md` / `comparison.json` with, per graph weight and strategy, `recall@k` beside
 `all-spans@k` (did the context carry EVERY hop, not just one), paired bootstrap intervals, the
@@ -113,6 +115,11 @@ item-level win/loss ledger, and an adopt / inconclusive / reject verdict for the
 Read `all-spans@k` first: a healthy `recall@k` on multi-hop questions usually means one hop was
 retrieved and the other was not. The measured host result is in
 [GraphRAG](../../impl/current/graphrag-backend.md#graph-vector-fusion-evidence).
+
+`--graph-fusion-candidates` is the per-lane candidate depth the weight is applied over (`k` == the
+scored cutoff, the default). Rows are labeled `fused/<strategy>@<weight>/d<depth>`. Expect the
+depth rows to tie unless your graph evidence spans share EXACT chunk boundaries with the vector
+lane -- on the measured Ukrainian corpus they never did, and the weight was the only live knob.
 
 ## Reference factoid-corpus result
 

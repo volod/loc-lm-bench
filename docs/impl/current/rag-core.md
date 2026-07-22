@@ -424,6 +424,28 @@ make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
   GRAPH_WEIGHTS=0,0.1,0.3,0.5,1.0
 ```
 
+### Fusion candidate depth (`graph_fusion_candidates`)
+
+`graph_fusion_candidates` is the per-lane candidate pool the graph share is applied over, the
+graph-vector counterpart of the hybrid store's `fusion_candidates`. `None` (the default) asks each
+lane for exactly `top_k`; a larger value retrieves that many from BOTH lanes, fuses, and then cuts
+to `top_k`. A value below `top_k` is lifted to `top_k`, and both endpoint weights stay exact
+single-lane passthroughs at `top_k` (a pool cannot change a ranking that is never fused). The knob
+rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-candidates`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_candidates=10,50"`, and the sweep lane's
+`GRAPH_FUSION_CANDIDATES` grid.
+
+**A deeper pool cannot move a single-lane candidate into the top-k.** Graph-vector fusion uses
+undamped reciprocal ranks, so a span that only ONE lane returns, at rank `r > k`, scores
+`lane_weight / r`. That lane's own top-k spans are k distinct candidates each scoring at least
+`lane_weight / k > lane_weight / r`, so at least k candidates outrank it at every graph weight.
+Only a span BOTH lanes return, with at least one of its ranks below `k`, can be promoted by depth.
+That makes the knob's usefulness a property of the corpus -- how often graph evidence spans and
+vector chunks share EXACT `(doc_id, char_start, char_end)` boundaries -- and on the measured
+Ukrainian goods corpus they almost never do; see
+[GraphRAG](graphrag-backend.md#candidate-depth-evidence) for the measured verdict. `graph_weight`,
+not depth, is the knob that controls the graph lane's influence there.
+
 `compare-retrieval` ranks backends at ONE graph weight; `compare-graph-fusion` sweeps the weight
 and decides it on the multi-hop slice with uncertainty -- see
 [GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for the lane, its measured

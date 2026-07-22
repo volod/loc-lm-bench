@@ -18,14 +18,17 @@ from llb.rag.fusion_evidence.models import (
 )
 from llb.rag.fusion_evidence.report import format_report
 from llb.rag.fusion_evidence.rows import (
+    DEFAULT_GRAPH_CANDIDATES,
     DEFAULT_GRAPH_WEIGHTS,
     VECTOR_ROW,
     build_sweep_rows,
+    parse_candidates,
     parse_weights,
 )
 from llb.rag.fusion_evidence.sweep import evaluate_fusion_evidence
 
 __all__ = [
+    "DEFAULT_GRAPH_CANDIDATES",
     "DEFAULT_GRAPH_WEIGHTS",
     "FOCUS_SLICE",
     "VECTOR_ROW",
@@ -35,5 +38,6 @@ __all__ = [
     "build_sweep_rows",
     "evaluate_fusion_evidence",
     "format_report",
+    "parse_candidates",
     "parse_weights",
 ]

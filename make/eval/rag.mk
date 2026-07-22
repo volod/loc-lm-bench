@@ -60,12 +60,13 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep the graph share of graph-vector fusion and decide it on the multi-hop slice (GOLDSET= GRAPH_WEIGHTS= GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep the graph share and candidate depth of graph-vector fusion, decided on the multi-hop slice (GOLDSET= GRAPH_WEIGHTS= GRAPH_FUSION_CANDIDATES= GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(GRAPH_WEIGHTS),--graph-weights "$(GRAPH_WEIGHTS)",) \
+		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates "$(GRAPH_FUSION_CANDIDATES)",) \
 		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
@@ -89,6 +90,7 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(ACL_LABEL),--acl "$(ACL_LABEL)",) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
 		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
+		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates $(GRAPH_FUSION_CANDIDATES),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \

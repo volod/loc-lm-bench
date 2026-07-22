@@ -146,6 +146,13 @@ class RunConfigFields(BaseModel):
     # Graph share of graph-vector RRF when retrieval_backend="fused". Zero is an exact vector
     # passthrough; one is an exact graph passthrough. Recorded in every run/cell fingerprint.
     graph_weight: float = Field(default=0.3, ge=0, le=1)
+    # Per-lane candidate depth fed into graph-vector fusion (the hybrid `fusion_candidates`
+    # pattern). None (the default) asks each lane for exactly `top_k`, so a graph-only span can
+    # enter the fused result only when it is already in the graph lane's own top_k and any graph
+    # candidate that enters displaces a vector candidate one-for-one. A value deeper than `top_k`
+    # fuses a larger pool and then cuts to `top_k`, so `graph_weight` controls influence on the
+    # ranking instead of seats in the result. Values below `top_k` are lifted to `top_k`.
+    graph_fusion_candidates: int | None = Field(default=None, ge=1)
     acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default

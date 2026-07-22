@@ -12,6 +12,7 @@ from llb.rag.fusion_evidence import (
     build_sweep_rows,
     evaluate_fusion_evidence,
     format_report,
+    parse_candidates,
     parse_weights,
 )
 from llb.rag.fusion_evidence.models import (
@@ -109,14 +110,14 @@ def test_sweep_rows_retrieve_each_lane_once_per_question():
     assert set(rows) == {
         VECTOR_ROW,
         "graph/local_khop",
-        "fused/local_khop@0.00",
-        "fused/local_khop@0.30",
-        "fused/local_khop@1.00",
+        "fused/local_khop@0.00/d10",
+        "fused/local_khop@0.30/d10",
+        "fused/local_khop@1.00/d10",
     }
     # endpoint weights stay exact lane passthroughs
-    assert rows["fused/local_khop@0.00"].retrieve("q", 10) == vector.retrieve("q", 10)
-    assert rows["fused/local_khop@1.00"].retrieve("q", 10) == graph.retrieve("q", 10)
-    fused = rows["fused/local_khop@0.30"].retrieve("q", 10)
+    assert rows["fused/local_khop@0.00/d10"].retrieve("q", 10) == vector.retrieve("q", 10)
+    assert rows["fused/local_khop@1.00/d10"].retrieve("q", 10) == graph.retrieve("q", 10)
+    fused = rows["fused/local_khop@0.30/d10"].retrieve("q", 10)
     assert {chunk["doc_id"] for chunk in fused} == {"d1", "d2"}
 
 
@@ -128,11 +129,13 @@ def test_replayed_fusion_matches_the_production_fused_retriever():
     vector, graph = _ByQuestion(hits), _ByQuestion(graph_hits)
     rows = build_sweep_rows(vector, {"local_khop": graph}, ["q"], k=3, weights=(0.3,))
     live = FusedRetriever(_ByQuestion(hits), _ByQuestion(graph_hits), 0.3).retrieve("q", 3)
-    assert rows["fused/local_khop@0.30"].retrieve("q", 3) == live
+    assert rows["fused/local_khop@0.30/d3"].retrieve("q", 3) == live
 
 
 def test_lane_cache_never_returns_more_than_the_swept_depth():
-    cache = LaneCache(_ByQuestion({"q": [_chunk("d1", i, i + 1) for i in range(5)]}), ["q"], k=2)
+    cache = LaneCache(
+        _ByQuestion({"q": [_chunk("d1", i, i + 1) for i in range(5)]}), ["q"], depth=2
+    )
     assert len(cache.retrieve("q", 10)) == 2
     assert cache.retrieve("missing", 10) == []
 
@@ -143,6 +146,86 @@ def test_parse_weights_dedupes_and_rejects_out_of_range():
         parse_weights("1.5")
     with pytest.raises(ValueError, match="no graph weight"):
         parse_weights(" , ")
+
+
+# --- candidate depth ----------------------------------------------------------------------
+
+
+def test_parse_candidates_reads_k_as_the_scored_cutoff_and_rejects_a_zero_depth():
+    assert parse_candidates("k, 50 ,50, 20") == (None, 50, 20)
+    with pytest.raises(ValueError, match="at least 1"):
+        parse_candidates("0")
+    with pytest.raises(ValueError, match="an integer or 'k'"):
+        parse_candidates("deep")
+    with pytest.raises(ValueError, match="no candidate depth"):
+        parse_candidates(" , ")
+
+
+def test_a_deeper_pool_surfaces_the_span_both_lanes_agree_on():
+    # `d2` is the span BOTH lanes rank -- vector rank 4 (below a k=3 cutoff) and graph rank 2.
+    # At depth k its vector evidence is invisible, so the fused row spends its third seat on the
+    # graph lane's own top hit; at depth 4 the two lanes' agreement outranks that graph-only hit.
+    vector = _ByQuestion(
+        {
+            "q": [
+                _chunk("d1", 0, 10),
+                _chunk("d1", 20, 30),
+                _chunk("d1", 40, 50),
+                _chunk("d2", 0, 10),
+            ]
+        }
+    )
+    graph = _ByQuestion(
+        {"q": [_chunk("d9", 0, 10), _chunk("d2", 0, 10), _chunk("d8", 0, 10)]},
+    )
+    rows = build_sweep_rows(
+        vector, {"local_khop": graph}, ["q"], k=3, weights=(0.3,), candidates=(None, 4)
+    )
+    shallow = [chunk["doc_id"] for chunk in rows["fused/local_khop@0.30/d3"].retrieve("q", 3)]
+    deep = [chunk["doc_id"] for chunk in rows["fused/local_khop@0.30/d4"].retrieve("q", 3)]
+    assert shallow == ["d1", "d1", "d9"]
+    assert deep == ["d1", "d1", "d2"]
+
+
+def test_depths_resolve_against_k_and_deduplicate_into_one_row():
+    vector = _ByQuestion({"q": [_chunk("d1", 0, 10)]})
+    graph = _ByQuestion({"q": [_chunk("d2", 0, 10)]})
+    rows = build_sweep_rows(
+        vector,
+        {"local_khop": graph},
+        ["q"],
+        k=10,
+        weights=(0.0, 0.3, 1.0),
+        candidates=(None, 4, 10, 50),
+    )
+    assert set(rows) == {
+        VECTOR_ROW,
+        "graph/local_khop",
+        # endpoint weights are lane passthroughs, so they carry no depth variants
+        "fused/local_khop@0.00/d10",
+        "fused/local_khop@1.00/d10",
+        "fused/local_khop@0.30/d10",
+        "fused/local_khop@0.30/d50",
+    }
+    assert vector.calls == 1 and graph.calls == 1  # one pass per lane, at the deepest pool
+
+
+def test_depth_equal_to_k_reproduces_the_default_fused_row_exactly():
+    hits = {"q": [_chunk("d1", 0, 10), _chunk("d1", 20, 30)]}
+    graph_hits = {"q": [_chunk("d2", 0, 10), _chunk("d1", 20, 30)]}
+    default = build_sweep_rows(
+        _ByQuestion(hits), {"local_khop": _ByQuestion(graph_hits)}, ["q"], k=2, weights=(0.3,)
+    )
+    explicit = build_sweep_rows(
+        _ByQuestion(hits),
+        {"local_khop": _ByQuestion(graph_hits)},
+        ["q"],
+        k=2,
+        weights=(0.3,),
+        candidates=(2,),
+    )
+    row = "fused/local_khop@0.30/d2"
+    assert explicit[row].retrieve("q", 2) == default[row].retrieve("q", 2)
 
 
 # --- evaluation + verdict -----------------------------------------------------------------
@@ -164,7 +247,7 @@ def _fusion_report(**kwargs):
 
 def test_fusion_that_completes_the_multi_hop_evidence_is_adopted():
     report = _fusion_report()
-    focus = report["rows"]["fused/local_khop@0.30"]["slices"]["multi-hop"]
+    focus = report["rows"]["fused/local_khop@0.30/d10"]["slices"]["multi-hop"]
     assert focus["n"] == 1
     assert focus["metrics"][METRIC_ALL_SPANS]["mean"] == 1.0
     assert (
@@ -174,13 +257,13 @@ def test_fusion_that_completes_the_multi_hop_evidence_is_adopted():
     assert focus["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == 1
     verdict = report["verdict"]
     assert verdict["decision"] == VERDICT_ADOPT
-    assert verdict["best_row"] == "fused/local_khop@0.30"
+    assert verdict["best_row"] == "fused/local_khop@0.30/d10"
     assert verdict["focus_n"] == 1
 
 
 def test_zero_weight_fused_row_ties_the_vector_baseline_exactly():
     report = _fusion_report()
-    passthrough = report["rows"]["fused/local_khop@0.00"]["overall"]
+    passthrough = report["rows"]["fused/local_khop@0.00/d10"]["overall"]
     for metric, comparison in passthrough["paired_vs_baseline"].items():
         assert comparison["wins"] == comparison["losses"] == 0, metric
         assert comparison["delta"]["mean"] == 0.0, metric
@@ -215,7 +298,7 @@ def test_a_multi_hop_gain_paid_for_in_overall_recall_is_rejected():
     )
     rows = build_sweep_rows(vector, {"local_khop": graph}, ["q1", "q2"], k=2, weights=(0.9,))
     report = evaluate_fusion_evidence(rows, items, 2, baseline=VECTOR_ROW, resamples=50)
-    fused = report["rows"]["fused/local_khop@0.90"]
+    fused = report["rows"]["fused/local_khop@0.90/d2"]
     assert fused["slices"]["multi-hop"]["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == 1
     assert fused["overall"]["paired_vs_baseline"][METRIC_RECALL]["delta"]["mean"] < 0
     assert report["verdict"]["decision"] == VERDICT_REJECT
@@ -265,7 +348,7 @@ def test_a_gain_whose_interval_includes_zero_is_inconclusive_not_adopted():
         vector, {"local_khop": graph}, [i.question for i in items], k=10, weights=(0.3,)
     )
     report = evaluate_fusion_evidence(rows, items, 10, baseline=VECTOR_ROW, resamples=500)
-    focus = report["rows"]["fused/local_khop@0.30"]["slices"]["multi-hop"]
+    focus = report["rows"]["fused/local_khop@0.30/d10"]["slices"]["multi-hop"]
     delta = focus["paired_vs_baseline"][METRIC_RECALL]["delta"]
     assert delta["mean"] == pytest.approx(0.25) and delta["lo"] == 0.0
     assert report["verdict"]["decision"] == VERDICT_INCONCLUSIVE

@@ -23,15 +23,35 @@ def span_key(chunk: ChunkRecord) -> SpanKey:
     return (chunk["doc_id"], chunk["char_start"], chunk["char_end"])
 
 
+def lane_depth(candidates: int | None, k: int) -> int:
+    """How many candidates each lane is asked for before the fused result is cut to `k`.
+
+    `None` (the default) asks for exactly `k`, which makes every graph candidate that enters the
+    fused result displace a vector candidate one-for-one. A deeper pool lets `graph_weight` move
+    the RANKING without spending a result seat per graph candidate; a shallower request is lifted
+    to `k`, since a lane can never contribute fewer candidates than the result needs.
+    """
+    return k if candidates is None else max(candidates, k)
+
+
 class FusedRetriever:
     """Fuse vector and graph candidate rankings, deduplicating their exact source spans."""
 
-    def __init__(self, vector: Retriever, graph: Retriever, graph_weight: float) -> None:
+    def __init__(
+        self,
+        vector: Retriever,
+        graph: Retriever,
+        graph_weight: float,
+        candidates: int | None = None,
+    ) -> None:
         if not 0.0 <= graph_weight <= 1.0:
             raise ValueError(f"graph weight must be within [0, 1], got {graph_weight}")
+        if candidates is not None and candidates < 1:
+            raise ValueError(f"fusion candidate depth must be at least 1, got {candidates}")
         self.vector = vector
         self.graph = graph
         self.graph_weight = graph_weight
+        self.candidates = candidates
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
         """Return top-k fused chunks; endpoint weights are exact lane passthroughs."""
@@ -46,18 +66,24 @@ class FusedRetriever:
     def _retrieve_lanes(self, dense_query: str, lexical_query: str, k: int) -> list[ChunkRecord]:
         if k < 1:
             return []
+        # Endpoint weights stay exact single-lane passthroughs at exactly `k`: a deeper pool
+        # cannot change a ranking that is never fused.
         if self.graph_weight == 1.0:
             return self.graph.retrieve(lexical_query, k)
-        vector_method = getattr(self.vector, "retrieve_queries", None)
-        vector_hits = (
-            vector_method(dense_query, lexical_query, k)
-            if callable(vector_method)
-            else self.vector.retrieve(dense_query, k)
-        )
         if self.graph_weight == 0.0:
-            return vector_hits
-        graph_hits = self.graph.retrieve(lexical_query, k)
+            return self._vector_hits(dense_query, lexical_query, k)
+        depth = lane_depth(self.candidates, k)
+        vector_hits = self._vector_hits(dense_query, lexical_query, depth)
+        graph_hits = self.graph.retrieve(lexical_query, depth)
         return fuse_lane_hits(vector_hits, graph_hits, self.graph_weight, k)
+
+    def _vector_hits(self, dense_query: str, lexical_query: str, depth: int) -> list[ChunkRecord]:
+        """Vector-lane candidates, routing HyDE text to dense search when the lane supports it."""
+        vector_method = getattr(self.vector, "retrieve_queries", None)
+        if callable(vector_method):
+            hits: list[ChunkRecord] = vector_method(dense_query, lexical_query, depth)
+            return hits
+        return self.vector.retrieve(dense_query, depth)
 
 
 def fuse_lane_hits(
