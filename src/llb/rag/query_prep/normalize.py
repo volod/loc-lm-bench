@@ -3,7 +3,12 @@
 import logging
 import re
 
-from llb.rag.query_prep.base import STEP_NORMALIZE, QueryEdit
+from llb.rag.query_prep.base import (
+    KIND_HOMOGLYPH,
+    KIND_TRANSLITERATE,
+    STEP_NORMALIZE,
+    QueryEdit,
+)
 from llb.scoring.security_cases import CYRILLIC_TO_LATIN_CONFUSABLES
 
 _LOG = logging.getLogger(__name__)
@@ -167,10 +172,10 @@ def apply_normalize(query: str) -> tuple[str, list[QueryEdit]]:
             if letters.isupper() and len(letters) <= LATIN_ACRONYM_MAX_CHARS:
                 return token
             replacement = transliterate_latin_to_cyrillic(token)
-            kind = "transliterate"
+            kind = KIND_TRANSLITERATE
         else:
             replacement = _repair_mixed_script(token)
-            kind = "homoglyph"
+            kind = KIND_HOMOGLYPH
         if replacement == token:
             return token
         edits.append(QueryEdit(STEP_NORMALIZE, kind, original=token, replacement=replacement))

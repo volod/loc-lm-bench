@@ -25,6 +25,14 @@ QUERY_PREP_STEPS: tuple[str, ...] = (
 
 QUERY_GLOSSARY_VERSION = "query-glossary-v1"
 
+# Edit `kind` values. The two normalize kinds are also the provenance kinds the typos step
+# reverses when it checks a correction candidate against the token as originally typed.
+KIND_TRANSLITERATE = "transliterate"
+KIND_HOMOGLYPH = "homoglyph"
+KIND_TYPO = "typo"
+KIND_ALIAS = "alias"
+KIND_REWRITE = "rewrite"
+
 # Injected local-LLM rewrite seam: original query -> rewritten query (identity when absent).
 Rewriter = Callable[[str], str]
 QueryGenerator = Callable[[str], str]

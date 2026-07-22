@@ -61,6 +61,9 @@ from llb.tracking.manifest import RunManifest, persist_run
 RagState = eval_graph.RagState
 _LOG = logging.getLogger(__name__)
 
+# Manifest marker for a run scored over items no reviewer has accepted (`verified_only=False`).
+ITEM_GROUNDING_DRAFTED = "drafted"
+
 
 def run_eval(
     config: RunConfig,
@@ -85,6 +88,7 @@ def run_eval(
     retry_backoff_s: float = 1.0,
     max_backend_relaunches: int = 1,
     sleep: Callable[[float], None] | None = None,
+    verified_only: bool = True,
 ) -> EvalResult:
     """Run the skeleton and return {rows, metrics, paths, table}.
 
@@ -96,8 +100,11 @@ def run_eval(
     (`max_case_retries` / `retry_backoff_s`), and a crashed launcher-owned backend relaunches up to
     `max_backend_relaunches` times. `resume=<run-dir>` continues an interrupted run from its journal
     instead of re-spending model calls; the config fingerprint and goldset digest must match.
+
+    `verified_only=False` scores a DRAFTED ledger (diagnostic lanes only, never a leaderboard run);
+    the manifest then records `item_grounding: drafted` so the bundle is self-describing.
     """
-    items = _select_eval_items(config, items, split, limit)
+    items = _select_eval_items(config, items, split, limit, verified_only)
     if not items:
         raise SystemExit(
             f"no verified '{split}' items in {config.goldset_path} "
@@ -105,6 +112,8 @@ def run_eval(
             "verified=false pending human review)"
         )
     config_payload = _eval_config_payload(config, items, prompt_system_provenance)
+    if not verified_only:
+        config_payload["item_grounding"] = ITEM_GROUNDING_DRAFTED
     run_timestamp, run_id, run_dir, staging_dir = _resolve_run_target(
         config, resume, config_payload, items, split
     )

@@ -7,13 +7,21 @@ import pytest
 from llb.backends.base import ChatResult
 from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
-from llb.eval.query_robustness import evaluate_query_robustness
+from llb.eval.query_robustness import (
+    LANE_NORMALIZE,
+    LANE_NORMALIZE_TYPOS,
+    LANE_OFF,
+    MITIGATION_LANES,
+    evaluate_query_robustness,
+)
 from llb.eval.query_robustness_report import write_robustness_artifacts
-from llb.eval.query_robustness_run import load_clean_case_rows, make_query_executor
+from llb.board.io import read_case_rows
+from llb.eval.query_robustness_run import make_query_executor
 from llb.eval.query_robustness_variants import (
     KEYBOARD_TYPOS,
     MIXED_SCRIPT,
     TRANSLITERATION,
+    VARIANT_CLASSES,
     generate_variant,
 )
 from llb.goldset.schema import GoldItem
@@ -49,10 +57,10 @@ def test_variant_rate_validation():
 def test_clean_baseline_reads_canonical_case_rows_not_aggregate_rows(tmp_path: Path):
     scores = tmp_path / "scores.jsonl"
     scores.write_text('{"item_id":"q1","objective_score":1,"retrieval_hit":1}\n')
-    assert load_clean_case_rows(scores)[0]["item_id"] == "q1"
+    assert read_case_rows(scores)[0]["item_id"] == "q1"
     scores.write_text('{"model":"aggregate"}\n')
     with pytest.raises(ValueError, match="per-case score row"):
-        load_clean_case_rows(scores)
+        read_case_rows(scores)
 
 
 class FakeStore:
@@ -124,14 +132,20 @@ def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
     clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
     result = evaluate_query_robustness([item], clean_rows, executor, seed=13, typo_rate=0.1)
 
-    assert len(result.rows) == 6
-    assert guard_loaded == [True]
+    assert len(result.rows) == len(VARIANT_CLASSES) * len(MITIGATION_LANES)
+    assert guard_loaded == [True]  # only the vocabulary-correction lane loads the morphology probe
     assert all(row["probe"] is True for row in result.rows)
-    raw = {lane.variant_class: lane for lane in result.lanes if not lane.mitigated}
-    mitigated = {lane.variant_class: lane for lane in result.lanes if lane.mitigated}
-    assert all(lane.recall_at_k == 0.0 for lane in raw.values())
-    assert all(lane.recall_at_k == 1.0 for lane in mitigated.values())
-    assert all(lane.recall_recovery == 1.0 for lane in mitigated.values())
+    lanes = {(lane.variant_class, lane.mitigation): lane for lane in result.lanes}
+    assert {lane.mitigation for lane in result.lanes} == {lane.id for lane in MITIGATION_LANES}
+    for variant_class in VARIANT_CLASSES:
+        assert lanes[(variant_class, LANE_OFF.id)].recall_at_k == 0.0
+        assert lanes[(variant_class, LANE_NORMALIZE_TYPOS.id)].recall_at_k == 1.0
+        assert lanes[(variant_class, LANE_NORMALIZE_TYPOS.id)].recall_recovery == 1.0
+    # the isolated lanes separate the two mechanisms: normalization alone inverts the noise it can
+    # attribute (script and transliteration), and only keyboard typos need vocabulary correction
+    assert lanes[(TRANSLITERATION, LANE_NORMALIZE.id)].recall_at_k == 1.0
+    assert lanes[(MIXED_SCRIPT, LANE_NORMALIZE.id)].recall_at_k == 1.0
+    assert lanes[(KEYBOARD_TYPOS, LANE_NORMALIZE.id)].recall_at_k == 0.0
 
     out = tmp_path / "query-robustness" / "run"
     paths = write_robustness_artifacts(
@@ -148,4 +162,6 @@ def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
     )
     assert set(out.iterdir()) == {Path(paths["report"]), Path(paths["robustness"])}
     assert not (out / "scores.jsonl").exists()
-    assert len((out / "robustness.jsonl").read_text(encoding="utf-8").splitlines()) == 6
+    assert len((out / "robustness.jsonl").read_text(encoding="utf-8").splitlines()) == len(
+        result.rows
+    )

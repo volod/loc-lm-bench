@@ -11,11 +11,11 @@ from llb.rag.query_prep.normalize import (
     cyrillic_to_latin,
     transliterate_latin_to_cyrillic,
 )
+from llb.rag.query_prep.distance import damerau_levenshtein
 from llb.rag.query_prep.pipeline import QueryPrep
 from llb.rag.query_prep.typos import (
     apply_typos,
     build_vocabulary,
-    damerau_levenshtein,
     nearest_vocab_token,
 )
 

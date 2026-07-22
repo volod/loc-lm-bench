@@ -2,6 +2,26 @@
 
 import json
 from pathlib import Path
+from typing import Any
+
+
+def read_case_rows(path: Path) -> list[dict[str, Any]]:
+    """Load a run bundle's canonical per-case rows from its `scores.jsonl`.
+
+    `run_eval()['rows']` holds the aggregate leaderboard row, not the per-case ones, so any lane
+    that compares two runs item by item reads them back from this file. A row without `item_id`
+    is a different artifact shape and raises rather than silently comparing nothing.
+    """
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict) or "item_id" not in value:
+                raise ValueError(f"{path}:{line_number}: expected a per-case score row")
+            rows.append(value)
+    return rows
 
 
 def read_case_series(run_dir: Path, column: str) -> list[float]:

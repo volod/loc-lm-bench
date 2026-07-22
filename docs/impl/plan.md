@@ -43,119 +43,219 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-null-model-research
+### sentence-chunker-size-cap (optional)
 
-**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
-that must be recorded rather than worked around.
+`sentence` packs whole sentences up to `size` but never splits a single unit that is already
+longer, so `size` is a packing target rather than a cap. On the converted Ukrainian goods PDFs at
+`size=200` that leaks badly: 21.6% of chunks exceed `size` and they hold 44% of the indexed
+characters, because table rows, page furniture, and heading blocks carry no sentence terminator and
+pack into one multi-hundred-character span ([RAG core](current/rag-core.md#chunking-strategies)).
+An operator who asks for small chunks silently does not get them, and the affected text is exactly
+the numeric/tabular content the retrieval slices care most about. Give the strategy a bounded
+fallback -- split an oversized unit on the recursive splitter's separators, keeping offsets exact
+-- and report the post-fix oversize share.
 
-Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
-a real false-positive rate instead of a rank cutoff. The current calibration measures the
-similarity distribution of the corpus's own comparable cross-document pairs, which contains
-whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
-the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
-and a budget of `N` returns exactly `N` pairs by construction (measured; see
-[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
-question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
-noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
-answer.
+- Agent status: CLEAR
+- Dependencies: none. Reuse `sentence_chunk_spans` / `_pack` in `src/llb/rag/chunking/spans.py` and
+  `recursive_spans` for the fallback split. Related: `table-aware-chunking` below owns the table
+  case specifically; this task is the general size guarantee.
+- User-visible outcome: `CHUNK_SIZE` means the same thing on every strategy, so a small-chunk
+  experiment measures the chunk size it asked for.
+- Scope boundary: in scope -- the fallback split, its offset exactness, and the measured oversize
+  share before and after. Out of scope -- changing the default strategy or `size`, table-aware
+  boundaries, and re-running any chunker bake-off.
+- Data and artifact paths: none beyond existing per-strategy stores.
+- Execution path: CI covers the oversize fallback on a committed fixture holding a terminator-free
+  block longer than `size`; `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive` confirms
+  no recall regression.
+- Acceptance gates: `make ci` green; no chunk exceeds `size` on the committed fixtures; every chunk
+  stays offset-exact under `validate-goldset`.
+- Documentation target: the chunking-strategies list in [RAG core](current/rag-core.md).
 
-Candidate approaches to evaluate, cheapest first; none is known to work:
+### multihop-both-hops-ceiling
 
-- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
-  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
-  shift makes the null too easy, understating the threshold.
-- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
-  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
-  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
-  lands too high.
-- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
-  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
-  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
-  problem already measured for chunk-pair sampling.
-- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
-  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
-  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
-  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
+Every fused row measured so far -- every weight, both depths, both identity policies -- retrieves
+BOTH hops for at most 3 of 35 two-hop questions (`all-spans@10` <= 0.086), while single-hop recall
+moves freely between 0.686 and 0.800
+([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). That ceiling is invariant to
+every ranking knob the lane exposes, which means it is probably not a ranking problem: either the
+second hop's chunk is not retrievable for the question's own wording (a query problem, addressable
+by decomposition), or it is not reachable at k=10 at all (a budget problem). Diagnose which:
+measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same items, and measure the
+per-hop retrievability of each labeled span when queried on its own. Record which of the two
+explanations the corpus supports, because they lead to opposite fixes.
 
-- Agent status: RUN NEEDED
-- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
-  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
-  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
-  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
-  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
-- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
-  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
-  would justify moving threshold selection to the claim tier's measured precision instead.
-- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
-  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
-  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
-  a null demonstrably beats the rank cutoff.
-- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  no new committed fixtures unless an approach earns one.
-- Execution path: a research harness invoked per null model over both quickstart stores plus the
-  fixture; CI covers each null constructor deterministically over committed vectors, with the
-  heavy corpus comparison run on the CUDA host.
-- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
-  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
-  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
-  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
-  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
-- Documentation target: the corpus-hygiene known-limitation section of
-  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
-  adopt-or-reject verdict.
-
-### graph-vector-fusion-multihop-evidence
-
-Create and human-accept a retrieval set with enough multi-hop questions to measure graph-vector
-fusion by graph strategy and weight. The available accepted evidence has no multi-hop labels; use
-the graph path seed lane to draft cross-span questions, run the verification gate, then compare
-vector, graph, and fused recall@10 / MRR without changing the opt-in default. See the current fused
-retrieval shape and evidence boundary in
-[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+A third lead is already measured and worth folding into the k sweep: shrinking the CHUNK moves the
+ceiling where no ranking knob could, the vector baseline's multi-hop `all-spans@10` running
+0.057 -> 0.086 -> 0.114 as the chunking goes from `recursive@800/120` to `sentence@200` to
+`recursive@200/30`
+([GraphRAG](current/graphrag-backend.md#does-the-pin-survive-a-smaller-chunk-size)) -- which points
+at the budget explanation, since k=10 buys more distinct spans when a span is smaller. Overall
+recall falls at the same time, so treat it as a diagnostic, not a recommendation.
 
 - Agent status: RUN NEEDED
-- Dependencies: a reviewed accepted ledger with multi-hop labels and a matched vector/graph store.
-- User-visible outcome: an evidence-backed graph-weight recommendation for multi-hop retrieval,
-  or a clear rejection if graph evidence costs factoid ranking without recovering multi-hop misses.
-- Scope boundary: in scope -- multi-hop drafting, human acceptance, per-type retrieval reports,
-  and graph-weight comparison. Out of scope -- graph schema and community-construction changes.
+- Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,
+  the sweep lane, and the existing query-decomposition step in
+  [RAG core](current/rag-core.md#query-side-processing).
+- User-visible outcome: the operator learns whether multi-hop evidence coverage is limited by the
+  retrieval budget or by the query, instead of tuning ranking knobs that provably cannot move it.
+- Scope boundary: in scope -- the k sweep, the per-hop probe, and a written diagnosis. Out of scope
+  -- building a new decomposition strategy before the diagnosis names it, and any ranking-policy
+  change.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Acceptance gates: the accepted set has a non-empty multi-hop slice; fused retrieval beats or
-  matches vector recall on that slice without regressing overall recall, and the report includes
-  confidence intervals or item-level paired outcomes for the small slice.
+- Execution path: `make compare-graph-fusion RAG_K=<k>` per budget plus a per-hop retrieval probe
+  on the CUDA host; CI covers the per-hop probe over fake lane stores.
+- Acceptance gates: `make ci` green; the report carries `all-spans@k` per budget and the per-hop
+  hit rate, and states which explanation the measurement supports.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
-### rag-vs-long-context-ablation
+### answer-side-span-coverage-metric
 
-Build `llb compare-context-strategies` (`make compare-context-strategies`): score one model on
-the final split under three context lanes -- `closed_book` (no retrieved context; the model
-answers from its weights), `rag` (the run configuration as-is), and `long_context` (the item's
-full source document laid into the prompt, budget-checked through `fits_context`; an item whose
-document exceeds the model's usable context is counted as a skip, never silently truncated). Each
-lane persists an ordinary run bundle; the comparison report renders per-lane objective plus two
-derived numbers -- retrieval uplift (`rag - closed_book`) and long-context delta
-(`long_context - rag`) -- and flags per item when the closed-book answer already matches the
-reference (a contamination / parametric-knowledge signal).
+The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
+`all_spans_at_k`, [RAG core](current/rag-core.md#retrieval-metrics)); the ANSWER side has no such
+distinction. `objective_score` is reference-answer token F1, so a two-hop answer that states one
+fact fluently and omits the other scores roughly half -- the same value a vague answer touching
+both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric that cannot
+say whether the model used both hops, which is precisely the question the lane exists to ask
+([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)). Build the answer-side
+counterpart: per gold span, decide whether the ANSWER carries that span's content (lemma and
+numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the correctness
+tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the objective and let
+the multi-hop verdict read them.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the `run-eval` seams, `fits_context` / `context_budget`
-  ([RAG core](current/rag-core.md#context-budget)), and the report shape of `compare-retrieval`.
-- User-visible outcome: the operator learns whether RAG pays for itself per model on their corpus
-  -- how much a Ukrainian-tuned model (MamayLM, Lapa) already answers closed-book, and whether
-  whole-document stuffing beats chunked retrieval within that model's usable context.
-- Scope boundary: in scope -- lane orchestration, prompt assembly for the two new lanes, the
-  report, and the contamination flag. Out of scope -- any ranking-policy change (the lanes are
-  diagnostics; the `rag` lane stays the leaderboard row) and context-window extension tricks.
-- Data and artifact paths: lane bundles under the standard `$DATA_DIR/run-eval/`; comparison
-  report under `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`.
-- Execution path: `make compare-context-strategies MODEL=<m> BACKEND=<b> GOLDSET=<gs>`; CI drives
-  all three lanes over a fake endpoint and the committed fixtures.
-- Acceptance gates: `make ci` green; the `rag` lane's per-case scores are identical to a plain
-  `run-eval` of the same configuration; a heavy run over the committed UA fixture on at least two
-  roster models records the three-lane table and the contamination rate.
-- Documentation target: a new [RAG core](current/rag-core.md) subsection; a
-  [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
+- Dependencies: none. Reuse the scoring tokenizer in `src/llb/scoring/correctness.py`, the
+  multi-span retrieval metrics in `src/llb/rag/retrieval.py`, and the per-slice comparison in
+  `src/llb/eval/answer_quality/`.
+- User-visible outcome: the operator learns whether a multi-hop answer actually contains BOTH
+  facts, instead of inferring it from a token-overlap score that a half-answer can earn.
+- Scope boundary: in scope -- the answer-side coverage metric, its per-case columns, and wiring it
+  into the answer-quality slices and verdict as an additive signal. Out of scope -- replacing
+  `objective_score` as the leaderboard ranking metric, judge re-calibration, and any change to the
+  retrieval metrics.
+- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
+  comparison under the existing `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality` on the drafted multi-hop bundle; CI covers the
+  metric on committed two-span fixtures (both facts, one fact, neither, paraphrased).
+- Acceptance gates: `make ci` green; on single-span items the answer-side coverage agrees with the
+  existing exact/contains signals; the multi-hop re-run reports the new columns with paired
+  intervals and states whether they change the recorded verdict.
+- Documentation target: [RAG core](current/rag-core.md#scoring) and the answer-quality evidence
+  subsection of [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+
+### fusion-answer-quality-second-model (optional)
+
+Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
+evidence converts into a better answer is a property of the MODEL, not only of the retrieval lane:
+a measured coverage gain that one model ignores may be exactly what a stronger (or more
+instruction-following) model needs, and a single-model result cannot separate "fusion does not
+help answers" from "this model does not use the extra hop". The lane, its verdict vocabulary, and
+the drafted-grounding rules are current behavior
+([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)).
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare-answer-quality` as-is with a different `MODEL`; the matched
+  stores and drafted bundle already exist.
+- User-visible outcome: the operator learns whether the retrieval-only finding is a property of
+  the corpus and the fusion lane, or of the one model that was scored.
+- Scope boundary: in scope -- one more model, the same lanes/splits/seed, and a two-model
+  comparison of the per-slice deltas. Out of scope -- any ranking-policy change, model selection,
+  and re-tuning the graph weight per model.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
+  calibration ANSWER_QUALITY_LANES=vector,<best-exact-row>,<best-overlap-row> INCLUDE_DRAFTED=1`
+  -- the same three lanes the first model was scored on, so the two models are compared row for
+  row; no new CI coverage.
+- Acceptance gates: `make ci` green; both models score the identical item set at the same seed;
+  the report states whether the two models agree on the verdict per lane, including whether the
+  factoid cost of the overlap row reproduces.
+- Documentation target: the answer-quality evidence subsection of
+  [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+
+### retrieved-document-long-context-lane
+
+The measured long-context lane is oracle-grounded -- it reads the item's own gold `doc_id`s, so it
+sizes a CEILING and cannot be adopted
+([product decisions](current/scope-boundaries.md#context-ablation-lanes-stay-diagnostic)). Add the
+shippable sibling: a `retrieved_document` context strategy that takes the top-ranked RETRIEVED
+chunk's document (no gold label), lays that whole document into the prompt under the same budget
+check and `context_overflow` skip rule, and reports beside the existing lanes. The measured
+oracle-versus-rag gap (+0.142 / +0.080 objective on two roster models) then splits into the part
+an operator can actually capture by widening the unit of retrieval from a chunk to its document,
+and the part that was pure oracle advantage.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the context-source seam, `fits_context_chars`, and the comparison in
+  [RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
+- User-visible outcome: the operator learns whether "retrieve the chunk, send the document" is a
+  real configuration worth shipping, or whether the long-context gain was the gold label all along.
+- Scope boundary: in scope -- the strategy, its document-selection rule (top-1 versus top-k
+  distinct documents), the budget/skip path, and a four-lane comparison. Out of scope -- changing
+  the chunker, the ranking policy, and context-window extension tricks.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: `make compare-context-strategies CONTEXT_LANES=closed_book,rag,retrieved_document,long_context`;
+  CI covers document selection and the skip rule over fake lane stores.
+- Acceptance gates: `make ci` green; the three existing lanes reproduce their current rows exactly;
+  a heavy run on both scored roster models reports the four-lane table with paired intervals and an
+  explicit adopt-or-reject verdict for the new lane.
+- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
+  diagnostic-lane boundary in [product decisions](current/scope-boundaries.md).
+
+### closed-book-decoding-stability (optional)
+
+A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
+same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
+the `rag` and `long_context` lanes were byte-identical
+([RAG core](current/rag-core.md#context-ablation-evidence)). An ungrounded prompt leaves a much
+flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift stayed well
+inside the uplift interval and changed no verdict, but a contamination rate quoted to one decimal
+place is currently over-stated precision. Measure it: repeat the closed-book lane N times at a
+fixed seed, report the between-repeat spread of the lane mean and of the contamination rate, and
+either quote the ablation's closed-book numbers with that spread or make the lane reproducible
+(pinned sampler / seeded backend options) if the backend allows it.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
+  existing paired-bootstrap reporting.
+- User-visible outcome: the operator knows how much of a closed-book delta is measurement noise
+  before reading it as parametric knowledge.
+- Scope boundary: in scope -- repeat runs, the spread statistic, and whichever of the two remedies
+  the measurement supports. Out of scope -- changing the objective metric and swapping backends.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: N repeats of the closed-book lane on the committed UA fixture on the CUDA host;
+  CI covers the spread statistic over committed fixture rows.
+- Acceptance gates: `make ci` green; the report states the between-repeat spread of the lane mean
+  and the contamination rate, and the ablation docs quote closed-book numbers accordingly.
+- Documentation target: the context-ablation evidence subsection of
+  [RAG core](current/rag-core.md).
+
+### context-ablation-question-type-slices (optional)
+
+The context ablation slices by question type, but the committed UA fixture ships no
+`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane
+([RAG core](current/rag-core.md#context-ablation-evidence)). Pooling hides the question the lane is
+most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose answer is
+one span versus a comparative or numeric question whose evidence is scattered. Run the ablation on
+a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted multi-hop
+bundle) so the uplift and the long-context delta are reported per slice, and record which slices
+retrieval fails to pay for.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. The slicing is already wired; this needs a labeled item set and the run.
+  Question-type labels come from the needle sidecar
+  ([data prep](current/data-prep.md)).
+- User-visible outcome: the operator learns WHICH questions retrieval pays for on their corpus,
+  instead of one pooled average over a mixed set.
+- Scope boundary: in scope -- the run, the per-slice reading, and a verdict per slice. Out of
+  scope -- new metrics, new lanes, and any ranking-policy change.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: `make compare-context-strategies GOLDSET=<sidecar-bearing goldset> CORPUS=<dir>`
+  on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the report carries a non-empty slice table with paired
+  intervals per slice and states which slices the uplift interval fails to clear zero on.
+- Documentation target: the context-ablation evidence subsection of
+  [RAG core](current/rag-core.md).
 
 ### table-aware-chunking
 
@@ -247,34 +347,220 @@ silently change the recommended model.
   tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
-### query-prep-ambiguity-aware-restoration (optional)
+### normalize-step language gate (optional)
 
-Constrain correction after lossy transliteration and dense keyboard noise so a nearest corpus
-surface cannot silently change the intended inflection or short function word. Carry the original
-noisy token and normalization edit provenance into typo candidate selection; compare candidates
-by reversible romanization compatibility, morphology, and local query context; and add separate
-`normalize`-only versus `normalize,typos` robustness lanes so normalization recovery is isolated
-from vocabulary correction risk. The benchmark contract and motivating evidence are in
-[evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+The `normalize` step decides transliteration PER TOKEN and unconditionally, so a query written in
+a foreign language is rewritten into Cyrillic nonsense (`what does the` -> `wгат доес тге`) that
+no later step can undo -- the restoration constraints correctly refuse to "repair" it, and the
+question retrieves on garbage. One item of the committed `ua_squad_postedited_v1` final split is
+exactly this case, and any bilingual operator corpus will have more
+([RAG core](current/rag-core.md#query-side-processing)). Decide transliteration for the QUERY as a
+whole instead: romanized Ukrainian decodes to tokens the corpus vocabulary or the morphology probe
+recognizes, foreign-language text does not, so gate the step on the share of decoded tokens that
+are plausible and leave the query untouched below the threshold.
 
-- Agent status: READY
-- Dependencies: the existing query-prep edit log, corpus vocabulary, morphology probe, and query
-  robustness fake/host fixtures.
-- User-visible outcome: safer recovery for lossy Latin typing and adjacent-key errors without
-  sacrificing the retrieval recall restored by normalization.
-- Scope boundary: in scope -- candidate constraints, provenance threading, isolated mitigation
-  lanes, tests, and two-model re-measurement. Out of scope -- model-generated correction and
-  hosted spell-check services.
-- Acceptance gates: `make ci` green; no alphabetic/numeric or acronym regressions; corrected tokens
-  remain compatible with the original noisy form; model-specific objective recovery is
-  non-negative or the `typos` step remains explicitly off for that model.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing and
-  [evaluation rigor](current/rigor-board-judge.md) robustness evidence.
+- Agent status: CLEAR
+- Dependencies: none. Reuse `apply_normalize` in `src/llb/rag/query_prep/normalize.py`, the
+  vocabulary/context index in `query_prep/restore.py`, and `llb.rag.lexical.load_uk_word_probe`.
+- User-visible outcome: a non-Ukrainian question survives the query-prep lane unchanged instead
+  of being mangled into unretrievable Cyrillic.
+- Scope boundary: in scope -- the whole-query plausibility gate, its threshold, and per-query
+  provenance for the decision. Out of scope -- language identification models, per-token
+  language tagging, and translating the query.
+- Data and artifact paths: none beyond the existing per-case `query_processed` provenance.
+- Execution path: CI covers the gate on committed English/Ukrainian/romanized fixtures; a
+  `make bench-query-robustness` re-run confirms the transliteration lane does not regress.
+- Acceptance gates: `make ci` green; every existing romanization test still transliterates; the
+  English fixture passes through unchanged.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
+
+### normalize-casefold-dense-lane-cost (optional)
+
+Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
+final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
+noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
+the lane ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)).
+Casefolding is a lexical-side convention that the dense side never asked for. Measure whether the
+processed query should stay cased on the dense lane while the lexical lane keeps the folded text
+-- the `retrieve_queries` seam already carries separate dense and lexical text.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the split dense/lexical query seam in
+  `src/llb/rag/query_prep/retrieval.py` and `RagStore.retrieve_queries`.
+- User-visible outcome: the operator stops paying dense recall for a normalization step whose
+  only job was to make matching safer.
+- Scope boundary: in scope -- routing case-preserved text to the dense lane, the A/B, and the
+  adopt-or-reject verdict. Out of scope -- changing the embedder, the lexical normalization, and
+  the transliteration table.
+- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
+- Execution path: `make bench-query-robustness` on the CUDA host with and without the change; CI
+  covers the dense/lexical text split over a fake store.
+- Acceptance gates: `make ci` green; the report shows the `normalize` lane no longer retrieving
+  below the `off` lane on any noise class, or records that casefolding is not the cause.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing and the robustness
+  evidence in [evaluation rigor](current/rigor-board-judge.md).
+
+### restoration-constraint-threshold-sweep (optional)
+
+The restoration constraints ship with three unswept design constants: the surface-compatibility
+budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
+ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
+context ([RAG core](current/rag-core.md#query-side-processing)). Each was chosen to be
+conservative, and nothing measures what the conservatism costs: a budget of 1 would admit a token
+that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words stay
+untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and the
+edit-precision audit per setting, and pin each value with evidence or expose it.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `select_restoration` in `src/llb/rag/query_prep/restore.py` and the
+  robustness lanes.
+- User-visible outcome: the operator knows whether the safe defaults are costing recoverable
+  recall, instead of trusting three hand-picked constants.
+- Scope boundary: in scope -- the sweep, the per-setting edit audit, and a pin-or-expose verdict
+  per constant. Out of scope -- new constraint signals and a learned ranker.
+- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
+- Execution path: `make bench-query-robustness` per setting on the CUDA host; CI covers each
+  setting's selection decisions over committed candidate fixtures.
+- Acceptance gates: `make ci` green; the report states recall and the share of corrections a human
+  reading of the audit calls wrong, per setting, with an explicit verdict per constant.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
+
+### fusion-routing-calibration-power (optional)
+
+Increase the sidecar-free routing calibration's statistical power before reconsidering its
+production defaults. The first held-out measurement cannot separate its positive retrieval deltas
+from zero; see the compact result and frozen-policy diagnostics in
+[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
+independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
+before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: `multihop-ledger-human-acceptance` must provide a non-empty accepted multi-span
+  ledger. Human step that gates completion: accept enough additional genuinely multi-span
+  questions to meet the predeclared split sizes.
+- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
+  artifact before changing the fallback defaults.
+- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
+  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
+  a learned router, and selecting on final.
+- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
+  the accepted ledger.
+- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
+  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
+- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
+  power target; a threshold changes only if the tuning gain clears zero without single-span
+  regression and the untouched final split confirms the same direction.
+- Documentation target: the sidecar-free calibration subsections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
+
+### conflict-null-model-research
+
+**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
+that must be recorded rather than worked around.
+
+Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
+a real false-positive rate instead of a rank cutoff. The current calibration measures the
+similarity distribution of the corpus's own comparable cross-document pairs, which contains
+whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
+the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
+and a budget of `N` returns exactly `N` pairs by construction (measured; see
+[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
+question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
+noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
+answer.
+
+Candidate approaches to evaluate, cheapest first; none is known to work:
+
+- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
+  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
+  shift makes the null too easy, understating the threshold.
+- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
+  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
+  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
+  lands too high.
+- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
+  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
+  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
+  problem already measured for chunk-pair sampling.
+- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
+  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
+  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
+  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
+
+- Agent status: RUN NEEDED
+- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
+  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
+  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
+  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
+  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
+- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
+  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
+  would justify moving threshold selection to the claim tier's measured precision instead.
+- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
+  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
+  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
+  a null demonstrably beats the rank cutoff.
+- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
+  no new committed fixtures unless an approach earns one.
+- Execution path: a research harness invoked per null model over both quickstart stores plus the
+  fixture; CI covers each null constructor deterministically over committed vectors, with the
+  heavy corpus comparison run on the CUDA host.
+- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
+  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
+  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
+  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
+  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
+- Documentation target: the corpus-hygiene known-limitation section of
+  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
+  adopt-or-reject verdict.
 
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### multihop-ledger-human-acceptance
+
+Accept (or reject) the drafted multi-hop retrieval slice through the verification gate, then re-run
+BOTH draft-grounded lanes on the accepted ledger -- the fusion sweep and the end-to-end
+answer-quality comparison -- so the graph-weight verdict rests on human-reviewed questions instead
+of drafted ones. The drafted set, its worksheet, the matched vector/graph stores, and the measured
+draft-grounded sweep plus answer-quality comparison are current behavior in
+[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence); every drafted multi-hop item
+is span-exact and Ukrainian-gated by construction, but only a reviewer can say whether a
+shared-bridge question genuinely needs both facts.
+
+- Agent status: HUMAN-GATED
+- Dependencies: the drafting, sweep, and store lanes are current behavior. Human step that gates
+  completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
+  specifically whether the question is answerable ONLY with both cited spans -- and signs off on
+  the resulting accepted ledger.
+- User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
+  human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
+  genuine multi-hop questions and the slice must come from another source.
+- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep over BOTH
+  span-identity policies on the accepted ledger, and the adopt-or-reject verdict per knob --
+  including whether `graph_fusion_span_identity` flips from `exact` to `overlap` as the shipped
+  default, which is currently gated only by the drafted ledger
+  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). Out of scope -- graph schema
+  changes and fusion mechanics (the candidate-depth and span-identity verdicts are current
+  behavior in [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)).
+- Data and artifact paths: the existing drafted bundle and worksheet plus a new
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
+  `answer-quality/` comparison.
+- Execution path: the stratified worksheet is already drawn beside the bundle, so start at
+  `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
+  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
+  GRAPH_FUSION_CANDIDATES=k,50 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap`,
+  then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
+  sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
+  the drafted-grounding escape.
+- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
+  multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
+  records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
+  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
+- Documentation target: the graph-vector fusion evidence section of
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### corpus-conflict-resolution-review
 

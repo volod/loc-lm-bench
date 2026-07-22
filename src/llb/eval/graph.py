@@ -22,10 +22,12 @@ from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
 
 __all__ = [
+    "ContextSource",
     "RagState",
     "SYSTEM_PROMPT",
     "build_messages",
     "build_rag_graph",
+    "generation_template",
     "make_generate_node",
     "make_retrieve_node",
     "run_case",
@@ -57,15 +59,32 @@ class RagState(TypedDict, total=False):
     query_subqueries: list[str]
 
 
-# Generation prompt ids: the baseline RAG chat and the cited-answer variant that requires `[i]`
-# chunk citations for factual claims (groundedness-citation-metrics).
+# Generation prompt ids: the baseline RAG chat, the cited-answer variant that requires `[i]`
+# chunk citations for factual claims (groundedness-citation-metrics), and the closed-book variant
+# that lays NO context into the prompt at all (rag-vs-long-context-ablation).
 CHAT_TEMPLATE = "eval.rag.chat"
 CITED_ANSWER_TEMPLATE = "eval.rag.cited_answer"
+CLOSED_BOOK_TEMPLATE = "eval.rag.closed_book"
+
+# A context source REPLACES store retrieval for a diagnostic context lane. It returns the same
+# partial state update the retrieve node would (`retrieved` / `context`, plus an optional terminal
+# `status`), so the graph, the per-case scoring, and the run-bundle shape are all unchanged.
+ContextSource = Callable[[RagState], RagState]
+
+
+def generation_template(cited: bool = False) -> str:
+    """The generation prompt id for this run's answer style."""
+    return CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE
 
 
 def build_messages(
-    question: str, context: str, prompt_package: Any | None = None, cited: bool = False
+    question: str,
+    context: str,
+    prompt_package: Any | None = None,
+    cited: bool = False,
+    template_id: str | None = None,
 ) -> list[ChatMessage]:
+    """Render the generation prompt. `template_id` overrides the `cited` style selection."""
     augmentation: PromptAugmentation | None = None
     if prompt_package is not None:
         augmentation = PromptAugmentation(system_prefix=str(prompt_package.system_prompt))
@@ -76,7 +95,7 @@ def build_messages(
                 {"additional_prompt": extra, "context": context},
             )
     return render_chat(
-        CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE,
+        template_id or generation_template(cited),
         {"context": context, "question": question},
         augmentation=augmentation,
     )
@@ -88,6 +107,7 @@ def make_retrieve_node(
     context_order: str = eval_common.ORDER_RANK,
     query_prep: Any | None = None,
     chunk_filter: Any | None = None,
+    context_source: ContextSource | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -99,9 +119,15 @@ def make_retrieve_node(
     `query_prep` (`llb.rag.query_prep.pipeline.QueryPrep`) is the opt-in query-side lane: when set, the
     question is processed BEFORE retrieval (the raw question stays in state for generation), and
     the processed form + correction count are recorded (uk-query-processing).
+
+    `context_source` replaces store retrieval entirely for a diagnostic context lane
+    (rag-vs-long-context-ablation): the store, `k`, the ordering policy, and the query-prep lane
+    all belong to retrieval, so a lane that does not retrieve simply supplies its own update.
     """
 
     def retrieve(state: RagState) -> RagState:
+        if context_source is not None:
+            return context_source(state)
         question = state["question"]
         prep_update: RagState = {}
         if query_prep is not None:
@@ -142,14 +168,23 @@ def make_generate_node(
     timeout: float,
     prompt_package: Any | None = None,
     cited: bool = False,
+    template_id: str | None = None,
 ) -> Callable[[RagState], RagState]:
-    """Closure: call the backend on the retrieved context; classify the response."""
+    """Closure: call the backend on the retrieved context; classify the response.
+
+    `template_id` overrides the generation prompt, which is how the closed-book context lane asks
+    the model to answer from its own weights instead of from an (empty) context block.
+    """
 
     def generate(state: RagState) -> RagState:
-        if state.get("status") == eval_common.RETRIEVAL_MISS:
+        if state.get("status") in eval_common.PRE_GENERATION_STATUSES:
             return {"answer": "", "usage": {}}  # short-circuit; status already terminal
         messages = build_messages(
-            state["question"], state.get("context", ""), prompt_package, cited=cited
+            state["question"],
+            state.get("context", ""),
+            prompt_package,
+            cited=cited,
+            template_id=template_id,
         )
         result = launcher.chat(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
@@ -181,6 +216,8 @@ def build_rag_graph(
     query_prep: Any | None = None,
     chunk_filter: Any | None = None,
     cited: bool = False,
+    context_source: ContextSource | None = None,
+    template_id: str | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -193,13 +230,26 @@ def build_rag_graph(
     # LangGraph's callable overloads cannot express partial TypedDict state updates.
     graph.add_node(
         "retrieve",
-        cast(Any, make_retrieve_node(store, k, context_order, query_prep, chunk_filter)),
+        cast(
+            Any,
+            make_retrieve_node(
+                store, k, context_order, query_prep, chunk_filter, context_source=context_source
+            ),
+        ),
     )
     graph.add_node(
         "generate",
         cast(
             Any,
-            make_generate_node(launcher, max_tokens, temperature, timeout, prompt_package, cited),
+            make_generate_node(
+                launcher,
+                max_tokens,
+                temperature,
+                timeout,
+                prompt_package,
+                cited,
+                template_id=template_id,
+            ),
         ),
     )
     graph.add_edge(START, "retrieve")

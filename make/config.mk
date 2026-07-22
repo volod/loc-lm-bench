@@ -97,6 +97,7 @@ DRAFT_COVERAGE_TARGET ?=
 DRAFT_MULTI_HOP ?= 0
 DRAFT_CHAINS ?= 0
 DRAFT_MULTI_HOP_MAX_PATHS ?=
+DRAFT_MULTI_HOP_BRIDGE_FILL ?= 0
 DRAFT_DEDUP_AGAINST ?=
 DRAFT_GRAPH_DIR ?=
 COVERAGE_JSON ?=
@@ -139,6 +140,42 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
+# Graph-vector fusion evidence: fixed graph shares, the routed row's non-zero graph share, swept
+# per-lane candidate depths ('k' == the scored cutoff), swept span-identity policies ('exact'
+# and/or 'overlap'), swept merge thresholds for a folding policy ('1.0' == containment only), and
+# the question type the verdict is decided on (compare-graph-fusion).
+# Empty knobs fall back to the command defaults.
+GRAPH_WEIGHTS ?=
+ROUTED_GRAPH_WEIGHT ?=
+GRAPH_FUSION_CANDIDATES ?=
+GRAPH_FUSION_SPAN_IDENTITY ?=
+GRAPH_FUSION_SPAN_MERGE_RATIO ?=
+GRAPH_STRATEGIES ?=
+FUSION_FOCUS_SLICE ?=
+FUSION_BOOTSTRAP_RESAMPLES ?=
+FUSION_HIDE_ROUTING_SIDECAR ?=
+FUSION_HEURISTIC_LONG_QUESTION_WORDS ?=
+FUSION_HEURISTIC_MIN_LINKED_ENTITIES ?=
+# Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
+# evaluate only the frozen policy on the held-out final split.
+ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20
+ROUTING_ENTITY_GRID ?= 0,1,2
+ROUTING_TUNING_SPLIT ?= tuning
+ROUTING_FINAL_SPLIT ?= final
+ROUTING_GRAPH_STRATEGY ?= global_community
+ROUTING_GRAPH_WEIGHT ?= 0.3
+ROUTING_CANDIDATES ?= 50
+ROUTING_SPAN_IDENTITY ?= overlap
+ROUTING_OUT_DIR ?=
+# End-to-end answer quality of two retrieval lanes (compare-answer-quality): the scored lanes
+# (compare-graph-fusion row labels; the FIRST is the baseline), the sweep comparison.json whose
+# verdict names them instead, and the full split by default.
+ANSWER_QUALITY_LANES ?=
+FUSION_COMPARISON ?=
+ANSWER_QUALITY_LIMIT ?=
+ANSWER_QUALITY_OUT_DIR ?=
+# Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
+INCLUDE_DRAFTED ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

@@ -1,7 +1,8 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
-	compare-retrieval compare-embeddings run-eval bench-query-robustness \
+	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
+	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
@@ -9,10 +10,19 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(DATA_DIR)/llb/rag" --strategy all --size 800 --overlap 120
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CHUNK_STRATEGY= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
+# With CONFIG= the YAML owns corpus_root (and the store's DATA_DIR), so the default CORPUS is
+# forwarded only when the caller actually set it on the command line or in the environment --
+# otherwise a config-targeted build would silently chunk the DEFAULT corpus into the config's
+# store. Without CONFIG the default corpus is the documented behavior and is always forwarded.
+BUILD_INDEX_CORPUS = $(if $(CONFIG),$(if $(filter-out file default,$(origin CORPUS)),--corpus-root "$(CORPUS)"),--corpus-root "$(CORPUS)")
+
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)" \
+	$(PY) -m llb.main build-index $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(BUILD_INDEX_CORPUS) \
 		$(if $(CHUNK_STRATEGY),--strategy "$(CHUNK_STRATEGY)",) \
+		$(if $(CHUNK_SIZE),--size "$(CHUNK_SIZE)",) \
+		$(if $(CHUNK_OVERLAP),--overlap "$(CHUNK_OVERLAP)",) \
 		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",) \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
 		$(if $(LEMMATIZE),--lemmatize,)
@@ -60,13 +70,72 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
+compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(GRAPH_WEIGHTS),--graph-weights "$(GRAPH_WEIGHTS)",) \
+		$(if $(ROUTED_GRAPH_WEIGHT),--routed-graph-weight "$(ROUTED_GRAPH_WEIGHT)",) \
+		$(if $(FUSION_HIDE_ROUTING_SIDECAR),--no-routing-sidecar,) \
+		$(if $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),--heuristic-long-question-words $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),) \
+		$(if $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),--heuristic-min-linked-entities $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),) \
+		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates "$(GRAPH_FUSION_CANDIDATES)",) \
+		$(if $(GRAPH_FUSION_SPAN_IDENTITY),--graph-fusion-span-identity "$(GRAPH_FUSION_SPAN_IDENTITY)",) \
+		$(if $(GRAPH_FUSION_SPAN_MERGE_RATIO),--graph-fusion-span-merge-ratio "$(GRAPH_FUSION_SPAN_MERGE_RATIO)",) \
+		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
+
+calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tuning, and score held-out final (GOLDSET= ROUTING_LONG_WORD_GRID= ROUTING_ENTITY_GRID= ROUTING_TUNING_SPLIT= ROUTING_FINAL_SPLIT= ROUTING_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main calibrate-fusion-routing $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) \
+		--tuning-split "$(ROUTING_TUNING_SPLIT)" --final-split "$(ROUTING_FINAL_SPLIT)" \
+		--long-question-words "$(ROUTING_LONG_WORD_GRID)" \
+		--min-linked-entities "$(ROUTING_ENTITY_GRID)" \
+		--graph-strategy "$(ROUTING_GRAPH_STRATEGY)" \
+		--graph-weight $(ROUTING_GRAPH_WEIGHT) \
+		--candidates $(ROUTING_CANDIDATES) --span-identity "$(ROUTING_SPAN_IDENTITY)" \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ROUTING_OUT_DIR),--out-dir "$(ROUTING_OUT_DIR)",)
+
+compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-answer-quality $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(ANSWER_QUALITY_LANES),--lanes "$(ANSWER_QUALITY_LANES)",) \
+		$(if $(FUSION_COMPARISON),--from-comparison "$(FUSION_COMPARISON)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ANSWER_QUALITY_LIMIT),--limit $(ANSWER_QUALITY_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
+
+compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES= CONTEXT_ABLATION_LIMIT= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-context-strategies $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(CORPUS),--corpus "$(CORPUS)",) \
+		$(if $(CONTEXT_LANES),--lanes "$(CONTEXT_LANES)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(CONTEXT_ABLATION_LIMIT),--limit $(CONTEXT_ABLATION_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
+
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings --goldset "$(GOLDSET)" --k $(RAG_K) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= QUERY_PREP=... RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= CONTEXT_STRATEGY= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -78,9 +147,11 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(ACL_LABEL),--acl "$(ACL_LABEL)",) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
 		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
+		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates $(GRAPH_FUSION_CANDIDATES),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \
+		$(if $(CONTEXT_STRATEGY),--context-strategy "$(CONTEXT_STRATEGY)",) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
@@ -93,7 +164,7 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-bench-query-robustness: ## Noisy UA queries vs clean RAG + normalize,typos recovery (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT=)
+bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-query-robustness --model "$(MODEL)" --backend "$(BACKEND)" \

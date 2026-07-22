@@ -28,14 +28,17 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         "Variant rows are probe-only and live in `robustness.jsonl`; they never enter the clean",
         "run's `scores.jsonl` or correctness aggregates. Generation delta is measured only on",
         "items where both the clean and noisy lane retrieved gold evidence.",
-        "The mitigation is `normalize,typos` with the Ukrainian morphology guard enabled.",
+        "Mitigation lanes are isolated: `normalize` inverts only attributable noise, while",
+        "`normalize,typos` adds corpus-vocabulary correction under the Ukrainian morphology",
+        "guard, so vocabulary-correction risk is read apart from normalization recovery.",
+        "Recovery columns are measured against the `off` lane of the same noise class.",
         "",
         "| Class | Mitigation | N | Errors | Objective | Obj delta | Recall | Recall delta | Shared hits | Generation delta | Obj recovery | Recall recovery |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for lane in result.lanes:
         lines.append(
-            f"| {lane.variant_class} | {'on' if lane.mitigated else 'off'} | {lane.n} | "
+            f"| {lane.variant_class} | `{lane.mitigation}` | {lane.n} | "
             f"{lane.errors} | {lane.objective_score:.4f} | {lane.objective_delta:+.4f} | "
             f"{lane.recall_at_k:.4f} | {lane.recall_delta:+.4f} | {lane.shared_hit_n} | "
             f"{lane.generation_delta_on_shared_hits:+.4f} | {lane.objective_recovery:+.4f} | "

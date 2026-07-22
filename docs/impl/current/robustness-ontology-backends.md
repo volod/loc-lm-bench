@@ -197,6 +197,12 @@ meta pins them).
   (default 40). Every multi-hop item is labeled `multi-hop` / hard. Injected-fake coverage for
   accepted and rejected answers lives in
   `tests/llb/prep/ontology/test_ontology_yield.py`.
+  `--multi-hop-bridge-fill` / `DRAFT_MULTI_HOP_BRIDGE_FILL=1` switches the walk to
+  `graph_paths.walk_chain_paths`, which keeps directed chains first and then fills the path budget
+  with shared-bridge fact pairs. Extracted graphs are usually too sparse in object-to-subject links
+  for the strict walk to supply a measurable slice, and every grounding, language, and >= 2-span
+  constraint above still applies to the filled seeds -- only the candidate supply widens. See
+  [data prep](data-prep.md#yield-max-empirical-acceptance) for the measured sparsity.
 - **Near-duplicate suppression** (`--dedup-against <bundle[,bundle]>`, `DRAFT_DEDUP_AGAINST=`).
   `dedup.NearDuplicateFilter` drops a drafted question whose pinned-E5 (`multilingual-e5-base`,
   the RAG store's embedder) cosine similarity to any prior-bundle question is `>= 0.9`, so a
@@ -224,7 +230,7 @@ yield-at-equal-quality gate. Per-question-type fractions and accepted-ledger pat
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \
   DRAFT_COVERAGE_TARGET=6 DRAFT_MULTI_HOP=1 DRAFT_DEDUP_AGAINST=<prior-bundle>
 llb prepare-goldset-draft --corpus-root <dir> --model <model> \
-  --coverage-target 6 --multi-hop --multi-hop-max-paths 40 \
+  --coverage-target 6 --multi-hop --multi-hop-bridge-fill --multi-hop-max-paths 40 \
   --dedup-against <prior-bundle>,<other-bundle> --graph-dir <graph-store>
 ```
 

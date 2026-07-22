@@ -55,6 +55,7 @@ class DraftSettings:
     multi_hop: bool = False
     chains: bool = False
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS
+    multi_hop_bridge_fill: bool = False
     dedup_against: list[Path | str] | None = None
     graph_dir: Path | str | None = None
     rejection_feedback: Path | str | None = None
@@ -79,6 +80,9 @@ class DraftSettings:
         self.multi_hop = bool(meta.get("multi_hop", self.multi_hop))
         self.chains = bool(meta.get("chains", self.chains))
         self.multi_hop_max_paths = int(meta.get("multi_hop_max_paths", self.multi_hop_max_paths))
+        self.multi_hop_bridge_fill = bool(
+            meta.get("multi_hop_bridge_fill", self.multi_hop_bridge_fill)
+        )
         dedup = meta.get("dedup_against")
         self.dedup_against = list(dedup) if dedup is not None else self.dedup_against
         self.graph_dir = meta.get("graph_dir") or self.graph_dir
@@ -129,6 +133,7 @@ class DraftSettings:
             "multi_hop": self.multi_hop,
             "chains": self.chains,
             "multi_hop_max_paths": self.multi_hop_max_paths,
+            "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
             "dedup_against": [str(path) for path in self.dedup_against]
             if self.dedup_against
             else None,
@@ -149,6 +154,7 @@ class DraftSettings:
             "multi_hop": self.multi_hop,
             "chains": self.chains,
             "multi_hop_max_paths": self.multi_hop_max_paths,
+            "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
             "dedup_against": [str(path) for path in self.dedup_against]
             if self.dedup_against
             else None,

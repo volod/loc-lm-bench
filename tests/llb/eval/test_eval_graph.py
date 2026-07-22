@@ -134,6 +134,19 @@ def test_retrieve_node_applies_acl_chunk_filter():
     assert [chunk["doc_id"] for chunk in update["retrieved"]] == ["b.txt"]
 
 
+def test_retrieve_node_context_source_replaces_store_lookup():
+    """A diagnostic context lane supplies its own update; the store must not be consulted."""
+
+    class ExplodingStore:
+        def retrieve(self, question, k):  # pragma: no cover - must never run
+            raise AssertionError("a context source must bypass store retrieval")
+
+    node = graph.make_retrieve_node(
+        ExplodingStore(), k=5, context_source=lambda state: {"retrieved": [], "context": "LANE"}
+    )
+    assert node({"question": "q"}) == {"retrieved": [], "context": "LANE"}
+
+
 def test_generate_node_ok_path():
     launcher = FakeLauncher(ChatResult(text="Київ", completion_tokens=3, latency_s=0.5))
     node = graph.make_generate_node(launcher, max_tokens=64, temperature=0.0, timeout=10)

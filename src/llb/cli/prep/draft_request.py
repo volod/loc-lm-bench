@@ -51,6 +51,7 @@ class DraftRequest:
     multi_hop: bool
     chains: bool
     multi_hop_max_paths: int
+    multi_hop_bridge_fill: bool
     dedup_against: Optional[str]
     graph_dir: Optional[Path]
     rejection_feedback: Optional[Path]

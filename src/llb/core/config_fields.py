@@ -24,9 +24,21 @@ Strategy = Literal[
 ]
 RetrievalBackend = Literal["faiss", "graph", "fused"]
 RetrievalStrategy = Literal["local_khop", "global_community"]
+# Span-identity policy of graph-vector fusion (fusion-span-overlap-identity): when do a graph
+# evidence span and a vector chunk name ONE candidate both lanes vouch for? "exact" requires
+# identical (doc_id, char_start, char_end); "overlap" folds a graph span into the vector chunk
+# that contains it. See `src/llb/rag/fusion_spans.py`.
+SpanIdentity = Literal["exact", "overlap"]
+# Per-question graph fusion policy. "fixed" applies graph_weight to every question;
+# "question_type" uses a sidecar label when available and a deterministic text fallback.
+GraphFusionRouter = Literal["fixed", "question_type"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
+# Context strategy (rag-vs-long-context-ablation): where the prompt's evidence comes from.
+# "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
+# document(s) into the prompt.
+ContextStrategy = Literal["rag", "closed_book", "long_context"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 # Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
 ScorerPolicy = Literal["human", "local", "frontier"]
@@ -121,6 +133,13 @@ class RunConfigFields(BaseModel):
     rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
     context_order: ContextOrder = "rank"
 
+    # Context strategy (rag-vs-long-context-ablation): a DIAGNOSTIC lane selector, not a ranking
+    # policy -- "rag" (the default) is the leaderboard row. "closed_book" sends no context at all,
+    # so the score is what the model already knows; "long_context" lays the item's whole source
+    # document(s) into the prompt, and skips (never truncates) an item whose document does not fit
+    # the model's usable window. Recorded in the manifest fingerprint like every other knob.
+    context_strategy: ContextStrategy = "rag"
+
     # Query-side processing lane (uk-query-processing): an ORDERED, opt-in list of query-prep
     # steps applied between the user question and retrieval (never mutating the stored corpus).
     # Empty (the default) is an exact no-op. Valid steps: normalize | typos | glossary | rewrite.
@@ -146,6 +165,24 @@ class RunConfigFields(BaseModel):
     # Graph share of graph-vector RRF when retrieval_backend="fused". Zero is an exact vector
     # passthrough; one is an exact graph passthrough. Recorded in every run/cell fingerprint.
     graph_weight: float = Field(default=0.3, ge=0, le=1)
+    # Per-lane candidate depth fed into graph-vector fusion (the hybrid `fusion_candidates`
+    # pattern). None (the default) asks each lane for exactly `top_k`, so a graph-only span can
+    # enter the fused result only when it is already in the graph lane's own top_k and any graph
+    # candidate that enters displaces a vector candidate one-for-one. A value deeper than `top_k`
+    # fuses a larger pool and then cuts to `top_k`, so `graph_weight` controls influence on the
+    # ranking instead of seats in the result. Values below `top_k` are lifted to `top_k`.
+    graph_fusion_candidates: int | None = Field(default=None, ge=1)
+    # Span-identity policy the fusion keys candidates by. "exact" (the default) only lets the two
+    # lanes reinforce each other when their boundaries match exactly, which a ~40-character graph
+    # mention and an ~800-character chunk essentially never do; "overlap" folds the mention into
+    # the chunk that contains it, so the pair becomes one candidate both lanes voted for.
+    graph_fusion_span_identity: SpanIdentity = "exact"
+    # Share of the SHORTER span the intersection must cover before a folding span-identity policy
+    # calls two spans one candidate. Dead under "exact" (which has no partial overlap to
+    # threshold); 1.0 makes "overlap" containment-only, a lower value also admits a mention the
+    # chunk boundary clipped. Zero is refused -- it would merge on a bare one-character touch.
+    graph_fusion_span_merge_ratio: float = Field(default=0.5, gt=0, le=1)
+    graph_fusion_router: GraphFusionRouter = "fixed"
     acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default

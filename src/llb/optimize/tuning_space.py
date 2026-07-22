@@ -147,10 +147,14 @@ def suggest_overrides(
     return overrides
 
 
+def estimate_context_tokens(config: RunConfig, context_chars: int) -> int:
+    """Rough tokens consumed by `context_chars` of context + headroom + the requested completion."""
+    return int(context_chars / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS + config.max_tokens
+
+
 def estimate_prompt_tokens(config: RunConfig) -> int:
     """Rough tokens consumed by the retrieved context + headroom + the requested completion."""
-    retrieved_chars = config.top_k * config.chunk_size
-    return int(retrieved_chars / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS + config.max_tokens
+    return estimate_context_tokens(config, config.top_k * config.chunk_size)
 
 
 def effective_max_context(
@@ -167,17 +171,34 @@ def effective_max_context(
     return ctx
 
 
-def fits_context(
-    config: RunConfig, model_spec: ModelSpec | None, vram_mib: int, ram_mib: int
+def fits_context_chars(
+    config: RunConfig,
+    model_spec: ModelSpec | None,
+    vram_mib: int,
+    ram_mib: int,
+    context_chars: int,
 ) -> bool:
-    """True if the retrieved prompt fits the effective context / explicit budget."""
-    estimated = estimate_prompt_tokens(config)
+    """True if a prompt carrying `context_chars` of context fits the window / explicit budget.
+
+    Without a `model_spec` only an explicit `context_budget` can bound the prompt, so an unknown
+    model never silently declares a document unusable.
+    """
+    estimated = estimate_context_tokens(config, context_chars)
     if config.context_budget is not None and estimated > config.context_budget:
         return False
     if model_spec is None:
         return True
     ctx = effective_max_context(config, model_spec, vram_mib, ram_mib)
     return ctx <= 0 or estimated <= ctx
+
+
+def fits_context(
+    config: RunConfig, model_spec: ModelSpec | None, vram_mib: int, ram_mib: int
+) -> bool:
+    """True if the retrieved prompt fits the effective context / explicit budget."""
+    return fits_context_chars(
+        config, model_spec, vram_mib, ram_mib, config.top_k * config.chunk_size
+    )
 
 
 def is_oom(exc: BaseException) -> bool:

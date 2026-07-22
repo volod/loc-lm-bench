@@ -39,6 +39,7 @@ make prep-models
 make build-index
 make validate-retrieval
 make run-eval MODEL=llama3.2:3b BACKEND=ollama LIMIT=20
+make compare-context-strategies MODEL=<m> BACKEND=<b> GOLDSET=<gs> CORPUS=<corpus-dir>
 ```
 
 The Makefile defaults `GOLDSET` and `CORPUS` to the committed fixture so smoke runs do not require
@@ -406,10 +407,10 @@ decision hangs on it.
 
 `retrieval_backend=fused` composes the configured vector lane (flat, parent-child, or hybrid) and
 the selected GraphRAG strategy behind one `.retrieve(question, k)` wrapper. The wrapper in
-`src/llb/rag/fusion.py` keys candidates by exact `(doc_id, char_start, char_end)` spans, fuses the
-two rankings through generalized weighted RRF, deduplicates shared spans, and keeps source offsets
-unchanged for recall@k and MRR. Reranking wraps the fused result once, rather than independently
-reranking each input lane.
+`src/llb/rag/fusion.py` maps both lane rankings onto one candidate set through the selected
+span-identity policy (`src/llb/rag/fusion_spans.py`), fuses them with generalized weighted RRF,
+and keeps the surviving record's source offsets unchanged for recall@k and MRR. Reranking wraps
+the fused result once, rather than independently reranking each input lane.
 
 `graph_weight` is in `RunConfig`, run manifests, sweep cell keys, and fused Optuna trials. The Make
 aliases forward `RETRIEVAL_BACKEND`, `RETRIEVAL_STRATEGY`, and `GRAPH_WEIGHT`; the comparison alias
@@ -420,11 +421,155 @@ make run-eval MODEL=<m> RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3
 make compare-retrieval CONFIG=<run-config.yaml> GRAPH_WEIGHT=0.3 \
   GOLDSET=<answered-jsonl> COMPARE_RETRIEVAL_OUT=<report-json>
 make sweep SWEEP_RAG_GRID="graph_weight=0,0.3,0.5"
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  GRAPH_WEIGHTS=0,0.1,0.3,0.5,1.0 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
 ```
 
-The CUDA-host accepted-set metrics, comparative slice, empty multi-hop slice, endpoint check, and
-artifact locations are recorded in
-[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence).
+### Fusion span identity (`graph_fusion_span_identity`)
+
+The identity rule decides WHEN the two lanes are talking about the same candidate, which is the
+precondition for RRF to reward agreement at all.
+
+`exact` (the default) keys candidates by the exact `(doc_id, char_start, char_end)` triple. A graph
+mention is a few dozen characters cut around an entity and a vector chunk is an ~800-character
+recursive window, so the two lanes almost never agree by construction and fusion degenerates into
+two disjoint rankings competing for the same result seats.
+
+`overlap` folds a graph span into the vector chunk that CONTAINS it (and, for a span no chunk
+covers, into whichever graph span it mutually overlaps), so the pair becomes one candidate both
+lanes voted for. Two invariants keep the rule safe for span-level scoring:
+
+- **Vector chunks are never merged with each other.** Consecutive recursive chunks share their
+  `chunk_overlap` tail, so a transitive union would chain a whole document into one candidate. Only
+  the vector lane creates anchors; the graph lane joins them, and a mention sitting in a shared
+  tail joins the better-ranked chunk.
+- **The survivor is an input record, verbatim.** A merge never synthesizes a union span, so the
+  fused chunk's text stays an exact corpus slice at its own offsets. `metadata` records the policy
+  in `fusion_span_identity` and every folded span in `fusion_merged_spans`.
+
+A merge needs the intersection to cover at least `graph_fusion_span_merge_ratio` of the SHORTER
+span: containment scores 1.0, a mention clipped by a chunk boundary scores its covered share, and
+an incidental one-character touch between neighbouring chunks stays separate. Both endpoint weights
+fuse nothing, so they are identity-independent.
+
+The threshold is a knob in `RunConfig` (default `SPAN_MERGE_MIN_RATIO` = 0.5, valid over `(0, 1]`
+where 1.0 is containment-only), recorded in the manifest fingerprint, and settable through
+`run-eval --graph-fusion-span-merge-ratio`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_span_merge_ratio=0.25,0.5"`, and the evidence lane's
+`GRAPH_FUSION_SPAN_MERGE_RATIO` grid. It is dead under `exact` (there is no partial overlap to
+threshold), so the sweep grid expands `overlap` rows only and a non-default value extends a row
+label as `/r<ratio>`. **The measured verdict is to pin 0.5 and not sweep it**, and it holds at two
+chunk scales: at `chunk_size=800` the threshold decides essentially nothing (0.25 / 0.5 / 0.75 are
+byte-identical on every row, because 99% of the graph spans touching a retrieved chunk are wholly
+INSIDE it), and at `size=200` -- where a chunk and an entity mention are finally the same order of
+magnitude -- it re-decides merges on up to a quarter of the questions yet still moves one headline
+metric in one row, in 0.5's favor. See
+[GraphRAG](graphrag-backend.md#span-merge-threshold-evidence) for the grid, the agreement table,
+the overlap histogram, and
+[the smaller-chunk re-run](graphrag-backend.md#does-the-pin-survive-a-smaller-chunk-size).
+
+The knob rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-span-identity`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_span_identity=exact,overlap"`, and the sweep lane's
+`GRAPH_FUSION_SPAN_IDENTITY` grid. `exact` remains the default: the measured adopt verdict for
+`overlap` rests on a drafted multi-hop ledger, and the end-to-end run of the same two rows finds
+the extra evidence is retrieval-only and costs measurable factoid answer quality -- see
+[GraphRAG](graphrag-backend.md#span-identity-evidence) for both halves.
+
+### Fusion candidate depth (`graph_fusion_candidates`)
+
+`graph_fusion_candidates` is the per-lane candidate pool the graph share is applied over, the
+graph-vector counterpart of the hybrid store's `fusion_candidates`. `None` (the default) asks each
+lane for exactly `top_k`; a larger value retrieves that many from BOTH lanes, fuses, and then cuts
+to `top_k`. A value below `top_k` is lifted to `top_k`, and both endpoint weights stay exact
+single-lane passthroughs at `top_k` (a pool cannot change a ranking that is never fused). The knob
+rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-candidates`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_candidates=10,50"`, and the sweep lane's
+`GRAPH_FUSION_CANDIDATES` grid.
+
+**A deeper pool cannot move a single-lane candidate into the top-k.** Graph-vector fusion uses
+undamped reciprocal ranks, so a span that only ONE lane returns, at rank `r > k`, scores
+`lane_weight / r`. That lane's own top-k spans are k distinct candidates each scoring at least
+`lane_weight / k > lane_weight / r`, so at least k candidates outrank it at every graph weight.
+Only a span BOTH lanes return, with at least one of its ranks below `k`, can be promoted by depth.
+That makes the knob's usefulness a property of the corpus AND of the span-identity policy above:
+under `exact` the measured Ukrainian goods corpus shares a candidate in 2 of 95 questions and depth
+changes nothing at all, while under `overlap` it shares one in 93 of 95 and every depth row moves
+(see [GraphRAG](graphrag-backend.md#candidate-depth-evidence) and
+[span identity](graphrag-backend.md#span-identity-evidence) for both measured verdicts). Depth is
+therefore a live knob exactly when the identity rule lets the lanes agree.
+
+`compare-retrieval` ranks backends at ONE graph weight; `compare-graph-fusion` sweeps the weight
+and decides it on the multi-hop slice with uncertainty; `compare-answer-quality` then scores the
+same items END TO END under two of those rows and compares the answers, which is what separates a
+retrieval-only coverage gain from an answer-quality gain -- see
+[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for all three lanes, their measured
+CUDA-host evidence, and the artifact locations.
+
+### Fusion question-type routing (`graph_fusion_router`)
+
+`graph_fusion_router=question_type` changes `graph_weight` from one corpus-wide value into a
+per-question endpoint choice: the configured share for likely multi-span questions, exactly zero
+for likely single-span questions. The zero endpoint calls only the vector lane at `top_k`; it is an
+exact ranking passthrough and does not query the graph store. `fixed` remains the default.
+
+The pure policy lives in `src/llb/rag/fusion_routing.py`. A recognized sidecar label wins:
+`multi-hop` and `comparative` route to graph fusion; `factoid`, `definition`, `numeric`, and
+`procedural` route to vector. An absent or unknown label falls back to deterministic text signals:
+a bridge term routes directly, while a long question routes only when it also names multiple
+capitalized entities. `HeuristicPolicy` makes the word and entity thresholds explicit and
+validated; setting the entity threshold to zero makes question length sufficient for controlled
+calibration runs. The production default remains 16 words plus 2 linked entities. Conflicting
+labels on duplicate question text are omitted from the sidecar map and therefore use the fallback.
+Every decision records its source and signal tuple.
+
+`FusedRetriever` accepts the router at the shared retrieval seam, while
+`runner_retrieval._load_store` builds it from the configured gold-set sidecar. The setting is a
+`RunConfig` field and is therefore present in every manifest and fingerprint; low-level runs can
+select it with `run-eval --graph-fusion-router question_type` or YAML.
+
+The fusion evidence command emits `routed/<strategy>@<weight>/d<depth>[/i<identity>]` rows beside
+the fixed grid. `ROUTED_GRAPH_WEIGHT` controls their non-zero share; route counts are reported
+overall and by question-type slice. The same label parses back into an ordinary answer-quality
+`run-eval` lane, so the retrieval and answer comparisons exercise the production path rather than
+a sweep-only approximation. `FUSION_HIDE_ROUTING_SIDECAR=1` exercises only the fallback in the
+standard Make workflow; `FUSION_HEURISTIC_LONG_QUESTION_WORDS` and
+`FUSION_HEURISTIC_MIN_LINKED_ENTITIES` select a frozen deterministic policy.
+
+`make calibrate-fusion-routing` is the dedicated held-out workflow. It hides the sidecar from the
+router while retaining each item's span count as the evaluation label, retrieves each physical
+lane once per question, sweeps the declared threshold grid on `tuning`, freezes one policy, and
+only then initializes and scores `final`. Its Markdown and JSON artifacts report confusion counts,
+an item-id/signal ledger for routing errors, bootstrap precision/recall intervals, paired
+multi-span coverage and single-span recall deltas, and an explicit recommendation gate. The gate
+requires the tuning coverage interval to clear zero without a single-span interval below zero;
+final never participates in selection and must pass the same gate independently before the frozen
+policy can be recommended.
+
+CI coverage is split along those seams: `tests/llb/rag/test_graph_vector_fusion.py` pins sidecar
+precedence, heuristic signals, exact zero-weight passthrough, configuration fingerprints, and
+runner wiring; `tests/llb/rag/test_fusion_evidence.py` pins routed replay and decision reporting;
+`tests/llb/rag/test_fusion_calibration.py` pins threshold parsing, tuning-only selection, frozen
+final scoring, and the no-gain refusal; `tests/llb/eval/test_answer_quality.py` pins label
+round-tripping and the routing outcome summary.
+
+```bash
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  ROUTED_GRAPH_WEIGHT=0.3 GRAPH_FUSION_CANDIDATES=k,50 \
+  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
+make calibrate-fusion-routing CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl>
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  SPLIT=tuning FUSION_HIDE_ROUTING_SIDECAR=1 \
+  FUSION_HEURISTIC_LONG_QUESTION_WORDS=12 FUSION_HEURISTIC_MIN_LINKED_ENTITIES=0
+make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  ANSWER_QUALITY_LANES=vector,routed/global_community@0.30/d50/ioverlap \
+  SPLIT=final,tuning,calibration INCLUDE_DRAFTED=1
+```
+
+The CUDA result keeps the best fixed row's multi-hop retrieval gain while making every factoid
+retrieval and answer an exact vector tie; see
+[GraphRAG](graphrag-backend.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss).
+The held-out sidecar-free calibration recommends no threshold change; see
+[GraphRAG](graphrag-backend.md#sidecar-free-heuristic-calibration).
 
 ## Reranking And Context Order (rerank-context-order)
 
@@ -557,17 +702,45 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
   would otherwise collide.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
-  the indexed corpus (`build_vocabulary` over `store.chunks`); a query token ABSENT from it is
-  corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
-  tokens over 8 chars). Tokens shorter than three characters are protected; candidate matching
-  cannot cross alphabetic/numeric kinds; a token the corpus already contains is NEVER altered;
-  and a numeric token is never "corrected" into a different one. Every correction is logged. An
+  the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
+  set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
+  in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for tokens over 8 chars).
+  Tokens shorter than three characters are protected; candidate matching cannot cross
+  alphabetic/numeric kinds; a token the corpus already contains is NEVER altered; and a numeric
+  token is never "corrected" into a different one. Every correction is logged. An
   opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
   recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
   valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
   lemmatization lane to match, while genuine misspellings stay unknown to the probe and are still
   corrected. Off by default so the pure edit-distance behavior remains explicitly selectable.
+- **Ambiguity-aware restoration** (`query_prep/restore.py`) decides WHICH near candidate the
+  `typos` step may take, and whether taking one is safe at all. Normalization is lossy -- Latin
+  typing drops the soft sign and apostrophes, so `sut` inverts to the out-of-vocabulary `сут`,
+  one edit from both `суть` and `суд`. Four constraints apply, in this order:
+  1. **Surface compatibility (hard filter).** `normalization_provenance` maps every normalized
+     token back to the single noisy token that produced it plus the edit `kind`; a candidate
+     survives only when re-applying that transform reproduces the typed form
+     (`surface_distance <= SURFACE_MAX_DISTANCE`, i.e. exactly). `суть` romanizes back to the
+     typed `sut` and is kept; `суд` romanizes to `sud` and is refused. A token whose noise
+     normalization already fully explains therefore cannot be rewritten by vocabulary correction
+     at all. A replacement two different noisy tokens collapsed onto carries no constraint.
+  2. **Short-token length lock.** At or below `AMBIGUOUS_TOKEN_MAX_CHARS` (4) an insertion or
+     deletion candidate is refused, because at that length it is a different short word rather
+     than a repair (`якв` -> `кв`, `зто` -> `то`). A transliteration provenance licenses the
+     length change, since a dropped soft sign is exactly what romanization is known to lose.
+  3. **Morphology, then local query context (ranking).** Candidates tied on edit distance are
+     ordered by whether the morphology probe knows them as real word forms, then by whether they
+     preserve the token's inflectional ending (`MORPH_SUFFIX_CHARS`), then by how often they share
+     a corpus chunk with the query's rarest other in-vocabulary tokens
+     (`VocabularyContext.cooccurrence` over up to `CONTEXT_MAX_ANCHORS` anchors), then
+     alphabetically. Context is what separates `накат` from `наказ` for a query about waves.
+  4. **Refusal on an unresolved tie.** When two candidates for a short token are equal on every
+     signal above, the token is left unchanged instead of being resolved alphabetically.
+
+  The constraints are always on inside the `typos` step (they only ever refuse or reorder a
+  correction, never add one) and need no new knob; the morphology signal rides on the same opt-in
+  probe as the guard, and the context index is built in the same pass as the vocabulary.
 - `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
   transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
   so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
@@ -621,7 +794,11 @@ tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
 processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
-deduplication, runner resolver dependency wiring), `tests/llb/rag/test_store.py` (split hybrid
+deduplication, runner resolver dependency wiring, provenance mapping including the ambiguous
+same-replacement case, per-kind surface distance, refusal of an incompatible nearest neighbor,
+restoration of the romanization-compatible form, the short-token length lock and the
+transliteration exemption from it, unresolved-tie refusal, context-driven candidate choice, and
+both morphology preferences), `tests/llb/rag/test_store.py` (split hybrid
 queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
 plus config validation in `tests/llb/core/test_config.py`.
 
@@ -688,7 +865,11 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
 `validate-goldset` and source-span scoring work identically across strategies:
 
 - `fixed`: character window with overlap (pure Python, zero deps);
-- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence);
+- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence, so `size` is a packing
+  target rather than a cap -- a single unit longer than `size` is emitted whole; measured on the
+  converted Ukrainian goods PDFs at `size=200`, 21.6% of chunks exceed `size` and hold 44% of the
+  indexed characters, because table rows, page furniture, and heading blocks carry no sentence
+  terminator);
 - `recursive`: pinned langchain `RecursiveCharacterTextSplitter` (offset-verified; default);
 - `markdown`: one chunk per leaf section BODY (heading lines stripped), breadcrumb in
   `metadata.headers`, long sections recursively sub-split;
@@ -708,8 +889,12 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
   (`Embedder.passage_token_offsets` / `encode_passage_tokens`); flat mode only -- `RagStore.build`
   refuses `parent_child`; a chunk no token overlapped falls back to per-chunk encoding, logged.
 
-Selection: `make build-index CHUNK_STRATEGY=<name>` / `build-index --strategy <name>` /
-`RunConfig.strategy`; chunk-only via `python -m llb.rag.chunking --strategy <name>`. The Optuna
+Selection: `make build-index CHUNK_STRATEGY=<name> CHUNK_SIZE=<chars> CHUNK_OVERLAP=<chars>` /
+`build-index --strategy <name> --size <chars> --overlap <chars>` / `RunConfig.strategy`;
+chunk-only via `python -m llb.rag.chunking --strategy <name>`. `make build-index CONFIG=<yaml>`
+builds into that config's own `data_dir`, which is how an experiment gets a store beside its run
+artifacts instead of overwriting the default one; with `CONFIG=` the YAML owns `corpus_root`
+unless `CORPUS=` is also passed on the command line. The Optuna
 tuner searches the original five by default; `llb tune --extended-chunkers` adds
 `page`/`heading`/`late` (`EXTENDED_STRATEGIES` in `src/llb/optimize/tuner.py`) -- opt-in because
 `late` re-embeds whole documents per trial and `page` only differs from `recursive` on
@@ -831,10 +1016,119 @@ throughput at 1139 chunks is no longer cold-load-dominated. Reports:
 `$DATA_DIR/compare-embeddings/20260710T044652*/report.md` (k=20) and
 `.../20260710T044914*/report.md` (k=10).
 
+## Context Ablation: Does RAG Pay For Itself? (rag-vs-long-context-ablation)
+
+A leaderboard row says how well a model answers WITH retrieval; it never says how much of that
+score retrieval bought. `llb compare-context-strategies` (`make compare-context-strategies`)
+scores ONE item set end to end under three context lanes and reports the differences.
+
+`RunConfig.context_strategy` selects the lane and is recorded in the manifest fingerprint like
+every other knob, so a lane's bundle is reproducible from its own config
+(`make run-eval CONTEXT_STRATEGY=<lane>`):
+
+- `rag` (default) -- retrieve as configured. This is the leaderboard row; the other two are
+  DIAGNOSTICS and never rank a model.
+- `closed_book` -- no context at all. `src/llb/eval/context_ablation/sources.py` supplies an empty
+  context and swaps in the `eval.rag.closed_book` prompt, which asks the model to answer from its
+  own knowledge (the RAG system prompt would push it to abstain). The empty context deliberately
+  does NOT raise `retrieval_miss`: that status short-circuits generation, and a lane that never
+  calls the model measures nothing.
+- `long_context` -- the item's whole gold source document(s) laid into the prompt as one
+  offset-exact chunk per document, with the SAME generation prompt as `rag`, so the delta is
+  attributable to the context and not to prompt wording. The lane is oracle-grounded (it reads the
+  item's own gold `doc_id`s), which makes it a ceiling, not a shippable retrieval policy.
+
+Budget and skips: the lane resolves the model's usable window ONCE per run --
+`resolve_model_spec` looks the served artifact up through `candidate_sources`, so an Ollama GGUF
+tag resolves to its roster entry priced at the right quant -- and each item is checked with
+`fits_context_chars` (`src/llb/optimize/tuning_space.py`, the same arithmetic as `fits_context`).
+An item whose document does not fit terminates as `context_overflow`, a new pre-generation status
+in the shared taxonomy: no model call, no truncation. A truncated document is a different and
+unstated retrieval policy, so crediting its answer to "long context" would measure whichever slice
+survived the cut. Without a manifest entry for the model, only an explicit `context_budget` /
+`max_model_len` can bound the prompt, so an unlisted model skips nothing rather than everything.
+
+The comparison (`src/llb/eval/context_ablation/`) is pure and file-driven: it consumes canonical
+`scores.jsonl` rows, aligns them with `llb.eval.paired_cases` (shared with
+`compare-answer-quality`), and reuses the fusion-evidence paired bootstrap and per-slice reporting,
+so the artifact reads beside the retrieval sweep. It reports:
+
+- `retrieval_uplift` = `rag - closed_book`, paired per item -- how much of the RAG score retrieval
+  paid for.
+- `long_context_delta` = `long_context - rag` -- whole-document stuffing versus chunked retrieval.
+- `long_context_delta_fitting` -- the same delta over items the lane did not skip, emitted only
+  when something WAS skipped. A skipped item scores zero, so the all-items delta would otherwise
+  read a document that never reached the model as a long-context loss; the VERDICT reads the
+  fitting delta when it exists.
+- A per-item contamination flag: the closed-book answer already matches the reference (`exact` or
+  `contains` is 1.0). Items the model answers with no evidence were never a retrieval problem, and
+  a corpus full of them makes any uplift look small for reasons unrelated to retrieval.
+
+Verdicts, in check order: `long_context_wins` | `rag_pays_off` | `retrieval_inconclusive` |
+`no_retrieval_gain` | `no_evidence`. Every gate reads the paired INTERVAL, never the point
+estimate. Artifacts: `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`, plus one
+ordinary `run-eval` bundle per (lane, split) under `$DATA_DIR/run-eval/`. CI drives all three
+lanes over fake bundles and the committed fixtures
+(`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
+
+### Context-ablation evidence
+
+Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
+`samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
+311 chunks at 800/120, `top_k=5`, `DATA_DIR=.data/context-ablation-host`):
+
+| model | closed_book | rag | long_context | retrieval uplift | long-context delta | closed-book matches |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MamayLM-Gemma-3-12B-IT v2.0 GGUF Q4_K_M | 0.160 | 0.501 | 0.643 | +0.340 [+0.262, +0.423] | +0.142 [+0.083, +0.206] | 10/82 (12.2%) |
+| Lapa v0.1.2-instruct GGUF Q4_K_M | 0.100 | 0.496 | 0.576 | +0.396 [+0.314, +0.484] | +0.080 [+0.036, +0.133] | 12/82 (14.6%) |
+
+Both models return `long_context_wins`, and both agree on the shape of the result:
+
+- Retrieval pays for itself, decisively. The uplift interval is far clear of zero for both models
+  (sign-test p<0.001, 50/6/26 and 59/3/20 item wins/losses/ties). RAG is not decoration on this
+  corpus.
+- Whole-document stuffing still beats chunked retrieval, by a smaller but separable margin. That
+  is expected here and is NOT an argument to ship long context: SQuAD-derived documents are ~1.5k
+  characters, the lane is oracle-grounded on the item's own gold document, and `rag` retrieval was
+  already near-ceiling (`recall@5=0.951`). The measured gap is what the retrieval layer still
+  loses to chunk boundaries when the right document is known for free.
+- Roughly one item in eight is answered correctly with no context at all -- parametric knowledge
+  or contamination of a public post-edited SQuAD set. Any uplift on this fixture is therefore
+  measured against a baseline that is not zero.
+
+Skip path, measured (same model and item set, `context_budget: 1250` to force overflow):
+28/82 items skipped, and the two populations diverge exactly as designed -- all-items
+`long_context_delta` reads `-0.085 [-0.188, +0.018]` (the 28 skips score zero) while
+`long_context_delta_fitting` over the remaining 54 reads `+0.165 [+0.091, +0.250]`. The verdict
+reads the fitting delta, and the report carries both.
+
+Reproducibility, measured: the `rag` lane's bundle is byte-identical to a plain `run-eval` of the
+same configuration (all 82 items: same answers, same per-case scores), which is the check that the
+lane machinery adds nothing to the leaderboard path. The `rag` and `long_context` lanes reproduce
+exactly across runs; the `closed_book` lane does NOT -- 11/82 answers differed between two
+identical invocations (lane mean 0.160 vs 0.153), because an ungrounded prompt leaves a much
+flatter next-token distribution for GGUF kernel nondeterminism to flip. The drift is well inside
+the uplift interval half-width (~0.08) and changed no verdict, but a closed-book number is a
+noisier measurement than a grounded one and should be quoted with that in mind.
+
+Reports: `$DATA_DIR/context-ablation/20260722T142639Z/` (MamayLM),
+`.../20260722T143030Z/` (Lapa), `.../20260722T143459Z/` (the budget-constrained skip run).
+
 ## Retrieval Metrics
 
 `src/llb/rag/retrieval.py` computes recall@k and MRR by source-span overlap. The common gate is
 `recall@10 >= 0.8`.
+
+The same module also computes two multi-span refinements used wherever an item's answer needs
+evidence from more than one span (multi-hop questions):
+
+- `span_coverage_at_k` -- the fraction of the item's labeled spans that the top-k covers.
+- `all_spans_at_k` -- 1.0 only when EVERY labeled span is covered.
+
+`recall_at_k` credits an item as soon as ANY labeled span is retrieved, which a two-hop item
+satisfies by returning only one of its hops; on single-span items all three metrics are identical.
+The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
+retrieval gain is distinguished from a partial hit.
 
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
@@ -850,7 +1144,16 @@ above), cross-encoder reranking (see Reranking And Context Order above), and the
 
 `src/llb/eval/graph.py` builds the retrieve-generate flow. LangGraph is imported only when the
 graph is built. The graph records one status per case: `ok`, `empty`, `malformed`, `refusal`,
-`timeout`, `backend_error`, `retrieval_miss`, or another typed failure from the shared taxonomy.
+`timeout`, `backend_error`, `retrieval_miss`, `context_overflow`, or another typed failure from the
+shared taxonomy. `retrieval_miss` and `context_overflow` are the pre-generation statuses
+(`eval_common.PRE_GENERATION_STATUSES`): the prompt is never sent, so the answer stays empty and
+the case scores zero rather than being quietly repaired into a different prompt.
+
+Two optional seams keep diagnostic lanes out of the retrieval path itself. `context_source`
+replaces the retrieve node's store lookup with a `RagState -> RagState` closure that supplies its
+own context, and `template_id` overrides the generation prompt; both are resolved from
+`RunConfig.context_strategy` in `_default_runner_fn` and are how the context ablation runs without
+special-casing anything downstream (see Context Ablation above).
 
 `src/llb/backends/openai_client.py` normalizes endpoint failures. Backend launchers own process
 lifecycle and readiness checks.
@@ -965,6 +1268,14 @@ pairs used by aggregate metrics and judge records.
 `src/llb/executor/runner.py` orchestrates one run. It filters unverified items, loads the selected
 retrieval backend, executes cases, collects optional telemetry, writes artifacts, mirrors to MLflow,
 and prints the row.
+
+`run_eval(..., verified_only=False)` is the one documented exception to the unverified filter. It
+exists so a diagnostic lane can score exactly the item set a drafted-grounded retrieval sweep
+measured (a drafted multi-hop slice has no accepted counterpart until a reviewer produces one), and
+it is deliberately hard to reach by accident: no default path sets it, `run-eval` itself has no
+flag for it, and the resulting manifest records `config.item_grounding: drafted` so the bundle is
+self-describing. The only caller is `compare-answer-quality --include-drafted`
+([GraphRAG](graphrag-backend.md#answer-quality-evidence)); a leaderboard run never uses it.
 
 Isolation and GPU safety live outside the scoring path:
 

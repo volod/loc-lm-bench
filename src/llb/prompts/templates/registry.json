@@ -731,6 +731,26 @@
         }
       ]
     },
+    "eval.rag.closed_book": {
+      "kind": "chat",
+      "descriptor": "eval/rag/closed_book.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/closed_book_system.txt",
+            "sha256": "002c016ca681fad47fbe454b8a8e473d627d479dc0eeab36376ce866a47bb801"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/closed_book_user.txt",
+            "sha256": "f9481f447fa59900ac86813de437dd8039f0515915664a6c1c8841845957c3a1"
+          }
+        }
+      ]
+    },
     "eval.rag.package_context": {
       "kind": "text",
       "descriptor": "eval/rag/package_context.prompt.json",

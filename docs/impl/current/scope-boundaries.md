@@ -69,6 +69,27 @@ autonomous gate should branch on the semantic tier's provisional `duplicate` ver
 report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,
 significance level, or confidence -- name it a candidate budget or a rank cutoff.
 
+## Context-Ablation Lanes Stay Diagnostic
+
+`closed_book` and `long_context` (`RunConfig.context_strategy`) are measurement lanes, never
+default retrieval policies and never leaderboard rows; `rag` remains the ranked lane. This is a
+decision, not an omission, and it survives the measured result that `long_context` beat `rag` on
+both scored roster models
+([RAG core](rag-core.md#context-ablation-evidence)):
+
+- `long_context` is **oracle-grounded**. It reads the item's own gold `doc_id`s, so it knows the
+  answer's document for free. That is a legitimate ceiling to measure a retrieval layer against
+  and an illegitimate thing to ship -- a real query arrives without a gold label.
+- Its gap therefore sizes what chunking still loses, not what an operator would gain. Reading
+  "+0.142 objective" as "stuff whole documents instead of retrieving" would be adopting the
+  oracle, not the lane.
+- `closed_book` scores what the model already knows, which is a contamination and
+  parametric-knowledge signal for the corpus, not a system configuration anyone would run.
+
+The one number the ablation is entitled to change is interpretation of a leaderboard row: an
+uplift that does not clear zero says the RAG stack is not earning its cost on that corpus, and a
+high closed-book match rate says the item set is measuring memory as much as retrieval.
+
 ## Agentic Framework Scope
 
 The maintained agentic harness axis is `loop`, `langgraph`, and `crewai`. Additional frameworks

@@ -65,6 +65,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ "$(DRAFT_MULTI_HOP)" = "1" ]; then args+=(--multi-hop); fi; \
 	if [ "$(DRAFT_CHAINS)" = "1" ]; then args+=(--chains); fi; \
 	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
+	if [ "$(DRAFT_MULTI_HOP_BRIDGE_FILL)" = "1" ]; then args+=(--multi-hop-bridge-fill); fi; \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
 	if [ -n "$(DRAFT_REJECTION_FEEDBACK)" ]; then args+=(--rejection-feedback "$(DRAFT_REJECTION_FEEDBACK)"); fi; \

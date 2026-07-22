@@ -8,12 +8,14 @@ launcher, and a runner_fn that composes the real eval-graph node closures sequen
 import json
 from pathlib import Path
 
+import pytest
+
 
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.core.config import RunConfig
 from llb.eval import common
 from llb.eval import graph
-from llb.executor.runner import run_eval
+from llb.executor.runner import ITEM_GROUNDING_DRAFTED, run_eval
 from llb.goldset.schema import GoldItem
 from llb.prompt_system.template import PromptPackage, TemplateFields
 
@@ -183,3 +185,30 @@ def test_run_eval_persists_prompt_system_provenance(tmp_path):
     persisted = json.loads(Path(result["paths"]["manifest"]).read_text(encoding="utf-8"))
     assert persisted["config"]["prompt_system"] == "ps-test"
     assert persisted["prompt_system_provenance"] == provenance
+
+
+def test_drafted_items_are_skipped_unless_asked_for_and_then_marked_in_the_manifest(tmp_path):
+    """A drafted (unverified) ledger scores only on request, and says so in its own bundle."""
+    q = "Яка столиця України?"
+    items = [gold_item("uk-1", q, "Київ", "Київ")]
+    items[0].verified = False
+    cfg = RunConfig(data_dir=tmp_path, run_name="drafted", model="fake-uk")
+    kwargs = {
+        "items": items,
+        "launcher": FakeLauncher(lambda messages: ChatResult(text="Київ")),
+        "runner_fn": lambda item: {
+            "answer": "Київ",
+            "status": common.OK,
+            "retrieved": [],
+            "usage": {},
+        },
+        "mirror": lambda *a: None,
+        "emit": False,
+    }
+    with pytest.raises(SystemExit, match="no verified"):
+        run_eval(cfg, **kwargs)
+
+    result = run_eval(cfg, verified_only=False, **kwargs)
+    assert result["manifest"].config["item_grounding"] == ITEM_GROUNDING_DRAFTED
+    persisted = json.loads(Path(result["paths"]["manifest"]).read_text(encoding="utf-8"))
+    assert persisted["config"]["item_grounding"] == ITEM_GROUNDING_DRAFTED

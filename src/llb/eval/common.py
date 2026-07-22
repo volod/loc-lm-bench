@@ -7,8 +7,8 @@ instead of redefining them. Everything in this module is a pure function or cons
 is unit-testable WITHOUT langgraph installed (only the `build_*_graph` functions import it).
 
 Failure taxonomy (design "distinct typed cases"): each case ends in exactly one status --
-ok / empty / malformed / refusal / timeout / backend_error / retrieval_miss -- recorded
-separately, never collapsed into a single "reliability failure".
+ok / empty / malformed / refusal / timeout / backend_error / retrieval_miss / context_overflow --
+recorded separately, never collapsed into a single "reliability failure".
 """
 
 import re
@@ -22,7 +22,15 @@ EMPTY = "empty"
 MALFORMED = "malformed"
 REFUSAL = "refusal"
 RETRIEVAL_MISS = "retrieval_miss"
+# The context a lane would have laid into the prompt does not fit the model's usable window
+# (rag-vs-long-context-ablation). The case is SKIPPED -- no model call, no silent truncation --
+# so a long-context lane can never be credited with an answer read from a shortened document.
+CONTEXT_OVERFLOW = "context_overflow"
 # transport tokens (timeout / backend_error) are passed through from ChatResult.error.
+
+# Statuses that terminate a case before generation: the prompt is never sent, so the answer stays
+# empty and the case scores zero instead of being quietly repaired into a different prompt.
+PRE_GENERATION_STATUSES = (RETRIEVAL_MISS, CONTEXT_OVERFLOW)
 
 # Markers a model uses when it declines to answer (UA + RU + EN). The Ukrainian stems are
 # first-person ("не можу" = "I cannot", "не маю права" = "I have no right"), which a substantive

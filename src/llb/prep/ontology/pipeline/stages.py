@@ -58,13 +58,28 @@ def _multi_hop_stage(
     graph_dir: Path | str | None,
     max_paths: int,
     seed: int,
+    bridge_fill: bool = False,
+    graph: "KnowledgeGraph | None" = None,
 ) -> tuple[list[GoldItem], dict[str, ItemLabels]]:
-    """Walk 2-hop graph paths and draft multi-span multi-hop chain items (yield-max)."""
-    from llb.prep.ontology.graph_paths import walk_two_hop_paths
+    """Walk 2-hop graph paths and draft multi-span multi-hop chain items (yield-max).
+
+    Strict directed `A -r1-> B -r2-> C` chains are the default, but extracted graphs are usually
+    too sparse in object-to-subject links to supply a measurable slice (a 625-node, 213-edge
+    Ukrainian PDF graph yields ONE). `bridge_fill` keeps directed paths first and then fills with
+    the same shared-bridge fact pairs the chain lane already uses: two distinct facts incident on
+    one entity, cited from two distinct spans, which is exactly the >= 2-span retrieval problem a
+    multi-hop slice has to measure.
+
+    `graph` is the injection seam: pass a built `KnowledgeGraph` to skip the store load entirely
+    (tests drive the stage with no DuckDB, no store on disk, and no extraction).
+    """
+    from llb.prep.ontology.graph_paths import walk_chain_paths, walk_two_hop_paths
     from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
 
-    graph = _load_path_graph(graph_dir, extractions, docs, ontology)
-    seeds = walk_two_hop_paths(graph, max_paths=max_paths, seed=seed)
+    if graph is None:
+        graph = _load_path_graph(graph_dir, extractions, docs, ontology)
+    walk = walk_chain_paths if bridge_fill else walk_two_hop_paths
+    seeds = walk(graph, max_paths=max_paths, seed=seed)
     raw = draft_multi_hop(complete, docs, seeds)
     return build_multi_hop_items(docs, seeds, raw)
 
@@ -187,6 +202,7 @@ def _graph_stages(
             graph_dir=settings.graph_dir,
             max_paths=settings.multi_hop_max_paths,
             seed=settings.seed,
+            bridge_fill=settings.multi_hop_bridge_fill,
         )
         items = items + mh_items
         item_labels = {**item_labels, **mh_labels}

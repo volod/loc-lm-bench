@@ -428,23 +428,31 @@ scorers (`--score-groundedness` / `--cited-answers`), and durable per-model evid
 `llb bench-query-robustness` / `make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>`
 measures end-to-end sensitivity to three deterministic noisy-query classes: Latin-typed
 transliteration, apostrophe plus mixed-script homoglyph substitutions, and keyboard-adjacent
-Cyrillic typos at a configured character rate. Each class runs with query preparation off and
-with `normalize,typos` plus the Ukrainian morphology guard. Clean cases are an ordinary
-`run-eval` bundle. The 6 x N variant rows are probe-only and publish atomically as
-`$DATA_DIR/query-robustness/<run>/{report.md,robustness.jsonl}`; no `scores.jsonl` exists in that
-probe directory.
+Cyrillic typos at a configured character rate. Each class runs under three isolated mitigation
+lanes (`MITIGATION_LANES`): `off`, `normalize` alone, and `normalize,typos` plus the Ukrainian
+morphology guard. The middle lane is what separates the two mechanisms -- normalization only
+inverts noise it can attribute, while the typos step additionally rewrites tokens to corpus
+surfaces -- so a recovery attributable to safe normalization is never credited to vocabulary
+correction, and vice versa. Recovery columns are measured against the `off` lane of the same
+class. Clean cases are an ordinary `run-eval` bundle. The 9 x N variant rows are probe-only and
+publish atomically as `$DATA_DIR/query-robustness/<run>/{report.md,robustness.jsonl}`; no
+`scores.jsonl` exists in that probe directory. Each row carries its lane in `mitigation`
+(plus `mitigation_steps` / `mitigation_typo_guard`).
 
 Implementation is split across `src/llb/eval/query_robustness_variants.py` (seeded generators),
-`query_robustness.py` (per-case joins and lane metrics), `query_robustness_run.py` (clean baseline,
-store, endpoint, and graph wiring), `query_robustness_report.py` (atomic report/JSONL publication),
-and `src/llb/cli/eval/query_robustness.py`. `tests/llb/eval/test_query_robustness.py` drives a fake
-endpoint and fake store through all six lanes using the graph module's pure-node seam, so the
-base `[dev]` GitHub environment does not need the optional LangGraph package. It checks
-deterministic variants and morphology-guard wiring and proves the probe directory never gains
+`query_robustness.py` (lane definitions, per-case joins, and lane metrics), `query_robustness_run.py`
+(clean baseline, store, endpoint, and per-lane graph wiring), `query_robustness_report.py` (atomic
+report/JSONL publication), and `src/llb/cli/eval/query_robustness.py`.
+`tests/llb/eval/test_query_robustness.py` drives a fake endpoint and fake store through all nine
+lanes using the graph module's pure-node seam, so the base `[dev]` GitHub environment does not
+need the optional LangGraph package. It checks deterministic variants, morphology-guard wiring
+(only the vocabulary-correction lane loads the probe), the mechanism split (normalization alone
+recovers the script classes but not keyboard noise), and proves the probe directory never gains
 correctness scores. Shared query-prep tests
 cover the bugs found by CUDA acceptance: collision-safe romanization, preservation of uppercase
 Latin acronyms, keyboard grave normalization, embedded homoglyph repair, short-token protection,
-and alphabetic/numeric candidate separation.
+and alphabetic/numeric candidate separation, plus the ambiguity-aware restoration constraints
+documented in [RAG core](rag-core.md#query-side-processing).
 
 CUDA-host evidence (2026-07-21): RTX 4060 Ti 16 GiB, Ollama, the full committed
 `ua_squad_postedited_v1` final split (n=82), seed 13, 8 percent character noise, k=10,

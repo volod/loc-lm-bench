@@ -93,6 +93,27 @@ def run_eval_cmd(
     graph_weight: Optional[float] = typer.Option(
         None, help="fused backend: graph share of weighted RRF, 0..1 (default 0.3)"
     ),
+    graph_fusion_candidates: Optional[int] = typer.Option(
+        None,
+        help="fused backend: per-lane candidate depth fused before the top_k cut "
+        "(default: top_k, i.e. each graph candidate that enters displaces a vector one)",
+    ),
+    graph_fusion_span_identity: Optional[str] = typer.Option(
+        None,
+        help="fused backend: span identity the lanes are fused by -- 'exact' (default, identical "
+        "offsets) or 'overlap' (fold a graph span into the vector chunk that contains it)",
+    ),
+    graph_fusion_span_merge_ratio: Optional[float] = typer.Option(
+        None,
+        help="fused backend: share of the shorter span a folding span identity needs covered "
+        "before two spans are one candidate (default 0.5; 1.0 == containment only, dead under "
+        "'exact')",
+    ),
+    graph_fusion_router: Optional[str] = typer.Option(
+        None,
+        help="fused backend: 'fixed' (default) or 'question_type' (sidecar label with a "
+        "deterministic question-text fallback)",
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
@@ -105,6 +126,12 @@ def run_eval_cmd(
         None,
         help="how kept chunks are laid into the prompt: rank (best-first, default) | "
         "reverse_rank (best-last)",
+    ),
+    context_strategy: Optional[str] = typer.Option(
+        None,
+        help="DIAGNOSTIC context lane (rag-vs-long-context-ablation): rag (retrieve, the default "
+        "and the leaderboard row) | closed_book (no context; the model answers from its weights) "
+        "| long_context (the item's whole source document, skipped when it does not fit)",
     ),
     query_prep: Optional[str] = typer.Option(
         None,
@@ -213,9 +240,14 @@ def run_eval_cmd(
         fusion_weight=fusion_weight,
         fusion_candidates=fusion_candidates,
         graph_weight=graph_weight,
+        graph_fusion_candidates=graph_fusion_candidates,
+        graph_fusion_span_identity=graph_fusion_span_identity,
+        graph_fusion_span_merge_ratio=graph_fusion_span_merge_ratio,
+        graph_fusion_router=graph_fusion_router,
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,
+        context_strategy=context_strategy,
         query_prep=_parse_query_prep(query_prep),
         query_glossary_path=query_glossary,
         query_prep_typo_guard=query_prep_typo_guard or None,
