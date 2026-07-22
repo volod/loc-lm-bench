@@ -36,6 +36,21 @@ def compare_graph_fusion_cmd(
         help="graph share used only for questions the question-type router sends to fusion; "
         "other questions are exact vector passthroughs",
     ),
+    routing_sidecar: bool = typer.Option(
+        True,
+        "--routing-sidecar/--no-routing-sidecar",
+        help="use question-type sidecar labels for routed rows; disable to exercise only the "
+        "deterministic fallback",
+    ),
+    heuristic_long_question_words: int = typer.Option(
+        16, min=1, help="sidecar-free router: minimum words for the long-question signal"
+    ),
+    heuristic_min_linked_entities: int = typer.Option(
+        2,
+        min=0,
+        help="sidecar-free router: minimum capitalized entities required with a long question; "
+        "zero makes length sufficient",
+    ),
     graph_fusion_candidates: str = typer.Option(
         DEFAULT_CANDIDATE_GRID,
         help="comma-separated per-lane candidate depths to sweep; 'k' == the scored cutoff "
@@ -84,6 +99,7 @@ def compare_graph_fusion_cmd(
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
     from llb.rag.fusion_evidence.rows import VECTOR_ROW
     from llb.rag.question_types import load_question_types_by_question
+    from llb.rag.fusion_routing import HeuristicPolicy
 
     cfg = load_config(config, goldset_path=goldset)
     try:
@@ -98,7 +114,7 @@ def compare_graph_fusion_cmd(
         typer.echo("[error] the gold set selection is empty", err=True)
         raise typer.Exit(code=2)
     vector, graphs = _load_lanes(cfg, graph_strategies)
-    question_types = load_question_types_by_question(cfg.goldset_path)
+    question_types = load_question_types_by_question(cfg.goldset_path) if routing_sidecar else {}
     rows = build_sweep_rows(
         vector,
         graphs,
@@ -109,6 +125,7 @@ def compare_graph_fusion_cmd(
         identities,
         routed_graph_weight,
         question_types,
+        HeuristicPolicy(heuristic_long_question_words, heuristic_min_linked_entities),
     )
     report = evaluate_fusion_evidence(
         rows,

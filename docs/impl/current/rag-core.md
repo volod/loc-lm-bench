@@ -500,8 +500,11 @@ The pure policy lives in `src/llb/rag/fusion_routing.py`. A recognized sidecar l
 `multi-hop` and `comparative` route to graph fusion; `factoid`, `definition`, `numeric`, and
 `procedural` route to vector. An absent or unknown label falls back to deterministic text signals:
 a bridge term routes directly, while a long question routes only when it also names multiple
-capitalized entities. Conflicting labels on duplicate question text are omitted from the sidecar
-map and therefore use the fallback. Every decision records its source and signal tuple.
+capitalized entities. `HeuristicPolicy` makes the word and entity thresholds explicit and
+validated; setting the entity threshold to zero makes question length sufficient for controlled
+calibration runs. The production default remains 16 words plus 2 linked entities. Conflicting
+labels on duplicate question text are omitted from the sidecar map and therefore use the fallback.
+Every decision records its source and signal tuple.
 
 `FusedRetriever` accepts the router at the shared retrieval seam, while
 `runner_retrieval._load_store` builds it from the configured gold-set sidecar. The setting is a
@@ -512,17 +515,35 @@ The fusion evidence command emits `routed/<strategy>@<weight>/d<depth>[/i<identi
 the fixed grid. `ROUTED_GRAPH_WEIGHT` controls their non-zero share; route counts are reported
 overall and by question-type slice. The same label parses back into an ordinary answer-quality
 `run-eval` lane, so the retrieval and answer comparisons exercise the production path rather than
-a sweep-only approximation.
+a sweep-only approximation. `FUSION_HIDE_ROUTING_SIDECAR=1` exercises only the fallback in the
+standard Make workflow; `FUSION_HEURISTIC_LONG_QUESTION_WORDS` and
+`FUSION_HEURISTIC_MIN_LINKED_ENTITIES` select a frozen deterministic policy.
+
+`make calibrate-fusion-routing` is the dedicated held-out workflow. It hides the sidecar from the
+router while retaining each item's span count as the evaluation label, retrieves each physical
+lane once per question, sweeps the declared threshold grid on `tuning`, freezes one policy, and
+only then initializes and scores `final`. Its Markdown and JSON artifacts report confusion counts,
+an item-id/signal ledger for routing errors, bootstrap precision/recall intervals, paired
+multi-span coverage and single-span recall deltas, and an explicit recommendation gate. The gate
+requires the tuning coverage interval to clear zero without a single-span interval below zero;
+final never participates in selection and must pass the same gate independently before the frozen
+policy can be recommended.
 
 CI coverage is split along those seams: `tests/llb/rag/test_graph_vector_fusion.py` pins sidecar
 precedence, heuristic signals, exact zero-weight passthrough, configuration fingerprints, and
 runner wiring; `tests/llb/rag/test_fusion_evidence.py` pins routed replay and decision reporting;
-`tests/llb/eval/test_answer_quality.py` pins label round-tripping and the routing outcome summary.
+`tests/llb/rag/test_fusion_calibration.py` pins threshold parsing, tuning-only selection, frozen
+final scoring, and the no-gain refusal; `tests/llb/eval/test_answer_quality.py` pins label
+round-tripping and the routing outcome summary.
 
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
   ROUTED_GRAPH_WEIGHT=0.3 GRAPH_FUSION_CANDIDATES=k,50 \
   GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
+make calibrate-fusion-routing CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl>
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  SPLIT=tuning FUSION_HIDE_ROUTING_SIDECAR=1 \
+  FUSION_HEURISTIC_LONG_QUESTION_WORDS=12 FUSION_HEURISTIC_MIN_LINKED_ENTITIES=0
 make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
   ANSWER_QUALITY_LANES=vector,routed/global_community@0.30/d50/ioverlap \
   SPLIT=final,tuning,calibration INCLUDE_DRAFTED=1
@@ -531,6 +552,8 @@ make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
 The CUDA result keeps the best fixed row's multi-hop retrieval gain while making every factoid
 retrieval and answer an exact vector tie; see
 [GraphRAG](graphrag-backend.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss).
+The held-out sidecar-free calibration recommends no threshold change; see
+[GraphRAG](graphrag-backend.md#sidecar-free-heuristic-calibration).
 
 ## Reranking And Context Order (rerank-context-order)
 

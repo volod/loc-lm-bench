@@ -73,6 +73,11 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   every row per question-type slice, `stats.py` is the paired bootstrap plus exact sign test,
   `verdict.py` is the adopt-or-reject rule, and `report.py` renders the Markdown artifact.
 
+`src/llb/rag/fusion_calibration/`
+: The held-out sidecar-free router calibration. It parses the deterministic threshold grid,
+  evaluates routing error and paired retrieval deltas on tuning, freezes one policy before final
+  retrieval, and renders the recommendation-gated JSON and Markdown artifacts.
+
 `src/llb/eval/answer_quality/`
 : The end-to-end companion to that sweep: it scores the SAME items under two retrieval lanes with
   the standard `run-eval` and compares the ANSWERS per question-type slice. `lanes.py` parses a
@@ -188,6 +193,10 @@ the shallower pool and the default policy on a tie.
 `routed/<strategy>@<weight>/d<depth>[/i<identity>]`. Its weight is applied only to questions the
 router calls multi-span; all other questions use the exact vector endpoint. The report records
 graph/vector and sidecar/heuristic decision counts, including a breakdown by question-type slice.
+`--no-routing-sidecar` masks the question-type map so routed rows use only deterministic text
+signals; the two `--heuristic-*` options select their fixed thresholds. The corresponding Make
+variables are `FUSION_HIDE_ROUTING_SIDECAR`, `FUSION_HEURISTIC_LONG_QUESTION_WORDS`, and
+`FUSION_HEURISTIC_MIN_LINKED_ENTITIES`.
 
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
@@ -584,9 +593,39 @@ The safety result is exact on the slice that motivated routing:
 
 Recommendation: use the routed overlap row when the bundle has the documented question-type
 sidecar and multi-hop coverage is the goal. Keep `fixed` as the shipped default: the evidence is
-drafted, the multi-hop answer gain is still absent, and the sidecar-free heuristic received zero
-live decisions. Held-out calibration of that fallback is tracked as
-`fusion-routing-heuristic-calibration` in [`plan.md`](../plan.md).
+drafted and the multi-hop answer gain is still absent. The sidecar-free policy has a separate
+held-out result below and does not support changing its defaults.
+
+### Sidecar-free heuristic calibration
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T180211Z-routing-calibration/`. The run used the
+same drafted goods ledger and matched stores, `global_community@0.30/d50/ioverlap`, k=10,
+multilingual E5 on the RTX 4060 Ti, 2,000 bootstrap resamples, and seed 13. Question-type labels
+were hidden from every routing decision; the evaluation truth was only whether an item carried
+more than one gold span.
+
+`make calibrate-fusion-routing` swept word thresholds 10/12/14/16/18/20 crossed with linked-entity
+thresholds 0/1/2 on the 31-item tuning split. It froze `w12/e0` before constructing the final-split
+retrieval caches, then evaluated that one policy on the untouched 31-item final split.
+
+| split | tp/fp/tn/fn | precision | recall | multi-span coverage delta | single-span recall delta |
+| --- | :-: | ---: | ---: | ---: | ---: |
+| tuning | 9/7/14/1 | 0.562 [0.333, 0.800] | 0.900 [0.667, 1.000] | +0.050 [0.000, +0.150] | +0.048 [0.000, +0.143] |
+| final | 8/6/14/3 | 0.571 [0.308, 0.833] | 0.727 [0.444, 1.000] | +0.091 [0.000, +0.227] | +0.000 [-0.150, +0.150] |
+
+Verdict: **no recommendation**. The frozen policy's tuning coverage interval touches zero, so it
+does not pass the predeclared positive-gain gate. Final points in the same positive direction but
+does not repair a failed tuning gate, and its single-span interval includes regression. The
+production fallback therefore stays at 16 words plus 2 linked entities.
+
+The standard sweep path independently reproduced the frozen policy with
+`FUSION_HIDE_ROUTING_SIDECAR=1` on each split. The routed row gained multi-hop recall +0.100
+[0.000, +0.300] on tuning and +0.182 [0.000, +0.455] on final, while all-spans@10 was unchanged;
+both sweep verdicts were `inconclusive`. Their reports are the calibration artifact's
+`tuning-compare/` and `final-compare/` children. The remaining limitation is statistical power,
+not an invitation to select on final; a larger accepted-ledger repeat is forward work in
+[`plan.md`](../plan.md) (`fusion-routing-calibration-power`).
 
 ## Ontology Scope
 

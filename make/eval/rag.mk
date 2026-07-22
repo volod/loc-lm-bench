@@ -2,7 +2,8 @@
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
-	compare-context-strategies bench-query-robustness probe-context-position analyze-misses
+	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
+	probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -60,19 +61,36 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, and span identity (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, and span identity (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(GRAPH_WEIGHTS),--graph-weights "$(GRAPH_WEIGHTS)",) \
 		$(if $(ROUTED_GRAPH_WEIGHT),--routed-graph-weight "$(ROUTED_GRAPH_WEIGHT)",) \
+		$(if $(FUSION_HIDE_ROUTING_SIDECAR),--no-routing-sidecar,) \
+		$(if $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),--heuristic-long-question-words $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),) \
+		$(if $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),--heuristic-min-linked-entities $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),) \
 		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates "$(GRAPH_FUSION_CANDIDATES)",) \
 		$(if $(GRAPH_FUSION_SPAN_IDENTITY),--graph-fusion-span-identity "$(GRAPH_FUSION_SPAN_IDENTITY)",) \
 		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
+
+calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tuning, and score held-out final (GOLDSET= ROUTING_LONG_WORD_GRID= ROUTING_ENTITY_GRID= ROUTING_TUNING_SPLIT= ROUTING_FINAL_SPLIT= ROUTING_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main calibrate-fusion-routing $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) \
+		--tuning-split "$(ROUTING_TUNING_SPLIT)" --final-split "$(ROUTING_FINAL_SPLIT)" \
+		--long-question-words "$(ROUTING_LONG_WORD_GRID)" \
+		--min-linked-entities "$(ROUTING_ENTITY_GRID)" \
+		--graph-strategy "$(ROUTING_GRAPH_STRATEGY)" \
+		--graph-weight $(ROUTING_GRAPH_WEIGHT) \
+		--candidates $(ROUTING_CANDIDATES) --span-identity "$(ROUTING_SPAN_IDENTITY)" \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ROUTING_OUT_DIR),--out-dir "$(ROUTING_OUT_DIR)",)
 
 compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -87,6 +87,16 @@ def test_paired_bootstrap_is_deterministic_and_brackets_the_delta():
     assert (first["wins"], first["losses"], first["ties"]) == (2, 0, 2)
 
 
+def test_bootstrap_ratio_handles_route_precision_and_a_zero_denominator():
+    from llb.rag.fusion_evidence.stats import bootstrap_ratio
+
+    index_sets = bootstrap_index_sets(3, resamples=20, seed=13)
+    measured = bootstrap_ratio([True, False, False], [True, True, False], index_sets)
+    assert measured["mean"] == pytest.approx(0.5)
+    assert measured["lo"] <= measured["mean"] <= measured["hi"]
+    assert bootstrap_ratio([False], [False], [[0]]) == {"mean": 0.0, "lo": 0.0, "hi": 0.0}
+
+
 def test_sign_test_is_two_sided_and_symmetric():
     assert sign_test_p(0, 0) == 1.0
     assert sign_test_p(5, 0) == pytest.approx(2 * 0.5**5)

@@ -151,6 +151,20 @@ GRAPH_FUSION_SPAN_IDENTITY ?=
 GRAPH_STRATEGIES ?=
 FUSION_FOCUS_SLICE ?=
 FUSION_BOOTSTRAP_RESAMPLES ?=
+FUSION_HIDE_ROUTING_SIDECAR ?=
+FUSION_HEURISTIC_LONG_QUESTION_WORDS ?=
+FUSION_HEURISTIC_MIN_LINKED_ENTITIES ?=
+# Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
+# evaluate only the frozen policy on the held-out final split.
+ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20
+ROUTING_ENTITY_GRID ?= 0,1,2
+ROUTING_TUNING_SPLIT ?= tuning
+ROUTING_FINAL_SPLIT ?= final
+ROUTING_GRAPH_STRATEGY ?= global_community
+ROUTING_GRAPH_WEIGHT ?= 0.3
+ROUTING_CANDIDATES ?= 50
+ROUTING_SPAN_IDENTITY ?= overlap
+ROUTING_OUT_DIR ?=
 # End-to-end answer quality of two retrieval lanes (compare-answer-quality): the scored lanes
 # (compare-graph-fusion row labels; the FIRST is the baseline), the sweep comparison.json whose
 # verdict names them instead, and the full split by default.

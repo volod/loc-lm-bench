@@ -22,7 +22,12 @@ from llb.rag.fusion_evidence.models import (
     fused_row_label,
     routed_row_label,
 )
-from llb.rag.fusion_routing import QuestionTypeRouter, RoutingDecision
+from llb.rag.fusion_routing import (
+    DEFAULT_HEURISTIC_POLICY,
+    HeuristicPolicy,
+    QuestionTypeRouter,
+    RoutingDecision,
+)
 from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_IDENTITIES, resolve_span_identity
 
 DEFAULT_GRAPH_WEIGHTS = (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0)
@@ -108,6 +113,7 @@ def build_sweep_rows(
     identities: tuple[str, ...] = DEFAULT_SPAN_IDENTITIES,
     routed_graph_weight: float | None = None,
     question_types: dict[str, str] | None = None,
+    heuristic_policy: HeuristicPolicy = DEFAULT_HEURISTIC_POLICY,
 ) -> dict[str, Retriever]:
     """`vector` + a row per graph strategy + a fused row per (strategy, weight, depth, identity).
 
@@ -129,7 +135,7 @@ def build_sweep_rows(
                 label = fused_row_label(strategy, weight, depth, identity)
                 rows[label] = FusedReplay(vector_cache, graph_cache, weight, depth, identity)
         if routed_graph_weight is not None:
-            router = QuestionTypeRouter(routed_graph_weight, question_types)
+            router = QuestionTypeRouter(routed_graph_weight, question_types, heuristic_policy)
             for depth in depths:
                 for identity in identities:
                     label = routed_row_label(strategy, routed_graph_weight, depth, identity)

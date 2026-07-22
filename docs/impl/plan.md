@@ -43,33 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### fusion-routing-heuristic-calibration (optional)
+### fusion-routing-calibration-power (optional)
 
-Calibrate the sidecar-free fallback router on a corpus whose questions have hidden span-count
-labels. The current evidence exercises the sidecar route for every scored item
-([GraphRAG](current/graphrag-backend.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss)),
-so it cannot estimate the false-positive rate of the length/entity/bridge-term heuristic. Hide the
-sidecar from the router, compare its graph/vector decisions with whether each item needs multiple
-gold spans, sweep only the documented deterministic thresholds on a tuning partition, and freeze
-the choice before scoring the final partition.
+Increase the sidecar-free routing calibration's statistical power before reconsidering its
+production defaults. The first held-out measurement cannot separate its positive retrieval deltas
+from zero; see the compact result and frozen-policy diagnostics in
+[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
+independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
+before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
 
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `QuestionTypeRouter` and its auditable signal tuple in
-  `src/llb/rag/fusion_routing.py` plus the routed-row report.
-- User-visible outcome: operators without a question-type sidecar get a measured routing error
-  rate instead of relying on an uncalibrated fallback.
-- Scope boundary: in scope -- precision/recall of the binary route, threshold selection on tuning,
-  and one held-out retrieval comparison. Out of scope -- a learned or model-based router and
-  per-item tuning on the scored split.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/` with the sidecar hidden
-  from routing but retained for evaluation labels.
-- Execution path: add a sidecar-masking comparison option, run `make compare-graph-fusion` on the
-  tuning and final partitions, and report route confusion counts plus retrieval deltas.
-- Acceptance gates: `make ci` green; the report separates tuning from final; the held-out route
-  precision and recall carry paired intervals; a recommended threshold is recorded only when it
-  improves routed retrieval without a single-span regression.
-- Documentation target: the question-type routing subsections of [RAG core](current/rag-core.md)
-  and [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: `multihop-ledger-human-acceptance` must provide a non-empty accepted multi-span
+  ledger. Human step that gates completion: accept enough additional genuinely multi-span
+  questions to meet the predeclared split sizes.
+- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
+  artifact before changing the fallback defaults.
+- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
+  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
+  a learned router, and selecting on final.
+- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
+  the accepted ledger.
+- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
+  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
+- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
+  power target; a threshold changes only if the tuning gain clears zero without single-span
+  regression and the untouched final split confirms the same direction.
+- Documentation target: the sidecar-free calibration subsections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### span-merge-ratio-sensitivity (optional)
 

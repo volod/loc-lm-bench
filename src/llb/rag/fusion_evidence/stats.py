@@ -74,6 +74,32 @@ def bootstrap_interval(
     return {"mean": point, "lo": lo, "hi": hi}
 
 
+def bootstrap_ratio(
+    numerators: list[bool],
+    denominators: list[bool],
+    index_sets: list[list[int]],
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> Interval:
+    """Bootstrap a ratio of counts, such as route precision or recall.
+
+    A zero denominator yields 0.0: a router making no positive prediction has zero measured
+    precision, not perfect precision or missing evidence.
+    """
+    if len(numerators) != len(denominators):
+        raise ValueError("ratio needs one denominator flag per numerator flag")
+
+    def ratio(indexes: list[int]) -> float:
+        denominator = sum(denominators[i] for i in indexes)
+        return sum(numerators[i] for i in indexes) / denominator if denominator else 0.0
+
+    all_indexes = list(range(len(numerators)))
+    point = ratio(all_indexes)
+    if not numerators or not index_sets:
+        return {"mean": point, "lo": point, "hi": point}
+    lo, hi = _percentiles([ratio(indexes) for indexes in index_sets], confidence)
+    return {"mean": point, "lo": lo, "hi": hi}
+
+
 def sign_test_p(wins: int, losses: int) -> float:
     """Exact two-sided sign-test p-value over the non-tied pairs (1.0 when none differ)."""
     decided = wins + losses
