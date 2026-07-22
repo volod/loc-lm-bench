@@ -15,6 +15,7 @@ measured one.
 from llb.eval.answer_quality.models import (
     METRIC_OBJECTIVE,
     METRIC_RETRIEVAL_HIT,
+    LaneDecision,
     LaneReport,
     AnswerQualityVerdict,
     VERDICT_ANSWER_GAIN,
@@ -49,10 +50,12 @@ def decide(
     focus_slice: str,
     coverage: str = METRIC_RETRIEVAL_HIT,
 ) -> AnswerQualityVerdict:
-    """Pick the best candidate lane on the focus slice and state what its gain amounts to.
+    """Judge every candidate lane on the focus slice and name the strongest one.
 
     `coverage` names the retrieval metric a retrieval-only effect is stated on -- `all_spans_at_k`
-    when the run bundles carried the retrieval sidecar, the weaker any-span hit otherwise.
+    when the run bundles carried the retrieval sidecar, the weaker any-span hit otherwise. Every
+    candidate keeps its own decision in `lane_decisions`: a three-lane comparison has a result per
+    lane, and collapsing it to the winner would silently drop the others.
     """
     verdict: AnswerQualityVerdict = {
         "focus_slice": focus_slice,
@@ -62,6 +65,7 @@ def decide(
         "coverage_metric": coverage,
         "decision": VERDICT_NO_EVIDENCE,
         "reason": "",
+        "lane_decisions": {},
     }
     candidates = {label: lane for label, lane in lanes.items() if label != baseline}
     if not candidates:
@@ -70,11 +74,15 @@ def decide(
     if verdict["focus_n"] == 0:
         verdict["reason"] = f"the scored set has no {focus_slice} item"
         return verdict
+    decisions: dict[str, LaneDecision] = {}
+    for label in sorted(candidates):
+        decision, reason = _judge(candidates[label], label, baseline, focus_slice, coverage)
+        decisions[label] = {"decision": decision, "reason": reason}
     best = max(sorted(candidates), key=lambda label: _rank_key(candidates[label], focus_slice))
-    decision, reason = _judge(candidates[best], best, baseline, focus_slice, coverage)
     verdict["best_lane"] = best
-    verdict["decision"] = decision
-    verdict["reason"] = reason
+    verdict["decision"] = decisions[best]["decision"]
+    verdict["reason"] = decisions[best]["reason"]
+    verdict["lane_decisions"] = decisions
     return verdict
 
 
@@ -89,7 +97,7 @@ def _focus_n(lanes: dict[str, LaneReport], baseline: str, focus_slice: str) -> i
 def _judge(
     lane: LaneReport, label: str, baseline: str, focus_slice: str, coverage_metric: str
 ) -> tuple[str, str]:
-    """The `(decision, reason)` for the winning candidate lane."""
+    """The `(decision, reason)` for one candidate lane against the baseline."""
     objective = _focus_delta(lane, focus_slice, METRIC_OBJECTIVE)
     coverage = _focus_delta(lane, focus_slice, coverage_metric)
     detail = (

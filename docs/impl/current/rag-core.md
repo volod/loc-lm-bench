@@ -454,9 +454,10 @@ fuse nothing, so they are identity-independent.
 
 The knob rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-span-identity`,
 `make sweep SWEEP_RAG_GRID="graph_fusion_span_identity=exact,overlap"`, and the sweep lane's
-`GRAPH_FUSION_SPAN_IDENTITY` grid. `exact` remains the default; the measured adopt verdict for
-`overlap` rests on a drafted multi-hop ledger, see
-[GraphRAG](graphrag-backend.md#span-identity-evidence).
+`GRAPH_FUSION_SPAN_IDENTITY` grid. `exact` remains the default: the measured adopt verdict for
+`overlap` rests on a drafted multi-hop ledger, and the end-to-end run of the same two rows finds
+the extra evidence is retrieval-only and costs measurable factoid answer quality -- see
+[GraphRAG](graphrag-backend.md#span-identity-evidence) for both halves.
 
 ### Fusion candidate depth (`graph_fusion_candidates`)
 

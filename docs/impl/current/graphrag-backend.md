@@ -385,11 +385,13 @@ What the run establishes:
 
 Verdict: `graph_fusion_span_identity` ships **opt-in with `exact` as the default**, despite the
 adopt. The evidence is measured on the DRAFTED multi-hop ledger (see the boundary above), and the
-project's standing rule is that a drafted slice does not move a default. The recommended operator
-setting when fusion is enabled on a corpus like this one is
-`graph_fusion_span_identity=overlap` with `graph_fusion_candidates=50`; flipping the shipped
-default is gated on the accepted-ledger re-run tracked in [`plan.md`](../plan.md)
-(`multihop-ledger-human-acceptance`).
+project's standing rule is that a drafted slice does not move a default. `overlap` with
+`graph_fusion_candidates=50` is the setting to enable when multi-hop retrieval coverage is the
+goal -- but the end-to-end run below measures an answer-side cost on the factoid slice, so it is
+not a free upgrade (see
+[the overlap answer-quality result](#measured-result-the-overlap-span-identity-carries-more-evidence-and-costs-factoid-answers)).
+Flipping the shipped default is gated on the accepted-ledger re-run tracked in
+[`plan.md`](../plan.md) (`multihop-ledger-human-acceptance`).
 
 ### Answer-quality evidence
 
@@ -421,6 +423,11 @@ The verdict is one of `answer_quality_gain` (the objective delta's interval clea
 `inconclusive`, or `no_gain`. `retrieval_only` is checked BEFORE `inconclusive` on purpose: a
 measured coverage gain paired with a noisy objective is a result about retrieval, and reporting it
 as merely inconclusive would drop the half that was measured.
+
+More than two lanes are allowed, and then EVERY candidate keeps its own decision in the verdict's
+`lane_decisions` (rendered as a "Per-lane decisions" list): the headline verdict names only the
+strongest candidate, so a three-lane comparison that collapsed to one sentence would silently drop
+the others.
 
 ```bash
 make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
@@ -481,6 +488,55 @@ Boundaries, both recorded in the artifact rather than inferred:
   is tracked in [`plan.md`](../plan.md) (`answer-side-span-coverage-metric`), and repeating the
   comparison on a second model -- since "did the model use the extra hop" is a model property -- is
   tracked as `fusion-answer-quality-second-model`.
+
+#### Measured result: the overlap span identity carries more evidence and costs factoid answers
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T151635Z-overlap-answer-quality/answer-quality/`.
+THREE lanes were scored end to end over the identical 95-item drafted ledger, same model, splits,
+bootstrap, and seed as the two-lane run above: `vector`, the best `exact` row
+(`fused/global_community@0.10/d10`), and the best `overlap` row
+(`fused/global_community@0.30/d50/ioverlap`) named by the span-identity sweep's verdict.
+
+Both shared lanes reproduced the earlier run EXACTLY -- every metric mean of `vector` and of the
+`exact` row is identical to the two-lane comparison, overall and on the multi-hop slice. Generation
+is deterministic for these grounded lanes, so the three-lane table and the earlier two-lane table
+are one measurement, not two.
+
+Multi-hop slice (n=35), lane minus vector, 95% paired bootstrap CI:
+
+| lane | objective | span coverage | recall@10 | all-spans@10 |
+| --- | ---: | ---: | ---: | ---: |
+| exact `@0.10/d10` | -0.005 [-0.071, +0.072] | **+0.057 [+0.014, +0.114]** | +0.086 [+0.000, +0.200] | +0.029 [+0.000, +0.086] |
+| overlap `@0.30/d50` | -0.000 [-0.075, +0.078] | **+0.071 [+0.014, +0.129]** | +0.114 [+0.029, +0.229] | +0.029 [+0.000, +0.086] |
+
+Verdict: **`retrieval_only` for BOTH lanes.** The overlap row carries the most multi-hop evidence
+of any lane measured (span coverage 0.443 versus the vector lane's 0.371, 5 wins and 0 losses) and
+converts none of it into better answers: its multi-hop objective is 0.326 against the vector lane's
+0.326 -- a delta of -0.000 with 12 wins against 7 losses, pure churn.
+
+The new finding is on the other side of the ledger:
+
+- **The overlap lane measurably HURTS factoid answers.** On the 40 factoid items the objective
+  falls -0.053 [-0.111, -0.001] (4 wins, 13 losses, sign test p=0.049) -- the only interval in the
+  run that clears zero, and it points down. The `exact` row costs less and does not clear zero
+  (-0.040 [-0.096, +0.005]). Factoid retrieval itself is flat (span coverage -0.025 [-0.100,
+  +0.050]), so this is the CONTEXT changing under a single-span question, not evidence being lost:
+  a stronger graph vote re-ranks the chunk the model was already answering from.
+- **Overall answer quality stays slightly negative for both**: -0.027 [-0.062, +0.009] for `exact`
+  and -0.029 [-0.067, +0.008] for `overlap`, both straddling zero.
+- **The retrieval columns reproduce the sweep exactly through a second code path.** Scored through
+  `run-eval` rather than the sweep's replay wrappers, the overlap lane reports multi-hop recall
+  0.800, all-spans 0.086, and span coverage 0.443 -- every figure identical to the swept row.
+
+What this means for the recommendation: on this corpus and this model, `graph_fusion_span_identity=
+overlap` buys strictly more multi-hop RETRIEVAL than `exact` and pays for it with a measured
+factoid ANSWER cost, so it stays opt-in and is worth enabling only when multi-hop coverage is the
+goal and the factoid slice is not. Whether a different model uses the extra hop is tracked in
+[`plan.md`](../plan.md) (`fusion-answer-quality-second-model`), and routing the graph lane by
+question type -- so a factoid question is never fused at all -- is tracked as
+`fusion-question-type-routing`. The ledger is DRAFTED and the answer-side metric still cannot see
+hops; both boundaries above apply unchanged.
 
 ## Ontology Scope
 

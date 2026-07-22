@@ -204,6 +204,36 @@ def test_better_retrieval_that_does_not_reach_the_answer_is_a_retrieval_only_eff
     assert verdict["coverage_metric"] == METRIC_RETRIEVAL_HIT
 
 
+def test_every_candidate_lane_keeps_its_own_decision_not_just_the_winner():
+    """A three-lane comparison has a result per lane; the headline verdict names only one."""
+    overlap = "fused/global_community@0.30/d50/ioverlap"
+    ids = [f"q{i}" for i in range(12)]
+    report = compare_answer_quality(
+        {
+            VECTOR: [_row(i, 0.0, 0.0) for i in ids],
+            FUSED: [_row(i, 0.0, 1.0) for i in ids],  # more evidence, identical answers
+            overlap: [_row(i, 1.0, 1.0) for i in ids],  # more evidence AND better answers
+        },
+        _types(*ids),
+        baseline=VECTOR,
+        resamples=200,
+    )
+    verdict = report["verdict"]
+    assert verdict["best_lane"] == overlap
+    assert verdict["lane_decisions"][overlap]["decision"] == VERDICT_ANSWER_GAIN
+    assert verdict["lane_decisions"][FUSED]["decision"] == VERDICT_RETRIEVAL_ONLY
+    assert VECTOR not in verdict["lane_decisions"]  # the baseline is not judged against itself
+    text = format_report(report)
+    assert "Per-lane decisions" in text
+    assert all(label in text for label in (FUSED, overlap))
+
+
+def test_a_two_lane_comparison_does_not_repeat_its_verdict_as_a_lane_list():
+    report = _report([0.0] * 12, [1.0] * 12)
+    assert list(report["verdict"]["lane_decisions"]) == [FUSED]
+    assert "Per-lane decisions" not in format_report(report)
+
+
 def test_a_measured_coverage_gain_outranks_a_noisy_objective_gain():
     """A +0.01 objective whose interval spans zero must not hide a coverage gain that does not."""
     verdict = _report(

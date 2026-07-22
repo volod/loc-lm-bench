@@ -81,8 +81,20 @@ class ItemOutcome(TypedDict):
     lanes: dict[str, dict[str, float]]
 
 
+class LaneDecision(TypedDict):
+    """One candidate lane's own decision against the baseline."""
+
+    decision: str
+    reason: str
+
+
 class AnswerQualityVerdict(TypedDict):
-    """Whether the candidate lane's retrieval gain reaches the answer."""
+    """Whether the candidate lane's retrieval gain reaches the answer.
+
+    `decision` / `reason` / `best_lane` describe the WINNING candidate; `lane_decisions` carries
+    the same judgment for every candidate, because a comparison of three or more lanes has a
+    result per lane and reporting only the winner would drop the rest.
+    """
 
     focus_slice: str
     focus_n: int
@@ -91,6 +103,7 @@ class AnswerQualityVerdict(TypedDict):
     coverage_metric: str
     decision: str
     reason: str
+    lane_decisions: dict[str, LaneDecision]
 
 
 class AnswerQualityReport(TypedDict):

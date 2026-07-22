@@ -91,6 +91,19 @@ def _item_table(report: AnswerQualityReport) -> list[str]:
     return lines
 
 
+def _lane_decisions(report: AnswerQualityReport) -> list[str]:
+    """A decision per candidate lane -- the headline verdict only names the winner."""
+    decisions = report["verdict"]["lane_decisions"]
+    if len(decisions) < 2:
+        return []
+    lines = ["### Per-lane decisions", ""]
+    for label in sorted(decisions):
+        entry = decisions[label]
+        lines.append(f"- `{label}`: **{entry['decision']}** -- {entry['reason']}")
+    lines.append("")
+    return lines
+
+
 def _lane_list(report: AnswerQualityReport) -> list[str]:
     """One entry per lane, naming the run bundle(s) its per-case scores came from."""
     lines = []
@@ -124,6 +137,7 @@ def format_report(
     ]
     lines += _lane_list(report)
     lines.append("")
+    lines += _lane_decisions(report)
     lines += _metric_table(
         report,
         report["focus_slice"],

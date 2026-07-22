@@ -43,33 +43,41 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### fusion-overlap-answer-quality
+### fusion-question-type-routing
 
-The adopted `overlap` span-identity row is a RETRIEVAL result: it carries more of the multi-hop
-evidence and ranks it better, and nothing yet says a model turns that into a better answer -- the
-one earlier end-to-end comparison scored an `exact` row
-([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)). Score the identical item set end
-to end under `vector` versus the sweep's best `overlap` row and read the per-slice objective, so the
-recommended operator setting (`graph_fusion_span_identity=overlap` with a depth-50 pool) is either
-confirmed as an answer gain or recorded as retrieval-only. The lane already parses the
-`/i<identity>` row label back into retrieval knobs, so this is a run, not a build.
+Fusion helps and hurts different question types at once, and the lane currently applies ONE graph
+weight to all of them. On the measured corpus the best fused row gains multi-hop retrieval coverage
+(+0.071 span coverage, interval clear of zero) while its factoid answers fall -0.053 [-0.111,
+-0.001] -- the only answer-side interval anywhere in the run that excludes zero, and factoid
+retrieval itself is flat, so the graph vote is re-ranking the context of questions that never
+needed a second hop
+([GraphRAG](current/graphrag-backend.md#measured-result-the-overlap-span-identity-carries-more-evidence-and-costs-factoid-answers)).
+Route instead of averaging: pick the graph weight per question (zero for a question the router
+calls single-span), starting with the cheapest usable signal -- the question-type sidecar label
+where one exists, else a deterministic heuristic (question length, multiple linked entities, a
+bridge term) -- and score the routed lane as one more row beside the fixed-weight rows.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-answer-quality` with `FUSION_COMPARISON=<span-identity
-  sweep>/comparison.json`, whose verdict names the overlap row
-  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)).
-- User-visible outcome: the operator learns whether the measured overlap coverage gain reaches the
-  ANSWER, which is what a recommendation to enable the policy has to rest on.
-- Scope boundary: in scope -- one comparison on the drafted bundle, the per-slice deltas, and the
-  verdict. Out of scope -- changing the shipped default, re-tuning the graph weight, and any
-  metric change.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Execution path: `make compare-answer-quality MODEL=<roster-model> SPLIT=final,tuning,calibration
-  FUSION_COMPARISON=<span-identity-sweep>/comparison.json INCLUDE_DRAFTED=1`; no new CI coverage.
-- Acceptance gates: `make ci` green; both lanes score the identical item set at the same seed; the
-  report states answer-gain versus retrieval-only for the overlap row.
-- Documentation target: the answer-quality evidence subsection of
-  [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+- Dependencies: none. Reuse `FusedRetriever` / `fuse_lane_hits` in `src/llb/rag/fusion.py`, the
+  question-type sidecar in `src/llb/rag/question_types.py`, and both comparison lanes
+  ([GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence)).
+- User-visible outcome: the operator can enable graph fusion for the questions it helps without
+  paying for it on the questions it hurts, instead of choosing one weight for the whole gold set.
+- Scope boundary: in scope -- the routing seam, one or two routers (sidecar label, deterministic
+  heuristic), the routed row in the sweep, and the end-to-end answer comparison of the routed row.
+  Out of scope -- a learned/model-based router, changing the span-identity default, and per-item
+  weight tuning on the scored split.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/` and its
+  `answer-quality/` comparison.
+- Execution path: `make compare-graph-fusion` with the routed row in the grid, then
+  `make compare-answer-quality` on the routed row versus `vector`; CI covers the router's decisions
+  and the zero-weight passthrough over fake lane stores.
+- Acceptance gates: `make ci` green; a routed question at weight zero is an exact vector
+  passthrough; the run reports the routed row beside the fixed-weight rows with paired intervals,
+  and states whether routing keeps the multi-hop coverage gain while clearing the factoid loss.
+- Documentation target: [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and the
+  graph-vector fusion evidence section of
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### span-merge-ratio-sensitivity (optional)
 
@@ -183,9 +191,12 @@ the drafted-grounding rules are current behavior
   and re-tuning the graph weight per model.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
 - Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
-  calibration FUSION_COMPARISON=<sweep>/comparison.json INCLUDE_DRAFTED=1`; no new CI coverage.
+  calibration ANSWER_QUALITY_LANES=vector,<best-exact-row>,<best-overlap-row> INCLUDE_DRAFTED=1`
+  -- the same three lanes the first model was scored on, so the two models are compared row for
+  row; no new CI coverage.
 - Acceptance gates: `make ci` green; both models score the identical item set at the same seed;
-  the report states whether the two models agree on the verdict.
+  the report states whether the two models agree on the verdict per lane, including whether the
+  factoid cost of the overlap row reproduces.
 - Documentation target: the answer-quality evidence subsection of
   [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
 
