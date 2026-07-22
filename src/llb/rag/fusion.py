@@ -57,23 +57,45 @@ class FusedRetriever:
         if self.graph_weight == 0.0:
             return vector_hits
         graph_hits = self.graph.retrieve(lexical_query, k)
-        records, lanes = _span_candidates(vector_hits, graph_hits)
-        fused = weighted_rrf_fuse(
-            lanes,
-            [1.0 - self.graph_weight, self.graph_weight],
-            k_const=GRAPH_VECTOR_RRF_K,
-        )
-        out: list[ChunkRecord] = []
-        for rank, (key, score) in enumerate(fused[:k], 1):
-            chunk = deepcopy(records[key])
-            metadata = dict(chunk.get("metadata") or {})
-            metadata["fusion_lanes"] = _matching_lanes(key, vector_hits, graph_hits)
-            metadata["graph_weight"] = self.graph_weight
-            chunk["metadata"] = metadata
-            chunk["retrieval_score"] = float(score)
-            chunk["rank"] = rank
-            out.append(chunk)
-        return out
+        return fuse_lane_hits(vector_hits, graph_hits, self.graph_weight, k)
+
+
+def fuse_lane_hits(
+    vector_hits: list[ChunkRecord],
+    graph_hits: list[ChunkRecord],
+    graph_weight: float,
+    k: int,
+) -> list[ChunkRecord]:
+    """Fuse ONE question's already-retrieved lane rankings at `graph_weight`.
+
+    Split out of `FusedRetriever` so a graph-weight sweep can query each lane once per question
+    and re-fuse the SAME candidates at every weight: the lane rankings do not depend on the
+    weight, only the fusion does, so this is identical to re-querying per weight but costs one
+    retrieval pass. Endpoint weights stay exact lane passthroughs.
+    """
+    if k < 1:
+        return []
+    if graph_weight == 1.0:
+        return graph_hits[:k]
+    if graph_weight == 0.0:
+        return vector_hits[:k]
+    records, lanes = _span_candidates(vector_hits, graph_hits)
+    fused = weighted_rrf_fuse(
+        lanes,
+        [1.0 - graph_weight, graph_weight],
+        k_const=GRAPH_VECTOR_RRF_K,
+    )
+    out: list[ChunkRecord] = []
+    for rank, (key, score) in enumerate(fused[:k], 1):
+        chunk = deepcopy(records[key])
+        metadata = dict(chunk.get("metadata") or {})
+        metadata["fusion_lanes"] = _matching_lanes(key, vector_hits, graph_hits)
+        metadata["graph_weight"] = graph_weight
+        chunk["metadata"] = metadata
+        chunk["retrieval_score"] = float(score)
+        chunk["rank"] = rank
+        out.append(chunk)
+    return out
 
 
 def _span_candidates(

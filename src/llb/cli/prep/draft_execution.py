@@ -92,6 +92,7 @@ def run_draft(request: DraftRequest) -> None:
             multi_hop=request.multi_hop,
             chains=request.chains,
             multi_hop_max_paths=request.multi_hop_max_paths,
+            multi_hop_bridge_fill=request.multi_hop_bridge_fill,
             dedup_against=dedup_against_dirs,
             graph_dir=request.graph_dir,
             rejection_feedback=request.rejection_feedback,

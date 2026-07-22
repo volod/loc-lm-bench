@@ -341,6 +341,16 @@ with a `question_type` and `difficulty` label reviewers and the miss analyzer ca
 [robust backends and ontology drafting](robustness-ontology-backends.md) for the module map, report
 fields, and command reference.
 
+`DRAFT_MULTI_HOP=1` alone walks strict directed `A -r1-> B -r2-> C` chains, which extracted
+Ukrainian PDF graphs rarely supply: the 625-node, 213-edge public-literature graph yields exactly
+one such path, so a multi-hop question slice cannot be measured from it.
+`DRAFT_MULTI_HOP_BRIDGE_FILL=1` (`--multi-hop-bridge-fill`) keeps directed paths first and then
+fills the path budget with the same shared-bridge fact pairs the chain lane uses -- two distinct
+facts incident on one entity, cited from two distinct spans. The drafted item still has to name the
+bridge or end entity in its reference answer and still has to re-ground >= 2 distinct exact spans,
+so the multi-span contract is unchanged; only the supply of candidate paths widens. The strict walk
+remains the default, because a directed chain is the stronger multi-hop claim.
+
 ### Yield-max empirical acceptance
 
 The 2026-07-12 local acceptance preparation compares coverage-target sampling with the flat

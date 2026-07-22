@@ -19,19 +19,23 @@ model-independent **retrieval** signal, which is CI-provable from fakes.
                                   [needs a local endpoint; disable thinking on reasoning models]
     3. compare                    make compare-retrieval GOLDSET=<goldset> RAG_K=10
                                   [recall@k + MRR per backend, same source-span metric]
+    4. sweep the fusion weight    make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset>
+                                  [optional; multi-hop slice + all-spans@k + intervals]
 
 The human decision sits in step 2 (pick a capable extraction model and the right serving knobs)
 and in reading step 3: GraphRAG pays off on multi-hop narrative corpora, not single-span factoid
 lookup -- see the [reference result](#reference-factoid-corpus-result) before concluding.
 
-## The two commands
+## The commands
 
 | Command | What it does | Needs |
 | --- | --- | --- |
 | `llb build-graph` | Builds the GraphRAG store (node/edge JSONL + communities) from an ontology-assisted drafting extraction over the corpus. | a local endpoint when extracting fresh |
 | `llb compare-retrieval` | Scores recall@k / MRR for every BUILT backend on one gold set; skips a backend whose store is absent. | a built FAISS index and/or graph store |
+| `llb compare-graph-fusion` | Sweeps the fused graph weight and decides it on the multi-hop slice, with multi-span metrics and paired intervals. | both stores built, plus multi-hop-labeled gold items |
 
-`make compare-retrieval GOLDSET=... RAG_K=10` wraps the second command.
+`make compare-retrieval GOLDSET=... RAG_K=10` and `make compare-graph-fusion CONFIG=... GOLDSET=...`
+wrap the last two.
 
 ## Step 1 -- build the FAISS index (the baseline)
 
@@ -93,6 +97,22 @@ native speed. Pick the largest model that **fits**, or accept the offload penalt
 
 It prints an ASCII table and (with `--out`) writes the JSON report. A backend whose store is not
 built is skipped with a log line, so you can compare whatever is present.
+
+## Step 4 (optional) -- sweep the fusion weight on multi-hop questions
+
+`compare-retrieval` ranks backends at one graph weight. When the gold set has multi-hop items
+(drafted with `--multi-hop`, labeled in `needle_items.jsonl`), sweep the weight instead:
+
+    llb compare-graph-fusion --config <run-config.yaml> --k 10 \
+      --graph-weights 0,0.1,0.2,0.3,0.5,0.7,1.0 --out-dir <artifact-dir>
+    # or: make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset> GRAPH_WEIGHTS=0,0.3,1.0
+
+It writes `report.md` / `comparison.json` with, per graph weight and strategy, `recall@k` beside
+`all-spans@k` (did the context carry EVERY hop, not just one), paired bootstrap intervals, the
+item-level win/loss ledger, and an adopt / inconclusive / reject verdict for the multi-hop slice.
+Read `all-spans@k` first: a healthy `recall@k` on multi-hop questions usually means one hop was
+retrieved and the other was not. The measured host result is in
+[GraphRAG](../../impl/current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ## Reference factoid-corpus result
 

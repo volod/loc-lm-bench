@@ -174,6 +174,12 @@ def prepare_goldset_draft_cmd(
         min=1,
         help="cap on 2-hop graph paths drafted when --multi-hop is set",
     ),
+    multi_hop_bridge_fill: bool = typer.Option(
+        False,
+        "--multi-hop-bridge-fill",
+        help="fill sparse directed 2-hop paths with shared-bridge fact pairs, so an extracted "
+        "graph with few object-to-subject links still yields a measurable multi-hop slice",
+    ),
     dedup_against: Optional[str] = typer.Option(
         None,
         help="yield-max: comma-separated prior bundle dirs; drop pinned-E5 near-duplicate questions",

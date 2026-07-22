@@ -104,25 +104,56 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
-### graph-vector-fusion-multihop-evidence
+### graph-lane-candidate-depth
 
-Create and human-accept a retrieval set with enough multi-hop questions to measure graph-vector
-fusion by graph strategy and weight. The available accepted evidence has no multi-hop labels; use
-the graph path seed lane to draft cross-span questions, run the verification gate, then compare
-vector, graph, and fused recall@10 / MRR without changing the opt-in default. See the current fused
-retrieval shape and evidence boundary in
-[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+Graph-vector fusion asks BOTH lanes for exactly `k` candidates, so at `k=10` a graph-only span can
+enter the fused result only when it is already in the graph lane's own top-10, and any graph
+candidate that does enter displaces a vector candidate one-for-one. The dense+BM25 hybrid lane
+already solves this with a separate `fusion_candidates` pool (default 50) that is deeper than `k`.
+Give graph-vector fusion the same knob: retrieve `graph_fusion_candidates` from each lane, fuse,
+then cut to `k`, so the graph share controls *influence on the ranking* rather than *seats in the
+result*. Measure whether a deeper pool converts the measured multi-hop coverage into a recall gain
+that the shallow pool cannot reach.
 
 - Agent status: RUN NEEDED
-- Dependencies: a reviewed accepted ledger with multi-hop labels and a matched vector/graph store.
-- User-visible outcome: an evidence-backed graph-weight recommendation for multi-hop retrieval,
-  or a clear rejection if graph evidence costs factoid ranking without recovering multi-hop misses.
-- Scope boundary: in scope -- multi-hop drafting, human acceptance, per-type retrieval reports,
-  and graph-weight comparison. Out of scope -- graph schema and community-construction changes.
+- Dependencies: none. Reuse `fuse_lane_hits` and `FusedRetriever`
+  ([RAG core](current/rag-core.md#graph-vector-fusion-retrieval)), the `fusion_candidates` pattern
+  of the hybrid store, and the sweep lane in
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence) to measure it.
+- User-visible outcome: an answer to whether the current fused rows are limited by the fusion
+  weight or by candidate depth -- the operator learns which knob to turn.
+- Scope boundary: in scope -- the candidate-depth knob, its config/manifest fingerprint entry, and
+  a re-measured weight sweep at two depths. Out of scope -- changing the RRF damping constant and
+  any graph schema change.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Acceptance gates: the accepted set has a non-empty multi-hop slice; fused retrieval beats or
-  matches vector recall on that slice without regressing overall recall, and the report includes
-  confidence intervals or item-level paired outcomes for the small slice.
+- Execution path: `make compare-graph-fusion GOLDSET=<gs> GRAPH_WEIGHTS=...` at each depth; CI
+  covers the depth knob over fake lane stores.
+- Acceptance gates: `make ci` green; depth equal to `k` reproduces the current fused rows exactly;
+  the sweep reports both depths with paired intervals and an explicit adopt-or-reject verdict.
+- Documentation target: the graph-vector fusion sections of
+  [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+
+### multi-hop-answer-quality
+
+Optional. Retrieval coverage is not answer quality: the fusion evidence lane measures whether the
+context CARRIES every span a multi-hop answer needs, not whether the model then uses both. Score
+the multi-hop slice end to end with `run-eval` under the vector lane and the best fused row, and
+report the verified objective per slice, so a measured coverage gain is either confirmed as an
+answer-quality gain or recorded as a retrieval-only effect.
+
+- Agent status: RUN NEEDED
+- Dependencies: the multi-hop retrieval set and the fusion sweep are current behavior
+  ([GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence)); reuse the per-question
+  type slicing in `src/llb/rag/question_types.py` and the standard `run-eval` bundle.
+- User-visible outcome: the operator learns whether paying for a graph build buys better multi-hop
+  ANSWERS, not just better multi-hop retrieval.
+- Scope boundary: in scope -- the two scored lanes, per-slice objective reporting, and the verdict.
+  Out of scope -- any ranking-policy change and judge re-calibration.
+- Data and artifact paths: lane bundles under `$DATA_DIR/run-eval/`; the slice comparison under
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Acceptance gates: `make ci` green; both lanes score the identical item set; the report carries
+  per-slice objective with item-level paired outcomes for the small multi-hop slice.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
@@ -275,6 +306,39 @@ from vocabulary correction risk. The benchmark contract and motivating evidence 
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### multihop-ledger-human-acceptance
+
+Accept (or reject) the drafted multi-hop retrieval slice through the verification gate, then re-run
+the fusion sweep on the accepted ledger so the graph-weight verdict rests on human-reviewed
+questions instead of drafted ones. The drafted set, its worksheet, the matched vector/graph stores,
+and the measured draft-grounded sweep are current behavior in
+[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence); every drafted multi-hop item
+is span-exact and Ukrainian-gated by construction, but only a reviewer can say whether a
+shared-bridge question genuinely needs both facts.
+
+- Agent status: HUMAN-GATED
+- Dependencies: the drafting, sweep, and store lanes are current behavior. Human step that gates
+  completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
+  specifically whether the question is answerable ONLY with both cited spans -- and signs off on
+  the resulting accepted ledger.
+- User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
+  human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
+  genuine multi-hop questions and the slice must come from another source.
+- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep on the
+  accepted ledger, and the adopt-or-reject verdict. Out of scope -- graph schema changes, the
+  candidate-depth knob (its own forward task), and changing the opt-in fusion default before the
+  accepted-ledger sweep supports it.
+- Data and artifact paths: the existing drafted bundle and worksheet plus a new
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl`.
+- Execution path: the stratified worksheet is already drawn beside the bundle, so start at
+  `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
+  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl`.
+- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
+  multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
+  records the adopt-or-reject verdict per graph strategy.
+- Documentation target: the graph-vector fusion evidence section of
+  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### corpus-conflict-resolution-review
 

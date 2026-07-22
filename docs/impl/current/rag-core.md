@@ -420,11 +420,14 @@ make run-eval MODEL=<m> RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3
 make compare-retrieval CONFIG=<run-config.yaml> GRAPH_WEIGHT=0.3 \
   GOLDSET=<answered-jsonl> COMPARE_RETRIEVAL_OUT=<report-json>
 make sweep SWEEP_RAG_GRID="graph_weight=0,0.3,0.5"
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  GRAPH_WEIGHTS=0,0.1,0.3,0.5,1.0
 ```
 
-The CUDA-host accepted-set metrics, comparative slice, empty multi-hop slice, endpoint check, and
-artifact locations are recorded in
-[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence).
+`compare-retrieval` ranks backends at ONE graph weight; `compare-graph-fusion` sweeps the weight
+and decides it on the multi-hop slice with uncertainty -- see
+[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for the lane, its measured
+CUDA-host evidence, and the artifact locations.
 
 ## Reranking And Context Order (rerank-context-order)
 
@@ -835,6 +838,17 @@ throughput at 1139 chunks is no longer cold-load-dominated. Reports:
 
 `src/llb/rag/retrieval.py` computes recall@k and MRR by source-span overlap. The common gate is
 `recall@10 >= 0.8`.
+
+The same module also computes two multi-span refinements used wherever an item's answer needs
+evidence from more than one span (multi-hop questions):
+
+- `span_coverage_at_k` -- the fraction of the item's labeled spans that the top-k covers.
+- `all_spans_at_k` -- 1.0 only when EVERY labeled span is covered.
+
+`recall_at_k` credits an item as soon as ANY labeled span is retrieved, which a two-hop item
+satisfies by returning only one of its hops; on single-span items all three metrics are identical.
+The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
+retrieval gain is distinguished from a partial hit.
 
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.

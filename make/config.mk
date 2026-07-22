@@ -97,6 +97,7 @@ DRAFT_COVERAGE_TARGET ?=
 DRAFT_MULTI_HOP ?= 0
 DRAFT_CHAINS ?= 0
 DRAFT_MULTI_HOP_MAX_PATHS ?=
+DRAFT_MULTI_HOP_BRIDGE_FILL ?= 0
 DRAFT_DEDUP_AGAINST ?=
 DRAFT_GRAPH_DIR ?=
 COVERAGE_JSON ?=
@@ -139,6 +140,12 @@ SPLIT ?= final
 LIMIT ?= 20
 RESUME ?=
 RAG_K ?= 10
+# Graph-vector fusion evidence: the swept graph shares and the question type the verdict is
+# decided on (compare-graph-fusion). Empty knobs fall back to the command defaults.
+GRAPH_WEIGHTS ?=
+GRAPH_STRATEGIES ?=
+FUSION_FOCUS_SLICE ?=
+FUSION_BOOTSTRAP_RESAMPLES ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

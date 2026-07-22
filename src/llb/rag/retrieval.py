@@ -53,6 +53,31 @@ def reciprocal_rank(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord])
     return 1.0 / rank if rank is not None else 0.0
 
 
+def covered_span_count(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int) -> int:
+    """How many of the item's labeled spans at least one top-k chunk covers."""
+    top = retrieved[:k]
+    return sum(any(chunk_hits_span(chunk, span) for chunk in top) for span in spans)
+
+
+def span_coverage_at_k(
+    retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int
+) -> float:
+    """Fraction of the item's labeled spans covered by the top-k (1.0 when it labels no span).
+
+    `recall_at_k` credits an item as soon as ANY labeled span is retrieved, which a multi-hop
+    item satisfies by returning only one of its hops. Coverage is the multi-span refinement: it
+    is the share of the evidence an answer actually needs that the context carries.
+    """
+    if not spans:
+        return 1.0
+    return covered_span_count(retrieved, spans, k) / len(spans)
+
+
+def all_spans_at_k(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int) -> float:
+    """1.0 when EVERY labeled span is covered by the top-k, else 0.0 (the multi-hop gate)."""
+    return 1.0 if span_coverage_at_k(retrieved, spans, k) == 1.0 else 0.0
+
+
 def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
     """Aggregate recall@k and MRR over (retrieved, gold_spans) pairs.
 

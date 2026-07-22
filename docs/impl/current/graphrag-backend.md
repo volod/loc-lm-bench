@@ -56,7 +56,14 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
 : Implements `FusedRetriever`. It queries the vector store (dense or hybrid) and `GraphStore`,
   fuses span ids with n-way weighted reciprocal-rank fusion, drops exact duplicate source spans,
   and preserves the selected record's exact text and offsets. Fused metadata records which lanes
-  returned each span and the graph weight.
+  returned each span and the graph weight. The fusion itself is the standalone `fuse_lane_hits`,
+  so a weight sweep can reuse the production rule over cached lane rankings.
+
+`src/llb/rag/fusion_evidence/`
+: The graph-weight sweep and its multi-hop verdict (see Graph-Vector Fusion Evidence below).
+  `rows.py` builds the compared row set and caches each lane once per question, `sweep.py` scores
+  every row per question-type slice, `stats.py` is the paired bootstrap plus exact sign test,
+  `verdict.py` is the adopt-or-reject rule, and `report.py` renders the Markdown artifact.
 
 ## Retrieval Strategies
 
@@ -124,6 +131,40 @@ make compare-retrieval GOLDSET=<draft-bundle>/goldset.jsonl RAG_K=10
 
 ## Graph-Vector Fusion Evidence
 
+### The graph-weight sweep lane
+
+`llb compare-graph-fusion` (`make compare-graph-fusion`) is the lane that decides a graph weight.
+`compare-retrieval` ranks backends over a whole gold set at ONE weight; this lane sweeps the weight
+and answers the narrower question a recommendation needs -- on items whose answer requires more
+than one source span, does fusing graph evidence retrieve more of that evidence, at which weight,
+and at what cost elsewhere.
+
+Three things separate it from the flat comparison:
+
+- **A multi-span metric.** `recall@k` credits an item as soon as ANY labeled span is retrieved,
+  which a two-hop item satisfies by returning only one hop. The lane reports `recall@k` beside
+  `all-spans@k` (every labeled span covered) and `span coverage` (the fraction covered), all from
+  [RAG core](rag-core.md#retrieval-metrics).
+- **Uncertainty.** A multi-hop slice is tens of items, so every cell carries a paired percentile
+  bootstrap interval over shared resample index sets, plus the item-level win/loss/tie ledger and
+  an exact two-sided sign test. The verdict gates on the INTERVAL: a positive mean whose interval
+  still includes no difference is recorded as `inconclusive`, never as an adopt.
+- **One retrieval pass per lane.** Neither lane's ranking depends on the weight, so the sweep
+  caches each lane's top-k per question and re-fuses the same candidates through the production
+  `fuse_lane_hits` at every weight.
+
+```bash
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0
+llb compare-graph-fusion --config <cfg> --k 10 --graph-weights 0,0.3,1.0 \
+  --focus-slice multi-hop --out-dir <dir>
+```
+
+Artifacts per run: `report.md` (verdict, focus slice, overall, per-type slices, item ledger),
+`comparison.json`, and `run_config.json`.
+
+### Accepted-ledger evidence, single graph weight
+
 CUDA-host evidence is under
 `$DATA_DIR/graph-vector-fusion-retrieval/20260721T052842Z/`. The run built a matched hybrid vector
 store (1,124 recursive chunks, multilingual E5 base, CUDA) and graph store (625 nodes, 213 edges)
@@ -138,14 +179,74 @@ from one accepted ontology bundle, then scored all 40 human-accepted questions a
 | fused/global_community, graph weight 0.3 | 0.925 | 0.865 |
 
 The two accepted comparative questions score recall 1.000 / MRR 1.000 for vector and both fused
-rows; each graph-only row scores recall 0.500. The accepted ledger contains no multi-hop item, so
+rows; each graph-only row scores recall 0.500. That accepted ledger contains no multi-hop item, so
 the report records that slice explicitly with `n=0`; it does not claim multi-hop quality evidence.
 At graph weight 0.0, both fused rows exactly match vector recall 0.925 / MRR 0.869, while CI checks
 the stronger per-query ranking equality and verifies that the graph lane is not called.
 
-The evidence supports opt-in fusion, not a default change: it preserves recall on this corpus but
+That evidence supports opt-in fusion, not a default change: it preserves recall on this corpus but
 reduces MRR slightly. Reports are `comparison.json` and `comparison_graph_weight_0.json`; the
 matched store config is `run_config.yaml` in the same artifact directory.
+
+### Multi-hop slice evidence, swept graph weight
+
+CUDA-host evidence is under `$DATA_DIR/graph-vector-fusion-multihop/20260722T100231Z/`; the scored
+draft bundle is the sibling `goods-draft/`. A five-document, 1.15 MB converted Ukrainian goods-PDF
+corpus was drafted with `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama at a 16,384-token
+context (62 extraction windows, 255 entities, 242 grounded facts), yielding 95 items: 60 flat plus
+**35 multi-hop items, every one carrying exactly two grounded spans, 17 of them citing two
+different documents**. `validate-goldset` passes. The matched stores are a hybrid recursive vector
+store (1,139 chunks, multilingual E5 base) and a graph store of 423 nodes, 242 edges, and 211
+communities. All 95 items were scored at k=10 over a 7-point weight grid with 2,000 bootstrap
+resamples (seed 13).
+
+Multi-hop slice (n=35), 95% bootstrap CI, paired against the vector row:
+
+| row | recall@10 | all-spans@10 | span coverage | MRR |
+| --- | ---: | ---: | ---: | ---: |
+| vector | 0.686 [0.543, 0.829] | 0.057 [0.000, 0.143] | 0.371 | 0.360 |
+| graph/local_khop | 0.514 [0.371, 0.686] | 0.086 [0.000, 0.200] | 0.300 | 0.164 |
+| graph/global_community | 0.543 [0.371, 0.714] | 0.057 [0.000, 0.143] | 0.300 | 0.397 |
+| fused/local_khop @0.30 | 0.714 [0.571, 0.857] | 0.029 [0.000, 0.086] | 0.371 | 0.347 |
+| fused/global_community @0.10 | 0.771 [0.629, 0.914] | 0.086 [0.000, 0.200] | 0.429 | 0.369 |
+| fused/global_community @0.30 | 0.771 [0.629, 0.914] | 0.057 [0.000, 0.143] | 0.414 | 0.384 |
+
+Overall (n=95):
+
+| row | recall@10 | all-spans@10 | span coverage | MRR | recall delta vs vector |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| vector | 0.705 [0.611, 0.789] | 0.474 | 0.589 | 0.421 | 0.000 |
+| graph/local_khop | 0.368 [0.274, 0.463] | 0.211 | 0.289 | 0.121 | -0.337 [-0.463, -0.200] |
+| graph/global_community | 0.326 [0.232, 0.421] | 0.147 | 0.237 | 0.221 | -0.379 [-0.505, -0.242] |
+| fused/local_khop @0.30 | 0.705 [0.611, 0.789] | 0.453 | 0.579 | 0.411 | 0.000 [-0.053, +0.053] |
+| fused/global_community @0.10 | 0.747 [0.663, 0.832] | 0.495 | 0.621 | 0.425 | +0.042 [+0.000, +0.095] |
+| fused/global_community @0.20 | 0.758 [0.674, 0.842] | 0.495 | 0.626 | 0.430 | +0.053 [+0.000, +0.105] |
+
+What the run establishes:
+
+- **`recall@10` hides the multi-hop problem entirely.** The vector lane looks acceptable on the
+  multi-hop slice at recall 0.686, but its `all-spans@10` is 0.057: it retrieves BOTH hops for 2 of
+  35 two-hop questions. No row in the sweep exceeds 0.086 (3 of 35). At k=10 multi-hop evidence
+  coverage is essentially unsolved on this corpus by every backend, fused or not -- which is the
+  measurement the flat comparison could not produce.
+- **The best fused row is `global_community` at a LOW graph weight**, not the 0.3 default and not
+  `local_khop`. It gains multi-hop recall +0.086 [0.000, 0.200] (3 wins, 0 losses, 32 ties, sign
+  test p=0.250) and overall recall +0.042 to +0.053, so it does not trade factoid ranking away.
+  Every one of those intervals touches zero.
+- **The verdict is therefore `inconclusive`, not `adopt`.** The direction is consistently positive
+  and never negative, but 35 items cannot separate it from the vector lane. Fusion stays opt-in and
+  the default weight is unchanged.
+- **Graph-only retrieval loses decisively overall** (-0.337 and -0.379 recall, sign test p=0.000),
+  reproducing the accepted-ledger run's ordering on a second, multi-document corpus.
+- **Graph weight 0.0 is an exact vector passthrough**: 0 wins, 0 losses, 95 ties on every metric.
+
+Boundary: the 35 multi-hop items are DRAFTED, not human-accepted. They are span-exact, Ukrainian
+gated, and each names its bridge or end entity in the reference answer, but only a reviewer can
+confirm that a drafted two-hop question truly needs both cited facts. The stratified 95-row
+worksheet is already drawn at `goods-draft/verify_sample.csv`, so the gate is
+`make verify-review VERIFY_WS=<that file>` followed by `make verify-accept`; accepting the ledger
+and re-running the sweep is tracked as forward work in [`plan.md`](../plan.md)
+(`multihop-ledger-human-acceptance`).
 
 ## Ontology Scope
 

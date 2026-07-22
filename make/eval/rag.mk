@@ -1,7 +1,7 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
-	compare-retrieval compare-embeddings run-eval bench-query-robustness \
+	compare-retrieval compare-graph-fusion compare-embeddings run-eval bench-query-robustness \
 	probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
@@ -59,6 +59,17 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
+
+compare-graph-fusion: ## Sweep the graph share of graph-vector fusion and decide it on the multi-hop slice (GOLDSET= GRAPH_WEIGHTS= GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(GRAPH_WEIGHTS),--graph-weights "$(GRAPH_WEIGHTS)",) \
+		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -148,3 +148,43 @@ def test_build_chain_items_carries_ordered_grounded_steps(tmp_path):
     assert chain.steps[0].question.startswith("Який факт")
     assert chain.steps[1].question.startswith("З урахуванням")
     assert validate_chains(chains, corpus)["errors"] == []
+
+
+def test_multi_hop_stage_bridge_fill_recovers_a_sparse_graph():
+    """Extracted graphs rarely have directed object-to-subject links, so the strict walk can
+    yield nothing at all; `bridge_fill` falls back to shared-bridge fact pairs, which still
+    cite two distinct spans -- the >= 2-span retrieval problem a multi-hop slice measures."""
+    from llb.prep.ontology.pipeline.stages import _multi_hop_stage
+
+    graph = _chain_graph()
+    graph.edges[1] = GraphEdge(
+        edge_id=1, src=0, dst=2, relation="підтримує", evidence=graph.edges[1].evidence
+    )
+    docs = [DocRecord(doc_id="chain.md", text=CHAIN_DOC, sha256="x", n_chars=len(CHAIN_DOC))]
+
+    def complete(_prompt: str) -> str:
+        return json.dumps(
+            {
+                "question": "Яка організація поєднує обидві згадані компанії?",
+                "reference_answer": "Їх поєднує Alpha.",
+            }
+        )
+
+    def _stage(bridge_fill: bool):
+        return _multi_hop_stage(
+            complete,
+            docs,
+            [],
+            None,
+            graph_dir=None,
+            max_paths=10,
+            seed=13,
+            bridge_fill=bridge_fill,
+            graph=graph,
+        )
+
+    assert _stage(False) == ([], {})  # strict directed walk finds no path in this graph
+    items, labels = _stage(True)
+    assert len(items) == 1
+    assert len(items[0].source_spans) >= 2
+    assert labels[items[0].id].question_type == QUESTION_TYPE_MULTI_HOP

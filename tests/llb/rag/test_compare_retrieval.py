@@ -5,9 +5,9 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 """
 
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
-from llb.cli.rag.compare_retrieval import _question_type_labels
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
+from llb.rag.question_types import aligned_question_types, load_question_types
 
 
 class _FakeStore:
@@ -140,8 +140,16 @@ def test_question_type_labels_find_parent_sidecar_for_accepted_ledger(tmp_path):
     (tmp_path / "needle_items.jsonl").write_text(
         "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
     )
-    assert _question_type_labels(goldset, ["b", "missing", "a"]) == [
+    assert aligned_question_types(goldset, ["b", "missing", "a"]) == [
         "multi-hop",
         None,
         "comparative",
     ]
+    assert load_question_types(goldset) == {"a": "comparative", "b": "multi-hop"}
+
+
+def test_question_type_labels_are_absent_without_a_needle_sidecar(tmp_path):
+    goldset = tmp_path / "goldset.jsonl"
+    goldset.write_text("", encoding="utf-8")
+    assert aligned_question_types(goldset, ["a"]) is None
+    assert load_question_types(goldset) == {}
