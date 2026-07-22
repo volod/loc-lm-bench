@@ -21,6 +21,9 @@ model-independent **retrieval** signal, which is CI-provable from fakes.
                                   [recall@k + MRR per backend, same source-span metric]
     4. sweep the fusion weight    make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset>
                                   [optional; multi-hop slice + all-spans@k + intervals]
+    5. score the ANSWERS          make compare-answer-quality CONFIG=<cfg> GOLDSET=<goldset> \
+                                    FUSION_COMPARISON=<step-4-dir>/comparison.json
+                                  [optional; needs a model -- does the extra evidence get used?]
 
 The human decision sits in step 2 (pick a capable extraction model and the right serving knobs)
 and in reading step 3: GraphRAG pays off on multi-hop narrative corpora, not single-span factoid
@@ -33,9 +36,10 @@ lookup -- see the [reference result](#reference-factoid-corpus-result) before co
 | `llb build-graph` | Builds the GraphRAG store (node/edge JSONL + communities) from an ontology-assisted drafting extraction over the corpus. | a local endpoint when extracting fresh |
 | `llb compare-retrieval` | Scores recall@k / MRR for every BUILT backend on one gold set; skips a backend whose store is absent. | a built FAISS index and/or graph store |
 | `llb compare-graph-fusion` | Sweeps the fused graph weight and per-lane candidate depth, and decides them on the multi-hop slice, with multi-span metrics and paired intervals. | both stores built, plus multi-hop-labeled gold items |
+| `llb compare-answer-quality` | Scores the same items END TO END under two of those rows and compares the ANSWERS per question-type slice, so a coverage gain is confirmed as an answer gain or recorded as retrieval-only. | the above plus a served model |
 
-`make compare-retrieval GOLDSET=... RAG_K=10` and `make compare-graph-fusion CONFIG=... GOLDSET=...`
-wrap the last two.
+`make compare-retrieval GOLDSET=... RAG_K=10`, `make compare-graph-fusion CONFIG=... GOLDSET=...`,
+and `make compare-answer-quality CONFIG=... GOLDSET=...` wrap the last three.
 
 ## Step 1 -- build the FAISS index (the baseline)
 
@@ -120,6 +124,40 @@ retrieved and the other was not. The measured host result is in
 scored cutoff, the default). Rows are labeled `fused/<strategy>@<weight>/d<depth>`. Expect the
 depth rows to tie unless your graph evidence spans share EXACT chunk boundaries with the vector
 lane -- on the measured Ukrainian corpus they never did, and the weight was the only live knob.
+
+## Step 5 (optional) -- does the extra evidence reach the ANSWER?
+
+Steps 3 and 4 are model-independent: they say what the context CARRIES, not what the model does
+with it. Step 5 scores the same items end to end under two of those rows and compares the answers:
+
+    llb compare-answer-quality --config <run-config.yaml> \
+      --from-comparison <step-4-dir>/comparison.json \
+      --split final,tuning,calibration
+    # or: make compare-answer-quality CONFIG=<cfg> GOLDSET=<goldset> \
+    #       FUSION_COMPARISON=<step-4-dir>/comparison.json SPLIT=final
+
+`--from-comparison` reads the baseline plus the fused row that step 4's verdict named best, so you
+score the row the sweep actually recommended instead of retyping it; `--lanes
+vector,fused/global_community@0.10` names them by hand. A comma-separated `--split` scores one
+ordinary `run-eval` bundle per split and pools them into ONE compared item set, which is how the
+comparison can cover exactly the ledger step 4 measured.
+
+Each lane is a plain run bundle under `$DATA_DIR/run-eval/`, so any lane's number is reproducible
+with a bare `run-eval`. The report gives per-question-type objective with paired intervals, the
+item-level ledger, and one of four verdicts: `answer_quality_gain`, `retrieval_only` (the lane
+carried measurably more evidence but the answers did not follow), `inconclusive`, or `no_gain`.
+
+Two gotchas:
+
+- **`--include-drafted`** is required when the gold items are drafted rather than human-accepted.
+  It is the only way to score the same set a draft-grounded sweep measured; every artifact then
+  records `grounding: drafted` and the numbers are diagnostic, never a leaderboard result.
+- **Read the coverage column beside the objective.** A lane that raises `span coverage` while the
+  objective stays flat has produced a retrieval-only effect -- more evidence in the prompt that the
+  model did not convert into a better answer.
+
+The measured host result is in
+[GraphRAG](../../impl/current/graphrag-backend.md#answer-quality-evidence).
 
 ## Reference factoid-corpus result
 

@@ -15,7 +15,7 @@ from llb.core.contracts.rag import SourceSpanRecord
 from llb.rag.compare import (
     Retriever as Retriever,
 )  # the one `.retrieve` seam, re-used not re-declared
-from llb.rag.fusion_evidence.stats import Interval, PairedComparison
+from llb.rag.fusion_evidence.slices import SliceReport
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
@@ -52,14 +52,6 @@ class EvidenceItem(NamedTuple):
     question: str
     spans: list[SourceSpanRecord]
     question_type: str | None
-
-
-class SliceReport(TypedDict):
-    """One row's metrics over one item slice, with its paired delta against the baseline row."""
-
-    n: int
-    metrics: dict[str, Interval]
-    paired_vs_baseline: dict[str, PairedComparison]
 
 
 class RowReport(TypedDict):

@@ -66,6 +66,15 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   every row per question-type slice, `stats.py` is the paired bootstrap plus exact sign test,
   `verdict.py` is the adopt-or-reject rule, and `report.py` renders the Markdown artifact.
 
+`src/llb/eval/answer_quality/`
+: The end-to-end companion to that sweep: it scores the SAME items under two retrieval lanes with
+  the standard `run-eval` and compares the ANSWERS per question-type slice. `lanes.py` parses a
+  sweep row label (`vector`, `fused/<strategy>@<weight>[/d<depth>]`) back into retrieval knobs,
+  `run.py` selects the item set once and drives one ordinary run bundle per lane,
+  `coverage.py` recomputes the multi-span coverage columns from each bundle's `retrieval.jsonl`,
+  `compare.py` is the pure per-slice comparison (reusing the fusion-evidence bootstrap),
+  `verdict.py` decides answer-gain versus retrieval-only, and `report.py` renders the artifact.
+
 ## Retrieval Strategies
 
 `local_khop`
@@ -91,6 +100,7 @@ llb validate-retrieval --retrieval-backend fused --graph-weight 0.3
 llb compare-retrieval --graph-weight 0.3 --k 10 --out report.json
 llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
+llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
 ```
 
 `RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, `graph_weight`
@@ -290,6 +300,97 @@ worksheet is already drawn at `goods-draft/verify_sample.csv`, so the gate is
 `make verify-review VERIFY_WS=<that file>` followed by `make verify-accept`; accepting the ledger
 and re-running the sweep is tracked as forward work in [`plan.md`](../plan.md)
 (`multihop-ledger-human-acceptance`).
+
+### Answer-quality evidence
+
+The sweep above is model-independent: it measures what the context CARRIES, never what the model
+does with it. `llb compare-answer-quality` (`make compare-answer-quality`) closes that gap. It
+scores the identical item set END TO END under two retrieval lanes with the standard `run-eval`,
+then compares the ANSWERS per question-type slice with the same paired bootstrap the sweep uses.
+
+Three properties make the comparison readable:
+
+- **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`, and
+  `fused/<strategy>@<weight>[/d<depth>]` parse back into retrieval knobs, and `--from-comparison
+  <sweep>/comparison.json` reads the baseline plus the row that sweep's verdict named best -- so
+  the scored lane is the row the retrieval sweep actually recommended, not a retyped approximation.
+- **One shared item set, ordinary bundles.** The selection happens once and every lane is a plain
+  `run-eval` bundle under `$DATA_DIR/run-eval/`, so any lane's number is reproducible with a bare
+  `run-eval` and the per-item pairing is legitimate. Lanes that scored different item sets are a
+  hard error, never a silent intersection. A comma-separated `--split` scores one bundle per split
+  and pools them into one compared set.
+- **Multi-span coverage beside the objective.** `retrieval_hit` in a score row is `recall@k`, which
+  a two-hop item satisfies with one hop, so the lane recomputes `span_coverage` and `all_spans_at_k`
+  from each bundle's `retrieval.jsonl` and reports them next to the objective. The verdict states a
+  coverage claim on `span_coverage` (graded) rather than the `all_spans_at_k` gate, because on a
+  hard multi-hop slice the gate can be near-zero for every lane and therefore blind to a lane that
+  nonetheless carried more evidence.
+
+The verdict is one of `answer_quality_gain` (the objective delta's interval clears zero),
+`retrieval_only` (the coverage delta's interval clears zero while the objective's does not),
+`inconclusive`, or `no_gain`. `retrieval_only` is checked BEFORE `inconclusive` on purpose: a
+measured coverage gain paired with a noisy objective is a result about retrieval, and reporting it
+as merely inconclusive would drop the half that was measured.
+
+```bash
+make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  FUSION_COMPARISON=<sweep-dir>/comparison.json SPLIT=final,tuning,calibration INCLUDE_DRAFTED=1
+llb compare-answer-quality --config <cfg> --lanes vector,fused/global_community@0.10 --split final
+```
+
+Artifacts per run: `report.md` and `comparison.json` under
+`$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+
+#### Measured result: the multi-hop coverage gain does not reach the answer
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T133033Z-answer-quality/answer-quality/`. The same
+95-item drafted goods ledger, matched stores, and k=10 as the sweep above were scored end to end by
+`MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama under two lanes -- `vector` and the sweep's
+best row `fused/global_community@0.10/d10` -- across all three splits (one run bundle per lane and
+split, pooled), 2,000 bootstrap resamples, seed 13.
+
+Multi-hop slice (n=35), fused minus vector, 95% paired bootstrap CI:
+
+| metric | delta | interval | w/l/t | sign p |
+| --- | ---: | ---: | :-: | ---: |
+| objective | -0.005 | [-0.071, +0.072] | 9/8/18 | 1.000 |
+| span coverage | **+0.057** | **[+0.014, +0.114]** | 4/0/31 | 0.125 |
+| recall@10 | +0.086 | [+0.000, +0.200] | 3/0/32 | 0.250 |
+| all-spans@10 | +0.029 | [+0.000, +0.086] | 1/0/34 | 1.000 |
+
+Verdict: **`retrieval_only`**. The fused lane carries measurably more of the multi-hop evidence --
+span coverage 0.429 versus 0.371, the only interval in the table that clears zero -- and the model
+turns none of it into better answers: the objective is 0.321 versus 0.326, an interval straddling
+zero with 9 wins against 8 losses. Paying for a graph build buys multi-hop RETRIEVAL on this
+corpus, not multi-hop ANSWERS.
+
+Two things corroborate the measurement:
+
+- **The retrieval columns reproduce the sweep exactly.** Scored through `run-eval` rather than
+  through the sweep's replay wrappers, the fused lane still reports multi-hop recall 0.771 vs
+  0.686, all-spans 0.086 vs 0.057, and span coverage 0.429 vs 0.371 -- every figure identical to
+  the swept row. The two lanes are measuring the same retrieval through independent code paths.
+- **Overall answer quality is flat to slightly negative**: objective -0.027 [-0.062, +0.009]
+  (15 wins, 22 losses), with the `procedural` slice at -0.021 [-0.050, -0.001] on n=14 -- the only
+  answer-side interval anywhere in the run that excludes zero, and it points DOWN. Extra graph
+  candidates displace vector chunks the model was using, and on a 12B model that costs a little
+  more than the multi-hop coverage gains back.
+
+Boundaries, both recorded in the artifact rather than inferred:
+
+- **The ledger is drafted.** No reviewer has accepted these 95 items, so the objective is
+  diagnostic, not a leaderboard result. Scoring them at all required `--include-drafted`, and every
+  bundle manifest carries `config.item_grounding: drafted` (see
+  [RAG core](rag-core.md#executor)). Re-running on the accepted ledger is tracked in
+  [`plan.md`](../plan.md) (`multihop-ledger-human-acceptance`).
+- **The answer-side metric cannot see hops.** `objective_score` is reference-answer token F1, so an
+  answer stating one fact fluently and omitting the other scores about the same as a vague answer
+  touching both. The retrieval side distinguishes partial from complete evidence; the answer side
+  does not, which bounds how sharply this verdict can be read. Building the answer-side counterpart
+  is tracked in [`plan.md`](../plan.md) (`answer-side-span-coverage-metric`), and repeating the
+  comparison on a second model -- since "did the model use the extra hop" is a model property -- is
+  tracked as `fusion-answer-quality-second-model`.
 
 ## Ontology Scope
 

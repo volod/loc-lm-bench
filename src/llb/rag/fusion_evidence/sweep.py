@@ -18,21 +18,21 @@ from llb.rag.fusion_evidence.models import (
     ItemOutcome,
     Retriever,
     RowReport,
-    SliceReport,
+)
+from llb.rag.fusion_evidence.slices import (
+    MetricVectors as RowVectors,
+    slice_index_sets,
+    slice_indexes,
+    slice_report,
 )
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
     bootstrap_index_sets,
-    bootstrap_interval,
-    paired_comparison,
 )
 from llb.rag.fusion_evidence.verdict import decide
 from llb.rag.retrieval import all_spans_at_k, recall_at_k, reciprocal_rank, span_coverage_at_k
-
-# label -> metric -> per-item values, in item order.
-RowVectors = dict[str, list[float]]
 
 
 def _item_vectors(store: Retriever, items: list[EvidenceItem], k: int) -> RowVectors:
@@ -45,37 +45,6 @@ def _item_vectors(store: Retriever, items: list[EvidenceItem], k: int) -> RowVec
         vectors[METRIC_COVERAGE].append(span_coverage_at_k(hits, item.spans, k))
         vectors[METRIC_MRR].append(reciprocal_rank(hits[:k], item.spans))
     return vectors
-
-
-def _slice_report(
-    vectors: RowVectors,
-    baseline: RowVectors,
-    indexes: list[int],
-    index_sets: list[list[int]],
-    confidence: float,
-) -> SliceReport:
-    """Metrics + paired deltas for one row restricted to `indexes` (an item slice)."""
-    picked = {metric: [vectors[metric][i] for i in indexes] for metric in METRICS}
-    base = {metric: [baseline[metric][i] for i in indexes] for metric in METRICS}
-    return {
-        "n": len(indexes),
-        "metrics": {
-            metric: bootstrap_interval(picked[metric], index_sets, confidence) for metric in METRICS
-        },
-        "paired_vs_baseline": {
-            metric: paired_comparison(picked[metric], base[metric], index_sets, confidence)
-            for metric in METRICS
-        },
-    }
-
-
-def _slice_indexes(items: list[EvidenceItem], focus_slice: str) -> dict[str, list[int]]:
-    """Item positions per question type; the focus slice is always present, even when empty."""
-    grouped: dict[str, list[int]] = {focus_slice: []}
-    for position, item in enumerate(items):
-        if item.question_type:
-            grouped.setdefault(item.question_type, []).append(position)
-    return grouped
 
 
 def _focus_items(
@@ -113,20 +82,17 @@ def evaluate_fusion_evidence(
     by_row = {label: _item_vectors(store, items, k) for label, store in stores.items()}
     base_vectors = by_row[baseline]
     index_sets = bootstrap_index_sets(len(items), resamples, seed)
-    grouped = _slice_indexes(items, focus_slice)
+    grouped = slice_indexes([item.question_type for item in items], focus_slice)
     all_indexes = list(range(len(items)))
-    # Draw each slice's resample sets ONCE and share them across every row: common random numbers
-    # keep the rows comparable, and the draw cost stops scaling with the size of the weight grid.
-    slice_index_sets = {
-        name: bootstrap_index_sets(len(positions), resamples, seed)
-        for name, positions in grouped.items()
-    }
+    per_slice_sets = slice_index_sets(grouped, resamples, seed)
     rows: dict[str, RowReport] = {
         label: {
-            "overall": _slice_report(vectors, base_vectors, all_indexes, index_sets, confidence),
+            "overall": slice_report(
+                vectors, base_vectors, all_indexes, index_sets, confidence, METRICS
+            ),
             "slices": {
-                name: _slice_report(
-                    vectors, base_vectors, positions, slice_index_sets[name], confidence
+                name: slice_report(
+                    vectors, base_vectors, positions, per_slice_sets[name], confidence, METRICS
                 )
                 for name, positions in sorted(grouped.items())
             },

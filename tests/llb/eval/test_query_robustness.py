@@ -9,7 +9,8 @@ from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import evaluate_query_robustness
 from llb.eval.query_robustness_report import write_robustness_artifacts
-from llb.eval.query_robustness_run import load_clean_case_rows, make_query_executor
+from llb.board.io import read_case_rows
+from llb.eval.query_robustness_run import make_query_executor
 from llb.eval.query_robustness_variants import (
     KEYBOARD_TYPOS,
     MIXED_SCRIPT,
@@ -49,10 +50,10 @@ def test_variant_rate_validation():
 def test_clean_baseline_reads_canonical_case_rows_not_aggregate_rows(tmp_path: Path):
     scores = tmp_path / "scores.jsonl"
     scores.write_text('{"item_id":"q1","objective_score":1,"retrieval_hit":1}\n')
-    assert load_clean_case_rows(scores)[0]["item_id"] == "q1"
+    assert read_case_rows(scores)[0]["item_id"] == "q1"
     scores.write_text('{"model":"aggregate"}\n')
     with pytest.raises(ValueError, match="per-case score row"):
-        load_clean_case_rows(scores)
+        read_case_rows(scores)
 
 
 class FakeStore:

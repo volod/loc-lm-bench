@@ -11,8 +11,8 @@ from llb.rag.fusion_evidence.models import (
     METRIC_MRR,
     METRIC_RECALL,
     FusionEvidenceReport,
-    SliceReport,
 )
+from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.stats import format_interval
 
 _HEADLINE_METRICS = (METRIC_RECALL, METRIC_ALL_SPANS, METRIC_COVERAGE, METRIC_MRR)

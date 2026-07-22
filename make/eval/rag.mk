@@ -1,8 +1,8 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
-	compare-retrieval compare-graph-fusion compare-embeddings run-eval bench-query-robustness \
-	probe-context-position analyze-misses
+	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
+	bench-query-robustness probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -71,6 +71,20 @@ compare-graph-fusion: ## Sweep the graph share and candidate depth of graph-vect
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
+
+compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-answer-quality $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(ANSWER_QUALITY_LANES),--lanes "$(ANSWER_QUALITY_LANES)",) \
+		$(if $(FUSION_COMPARISON),--from-comparison "$(FUSION_COMPARISON)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ANSWER_QUALITY_LIMIT),--limit $(ANSWER_QUALITY_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

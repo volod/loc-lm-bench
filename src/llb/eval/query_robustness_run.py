@@ -1,12 +1,12 @@
 """Production wiring for clean baseline plus noisy query probe lanes."""
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from llb.bench.common import new_run_timestamp
+from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import (
@@ -78,20 +78,6 @@ def _baseline_config(config: RunConfig) -> RunConfig:
     return RunConfig.model_validate(values)
 
 
-def load_clean_case_rows(path: Path) -> list[dict[str, Any]]:
-    """Load canonical per-case rows; `run_eval()['rows']` contains aggregate board rows."""
-    rows: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, 1):
-            if not line.strip():
-                continue
-            value = json.loads(line)
-            if not isinstance(value, dict) or "item_id" not in value:
-                raise ValueError(f"{path}:{line_number}: expected a per-case score row")
-            rows.append(value)
-    return rows
-
-
 def run_query_robustness(
     config: RunConfig,
     *,
@@ -115,7 +101,7 @@ def run_query_robustness(
         emit=emit_clean,
     )
     clean_run_dir = Path(str(clean["paths"]["manifest"])).parent
-    clean_rows = load_clean_case_rows(Path(str(clean["paths"]["scores"])))
+    clean_rows = read_case_rows(Path(str(clean["paths"]["scores"])))
 
     store = _load_store(baseline_config)
     launcher = _make_launcher(baseline_config)

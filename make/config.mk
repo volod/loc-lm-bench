@@ -148,6 +148,15 @@ GRAPH_FUSION_CANDIDATES ?=
 GRAPH_STRATEGIES ?=
 FUSION_FOCUS_SLICE ?=
 FUSION_BOOTSTRAP_RESAMPLES ?=
+# End-to-end answer quality of two retrieval lanes (compare-answer-quality): the scored lanes
+# (compare-graph-fusion row labels; the FIRST is the baseline), the sweep comparison.json whose
+# verdict names them instead, and the full split by default.
+ANSWER_QUALITY_LANES ?=
+FUSION_COMPARISON ?=
+ANSWER_QUALITY_LIMIT ?=
+ANSWER_QUALITY_OUT_DIR ?=
+# Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
+INCLUDE_DRAFTED ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

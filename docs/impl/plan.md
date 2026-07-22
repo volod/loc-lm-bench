@@ -141,28 +141,65 @@ cross-lane agreement is common.
   [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
-### multi-hop-answer-quality
+### answer-side-span-coverage-metric
 
-Optional. Retrieval coverage is not answer quality: the fusion evidence lane measures whether the
-context CARRIES every span a multi-hop answer needs, not whether the model then uses both. Score
-the multi-hop slice end to end with `run-eval` under the vector lane and the best fused row, and
-report the verified objective per slice, so a measured coverage gain is either confirmed as an
-answer-quality gain or recorded as a retrieval-only effect.
+The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
+`all_spans_at_k`, [RAG core](current/rag-core.md#retrieval-metrics)); the ANSWER side has no such
+distinction. `objective_score` is reference-answer token F1, so a two-hop answer that states one
+fact fluently and omits the other scores roughly half -- the same value a vague answer touching
+both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric that cannot
+say whether the model used both hops, which is precisely the question the lane exists to ask
+([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)). Build the answer-side
+counterpart: per gold span, decide whether the ANSWER carries that span's content (lemma and
+numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the correctness
+tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the objective and let
+the multi-hop verdict read them.
 
 - Agent status: RUN NEEDED
-- Dependencies: the multi-hop retrieval set and the fusion sweep are current behavior
-  ([GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence)); reuse the per-question
-  type slicing in `src/llb/rag/question_types.py` and the standard `run-eval` bundle.
-- User-visible outcome: the operator learns whether paying for a graph build buys better multi-hop
-  ANSWERS, not just better multi-hop retrieval.
-- Scope boundary: in scope -- the two scored lanes, per-slice objective reporting, and the verdict.
-  Out of scope -- any ranking-policy change and judge re-calibration.
-- Data and artifact paths: lane bundles under `$DATA_DIR/run-eval/`; the slice comparison under
-  `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Acceptance gates: `make ci` green; both lanes score the identical item set; the report carries
-  per-slice objective with item-level paired outcomes for the small multi-hop slice.
-- Documentation target: the graph-vector fusion evidence section of
-  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+- Dependencies: none. Reuse the scoring tokenizer in `src/llb/scoring/correctness.py`, the
+  multi-span retrieval metrics in `src/llb/rag/retrieval.py`, and the per-slice comparison in
+  `src/llb/eval/answer_quality/`.
+- User-visible outcome: the operator learns whether a multi-hop answer actually contains BOTH
+  facts, instead of inferring it from a token-overlap score that a half-answer can earn.
+- Scope boundary: in scope -- the answer-side coverage metric, its per-case columns, and wiring it
+  into the answer-quality slices and verdict as an additive signal. Out of scope -- replacing
+  `objective_score` as the leaderboard ranking metric, judge re-calibration, and any change to the
+  retrieval metrics.
+- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
+  comparison under the existing `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality` on the drafted multi-hop bundle; CI covers the
+  metric on committed two-span fixtures (both facts, one fact, neither, paraphrased).
+- Acceptance gates: `make ci` green; on single-span items the answer-side coverage agrees with the
+  existing exact/contains signals; the multi-hop re-run reports the new columns with paired
+  intervals and states whether they change the recorded verdict.
+- Documentation target: [RAG core](current/rag-core.md#scoring) and the answer-quality evidence
+  subsection of [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+
+### fusion-answer-quality-second-model (optional)
+
+Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
+evidence converts into a better answer is a property of the MODEL, not only of the retrieval lane:
+a measured coverage gain that one model ignores may be exactly what a stronger (or more
+instruction-following) model needs, and a single-model result cannot separate "fusion does not
+help answers" from "this model does not use the extra hop". The lane, its verdict vocabulary, and
+the drafted-grounding rules are current behavior
+([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)).
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare-answer-quality` as-is with a different `MODEL`; the matched
+  stores and drafted bundle already exist.
+- User-visible outcome: the operator learns whether the retrieval-only finding is a property of
+  the corpus and the fusion lane, or of the one model that was scored.
+- Scope boundary: in scope -- one more model, the same lanes/splits/seed, and a two-model
+  comparison of the per-slice deltas. Out of scope -- any ranking-policy change, model selection,
+  and re-tuning the graph weight per model.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
+  calibration FUSION_COMPARISON=<sweep>/comparison.json INCLUDE_DRAFTED=1`; no new CI coverage.
+- Acceptance gates: `make ci` green; both models score the identical item set at the same seed;
+  the report states whether the two models agree on the verdict.
+- Documentation target: the answer-quality evidence subsection of
+  [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
 
 ### rag-vs-long-context-ablation
 
@@ -317,9 +354,10 @@ requires human judgment or authorization.
 ### multihop-ledger-human-acceptance
 
 Accept (or reject) the drafted multi-hop retrieval slice through the verification gate, then re-run
-the fusion sweep on the accepted ledger so the graph-weight verdict rests on human-reviewed
-questions instead of drafted ones. The drafted set, its worksheet, the matched vector/graph stores,
-and the measured draft-grounded sweep are current behavior in
+BOTH draft-grounded lanes on the accepted ledger -- the fusion sweep and the end-to-end
+answer-quality comparison -- so the graph-weight verdict rests on human-reviewed questions instead
+of drafted ones. The drafted set, its worksheet, the matched vector/graph stores, and the measured
+draft-grounded sweep plus answer-quality comparison are current behavior in
 [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence); every drafted multi-hop item
 is span-exact and Ukrainian-gated by construction, but only a reviewer can say whether a
 shared-bridge question genuinely needs both facts.
@@ -332,20 +370,25 @@ shared-bridge question genuinely needs both facts.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
   human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
   genuine multi-hop questions and the slice must come from another source.
-- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep on the
-  accepted ledger, and the adopt-or-reject verdict. Out of scope -- graph schema changes, fusion
-  mechanics (the candidate-depth verdict is current behavior in
+- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep and the
+  answer-quality comparison on the accepted ledger, and the adopt-or-reject verdict. Out of scope
+  -- graph schema changes, fusion mechanics (the candidate-depth verdict is current behavior in
   [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence); span identity is its own
   forward task), and changing the opt-in fusion default before the accepted-ledger sweep supports
   it.
 - Data and artifact paths: the existing drafted bundle and worksheet plus a new
-  `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl`.
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
+  `answer-quality/` comparison.
 - Execution path: the stratified worksheet is already drawn beside the bundle, so start at
   `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
-  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl`.
+  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl`,
+  then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
+  sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
+  the drafted-grounding escape.
 - Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
   multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
-  records the adopt-or-reject verdict per graph strategy.
+  records the adopt-or-reject verdict per graph strategy; the answer-quality comparison re-runs on
+  the accepted ledger with `grounding: verified`.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 

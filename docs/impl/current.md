@@ -21,7 +21,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Security, tooling, agentic, summarization, structured, text analysis | [Category suite](current/category-benchmark-suite.md) |
 | Effective real-world knowledge cutoff for local models | [Knowledge cutoff](current/knowledge-cutoff.md) |
 | Prompt template registry and review workflow | [Prompt templates](current/prompt-templates.md) |
-| Knowledge-graph retrieval and graph-vs-vector comparison | [GraphRAG](current/graphrag-backend.md) |
+| Knowledge-graph retrieval, graph-vs-vector comparison, multi-hop retrieval and answer-quality evidence | [GraphRAG](current/graphrag-backend.md) |
 | Backend matrix, power telemetry, vector-store adapters | [Platform matrix](current/platform-vector-matrix.md) |
 | Agentic harnesses, judge diagnostics, prompt-system packages, local fine-tuning, adapter registry and lifecycle | [Extended workflows](current/extended-workflows.md) |
 | Host acceptance checklist and repeatable smoke runs | [Host validation](current/host-validation.md) |

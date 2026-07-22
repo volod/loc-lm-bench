@@ -447,8 +447,10 @@ Ukrainian goods corpus they almost never do; see
 not depth, is the knob that controls the graph lane's influence there.
 
 `compare-retrieval` ranks backends at ONE graph weight; `compare-graph-fusion` sweeps the weight
-and decides it on the multi-hop slice with uncertainty -- see
-[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for the lane, its measured
+and decides it on the multi-hop slice with uncertainty; `compare-answer-quality` then scores the
+same items END TO END under two of those rows and compares the answers, which is what separates a
+retrieval-only coverage gain from an answer-quality gain -- see
+[GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for all three lanes, their measured
 CUDA-host evidence, and the artifact locations.
 
 ## Reranking And Context Order (rerank-context-order)
@@ -1001,6 +1003,14 @@ pairs used by aggregate metrics and judge records.
 `src/llb/executor/runner.py` orchestrates one run. It filters unverified items, loads the selected
 retrieval backend, executes cases, collects optional telemetry, writes artifacts, mirrors to MLflow,
 and prints the row.
+
+`run_eval(..., verified_only=False)` is the one documented exception to the unverified filter. It
+exists so a diagnostic lane can score exactly the item set a drafted-grounded retrieval sweep
+measured (a drafted multi-hop slice has no accepted counterpart until a reviewer produces one), and
+it is deliberately hard to reach by accident: no default path sets it, `run-eval` itself has no
+flag for it, and the resulting manifest records `config.item_grounding: drafted` so the bundle is
+self-describing. The only caller is `compare-answer-quality --include-drafted`
+([GraphRAG](graphrag-backend.md#answer-quality-evidence)); a leaderboard run never uses it.
 
 Isolation and GPU safety live outside the scoring path:
 

@@ -19,7 +19,9 @@ from llb.executor.runner_retrieval import build_query_prep
 RagState = eval_graph.RagState
 
 
-def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[GoldItem]:
+def _load_eval_items(
+    config: RunConfig, split: str, limit: int | None, verified_only: bool = True
+) -> list[GoldItem]:
     if not config.goldset_path.exists():
         raise SystemExit(
             f"gold set not found: {config.goldset_path}\n"
@@ -28,7 +30,9 @@ def _load_eval_items(config: RunConfig, split: str, limit: int | None) -> list[G
             "  or create unverified development material with `make ingest-uk-squad`."
         )
     items = [
-        item for item in load_goldset(config.goldset_path) if item.split == split and item.verified
+        item
+        for item in load_goldset(config.goldset_path)
+        if item.split == split and (item.verified or not verified_only)
     ]
     items.sort(key=lambda it: it.id)
     return items[:limit] if limit is not None else items
@@ -39,13 +43,21 @@ def _select_eval_items(
     items: list[GoldItem] | None,
     split: str,
     limit: int | None,
+    verified_only: bool = True,
 ) -> list[GoldItem]:
+    """The scored item selection.
+
+    `verified_only=False` scores a DRAFTED ledger whose items no reviewer has accepted. It exists
+    for diagnostic lanes that must measure the same set a retrieval sweep measured, never for a
+    leaderboard run, and the run that uses it records the grounding in its manifest so a
+    drafted-grounded score can never be mistaken for a verified one.
+    """
     if limit is not None and limit < 1:
         raise ValueError("limit must be >= 1")
     if items is None:
-        return _load_eval_items(config, split, limit)
+        return _load_eval_items(config, split, limit, verified_only)
     selected = sorted(
-        (item for item in items if item.split == split and item.verified),
+        (item for item in items if item.split == split and (item.verified or not verified_only)),
         key=lambda item: item.id,
     )
     return selected[:limit] if limit is not None else selected
