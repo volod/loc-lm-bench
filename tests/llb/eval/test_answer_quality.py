@@ -32,7 +32,7 @@ from llb.eval.answer_quality.models import (
 )
 from llb.eval.paired_cases import shared_item_ids
 from llb.goldset.schema import GoldItem
-from llb.rag.fusion_evidence.models import fused_row_label
+from llb.rag.fusion_evidence.models import fused_row_label, routed_row_label
 
 VECTOR = "vector"
 FUSED = "fused/global_community@0.10/d10"
@@ -82,6 +82,39 @@ def test_fused_label_round_trips_the_sweeps_own_template():
         assert (spec.retrieval_strategy, spec.graph_fusion_candidates) == ("global_community", 10)
         assert spec.graph_fusion_span_identity == identity
         assert spec.graph_weight == pytest.approx(0.1)
+
+
+def test_routed_label_round_trips_and_enables_question_type_routing():
+    label = routed_row_label("global_community", 0.3, 50, "overlap")
+    spec = parse_lane_label(label)
+    assert label == "routed/global_community@0.30/d50/ioverlap"
+    assert spec.graph_fusion_router == "question_type"
+    config = lane_config(RunConfig(), spec, run_name_prefix="aq")
+    assert config.retrieval_backend == "fused"
+    assert config.graph_fusion_router == "question_type"
+
+
+def test_routed_report_states_focus_gain_and_exact_factoid_passthrough():
+    routed = "routed/global_community@0.30/d50/ioverlap"
+    rows = {
+        VECTOR: [
+            _row("multi", 0.2, 0.0),
+            _row("fact", 0.8, 1.0),
+        ],
+        routed: [
+            _row("multi", 0.2, 1.0),
+            _row("fact", 0.8, 1.0),
+        ],
+    }
+    report = compare_answer_quality(
+        rows,
+        {"multi": "multi-hop", "fact": "factoid"},
+        baseline=VECTOR,
+        resamples=20,
+    )
+    rendered = format_report(report)
+    assert "### Routing outcome" in rendered
+    assert "makes factoid answers an exact baseline passthrough" in rendered
 
 
 def test_fused_label_without_depth_leaves_the_lane_pool_at_top_k():

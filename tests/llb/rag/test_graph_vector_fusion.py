@@ -5,6 +5,7 @@ import pytest
 from llb.core.config import RunConfig
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.fusion import FusedRetriever, fuse_lane_hits, lane_agreement
+from llb.rag.fusion_routing import QuestionTypeRouter, heuristic_signals
 from llb.rag.fusion_spans import (
     SPAN_IDENTITY_EXACT,
     SPAN_IDENTITY_OVERLAP,
@@ -61,6 +62,46 @@ def test_graph_weight_one_is_exact_graph_passthrough_without_vector_query():
     assert vector.calls == 0
 
 
+def test_question_type_router_uses_sidecar_before_the_text_heuristic():
+    router = QuestionTypeRouter(
+        0.3,
+        {
+            "How are Alpha and Beta related?": "factoid",
+            "Where is it?": "multi_hop",
+        },
+    )
+    assert router.decide("How are Alpha and Beta related?").graph_weight == 0.0
+    assert router.decide("How are Alpha and Beta related?").source == "sidecar"
+    assert router.decide("Where is it?").graph_weight == pytest.approx(0.3)
+
+
+def test_question_type_router_fallback_is_conservative_and_auditable():
+    router = QuestionTypeRouter(0.3)
+    bridge = router.decide("What is the relationship between Alpha and Beta?")
+    assert bridge.route == "graph"
+    assert bridge.signals == ("bridge_term", "multiple_linked_entities")
+    assert router.decide("Where is Alpha?").route == "vector"
+    long_linked = " ".join(
+        ["Explain", "Alpha", "and", "Beta", "using", "all", "the", "available", "details"]
+        + ["from", "the", "documents", "that", "describe", "these", "two", "organizations"]
+    )
+    assert heuristic_signals(long_linked) == {
+        "long_question",
+        "multiple_linked_entities",
+    }
+    assert router.decide(long_linked).route == "graph"
+
+
+def test_routed_zero_weight_is_exact_vector_passthrough_without_graph_query():
+    vector_hits = [_chunk("a", 0, 10, lane="vector"), _chunk("b", 10, 20, lane="vector")]
+    vector = FakeRetriever(vector_hits)
+    graph = FakeRetriever([_chunk("g", 30, 40, lane="graph")])
+    router = QuestionTypeRouter(0.3, {"q": "factoid"})
+    hits = FusedRetriever(vector, graph, 0.3, router=router).retrieve("q", 2)
+    assert hits == vector_hits
+    assert graph.calls == 0
+
+
 def test_fusion_surfaces_graph_hits_and_deduplicates_shared_exact_span():
     vector = FakeRetriever(
         [
@@ -95,6 +136,9 @@ def test_fused_config_fields_land_in_the_fingerprint():
     assert config.fingerprint()["graph_fusion_candidates"] == 50
     # the default is the historical behavior: each lane is asked for exactly top_k
     assert RunConfig().fingerprint()["graph_fusion_candidates"] is None
+    assert RunConfig().fingerprint()["graph_fusion_router"] == "fixed"
+    routed = config.with_overrides(graph_fusion_router="question_type")
+    assert routed.fingerprint()["graph_fusion_router"] == "question_type"
 
 
 def test_runner_loads_vector_and_graph_before_fusing(monkeypatch, tmp_path):
@@ -115,6 +159,31 @@ def test_runner_loads_vector_and_graph_before_fusing(monkeypatch, tmp_path):
     assert isinstance(loaded, FusedRetriever)
     assert loaded.vector is vector and loaded.graph is graph
     assert loaded.candidates == 40
+
+
+def test_runner_builds_the_configured_question_type_router(monkeypatch, tmp_path):
+    from llb.executor import runner_retrieval
+    from llb.rag import question_types
+
+    vector = FakeRetriever([_chunk("v", 0, 10, lane="vector")])
+    graph = FakeRetriever([_chunk("g", 10, 20, lane="graph")])
+    monkeypatch.setattr(runner_retrieval, "_load_vector_store", lambda _config: vector)
+    monkeypatch.setattr(runner_retrieval, "_load_graph_store", lambda _config: graph)
+    monkeypatch.setattr(
+        question_types, "load_question_types_by_question", lambda _path: {"q": "factoid"}
+    )
+    loaded = runner_retrieval._load_store(
+        RunConfig(
+            data_dir=tmp_path,
+            retrieval_backend="fused",
+            graph_weight=0.3,
+            graph_fusion_router="question_type",
+        )
+    )
+    assert isinstance(loaded, FusedRetriever)
+    assert loaded.router is not None
+    assert loaded.retrieve("q", 1) == vector.hits
+    assert graph.calls == 0
 
 
 # --- candidate depth ------------------------------------------------------------------------

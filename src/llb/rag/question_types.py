@@ -7,6 +7,7 @@ one level up when the gold set is an accepted ledger under `accepted/`.
 """
 
 import json
+from collections import defaultdict
 from pathlib import Path
 
 SIDECAR_NAME = "needle_items.jsonl"
@@ -45,3 +46,25 @@ def aligned_question_types(goldset: Path, item_ids: list[str]) -> list[str | Non
         return None
     labels = load_question_types(goldset)
     return [labels.get(item_id) for item_id in item_ids]
+
+
+def load_question_types_by_question(goldset: Path) -> dict[str, str]:
+    """Map exact question text to a sidecar type, omitting ambiguous duplicate questions.
+
+    Retrieval receives question text rather than the gold item id.  A duplicate question carrying
+    conflicting labels therefore has no safe sidecar route and intentionally falls back to the
+    deterministic text heuristic.
+    """
+    from llb.goldset.schema import load_goldset
+
+    by_id = load_question_types(goldset)
+    grouped: dict[str, set[str]] = defaultdict(set)
+    for item in load_goldset(goldset):
+        question_type = by_id.get(item.id)
+        if question_type is not None:
+            grouped[item.question].add(question_type)
+    return {
+        question: next(iter(question_types))
+        for question, question_types in grouped.items()
+        if len(question_types) == 1
+    }

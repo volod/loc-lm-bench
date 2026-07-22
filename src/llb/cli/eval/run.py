@@ -103,6 +103,11 @@ def run_eval_cmd(
         help="fused backend: span identity the lanes are fused by -- 'exact' (default, identical "
         "offsets) or 'overlap' (fold a graph span into the vector chunk that contains it)",
     ),
+    graph_fusion_router: Optional[str] = typer.Option(
+        None,
+        help="fused backend: 'fixed' (default) or 'question_type' (sidecar label with a "
+        "deterministic question-text fallback)",
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
@@ -231,6 +236,7 @@ def run_eval_cmd(
         graph_weight=graph_weight,
         graph_fusion_candidates=graph_fusion_candidates,
         graph_fusion_span_identity=graph_fusion_span_identity,
+        graph_fusion_router=graph_fusion_router,
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,

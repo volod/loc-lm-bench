@@ -122,6 +122,44 @@ def test_sweep_rows_retrieve_each_lane_once_per_question():
     assert {chunk["doc_id"] for chunk in fused} == {"d1", "d2"}
 
 
+def test_sweep_adds_one_routed_row_and_reports_its_decision_counts():
+    vector = _ByQuestion({"single": [_chunk("d1", 0, 10)], "multi": [_chunk("d1", 0, 10)]})
+    graph = _ByQuestion({"single": [_chunk("d2", 0, 10)], "multi": [_chunk("d2", 0, 10)]})
+    rows = build_sweep_rows(
+        vector,
+        {"local_khop": graph},
+        ["single", "multi"],
+        k=2,
+        weights=(0.3,),
+        routed_graph_weight=0.3,
+        question_types={"single": "factoid", "multi": "multi-hop"},
+    )
+    routed = rows["routed/local_khop@0.30/d2"]
+    assert routed.retrieve("single", 2) == rows[VECTOR_ROW].retrieve("single", 2)
+    report = evaluate_fusion_evidence(
+        rows,
+        [
+            EvidenceItem("s", "single", [_span("d1", 0, 10)], "factoid"),
+            _multi_hop_item("m", "multi"),
+        ],
+        2,
+        baseline=VECTOR_ROW,
+        resamples=20,
+    )
+    assert report["rows"]["routed/local_khop@0.30/d2"]["routing"] == {
+        "graph_questions": 1,
+        "vector_questions": 1,
+        "sidecar_questions": 2,
+        "heuristic_questions": 0,
+        "slices": {
+            "factoid": {"graph_questions": 0, "vector_questions": 1},
+            "multi-hop": {"graph_questions": 1, "vector_questions": 0},
+        },
+    }
+    rendered = format_report(report)
+    assert "### Question routing" in rendered
+
+
 def test_replayed_fusion_matches_the_production_fused_retriever():
     from llb.rag.fusion import FusedRetriever
 

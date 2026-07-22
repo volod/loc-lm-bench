@@ -28,7 +28,7 @@ def compare_answer_quality_cmd(
         DEFAULT_LANES,
         help="comma-separated retrieval lanes to score; the FIRST is the baseline. Labels are "
         "compare-graph-fusion row labels: vector | graph/<strategy> | "
-        "fused/<strategy>@<weight>[/d<depth>]",
+        "fused/<strategy>@<weight>[/d<depth>] | routed/<strategy>@<weight>[/d<depth>]",
     ),
     from_comparison: Optional[Path] = typer.Option(
         None,

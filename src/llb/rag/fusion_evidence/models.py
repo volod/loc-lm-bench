@@ -28,6 +28,7 @@ OVERALL_RECALL_TOLERANCE = 0.0
 VECTOR_ROW = "vector"
 GRAPH_ROW_PREFIX = "graph/"
 FUSED_ROW_PREFIX = "fused/"
+ROUTED_ROW_PREFIX = "routed/"
 # A fused row is identified by BOTH fusion knobs: the graph share and the per-lane candidate
 # depth the share is applied over (`/d<depth>`), so a depth sweep and a weight sweep are the same
 # table and the verdict ranks across both.
@@ -46,6 +47,14 @@ def fused_row_label(
     if span_identity == DEFAULT_SPAN_IDENTITY:
         return label
     return f"{label}{IDENTITY_MARKER}{span_identity}"
+
+
+def routed_row_label(
+    strategy: str, weight: float, depth: int, span_identity: str = DEFAULT_SPAN_IDENTITY
+) -> str:
+    """Label a question-type-routed row by its non-zero graph share and fusion knobs."""
+    label = fused_row_label(strategy, weight, depth, span_identity)
+    return ROUTED_ROW_PREFIX + label[len(FUSED_ROW_PREFIX) :]
 
 
 METRIC_RECALL = "recall_at_k"
@@ -84,12 +93,23 @@ class AgreementReport(TypedDict):
     mean_shared_candidates: float
 
 
+class RoutingReport(TypedDict):
+    """Auditable decision counts for one routed row."""
+
+    graph_questions: int
+    vector_questions: int
+    sidecar_questions: int
+    heuristic_questions: int
+    slices: dict[str, dict[str, int]]
+
+
 class RowReport(TypedDict):
     """One compared retrieval row: overall plus every question-type slice."""
 
     overall: SliceReport
     slices: dict[str, SliceReport]
     agreement: NotRequired[AgreementReport]
+    routing: NotRequired[RoutingReport]
 
 
 class ItemOutcome(TypedDict):

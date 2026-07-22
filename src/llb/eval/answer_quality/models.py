@@ -62,6 +62,7 @@ class LaneSpec(NamedTuple):
     graph_weight: float | None = None
     graph_fusion_candidates: int | None = None
     graph_fusion_span_identity: str = DEFAULT_SPAN_IDENTITY
+    graph_fusion_router: str = "fixed"
 
 
 class LaneReport(TypedDict):

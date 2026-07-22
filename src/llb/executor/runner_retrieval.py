@@ -128,14 +128,22 @@ def _load_store(config: RunConfig) -> Any:
     vector = _load_vector_store(config)
     if config.retrieval_backend == "fused":
         from llb.rag.fusion import FusedRetriever
+        from llb.rag.fusion_routing import QuestionTypeRouter, ROUTER_QUESTION_TYPE
+        from llb.rag.question_types import load_question_types_by_question
 
         assert graph is not None
+        router = None
+        if config.graph_fusion_router == ROUTER_QUESTION_TYPE:
+            router = QuestionTypeRouter(
+                config.graph_weight, load_question_types_by_question(config.goldset_path)
+            )
         fused = FusedRetriever(
             vector,
             graph,
             config.graph_weight,
             config.graph_fusion_candidates,
             config.graph_fusion_span_identity,
+            router,
         )
         return maybe_wrap_reranker(fused, config)
     return maybe_wrap_reranker(vector, config)

@@ -29,6 +29,9 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # identical (doc_id, char_start, char_end); "overlap" folds a graph span into the vector chunk
 # that contains it. See `src/llb/rag/fusion_spans.py`.
 SpanIdentity = Literal["exact", "overlap"]
+# Per-question graph fusion policy. "fixed" applies graph_weight to every question;
+# "question_type" uses a sidecar label when available and a deterministic text fallback.
+GraphFusionRouter = Literal["fixed", "question_type"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
@@ -174,6 +177,7 @@ class RunConfigFields(BaseModel):
     # mention and an ~800-character chunk essentially never do; "overlap" folds the mention into
     # the chunk that contains it, so the pair becomes one candidate both lanes voted for.
     graph_fusion_span_identity: SpanIdentity = "exact"
+    graph_fusion_router: GraphFusionRouter = "fixed"
     acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default

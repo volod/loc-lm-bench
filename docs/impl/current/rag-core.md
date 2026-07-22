@@ -489,6 +489,49 @@ retrieval-only coverage gain from an answer-quality gain -- see
 [GraphRAG](graphrag-backend.md#graph-vector-fusion-evidence) for all three lanes, their measured
 CUDA-host evidence, and the artifact locations.
 
+### Fusion question-type routing (`graph_fusion_router`)
+
+`graph_fusion_router=question_type` changes `graph_weight` from one corpus-wide value into a
+per-question endpoint choice: the configured share for likely multi-span questions, exactly zero
+for likely single-span questions. The zero endpoint calls only the vector lane at `top_k`; it is an
+exact ranking passthrough and does not query the graph store. `fixed` remains the default.
+
+The pure policy lives in `src/llb/rag/fusion_routing.py`. A recognized sidecar label wins:
+`multi-hop` and `comparative` route to graph fusion; `factoid`, `definition`, `numeric`, and
+`procedural` route to vector. An absent or unknown label falls back to deterministic text signals:
+a bridge term routes directly, while a long question routes only when it also names multiple
+capitalized entities. Conflicting labels on duplicate question text are omitted from the sidecar
+map and therefore use the fallback. Every decision records its source and signal tuple.
+
+`FusedRetriever` accepts the router at the shared retrieval seam, while
+`runner_retrieval._load_store` builds it from the configured gold-set sidecar. The setting is a
+`RunConfig` field and is therefore present in every manifest and fingerprint; low-level runs can
+select it with `run-eval --graph-fusion-router question_type` or YAML.
+
+The fusion evidence command emits `routed/<strategy>@<weight>/d<depth>[/i<identity>]` rows beside
+the fixed grid. `ROUTED_GRAPH_WEIGHT` controls their non-zero share; route counts are reported
+overall and by question-type slice. The same label parses back into an ordinary answer-quality
+`run-eval` lane, so the retrieval and answer comparisons exercise the production path rather than
+a sweep-only approximation.
+
+CI coverage is split along those seams: `tests/llb/rag/test_graph_vector_fusion.py` pins sidecar
+precedence, heuristic signals, exact zero-weight passthrough, configuration fingerprints, and
+runner wiring; `tests/llb/rag/test_fusion_evidence.py` pins routed replay and decision reporting;
+`tests/llb/eval/test_answer_quality.py` pins label round-tripping and the routing outcome summary.
+
+```bash
+make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  ROUTED_GRAPH_WEIGHT=0.3 GRAPH_FUSION_CANDIDATES=k,50 \
+  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
+make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  ANSWER_QUALITY_LANES=vector,routed/global_community@0.30/d50/ioverlap \
+  SPLIT=final,tuning,calibration INCLUDE_DRAFTED=1
+```
+
+The CUDA result keeps the best fixed row's multi-hop retrieval gain while making every factoid
+retrieval and answer an exact vector tie; see
+[GraphRAG](graphrag-backend.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss).
+
 ## Reranking And Context Order (rerank-context-order)
 
 Shipped: the stage between retrieval and generation is tunable -- an optional local

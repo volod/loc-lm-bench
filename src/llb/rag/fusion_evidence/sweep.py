@@ -18,6 +18,7 @@ from llb.rag.fusion_evidence.models import (
     FusionEvidenceReport,
     ItemOutcome,
     Retriever,
+    RoutingReport,
     RowReport,
 )
 from llb.rag.fusion_evidence.slices import (
@@ -64,6 +65,29 @@ def _agreement(store: Retriever, items: list[EvidenceItem], k: int) -> Agreement
         "questions_with_shared_candidate": with_shared,
         "share_of_questions": with_shared / len(shared),
         "mean_shared_candidates": sum(shared) / len(shared),
+    }
+
+
+def _routing(store: Retriever, items: list[EvidenceItem]) -> RoutingReport | None:
+    """Decision counts for a routed row, read through its optional audit seam."""
+    measure = getattr(store, "routing_decision", None)
+    if not callable(measure):
+        return None
+    measured = [(item, measure(item.question)) for item in items]
+    routed = [(item, decision) for item, decision in measured if decision is not None]
+    if not routed:
+        return None
+    slices: dict[str, dict[str, int]] = {}
+    for item, decision in routed:
+        name = item.question_type or "unlabeled"
+        counts = slices.setdefault(name, {"graph_questions": 0, "vector_questions": 0})
+        counts[f"{decision.route}_questions"] += 1
+    return {
+        "graph_questions": sum(decision.route == "graph" for _item, decision in routed),
+        "vector_questions": sum(decision.route == "vector" for _item, decision in routed),
+        "sidecar_questions": sum(decision.source == "sidecar" for _item, decision in routed),
+        "heuristic_questions": sum(decision.source == "heuristic" for _item, decision in routed),
+        "slices": slices,
     }
 
 
@@ -121,6 +145,9 @@ def evaluate_fusion_evidence(
         agreement = _agreement(stores[label], items, k)
         if agreement is not None:
             row["agreement"] = agreement
+        routing = _routing(stores[label], items)
+        if routing is not None:
+            row["routing"] = routing
         rows[label] = row
     return {
         "k": k,

@@ -17,6 +17,7 @@ from llb.rag.fusion_evidence.models import (
     METRIC_RECALL,
     OVERALL_RECALL_TOLERANCE,
     RowReport,
+    ROUTED_ROW_PREFIX,
     Verdict,
     VERDICT_ADOPT,
     VERDICT_INCONCLUSIVE,
@@ -65,7 +66,7 @@ def decide(rows: dict[str, RowReport], *, baseline: str, focus_slice: str) -> Ve
     candidates = {
         label: row
         for label, row in rows.items()
-        if label.startswith(FUSED_ROW_PREFIX) and label != baseline
+        if label.startswith((FUSED_ROW_PREFIX, ROUTED_ROW_PREFIX)) and label != baseline
     }
     if not candidates:
         verdict["reason"] = "no fused row was compared"

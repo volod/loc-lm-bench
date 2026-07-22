@@ -113,6 +113,41 @@ def _agreement_table(report: FusionEvidenceReport) -> list[str]:
     return lines
 
 
+def _routing_table(report: FusionEvidenceReport) -> list[str]:
+    """Show how routed rows divided the scored questions and which signal supplied the route."""
+    measured = {label: row["routing"] for label, row in report["rows"].items() if "routing" in row}
+    if not measured:
+        return []
+    lines = [
+        "### Question routing",
+        "",
+        "| row | graph | vector | sidecar | heuristic |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for label in sorted(measured):
+        entry = measured[label]
+        lines.append(
+            f"| {label} | {entry['graph_questions']} | {entry['vector_questions']} "
+            f"| {entry['sidecar_questions']} | {entry['heuristic_questions']} |"
+        )
+    lines.append("")
+    lines.extend(
+        [
+            "Routes by question-type slice:",
+            "",
+            "| row | slice | graph | vector |",
+            "| --- | --- | ---: | ---: |",
+        ]
+    )
+    for label in sorted(measured):
+        for name, counts in sorted(measured[label]["slices"].items()):
+            lines.append(
+                f"| {label} | {name} | {counts['graph_questions']} | {counts['vector_questions']} |"
+            )
+    lines.append("")
+    return lines
+
+
 def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fusion") -> str:
     """The full Markdown artifact: verdict, focus slice, overall, other slices, item ledger."""
     verdict = report["verdict"]
@@ -143,5 +178,6 @@ def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fu
     for name in sorted(set(other)):
         lines += _metric_table(report, name, f"Slice: {name}", "Context slice")
     lines += _agreement_table(report)
+    lines += _routing_table(report)
     lines += _item_table(report)
     return "\n".join(lines)

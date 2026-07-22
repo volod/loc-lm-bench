@@ -18,6 +18,10 @@ class Retriever(Protocol):
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]: ...
 
 
+class GraphWeightRouter(Protocol):
+    def graph_weight(self, question: str) -> float: ...
+
+
 # Graph evidence spans and vector chunks rarely have identical boundaries, so the standard RRF
 # damping constant would make a 0.3 graph lane unable to enter a top-10 vector ranking at all.
 # Undamped reciprocal ranks make graph_weight behave as an effective candidate share.
@@ -45,6 +49,7 @@ class FusedRetriever:
         graph_weight: float,
         candidates: int | None = None,
         span_identity: str = DEFAULT_SPAN_IDENTITY,
+        router: GraphWeightRouter | None = None,
     ) -> None:
         if not 0.0 <= graph_weight <= 1.0:
             raise ValueError(f"graph weight must be within [0, 1], got {graph_weight}")
@@ -55,6 +60,7 @@ class FusedRetriever:
         self.graph_weight = graph_weight
         self.candidates = candidates
         self.span_identity = resolve_span_identity(span_identity)
+        self.router = router
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
         """Return top-k fused chunks; endpoint weights are exact lane passthroughs."""
@@ -69,17 +75,22 @@ class FusedRetriever:
     def _retrieve_lanes(self, dense_query: str, lexical_query: str, k: int) -> list[ChunkRecord]:
         if k < 1:
             return []
+        graph_weight = (
+            self.router.graph_weight(lexical_query)
+            if self.router is not None
+            else self.graph_weight
+        )
         # Endpoint weights stay exact single-lane passthroughs at exactly `k`: a deeper pool
         # cannot change a ranking that is never fused.
-        if self.graph_weight == 1.0:
+        if graph_weight == 1.0:
             return self.graph.retrieve(lexical_query, k)
-        if self.graph_weight == 0.0:
+        if graph_weight == 0.0:
             return self._vector_hits(dense_query, lexical_query, k)
         depth = lane_depth(self.candidates, k)
         vector_hits = self._vector_hits(dense_query, lexical_query, depth)
         graph_hits = self.graph.retrieve(lexical_query, depth)
         return fuse_lane_hits(
-            vector_hits, graph_hits, self.graph_weight, k, span_identity=self.span_identity
+            vector_hits, graph_hits, graph_weight, k, span_identity=self.span_identity
         )
 
     def _vector_hits(self, dense_query: str, lexical_query: str, depth: int) -> list[ChunkRecord]:

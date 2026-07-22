@@ -43,41 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### fusion-question-type-routing
+### fusion-routing-heuristic-calibration (optional)
 
-Fusion helps and hurts different question types at once, and the lane currently applies ONE graph
-weight to all of them. On the measured corpus the best fused row gains multi-hop retrieval coverage
-(+0.071 span coverage, interval clear of zero) while its factoid answers fall -0.053 [-0.111,
--0.001] -- the only answer-side interval anywhere in the run that excludes zero, and factoid
-retrieval itself is flat, so the graph vote is re-ranking the context of questions that never
-needed a second hop
-([GraphRAG](current/graphrag-backend.md#measured-result-the-overlap-span-identity-carries-more-evidence-and-costs-factoid-answers)).
-Route instead of averaging: pick the graph weight per question (zero for a question the router
-calls single-span), starting with the cheapest usable signal -- the question-type sidecar label
-where one exists, else a deterministic heuristic (question length, multiple linked entities, a
-bridge term) -- and score the routed lane as one more row beside the fixed-weight rows.
+Calibrate the sidecar-free fallback router on a corpus whose questions have hidden span-count
+labels. The current evidence exercises the sidecar route for every scored item
+([GraphRAG](current/graphrag-backend.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss)),
+so it cannot estimate the false-positive rate of the length/entity/bridge-term heuristic. Hide the
+sidecar from the router, compare its graph/vector decisions with whether each item needs multiple
+gold spans, sweep only the documented deterministic thresholds on a tuning partition, and freeze
+the choice before scoring the final partition.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `FusedRetriever` / `fuse_lane_hits` in `src/llb/rag/fusion.py`, the
-  question-type sidecar in `src/llb/rag/question_types.py`, and both comparison lanes
-  ([GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence)).
-- User-visible outcome: the operator can enable graph fusion for the questions it helps without
-  paying for it on the questions it hurts, instead of choosing one weight for the whole gold set.
-- Scope boundary: in scope -- the routing seam, one or two routers (sidecar label, deterministic
-  heuristic), the routed row in the sweep, and the end-to-end answer comparison of the routed row.
-  Out of scope -- a learned/model-based router, changing the span-identity default, and per-item
-  weight tuning on the scored split.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/` and its
-  `answer-quality/` comparison.
-- Execution path: `make compare-graph-fusion` with the routed row in the grid, then
-  `make compare-answer-quality` on the routed row versus `vector`; CI covers the router's decisions
-  and the zero-weight passthrough over fake lane stores.
-- Acceptance gates: `make ci` green; a routed question at weight zero is an exact vector
-  passthrough; the run reports the routed row beside the fixed-weight rows with paired intervals,
-  and states whether routing keeps the multi-hop coverage gain while clearing the factoid loss.
-- Documentation target: [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and the
-  graph-vector fusion evidence section of
-  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+- Dependencies: none. Reuse `QuestionTypeRouter` and its auditable signal tuple in
+  `src/llb/rag/fusion_routing.py` plus the routed-row report.
+- User-visible outcome: operators without a question-type sidecar get a measured routing error
+  rate instead of relying on an uncalibrated fallback.
+- Scope boundary: in scope -- precision/recall of the binary route, threshold selection on tuning,
+  and one held-out retrieval comparison. Out of scope -- a learned or model-based router and
+  per-item tuning on the scored split.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/` with the sidecar hidden
+  from routing but retained for evaluation labels.
+- Execution path: add a sidecar-masking comparison option, run `make compare-graph-fusion` on the
+  tuning and final partitions, and report route confusion counts plus retrieval deltas.
+- Acceptance gates: `make ci` green; the report separates tuning from final; the held-out route
+  precision and recall carry paired intervals; a recommended threshold is recorded only when it
+  improves routed retrieval without a single-span regression.
+- Documentation target: the question-type routing subsections of [RAG core](current/rag-core.md)
+  and [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### span-merge-ratio-sensitivity (optional)
 

@@ -1,10 +1,11 @@
 """Resolve fusion sweep row labels into scored `run-eval` lanes.
 
-The fusion sweep names its rows `vector`, `graph/<strategy>`, and
-`fused/<strategy>@<weight>/d<depth>[/i<span-identity>]`; its verdict names the best one. This
-module parses exactly those labels back into retrieval knobs, so the answer-quality lane scores THE row the retrieval
-sweep recommended instead of a hand-copied approximation of it. A round-trip test pins the parser
-to `fused_row_label`, which is the one place the label is formatted.
+The fusion sweep names its rows `vector`, `graph/<strategy>`,
+`fused/<strategy>@<weight>/d<depth>[/i<span-identity>]`, and
+`routed/<strategy>@<weight>/d<depth>[/i<span-identity>]`; its verdict names the best one. This
+module parses exactly those labels back into retrieval knobs, so the answer-quality lane scores THE
+row the retrieval sweep recommended instead of a hand-copied approximation of it. Round-trip tests
+pin both fixed and routed parsers to the sweep's own formatters.
 """
 
 import json
@@ -16,9 +17,11 @@ from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
     GRAPH_ROW_PREFIX,
     IDENTITY_MARKER,
+    ROUTED_ROW_PREFIX,
     VECTOR_ROW,
 )
 from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, resolve_span_identity
+from llb.rag.fusion_routing import ROUTER_QUESTION_TYPE
 
 BACKEND_VECTOR = "faiss"
 BACKEND_GRAPH = "graph"
@@ -27,7 +30,7 @@ DEPTH_MARKER = "/d"
 
 
 def parse_lane_label(label: str) -> LaneSpec:
-    """`vector` | `graph/<s>` | `fused/<s>@<weight>[/d<depth>][/i<identity>]` -> a `LaneSpec`."""
+    """Turn a vector, graph, fixed-fused, or routed-fused row label into a `LaneSpec`."""
     text = label.strip()
     if text == VECTOR_ROW:
         return LaneSpec(label=text, retrieval_backend=BACKEND_VECTOR)
@@ -36,13 +39,16 @@ def parse_lane_label(label: str) -> LaneSpec:
         if not strategy:
             raise ValueError(f"graph lane label needs a strategy, got {label!r}")
         return LaneSpec(text, BACKEND_GRAPH, retrieval_strategy=strategy)
-    if not text.startswith(FUSED_ROW_PREFIX):
+    is_routed = text.startswith(ROUTED_ROW_PREFIX)
+    if not text.startswith(FUSED_ROW_PREFIX) and not is_routed:
         raise ValueError(
             f"unknown lane label {label!r}: expected {VECTOR_ROW!r}, "
             f"{GRAPH_ROW_PREFIX}<strategy>, or "
-            f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>]"
+            f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>], or "
+            f"{ROUTED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>]"
         )
-    body = text[len(FUSED_ROW_PREFIX) :]
+    prefix = ROUTED_ROW_PREFIX if is_routed else FUSED_ROW_PREFIX
+    body = text[len(prefix) :]
     identity = DEFAULT_SPAN_IDENTITY
     if IDENTITY_MARKER in body:
         body, _, identity_token = body.partition(IDENTITY_MARKER)
@@ -64,6 +70,7 @@ def parse_lane_label(label: str) -> LaneSpec:
         graph_weight=_weight(weight_token, label),
         graph_fusion_candidates=depth,
         graph_fusion_span_identity=identity,
+        graph_fusion_router=ROUTER_QUESTION_TYPE if is_routed else "fixed",
     )
 
 
@@ -125,6 +132,7 @@ def lane_config(config: RunConfig, lane: LaneSpec, *, run_name_prefix: str) -> R
         retrieval_backend=lane.retrieval_backend,
         graph_fusion_candidates=lane.graph_fusion_candidates,
         graph_fusion_span_identity=lane.graph_fusion_span_identity,
+        graph_fusion_router=lane.graph_fusion_router,
     )
     if lane.retrieval_strategy is not None:
         values["retrieval_strategy"] = lane.retrieval_strategy

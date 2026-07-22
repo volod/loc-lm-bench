@@ -173,7 +173,8 @@ Three things separate it from the flat comparison:
   candidate depth, so the sweep retrieves each lane once at the DEEPEST compared pool and re-fuses
   those same candidates through the production `fuse_lane_hits` at every (weight, depth) point.
 
-The lane sweeps all three fusion knobs. `GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is
+The lane sweeps all three fusion knobs and adds question-type-routed rows.
+`GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is
 the per-lane candidate depth grid, where `k` names the scored cutoff itself;
 `GRAPH_FUSION_SPAN_IDENTITY` (`--graph-fusion-span-identity`) is the span-identity grid (`exact`
 and/or `overlap`). Each fused row is labeled `fused/<strategy>@<weight>/d<depth>`, with
@@ -183,10 +184,15 @@ de-duplicate, endpoint weights carry neither depth nor identity variants (they a
 passthroughs, nothing is fused), and the verdict ranks across all three knobs together, preferring
 the shallower pool and the default policy on a tie.
 
+`ROUTED_GRAPH_WEIGHT` (`--routed-graph-weight`, default 0.3) also emits
+`routed/<strategy>@<weight>/d<depth>[/i<identity>]`. Its weight is applied only to questions the
+router calls multi-span; all other questions use the exact vector endpoint. The report records
+graph/vector and sidecar/heuristic decision counts, including a breakdown by question-type slice.
+
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
   GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0 GRAPH_FUSION_CANDIDATES=k,50 \
-  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
+  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap ROUTED_GRAPH_WEIGHT=0.3
 llb compare-graph-fusion --config <cfg> --k 10 --graph-weights 0,0.3,1.0 \
   --graph-fusion-candidates k,50 --graph-fusion-span-identity exact,overlap \
   --focus-slice multi-hop --out-dir <dir>
@@ -402,8 +408,9 @@ then compares the ANSWERS per question-type slice with the same paired bootstrap
 
 Three properties make the comparison readable:
 
-- **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`, and
-  `fused/<strategy>@<weight>[/d<depth>]` parse back into retrieval knobs, and `--from-comparison
+- **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`,
+  `fused/<strategy>@<weight>[/d<depth>]`, and
+  `routed/<strategy>@<weight>[/d<depth>]` parse back into retrieval knobs, and `--from-comparison
   <sweep>/comparison.json` reads the baseline plus the row that sweep's verdict named best -- so
   the scored lane is the row the retrieval sweep actually recommended, not a retyped approximation.
 - **One shared item set, ordinary bundles.** The selection happens once and every lane is a plain
@@ -531,12 +538,55 @@ The new finding is on the other side of the ledger:
 
 What this means for the recommendation: on this corpus and this model, `graph_fusion_span_identity=
 overlap` buys strictly more multi-hop RETRIEVAL than `exact` and pays for it with a measured
-factoid ANSWER cost, so it stays opt-in and is worth enabling only when multi-hop coverage is the
-goal and the factoid slice is not. Whether a different model uses the extra hop is tracked in
-[`plan.md`](../plan.md) (`fusion-answer-quality-second-model`), and routing the graph lane by
-question type -- so a factoid question is never fused at all -- is tracked as
-`fusion-question-type-routing`. The ledger is DRAFTED and the answer-side metric still cannot see
-hops; both boundaries above apply unchanged.
+factoid ANSWER cost, so the fixed-weight row stays opt-in. The question-type route below removes
+that cost by never fusing a factoid. Whether a different model uses the extra hop is tracked in
+[`plan.md`](../plan.md) (`fusion-answer-quality-second-model`). The ledger is DRAFTED and the
+answer-side metric still cannot see hops; both boundaries above apply unchanged.
+
+#### Measured result: question-type routing keeps the gain and clears the factoid loss
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T160531Z-question-routing/`; answer comparison is
+in its `answer-quality/` child. The same 95-item drafted goods ledger, stores, k=10, split pool,
+2,000 bootstrap resamples, seed 13, and 12B MamayLM model as the fixed overlap result were used.
+The sweep reports the routed rows beside the complete fixed grid; the end-to-end comparison scores
+`vector` against `routed/global_community@0.30/d50/ioverlap`.
+
+All 95 questions had sidecar labels. The router sent 37 to graph fusion -- all 35 `multi-hop` and
+both `comparative` items -- and sent 58 to vector -- all 40 `factoid`, 4 `numeric`, and 14
+`procedural` items. No heuristic decision contributes to this measurement.
+
+Multi-hop slice (n=35), routed minus vector, 95% paired bootstrap CI:
+
+| metric | delta | interval | w/l/t | sign p |
+| --- | ---: | ---: | :-: | ---: |
+| objective | -0.000 | [-0.075, +0.078] | 12/7/16 | 0.359 |
+| span coverage | **+0.071** | **[+0.014, +0.129]** | 5/0/30 | 0.062 |
+| recall@10 | **+0.114** | **[+0.029, +0.229]** | 4/0/31 | 0.125 |
+| all-spans@10 | +0.029 | [+0.000, +0.086] | 1/0/34 | 1.000 |
+
+The routed row is retrieval-identical to the best fixed overlap row on every multi-hop metric:
+recall 0.800, all-spans 0.086, and span coverage 0.443. It therefore keeps the full measured
+multi-hop gain, including both intervals that clear zero. The answer verdict remains
+**`retrieval_only`** because objective 0.326 is unchanged from vector despite the extra evidence.
+
+The safety result is exact on the slice that motivated routing:
+
+- **All 40 factoid retrieval and answer rows are vector ties.** Objective delta is 0.000
+  [0.000, 0.000], 0/0/40 wins/losses/ties; recall, all-spans, and span coverage are also exact
+  40-item ties. The fixed overlap row's -0.053 [-0.111, -0.001] factoid answer loss is absent.
+- **Overall retrieval improves while answer quality stays flat.** Recall rises +0.063
+  [+0.021, +0.116] and span coverage +0.047 [+0.016, +0.089]. Objective is -0.001
+  [-0.029, +0.027], compared with -0.029 [-0.067, +0.008] for the fixed overlap row.
+- **The exact endpoint is production behavior.** Each routed lane manifest records
+  `graph_fusion_router: question_type`; CI verifies that a vector route does not query the graph
+  lane, while the live factoid results reproduce vector generation exactly.
+
+Recommendation: use the routed overlap row when the bundle has the documented question-type
+sidecar and multi-hop coverage is the goal. Keep `fixed` as the shipped default: the evidence is
+drafted, the multi-hop answer gain is still absent, and the sidecar-free heuristic received zero
+live decisions. Held-out calibration of that fallback is tracked as
+`fusion-routing-heuristic-calibration` in [`plan.md`](../plan.md).
 
 ## Ontology Scope
 

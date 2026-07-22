@@ -1,4 +1,4 @@
-"""Graph-weight sweep with multi-hop evidence (`compare-graph-fusion`)."""
+"""Fixed and question-routed graph fusion with multi-hop evidence."""
 
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +17,7 @@ DEFAULT_CANDIDATE_GRID = "k"
 # Default to the historical identity rule (exact offsets), so the row set is unchanged until an
 # operator asks for the containment/overlap policy.
 DEFAULT_SPAN_IDENTITY_GRID = "exact"
+DEFAULT_ROUTED_GRAPH_WEIGHT = 0.3
 
 
 @app.command("compare-graph-fusion")
@@ -27,6 +28,13 @@ def compare_graph_fusion_cmd(
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
     graph_weights: str = typer.Option(
         DEFAULT_WEIGHT_GRID, help="comma-separated graph shares to sweep (each within [0, 1])"
+    ),
+    routed_graph_weight: float = typer.Option(
+        DEFAULT_ROUTED_GRAPH_WEIGHT,
+        min=0.0,
+        max=1.0,
+        help="graph share used only for questions the question-type router sends to fusion; "
+        "other questions are exact vector passthroughs",
     ),
     graph_fusion_candidates: str = typer.Option(
         DEFAULT_CANDIDATE_GRID,
@@ -51,7 +59,7 @@ def compare_graph_fusion_cmd(
         None, help=f"artifact dir (default: $DATA_DIR/{FUSION_EVIDENCE_METHOD}/<timestamp>/)"
     ),
 ) -> None:
-    """Sweep the graph share of graph-vector fusion and decide it on the multi-hop slice.
+    """Compare fixed graph shares plus question routing on the multi-hop slice.
 
     `compare-retrieval` ranks backends over a whole gold set. This lane answers the narrower
     question a graph-weight recommendation needs: on items whose answer requires MORE THAN ONE
@@ -59,8 +67,8 @@ def compare_graph_fusion_cmd(
     at which weight, and at what cost overall. Every number carries a paired bootstrap interval
     and the item-level win/loss ledger, because a multi-hop slice is a dozen items.
 
-    Each lane is retrieved once per question and re-fused at every weight, so the sweep costs one
-    vector pass plus one pass per graph strategy.
+    Each physical lane is retrieved once per question and re-fused at every fixed or routed row,
+    so the comparison costs one vector pass plus one pass per graph strategy.
     """
     import json
 
@@ -75,6 +83,7 @@ def compare_graph_fusion_cmd(
     )
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
     from llb.rag.fusion_evidence.rows import VECTOR_ROW
+    from llb.rag.question_types import load_question_types_by_question
 
     cfg = load_config(config, goldset_path=goldset)
     try:
@@ -89,8 +98,17 @@ def compare_graph_fusion_cmd(
         typer.echo("[error] the gold set selection is empty", err=True)
         raise typer.Exit(code=2)
     vector, graphs = _load_lanes(cfg, graph_strategies)
+    question_types = load_question_types_by_question(cfg.goldset_path)
     rows = build_sweep_rows(
-        vector, graphs, [item.question for item in items], k, weights, candidates, identities
+        vector,
+        graphs,
+        [item.question for item in items],
+        k,
+        weights,
+        candidates,
+        identities,
+        routed_graph_weight,
+        question_types,
     )
     report = evaluate_fusion_evidence(
         rows,
