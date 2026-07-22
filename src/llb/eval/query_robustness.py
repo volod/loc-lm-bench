@@ -7,16 +7,40 @@ from typing import Any
 from llb.eval.query_robustness_variants import VARIANT_CLASSES, generate_variant
 from llb.goldset.schema import GoldItem
 
-MITIGATION_STEPS = ("normalize", "typos")
-MITIGATION_TYPO_GUARD = True
-QueryExecutor = Callable[[GoldItem, str, bool], Mapping[str, Any]]
+
+@dataclass(frozen=True)
+class MitigationLane:
+    """One query-prep configuration every noise class is measured under.
+
+    Splitting `normalize` from `normalize,typos` isolates the two mechanisms: normalization only
+    inverts noise it can attribute (transliteration, homoglyphs, apostrophes), while the typos
+    step additionally rewrites tokens to corpus surfaces, which is the step that carries
+    vocabulary-correction risk. Reading them apart is what tells an operator whether a recovery
+    came from safe normalization or from a correction they may not want on their corpus.
+    """
+
+    id: str
+    steps: tuple[str, ...]
+    typo_guard: bool
+
+    @property
+    def mitigated(self) -> bool:
+        return bool(self.steps)
+
+
+LANE_OFF = MitigationLane("off", (), False)
+LANE_NORMALIZE = MitigationLane("normalize", ("normalize",), False)
+LANE_NORMALIZE_TYPOS = MitigationLane("normalize,typos", ("normalize", "typos"), True)
+MITIGATION_LANES: tuple[MitigationLane, ...] = (LANE_OFF, LANE_NORMALIZE, LANE_NORMALIZE_TYPOS)
+
+QueryExecutor = Callable[[GoldItem, str, MitigationLane], Mapping[str, Any]]
 Progress = Callable[[str], None]
 
 
 @dataclass(frozen=True)
 class LaneMetrics:
     variant_class: str
-    mitigated: bool
+    mitigation: str
     n: int
     errors: int
     objective_score: float
@@ -43,7 +67,7 @@ def _mean(values: Sequence[float]) -> float:
 
 def _lane_metrics(
     variant_class: str,
-    mitigated: bool,
+    mitigation: str,
     rows: list[dict[str, Any]],
     clean: Mapping[str, Mapping[str, Any]],
     clean_objective: float,
@@ -65,7 +89,7 @@ def _lane_metrics(
     )
     return LaneMetrics(
         variant_class=variant_class,
-        mitigated=mitigated,
+        mitigation=mitigation,
         n=len(rows),
         errors=sum(str(row.get("status", "ok")) != "ok" for row in rows),
         objective_score=objective,
@@ -86,7 +110,7 @@ def evaluate_query_robustness(
     typo_rate: float,
     progress: Progress | None = None,
 ) -> RobustnessResult:
-    """Run every noisy class with mitigation off/on; clean rows remain external baseline rows."""
+    """Run every noisy class under every mitigation lane; clean rows stay external baseline rows."""
     clean = {str(row["item_id"]): row for row in clean_rows}
     missing = [item.id for item in items if item.id not in clean]
     if missing:
@@ -95,10 +119,10 @@ def evaluate_query_robustness(
     clean_recall = _mean([float(clean[item.id]["retrieval_hit"]) for item in items])
     all_rows: list[dict[str, Any]] = []
     metrics: list[LaneMetrics] = []
-    total = len(items) * len(VARIANT_CLASSES) * 2
+    total = len(items) * len(VARIANT_CLASSES) * len(MITIGATION_LANES)
     completed = 0
     for variant_class in VARIANT_CLASSES:
-        for mitigated in (False, True):
+        for lane in MITIGATION_LANES:
             lane_rows: list[dict[str, Any]] = []
             for item in items:
                 variant = generate_variant(
@@ -108,15 +132,16 @@ def evaluate_query_robustness(
                     seed=seed,
                     typo_rate=typo_rate,
                 )
-                score = dict(execute(item, variant, mitigated))
+                score = dict(execute(item, variant, lane))
                 clean_row = clean[item.id]
                 row = {
                     "probe": True,
                     "item_id": item.id,
                     "variant_class": variant_class,
-                    "mitigated": mitigated,
-                    "mitigation_steps": list(MITIGATION_STEPS) if mitigated else [],
-                    "mitigation_typo_guard": MITIGATION_TYPO_GUARD if mitigated else False,
+                    "mitigation": lane.id,
+                    "mitigated": lane.mitigated,
+                    "mitigation_steps": list(lane.steps),
+                    "mitigation_typo_guard": lane.typo_guard,
                     "seed": seed,
                     "typo_rate": typo_rate,
                     "clean_question": item.question,
@@ -139,14 +164,18 @@ def evaluate_query_robustness(
             metrics.append(
                 _lane_metrics(
                     variant_class,
-                    mitigated,
+                    lane.id,
                     lane_rows,
                     clean,
                     clean_objective,
                     clean_recall,
                 )
             )
-    raw_by_class = {metric.variant_class: metric for metric in metrics if not metric.mitigated}
+    # Recovery is always read against the unmitigated lane of the SAME noise class, so each
+    # mitigation lane's number answers "how much of this class's loss did this lane restore?".
+    raw_by_class = {
+        metric.variant_class: metric for metric in metrics if metric.mitigation == LANE_OFF.id
+    }
     with_recovery = tuple(
         LaneMetrics(
             **{
@@ -157,7 +186,7 @@ def evaluate_query_robustness(
                 - raw_by_class[metric.variant_class].recall_at_k,
             }
         )
-        if metric.mitigated
+        if metric.mitigation != LANE_OFF.id
         else metric
         for metric in metrics
     )

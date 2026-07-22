@@ -21,6 +21,7 @@ from llb.rag.query_prep.decompose import apply_decompose
 from llb.rag.query_prep.glossary import Glossary, apply_glossary
 from llb.rag.query_prep.hyde import apply_hyde
 from llb.rag.query_prep.normalize import apply_normalize
+from llb.rag.query_prep.restore import VocabularyContext, normalization_provenance
 from llb.rag.query_prep.rewrite import apply_rewrite
 from llb.rag.query_prep.typos import apply_typos
 
@@ -41,6 +42,7 @@ class QueryPrep:
     hypothesizer: QueryGenerator | None = None
     decomposer: QueryGenerator | None = None
     known_word: KnownWordProbe | None = None
+    context: VocabularyContext | None = None
 
     @classmethod
     def build(
@@ -53,6 +55,7 @@ class QueryPrep:
         hypothesizer: QueryGenerator | None = None,
         decomposer: QueryGenerator | None = None,
         known_word: KnownWordProbe | None = None,
+        context: VocabularyContext | None = None,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
@@ -67,6 +70,8 @@ class QueryPrep:
             raise ValueError("the 'typos' step needs a corpus vocabulary")
         if known_word is not None and STEP_TYPOS not in ordered:
             raise ValueError("the typo morphology guard needs the 'typos' step")
+        if context is not None and STEP_TYPOS not in ordered:
+            raise ValueError("the query-context index needs the 'typos' step")
         if STEP_GLOSSARY in ordered and glossary is None:
             raise ValueError("the 'glossary' step needs a query glossary")
         if STEP_REWRITE in ordered and rewriter is None:
@@ -83,6 +88,7 @@ class QueryPrep:
             hypothesizer=hypothesizer,
             decomposer=decomposer,
             known_word=known_word,
+            context=context,
         )
 
     def process(self, query: str) -> QueryPrepResult:
@@ -96,8 +102,14 @@ class QueryPrep:
             if step == STEP_NORMALIZE:
                 current, step_edits = apply_normalize(current)
             elif step == STEP_TYPOS:
+                # The edits accumulated so far carry each normalized token back to the form the
+                # user typed, so candidate selection can refuse an incompatible restoration.
                 current, step_edits = apply_typos(
-                    current, self.vocabulary, known_word=self.known_word
+                    current,
+                    self.vocabulary,
+                    known_word=self.known_word,
+                    provenance=normalization_provenance(edits),
+                    context=self.context,
                 )
             elif step == STEP_GLOSSARY:
                 assert self.glossary is not None  # guaranteed by build()

@@ -49,16 +49,20 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         STEP_TYPOS,
     )
     from llb.rag.query_prep.pipeline import QueryPrep
-    from llb.rag.query_prep.typos import build_vocabulary
+    from llb.rag.query_prep.restore import VocabularyContext
 
     steps = list(config.query_prep)
     if not steps:
         return None
     vocabulary = None
     known_word = None
+    context = None
     if STEP_TYPOS in steps:
         chunks = getattr(store, "chunks", None) or []
-        vocabulary = build_vocabulary(str(chunk.get("text", "")) for chunk in chunks)
+        # One pass builds both the in-vocabulary set and the co-occurrence postings the
+        # restoration constraints score candidates with.
+        context = VocabularyContext.build(str(chunk.get("text", "")) for chunk in chunks)
+        vocabulary = context.tokens
         if config.query_prep_typo_guard:
             from llb.rag.lexical import load_uk_word_probe
 
@@ -92,6 +96,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             hypothesizer=hypothesizer,
             decomposer=decomposer,
             known_word=known_word,
+            context=context,
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None

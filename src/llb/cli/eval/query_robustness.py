@@ -39,7 +39,7 @@ def bench_query_robustness_cmd(
         None, help="maximum answer tokens per clean or noisy case"
     ),
 ) -> None:
-    """Measure clean-to-noisy RAG deltas and normalize+typos mitigation recovery."""
+    """Measure clean-to-noisy RAG deltas under the off / normalize / normalize,typos lanes."""
     from llb.eval.query_robustness_run import run_query_robustness
 
     cfg = load_config(

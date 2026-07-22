@@ -10,7 +10,8 @@ from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import (
-    MITIGATION_STEPS,
+    MITIGATION_LANES,
+    MitigationLane,
     QueryExecutor,
     RobustnessResult,
     evaluate_query_robustness,
@@ -35,14 +36,13 @@ class QueryRobustnessRun:
 
 
 def make_query_executor(config: RunConfig, store: Any, launcher: Any) -> QueryExecutor:
-    """Build raw and normalize+typos graph lanes over one injected store/endpoint pair."""
-    mitigation_config = config.with_overrides(
-        query_prep=list(MITIGATION_STEPS), query_prep_typo_guard=True
-    )
-    prep = build_query_prep(mitigation_config, store, launcher)
+    """Build one graph lane per mitigation configuration over one injected store/endpoint pair."""
     options = _score_options(config)
 
-    def build(prepared: bool) -> Any:
+    def build(lane: MitigationLane) -> Any:
+        lane_config = config.with_overrides(
+            query_prep=list(lane.steps), query_prep_typo_guard=lane.typo_guard
+        )
         return eval_graph.build_rag_graph(
             store,
             launcher,
@@ -51,14 +51,14 @@ def make_query_executor(config: RunConfig, store: Any, launcher: Any) -> QueryEx
             config.temperature,
             config.request_timeout_s,
             context_order=config.context_order,
-            query_prep=prep if prepared else None,
+            query_prep=build_query_prep(lane_config, store, launcher) if lane.steps else None,
             cited=config.cited_answers,
         )
 
-    apps = {False: build(False), True: build(True)}
+    apps = {lane.id: build(lane) for lane in MITIGATION_LANES}
 
-    def execute(item: GoldItem, question: str, mitigated: bool) -> Mapping[str, Any]:
-        state = eval_graph.run_case(apps[mitigated], question, spans_as_dicts(item))
+    def execute(item: GoldItem, question: str, lane: MitigationLane) -> Mapping[str, Any]:
+        state = eval_graph.run_case(apps[lane.id], question, spans_as_dicts(item))
         return score_case(item, state, options=options)
 
     return execute

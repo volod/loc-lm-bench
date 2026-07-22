@@ -686,17 +686,45 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
   would otherwise collide.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
-  the indexed corpus (`build_vocabulary` over `store.chunks`); a query token ABSENT from it is
-  corrected to its nearest in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for
-  tokens over 8 chars). Tokens shorter than three characters are protected; candidate matching
-  cannot cross alphabetic/numeric kinds; a token the corpus already contains is NEVER altered;
-  and a numeric token is never "corrected" into a different one. Every correction is logged. An
+  the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
+  set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
+  in-vocabulary token within Damerau-Levenshtein (OSA) distance 1 (2 for tokens over 8 chars).
+  Tokens shorter than three characters are protected; candidate matching cannot cross
+  alphabetic/numeric kinds; a token the corpus already contains is NEVER altered; and a numeric
+  token is never "corrected" into a different one. Every correction is logged. An
   opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
   recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
   valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
   lemmatization lane to match, while genuine misspellings stay unknown to the probe and are still
   corrected. Off by default so the pure edit-distance behavior remains explicitly selectable.
+- **Ambiguity-aware restoration** (`query_prep/restore.py`) decides WHICH near candidate the
+  `typos` step may take, and whether taking one is safe at all. Normalization is lossy -- Latin
+  typing drops the soft sign and apostrophes, so `sut` inverts to the out-of-vocabulary `сут`,
+  one edit from both `суть` and `суд`. Four constraints apply, in this order:
+  1. **Surface compatibility (hard filter).** `normalization_provenance` maps every normalized
+     token back to the single noisy token that produced it plus the edit `kind`; a candidate
+     survives only when re-applying that transform reproduces the typed form
+     (`surface_distance <= SURFACE_MAX_DISTANCE`, i.e. exactly). `суть` romanizes back to the
+     typed `sut` and is kept; `суд` romanizes to `sud` and is refused. A token whose noise
+     normalization already fully explains therefore cannot be rewritten by vocabulary correction
+     at all. A replacement two different noisy tokens collapsed onto carries no constraint.
+  2. **Short-token length lock.** At or below `AMBIGUOUS_TOKEN_MAX_CHARS` (4) an insertion or
+     deletion candidate is refused, because at that length it is a different short word rather
+     than a repair (`якв` -> `кв`, `зто` -> `то`). A transliteration provenance licenses the
+     length change, since a dropped soft sign is exactly what romanization is known to lose.
+  3. **Morphology, then local query context (ranking).** Candidates tied on edit distance are
+     ordered by whether the morphology probe knows them as real word forms, then by whether they
+     preserve the token's inflectional ending (`MORPH_SUFFIX_CHARS`), then by how often they share
+     a corpus chunk with the query's rarest other in-vocabulary tokens
+     (`VocabularyContext.cooccurrence` over up to `CONTEXT_MAX_ANCHORS` anchors), then
+     alphabetically. Context is what separates `накат` from `наказ` for a query about waves.
+  4. **Refusal on an unresolved tie.** When two candidates for a short token are equal on every
+     signal above, the token is left unchanged instead of being resolved alphabetically.
+
+  The constraints are always on inside the `typos` step (they only ever refuse or reorder a
+  correction, never add one) and need no new knob; the morphology signal rides on the same opt-in
+  probe as the guard, and the context index is built in the same pass as the vocabulary.
 - `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
   transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
   so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
@@ -750,7 +778,11 @@ tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
 dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
 processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
-deduplication, runner resolver dependency wiring), `tests/llb/rag/test_store.py` (split hybrid
+deduplication, runner resolver dependency wiring, provenance mapping including the ambiguous
+same-replacement case, per-kind surface distance, refusal of an incompatible nearest neighbor,
+restoration of the romanization-compatible form, the short-token length lock and the
+transliteration exemption from it, unresolved-tie refusal, context-driven candidate choice, and
+both morphology preferences), `tests/llb/rag/test_store.py` (split hybrid
 queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
 plus config validation in `tests/llb/core/test_config.py`.
 

@@ -43,33 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### fusion-routing-calibration-power (optional)
-
-Increase the sidecar-free routing calibration's statistical power before reconsidering its
-production defaults. The first held-out measurement cannot separate its positive retrieval deltas
-from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
-independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
-before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
-
-- Agent status: BLOCKED BY HUMAN
-- Dependencies: `multihop-ledger-human-acceptance` must provide a non-empty accepted multi-span
-  ledger. Human step that gates completion: accept enough additional genuinely multi-span
-  questions to meet the predeclared split sizes.
-- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
-  artifact before changing the fallback defaults.
-- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
-  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
-  a learned router, and selecting on final.
-- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
-  the accepted ledger.
-- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
-  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
-- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
-  power target; a threshold changes only if the tuning gain clears zero without single-span
-  regression and the untouched final split confirms the same direction.
-- Documentation target: the sidecar-free calibration subsections of
-  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### span-merge-ratio-sensitivity (optional)
 
@@ -366,29 +339,111 @@ silently change the recommended model.
   tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
-### query-prep-ambiguity-aware-restoration (optional)
+### normalize-step language gate (optional)
 
-Constrain correction after lossy transliteration and dense keyboard noise so a nearest corpus
-surface cannot silently change the intended inflection or short function word. Carry the original
-noisy token and normalization edit provenance into typo candidate selection; compare candidates
-by reversible romanization compatibility, morphology, and local query context; and add separate
-`normalize`-only versus `normalize,typos` robustness lanes so normalization recovery is isolated
-from vocabulary correction risk. The benchmark contract and motivating evidence are in
-[evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+The `normalize` step decides transliteration PER TOKEN and unconditionally, so a query written in
+a foreign language is rewritten into Cyrillic nonsense (`what does the` -> `wгат доес тге`) that
+no later step can undo -- the restoration constraints correctly refuse to "repair" it, and the
+question retrieves on garbage. One item of the committed `ua_squad_postedited_v1` final split is
+exactly this case, and any bilingual operator corpus will have more
+([RAG core](current/rag-core.md#query-side-processing)). Decide transliteration for the QUERY as a
+whole instead: romanized Ukrainian decodes to tokens the corpus vocabulary or the morphology probe
+recognizes, foreign-language text does not, so gate the step on the share of decoded tokens that
+are plausible and leave the query untouched below the threshold.
 
-- Agent status: READY
-- Dependencies: the existing query-prep edit log, corpus vocabulary, morphology probe, and query
-  robustness fake/host fixtures.
-- User-visible outcome: safer recovery for lossy Latin typing and adjacent-key errors without
-  sacrificing the retrieval recall restored by normalization.
-- Scope boundary: in scope -- candidate constraints, provenance threading, isolated mitigation
-  lanes, tests, and two-model re-measurement. Out of scope -- model-generated correction and
-  hosted spell-check services.
-- Acceptance gates: `make ci` green; no alphabetic/numeric or acronym regressions; corrected tokens
-  remain compatible with the original noisy form; model-specific objective recovery is
-  non-negative or the `typos` step remains explicitly off for that model.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing and
-  [evaluation rigor](current/rigor-board-judge.md) robustness evidence.
+- Agent status: CLEAR
+- Dependencies: none. Reuse `apply_normalize` in `src/llb/rag/query_prep/normalize.py`, the
+  vocabulary/context index in `query_prep/restore.py`, and `llb.rag.lexical.load_uk_word_probe`.
+- User-visible outcome: a non-Ukrainian question survives the query-prep lane unchanged instead
+  of being mangled into unretrievable Cyrillic.
+- Scope boundary: in scope -- the whole-query plausibility gate, its threshold, and per-query
+  provenance for the decision. Out of scope -- language identification models, per-token
+  language tagging, and translating the query.
+- Data and artifact paths: none beyond the existing per-case `query_processed` provenance.
+- Execution path: CI covers the gate on committed English/Ukrainian/romanized fixtures; a
+  `make bench-query-robustness` re-run confirms the transliteration lane does not regress.
+- Acceptance gates: `make ci` green; every existing romanization test still transliterates; the
+  English fixture passes through unchanged.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
+
+### normalize-casefold-dense-lane-cost (optional)
+
+Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
+final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
+noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
+the lane ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)).
+Casefolding is a lexical-side convention that the dense side never asked for. Measure whether the
+processed query should stay cased on the dense lane while the lexical lane keeps the folded text
+-- the `retrieve_queries` seam already carries separate dense and lexical text.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the split dense/lexical query seam in
+  `src/llb/rag/query_prep/retrieval.py` and `RagStore.retrieve_queries`.
+- User-visible outcome: the operator stops paying dense recall for a normalization step whose
+  only job was to make matching safer.
+- Scope boundary: in scope -- routing case-preserved text to the dense lane, the A/B, and the
+  adopt-or-reject verdict. Out of scope -- changing the embedder, the lexical normalization, and
+  the transliteration table.
+- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
+- Execution path: `make bench-query-robustness` on the CUDA host with and without the change; CI
+  covers the dense/lexical text split over a fake store.
+- Acceptance gates: `make ci` green; the report shows the `normalize` lane no longer retrieving
+  below the `off` lane on any noise class, or records that casefolding is not the cause.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing and the robustness
+  evidence in [evaluation rigor](current/rigor-board-judge.md).
+
+### restoration-constraint-threshold-sweep (optional)
+
+The restoration constraints ship with three unswept design constants: the surface-compatibility
+budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
+ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
+context ([RAG core](current/rag-core.md#query-side-processing)). Each was chosen to be
+conservative, and nothing measures what the conservatism costs: a budget of 1 would admit a token
+that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words stay
+untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and the
+edit-precision audit per setting, and pin each value with evidence or expose it.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `select_restoration` in `src/llb/rag/query_prep/restore.py` and the
+  robustness lanes.
+- User-visible outcome: the operator knows whether the safe defaults are costing recoverable
+  recall, instead of trusting three hand-picked constants.
+- Scope boundary: in scope -- the sweep, the per-setting edit audit, and a pin-or-expose verdict
+  per constant. Out of scope -- new constraint signals and a learned ranker.
+- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
+- Execution path: `make bench-query-robustness` per setting on the CUDA host; CI covers each
+  setting's selection decisions over committed candidate fixtures.
+- Acceptance gates: `make ci` green; the report states recall and the share of corrections a human
+  reading of the audit calls wrong, per setting, with an explicit verdict per constant.
+- Documentation target: [RAG core](current/rag-core.md) query-side processing.
+
+### fusion-routing-calibration-power (optional)
+
+Increase the sidecar-free routing calibration's statistical power before reconsidering its
+production defaults. The first held-out measurement cannot separate its positive retrieval deltas
+from zero; see the compact result and frozen-policy diagnostics in
+[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
+independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
+before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: `multihop-ledger-human-acceptance` must provide a non-empty accepted multi-span
+  ledger. Human step that gates completion: accept enough additional genuinely multi-span
+  questions to meet the predeclared split sizes.
+- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
+  artifact before changing the fallback defaults.
+- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
+  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
+  a learned router, and selecting on final.
+- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
+  the accepted ledger.
+- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
+  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
+- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
+  power target; a threshold changes only if the tuning gain clears zero without single-span
+  regression and the untouched final split confirms the same direction.
+- Documentation target: the sidecar-free calibration subsections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### conflict-null-model-research
 
