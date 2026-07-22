@@ -109,9 +109,10 @@ built is skipped with a log line, so you can compare whatever is present.
 
     llb compare-graph-fusion --config <run-config.yaml> --k 10 \
       --graph-weights 0,0.1,0.2,0.3,0.5,0.7,1.0 \
-      --graph-fusion-candidates k,50 --out-dir <artifact-dir>
+      --graph-fusion-candidates k,50 --graph-fusion-span-identity exact,overlap \
+      --out-dir <artifact-dir>
     # or: make compare-graph-fusion CONFIG=<cfg> GOLDSET=<goldset> GRAPH_WEIGHTS=0,0.3,1.0 \
-    #       GRAPH_FUSION_CANDIDATES=k,50
+    #       GRAPH_FUSION_CANDIDATES=k,50 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
 
 It writes `report.md` / `comparison.json` with, per graph weight and strategy, `recall@k` beside
 `all-spans@k` (did the context carry EVERY hop, not just one), paired bootstrap intervals, the
@@ -121,9 +122,16 @@ retrieved and the other was not. The measured host result is in
 [GraphRAG](../../impl/current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 `--graph-fusion-candidates` is the per-lane candidate depth the weight is applied over (`k` == the
-scored cutoff, the default). Rows are labeled `fused/<strategy>@<weight>/d<depth>`. Expect the
-depth rows to tie unless your graph evidence spans share EXACT chunk boundaries with the vector
-lane -- on the measured Ukrainian corpus they never did, and the weight was the only live knob.
+scored cutoff, the default). `--graph-fusion-span-identity` is the rule that decides when a graph
+evidence span and a vector chunk are the SAME candidate: `exact` (identical offsets, the default)
+or `overlap` (fold a graph mention into the chunk that contains it). Rows are labeled
+`fused/<strategy>@<weight>/d<depth>`, with `/i<identity>` appended for a non-default policy.
+
+Sweep the two policies together, and read the report's cross-lane agreement table first: under
+`exact` the depth rows tie unless your graph spans share EXACT chunk boundaries with the vector
+lane (on the measured Ukrainian corpus they shared 2 in 95 questions, so depth was inert), while
+`overlap` makes agreement the common case and depth a live knob. The measured host result is in
+[GraphRAG](../../impl/current/graphrag-backend.md#span-identity-evidence).
 
 ## Step 5 (optional) -- does the extra evidence reach the ANSWER?
 

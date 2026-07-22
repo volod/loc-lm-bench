@@ -9,13 +9,14 @@ reviewer can actually read.
 
 from typing import NamedTuple
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
 from llb.rag.compare import (
     Retriever as Retriever,
 )  # the one `.retrieve` seam, re-used not re-declared
 from llb.rag.fusion_evidence.slices import SliceReport
+from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
@@ -31,6 +32,21 @@ FUSED_ROW_PREFIX = "fused/"
 # depth the share is applied over (`/d<depth>`), so a depth sweep and a weight sweep are the same
 # table and the verdict ranks across both.
 FUSED_ROW_TEMPLATE = FUSED_ROW_PREFIX + "{strategy}@{weight:.2f}/d{depth}"
+# A third knob: the span-identity policy the two lanes are fused by. The default policy carries NO
+# marker, so an `exact` row keeps the exact label (and therefore the exact comparability) it had
+# before the policy existed; only a non-default policy extends the label.
+IDENTITY_MARKER = "/i"
+
+
+def fused_row_label(
+    strategy: str, weight: float, depth: int, span_identity: str = DEFAULT_SPAN_IDENTITY
+) -> str:
+    """The one place a fused row label is formatted; `lanes.py` parses exactly this shape back."""
+    label = FUSED_ROW_TEMPLATE.format(strategy=strategy, weight=weight, depth=depth)
+    if span_identity == DEFAULT_SPAN_IDENTITY:
+        return label
+    return f"{label}{IDENTITY_MARKER}{span_identity}"
+
 
 METRIC_RECALL = "recall_at_k"
 METRIC_ALL_SPANS = "all_spans_at_k"
@@ -54,11 +70,26 @@ class EvidenceItem(NamedTuple):
     question_type: str | None
 
 
+class AgreementReport(TypedDict):
+    """Cross-lane agreement of one fused row: candidates BOTH lanes returned, per question.
+
+    The number the span-identity policy exists to move, and the reason candidate depth is or is
+    not a live knob: under undamped RRF only a candidate both lanes vouch for can be promoted out
+    of a deeper pool into the top-k.
+    """
+
+    questions: int
+    questions_with_shared_candidate: int
+    share_of_questions: float
+    mean_shared_candidates: float
+
+
 class RowReport(TypedDict):
     """One compared retrieval row: overall plus every question-type slice."""
 
     overall: SliceReport
     slices: dict[str, SliceReport]
+    agreement: NotRequired[AgreementReport]
 
 
 class ItemOutcome(TypedDict):

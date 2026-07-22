@@ -12,6 +12,7 @@ from typing import NamedTuple
 from typing_extensions import TypedDict
 
 from llb.rag.fusion_evidence.slices import SliceReport
+from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY
 
 # Per-case columns compared between lanes, all present on every `scores.jsonl` row.
 # `objective_score` is the decision metric; `retrieval_hit` is the any-span coverage signal that
@@ -60,6 +61,7 @@ class LaneSpec(NamedTuple):
     retrieval_strategy: str | None = None
     graph_weight: float | None = None
     graph_fusion_candidates: int | None = None
+    graph_fusion_span_identity: str = DEFAULT_SPAN_IDENTITY
 
 
 class LaneReport(TypedDict):

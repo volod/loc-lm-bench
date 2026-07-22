@@ -407,10 +407,10 @@ decision hangs on it.
 
 `retrieval_backend=fused` composes the configured vector lane (flat, parent-child, or hybrid) and
 the selected GraphRAG strategy behind one `.retrieve(question, k)` wrapper. The wrapper in
-`src/llb/rag/fusion.py` keys candidates by exact `(doc_id, char_start, char_end)` spans, fuses the
-two rankings through generalized weighted RRF, deduplicates shared spans, and keeps source offsets
-unchanged for recall@k and MRR. Reranking wraps the fused result once, rather than independently
-reranking each input lane.
+`src/llb/rag/fusion.py` maps both lane rankings onto one candidate set through the selected
+span-identity policy (`src/llb/rag/fusion_spans.py`), fuses them with generalized weighted RRF,
+and keeps the surviving record's source offsets unchanged for recall@k and MRR. Reranking wraps
+the fused result once, rather than independently reranking each input lane.
 
 `graph_weight` is in `RunConfig`, run manifests, sweep cell keys, and fused Optuna trials. The Make
 aliases forward `RETRIEVAL_BACKEND`, `RETRIEVAL_STRATEGY`, and `GRAPH_WEIGHT`; the comparison alias
@@ -422,8 +422,41 @@ make compare-retrieval CONFIG=<run-config.yaml> GRAPH_WEIGHT=0.3 \
   GOLDSET=<answered-jsonl> COMPARE_RETRIEVAL_OUT=<report-json>
 make sweep SWEEP_RAG_GRID="graph_weight=0,0.3,0.5"
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
-  GRAPH_WEIGHTS=0,0.1,0.3,0.5,1.0
+  GRAPH_WEIGHTS=0,0.1,0.3,0.5,1.0 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
 ```
+
+### Fusion span identity (`graph_fusion_span_identity`)
+
+The identity rule decides WHEN the two lanes are talking about the same candidate, which is the
+precondition for RRF to reward agreement at all.
+
+`exact` (the default) keys candidates by the exact `(doc_id, char_start, char_end)` triple. A graph
+mention is a few dozen characters cut around an entity and a vector chunk is an ~800-character
+recursive window, so the two lanes almost never agree by construction and fusion degenerates into
+two disjoint rankings competing for the same result seats.
+
+`overlap` folds a graph span into the vector chunk that CONTAINS it (and, for a span no chunk
+covers, into whichever graph span it mutually overlaps), so the pair becomes one candidate both
+lanes voted for. Two invariants keep the rule safe for span-level scoring:
+
+- **Vector chunks are never merged with each other.** Consecutive recursive chunks share their
+  `chunk_overlap` tail, so a transitive union would chain a whole document into one candidate. Only
+  the vector lane creates anchors; the graph lane joins them, and a mention sitting in a shared
+  tail joins the better-ranked chunk.
+- **The survivor is an input record, verbatim.** A merge never synthesizes a union span, so the
+  fused chunk's text stays an exact corpus slice at its own offsets. `metadata` records the policy
+  in `fusion_span_identity` and every folded span in `fusion_merged_spans`.
+
+A merge needs the intersection to cover at least `SPAN_MERGE_MIN_RATIO` (0.5) of the SHORTER span:
+containment scores 1.0, a mention clipped by a chunk boundary scores its covered share, and an
+incidental one-character touch between neighbouring chunks stays separate. Both endpoint weights
+fuse nothing, so they are identity-independent.
+
+The knob rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-span-identity`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_span_identity=exact,overlap"`, and the sweep lane's
+`GRAPH_FUSION_SPAN_IDENTITY` grid. `exact` remains the default; the measured adopt verdict for
+`overlap` rests on a drafted multi-hop ledger, see
+[GraphRAG](graphrag-backend.md#span-identity-evidence).
 
 ### Fusion candidate depth (`graph_fusion_candidates`)
 
@@ -441,11 +474,12 @@ undamped reciprocal ranks, so a span that only ONE lane returns, at rank `r > k`
 `lane_weight / r`. That lane's own top-k spans are k distinct candidates each scoring at least
 `lane_weight / k > lane_weight / r`, so at least k candidates outrank it at every graph weight.
 Only a span BOTH lanes return, with at least one of its ranks below `k`, can be promoted by depth.
-That makes the knob's usefulness a property of the corpus -- how often graph evidence spans and
-vector chunks share EXACT `(doc_id, char_start, char_end)` boundaries -- and on the measured
-Ukrainian goods corpus they almost never do; see
-[GraphRAG](graphrag-backend.md#candidate-depth-evidence) for the measured verdict. `graph_weight`,
-not depth, is the knob that controls the graph lane's influence there.
+That makes the knob's usefulness a property of the corpus AND of the span-identity policy above:
+under `exact` the measured Ukrainian goods corpus shares a candidate in 2 of 95 questions and depth
+changes nothing at all, while under `overlap` it shares one in 93 of 95 and every depth row moves
+(see [GraphRAG](graphrag-backend.md#candidate-depth-evidence) and
+[span identity](graphrag-backend.md#span-identity-evidence) for both measured verdicts). Depth is
+therefore a live knob exactly when the identity rule lets the lanes agree.
 
 `compare-retrieval` ranks backends at ONE graph weight; `compare-graph-fusion` sweeps the weight
 and decides it on the multi-hop slice with uncertainty; `compare-answer-quality` then scores the

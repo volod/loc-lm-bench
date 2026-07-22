@@ -14,6 +14,9 @@ DEFAULT_WEIGHT_GRID = "0,0.1,0.2,0.3,0.5,0.7,1.0"
 # Default to the historical single depth (each lane asked for exactly the scored `k`), so the
 # command's out-of-the-box row set is unchanged until an operator asks for a deeper pool.
 DEFAULT_CANDIDATE_GRID = "k"
+# Default to the historical identity rule (exact offsets), so the row set is unchanged until an
+# operator asks for the containment/overlap policy.
+DEFAULT_SPAN_IDENTITY_GRID = "exact"
 
 
 @app.command("compare-graph-fusion")
@@ -29,6 +32,11 @@ def compare_graph_fusion_cmd(
         DEFAULT_CANDIDATE_GRID,
         help="comma-separated per-lane candidate depths to sweep; 'k' == the scored cutoff "
         "(the shallow pool), a larger number fuses a deeper pool and then cuts to k",
+    ),
+    graph_fusion_span_identity: str = typer.Option(
+        DEFAULT_SPAN_IDENTITY_GRID,
+        help="comma-separated span-identity policies to sweep: 'exact' (identical offsets) and/or "
+        "'overlap' (fold a graph span into the vector chunk that contains it)",
     ),
     graph_strategies: Optional[str] = typer.Option(
         None, help="comma-separated graph strategies (default: local_khop,global_community)"
@@ -62,6 +70,7 @@ def compare_graph_fusion_cmd(
         evaluate_fusion_evidence,
         format_report,
         parse_candidates,
+        parse_span_identities,
         parse_weights,
     )
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
@@ -71,6 +80,7 @@ def compare_graph_fusion_cmd(
     try:
         weights = parse_weights(graph_weights)
         candidates = parse_candidates(graph_fusion_candidates)
+        identities = parse_span_identities(graph_fusion_span_identity)
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -80,7 +90,7 @@ def compare_graph_fusion_cmd(
         raise typer.Exit(code=2)
     vector, graphs = _load_lanes(cfg, graph_strategies)
     rows = build_sweep_rows(
-        vector, graphs, [item.question for item in items], k, weights, candidates
+        vector, graphs, [item.question for item in items], k, weights, candidates, identities
     )
     report = evaluate_fusion_evidence(
         rows,

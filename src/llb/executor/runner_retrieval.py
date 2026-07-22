@@ -130,7 +130,13 @@ def _load_store(config: RunConfig) -> Any:
         from llb.rag.fusion import FusedRetriever
 
         assert graph is not None
-        fused = FusedRetriever(vector, graph, config.graph_weight, config.graph_fusion_candidates)
+        fused = FusedRetriever(
+            vector,
+            graph,
+            config.graph_weight,
+            config.graph_fusion_candidates,
+            config.graph_fusion_span_identity,
+        )
         return maybe_wrap_reranker(fused, config)
     return maybe_wrap_reranker(vector, config)
 

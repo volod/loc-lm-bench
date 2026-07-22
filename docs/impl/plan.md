@@ -43,102 +43,90 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-null-model-research
+### fusion-overlap-answer-quality
 
-**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
-that must be recorded rather than worked around.
-
-Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
-a real false-positive rate instead of a rank cutoff. The current calibration measures the
-similarity distribution of the corpus's own comparable cross-document pairs, which contains
-whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
-the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
-and a budget of `N` returns exactly `N` pairs by construction (measured; see
-[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
-question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
-noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
-answer.
-
-Candidate approaches to evaluate, cheapest first; none is known to work:
-
-- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
-  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
-  shift makes the null too easy, understating the threshold.
-- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
-  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
-  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
-  lands too high.
-- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
-  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
-  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
-  problem already measured for chunk-pair sampling.
-- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
-  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
-  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
-  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
+The adopted `overlap` span-identity row is a RETRIEVAL result: it carries more of the multi-hop
+evidence and ranks it better, and nothing yet says a model turns that into a better answer -- the
+one earlier end-to-end comparison scored an `exact` row
+([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)). Score the identical item set end
+to end under `vector` versus the sweep's best `overlap` row and read the per-slice objective, so the
+recommended operator setting (`graph_fusion_span_identity=overlap` with a depth-50 pool) is either
+confirmed as an answer gain or recorded as retrieval-only. The lane already parses the
+`/i<identity>` row label back into retrieval knobs, so this is a run, not a build.
 
 - Agent status: RUN NEEDED
-- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
-  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
-  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
-  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
-  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
-- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
-  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
-  would justify moving threshold selection to the claim tier's measured precision instead.
-- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
-  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
-  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
-  a null demonstrably beats the rank cutoff.
-- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  no new committed fixtures unless an approach earns one.
-- Execution path: a research harness invoked per null model over both quickstart stores plus the
-  fixture; CI covers each null constructor deterministically over committed vectors, with the
-  heavy corpus comparison run on the CUDA host.
-- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
-  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
-  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
-  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
-  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
-- Documentation target: the corpus-hygiene known-limitation section of
-  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
-  adopt-or-reject verdict.
+- Dependencies: none. Reuse `compare-answer-quality` with `FUSION_COMPARISON=<span-identity
+  sweep>/comparison.json`, whose verdict names the overlap row
+  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)).
+- User-visible outcome: the operator learns whether the measured overlap coverage gain reaches the
+  ANSWER, which is what a recommendation to enable the policy has to rest on.
+- Scope boundary: in scope -- one comparison on the drafted bundle, the per-slice deltas, and the
+  verdict. Out of scope -- changing the shipped default, re-tuning the graph weight, and any
+  metric change.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality MODEL=<roster-model> SPLIT=final,tuning,calibration
+  FUSION_COMPARISON=<span-identity-sweep>/comparison.json INCLUDE_DRAFTED=1`; no new CI coverage.
+- Acceptance gates: `make ci` green; both lanes score the identical item set at the same seed; the
+  report states answer-gain versus retrieval-only for the overlap row.
+- Documentation target: the answer-quality evidence subsection of
+  [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
 
-### fusion-span-overlap-identity
+### span-merge-ratio-sensitivity (optional)
 
-Graph-vector fusion keys candidates by EXACT `(doc_id, char_start, char_end)`, so the two lanes can
-only reinforce each other when a graph evidence span and a vector chunk share both boundaries --
-measured at 2 shared spans across 93 questions, which is why the candidate-depth pool is provably
-inert on that corpus ([GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)). A graph
-mention of ~40 characters that sits INSIDE a retrieved 800-character chunk is currently two
-unrelated candidates competing for seats instead of one candidate both lanes vouch for. Replace the
-identity with a containment/overlap rule: fold a graph span into the vector chunk that contains it
-(and merge mutually overlapping spans otherwise), fuse the merged candidates, and keep the surviving
-record's exact text and offsets so span-level recall@k and MRR still score unchanged rules. Then
-re-measure the graph weight AND the candidate depth, since depth only becomes a live knob once
-cross-lane agreement is common.
+The overlap policy merges when the intersection covers at least half of the SHORTER span, and it
+refuses to merge two vector chunks with each other; both are unswept design constants chosen to
+keep a document's overlapping chunks from chaining into one candidate
+([RAG core](current/rag-core.md#fusion-span-identity-graph_fusion_span_identity)). A corpus whose
+graph spans routinely straddle chunk boundaries could want a lower ratio, and one with short
+chunks could want a higher one, but nothing measures how sensitive the adopted result is to the
+choice. Sweep the ratio (for example 0.25 / 0.5 / 0.75 / containment-only), report the cross-lane
+agreement rate and the multi-hop delta per setting, and either pin the current value with evidence
+or expose the ratio as a knob.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `span_key` / `fuse_lane_hits` / `lane_depth` in `src/llb/rag/fusion.py`
-  ([RAG core](current/rag-core.md#graph-vector-fusion-retrieval)) and the sweep lane in
-  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence) to measure it.
-- User-visible outcome: the operator learns whether graph evidence helps most as a SEPARATE
-  candidate (today) or as a relevance vote on the chunk that contains it -- and if the latter, the
-  fused rows gain the cross-lane agreement signal that RRF is designed to exploit.
-- Scope boundary: in scope -- the span-identity rule behind a selectable policy (exact stays the
-  default until measured), which record survives a merge and what its metadata records, and a
-  re-measured weight-by-depth sweep. Out of scope -- changing the RRF damping constant, chunking
-  changes, and any graph schema change.
+- Dependencies: none. Reuse `SPAN_MERGE_MIN_RATIO` and `lane_candidates` in
+  `src/llb/rag/fusion_spans.py` plus the sweep lane's identity grid.
+- User-visible outcome: the operator knows whether the merge threshold is a real tuning surface or
+  a constant the result is insensitive to.
+- Scope boundary: in scope -- the ratio sweep, the agreement/metric reading per setting, and the
+  pin-or-expose decision. Out of scope -- merging vector chunks with each other, changing the RRF
+  damping constant, and chunking changes.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-graph-fusion GOLDSET=<gs> GRAPH_WEIGHTS=... GRAPH_FUSION_CANDIDATES=k,50`
-  under each identity policy; CI covers the merge rule (containment, partial overlap, disjoint,
-  offset preservation) over fake lane stores.
-- Acceptance gates: `make ci` green; the exact-identity policy reproduces the current fused rows
-  exactly; every fused chunk stays offset-exact; the sweep reports both policies with paired
-  intervals, states the measured cross-lane agreement rate under each, and carries an explicit
-  adopt-or-reject verdict.
-- Documentation target: the graph-vector fusion sections of
-  [RAG core](current/rag-core.md#graph-vector-fusion-retrieval) and
+- Execution path: `make compare-graph-fusion GRAPH_FUSION_SPAN_IDENTITY=overlap` per ratio setting
+  on the CUDA host; CI covers each ratio's merge decisions over committed fake lane hits.
+- Acceptance gates: `make ci` green; the report states the agreement rate and multi-hop delta per
+  ratio and carries an explicit pin-or-expose verdict.
+- Documentation target: the fusion span-identity subsection of
+  [RAG core](current/rag-core.md#fusion-span-identity-graph_fusion_span_identity).
+
+### multihop-both-hops-ceiling
+
+Every fused row measured so far -- every weight, both depths, both identity policies -- retrieves
+BOTH hops for at most 3 of 35 two-hop questions (`all-spans@10` <= 0.086), while single-hop recall
+moves freely between 0.686 and 0.800
+([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). That ceiling is invariant to
+every ranking knob the lane exposes, which means it is probably not a ranking problem: either the
+second hop's chunk is not retrievable for the question's own wording (a query problem, addressable
+by decomposition), or it is not reachable at k=10 at all (a budget problem). Diagnose which:
+measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same items, and measure the
+per-hop retrievability of each labeled span when queried on its own. Record which of the two
+explanations the corpus supports, because they lead to opposite fixes.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,
+  the sweep lane, and the existing query-decomposition step in
+  [RAG core](current/rag-core.md#query-side-processing).
+- User-visible outcome: the operator learns whether multi-hop evidence coverage is limited by the
+  retrieval budget or by the query, instead of tuning ranking knobs that provably cannot move it.
+- Scope boundary: in scope -- the k sweep, the per-hop probe, and a written diagnosis. Out of scope
+  -- building a new decomposition strategy before the diagnosis names it, and any ranking-policy
+  change.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: `make compare-graph-fusion RAG_K=<k>` per budget plus a per-hop retrieval probe
+  on the CUDA host; CI covers the per-hop probe over fake lane stores.
+- Acceptance gates: `make ci` green; the report carries `all-spans@k` per budget and the per-hop
+  hit rate, and states which explanation the measurement supports.
+- Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
 ### answer-side-span-coverage-metric
@@ -399,6 +387,67 @@ from vocabulary correction risk. The benchmark contract and motivating evidence 
 - Documentation target: [RAG core](current/rag-core.md) query-side processing and
   [evaluation rigor](current/rigor-board-judge.md) robustness evidence.
 
+### conflict-null-model-research
+
+**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
+that must be recorded rather than worked around.
+
+Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
+a real false-positive rate instead of a rank cutoff. The current calibration measures the
+similarity distribution of the corpus's own comparable cross-document pairs, which contains
+whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
+the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
+and a budget of `N` returns exactly `N` pairs by construction (measured; see
+[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
+question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
+noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
+answer.
+
+Candidate approaches to evaluate, cheapest first; none is known to work:
+
+- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
+  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
+  shift makes the null too easy, understating the threshold.
+- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
+  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
+  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
+  lands too high.
+- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
+  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
+  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
+  problem already measured for chunk-pair sampling.
+- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
+  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
+  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
+  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
+
+- Agent status: RUN NEEDED
+- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
+  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
+  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
+  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
+  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
+- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
+  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
+  would justify moving threshold selection to the claim tier's measured precision instead.
+- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
+  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
+  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
+  a null demonstrably beats the rank cutoff.
+- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
+  no new committed fixtures unless an approach earns one.
+- Execution path: a research harness invoked per null model over both quickstart stores plus the
+  fixture; CI covers each null constructor deterministically over committed vectors, with the
+  heavy corpus comparison run on the CUDA host.
+- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
+  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
+  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
+  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
+  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
+- Documentation target: the corpus-hygiene known-limitation section of
+  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
+  adopt-or-reject verdict.
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
@@ -423,25 +472,27 @@ shared-bridge question genuinely needs both facts.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
   human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
   genuine multi-hop questions and the slice must come from another source.
-- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep and the
-  answer-quality comparison on the accepted ledger, and the adopt-or-reject verdict. Out of scope
-  -- graph schema changes, fusion mechanics (the candidate-depth verdict is current behavior in
-  [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence); span identity is its own
-  forward task), and changing the opt-in fusion default before the accepted-ledger sweep supports
-  it.
+- Scope boundary: in scope -- worksheet review, `verify-accept`, re-running the sweep over BOTH
+  span-identity policies on the accepted ledger, and the adopt-or-reject verdict per knob --
+  including whether `graph_fusion_span_identity` flips from `exact` to `overlap` as the shipped
+  default, which is currently gated only by the drafted ledger
+  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). Out of scope -- graph schema
+  changes and fusion mechanics (the candidate-depth and span-identity verdicts are current
+  behavior in [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)).
 - Data and artifact paths: the existing drafted bundle and worksheet plus a new
   `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
   `answer-quality/` comparison.
 - Execution path: the stratified worksheet is already drawn beside the bundle, so start at
   `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
-  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl`,
+  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
+  GRAPH_FUSION_CANDIDATES=k,50 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap`,
   then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
   sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
   the drafted-grounding escape.
 - Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
   multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
-  records the adopt-or-reject verdict per graph strategy; the answer-quality comparison re-runs on
-  the accepted ledger with `grounding: verified`.
+  records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
+  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 

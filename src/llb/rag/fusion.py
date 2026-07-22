@@ -4,6 +4,13 @@ from copy import deepcopy
 from typing import Protocol
 
 from llb.core.contracts.rag import ChunkRecord
+from llb.rag.fusion_spans import (
+    DEFAULT_SPAN_IDENTITY,
+    LaneCandidates,
+    SpanKey,
+    lane_candidates,
+    resolve_span_identity,
+)
 from llb.rag.lexical import weighted_rrf_fuse
 
 
@@ -11,16 +18,10 @@ class Retriever(Protocol):
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]: ...
 
 
-SpanKey = tuple[str, int, int]
 # Graph evidence spans and vector chunks rarely have identical boundaries, so the standard RRF
 # damping constant would make a 0.3 graph lane unable to enter a top-10 vector ranking at all.
 # Undamped reciprocal ranks make graph_weight behave as an effective candidate share.
 GRAPH_VECTOR_RRF_K = 0
-
-
-def span_key(chunk: ChunkRecord) -> SpanKey:
-    """Stable identity shared by vector chunks and graph evidence records."""
-    return (chunk["doc_id"], chunk["char_start"], chunk["char_end"])
 
 
 def lane_depth(candidates: int | None, k: int) -> int:
@@ -35,7 +36,7 @@ def lane_depth(candidates: int | None, k: int) -> int:
 
 
 class FusedRetriever:
-    """Fuse vector and graph candidate rankings, deduplicating their exact source spans."""
+    """Fuse vector and graph candidate rankings over one shared span-identity policy."""
 
     def __init__(
         self,
@@ -43,6 +44,7 @@ class FusedRetriever:
         graph: Retriever,
         graph_weight: float,
         candidates: int | None = None,
+        span_identity: str = DEFAULT_SPAN_IDENTITY,
     ) -> None:
         if not 0.0 <= graph_weight <= 1.0:
             raise ValueError(f"graph weight must be within [0, 1], got {graph_weight}")
@@ -52,6 +54,7 @@ class FusedRetriever:
         self.graph = graph
         self.graph_weight = graph_weight
         self.candidates = candidates
+        self.span_identity = resolve_span_identity(span_identity)
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
         """Return top-k fused chunks; endpoint weights are exact lane passthroughs."""
@@ -75,7 +78,9 @@ class FusedRetriever:
         depth = lane_depth(self.candidates, k)
         vector_hits = self._vector_hits(dense_query, lexical_query, depth)
         graph_hits = self.graph.retrieve(lexical_query, depth)
-        return fuse_lane_hits(vector_hits, graph_hits, self.graph_weight, k)
+        return fuse_lane_hits(
+            vector_hits, graph_hits, self.graph_weight, k, span_identity=self.span_identity
+        )
 
     def _vector_hits(self, dense_query: str, lexical_query: str, depth: int) -> list[ChunkRecord]:
         """Vector-lane candidates, routing HyDE text to dense search when the lane supports it."""
@@ -91,6 +96,8 @@ def fuse_lane_hits(
     graph_hits: list[ChunkRecord],
     graph_weight: float,
     k: int,
+    *,
+    span_identity: str = DEFAULT_SPAN_IDENTITY,
 ) -> list[ChunkRecord]:
     """Fuse ONE question's already-retrieved lane rankings at `graph_weight`.
 
@@ -105,49 +112,49 @@ def fuse_lane_hits(
         return graph_hits[:k]
     if graph_weight == 0.0:
         return vector_hits[:k]
-    records, lanes = _span_candidates(vector_hits, graph_hits)
+    candidates = lane_candidates(vector_hits, graph_hits, span_identity)
     fused = weighted_rrf_fuse(
-        lanes,
+        candidates.rankings,
         [1.0 - graph_weight, graph_weight],
         k_const=GRAPH_VECTOR_RRF_K,
     )
-    out: list[ChunkRecord] = []
-    for rank, (key, score) in enumerate(fused[:k], 1):
-        chunk = deepcopy(records[key])
-        metadata = dict(chunk.get("metadata") or {})
-        metadata["fusion_lanes"] = _matching_lanes(key, vector_hits, graph_hits)
-        metadata["graph_weight"] = graph_weight
-        chunk["metadata"] = metadata
-        chunk["retrieval_score"] = float(score)
-        chunk["rank"] = rank
-        out.append(chunk)
-    return out
+    return [
+        _fused_chunk(candidates, key, score, rank, graph_weight, span_identity)
+        for rank, (key, score) in enumerate(fused[:k], 1)
+    ]
 
 
-def _span_candidates(
-    vector_hits: list[ChunkRecord], graph_hits: list[ChunkRecord]
-) -> tuple[dict[SpanKey, ChunkRecord], list[list[SpanKey]]]:
-    """Map both rankings to span ids; prefer the vector record for shared spans."""
-    records: dict[SpanKey, ChunkRecord] = {}
-    vector_ranking: list[SpanKey] = []
-    graph_ranking: list[SpanKey] = []
-    for hit in vector_hits:
-        key = span_key(hit)
-        records.setdefault(key, hit)
-        vector_ranking.append(key)
-    for hit in graph_hits:
-        key = span_key(hit)
-        records.setdefault(key, hit)
-        graph_ranking.append(key)
-    return records, [vector_ranking, graph_ranking]
+def _fused_chunk(
+    candidates: LaneCandidates,
+    key: SpanKey,
+    score: float,
+    rank: int,
+    graph_weight: float,
+    span_identity: str,
+) -> ChunkRecord:
+    """One fused result row: the surviving record verbatim, plus the fusion provenance."""
+    chunk = deepcopy(candidates.records[key])
+    metadata = dict(chunk.get("metadata") or {})
+    metadata["fusion_lanes"] = list(candidates.lanes[key])
+    metadata["graph_weight"] = graph_weight
+    metadata["fusion_span_identity"] = span_identity
+    merged = candidates.merged.get(key)
+    if merged:
+        metadata["fusion_merged_spans"] = [dict(span) for span in merged]
+    chunk["metadata"] = metadata
+    chunk["retrieval_score"] = float(score)
+    chunk["rank"] = rank
+    return chunk
 
 
-def _matching_lanes(
-    key: SpanKey, vector_hits: list[ChunkRecord], graph_hits: list[ChunkRecord]
-) -> list[str]:
-    lanes = []
-    if any(span_key(hit) == key for hit in vector_hits):
-        lanes.append("vector")
-    if any(span_key(hit) == key for hit in graph_hits):
-        lanes.append("graph")
-    return lanes
+def lane_agreement(
+    vector_hits: list[ChunkRecord],
+    graph_hits: list[ChunkRecord],
+    span_identity: str = DEFAULT_SPAN_IDENTITY,
+) -> int:
+    """How many candidates BOTH lanes vouch for under `span_identity` -- the RRF agreement rate.
+
+    Depth is only a live knob when this is non-zero: under undamped RRF a candidate only one lane
+    returned, below rank k, can never enter the fused top-k.
+    """
+    return len(lane_candidates(vector_hits, graph_hits, span_identity).shared())

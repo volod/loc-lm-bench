@@ -24,6 +24,11 @@ Strategy = Literal[
 ]
 RetrievalBackend = Literal["faiss", "graph", "fused"]
 RetrievalStrategy = Literal["local_khop", "global_community"]
+# Span-identity policy of graph-vector fusion (fusion-span-overlap-identity): when do a graph
+# evidence span and a vector chunk name ONE candidate both lanes vouch for? "exact" requires
+# identical (doc_id, char_start, char_end); "overlap" folds a graph span into the vector chunk
+# that contains it. See `src/llb/rag/fusion_spans.py`.
+SpanIdentity = Literal["exact", "overlap"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
@@ -164,6 +169,11 @@ class RunConfigFields(BaseModel):
     # fuses a larger pool and then cuts to `top_k`, so `graph_weight` controls influence on the
     # ranking instead of seats in the result. Values below `top_k` are lifted to `top_k`.
     graph_fusion_candidates: int | None = Field(default=None, ge=1)
+    # Span-identity policy the fusion keys candidates by. "exact" (the default) only lets the two
+    # lanes reinforce each other when their boundaries match exactly, which a ~40-character graph
+    # mention and an ~800-character chunk essentially never do; "overlap" folds the mention into
+    # the chunk that contains it, so the pair becomes one candidate both lanes voted for.
+    graph_fusion_span_identity: SpanIdentity = "exact"
     acl_label: str | None = None
 
     # Judge gating (Premise 2): demoted to diagnostic below the rho threshold. Both default

@@ -8,6 +8,7 @@ adding a graph weight to the sweep costs one retrieval pass, not one per metric.
 
 from llb.rag.fusion_evidence.models import (
     FOCUS_SLICE,
+    AgreementReport,
     METRIC_ALL_SPANS,
     METRIC_COVERAGE,
     METRIC_MRR,
@@ -45,6 +46,25 @@ def _item_vectors(store: Retriever, items: list[EvidenceItem], k: int) -> RowVec
         vectors[METRIC_COVERAGE].append(span_coverage_at_k(hits, item.spans, k))
         vectors[METRIC_MRR].append(reciprocal_rank(hits[:k], item.spans))
     return vectors
+
+
+def _agreement(store: Retriever, items: list[EvidenceItem], k: int) -> AgreementReport | None:
+    """Cross-lane agreement of one row, when the row can measure it (only fused rows can).
+
+    Read through an optional `lane_agreement(question, k)` seam rather than by isinstance, so the
+    sweep stays a pure consumer of the `.retrieve` protocol and a fake row can report agreement.
+    """
+    measure = getattr(store, "lane_agreement", None)
+    if not callable(measure) or not items:
+        return None
+    shared = [int(measure(item.question, k)) for item in items]
+    with_shared = sum(1 for count in shared if count > 0)
+    return {
+        "questions": len(shared),
+        "questions_with_shared_candidate": with_shared,
+        "share_of_questions": with_shared / len(shared),
+        "mean_shared_candidates": sum(shared) / len(shared),
+    }
 
 
 def _focus_items(
@@ -85,8 +105,9 @@ def evaluate_fusion_evidence(
     grouped = slice_indexes([item.question_type for item in items], focus_slice)
     all_indexes = list(range(len(items)))
     per_slice_sets = slice_index_sets(grouped, resamples, seed)
-    rows: dict[str, RowReport] = {
-        label: {
+    rows: dict[str, RowReport] = {}
+    for label, vectors in by_row.items():
+        row: RowReport = {
             "overall": slice_report(
                 vectors, base_vectors, all_indexes, index_sets, confidence, METRICS
             ),
@@ -97,8 +118,10 @@ def evaluate_fusion_evidence(
                 for name, positions in sorted(grouped.items())
             },
         }
-        for label, vectors in by_row.items()
-    }
+        agreement = _agreement(stores[label], items, k)
+        if agreement is not None:
+            row["agreement"] = agreement
+        rows[label] = row
     return {
         "k": k,
         "n": len(items),

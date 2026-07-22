@@ -7,6 +7,7 @@ import typer
 from llb.backends.readiness import local_backend_ready
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
+from llb.rag.fusion_spans import SPAN_IDENTITIES
 
 _local_backend_ready = local_backend_ready
 
@@ -44,6 +45,7 @@ _RAG_GRID_AXES: dict[str, tuple[Any, Any]] = {
     "fusion_weight": (float, lambda v: 0.0 <= v <= 1.0),
     "graph_weight": (float, lambda v: 0.0 <= v <= 1.0),
     "graph_fusion_candidates": (int, lambda v: v >= 1),
+    "graph_fusion_span_identity": (str, lambda v: v in SPAN_IDENTITIES),
     "rerank_candidates": (int, lambda v: v >= 0),
 }
 _RAG_GRID_USAGE = (
@@ -98,6 +100,7 @@ _GRID_SUFFIX_PREFIX = {
     "fusion_weight": "w",
     "graph_weight": "gw",
     "graph_fusion_candidates": "gc",
+    "graph_fusion_span_identity": "gi",
     "rerank_candidates": "r",
 }
 
@@ -151,5 +154,7 @@ def _apply_grid_point(cell: dict[str, Any], point: dict[str, Any], reranker: str
         cell[key] = value
     if "fusion_weight" in point:
         cell["retrieval_mode"] = "hybrid"
-    if "graph_weight" in point or "graph_fusion_candidates" in point:
+    if not {"graph_weight", "graph_fusion_candidates", "graph_fusion_span_identity"}.isdisjoint(
+        point
+    ):
         cell["retrieval_backend"] = "fused"

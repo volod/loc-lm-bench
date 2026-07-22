@@ -32,7 +32,7 @@ from llb.eval.answer_quality.models import (
 )
 from llb.eval.paired_cases import shared_item_ids
 from llb.goldset.schema import GoldItem
-from llb.rag.fusion_evidence.models import FUSED_ROW_TEMPLATE
+from llb.rag.fusion_evidence.models import fused_row_label
 
 VECTOR = "vector"
 FUSED = "fused/global_community@0.10/d10"
@@ -75,11 +75,13 @@ def test_lane_label_parses_every_sweep_row_shape():
 
 def test_fused_label_round_trips_the_sweeps_own_template():
     """The parser must never drift from the one place the sweep FORMATS a fused row label."""
-    label = FUSED_ROW_TEMPLATE.format(strategy="global_community", weight=0.1, depth=10)
-    spec = parse_lane_label(label)
-    assert spec.label == label
-    assert (spec.retrieval_strategy, spec.graph_fusion_candidates) == ("global_community", 10)
-    assert spec.graph_weight == pytest.approx(0.1)
+    for identity in ("exact", "overlap"):
+        label = fused_row_label("global_community", 0.1, 10, identity)
+        spec = parse_lane_label(label)
+        assert spec.label == label
+        assert (spec.retrieval_strategy, spec.graph_fusion_candidates) == ("global_community", 10)
+        assert spec.graph_fusion_span_identity == identity
+        assert spec.graph_weight == pytest.approx(0.1)
 
 
 def test_fused_label_without_depth_leaves_the_lane_pool_at_top_k():

@@ -98,6 +98,11 @@ def run_eval_cmd(
         help="fused backend: per-lane candidate depth fused before the top_k cut "
         "(default: top_k, i.e. each graph candidate that enters displaces a vector one)",
     ),
+    graph_fusion_span_identity: Optional[str] = typer.Option(
+        None,
+        help="fused backend: span identity the lanes are fused by -- 'exact' (default, identical "
+        "offsets) or 'overlap' (fold a graph span into the vector chunk that contains it)",
+    ),
     reranker: Optional[str] = typer.Option(
         None,
         help="local cross-encoder reranker (HF id, e.g. BAAI/bge-reranker-v2-m3): retrieve "
@@ -225,6 +230,7 @@ def run_eval_cmd(
         fusion_candidates=fusion_candidates,
         graph_weight=graph_weight,
         graph_fusion_candidates=graph_fusion_candidates,
+        graph_fusion_span_identity=graph_fusion_span_identity,
         reranker=reranker,
         rerank_candidates=rerank_candidates,
         context_order=context_order,

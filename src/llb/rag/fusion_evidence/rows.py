@@ -9,21 +9,25 @@ scores exactly what `FusedRetriever` would return.
 A candidate-depth sweep rides the same cache: each lane is retrieved once at the DEEPEST compared
 depth and every shallower fused row slices that one ranking, because a lane's top-d truncated to
 d' < d is exactly its top-d' (every lane ranks by a total order that does not depend on the
-requested depth).
+requested depth). A span-identity sweep rides it too: the policy decides how the two cached
+rankings are MAPPED onto candidates, never what either lane returns.
 """
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.fusion import fuse_lane_hits, lane_depth
+from llb.rag.fusion import fuse_lane_hits, lane_agreement, lane_depth
 from llb.rag.fusion_evidence.models import (
-    FUSED_ROW_TEMPLATE,
     GRAPH_ROW_PREFIX,
     VECTOR_ROW,
     Retriever,
+    fused_row_label,
 )
+from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_IDENTITIES, resolve_span_identity
 
 DEFAULT_GRAPH_WEIGHTS = (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0)
 # `None` == the historical single depth: ask each lane for exactly the sweep's `k`.
 DEFAULT_GRAPH_CANDIDATES: tuple[int | None, ...] = (None,)
+# The historical identity rule stays the only swept policy until an operator asks for the other.
+DEFAULT_SPAN_IDENTITIES: tuple[str, ...] = (DEFAULT_SPAN_IDENTITY,)
 
 
 class LaneCache:
@@ -51,7 +55,12 @@ class FusedReplay:
     """
 
     def __init__(
-        self, vector: LaneCache, graph: LaneCache, graph_weight: float, depth: int | None = None
+        self,
+        vector: LaneCache,
+        graph: LaneCache,
+        graph_weight: float,
+        depth: int | None = None,
+        span_identity: str = DEFAULT_SPAN_IDENTITY,
     ) -> None:
         if not 0.0 <= graph_weight <= 1.0:
             raise ValueError(f"graph weight must be within [0, 1], got {graph_weight}")
@@ -61,15 +70,21 @@ class FusedReplay:
         self.graph = graph
         self.graph_weight = graph_weight
         self.depth = depth
+        self.span_identity = resolve_span_identity(span_identity)
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
-        depth = lane_depth(self.depth, k)
+        vector_hits, graph_hits = self._lane_hits(question, k)
         return fuse_lane_hits(
-            self.vector.retrieve(question, depth),
-            self.graph.retrieve(question, depth),
-            self.graph_weight,
-            k,
+            vector_hits, graph_hits, self.graph_weight, k, span_identity=self.span_identity
         )
+
+    def lane_agreement(self, question: str, k: int) -> int:
+        """Candidates BOTH lanes returned in this row's pool -- the sweep's agreement diagnostic."""
+        return lane_agreement(*self._lane_hits(question, k), self.span_identity)
+
+    def _lane_hits(self, question: str, k: int) -> tuple[list[ChunkRecord], list[ChunkRecord]]:
+        depth = lane_depth(self.depth, k)
+        return self.vector.retrieve(question, depth), self.graph.retrieve(question, depth)
 
 
 def build_sweep_rows(
@@ -79,8 +94,9 @@ def build_sweep_rows(
     k: int,
     weights: tuple[float, ...] = DEFAULT_GRAPH_WEIGHTS,
     candidates: tuple[int | None, ...] = DEFAULT_GRAPH_CANDIDATES,
+    identities: tuple[str, ...] = DEFAULT_SPAN_IDENTITIES,
 ) -> dict[str, Retriever]:
-    """`vector` + a row per graph strategy + a fused row per (strategy, weight, candidate depth).
+    """`vector` + a row per graph strategy + a fused row per (strategy, weight, depth, identity).
 
     Depths are resolved against `k` first (a request below `k` is lifted to `k`) and then
     de-duplicated, so two requested depths that resolve to the same pool produce one row rather
@@ -94,12 +110,36 @@ def build_sweep_rows(
         graph_cache = LaneCache(store, questions, cache_depth)
         rows[f"{GRAPH_ROW_PREFIX}{strategy}"] = graph_cache
         for weight in weights:
-            # An endpoint weight is a single-lane passthrough, so a deeper pool cannot change it;
-            # emitting one row per depth there would report the same ranking several times.
-            for depth in depths if 0.0 < weight < 1.0 else (k,):
-                label = FUSED_ROW_TEMPLATE.format(strategy=strategy, weight=weight, depth=depth)
-                rows[label] = FusedReplay(vector_cache, graph_cache, weight, depth)
+            for depth, identity in _fusion_points(weight, depths, identities, k):
+                label = fused_row_label(strategy, weight, depth, identity)
+                rows[label] = FusedReplay(vector_cache, graph_cache, weight, depth, identity)
     return rows
+
+
+def _fusion_points(
+    weight: float, depths: tuple[int, ...], identities: tuple[str, ...], k: int
+) -> list[tuple[int, str]]:
+    """The (depth, identity) points worth emitting a fused row for at this graph weight.
+
+    An endpoint weight is a single-lane passthrough: nothing is fused, so neither a deeper pool
+    nor a different span-identity rule can change its ranking. Emitting the full grid there would
+    report one ranking under several labels.
+    """
+    if not 0.0 < weight < 1.0:
+        return [(k, DEFAULT_SPAN_IDENTITY)]
+    return [(depth, identity) for depth in depths for identity in identities]
+
+
+def parse_span_identities(spec: str) -> tuple[str, ...]:
+    """Parse an `exact,overlap` span-identity grid; raises `ValueError` on an unknown policy."""
+    identities = [
+        resolve_span_identity(token.strip()) for token in spec.split(",") if token.strip()
+    ]
+    if not identities:
+        raise ValueError(
+            f"no span identity parsed from the grid spec (expected {', '.join(SPAN_IDENTITIES)})"
+        )
+    return tuple(dict.fromkeys(identities))
 
 
 def parse_candidates(spec: str) -> tuple[int | None, ...]:

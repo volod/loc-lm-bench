@@ -1,10 +1,10 @@
 """Resolve fusion sweep row labels into scored `run-eval` lanes.
 
 The fusion sweep names its rows `vector`, `graph/<strategy>`, and
-`fused/<strategy>@<weight>/d<depth>`; its verdict names the best one. This module parses exactly
-those labels back into retrieval knobs, so the answer-quality lane scores THE row the retrieval
+`fused/<strategy>@<weight>/d<depth>[/i<span-identity>]`; its verdict names the best one. This
+module parses exactly those labels back into retrieval knobs, so the answer-quality lane scores THE row the retrieval
 sweep recommended instead of a hand-copied approximation of it. A round-trip test pins the parser
-to `FUSED_ROW_TEMPLATE`, which is the one place the label is formatted.
+to `fused_row_label`, which is the one place the label is formatted.
 """
 
 import json
@@ -15,8 +15,10 @@ from llb.eval.answer_quality.models import LaneSpec
 from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
     GRAPH_ROW_PREFIX,
+    IDENTITY_MARKER,
     VECTOR_ROW,
 )
+from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, resolve_span_identity
 
 BACKEND_VECTOR = "faiss"
 BACKEND_GRAPH = "graph"
@@ -25,7 +27,7 @@ DEPTH_MARKER = "/d"
 
 
 def parse_lane_label(label: str) -> LaneSpec:
-    """`vector` | `graph/<strategy>` | `fused/<strategy>@<weight>[/d<depth>]` -> a `LaneSpec`."""
+    """`vector` | `graph/<s>` | `fused/<s>@<weight>[/d<depth>][/i<identity>]` -> a `LaneSpec`."""
     text = label.strip()
     if text == VECTOR_ROW:
         return LaneSpec(label=text, retrieval_backend=BACKEND_VECTOR)
@@ -37,9 +39,17 @@ def parse_lane_label(label: str) -> LaneSpec:
     if not text.startswith(FUSED_ROW_PREFIX):
         raise ValueError(
             f"unknown lane label {label!r}: expected {VECTOR_ROW!r}, "
-            f"{GRAPH_ROW_PREFIX}<strategy>, or {FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>]"
+            f"{GRAPH_ROW_PREFIX}<strategy>, or "
+            f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>]"
         )
     body = text[len(FUSED_ROW_PREFIX) :]
+    identity = DEFAULT_SPAN_IDENTITY
+    if IDENTITY_MARKER in body:
+        body, _, identity_token = body.partition(IDENTITY_MARKER)
+        try:
+            identity = resolve_span_identity(identity_token)
+        except ValueError as exc:
+            raise ValueError(f"{exc} in lane label {label!r}") from None
     depth: int | None = None
     if DEPTH_MARKER in body:
         body, _, depth_token = body.partition(DEPTH_MARKER)
@@ -53,6 +63,7 @@ def parse_lane_label(label: str) -> LaneSpec:
         retrieval_strategy=strategy,
         graph_weight=_weight(weight_token, label),
         graph_fusion_candidates=depth,
+        graph_fusion_span_identity=identity,
     )
 
 
@@ -113,6 +124,7 @@ def lane_config(config: RunConfig, lane: LaneSpec, *, run_name_prefix: str) -> R
         run_name=f"{run_name_prefix}-{lane.label}",
         retrieval_backend=lane.retrieval_backend,
         graph_fusion_candidates=lane.graph_fusion_candidates,
+        graph_fusion_span_identity=lane.graph_fusion_span_identity,
     )
     if lane.retrieval_strategy is not None:
         values["retrieval_strategy"] = lane.retrieval_strategy

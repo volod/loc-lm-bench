@@ -84,6 +84,35 @@ def _item_table(report: FusionEvidenceReport) -> list[str]:
     return lines
 
 
+def _agreement_table(report: FusionEvidenceReport) -> list[str]:
+    """Per fused row: how often the two lanes vouch for the SAME candidate.
+
+    Fusion can only reward agreement it can see, so this table is what a span-identity policy is
+    read against -- and it is also the precondition for candidate depth to matter at all.
+    """
+    measured = {
+        label: row["agreement"] for label, row in report["rows"].items() if "agreement" in row
+    }
+    if not measured:
+        return []
+    lines = [
+        "### Cross-lane agreement",
+        "",
+        "Candidates BOTH lanes returned in the fused pool, per question.",
+        "",
+        "| row | questions with a shared candidate | share | mean shared candidates |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for label in sorted(measured):
+        entry = measured[label]
+        lines.append(
+            f"| {label} | {entry['questions_with_shared_candidate']}/{entry['questions']} "
+            f"| {entry['share_of_questions']:.3f} | {entry['mean_shared_candidates']:.3f} |"
+        )
+    lines.append("")
+    return lines
+
+
 def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fusion") -> str:
     """The full Markdown artifact: verdict, focus slice, overall, other slices, item ledger."""
     verdict = report["verdict"]
@@ -113,5 +142,6 @@ def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fu
     ]
     for name in sorted(set(other)):
         lines += _metric_table(report, name, f"Slice: {name}", "Context slice")
+    lines += _agreement_table(report)
     lines += _item_table(report)
     return "\n".join(lines)

@@ -54,11 +54,18 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
 
 `src/llb/rag/fusion.py`
 : Implements `FusedRetriever`. It queries the vector store (dense or hybrid) and `GraphStore` for
-  `lane_depth(graph_fusion_candidates, k)` candidates each, fuses span ids with n-way weighted
-  reciprocal-rank fusion, drops exact duplicate source spans, cuts to `k`, and preserves the
-  selected record's exact text and offsets. Fused metadata records which lanes returned each span
-  and the graph weight. The fusion itself is the standalone `fuse_lane_hits`, so a weight/depth
-  sweep can reuse the production rule over cached lane rankings.
+  `lane_depth(graph_fusion_candidates, k)` candidates each, maps both rankings onto one candidate
+  set, fuses them with n-way weighted reciprocal-rank fusion, cuts to `k`, and preserves the
+  surviving record's exact text and offsets. Fused metadata records which lanes returned each
+  candidate, the graph weight, the span-identity policy, and any folded spans. The fusion itself is
+  the standalone `fuse_lane_hits`, so a weight/depth/identity sweep can reuse the production rule
+  over cached lane rankings; `lane_agreement` counts the candidates both lanes vouch for.
+
+`src/llb/rag/fusion_spans.py`
+: The span-identity policies -- `exact` (identical `(doc_id, char_start, char_end)`) and `overlap`
+  (fold a graph span into the vector chunk that contains it) -- plus the merge rule, its
+  invariants, and the `LaneCandidates` view both lanes are ranked over. See
+  [RAG core](rag-core.md#fusion-span-identity-graph_fusion_span_identity).
 
 `src/llb/rag/fusion_evidence/`
 : The graph-weight sweep and its multi-hop verdict (see Graph-Vector Fusion Evidence below).
@@ -166,21 +173,31 @@ Three things separate it from the flat comparison:
   candidate depth, so the sweep retrieves each lane once at the DEEPEST compared pool and re-fuses
   those same candidates through the production `fuse_lane_hits` at every (weight, depth) point.
 
-The lane sweeps both fusion knobs. `GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is the
-per-lane candidate depth grid, where `k` names the scored cutoff itself; each fused row is labeled
-`fused/<strategy>@<weight>/d<depth>`. Depths resolve against `k` and de-duplicate, endpoint weights
-carry no depth variants (they are lane passthroughs), and the verdict ranks across weights and
-depths together, preferring the shallower pool on a tie.
+The lane sweeps all three fusion knobs. `GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is
+the per-lane candidate depth grid, where `k` names the scored cutoff itself;
+`GRAPH_FUSION_SPAN_IDENTITY` (`--graph-fusion-span-identity`) is the span-identity grid (`exact`
+and/or `overlap`). Each fused row is labeled `fused/<strategy>@<weight>/d<depth>`, with
+`/i<identity>` appended for a non-default policy -- so an `exact` row keeps the exact label, and
+therefore the exact comparability, it had before the policy existed. Depths resolve against `k` and
+de-duplicate, endpoint weights carry neither depth nor identity variants (they are lane
+passthroughs, nothing is fused), and the verdict ranks across all three knobs together, preferring
+the shallower pool and the default policy on a tie.
 
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
-  GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0 GRAPH_FUSION_CANDIDATES=k,50
+  GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0 GRAPH_FUSION_CANDIDATES=k,50 \
+  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap
 llb compare-graph-fusion --config <cfg> --k 10 --graph-weights 0,0.3,1.0 \
-  --graph-fusion-candidates k,50 --focus-slice multi-hop --out-dir <dir>
+  --graph-fusion-candidates k,50 --graph-fusion-span-identity exact,overlap \
+  --focus-slice multi-hop --out-dir <dir>
 ```
 
-Artifacts per run: `report.md` (verdict, focus slice, overall, per-type slices, item ledger),
-`comparison.json`, and `run_config.json`.
+Every fused row also reports its **cross-lane agreement**: how many questions produced a candidate
+BOTH lanes returned, and how many such candidates per question. That is the number a span-identity
+policy is read against, and the precondition for candidate depth to matter at all.
+
+Artifacts per run: `report.md` (verdict, focus slice, overall, per-type slices, agreement table,
+item ledger), `comparison.json`, and `run_config.json`.
 
 ### Accepted-ledger evidence, single graph weight
 
@@ -285,13 +302,12 @@ share an exact `(doc_id, char_start, char_end)` span **twice at depth 50** (once
 strategy -- graph evidence spans are entity mentions and edge evidence, whose boundaries essentially
 never coincide with an 800-character recursive chunk.
 
-Verdict: **reject as a default**. `graph_fusion_candidates` stays `None` (each lane asked for
-exactly `top_k`), and the operator's answer is that the fused rows are limited by the graph
-WEIGHT, not by candidate depth -- on this corpus depth is not a knob at all. The knob ships opt-in
-because it becomes live for any corpus whose lanes share exact spans, and because it is the
-prerequisite half of the span-identity work tracked in [`plan.md`](../plan.md)
-(`fusion-span-overlap-identity`): once fusion keys candidates by OVERLAP instead of exact
-boundaries, cross-lane agreement stops being a 2-in-93 event and depth starts to matter.
+Verdict under the `exact` identity rule: **reject as a default**. `graph_fusion_candidates` stays
+`None` (each lane asked for exactly `top_k`), and the operator's answer is that those fused rows
+are limited by the graph WEIGHT, not by candidate depth. The knob ships opt-in because it becomes
+live as soon as the lanes agree -- which is exactly what the span-identity policy changes: under
+`overlap` the same depth grid moves every fused row (see
+[span-identity evidence](#span-identity-evidence)).
 
 Boundary: the 35 multi-hop items are DRAFTED, not human-accepted. They are span-exact, Ukrainian
 gated, and each names its bridge or end entity in the reference answer, but only a reviewer can
@@ -299,6 +315,80 @@ confirm that a drafted two-hop question truly needs both cited facts. The strati
 worksheet is already drawn at `goods-draft/verify_sample.csv`, so the gate is
 `make verify-review VERIFY_WS=<that file>` followed by `make verify-accept`; accepting the ledger
 and re-running the sweep is tracked as forward work in [`plan.md`](../plan.md)
+(`multihop-ledger-human-acceptance`).
+
+### Span-identity evidence
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T145615Z-span-identity/`. The same 95 drafted items
+(35 multi-hop), matched stores, weight grid, depth grid, and seed as the two runs above were
+re-scored under BOTH span-identity policies -- 47 rows in one table -- with
+`GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_CANDIDATES=k,50`.
+
+The reproduction check passed before the comparison was read: all 27 `exact` rows equal the prior
+depth run on every metric, interval, win/loss/tie ledger, and per-item focus outcome, and every
+fused chunk is still a verbatim corpus slice at its own offsets.
+
+**Cross-lane agreement, the number the policy exists to move** (questions out of 95 whose fused
+pool contains a candidate BOTH lanes returned):
+
+| policy | depth | local_khop | global_community |
+| --- | ---: | ---: | ---: |
+| exact | 10 | 1 (0.011 per question) | 1 (0.011) |
+| exact | 50 | 2 (0.021) | 2 (0.021) |
+| overlap | 10 | 53 (0.842) | 47 (0.716) |
+| overlap | 50 | 87 (3.853) | 93 (4.095) |
+
+Multi-hop slice (n=35), 95% bootstrap CI, paired against the vector row:
+
+| row | recall@10 | all-spans@10 | span coverage | MRR | recall delta vs vector |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| vector | 0.686 [0.543, 0.829] | 0.057 | 0.371 | 0.360 | 0.000 |
+| fused/global_community@0.10/d10 (exact) | 0.771 [0.629, 0.914] | 0.086 | 0.429 | 0.369 | +0.086 [+0.000, +0.200] |
+| fused/global_community@0.30/d50 (exact) | 0.771 [0.629, 0.914] | 0.057 | 0.414 | 0.384 | +0.086 [+0.000, +0.200] |
+| fused/global_community@0.30/d10/ioverlap | 0.800 [0.657, 0.914] | 0.086 | 0.443 | 0.399 | +0.114 [+0.029, +0.229] |
+| fused/global_community@0.30/d50/ioverlap | 0.800 [0.657, 0.914] | 0.086 | 0.443 | 0.403 | +0.114 [+0.029, +0.229] |
+| fused/local_khop@0.30/d10/ioverlap | 0.714 [0.571, 0.857] | 0.057 | 0.386 | 0.352 | +0.029 [+0.000, +0.086] |
+| fused/local_khop@0.30/d50/ioverlap | 0.743 [0.600, 0.886] | 0.057 | 0.400 | 0.356 | +0.057 [+0.000, +0.143] |
+
+Overall (n=95):
+
+| row | recall@10 | all-spans@10 | span coverage | MRR | recall delta vs vector |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| vector | 0.705 [0.611, 0.789] | 0.474 | 0.589 | 0.421 | 0.000 |
+| fused/global_community@0.10/d10 (exact) | 0.747 [0.663, 0.832] | 0.495 | 0.621 | 0.425 | +0.042 [+0.000, +0.095] |
+| fused/global_community@0.30/d50/ioverlap | 0.768 [0.684, 0.842] | 0.505 | 0.637 | 0.447 | +0.063 [-0.011, +0.137] |
+| fused/local_khop@0.30/d50/ioverlap | 0.768 [0.684, 0.853] | 0.516 | 0.642 | 0.430 | +0.063 [+0.000, +0.126] |
+| fused/local_khop@0.50/d50/ioverlap | 0.779 [0.695, 0.853] | 0.537 | 0.658 | 0.417 | +0.074 [+0.000, +0.158] |
+
+What the run establishes:
+
+- **Exact identity made fusion structurally inert on this corpus.** One shared candidate in 95
+  questions at depth 10 is not fusion; it is two disjoint rankings trading result seats. Containment
+  is the common case the exact rule could not see: `overlap` finds a shared candidate for 47-53 of
+  95 questions at depth 10 and 87-93 at depth 50.
+- **The multi-hop gain becomes separable from zero.** The best `exact` row gains +0.086
+  [+0.000, +0.200] multi-hop recall (interval touches zero, `inconclusive`); the best `overlap` row,
+  `fused/global_community@0.30/d50/ioverlap`, gains +0.114 [+0.029, +0.229] with 4 wins, 0 losses,
+  31 ties, and does not pay for it overall (+0.063 [-0.011, +0.137]). The lane's verdict on this
+  ledger is therefore **adopt**.
+- **Candidate depth is now a live knob, and only because of the identity rule.** Under `exact`,
+  all 10 (strategy, weight) pairs are byte-identical at depth 10 and 50; under `overlap`, all 10
+  differ. Depth 50 is what turns `local_khop@0.30` from +0.029 to +0.057 multi-hop recall and from
+  +0.011 to +0.063 overall.
+- **`all-spans@10` still does not move.** The best row carries BOTH hops for 3 of 35 two-hop
+  questions (0.086), the same ceiling every earlier row hit. Fusion improves WHICH single hop is
+  retrieved and how the pool ranks; it does not solve two-hop coverage at k=10.
+- **The weight optimum shifted with the policy.** Under `exact` the best row was `global_community`
+  at weight 0.10; under `overlap` it is weight 0.30 -- unsurprising once a graph vote reinforces a
+  chunk instead of displacing it, since a graph candidate no longer costs a result seat.
+
+Verdict: `graph_fusion_span_identity` ships **opt-in with `exact` as the default**, despite the
+adopt. The evidence is measured on the DRAFTED multi-hop ledger (see the boundary above), and the
+project's standing rule is that a drafted slice does not move a default. The recommended operator
+setting when fusion is enabled on a corpus like this one is
+`graph_fusion_span_identity=overlap` with `graph_fusion_candidates=50`; flipping the shipped
+default is gated on the accepted-ledger re-run tracked in [`plan.md`](../plan.md)
 (`multihop-ledger-human-acceptance`).
 
 ### Answer-quality evidence
