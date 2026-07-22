@@ -2,7 +2,7 @@
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
-	bench-query-robustness probe-context-position analyze-misses
+	compare-context-strategies bench-query-robustness probe-context-position analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -86,13 +86,26 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
+compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES= CONTEXT_ABLATION_LIMIT= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-context-strategies $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(CORPUS),--corpus "$(CORPUS)",) \
+		$(if $(CONTEXT_LANES),--lanes "$(CONTEXT_LANES)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(CONTEXT_ABLATION_LIMIT),--limit $(CONTEXT_ABLATION_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
+
 compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings --goldset "$(GOLDSET)" --k $(RAG_K) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= QUERY_PREP=... RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= CONTEXT_STRATEGY= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -108,6 +121,7 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(CONTEXT_ORDER),--context-order "$(CONTEXT_ORDER)",) \
+		$(if $(CONTEXT_STRATEGY),--context-strategy "$(CONTEXT_STRATEGY)",) \
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \

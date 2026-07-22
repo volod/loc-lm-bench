@@ -1,0 +1,8 @@
+{
+  "id": "eval.rag.closed_book",
+  "kind": "chat",
+  "messages": [
+    {"role": "system", "template": "closed_book_system.txt"},
+    {"role": "user", "template": "closed_book_user.txt"}
+  ]
+}

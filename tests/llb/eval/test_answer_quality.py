@@ -19,7 +19,6 @@ from llb.eval.answer_quality import (
     parse_lane_label,
     parse_lanes,
     run_answer_quality,
-    shared_item_ids,
 )
 from llb.eval.answer_quality.coverage import read_case_coverage, with_coverage
 from llb.eval.answer_quality.models import (
@@ -31,6 +30,7 @@ from llb.eval.answer_quality.models import (
     VERDICT_NO_GAIN,
     VERDICT_RETRIEVAL_ONLY,
 )
+from llb.eval.paired_cases import shared_item_ids
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.models import FUSED_ROW_TEMPLATE
 

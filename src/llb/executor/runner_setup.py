@@ -66,11 +66,21 @@ def _select_eval_items(
 def _default_runner_fn(
     config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
 ) -> Callable[[GoldItem], RagState]:
+    """The per-case runner for this config's context strategy.
+
+    A non-`rag` strategy (rag-vs-long-context-ablation) swaps the retrieve node's store lookup for
+    its own context source and, for `closed_book`, its own generation prompt. The store is still
+    loaded and passed: it carries the embedder the optional semantic correctness signal scores
+    with, so every lane scores its answers identically.
+    """
+    from llb.eval.context_ablation.sources import build_context_lane
+
     chunk_filter = None
     if config.acl_label is not None:
         from llb.rag.filters import metadata_filter
 
         chunk_filter = metadata_filter(acl_label=config.acl_label)
+    lane = build_context_lane(config)
     app = eval_graph.build_rag_graph(
         store,
         launcher,
@@ -83,6 +93,8 @@ def _default_runner_fn(
         query_prep=build_query_prep(config, store, launcher),
         chunk_filter=chunk_filter,
         cited=config.cited_answers,
+        context_source=lane.source if lane is not None else None,
+        template_id=lane.template_id if lane is not None else None,
     )
 
     def run(item: GoldItem) -> RagState:

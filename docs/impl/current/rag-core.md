@@ -39,6 +39,7 @@ make prep-models
 make build-index
 make validate-retrieval
 make run-eval MODEL=llama3.2:3b BACKEND=ollama LIMIT=20
+make compare-context-strategies MODEL=<m> BACKEND=<b> GOLDSET=<gs> CORPUS=<corpus-dir>
 ```
 
 The Makefile defaults `GOLDSET` and `CORPUS` to the committed fixture so smoke runs do not require
@@ -858,6 +859,104 @@ throughput at 1139 chunks is no longer cold-load-dominated. Reports:
 `$DATA_DIR/compare-embeddings/20260710T044652*/report.md` (k=20) and
 `.../20260710T044914*/report.md` (k=10).
 
+## Context Ablation: Does RAG Pay For Itself? (rag-vs-long-context-ablation)
+
+A leaderboard row says how well a model answers WITH retrieval; it never says how much of that
+score retrieval bought. `llb compare-context-strategies` (`make compare-context-strategies`)
+scores ONE item set end to end under three context lanes and reports the differences.
+
+`RunConfig.context_strategy` selects the lane and is recorded in the manifest fingerprint like
+every other knob, so a lane's bundle is reproducible from its own config
+(`make run-eval CONTEXT_STRATEGY=<lane>`):
+
+- `rag` (default) -- retrieve as configured. This is the leaderboard row; the other two are
+  DIAGNOSTICS and never rank a model.
+- `closed_book` -- no context at all. `src/llb/eval/context_ablation/sources.py` supplies an empty
+  context and swaps in the `eval.rag.closed_book` prompt, which asks the model to answer from its
+  own knowledge (the RAG system prompt would push it to abstain). The empty context deliberately
+  does NOT raise `retrieval_miss`: that status short-circuits generation, and a lane that never
+  calls the model measures nothing.
+- `long_context` -- the item's whole gold source document(s) laid into the prompt as one
+  offset-exact chunk per document, with the SAME generation prompt as `rag`, so the delta is
+  attributable to the context and not to prompt wording. The lane is oracle-grounded (it reads the
+  item's own gold `doc_id`s), which makes it a ceiling, not a shippable retrieval policy.
+
+Budget and skips: the lane resolves the model's usable window ONCE per run --
+`resolve_model_spec` looks the served artifact up through `candidate_sources`, so an Ollama GGUF
+tag resolves to its roster entry priced at the right quant -- and each item is checked with
+`fits_context_chars` (`src/llb/optimize/tuning_space.py`, the same arithmetic as `fits_context`).
+An item whose document does not fit terminates as `context_overflow`, a new pre-generation status
+in the shared taxonomy: no model call, no truncation. A truncated document is a different and
+unstated retrieval policy, so crediting its answer to "long context" would measure whichever slice
+survived the cut. Without a manifest entry for the model, only an explicit `context_budget` /
+`max_model_len` can bound the prompt, so an unlisted model skips nothing rather than everything.
+
+The comparison (`src/llb/eval/context_ablation/`) is pure and file-driven: it consumes canonical
+`scores.jsonl` rows, aligns them with `llb.eval.paired_cases` (shared with
+`compare-answer-quality`), and reuses the fusion-evidence paired bootstrap and per-slice reporting,
+so the artifact reads beside the retrieval sweep. It reports:
+
+- `retrieval_uplift` = `rag - closed_book`, paired per item -- how much of the RAG score retrieval
+  paid for.
+- `long_context_delta` = `long_context - rag` -- whole-document stuffing versus chunked retrieval.
+- `long_context_delta_fitting` -- the same delta over items the lane did not skip, emitted only
+  when something WAS skipped. A skipped item scores zero, so the all-items delta would otherwise
+  read a document that never reached the model as a long-context loss; the VERDICT reads the
+  fitting delta when it exists.
+- A per-item contamination flag: the closed-book answer already matches the reference (`exact` or
+  `contains` is 1.0). Items the model answers with no evidence were never a retrieval problem, and
+  a corpus full of them makes any uplift look small for reasons unrelated to retrieval.
+
+Verdicts, in check order: `long_context_wins` | `rag_pays_off` | `retrieval_inconclusive` |
+`no_retrieval_gain` | `no_evidence`. Every gate reads the paired INTERVAL, never the point
+estimate. Artifacts: `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`, plus one
+ordinary `run-eval` bundle per (lane, split) under `$DATA_DIR/run-eval/`. CI drives all three
+lanes over fake bundles and the committed fixtures
+(`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
+
+### Context-ablation evidence
+
+Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
+`samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
+311 chunks at 800/120, `top_k=5`, `DATA_DIR=.data/context-ablation-host`):
+
+| model | closed_book | rag | long_context | retrieval uplift | long-context delta | closed-book matches |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MamayLM-Gemma-3-12B-IT v2.0 GGUF Q4_K_M | 0.160 | 0.501 | 0.643 | +0.340 [+0.262, +0.423] | +0.142 [+0.083, +0.206] | 10/82 (12.2%) |
+| Lapa v0.1.2-instruct GGUF Q4_K_M | 0.100 | 0.496 | 0.576 | +0.396 [+0.314, +0.484] | +0.080 [+0.036, +0.133] | 12/82 (14.6%) |
+
+Both models return `long_context_wins`, and both agree on the shape of the result:
+
+- Retrieval pays for itself, decisively. The uplift interval is far clear of zero for both models
+  (sign-test p<0.001, 50/6/26 and 59/3/20 item wins/losses/ties). RAG is not decoration on this
+  corpus.
+- Whole-document stuffing still beats chunked retrieval, by a smaller but separable margin. That
+  is expected here and is NOT an argument to ship long context: SQuAD-derived documents are ~1.5k
+  characters, the lane is oracle-grounded on the item's own gold document, and `rag` retrieval was
+  already near-ceiling (`recall@5=0.951`). The measured gap is what the retrieval layer still
+  loses to chunk boundaries when the right document is known for free.
+- Roughly one item in eight is answered correctly with no context at all -- parametric knowledge
+  or contamination of a public post-edited SQuAD set. Any uplift on this fixture is therefore
+  measured against a baseline that is not zero.
+
+Skip path, measured (same model and item set, `context_budget: 1250` to force overflow):
+28/82 items skipped, and the two populations diverge exactly as designed -- all-items
+`long_context_delta` reads `-0.085 [-0.188, +0.018]` (the 28 skips score zero) while
+`long_context_delta_fitting` over the remaining 54 reads `+0.165 [+0.091, +0.250]`. The verdict
+reads the fitting delta, and the report carries both.
+
+Reproducibility, measured: the `rag` lane's bundle is byte-identical to a plain `run-eval` of the
+same configuration (all 82 items: same answers, same per-case scores), which is the check that the
+lane machinery adds nothing to the leaderboard path. The `rag` and `long_context` lanes reproduce
+exactly across runs; the `closed_book` lane does NOT -- 11/82 answers differed between two
+identical invocations (lane mean 0.160 vs 0.153), because an ungrounded prompt leaves a much
+flatter next-token distribution for GGUF kernel nondeterminism to flip. The drift is well inside
+the uplift interval half-width (~0.08) and changed no verdict, but a closed-book number is a
+noisier measurement than a grounded one and should be quoted with that in mind.
+
+Reports: `$DATA_DIR/context-ablation/20260722T142639Z/` (MamayLM),
+`.../20260722T143030Z/` (Lapa), `.../20260722T143459Z/` (the budget-constrained skip run).
+
 ## Retrieval Metrics
 
 `src/llb/rag/retrieval.py` computes recall@k and MRR by source-span overlap. The common gate is
@@ -888,7 +987,16 @@ above), cross-encoder reranking (see Reranking And Context Order above), and the
 
 `src/llb/eval/graph.py` builds the retrieve-generate flow. LangGraph is imported only when the
 graph is built. The graph records one status per case: `ok`, `empty`, `malformed`, `refusal`,
-`timeout`, `backend_error`, `retrieval_miss`, or another typed failure from the shared taxonomy.
+`timeout`, `backend_error`, `retrieval_miss`, `context_overflow`, or another typed failure from the
+shared taxonomy. `retrieval_miss` and `context_overflow` are the pre-generation statuses
+(`eval_common.PRE_GENERATION_STATUSES`): the prompt is never sent, so the answer stays empty and
+the case scores zero rather than being quietly repaired into a different prompt.
+
+Two optional seams keep diagnostic lanes out of the retrieval path itself. `context_source`
+replaces the retrieve node's store lookup with a `RagState -> RagState` closure that supplies its
+own context, and `template_id` overrides the generation prompt; both are resolved from
+`RunConfig.context_strategy` in `_default_runner_fn` and are how the context ablation runs without
+special-casing anything downstream (see Context Ablation above).
 
 `src/llb/backends/openai_client.py` normalizes endpoint failures. Backend launchers own process
 lifecycle and readiness checks.

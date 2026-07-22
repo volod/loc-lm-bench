@@ -7,7 +7,7 @@ question-type slice, so a measured coverage gain is either confirmed as an answe
 recorded as a retrieval-only effect.
 """
 
-from llb.eval.answer_quality.compare import compare_answer_quality, shared_item_ids
+from llb.eval.answer_quality.compare import compare_answer_quality
 from llb.eval.answer_quality.lanes import (
     lane_config,
     lane_labels_from_comparison,
@@ -28,5 +28,4 @@ __all__ = [
     "parse_lane_label",
     "parse_lanes",
     "run_answer_quality",
-    "shared_item_ids",
 ]

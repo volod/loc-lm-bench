@@ -35,13 +35,16 @@ class SliceReport(TypedDict):
     paired_vs_baseline: dict[str, PairedComparison]
 
 
-def slice_indexes(question_types: Sequence[str | None], focus_slice: str) -> dict[str, list[int]]:
-    """Item positions per question type; the focus slice is always present, even when empty.
+def slice_indexes(
+    question_types: Sequence[str | None], focus_slice: str | None = None
+) -> dict[str, list[int]]:
+    """Item positions per question type; a named focus slice is always present, even when empty.
 
     An empty focus slice must still appear, so a report over a set with no multi-hop item says
-    `n=0` explicitly instead of omitting the slice the verdict is decided on.
+    `n=0` explicitly instead of omitting the slice the verdict is decided on. A lane with no focus
+    slice (the context ablation decides on the whole set) passes None and gets only real types.
     """
-    grouped: dict[str, list[int]] = {focus_slice: []}
+    grouped: dict[str, list[int]] = {} if focus_slice is None else {focus_slice: []}
     for position, question_type in enumerate(question_types):
         if question_type:
             grouped.setdefault(question_type, []).append(position)

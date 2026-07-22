@@ -27,6 +27,10 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
+# Context strategy (rag-vs-long-context-ablation): where the prompt's evidence comes from.
+# "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
+# document(s) into the prompt.
+ContextStrategy = Literal["rag", "closed_book", "long_context"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 # Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
 ScorerPolicy = Literal["human", "local", "frontier"]
@@ -120,6 +124,13 @@ class RunConfigFields(BaseModel):
     reranker: str | None = None
     rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
     context_order: ContextOrder = "rank"
+
+    # Context strategy (rag-vs-long-context-ablation): a DIAGNOSTIC lane selector, not a ranking
+    # policy -- "rag" (the default) is the leaderboard row. "closed_book" sends no context at all,
+    # so the score is what the model already knows; "long_context" lays the item's whole source
+    # document(s) into the prompt, and skips (never truncates) an item whose document does not fit
+    # the model's usable window. Recorded in the manifest fingerprint like every other knob.
+    context_strategy: ContextStrategy = "rag"
 
     # Query-side processing lane (uk-query-processing): an ORDERED, opt-in list of query-prep
     # steps applied between the user question and retrieval (never mutating the stored corpus).

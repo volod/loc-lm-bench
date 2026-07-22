@@ -201,36 +201,89 @@ the drafted-grounding rules are current behavior
 - Documentation target: the answer-quality evidence subsection of
   [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
 
-### rag-vs-long-context-ablation
+### retrieved-document-long-context-lane
 
-Build `llb compare-context-strategies` (`make compare-context-strategies`): score one model on
-the final split under three context lanes -- `closed_book` (no retrieved context; the model
-answers from its weights), `rag` (the run configuration as-is), and `long_context` (the item's
-full source document laid into the prompt, budget-checked through `fits_context`; an item whose
-document exceeds the model's usable context is counted as a skip, never silently truncated). Each
-lane persists an ordinary run bundle; the comparison report renders per-lane objective plus two
-derived numbers -- retrieval uplift (`rag - closed_book`) and long-context delta
-(`long_context - rag`) -- and flags per item when the closed-book answer already matches the
-reference (a contamination / parametric-knowledge signal).
+The measured long-context lane is oracle-grounded -- it reads the item's own gold `doc_id`s, so it
+sizes a CEILING and cannot be adopted
+([product decisions](current/scope-boundaries.md#context-ablation-lanes-stay-diagnostic)). Add the
+shippable sibling: a `retrieved_document` context strategy that takes the top-ranked RETRIEVED
+chunk's document (no gold label), lays that whole document into the prompt under the same budget
+check and `context_overflow` skip rule, and reports beside the existing lanes. The measured
+oracle-versus-rag gap (+0.142 / +0.080 objective on two roster models) then splits into the part
+an operator can actually capture by widening the unit of retrieval from a chunk to its document,
+and the part that was pure oracle advantage.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the `run-eval` seams, `fits_context` / `context_budget`
-  ([RAG core](current/rag-core.md#context-budget)), and the report shape of `compare-retrieval`.
-- User-visible outcome: the operator learns whether RAG pays for itself per model on their corpus
-  -- how much a Ukrainian-tuned model (MamayLM, Lapa) already answers closed-book, and whether
-  whole-document stuffing beats chunked retrieval within that model's usable context.
-- Scope boundary: in scope -- lane orchestration, prompt assembly for the two new lanes, the
-  report, and the contamination flag. Out of scope -- any ranking-policy change (the lanes are
-  diagnostics; the `rag` lane stays the leaderboard row) and context-window extension tricks.
-- Data and artifact paths: lane bundles under the standard `$DATA_DIR/run-eval/`; comparison
-  report under `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`.
-- Execution path: `make compare-context-strategies MODEL=<m> BACKEND=<b> GOLDSET=<gs>`; CI drives
-  all three lanes over a fake endpoint and the committed fixtures.
-- Acceptance gates: `make ci` green; the `rag` lane's per-case scores are identical to a plain
-  `run-eval` of the same configuration; a heavy run over the committed UA fixture on at least two
-  roster models records the three-lane table and the contamination rate.
-- Documentation target: a new [RAG core](current/rag-core.md) subsection; a
-  [product decisions](current/scope-boundaries.md) note if a lane is rejected as a default.
+- Dependencies: none. Reuse the context-source seam, `fits_context_chars`, and the comparison in
+  [RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
+- User-visible outcome: the operator learns whether "retrieve the chunk, send the document" is a
+  real configuration worth shipping, or whether the long-context gain was the gold label all along.
+- Scope boundary: in scope -- the strategy, its document-selection rule (top-1 versus top-k
+  distinct documents), the budget/skip path, and a four-lane comparison. Out of scope -- changing
+  the chunker, the ranking policy, and context-window extension tricks.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: `make compare-context-strategies CONTEXT_LANES=closed_book,rag,retrieved_document,long_context`;
+  CI covers document selection and the skip rule over fake lane stores.
+- Acceptance gates: `make ci` green; the three existing lanes reproduce their current rows exactly;
+  a heavy run on both scored roster models reports the four-lane table with paired intervals and an
+  explicit adopt-or-reject verdict for the new lane.
+- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
+  diagnostic-lane boundary in [product decisions](current/scope-boundaries.md).
+
+### closed-book-decoding-stability (optional)
+
+A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
+same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
+the `rag` and `long_context` lanes were byte-identical
+([RAG core](current/rag-core.md#context-ablation-evidence)). An ungrounded prompt leaves a much
+flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift stayed well
+inside the uplift interval and changed no verdict, but a contamination rate quoted to one decimal
+place is currently over-stated precision. Measure it: repeat the closed-book lane N times at a
+fixed seed, report the between-repeat spread of the lane mean and of the contamination rate, and
+either quote the ablation's closed-book numbers with that spread or make the lane reproducible
+(pinned sampler / seeded backend options) if the backend allows it.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
+  existing paired-bootstrap reporting.
+- User-visible outcome: the operator knows how much of a closed-book delta is measurement noise
+  before reading it as parametric knowledge.
+- Scope boundary: in scope -- repeat runs, the spread statistic, and whichever of the two remedies
+  the measurement supports. Out of scope -- changing the objective metric and swapping backends.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: N repeats of the closed-book lane on the committed UA fixture on the CUDA host;
+  CI covers the spread statistic over committed fixture rows.
+- Acceptance gates: `make ci` green; the report states the between-repeat spread of the lane mean
+  and the contamination rate, and the ablation docs quote closed-book numbers accordingly.
+- Documentation target: the context-ablation evidence subsection of
+  [RAG core](current/rag-core.md).
+
+### context-ablation-question-type-slices (optional)
+
+The context ablation slices by question type, but the committed UA fixture ships no
+`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane
+([RAG core](current/rag-core.md#context-ablation-evidence)). Pooling hides the question the lane is
+most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose answer is
+one span versus a comparative or numeric question whose evidence is scattered. Run the ablation on
+a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted multi-hop
+bundle) so the uplift and the long-context delta are reported per slice, and record which slices
+retrieval fails to pay for.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. The slicing is already wired; this needs a labeled item set and the run.
+  Question-type labels come from the needle sidecar
+  ([data prep](current/data-prep.md)).
+- User-visible outcome: the operator learns WHICH questions retrieval pays for on their corpus,
+  instead of one pooled average over a mixed set.
+- Scope boundary: in scope -- the run, the per-slice reading, and a verdict per slice. Out of
+  scope -- new metrics, new lanes, and any ranking-policy change.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: `make compare-context-strategies GOLDSET=<sidecar-bearing goldset> CORPUS=<dir>`
+  on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the report carries a non-empty slice table with paired
+  intervals per slice and states which slices the uplift interval fails to clear zero on.
+- Documentation target: the context-ablation evidence subsection of
+  [RAG core](current/rag-core.md).
 
 ### table-aware-chunking
 
