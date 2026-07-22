@@ -1,8 +1,9 @@
 """Resolve fusion sweep row labels into scored `run-eval` lanes.
 
 The fusion sweep names its rows `vector`, `graph/<strategy>`,
-`fused/<strategy>@<weight>/d<depth>[/i<span-identity>]`, and
-`routed/<strategy>@<weight>/d<depth>[/i<span-identity>]`; its verdict names the best one. This
+`fused/<strategy>@<weight>/d<depth>[/i<span-identity>][/r<merge-ratio>]`, and
+`routed/<strategy>@<weight>/d<depth>[/i<span-identity>][/r<merge-ratio>]`; its verdict names the
+best one. This
 module parses exactly those labels back into retrieval knobs, so the answer-quality lane scores THE
 row the retrieval sweep recommended instead of a hand-copied approximation of it. Round-trip tests
 pin both fixed and routed parsers to the sweep's own formatters.
@@ -17,10 +18,16 @@ from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
     GRAPH_ROW_PREFIX,
     IDENTITY_MARKER,
+    MERGE_RATIO_MARKER,
     ROUTED_ROW_PREFIX,
     VECTOR_ROW,
 )
-from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, resolve_span_identity
+from llb.rag.fusion_spans import (
+    DEFAULT_SPAN_IDENTITY,
+    SPAN_MERGE_MIN_RATIO,
+    resolve_merge_ratio,
+    resolve_span_identity,
+)
 from llb.rag.fusion_routing import ROUTER_QUESTION_TYPE
 
 BACKEND_VECTOR = "faiss"
@@ -44,11 +51,15 @@ def parse_lane_label(label: str) -> LaneSpec:
         raise ValueError(
             f"unknown lane label {label!r}: expected {VECTOR_ROW!r}, "
             f"{GRAPH_ROW_PREFIX}<strategy>, or "
-            f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>], or "
-            f"{ROUTED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>]"
+            f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>], or "
+            f"{ROUTED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]"
         )
     prefix = ROUTED_ROW_PREFIX if is_routed else FUSED_ROW_PREFIX
     body = text[len(prefix) :]
+    merge_ratio = SPAN_MERGE_MIN_RATIO
+    if MERGE_RATIO_MARKER in body:
+        body, _, ratio_token = body.partition(MERGE_RATIO_MARKER)
+        merge_ratio = _merge_ratio(ratio_token, label)
     identity = DEFAULT_SPAN_IDENTITY
     if IDENTITY_MARKER in body:
         body, _, identity_token = body.partition(IDENTITY_MARKER)
@@ -70,6 +81,7 @@ def parse_lane_label(label: str) -> LaneSpec:
         graph_weight=_weight(weight_token, label),
         graph_fusion_candidates=depth,
         graph_fusion_span_identity=identity,
+        graph_fusion_span_merge_ratio=merge_ratio,
         graph_fusion_router=ROUTER_QUESTION_TYPE if is_routed else "fixed",
     )
 
@@ -82,6 +94,13 @@ def _positive_int(token: str, label: str, what: str) -> int:
     if value < 1:
         raise ValueError(f"{what} must be at least 1 in lane label {label!r}")
     return value
+
+
+def _merge_ratio(token: str, label: str) -> float:
+    try:
+        return resolve_merge_ratio(float(token))
+    except ValueError as exc:
+        raise ValueError(f"{exc} in lane label {label!r}") from None
 
 
 def _weight(token: str, label: str) -> float:
@@ -132,6 +151,7 @@ def lane_config(config: RunConfig, lane: LaneSpec, *, run_name_prefix: str) -> R
         retrieval_backend=lane.retrieval_backend,
         graph_fusion_candidates=lane.graph_fusion_candidates,
         graph_fusion_span_identity=lane.graph_fusion_span_identity,
+        graph_fusion_span_merge_ratio=lane.graph_fusion_span_merge_ratio,
         graph_fusion_router=lane.graph_fusion_router,
     )
     if lane.retrieval_strategy is not None:

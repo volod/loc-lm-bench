@@ -142,12 +142,14 @@ RESUME ?=
 RAG_K ?= 10
 # Graph-vector fusion evidence: fixed graph shares, the routed row's non-zero graph share, swept
 # per-lane candidate depths ('k' == the scored cutoff), swept span-identity policies ('exact'
-# and/or 'overlap'), and the question type the verdict is decided on (compare-graph-fusion).
+# and/or 'overlap'), swept merge thresholds for a folding policy ('1.0' == containment only), and
+# the question type the verdict is decided on (compare-graph-fusion).
 # Empty knobs fall back to the command defaults.
 GRAPH_WEIGHTS ?=
 ROUTED_GRAPH_WEIGHT ?=
 GRAPH_FUSION_CANDIDATES ?=
 GRAPH_FUSION_SPAN_IDENTITY ?=
+GRAPH_FUSION_SPAN_MERGE_RATIO ?=
 GRAPH_STRATEGIES ?=
 FUSION_FOCUS_SLICE ?=
 FUSION_BOOTSTRAP_RESAMPLES ?=

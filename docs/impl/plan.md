@@ -43,34 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
+### span-merge-threshold-chunk-size-interaction (optional)
 
-### span-merge-ratio-sensitivity (optional)
-
-The overlap policy merges when the intersection covers at least half of the SHORTER span, and it
-refuses to merge two vector chunks with each other; both are unswept design constants chosen to
-keep a document's overlapping chunks from chaining into one candidate
-([RAG core](current/rag-core.md#fusion-span-identity-graph_fusion_span_identity)). A corpus whose
-graph spans routinely straddle chunk boundaries could want a lower ratio, and one with short
-chunks could want a higher one, but nothing measures how sensitive the adopted result is to the
-choice. Sweep the ratio (for example 0.25 / 0.5 / 0.75 / containment-only), report the cross-lane
-agreement rate and the multi-hop delta per setting, and either pin the current value with evidence
-or expose the ratio as a knob.
+The merge threshold is pinned at 0.5 because on an ~800-character chunking a graph mention is
+either wholly inside a retrieved chunk or misses it entirely -- not one graph span in the measured
+corpus lands below 0.75 while still overlapping a chunk, so the whole 0.25-0.75 range scores
+byte-identically
+([GraphRAG](current/graphrag-backend.md#span-merge-threshold-evidence)). That is a property of the
+CHUNK SIZE, not of the policy: a `sentence` chunker, a small `size`, or a future table-aware
+chunker produces chunks the same order of magnitude as a graph mention, which is exactly the
+regime where the threshold starts deciding merges. Re-run the threshold grid on a store built with
+a materially smaller chunk size (and the overlap histogram probe beside it), and record whether the
+pin survives or the default has to become chunk-size aware.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `SPAN_MERGE_MIN_RATIO` and `lane_candidates` in
-  `src/llb/rag/fusion_spans.py` plus the sweep lane's identity grid.
-- User-visible outcome: the operator knows whether the merge threshold is a real tuning surface or
-  a constant the result is insensitive to.
-- Scope boundary: in scope -- the ratio sweep, the agreement/metric reading per setting, and the
-  pin-or-expose decision. Out of scope -- merging vector chunks with each other, changing the RRF
-  damping constant, and chunking changes.
+- Dependencies: none. Reuse `GRAPH_FUSION_SPAN_MERGE_RATIO` in the fusion sweep and the
+  `span_overlap_histogram.py` probe archived beside the pinning run.
+- User-visible outcome: the operator learns whether the pinned threshold is safe on their chunking
+  or only on the one it was measured at.
+- Scope boundary: in scope -- one or two smaller-chunk stores, the same grid, the histogram, and a
+  keep-or-revise verdict for the default. Out of scope -- changing the chunker, the identity
+  policy, and the graph weight.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-graph-fusion GRAPH_FUSION_SPAN_IDENTITY=overlap` per ratio setting
-  on the CUDA host; CI covers each ratio's merge decisions over committed fake lane hits.
-- Acceptance gates: `make ci` green; the report states the agreement rate and multi-hop delta per
-  ratio and carries an explicit pin-or-expose verdict.
-- Documentation target: the fusion span-identity subsection of
-  [RAG core](current/rag-core.md#fusion-span-identity-graph_fusion_span_identity).
+- Execution path: `make build-index CHUNK_STRATEGY=sentence` (or a smaller `size`), then
+  `make compare-graph-fusion GRAPH_FUSION_SPAN_IDENTITY=overlap
+  GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,0.75,1.0` on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the report states the overlap histogram and the per-threshold
+  multi-hop delta at the smaller chunk size, and states whether 0.5 stays the right default.
+- Documentation target: the span merge-threshold subsection of
+  [GraphRAG](current/graphrag-backend.md#span-merge-threshold-evidence).
 
 ### multihop-both-hops-ceiling
 

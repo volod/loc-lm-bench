@@ -16,7 +16,7 @@ from llb.rag.compare import (
     Retriever as Retriever,
 )  # the one `.retrieve` seam, re-used not re-declared
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY
+from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
@@ -37,23 +37,37 @@ FUSED_ROW_TEMPLATE = FUSED_ROW_PREFIX + "{strategy}@{weight:.2f}/d{depth}"
 # marker, so an `exact` row keeps the exact label (and therefore the exact comparability) it had
 # before the policy existed; only a non-default policy extends the label.
 IDENTITY_MARKER = "/i"
+# A fourth knob, and a parameter OF the identity policy: the merge threshold a folding policy
+# applies. Same rule -- the default value carries no marker, so every row measured before the
+# threshold was swept keeps its label.
+MERGE_RATIO_MARKER = "/r"
 
 
 def fused_row_label(
-    strategy: str, weight: float, depth: int, span_identity: str = DEFAULT_SPAN_IDENTITY
+    strategy: str,
+    weight: float,
+    depth: int,
+    span_identity: str = DEFAULT_SPAN_IDENTITY,
+    merge_ratio: float = SPAN_MERGE_MIN_RATIO,
 ) -> str:
     """The one place a fused row label is formatted; `lanes.py` parses exactly this shape back."""
     label = FUSED_ROW_TEMPLATE.format(strategy=strategy, weight=weight, depth=depth)
-    if span_identity == DEFAULT_SPAN_IDENTITY:
-        return label
-    return f"{label}{IDENTITY_MARKER}{span_identity}"
+    if span_identity != DEFAULT_SPAN_IDENTITY:
+        label = f"{label}{IDENTITY_MARKER}{span_identity}"
+    if merge_ratio != SPAN_MERGE_MIN_RATIO:
+        label = f"{label}{MERGE_RATIO_MARKER}{merge_ratio:.2f}"
+    return label
 
 
 def routed_row_label(
-    strategy: str, weight: float, depth: int, span_identity: str = DEFAULT_SPAN_IDENTITY
+    strategy: str,
+    weight: float,
+    depth: int,
+    span_identity: str = DEFAULT_SPAN_IDENTITY,
+    merge_ratio: float = SPAN_MERGE_MIN_RATIO,
 ) -> str:
     """Label a question-type-routed row by its non-zero graph share and fusion knobs."""
-    label = fused_row_label(strategy, weight, depth, span_identity)
+    label = fused_row_label(strategy, weight, depth, span_identity, merge_ratio)
     return ROUTED_ROW_PREFIX + label[len(FUSED_ROW_PREFIX) :]
 
 

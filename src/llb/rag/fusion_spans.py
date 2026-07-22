@@ -18,6 +18,11 @@ Two invariants keep the rule safe for span-level scoring:
 - **The surviving record is always one of the input records, verbatim.** A merge never synthesizes
   a union span, so the fused chunk's text stays an exact corpus slice at its own offsets and
   `recall@k` / `MRR` score the same rule they always did.
+
+How much overlap a fold requires is `SPAN_MERGE_MIN_RATIO`, exposed as
+`graph_fusion_span_merge_ratio`. It was swept and pinned: on an ~800-character chunking a graph
+mention is either wholly inside a chunk or misses it, so 0.25 / 0.5 / 0.75 score identically. A
+corpus with much shorter chunks could put mass in that empty middle.
 """
 
 from typing import NamedTuple
@@ -35,6 +40,8 @@ DEFAULT_SPAN_IDENTITY = SPAN_IDENTITY_EXACT
 # Share of the SHORTER span that the intersection must cover before two spans are one candidate.
 # Containment scores 1.0, a graph mention clipped by a chunk boundary scores the covered share, and
 # an incidental one-character touch between neighbouring chunks scores ~0 and stays separate.
+# The default is the swept-and-pinned value; 1.0 is the strictest setting (containment only) and a
+# lower value admits more clipped mentions. Zero is refused: it would merge on a bare touch.
 SPAN_MERGE_MIN_RATIO = 0.5
 
 LANE_VECTOR = "vector"
@@ -84,6 +91,23 @@ def resolve_span_identity(identity: str | None) -> str:
     return resolved
 
 
+def merges_spans(identity: str) -> bool:
+    """Whether a policy can fold one span into another -- the only case the ratio applies to.
+
+    Under `exact` two spans are one candidate or they are not; there is no partial overlap to
+    threshold, so a merge-ratio grid would report one ranking under several labels.
+    """
+    return resolve_span_identity(identity) != SPAN_IDENTITY_EXACT
+
+
+def resolve_merge_ratio(ratio: float | None) -> float:
+    """Validate a merge threshold, mapping `None` to the default."""
+    resolved = SPAN_MERGE_MIN_RATIO if ratio is None else float(ratio)
+    if not 0.0 < resolved <= 1.0:
+        raise ValueError(f"span merge ratio must be within (0, 1], got {ratio!r}")
+    return resolved
+
+
 def overlap_ratio(left: SpanKey, right: SpanKey) -> float:
     """Intersection as a share of the shorter span; 0.0 across documents or on a bare touch."""
     if left[0] != right[0]:
@@ -99,11 +123,12 @@ def lane_candidates(
     vector_hits: list[ChunkRecord],
     graph_hits: list[ChunkRecord],
     identity: str = DEFAULT_SPAN_IDENTITY,
+    merge_ratio: float = SPAN_MERGE_MIN_RATIO,
 ) -> LaneCandidates:
     """Map both lane rankings onto one candidate set under the selected span-identity policy."""
-    if resolve_span_identity(identity) == SPAN_IDENTITY_EXACT:
+    if not merges_spans(identity):
         return _exact_candidates(vector_hits, graph_hits)
-    return _overlap_candidates(vector_hits, graph_hits)
+    return _overlap_candidates(vector_hits, graph_hits, resolve_merge_ratio(merge_ratio))
 
 
 def _exact_candidates(
@@ -119,7 +144,7 @@ def _exact_candidates(
 
 
 def _overlap_candidates(
-    vector_hits: list[ChunkRecord], graph_hits: list[ChunkRecord]
+    vector_hits: list[ChunkRecord], graph_hits: list[ChunkRecord], merge_ratio: float
 ) -> LaneCandidates:
     """Fold each graph span into the vector chunk that covers it, else into a graph sibling."""
     builder = _CandidateSet()
@@ -128,7 +153,7 @@ def _overlap_candidates(
     anchors = list(builder.keys)
     for hit in graph_hits:
         key = span_key(hit)
-        host = key if key in builder.keys else _best_host(key, anchors)
+        host = key if key in builder.keys else _best_host(key, anchors, merge_ratio)
         if host is None:
             builder.add(key, hit, LANE_GRAPH)
             anchors.append(key)
@@ -137,7 +162,7 @@ def _overlap_candidates(
     return builder.result()
 
 
-def _best_host(key: SpanKey, anchors: list[SpanKey]) -> SpanKey | None:
+def _best_host(key: SpanKey, anchors: list[SpanKey], merge_ratio: float) -> SpanKey | None:
     """The anchor this span belongs to: strongest overlap, then the earlier-ranked anchor."""
     best: SpanKey | None = None
     best_ratio = 0.0
@@ -145,7 +170,7 @@ def _best_host(key: SpanKey, anchors: list[SpanKey]) -> SpanKey | None:
         ratio = overlap_ratio(key, anchor)
         # Strict `>` keeps the earliest (best-ranked) anchor on a tie, so a span sitting in the
         # shared tail of two consecutive chunks joins the one the vector lane ranked higher.
-        if ratio >= SPAN_MERGE_MIN_RATIO and ratio > best_ratio:
+        if ratio >= merge_ratio and ratio > best_ratio:
             best, best_ratio = anchor, ratio
     return best
 

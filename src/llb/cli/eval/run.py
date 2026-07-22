@@ -103,6 +103,12 @@ def run_eval_cmd(
         help="fused backend: span identity the lanes are fused by -- 'exact' (default, identical "
         "offsets) or 'overlap' (fold a graph span into the vector chunk that contains it)",
     ),
+    graph_fusion_span_merge_ratio: Optional[float] = typer.Option(
+        None,
+        help="fused backend: share of the shorter span a folding span identity needs covered "
+        "before two spans are one candidate (default 0.5; 1.0 == containment only, dead under "
+        "'exact')",
+    ),
     graph_fusion_router: Optional[str] = typer.Option(
         None,
         help="fused backend: 'fixed' (default) or 'question_type' (sidecar label with a "
@@ -236,6 +242,7 @@ def run_eval_cmd(
         graph_weight=graph_weight,
         graph_fusion_candidates=graph_fusion_candidates,
         graph_fusion_span_identity=graph_fusion_span_identity,
+        graph_fusion_span_merge_ratio=graph_fusion_span_merge_ratio,
         graph_fusion_router=graph_fusion_router,
         reranker=reranker,
         rerank_candidates=rerank_candidates,

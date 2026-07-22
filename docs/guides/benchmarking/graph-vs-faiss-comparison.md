@@ -133,6 +133,12 @@ lane (on the measured Ukrainian corpus they shared 2 in 95 questions, so depth w
 `overlap` makes agreement the common case and depth a live knob. The measured host result is in
 [GraphRAG](../../impl/current/graphrag-backend.md#span-identity-evidence).
 
+`--graph-fusion-span-merge-ratio` is the share of the shorter span `overlap` needs covered before
+it folds (`1.0` == containment only). Leave it alone unless your chunks are short or your graph
+spans are long: on the measured corpus 0.25 / 0.5 / 0.75 give byte-identical rows, because a graph
+mention is either wholly inside a chunk or misses it entirely
+([GraphRAG](../../impl/current/graphrag-backend.md#span-merge-threshold-evidence)).
+
 ## Step 5 (optional) -- does the extra evidence reach the ANSWER?
 
 Steps 3 and 4 are model-independent: they say what the context CARRIES, not what the model does

@@ -447,10 +447,22 @@ lanes voted for. Two invariants keep the rule safe for span-level scoring:
   fused chunk's text stays an exact corpus slice at its own offsets. `metadata` records the policy
   in `fusion_span_identity` and every folded span in `fusion_merged_spans`.
 
-A merge needs the intersection to cover at least `SPAN_MERGE_MIN_RATIO` (0.5) of the SHORTER span:
-containment scores 1.0, a mention clipped by a chunk boundary scores its covered share, and an
-incidental one-character touch between neighbouring chunks stays separate. Both endpoint weights
+A merge needs the intersection to cover at least `graph_fusion_span_merge_ratio` of the SHORTER
+span: containment scores 1.0, a mention clipped by a chunk boundary scores its covered share, and
+an incidental one-character touch between neighbouring chunks stays separate. Both endpoint weights
 fuse nothing, so they are identity-independent.
+
+The threshold is a knob in `RunConfig` (default `SPAN_MERGE_MIN_RATIO` = 0.5, valid over `(0, 1]`
+where 1.0 is containment-only), recorded in the manifest fingerprint, and settable through
+`run-eval --graph-fusion-span-merge-ratio`,
+`make sweep SWEEP_RAG_GRID="graph_fusion_span_merge_ratio=0.25,0.5"`, and the evidence lane's
+`GRAPH_FUSION_SPAN_MERGE_RATIO` grid. It is dead under `exact` (there is no partial overlap to
+threshold), so the sweep grid expands `overlap` rows only and a non-default value extends a row
+label as `/r<ratio>`. **The measured verdict is to pin 0.5 and not sweep it**: on the Ukrainian
+goods corpus 0.25 / 0.5 / 0.75 are byte-identical on every row, because 99% of the graph spans that
+touch a retrieved chunk are wholly INSIDE it -- see
+[GraphRAG](graphrag-backend.md#span-merge-threshold-evidence) for the grid, the agreement table,
+and the overlap histogram that explains why.
 
 The knob rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-span-identity`,
 `make sweep SWEEP_RAG_GRID="graph_fusion_span_identity=exact,overlap"`, and the sweep lane's

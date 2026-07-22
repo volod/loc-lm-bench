@@ -17,15 +17,19 @@ from llb.rag.fusion_evidence.models import (
     Verdict,
 )
 from llb.rag.fusion_evidence.report import format_report
+from llb.rag.fusion_evidence.grids import (
+    parse_candidates,
+    parse_merge_ratios,
+    parse_span_identities,
+    parse_weights,
+)
 from llb.rag.fusion_evidence.rows import (
     DEFAULT_GRAPH_CANDIDATES,
     DEFAULT_GRAPH_WEIGHTS,
     DEFAULT_SPAN_IDENTITIES,
+    DEFAULT_SPAN_MERGE_RATIOS,
     VECTOR_ROW,
     build_sweep_rows,
-    parse_candidates,
-    parse_span_identities,
-    parse_weights,
 )
 from llb.rag.fusion_evidence.sweep import evaluate_fusion_evidence
 
@@ -33,6 +37,7 @@ __all__ = [
     "DEFAULT_GRAPH_CANDIDATES",
     "DEFAULT_GRAPH_WEIGHTS",
     "DEFAULT_SPAN_IDENTITIES",
+    "DEFAULT_SPAN_MERGE_RATIOS",
     "FOCUS_SLICE",
     "VECTOR_ROW",
     "EvidenceItem",
@@ -42,6 +47,7 @@ __all__ = [
     "evaluate_fusion_evidence",
     "format_report",
     "parse_candidates",
+    "parse_merge_ratios",
     "parse_span_identities",
     "parse_weights",
 ]

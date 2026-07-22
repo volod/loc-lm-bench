@@ -149,6 +149,7 @@ def _load_store(config: RunConfig) -> Any:
             config.graph_fusion_candidates,
             config.graph_fusion_span_identity,
             router,
+            config.graph_fusion_span_merge_ratio,
         )
         return maybe_wrap_reranker(fused, config)
     return maybe_wrap_reranker(vector, config)

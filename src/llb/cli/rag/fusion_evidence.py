@@ -17,6 +17,9 @@ DEFAULT_CANDIDATE_GRID = "k"
 # Default to the historical identity rule (exact offsets), so the row set is unchanged until an
 # operator asks for the containment/overlap policy.
 DEFAULT_SPAN_IDENTITY_GRID = "exact"
+# Default to the shipped merge threshold. The grid only produces distinct rows under a folding
+# identity policy, so it is inert unless `overlap` is swept too.
+DEFAULT_SPAN_MERGE_RATIO_GRID = "0.5"
 DEFAULT_ROUTED_GRAPH_WEIGHT = 0.3
 
 
@@ -61,6 +64,12 @@ def compare_graph_fusion_cmd(
         help="comma-separated span-identity policies to sweep: 'exact' (identical offsets) and/or "
         "'overlap' (fold a graph span into the vector chunk that contains it)",
     ),
+    graph_fusion_span_merge_ratio: str = typer.Option(
+        DEFAULT_SPAN_MERGE_RATIO_GRID,
+        help="comma-separated merge thresholds to sweep: the share of the SHORTER span the "
+        "intersection must cover before a folding identity policy calls two spans one candidate "
+        "(1.0 == containment only). Inert unless 'overlap' is among the swept policies",
+    ),
     graph_strategies: Optional[str] = typer.Option(
         None, help="comma-separated graph strategies (default: local_khop,global_community)"
     ),
@@ -93,6 +102,7 @@ def compare_graph_fusion_cmd(
         evaluate_fusion_evidence,
         format_report,
         parse_candidates,
+        parse_merge_ratios,
         parse_span_identities,
         parse_weights,
     )
@@ -106,6 +116,7 @@ def compare_graph_fusion_cmd(
         weights = parse_weights(graph_weights)
         candidates = parse_candidates(graph_fusion_candidates)
         identities = parse_span_identities(graph_fusion_span_identity)
+        merge_ratios = parse_merge_ratios(graph_fusion_span_merge_ratio)
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -126,6 +137,7 @@ def compare_graph_fusion_cmd(
         routed_graph_weight,
         question_types,
         HeuristicPolicy(heuristic_long_question_words, heuristic_min_linked_entities),
+        merge_ratios,
     )
     report = evaluate_fusion_evidence(
         rows,

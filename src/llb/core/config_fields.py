@@ -177,6 +177,11 @@ class RunConfigFields(BaseModel):
     # mention and an ~800-character chunk essentially never do; "overlap" folds the mention into
     # the chunk that contains it, so the pair becomes one candidate both lanes voted for.
     graph_fusion_span_identity: SpanIdentity = "exact"
+    # Share of the SHORTER span the intersection must cover before a folding span-identity policy
+    # calls two spans one candidate. Dead under "exact" (which has no partial overlap to
+    # threshold); 1.0 makes "overlap" containment-only, a lower value also admits a mention the
+    # chunk boundary clipped. Zero is refused -- it would merge on a bare one-character touch.
+    graph_fusion_span_merge_ratio: float = Field(default=0.5, gt=0, le=1)
     graph_fusion_router: GraphFusionRouter = "fixed"
     acl_label: str | None = None
 

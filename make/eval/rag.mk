@@ -61,7 +61,7 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, and span identity (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -73,6 +73,7 @@ compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed sh
 		$(if $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),--heuristic-min-linked-entities $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),) \
 		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates "$(GRAPH_FUSION_CANDIDATES)",) \
 		$(if $(GRAPH_FUSION_SPAN_IDENTITY),--graph-fusion-span-identity "$(GRAPH_FUSION_SPAN_IDENTITY)",) \
+		$(if $(GRAPH_FUSION_SPAN_MERGE_RATIO),--graph-fusion-span-merge-ratio "$(GRAPH_FUSION_SPAN_MERGE_RATIO)",) \
 		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \

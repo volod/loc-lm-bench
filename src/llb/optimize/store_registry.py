@@ -76,6 +76,7 @@ def _apply_query_knobs(store: Any, config: RunConfig) -> Any:
             config.graph_weight,
             config.graph_fusion_candidates,
             config.graph_fusion_span_identity,
+            span_merge_ratio=config.graph_fusion_span_merge_ratio,
         )
     return maybe_wrap_reranker(retriever, config)
 

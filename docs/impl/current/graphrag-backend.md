@@ -57,14 +57,16 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   `lane_depth(graph_fusion_candidates, k)` candidates each, maps both rankings onto one candidate
   set, fuses them with n-way weighted reciprocal-rank fusion, cuts to `k`, and preserves the
   surviving record's exact text and offsets. Fused metadata records which lanes returned each
-  candidate, the graph weight, the span-identity policy, and any folded spans. The fusion itself is
-  the standalone `fuse_lane_hits`, so a weight/depth/identity sweep can reuse the production rule
-  over cached lane rankings; `lane_agreement` counts the candidates both lanes vouch for.
+  candidate, the graph weight, the span-identity policy, its merge threshold (folding policies
+  only), and any folded spans. The fusion itself is the standalone `fuse_lane_hits`, so a
+  weight/depth/identity/threshold sweep can reuse the production rule over cached lane rankings;
+  `lane_agreement` counts the candidates both lanes vouch for.
 
 `src/llb/rag/fusion_spans.py`
 : The span-identity policies -- `exact` (identical `(doc_id, char_start, char_end)`) and `overlap`
   (fold a graph span into the vector chunk that contains it) -- plus the merge rule, its
-  invariants, and the `LaneCandidates` view both lanes are ranked over. See
+  configurable threshold, its invariants, and the `LaneCandidates` view both lanes are ranked over.
+  See
   [RAG core](rag-core.md#fusion-span-identity-graph_fusion_span_identity).
 
 `src/llb/rag/fusion_evidence/`
@@ -81,8 +83,8 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
 `src/llb/eval/answer_quality/`
 : The end-to-end companion to that sweep: it scores the SAME items under two retrieval lanes with
   the standard `run-eval` and compares the ANSWERS per question-type slice. `lanes.py` parses a
-  sweep row label (`vector`, `fused/<strategy>@<weight>[/d<depth>]`) back into retrieval knobs,
-  `run.py` selects the item set once and drives one ordinary run bundle per lane,
+  sweep row label (`vector`, `fused/<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]`) back
+  into retrieval knobs, `run.py` selects the item set once and drives one run bundle per lane,
   `coverage.py` recomputes the multi-span coverage columns from each bundle's `retrieval.jsonl`,
   `compare.py` is the pure per-slice comparison (reusing the fusion-evidence bootstrap),
   `verdict.py` decides answer-gain versus retrieval-only, and `report.py` renders the artifact.
@@ -182,12 +184,15 @@ The lane sweeps all three fusion knobs and adds question-type-routed rows.
 `GRAPH_FUSION_CANDIDATES` (`--graph-fusion-candidates`) is
 the per-lane candidate depth grid, where `k` names the scored cutoff itself;
 `GRAPH_FUSION_SPAN_IDENTITY` (`--graph-fusion-span-identity`) is the span-identity grid (`exact`
-and/or `overlap`). Each fused row is labeled `fused/<strategy>@<weight>/d<depth>`, with
-`/i<identity>` appended for a non-default policy -- so an `exact` row keeps the exact label, and
-therefore the exact comparability, it had before the policy existed. Depths resolve against `k` and
-de-duplicate, endpoint weights carry neither depth nor identity variants (they are lane
-passthroughs, nothing is fused), and the verdict ranks across all three knobs together, preferring
-the shallower pool and the default policy on a tie.
+and/or `overlap`); `GRAPH_FUSION_SPAN_MERGE_RATIO` (`--graph-fusion-span-merge-ratio`) is the merge
+threshold that identity policy folds by. Each fused row is labeled
+`fused/<strategy>@<weight>/d<depth>`, with `/i<identity>` and then `/r<ratio>` appended for a
+non-default policy or threshold -- so an `exact` row keeps the exact label, and therefore the exact
+comparability, it had before either knob existed. Depths resolve against `k` and de-duplicate,
+endpoint weights carry no depth, identity, or threshold variants (they are lane passthroughs,
+nothing is fused), the threshold grid expands only the folding identity policies (`exact` has no
+partial overlap to threshold), and the verdict ranks across all four knobs together, preferring the
+shallower pool, the default policy, and the default threshold on a tie.
 
 `ROUTED_GRAPH_WEIGHT` (`--routed-graph-weight`, default 0.3) also emits
 `routed/<strategy>@<weight>/d<depth>[/i<identity>]`. Its weight is applied only to questions the
@@ -201,7 +206,8 @@ variables are `FUSION_HIDE_ROUTING_SIDECAR`, `FUSION_HEURISTIC_LONG_QUESTION_WOR
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
   GRAPH_WEIGHTS=0,0.1,0.2,0.3,0.5,0.7,1.0 GRAPH_FUSION_CANDIDATES=k,50 \
-  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap ROUTED_GRAPH_WEIGHT=0.3
+  GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,0.75,1.0 \
+  ROUTED_GRAPH_WEIGHT=0.3
 llb compare-graph-fusion --config <cfg> --k 10 --graph-weights 0,0.3,1.0 \
   --graph-fusion-candidates k,50 --graph-fusion-span-identity exact,overlap \
   --focus-slice multi-hop --out-dir <dir>
@@ -408,6 +414,61 @@ not a free upgrade (see
 Flipping the shipped default is gated on the accepted-ledger re-run tracked in
 [`plan.md`](../plan.md) (`multihop-ledger-human-acceptance`).
 
+### Span merge-threshold evidence
+
+CUDA-host evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260722T194026Z-span-merge-ratio/`. The same 95 drafted
+items (35 multi-hop), matched stores, weight grid, depth grid, identity grid, and seed as the
+span-identity run were re-scored across a four-point merge-threshold grid --
+`GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,0.75,1.0`, where `1.0` is containment-only -- for 127 rows
+in one table. The threshold is a parameter of a FOLDING policy, so the grid expands `overlap` rows
+only; `exact` has no partial overlap to threshold.
+
+The reproduction check passed before the comparison was read: all 47 rows of the span-identity run
+are byte-identical here, including the verdict row and its item ledger.
+
+**Result: on this corpus the threshold moves no multi-hop metric at any setting.** Across the 24
+`overlap` row families (fixed and routed, both strategies, both depths, every interior weight):
+
+| threshold | row families whose metrics differ from 0.5 | max multi-hop change | max overall change |
+| --- | ---: | ---: | ---: |
+| 0.25 | 0 of 24 | 0.0000 | 0.0000 |
+| 0.75 | 0 of 24 | 0.0000 | 0.0000 |
+| 1.0 (containment only) | 16 of 24 | 0.0000 | 0.0105 (1 of 95 questions) |
+
+Cross-lane agreement barely moves either: `global_community` reports the identical 47/95 (depth 10)
+and 93/95 (depth 50) questions with a shared candidate at all four thresholds; `local_khop` moves
+54 / 53 / 53 / 52 at depth 10 and 87 at every threshold at depth 50, and its mean shared candidates
+per question falls only from 3.853 to 3.832 between the loosest and strictest setting. The
+sweep-winning row is the default-threshold `fused/global_community@0.30/d50/ioverlap` at
++0.114 [+0.029, +0.229] multi-hop recall -- unchanged, since the threshold does not reach it.
+
+The mechanism is measured, not incidental (`span_overlap_histogram.py` beside the run artifacts
+re-derives it). For every graph evidence span in the depth-50 pool, bucketed by its strongest
+overlap with any retrieved vector chunk:
+
+| strategy | graph spans | no overlap | contained (1.0) | [0.75, 1.0) | below 0.75 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| local_khop | 3,010 | 2,448 | 557 | 5 | 0 |
+| global_community | 4,291 | 3,683 | 601 | 7 | 0 |
+
+A graph span either misses the retrieved chunks entirely or sits **wholly inside** one: 99.1% and
+98.9% of the spans that overlap at all are fully contained, and **not one span in the corpus lands
+below 0.75 while still overlapping a chunk**. The threshold therefore has nothing to decide between
+0.25, 0.5, and 0.75, and containment-only differs on the dozen partially-covered spans alone. An
+~800-character recursive chunk with a 120-character overlap is two orders of magnitude longer than
+an entity mention, and a mention landing in the shared tail is contained in BOTH neighbours -- so
+straddling a boundary needs a mention to sit exactly on a cut, which happens ~0.2% of the time.
+
+Verdict: **pin `graph_fusion_span_merge_ratio=0.5`**. The value is exposed (see
+[RAG core](rag-core.md#fusion-span-identity-graph_fusion_span_identity)) because the sweep needed
+it and a corpus with shorter chunks or longer graph spans could put mass in the buckets this one
+leaves empty, but on Ukrainian goods PDFs at `chunk_size=800` it is not a tuning surface: the
+operator should not spend a sweep on it. The one directional signal is that containment-only never
+helps -- where it moves overall recall at all it loses a question -- so 0.5 is not merely
+arbitrary among the insensitive settings. Re-run the histogram probe before trusting the pin on a
+corpus with materially different chunking.
+
 ### Answer-quality evidence
 
 The sweep above is model-independent: it measures what the context CARRIES, never what the model
@@ -418,9 +479,10 @@ then compares the ANSWERS per question-type slice with the same paired bootstrap
 Three properties make the comparison readable:
 
 - **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`,
-  `fused/<strategy>@<weight>[/d<depth>]`, and
-  `routed/<strategy>@<weight>[/d<depth>]` parse back into retrieval knobs, and `--from-comparison
-  <sweep>/comparison.json` reads the baseline plus the row that sweep's verdict named best -- so
+  `fused/<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]`, and
+  `routed/<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]` parse back into retrieval knobs,
+  and `--from-comparison <sweep>/comparison.json` reads the baseline plus the row that sweep's
+  verdict named best -- so
   the scored lane is the row the retrieval sweep actually recommended, not a retyped approximation.
 - **One shared item set, ordinary bundles.** The selection happens once and every lane is a plain
   `run-eval` bundle under `$DATA_DIR/run-eval/`, so any lane's number is reproducible with a bare
