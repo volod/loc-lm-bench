@@ -20,9 +20,11 @@ Two invariants keep the rule safe for span-level scoring:
   `recall@k` / `MRR` score the same rule they always did.
 
 How much overlap a fold requires is `SPAN_MERGE_MIN_RATIO`, exposed as
-`graph_fusion_span_merge_ratio`. It was swept and pinned: on an ~800-character chunking a graph
-mention is either wholly inside a chunk or misses it, so 0.25 / 0.5 / 0.75 score identically. A
-corpus with much shorter chunks could put mass in that empty middle.
+`graph_fusion_span_merge_ratio`. It was swept and pinned at two chunk scales: on an ~800-character
+chunking a graph mention is either wholly inside a chunk or misses it, so 0.25 / 0.5 / 0.75 score
+identically; at `size=200`, where a chunk and a mention are the same order of magnitude, the
+threshold re-decides real merges yet still moves one headline metric in one row -- and that row
+prefers the pinned value to a stricter one. See the GraphRAG span merge-threshold evidence.
 """
 
 from typing import NamedTuple

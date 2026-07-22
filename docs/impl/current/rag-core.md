@@ -458,11 +458,15 @@ where 1.0 is containment-only), recorded in the manifest fingerprint, and settab
 `make sweep SWEEP_RAG_GRID="graph_fusion_span_merge_ratio=0.25,0.5"`, and the evidence lane's
 `GRAPH_FUSION_SPAN_MERGE_RATIO` grid. It is dead under `exact` (there is no partial overlap to
 threshold), so the sweep grid expands `overlap` rows only and a non-default value extends a row
-label as `/r<ratio>`. **The measured verdict is to pin 0.5 and not sweep it**: on the Ukrainian
-goods corpus 0.25 / 0.5 / 0.75 are byte-identical on every row, because 99% of the graph spans that
-touch a retrieved chunk are wholly INSIDE it -- see
+label as `/r<ratio>`. **The measured verdict is to pin 0.5 and not sweep it**, and it holds at two
+chunk scales: at `chunk_size=800` the threshold decides essentially nothing (0.25 / 0.5 / 0.75 are
+byte-identical on every row, because 99% of the graph spans touching a retrieved chunk are wholly
+INSIDE it), and at `size=200` -- where a chunk and an entity mention are finally the same order of
+magnitude -- it re-decides merges on up to a quarter of the questions yet still moves one headline
+metric in one row, in 0.5's favor. See
 [GraphRAG](graphrag-backend.md#span-merge-threshold-evidence) for the grid, the agreement table,
-and the overlap histogram that explains why.
+the overlap histogram, and
+[the smaller-chunk re-run](graphrag-backend.md#does-the-pin-survive-a-smaller-chunk-size).
 
 The knob rides `RunConfig`, the manifest fingerprint, `run-eval --graph-fusion-span-identity`,
 `make sweep SWEEP_RAG_GRID="graph_fusion_span_identity=exact,overlap"`, and the sweep lane's
@@ -861,7 +865,11 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
 `validate-goldset` and source-span scoring work identically across strategies:
 
 - `fixed`: character window with overlap (pure Python, zero deps);
-- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence);
+- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence, so `size` is a packing
+  target rather than a cap -- a single unit longer than `size` is emitted whole; measured on the
+  converted Ukrainian goods PDFs at `size=200`, 21.6% of chunks exceed `size` and hold 44% of the
+  indexed characters, because table rows, page furniture, and heading blocks carry no sentence
+  terminator);
 - `recursive`: pinned langchain `RecursiveCharacterTextSplitter` (offset-verified; default);
 - `markdown`: one chunk per leaf section BODY (heading lines stripped), breadcrumb in
   `metadata.headers`, long sections recursively sub-split;
@@ -881,8 +889,12 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
   (`Embedder.passage_token_offsets` / `encode_passage_tokens`); flat mode only -- `RagStore.build`
   refuses `parent_child`; a chunk no token overlapped falls back to per-chunk encoding, logged.
 
-Selection: `make build-index CHUNK_STRATEGY=<name>` / `build-index --strategy <name>` /
-`RunConfig.strategy`; chunk-only via `python -m llb.rag.chunking --strategy <name>`. The Optuna
+Selection: `make build-index CHUNK_STRATEGY=<name> CHUNK_SIZE=<chars> CHUNK_OVERLAP=<chars>` /
+`build-index --strategy <name> --size <chars> --overlap <chars>` / `RunConfig.strategy`;
+chunk-only via `python -m llb.rag.chunking --strategy <name>`. `make build-index CONFIG=<yaml>`
+builds into that config's own `data_dir`, which is how an experiment gets a store beside its run
+artifacts instead of overwriting the default one; with `CONFIG=` the YAML owns `corpus_root`
+unless `CORPUS=` is also passed on the command line. The Optuna
 tuner searches the original five by default; `llb tune --extended-chunkers` adds
 `page`/`heading`/`late` (`EXTENDED_STRATEGIES` in `src/llb/optimize/tuner.py`) -- opt-in because
 `late` re-embeds whole documents per trial and `page` only differs from `recursive` on

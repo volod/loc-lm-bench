@@ -43,35 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### span-merge-threshold-chunk-size-interaction (optional)
+### sentence-chunker-size-cap (optional)
 
-The merge threshold is pinned at 0.5 because on an ~800-character chunking a graph mention is
-either wholly inside a retrieved chunk or misses it entirely -- not one graph span in the measured
-corpus lands below 0.75 while still overlapping a chunk, so the whole 0.25-0.75 range scores
-byte-identically
-([GraphRAG](current/graphrag-backend.md#span-merge-threshold-evidence)). That is a property of the
-CHUNK SIZE, not of the policy: a `sentence` chunker, a small `size`, or a future table-aware
-chunker produces chunks the same order of magnitude as a graph mention, which is exactly the
-regime where the threshold starts deciding merges. Re-run the threshold grid on a store built with
-a materially smaller chunk size (and the overlap histogram probe beside it), and record whether the
-pin survives or the default has to become chunk-size aware.
+`sentence` packs whole sentences up to `size` but never splits a single unit that is already
+longer, so `size` is a packing target rather than a cap. On the converted Ukrainian goods PDFs at
+`size=200` that leaks badly: 21.6% of chunks exceed `size` and they hold 44% of the indexed
+characters, because table rows, page furniture, and heading blocks carry no sentence terminator and
+pack into one multi-hundred-character span ([RAG core](current/rag-core.md#chunking-strategies)).
+An operator who asks for small chunks silently does not get them, and the affected text is exactly
+the numeric/tabular content the retrieval slices care most about. Give the strategy a bounded
+fallback -- split an oversized unit on the recursive splitter's separators, keeping offsets exact
+-- and report the post-fix oversize share.
 
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `GRAPH_FUSION_SPAN_MERGE_RATIO` in the fusion sweep and the
-  `span_overlap_histogram.py` probe archived beside the pinning run.
-- User-visible outcome: the operator learns whether the pinned threshold is safe on their chunking
-  or only on the one it was measured at.
-- Scope boundary: in scope -- one or two smaller-chunk stores, the same grid, the histogram, and a
-  keep-or-revise verdict for the default. Out of scope -- changing the chunker, the identity
-  policy, and the graph weight.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make build-index CHUNK_STRATEGY=sentence` (or a smaller `size`), then
-  `make compare-graph-fusion GRAPH_FUSION_SPAN_IDENTITY=overlap
-  GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,0.75,1.0` on the CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the report states the overlap histogram and the per-threshold
-  multi-hop delta at the smaller chunk size, and states whether 0.5 stays the right default.
-- Documentation target: the span merge-threshold subsection of
-  [GraphRAG](current/graphrag-backend.md#span-merge-threshold-evidence).
+- Agent status: CLEAR
+- Dependencies: none. Reuse `sentence_chunk_spans` / `_pack` in `src/llb/rag/chunking/spans.py` and
+  `recursive_spans` for the fallback split. Related: `table-aware-chunking` below owns the table
+  case specifically; this task is the general size guarantee.
+- User-visible outcome: `CHUNK_SIZE` means the same thing on every strategy, so a small-chunk
+  experiment measures the chunk size it asked for.
+- Scope boundary: in scope -- the fallback split, its offset exactness, and the measured oversize
+  share before and after. Out of scope -- changing the default strategy or `size`, table-aware
+  boundaries, and re-running any chunker bake-off.
+- Data and artifact paths: none beyond existing per-strategy stores.
+- Execution path: CI covers the oversize fallback on a committed fixture holding a terminator-free
+  block longer than `size`; `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive` confirms
+  no recall regression.
+- Acceptance gates: `make ci` green; no chunk exceeds `size` on the committed fixtures; every chunk
+  stays offset-exact under `validate-goldset`.
+- Documentation target: the chunking-strategies list in [RAG core](current/rag-core.md).
 
 ### multihop-both-hops-ceiling
 
@@ -85,6 +84,14 @@ by decomposition), or it is not reachable at k=10 at all (a budget problem). Dia
 measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same items, and measure the
 per-hop retrievability of each labeled span when queried on its own. Record which of the two
 explanations the corpus supports, because they lead to opposite fixes.
+
+A third lead is already measured and worth folding into the k sweep: shrinking the CHUNK moves the
+ceiling where no ranking knob could, the vector baseline's multi-hop `all-spans@10` running
+0.057 -> 0.086 -> 0.114 as the chunking goes from `recursive@800/120` to `sentence@200` to
+`recursive@200/30`
+([GraphRAG](current/graphrag-backend.md#does-the-pin-survive-a-smaller-chunk-size)) -- which points
+at the budget explanation, since k=10 buys more distinct spans when a span is smaller. Overall
+recall falls at the same time, so treat it as a diagnostic, not a recommendation.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,

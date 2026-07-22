@@ -10,10 +10,19 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 	$(PY) -m llb.rag.chunking --corpus-root "$(CORPUS_DIR)" \
 		--out-dir "$(DATA_DIR)/llb/rag" --strategy all --size 800 --overlap 120
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CHUNK_STRATEGY= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
+# With CONFIG= the YAML owns corpus_root (and the store's DATA_DIR), so the default CORPUS is
+# forwarded only when the caller actually set it on the command line or in the environment --
+# otherwise a config-targeted build would silently chunk the DEFAULT corpus into the config's
+# store. Without CONFIG the default corpus is the documented behavior and is always forwarded.
+BUILD_INDEX_CORPUS = $(if $(CONFIG),$(if $(filter-out file default,$(origin CORPUS)),--corpus-root "$(CORPUS)"),--corpus-root "$(CORPUS)")
+
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main build-index --corpus-root "$(CORPUS)" \
+	$(PY) -m llb.main build-index $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(BUILD_INDEX_CORPUS) \
 		$(if $(CHUNK_STRATEGY),--strategy "$(CHUNK_STRATEGY)",) \
+		$(if $(CHUNK_SIZE),--size "$(CHUNK_SIZE)",) \
+		$(if $(CHUNK_OVERLAP),--overlap "$(CHUNK_OVERLAP)",) \
 		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",) \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
 		$(if $(LEMMATIZE),--lemmatize,)
