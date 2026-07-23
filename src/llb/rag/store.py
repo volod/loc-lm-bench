@@ -42,6 +42,7 @@ from llb.rag.store_build import (
     _children_to_parents,
     _indexed_units,
     _validate_build_params,
+    order_by_score,
 )
 from llb.rag.store_io import _read_jsonl, _renumber, _write_jsonl
 
@@ -87,6 +88,7 @@ class RagStore:
         embedder: Any = None,
         lexical_lemmas: bool = False,
         lemmatizer: Lemmatizer | None = None,
+        collapse_duplicates: bool = True,
     ) -> "RagStore":
         """Chunk + embed a corpus into a retrievable store.
 
@@ -98,12 +100,24 @@ class RagStore:
         `mode="hybrid"` additionally builds the lexical BM25 index over the same chunks;
         `lexical_lemmas` opts its tokenization into Ukrainian lemmatization (`lemmatizer`
         injects a fake for tests). The stored chunk text is byte-identical either way.
+
+        `collapse_duplicates` (default) indexes each distinct chunk text once and records the
+        dropped copies as additive occurrence metadata (`llb.rag.duplicates`); pass False to keep
+        every copy indexed, which only changes the index budget and the tie rate -- the measured
+        duplicate stats land in the store meta either way.
         """
         _validate_build_params(mode, strategy, child_size)
         embedder = embedder if embedder is not None else Embedder(embedding_model)
         embedding_model = getattr(embedder, "model_name", embedding_model)
-        indexed, parents = _indexed_units(
-            Path(corpus_root), strategy, size, overlap, mode, child_size, embedder
+        indexed, parents, duplicates = _indexed_units(
+            Path(corpus_root),
+            strategy,
+            size,
+            overlap,
+            mode,
+            child_size,
+            embedder,
+            collapse_duplicates=collapse_duplicates,
         )
 
         # Attach page/section provenance from PDF citation sidecars (strategy-independent,
@@ -141,6 +155,8 @@ class RagStore:
             "doc_fingerprints": corpus_doc_fingerprints(corpus_root),
             "corpus_manifest": "corpus_manifest.json",
             "governance_fields": list(GOVERNANCE_FIELDS),
+            "collapse_duplicates": collapse_duplicates,
+            "duplicates": dict(duplicates),
         }
         if lexical is not None:
             meta["lexical"] = {"lemmatize": lexical.lemmatize, "n_terms": len(lexical.postings)}
@@ -202,8 +218,8 @@ class RagStore:
         assert self.lexical is not None
         depth = max(self.fusion_candidates, k)
         search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), depth)
-        _scores, ids = self.index.search(query_vec, max(1, search_k))
-        dense_ids = [int(cid) for cid in ids[0] if cid >= 0]
+        scores, ids = self.index.search(query_vec, max(1, search_k))
+        dense_ids = [cid for cid, _ in self._ranked_candidates(ids, scores)]
         allowed: set[int] | None = None
         if chunk_filter is not None:
             allowed = {i for i, c in enumerate(self.chunks) if chunk_filter(c)}
@@ -220,17 +236,28 @@ class RagStore:
         return hits
 
     def _search(self, query_vec: Any, search_k: int) -> list[ChunkRecord]:
-        """Return ranked indexed units for an already encoded query."""
+        """Return ranked indexed units for an already encoded query.
+
+        Candidates are re-sorted through `order_by_score`, so an exact score tie is broken by
+        `chunk_id` rather than by the backend's candidate order.
+        """
         scores, ids = self.index.search(query_vec, search_k)
         hits: list[ChunkRecord] = []
-        for rank, (cid, score) in enumerate(zip(ids[0], scores[0]), 1):
-            if cid < 0:  # faiss pads with -1 when fewer than k results exist
-                continue
+        for rank, (cid, score) in enumerate(self._ranked_candidates(ids, scores), 1):
             chunk = cast(ChunkRecord, dict(self.chunks[cid]))
             chunk["retrieval_score"] = float(score)
             chunk["rank"] = rank
             hits.append(chunk)
         return hits
+
+    def _ranked_candidates(self, ids: Any, scores: Any) -> list[tuple[int, float]]:
+        """Backend `(id, score)` rows, padding dropped and exact ties broken deterministically."""
+        candidates = [
+            (int(cid), float(score))
+            for cid, score in zip(ids[0], scores[0])
+            if cid >= 0  # faiss pads with -1 when fewer than k results exist
+        ]
+        return order_by_score(candidates, self.chunks)
 
     def save(self, index_dir: Path | str) -> None:
         index_dir = Path(index_dir)

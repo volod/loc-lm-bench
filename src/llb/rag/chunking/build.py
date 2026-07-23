@@ -15,6 +15,7 @@ from pathlib import Path
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus, summarize
 from llb.rag.chunking.dispatch import STRATEGIES
+from llb.rag.duplicates import duplicate_stats
 
 _LOG = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         args.overlap,
     )
     _LOG.info(
-        "  %-10s %7s %6s %6s %6s %7s %7s",
+        "  %-10s %7s %6s %6s %6s %7s %7s %7s %6s",
         "strategy",
         "chunks",
         "avg",
@@ -110,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         "max",
         "over%",
         "overC%",
+        "dup%",
+        "maxdup",
     )
     for strategy in strategies:
         chunks = chunk_corpus(args.corpus_root, strategy, args.size, args.overlap, embedder)
@@ -118,8 +121,9 @@ def main(argv: list[str] | None = None) -> int:
             for chunk in chunks:
                 fh.write(json.dumps(chunk, ensure_ascii=False) + "\n")
         s = summarize(chunks)
+        dup = duplicate_stats(chunks)
         _LOG.info(
-            "  %-10s %7d %6d %6d %6d %6.1f%% %6.1f%%",
+            "  %-10s %7d %6d %6d %6d %6.1f%% %6.1f%% %6.1f%% %6d",
             strategy,
             s["n"],
             s["avg"],
@@ -127,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
             s["max"],
             100.0 * s["oversize_share"],
             100.0 * s["oversize_char_share"],
+            100.0 * dup["duplicate_share"],
+            dup["largest_group"],
         )
         if args.embed:
             build_faiss(

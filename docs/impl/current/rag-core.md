@@ -207,6 +207,70 @@ Retrieval modes:
 - `hybrid`: index like `flat`, plus a lexical BM25 index fused with the dense ranking at query
   time (see Hybrid Retrieval below).
 
+### Duplicate Chunk Collapse
+
+Shipped (duplicate-chunk-suppression, `src/llb/rag/duplicates.py`): `RagStore.build` indexes each
+DISTINCT chunk text once. Converted-PDF corpora repeat page furniture and table boilerplate
+verbatim across documents, so the same text was embedded, stored, and searched many times over;
+worse, identical text embeds to an identical vector, which scores an EXACT tie, which the backend
+broke by candidate order -- so an item whose top-k cut fell inside such a group had a metric no
+retrieval property decided (see [measurement floor](#measurement-floor-compare-retrieval---noise-floor)).
+
+How it works:
+
+- Collapse is EXACT-only (byte-identical text) and keeps the FIRST copy in build order, so the
+  surviving record is deterministic across rebuilds. Near-duplicate DOCUMENTS remain the corpus
+  conflict lane's question ([data prep](data-prep.md)).
+- Each dropped copy is kept on the survivor as additive `metadata.duplicate_occurrences` -- its
+  whole chunk record minus the (identical) text, so offsets, ids, and page/governance metadata
+  survive -- plus `metadata.duplicate_count`. Every surviving chunk and every recorded occurrence
+  is still a verbatim corpus slice.
+- `chunk_hits_span` (`src/llb/rag/retrieval.py`) matches a chunk at EVERY place its text appears,
+  so a gold span labeled on any copy still counts as retrieved and a citation still resolves to
+  every document that carries the passage. In `parent_child` mode a collapsed child surfaces the
+  parents of all its occurrences, which is the same parent set the tied duplicate children
+  returned before.
+- Where duplicates remain (`build-index --keep-duplicate-chunks`, or a backend that rounds its
+  scores), `order_by_score` in `src/llb/rag/store_build.py` breaks an exact score tie on the
+  stable `chunk_id` instead of the backend's candidate order, on both the dense and the hybrid
+  path -- so a tie is a documented property of the data, reproducible across rebuilds and
+  backends.
+- The incremental refresh undoes the collapse before its per-document merge and re-applies it
+  after (`expand_duplicate_chunks` plus `resolve_duplicates` in
+  `src/llb/rag/refresh/merge.py`), so a refreshed store still equals a from-scratch
+  rebuild even when the document that happened to carry a survivor is the one edited or deleted.
+  A repeated passage that is already indexed costs no embedding call when a new document
+  introduces it again.
+- `store_meta.json` records `collapse_duplicates` and the measured `duplicates` stats (`n`,
+  `unique`, `collapsed`, `duplicate_chunks`, `duplicate_share`, `groups`, `largest_group`), and
+  `build-index` echoes them as its duplicate-rate line -- measured either way, so a store built
+  with `--keep-duplicate-chunks` still reports what the repeats cost. `make build-rag-store` adds
+  `dup%` / `maxdup` columns to its per-strategy table.
+
+Durable evidence (2026-07-23, CUDA host, pinned e5-base, k=10, reports under
+`$DATA_DIR/retrieval-noise-floor/<run>/`; the no-collapse baseline is the recorded
+[measurement-floor](#measurement-floor-compare-retrieval---noise-floor) run):
+
+| corpus (`size`) | lane | indexed chunks | fragile | recall@10 | MRR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| goods PDFs (200) | `recursive` | 4848 -> 3515 | 25 -> 1 | 0.653 -> 0.695 | 0.414 -> 0.465 |
+| goods PDFs (200) | `sentence` | 5019 -> 3659 | 20 -> 0 | 0.621 -> 0.632 | 0.411 -> 0.465 |
+| accepted PDF goldset (800) | `recursive` | 1124 -> 1120 | 0 -> 0 | 0.925 -> 0.925 | 0.852 -> 0.852 |
+| committed UA fixture (800) | both | 311 -> 311 | 0 -> 0 | 0.976 -> 0.976 | 0.838 -> 0.838 |
+
+The goods corpus stopped spending 27% of its index on text it already held, its floor fell from
++/-0.021 to +/-0.000, and recall/MRR ROSE rather than regressing: a top-10 that no longer repeats
+one passage up to 58 times carries more distinct evidence. The two corpora with essentially no
+duplicates reproduce every recorded number exactly, which is the check that collapse is a no-op
+where there is nothing to collapse.
+
+Tests: `tests/llb/rag/test_duplicates.py` (collapse, occurrence metadata, offset-exactness against
+the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span matching at every
+occurrence, exact expansion, the tie-break, and the parent expansion) and
+`tests/llb/rag/test_duplicates_store.py` (index budget, retrievability of every copy's place, the
+fragility drop measured through `measure_noise_floor`, and refresh-equals-rebuild when the
+survivor's document is deleted) -- fake hashed-BoW embedder, no GPU.
+
 ## Store Lifecycle: Dynamic Corpus Refresh
 
 Shipped (dynamic-corpus-refresh): `llb refresh-index` (`make refresh-index CORPUS=<dir>
@@ -993,9 +1057,13 @@ No recall regression, and the delta is not distinguishable from measurement nois
 +0.011, because the preceding lane's different batch shapes perturb the encoder output by ~5e-7
 per dimension and that is enough to flip one borderline item at k=10 on 95 items. Repeat runs
 within a code version reproduce byte-identically, so the drift is invisible to a naive repeat
-check. `compare-retrieval --noise-floor` measures that floor directly and puts this corpus at
-+/-0.021 recall@10 -- read any smaller retrieval delta on this set as noise
-([measurement floor](#measurement-floor-compare-retrieval---noise-floor)).
+check. `compare-retrieval --noise-floor` measures that floor directly and put this corpus at
++/-0.021 recall@10 while its duplicates were still indexed -- read any smaller retrieval delta on
+those rows as noise. The same comparison after
+[duplicate chunk collapse](#duplicate-chunk-collapse) reads 0.632 `sentence` / 0.695 `recursive`
+at a +/-0.000 floor ([measurement floor](#measurement-floor-compare-retrieval---noise-floor)), so
+the rows above are the pre-collapse state of this corpus, kept because they are what the cap
+verdict was measured on.
 
 Tests: `tests/llb/rag/test_chunking.py` covers the cap over the committed
 `samples/chunking/goods_table_uk.md` fixture (a heading + markdown-table block with no sentence
@@ -1198,6 +1266,10 @@ satisfies by returning only one of its hops; on single-span items all three metr
 The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
 retrieval gain is distinguished from a partial hit.
 
+Span matching is occurrence-aware: a chunk that collapsed byte-identical copies
+([duplicate chunk collapse](#duplicate-chunk-collapse)) hits a span labeled at ANY place its text
+appears, so indexing a repeated passage once neither loses nor invents a hit.
+
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
 
@@ -1223,37 +1295,44 @@ deliberately conservative: a delta that clears it is not numeric noise.
 
 Each lane also reports `fragile N/n` -- items whose rank-k and rank-(k+1) candidates sit within
 the jitter, so their top-k membership is decided by noise or by the backend's arbitrary order at
-an exact tie. That count explains the band's width and is the number to act on.
+an exact tie. That count explains the band's width and is the number to act on: acting on it is
+exactly what [duplicate chunk collapse](#duplicate-chunk-collapse) did.
 
 Measured floors (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`; reports under
 `$DATA_DIR/retrieval-noise-floor/<run>/`):
 
 | corpus | n | chunk `size` | duplicate chunks | fragile | floor recall@10 | floor MRR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| converted Ukrainian goods PDFs | 95 | 200 | 37.7% | 25/95 | +/-0.021 | +/-0.018 |
+| converted Ukrainian goods PDFs (before collapse) | 95 | 200 | 37.7% | 25/95 | +/-0.021 | +/-0.018 |
+| converted Ukrainian goods PDFs (shipped) | 95 | 200 | 0.0% | 1/95 | +/-0.000 | +/-0.000 |
 | committed `ua_squad_postedited_v1` (final split) | 82 | 800 | 0.0% | 0/82 | +/-0.000 | +/-0.000 |
 | accepted converted-PDF goldset | 40 | 800 | 0.5% | 1/40 | +/-0.000 | +/-0.000 |
 
-The floor tracks DUPLICATE CHUNKS, not gold-set size. The goods corpus at `size=200` has 37.7% of
-its chunks byte-identical to another chunk (repeated page furniture and table boilerplate in
-converted scanned manuals; the largest identical group is 58 copies for `recursive` and 72 for
-`sentence`). Identical text embeds to an identical vector, which scores an exact tie, which the
-backend breaks by candidate order -- so a quarter of that corpus's items have a top-10 membership
-that no retrieval property decides. The two corpora with essentially no duplicates have a floor of
-exactly zero, and their deltas can be read at face value.
+The floor tracks DUPLICATE CHUNKS, not gold-set size, and that is why the measured floor is now
+zero on every corpus: the goods corpus at `size=200` HAD 37.7% of its chunks byte-identical to
+another chunk (repeated page furniture and table boilerplate in converted scanned manuals; the
+largest identical group was 58 copies for `recursive` and 72 for `sentence`), identical text
+embedded to an identical vector, that scored an exact tie, and the backend broke the tie by
+candidate order -- so a quarter of that corpus's items had a top-10 membership no retrieval
+property decided. [Duplicate chunk collapse](#duplicate-chunk-collapse) indexes each distinct
+passage once and gives any surviving tie a documented `chunk_id` tie-break, which removes the
+mechanism; the row above is the same corpus, goldset, k, and seed re-measured with it.
 
 Verdicts re-read against the measured floors:
 
-- Goods PDFs at `size=200`: `recursive` leads `sentence` by 0.032 recall@10, just outside the
-  +/-0.021 floor (the two bands touch at 0.621), so the recall ranking is at the edge of what
-  this set resolves; the MRR gap of 0.003 is far inside the +/-0.018 floor and means nothing.
-  The floor also covers the between-process drift that motivated it: the `recursive` control moved
-  0.642 -> 0.653 across two processes on byte-identical chunks, and both values sit inside its
-  measured 0.621-0.663 band ([the `size` cap evidence](#size-is-a-hard-cap-on-every-strategy)).
+- Goods PDFs at `size=200`: with duplicates collapsed, `recursive` leads `sentence` by 0.063
+  recall@10 against a +/-0.000 floor, so the recall ranking is now resolved rather than at the
+  edge (before collapse it was 0.032 against a +/-0.021 floor, the two bands touching at 0.621).
+  The MRR gap closed to 0.000 -- the two chunkers rank their first hit equally well here, and the
+  earlier 0.003 gap was inside its own floor and meant nothing either way.
 - Committed UA fixture and the accepted PDF goldset: floor 0.000, so their recorded recall/MRR
   deltas are not numeric noise. They remain subject to SAMPLING uncertainty, which is a separate
   question the paired-bootstrap lanes answer -- a 0.022 recall delta on a 44-item set is under one
   item either way.
+
+A zero floor is not a permanent property of a corpus: it is measured per run, and a corpus whose
+chunks tie for a reason collapse does not remove (a backend that rounds its scores, or lexical
+fusion producing equal RRF sums) will report a non-zero band again.
 
 The floor is opt-in, so every existing comparison row is unchanged when it is not asked for.
 Tests: `tests/llb/rag/test_noise_floor.py` (zero floor on separated scores, a full 0.0-1.0 band

@@ -46,6 +46,8 @@ class RagStoreMeta(TypedDict):
     governance_fields: NotRequired[list[str]]
     doc_fingerprints: NotRequired[dict[str, str]]
     refreshed_from: NotRequired[str]
+    collapse_duplicates: NotRequired[bool]  # exact-duplicate chunk collapse (llb.rag.duplicates)
+    duplicates: NotRequired[JsonObject]  # its measured DuplicateStats, collapsed or not
 
 
 class RetrievalMetrics(TypedDict):

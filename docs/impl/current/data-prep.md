@@ -1016,6 +1016,12 @@ durable deltas live in the [RAG core](rag-core.md) query-side-processing section
 
 ## Corpus Hygiene: Conflict Detection (corpus-conflict-detection)
 
+This lane owns DOCUMENT-level duplication and contradiction, which needs a human decision. The
+chunk-level counterpart is automatic and separate: exact-duplicate chunk text inside one index is
+collapsed at build time
+([duplicate chunk collapse](rag-core.md#duplicate-chunk-collapse)), which changes no corpus byte
+and reports its rate in `store_meta.json`.
+
 `llb audit-corpus-conflicts` (`make audit-corpus-conflicts CORPUS=<dir> EFFORT=<tier>`) reports
 duplicated, stale, and mutually inconsistent knowledge in a corpus. It is **detection only**: no
 tier edits, deletes, or reorders a corpus byte, and a CI test asserts the corpus is unchanged after

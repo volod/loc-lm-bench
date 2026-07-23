@@ -1,7 +1,7 @@
 """RAG/GraphRAG index build commands (vector index + graph store)."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 import typer
 
@@ -29,6 +29,13 @@ def build_index(
         help="flat | parent_child | hybrid (hybrid adds a lexical BM25 index beside the vectors)",
     ),
     child_size: Optional[int] = typer.Option(None, help="child chunk size (parent_child mode)"),
+    keep_duplicate_chunks: bool = typer.Option(
+        False,
+        "--keep-duplicate-chunks",
+        help="index every byte-identical chunk instead of collapsing repeated passages into one "
+        "record carrying its other occurrences as metadata; the duplicate rate is reported "
+        "either way",
+    ),
     lemmatize: bool = typer.Option(
         False,
         "--lemmatize",
@@ -42,6 +49,7 @@ def build_index(
     ),
 ) -> None:
     """Chunk + embed the corpus into a RAG store (FAISS by default) under the index dir."""
+    from llb.rag.duplicates import DuplicateStats, format_duplicate_stats
     from llb.rag.store import RagStore
     from llb.rag.vector_index import RAG_BACKENDS
 
@@ -74,6 +82,7 @@ def build_index(
         child_size=cfg.child_chunk_size,
         vector_store=vector_store,
         lexical_lemmas=cfg.lexical_lemmas,
+        collapse_duplicates=not keep_duplicate_chunks,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""
@@ -91,3 +100,7 @@ def build_index(
         f"({cfg.strategy}/{cfg.retrieval_mode}, {vector_store}, dim {store.meta['dim']}) "
         f"-> {cfg.index_dir()}{pages}{lexical}"
     )
+    duplicates = format_duplicate_stats(
+        cast(DuplicateStats, store.meta["duplicates"]), not keep_duplicate_chunks
+    )
+    typer.echo(f"[build-index] {duplicates}")

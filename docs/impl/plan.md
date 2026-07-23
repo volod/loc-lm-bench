@@ -43,41 +43,87 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### duplicate-chunk-suppression
+### duplicate-occurrences-in-the-retrieval-record (optional)
 
-Converted-PDF corpora index the same text many times over, and it corrupts both the index budget
-and the retrieval metric. On the goods corpus at `size=200`, 37.7% of chunks are byte-identical to
-another chunk -- repeated page furniture and table boilerplate, the largest identical group having
-58 copies -- and identical text embeds to an identical vector, so those chunks tie exactly, the
-tie is broken by candidate order, and a quarter of the items have a top-10 membership no
-retrieval property decides. That is the entire reason the corpus's measured recall@10 floor is
-+/-0.021 while two clean corpora measure exactly zero
-([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)). Collapse
-identical chunk text at build time into one indexed chunk carrying its duplicate occurrences as
-additive `metadata`, so each distinct passage is retrieved once and the citation still resolves to
-every place it appears; where duplicates must stay, give the backend a documented deterministic
-tie-break instead of candidate order.
+A retrieved chunk that collapsed byte-identical copies stands for several places in the corpus,
+but `retrieval.jsonl` persists only the survivor's own `doc_id` + offsets per hit
+(`_retrieved_span` in `src/llb/executor/cases.py`), so every artifact that reads it back -- miss
+clustering, the source-span audit, verify cards -- reports one place where the metric counted
+several ([RAG core](current/rag-core.md#duplicate-chunk-collapse)). On a corpus where a passage
+repeats up to 58 times that is a materially incomplete provenance record: an operator reading a
+miss cluster cannot tell that the chunk also sits in the document they expected. Carry the
+occurrence list (or a bounded head of it plus a count) into the persisted retrieved-span record
+and surface it wherever a citation is rendered.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse `duplicate_occurrences` / `occurrence_spans` in
+  `src/llb/rag/duplicates.py` and the `RetrievedSpanRecord` contract in
+  `src/llb/core/contracts/rag.py`.
+- User-visible outcome: a citation or miss cluster says every document a retrieved passage appears
+  in, instead of the one the build happened to keep.
+- Scope boundary: in scope -- the additive record field, its bound, and the readers that render
+  it. Out of scope -- changing which chunk survives collapse and any retrieval-metric change.
+- Data and artifact paths: additive columns in the existing `$DATA_DIR/run-eval/` bundles.
+- Execution path: CI over a committed collapsed-store fixture; no heavy run needed.
+- Acceptance gates: `make ci` green; a single-occurrence chunk's record is byte-identical to
+  today's; the bound keeps the record size finite on the 58-copy case.
+- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse) and the
+  groundedness/citation subsection.
+
+### near-duplicate-chunk-collapse (optional)
+
+Chunk collapse is EXACT-only, and converted-PDF furniture is not always exact: the same footer
+repeats with a page number in it, the same table header repeats with one changed cell, the same
+heading repeats with different whitespace after conversion. Those chunks miss the collapse, keep
+their own index rows, and score near-ties instead of exact ties -- so they still crowd the top-k
+and can still sit inside the noise band. Measure how much residue is left after exact collapse on
+the goods corpus (cluster the surviving chunks by normalized text, then by embedding distance),
+and decide with evidence whether a normalized-text tier (casefold + whitespace + digit masking,
+reusing the corpus-conflict `hash` tier's normalizer) earns its place, since unlike exact collapse
+it can merge passages that genuinely differ.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the chunk build path in `src/llb/rag/store_build.py`, the summary in
-  `src/llb/rag/chunking/corpus.py`, and the fragility count in `src/llb/rag/noise_floor.py` to
-  verify the effect. Related: the corpus-conflict lane in [data prep](current/data-prep.md) owns
-  near-duplicate DOCUMENTS; this task is exact-duplicate CHUNKS inside the index.
-- User-visible outcome: a converted-PDF index stops spending a third of its budget on repeated
-  page furniture, and its retrieval metric stops depending on arbitrary tie order.
-- Scope boundary: in scope -- exact-duplicate collapse, the occurrence metadata, a duplicate-rate
-  line in the build summary, and the before/after floor plus recall comparison. Out of scope --
-  near-duplicate (fuzzy) collapse, corpus text rewriting, and changing the chunking strategies.
-- Data and artifact paths: no new roots; per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`
-  and a comparison under `$DATA_DIR/retrieval-noise-floor/<run>/`.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` on
-  the goods corpus before and after; CI covers the collapse and its occurrence metadata on a
-  committed fixture with a repeated block.
-- Acceptance gates: `make ci` green; every surviving chunk stays offset-exact; the goods corpus
-  reports a materially lower fragile-item count and floor, and recall@10 does not regress beyond
-  the measured floor.
-- Documentation target: [RAG core](current/rag-core.md) retrieval store and the measurement-floor
-  subsection.
+- Dependencies: none. Reuse `collapse_duplicate_chunks` in `src/llb/rag/duplicates.py`, the
+  normalizer behind the `hash` tier in `src/llb/conflicts/`, and the fragility count in
+  `src/llb/rag/noise_floor.py`.
+- User-visible outcome: the operator learns whether the remaining repetition in a converted-PDF
+  index is worth collapsing, or whether exact collapse already took all of it.
+- Scope boundary: in scope -- the residue measurement, an optional normalized tier behind a flag,
+  and an adopt-or-reject verdict with the recall/floor evidence. Out of scope -- embedding-based
+  (fuzzy) merging without a measured false-merge rate, and corpus text rewriting.
+- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` per
+  tier on the goods corpus; CI covers the normalizer's grouping on a committed fixture.
+- Acceptance gates: `make ci` green; the report states the post-exact-collapse duplicate residue,
+  and any adopted tier keeps recall@10 within the measured floor while lowering the fragile count.
+- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse).
+
+### refresh-embedding-reuse-keyed-by-text (optional)
+
+The incremental refresh reuses an embedding row by chunk POSITION, so when the document that
+carried the surviving copy of a repeated passage is the one edited, the merged store re-embeds
+text it already holds in an unchanged document
+([RAG core](current/rag-core.md#duplicate-chunk-collapse)). It is correct -- the refreshed store
+still equals a rebuild -- but it pays for an encoder call the store could have answered from its
+own vectors, and on a furniture-heavy corpus the passages that move this way are exactly the ones
+that appear everywhere. Key the reuse lookup on chunk TEXT (a text -> stored row map built once
+from the live store) so any unchanged text reuses its row regardless of which document now carries
+it, and report the extra rows the change saves.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse `resolve_duplicates` / `merged_vectors` in
+  `src/llb/rag/refresh/merge.py`; the rebuild-equivalence tests in
+  `tests/llb/rag/test_refresh_store.py` and `tests/llb/rag/test_duplicates_store.py` are the gate.
+- User-visible outcome: a refresh after editing a boilerplate-carrying document costs encoder
+  calls proportional to the NEW text, not to which document happened to hold the survivor.
+- Scope boundary: in scope -- the text-keyed reuse map, its memory bound on a large store, and the
+  saved-row count in the refresh log. Out of scope -- changing which copy survives collapse (it
+  must stay the first in build order, or refresh no longer equals a rebuild).
+- Data and artifact paths: none beyond the existing generation directories.
+- Execution path: CI only -- the fake-embedder refresh tests already count embedded texts.
+- Acceptance gates: `make ci` green; refresh still equals a from-scratch rebuild on every existing
+  store kind; the duplicate-corpus refresh embeds strictly fewer texts than today.
+- Documentation target: the refresh subsection of [RAG core](current/rag-core.md).
 
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 
@@ -117,7 +163,10 @@ contained oversized units, and the unit-packing strategies are exactly the ones 
 their chunk counts rise and their long table/heading spans are now split
 ([RAG core](current/rag-core.md#chunking-strategies)). The ranking may hold, invert, or collapse
 into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
-the same k and record whether the `sentence` recommendation survives.
+the same k and record whether the `sentence` recommendation survives. A second reason to re-run:
+those stores also predate exact-duplicate chunk collapse, which changes the chunk counts per
+strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the goods rows and drove
+that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
