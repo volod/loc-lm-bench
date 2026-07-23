@@ -86,10 +86,15 @@ class CorrectnessScores(TypedDict):
 
 
 class ChunkSummary(TypedDict):
+    """Chunk-length distribution of a built store; the oversize fields audit the `size` cap."""
+
     n: int
     avg: int
     min: int
     max: int
+    oversize: int  # chunks longer than the `size` they were built with
+    oversize_share: float  # their share of the chunk COUNT
+    oversize_char_share: float  # their share of the indexed CHARACTERS
 
 
 class SquadAnswers(TypedDict):

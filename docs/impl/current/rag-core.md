@@ -865,11 +865,9 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
 `validate-goldset` and source-span scoring work identically across strategies:
 
 - `fixed`: character window with overlap (pure Python, zero deps);
-- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence, so `size` is a packing
-  target rather than a cap -- a single unit longer than `size` is emitted whole; measured on the
-  converted Ukrainian goods PDFs at `size=200`, 21.6% of chunks exceed `size` and hold 44% of the
-  indexed characters, because table rows, page furniture, and heading blocks carry no sentence
-  terminator);
+- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence; a single unit longer
+  than `size` falls back to the shared cap split -- see
+  [`size` is a hard cap](#size-is-a-hard-cap-on-every-strategy));
 - `recursive`: pinned langchain `RecursiveCharacterTextSplitter` (offset-verified; default);
 - `markdown`: one chunk per leaf section BODY (heading lines stripped), breadcrumb in
   `metadata.headers`, long sections recursively sub-split;
@@ -932,7 +930,71 @@ display, not retrieval quality; `late` vs `sentence` (identical spans, late docu
 pooling) is -0.091 recall / -0.164 MRR -- late pooling blurs retrieval on this corpus and its
 extra whole-document embed pass costs the most wall-clock of any strategy, so it stays a
 prove-it-per-corpus option, never a default. `markdown` trails badly because the docling-emitted
-markdown carries few semantic heading boundaries in the big 1.1 MB manual.
+markdown carries few semantic heading boundaries in the big 1.1 MB manual. That bake-off predates
+the `size` cap below, so its `sentence` / `late` / `semantic` rows were scored on stores that still
+contained oversized units.
+
+### `size` Is A Hard Cap On Every Strategy
+
+`chunk_spans` runs every strategy's own boundaries through `cap_spans`
+(`src/llb/rag/chunking/cap.py`), so no chunk is ever longer than the requested `size`. A
+unit-packing strategy (`sentence`, `late`, `semantic`) otherwise emits a single unit whole however
+long it is, and a structure-aware strategy does the same for a whole section: on converted
+Ukrainian PDFs a markdown table, page furniture, or a heading block carries no sentence
+terminator, so it packs into one multi-hundred-character span and an operator who asks for small
+chunks silently does not get them -- and the affected text is exactly the numeric/tabular content
+the retrieval slices care most about.
+
+An oversized span is split on the pinned recursive splitter's separators (paragraph -> line ->
+word -> character), keeping the largest natural boundary that fits. Offsets stay exact: sub-spans
+are resolved inside the oversized slice and shifted back to source coordinates, and each inherits
+its span's metadata (breadcrumbs survive the split). The splitter's last-resort separator is
+per-character, so a residual oversized span is impossible; `cap_span` raises rather than letting
+one reach the index. `markdown` / `heading` / `page` now route their long-section sub-split through
+the same helper instead of each calling `recursive_spans` themselves -- their spans are unchanged
+(verified byte-identical against the pre-cap implementation on the goods corpus at
+`size=200` and `size=800`).
+
+`summarize` (`src/llb/rag/chunking/corpus.py`) reports the audit numbers -- `oversize`,
+`oversize_share`, `oversize_char_share` -- and `make build-rag-store` prints them as the `over%` /
+`overC%` columns per strategy, so the cap is verifiable on any corpus without a bespoke script.
+
+Measured `sentence` oversize share before and after the cap (`chunk_corpus` + `summarize`;
+`max` is the longest chunk in chars):
+
+| corpus | `size` | before: over% / of chars / max | after |
+| --- | ---: | ---: | ---: |
+| committed `ua_squad_postedited_v1` corpus | 200 | 20.2% / 32.2% / 713 | 0% / 0% / 200 |
+| committed `ua_squad_postedited_v1` corpus | 800 | 0% / 0% / 796 | unchanged |
+| converted Ukrainian goods PDFs | 200 | 21.6% / 44.3% / 1776 | 0% / 0% / 200 |
+| converted Ukrainian goods PDFs | 800 | 5.9% / 8.9% / 1776 | 0% / 0% / 800 |
+
+The leak is not only a small-chunk problem: at the DEFAULT `size=800` the goods corpus still put
+8.9% of its indexed characters into over-budget chunks. Capping costs chunk count -- the goods
+corpus goes 3333 -> 5019 chunks at `size=200` (+51%) and 976 -> 1073 at `size=800` -- so an index
+build and every query touch more vectors.
+
+Retrieval evidence (CUDA host, `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive`,
+pinned e5-base, k=10, the 95-item drafted goods multi-hop ledger, `CHUNK_SIZE=200`
+`CHUNK_OVERLAP=30`; artifacts under `$DATA_DIR/chunk-size-cap/<run>/{before,after}/`):
+
+| lane | recall@10 before | after | MRR before | after |
+| --- | ---: | ---: | ---: | ---: |
+| `sentence` | 0.611 | 0.621 | 0.414 | 0.411 |
+| `recursive` (control, chunks byte-identical) | 0.642 | 0.653 | 0.419 | 0.414 |
+
+No recall regression, and the delta is not distinguishable from measurement noise: the
+`recursive` control chunks are byte-identical across the two runs yet its recall moved by the same
++0.011, because the preceding lane's different batch shapes perturb the encoder output by ~5e-7
+per dimension and that is enough to flip one borderline item at k=10 on 95 items. Repeat runs
+within a code version reproduce byte-identically, so the noise floor here is ~0.011 recall@10, or
+one item -- read any smaller retrieval delta on this set as noise
+(see `retrieval-comparison-noise-floor` in [plan.md](../plan.md)).
+
+Tests: `tests/llb/rag/test_chunking.py` covers the cap over the committed
+`samples/chunking/goods_table_uk.md` fixture (a heading + markdown-table block with no sentence
+terminator, 613 chars) -- every strategy stays within `size`, stays offset-exact, loses no
+non-whitespace character, and the fixture itself is guarded against gaining a terminator.
 
 ## Embedder Conventions And Bake-off
 

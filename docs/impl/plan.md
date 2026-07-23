@@ -43,34 +43,60 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### sentence-chunker-size-cap (optional)
+### retrieval-comparison-noise-floor (optional)
 
-`sentence` packs whole sentences up to `size` but never splits a single unit that is already
-longer, so `size` is a packing target rather than a cap. On the converted Ukrainian goods PDFs at
-`size=200` that leaks badly: 21.6% of chunks exceed `size` and they hold 44% of the indexed
-characters, because table rows, page furniture, and heading blocks carry no sentence terminator and
-pack into one multi-hundred-character span ([RAG core](current/rag-core.md#chunking-strategies)).
-An operator who asks for small chunks silently does not get them, and the affected text is exactly
-the numeric/tabular content the retrieval slices care most about. Give the strategy a bounded
-fallback -- split an oversized unit on the recursive splitter's separators, keeping offsets exact
--- and report the post-fix oversize share.
+`compare-retrieval` reports recall@k / MRR to three decimals with no measurement floor beside
+them, and the floor is not zero. A control lane whose chunks were byte-identical across two
+processes moved +0.011 recall@10 / -0.005 MRR on a 95-item set, because a preceding lane in the
+same process changes the encoder's batch shapes and perturbs every vector by ~5e-7 per dimension
+-- enough to flip one borderline item at k=10
+([RAG core](current/rag-core.md#size-is-a-hard-cap-on-every-strategy)). Repeat runs within one
+code version reproduce byte-identically, so the drift is invisible to a naive repeat check and
+every small chunker/embedder delta recorded so far is quoted with more precision than it has.
+Make the floor measurable: give the comparison an unchanged control lane (or a fixed-vector
+replay) and report the per-lane spread beside the metric, so a reader can tell a real gain from
+one item of float noise.
 
-- Agent status: CLEAR
-- Dependencies: none. Reuse `sentence_chunk_spans` / `_pack` in `src/llb/rag/chunking/spans.py` and
-  `recursive_spans` for the fallback split. Related: `table-aware-chunking` below owns the table
-  case specifically; this task is the general size guarantee.
-- User-visible outcome: `CHUNK_SIZE` means the same thing on every strategy, so a small-chunk
-  experiment measures the chunk size it asked for.
-- Scope boundary: in scope -- the fallback split, its offset exactness, and the measured oversize
-  share before and after. Out of scope -- changing the default strategy or `size`, table-aware
-  boundaries, and re-running any chunker bake-off.
-- Data and artifact paths: none beyond existing per-strategy stores.
-- Execution path: CI covers the oversize fallback on a committed fixture holding a terminator-free
-  block longer than `size`; `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive` confirms
-  no recall regression.
-- Acceptance gates: `make ci` green; no chunk exceeds `size` on the committed fixtures; every chunk
-  stays offset-exact under `validate-goldset`.
-- Documentation target: the chunking-strategies list in [RAG core](current/rag-core.md).
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare_retrieval` / `format_comparison` in `src/llb/rag/compare.py`
+  and the per-strategy store builder `build_chunking_comparison`.
+- User-visible outcome: the operator can tell whether a chunker or embedder delta clears the
+  measurement floor of their own corpus and gold-set size, instead of reading three decimals as
+  signal.
+- Scope boundary: in scope -- the control lane or replay, the reported spread, and a stated floor
+  per corpus/`n`. Out of scope -- changing the metrics themselves, forcing deterministic GPU
+  kernels, and re-running past comparisons.
+- Data and artifact paths: `$DATA_DIR/chunk-size-cap/<run>/` holds the measured example; new
+  comparisons keep their existing report paths.
+- Execution path: repeat `make compare-retrieval CHUNK_STRATEGIES=<a>,<b>` with the lane order
+  permuted on the CUDA host; CI covers the spread statistic over committed fixture rows.
+- Acceptance gates: `make ci` green; the report states the floor and the comparison verdicts are
+  re-read against it.
+- Documentation target: the chunker-comparison subsection of [RAG core](current/rag-core.md).
+
+### chunker-bake-off-under-the-size-cap (optional)
+
+Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The
+recorded winner (`sentence`, +0.022 recall@10 over `recursive`) was scored on stores that still
+contained oversized units, and the unit-packing strategies are exactly the ones the cap changes:
+their chunk counts rise and their long table/heading spans are now split
+([RAG core](current/rag-core.md#chunking-strategies)). The ranking may hold, invert, or collapse
+into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
+the same k and record whether the `sentence` recommendation survives.
+
+- Agent status: RUN NEEDED
+- Dependencies: `retrieval-comparison-noise-floor` above should land first, or the re-run cannot
+  say whether a changed row cleared the floor. Reuse `make compare-retrieval` unchanged.
+- User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
+  `size` the operator asked for.
+- Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
+  verdict on the `sentence` recommendation. Out of scope -- new strategies and tuning `size`.
+- Data and artifact paths: the existing per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,late,
+  markdown,semantic GOLDSET=<quickstart accepted goldset>` on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the report covers all seven strategies at the recorded k and
+  states whether the recorded winner still wins by more than the measurement floor.
+- Documentation target: the chunking-strategies evidence in [RAG core](current/rag-core.md).
 
 ### multihop-both-hops-ceiling
 

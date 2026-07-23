@@ -101,7 +101,16 @@ def main(argv: list[str] | None = None) -> int:
         args.size,
         args.overlap,
     )
-    _LOG.info("  %-10s %7s %6s %6s %6s", "strategy", "chunks", "avg", "min", "max")
+    _LOG.info(
+        "  %-10s %7s %6s %6s %6s %7s %7s",
+        "strategy",
+        "chunks",
+        "avg",
+        "min",
+        "max",
+        "over%",
+        "overC%",
+    )
     for strategy in strategies:
         chunks = chunk_corpus(args.corpus_root, strategy, args.size, args.overlap, embedder)
         out_path = chunks_dir / f"{strategy}.jsonl"
@@ -110,12 +119,14 @@ def main(argv: list[str] | None = None) -> int:
                 fh.write(json.dumps(chunk, ensure_ascii=False) + "\n")
         s = summarize(chunks)
         _LOG.info(
-            "  %-10s %7d %6d %6d %6d",
+            "  %-10s %7d %6d %6d %6d %6.1f%% %6.1f%%",
             strategy,
             s["n"],
             s["avg"],
             s["min"],
             s["max"],
+            100.0 * s["oversize_share"],
+            100.0 * s["oversize_char_share"],
         )
         if args.embed:
             build_faiss(
