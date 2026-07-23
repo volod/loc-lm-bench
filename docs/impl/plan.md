@@ -43,32 +43,62 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### duplicate-occurrences-in-the-retrieval-record (optional)
+### intra-document-repeat-stripping (optional)
 
-A retrieved chunk that collapsed byte-identical copies stands for several places in the corpus,
-but `retrieval.jsonl` persists only the survivor's own `doc_id` + offsets per hit
-(`_retrieved_span` in `src/llb/executor/cases.py`), so every artifact that reads it back -- miss
-clustering, the source-span audit, verify cards -- reports one place where the metric counted
-several ([RAG core](current/rag-core.md#duplicate-chunk-collapse)). On a corpus where a passage
-repeats up to 58 times that is a materially incomplete provenance record: an operator reading a
-miss cluster cannot tell that the chunk also sits in the document they expected. Carry the
-occurrence list (or a bounded head of it plus a count) into the persisted retrieved-span record
-and surface it wherever a citation is rendered.
+Chunk duplication in a converted manual is not a cross-document problem: on the goods corpus all
+494 collapse groups repeat INSIDE one document, the largest 58 times, and the repeated text is
+boilerplate procedure steps rather than page furniture
+([RAG core](current/rag-core.md#duplicate-chunk-collapse)). Collapse already removes the index and
+tie cost, but the repeats also mean a document's own chunk ordinals no longer track its reading
+order, and a repeated instruction block is retrieved once for a question about any of the sections
+that contain it -- the operator gets a passage without the section it belonged to. Measure whether
+those blocks should be handled at CONVERSION time instead (recognized as repeated furniture and
+either dropped or anchored to their section), and whether doing so changes recall on the
+question types whose evidence sits near a repeat.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the duplicate stats in `src/llb/rag/duplicates.py`, the page/section
+  sidecars from the PDF conversion lane ([data prep](current/data-prep.md)), and
+  `make compare-retrieval` with `NOISE_FLOOR=1`.
+- User-visible outcome: the operator learns whether a converted manual's repeated blocks are best
+  handled at ingestion, instead of only at index time.
+- Scope boundary: in scope -- the intra-document repeat census per corpus, a conversion-side
+  handling option behind a flag, and its retrieval verdict. Out of scope -- rewriting source
+  documents in place and near-duplicate (fuzzy) matching.
+- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`; conversion outputs stay under
+  their existing `_md` roots.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=recursive,sentence NOISE_FLOOR=1` per
+  handling option on the CUDA host; CI covers the repeat census on the committed fixture.
+- Acceptance gates: `make ci` green; the report states the intra- versus cross-document split of
+  the duplicate groups per corpus and an adopt-or-reject verdict for conversion-side handling.
+- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse) and the PDF
+  conversion section of [data prep](current/data-prep.md).
+
+### duplicate-occurrences-in-the-goldset-drafting-guard (optional)
+
+A drafted gold span can land inside a passage the corpus repeats verbatim, and nothing says so
+today. Such an item is ambiguous by construction: the answer text exists in several places, the
+retrieval metric credits any of them
+([RAG core](current/rag-core.md#the-persisted-retrieval-record)), and a reviewer reading the
+worksheet cannot tell that the span they are accepting is not unique. The measured goods ledger
+happens to contain none (which is why the record change moved no number there), but that is luck,
+not a property of drafting. Flag it at draft time: when a candidate span's text occurs more than
+once in the corpus, mark the item and show the count on the verification worksheet, so a reviewer
+decides whether an ambiguous-evidence question belongs in the ledger.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `duplicate_occurrences` / `occurrence_spans` in
-  `src/llb/rag/duplicates.py` and the `RetrievedSpanRecord` contract in
-  `src/llb/core/contracts/rag.py`.
-- User-visible outcome: a citation or miss cluster says every document a retrieved passage appears
-  in, instead of the one the build happened to keep.
-- Scope boundary: in scope -- the additive record field, its bound, and the readers that render
-  it. Out of scope -- changing which chunk survives collapse and any retrieval-metric change.
-- Data and artifact paths: additive columns in the existing `$DATA_DIR/run-eval/` bundles.
-- Execution path: CI over a committed collapsed-store fixture; no heavy run needed.
-- Acceptance gates: `make ci` green; a single-occurrence chunk's record is byte-identical to
-  today's; the bound keeps the record size finite on the 58-copy case.
-- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse) and the
-  groundedness/citation subsection.
+- Dependencies: none. Reuse `duplicate_stats` / `collapse_duplicate_chunks` in
+  `src/llb/rag/duplicates.py` (or a direct corpus scan for the span text) and the drafting
+  worksheet fields in [data prep](current/data-prep.md).
+- User-visible outcome: a reviewer sees "this evidence appears in N places" before accepting an
+  item, instead of discovering the ambiguity from a retrieval result later.
+- Scope boundary: in scope -- the draft-time occurrence count, its worksheet column, and the
+  guard's threshold. Out of scope -- auto-rejecting such items and changing the retrieval metric.
+- Data and artifact paths: additive columns in the existing drafted bundle and worksheet.
+- Execution path: CI over a committed corpus fixture with a repeated block; no heavy run needed.
+- Acceptance gates: `make ci` green; an item whose span text is unique keeps its current
+  worksheet row byte-for-byte.
+- Documentation target: the drafting and verification sections of [data prep](current/data-prep.md).
 
 ### near-duplicate-chunk-collapse (optional)
 

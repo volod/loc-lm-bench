@@ -113,7 +113,9 @@ Open a run and select **Artifacts -> canonical**:
   retrieval hit/rank, latency, token count, and answer preview.
 - `retrieval.jsonl`: one row per case with the retrieved chunk spans (doc id, char offsets,
   rank, score, bounded text preview) beside the gold spans -- the observability trace of what
-  the model actually saw.
+  the model actually saw. A chunk whose text is indexed once for several places in the corpus
+  also carries `duplicate_count` and a bounded `duplicate_occurrences` list of those other
+  places.
 - `vllm/`: backend logs when the run launched vLLM.
 
 MLflow does not replace the case table with aggregate charts. Download `scores.jsonl` for
@@ -129,8 +131,10 @@ the bundle directory (canonical location under `$DATA_DIR/run-eval/`):
     make analyze-misses RUN_DIR=<run> PROBE_TOP_K=3,8
 
 It classifies every miss as a retrieval miss, generation miss, refusal, format/scoring
-artifact, or judge disagreement (span overlap over `retrieval.jsonl`), clusters misses by
-document, topic, and question type, and writes ranked, evidence-backed recommendations to
+artifact, or judge disagreement (span overlap over `retrieval.jsonl`, counting every place a
+repeated passage appears), clusters misses by document, topic, and question type, records the
+documents each miss's context actually carried (`retrieved_docs`), and writes ranked,
+evidence-backed recommendations to
 `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`. `llb recommend`
 folds the latest analysis into its summary. See the miss-analysis section of
 [evaluation rigor](../../impl/current/rigor-board-judge.md) for the class definitions and the

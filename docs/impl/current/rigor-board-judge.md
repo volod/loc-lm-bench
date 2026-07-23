@@ -323,8 +323,12 @@ answer wrong). A scoreable case is a miss when `objective_score < 0.5`
 (`--miss-threshold` / `MISS_THRESHOLD=` overrides). Span overlap reads the additive per-case
 `retrieval.jsonl` records persist beside `scores.jsonl`
 (`batch_retrieval_records` in `src/llb/executor/cases.py`; doc id + char offsets + rank +
-score + bounded 160-char text preview + the gold spans). When detailed retrieval evidence is
-absent, classification uses the scored `retrieval_hit` flag and logs a warning.
+score + bounded 160-char text preview + the gold spans, plus the other places of a
+duplicate-collapsed chunk -- see
+[the persisted retrieval record](rag-core.md#the-persisted-retrieval-record)). When detailed
+retrieval evidence is absent, classification uses the scored `retrieval_hit` flag and logs a
+warning. Each miss row also lists `retrieved_docs`, the distinct documents its scored context
+carried, so a retrieval miss can be read against the document the operator expected.
 
 Misses are clustered by document (`source_doc_id`), topic, and question type, with per-key miss
 rates computed over ALL scored cases of that key. Labels come from the goldset's

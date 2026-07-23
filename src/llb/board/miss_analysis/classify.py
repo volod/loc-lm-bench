@@ -22,6 +22,7 @@ from llb.board.miss_analysis.model import (
     MISS_JUDGE,
     MISS_REFUSAL,
     MISS_RETRIEVAL,
+    MISS_RETRIEVED_DOCS_LIMIT,
     RAG_CONFIG_KEYS,
     _QUESTION_TYPE_MARKERS,
     _TOPIC_MIN_TOKEN_CHARS,
@@ -35,15 +36,35 @@ from llb.core.contracts.common import JsonObject
 from llb.eval import common as eval_common
 from llb.goldset.schema import GoldItem
 from llb.rag.retrieval import chunk_hits_any
+from llb.rag.retrieval_records import record_as_chunk, record_documents
 
 
 def retrieval_hit_from_record(record: JsonObject) -> bool:
-    """Span-overlap hit check over a persisted `retrieval.jsonl` record."""
+    """Span-overlap hit check over a persisted `retrieval.jsonl` record.
+
+    Each retrieved row is read back through `record_as_chunk`, so a chunk that collapsed
+    byte-identical copies is matched at every place its text appears -- otherwise a hit the run
+    counted would be reclassified here as a retrieval miss."""
     gold_spans = [dict(span) for span in record.get("gold_spans", [])]
     return any(
-        chunk_hits_any(dict(chunk), gold_spans)  # type: ignore[arg-type]
+        chunk_hits_any(record_as_chunk(chunk), gold_spans)  # type: ignore[arg-type]
         for chunk in record.get("retrieved", [])
     )
+
+
+def retrieved_docs_from_record(record: JsonObject) -> list[str]:
+    """The distinct documents the scored context carried, best rank first, bounded for reading.
+
+    A duplicate-collapsed chunk contributes every document its text appears in, so a retrieval
+    miss whose expected document WAS in context via a repeated passage is visible as such."""
+    documents: list[str] = []
+    for chunk in record.get("retrieved", []):
+        for doc_id in record_documents(chunk):
+            if doc_id not in documents:
+                documents.append(doc_id)
+            if len(documents) >= MISS_RETRIEVED_DOCS_LIMIT:
+                return documents
+    return documents
 
 
 def classify_case(
@@ -195,6 +216,7 @@ def analyze_run(
                 topic=keys_by_item[item_id]["topic"],
                 question_type=keys_by_item[item_id]["question_type"],
                 answer_preview=str(row.get("answer_preview", "")),
+                retrieved_docs=retrieved_docs_from_record(record),
             )
         )
 

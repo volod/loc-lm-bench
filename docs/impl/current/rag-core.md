@@ -210,8 +210,10 @@ Retrieval modes:
 ### Duplicate Chunk Collapse
 
 Shipped (duplicate-chunk-suppression, `src/llb/rag/duplicates.py`): `RagStore.build` indexes each
-DISTINCT chunk text once. Converted-PDF corpora repeat page furniture and table boilerplate
-verbatim across documents, so the same text was embedded, stored, and searched many times over;
+DISTINCT chunk text once. Converted-PDF corpora repeat page furniture, boilerplate instructions,
+and table headers verbatim -- on the measured goods corpus every one of the 494 collapse groups
+repeats INSIDE a single long manual, none across documents -- so the same text was embedded,
+stored, and searched many times over;
 worse, identical text embeds to an identical vector, which scores an EXACT tie, which the backend
 broke by candidate order -- so an item whose top-k cut fell inside such a group had a metric no
 retrieval property decided (see [measurement floor](#measurement-floor-compare-retrieval---noise-floor)).
@@ -246,6 +248,9 @@ How it works:
   `build-index` echoes them as its duplicate-rate line -- measured either way, so a store built
   with `--keep-duplicate-chunks` still reports what the repeats cost. `make build-rag-store` adds
   `dup%` / `maxdup` columns to its per-strategy table.
+- The occurrences travel into the run bundle's `retrieval.jsonl`, so a lane that recomputes a
+  metric from that sidecar agrees with the run that wrote it (see
+  [the persisted retrieval record](#the-persisted-retrieval-record) under Persistence).
 
 Durable evidence (2026-07-23, CUDA host, pinned e5-base, k=10, reports under
 `$DATA_DIR/retrieval-noise-floor/<run>/`; the no-collapse baseline is the recorded
@@ -1468,6 +1473,57 @@ Per-case score rows record `retrieval_hit` and `first_hit_rank`. `retrieval.json
 retrieved chunk text plus source-span coordinates for miss analysis and observability;
 `src/llb/executor/cases.py` constructs both the persisted records and the in-process retrieval
 pairs used by aggregate metrics and judge records.
+
+### The Persisted Retrieval Record
+
+Shipped (duplicate-occurrences-in-the-retrieval-record, `src/llb/rag/retrieval_records.py`): the
+record is built by `retrieved_span` and read back by `record_as_chunk`, one seam for both
+directions, because several lanes recompute retrieval metrics from the sidecar instead of from the
+live store -- miss classification (`llb.board.miss_analysis`) and multi-span answer coverage
+(`llb.eval.answer_quality.coverage`). Those recomputations have to agree with the run that wrote
+the bundle, and a chunk that collapsed byte-identical copies
+([duplicate chunk collapse](#duplicate-chunk-collapse)) stands for several places at once, so the
+record carries them:
+
+- `duplicate_count` -- the TOTAL number of places the chunk's text appears, including its own.
+- `duplicate_occurrences` -- the other places, each projected to `doc_id` + offsets + `chunk_id`
+  (never the copy's own metadata; the store keeps that).
+- Neither key is written for an uncollapsed chunk, so a corpus with no duplicates persists exactly
+  the record it always did.
+
+The list is bounded -- a converted-PDF corpus repeats one passage dozens of times and the sidecar
+is written per case per hit -- and the bound is content-aware rather than blind: every occurrence
+that overlaps one of the ITEM'S OWN gold spans is kept, so the recomputation stays exact, the
+remaining slots (`RETRIEVED_OCCURRENCE_LIMIT = 8`) go to the first other occurrences in build
+order, and `duplicate_count` always states the true total. A reader can therefore say "3 shown of
+58 places" without the record growing with the corpus.
+
+Readers: `retrieval_hit_from_record` and `read_case_coverage` both go through `record_as_chunk`,
+so a gold span carried by a duplicate copy counts as retrieved in miss classification and as
+covered in the multi-span columns -- previously each would have reported a miss the run did not
+have. `MissRecord.retrieved_docs` (in `misses.jsonl`) lists the distinct documents the scored
+context carried, first five in rank order, counting every place a collapsed chunk stands for --
+which answers "did my context even come from the document I expected?" per miss.
+
+The model PROMPT is deliberately unchanged: `format_context` still renders one `[i] (doc_id)` per
+chunk. Listing every place would spend context budget on provenance the answer does not need and
+would change the prompt bytes of every scored run, breaking comparability with the recorded
+evidence.
+
+Durable evidence (2026-07-23, CUDA host, pinned e5-base, goods corpus at `size=200`, the 95-item
+drafted ledger, k=10; artifacts under `$DATA_DIR/duplicate-occurrences/<run>/`): 132 of 950
+retrieved rows (13.9%) were collapsed chunks and 53 of 95 items had at least one in their top-10;
+the largest recorded `duplicate_count` was 58 with the list capped at 8; the sidecar grew from
+426.8 KB to 471.6 KB (+10.5%). Recomputed hit and coverage matched the live metric on all 95 items
+-- and so did a recomputation from the occurrence-free record, because no gold span in this ledger
+falls inside a repeated block. What changed on this corpus is therefore the guarantee, not the
+numbers; the flip it prevents is exercised in CI.
+
+Tests: `tests/llb/rag/test_retrieval_records.py` (the unchanged uncollapsed record, the projected
+occurrences, the bound on a 58-copy chunk, the gold-completeness of that bound, and reading a
+record back), plus reader-level cases in `tests/llb/board/test_miss_analysis_classification.py`,
+`tests/llb/board/test_miss_probe.py` (producer to reader, end to end), and
+`tests/llb/eval/test_answer_quality.py`.
 
 ## Executor
 
