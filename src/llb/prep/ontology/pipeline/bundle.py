@@ -14,6 +14,7 @@ from pathlib import Path
 
 from llb.goldset.chains import dump_chains
 from llb.goldset.schema import dump_goldset
+from llb.goldset.span_occurrences import span_occurrence_counts, write_occurrences_sidecar
 from llb.prep.ontology.artifacts.citations import copy_pdf_citation_sidecars
 from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.prep.ontology.constants import (
@@ -197,6 +198,11 @@ def _write_bundle(
     if result.chains:
         dump_chains(result.chains, out_dir / CHAINS_FILENAME)
     _write_corpus_copy(result.corpus_root, out_dir / CORPUS_DIRNAME, result.docs)
+    # Draft-time ambiguous-evidence guard: flag items whose gold span repeats verbatim elsewhere in
+    # the corpus, so the verification worksheet can show the count. No file when all spans are unique.
+    write_occurrences_sidecar(
+        out_dir, span_occurrence_counts(result.items, {doc.doc_id: doc.text for doc in result.docs})
+    )
     (out_dir / ONTOLOGY_FILENAME).write_text(
         json.dumps(result.ontology.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
     )

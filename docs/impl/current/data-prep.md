@@ -967,6 +967,17 @@ with the measured human review-pass evidence recorded at the end of this section
   `item_provenance.jsonl`) and a `<source.pdf> p.N[-M]` citation resolved through the PDF lane's
   `*.citations.json` sidecars, so the reviewer can check the original page without leaving the
   terminal.
+- **Ambiguous-evidence guard** -- an optional `span_occurrences` column carries how many times an
+  item's primary gold span text appears verbatim across the whole corpus (`span_occurrences.py`).
+  An item whose span repeats is ambiguous by construction: the answer text exists in several
+  places, the retrieval metric credits any of them, and the reviewer could not otherwise tell that
+  the span they are accepting is not unique. The count comes from the draft-time
+  `span_occurrences.jsonl` sidecar when present, else a direct corpus scan of the sampled items;
+  the review card adds an `== ambiguous evidence: this span text appears in N places ...` line so
+  the reviewer decides whether the question is uniquely answerable. The guard fires above one
+  occurrence (`OCCURRENCE_FLAG_THRESHOLD`) and only annotates -- it never rejects an item or
+  changes the retrieval metric. The column and sidecar are BOTH absent when every sampled span is
+  unique, so an all-unique bundle keeps its worksheet byte-for-byte.
 - **Accept-with-edit re-grounding** -- the `e` command captures an edited reference answer and
   re-grounds it IMMEDIATELY against the bundle corpus (resolved via `sample_manifest.json`); an
   edit that is not a verbatim corpus span is refused on the spot, an accept over a stale edit is

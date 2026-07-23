@@ -43,32 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### duplicate-occurrences-in-the-goldset-drafting-guard (optional)
-
-A drafted gold span can land inside a passage the corpus repeats verbatim, and nothing says so
-today. Such an item is ambiguous by construction: the answer text exists in several places, the
-retrieval metric credits any of them
-([RAG core](current/rag-core.md#the-persisted-retrieval-record)), and a reviewer reading the
-worksheet cannot tell that the span they are accepting is not unique. The measured goods ledger
-happens to contain none (which is why the record change moved no number there), but that is luck,
-not a property of drafting. Flag it at draft time: when a candidate span's text occurs more than
-once in the corpus, mark the item and show the count on the verification worksheet, so a reviewer
-decides whether an ambiguous-evidence question belongs in the ledger.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `duplicate_stats` / `collapse_duplicate_chunks` in
-  `src/llb/rag/duplicates.py` (or a direct corpus scan for the span text) and the drafting
-  worksheet fields in [data prep](current/data-prep.md).
-- User-visible outcome: a reviewer sees "this evidence appears in N places" before accepting an
-  item, instead of discovering the ambiguity from a retrieval result later.
-- Scope boundary: in scope -- the draft-time occurrence count, its worksheet column, and the
-  guard's threshold. Out of scope -- auto-rejecting such items and changing the retrieval metric.
-- Data and artifact paths: additive columns in the existing drafted bundle and worksheet.
-- Execution path: CI over a committed corpus fixture with a repeated block; no heavy run needed.
-- Acceptance gates: `make ci` green; an item whose span text is unique keeps its current
-  worksheet row byte-for-byte.
-- Documentation target: the drafting and verification sections of [data prep](current/data-prep.md).
-
 ### near-duplicate-chunk-collapse (optional)
 
 Chunk collapse is EXACT-only, and converted-PDF furniture is not always exact: the same footer

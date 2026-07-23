@@ -8,6 +8,7 @@ session loop) builds on these; both share the worksheet schema from `verify.py`.
 
 import json
 
+from llb.goldset.span_occurrences import SPAN_OCCURRENCES_COL
 from llb.goldset.verify_base import CHECK_COLS, KIND_CHAINS
 from llb.goldset.verify_commands import check_label
 from llb.goldset.verify_card_text import (
@@ -174,6 +175,14 @@ def _standard_card_lines(row: dict[str, str], position: int, total: int, decided
         f"== question: {row.get('question', '')}",
         f"== reference_answer: {row.get('reference_answer', '')}",
         f"== span: doc={row.get('span_doc_id', '')} page={page}",
+    ]
+    occurrences = (row.get(SPAN_OCCURRENCES_COL) or "").strip()
+    if occurrences and occurrences != "1":
+        lines.append(
+            f"== ambiguous evidence: this span text appears in {occurrences} places in the corpus "
+            "-- decide whether the question is uniquely answerable"
+        )
+    lines += [
         "== context (cited span between >>> <<<)",
         _indent(row.get("context", "") or "(missing)"),
         "== checks:",

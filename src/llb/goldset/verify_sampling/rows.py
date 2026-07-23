@@ -6,6 +6,7 @@ from pathlib import Path
 
 from llb.goldset.chains import ChainItem, chain_stratum_key
 from llb.goldset.schema import GoldItem
+from llb.goldset.span_occurrences import SPAN_OCCURRENCES_COL, worksheet_occurrences
 from llb.goldset.verify_base import CORPUS_DIRNAME, KIND_CHAINS, KIND_GOLDSET
 from llb.goldset.verify_sampling.context import (
     corpus_text,
@@ -28,6 +29,7 @@ def gold_row(
     synthetic: bool,
     retrieval_rank: int | None = None,
     page_cache: PageCache | None = None,
+    span_occurrences: int | None = None,
 ) -> dict[str, str]:
     span = item.source_spans[0]
     text = corpus_text(corpus_root, span.doc_id, cache)
@@ -59,6 +61,7 @@ def gold_row(
         "context": context,
         "retrieval_rank": "" if retrieval_rank is None else str(retrieval_rank),
         "page_citation": page,
+        SPAN_OCCURRENCES_COL: "" if span_occurrences is None else str(span_occurrences),
         "chain_steps": "",
         "cc_grounded": flag("grounded"),
         "cc_non_circular": flag("non_circular"),
@@ -127,6 +130,7 @@ def sample_gold_rows(
     verdicts = load_cross_check(bundle)
     ranks = load_retrieval_ranks(bundle)
     corpus_root = bundle / CORPUS_DIRNAME
+    occurrences = worksheet_occurrences(bundle, sample, corpus_root)
     cache: dict[str, str | None] = {}
     page_cache: PageCache = {}
     return [
@@ -138,6 +142,7 @@ def sample_gold_rows(
             synthetic=synthetic,
             retrieval_rank=ranks.get(item.id),
             page_cache=page_cache,
+            span_occurrences=occurrences.get(item.id),
         )
         for item in sample
     ]
