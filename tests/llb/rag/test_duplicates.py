@@ -56,6 +56,9 @@ def test_fixture_plants_the_documented_duplicate_rate():
     assert (stats["groups"], stats["largest_group"]) == (FIXTURE_GROUPS, FIXTURE_LARGEST)
     assert stats["duplicate_chunks"] == FIXTURE_GROUPS * FIXTURE_LARGEST
     assert stats["duplicate_share"] == pytest.approx(0.75)
+    # every repeated group in this fixture is the same furniture shared ACROSS the three manuals
+    assert stats["cross_document_groups"] == FIXTURE_GROUPS
+    assert stats["intra_document_groups"] == 0
 
 
 def test_collapse_indexes_each_distinct_text_once_and_stays_offset_exact():
@@ -182,6 +185,25 @@ def test_format_duplicate_stats_reports_both_dispositions():
     assert "9/12 chunks (75.0%)" in collapsed
     assert "largest 3 copies" in collapsed
     assert "6 indexed (6 collapsed)" in collapsed
+    assert "0 intra-document, 3 cross-document" in collapsed
     kept = format_duplicate_stats(stats, collapsed=False)
     assert "all 12 indexed" in kept
     assert "chunk_id" in kept  # the tie-break the operator gets instead
+
+
+def test_duplicate_stats_split_intra_from_cross_document():
+    chunks = [
+        _chunk("a.md", 0, 3, "hdr", "a#0"),  # same text in two documents -> cross
+        _chunk("b.md", 0, 3, "hdr", "b#0"),
+        _chunk("a.md", 3, 6, "boi", "a#1"),  # same text twice in ONE document -> intra
+        _chunk("a.md", 6, 9, "boi", "a#2"),
+        _chunk("a.md", 9, 12, "boi", "a#3"),
+    ]
+    stats = duplicate_stats(chunks)
+    assert (stats["groups"], stats["intra_document_groups"], stats["cross_document_groups"]) == (
+        2,
+        1,
+        1,
+    )
+    # the collapse path measures the same split from the survivors' folded occurrences
+    assert collapse_duplicate_chunks(chunks).stats["intra_document_groups"] == 1

@@ -7,7 +7,13 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
-from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
+from llb.rag.compare import (
+    ROW_ORACLE_DOC,
+    add_rerank_rows,
+    compare_retrieval,
+    duplicate_census,
+    format_comparison,
+)
 from llb.rag.question_types import (
     aligned_question_types,
     load_question_types,
@@ -77,6 +83,39 @@ def test_format_comparison_is_ascii_and_lists_backends():
 def test_format_comparison_handles_no_backends():
     text = format_comparison(compare_retrieval({}, _items(), k=5))
     assert "no backends loaded" in text
+
+
+class _MetaStore(_FakeStore):
+    """A store that also carries build meta, like a real `RagStore`."""
+
+    def __init__(self, hits: list[ChunkRecord], duplicates: dict) -> None:
+        super().__init__(hits)
+        self.meta = {"duplicates": duplicates}
+
+
+def test_duplicate_census_reads_only_stores_with_build_meta():
+    stats = {
+        "n": 4,
+        "unique": 3,
+        "collapsed": 1,
+        "duplicate_chunks": 2,
+        "duplicate_share": 0.5,
+        "groups": 1,
+        "largest_group": 2,
+        "intra_document_groups": 1,
+        "cross_document_groups": 0,
+    }
+    stores = {
+        "faiss": _MetaStore([_chunk("d1", 0, 10)], stats),
+        "graph/local_khop": _FakeStore([_chunk("d1", 0, 10)]),  # no meta -> no census row
+    }
+    census = duplicate_census(stores)
+    assert set(census) == {"faiss"}
+    report = compare_retrieval(stores, _items(), k=5)
+    report["duplicates"] = census
+    rendered = format_comparison(report)
+    assert "1 intra-document, 0 cross-document" in rendered
+    assert rendered.isascii()
 
 
 def test_compare_reports_question_type_slices_without_retrieving_twice():

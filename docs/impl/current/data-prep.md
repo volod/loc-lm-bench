@@ -228,10 +228,83 @@ make pdf-to-markdown PDF_REFRESH=1
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
-The make alias defaults `PDF_DIR` to `$DATA_DIR/quickstart-pdf-corpus`. When `out-dir` is omitted,
-the default is `<pdf-dir>/_md`, for example `.data/quickstart-pdf-corpus/_md`. Each successful
-document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF diagnostics, page
-numbers, generated-corpus character spans, and page-local block spans when the parser exposes them.
+The converter strips PDF page furniture line-by-line while it renders (`strip_page_furniture` in
+`src/llb/prep/pdf/furniture.py`): a short line that recurs on many pages -- a running header or
+footer, a bare page number -- is dropped so a passage crossing a page break grounds contiguously.
+That pass is per-line and cross-page; the block-level intra-document handling below is a separate,
+opt-in step for whole blocks a single document repeats.
+
+#### Intra-document repeated-block handling (`--repeat-blocks`)
+
+A converted manual also repeats whole BLOCKS inside the one document -- a boilerplate procedure
+step restated in section after section, a note repeated under every table -- which the per-line
+furniture pass cannot see and which index-time [duplicate chunk
+collapse](rag-core.md#duplicate-chunk-collapse) can only hide, not fix at the source: collapse
+indexes the block once but still returns that one copy for a question about any section that
+carries it, and the document's own chunk ordinals stop tracking its reading order. Measured on the
+goods corpus every one of the 494 exact chunk-collapse groups is intra-document (0 cross-document),
+the largest block repeating 335 times in the single 637 KB manual -- so on this corpus the
+repetition is entirely a conversion-side property of one document, not shared page furniture.
+
+`llb.prep.pdf.repeats` measures and, optionally, rewrites it. `ingest-pdf-corpus` /
+`pdf-to-markdown` / `ingest-corpus` take `--repeat-blocks keep|drop|anchor` (the mode is recorded
+per manifest item and is part of the reuse key, so switching it reconverts):
+
+- `keep` (default) -- unchanged; the rendered document is byte-identical to before.
+- `drop` -- index the FIRST occurrence of a repeated block and remove the rest. Loss-free (every
+  removed copy is byte-identical to the survivor) and it shrinks the source, so the freed top-k
+  slots carry other evidence.
+- `anchor` -- keep every occurrence and prefix each with its enclosing-heading breadcrumb (glued
+  with no blank line, so every blank-line splitter keeps anchor and block in one chunk), so copies
+  under different sections stop being identical and each is retrievable in its own section.
+
+A block counts as repeated at `--min-repeats` occurrences (default 3) INSIDE one document; repeated
+markdown headings and table-header/`|`-rows are never rewritten, because they carry structure the
+tables and sections under them depend on. Both rewriting modes are offset-exact: every edit is a
+recorded `TextEdit` and `remap_span` moves a surviving offset (a dropped copy resolves onto the
+survivor of its identical text), so page-citation sidecars and gold spans follow the rewrite; a
+span that straddles a rewrite has no single image and is refused rather than moved.
+
+`make strip-corpus-repeats` (`llb strip-corpus-repeats`) runs the same census or rewrite on an
+ALREADY-converted `_md` corpus -- the common case, since the corpus outlives its source PDFs. It
+never edits in place: `REPEAT_MODE=keep` (default) reports only, `drop`/`anchor` write a NEW root
+under `REPEAT_OUT=` with the citation sidecars remapped, and `GOLDSET=` remaps a gold set's span
+offsets onto the rewritten corpus (dropping and naming any item whose evidence straddles a rewrite)
+so the same questions stay scoreable.
+
+```bash
+make strip-corpus-repeats CORPUS=<md-corpus>                       # census only, writes nothing
+make strip-corpus-repeats CORPUS=<md-corpus> REPEAT_MODE=drop REPEAT_OUT=<new-root> GOLDSET=<gs>
+llb ingest-pdf-corpus --pdf-root <pdf-dir> --repeat-blocks drop    # at conversion time
+```
+
+Retrieval verdict (CUDA host, pinned e5-base, `sentence`/`recursive` at `size=200`, k=10, seed 13,
+exact collapse ON in every lane; the 89 goods items whose gold spans survive both rewrites, so the
+three lanes score one item set; floor `+/-0.000` throughout; reports under
+`$DATA_DIR/retrieval-noise-floor/20260723T-intra-repeats/`):
+
+| lane | recursive recall@10 | sentence recall@10 | dup% (recursive) | corpus chars |
+| --- | ---: | ---: | ---: | ---: |
+| `keep` (baseline) | 0.708 | 0.640 | 37.7% | 681627 |
+| `drop` | 0.730 | 0.674 | 24.8% | 531011 |
+| `anchor` | 0.685 | 0.685 | 34.9% | 755943 |
+
+Verdict: ADOPT `drop` as an available conversion-side option, KEEP `keep` as the default, REJECT
+`anchor`. `drop` lifts recall@10 by +0.022 (`recursive`) / +0.034 (`sentence`) -- both clear of the
+`+/-0.000` floor -- while cutting the intra-document duplicate share the index carries from 37.7% to
+24.8% and shrinking the source 22%. The gain is not about ties (exact collapse already drove the
+floor to zero): a top-10 that no longer must re-list one boilerplate block carries more distinct
+evidence, and unlike collapse the survivor now sits in its first section only. `anchor` helps
+`sentence` (+0.045) but regresses `recursive` (-0.023) and, by making copies textually distinct,
+defeats the cheaper exact collapse and inflates the index -- so it is not a default, only a probe
+for a corpus whose repeated blocks genuinely belong to several sections at once. `drop` stays
+opt-in because it is not loss-free at the QUESTION level: 5 of 95 goods items had gold evidence on a
+later copy and were remapped onto the survivor or dropped from the scored set, which is the
+operator's call to make per corpus.
+
+Each successful document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF
+diagnostics, page numbers, generated-corpus character spans, and page-local block spans when the
+parser exposes them.
 The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`; the
 quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
 markers, and the selection score.

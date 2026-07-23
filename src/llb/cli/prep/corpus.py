@@ -1,11 +1,18 @@
 """Corpus ingestion commands: PDF and mixed txt/md/pdf -> canonical .md corpus."""
 
+import json
 from pathlib import Path
 from typing import Optional
 
 import typer
 
 from llb.cli.app import app
+
+REPEAT_BLOCKS_HELP = (
+    "intra-document repeated-block handling: keep (default, unchanged) | drop (index the "
+    "first copy of a repeated block, remove the rest) | anchor (keep every copy, prefixed "
+    "with its enclosing-heading breadcrumb so each stays retrievable in its own section)"
+)
 
 
 @app.command("ingest-pdf-corpus")
@@ -24,10 +31,18 @@ def ingest_pdf_corpus_cmd(
     refresh: bool = typer.Option(
         False, "--refresh", help="reconvert every PDF even when the source is unchanged"
     ),
+    repeat_blocks: str = typer.Option("keep", help=REPEAT_BLOCKS_HELP, metavar="keep|drop|anchor"),
 ) -> None:
     """Extract local PDFs into the `.md` corpus shape used by RAG, goldset, and GraphRAG commands."""
     _run_pdf_markdown_ingest(
-        "ingest-pdf-corpus", pdf_root, out_dir, min_chars, parser, limit, refresh
+        "ingest-pdf-corpus",
+        pdf_root,
+        out_dir,
+        min_chars,
+        parser,
+        limit,
+        refresh,
+        repeat_blocks=repeat_blocks,
     )
 
 
@@ -99,11 +114,74 @@ def pdf_to_markdown_cmd(
     refresh: bool = typer.Option(
         False, "--refresh", help="reconvert every PDF even when the source is unchanged"
     ),
+    repeat_blocks: str = typer.Option("keep", help=REPEAT_BLOCKS_HELP, metavar="keep|drop|anchor"),
 ) -> None:
     """Convert local PDFs into markdown files plus quality/citation sidecars."""
     _run_pdf_markdown_ingest(
-        "pdf-to-markdown", pdf_root, out_dir, min_chars, parser, limit, refresh
+        "pdf-to-markdown",
+        pdf_root,
+        out_dir,
+        min_chars,
+        parser,
+        limit,
+        refresh,
+        repeat_blocks=repeat_blocks,
     )
+
+
+@app.command("strip-corpus-repeats")
+def strip_corpus_repeats_cmd(
+    corpus: Path = typer.Option(
+        ..., help="converted corpus root to census (never edited in place)"
+    ),
+    out: Optional[Path] = typer.Option(
+        None, help="write the rewritten corpus here (required for --mode drop|anchor)"
+    ),
+    mode: str = typer.Option("keep", help=REPEAT_BLOCKS_HELP, metavar="keep|drop|anchor"),
+    min_repeats: Optional[int] = typer.Option(
+        None, help="occurrences inside ONE document before a block counts as repeated (default 3)"
+    ),
+    goldset: Optional[Path] = typer.Option(
+        None, help="gold set whose span offsets should follow the rewrite"
+    ),
+    goldset_out: Optional[Path] = typer.Option(
+        None, help="write the remapped gold set here (defaults to <out>/goldset.jsonl)"
+    ),
+    report: Optional[Path] = typer.Option(None, help="write the JSON census/rewrite report here"),
+) -> None:
+    """Census a converted corpus's intra-document repeated blocks, and optionally strip them.
+
+    `--mode keep` measures only: it reports how much of the corpus repeats INSIDE one document
+    (which index-time collapse hides but cannot fix at the source) and writes nothing. `drop` and
+    `anchor` rewrite into `--out`, carrying the page-citation sidecars and, with `--goldset`, the
+    gold spans onto the rewritten text so the same questions stay scoreable.
+    """
+    from llb.prep.pdf.repeats import DEFAULT_MIN_REPEATS, REPEAT_KEEP
+    from llb.prep.pdf.repeat_corpus import format_repeat_report, strip_corpus_repeats
+
+    if mode != REPEAT_KEEP and out is None:
+        typer.echo(f"[error] --mode {mode} rewrites the corpus: pass --out <new-root>", err=True)
+        raise typer.Exit(code=2)
+    target_goldset = goldset_out
+    if goldset is not None and target_goldset is None and out is not None:
+        target_goldset = out / "goldset.jsonl"
+    try:
+        result = strip_corpus_repeats(
+            corpus,
+            out,
+            mode=mode,
+            min_repeats=min_repeats or DEFAULT_MIN_REPEATS,
+            goldset=goldset,
+            goldset_out=target_goldset,
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2)
+    typer.echo(format_repeat_report(result))
+    if report is not None:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        typer.echo(f"[strip-corpus-repeats] wrote report -> {report}")
 
 
 def _run_pdf_markdown_ingest(
@@ -114,6 +192,7 @@ def _run_pdf_markdown_ingest(
     parser: str,
     limit: Optional[int],
     refresh: bool = False,
+    repeat_blocks: str = "keep",
 ) -> None:
     from llb.prep.pdf.ingest import ingest_pdf_corpus
 
@@ -125,6 +204,7 @@ def _run_pdf_markdown_ingest(
             parser=parser,
             limit=limit,
             refresh=refresh,
+            repeat_blocks=repeat_blocks,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

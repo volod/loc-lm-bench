@@ -43,36 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### intra-document-repeat-stripping (optional)
+### repeat-strip-question-yield-audit (optional)
 
-Chunk duplication in a converted manual is not a cross-document problem: on the goods corpus all
-494 collapse groups repeat INSIDE one document, the largest 58 times, and the repeated text is
-boilerplate procedure steps rather than page furniture
-([RAG core](current/rag-core.md#duplicate-chunk-collapse)). Collapse already removes the index and
-tie cost, but the repeats also mean a document's own chunk ordinals no longer track its reading
-order, and a repeated instruction block is retrieved once for a question about any of the sections
-that contain it -- the operator gets a passage without the section it belonged to. Measure whether
-those blocks should be handled at CONVERSION time instead (recognized as repeated furniture and
-either dropped or anchored to their section), and whether doing so changes recall on the
-question types whose evidence sits near a repeat.
+`--repeat-blocks drop` lifts pooled recall@10 above the collapse baseline, but it is not loss-free
+at the QUESTION level: on the goods corpus 5 of 95 items had gold evidence on a later copy and were
+remapped onto the survivor or dropped from the scored set, and the pooled win is measured on the 89
+that survived BOTH rewrites -- exactly the items `drop` was least likely to hurt
+([data prep](current/data-prep.md#intra-document-repeated-block-handling---repeat-blocks)). Measure
+the yield cost directly: for the items whose evidence sat on a dropped copy, check whether the
+retained survivor still answers the question (the surviving copy is identical text, so retrieval
+CAN hit it, but its section context differs), and report a per-question adopt/hold verdict beside
+the pooled recall gain so an operator sees which questions `drop` silently re-homes.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the duplicate stats in `src/llb/rag/duplicates.py`, the page/section
-  sidecars from the PDF conversion lane ([data prep](current/data-prep.md)), and
-  `make compare-retrieval` with `NOISE_FLOOR=1`.
-- User-visible outcome: the operator learns whether a converted manual's repeated blocks are best
-  handled at ingestion, instead of only at index time.
-- Scope boundary: in scope -- the intra-document repeat census per corpus, a conversion-side
-  handling option behind a flag, and its retrieval verdict. Out of scope -- rewriting source
-  documents in place and near-duplicate (fuzzy) matching.
-- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`; conversion outputs stay under
-  their existing `_md` roots.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=recursive,sentence NOISE_FLOOR=1` per
-  handling option on the CUDA host; CI covers the repeat census on the committed fixture.
-- Acceptance gates: `make ci` green; the report states the intra- versus cross-document split of
-  the duplicate groups per corpus and an adopt-or-reject verdict for conversion-side handling.
-- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse) and the PDF
-  conversion section of [data prep](current/data-prep.md).
+- Dependencies: none. Reuse `strip_corpus_repeats` (its `goldset` remap already names the dropped
+  ids) and `make compare-retrieval` with `NOISE_FLOOR=1`.
+- User-visible outcome: the operator learns which questions `drop` moves onto a different section's
+  copy of the evidence, not just the pooled recall delta.
+- Scope boundary: in scope -- the per-question survivor-answers-it check, the yield report, and a
+  per-question verdict. Out of scope -- changing the drop rule, fuzzy matching, and re-drafting the
+  moved items.
+- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
+- Execution path: `make strip-corpus-repeats ... GOLDSET=<gs>` then
+  `make compare-retrieval CHUNK_STRATEGIES=recursive,sentence NOISE_FLOOR=1` on the CUDA host; CI
+  covers the yield check on a committed fixture with a straddling item.
+- Acceptance gates: `make ci` green; the report states, per remapped/dropped item, whether the
+  survivor still answers it, alongside the pooled recall verdict.
+- Documentation target: the intra-document repeat section of [data prep](current/data-prep.md).
 
 ### duplicate-occurrences-in-the-goldset-drafting-guard (optional)
 

@@ -244,10 +244,19 @@ How it works:
   A repeated passage that is already indexed costs no embedding call when a new document
   introduces it again.
 - `store_meta.json` records `collapse_duplicates` and the measured `duplicates` stats (`n`,
-  `unique`, `collapsed`, `duplicate_chunks`, `duplicate_share`, `groups`, `largest_group`), and
-  `build-index` echoes them as its duplicate-rate line -- measured either way, so a store built
-  with `--keep-duplicate-chunks` still reports what the repeats cost. `make build-rag-store` adds
-  `dup%` / `maxdup` columns to its per-strategy table.
+  `unique`, `collapsed`, `duplicate_chunks`, `duplicate_share`, `groups`, `largest_group`,
+  `intra_document_groups`, `cross_document_groups`), and `build-index` echoes them as its
+  duplicate-rate line -- measured either way, so a store built with `--keep-duplicate-chunks` still
+  reports what the repeats cost. `make build-rag-store` adds `dup%` / `maxdup` columns to its
+  per-strategy table. The intra/cross split says WHERE a corpus's repetition comes from: page
+  furniture shared across documents (`cross_document_groups`) versus a boilerplate block a single
+  manual repeats section after section (`intra_document_groups`), which is a conversion-side
+  property of that one document handled at ingestion by
+  [intra-document repeat handling](data-prep.md#intra-document-repeated-block-handling---repeat-blocks).
+- `compare-retrieval` prints each built lane's duplicate census beneath the recall table
+  (`duplicate_census` in `src/llb/rag/compare.py`), so a recall row is read next to how much of
+  that lane's index is repeated text and whether the repeats are intra- or cross-document; a lane
+  with no build meta (a graph or fake store) simply contributes no census row.
 - The occurrences travel into the run bundle's `retrieval.jsonl`, so a lane that recomputes a
   metric from that sidecar agrees with the run that wrote it (see
   [the persisted retrieval record](#the-persisted-retrieval-record) under Persistence).
@@ -268,6 +277,15 @@ The goods corpus stopped spending 27% of its index on text it already held, its 
 one passage up to 58 times carries more distinct evidence. The two corpora with essentially no
 duplicates reproduce every recorded number exactly, which is the check that collapse is a no-op
 where there is nothing to collapse.
+
+Every one of those goods collapse groups repeats INSIDE one document (measured:
+`intra_document_groups` = all 494, `cross_document_groups` = 0). Collapse removes the index and tie
+cost of that repetition but cannot fix it at the source -- the survivor is still returned for a
+question about any section that carries the block. Handling those blocks at CONVERSION time
+(`--repeat-blocks drop`) removes the later copies from the source and lifts recall@10 a further
++0.022/+0.034 above the collapse baseline on the shared item set; see
+[intra-document repeat handling](data-prep.md#intra-document-repeated-block-handling---repeat-blocks)
+for the option and its adopt-`drop` / reject-`anchor` verdict.
 
 Tests: `tests/llb/rag/test_duplicates.py` (collapse, occurrence metadata, offset-exactness against
 the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span matching at every

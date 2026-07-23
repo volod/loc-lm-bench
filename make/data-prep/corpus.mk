@@ -1,7 +1,7 @@
 ## Corpus conversion, ingestion, validation, and SQuAD preparation.
 
-.PHONY: gen-rag-items pdf-to-markdown ingest-corpus validate-goldset ingest-squad \
-	external-squad-rag audit-corpus-conflicts resolve-corpus-conflicts
+.PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats validate-goldset \
+	ingest-squad external-squad-rag audit-corpus-conflicts resolve-corpus-conflicts
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -25,6 +25,16 @@ ingest-corpus: ## Ingest a mixed txt/md/pdf CORPUS_ROOT into one .md/.txt corpus
 	if [ -n "$(CORPUS_SOURCE_SYSTEM)" ]; then args+=(--source-system "$(CORPUS_SOURCE_SYSTEM)"); fi; \
 	if [ -n "$(CORPUS_ACL_LABEL)" ]; then args+=(--acl-label "$(CORPUS_ACL_LABEL)"); fi; \
 	$(PY) -m llb.main ingest-corpus "$${args[@]}"
+
+strip-corpus-repeats: ## Census (REPEAT_MODE=keep) or strip (drop|anchor) intra-document repeated blocks of CORPUS into REPEAT_OUT; GOLDSET= follows the rewrite, REPEAT_MIN=, REPEAT_REPORT=
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(--corpus "$(CORPUS)" --mode "$(or $(REPEAT_MODE),keep)"); \
+	if [ -n "$(REPEAT_OUT)" ]; then args+=(--out "$(REPEAT_OUT)"); fi; \
+	if [ -n "$(REPEAT_MIN)" ]; then args+=(--min-repeats "$(REPEAT_MIN)"); fi; \
+	if [ -n "$(GOLDSET)" ]; then args+=(--goldset "$(GOLDSET)"); fi; \
+	if [ -n "$(REPEAT_GOLDSET_OUT)" ]; then args+=(--goldset-out "$(REPEAT_GOLDSET_OUT)"); fi; \
+	if [ -n "$(REPEAT_REPORT)" ]; then args+=(--report "$(REPEAT_REPORT)"); fi; \
+	$(PY) -m llb.main strip-corpus-repeats "$${args[@]}"
 
 audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=); never edits the corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

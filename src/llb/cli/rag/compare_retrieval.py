@@ -72,7 +72,12 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import add_rerank_rows, compare_retrieval, format_comparison
+    from llb.rag.compare import (
+        add_rerank_rows,
+        compare_retrieval,
+        duplicate_census,
+        format_comparison,
+    )
     from llb.rag.question_types import aligned_question_types
 
     if strategies and hybrid:
@@ -104,6 +109,9 @@ def compare_retrieval_cmd(
         k,
         slice_labels=aligned_question_types(cfg.goldset_path, [it.id for it in items]),
     )
+    census = duplicate_census(stores)
+    if census:
+        report["duplicates"] = census
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
 

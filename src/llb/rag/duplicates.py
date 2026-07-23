@@ -15,6 +15,7 @@ Collapse is exact-only (byte-identical text). Near-duplicate documents are a cor
 question owned by the conflict lane, not a chunk-level one.
 """
 
+from collections.abc import Sequence
 from typing import NamedTuple, cast
 
 from typing_extensions import NotRequired, TypedDict
@@ -44,7 +45,13 @@ class DuplicateOccurrence(TypedDict):
 
 
 class DuplicateStats(TypedDict):
-    """Exact-duplicate rate of a chunk set, before and after collapse."""
+    """Exact-duplicate rate of a chunk set, before and after collapse.
+
+    The intra/cross split is the census that says WHERE a corpus's repetition comes from: page
+    furniture shared by many converted documents is cross-document, while boilerplate a single
+    manual repeats section after section is intra-document and is a CONVERSION-side property of
+    that one document (see `llb.prep.pdf.repeats`).
+    """
 
     n: int  # chunks before collapse
     unique: int  # distinct chunk texts == chunks after collapse
@@ -53,6 +60,15 @@ class DuplicateStats(TypedDict):
     duplicate_share: float  # their share of the chunk COUNT
     groups: int  # distinct texts appearing more than once
     largest_group: int  # copies in the largest identical group (1 when all texts are distinct)
+    intra_document_groups: int  # repeated groups whose copies all sit in ONE document
+    cross_document_groups: int  # repeated groups whose copies span two or more documents
+
+
+class _GroupShape(NamedTuple):
+    """One distinct chunk text: how many copies it has and how many documents carry them."""
+
+    size: int
+    documents: int
 
 
 class Collapse(NamedTuple):
@@ -69,7 +85,7 @@ class Collapse(NamedTuple):
 
 def duplicate_stats(chunks: list[ChunkRecord]) -> DuplicateStats:
     """Measure the exact-duplicate rate of `chunks` without changing them."""
-    return _stats(_group_sizes(chunks))
+    return _stats(_group_shapes(chunks))
 
 
 def collapse_duplicate_chunks(chunks: list[ChunkRecord]) -> Collapse:
@@ -92,10 +108,13 @@ def collapse_duplicate_chunks(chunks: list[ChunkRecord]) -> Collapse:
             kept.append(position)
             continue
         occurrences.setdefault(index, []).append(_occurrence(chunk))
+    shapes = [
+        _survivor_shape(survivor, occurrences.get(index, ()))
+        for index, survivor in enumerate(survivors)
+    ]
     for index, copies in occurrences.items():
         survivors[index] = _with_occurrences(survivors[index], copies)
-    sizes = [len(occurrences.get(i, ())) + 1 for i in range(len(survivors))]
-    return Collapse(chunks=survivors, kept=kept, stats=_stats(sizes))
+    return Collapse(chunks=survivors, kept=kept, stats=_stats(shapes))
 
 
 def expand_duplicate_chunks(chunks: list[ChunkRecord]) -> tuple[list[ChunkRecord], list[int]]:
@@ -145,7 +164,8 @@ def format_duplicate_stats(stats: DuplicateStats, collapsed: bool = True) -> str
     measured = (
         f"duplicates: {stats['duplicate_chunks']}/{stats['n']} chunks "
         f"({stats['duplicate_share']:.1%}) byte-identical to another, "
-        f"{stats['groups']} groups, largest {stats['largest_group']} copies"
+        f"{stats['groups']} groups{_census_clause(stats)}, "
+        f"largest {stats['largest_group']} copies"
     )
     if collapsed:
         return f"{measured} -> {stats['unique']} indexed ({stats['collapsed']} collapsed)"
@@ -185,18 +205,36 @@ def _without_occurrences(survivor: ChunkRecord) -> ChunkRecord:
     return restored
 
 
-def _group_sizes(chunks: list[ChunkRecord]) -> list[int]:
+def _census_clause(stats: DuplicateStats) -> str:
+    """The intra/cross split, omitted for a store meta written before the census shipped."""
+    intra = stats.get("intra_document_groups")
+    cross = stats.get("cross_document_groups")
+    if intra is None or cross is None:
+        return ""
+    return f" ({intra} intra-document, {cross} cross-document)"
+
+
+def _survivor_shape(survivor: ChunkRecord, copies: Sequence[DuplicateOccurrence]) -> _GroupShape:
+    """The group a survivor stands for: its own copy plus every copy folded into it."""
+    documents = {survivor["doc_id"], *(copy["doc_id"] for copy in copies)}
+    return _GroupShape(size=len(copies) + 1, documents=len(documents))
+
+
+def _group_shapes(chunks: list[ChunkRecord]) -> list[_GroupShape]:
     counts: dict[str, int] = {}
+    documents: dict[str, set[str]] = {}
     for chunk in chunks:
-        counts[chunk["text"]] = counts.get(chunk["text"], 0) + 1
-    return list(counts.values())
+        text = chunk["text"]
+        counts[text] = counts.get(text, 0) + 1
+        documents.setdefault(text, set()).add(chunk["doc_id"])
+    return [_GroupShape(size, len(documents[text])) for text, size in counts.items()]
 
 
-def _stats(group_sizes: list[int]) -> DuplicateStats:
-    n = sum(group_sizes)
-    unique = len(group_sizes)
-    repeated = [size for size in group_sizes if size > 1]
-    duplicate_chunks = sum(repeated)
+def _stats(shapes: list[_GroupShape]) -> DuplicateStats:
+    n = sum(shape.size for shape in shapes)
+    unique = len(shapes)
+    repeated = [shape for shape in shapes if shape.size > 1]
+    duplicate_chunks = sum(shape.size for shape in repeated)
     return {
         "n": n,
         "unique": unique,
@@ -204,5 +242,7 @@ def _stats(group_sizes: list[int]) -> DuplicateStats:
         "duplicate_chunks": duplicate_chunks,
         "duplicate_share": duplicate_chunks / n if n else 0.0,
         "groups": len(repeated),
-        "largest_group": max(group_sizes, default=1) if group_sizes else 1,
+        "largest_group": max((shape.size for shape in shapes), default=1),
+        "intra_document_groups": sum(1 for shape in repeated if shape.documents == 1),
+        "cross_document_groups": sum(1 for shape in repeated if shape.documents > 1),
     }
