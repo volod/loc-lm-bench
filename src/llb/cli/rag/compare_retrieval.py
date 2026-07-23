@@ -45,6 +45,16 @@ def compare_retrieval_cmd(
     rerank_candidates: Optional[int] = typer.Option(
         None, help="rerank rows: candidate pool depth fed into the reranker (default 30)"
     ),
+    noise_floor: bool = typer.Option(
+        False,
+        "--noise-floor",
+        help="also measure the MEASUREMENT FLOOR: re-rank each lane's candidates under "
+        "numeric score noise of the measured between-process amplitude and report the "
+        "resulting recall@k / MRR band, so a delta smaller than the floor reads as noise",
+    ),
+    noise_floor_replicates: Optional[int] = typer.Option(
+        None, help="--noise-floor: jitter replicates per lane (default 64)"
+    ),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
     """Compare retrieval backends -- or chunking strategies, or hybrid fusion -- on one gold set.
@@ -94,6 +104,12 @@ def compare_retrieval_cmd(
         k,
         slice_labels=aligned_question_types(cfg.goldset_path, [it.id for it in items]),
     )
+    if noise_floor:
+        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+
+        report["noise_floor"] = measure_noise_floor(
+            stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
+        )
     typer.echo(format_comparison(report))
     _echo_stage_latencies(stores)
     if out is not None:

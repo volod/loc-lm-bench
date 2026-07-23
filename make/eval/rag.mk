@@ -58,7 +58,7 @@ validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PR
 		$(if $(QUERY_PREP_AB),--query-prep-ab,) \
 		$(if $(QUERY_PREP_OUT),--out "$(QUERY_PREP_OUT)",)
 
-compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER= are optional lanes
+compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER=, NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
@@ -68,6 +68,8 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
 compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)

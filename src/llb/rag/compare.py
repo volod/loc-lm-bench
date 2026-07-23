@@ -11,12 +11,15 @@ seam), so it is unit-tested with fake stores -- no GPU, no FAISS, no DuckDB. Eac
 one `evaluate_retrieval` span metric, so graph and FAISS score on identical rules.
 """
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
+
+if TYPE_CHECKING:  # `noise_floor` imports this module, so the type is a forward reference
+    from llb.rag.noise_floor import NoiseFloorReport
 
 # (question, gold source spans) -- the per-item input shared across every compared backend.
 CompareItem = tuple[str, list[SourceSpanRecord]]
@@ -46,6 +49,9 @@ class ComparisonReport(TypedDict):
     backends: dict[str, RetrievalMetrics]
     best_recall: str | None
     slices: NotRequired[dict[str, "ComparisonSlice"]]
+    # Measurement floor under numeric score noise; present only when it was asked for
+    # (`compare-retrieval --noise-floor`). See `llb.rag.noise_floor`.
+    noise_floor: NotRequired["NoiseFloorReport"]
 
 
 class ComparisonSlice(TypedDict):
@@ -143,6 +149,11 @@ def format_comparison(report: ComparisonReport) -> str:
             f"  {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    floor = report.get("noise_floor")
+    if floor is not None:
+        from llb.rag.noise_floor import format_noise_floor
+
+        lines.extend(format_noise_floor(floor))
     for slice_label, slice_report in report.get("slices", {}).items():
         lines.append(f"  slice {slice_label} (n={slice_report['n']}):")
         for label in sorted(slice_report["backends"]):

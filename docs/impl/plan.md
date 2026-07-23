@@ -43,36 +43,71 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### retrieval-comparison-noise-floor (optional)
+### duplicate-chunk-suppression
 
-`compare-retrieval` reports recall@k / MRR to three decimals with no measurement floor beside
-them, and the floor is not zero. A control lane whose chunks were byte-identical across two
-processes moved +0.011 recall@10 / -0.005 MRR on a 95-item set, because a preceding lane in the
-same process changes the encoder's batch shapes and perturbs every vector by ~5e-7 per dimension
--- enough to flip one borderline item at k=10
-([RAG core](current/rag-core.md#size-is-a-hard-cap-on-every-strategy)). Repeat runs within one
-code version reproduce byte-identically, so the drift is invisible to a naive repeat check and
-every small chunker/embedder delta recorded so far is quoted with more precision than it has.
-Make the floor measurable: give the comparison an unchanged control lane (or a fixed-vector
-replay) and report the per-lane spread beside the metric, so a reader can tell a real gain from
-one item of float noise.
+Converted-PDF corpora index the same text many times over, and it corrupts both the index budget
+and the retrieval metric. On the goods corpus at `size=200`, 37.7% of chunks are byte-identical to
+another chunk -- repeated page furniture and table boilerplate, the largest identical group having
+58 copies -- and identical text embeds to an identical vector, so those chunks tie exactly, the
+tie is broken by candidate order, and a quarter of the items have a top-10 membership no
+retrieval property decides. That is the entire reason the corpus's measured recall@10 floor is
++/-0.021 while two clean corpora measure exactly zero
+([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)). Collapse
+identical chunk text at build time into one indexed chunk carrying its duplicate occurrences as
+additive `metadata`, so each distinct passage is retrieved once and the citation still resolves to
+every place it appears; where duplicates must stay, give the backend a documented deterministic
+tie-break instead of candidate order.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare_retrieval` / `format_comparison` in `src/llb/rag/compare.py`
-  and the per-strategy store builder `build_chunking_comparison`.
-- User-visible outcome: the operator can tell whether a chunker or embedder delta clears the
-  measurement floor of their own corpus and gold-set size, instead of reading three decimals as
-  signal.
-- Scope boundary: in scope -- the control lane or replay, the reported spread, and a stated floor
-  per corpus/`n`. Out of scope -- changing the metrics themselves, forcing deterministic GPU
-  kernels, and re-running past comparisons.
-- Data and artifact paths: `$DATA_DIR/chunk-size-cap/<run>/` holds the measured example; new
-  comparisons keep their existing report paths.
-- Execution path: repeat `make compare-retrieval CHUNK_STRATEGIES=<a>,<b>` with the lane order
-  permuted on the CUDA host; CI covers the spread statistic over committed fixture rows.
-- Acceptance gates: `make ci` green; the report states the floor and the comparison verdicts are
-  re-read against it.
-- Documentation target: the chunker-comparison subsection of [RAG core](current/rag-core.md).
+- Dependencies: none. Reuse the chunk build path in `src/llb/rag/store_build.py`, the summary in
+  `src/llb/rag/chunking/corpus.py`, and the fragility count in `src/llb/rag/noise_floor.py` to
+  verify the effect. Related: the corpus-conflict lane in [data prep](current/data-prep.md) owns
+  near-duplicate DOCUMENTS; this task is exact-duplicate CHUNKS inside the index.
+- User-visible outcome: a converted-PDF index stops spending a third of its budget on repeated
+  page furniture, and its retrieval metric stops depending on arbitrary tie order.
+- Scope boundary: in scope -- exact-duplicate collapse, the occurrence metadata, a duplicate-rate
+  line in the build summary, and the before/after floor plus recall comparison. Out of scope --
+  near-duplicate (fuzzy) collapse, corpus text rewriting, and changing the chunking strategies.
+- Data and artifact paths: no new roots; per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`
+  and a comparison under `$DATA_DIR/retrieval-noise-floor/<run>/`.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` on
+  the goods corpus before and after; CI covers the collapse and its occurrence metadata on a
+  committed fixture with a repeated block.
+- Acceptance gates: `make ci` green; every surviving chunk stays offset-exact; the goods corpus
+  reports a materially lower fragile-item count and floor, and recall@10 does not regress beyond
+  the measured floor.
+- Documentation target: [RAG core](current/rag-core.md) retrieval store and the measurement-floor
+  subsection.
+
+### noise-floor-for-the-remaining-comparison-lanes (optional)
+
+The measurement floor is wired into `compare-retrieval` only. `compare-embeddings` (its own
+bake-off report), `compare-vector-stores`, and the `compare-graph-fusion` sweep publish the same
+three-decimal recall@k / MRR rows with no floor beside them, and the embedder bake-off is exactly
+where a sub-item delta gets read as a recommendation
+([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)). Extend the
+floor to those lanes -- the measurement itself is store-agnostic, it only needs a lane's
+candidates and their scores -- and re-read each recorded recommendation against its own corpus's
+floor.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `measure_noise_floor` / `format_noise_floor` in
+  `src/llb/rag/noise_floor.py` unchanged; the work is report plumbing per lane
+  (`src/llb/rag/embedding_bakeoff_report.py`, `src/llb/cli/rag/compare_stores.py`, the fusion
+  evidence report).
+- User-visible outcome: every retrieval recommendation the repo publishes states the floor it
+  clears, not just its point estimate.
+- Scope boundary: in scope -- the per-lane plumbing, the re-read of each recorded verdict, and a
+  stated floor per corpus. Out of scope -- changing any metric, and re-running the heavy bake-offs
+  beyond what a floor re-read needs.
+- Data and artifact paths: each lane keeps its existing report path.
+- Execution path: `make compare-embeddings` / `make compare-vector-stores` /
+  `make compare-graph-fusion` with the floor enabled on the CUDA host; CI covers the new report
+  blocks over fake stores.
+- Acceptance gates: `make ci` green; each lane's report carries the floor and each recorded
+  recommendation is restated as clearing it or not.
+- Documentation target: the embedder bake-off and fusion evidence sections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### chunker-bake-off-under-the-size-cap (optional)
 
@@ -85,15 +120,17 @@ into a tie, and the current recommendation cannot say which. Score the same acce
 the same k and record whether the `sentence` recommendation survives.
 
 - Agent status: RUN NEEDED
-- Dependencies: `retrieval-comparison-noise-floor` above should land first, or the re-run cannot
-  say whether a changed row cleared the floor. Reuse `make compare-retrieval` unchanged.
+- Dependencies: none. Reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
+  row can be read against the corpus's own floor
+  ([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
   `size` the operator asked for.
 - Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
   verdict on the `sentence` recommendation. Out of scope -- new strategies and tuning `size`.
 - Data and artifact paths: the existing per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`.
 - Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,late,
-  markdown,semantic GOLDSET=<quickstart accepted goldset>` on the CUDA host; no new CI coverage.
+  markdown,semantic GOLDSET=<quickstart accepted goldset> NOISE_FLOOR=1` on the CUDA host; no new
+  CI coverage.
 - Acceptance gates: `make ci` green; the report covers all seven strategies at the recorded k and
   states whether the recorded winner still wins by more than the measurement floor.
 - Documentation target: the chunking-strategies evidence in [RAG core](current/rag-core.md).
