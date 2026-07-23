@@ -43,35 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### repeat-strip-straddle-recovery (optional)
-
-The per-question yield audit for `--repeat-blocks drop` found that its only genuine cost is items
-whose gold span STRADDLES a removed block boundary: they cannot be re-anchored and leave the scored
-set (3 of 5 dropped goods items were retrievable at baseline)
-([data prep](current/data-prep.md#per-question-yield-audit-audit-repeat-yield)). Re-homing itself
-is harmless -- no item moved onto a survivor became a retrieval miss. So the whole adoptability
-question reduces to recovering the straddlers. A straddling span is almost always
-`<tail of the dropped copy> + <head of the following block>`; the dropped copy's text still exists
-(on the survivor), so the span could be re-anchored by splitting it at the block boundary and
-mapping the first part onto the survivor and the second onto its own kept block. Build that
-straddle-recovery path behind a flag, and re-run the yield audit to confirm it turns the
-`dropped_from_set` items into `held`/`recovered` without moving the pooled recall.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `remap_span` / `span_rehomed` in `src/llb/prep/pdf/repeats.py`, the
-  goldset remap in `src/llb/prep/pdf/repeat_corpus.py`, and `audit-repeat-yield`.
-- User-visible outcome: `drop` stops silently discarding a question whose evidence merely touched a
-  removed block, so its opt-in cost drops toward zero.
-- Scope boundary: in scope -- the boundary-split remap for a straddling span, its flag, and the
-  yield re-run. Out of scope -- fuzzy matching, re-drafting spans by hand, and changing which copy
-  survives collapse.
-- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
-- Execution path: `make audit-repeat-yield CORPUS=<md> GOLDSET=<gs>` before/after the flag on the
-  CUDA host; CI covers the boundary-split remap on the committed straddling-item fixture.
-- Acceptance gates: `make ci` green; the audit reports fewer `dropped_from_set` items with the flag
-  on and no new `lost` item, and the pooled kept-recall stays within the measurement floor.
-- Documentation target: the per-question yield subsection of [data prep](current/data-prep.md).
-
 ### duplicate-occurrences-in-the-goldset-drafting-guard (optional)
 
 A drafted gold span can land inside a passage the corpus repeats verbatim, and nothing says so

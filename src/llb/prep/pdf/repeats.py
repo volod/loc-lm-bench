@@ -74,6 +74,16 @@ class RepeatRewrite:
     edits: list[TextEdit] = field(default_factory=list)
 
 
+class StrippedDoc(TypedDict):
+    """A document's rewrite state: the stripped text and the edits that produced it.
+
+    The citation and goldset remaps both read this to move offsets onto the stripped document.
+    """
+
+    text: str
+    edits: list[TextEdit]
+
+
 class _Block(NamedTuple):
     start: int
     end: int
@@ -142,18 +152,45 @@ def remap_span(edits: list[TextEdit], start: int, end: int) -> tuple[int, int] |
     return new_start, new_last + 1
 
 
+def remap_span_split(edits: list[TextEdit], start: int, end: int) -> list[tuple[int, int]] | None:
+    """Remap `[start, end)` as one or MORE images, recovering a span that straddles a rewrite.
+
+    `remap_span` refuses a span crossing an edit boundary because its two halves move apart -- but
+    with `drop` the halves are not lost: the part inside a removed block still exists on the
+    byte-identical survivor, and the part after it stays in place. Splitting the span at every edit
+    boundary it crosses maps each piece cleanly (each piece lies in one region, so `remap_span`
+    succeeds) and returns the pieces as separate images. Because `recall_at_k` credits an item when
+    ANY of its spans is covered, a span split this way keeps exactly the original retrieval
+    semantics. Returns None only when a piece is genuinely unanchorable (removed with no survivor);
+    contiguous images are merged so a non-straddling span still returns a single pair.
+    """
+    if end <= start:
+        return None
+    cuts = sorted({c for edit in edits for c in (edit.start, edit.end) if start < c < end})
+    bounds = [start, *cuts, end]
+    images: list[tuple[int, int]] = []
+    for lo, hi in zip(bounds, bounds[1:]):
+        piece = remap_span(edits, lo, hi)
+        if piece is None:
+            return None
+        if images and images[-1][1] == piece[0]:
+            images[-1] = (images[-1][0], piece[1])  # merge a piece that stayed contiguous
+        else:
+            images.append(piece)
+    return images
+
+
 def span_rehomed(edits: list[TextEdit], start: int, end: int) -> bool:
-    """True when `[start, end)` sat inside a DROPPED copy, so its remap lands on another section.
+    """True when `[start, end)` OVERLAPS a DROPPED copy, so part of it re-homes onto the survivor.
 
     `drop` keeps the first copy of a repeated block and removes the rest; a span labeled on one of
-    those removed copies is not lost -- `remap_span` follows it onto the byte-identical survivor --
-    but the survivor sits in a DIFFERENT section, so the question's evidence has been re-homed.
-    This flags exactly those spans for the yield audit, which then asks whether retrieval still
-    reaches the survivor.
+    those removed copies is not lost -- `remap_span` (or `remap_span_split` for a straddler)
+    follows it onto the byte-identical survivor -- but the survivor sits in a DIFFERENT section, so
+    the question's evidence has been re-homed. This flags any span that touches a removed block for
+    the yield audit, which then asks whether retrieval still reaches the survivor.
     """
     return any(
-        edit.moved_to is not None and edit.start <= start < edit.end and start < end
-        for edit in edits
+        edit.moved_to is not None and edit.start < end and start < edit.end for edit in edits
     )
 
 

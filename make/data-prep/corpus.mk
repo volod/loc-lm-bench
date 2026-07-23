@@ -34,10 +34,11 @@ strip-corpus-repeats: ## Census (REPEAT_MODE=keep) or strip (drop|anchor) intra-
 	if [ -n "$(REPEAT_MIN)" ]; then args+=(--min-repeats "$(REPEAT_MIN)"); fi; \
 	if [ -n "$(GOLDSET)" ]; then args+=(--goldset "$(GOLDSET)"); fi; \
 	if [ -n "$(REPEAT_GOLDSET_OUT)" ]; then args+=(--goldset-out "$(REPEAT_GOLDSET_OUT)"); fi; \
+	if [ -n "$(REPEAT_RECOVER)" ]; then args+=(--recover-straddle); fi; \
 	if [ -n "$(REPEAT_REPORT)" ]; then args+=(--report "$(REPEAT_REPORT)"); fi; \
 	$(PY) -m llb.main strip-corpus-repeats "$${args[@]}"
 
-audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLDSET: which questions it re-homes vs the pooled recall gain (REPEAT_OUT=, RAG_K=, SPLIT=, REPEAT_MIN=, CHUNK_STRATEGY=, CHUNK_SIZE=, CHUNK_OVERLAP=, EMBEDDING_MODEL=); needs ".[rag]"
+audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLDSET: which questions it re-homes vs the pooled recall gain (REPEAT_OUT=, RAG_K=, SPLIT=, REPEAT_MIN=, REPEAT_RECOVER=1 recovers straddlers, CHUNK_STRATEGY=, CHUNK_SIZE=, CHUNK_OVERLAP=, EMBEDDING_MODEL=); needs ".[rag]"
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	args=(--corpus "$(CORPUS)" --goldset "$(GOLDSET)" --k $(RAG_K)); \
@@ -49,6 +50,7 @@ audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLD
 	if [ -n "$(CHUNK_SIZE)" ]; then args+=(--chunk-size "$(CHUNK_SIZE)"); fi; \
 	if [ -n "$(CHUNK_OVERLAP)" ]; then args+=(--chunk-overlap "$(CHUNK_OVERLAP)"); fi; \
 	if [ -n "$(EMBEDDING_MODEL)" ]; then args+=(--embedding-model "$(EMBEDDING_MODEL)"); fi; \
+	if [ -n "$(REPEAT_RECOVER)" ]; then args+=(--recover-straddle); fi; \
 	$(PY) -m llb.main audit-repeat-yield "$${args[@]}"
 
 audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=); never edits the corpus

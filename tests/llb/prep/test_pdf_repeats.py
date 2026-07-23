@@ -22,6 +22,7 @@ from llb.prep.pdf.repeats import (
     REPEAT_KEEP,
     heading_breadcrumb,
     remap_span,
+    remap_span_split,
     rewrite_repeated_blocks,
 )
 from llb.rag.chunking.corpus import chunk_corpus
@@ -122,6 +123,32 @@ def test_remap_span_refuses_a_span_straddling_a_rewrite() -> None:
     assert remap_span(rewrite.edits, second - 40, second + len(PROCEDURE)) is None
 
 
+def test_remap_span_split_recovers_a_straddler_as_two_pieces() -> None:
+    text = fixture_text()
+    rewrite = rewrite_repeated_blocks(text, mode=REPEAT_DROP)
+    second = text.index(PROCEDURE, text.index(PROCEDURE) + 1)
+    start, end = second - 40, second + len(PROCEDURE)  # kept tail + dropped procedure head
+
+    images = remap_span_split(rewrite.edits, start, end)
+
+    assert images is not None and len(images) == 2
+    # in order, the two stripped images reconstruct the original span exactly
+    assert "".join(rewrite.text[lo:hi] for lo, hi in images) == text[start:end]
+    # the second piece landed on the surviving copy of the procedure block
+    assert rewrite.text[images[1][0] : images[1][1]] in text[second : second + len(PROCEDURE)]
+
+
+def test_remap_span_split_is_a_single_piece_for_a_clean_span() -> None:
+    text = fixture_text()
+    rewrite = rewrite_repeated_blocks(text, mode=REPEAT_DROP)
+    unique = "Списання майна виконується комісією"
+    start = text.index(unique)
+
+    images = remap_span_split(rewrite.edits, start, start + len(unique))
+
+    assert images is not None and len(images) == 1
+
+
 def test_every_untouched_span_keeps_its_text_under_both_modes() -> None:
     """The offset map is exact: an unrelated span still reads as itself after the rewrite."""
     text = fixture_text()
@@ -204,6 +231,43 @@ def test_strip_corpus_repeats_remaps_a_goldset_onto_the_stripped_corpus(tmp_path
     for item in load_goldset(out / "goldset.jsonl"):
         span = item.source_spans[0]
         assert stripped[span.char_start : span.char_end] == span.text
+
+
+def test_recover_straddle_keeps_a_boundary_crossing_item_as_two_spans(tmp_path: Path) -> None:
+    text = fixture_text()
+    second = text.index(PROCEDURE, text.index(PROCEDURE) + 1)
+    start, end = second - 40, second + len(PROCEDURE)  # kept tail + dropped procedure head
+    goldset = tmp_path / "goldset.jsonl"
+    goldset.write_text(
+        _item("straddle", text, start, end - start).model_dump_json(), encoding="utf-8"
+    )
+
+    dropped = strip_corpus_repeats(
+        FIXTURE, tmp_path / "a", mode=REPEAT_DROP, goldset=goldset, goldset_out=tmp_path / "a.jsonl"
+    )
+    recovered = strip_corpus_repeats(
+        FIXTURE,
+        tmp_path / "b",
+        mode=REPEAT_DROP,
+        goldset=goldset,
+        goldset_out=tmp_path / "b.jsonl",
+        recover_straddle=True,
+    )
+
+    # without recovery the straddler is dropped; with it, the item survives as two re-anchored spans
+    assert dropped["goldset"] == {"items": 1, "remapped": 0, "dropped": ["straddle"], "rehomed": []}
+    assert recovered["goldset"] == {
+        "items": 1,
+        "remapped": 1,
+        "dropped": [],
+        "rehomed": ["straddle"],
+    }
+    stripped = (tmp_path / "b" / REPEATED_DOC).read_text(encoding="utf-8")
+    (item,) = load_goldset(tmp_path / "b.jsonl")
+    assert len(item.source_spans) == 2
+    for span in item.source_spans:
+        assert stripped[span.char_start : span.char_end] == span.text
+    assert "".join(span.text for span in item.source_spans) == text[start:end]
 
 
 def test_conversion_applies_the_selected_repeat_mode_and_keeps_citations_exact(

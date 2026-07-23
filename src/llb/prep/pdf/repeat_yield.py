@@ -4,7 +4,7 @@
 loss-free at the QUESTION level: an item whose gold evidence sat on a dropped copy is re-homed
 onto the byte-identical survivor, which sits in a DIFFERENT section, and an item whose evidence
 straddled a rewrite is dropped from the scored set entirely
-(`llb.prep.pdf.repeat_corpus.GoldsetRemap`). Pooled recall cannot say whether a re-homed question
+(`llb.prep.pdf.repeat_goldset.GoldsetRemap`). Pooled recall cannot say whether a re-homed question
 is still answerable.
 
 This audit asks it directly, per item, on the retrieval seam alone (no model): retrieve on the

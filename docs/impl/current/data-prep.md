@@ -338,10 +338,38 @@ cost each come from:
 - The pooled gain is real and comes from `recovered` items (4 `sentence` / 2 `recursive`): a top-10
   no longer padded with repeated boilerplate surfaces evidence the baseline missed.
 - The genuine cost is the 5 items `drop` removes from the scored set entirely -- their gold span
-  STRADDLED a removed block boundary, so it cannot be re-anchored. 3 of those 5 the baseline could
-  retrieve, and losing them is the operator's call: re-draft the straddling span, or keep the block
-  by raising `--min-repeats` for that corpus. This is the concrete question-level cost the
-  survivor-only pooled number hid, which is why `drop` stays opt-in.
+  STRADDLED a removed block boundary, so `remap_span` cannot map it to one contiguous image. 3 of
+  those 5 the baseline could retrieve. This is the concrete question-level cost the survivor-only
+  pooled number hid, and `--recover-straddle` below removes it.
+
+###### Straddle recovery (`--recover-straddle`)
+
+A straddling gold span is `<tail of a removed copy> + <head of the block after it>`; the removed
+copy's text still exists on the survivor and the following block stays in place, so the span is not
+truly lost -- it just maps to two non-contiguous images. `remap_span_split` (`--recover-straddle`
+on `strip-corpus-repeats` and `audit-repeat-yield`, `REPEAT_RECOVER=1`) splits the span at every
+edit boundary it crosses, re-anchors each piece (the removed part onto the survivor, the kept part
+by shift), and keeps the item with several spans instead of dropping it. Because `recall_at_k`
+credits an item when ANY of its spans is covered, the split preserves the original retrieval
+semantics, and each piece is verified against the stripped text so an off-by-one remap fails loudly.
+
+Re-run with recovery on (same corpus, k, splits; reports under
+`$DATA_DIR/retrieval-noise-floor/20260723T-straddle-recover-<strategy>/`):
+
+| strategy | kept recall@10 keep -> drop | dropped-from-set | answerable lost | verdict |
+| --- | --- | ---: | ---: | --- |
+| `sentence` | 0.632 -> 0.663 (+0.032) | 0 (was 5) | 1 (was 4) | HOLD |
+| `recursive` | 0.695 -> 0.716 (+0.021) | 0 (was 5) | 0 (was 3) | ADOPT |
+
+Recovery does exactly what its design predicts: all 5 straddlers re-enter the scored set, every one
+of the 3 previously answerable-lost items becomes `held` (retrieval reaches the recovered survivor
+piece), and the pooled kept-recall is unchanged within the `+/-0.000` floor. `recursive` flips to
+ADOPT -- the strip now costs zero answerable questions. `sentence` still returns HOLD, but for a
+reason unrelated to the strip's rewrites: its one remaining `lost` item (`...-onto-81`) is `unmoved`
+and was `lost` in the no-recovery audit too -- a corpus-wide ranking side-effect of removing
+boilerplate distractors, which no straddle handling can address. So with `--recover-straddle` the
+straddle cost of `drop` is fully recovered, and what remains is only the ordinary ranking noise any
+index edit produces.
 
 Each successful document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF
 diagnostics, page numbers, generated-corpus character spans, and page-local block spans when the

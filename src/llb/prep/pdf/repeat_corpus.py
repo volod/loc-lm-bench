@@ -20,16 +20,16 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
-from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX
+from llb.prep.pdf.repeat_goldset import GoldsetRemap, remap_goldset
 from llb.prep.pdf.repeats import (
     DEFAULT_MIN_REPEATS,
     REPEAT_KEEP,
     RepeatCensus,
+    StrippedDoc,
     TextEdit,
     remap_span,
     rewrite_repeated_blocks,
-    span_rehomed,
 )
 
 CORPUS_SUFFIXES = (".md", ".txt")
@@ -43,15 +43,6 @@ class DocumentRepeats(TypedDict):
     census: RepeatCensus
     chars_before: int
     chars_after: int
-
-
-class GoldsetRemap(TypedDict):
-    """How a gold set survived the rewrite."""
-
-    items: int
-    remapped: int
-    dropped: list[str]  # ids whose spans straddle a rewrite and can no longer be anchored
-    rehomed: list[str]  # remapped ids whose evidence sat on a dropped copy (now on the survivor)
 
 
 class CorpusRepeatReport(TypedDict):
@@ -71,13 +62,6 @@ class CorpusRepeatReport(TypedDict):
     goldset: GoldsetRemap | None
 
 
-class _Stripped(TypedDict):
-    """Per-document rewrite state the goldset and citation remaps both read."""
-
-    text: str
-    edits: list[TextEdit]
-
-
 def strip_corpus_repeats(
     corpus_root: Path | str,
     out_root: Path | str | None = None,
@@ -86,11 +70,14 @@ def strip_corpus_repeats(
     min_repeats: int = DEFAULT_MIN_REPEATS,
     goldset: Path | str | None = None,
     goldset_out: Path | str | None = None,
+    recover_straddle: bool = False,
 ) -> CorpusRepeatReport:
     """Census (and, for a rewriting mode, rewrite) a converted corpus into `out_root`.
 
     With `mode='keep'` -- or no `out_root` -- nothing is written except the returned report: the
-    census is the deliverable and the corpus is left untouched.
+    census is the deliverable and the corpus is left untouched. With `recover_straddle`, a gold
+    span that crosses a removed block boundary is split at the boundary and re-anchored on both
+    sides instead of being dropped (`remap_span_split`).
     """
     root = Path(corpus_root)
     if not root.is_dir():
@@ -99,7 +86,7 @@ def strip_corpus_repeats(
     if target is not None:
         target.mkdir(parents=True, exist_ok=True)
     documents: list[DocumentRepeats] = []
-    stripped: dict[str, _Stripped] = {}
+    stripped: dict[str, StrippedDoc] = {}
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
@@ -120,7 +107,7 @@ def strip_corpus_repeats(
         )
         _write_doc(target, doc_id, rewrite.text)
     report = _report(root, target, mode, min_repeats, documents)
-    report["goldset"] = _remap_goldset(goldset, goldset_out, stripped)
+    report["goldset"] = remap_goldset(goldset, goldset_out, stripped, recover_straddle)
     if target is not None:
         (target / REPEAT_REPORT_NAME).write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -205,7 +192,7 @@ def _write_doc(target: Path | None, doc_id: str, text: str) -> None:
 
 
 def _write_sidecar(
-    path: Path, target: Path | None, doc_id: str, stripped: dict[str, _Stripped]
+    path: Path, target: Path | None, doc_id: str, stripped: dict[str, StrippedDoc]
 ) -> None:
     """Copy a non-corpus file into the target, remapping a page-citation sidecar on the way.
 
@@ -243,50 +230,3 @@ def _report(
         "chars_after": sum(document["chars_after"] for document in documents),
         "goldset": None,
     }
-
-
-def _remap_goldset(
-    goldset: Path | str | None,
-    goldset_out: Path | str | None,
-    stripped: dict[str, _Stripped],
-) -> GoldsetRemap | None:
-    """Rewrite each item's span offsets onto the stripped corpus; drop what cannot be anchored."""
-    if goldset is None:
-        return None
-    items = load_goldset(goldset)
-    kept: list[GoldItem] = []
-    dropped: list[str] = []
-    rehomed: list[str] = []
-    for item in items:
-        remapped = [_remap_gold_span(span, stripped.get(span.doc_id)) for span in item.source_spans]
-        moved = [span for span, _ in remapped if span is not None]
-        if len(moved) != len(item.source_spans):
-            dropped.append(item.id)
-            continue
-        if any(was_rehomed for _, was_rehomed in remapped):
-            rehomed.append(item.id)
-        kept.append(item.model_copy(update={"source_spans": moved}))
-    if goldset_out is not None:
-        out = Path(goldset_out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text("".join(item.model_dump_json() + "\n" for item in kept), encoding="utf-8")
-    return {"items": len(items), "remapped": len(kept), "dropped": dropped, "rehomed": rehomed}
-
-
-def _remap_gold_span(
-    span: SourceSpan, stripped: _Stripped | None
-) -> tuple[SourceSpan | None, bool]:
-    """The span's offsets in the stripped document (and whether it was re-homed onto a survivor).
-
-    The offsets are verified against the stripped text itself, so a remap that is off by one
-    character reads as unanchorable rather than scoring the wrong words.
-    """
-    if stripped is None:
-        return None, False
-    if not stripped["edits"]:
-        return span, False
-    rehomed = span_rehomed(stripped["edits"], span.char_start, span.char_end)
-    moved = remap_span(stripped["edits"], span.char_start, span.char_end)
-    if moved is None or stripped["text"][moved[0] : moved[1]] != span.text:
-        return None, False
-    return span.model_copy(update={"char_start": moved[0], "char_end": moved[1]}), rehomed

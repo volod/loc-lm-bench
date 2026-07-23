@@ -38,6 +38,12 @@ def audit_repeat_yield_cmd(
     chunk_size: Optional[int] = typer.Option(None, help="chunk size (default from config)"),
     chunk_overlap: Optional[int] = typer.Option(None, help="chunk overlap (default from config)"),
     embedding_model: Optional[str] = typer.Option(None, help="embedder id (default from config)"),
+    recover_straddle: bool = typer.Option(
+        False,
+        "--recover-straddle",
+        help="split a gold span that crosses a removed block boundary and re-anchor both sides "
+        "instead of dropping the item, then audit the recovered yield",
+    ),
 ) -> None:
     """Measure which questions `--repeat-blocks drop` re-homes, beside its pooled recall gain.
 
@@ -70,6 +76,7 @@ def audit_repeat_yield_cmd(
         min_repeats=min_repeats or DEFAULT_MIN_REPEATS,
         goldset=goldset,
         goldset_out=drop_goldset,
+        recover_straddle=recover_straddle,
     )
     (work / REPEAT_REPORT_NAME).write_text(
         json.dumps(strip, ensure_ascii=False, indent=2), encoding="utf-8"

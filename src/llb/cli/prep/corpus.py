@@ -147,6 +147,12 @@ def strip_corpus_repeats_cmd(
     goldset_out: Optional[Path] = typer.Option(
         None, help="write the remapped gold set here (defaults to <out>/goldset.jsonl)"
     ),
+    recover_straddle: bool = typer.Option(
+        False,
+        "--recover-straddle",
+        help="drop mode: a gold span crossing a removed block boundary is split at the boundary "
+        "and re-anchored on both sides instead of dropping the item",
+    ),
     report: Optional[Path] = typer.Option(None, help="write the JSON census/rewrite report here"),
 ) -> None:
     """Census a converted corpus's intra-document repeated blocks, and optionally strip them.
@@ -173,6 +179,7 @@ def strip_corpus_repeats_cmd(
             min_repeats=min_repeats or DEFAULT_MIN_REPEATS,
             goldset=goldset,
             goldset_out=target_goldset,
+            recover_straddle=recover_straddle,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
