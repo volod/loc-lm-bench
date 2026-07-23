@@ -142,6 +142,21 @@ def remap_span(edits: list[TextEdit], start: int, end: int) -> tuple[int, int] |
     return new_start, new_last + 1
 
 
+def span_rehomed(edits: list[TextEdit], start: int, end: int) -> bool:
+    """True when `[start, end)` sat inside a DROPPED copy, so its remap lands on another section.
+
+    `drop` keeps the first copy of a repeated block and removes the rest; a span labeled on one of
+    those removed copies is not lost -- `remap_span` follows it onto the byte-identical survivor --
+    but the survivor sits in a DIFFERENT section, so the question's evidence has been re-homed.
+    This flags exactly those spans for the yield audit, which then asks whether retrieval still
+    reaches the survivor.
+    """
+    return any(
+        edit.moved_to is not None and edit.start <= start < edit.end and start < end
+        for edit in edits
+    )
+
+
 def heading_breadcrumb(text: str, offset: int) -> str:
     """The enclosing markdown heading chain at `offset` (`h1 > h2 > ...`), '' when there is none.
 

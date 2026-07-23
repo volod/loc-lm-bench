@@ -298,9 +298,50 @@ evidence, and unlike collapse the survivor now sits in its first section only. `
 `sentence` (+0.045) but regresses `recursive` (-0.023) and, by making copies textually distinct,
 defeats the cheaper exact collapse and inflates the index -- so it is not a default, only a probe
 for a corpus whose repeated blocks genuinely belong to several sections at once. `drop` stays
-opt-in because it is not loss-free at the QUESTION level: 5 of 95 goods items had gold evidence on a
-later copy and were remapped onto the survivor or dropped from the scored set, which is the
-operator's call to make per corpus.
+opt-in because it is not loss-free at the QUESTION level: on the goods corpus it removes 5 of 95
+items from the scored set (their gold span straddled a removed block), 3 of which the baseline
+could retrieve -- the per-question audit below quantifies exactly that cost, which is the operator's
+call to make per corpus.
+
+##### Per-question yield audit (`audit-repeat-yield`)
+
+The pooled recall verdict above is measured on the items that SURVIVE the rewrite, so it cannot
+show what `drop` cost the questions it moved. `make audit-repeat-yield` (`llb audit-repeat-yield`,
+`src/llb/prep/pdf/repeat_yield.py`) measures that directly: it runs the `drop` strip, indexes the
+keep and drop corpora identically, retrieves each item on its own corpus (baseline against the
+original spans, drop against the remapped spans), and classifies every item -- `held` (hit both
+sides), `lost` (hit -> miss), `recovered` (miss -> hit), `dropped_from_set` (evidence straddled a
+rewrite, item removed). The goldset remap tags each item's change as `unmoved`, `rehomed` (its
+evidence moved onto a survivor), or `dropped`, so the report separates a re-homing from a
+corpus-wide ranking side-effect. It ends in an ADOPT/HOLD verdict naming any question the strip
+cost that retrieval could previously answer.
+
+```bash
+make audit-repeat-yield CORPUS=<md-corpus> GOLDSET=<gs> CHUNK_STRATEGY=sentence CHUNK_SIZE=200
+```
+
+Measured on the goods corpus (CUDA host, pinned e5-base, `size=200`, k=10, all 95 items; reports
+under `$DATA_DIR/retrieval-noise-floor/20260723T-repeat-yield-<strategy>/`):
+
+| strategy | kept recall@10 keep -> drop | held | recovered | lost (re-home) | dropped-from-set | answerable lost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `sentence` | 0.633 -> 0.667 (+0.033) | 56 | 4 | 1 (unmoved flip) | 5 | 4 |
+| `recursive` | 0.700 -> 0.722 (+0.022) | 63 | 2 | 0 | 5 | 3 |
+
+Both strategies return HOLD, and the audit resolves exactly where the pooled gain and the hidden
+cost each come from:
+
+- Re-homing itself is harmless to retrieval. NO item whose evidence moved onto a survivor became a
+  miss under either strategy -- the survivor is byte-identical text and retrieval still reaches it.
+  The one `sentence` `lost` item was `unmoved`: a corpus-wide ranking side-effect of removing other
+  blocks, not the re-homing.
+- The pooled gain is real and comes from `recovered` items (4 `sentence` / 2 `recursive`): a top-10
+  no longer padded with repeated boilerplate surfaces evidence the baseline missed.
+- The genuine cost is the 5 items `drop` removes from the scored set entirely -- their gold span
+  STRADDLED a removed block boundary, so it cannot be re-anchored. 3 of those 5 the baseline could
+  retrieve, and losing them is the operator's call: re-draft the straddling span, or keep the block
+  by raising `--min-repeats` for that corpus. This is the concrete question-level cost the
+  survivor-only pooled number hid, which is why `drop` stays opt-in.
 
 Each successful document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF
 diagnostics, page numbers, generated-corpus character spans, and page-local block spans when the

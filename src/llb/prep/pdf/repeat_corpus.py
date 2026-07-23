@@ -29,6 +29,7 @@ from llb.prep.pdf.repeats import (
     TextEdit,
     remap_span,
     rewrite_repeated_blocks,
+    span_rehomed,
 )
 
 CORPUS_SUFFIXES = (".md", ".txt")
@@ -50,6 +51,7 @@ class GoldsetRemap(TypedDict):
     items: int
     remapped: int
     dropped: list[str]  # ids whose spans straddle a rewrite and can no longer be anchored
+    rehomed: list[str]  # remapped ids whose evidence sat on a dropped copy (now on the survivor)
 
 
 class CorpusRepeatReport(TypedDict):
@@ -148,7 +150,12 @@ def format_repeat_report(report: CorpusRepeatReport) -> str:
     goldset = report["goldset"]
     if goldset is not None:
         dropped = f", dropped {', '.join(goldset['dropped'])}" if goldset["dropped"] else ""
-        lines.append(f"  goldset: {goldset['remapped']}/{goldset['items']} items remapped{dropped}")
+        rehomed = (
+            f", {len(goldset['rehomed'])} re-homed onto a survivor" if goldset["rehomed"] else ""
+        )
+        lines.append(
+            f"  goldset: {goldset['remapped']}/{goldset['items']} items remapped{rehomed}{dropped}"
+        )
     return "\n".join(lines)
 
 
@@ -249,27 +256,37 @@ def _remap_goldset(
     items = load_goldset(goldset)
     kept: list[GoldItem] = []
     dropped: list[str] = []
+    rehomed: list[str] = []
     for item in items:
-        spans = [_remap_gold_span(span, stripped.get(span.doc_id)) for span in item.source_spans]
-        moved = [span for span in spans if span is not None]
-        if len(moved) != len(spans):
+        remapped = [_remap_gold_span(span, stripped.get(span.doc_id)) for span in item.source_spans]
+        moved = [span for span, _ in remapped if span is not None]
+        if len(moved) != len(item.source_spans):
             dropped.append(item.id)
             continue
+        if any(was_rehomed for _, was_rehomed in remapped):
+            rehomed.append(item.id)
         kept.append(item.model_copy(update={"source_spans": moved}))
     if goldset_out is not None:
         out = Path(goldset_out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("".join(item.model_dump_json() + "\n" for item in kept), encoding="utf-8")
-    return {"items": len(items), "remapped": len(kept), "dropped": dropped}
+    return {"items": len(items), "remapped": len(kept), "dropped": dropped, "rehomed": rehomed}
 
 
-def _remap_gold_span(span: SourceSpan, stripped: _Stripped | None) -> SourceSpan | None:
-    """The span's offsets in the stripped document, verified against the stripped text itself."""
+def _remap_gold_span(
+    span: SourceSpan, stripped: _Stripped | None
+) -> tuple[SourceSpan | None, bool]:
+    """The span's offsets in the stripped document (and whether it was re-homed onto a survivor).
+
+    The offsets are verified against the stripped text itself, so a remap that is off by one
+    character reads as unanchorable rather than scoring the wrong words.
+    """
     if stripped is None:
-        return None
+        return None, False
     if not stripped["edits"]:
-        return span
+        return span, False
+    rehomed = span_rehomed(stripped["edits"], span.char_start, span.char_end)
     moved = remap_span(stripped["edits"], span.char_start, span.char_end)
     if moved is None or stripped["text"][moved[0] : moved[1]] != span.text:
-        return None
-    return span.model_copy(update={"char_start": moved[0], "char_end": moved[1]})
+        return None, False
+    return span.model_copy(update={"char_start": moved[0], "char_end": moved[1]}), rehomed

@@ -192,7 +192,14 @@ def test_strip_corpus_repeats_remaps_a_goldset_onto_the_stripped_corpus(tmp_path
         FIXTURE, out, mode=REPEAT_DROP, goldset=goldset, goldset_out=out / "goldset.jsonl"
     )
 
-    assert report["goldset"] == {"items": 2, "remapped": 2, "dropped": []}
+    # the "repeat" item's evidence sat on a dropped copy -> re-homed onto the survivor; "unique"
+    # is untouched.
+    assert report["goldset"] == {
+        "items": 2,
+        "remapped": 2,
+        "dropped": [],
+        "rehomed": ["repeat"],
+    }
     stripped = (out / REPEATED_DOC).read_text(encoding="utf-8")
     for item in load_goldset(out / "goldset.jsonl"):
         span = item.source_spans[0]

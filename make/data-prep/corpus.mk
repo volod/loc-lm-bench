@@ -1,7 +1,8 @@
 ## Corpus conversion, ingestion, validation, and SQuAD preparation.
 
-.PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats validate-goldset \
-	ingest-squad external-squad-rag audit-corpus-conflicts resolve-corpus-conflicts
+.PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
+	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
+	resolve-corpus-conflicts
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -35,6 +36,20 @@ strip-corpus-repeats: ## Census (REPEAT_MODE=keep) or strip (drop|anchor) intra-
 	if [ -n "$(REPEAT_GOLDSET_OUT)" ]; then args+=(--goldset-out "$(REPEAT_GOLDSET_OUT)"); fi; \
 	if [ -n "$(REPEAT_REPORT)" ]; then args+=(--report "$(REPEAT_REPORT)"); fi; \
 	$(PY) -m llb.main strip-corpus-repeats "$${args[@]}"
+
+audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLDSET: which questions it re-homes vs the pooled recall gain (REPEAT_OUT=, RAG_K=, SPLIT=, REPEAT_MIN=, CHUNK_STRATEGY=, CHUNK_SIZE=, CHUNK_OVERLAP=, EMBEDDING_MODEL=); needs ".[rag]"
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	args=(--corpus "$(CORPUS)" --goldset "$(GOLDSET)" --k $(RAG_K)); \
+	if [ -n "$(CONFIG)" ]; then args+=(--config "$(CONFIG)"); fi; \
+	if [ -n "$(REPEAT_OUT)" ]; then args+=(--out "$(REPEAT_OUT)"); fi; \
+	if [ -n "$(SPLIT)" ]; then args+=(--split "$(SPLIT)"); fi; \
+	if [ -n "$(REPEAT_MIN)" ]; then args+=(--min-repeats "$(REPEAT_MIN)"); fi; \
+	if [ -n "$(CHUNK_STRATEGY)" ]; then args+=(--strategy "$(CHUNK_STRATEGY)"); fi; \
+	if [ -n "$(CHUNK_SIZE)" ]; then args+=(--chunk-size "$(CHUNK_SIZE)"); fi; \
+	if [ -n "$(CHUNK_OVERLAP)" ]; then args+=(--chunk-overlap "$(CHUNK_OVERLAP)"); fi; \
+	if [ -n "$(EMBEDDING_MODEL)" ]; then args+=(--embedding-model "$(EMBEDDING_MODEL)"); fi; \
+	$(PY) -m llb.main audit-repeat-yield "$${args[@]}"
 
 audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=); never edits the corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
