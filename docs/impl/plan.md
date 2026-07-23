@@ -405,33 +405,6 @@ silently change the recommended model.
   tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
-### normalize-step language gate (optional)
-
-The `normalize` step decides transliteration PER TOKEN and unconditionally, so a query written in
-a foreign language is rewritten into Cyrillic nonsense (`what does the` -> `wгат доес тге`) that
-no later step can undo -- the restoration constraints correctly refuse to "repair" it, and the
-question retrieves on garbage. One item of the committed `ua_squad_postedited_v1` final split is
-exactly this case, and any bilingual operator corpus will have more
-([RAG core](current/rag-core.md#query-side-processing)). Decide transliteration for the QUERY as a
-whole instead: romanized Ukrainian decodes to tokens the corpus vocabulary or the morphology probe
-recognizes, foreign-language text does not, so gate the step on the share of decoded tokens that
-are plausible and leave the query untouched below the threshold.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `apply_normalize` in `src/llb/rag/query_prep/normalize.py`, the
-  vocabulary/context index in `query_prep/restore.py`, and `llb.rag.lexical.load_uk_word_probe`.
-- User-visible outcome: a non-Ukrainian question survives the query-prep lane unchanged instead
-  of being mangled into unretrievable Cyrillic.
-- Scope boundary: in scope -- the whole-query plausibility gate, its threshold, and per-query
-  provenance for the decision. Out of scope -- language identification models, per-token
-  language tagging, and translating the query.
-- Data and artifact paths: none beyond the existing per-case `query_processed` provenance.
-- Execution path: CI covers the gate on committed English/Ukrainian/romanized fixtures; a
-  `make bench-query-robustness` re-run confirms the transliteration lane does not regress.
-- Acceptance gates: `make ci` green; every existing romanization test still transliterates; the
-  English fixture passes through unchanged.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
 ### normalize-casefold-dense-lane-cost (optional)
 
 Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item

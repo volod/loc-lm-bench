@@ -152,6 +152,12 @@ class RunConfigFields(BaseModel):
     # unchanged (it is an inflection for the lemmatization lane, not a misspelling). Off by
     # default so the pure edit-distance behavior remains explicitly selectable.
     query_prep_typo_guard: bool = False
+    # Language gate for the 'normalize' step (normalize-step-language-gate): when on, transliteration
+    # is decided for the WHOLE query -- a foreign-language question whose Latin tokens do not decode
+    # to plausible Ukrainian is left untouched instead of being mangled into unretrievable Cyrillic
+    # (`what does the` -> `wгат доес тге`). Off by default so per-token transliteration stays the
+    # explicit baseline; needs the 'normalize' step.
+    query_prep_language_gate: bool = False
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

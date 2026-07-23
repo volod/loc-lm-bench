@@ -7,11 +7,19 @@ from llb.rag.query_prep.base import (
     KIND_HOMOGLYPH,
     KIND_TRANSLITERATE,
     STEP_NORMALIZE,
+    LanguageGate,
+    PlausibilityProbe,
     QueryEdit,
 )
 from llb.scoring.security_cases import CYRILLIC_TO_LATIN_CONFUSABLES
 
 _LOG = logging.getLogger(__name__)
+
+# Below this share of a query's Latin word tokens decoding to plausible Ukrainian, the whole query
+# is treated as foreign-language text and left untransliterated. Half is the natural split: a
+# genuinely romanized Ukrainian query decodes (near-)entirely to known forms, while foreign text
+# decodes to none, so the boundary is not delicate.
+LANGUAGE_GATE_MIN_PLAUSIBLE_SHARE = 0.5
 
 # Reversible-ish Ukrainian romanization used to invert Latin-typed terms back to Cyrillic.
 CYRILLIC_TO_LATIN: dict[str, str] = {
@@ -152,14 +160,74 @@ def _repair_mixed_script(token: str) -> str:
     return "".join(LATIN_TO_UKRAINIAN_CONFUSABLES.get(char, char) for char in token)
 
 
-def apply_normalize(query: str) -> tuple[str, list[QueryEdit]]:
+def _transliteration_candidates(query: str) -> list[str]:
+    """The casefolded Latin word tokens `apply_normalize` would try to transliterate.
+
+    Short uppercase acronyms are excluded for the same reason the step leaves them Latin: `NP` is
+    not romanized Ukrainian, so it neither romanizes nor speaks to whether the query is Ukrainian.
+    """
+    from llb.rag.lexical import _TOKEN_RE
+
+    candidates: list[str] = []
+    for raw in _TOKEN_RE.findall(query):
+        token = raw.casefold()
+        if not _is_latin_word(token):
+            continue
+        letters = raw.replace("'", "")
+        if letters.isupper() and len(letters) <= LATIN_ACRONYM_MAX_CHARS:
+            continue
+        candidates.append(token)
+    return candidates
+
+
+def language_gate(
+    query: str,
+    plausible: PlausibilityProbe,
+    threshold: float = LANGUAGE_GATE_MIN_PLAUSIBLE_SHARE,
+) -> LanguageGate:
+    """Decide whether the query as a whole should be transliterated to Cyrillic.
+
+    Romanized Ukrainian decodes to tokens the corpus vocabulary or the morphology probe knows;
+    foreign-language text (`what does the` -> `wгат доес тге`) decodes to Cyrillic nonsense the
+    later restoration constraints correctly refuse to repair. When fewer than `threshold` of the
+    query's Latin word tokens decode to a plausible Ukrainian form, the whole query is left
+    untouched. A query with no Latin word tokens is transliterated vacuously -- there is nothing to
+    gate, so homoglyph repair and Cyrillic passthrough behave exactly as before.
+    """
+    candidates = _transliteration_candidates(query)
+    plausible_count = sum(
+        1 for token in candidates if plausible(transliterate_latin_to_cyrillic(token))
+    )
+    total = len(candidates)
+    transliterate = total == 0 or (plausible_count / total) >= threshold
+    if not transliterate:
+        _LOG.info(
+            "[query-prep] normalize language gate refused %r: %d/%d Latin tokens decode to "
+            "plausible Ukrainian (< %.2f)",
+            query,
+            plausible_count,
+            total,
+            threshold,
+        )
+    return LanguageGate(transliterate, total, plausible_count, threshold)
+
+
+def apply_normalize(query: str, *, gate: LanguageGate | None = None) -> tuple[str, list[QueryEdit]]:
     """Casefold + apostrophe-unify the whole query, then transliterate Latin-typed tokens.
 
     Casefolding and apostrophe unification are silent matching-side normalization (they never
     change which corpus terms match). Each Latin->Cyrillic transliteration is recorded as an edit
     because it is a real, auditable substitution.
+
+    When `gate` decided the query is not romanized Ukrainian, the query is returned untouched: per
+    token transliteration would rewrite foreign text into unrecoverable Cyrillic. The gate stays
+    off (None) unless the pipeline is wired with a plausibility probe, so a bare `apply_normalize`
+    call transliterates unconditionally as before.
     """
     from llb.rag.lexical import _APOSTROPHE_VARIANTS, _TOKEN_RE
+
+    if gate is not None and not gate.transliterate:
+        return query, []
 
     folded = query.translate(_APOSTROPHE_VARIANTS)
     edits: list[QueryEdit] = []

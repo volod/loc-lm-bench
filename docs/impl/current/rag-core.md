@@ -803,6 +803,24 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   repair inside mixed Cyrillic tokens. Canonical romanization preserves existing uppercase Latin
   acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
   would otherwise collide.
+
+  An opt-in **language gate** (normalize-step-language-gate; `RunConfig.query_prep_language_gate`,
+  refused at config validation unless the `normalize` step is present) decides transliteration for
+  the QUERY AS A WHOLE rather than per token. Per-token transliteration is unconditional, so a
+  foreign-language question is rewritten into Cyrillic nonsense the later restoration constraints
+  correctly refuse to repair (`What does the Premier of Victoria...` -> `wгат доес тге...`), and it
+  then retrieves on garbage. The gate romanizes each of the query's Latin word tokens (short
+  uppercase acronyms excluded) and asks whether the decoded form is plausible Ukrainian -- present
+  in the corpus vocabulary OR recognized by the pymorphy3 word probe (`_plausibility_probe`,
+  reusing the typo guard's probe when both are on). Romanized Ukrainian decodes (near-)entirely to
+  plausible forms; foreign text decodes to none. Below `LANGUAGE_GATE_MIN_PLAUSIBLE_SHARE` (0.5)
+  the whole query is left untouched; a query with no Latin word tokens transliterates vacuously, so
+  homoglyph repair and Cyrillic passthrough are unaffected. A refusal is recorded per query as
+  `query_normalize_gate` provenance (only when it fired) and surfaces in the A/B report. On the
+  committed `ua_squad_postedited_v1` goldset the gate leaves every untranslated English SQuAD
+  question untouched while a romanized-Ukrainian query with a dropped soft sign (`yakist rishennya
+  sudu`, 2/3 plausible) still clears the threshold and transliterates. Off by default so per-token
+  transliteration stays the explicit baseline.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
   set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
@@ -868,8 +886,9 @@ inclusion also fixes the earlier loss of deterministic query-prep provenance on 
 
 Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
 `normalize` | `typos` | `glossary` | `rewrite` | `hyde` | `decompose`;
-unknown/duplicated steps rejected at config validation), `query_glossary_path`, and
-`query_prep_typo_guard` (refused at config validation unless the `typos` step is present).
+unknown/duplicated steps rejected at config validation), `query_glossary_path`,
+`query_prep_typo_guard` (refused at config validation unless the `typos` step is present), and
+`query_prep_language_gate` (refused at config validation unless the `normalize` step is present).
 
 Commands:
 
