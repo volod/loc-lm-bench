@@ -28,9 +28,12 @@ class MergedUnits:
 
     indexed: list[ChunkRecord]
     parents: list[ChunkRecord] | None
-    # per indexed row: the old build-order ordinal to reuse, or None for a fresh unit to embed
+    # per indexed row: the stored embedding row to reuse, or None for a fresh unit to embed
     row_sources: list[int | None]
     duplicates: DuplicateStats | None = None  # measured after the merge, None when not collapsed
+    # kept rows whose embedding was recovered by TEXT (a changed doc re-introduced text the store
+    # already held), i.e. the encoder calls the text-keyed reuse saved beyond the position map.
+    text_reused: int = 0
 
     @property
     def new_units(self) -> list[ChunkRecord]:
@@ -147,7 +150,28 @@ def assemble(
     return MergedUnits(indexed=indexed, parents=parents, row_sources=row_sources)
 
 
-def resolve_duplicates(merged: MergedUnits, vector_rows: list[int], collapse: bool) -> MergedUnits:
+def text_row_map(chunks: list[ChunkRecord]) -> dict[str, int]:
+    """`{chunk text -> stored embedding row}` for the live store, first row per text wins.
+
+    Built once from the stored survivors (each `chunks[row]` is the row of `stored_vectors`),
+    it holds REFERENCES to the texts already in `chunks`, so its cost is one dict entry per stored
+    row -- no copy of the corpus text -- which bounds it on a large store. Collapsed stores have
+    distinct survivor texts so no key ever collides; `--keep-duplicate-chunks` stores can repeat a
+    text, and first-wins then points at the lowest (survivor-equivalent) row, whose vector is
+    identical to every copy's anyway.
+    """
+    rows: dict[str, int] = {}
+    for row, chunk in enumerate(chunks):
+        rows.setdefault(str(chunk["text"]), row)
+    return rows
+
+
+def resolve_duplicates(
+    merged: MergedUnits,
+    vector_rows: list[int],
+    collapse: bool,
+    text_rows: dict[str, int] | None = None,
+) -> MergedUnits:
     """Point the reuse plan back at stored embedding rows, then re-collapse the merged units.
 
     Expansion (see `refresh_vector_store`) gave every duplicate copy its own record so the
@@ -155,16 +179,34 @@ def resolve_duplicates(merged: MergedUnits, vector_rows: list[int], collapse: bo
     instead of stored rows; `vector_rows` maps them back. Re-collapsing AFTER the merge is what
     keeps a refreshed store identical to a rebuild even when the document that happened to carry
     a survivor was the one edited or deleted.
+
+    `text_rows` (when supplied) recovers a fresh unit's embedding by its TEXT: the position map
+    can only reuse a row a fresh unit inherits from its own stored chunk, so a repeated passage
+    whose stored survivor lived in the EDITED document -- or an unchanged chunk of a modified
+    document -- re-embeds text the store already holds. Keying the leftover fresh rows on stored
+    text reuses that row regardless of which document now carries it. Only valid where a chunk
+    vector is a pure function of its text (every strategy but `late`, whose vectors are
+    document-contextual), so the caller passes `None` for `late`.
     """
     rows: list[int | None] = [
         None if source is None else vector_rows[source] for source in merged.row_sources
     ]
+    reused: set[int] = set()
+    if text_rows:
+        for position, (unit, row) in enumerate(zip(merged.indexed, rows)):
+            if row is not None:
+                continue
+            hit = text_rows.get(str(unit["text"]))
+            if hit is not None:
+                rows[position] = hit
+                reused.add(position)
     if not collapse:
         return MergedUnits(
             indexed=merged.indexed,
             parents=merged.parents,
             row_sources=rows,
             duplicates=duplicate_stats(merged.indexed),
+            text_reused=len(reused),
         )
     collapsed = collapse_duplicate_chunks(merged.indexed)
     return MergedUnits(
@@ -172,6 +214,7 @@ def resolve_duplicates(merged: MergedUnits, vector_rows: list[int], collapse: bo
         parents=merged.parents,
         row_sources=[rows[position] for position in collapsed.kept],
         duplicates=collapsed.stats,
+        text_reused=sum(1 for position in collapsed.kept if position in reused),
     )
 
 

@@ -71,33 +71,6 @@ it can merge passages that genuinely differ.
   and any adopted tier keeps recall@10 within the measured floor while lowering the fragile count.
 - Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse).
 
-### refresh-embedding-reuse-keyed-by-text (optional)
-
-The incremental refresh reuses an embedding row by chunk POSITION, so when the document that
-carried the surviving copy of a repeated passage is the one edited, the merged store re-embeds
-text it already holds in an unchanged document
-([RAG core](current/rag-core.md#duplicate-chunk-collapse)). It is correct -- the refreshed store
-still equals a rebuild -- but it pays for an encoder call the store could have answered from its
-own vectors, and on a furniture-heavy corpus the passages that move this way are exactly the ones
-that appear everywhere. Key the reuse lookup on chunk TEXT (a text -> stored row map built once
-from the live store) so any unchanged text reuses its row regardless of which document now carries
-it, and report the extra rows the change saves.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `resolve_duplicates` / `merged_vectors` in
-  `src/llb/rag/refresh/merge.py`; the rebuild-equivalence tests in
-  `tests/llb/rag/test_refresh_store.py` and `tests/llb/rag/test_duplicates_store.py` are the gate.
-- User-visible outcome: a refresh after editing a boilerplate-carrying document costs encoder
-  calls proportional to the NEW text, not to which document happened to hold the survivor.
-- Scope boundary: in scope -- the text-keyed reuse map, its memory bound on a large store, and the
-  saved-row count in the refresh log. Out of scope -- changing which copy survives collapse (it
-  must stay the first in build order, or refresh no longer equals a rebuild).
-- Data and artifact paths: none beyond the existing generation directories.
-- Execution path: CI only -- the fake-embedder refresh tests already count embedded texts.
-- Acceptance gates: `make ci` green; refresh still equals a from-scratch rebuild on every existing
-  store kind; the duplicate-corpus refresh embeds strictly fewer texts than today.
-- Documentation target: the refresh subsection of [RAG core](current/rag-core.md).
-
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 
 The measurement floor is wired into `compare-retrieval` only. `compare-embeddings` (its own

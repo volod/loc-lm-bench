@@ -242,7 +242,11 @@ How it works:
   `src/llb/rag/refresh/merge.py`), so a refreshed store still equals a from-scratch
   rebuild even when the document that happened to carry a survivor is the one edited or deleted.
   A repeated passage that is already indexed costs no embedding call when a new document
-  introduces it again.
+  introduces it again, and -- because the leftover fresh rows are keyed on stored TEXT, not on
+  chunk position (`text_row_map`) -- that holds even when the EDITED document is the one that
+  carried the survivor: its re-emitted copy recovers the row an unchanged document still holds
+  instead of paying the encoder for text the store already has. The refresh reports the recovered
+  rows as `n_reused_by_text` (`refresh-index` prints "N recovered by text").
 - `store_meta.json` records `collapse_duplicates` and the measured `duplicates` stats (`n`,
   `unique`, `collapsed`, `duplicate_chunks`, `duplicate_share`, `groups`, `largest_group`,
   `intra_document_groups`, `cross_document_groups`), and `build-index` echoes them as its
@@ -325,15 +329,26 @@ page-span regeneration, governance-only manifest changes) rewrites its chunk rec
 the re-annotated metadata -- but reuses every embedding row and its lexical postings instead of
 re-embedding (`_annotation_only_sources`); `refresh-index` reports those rows as reused, not
 embedded. The fast path applies only to the diff's modified class: added documents and the
-legacy no-`doc_fingerprints` full refresh always embed fresh rows, and any real text edit
+legacy no-`doc_fingerprints` full refresh always start with fresh rows, and any real text edit
 (including an equal-length in-place replacement, which keeps the span grid but changes chunk
-text) still re-embeds. The merged store preserves the exact from-scratch
-build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
+text) re-chunks the document. Text-keyed reuse then recovers every fresh row whose text the store
+already holds: `text_row_map` builds a `{stored chunk text -> row}` index once (references, not
+copies, so it costs one entry per stored row), and `resolve_duplicates` reuses that row for any
+leftover fresh unit with the same text -- so re-emitted page furniture, an unchanged chunk of a
+modified document, and unchanged documents in a legacy full refresh all reuse their stored rows
+regardless of which document now carries the text. It is only applied where a chunk vector is a
+pure function of its text; the `late` strategy pools document context, so it passes `text_rows`
+as `None` and re-encodes each changed document instead. The merged store preserves the exact
+from-scratch build order, so a refresh is identical to a rebuild on the same corpus state; CI
+proves the
 equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
 and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
 cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`,
 plus annotation-only (sidecar regeneration) cases asserting zero embedder calls in flat,
-hybrid, and parent_child modes and a same-span text-edit guard. The
+hybrid, and parent_child modes and a same-span text-edit guard. `tests/llb/rag/test_duplicates_store.py`
+covers the text-keyed reuse: the shared block is recovered from the store's own vectors when the
+edited document is the one that carried its survivor, and the refreshed store still matches a
+rebuild byte for byte. The
 hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
 postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
 or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed

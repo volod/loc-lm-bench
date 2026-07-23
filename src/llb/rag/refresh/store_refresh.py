@@ -42,6 +42,7 @@ from llb.rag.refresh.merge import (
     chunk_changed_docs,
     merged_vectors,
     resolve_duplicates,
+    text_row_map,
 )
 from llb.rag.store import RagStore
 from llb.rag.store_build import (
@@ -67,6 +68,9 @@ class VectorRefreshResult:
     generation_dir: Path | None = None
     n_reused: int = 0
     n_embedded: int = 0
+    n_reused_by_text: int = (
+        0  # of n_reused, rows a changed doc recovered by text (else re-embedded)
+    )
     old_store: RagStore | None = None
     new_store: RagStore | None = None
 
@@ -179,6 +183,10 @@ def refresh_vector_store(
     # merge still sees every document's complete chunk list (`llb.rag.duplicates`).
     merge_chunks, vector_rows = expand_duplicate_chunks(old_chunks)
     new_by_doc, new_parents_by_doc = chunk_changed_docs(corpus_root, diff.changed, meta, embedder)
+    # Recover a changed doc's fresh row from any stored chunk with the same text -- valid only
+    # where the vector is a pure function of the text (`late` pools document context, so its rows
+    # cannot be reused across documents and it re-encodes each changed doc instead).
+    text_rows = None if str(meta.get("strategy")) == "late" else text_row_map(old_chunks)
     merged = resolve_duplicates(
         assemble(
             corpus_root,
@@ -191,6 +199,7 @@ def refresh_vector_store(
         ),
         vector_rows,
         collapse=bool(meta.get("collapse_duplicates", True)),
+        text_rows=text_rows,
     )
     if not merged.indexed:
         raise SystemExit(f"[refresh] no chunks produced from corpus at {corpus_root}")
@@ -214,11 +223,12 @@ def refresh_vector_store(
     )
     n_embedded = sum(1 for src in merged.row_sources if src is None)
     _LOG.info(
-        "[refresh] %s -> %s: %s; %d rows reused, %d embedded",
+        "[refresh] %s -> %s: %s; %d rows reused (%d recovered by text), %d embedded",
         live_dir,
         generation_dir,
         diff.summary(),
         len(merged.row_sources) - n_embedded,
+        merged.text_reused,
         n_embedded,
     )
     return VectorRefreshResult(
@@ -228,6 +238,7 @@ def refresh_vector_store(
         generation_dir=generation_dir,
         n_reused=len(merged.row_sources) - n_embedded,
         n_embedded=n_embedded,
+        n_reused_by_text=merged.text_reused,
         old_store=old_store,
         new_store=new_store,
     )

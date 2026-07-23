@@ -49,6 +49,14 @@ V2_DUP_DOCS = {
 # a.md carries the SURVIVING copy of the shared block, so deleting it is the case an incremental
 # refresh gets wrong unless collapse is undone before the merge and re-applied after it.
 V2_DELETED_SURVIVOR_DOCS = {k: v for k, v in V2_DUP_DOCS.items() if k != "a.md"}
+# a.md is EDITED but keeps the shared block: the survivor's own document is the one that changed,
+# so its fresh copy re-embeds the shared block (which unchanged b.md/c.md still hold) unless the
+# reuse is keyed on stored text rather than on chunk position.
+V2_EDITED_SURVIVOR_DOCS = {
+    "a.md": f"# А\n\n{SHARED_BLOCK}\n## Розділ А\n\nНасос подає триста кубічних метрів.\n",
+    "b.md": V1_DUP_DOCS["b.md"],
+    "c.md": V1_DUP_DOCS["c.md"],
+}
 DUP_QUESTIONS = ["Що подає насос?", "Скільки дає компресор?", "Про що загальні положення?"]
 
 
@@ -158,3 +166,28 @@ def test_refresh_only_embeds_the_changed_documents_distinct_text(tmp_path):
     assert embedder.embedded_texts
     assert all("Загальні положення" not in text for text in embedder.embedded_texts)
     assert any("Турбіна" in text for text in embedder.embedded_texts)
+
+
+def test_refresh_recovers_by_text_when_the_edited_document_carried_the_survivor(tmp_path):
+    corpus = write_corpus(tmp_path / "corpus", V1_DUP_DOCS)
+    index_dir = tmp_path / "rag"
+    _dup_store(corpus).save(index_dir)
+    # a.md holds the surviving copy of the shared block AND is the document being edited
+    write_corpus(corpus, V2_EDITED_SURVIVOR_DOCS)
+    embedder = CountingEmbedder()
+
+    result = refresh_vector_store(index_dir, corpus, embedder=embedder, timestamp="T")
+    # only a.md's new section is genuinely new text; the shared block a.md re-emits is recovered
+    # from the store's own vectors even though the survivor's own document is the one that changed
+    assert embedder.embedded_texts
+    assert all("Загальні положення" not in text for text in embedder.embedded_texts)
+    assert any("триста" in text for text in embedder.embedded_texts)
+    assert result.n_reused_by_text == 1  # the one shared-block row a position map would re-embed
+    # and the refreshed store is still byte-for-byte a rebuild
+    rebuilt = _dup_store(corpus)
+    assert result.new_store.chunks == rebuilt.chunks
+    np.testing.assert_array_equal(
+        np.asarray(stored_vectors(result.new_store.index)),
+        np.asarray(stored_vectors(rebuilt.index)),
+    )
+    assert retrieval_ids(result.new_store, DUP_QUESTIONS) == retrieval_ids(rebuilt, DUP_QUESTIONS)
