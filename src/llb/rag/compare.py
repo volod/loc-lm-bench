@@ -30,6 +30,10 @@ ROW_DENSE = "dense"
 ROW_HYBRID = "hybrid"
 ROW_HYBRID_LEMMAS = "hybrid+lemmas"
 ROW_ORACLE_DOC = "dense+oracle-doc"
+# BM25 alone: the hybrid store queried at fusion weight 0, which `weighted_rrf_fuse` resolves to
+# an exact lexical passthrough. It is the row that reads a LEXICAL-side change (tokenizer,
+# lemmatization, normalization) without the dense lane masking it inside the fusion.
+ROW_LEXICAL = "lexical"
 # Suffix of the reranked twin row (rerank-context-order): `<label>+rerank` scores the SAME
 # store's candidates after the cross-encoder cut, so pre/post-rerank recall@k / MRR compare
 # through the one `evaluate_retrieval` metric.

@@ -551,11 +551,19 @@ make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"
 llb tune ...    # the Optuna space samples retrieval_mode=hybrid + both fusion knobs
 ```
 
-`compare-retrieval --hybrid` embeds the corpus ONCE and scores four rows sharing that dense
-index: `dense`, `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second, lemmatized lexical
-index), and `dense+oracle-doc` -- a diagnostic row restricting candidates to each gold item's
-`source_doc_id` through the filter seam, quantifying the recall headroom a PERFECT document router
-would buy (never a scoring config).
+`compare-retrieval --hybrid` embeds the corpus ONCE and scores five rows sharing that dense
+index: `dense`, `lexical` (BM25 alone), `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second,
+lemmatized lexical index), and `dense+oracle-doc` -- a diagnostic row restricting candidates to
+each gold item's `source_doc_id` through the filter seam, quantifying the recall headroom a
+PERFECT document router would buy (never a scoring config).
+
+The `lexical` row is the same hybrid store queried at fusion weight 0, which `weighted_rrf_fuse`
+resolves to an exact lexical passthrough (a zero-weight lane is dropped from candidate membership
+too). It exists because a LEXICAL-side change -- tokenizer, lemmatization, normalization -- is
+invisible in the fused row whenever the dense lane already retrieves the item: the mixed-variant
+evidence below measured a lexical lane at half recall while `dense` and the fused row read 1.000
+and 0.650, and only the isolated row said which lane was broken. It is a diagnostic like the
+oracle row, not a shipping configuration.
 
 The lemma normalizer is reused by the miss analysis: `topic_of` in
 `src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key, so Ukrainian case
@@ -653,9 +661,7 @@ What DID move, measured:
 
 Why the metrics cannot see it: only 2 of 95 goods questions and 14 of 250 SQuAD questions contain
 an apostrophe at all, both corpora are internally consistent about which variant they use, and at
-k=10 the other query terms already retrieve those items. A corpus that MIXES variants (a
-re-ingested edition, a copy-pasted appendix) is where the fix pays, and neither corpus on hand is
-one; see the forward mixed-variant-fixture task for the measurement that would show it.
+k=10 the other query terms already retrieve those items.
 
 The end-to-end query side of the same question is now measured as its own noise class rather than
 inferred: `apostrophe_variant` re-types every apostrophe in the question and touches nothing else
@@ -664,8 +670,54 @@ final split all 6 apostrophe-bearing questions still retrieve their gold evidenc
 unmitigated re-typed apostrophe, so the dense e5 lane is variant-insensitive here and there is
 nothing for normalization to recover. Post-v2 the lexical lane cannot see the class either --
 `llb.rag.lexical.tokenize` unifies every variant, so a re-typed query and the index produce the
-same terms by construction, which IS the fix. What neither lane can be asked on these corpora is
-the mismatch case, where index and query disagree about the variant.
+same terms by construction, which IS the fix.
+
+### What the fix is worth when the corpus MIXES variants
+
+The case the two real corpora cannot pose is the MISMATCH: index and query disagreeing about which
+apostrophe was typed, which is what a re-ingested edition, a pasted appendix, or two converters
+produce. `samples/goldsets/apostrophe_variants_uk/` plants exactly that -- 60 near-identical
+Ukrainian registry entries across four documents "converted" with four different apostrophes, one
+apostrophe-bearing subject noun as the ONLY discriminating token per entry, and every question
+typed with the keyboard apostrophe (45 of 60 items therefore face a mismatch; 15 are the
+same-variant control). Its README states the plant.
+
+Durable evidence (2026-07-24, CUDA host, pinned e5-base, `recursive` 800/120, k=10, exact
+duplicate collapse 180 chunks -> 80 indexed, `--noise-floor`; reports under
+`$DATA_DIR/apostrophe-normalizer/mixed-{before,after}/`). Both arms ran the SAME command over the
+SAME corpus, goldset, and seed; the `before` arm ran from a worktree whose ONLY difference is the
+pre-fix `src/llb/rag/lexical.py`:
+
+| row | v1 recall@10 / MRR | v2 recall@10 / MRR | delta recall@10 |
+| --- | --- | --- | ---: |
+| `dense` | 1.000 / 0.958 | 1.000 / 0.958 | +0.000 |
+| `lexical` | 0.500 / 0.167 | 1.000 / 0.200 | **+0.500** |
+| `hybrid` | 0.650 / 0.520 | 1.000 / 0.983 | **+0.350** |
+| `hybrid+lemmas` | 0.650 / 0.520 | 1.000 / 0.975 | +0.350 |
+| `dense+oracle-doc` | 1.000 / 0.967 | 1.000 / 0.967 | +0.000 |
+
+The measurement floor is +/-0.000 recall@10 in both arms, so every delta above clears it by two
+orders of magnitude. Three readings:
+
+- **The lexical lane loses exactly the entries written with a punctuation-class variant.** Per
+  variant (measured by `tests/llb/rag/test_apostrophe_variant_fixture.py`, which reproduces the
+  heavy run's 0.500 exactly): U+0027 15/15 and U+02BC 15/15 under BOTH tokenizers, U+2019 0/23 and
+  grave 0/7 under v1 and 23/23 + 7/7 under v2. The v1 misses are TOTAL -- the subject term returns
+  zero BM25 candidates, and boilerplate ties recover none of them.
+- **U+02BC never needed the fix.** It is a Unicode modifier LETTER, so `\w` already kept
+  `памʼятка` whole; only U+2019 and the grave accent are punctuation to the regex and split the
+  word. The fix's value is variant-specific, which a single "apostrophe support" claim would hide.
+- **A broken lexical lane is worse than no lexical lane.** Under v1 `hybrid` retrieves 0.650 --
+  0.350 BELOW the `dense` row it fuses with -- because RRF gives half the rank budget to a lane
+  whose candidates are unrelated. The fix does not merely restore the lexical lane, it turns
+  hybrid from harmful (-0.350 versus dense) into the best row (+0.025 MRR over dense).
+
+Scope of the claim: the effect size is a property of the PLANT (one discriminating token per
+entry, 75 percent of items mismatched). It is a lower bound on nothing and an estimate of nothing;
+what it demonstrates is the mechanism and its direction, which the flat real-corpus numbers above
+cannot. On the real corpora the dense lane also retrieves every planted item at k=10, so an
+operator whose corpus mixes variants would see the breakage ONLY in the `lexical` row -- the
+reason that row is now published.
 
 ## Graph-Vector Fusion Retrieval
 

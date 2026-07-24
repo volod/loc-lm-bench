@@ -43,39 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### apostrophe-mixed-variant retrieval fixture (optional)
+### lexical-row-re-read-of-the-recorded-hybrid-verdicts (optional)
 
-Neither corpus on hand can measure what apostrophe-variant tokenization buys: each is internally
-consistent about which apostrophe it uses, so index and query split identically and every recall
-number is flat before and after the fix
-([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). The dedicated
-`apostrophe_variant` robustness class closed the query-side half of this question on the dense
-lane and found nothing to recover there -- all 6 apostrophe-bearing final-split questions still
-retrieve their gold evidence at k=10 when re-typed with another variant
-([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)) -- so what
-remains is the LEXICAL side on a corpus that MIXES variants: a re-ingested edition, a copy-pasted
-appendix, two converters. The repo has no such fixture. Build one (or find a real corpus with the
-property), score the lexical lane on it, and record the retrieval delta the fix is worth when the
-mismatch is real.
+`compare-retrieval --hybrid` now publishes a `lexical` row (BM25 alone, fusion weight 0) beside
+`dense` and the fused rows ([RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf)).
+Every recorded hybrid verdict predates it and therefore reads a fused number without knowing how
+each lane retrieved alone -- which is exactly the reading that hid a half-broken lexical lane
+behind a saturated dense one on the mixed-variant fixture
+([RAG core](current/rag-core.md#what-the-fix-is-worth-when-the-corpus-mixes-variants)). Re-run the
+recorded hybrid comparisons with the new row and re-read each `FUSION_WEIGHT` recommendation:
+a weight tuned when one lane was silently weak is a weight tuned on the wrong evidence.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-retrieval --hybrid`, the `apostrophe_variant` noise class
-  (`make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=apostrophe_variant`), and the committed
-  `samples/corpora/near_duplicate_chunks_uk_v1/` shape for a planted fixture.
-- User-visible outcome: a measured answer to "what does apostrophe-variant matching buy on a corpus
-  that actually mixes variants", instead of a correctness argument with a flat metric.
-- Scope boundary: in scope -- the fixture (or corpus selection), the lexical-lane A/B, and the
-  recorded delta. Out of scope -- changing the tokenizer again and dense-side work.
-- Data and artifact paths: `$DATA_DIR/apostrophe-normalizer/<run>/`; a committed fixture under
-  `samples/` only if a planted corpus earns one.
-- Execution path: `make compare-retrieval HYBRID=1` over the mixed-variant corpus on the CUDA host
-  -- the store must carry a lexical index, since the measured robustness runs used a dense-only
-  store and therefore could not exercise the tokenizer at all; CI covers the fixture's planted
-  variant mix.
-- Acceptance gates: `make ci` green; the report states the lexical-lane recall delta against the
-  corpus's own measurement floor.
-- Documentation target:
-  [RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence).
+- Dependencies: none. Reuse `make compare-retrieval HYBRID=1 NOISE_FLOOR=1` unchanged; the row
+  ships already, so this is a re-run plus a re-read.
+- User-visible outcome: every published hybrid recommendation states what each lane retrieves on
+  its own, so a fusion weight is chosen knowing which lane carries the recall.
+- Scope boundary: in scope -- the re-runs on the corpora whose verdicts are recorded (goods PDFs,
+  quickstart accepted goldset, `exact_terms_uk`), the `lexical` row per corpus, and a keep-or-change
+  verdict per recorded `FUSION_WEIGHT`. Out of scope -- new fusion mechanics and re-tuning the
+  weight grid.
+- Data and artifact paths: each comparison keeps its existing report path.
+- Execution path: `make compare-retrieval HYBRID=1 NOISE_FLOOR=1 GOLDSET=<gs>` per recorded corpus
+  on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; each report carries the `lexical` row against the corpus's own
+  floor, and each recorded fusion-weight recommendation is restated as surviving or not.
+- Documentation target: the hybrid-retrieval evidence section of
+  [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
 
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 

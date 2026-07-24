@@ -26,9 +26,9 @@ def compare_retrieval_cmd(
     hybrid: bool = typer.Option(
         False,
         "--hybrid",
-        help="compare dense vs hybrid (BM25+RRF) vs hybrid+lemmas plus the oracle-doc-filter "
-        "headroom row over one embedded corpus (the sibling corpus/ of --goldset when present); "
-        "the hybrid store persists under $DATA_DIR/llb/rag/hybrid/",
+        help="compare dense vs lexical (BM25 alone) vs hybrid (BM25+RRF) vs hybrid+lemmas plus "
+        "the oracle-doc-filter headroom row over one embedded corpus (the sibling corpus/ of "
+        "--goldset when present); the hybrid store persists under $DATA_DIR/llb/rag/hybrid/",
     ),
     fusion_weight: Optional[float] = typer.Option(
         None, help="hybrid rows: dense share of the weighted RRF (0..1; default 0.5)"
@@ -70,8 +70,9 @@ def compare_retrieval_cmd(
     the SAME items (a backend whose store is not built is skipped). With `--strategies` it instead
     builds one store per CHUNKING strategy (same corpus + pinned embedder) and ranks the chunkers,
     so the best chunker is demonstrated per corpus. With `--hybrid` it demonstrates (not assumes)
-    per corpus whether dense+BM25 RRF fusion beats dense-only, what Ukrainian lemmatization adds,
-    and how much recall headroom perfect document routing would buy. `--reranker` adds a reranked
+    per corpus whether dense+BM25 RRF fusion beats dense-only, how each lane retrieves ALONE,
+    what Ukrainian lemmatization adds, and how much recall headroom perfect document routing
+    would buy. `--reranker` adds a reranked
     twin row per compared row (rerank-context-order). Answer-quality comparison rides
     `run-eval --retrieval-backend ...` (it needs a model).
     """

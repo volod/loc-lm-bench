@@ -8,6 +8,7 @@ from llb.rag.compare import (
     ROW_DENSE,
     ROW_HYBRID,
     ROW_HYBRID_LEMMAS,
+    ROW_LEXICAL,
     ROW_ORACLE_DOC,
     Retriever,
 )
@@ -114,9 +115,9 @@ def build_hybrid_comparison(
     """Build the hybrid-retrieval row set over ONE embedded corpus (hybrid-retrieval-uk).
 
     One hybrid store is built (corpus embedded once); the rows share its chunks + dense index
-    and differ only in the query path: `dense` (fusion disabled), `hybrid` (BM25 + weighted
-    RRF with the config's fusion knobs), `hybrid+lemmas` (a second lexical index with
-    Ukrainian lemmatization), and
+    and differ only in the query path: `dense` (fusion disabled), `lexical` (BM25 alone, i.e.
+    fusion weight 0), `hybrid` (BM25 + weighted RRF with the config's fusion knobs),
+    `hybrid+lemmas` (a second lexical index with Ukrainian lemmatization), and
     `dense+oracle-doc` (candidates restricted to each gold item's source doc -- the recall
     headroom a perfect document router would buy). When `stores_root` is given the hybrid
     store persists under `<stores_root>/hybrid/`. Real path: needs the `[rag]` extra.
@@ -144,8 +145,21 @@ def build_hybrid_comparison(
     dense_meta["mode"] = "flat"
     dense = RagStore(hybrid.chunks, hybrid.index, hybrid.embedder, dense_meta)  # type: ignore[arg-type]
 
+    # BM25 alone over the same chunks: fusion weight 0 drops the dense lane from the fusion
+    # entirely, so the row reads a lexical-side change without the dense lane masking it.
+    lexical_only = RagStore(
+        hybrid.chunks,
+        hybrid.index,
+        hybrid.embedder,
+        dict(hybrid.meta),  # type: ignore[arg-type]
+        lexical=hybrid.lexical,
+    )
+    lexical_only.fusion_weight = 0.0
+    lexical_only.fusion_candidates = config.fusion_candidates
+
     stores: dict[str, Retriever] = {
         ROW_DENSE: dense,
+        ROW_LEXICAL: lexical_only,
         ROW_HYBRID: hybrid,
         ROW_ORACLE_DOC: OracleDocFilter(dense, items),
     }
