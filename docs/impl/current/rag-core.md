@@ -216,7 +216,7 @@ repeats INSIDE a single long manual, none across documents -- so the same text w
 stored, and searched many times over;
 worse, identical text embeds to an identical vector, which scores an EXACT tie, which the backend
 broke by candidate order -- so an item whose top-k cut fell inside such a group had a metric no
-retrieval property decided (see [measurement floor](#measurement-floor-compare-retrieval---noise-floor)).
+retrieval property decided (see [measurement floor](#measurement-floor---noise-floor)).
 
 How it works:
 
@@ -267,7 +267,7 @@ How it works:
 
 Durable evidence (2026-07-23, CUDA host, pinned e5-base, k=10, reports under
 `$DATA_DIR/retrieval-noise-floor/<run>/`; the no-collapse baseline is the recorded
-[measurement-floor](#measurement-floor-compare-retrieval---noise-floor) run):
+[measurement-floor](#measurement-floor---noise-floor) run):
 
 | corpus (`size`) | lane | indexed chunks | fragile | recall@10 | MRR |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -1284,7 +1284,7 @@ Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,m
 corpus + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by
 recall@k / MRR on the gold set, so the best chunker is demonstrated per corpus, never assumed.
 Add `NOISE_FLOOR=1` to learn how much of a chunker delta the corpus can actually resolve
-([measurement floor](#measurement-floor-compare-retrieval---noise-floor)).
+([measurement floor](#measurement-floor---noise-floor)).
 Tests: `tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
@@ -1317,7 +1317,7 @@ markdown carries few semantic heading boundaries in the big 1.1 MB manual. Two c
 rows: the bake-off predates the `size` cap below, so its `sentence` / `late` / `semantic` stores
 still contained oversized units, and its 44-item set puts one item at 0.023 recall -- the
 `sentence` win of +0.022 is under one item, which the
-[measurement floor](#measurement-floor-compare-retrieval---noise-floor) lane exists to make
+[measurement floor](#measurement-floor---noise-floor) lane exists to make
 visible.
 
 ### `size` Is A Hard Cap On Every Strategy
@@ -1378,7 +1378,7 @@ check. `compare-retrieval --noise-floor` measures that floor directly and put th
 +/-0.021 recall@10 while its duplicates were still indexed -- read any smaller retrieval delta on
 those rows as noise. The same comparison after
 [duplicate chunk collapse](#duplicate-chunk-collapse) reads 0.632 `sentence` / 0.695 `recursive`
-at a +/-0.000 floor ([measurement floor](#measurement-floor-compare-retrieval---noise-floor)), so
+at a +/-0.000 floor ([measurement floor](#measurement-floor---noise-floor)), so
 the rows above are the pre-collapse state of this corpus, kept because they are what the cap
 verdict was measured on.
 
@@ -1411,6 +1411,49 @@ index size, dimension, and device -- ending in a written recommendation the oper
 `intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
+
+`NOISE_FLOOR=1` (`--noise-floor`) adds the [measurement floor](#measurement-floor---noise-floor)
+per candidate to both the ASCII table and `report.md`, ending in the one sentence the
+recommendation needs: how far the winner leads the runner-up and whether that lead clears the
+floor. Without it `report.md` says so explicitly instead of leaving the reader to assume a lead is
+real. This lane is where the floor matters most -- four candidates on one corpus routinely differ
+by a single item.
+
+### The recommendation re-read against the floor
+
+CUDA host, 2026-07-24; report under
+`$DATA_DIR/compare-embeddings/floor-reread/compare-embeddings/<run>/report.md`. The recorded
+recommendation was measured on a verified 44-item quickstart-PDF accepted goldset that is no longer
+on disk, so the re-read uses the human-ACCEPTED converted-PDF goldset the repo still has (40 items,
+one document, 1120 chunks at `recursive` 800/120, flat mode, k=10) -- a different item set, stated
+where the numbers are.
+
+| model | recall@10 | MRR | dim | chunks/s | size (MB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `BAAI/bge-m3` | 0.975 | 0.917 | 1024 | 5.5 | 5.89 |
+| `intfloat/multilingual-e5-large` | 0.925 | 0.871 | 1024 | 5.5 | 5.89 |
+| `intfloat/multilingual-e5-base` | 0.925 | 0.852 | 768 | 17.7 | 4.79 |
+| `lang-uk/ukr-paraphrase-multilingual-mpnet-base` | 0.475 | 0.241 | 768 | 33.2 | 4.79 |
+
+Floor: recall@10 `+/-0.000`, MRR `+/-0.000`, 0 of 40 items fragile in every lane.
+
+What the re-read establishes:
+
+- **The floor is not what limits this recommendation.** Every candidate's band is exactly zero:
+  no item's rank-10 / rank-11 scores sit within `1e-6` in any of the four stores.
+- **The recorded ranking does not reproduce on this item set.** `BAAI/bge-m3` leads by 0.050
+  recall@10 -- two items, and it clears the zero floor -- where the recorded run had it 0.023
+  BELOW `e5-base`. `e5-base` and `e5-large` tie exactly here (0.925), so the recorded separation
+  between those two is not reproduced either. The `lang-uk` paraphrase model collapses on both
+  runs, which is the one part of the recorded reading that holds.
+- **A zero floor does not make a 2-item lead a ranking.** 0.050 on n=40 is two questions, and the
+  floor answers only the numeric-noise question; SAMPLING is now the binding constraint on this
+  lane and it has no paired interval. Settling the embedder choice is forward work in
+  [`plan.md`](../plan.md) (`embedder-bake-off-paired-uncertainty`).
+- **The default is unchanged.** `RunConfig.embedding_model` stays `intfloat/multilingual-e5-base`:
+  the row that would replace it is one item-set's 2-question lead bought at 3.2x the embed cost
+  (5.5 vs 17.7 chunks/s) and 1.23x the index, and no accepted-goldset comparison with uncertainty
+  supports the swap yet.
 
 Multi-objective tune (`llb tune --objectives ...`) may sample that same shortlist as a categorical
 knob; the tuner `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder
@@ -1630,17 +1673,50 @@ appears, so indexing a repeated passage once neither loses nor invents a hit.
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
 
-### Measurement Floor (`compare-retrieval --noise-floor`)
+### Measurement Floor (`--noise-floor`)
 
 `recall@k` / `MRR` are reported to three decimals, and the floor under those decimals is a
-property of the CORPUS, not zero by default. `src/llb/rag/noise_floor.py` measures it:
-`make compare-retrieval ... NOISE_FLOOR=1` (`compare-retrieval --noise-floor`,
-`NOISE_FLOOR_REPLICATES=` / `--noise-floor-replicates` to change the replicate count) retrieves a
-`3k` candidate pool once per lane, perturbs every candidate score by `N(0, 1e-6)`, re-ranks,
-keeps the top k, and reports the band the metric spans over 64 seeded replicates plus the
-worst-lane `floor` to read every delta against. The replicates only re-sort a cached pool, so the
-whole measurement costs one extra retrieval pass per lane; the seed is stable per lane
-(`crc32` of the label, never the salted `hash()`), so a report reproduces byte-identically.
+property of the CORPUS, not zero by default. `src/llb/rag/noise_floor.py` measures it (and
+`src/llb/rag/noise_floor_report.py` renders the one ASCII and one Markdown block every lane below
+shares):
+`NOISE_FLOOR=1` (`--noise-floor`, `NOISE_FLOOR_REPLICATES=` / `--noise-floor-replicates` to change
+the replicate count) retrieves a `3k` candidate pool once per lane, perturbs every candidate score
+by `N(0, 1e-6)`, re-ranks, keeps the top k, and reports the band the metric spans over 64 seeded
+replicates plus the worst-lane `floor` to read every delta against. The replicates only re-sort a
+cached pool, so the whole measurement costs one extra retrieval pass per lane; the seed is stable
+per lane (`crc32` of the label, never the salted `hash()`), so a report reproduces byte-identically.
+
+The measurement is store-agnostic -- it needs a lane's candidates and their scores, nothing else --
+so every comparison lane that publishes three-decimal rows reads its own floor through the one
+module:
+
+| lane | flag | where the floor lands |
+| --- | --- | --- |
+| `make compare-retrieval` | `NOISE_FLOOR=1` | the ASCII table and `report["noise_floor"]` |
+| `make compare-embeddings` | `NOISE_FLOOR=1` | a `### Measurement floor` block in `report.md` |
+| `make compare-vector-stores` | `NOISE_FLOOR=1` | the ASCII table and the `--out` JSON |
+| `make compare-graph-fusion` | `NOISE_FLOOR=1` | two blocks in `report.md`: every item, and the focus slice |
+
+Two properties the multi-lane wiring needed:
+
+- **A recommendation is restated as clearing the floor or not.** Every floor report carries a
+  `margin`: the top two lanes by recall@k (ties broken by MRR, the order every table here ranks
+  by), their gap, and whether that gap exceeds the floor. It is rendered as one sentence, because
+  a lane comparison names ONE winner and a winner whose lead is inside the floor has not been
+  distinguished from the runner-up -- which is exactly how a bake-off's sub-item delta becomes a
+  recommendation.
+- **A FUSED row is perturbed at its own depth.** Most lanes extend cleanly -- a dense store's top-k
+  is the prefix of its top-3k -- but a fused row's ranking depends on how deep each lane was asked,
+  so retrieving `3k` from it would answer for a DIFFERENT row (that is the
+  [candidate-depth knob](#fusion-candidate-depth-graph_fusion_candidates)). Such a row exposes
+  `retrieve_candidate_pool(question, k, candidates)`: fuse exactly as at `k`, move only the cut. The
+  fusion sweep also caches its lanes `3k` deep under `--noise-floor` (`build_sweep_rows(...,
+  pool_depth=...)`), which widens no row's ranking because every row still asks for its own depth.
+
+The floor a comparison quotes is the WIDEST band any lane showed, and each per-lane band is itself
+a 64-replicate sample: two lanes with byte-identical rankings can report `+/-0.000` and `+/-0.005`
+because they are seeded independently. Read the per-lane bands as fragility evidence and the
+worst-lane `floor` as the number a delta must clear.
 
 Why `1e-6`: two processes that built BYTE-IDENTICAL chunks on this host produced dense vectors
 differing by up to 5.4e-7 per dimension -- the encoder's kernels depend on the batch shapes it
@@ -1655,8 +1731,8 @@ the jitter, so their top-k membership is decided by noise or by the backend's ar
 an exact tie. That count explains the band's width and is the number to act on: acting on it is
 exactly what [duplicate chunk collapse](#duplicate-chunk-collapse) did.
 
-Measured floors (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`; reports under
-`$DATA_DIR/retrieval-noise-floor/<run>/`):
+Measured floors on the chunker lane (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`;
+reports under `$DATA_DIR/retrieval-noise-floor/<run>/`):
 
 | corpus | n | chunk `size` | duplicate chunks | fragile | floor recall@10 | floor MRR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1664,6 +1740,29 @@ Measured floors (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`; rep
 | converted Ukrainian goods PDFs (shipped) | 95 | 200 | 0.0% | 1/95 | +/-0.000 | +/-0.000 |
 | committed `ua_squad_postedited_v1` (final split) | 82 | 800 | 0.0% | 0/82 | +/-0.000 | +/-0.000 |
 | accepted converted-PDF goldset | 40 | 800 | 0.5% | 1/40 | +/-0.000 | +/-0.000 |
+
+Measured floors on the other three lanes (CUDA host, 2026-07-24, k=10; see each lane's section for
+the tables the floors are read against):
+
+| lane | corpus / item set | n | worst-lane fragile | floor recall@10 | floor MRR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `compare-embeddings` (4 candidates) | accepted converted-PDF goldset, `recursive` 800/120 | 40 | 0/40 | +/-0.000 | +/-0.000 |
+| `compare-vector-stores` (faiss/chroma/qdrant) | the same corpus + goldset | 40 | 0/40 | +/-0.000 | +/-0.000 |
+| `compare-graph-fusion`, every item | drafted goods multi-hop bundle | 95 | 68/95 | +/-0.021 | +/-0.044 |
+| `compare-graph-fusion`, multi-hop slice | the same bundle's focus slice | 35 | 33/35 | +/-0.043 | +/-0.074 |
+
+The two dense-only lanes have nothing to arbitrate: with duplicates collapsed no item's rank-10 /
+rank-11 cosine scores sit within `1e-6`, so a delta of any size in those tables is a real ranking
+difference (still subject to SAMPLING uncertainty, which the floor does not answer). The fusion
+sweep is the opposite case, and its cause is measured: the GRAPH lanes score by link relevance, a
+sum over a small integer-ish set of link weights, so their candidate lists carry long exact-tie
+blocks (`5.0077, 5.0075, 2.5042, ... , 0.001, 0.001, 0.001, ...` -- eight identical `0.001` tails
+are typical), and the rank-10 cut falls inside such a block for 68 of 95 questions. `_rank_dedup`
+in `src/llb/graph/retrieval.py` breaks those ties deterministically on `(doc_id, char_start,
+char_end)`, so the ranking is REPRODUCIBLE -- but reproducible is not the same as retrieved: which
+equally-scored span lands in the top 10 is decided by a document id, not by relevance. Every fused
+row at a non-endpoint weight inherits a `+/-0.000` band, because RRF ranks are integers and the
+tie block is far below the cut once the vector lane contributes.
 
 The floor tracks DUPLICATE CHUNKS, not gold-set size, and that is why the measured floor is now
 zero on every corpus: the goods corpus at `size=200` HAD 37.7% of its chunks byte-identical to
@@ -1686,15 +1785,29 @@ Verdicts re-read against the measured floors:
   deltas are not numeric noise. They remain subject to SAMPLING uncertainty, which is a separate
   question the paired-bootstrap lanes answer -- a 0.022 recall delta on a 44-item set is under one
   item either way.
+- Embedder bake-off: the recorded `e5-base` recommendation is NOT reproduced on the accepted
+  goldset that still exists, and the floor is not why -- see
+  [the bake-off re-read](#the-recommendation-re-read-against-the-floor).
+- Vector-store backends: `faiss`, `chroma`, and `qdrant` return the identical recall@10 / MRR on
+  this corpus, so the `best (recall@k)` line is label order, not a ranking -- see
+  [platform matrix](platform-vector-matrix.md#embedding-bake-off).
+- Graph-vector fusion: the recorded multi-hop and overall gains clear their floors; the CHOICE
+  between the two best weights does not -- see
+  [GraphRAG](graphrag-backend.md#the-sweep-re-read-against-its-measurement-floor).
 
 A zero floor is not a permanent property of a corpus: it is measured per run, and a corpus whose
-chunks tie for a reason collapse does not remove (a backend that rounds its scores, or lexical
-fusion producing equal RRF sums) will report a non-zero band again.
+chunks tie for a reason collapse does not remove (a backend that rounds its scores, a graph lane
+whose link relevance saturates, or lexical fusion producing equal RRF sums) will report a non-zero
+band again.
 
 The floor is opt-in, so every existing comparison row is unchanged when it is not asked for.
 Tests: `tests/llb/rag/test_noise_floor.py` (zero floor on separated scores, a full 0.0-1.0 band
 when the cut sits on a tie, the fragility count, per-lane seeding and reproducibility, the
-unscored-lane skip, and the ASCII rendering) over fake stores -- no FAISS, no GPU.
+unscored-lane skip, the margin reading and its MRR tie-break, the candidate-pool seam, and the
+ASCII rendering), plus each lane's own wiring in `tests/llb/rag/test_embedding_bakeoff.py`,
+`tests/llb/rag/test_compare_retrieval.py` (the `compare-vector-stores` CLI over injected stores),
+and `tests/llb/rag/test_fusion_evidence.py` (per-row and focus-slice floors, and that the pool
+seam keeps the ranking the sweep published) -- all over fake stores, no FAISS, no GPU.
 
 The default store retrieves dense-only (cosine over the pinned E5 embedding). Measured against
 the gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the

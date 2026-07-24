@@ -216,3 +216,108 @@ def test_render_markdown_has_table_and_recommendation():
 def test_format_report_handles_no_candidates():
     empty = {"k": 10, "n": 0, "corpus_root": "c", "candidates": [], "best_recall": None}
     assert "no candidates" in format_report(empty)  # type: ignore[arg-type]
+
+
+def _scored(doc: str, start: int, score: float) -> ChunkRecord:
+    chunk = _chunk(doc, start, start + 10)
+    chunk["retrieval_score"] = score
+    return chunk
+
+
+class _PerQuestionStore:
+    """Fake store whose ranking depends on the question, so items can differ within one lane."""
+
+    def __init__(self, hits: dict[str, list[ChunkRecord]]):
+        self._hits = hits
+        self.meta = {"dim": 8, "n_indexed": 3, "embedding_model": "m"}
+
+    def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
+        return self._hits[question][:k]
+
+
+def _floor_items() -> list[tuple[str, list[SourceSpanRecord]]]:
+    return [("резолюція", [_span("d1", 0, 10)]), ("протокол", [_span("d9", 0, 10)])]
+
+
+# Both lanes resolve the first item outright; the second item's gold sits in a tied block whose
+# order alone decides the cut -- so a candidate's lead over the other is exactly what the floor is
+# there to arbitrate.
+_RESOLVED_ITEM = [_scored("d1", 0, 0.9), _scored("d2", 20, 0.2)]
+_TIED_ITEM = [_scored("d7", 70, 0.5), _scored("d8", 80, 0.5), _scored("d9", 0, 0.5)]
+# The same three candidates in another arbitrary tie order: a different lane, the same retrieval.
+_TIED_ITEM_REORDERED = [_TIED_ITEM[1], _TIED_ITEM[0], _TIED_ITEM[2]]
+# A lane that ranks the second item's gold on a resolved score instead: a real retrieval lead.
+_RESOLVED_SECOND_ITEM = [_scored("d9", 0, 0.9), _scored("d7", 70, 0.2)]
+
+
+def _floor_bakeoff(runner_up_second_item: list[ChunkRecord], k: int = 2):
+    """A two-candidate bake-off with the floor measured over the same two items."""
+    stores = {
+        "cand-a": _PerQuestionStore({"резолюція": _RESOLVED_ITEM, "протокол": _TIED_ITEM}),
+        "cand-b": _PerQuestionStore(
+            {"резолюція": _RESOLVED_ITEM, "протокол": runner_up_second_item}
+        ),
+    }
+    return run_bakeoff(
+        _floor_items(),
+        k=k,
+        corpus_root="corpus",
+        local_models=["cand-a", "cand-b"],
+        build_local=lambda model: BuiltStore(
+            store=stores[model], embed_seconds=1.0, index_bytes=100
+        ),
+        noise_floor=True,
+        noise_floor_replicates=16,
+    )
+
+
+def test_bakeoff_floor_is_opt_in():
+    report = run_bakeoff(
+        _items(),
+        k=10,
+        corpus_root="corpus",
+        local_models=["e5"],
+        build_local=_fixed_builder(_FakeStore([_chunk("d1", 0, 10)])),
+    )
+    assert "noise_floor" not in report  # default bake-off row set is unchanged
+
+
+def test_bakeoff_floor_covers_every_candidate_lane():
+    report = _floor_bakeoff(_TIED_ITEM_REORDERED)
+    floor = report["noise_floor"]
+    assert set(floor["lanes"]) == {"cand-a", "cand-b"}
+    assert floor["floor_recall_at_k"] > 0.0  # the tied item can land either side of the cut
+    # Each lane's floor base is the recall the candidate row published: the two cannot drift.
+    by_model = {row["model"]: row for row in report["candidates"]}
+    for model, lane in floor["lanes"].items():
+        assert lane["recall_at_k"]["base"] == by_model[model]["recall_at_k"]
+
+
+def test_bakeoff_recommendation_that_rests_on_tie_order_does_not_clear_the_floor():
+    report = _floor_bakeoff(_TIED_ITEM_REORDERED)
+    margin = report["noise_floor"]["margin"]
+    assert margin["leader"] == report["best_recall"]
+    assert margin["clears_floor"] is False
+    md = render_markdown(report)
+    assert "Measurement floor" in md and "does NOT clear the floor" in md
+    assert md.isascii()  # AGENTS.md: ASCII-only output
+    assert "noise floor" in format_report(report)
+
+
+def test_bakeoff_recommendation_on_a_resolved_lead_clears_the_floor():
+    report = _floor_bakeoff(_RESOLVED_SECOND_ITEM)
+    margin = report["noise_floor"]["margin"]
+    assert margin["leader"] == "cand-b" == report["best_recall"]
+    assert margin["delta"] > margin["floor"] and margin["clears_floor"] is True
+    assert "clears the floor" in render_markdown(report)
+
+
+def test_markdown_says_the_floor_is_unmeasured_when_it_was_not_asked_for():
+    report = run_bakeoff(
+        _items(),
+        k=10,
+        corpus_root="corpus",
+        local_models=["e5"],
+        build_local=_fixed_builder(_FakeStore([_chunk("d1", 0, 10)])),
+    )
+    assert "--noise-floor" in render_markdown(report)

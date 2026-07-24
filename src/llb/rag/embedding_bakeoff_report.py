@@ -25,6 +25,11 @@ def format_report(report: BakeoffReport) -> str:
             f"{row['dim']:6d} {_throughput(row):9.1f} {size_mb:9.2f}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    floor = report.get("noise_floor")
+    if floor is not None:
+        from llb.rag.noise_floor_report import format_noise_floor
+
+        lines.extend(format_noise_floor(floor))
     return "\n".join(lines)
 
 
@@ -57,4 +62,24 @@ def render_markdown(report: BakeoffReport) -> str:
         "`RunConfig.embedding_model` to match.",
         "",
     ]
+    lines += _floor_section(report)
     return "\n".join(lines)
+
+
+def _floor_section(report: BakeoffReport) -> list[str]:
+    """The measurement floor the recommendation above has to clear, when it was measured.
+
+    A bake-off ranks four candidates on ONE corpus, so the gap between the winner and the runner-up
+    is routinely worth a single item; without the floor beside it there is no way to tell a real
+    ranking from tie order.
+    """
+    floor = report.get("noise_floor")
+    if floor is None:
+        return [
+            "The measurement floor was not measured for this run; re-run with `--noise-floor` to",
+            "state whether the recommended gap is larger than numeric noise.",
+            "",
+        ]
+    from llb.rag.noise_floor_report import render_noise_floor_markdown
+
+    return render_noise_floor_markdown(floor)

@@ -16,13 +16,19 @@ pool, so the whole measurement costs one deeper retrieval pass per lane.
 A lane's floor is large when its ranking near the cut is arbitrary -- scores separated by less
 than the noise, or exact ties (a backend that ROUNDS its scores produces many). That is a real
 property of the lane, not an artifact: it says the reported metric depends on tie order.
+
+The measurement is store-agnostic: it needs a lane's candidates and their scores, nothing else.
+Every comparison lane that publishes three-decimal recall@k / MRR rows therefore reads its own
+floor through this module -- `compare-retrieval`, the embedder bake-off, the vector-store
+comparison, and the graph-fusion sweep -- and each states its recommendation as clearing the
+floor or not (`margin`), so a sub-item delta cannot be read as a ranking.
 """
 
 import random
 import statistics
 import zlib
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.compare import CompareItem, Retriever
@@ -66,6 +72,21 @@ class LaneFloor(TypedDict):
     fragile_items: int  # items whose rank-k and rank-(k+1) scores sit within `jitter`
 
 
+class FloorMargin(TypedDict):
+    """The reading a recommendation rests on: the top two lanes and their gap versus the floor.
+
+    Only the two best lanes matter, because a recommendation names ONE lane: if the leader's gap
+    over the runner-up is inside the floor, the report has not distinguished them, whatever the
+    third decimal says.
+    """
+
+    leader: str
+    runner_up: str | None
+    delta: float  # leader recall@k - runner-up recall@k (0.0 when there is no runner-up)
+    floor: float  # the floor the delta is read against (`floor_recall_at_k`)
+    clears_floor: bool
+
+
 class NoiseFloorReport(TypedDict):
     """Per-lane metric spread under score noise, plus the worst-lane floor per metric."""
 
@@ -77,6 +98,7 @@ class NoiseFloorReport(TypedDict):
     unscored: list[str]  # lanes whose candidates expose no score, so nothing can be perturbed
     floor_recall_at_k: float
     floor_mrr: float
+    margin: NotRequired[FloorMargin]  # absent when no lane was measured
 
 
 def measure_noise_floor(
@@ -101,7 +123,9 @@ def measure_noise_floor(
     lanes: dict[str, LaneFloor] = {}
     unscored: list[str] = []
     for label, store in stores.items():
-        pools = [(store.retrieve(question, candidates), spans) for question, spans in items]
+        pools = [
+            (_candidate_pool(store, question, k, candidates), spans) for question, spans in items
+        ]
         if not _pools_are_scored(pools):
             unscored.append(label)
             continue
@@ -109,7 +133,7 @@ def measure_noise_floor(
             [(store.retrieve(question, k), spans) for question, spans in items], k
         )
         lanes[label] = _lane_floor(pools, base, k, replicates, jitter, _lane_seed(label, seed))
-    return {
+    report: NoiseFloorReport = {
         "replicates": replicates,
         "jitter": jitter,
         "candidates": candidates,
@@ -118,6 +142,59 @@ def measure_noise_floor(
         "unscored": sorted(unscored),
         "floor_recall_at_k": _worst(lanes, "recall_at_k"),
         "floor_mrr": _worst(lanes, "mrr"),
+    }
+    margin = _margin(lanes, report["floor_recall_at_k"])
+    if margin is not None:
+        report["margin"] = margin
+    return report
+
+
+def _candidate_pool(store: Retriever, question: str, k: int, candidates: int) -> list[ChunkRecord]:
+    """The lane's own top-k ranking, extended to `candidates` -- NOT a re-ranking at a deeper k.
+
+    For most lanes the two are the same call: a dense store's top-k is the prefix of its top-3k.
+    A FUSED lane is different -- its ranking depends on how deep each side was asked, so asking
+    it for 3k results would fuse a deeper pool and the unjittered top-k of that pool need not be
+    the row the comparison published. Such a lane exposes `retrieve_candidate_pool(question, k,
+    candidates)`: fuse exactly as it does at `k`, then cut at `candidates` instead.
+    """
+    deeper = getattr(store, "retrieve_candidate_pool", None)
+    if callable(deeper):
+        pool: list[ChunkRecord] = deeper(question, k, candidates)
+        return pool
+    return store.retrieve(question, candidates)
+
+
+def _margin(lanes: dict[str, LaneFloor], floor: float) -> FloorMargin | None:
+    """Read the top two lanes' recall@k gap against the floor.
+
+    Ranked recall first, then MRR, then label -- the order every comparison table in the repo
+    ranks by (`_best_recall` in `llb.rag.compare`, `best_recall` in the bake-off), so the lane the
+    margin calls the runner-up is the one the table prints second.
+    """
+    ranked = sorted(
+        lanes,
+        key=lambda label: (
+            -lanes[label]["recall_at_k"]["base"],
+            -lanes[label]["mrr"]["base"],
+            label,
+        ),
+    )
+    if not ranked:
+        return None
+    leader = ranked[0]
+    runner_up = ranked[1] if len(ranked) > 1 else None
+    delta = (
+        lanes[leader]["recall_at_k"]["base"] - lanes[runner_up]["recall_at_k"]["base"]
+        if runner_up is not None
+        else 0.0
+    )
+    return {
+        "leader": leader,
+        "runner_up": runner_up,
+        "delta": delta,
+        "floor": floor,
+        "clears_floor": runner_up is not None and delta > floor,
     }
 
 
@@ -196,32 +273,3 @@ def _spread(base: float, values: list[float]) -> MetricSpread:
 def _worst(lanes: dict[str, LaneFloor], metric: str) -> float:
     """The floor to quote for the whole comparison: the widest band any lane showed."""
     return max((lane[metric]["half_width"] for lane in lanes.values()), default=0.0)  # type: ignore[literal-required]
-
-
-def format_noise_floor(report: NoiseFloorReport) -> list[str]:
-    """ASCII lines for the floor block (AGENTS.md: ASCII-only, no box-drawing)."""
-    lines = [
-        f"  noise floor ({report['replicates']} replicates, jitter {report['jitter']:.1e}, "
-        f"candidates {report['candidates']}):"
-    ]
-    lanes = report["lanes"]
-    if lanes:
-        width = max(len(label) for label in lanes)
-        for label in sorted(lanes):
-            lane = lanes[label]
-            lines.append(
-                f"    {label.ljust(width)}   recall@k {_band(lane['recall_at_k'])}"
-                f"   mrr {_band(lane['mrr'])}"
-                f"   fragile {lane['fragile_items']}/{lane['n']}"
-            )
-    for label in report["unscored"]:
-        lines.append(f"    {label}: no candidate score to perturb -- floor not measured")
-    lines.append(
-        f"  floor: recall@k +/-{report['floor_recall_at_k']:.3f}, "
-        f"mrr +/-{report['floor_mrr']:.3f} -- read any smaller delta as noise"
-    )
-    return lines
-
-
-def _band(spread: MetricSpread) -> str:
-    return f"{spread['min']:.3f}-{spread['max']:.3f} (+/-{spread['half_width']:.3f})"

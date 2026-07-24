@@ -175,7 +175,7 @@ def format_comparison(report: ComparisonReport) -> str:
     lines.append(f"  best (recall@k): {report['best_recall']}")
     floor = report.get("noise_floor")
     if floor is not None:
-        from llb.rag.noise_floor import format_noise_floor
+        from llb.rag.noise_floor_report import format_noise_floor
 
         lines.extend(format_noise_floor(floor))
     for label, stats in report.get("duplicates", {}).items():

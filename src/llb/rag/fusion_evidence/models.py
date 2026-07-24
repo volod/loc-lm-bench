@@ -7,7 +7,7 @@ what cost to everything else? That needs three things the flat table lacks -- a 
 reviewer can actually read.
 """
 
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -17,6 +17,9 @@ from llb.rag.compare import (
 )  # the one `.retrieve` seam, re-used not re-declared
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
+
+if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra pass per row
+    from llb.rag.noise_floor import NoiseFloorReport
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
@@ -159,3 +162,10 @@ class FusionEvidenceReport(TypedDict):
     rows: dict[str, RowReport]
     focus_items: list[ItemOutcome]
     verdict: Verdict
+    # Measurement floor per swept row, present only when it was asked for
+    # (`compare-graph-fusion --noise-floor`). The sweep publishes three-decimal recall@k rows
+    # across a dozen weights, so the floor states which of them are separated at all. It is
+    # measured over every item AND over the focus slice alone, because the verdict is decided on
+    # the focus slice and a floor measured on the whole set does not bound a slice of it.
+    noise_floor: NotRequired["NoiseFloorReport"]
+    noise_floor_focus: NotRequired["NoiseFloorReport"]  # absent when the focus slice is empty

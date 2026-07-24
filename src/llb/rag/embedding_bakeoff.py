@@ -19,12 +19,15 @@ consent gate are unit-tested with fake stores/embedders -- no GPU, no FAISS, no 
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
+
+if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra retrieval pass
+    from llb.rag.noise_floor import NoiseFloorReport
 
 _LOG = logging.getLogger(__name__)
 
@@ -94,6 +97,11 @@ class BakeoffReport(TypedDict):
     corpus_root: str
     candidates: list[CandidateResult]
     best_recall: str | None
+    # Measurement floor across the candidate stores, present only when it was asked for
+    # (`compare-embeddings --noise-floor`). This lane is exactly where a sub-item recall delta
+    # gets read as a recommendation, so the floor states whether the winner is separated from
+    # the runner-up at all. See `llb.rag.noise_floor`.
+    noise_floor: NotRequired["NoiseFloorReport"]
 
 
 def score_candidate(
@@ -170,27 +178,45 @@ def run_bakeoff(
     build_api: StoreBuilder | None = None,
     data_classification: str | None = None,
     consent: Callable[[], bool] = lambda: False,
+    noise_floor: bool = False,
+    noise_floor_replicates: int | None = None,
 ) -> BakeoffReport:
     """Build + score each local candidate, then the gated API row, and rank by recall@k.
 
     `build_local` / `build_api` are the injectable store-builder seam (real FAISS builds in the CLI,
     fakes in tests). The API row is added only when `api_lane_enabled` clears the consent + open-data
     gate, so a declined or non-open run never calls `build_api`.
+
+    With `noise_floor` the candidate stores are kept until the whole set is scored and their
+    measurement floor is measured over the SAME items, so the recommendation is published beside
+    the delta it has to clear rather than as a bare third decimal.
     """
     candidates: list[CandidateResult] = []
+    stores: dict[str, Any] = {}
     for model in local_models:
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
-        candidates.append(score_candidate(model, build_local(model), items, k))
+        built = build_local(model)
+        candidates.append(score_candidate(model, built, items, k))
+        stores[model] = built.store
 
     if api_lane_enabled(api_model, data_classification, consent):
         assert api_model is not None and build_api is not None  # narrowed by the gate
         _LOG.info("[compare-embeddings] building API candidate (CORPUS EGRESS): %s", api_model)
-        candidates.append(score_candidate(api_model, build_api(api_model), items, k))
+        built = build_api(api_model)
+        candidates.append(score_candidate(api_model, built, items, k))
+        stores[api_model] = built.store
 
-    return {
+    report: BakeoffReport = {
         "k": k,
         "n": len(items),
         "corpus_root": corpus_root,
         "candidates": candidates,
         "best_recall": best_recall(candidates),
     }
+    if noise_floor:
+        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+
+        report["noise_floor"] = measure_noise_floor(
+            stores, list(items), k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
+        )
+    return report

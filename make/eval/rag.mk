@@ -2,7 +2,8 @@
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	measure-duplicate-residue \
-	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
+	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
+	compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -84,7 +85,7 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 NOISE_FLOOR=1 FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -99,6 +100,8 @@ compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed sh
 		$(if $(GRAPH_FUSION_SPAN_MERGE_RATIO),--graph-fusion-span-merge-ratio "$(GRAPH_FUSION_SPAN_MERGE_RATIO)",) \
 		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
@@ -143,11 +146,24 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
+compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main compare-embeddings --goldset "$(GOLDSET)" --k $(RAG_K) \
+	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(MODELS),--models "$(MODELS)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
+
+compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main compare-vector-stores $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(VECTOR_BACKENDS),--backends "$(VECTOR_BACKENDS)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_STORES_OUT),--out "$(COMPARE_STORES_OUT)",)
 
 run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= CONTEXT_STRATEGY= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

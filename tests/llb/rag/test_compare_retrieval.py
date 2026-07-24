@@ -226,3 +226,62 @@ def test_question_type_map_omits_duplicate_question_text_with_conflicting_labels
         encoding="utf-8",
     )
     assert load_question_types_by_question(goldset) == {"unique": "comparative"}
+
+
+def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypatch):
+    """The backend lane reads the same floor as `compare-retrieval` (`--noise-floor`)."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = tmp_path / "goldset.jsonl"
+    dump_goldset(
+        [
+            GoldItem(
+                id="a",
+                question="питання",
+                reference_answer="x",
+                source_doc_id="d1",
+                source_spans=[
+                    SourceSpan(doc_id="d1", char_start=0, char_end=10, text="0123456789")
+                ],
+                provenance="ontology-drafted",
+                split="final",
+            )
+        ],
+        goldset,
+    )
+    tied = [
+        {**_chunk("d2", 20, 30), "retrieval_score": 0.5},
+        {**_chunk("d1", 0, 10), "retrieval_score": 0.5},
+    ]
+    monkeypatch.setattr(
+        "llb.rag.comparison_builders.build_vector_store_comparison",
+        lambda cfg, backends: {name: _FakeStore(tied) for name in backends},
+    )
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compare-vector-stores",
+            "--goldset",
+            str(goldset),
+            "--backends",
+            "faiss,chroma",
+            "--k",
+            "1",
+            "--noise-floor",
+            "--noise-floor-replicates",
+            "16",
+            "--out",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "noise floor" in result.output
+    floor = json.loads(out.read_text(encoding="utf-8"))["noise_floor"]
+    assert set(floor["lanes"]) == {"faiss", "chroma"}
+    # Both backends rank the same tie, so neither is distinguished from the other.
+    assert floor["floor_recall_at_k"] > 0.0 and floor["margin"]["clears_floor"] is False

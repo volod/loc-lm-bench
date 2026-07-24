@@ -8,11 +8,8 @@ import pytest
 
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.compare import compare_retrieval, format_comparison
-from llb.rag.noise_floor import (
-    DEFAULT_SCORE_JITTER,
-    format_noise_floor,
-    measure_noise_floor,
-)
+from llb.rag.noise_floor import DEFAULT_SCORE_JITTER, measure_noise_floor
+from llb.rag.noise_floor_report import format_noise_floor
 
 REPLICATES = 32
 
@@ -150,6 +147,73 @@ def test_format_noise_floor_is_ascii_and_states_the_floor():
     assert "read any smaller delta as noise" in text
 
 
+def test_margin_reads_the_top_two_lanes_against_the_floor():
+    stores = {
+        "hit": _ScoredStore(_separated_hits()),
+        "miss": _ScoredStore([_chunk("d9", 0, 10, 0.9), _chunk("d8", 0, 10, 0.5)]),
+    }
+    margin = measure_noise_floor(stores, _items(), k=2, replicates=REPLICATES)["margin"]
+    assert margin["leader"] == "hit" and margin["runner_up"] == "miss"
+    assert margin["delta"] == 1.0 and margin["floor"] == 0.0
+    assert margin["clears_floor"] is True
+
+
+def test_margin_of_a_lead_inside_the_floor_does_not_clear_it():
+    # Two lanes over the same tie: identical base recall, and a band the tie order can move.
+    stores = {"a": _ScoredStore(_tied_hits(k=3)), "b": _ScoredStore(_tied_hits(k=3))}
+    report = measure_noise_floor(stores, _items(), k=3, replicates=REPLICATES)
+    margin = report["margin"]
+    assert margin["delta"] == 0.0 and margin["floor"] > 0.0
+    assert margin["clears_floor"] is False
+    assert "does NOT clear the floor" in "\n".join(format_noise_floor(report))
+
+
+def test_margin_of_a_single_lane_has_nothing_to_clear():
+    report = measure_noise_floor(
+        {"faiss": _ScoredStore(_separated_hits())}, _items(), k=2, replicates=REPLICATES
+    )
+    margin = report["margin"]
+    assert margin["runner_up"] is None and margin["clears_floor"] is False
+    assert "nothing to clear" in "\n".join(format_noise_floor(report))
+
+
+class _PoolStore:
+    """A lane whose deeper ranking is NOT its top-k extended -- the fused-row case.
+
+    Asking such a lane for `3k` results re-ranks a deeper pool and answers for a DIFFERENT row, so
+    it exposes the pool seam: the published top-k ranking with the cut moved instead.
+    """
+
+    def __init__(self) -> None:
+        self.pool_calls: list[tuple[int, int]] = []
+        self.depths: list[int] = []
+
+    def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
+        self.depths.append(k)
+        if k > 2:  # a deeper request fuses a deeper pool: another row, and it loses the gold
+            return [_chunk("dX", i, i + 5, 0.9 - i / 100) for i in range(k)]
+        return self._published(k)
+
+    def retrieve_candidate_pool(self, question: str, k: int, candidates: int) -> list[ChunkRecord]:
+        self.pool_calls.append((k, candidates))
+        return self._published(candidates)
+
+    def _published(self, cut: int) -> list[ChunkRecord]:
+        ranking = [_chunk("d1", 0, 10, 0.9)]
+        ranking += [_chunk("dY", i * 5, i * 5 + 5, 0.1) for i in range(cut)]
+        return ranking[:cut]
+
+
+def test_floor_perturbs_the_pool_seam_when_a_lane_exposes_one():
+    store = _PoolStore()
+    report = measure_noise_floor({"fused": store}, _items(), k=2, replicates=REPLICATES)
+    assert store.pool_calls == [(2, 6)]  # asked for its own k, cut at CANDIDATE_DEPTH_FACTOR * k
+    assert store.depths == [2]  # the deep `retrieve` that would answer for another row never runs
+    # The pool's top-k IS the published row, so the band brackets the published recall.
+    lane = report["lanes"]["fused"]
+    assert lane["recall_at_k"]["base"] == 1.0 and lane["recall_at_k"]["min"] == 1.0
+
+
 def test_comparison_renders_the_floor_when_it_is_attached():
     stores = {"faiss": _ScoredStore(_tied_hits(k=3))}
     report = compare_retrieval(stores, _items(), k=3)
@@ -157,3 +221,16 @@ def test_comparison_renders_the_floor_when_it_is_attached():
     report["noise_floor"] = measure_noise_floor(stores, _items(), k=3, replicates=REPLICATES)
     rendered = format_comparison(report)
     assert "noise floor" in rendered and "best (recall@k)" in rendered
+
+
+def test_margin_breaks_a_recall_tie_by_mrr_like_the_tables_do():
+    # Same recall, different first-hit rank: the runner-up must be the row the table prints second.
+    stores = {
+        "top": _ScoredStore(_separated_hits()),
+        "mid-mrr": _ScoredStore([_chunk("d2", 0, 10, 0.9), _chunk("d1", 0, 10, 0.5)]),
+        "low-mrr": _ScoredStore(
+            [_chunk("d2", 0, 10, 0.9), _chunk("d3", 0, 10, 0.7), _chunk("d1", 0, 10, 0.5)]
+        ),
+    }
+    margin = measure_noise_floor(stores, _items(), k=3, replicates=REPLICATES)["margin"]
+    assert margin["leader"] == "top" and margin["runner_up"] == "mid-mrr"

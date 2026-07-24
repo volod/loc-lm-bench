@@ -43,35 +43,69 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### noise-floor-for-the-remaining-comparison-lanes (optional)
+### embedder-bake-off-paired-uncertainty
 
-The measurement floor is wired into `compare-retrieval` only. `compare-embeddings` (its own
-bake-off report), `compare-vector-stores`, and the `compare-graph-fusion` sweep publish the same
-three-decimal recall@k / MRR rows with no floor beside them, and the embedder bake-off is exactly
-where a sub-item delta gets read as a recommendation
-([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)). Extend the
-floor to those lanes -- the measurement itself is store-agnostic, it only needs a lane's
-candidates and their scores -- and re-read each recorded recommendation against its own corpus's
-floor.
+The embedder recommendation is the one comparison in the repo with NO uncertainty beside it, and it
+is now known to be item-set sensitive: the recorded `e5-base` winner does not reproduce on the
+accepted goldset that still exists, where `BAAI/bge-m3` leads by 0.050 recall@10 -- two questions on
+40 -- against a measured `+/-0.000` floor
+([RAG core](current/rag-core.md#the-recommendation-re-read-against-the-floor)). The floor has
+answered its question (the delta is not numeric noise) and cannot answer the next one. Give the
+bake-off the paired percentile bootstrap the fusion sweep already has: per candidate, the per-item
+metric vector against the incumbent embedder, shared resample index sets, a paired delta interval,
+and the win/loss/tie ledger -- then re-run the four candidates and record whether ANY candidate
+separates from `e5-base` on an accepted ledger.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `measure_noise_floor` / `format_noise_floor` in
-  `src/llb/rag/noise_floor.py` unchanged; the work is report plumbing per lane
-  (`src/llb/rag/embedding_bakeoff_report.py`, `src/llb/cli/rag/compare_stores.py`, the fusion
-  evidence report).
-- User-visible outcome: every retrieval recommendation the repo publishes states the floor it
-  clears, not just its point estimate.
-- Scope boundary: in scope -- the per-lane plumbing, the re-read of each recorded verdict, and a
-  stated floor per corpus. Out of scope -- changing any metric, and re-running the heavy bake-offs
-  beyond what a floor re-read needs.
-- Data and artifact paths: each lane keeps its existing report path.
-- Execution path: `make compare-embeddings` / `make compare-vector-stores` /
-  `make compare-graph-fusion` with the floor enabled on the CUDA host; CI covers the new report
-  blocks over fake stores.
-- Acceptance gates: `make ci` green; each lane's report carries the floor and each recorded
-  recommendation is restated as clearing it or not.
-- Documentation target: the embedder bake-off and fusion evidence sections of
-  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
+- Dependencies: none. Reuse `bootstrap_index_sets` / `paired_comparison` in
+  `src/llb/rag/fusion_evidence/stats.py` (they take metric vectors, not fusion rows) and the
+  bake-off scoring seam in `src/llb/rag/embedding_bakeoff.py`, which already retrieves each
+  candidate once per item.
+- User-visible outcome: the operator learns whether an embedder swap is supported by the item set
+  or is one question of luck, instead of reading a point estimate ranked to three decimals.
+- Scope boundary: in scope -- per-item metric vectors, the paired interval and ledger per
+  candidate, the report columns, and a re-run with an explicit adopt-or-retain verdict. Out of
+  scope -- new candidates, fine-tuning (that is `ua-embedder-domain-finetune`), and changing the
+  default before an interval clears zero.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
+- Execution path: `make compare-embeddings GOLDSET=<accepted-goldset> NOISE_FLOOR=1` on the CUDA
+  host, on at least the accepted converted-PDF goldset and the committed UA fixture so a
+  corpus-specific reversal is visible; CI covers the interval columns over fake stores.
+- Acceptance gates: `make ci` green; every candidate row carries a paired delta interval against
+  `e5-base` on both corpora, and the recorded recommendation is restated as adopt or retain.
+- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md) and the
+  recommendation line in [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
+
+### graph-lane-score-ties (optional)
+
+The graph lane's own recall is decided by tie order for two thirds of the questions it is scored
+on: its link-relevance scores saturate into long exact-tie blocks, the rank-k cut falls inside one
+for 68 of 95 items (33 of 35 on the multi-hop slice), and that is what sets the fusion sweep's
+whole measurement floor at `+/-0.021` recall@10 overall and `+/-0.043` on the focus slice
+([GraphRAG](current/graphrag-backend.md#the-sweep-re-read-against-its-measurement-floor)). The
+ranking is reproducible -- `_rank_dedup` breaks ties on `(doc_id, char_start, char_end)` -- but a
+document id is not a relevance signal, so every graph-only row is quoted to three decimals it has
+not earned. Find out whether the tie blocks are reducible: measure how much of each tie block is
+one relevance value versus rounding, and if a finer signal exists (edge weight, hop distance,
+mention count, community rank as a continuous term rather than a bucket) score the lane with it and
+re-measure the floor.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the scoring in `src/llb/graph/linking.py` / `src/llb/graph/retrieval.py`
+  and the floor lane (`compare-graph-fusion --noise-floor`) to read the result.
+- User-visible outcome: either graph-only rows whose recall reflects relevance instead of document
+  order, or a recorded finding that the lane's evidence is inherently tied and its rows must be
+  read at the floor's precision.
+- Scope boundary: in scope -- the tie-block census, one finer relevance signal if the census
+  supports one, and the before/after floor. Out of scope -- changing the graph schema, the fusion
+  mechanics, and the RRF rank basis (fused rows already report a zero band).
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: `make compare-graph-fusion NOISE_FLOOR=1 SPLIT=` before and after, on the CUDA
+  host; CI covers the scoring change over the committed graph fixtures.
+- Acceptance gates: `make ci` green; the report states the fragile count and floor per graph row
+  before and after, and whether any recorded graph-row verdict changes.
+- Documentation target: the retrieval-strategies section of
+  [GraphRAG](current/graphrag-backend.md) and the floor table in [RAG core](current/rag-core.md).
 
 ### chunker-bake-off-under-the-size-cap (optional)
 
@@ -89,7 +123,7 @@ that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-coll
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
   row can be read against the corpus's own floor
-  ([RAG core](current/rag-core.md#measurement-floor-compare-retrieval---noise-floor)).
+  ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
   `size` the operator asked for.
 - Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
