@@ -281,3 +281,20 @@ regressions.
 Tests target durable specifications and business rules. Internal builders, helper splits, and
 deterministic intermediate values do not get dedicated tests when workflow or domain tests already
 guard the observable behavior.
+
+Tool caches (ruff, mypy, pytest, deepeval) resolve from `DATA_DIR` at RUNTIME, never from a static
+path in `pyproject.toml`: `make/config.mk` exports `RUFF_CACHE_DIR` / `MYPY_CACHE_DIR` /
+`DEEPEVAL_*` (and passes `-o cache_dir=` for pytest, which has no env var), and
+`llb_export_tool_caches` in `scripts/shared/common.sh` exports the same values for shell-driven
+runs. A config file cannot read `.env`, so a literal `.data/cache/...` default there would keep
+writing into the project root after an operator moved `DATA_DIR` -- and `rm -rf $DATA_DIR` would
+not clear it. A tool invoked with neither layer loaded falls back to its own gitignored default
+(`.ruff_cache/`, `.mypy_cache/`, `.pytest_cache/`), which never masquerades as `DATA_DIR`.
+
+Lint contract: `[tool.ruff.lint].select` in `pyproject.toml` names the enforced rule groups
+(`E4`, `E7`, `E9`, `F`) instead of relying on ruff's default set, and the `dev` extra caps the
+version (`ruff>=0.6,<0.17`). Ruff 0.16 widened its defaults (import sorting, pyupgrade,
+flake8-bugbear, implicit string concatenation, ...), so a GitHub runner resolving a newer ruff than
+the dev box reported 1391 findings on unchanged code while the dev box was green. A linter release
+must never be able to fail CI on code nobody touched; widening the rule set is a deliberate,
+separate change to that `select` list.

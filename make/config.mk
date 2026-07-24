@@ -1,8 +1,11 @@
 # Shared variables and exported environment for loc-lm-bench make targets.
 # Tool caches live under one $DATA_DIR/cache/<tool> tree (not the project root), so the root stays
-# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars override
-# the static pyproject defaults, so the caches follow a custom DATA_DIR. deepeval reads
-# DEEPEVAL_CACHE_FOLDER (its `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
+# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars are the
+# ONLY place the cache locations are set for make-driven runs -- pyproject.toml deliberately holds
+# no static cache path, since a config file cannot read .env and would not follow a custom
+# DATA_DIR. `llb_export_tool_caches` in scripts/shared/common.sh exports the same values for
+# shell-driven runs (Make cannot source that file). deepeval reads DEEPEVAL_CACHE_FOLDER (its
+# `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
 LLB_CACHE_DIR := $(DATA_DIR)/cache
 export RUFF_CACHE_DIR := $(LLB_CACHE_DIR)/ruff
 export MYPY_CACHE_DIR := $(LLB_CACHE_DIR)/mypy
