@@ -187,16 +187,21 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
-| Gold data | `validate-goldset`, `ingest-squad`, `ingest-uk-squad` |
-| Verification | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-accept` |
-| Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score` |
-| RAG retrieval | `build-index`, `validate-retrieval`, `compare-retrieval`, `compare-vector-stores` |
-| RAG scoring | `run-eval`, `sweep`, `tune`, `joint-search`, `pipeline`, `board` |
-| Backends | `prep-models`, `list-models`, `resolve-models`, `build-vllm`, `build-llamacpp` |
-| Category suites | `bench-security`, `bench-*`, `bench-composite`, `composite-headline` |
+| Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `measure-duplicate-residue` |
+| Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |
+| Verification and review | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-adjudicate`, `verify-accept`, `review` (`make review-workbench`) |
+| Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score`, `judge-experiment`, `frontier-judge-agreement` |
+| RAG retrieval | `build-index`, `build-graph`, `refresh-index`, `validate-retrieval`, `build-query-glossary` |
+| Retrieval evidence | `compare-retrieval`, `compare-embeddings`, `compare-vector-stores`, `compare-graph-fusion`, `calibrate-fusion-routing`, `compare-context-strategies`, `compare-answer-quality` |
+| RAG scoring | `run-eval`, `sweep`, `tune`, `joint-search`, `pipeline`, `screen-public`, `board`, `recommend`, `mlflow-ui` |
+| Diagnostics | `analyze-misses`, `probe-context-position`, `bench-query-robustness`, `score-external-rag` |
+| Fine-tuning and adapters | `export-finetune-set`, `finetune-hparams`, `finetune-adapter`, `finetune-compat`, `self-improve`, `distill`, `finetune-campaign`, `register-adapter`, `list-adapters`, `serve-adapter`, `gc-adapters` |
+| Backends | `prep-models`, `list-models`, `resolve-models`, `preflight-vllm`, `build-vllm`, `build-llamacpp` |
+| Category suites | `bench-security`, `bench-*`, `bench-chain-context`, `bench-composite`, `composite-headline` |
+| Knowledge cutoff | `bench-knowledge-cutoff`, `knowledge-cutoff-ua-*`, `bench-knowledge-cutoff-bilingual` |
 | Prompt systems | `prompt-system-prepare`, `prompt-system-review`, `prompt-system-compare` |
-| Platform matrix | `platform-matrix`, `detect-gpu-vram`, `gen-serving-config` |
-| Quickstart flows | `quickstart-goldset`, `quickstart-pdf-corpus` |
+| Platform matrix | `platform-matrix`, `detect-gpu-vram`, `gen-serving-config`, `prep-serving-targets` |
+| Orchestration | `auto-rag`, `quickstart-goldset`, `quickstart-pdf-corpus`, `quickstart-corpus` |
 
 The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cli/`.
 
@@ -205,18 +210,30 @@ The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cl
 ```text
 src/llb/
   cli/              Typer command modules and config helpers
+  core/             canonical RunConfig, contracts, env and filesystem helpers
   goldset/          canonical gold schema, validation, splits, review ledger tooling
   prep/             ingestion, drafting, cross-check, public-source adapters
-  rag/              chunking, embeddings, vector stores, retrieval comparison
+  conflicts/        corpus-hygiene tiers, conflict detection and reversible resolution
+  review/           unified terminal review workbench and its per-ledger adapters
+  rag/              chunking, embeddings, vector stores, retrieval comparison and evidence
   graph/            GraphRAG model, store, retrieval, summaries
   backends/         launchers, hardware detection, planning, resolver, telemetry
-  eval/             retrieve-generate graph templates
+  inference/        serving selection and generated serve/run configs per GPU tier
+  eval/             retrieve-generate graph templates, context ablation, answer quality
   executor/         run orchestration, isolation, VRAM and contention gates
+  optimize/         Optuna tuning space, multi-objective study, joint model+config search
   scoring/          correctness, judge, board aggregation, category metrics
-  bench/            category benchmark runners and deterministic tool worlds
+  judge/            judge calibration statistics, worksheets, experiments
+  screen/           Tier-1 public UA screen and its report
+  finetune/         dataset export, LoRA trainers, hparam search, adapter registry
+  bench/            category benchmark runners, chain-context policies, tool worlds
   prompts/          shared prompt-template engine, templates, generated registry
   prompt_system/    prompt-system packages, review state, selection
+  auto_rag/         autonomous corpus-to-recommendation stage machine and journal
+  quickstart/       quickstart model-selection helpers
   board/            run loaders, category/harness/prompt-system comparisons, UI
+  standalone/       stdlib-only client for scoring a closed remote RAG service
+  build/            source-build helpers (vLLM wheels)
   tracking/         canonical manifests and MLflow mirror
 ```
 
