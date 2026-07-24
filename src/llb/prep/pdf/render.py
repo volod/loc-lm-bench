@@ -6,6 +6,7 @@ records point at the cleaned, contiguous body text the rest of the pipeline grou
 """
 
 import hashlib
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,8 @@ from llb.prep.pdf.model import (
     PdfParserAttempt,
     RenderedPdfDoc,
 )
+from llb.prep.pdf.repeat_corpus import remap_citation_pages
+from llb.prep.pdf.repeats import REPEAT_KEEP, RepeatCensus, rewrite_repeated_blocks
 
 
 def iter_pdf_files(pdf_root: Path | str) -> list[Path]:
@@ -104,6 +107,24 @@ def _render_doc(source: str, extraction: PdfExtraction) -> RenderedPdfDoc:
             )
         )
     return RenderedPdfDoc(text="".join(parts).rstrip() + "\n", citations=citations)
+
+
+def strip_rendered_repeats(
+    rendered: RenderedPdfDoc, mode: str, min_repeats: int
+) -> tuple[RenderedPdfDoc, RepeatCensus | None]:
+    """Apply intra-document repeat handling to a rendered doc, carrying its citations along.
+
+    The line-level `strip_page_furniture` pass above removes running headers and footers; this one
+    removes (or section-anchors) whole BLOCKS a document repeats -- boilerplate procedure steps and
+    notes restated section after section, which no per-line rule can see. `keep` returns the same
+    object, so a conversion that does not ask for the handling is byte-identical to before.
+    """
+    if mode == REPEAT_KEEP:
+        return rendered, None
+    rewrite = rewrite_repeated_blocks(rendered.text, mode=mode, min_repeats=min_repeats)
+    pages = remap_citation_pages([asdict(page) for page in rendered.citations], rewrite.edits)
+    citations = [PdfPageCitation(**page) for page in pages]
+    return RenderedPdfDoc(text=rewrite.text, citations=citations), rewrite.census
 
 
 def _offset_blocks(blocks: list[dict[str, Any]], text_start: int) -> list[dict[str, Any]]:

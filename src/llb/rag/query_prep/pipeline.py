@@ -12,6 +12,8 @@ from llb.rag.query_prep.base import (
     STEP_REWRITE,
     STEP_TYPOS,
     KnownWordProbe,
+    LanguageGate,
+    PlausibilityProbe,
     QueryEdit,
     QueryGenerator,
     QueryPrepResult,
@@ -20,7 +22,7 @@ from llb.rag.query_prep.base import (
 from llb.rag.query_prep.decompose import apply_decompose
 from llb.rag.query_prep.glossary import Glossary, apply_glossary
 from llb.rag.query_prep.hyde import apply_hyde
-from llb.rag.query_prep.normalize import apply_normalize
+from llb.rag.query_prep.normalize import apply_normalize, language_gate
 from llb.rag.query_prep.restore import VocabularyContext, normalization_provenance
 from llb.rag.query_prep.rewrite import apply_rewrite
 from llb.rag.query_prep.typos import apply_typos
@@ -43,6 +45,7 @@ class QueryPrep:
     decomposer: QueryGenerator | None = None
     known_word: KnownWordProbe | None = None
     context: VocabularyContext | None = None
+    plausible: PlausibilityProbe | None = None
 
     @classmethod
     def build(
@@ -56,6 +59,7 @@ class QueryPrep:
         decomposer: QueryGenerator | None = None,
         known_word: KnownWordProbe | None = None,
         context: VocabularyContext | None = None,
+        plausible: PlausibilityProbe | None = None,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
@@ -72,6 +76,8 @@ class QueryPrep:
             raise ValueError("the typo morphology guard needs the 'typos' step")
         if context is not None and STEP_TYPOS not in ordered:
             raise ValueError("the query-context index needs the 'typos' step")
+        if plausible is not None and STEP_NORMALIZE not in ordered:
+            raise ValueError("the normalize language gate needs the 'normalize' step")
         if STEP_GLOSSARY in ordered and glossary is None:
             raise ValueError("the 'glossary' step needs a query glossary")
         if STEP_REWRITE in ordered and rewriter is None:
@@ -89,6 +95,7 @@ class QueryPrep:
             decomposer=decomposer,
             known_word=known_word,
             context=context,
+            plausible=plausible,
         )
 
     def process(self, query: str) -> QueryPrepResult:
@@ -98,9 +105,15 @@ class QueryPrep:
         hypothetical_answer: str | None = None
         decomposition: str | None = None
         subqueries: tuple[str, ...] = ()
+        normalize_gate: LanguageGate | None = None
         for step in self.steps:
             if step == STEP_NORMALIZE:
-                current, step_edits = apply_normalize(current)
+                # With a plausibility probe wired in, decide transliteration for the whole query
+                # so a foreign-language question is not mangled into unretrievable Cyrillic.
+                normalize_gate = (
+                    language_gate(current, self.plausible) if self.plausible is not None else None
+                )
+                current, step_edits = apply_normalize(current, gate=normalize_gate)
             elif step == STEP_TYPOS:
                 # The edits accumulated so far carry each normalized token back to the form the
                 # user typed, so candidate selection can refuse an incompatible restoration.
@@ -133,4 +146,5 @@ class QueryPrep:
             hypothetical_answer=hypothetical_answer,
             decomposition=decomposition,
             subqueries=subqueries,
+            normalize_gate=normalize_gate,
         )

@@ -222,8 +222,16 @@ Every fused row also reports its **cross-lane agreement**: how many questions pr
 BOTH lanes returned, and how many such candidates per question. That is the number a span-identity
 policy is read against, and the precondition for candidate depth to matter at all.
 
+`NOISE_FLOOR=1` (`--noise-floor`) adds the
+[measurement floor](rag-core.md#measurement-floor---noise-floor) per swept row, in TWO blocks: over
+every scored item and over the focus slice alone, because the verdict is decided on the focus slice
+and a floor measured on 95 items does not bound the band of a 35-item slice. It answers a different
+question from the bootstrap intervals already in the table -- the intervals ask whether the item
+SAMPLE supports a difference, the floor asks whether the rows differ for any reason other than tie
+order -- and a weight recommendation needs both.
+
 Artifacts per run: `report.md` (verdict, focus slice, overall, per-type slices, agreement table,
-item ledger), `comparison.json`, and `run_config.json`.
+measurement floor when asked for, item ledger), `comparison.json`, and `run_config.json`.
 
 ### Accepted-ledger evidence, single graph weight
 
@@ -301,6 +309,50 @@ What the run establishes:
 - **Graph-only retrieval loses decisively overall** (-0.337 and -0.379 recall, sign test p=0.000),
   reproducing the accepted-ledger run's ordering on a second, multi-document corpus.
 - **Graph weight 0.0 is an exact vector passthrough**: 0 wins, 0 losses, 95 ties on every metric.
+
+### The sweep re-read against its measurement floor
+
+CUDA host, 2026-07-24; evidence under
+`$DATA_DIR/graph-vector-fusion-multihop/20260724T-noise-floor/`. The same 95 drafted items, the
+same weight grid, k, and seed were re-scored with `NOISE_FLOOR=1`. The vector store was REBUILT for
+this run (the recorded one predates duplicate-chunk collapse and the v2 BM25 tokenizer, and its
+lexical index is refused by the current build), so the run is also a reproduction check: 1139
+chunks collapse to 1099 indexed, and 74 of the 102 compared metric cells are unchanged. The 28 that
+moved moved by at most 0.029 (multi-hop recall on the `@0.30` rows) and 0.011 overall -- inside the
+floors below. The verdict string, the winning row, and every headline number are identical.
+
+Floors, worst lane of the sweep:
+
+| item set | n | worst-lane fragile | floor recall@10 | floor MRR |
+| --- | ---: | ---: | ---: | ---: |
+| every item | 95 | 68/95 (`graph/global_community`) | +/-0.021 | +/-0.044 |
+| multi-hop focus slice | 35 | 33/35 (`graph/local_khop`) | +/-0.043 | +/-0.074 |
+
+Both floors are set by the GRAPH-ONLY rows, and the cause is the graph lane's score distribution,
+not the corpus: link relevance sums a small set of link weights, so candidate lists carry long
+exact-tie blocks and the rank-10 cut falls inside one for two thirds of the questions. `_rank_dedup`
+(`src/llb/graph/retrieval.py`) breaks those ties deterministically on `(doc_id, char_start,
+char_end)`, so the ranking reproduces across runs -- but which of many equally-scored spans lands in
+the top 10 is decided by a document id rather than by relevance. Every fused row at a non-endpoint
+weight reports `+/-0.000`: RRF ranks are integers, and once the vector lane contributes, the tie
+block sits far below the cut.
+
+Recorded verdicts re-read:
+
+- **The multi-hop gain clears its floor.** `fused/global_community@0.10` gains +0.086 recall@10
+  over the vector row on the multi-hop slice, against a +/-0.043 slice floor -- exactly twice the
+  floor, so the gain is not tie order. Its bootstrap interval still touches zero, so the recorded
+  `inconclusive` verdict is unchanged: the floor and the interval fail this row for different
+  reasons, and only the SAMPLING one is still open.
+- **The overall gains clear their floor.** +0.042 (`@0.10`) and +0.053 (`@0.20`) against +/-0.021.
+- **The sweep does not choose between its two best weights.** `@0.20` leads `@0.10` by 0.011
+  overall and by 0.000 on the multi-hop slice, against floors of +/-0.021 and +/-0.043; the report
+  states in one line that the top two rows are not distinguished. Any recommendation naming one of
+  those two weights over the other is reading tie order.
+- **Graph-only retrieval still loses decisively.** -0.337 and -0.379 overall recall are an order of
+  magnitude past the +/-0.021 floor, so that ordering is not an artifact of the tie blocks -- even
+  though those same tie blocks are what make the graph rows' own recall fragile.
+- **Endpoint and passthrough rows are unaffected.** `fused/*@0.00` reproduces the vector row.
 
 ### Candidate depth evidence
 

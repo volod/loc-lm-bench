@@ -26,9 +26,9 @@ def compare_retrieval_cmd(
     hybrid: bool = typer.Option(
         False,
         "--hybrid",
-        help="compare dense vs hybrid (BM25+RRF) vs hybrid+lemmas plus the oracle-doc-filter "
-        "headroom row over one embedded corpus (the sibling corpus/ of --goldset when present); "
-        "the hybrid store persists under $DATA_DIR/llb/rag/hybrid/",
+        help="compare dense vs lexical (BM25 alone) vs hybrid (BM25+RRF) vs hybrid+lemmas plus "
+        "the oracle-doc-filter headroom row over one embedded corpus (the sibling corpus/ of "
+        "--goldset when present); the hybrid store persists under $DATA_DIR/llb/rag/hybrid/",
     ),
     fusion_weight: Optional[float] = typer.Option(
         None, help="hybrid rows: dense share of the weighted RRF (0..1; default 0.5)"
@@ -45,6 +45,23 @@ def compare_retrieval_cmd(
     rerank_candidates: Optional[int] = typer.Option(
         None, help="rerank rows: candidate pool depth fed into the reranker (default 30)"
     ),
+    duplicate_tier: Optional[str] = typer.Option(
+        None,
+        "--duplicate-tier",
+        help="duplicate-collapse tier for the stores this run BUILDS (--strategies / --hybrid): "
+        "exact (default) | normalized | masked -- see `measure-duplicate-residue` for the "
+        "residue each tier would take",
+    ),
+    noise_floor: bool = typer.Option(
+        False,
+        "--noise-floor",
+        help="also measure the MEASUREMENT FLOOR: re-rank each lane's candidates under "
+        "numeric score noise of the measured between-process amplitude and report the "
+        "resulting recall@k / MRR band, so a delta smaller than the floor reads as noise",
+    ),
+    noise_floor_replicates: Optional[int] = typer.Option(
+        None, help="--noise-floor: jitter replicates per lane (default 64)"
+    ),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
     """Compare retrieval backends -- or chunking strategies, or hybrid fusion -- on one gold set.
@@ -53,8 +70,9 @@ def compare_retrieval_cmd(
     the SAME items (a backend whose store is not built is skipped). With `--strategies` it instead
     builds one store per CHUNKING strategy (same corpus + pinned embedder) and ranks the chunkers,
     so the best chunker is demonstrated per corpus. With `--hybrid` it demonstrates (not assumes)
-    per corpus whether dense+BM25 RRF fusion beats dense-only, what Ukrainian lemmatization adds,
-    and how much recall headroom perfect document routing would buy. `--reranker` adds a reranked
+    per corpus whether dense+BM25 RRF fusion beats dense-only, how each lane retrieves ALONE,
+    what Ukrainian lemmatization adds, and how much recall headroom perfect document routing
+    would buy. `--reranker` adds a reranked
     twin row per compared row (rerank-context-order). Answer-quality comparison rides
     `run-eval --retrieval-backend ...` (it needs a model).
     """
@@ -62,7 +80,12 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import add_rerank_rows, compare_retrieval, format_comparison
+    from llb.rag.compare import (
+        add_rerank_rows,
+        compare_retrieval,
+        duplicate_census,
+        format_comparison,
+    )
     from llb.rag.question_types import aligned_question_types
 
     if strategies and hybrid:
@@ -74,6 +97,7 @@ def compare_retrieval_cmd(
         corpus_root=_compare_vector_corpus_root(goldset, None) if (strategies or hybrid) else None,
         fusion_weight=fusion_weight,
         graph_weight=graph_weight,
+        duplicate_tier=duplicate_tier,
     )
     items = load_goldset(cfg.goldset_path)
     if split:
@@ -94,6 +118,15 @@ def compare_retrieval_cmd(
         k,
         slice_labels=aligned_question_types(cfg.goldset_path, [it.id for it in items]),
     )
+    census = duplicate_census(stores)
+    if census:
+        report["duplicates"] = census
+    if noise_floor:
+        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+
+        report["noise_floor"] = measure_noise_floor(
+            stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
+        )
     typer.echo(format_comparison(report))
     _echo_stage_latencies(stores)
     if out is not None:

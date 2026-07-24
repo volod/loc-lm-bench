@@ -1,14 +1,14 @@
 """Structure-aware strategies: markdown-header, heading-hierarchy, and PDF page-aligned splits.
 
 All three parse boundaries from the SOURCE so every span stays an exact source substring, and
-sub-split oversized sections with the pinned `recursive_spans`.
+sub-split oversized sections through the shared `cap_span` fallback.
 """
 
 import re
 from pathlib import Path
 
 from llb.core.contracts.common import JsonObject
-from llb.rag.chunking.recursive import recursive_spans
+from llb.rag.chunking.cap import cap_span
 from llb.rag.chunking.spans import _trim, validate_chunking
 
 _MD_HEADER = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.M)
@@ -44,15 +44,11 @@ def _emit_section(
     size: int,
     overlap: int,
 ) -> None:
-    """Append the trimmed section as one span, or recursive sub-spans when it exceeds `size`."""
+    """Append the trimmed section as one span, or capped sub-spans when it exceeds `size`."""
     bs, be = _trim(text, body_start, body_end)
     if be <= bs:
         return
-    if be - bs <= size:
-        out.append((bs, be, meta))
-    else:
-        for rs, re_end in recursive_spans(text[bs:be], size, overlap):
-            out.append((bs + rs, bs + re_end, meta))
+    out.extend((s, e, meta) for s, e in cap_span(text, bs, be, size, overlap))
 
 
 def markdown_spans(text: str, size: int, overlap: int) -> list[tuple[int, int, JsonObject]]:
@@ -107,12 +103,8 @@ def page_aligned_spans(
     spans: list[tuple[int, int]] = []
     for region_start, region_end in regions:
         rs, re_ = _trim(text, region_start, region_end)
-        if re_ <= rs:
-            continue
-        if re_ - rs <= size:
-            spans.append((rs, re_))
-        else:
-            spans.extend((rs + s, rs + e) for s, e in recursive_spans(text[rs:re_], size, overlap))
+        if re_ > rs:
+            spans.extend(cap_span(text, rs, re_, size, overlap))
     return spans
 
 

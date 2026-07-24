@@ -312,6 +312,29 @@ def test_coverage_columns_are_recomputed_from_the_bundles_retrieval_sidecar(tmp_
     assert enriched[0]["objective_score"] == 1.0
 
 
+def test_a_second_hop_carried_by_a_collapsed_duplicate_counts_as_covered(tmp_path: Path):
+    """One retrieved chunk stands for both hops when its text is indexed once for two documents."""
+    record = {
+        "item_id": "q0",
+        "retrieved": [
+            {
+                "doc_id": "d1",
+                "char_start": 0,
+                "char_end": 10,
+                "rank": 1,
+                "duplicate_count": 2,
+                "duplicate_occurrences": [{"doc_id": "d2", "char_start": 0, "char_end": 10}],
+            }
+        ],
+        "gold_spans": [
+            {"doc_id": "d1", "char_start": 0, "char_end": 10, "text": "a"},
+            {"doc_id": "d2", "char_start": 0, "char_end": 10, "text": "b"},
+        ],
+    }
+    (tmp_path / "retrieval.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    assert read_case_coverage(tmp_path, 10)["q0"] == {"all_spans_at_k": 1.0, "span_coverage": 1.0}
+
+
 def test_a_bundle_without_the_sidecar_keeps_its_rows_unchanged(tmp_path: Path):
     rows = [_row("q0", 1.0)]
     assert with_coverage(rows, read_case_coverage(tmp_path, 10)) == rows

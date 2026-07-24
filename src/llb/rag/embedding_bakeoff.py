@@ -5,8 +5,11 @@
 (E5 / BGE-M3) exactly because its objective differs, so the ranking must be measured. This builds
 one store per candidate over the SAME corpus + chunking (each under its own family convention from
 `src/llb/rag/embedding.py`) and scores recall@k / MRR by the model-independent source-span metric
-(`evaluate_retrieval`), plus embed throughput, index size, and device -- ending in a written
-recommendation the operator applies via `RunConfig.embedding_model`.
+(`evaluate_retrieval`), plus embed throughput, index size, and device.
+
+The recommendation is NOT the point-estimate order: each candidate is also PAIRED against the
+baseline embedder (`llb.rag.embedding_bakeoff_uncertainty`), and the run ends in an adopt-or-retain
+verdict that a lead inside its own sampling interval cannot win.
 
 For OPEN corpora an operator may additionally opt in one Cohere API row (`src/llb/rag/api_embedder.py`):
 full corpus egress, so it is gated on explicit consent + `--max-usd` and refused for any non-open
@@ -17,90 +20,47 @@ consent gate are unit-tested with fake stores/embedders -- no GPU, no FAISS, no 
 """
 
 import logging
-import re
-from dataclasses import dataclass
 from typing import Any, Callable
 
-from typing_extensions import NotRequired, TypedDict
-
-from llb.core.contracts.rag import SourceSpanRecord
+from llb.core.contracts.rag import RetrievalPair
+from llb.rag.embedding_bakeoff_models import (
+    BakeoffItem,
+    BakeoffReport,
+    BuiltStore,
+    CandidateResult,
+    StoreBuilder,
+)
+from llb.rag.embedding_bakeoff_uncertainty import (
+    DEFAULT_BASELINE_MODEL,
+    DEFAULT_CONFIDENCE,
+    DEFAULT_RESAMPLES,
+    DEFAULT_SEED,
+    MetricVectors,
+    decide_verdict,
+    item_vectors,
+    paired_rows,
+)
 from llb.rag.retrieval import evaluate_retrieval
 
 _LOG = logging.getLogger(__name__)
 
-# (question, gold source spans) -- the per-item input shared across every candidate.
-BakeoffItem = tuple[str, list[SourceSpanRecord]]
 
-KIND_LOCAL = "local"
-KIND_API = "api"
-
-# Default LOCAL candidates for Ukrainian RAG. The current default first, then two retrieval-tuned
-# alternatives, then the paraphrase/STS model whose objective differs (why the ranking is measured).
-DEFAULT_LOCAL_CANDIDATES = [
-    "intfloat/multilingual-e5-base",  # current RunConfig default
-    "intfloat/multilingual-e5-large",
-    "BAAI/bge-m3",
-    "lang-uk/ukr-paraphrase-multilingual-mpnet-base",
-]
-
-_BYTES_PER_MB = 1024 * 1024
-
-
-def slugify_model(model: str) -> str:
-    """Filesystem-safe slug for a model id, for the per-candidate store directory."""
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", model).strip("._") or "model"
-
-
-@dataclass
-class BuiltStore:
-    """One built candidate store plus the build measurements the report ranks on.
-
-    `store` exposes `.retrieve(question, k) -> list[ChunkRecord]` and `.meta` (dim / n_indexed /
-    embedding_model). `cost_usd` is set only for the API row.
-    """
-
-    store: Any
-    embed_seconds: float
-    index_bytes: int
-    kind: str = KIND_LOCAL
-    device: str | None = None
-    cost_usd: float | None = None
-
-
-# embedding_model -> BuiltStore. The CLI binds the heavy real builder; tests inject a fake.
-StoreBuilder = Callable[[str], BuiltStore]
-
-
-class CandidateResult(TypedDict):
-    """One embedder's row: retrieval quality plus throughput / size / device fit."""
-
-    model: str
-    kind: str
-    recall_at_k: float
-    mrr: float
-    n: int
-    k: int
-    dim: int
-    n_indexed: int
-    embed_seconds: float
-    index_bytes: int
-    device: NotRequired[str]
-    cost_usd: NotRequired[float]
-
-
-class BakeoffReport(TypedDict):
-    k: int
-    n: int
-    corpus_root: str
-    candidates: list[CandidateResult]
-    best_recall: str | None
+def retrieve_pairs(store: Any, items: list[BakeoffItem], k: int) -> list[RetrievalPair]:
+    """One top-k retrieval pass over the shared items; the row AND its per-item vectors read it."""
+    return [(store.retrieve(question, k), spans) for question, spans in items]
 
 
 def score_candidate(
     model: str, built: BuiltStore, items: list[BakeoffItem], k: int
 ) -> CandidateResult:
     """Score one built store's top-k retrieval over the shared items (pure; fake-store testable)."""
-    pairs = [(built.store.retrieve(question, k), spans) for question, spans in items]
+    return score_pairs(model, built, retrieve_pairs(built.store, items, k), k)
+
+
+def score_pairs(
+    model: str, built: BuiltStore, pairs: list[RetrievalPair], k: int
+) -> CandidateResult:
+    """Shape one candidate row from an already-retrieved pass (so the pass is never repeated)."""
     metrics = evaluate_retrieval(pairs, k)
     meta = getattr(built.store, "meta", {}) or {}
     result: CandidateResult = {
@@ -170,27 +130,92 @@ def run_bakeoff(
     build_api: StoreBuilder | None = None,
     data_classification: str | None = None,
     consent: Callable[[], bool] = lambda: False,
+    noise_floor: bool = False,
+    noise_floor_replicates: int | None = None,
+    baseline: str | None = DEFAULT_BASELINE_MODEL,
+    resamples: int = DEFAULT_RESAMPLES,
+    confidence: float = DEFAULT_CONFIDENCE,
+    seed: int = DEFAULT_SEED,
 ) -> BakeoffReport:
     """Build + score each local candidate, then the gated API row, and rank by recall@k.
 
     `build_local` / `build_api` are the injectable store-builder seam (real FAISS builds in the CLI,
     fakes in tests). The API row is added only when `api_lane_enabled` clears the consent + open-data
     gate, so a declined or non-open run never calls `build_api`.
+
+    Every candidate also keeps its per-item metric vectors, so the run ends with a PAIRED interval
+    against `baseline` and an adopt-or-retain verdict: the point-estimate order alone cannot say
+    whether a two-question lead survives a different draw of questions
+    (`llb.rag.embedding_bakeoff_uncertainty`).
+
+    With `noise_floor` the candidate stores are kept until the whole set is scored and their
+    measurement floor is measured over the SAME items, so the recommendation is published beside
+    the delta it has to clear rather than as a bare third decimal.
     """
     candidates: list[CandidateResult] = []
+    stores: dict[str, Any] = {}
+    vectors: dict[str, MetricVectors] = {}
+
+    def score(model: str, built: BuiltStore) -> None:
+        pairs = retrieve_pairs(built.store, items, k)
+        candidates.append(score_pairs(model, built, pairs, k))
+        vectors[model] = item_vectors(pairs, k)
+        stores[model] = built.store
+
     for model in local_models:
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
-        candidates.append(score_candidate(model, build_local(model), items, k))
+        score(model, build_local(model))
 
     if api_lane_enabled(api_model, data_classification, consent):
         assert api_model is not None and build_api is not None  # narrowed by the gate
         _LOG.info("[compare-embeddings] building API candidate (CORPUS EGRESS): %s", api_model)
-        candidates.append(score_candidate(api_model, build_api(api_model), items, k))
+        score(api_model, build_api(api_model))
 
-    return {
+    report: BakeoffReport = {
         "k": k,
         "n": len(items),
         "corpus_root": corpus_root,
         "candidates": candidates,
         "best_recall": best_recall(candidates),
     }
+    _attach_uncertainty(
+        report, vectors, baseline, resamples=resamples, confidence=confidence, seed=seed
+    )
+    if noise_floor:
+        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+
+        report["noise_floor"] = measure_noise_floor(
+            stores, list(items), k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
+        )
+    return report
+
+
+def _attach_uncertainty(
+    report: BakeoffReport,
+    vectors: dict[str, MetricVectors],
+    baseline: str | None,
+    *,
+    resamples: int,
+    confidence: float,
+    seed: int,
+) -> None:
+    """Hang the paired interval on each row and the adopt-or-retain verdict on the report.
+
+    A baseline the run did not score leaves the rows bare and the verdict `undecided` rather than
+    silently re-pointing the comparison at whichever candidate happened to rank first.
+    """
+    report["uncertainty"] = {
+        "baseline": baseline,
+        "resamples": resamples,
+        "confidence": confidence,
+        "seed": seed,
+    }
+    paired = (
+        paired_rows(vectors, baseline, resamples=resamples, confidence=confidence, seed=seed)
+        if baseline is not None
+        else {}
+    )
+    for row in report["candidates"]:
+        if row["model"] in paired:
+            row["paired_vs_baseline"] = paired[row["model"]]
+    report["verdict"] = decide_verdict(paired, baseline)

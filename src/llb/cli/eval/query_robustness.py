@@ -7,6 +7,11 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
+from llb.eval.query_robustness_variants import (
+    APOSTROPHE_MIXED_SCRIPT,
+    VARIANT_CLASSES,
+    parse_variant_classes,
+)
 
 
 def _inferred_corpus(goldset: Optional[Path], corpus_root: Optional[Path]) -> Optional[Path]:
@@ -34,6 +39,14 @@ def bench_query_robustness_cmd(
     typo_rate: float = typer.Option(
         0.08, help="share of eligible characters replaced in typo and mixed-script lanes"
     ),
+    variant_classes: Optional[str] = typer.Option(
+        None,
+        "--variant-classes",
+        help=(
+            "comma-separated noise classes; default "
+            f"{','.join(VARIANT_CLASSES)} (add {APOSTROPHE_MIXED_SCRIPT} for the combined class)"
+        ),
+    ),
     top_k: Optional[int] = typer.Option(None, "--top-k", help="retrieved chunks per query"),
     max_tokens: Optional[int] = typer.Option(
         None, help="maximum answer tokens per clean or noisy case"
@@ -42,6 +55,11 @@ def bench_query_robustness_cmd(
     """Measure clean-to-noisy RAG deltas under the off / normalize / normalize,typos lanes."""
     from llb.eval.query_robustness_run import run_query_robustness
 
+    try:
+        classes = parse_variant_classes(variant_classes) if variant_classes else None
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
     cfg = load_config(
         config,
         model=model,
@@ -58,6 +76,7 @@ def bench_query_robustness_cmd(
             split=split,
             limit=limit,
             typo_rate=typo_rate,
+            variant_classes=classes,
             progress=typer.echo,
         )
     except ValueError as exc:

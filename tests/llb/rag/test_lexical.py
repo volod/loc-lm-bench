@@ -17,6 +17,22 @@ def test_normalize_token_unifies_apostrophe_variants_and_casefolds():
     assert normalize_token("М'ЯЧ") == "м'яч"
 
 
+def test_tokenize_keeps_an_apostrophe_variant_inside_the_word():
+    """A converted PDF's U+2019 must not split a Ukrainian word into two half-words."""
+    for form in ("зобов’язання", "зобов'язання", "зобовʼязання", "зобов`язання"):
+        assert tokenize(form) == ["зобов'язання"]
+
+
+def test_bm25_matches_a_typographic_apostrophe_against_a_keyboard_typed_query():
+    idx = _index(["Виконайте обов’язки вчасно.", "Зовсім інша тема без термінів."])
+    ranked = idx.search("обов'язки", k=2)
+    assert [ordinal for ordinal, _ in ranked] == [0]
+
+
+def test_tokenize_strips_edge_apostrophes_of_every_variant():
+    assert tokenize("‘слово’ `код` 'цитата'") == ["слово", "код", "цитата"]
+
+
 def test_tokenize_strips_punctuation_and_keeps_numbers():
     tokens = tokenize("Наказ № 4821, від 12.03.2024 (ДСТУ 8134:2020)!")
     assert tokens == ["наказ", "4821", "від", "12", "03", "2024", "дсту", "8134", "2020"]
@@ -76,6 +92,19 @@ def test_lexical_index_save_load_round_trip(tmp_path):
     loaded = LexicalIndex.load(tmp_path / "lexical_index.json")
     assert loaded.search("4821", k=2) == idx.search("4821", k=2)
     assert loaded.lemmatize is False
+
+
+def test_loading_an_index_written_by_an_older_tokenizer_is_refused(tmp_path):
+    """Postings are tokenizer output, so a stale generation would answer with the wrong terms."""
+    import json
+
+    path = tmp_path / "lexical_index.json"
+    _index(["наказ № 4821 тут"]).save(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["version"] = "bm25-uk-v1"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(SystemExit, match="bm25-uk-v1"):
+        LexicalIndex.load(path)
 
 
 def test_build_with_lemmas_never_mutates_the_texts():

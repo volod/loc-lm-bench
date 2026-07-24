@@ -1,11 +1,13 @@
 """Sample worksheet creation, additive enlargement, and manifest persistence."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.chains import chain_stratum_key, load_chains
 from llb.goldset.schema import load_goldset
+from llb.goldset.span_occurrences import SPAN_OCCURRENCES_COL
 from llb.goldset.verify_base import (
     KIND_AUTO,
     KIND_CHAINS,
@@ -17,6 +19,7 @@ from llb.goldset.verify_base import (
     find_goldset,
     load_worksheet,
     resolve_sample_kind,
+    worksheet_fieldnames,
     write_worksheet_rows,
 )
 from llb.goldset.verify_sampling.rows import sample_chain_rows, sample_gold_rows
@@ -25,6 +28,20 @@ from llb.goldset.verify_sampling.strata import (
     draw_stratified_sample,
     stratum_key,
 )
+
+
+def _fieldnames_for(rows: Sequence[dict[str, str]], base: Sequence[str] | None = None) -> list[str]:
+    """Complete the worksheet header, appending the occurrence column only when a row is flagged.
+
+    A bundle whose sampled spans are all unique keeps its header (and every row) byte-for-byte;
+    the additive `span_occurrences` column appears only once at least one ambiguous-evidence item
+    is present in the sheet.
+    """
+    names = worksheet_fieldnames(base)
+    flagged = any((row.get(SPAN_OCCURRENCES_COL) or "").strip() for row in rows)
+    if flagged and SPAN_OCCURRENCES_COL not in names:
+        names.append(SPAN_OCCURRENCES_COL)
+    return names
 
 
 def write_sample_manifest(
@@ -70,7 +87,7 @@ def build_sample_worksheet(
         population_size = len(items)
     for key in keys:
         strata_sizes[key] = strata_sizes.get(key, 0) + 1
-    write_worksheet_rows(out_path, rows)
+    write_worksheet_rows(out_path, rows, _fieldnames_for(rows))
     write_sample_manifest(
         out_path,
         bundle,
@@ -107,7 +124,7 @@ def merge_sample_worksheet(
     if not new_rows:
         return 0, len(existing_rows)
     all_rows = [*existing_rows, *new_rows]
-    write_worksheet_rows(out_path, all_rows, fieldnames)
+    write_worksheet_rows(out_path, all_rows, _fieldnames_for(all_rows, fieldnames))
     write_sample_manifest(
         out_path,
         bundle,

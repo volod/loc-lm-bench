@@ -207,6 +207,193 @@ Retrieval modes:
 - `hybrid`: index like `flat`, plus a lexical BM25 index fused with the dense ranking at query
   time (see Hybrid Retrieval below).
 
+### Duplicate Chunk Collapse
+
+Shipped (duplicate-chunk-suppression, `src/llb/rag/duplicates.py`): `RagStore.build` indexes each
+DISTINCT chunk text once. Converted-PDF corpora repeat page furniture, boilerplate instructions,
+and table headers verbatim -- on the measured goods corpus every one of the 494 collapse groups
+repeats INSIDE a single long manual, none across documents -- so the same text was embedded,
+stored, and searched many times over;
+worse, identical text embeds to an identical vector, which scores an EXACT tie, which the backend
+broke by candidate order -- so an item whose top-k cut fell inside such a group had a metric no
+retrieval property decided (see [measurement floor](#measurement-floor---noise-floor)).
+
+How it works:
+
+- Collapse is EXACT-only (byte-identical text) and keeps the FIRST copy in build order, so the
+  surviving record is deterministic across rebuilds. Near-duplicate DOCUMENTS remain the corpus
+  conflict lane's question ([data prep](data-prep.md)).
+- Each dropped copy is kept on the survivor as additive `metadata.duplicate_occurrences` -- its
+  whole chunk record minus the (identical) text, so offsets, ids, and page/governance metadata
+  survive -- plus `metadata.duplicate_count`. Every surviving chunk and every recorded occurrence
+  is still a verbatim corpus slice.
+- `chunk_hits_span` (`src/llb/rag/retrieval.py`) matches a chunk at EVERY place its text appears,
+  so a gold span labeled on any copy still counts as retrieved and a citation still resolves to
+  every document that carries the passage. In `parent_child` mode a collapsed child surfaces the
+  parents of all its occurrences, which is the same parent set the tied duplicate children
+  returned before.
+- Where duplicates remain (`build-index --keep-duplicate-chunks`, or a backend that rounds its
+  scores), `order_by_score` in `src/llb/rag/store_build.py` breaks an exact score tie on the
+  stable `chunk_id` instead of the backend's candidate order, on both the dense and the hybrid
+  path -- so a tie is a documented property of the data, reproducible across rebuilds and
+  backends.
+- The incremental refresh undoes the collapse before its per-document merge and re-applies it
+  after (`expand_duplicate_chunks` plus `resolve_duplicates` in
+  `src/llb/rag/refresh/merge.py`), so a refreshed store still equals a from-scratch
+  rebuild even when the document that happened to carry a survivor is the one edited or deleted.
+  A repeated passage that is already indexed costs no embedding call when a new document
+  introduces it again, and -- because the leftover fresh rows are keyed on stored TEXT, not on
+  chunk position (`text_row_map`) -- that holds even when the EDITED document is the one that
+  carried the survivor: its re-emitted copy recovers the row an unchanged document still holds
+  instead of paying the encoder for text the store already has. The refresh reports the recovered
+  rows as `n_reused_by_text` (`refresh-index` prints "N recovered by text").
+- `store_meta.json` records `collapse_duplicates` and the measured `duplicates` stats (`n`,
+  `unique`, `collapsed`, `duplicate_chunks`, `duplicate_share`, `groups`, `largest_group`,
+  `intra_document_groups`, `cross_document_groups`), and `build-index` echoes them as its
+  duplicate-rate line -- measured either way, so a store built with `--keep-duplicate-chunks` still
+  reports what the repeats cost. `make build-rag-store` adds `dup%` / `maxdup` columns to its
+  per-strategy table. The intra/cross split says WHERE a corpus's repetition comes from: page
+  furniture shared across documents (`cross_document_groups`) versus a boilerplate block a single
+  manual repeats section after section (`intra_document_groups`), which is a conversion-side
+  property of that one document handled at ingestion by
+  [intra-document repeat handling](data-prep.md#intra-document-repeated-block-handling---repeat-blocks).
+- `compare-retrieval` prints each built lane's duplicate census beneath the recall table
+  (`duplicate_census` in `src/llb/rag/compare.py`), so a recall row is read next to how much of
+  that lane's index is repeated text and whether the repeats are intra- or cross-document; a lane
+  with no build meta (a graph or fake store) simply contributes no census row.
+- The occurrences travel into the run bundle's `retrieval.jsonl`, so a lane that recomputes a
+  metric from that sidecar agrees with the run that wrote it (see
+  [the persisted retrieval record](#the-persisted-retrieval-record) under Persistence).
+
+Durable evidence (2026-07-23, CUDA host, pinned e5-base, k=10, reports under
+`$DATA_DIR/retrieval-noise-floor/<run>/`; the no-collapse baseline is the recorded
+[measurement-floor](#measurement-floor---noise-floor) run):
+
+| corpus (`size`) | lane | indexed chunks | fragile | recall@10 | MRR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| goods PDFs (200) | `recursive` | 4848 -> 3515 | 25 -> 1 | 0.653 -> 0.695 | 0.414 -> 0.465 |
+| goods PDFs (200) | `sentence` | 5019 -> 3659 | 20 -> 0 | 0.621 -> 0.632 | 0.411 -> 0.465 |
+| accepted PDF goldset (800) | `recursive` | 1124 -> 1120 | 0 -> 0 | 0.925 -> 0.925 | 0.852 -> 0.852 |
+| committed UA fixture (800) | both | 311 -> 311 | 0 -> 0 | 0.976 -> 0.976 | 0.838 -> 0.838 |
+
+The goods corpus stopped spending 27% of its index on text it already held, its floor fell from
++/-0.021 to +/-0.000, and recall/MRR ROSE rather than regressing: a top-10 that no longer repeats
+one passage up to 58 times carries more distinct evidence. The two corpora with essentially no
+duplicates reproduce every recorded number exactly, which is the check that collapse is a no-op
+where there is nothing to collapse.
+
+Every one of those goods collapse groups repeats INSIDE one document (measured:
+`intra_document_groups` = all 494, `cross_document_groups` = 0). Collapse removes the index and tie
+cost of that repetition but cannot fix it at the source -- the survivor is still returned for a
+question about any section that carries the block. Handling those blocks at CONVERSION time
+(`--repeat-blocks drop`) removes the later copies from the source and lifts recall@10 a further
++0.022/+0.034 above the collapse baseline on the shared item set; see
+[intra-document repeat handling](data-prep.md#intra-document-repeated-block-handling---repeat-blocks)
+for the option and its adopt-`drop` / reject-`anchor` verdict.
+
+Tests: `tests/llb/rag/test_duplicates.py` (collapse, occurrence metadata, offset-exactness against
+the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span matching at every
+occurrence, exact expansion, the tie-break, and the parent expansion) and
+`tests/llb/rag/test_duplicates_store.py` (index budget, retrievability of every copy's place, the
+fragility drop measured through `measure_noise_floor`, and refresh-equals-rebuild when the
+survivor's document is deleted) -- fake hashed-BoW embedder, no GPU.
+
+### Near-Duplicate Residue And The Collapse Tiers
+
+Shipped (near-duplicate-chunk-collapse, `src/llb/rag/duplicate_tiers.py` and
+`src/llb/rag/duplicate_residue.py`): collapse takes a TIER that decides when two chunk texts count
+as one passage, and a measurement that says how much repetition a store still holds after it.
+
+Tiers, cheapest first, each strictly coarser than the one before:
+
+| tier | two texts are one passage when | loss-free |
+| --- | --- | --- |
+| `exact` (default) | they are byte-identical | yes -- the survivor's text IS every copy's |
+| `normalized` | they share the corpus-conflict `hash` tier's normalized token stream (`llb.rag.lexical.tokenize`: casefold, apostrophe unification, punctuation strip, whitespace collapse) | no |
+| `masked` | `normalized` plus digit-run masking (`Сторінка 3` == `Сторінка 47`) | no |
+
+- Selection: `build-index --duplicate-tier <tier>` (`make build-index DUPLICATE_TIER=`),
+  `compare-retrieval --duplicate-tier <tier>` for the stores that lane BUILDS
+  (`make compare-retrieval DUPLICATE_TIER=`), or the `duplicate_tier` run-config field. The tier
+  lands in `store_meta.json` and in the measured `duplicates.tier`, so the build summary names what
+  it measured ("byte-identical to" / "normalization-equivalent to" / "digit-masked-equivalent to").
+- Reversibility holds at every tier: where a merged copy's text differs from its survivor's, the
+  copy is recorded WITH its own text, so `expand_duplicate_chunks` still reconstructs the
+  pre-collapse set exactly. It hands back no reusable embedding row for such a copy, so an
+  incremental refresh that promotes a differing copy to survivor re-embeds it instead of inheriting
+  a vector encoded from another wording -- a refreshed store still equals a rebuild under a coarse
+  tier (`tests/llb/rag/test_duplicates_store.py`).
+- A chunk whose text has no word tokens at all (a rule line, a stray bullet) falls back to its
+  verbatim text, so no tier ever merges on the absence of content.
+- What a coarse tier gives up: only `exact` guarantees the survivor's text is a verbatim slice of
+  every occurrence's offsets. `occurrence_spans` still resolves every place the passage appears --
+  span matching is by offsets -- but the indexed and quoted TEXT is one representative wording.
+
+`llb measure-duplicate-residue --store <dir>` (`make measure-duplicate-residue STORE=<dir>
+[RESIDUE_THRESHOLDS=] [RESIDUE_EXAMPLES=] [RESIDUE_OUT=<json>]`) measures the residue of a BUILT
+store without loading an embedder (it reads the persisted chunks and vectors), along two axes:
+
+- text: what each coarser tier would still collapse, with the same intra/cross census;
+- embedding: chunk pairs above each cosine band (default 0.999 / 0.99 / 0.95), the share of chunks
+  with such a neighbour, and how many of those pairs each TEXT tier reaches -- the cross-tab that
+  says whether a cheap normalizer can take the residue at all.
+
+It also samples what a merge would actually do: the top-cosine pairs no text tier merges, and the
+pairs ONLY digit masking merges (the page footer and the rate row are the same shape to it).
+
+Durable evidence (2026-07-24, goods PDF corpus at `size` 200/30, pinned e5-base, k=10, n=95, the
+same corpus/goldset/seed as the exact-collapse evidence above; reports under
+`$DATA_DIR/retrieval-noise-floor/20260724T-near-dup-residue/`).
+
+Residue left by exact collapse, per lane:
+
+| lane | indexed | `normalized` would collapse | `masked` would collapse | chunks with a >=0.99 neighbour | those pairs / reached by `normalized` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `recursive` | 3515 | 26 (25 groups) | 311 (67 groups, largest 147) | 727 (20.7%) | 13105 / 26 |
+| `sentence` | 3659 | 55 (48 groups) | 357 (68 groups, largest 221) | 772 (21.1%) | 23142 / 54 |
+
+Retrieval per tier (same items, same k, same seed):
+
+| tier | `recursive` recall@10 / MRR / fragile | `sentence` recall@10 / MRR / fragile | indexed |
+| --- | --- | --- | --- |
+| `exact` | 0.6947 / 0.46515 / 1 | 0.6316 / 0.46487 / 0 | 3515 / 3659 |
+| `normalized` | 0.6947 / 0.46565 / 0 | 0.6316 / 0.46505 / 0 | 3489 / 3604 |
+| `masked` | 0.6947 / 0.46565 / 0 | 0.6316 / 0.46505 / 0 | 3204 / 3302 |
+
+The floor is +/-0.000 on every lane and every tier, and every question-type slice is identical
+across the three tiers, so the only measured movements are the MRR digits and the fragile count.
+
+Verdict: **`exact` stays the shipped default; `normalized` is available per corpus; `masked` is
+not recommended even though this goldset cannot see its cost.**
+
+- `exact` reproduced its recorded rows to the digit under the tier refactor (0.6947/0.6316, fragile
+  1/0), which is the check that adding tiers changed nothing for stores that do not ask for one.
+- `normalized` clears the stated gate -- recall unchanged (well inside the +/-0.000 floor), MRR
+  +0.0005, and the one fragile `recursive` item removed -- but what it buys is that single item and
+  0.7-1.5% of the index, paid for with the loss-free property. Worth enabling only where the
+  residue measurement shows a materially larger group count than the 25-48 groups measured here.
+- `masked` scores IDENTICALLY to `normalized` on every row and slice while removing ~9% of the
+  index, and that is exactly the trap: the sampled merges show it merging `Поле має обмеження в 200
+  символів` with `... 2000 символів`, `в 5 символів` with `в 10 символів`, and consecutive numbered
+  steps -- genuine content differences alongside the real page footers (`**ЗСУ. Конфіденційно**
+  **N**`, a group of 147 copies). No item of this 95-question set happens to need a merged row, so
+  the retrieval metric reports no cost; the evidence against the tier is the sampled merge list,
+  not the recall. Reject it on any corpus whose facts differ by one number.
+- The residue that matters is NOT text-reachable: 20.7% of the exact-collapsed `recursive` chunks
+  have a neighbour at cosine >= 0.99, and the `normalized` tier merges 26 of those 13105 pairs.
+  Reaching the rest needs an embedding-side merge with a measured false-merge rate, which is
+  forward work, not current behavior.
+
+Tests: `tests/llb/rag/test_duplicate_tiers.py` (the normalizer's grouping and digit masking, the
+token-free fallback, the tier ladder on the committed
+`samples/corpora/near_duplicate_chunks_uk_v1/` fixture, offset-exactness and per-copy text at a
+coarse tier, exact expansion with no reusable row for a differing copy, and the residue report's
+bands/samples over hand-built vectors) plus the two coarse-tier store tests in
+`tests/llb/rag/test_duplicates_store.py` -- fake embedders, no GPU. The fixture's `Застереження`
+block additionally pins apostrophe-variant equivalence: a U+2019 copy normalizes onto its U+0027
+twin (see [hybrid retrieval](#hybrid-retrieval-dense--bm25--rrf) for the tokenizer rule and what
+it moved).
+
 ## Store Lifecycle: Dynamic Corpus Refresh
 
 Shipped (dynamic-corpus-refresh): `llb refresh-index` (`make refresh-index CORPUS=<dir>
@@ -238,15 +425,26 @@ page-span regeneration, governance-only manifest changes) rewrites its chunk rec
 the re-annotated metadata -- but reuses every embedding row and its lexical postings instead of
 re-embedding (`_annotation_only_sources`); `refresh-index` reports those rows as reused, not
 embedded. The fast path applies only to the diff's modified class: added documents and the
-legacy no-`doc_fingerprints` full refresh always embed fresh rows, and any real text edit
+legacy no-`doc_fingerprints` full refresh always start with fresh rows, and any real text edit
 (including an equal-length in-place replacement, which keeps the span grid but changes chunk
-text) still re-embeds. The merged store preserves the exact from-scratch
-build order, so a refresh is identical to a rebuild on the same corpus state; CI proves the
+text) re-chunks the document. Text-keyed reuse then recovers every fresh row whose text the store
+already holds: `text_row_map` builds a `{stored chunk text -> row}` index once (references, not
+copies, so it costs one entry per stored row), and `resolve_duplicates` reuses that row for any
+leftover fresh unit with the same text -- so re-emitted page furniture, an unchanged chunk of a
+modified document, and unchanged documents in a legacy full refresh all reuse their stored rows
+regardless of which document now carries the text. It is only applied where a chunk vector is a
+pure function of its text; the `late` strategy pools document context, so it passes `text_rows`
+as `None` and re-encodes each changed document instead. The merged store preserves the exact
+from-scratch build order, so a refresh is identical to a rebuild on the same corpus state; CI
+proves the
 equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
 and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
 cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`,
 plus annotation-only (sidecar regeneration) cases asserting zero embedder calls in flat,
-hybrid, and parent_child modes and a same-span text-edit guard. The
+hybrid, and parent_child modes and a same-span text-edit guard. `tests/llb/rag/test_duplicates_store.py`
+covers the text-keyed reuse: the shared block is recovered from the store's own vectors when the
+edited document is the one that carried its survivor, and the refreshed store still matches a
+rebuild byte for byte. The
 hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
 postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
 or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed
@@ -307,8 +505,13 @@ Modules:
 
 - `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo)
   over the SAME offset-exact chunks the vector index holds; Ukrainian-aware token normalization
-  on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`'`,
-  punctuation strip); opt-in lemmatization via the base dependencies `pymorphy3` +
+  on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`` ` ``/`'`,
+  punctuation strip). Every apostrophe variant is an IN-WORD character for the token regex, which
+  is derived from the same variant list (`_APOSTROPHES`): a converted PDF writes `зобов’язання`
+  with U+2019, and a regex that admitted only U+0027 split that into `зобов` + `язання` -- two
+  half-words that no later unification can rejoin. Edge apostrophes of any variant are stripped
+  after unification, so `'слово'`, `` `слово` ``, and `‘слово’` all index as the bare term;
+  opt-in lemmatization via the base dependencies `pymorphy3` +
   `pymorphy3-dicts-uk`, collapsing cases/inflection to lemmas at index AND query time -- the stored
   chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
@@ -327,6 +530,11 @@ Modules:
   (`meta.lexical = {lemmatize, n_terms}`). Loading a hybrid store whose lexical file is missing
   refuses with a rebuild message, and `run-eval --retrieval-mode hybrid` over a dense-only store
   refuses too (`_load_store`); a non-hybrid config over a hybrid store serves dense-only.
+  The persisted file carries `LEXICAL_INDEX_VERSION`, which is the TOKENIZER generation as much as
+  the format: postings are tokenizer output, and the query is tokenized by whichever build reads
+  them, so `LexicalIndex.load` refuses a version it did not write and names the rebuild command
+  (current: `bm25-uk-v2`; `v1` predates apostrophe variants becoming in-word). Bump it whenever
+  tokenization changes.
 
 Knobs (all `RunConfig` fields, hence in the manifest and the sweep cell fingerprint):
 `retrieval_mode=hybrid`, `fusion_weight` (dense share of the RRF, default 0.5; 1.0 == dense
@@ -343,11 +551,19 @@ make sweep SWEEP_RAG_GRID="top_k=3,5;fusion_weight=0.4,0.6"
 llb tune ...    # the Optuna space samples retrieval_mode=hybrid + both fusion knobs
 ```
 
-`compare-retrieval --hybrid` embeds the corpus ONCE and scores four rows sharing that dense
-index: `dense`, `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second, lemmatized lexical
-index), and `dense+oracle-doc` -- a diagnostic row restricting candidates to each gold item's
-`source_doc_id` through the filter seam, quantifying the recall headroom a PERFECT document router
-would buy (never a scoring config).
+`compare-retrieval --hybrid` embeds the corpus ONCE and scores five rows sharing that dense
+index: `dense`, `lexical` (BM25 alone), `hybrid` (BM25 + weighted RRF), `hybrid+lemmas` (a second,
+lemmatized lexical index), and `dense+oracle-doc` -- a diagnostic row restricting candidates to
+each gold item's `source_doc_id` through the filter seam, quantifying the recall headroom a
+PERFECT document router would buy (never a scoring config).
+
+The `lexical` row is the same hybrid store queried at fusion weight 0, which `weighted_rrf_fuse`
+resolves to an exact lexical passthrough (a zero-weight lane is dropped from candidate membership
+too). It exists because a LEXICAL-side change -- tokenizer, lemmatization, normalization -- is
+invisible in the fused row whenever the dense lane already retrieves the item: the mixed-variant
+evidence below measured a lexical lane at half recall while `dense` and the fused row read 1.000
+and 0.650, and only the isolated row said which lane was broken. It is a diagnostic like the
+oracle row, not a shipping configuration.
 
 The lemma normalizer is reused by the miss analysis: `topic_of` in
 `src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key, so Ukrainian case
@@ -364,16 +580,22 @@ grid/tuner coverage in
 `tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
 
 Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick CI), via
-`compare-retrieval --hybrid`:
+`compare-retrieval --hybrid`; the `lexical` column was added by the 2026-07-24 re-read below,
+which reproduced every other cell to four decimals:
 
-- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture), k=10: all four rows hold
-  recall 1.000 / MRR 1.000 -- hybrid is equal-or-better than dense on the committed goldset (the
-  gate), and the fixture is too small to discriminate further.
+- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture), k=10 and k=3: all five rows
+  hold recall 1.000 / MRR 1.000 -- hybrid is equal-or-better than dense on the committed goldset
+  (the gate), and the fixture is too small to discriminate further. The `lexical` row now shows
+  the saturation is not a fusion artifact: BM25 alone also scores 1.000 / 1.000.
 - `samples/goldsets/exact_terms_uk` (8 exact-term items), k=10: recall ties at 1.000 but hybrid
-  MRR 0.938 vs dense 0.713; at k=3 hybrid holds recall 1.000 / MRR 0.938 vs dense 0.875 / 0.688
-  -- the strict exact-term win the lexical side exists for. `hybrid+lemmas` matched plain
-  `hybrid` on both fixtures (exact numbers do not inflect). The oracle-doc row equals dense on
-  these single-document corpora by construction (a doc filter is a no-op with one doc).
+  MRR 0.938 vs dense 0.713 and `lexical` 0.781; at k=3 hybrid holds recall 1.000 / MRR 0.938
+  while dense is 0.875 / 0.688 and `lexical` 0.875 / 0.750 -- the strict exact-term win the
+  lexical side exists for. The isolated row sharpens what that win IS: the fused row beats BOTH
+  lanes alone at both cutoffs, and at k=3 it retrieves an item NEITHER lane ranked in its own top
+  3. Hybrid is buying complementarity here, not standing in for a weak dense lane.
+  `hybrid+lemmas` matched plain `hybrid` on both fixtures (exact numbers do not inflect). The
+  oracle-doc row equals dense on these single-document corpora by construction (a doc filter is a
+  no-op with one doc).
 
 Durable evidence, full corpus (2026-07-10, hybrid-comparison-full-corpus on the CUDA host,
 outside quick CI): dense vs hybrid over the verified 44-item quickstart-PDF accepted goldset
@@ -391,17 +613,154 @@ gridded across three runs:
 | hybrid+lemmas w=0.6 | 0.932 | 0.759 |
 | hybrid+lemmas w=0.7 | 0.932 | 0.753 |
 
-Fusion-knob verdict for this corpus: dense-only STAYS the default -- at the 0.5 default the
-BM25 side actively costs recall (-0.023), and only a dense-heavy `fusion_weight=0.7` climbs
-back to the dense recall while adding a small MRR gain (+0.008). The measured lemmatization
+Fusion-knob verdict as recorded for this corpus: dense-only STAYS the default -- at the 0.5
+default the BM25 side actively costs recall (-0.023), and only a dense-heavy `fusion_weight=0.7`
+climbs back to the dense recall while adding a small MRR gain (+0.008). The measured lemmatization
 delta on an inflection-rich corpus is a real but MRR-only effect: +0.020 MRR at w=0.5 with
 recall unchanged (the tiny-fixture zero was a corpus artifact, as predicted). The oracle-doc
 router headroom row is finally non-degenerate on this multi-document corpus: perfect document
 routing would buy +0.022 recall / +0.013 MRR -- modest, so a learned router stays unattractive
-here. Operators who want hybrid for exact-term robustness (see the exact-term fixture win
-above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
-(`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
-decision hangs on it.
+here.
+
+**The `FUSION_WEIGHT=0.7` pin from that verdict is WITHDRAWN** -- see the re-read below.
+
+### Lexical-row re-read of the fusion-weight verdict
+
+Re-read (2026-07-24, CUDA host, `compare-retrieval --hybrid --noise-floor`, reports under
+`$DATA_DIR/lexical-row-reread/`) once the `lexical` row existed. Both committed fixtures
+reproduced every recorded cell exactly, so the harness is unchanged; the full-corpus table above
+could NOT be reproduced, because its verified 44-item quickstart-PDF accepted goldset is no
+longer on disk. Two item sets that ARE on disk were run instead: the SAME 5-document goods corpus
+at the same `recursive` 800/120 chunking with its 95-item drafted goldset, and a human-accepted
+40-item PDF goldset over a single-document corpus.
+
+| corpus / item set | `dense` | `lexical` | `hybrid` w=0.5 | `hybrid+lemmas` w=0.5 | floor (r / MRR) |
+| --- | --- | --- | --- | --- | --- |
+| goods, 95 drafted (n=95) | 0.674 / 0.409 | 0.621 / 0.435 | 0.695 / 0.449 | **0.726** / **0.463** | 0.000 / 0.008 |
+| PDF, 40 accepted (n=40) | 0.925 / 0.852 | 0.875 / 0.790 | 0.925 / 0.869 | 0.925 / **0.906** | 0.000 / 0.006 |
+
+On the goods corpus the weight sweep runs `hybrid` 0.695 / 0.695 / 0.705 recall and
+`hybrid+lemmas` 0.726 / 0.726 / 0.716 at w=0.5 / 0.6 / 0.7 -- the dense-heavy weight the recorded
+verdict recommended is the WORST of the three for the best row.
+
+What the re-read changes:
+
+- **The premise of the recorded verdict does not hold on either available item set.** "The BM25
+  side actively costs recall at w=0.5" was the reason to pin 0.7; here fusion ADDS recall on the
+  goods corpus (+0.021 hybrid, +0.053 with lemmas, against a +/-0.000 recall floor) and ties it on
+  the accepted set while adding +0.054 MRR (floor +/-0.006). The pin is withdrawn: on both sets
+  `w=0.5` is at least as good as `w=0.7`, and `hybrid+lemmas` is the best row everywhere.
+- **The `lexical` row is why that premise was risky to state.** BM25 alone retrieves 0.621 on the
+  goods corpus against dense's 0.674 -- with a HIGHER MRR (0.435 vs 0.409). The lexical lane is
+  not the weak lane; whether fusing it pays is a property of the ITEM SET, not of lane strength,
+  and a fused number alone cannot tell those apart. That is the reading the row exists for.
+- **What does NOT change:** the shipped defaults. Hybrid stays opt-in (`retrieval_mode=flat`) and
+  `fusion_weight` keeps its 0.5 default, so no configuration ships differently -- only the advice
+  to pin 0.7 is retracted.
+- **What stays unsettled:** the recorded table's item set was human-accepted and the goods item
+  set is drafted, so this re-read cannot say the recorded numbers were wrong -- only that nothing
+  on hand reproduces them. Settling it needs an accepted ledger over the goods corpus; that is the
+  forward `goods-fusion-weight-accepted-ledger` task.
+
+### Apostrophe-variant tokenization evidence
+
+Durable evidence (2026-07-24, CUDA host, pinned e5-base, k=10; stores and reports under
+`$DATA_DIR/apostrophe-normalizer/`) for making every apostrophe variant an in-word character.
+Two corpora, each scored with the v1 tokenizer (unification after tokenizing) and the shipped v2
+one over the SAME chunks and the SAME dense index, so only the lexical side differs:
+
+| corpus | items | apostrophe questions | lexical terms v1 -> v2 | recall@10 (dense+BM25) v1 -> v2 | lexical-only recall@10 v1 -> v2 |
+| --- | ---: | ---: | --- | --- | --- |
+| goods PDFs (U+2019 corpus) | 95 | 2 | 4274 -> 4268 | 0.6842 -> 0.6842 | 0.5053 -> 0.5053 |
+| UA SQuAD fixture (U+0027 corpus) | 250 | 14 | 8276 -> 8276 | 0.9640 -> 0.9640 | 0.8600 -> 0.8600 |
+
+**No retrieval metric moved on either corpus**, with or without the dense lane, and the same holds
+when every question is re-typed with a different apostrophe variant (the committed
+`apostrophe_variant` noise generator, which rewrites apostrophes and nothing else). That is the
+honest headline: this is a correctness fix, not a recall win, and no recorded retrieval verdict
+changes because of it.
+
+What DID move, measured:
+
+- **Vocabulary.** On the U+2019 corpus, 62 fragment terms (`зв`, `зобов`, `комп`, `обов`, `пам`,
+  `дистриб`, ...) disappeared and 56 whole-word terms took their place; apostrophe-bearing index
+  terms went from 1 to 57. The SQuAD corpus writes only U+0027, so its index is unchanged -- which
+  is the check that the change is a no-op where a corpus never used another variant.
+- **Variant invariance on the query side.** Across the SQuAD questions the lexical lane sees 16
+  apostrophe-bearing query terms under v2 no matter which variant was typed; under v1 that count
+  collapsed from 14 (as typed) to 2 (re-typed with another variant), i.e. 12 words silently
+  shattered into fragments. Of the 8 that the corpus can actually match, a variant-mismatched
+  query kept 1 under v1 and keeps all 8 under v2.
+- **A dead query term became live.** `з'явиться` typed with the keyboard apostrophe returned ZERO
+  BM25 candidates against the U+2019 goods corpus under v1 (its postings held `з` + `явиться`) and
+  returns hits under v2.
+- **Duplicate-collapse `normalized` tier.** It now merges an apostrophe-variant copy of a repeated
+  block (the committed near-duplicate fixture's `Застереження` group: 2 -> 3 copies). On the goods
+  corpus the measured residue is unchanged (26 / 311 collapsible for `recursive`, 55 / 357 for
+  `sentence`) -- its repeated blocks use one variant consistently.
+- **Corpus-conflict `hash` tier.** Document-level duplicate yield is unchanged on all three
+  measured corpora (goods 0, near-duplicate fixture 0, `conflicts_uk_v1` 1 group): no whole-document
+  near-duplicate in them hinges on an apostrophe.
+
+Why the metrics cannot see it: only 2 of 95 goods questions and 14 of 250 SQuAD questions contain
+an apostrophe at all, both corpora are internally consistent about which variant they use, and at
+k=10 the other query terms already retrieve those items.
+
+The end-to-end query side of the same question is now measured as its own noise class rather than
+inferred: `apostrophe_variant` re-types every apostrophe in the question and touches nothing else
+([evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark)). On the SQuAD
+final split all 6 apostrophe-bearing questions still retrieve their gold evidence at k=10 with an
+unmitigated re-typed apostrophe, so the dense e5 lane is variant-insensitive here and there is
+nothing for normalization to recover. Post-v2 the lexical lane cannot see the class either --
+`llb.rag.lexical.tokenize` unifies every variant, so a re-typed query and the index produce the
+same terms by construction, which IS the fix.
+
+### What the fix is worth when the corpus MIXES variants
+
+The case the two real corpora cannot pose is the MISMATCH: index and query disagreeing about which
+apostrophe was typed, which is what a re-ingested edition, a pasted appendix, or two converters
+produce. `samples/goldsets/apostrophe_variants_uk/` plants exactly that -- 60 near-identical
+Ukrainian registry entries across four documents "converted" with four different apostrophes, one
+apostrophe-bearing subject noun as the ONLY discriminating token per entry, and every question
+typed with the keyboard apostrophe (45 of 60 items therefore face a mismatch; 15 are the
+same-variant control). Its README states the plant.
+
+Durable evidence (2026-07-24, CUDA host, pinned e5-base, `recursive` 800/120, k=10, exact
+duplicate collapse 180 chunks -> 80 indexed, `--noise-floor`; reports under
+`$DATA_DIR/apostrophe-normalizer/mixed-{before,after}/`). Both arms ran the SAME command over the
+SAME corpus, goldset, and seed; the `before` arm ran from a worktree whose ONLY difference is the
+pre-fix `src/llb/rag/lexical.py`:
+
+| row | v1 recall@10 / MRR | v2 recall@10 / MRR | delta recall@10 |
+| --- | --- | --- | ---: |
+| `dense` | 1.000 / 0.958 | 1.000 / 0.958 | +0.000 |
+| `lexical` | 0.500 / 0.167 | 1.000 / 0.200 | **+0.500** |
+| `hybrid` | 0.650 / 0.520 | 1.000 / 0.983 | **+0.350** |
+| `hybrid+lemmas` | 0.650 / 0.520 | 1.000 / 0.975 | +0.350 |
+| `dense+oracle-doc` | 1.000 / 0.967 | 1.000 / 0.967 | +0.000 |
+
+The measurement floor is +/-0.000 recall@10 in both arms, so every delta above clears it by two
+orders of magnitude. Three readings:
+
+- **The lexical lane loses exactly the entries written with a punctuation-class variant.** Per
+  variant (measured by `tests/llb/rag/test_apostrophe_variant_fixture.py`, which reproduces the
+  heavy run's 0.500 exactly): U+0027 15/15 and U+02BC 15/15 under BOTH tokenizers, U+2019 0/23 and
+  grave 0/7 under v1 and 23/23 + 7/7 under v2. The v1 misses are TOTAL -- the subject term returns
+  zero BM25 candidates, and boilerplate ties recover none of them.
+- **U+02BC never needed the fix.** It is a Unicode modifier LETTER, so `\w` already kept
+  `памʼятка` whole; only U+2019 and the grave accent are punctuation to the regex and split the
+  word. The fix's value is variant-specific, which a single "apostrophe support" claim would hide.
+- **A broken lexical lane is worse than no lexical lane.** Under v1 `hybrid` retrieves 0.650 --
+  0.350 BELOW the `dense` row it fuses with -- because RRF gives half the rank budget to a lane
+  whose candidates are unrelated. The fix does not merely restore the lexical lane, it turns
+  hybrid from harmful (-0.350 versus dense) into the best row (+0.025 MRR over dense).
+
+Scope of the claim: the effect size is a property of the PLANT (one discriminating token per
+entry, 75 percent of items mismatched). It is a lower bound on nothing and an estimate of nothing;
+what it demonstrates is the mechanism and its direction, which the flat real-corpus numbers above
+cannot. On the real corpora the dense lane also retrieves every planted item at k=10, so an
+operator whose corpus mixes variants would see the breakage ONLY in the `lexical` row -- the
+reason that row is now published.
 
 ## Graph-Vector Fusion Retrieval
 
@@ -701,6 +1060,24 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   repair inside mixed Cyrillic tokens. Canonical romanization preserves existing uppercase Latin
   acronyms and inserts a minimal ASCII apostrophe separator only where greedy digraph decoding
   would otherwise collide.
+
+  An opt-in **language gate** (normalize-step-language-gate; `RunConfig.query_prep_language_gate`,
+  refused at config validation unless the `normalize` step is present) decides transliteration for
+  the QUERY AS A WHOLE rather than per token. Per-token transliteration is unconditional, so a
+  foreign-language question is rewritten into Cyrillic nonsense the later restoration constraints
+  correctly refuse to repair (`What does the Premier of Victoria...` -> `wгат доес тге...`), and it
+  then retrieves on garbage. The gate romanizes each of the query's Latin word tokens (short
+  uppercase acronyms excluded) and asks whether the decoded form is plausible Ukrainian -- present
+  in the corpus vocabulary OR recognized by the pymorphy3 word probe (`_plausibility_probe`,
+  reusing the typo guard's probe when both are on). Romanized Ukrainian decodes (near-)entirely to
+  plausible forms; foreign text decodes to none. Below `LANGUAGE_GATE_MIN_PLAUSIBLE_SHARE` (0.5)
+  the whole query is left untouched; a query with no Latin word tokens transliterates vacuously, so
+  homoglyph repair and Cyrillic passthrough are unaffected. A refusal is recorded per query as
+  `query_normalize_gate` provenance (only when it fired) and surfaces in the A/B report. On the
+  committed `ua_squad_postedited_v1` goldset the gate leaves every untranslated English SQuAD
+  question untouched while a romanized-Ukrainian query with a dropped soft sign (`yakist rishennya
+  sudu`, 2/3 plausible) still clears the threshold and transliterates. Off by default so per-token
+  transliteration stays the explicit baseline.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
   set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
@@ -766,8 +1143,9 @@ inclusion also fixes the earlier loss of deterministic query-prep provenance on 
 
 Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` (ordered list of
 `normalize` | `typos` | `glossary` | `rewrite` | `hyde` | `decompose`;
-unknown/duplicated steps rejected at config validation), `query_glossary_path`, and
-`query_prep_typo_guard` (refused at config validation unless the `typos` step is present).
+unknown/duplicated steps rejected at config validation), `query_glossary_path`,
+`query_prep_typo_guard` (refused at config validation unless the `typos` step is present), and
+`query_prep_language_gate` (refused at config validation unless the `normalize` step is present).
 
 Commands:
 
@@ -803,7 +1181,10 @@ queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journ
 plus config validation in `tests/llb/core/test_config.py`.
 
 The end-to-end noise benchmark, model evidence, and model-specific default recommendation live in
-[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark). Its noise classes
+are one mechanism each (`transliteration`, `apostrophe_variant`, `mixed_script`,
+`keyboard_typos`), so what a mitigation lane recovers is attributable to the noise it inverts
+rather than blended across two mechanisms at once.
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
@@ -865,11 +1246,9 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
 `validate-goldset` and source-span scoring work identically across strategies:
 
 - `fixed`: character window with overlap (pure Python, zero deps);
-- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence, so `size` is a packing
-  target rather than a cap -- a single unit longer than `size` is emitted whole; measured on the
-  converted Ukrainian goods PDFs at `size=200`, 21.6% of chunks exceed `size` and hold 44% of the
-  indexed characters, because table rows, page furniture, and heading blocks carry no sentence
-  terminator);
+- `sentence`: pack whole sentences up to `size` (never cuts mid-sentence; a single unit longer
+  than `size` falls back to the shared cap split -- see
+  [`size` is a hard cap](#size-is-a-hard-cap-on-every-strategy));
 - `recursive`: pinned langchain `RecursiveCharacterTextSplitter` (offset-verified; default);
 - `markdown`: one chunk per leaf section BODY (heading lines stripped), breadcrumb in
   `metadata.headers`, long sections recursively sub-split;
@@ -904,6 +1283,8 @@ Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,m
 (`compare-retrieval --strategies ...`) builds one flat FAISS store per strategy over the SAME
 corpus + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by
 recall@k / MRR on the gold set, so the best chunker is demonstrated per corpus, never assumed.
+Add `NOISE_FLOOR=1` to learn how much of a chunker delta the corpus can actually resolve
+([measurement floor](#measurement-floor---noise-floor)).
 Tests: `tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
@@ -932,7 +1313,79 @@ display, not retrieval quality; `late` vs `sentence` (identical spans, late docu
 pooling) is -0.091 recall / -0.164 MRR -- late pooling blurs retrieval on this corpus and its
 extra whole-document embed pass costs the most wall-clock of any strategy, so it stays a
 prove-it-per-corpus option, never a default. `markdown` trails badly because the docling-emitted
-markdown carries few semantic heading boundaries in the big 1.1 MB manual.
+markdown carries few semantic heading boundaries in the big 1.1 MB manual. Two caveats on those
+rows: the bake-off predates the `size` cap below, so its `sentence` / `late` / `semantic` stores
+still contained oversized units, and its 44-item set puts one item at 0.023 recall -- the
+`sentence` win of +0.022 is under one item, which the
+[measurement floor](#measurement-floor---noise-floor) lane exists to make
+visible.
+
+### `size` Is A Hard Cap On Every Strategy
+
+`chunk_spans` runs every strategy's own boundaries through `cap_spans`
+(`src/llb/rag/chunking/cap.py`), so no chunk is ever longer than the requested `size`. A
+unit-packing strategy (`sentence`, `late`, `semantic`) otherwise emits a single unit whole however
+long it is, and a structure-aware strategy does the same for a whole section: on converted
+Ukrainian PDFs a markdown table, page furniture, or a heading block carries no sentence
+terminator, so it packs into one multi-hundred-character span and an operator who asks for small
+chunks silently does not get them -- and the affected text is exactly the numeric/tabular content
+the retrieval slices care most about.
+
+An oversized span is split on the pinned recursive splitter's separators (paragraph -> line ->
+word -> character), keeping the largest natural boundary that fits. Offsets stay exact: sub-spans
+are resolved inside the oversized slice and shifted back to source coordinates, and each inherits
+its span's metadata (breadcrumbs survive the split). The splitter's last-resort separator is
+per-character, so a residual oversized span is impossible; `cap_span` raises rather than letting
+one reach the index. `markdown` / `heading` / `page` now route their long-section sub-split through
+the same helper instead of each calling `recursive_spans` themselves -- their spans are unchanged
+(verified byte-identical against the pre-cap implementation on the goods corpus at
+`size=200` and `size=800`).
+
+`summarize` (`src/llb/rag/chunking/corpus.py`) reports the audit numbers -- `oversize`,
+`oversize_share`, `oversize_char_share` -- and `make build-rag-store` prints them as the `over%` /
+`overC%` columns per strategy, so the cap is verifiable on any corpus without a bespoke script.
+
+Measured `sentence` oversize share before and after the cap (`chunk_corpus` + `summarize`;
+`max` is the longest chunk in chars):
+
+| corpus | `size` | before: over% / of chars / max | after |
+| --- | ---: | ---: | ---: |
+| committed `ua_squad_postedited_v1` corpus | 200 | 20.2% / 32.2% / 713 | 0% / 0% / 200 |
+| committed `ua_squad_postedited_v1` corpus | 800 | 0% / 0% / 796 | unchanged |
+| converted Ukrainian goods PDFs | 200 | 21.6% / 44.3% / 1776 | 0% / 0% / 200 |
+| converted Ukrainian goods PDFs | 800 | 5.9% / 8.9% / 1776 | 0% / 0% / 800 |
+
+The leak is not only a small-chunk problem: at the DEFAULT `size=800` the goods corpus still put
+8.9% of its indexed characters into over-budget chunks. Capping costs chunk count -- the goods
+corpus goes 3333 -> 5019 chunks at `size=200` (+51%) and 976 -> 1073 at `size=800` -- so an index
+build and every query touch more vectors.
+
+Retrieval evidence (CUDA host, `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive`,
+pinned e5-base, k=10, the 95-item drafted goods multi-hop ledger, `CHUNK_SIZE=200`
+`CHUNK_OVERLAP=30`; artifacts under `$DATA_DIR/chunk-size-cap/<run>/{before,after}/`):
+
+| lane | recall@10 before | after | MRR before | after |
+| --- | ---: | ---: | ---: | ---: |
+| `sentence` | 0.611 | 0.621 | 0.414 | 0.411 |
+| `recursive` (control, chunks byte-identical) | 0.642 | 0.653 | 0.419 | 0.414 |
+
+No recall regression, and the delta is not distinguishable from measurement noise: the
+`recursive` control chunks are byte-identical across the two runs yet its recall moved by the same
++0.011, because the preceding lane's different batch shapes perturb the encoder output by ~5e-7
+per dimension and that is enough to flip one borderline item at k=10 on 95 items. Repeat runs
+within a code version reproduce byte-identically, so the drift is invisible to a naive repeat
+check. `compare-retrieval --noise-floor` measures that floor directly and put this corpus at
++/-0.021 recall@10 while its duplicates were still indexed -- read any smaller retrieval delta on
+those rows as noise. The same comparison after
+[duplicate chunk collapse](#duplicate-chunk-collapse) reads 0.632 `sentence` / 0.695 `recursive`
+at a +/-0.000 floor ([measurement floor](#measurement-floor---noise-floor)), so
+the rows above are the pre-collapse state of this corpus, kept because they are what the cap
+verdict was measured on.
+
+Tests: `tests/llb/rag/test_chunking.py` covers the cap over the committed
+`samples/chunking/goods_table_uk.md` fixture (a heading + markdown-table block with no sentence
+terminator, 613 chars) -- every strategy stays within `size`, stays offset-exact, loses no
+non-whitespace character, and the fixture itself is guarded against gaining a terminator.
 
 ## Embedder Conventions And Bake-off
 
@@ -951,13 +1404,146 @@ are pure + unit-tested):
 "which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
 over the SAME corpus + chunking (each under its own family convention), scores recall@k / MRR by the
 model-independent source-span metric (reusing `evaluate_retrieval`), and reports embed throughput,
-index size, dimension, and device -- ending in a written recommendation the operator applies via
-`build-index --embedding-model <winner>` + `RunConfig.embedding_model`. Artifacts:
-`$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one saved store per candidate under
+index size, dimension, and device -- ending in the adopt-or-retain verdict below, which the
+operator applies via `build-index --embedding-model <winner>` + `RunConfig.embedding_model`.
+Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and `report.json` plus one saved
+store per candidate under
 `stores/<model-slug>/`. Default local candidates: `intfloat/multilingual-e5-base` (current default),
 `intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
+The lane is four modules: `embedding_bakeoff_models.py` (the item/store seams and the row +
+report shapes every consumer reads), `embedding_bakeoff.py` (build, score, rank),
+`embedding_bakeoff_uncertainty.py` (the paired intervals and the verdict, below), and
+`embedding_bakeoff_report.py` (ASCII + Markdown rendering).
+
+`NOISE_FLOOR=1` (`--noise-floor`) adds the [measurement floor](#measurement-floor---noise-floor)
+per candidate to both the ASCII table and `report.md`, ending in the one sentence the
+recommendation needs: how far the winner leads the runner-up and whether that lead clears the
+floor. Without it `report.md` says so explicitly instead of leaving the reader to assume a lead is
+real. This lane is where the floor matters most -- four candidates on one corpus routinely differ
+by a single item.
+
+### Paired uncertainty and the adopt-or-retain verdict
+
+The floor answers whether a gap is numeric noise; it cannot answer whether the SAME gap survives a
+different draw of questions, and on a 40-item set a "winner" is routinely two questions.
+`src/llb/rag/embedding_bakeoff_uncertainty.py` supplies the second reading, reusing
+`bootstrap_index_sets` / `paired_comparison` from the fusion sweep
+(`src/llb/rag/fusion_evidence/stats.py` -- they take metric vectors, not fusion rows):
+
+- Every candidate is retrieved ONCE per item (`retrieve_pairs`), and both the published row and its
+  per-item vectors (`item_vectors`: recall@k and reciprocal rank) come from that one pass, so a row
+  and its interval can never disagree.
+- `paired_rows` draws ONE set of resample indexes (common random numbers, seeded) and reuses it for
+  every candidate and metric, so each interval is about the DIFFERENCE against the baseline
+  embedder rather than two lanes' separate sampling noise. Each row carries
+  `paired_vs_baseline` = `{baseline, metrics: {recall_at_k, mrr}}` with the delta interval, the
+  item-level win/loss/tie ledger, and the exact sign-test p.
+- The baseline is `--baseline` (`EMBED_BASELINE=`), defaulting to the shipped
+  `intfloat/multilingual-e5-base`, because a swap recommendation is a statement about replacing
+  THAT row. A baseline the run did not score leaves the rows bare and the verdict `undecided`
+  instead of silently re-pointing the comparison. `--resamples` (`EMBED_RESAMPLES=`, default 2000)
+  and `--seed` (default 13) pin the draw.
+- `decide_verdict` states the recommendation as **adopt** or **retain**: a candidate is "separated"
+  only when its 95% paired recall@k interval lies wholly above zero. Otherwise the incumbent is
+  retained, whatever the point estimate says. `best_recall` is still reported, relabeled in
+  `report.md` as the point-estimate leader -- it is no longer the recommendation.
+- Artifacts: `report.md` (the table gains `recall delta vs <baseline>` / `w/l/t` / `sign p` columns
+  and the verdict line) plus `report.json` beside it with every interval bound and ledger, so a
+  later re-read recomputes from numbers instead of prose.
+
+Tests: `tests/llb/rag/test_embedding_bakeoff_uncertainty.py` (vector means matching the published
+row, the paired ledger, seed determinism, a baseline paired against itself at exactly zero, a
+one-item lead that does NOT separate, adopt/retain/undecided, the report columns, and the CLI's
+`report.json`) -- all over fake stores, no FAISS, no GPU.
+
+### The recommendation re-read against the floor
+
+CUDA host, 2026-07-24; report under
+`$DATA_DIR/compare-embeddings/floor-reread/compare-embeddings/<run>/report.md`. The recorded
+recommendation was measured on a verified 44-item quickstart-PDF accepted goldset that is no longer
+on disk, so the re-read uses the human-ACCEPTED converted-PDF goldset the repo still has (40 items,
+one document, 1120 chunks at `recursive` 800/120, flat mode, k=10) -- a different item set, stated
+where the numbers are.
+
+| model | recall@10 | MRR | dim | chunks/s | size (MB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `BAAI/bge-m3` | 0.975 | 0.917 | 1024 | 5.5 | 5.89 |
+| `intfloat/multilingual-e5-large` | 0.925 | 0.871 | 1024 | 5.5 | 5.89 |
+| `intfloat/multilingual-e5-base` | 0.925 | 0.852 | 768 | 17.7 | 4.79 |
+| `lang-uk/ukr-paraphrase-multilingual-mpnet-base` | 0.475 | 0.241 | 768 | 33.2 | 4.79 |
+
+Floor: recall@10 `+/-0.000`, MRR `+/-0.000`, 0 of 40 items fragile in every lane.
+
+What the re-read establishes:
+
+- **The floor is not what limits this recommendation.** Every candidate's band is exactly zero:
+  no item's rank-10 / rank-11 scores sit within `1e-6` in any of the four stores.
+- **The recorded ranking does not reproduce on this item set.** `BAAI/bge-m3` leads by 0.050
+  recall@10 -- two items, and it clears the zero floor -- where the recorded run had it 0.023
+  BELOW `e5-base`. `e5-base` and `e5-large` tie exactly here (0.925), so the recorded separation
+  between those two is not reproduced either. The `lang-uk` paraphrase model collapses on both
+  runs, which is the one part of the recorded reading that holds.
+- **A zero floor does not make a 2-item lead a ranking.** 0.050 on n=40 is two questions, and the
+  floor answers only the numeric-noise question; SAMPLING is the binding constraint on this lane,
+  which the paired lane below measures.
+- **The default is unchanged.** `RunConfig.embedding_model` stays `intfloat/multilingual-e5-base`:
+  the row that would replace it is one item-set's 2-question lead bought at 3.2x the embed cost
+  (5.5 vs 17.7 chunks/s) and 1.23x the index.
+
+### The recommendation re-read with paired uncertainty
+
+CUDA host (`LLB_EMBED_DEVICE=cuda`), 2026-07-24; the four default local candidates at k=10,
+`recursive` 800/120, flat mode, 2000 resamples, seed 13, `NOISE_FLOOR=1`. Reports (`report.md` +
+`report.json`) under `$DATA_DIR/compare-embeddings/paired-uncertainty-pdf/compare-embeddings/<run>/`
+and `.../paired-uncertainty-fixture/compare-embeddings/<run>/`; the two run configs are
+`$DATA_DIR/compare-embeddings/paired-uncertainty.yaml` and `...-fixture.yaml`. Both corpora report
+a `+/-0.000` floor with 0 fragile items, so every number below is a SAMPLING statement.
+
+Accepted converted-PDF goldset (40 items, 1120 chunks) -- deltas against `e5-base`:
+
+| model | recall@10 | MRR | recall delta | w/l/t | sign p | chunks/s |
+| --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `BAAI/bge-m3` | 0.975 | 0.917 | +0.050 [-0.050, +0.150] | 3/1/36 | 0.625 | 48.1 |
+| `intfloat/multilingual-e5-large` | 0.925 | 0.871 | 0.000 [-0.075, +0.075] | 1/1/38 | 1.000 | 47.8 |
+| `intfloat/multilingual-e5-base` | 0.925 | 0.852 | 0.000 [0.000, 0.000] | 0/0/40 | 1.000 | 75.9 |
+| `lang-uk/ukr-paraphrase...` | 0.475 | 0.241 | -0.450 [-0.600, -0.275] | 1/19/20 | 0.000 | 128.2 |
+
+Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 chunks):
+
+| model | recall@10 | MRR | recall delta | w/l/t | sign p | chunks/s |
+| --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `intfloat/multilingual-e5-large` | 1.000 | 0.879 | +0.020 [+0.004, +0.040] | 5/0/245 | 0.062 | 34.5 |
+| `BAAI/bge-m3` | 0.992 | 0.849 | +0.012 [0.000, +0.028] | 3/0/247 | 0.250 | 33.3 |
+| `intfloat/multilingual-e5-base` | 0.980 | 0.847 | 0.000 [0.000, 0.000] | 0/0/250 | 1.000 | 32.0 |
+| `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
+
+Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
+**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture. What that establishes:
+
+- **The `bge-m3` lead the floor re-read surfaced is an item set, not a ranking.** +0.050 on 40
+  items is 3 wins against 1 loss with 36 questions tied; the paired interval spans zero
+  (`[-0.050, +0.150]`) and the exact sign test is p=0.625. The floor said the delta is not numeric
+  noise and the paired lane says it is not evidence of a better encoder either.
+- **The two corpora disagree, so the ranking is corpus-specific.** The PDF corpus's separated
+  candidate is none; the fixture's is `e5-large` (+0.020, 5 wins, 0 losses), where `bge-m3` --
+  the PDF leader -- does not separate (`[0.000, +0.028]`). A single-corpus bake-off cannot be read
+  as a general Ukrainian embedder ranking.
+- **The shipped default is unchanged.** `RunConfig.embedding_model` stays
+  `intfloat/multilingual-e5-base`. The one ADOPT is on a committed toy fixture whose baseline is
+  already at 0.980 recall (5 questions of headroom), its sign test is p=0.062 -- 5 discordant
+  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction -- and the same
+  candidate is flat on the accepted operator-corpus ledger while embedding 1.6x slower there
+  (47.8 vs 75.9 chunks/s) for a 1.23x index.
+- **First-hit rank is where `bge-m3` does separate on the PDF corpus.** Its MRR delta is
+  +0.064 `[+0.008, +0.137]` (5 wins / 1 loss) while its recall delta does not clear zero -- it
+  ranks the same evidence earlier without finding more of it. The verdict bar is recall@k alone,
+  so this does not adopt anything; whether a first-hit-rank gain is worth adopting under a
+  reranker or a small `top_k` is forward work in [`plan.md`](../plan.md).
+- **The lane can resolve a real gap at these sample sizes.** The `lang-uk` paraphrase row separates
+  in the NEGATIVE direction on both corpora (-0.450 and -0.124, p=0.000), so a wide interval on the
+  leaders is headroom exhaustion, not an inert statistic.
 
 Multi-objective tune (`llb tune --objectives ...`) may sample that same shortlist as a categorical
 knob; the tuner `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder
@@ -1114,6 +1700,46 @@ noisier measurement than a grounded one and should be quoted with that in mind.
 Reports: `$DATA_DIR/context-ablation/20260722T142639Z/` (MamayLM),
 `.../20260722T143030Z/` (Lapa), `.../20260722T143459Z/` (the budget-constrained skip run).
 
+#### Roster-wide ablation cohort (2026-07-24)
+
+The same lane, host, index fingerprint, and item set extended to the Gemma 4, MamayLM v2.0, and
+Qwen3.6 rosters. `rag` recall@5 is 0.951 for every row (retrieval is pinned), so all differences
+are answer-side. Throughput is the `rag` lane's measured tokens/s.
+
+| model | closed_book | rag | long_context | retrieval uplift | long-context delta | closed-book matches | rag tok/s | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `batiai/qwen3.6-35b:iq3` | 0.133 | 0.554 | 0.615 | +0.421 [+0.333, +0.503] | +0.060 [-0.008, +0.130] | 10/82 (12.2%) | 6.1 | `rag_pays_off` |
+| MamayLM-Gemma-3-27B-IT v2.0 GGUF Q4_K_M | 0.193 | 0.546 | 0.609 | +0.353 [+0.269, +0.436] | +0.063 [+0.014, +0.124] | 12/82 (14.6%) | 3.3 | `long_context_wins` |
+| MamayLM-Gemma-3-12B-IT v2.0 GGUF Q4_K_M | 0.153 | 0.501 | 0.643 | +0.348 [+0.268, +0.429] | +0.142 [+0.083, +0.206] | 10/82 (12.2%) | 11.8 | `long_context_wins` |
+| `gemma4:e4b` | 0.062 | 0.365 | 0.470 | +0.303 [+0.242, +0.364] | +0.105 [+0.056, +0.163] | 5/82 (6.1%) | 31.8 | `long_context_wins` |
+| `gemma4:26b` | 0.097 | 0.288 | 0.410 | +0.190 [+0.138, +0.240] | +0.122 [+0.081, +0.169] | 11/82 (13.4%) | 12.1 | `long_context_wins` |
+
+Reports: `$DATA_DIR/context-ablation/20260724T0{65410,70414,73659,74544,75718}Z/` (gemma4:e4b,
+gemma4:26b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
+
+What the wider cohort adds beyond the two-model result:
+
+- **Qwen3.6-35B-A3B is the only model that does not return `long_context_wins`.** Its
+  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one interval in the whole
+  evidence set that straddles zero, so the lane reports `rag_pays_off` instead. It also posts the
+  largest retrieval uplift measured (+0.421). Read together: this model loses the least to chunk
+  boundaries, which is the property that makes chunked retrieval a cheap substitute for a long
+  window rather than a compromise.
+- **A tie at the top, at very different cost.** Qwen3.6-35B and MamayLM-27B are statistically
+  indistinguishable on `rag` (0.554 vs 0.546) and on the context-position probe (paired
+  +0.006 [-0.048, +0.059]), but Qwen serves from VRAM at 13 GB with ~3B active parameters while
+  the 27B's 18 GB artifact runs at 23%/77% CPU offload -- 6.1 vs 3.3 tok/s on this lane, and
+  18.5 vs 6.5 on closed-book. Quality-first ranking calls this a tie; the tiebreak is throughput.
+- **Closed-book tracks Ukrainian specialization, not size.** MamayLM-27B leads the cohort at
+  0.193 and the Gemma 4 rows sit at 0.062-0.097, so the contamination/parametric baseline a given
+  uplift is measured against is model-specific and must be quoted with the uplift.
+- The `long_context` lane skipped nothing for any model, so no fitting-population split applies.
+
+Reproducibility, measured: MamayLM-12B reproduced its 2026-07-22 grounded lanes exactly
+(`rag` 0.501, `long_context` 0.643, `long_context_delta` +0.142 [+0.083, +0.206]) while its
+closed-book lane again landed at 0.153 against the original 0.160 -- an independent confirmation
+of the closed-book nondeterminism documented above, on a re-run 2 days later.
+
 ## Retrieval Metrics
 
 `src/llb/rag/retrieval.py` computes recall@k and MRR by source-span overlap. The common gate is
@@ -1130,8 +1756,151 @@ satisfies by returning only one of its hops; on single-span items all three metr
 The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
 retrieval gain is distinguished from a partial hit.
 
+Span matching is occurrence-aware: a chunk that collapsed byte-identical copies
+([duplicate chunk collapse](#duplicate-chunk-collapse)) hits a span labeled at ANY place its text
+appears, so indexing a repeated passage once neither loses nor invents a hit.
+
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
+
+### Measurement Floor (`--noise-floor`)
+
+`recall@k` / `MRR` are reported to three decimals, and the floor under those decimals is a
+property of the CORPUS, not zero by default. `src/llb/rag/noise_floor.py` measures it (and
+`src/llb/rag/noise_floor_report.py` renders the one ASCII and one Markdown block every lane below
+shares):
+`NOISE_FLOOR=1` (`--noise-floor`, `NOISE_FLOOR_REPLICATES=` / `--noise-floor-replicates` to change
+the replicate count) retrieves a `3k` candidate pool once per lane, perturbs every candidate score
+by `N(0, 1e-6)`, re-ranks, keeps the top k, and reports the band the metric spans over 64 seeded
+replicates plus the worst-lane `floor` to read every delta against. The replicates only re-sort a
+cached pool, so the whole measurement costs one extra retrieval pass per lane; the seed is stable
+per lane (`crc32` of the label, never the salted `hash()`), so a report reproduces byte-identically.
+
+The measurement is store-agnostic -- it needs a lane's candidates and their scores, nothing else --
+so every comparison lane that publishes three-decimal rows reads its own floor through the one
+module:
+
+| lane | flag | where the floor lands |
+| --- | --- | --- |
+| `make compare-retrieval` | `NOISE_FLOOR=1` | the ASCII table and `report["noise_floor"]` |
+| `make compare-embeddings` | `NOISE_FLOOR=1` | a `### Measurement floor` block in `report.md` |
+| `make compare-vector-stores` | `NOISE_FLOOR=1` | the ASCII table and the `--out` JSON |
+| `make compare-graph-fusion` | `NOISE_FLOOR=1` | two blocks in `report.md`: every item, and the focus slice |
+
+Two properties the multi-lane wiring needed:
+
+- **A recommendation is restated as clearing the floor or not.** Every floor report carries a
+  `margin`: the top two lanes by recall@k (ties broken by MRR, the order every table here ranks
+  by), their gap, and whether that gap exceeds the floor. It is rendered as one sentence, because
+  a lane comparison names ONE winner and a winner whose lead is inside the floor has not been
+  distinguished from the runner-up -- which is exactly how a bake-off's sub-item delta becomes a
+  recommendation.
+- **A FUSED row is perturbed at its own depth.** Most lanes extend cleanly -- a dense store's top-k
+  is the prefix of its top-3k -- but a fused row's ranking depends on how deep each lane was asked,
+  so retrieving `3k` from it would answer for a DIFFERENT row (that is the
+  [candidate-depth knob](#fusion-candidate-depth-graph_fusion_candidates)). Such a row exposes
+  `retrieve_candidate_pool(question, k, candidates)`: fuse exactly as at `k`, move only the cut. The
+  fusion sweep also caches its lanes `3k` deep under `--noise-floor` (`build_sweep_rows(...,
+  pool_depth=...)`), which widens no row's ranking because every row still asks for its own depth.
+
+The floor a comparison quotes is the WIDEST band any lane showed, and each per-lane band is itself
+a 64-replicate sample: two lanes with byte-identical rankings can report `+/-0.000` and `+/-0.005`
+because they are seeded independently. Read the per-lane bands as fragility evidence and the
+worst-lane `floor` as the number a delta must clear.
+
+Why `1e-6`: two processes that built BYTE-IDENTICAL chunks on this host produced dense vectors
+differing by up to 5.4e-7 per dimension -- the encoder's kernels depend on the batch shapes it
+saw earlier in the process, so the lane built BEFORE this one changes its output -- which moved
+the cosine scores by up to 6.0e-7 (mean 1.3e-7). Repeats WITHIN one process are byte-identical,
+so a naive repeat check reports a spread of zero and never sees the drift. The default rounds the
+measured maximum up and perturbs every candidate independently, so the reported floor is
+deliberately conservative: a delta that clears it is not numeric noise.
+
+Each lane also reports `fragile N/n` -- items whose rank-k and rank-(k+1) candidates sit within
+the jitter, so their top-k membership is decided by noise or by the backend's arbitrary order at
+an exact tie. That count explains the band's width and is the number to act on: acting on it is
+exactly what [duplicate chunk collapse](#duplicate-chunk-collapse) did.
+
+Measured floors on the chunker lane (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`;
+reports under `$DATA_DIR/retrieval-noise-floor/<run>/`):
+
+| corpus | n | chunk `size` | duplicate chunks | fragile | floor recall@10 | floor MRR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| converted Ukrainian goods PDFs (before collapse) | 95 | 200 | 37.7% | 25/95 | +/-0.021 | +/-0.018 |
+| converted Ukrainian goods PDFs (shipped) | 95 | 200 | 0.0% | 1/95 | +/-0.000 | +/-0.000 |
+| committed `ua_squad_postedited_v1` (final split) | 82 | 800 | 0.0% | 0/82 | +/-0.000 | +/-0.000 |
+| accepted converted-PDF goldset | 40 | 800 | 0.5% | 1/40 | +/-0.000 | +/-0.000 |
+
+Measured floors on the other three lanes (CUDA host, 2026-07-24, k=10; see each lane's section for
+the tables the floors are read against):
+
+| lane | corpus / item set | n | worst-lane fragile | floor recall@10 | floor MRR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `compare-embeddings` (4 candidates) | accepted converted-PDF goldset, `recursive` 800/120 | 40 | 0/40 | +/-0.000 | +/-0.000 |
+| `compare-vector-stores` (faiss/chroma/qdrant) | the same corpus + goldset | 40 | 0/40 | +/-0.000 | +/-0.000 |
+| `compare-graph-fusion`, every item | drafted goods multi-hop bundle | 95 | 68/95 | +/-0.021 | +/-0.044 |
+| `compare-graph-fusion`, multi-hop slice | the same bundle's focus slice | 35 | 33/35 | +/-0.043 | +/-0.074 |
+
+The two dense-only lanes have nothing to arbitrate: with duplicates collapsed no item's rank-10 /
+rank-11 cosine scores sit within `1e-6`, so a delta of any size in those tables is a real ranking
+difference (still subject to SAMPLING uncertainty, which the floor does not answer). The fusion
+sweep is the opposite case, and its cause is measured: the GRAPH lanes score by link relevance, a
+sum over a small integer-ish set of link weights, so their candidate lists carry long exact-tie
+blocks (`5.0077, 5.0075, 2.5042, ... , 0.001, 0.001, 0.001, ...` -- eight identical `0.001` tails
+are typical), and the rank-10 cut falls inside such a block for 68 of 95 questions. `_rank_dedup`
+in `src/llb/graph/retrieval.py` breaks those ties deterministically on `(doc_id, char_start,
+char_end)`, so the ranking is REPRODUCIBLE -- but reproducible is not the same as retrieved: which
+equally-scored span lands in the top 10 is decided by a document id, not by relevance. Every fused
+row at a non-endpoint weight inherits a `+/-0.000` band, because RRF ranks are integers and the
+tie block is far below the cut once the vector lane contributes.
+
+The floor tracks DUPLICATE CHUNKS, not gold-set size, and that is why the measured floor is now
+zero on every corpus: the goods corpus at `size=200` HAD 37.7% of its chunks byte-identical to
+another chunk (repeated page furniture and table boilerplate in converted scanned manuals; the
+largest identical group was 58 copies for `recursive` and 72 for `sentence`), identical text
+embedded to an identical vector, that scored an exact tie, and the backend broke the tie by
+candidate order -- so a quarter of that corpus's items had a top-10 membership no retrieval
+property decided. [Duplicate chunk collapse](#duplicate-chunk-collapse) indexes each distinct
+passage once and gives any surviving tie a documented `chunk_id` tie-break, which removes the
+mechanism; the row above is the same corpus, goldset, k, and seed re-measured with it.
+
+Verdicts re-read against the measured floors:
+
+- Goods PDFs at `size=200`: with duplicates collapsed, `recursive` leads `sentence` by 0.063
+  recall@10 against a +/-0.000 floor, so the recall ranking is now resolved rather than at the
+  edge (before collapse it was 0.032 against a +/-0.021 floor, the two bands touching at 0.621).
+  The MRR gap closed to 0.000 -- the two chunkers rank their first hit equally well here, and the
+  earlier 0.003 gap was inside its own floor and meant nothing either way.
+- Committed UA fixture and the accepted PDF goldset: floor 0.000, so their recorded recall/MRR
+  deltas are not numeric noise. They remain subject to SAMPLING uncertainty, which is a separate
+  question the paired-bootstrap lanes answer -- a 0.022 recall delta on a 44-item set is under one
+  item either way.
+- Embedder bake-off: the recorded `e5-base` recommendation is NOT reproduced on the accepted
+  goldset that still exists, and the floor is not why -- see
+  [the bake-off re-read](#the-recommendation-re-read-against-the-floor). The paired re-read then
+  showed the challenger's lead does not clear its SAMPLING interval either, and the two scored
+  corpora separate different candidates -- see
+  [the paired re-read](#the-recommendation-re-read-with-paired-uncertainty).
+- Vector-store backends: `faiss`, `chroma`, and `qdrant` return the identical recall@10 / MRR on
+  this corpus, so the `best (recall@k)` line is label order, not a ranking -- see
+  [platform matrix](platform-vector-matrix.md#embedding-bake-off).
+- Graph-vector fusion: the recorded multi-hop and overall gains clear their floors; the CHOICE
+  between the two best weights does not -- see
+  [GraphRAG](graphrag-backend.md#the-sweep-re-read-against-its-measurement-floor).
+
+A zero floor is not a permanent property of a corpus: it is measured per run, and a corpus whose
+chunks tie for a reason collapse does not remove (a backend that rounds its scores, a graph lane
+whose link relevance saturates, or lexical fusion producing equal RRF sums) will report a non-zero
+band again.
+
+The floor is opt-in, so every existing comparison row is unchanged when it is not asked for.
+Tests: `tests/llb/rag/test_noise_floor.py` (zero floor on separated scores, a full 0.0-1.0 band
+when the cut sits on a tie, the fragility count, per-lane seeding and reproducibility, the
+unscored-lane skip, the margin reading and its MRR tie-break, the candidate-pool seam, and the
+ASCII rendering), plus each lane's own wiring in `tests/llb/rag/test_embedding_bakeoff.py`,
+`tests/llb/rag/test_compare_retrieval.py` (the `compare-vector-stores` CLI over injected stores),
+and `tests/llb/rag/test_fusion_evidence.py` (per-row and focus-slice floors, and that the pool
+seam keeps the ranking the sweep published) -- all over fake stores, no FAISS, no GPU.
 
 The default store retrieves dense-only (cosine over the pinned E5 embedding). Measured against
 the gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the
@@ -1262,6 +2031,57 @@ Per-case score rows record `retrieval_hit` and `first_hit_rank`. `retrieval.json
 retrieved chunk text plus source-span coordinates for miss analysis and observability;
 `src/llb/executor/cases.py` constructs both the persisted records and the in-process retrieval
 pairs used by aggregate metrics and judge records.
+
+### The Persisted Retrieval Record
+
+Shipped (duplicate-occurrences-in-the-retrieval-record, `src/llb/rag/retrieval_records.py`): the
+record is built by `retrieved_span` and read back by `record_as_chunk`, one seam for both
+directions, because several lanes recompute retrieval metrics from the sidecar instead of from the
+live store -- miss classification (`llb.board.miss_analysis`) and multi-span answer coverage
+(`llb.eval.answer_quality.coverage`). Those recomputations have to agree with the run that wrote
+the bundle, and a chunk that collapsed byte-identical copies
+([duplicate chunk collapse](#duplicate-chunk-collapse)) stands for several places at once, so the
+record carries them:
+
+- `duplicate_count` -- the TOTAL number of places the chunk's text appears, including its own.
+- `duplicate_occurrences` -- the other places, each projected to `doc_id` + offsets + `chunk_id`
+  (never the copy's own metadata; the store keeps that).
+- Neither key is written for an uncollapsed chunk, so a corpus with no duplicates persists exactly
+  the record it always did.
+
+The list is bounded -- a converted-PDF corpus repeats one passage dozens of times and the sidecar
+is written per case per hit -- and the bound is content-aware rather than blind: every occurrence
+that overlaps one of the ITEM'S OWN gold spans is kept, so the recomputation stays exact, the
+remaining slots (`RETRIEVED_OCCURRENCE_LIMIT = 8`) go to the first other occurrences in build
+order, and `duplicate_count` always states the true total. A reader can therefore say "3 shown of
+58 places" without the record growing with the corpus.
+
+Readers: `retrieval_hit_from_record` and `read_case_coverage` both go through `record_as_chunk`,
+so a gold span carried by a duplicate copy counts as retrieved in miss classification and as
+covered in the multi-span columns -- previously each would have reported a miss the run did not
+have. `MissRecord.retrieved_docs` (in `misses.jsonl`) lists the distinct documents the scored
+context carried, first five in rank order, counting every place a collapsed chunk stands for --
+which answers "did my context even come from the document I expected?" per miss.
+
+The model PROMPT is deliberately unchanged: `format_context` still renders one `[i] (doc_id)` per
+chunk. Listing every place would spend context budget on provenance the answer does not need and
+would change the prompt bytes of every scored run, breaking comparability with the recorded
+evidence.
+
+Durable evidence (2026-07-23, CUDA host, pinned e5-base, goods corpus at `size=200`, the 95-item
+drafted ledger, k=10; artifacts under `$DATA_DIR/duplicate-occurrences/<run>/`): 132 of 950
+retrieved rows (13.9%) were collapsed chunks and 53 of 95 items had at least one in their top-10;
+the largest recorded `duplicate_count` was 58 with the list capped at 8; the sidecar grew from
+426.8 KB to 471.6 KB (+10.5%). Recomputed hit and coverage matched the live metric on all 95 items
+-- and so did a recomputation from the occurrence-free record, because no gold span in this ledger
+falls inside a repeated block. What changed on this corpus is therefore the guarantee, not the
+numbers; the flip it prevents is exercised in CI.
+
+Tests: `tests/llb/rag/test_retrieval_records.py` (the unchanged uncollapsed record, the projected
+occurrences, the bound on a 58-copy chunk, the gold-completeness of that bound, and reading a
+record back), plus reader-level cases in `tests/llb/board/test_miss_analysis_classification.py`,
+`tests/llb/board/test_miss_probe.py` (producer to reader, end to end), and
+`tests/llb/eval/test_answer_quality.py`.
 
 ## Executor
 

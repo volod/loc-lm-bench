@@ -39,6 +39,10 @@ PROBE_MIN_OBJECTIVE_GAIN = 0.05
 DICTIONARY_CLUSTER_MIN = 2
 DICTIONARY_CLUSTER_SHARE = 0.5
 
+# How many distinct documents a miss row lists for its scored context. A miss row is a pointer for
+# a human, so the head of the ranking is the useful part; the run bundle keeps the full record.
+MISS_RETRIEVED_DOCS_LIMIT = 5
+
 MISS_ANALYSIS_METHOD = "miss-analysis"
 RETRIEVAL_FILENAME = "retrieval.jsonl"
 MISSES_FILENAME = "misses.jsonl"
@@ -129,6 +133,10 @@ class MissRecord:
     topic: str
     question_type: str
     answer_preview: str
+    # Documents the scored context actually carried, in rank order -- a duplicate-collapsed chunk
+    # contributes every document its text appears in, so a retrieval miss can be read against the
+    # document the operator expected (see `llb.rag.retrieval_records`).
+    retrieved_docs: list[str] = field(default_factory=list)
 
     def as_dict(self) -> JsonObject:
         return {
@@ -144,6 +152,7 @@ class MissRecord:
             "topic": self.topic,
             "question_type": self.question_type,
             "answer_preview": self.answer_preview,
+            "retrieved_docs": list(self.retrieved_docs),
         }
 
 

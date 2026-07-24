@@ -15,6 +15,7 @@ Inputs are plain dicts so this module has zero heavy deps and is fully unit-test
 """
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, RetrievalPair, SourceSpanRecord
+from llb.rag.duplicates import occurrence_spans
 
 
 def spans_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
@@ -22,11 +23,19 @@ def spans_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
     return a_start < b_end and b_start < a_end
 
 
-def chunk_hits_span(chunk: ChunkRecord, span: SourceSpanRecord) -> bool:
-    """True if a retrieved chunk overlaps a labeled span in the same document."""
-    return chunk["doc_id"] == span["doc_id"] and spans_overlap(
-        chunk["char_start"], chunk["char_end"], span["char_start"], span["char_end"]
+def _place_hits_span(place: SourceSpanRecord, span: SourceSpanRecord) -> bool:
+    return place["doc_id"] == span["doc_id"] and spans_overlap(
+        place["char_start"], place["char_end"], span["char_start"], span["char_end"]
     )
+
+
+def chunk_hits_span(chunk: ChunkRecord, span: SourceSpanRecord) -> bool:
+    """True if a retrieved chunk overlaps a labeled span in the same document.
+
+    A chunk that collapsed byte-identical copies (`llb.rag.duplicates`) is matched at EVERY place
+    its text appears, so indexing a repeated passage once neither loses nor invents a hit.
+    """
+    return any(_place_hits_span(place, span) for place in occurrence_spans(chunk))
 
 
 def chunk_hits_any(chunk: ChunkRecord, spans: list[SourceSpanRecord]) -> bool:

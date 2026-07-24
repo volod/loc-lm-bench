@@ -30,27 +30,44 @@ _LOG = logging.getLogger(__name__)
 Lemmatizer = Callable[[str], str]
 
 # Apostrophe variants unified to U+0027 so copied and keyboard-typed forms index as one token.
-_APOSTROPHE_VARIANTS = str.maketrans({"‘": "'", "’": "'", "ʼ": "'", "`": "'"})
+# Every variant must ALSO be in-word for the token regex: a converted PDF writes `зобов’язання`
+# with U+2019, and a regex that treats only U+0027 as in-word splits that into `зобов` + `язання`
+# -- two half-words that can never match the keyboard-typed twin, no matter what the unification
+# does afterwards. The regex is therefore derived from the same variant list.
+_APOSTROPHES = "'‘’ʼ`"
+_APOSTROPHE_VARIANTS = str.maketrans({variant: "'" for variant in _APOSTROPHES})
 # Word tokens: letters/digits plus in-word apostrophes; everything else is punctuation.
-_TOKEN_RE = re.compile(r"[\w']+")
+_TOKEN_RE = re.compile(rf"[\w{re.escape(_APOSTROPHES)}]+")
 
 # BM25 constants (Robertson/Sparck Jones defaults; recorded in the persisted index meta).
 BM25_K1 = 1.5
 BM25_B = 0.75
 # Standard RRF rank damping constant (Cormack et al. 2009).
 RRF_K = 60
-LEXICAL_INDEX_VERSION = "bm25-uk-v1"
+# Persisted-postings format AND tokenizer generation. Bump it whenever tokenization changes: the
+# postings are tokenizer output, so an index written by an older tokenizer answers a query the new
+# one produced with the wrong terms. `LexicalIndex.load` refuses a mismatch (v1 -> v2: apostrophe
+# variants became in-word characters).
+LEXICAL_INDEX_VERSION = "bm25-uk-v2"
 
 RankedId = TypeVar("RankedId", bound=Hashable)
 
 
 def normalize_token(token: str) -> str:
-    """Casefold + apostrophe unification + edge-apostrophe strip (matching side only)."""
+    """Casefold + apostrophe unification + edge-apostrophe strip (matching side only).
+
+    Edge apostrophes are stripped AFTER unification, so a quoted `'слово'`, a backticked
+    `` `слово` ``, and a typographic `‘слово’` all normalize onto the bare term.
+    """
     return token.translate(_APOSTROPHE_VARIANTS).casefold().strip("'")
 
 
 def tokenize(text: str, lemmatizer: Lemmatizer | None = None) -> list[str]:
-    """Normalized word tokens of `text`; `lemmatizer` (when given) maps each to its lemma."""
+    """Normalized word tokens of `text`; `lemmatizer` (when given) maps each to its lemma.
+
+    A token keeps whichever apostrophe variant the source used (see `_TOKEN_RE`) and
+    `normalize_token` unifies it, so the index and the query agree on one surface form.
+    """
     tokens = [normalize_token(t) for t in _TOKEN_RE.findall(text)]
     tokens = [t for t in tokens if t]
     if lemmatizer is None:
@@ -190,7 +207,22 @@ class LexicalIndex:
 
     @classmethod
     def load(cls, path: Path | str) -> "LexicalIndex":
+        """Load a persisted index, refusing one whose postings predate the current tokenizer.
+
+        Postings ARE tokenizer output, and a query is tokenized by the code doing the loading, so
+        an index written by a different tokenizer version silently mismatches every term the
+        tokenizer changed. Refusing with a rebuild message is the same discipline the store applies
+        to a changed corpus fingerprint.
+        """
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        version = str(payload.get("version", "unknown"))
+        if version != LEXICAL_INDEX_VERSION:
+            raise SystemExit(
+                f"[rag] the lexical index at {path} was written by tokenizer version {version}, "
+                f"but this build tokenizes as {LEXICAL_INDEX_VERSION}; its postings would not "
+                "match the queries. Rebuild the store with "
+                "`llb build-index --retrieval-mode hybrid`."
+            )
         postings = {
             term: [(int(ordinal), int(tf)) for ordinal, tf in entries]
             for term, entries in payload["postings"].items()

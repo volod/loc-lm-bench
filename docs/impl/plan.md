@@ -43,34 +43,156 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### sentence-chunker-size-cap (optional)
+### embedder-decision-on-a-resolvable-item-set
 
-`sentence` packs whole sentences up to `size` but never splits a single unit that is already
-longer, so `size` is a packing target rather than a cap. On the converted Ukrainian goods PDFs at
-`size=200` that leaks badly: 21.6% of chunks exceed `size` and they hold 44% of the indexed
-characters, because table rows, page furniture, and heading blocks carry no sentence terminator and
-pack into one multi-hundred-character span ([RAG core](current/rag-core.md#chunking-strategies)).
-An operator who asks for small chunks silently does not get them, and the affected text is exactly
-the numeric/tabular content the retrieval slices care most about. Give the strategy a bounded
-fallback -- split an oversized unit on the recursive splitter's separators, keeping offsets exact
--- and report the post-fix oversize share.
+The embedder choice is undecidable on the item sets the repo currently has, and the paired lane
+says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are TIED between the
+leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
+consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
+retrieves 0.980, leaving 5 questions of headroom for any candidate to win
+([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Both sets are
+at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
+can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
+assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors
+in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
+encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
+it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
+outcome and is what would justify closing the question.
 
-- Agent status: CLEAR
-- Dependencies: none. Reuse `sentence_chunk_spans` / `_pack` in `src/llb/rag/chunking/spans.py` and
-  `recursive_spans` for the fallback split. Related: `table-aware-chunking` below owns the table
-  case specifically; this task is the general size guarantee.
-- User-visible outcome: `CHUNK_SIZE` means the same thing on every strategy, so a small-chunk
-  experiment measures the chunk size it asked for.
-- Scope boundary: in scope -- the fallback split, its offset exactness, and the measured oversize
-  share before and after. Out of scope -- changing the default strategy or `size`, table-aware
-  boundaries, and re-running any chunker bake-off.
-- Data and artifact paths: none beyond existing per-strategy stores.
-- Execution path: CI covers the oversize fallback on a committed fixture holding a terminator-free
-  block longer than `size`; `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive` confirms
-  no recall regression.
-- Acceptance gates: `make ci` green; no chunk exceeds `size` on the committed fixtures; every chunk
-  stays offset-exact under `validate-goldset`.
-- Documentation target: the chunking-strategies list in [RAG core](current/rag-core.md).
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the paired bake-off lane, the verdict, and `report.json` are current behavior
+  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). Human step
+  that gates completion: a reviewer accepts the enriched question set through
+  `make verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
+- User-visible outcome: either a measured embedder swap an operator can adopt, or a recorded
+  statement of how many questions a decision would need -- instead of a permanently open ranking.
+- Scope boundary: in scope -- the power target, the enriched ledger, its acceptance, and one
+  re-run per corpus with the verdict restated. Out of scope -- new candidates, fine-tuning (that
+  is `ua-embedder-domain-finetune`), and widening the verdict bar beyond recall@k.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
+- Execution path: `make compare-embeddings GOLDSET=<accepted-enriched-goldset> NOISE_FLOOR=1` on
+  the CUDA host; no new CI coverage.
+- Acceptance gates: the predeclared minimum detectable gain and split size are written down BEFORE
+  retrieval; every candidate row reports its paired interval on the accepted ledger; the verdict is
+  recorded as adopt, retain, or explicitly undecidable at the reached sample size.
+- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md) and the
+  recommendation line in [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
+
+### embedder-first-hit-rank-adoption-bar (optional)
+
+The bake-off adopts on recall@k alone, and one candidate is already separated on the OTHER metric:
+on the accepted converted-PDF ledger `BAAI/bge-m3` beats the incumbent by +0.064 MRR
+`[+0.008, +0.137]` while its recall delta spans zero -- it ranks the same evidence earlier without
+finding more of it ([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)).
+Whether that is worth adopting depends on a downstream fact the retrieval table cannot see: at a
+small `top_k`, or under a cross-encoder reranker that only re-sorts what it is given, first-hit
+rank is the binding constraint, while at k=10 with a generous context budget it is nearly free.
+Measure it end to end -- score answer quality at the shipped `top_k` and at a small one, with and
+without the reranker, on both embedders -- then either add a second, explicitly-scoped adoption bar
+to `decide_verdict` or record that recall@k stays the sole bar and why.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `decide_verdict` in `src/llb/rag/embedding_bakeoff_uncertainty.py`, the
+  reranking lane ([RAG core](current/rag-core.md)), and `compare-answer-quality` for the end-to-end
+  read.
+- User-visible outcome: the operator learns whether an encoder that only ranks better is worth its
+  cost on their retrieval configuration, instead of that gain being silently discarded.
+- Scope boundary: in scope -- the top_k / reranker sweep on both embedders, the verdict-bar
+  decision, and its implementation if the measurement supports one. Out of scope -- new candidates
+  and changing the recall@k bar itself.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout plus a
+  `$DATA_DIR/run-eval/` bundle per scored configuration.
+- Execution path: `make compare-embeddings` for the retrieval side, then `make run-eval` /
+  `make compare-answer-quality` per (embedder, top_k, reranker) cell on the CUDA host; CI covers a
+  second adoption bar over fake vectors if one is added.
+- Acceptance gates: `make ci` green; the report states the answer-side delta per cell with paired
+  intervals and an explicit keep-or-extend decision on the adoption bar.
+- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md).
+
+### vector-store-bake-off-paired-uncertainty (optional)
+
+`compare-vector-stores` still ranks backends on a point estimate plus the measurement floor, the
+one reading the embedder bake-off already carries: its `best (recall@k)` line is label order when
+the backends tie ([platform matrix](current/platform-vector-matrix.md#embedding-bake-off)), and
+nothing states how large a backend difference the item set could even resolve. Give it the same
+paired lane -- per-item metric vectors against a baseline backend, shared resample index sets, the
+delta interval and win/loss/tie ledger per row, and an adopt-or-retain verdict -- so a backend swap
+is decided the same way an embedder swap now is.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes
+  metric vectors, not embedder rows) and the store seam in `src/llb/cli/rag/compare_stores.py`.
+- User-visible outcome: the operator learns whether a vector-backend difference is real or is the
+  order the labels happened to sort in.
+- Scope boundary: in scope -- the paired columns, the verdict, and a re-run on both scored
+  corpora. Out of scope -- new backends and any change to the retrieval metrics.
+- Data and artifact paths: the existing `$DATA_DIR/compare-vector-stores/<run>/` layout.
+- Execution path: `make compare-vector-stores NOISE_FLOOR=1` on the CUDA host; CI covers the
+  interval columns over fake stores.
+- Acceptance gates: `make ci` green; every backend row carries a paired delta interval against the
+  baseline backend and the report states adopt or retain.
+- Documentation target: the vector-store section of
+  [platform matrix](current/platform-vector-matrix.md).
+
+### graph-lane-score-ties (optional)
+
+The graph lane's own recall is decided by tie order for two thirds of the questions it is scored
+on: its link-relevance scores saturate into long exact-tie blocks, the rank-k cut falls inside one
+for 68 of 95 items (33 of 35 on the multi-hop slice), and that is what sets the fusion sweep's
+whole measurement floor at `+/-0.021` recall@10 overall and `+/-0.043` on the focus slice
+([GraphRAG](current/graphrag-backend.md#the-sweep-re-read-against-its-measurement-floor)). The
+ranking is reproducible -- `_rank_dedup` breaks ties on `(doc_id, char_start, char_end)` -- but a
+document id is not a relevance signal, so every graph-only row is quoted to three decimals it has
+not earned. Find out whether the tie blocks are reducible: measure how much of each tie block is
+one relevance value versus rounding, and if a finer signal exists (edge weight, hop distance,
+mention count, community rank as a continuous term rather than a bucket) score the lane with it and
+re-measure the floor.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the scoring in `src/llb/graph/linking.py` / `src/llb/graph/retrieval.py`
+  and the floor lane (`compare-graph-fusion --noise-floor`) to read the result.
+- User-visible outcome: either graph-only rows whose recall reflects relevance instead of document
+  order, or a recorded finding that the lane's evidence is inherently tied and its rows must be
+  read at the floor's precision.
+- Scope boundary: in scope -- the tie-block census, one finer relevance signal if the census
+  supports one, and the before/after floor. Out of scope -- changing the graph schema, the fusion
+  mechanics, and the RRF rank basis (fused rows already report a zero band).
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: `make compare-graph-fusion NOISE_FLOOR=1 SPLIT=` before and after, on the CUDA
+  host; CI covers the scoring change over the committed graph fixtures.
+- Acceptance gates: `make ci` green; the report states the fragile count and floor per graph row
+  before and after, and whether any recorded graph-row verdict changes.
+- Documentation target: the retrieval-strategies section of
+  [GraphRAG](current/graphrag-backend.md) and the floor table in [RAG core](current/rag-core.md).
+
+### chunker-bake-off-under-the-size-cap (optional)
+
+Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The
+recorded winner (`sentence`, +0.022 recall@10 over `recursive`) was scored on stores that still
+contained oversized units, and the unit-packing strategies are exactly the ones the cap changes:
+their chunk counts rise and their long table/heading spans are now split
+([RAG core](current/rag-core.md#chunking-strategies)). The ranking may hold, invert, or collapse
+into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
+the same k and record whether the `sentence` recommendation survives. A second reason to re-run:
+those stores also predate exact-duplicate chunk collapse, which changes the chunk counts per
+strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the goods rows and drove
+that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
+  row can be read against the corpus's own floor
+  ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
+- User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
+  `size` the operator asked for.
+- Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
+  verdict on the `sentence` recommendation. Out of scope -- new strategies and tuning `size`.
+- Data and artifact paths: the existing per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,late,
+  markdown,semantic GOLDSET=<quickstart accepted goldset> NOISE_FLOOR=1` on the CUDA host; no new
+  CI coverage.
+- Acceptance gates: `make ci` green; the report covers all seven strategies at the recorded k and
+  states whether the recorded winner still wins by more than the measurement floor.
+- Documentation target: the chunking-strategies evidence in [RAG core](current/rag-core.md).
 
 ### multihop-both-hops-ceiling
 
@@ -319,7 +441,9 @@ other encoder.
   plus the hashed-BoW embedder pattern from the curation tests, no GPU.
 - Acceptance gates: `make ci` green; the guard refuses a pair set naming calibration/final ids;
   a heavy CUDA run trains on the quickstart tuning split and reports tuned-vs-base recall@10 /
-  MRR on the held-out final split with an explicit adopt-or-keep-base verdict.
+  MRR on the held-out final split, where the adopt-or-keep-base verdict is the bake-off's own
+  paired one -- the tuned row must clear zero against the base encoder, not merely outrank it
+  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
 - Documentation target: [RAG core](current/rag-core.md) embedder section and
   [extended workflows](current/extended-workflows.md) for the trainer lane.
 
@@ -347,42 +471,19 @@ silently change the recommended model.
   tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
-### normalize-step language gate (optional)
-
-The `normalize` step decides transliteration PER TOKEN and unconditionally, so a query written in
-a foreign language is rewritten into Cyrillic nonsense (`what does the` -> `wгат доес тге`) that
-no later step can undo -- the restoration constraints correctly refuse to "repair" it, and the
-question retrieves on garbage. One item of the committed `ua_squad_postedited_v1` final split is
-exactly this case, and any bilingual operator corpus will have more
-([RAG core](current/rag-core.md#query-side-processing)). Decide transliteration for the QUERY as a
-whole instead: romanized Ukrainian decodes to tokens the corpus vocabulary or the morphology probe
-recognizes, foreign-language text does not, so gate the step on the share of decoded tokens that
-are plausible and leave the query untouched below the threshold.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `apply_normalize` in `src/llb/rag/query_prep/normalize.py`, the
-  vocabulary/context index in `query_prep/restore.py`, and `llb.rag.lexical.load_uk_word_probe`.
-- User-visible outcome: a non-Ukrainian question survives the query-prep lane unchanged instead
-  of being mangled into unretrievable Cyrillic.
-- Scope boundary: in scope -- the whole-query plausibility gate, its threshold, and per-query
-  provenance for the decision. Out of scope -- language identification models, per-token
-  language tagging, and translating the query.
-- Data and artifact paths: none beyond the existing per-case `query_processed` provenance.
-- Execution path: CI covers the gate on committed English/Ukrainian/romanized fixtures; a
-  `make bench-query-robustness` re-run confirms the transliteration lane does not regress.
-- Acceptance gates: `make ci` green; every existing romanization test still transliterates; the
-  English fixture passes through unchanged.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
 ### normalize-casefold-dense-lane-cost (optional)
 
 Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
 final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
 noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
 the lane ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)).
-Casefolding is a lexical-side convention that the dense side never asked for. Measure whether the
-processed query should stay cased on the dense lane while the lexical lane keeps the folded text
--- the `retrieve_queries` seam already carries separate dense and lexical text.
+The split noise classes sharpen the diagnosis: on the `apostrophe_variant` class the `normalize`
+lane loses an item (0.9756 -> 0.9634 recall@10) even though the affected-items table shows all 6
+perturbed questions retrieved perfectly in every lane -- the loss is on questions the noise class
+never touched, so it is the mitigation step acting on an otherwise clean query, not a failed
+repair. Casefolding is a lexical-side convention that the dense side never asked for. Measure
+whether the processed query should stay cased on the dense lane while the lexical lane keeps the
+folded text -- the `retrieve_queries` seam already carries separate dense and lexical text.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the split dense/lexical query seam in
@@ -518,6 +619,73 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### embedding-clustered chunk merging (optional)
+
+The measured near-duplicate residue is real but not text-reachable: on the goods corpus 20.7% of
+the exact-collapsed chunks have a neighbour at cosine >= 0.99, and the `normalized` collapse tier
+merges 26 of those 13105 pairs
+([RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers)). Only an
+embedding-side merge can reach the rest, which the collapse lane deliberately does not do because a
+false merge silently deletes a distinct passage from the index. Decide it with a measured
+false-merge rate instead of by assumption: cluster the survivors by cosine at several thresholds,
+sample the merges for human reading (the residue report's pair sampler already renders them), and
+score retrieval per threshold against the corpus's own measurement floor. Adopt only if a threshold
+lowers the fragile count without a recall regression AND its sampled false-merge rate is acceptable
+on a corpus whose facts differ by one number.
+
+- Agent status: HUMAN-GATED
+- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicate_residue.py` for
+  the clustering and the sampler, and `collapse_duplicate_chunks` for the merge itself. Human step
+  that gates completion: a reviewer reads the sampled merges at the candidate threshold and calls
+  the false-merge rate acceptable or not.
+- User-visible outcome: either an embedding-side merge tier with a measured false-merge rate, or a
+  recorded finding that the residue must be left in the index.
+- Scope boundary: in scope -- the clustering, the sampled review, the per-threshold retrieval run,
+  and the adopt-or-reject verdict. Out of scope -- learned merge policies and corpus rewriting.
+- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
+- Execution path: `make measure-duplicate-residue` per threshold, then `make compare-retrieval
+  CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` per candidate on the CUDA host.
+- Acceptance gates: `make ci` green; the report carries the per-threshold recall against the floor,
+  the fragile count, and the human's false-merge reading.
+- Documentation target:
+  [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers).
+
+### goods-fusion-weight-accepted-ledger
+
+Settle the goods-corpus fusion-weight verdict on an item set someone accepted. The recorded
+verdict ("the BM25 side costs recall at w=0.5, pin `FUSION_WEIGHT=0.7`") was measured on a
+verified 44-item quickstart-PDF accepted goldset that is no longer on disk, and the lexical-row
+re-read could not reproduce it: on the SAME corpus at the SAME chunking, the 95-item drafted
+goldset inverts it -- fusion ADDS recall at w=0.5 (+0.021, +0.053 with lemmas, against a
++/-0.000 floor) and w=0.7 is the worst of the three weights for the best row
+([RAG core](current/rag-core.md#lexical-row-re-read-of-the-fusion-weight-verdict)). The pin is
+already withdrawn; what remains is deciding whether the recorded verdict was an artifact of its
+item set or of the drafting, which only an accepted ledger over that corpus can answer.
+
+- Agent status: HUMAN-GATED
+- Dependencies: none in code -- `make compare-retrieval HYBRID=1 NOISE_FLOOR=1` and the
+  verification gate are both current behavior. Human step that gates completion: a reviewer
+  accepts (or rejects) enough of the drafted goods questions through
+  `make verify-review` / `make verify-accept` to produce an accepted goods ledger.
+- User-visible outcome: an operator on a converted-PDF Ukrainian corpus gets a fusion-weight
+  recommendation backed by human-reviewed questions, instead of two drafted-versus-vanished item
+  sets that disagree.
+- Scope boundary: in scope -- worksheet review, the accepted ledger, one re-run per recorded
+  weight with the `lexical` row, and a keep-or-change verdict on the recorded table. Out of scope
+  -- widening the weight grid, new fusion mechanics, and changing the shipped defaults before the
+  accepted run supports it.
+- Data and artifact paths: the drafted bundle under
+  `$DATA_DIR/graph-vector-fusion-multihop/goods-draft/` plus a new
+  `$DATA_DIR/lexical-row-reread/goods-accepted-w<weight>/` per weight.
+- Execution path: `make verify-review` then `make verify-accept` over the goods draft, then
+  `make compare-retrieval CONFIG=<cfg> GOLDSET=<accepted>/goldset.jsonl SPLIT= HYBRID=1
+  NOISE_FLOOR=1` at `FUSION_WEIGHT=0.5,0.6,0.7`.
+- Acceptance gates: every worksheet row has a decision; the three weights are scored on the
+  identical accepted item set with the `lexical` row and the corpus's floor; the recorded table is
+  restated as reproduced, corrected, or retired.
+- Documentation target: the hybrid-retrieval evidence section of
+  [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
 
 ### multihop-ledger-human-acceptance
 

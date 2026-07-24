@@ -9,6 +9,7 @@ from llb.rag.query_prep.glossary import (
 from llb.rag.query_prep.normalize import (
     apply_normalize,
     cyrillic_to_latin,
+    language_gate,
     transliterate_latin_to_cyrillic,
 )
 from llb.rag.query_prep.distance import damerau_levenshtein
@@ -73,6 +74,55 @@ def test_romanization_escapes_greedy_digraph_collisions(word):
 
 def test_romanization_preserves_existing_latin_terms_without_escape_noise():
     assert cyrillic_to_latin("Клас NP складний") == "klas NP skladnyj"
+
+
+# --------------------------------------------------------------------------------------------
+# normalize language gate (normalize-step-language-gate): transliterate the query, not the token
+# --------------------------------------------------------------------------------------------
+
+
+# A romanized Ukrainian corpus vocabulary; foreign text never decodes into it.
+_UK_PLAUSIBLE = {"закон", "про", "право", "суд", "рішення"}.__contains__
+
+
+def test_language_gate_passes_romanized_ukrainian():
+    gate = language_gate("zakon pro pravo", _UK_PLAUSIBLE)
+    assert gate.transliterate is True
+    assert (gate.plausible_tokens, gate.latin_tokens) == (3, 3)
+
+
+def test_language_gate_refuses_foreign_language_query():
+    gate = language_gate("what does the", _UK_PLAUSIBLE)
+    assert gate.transliterate is False
+    assert gate.plausible_tokens == 0 and gate.latin_tokens == 3
+    assert gate.plausible_share == 0.0
+
+
+def test_language_gate_transliterates_cyrillic_query_vacuously():
+    # No Latin word tokens to gate: behaves exactly as before (nothing to refuse).
+    gate = language_gate("рішення суду", _UK_PLAUSIBLE)
+    assert gate.transliterate is True
+    assert gate.latin_tokens == 0 and gate.plausible_share == 1.0
+
+
+def test_language_gate_ignores_short_uppercase_acronyms():
+    # "NP" is excluded, so a lone romanized Ukrainian word still carries the whole query.
+    gate = language_gate("NP zakon", _UK_PLAUSIBLE)
+    assert gate.transliterate is True
+    assert gate.latin_tokens == 1 and gate.plausible_tokens == 1
+
+
+def test_apply_normalize_leaves_query_untouched_when_gate_refuses():
+    gate = language_gate("What does the", _UK_PLAUSIBLE)
+    processed, edits = apply_normalize("What does the", gate=gate)
+    assert processed == "What does the"  # verbatim: no casefold, no transliteration
+    assert edits == []
+
+
+def test_apply_normalize_transliterates_when_gate_passes():
+    gate = language_gate("zakon pro pravo", _UK_PLAUSIBLE)
+    processed, _ = apply_normalize("zakon pro pravo", gate=gate)
+    assert processed == "закон про право"
 
 
 # --------------------------------------------------------------------------------------------

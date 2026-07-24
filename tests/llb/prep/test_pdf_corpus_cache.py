@@ -108,6 +108,7 @@ def test_pdf_to_markdown_cli_defaults_out_dir(
         parser: str,
         limit: int | None,
         refresh: bool,
+        repeat_blocks: str,
     ) -> PdfCorpusResult:
         seen["pdf_root"] = pdf_root_arg
         seen["out_dir"] = out_dir_arg
@@ -115,6 +116,7 @@ def test_pdf_to_markdown_cli_defaults_out_dir(
         seen["parser"] = parser
         seen["limit"] = limit
         seen["refresh"] = refresh
+        seen["repeat_blocks"] = repeat_blocks
         return PdfCorpusResult(
             pdf_root=pdf_root_arg,
             out_dir=default_markdown_out_dir(pdf_root_arg),
@@ -133,5 +135,6 @@ def test_pdf_to_markdown_cli_defaults_out_dir(
         "parser": "auto",
         "limit": 1,
         "refresh": False,
+        "repeat_blocks": "keep",
     }
     assert f"-> {pdf_root / '_md'}" in result.output
