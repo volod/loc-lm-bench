@@ -15,6 +15,7 @@ from llb.core.config_validation import (
     DEFAULT_FUSION_WEIGHT,
 )
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
+from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.embedding import Embedder
 from llb.rag.filters import ChunkFilter
 from llb.rag.late_encoding import encode_store_vectors
@@ -89,6 +90,7 @@ class RagStore:
         lexical_lemmas: bool = False,
         lemmatizer: Lemmatizer | None = None,
         collapse_duplicates: bool = True,
+        duplicate_tier: str = TIER_EXACT,
     ) -> "RagStore":
         """Chunk + embed a corpus into a retrievable store.
 
@@ -104,7 +106,9 @@ class RagStore:
         `collapse_duplicates` (default) indexes each distinct chunk text once and records the
         dropped copies as additive occurrence metadata (`llb.rag.duplicates`); pass False to keep
         every copy indexed, which only changes the index budget and the tie rate -- the measured
-        duplicate stats land in the store meta either way.
+        duplicate stats land in the store meta either way. `duplicate_tier` selects WHEN two texts
+        count as the same passage (`llb.rag.duplicate_tiers`); only the default `exact` tier is
+        loss-free.
         """
         _validate_build_params(mode, strategy, child_size)
         embedder = embedder if embedder is not None else Embedder(embedding_model)
@@ -118,6 +122,7 @@ class RagStore:
             child_size,
             embedder,
             collapse_duplicates=collapse_duplicates,
+            duplicate_tier=duplicate_tier,
         )
 
         # Attach page/section provenance from PDF citation sidecars (strategy-independent,
@@ -156,6 +161,7 @@ class RagStore:
             "corpus_manifest": "corpus_manifest.json",
             "governance_fields": list(GOVERNANCE_FIELDS),
             "collapse_duplicates": collapse_duplicates,
+            "duplicate_tier": duplicate_tier,
             "duplicates": dict(duplicates),
         }
         if lexical is not None:

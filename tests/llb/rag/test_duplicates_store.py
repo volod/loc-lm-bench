@@ -9,6 +9,7 @@ The dense index still goes through the real vector-index seam, so the module nee
 import numpy as np
 import pytest
 
+from llb.rag.duplicate_tiers import TIER_EXACT, TIER_MASKED
 from llb.rag.duplicates import duplicate_occurrences
 from llb.rag.noise_floor import measure_noise_floor
 from llb.rag.refresh.store_refresh import refresh_vector_store, stored_vectors
@@ -59,6 +60,21 @@ V2_EDITED_SURVIVOR_DOCS = {
 }
 DUP_QUESTIONS = ["Що подає насос?", "Скільки дає компресор?", "Про що загальні положення?"]
 
+# The same shared block carrying a PAGE NUMBER, so the copies are equivalent only at the `masked`
+# tier -- the survivor's stored vector encodes a.md's wording, not b.md's.
+NUMBERED_BLOCK = (
+    "## Колонтитул\n\nСторінка {page} з 12. Редакція документа. Внутрішній службовий обіг.\n"
+)
+V1_NEAR_DUP_DOCS = {
+    f"{name}.md": f"# {name}\n\n{NUMBERED_BLOCK.format(page=page)}\n## Розділ\n\n{body}\n"
+    for name, page, body in (
+        ("a", 1, "Насос подає двісті кубічних метрів на годину."),
+        ("b", 4, "Компресор дає сім кубічних метрів на хвилину."),
+        ("c", 9, "Вентилятор дає дванадцять тисяч метрів."),
+    )
+}
+V2_NEAR_DUP_DOCS = {k: v for k, v in V1_NEAR_DUP_DOCS.items() if k != "a.md"}
+
 
 def _fixture_store(collapse: bool = True) -> RagStore:
     return RagStore.build(
@@ -71,9 +87,11 @@ def _fixture_store(collapse: bool = True) -> RagStore:
     )
 
 
-def _dup_store(corpus, embedder=None) -> RagStore:
+def _dup_store(corpus, embedder=None, tier=TIER_EXACT) -> RagStore:
     """One chunk per `##` section (size 120 keeps sections apart), so the shared block repeats."""
-    return RagStore.build(corpus, "heading", 120, 0, embedder=embedder or CountingEmbedder())
+    return RagStore.build(
+        corpus, "heading", 120, 0, embedder=embedder or CountingEmbedder(), duplicate_tier=tier
+    )
 
 
 def test_store_indexes_each_distinct_chunk_once():
@@ -185,6 +203,39 @@ def test_refresh_recovers_by_text_when_the_edited_document_carried_the_survivor(
     assert result.n_reused_by_text == 1  # the one shared-block row a position map would re-embed
     # and the refreshed store is still byte-for-byte a rebuild
     rebuilt = _dup_store(corpus)
+    assert result.new_store.chunks == rebuilt.chunks
+    np.testing.assert_array_equal(
+        np.asarray(stored_vectors(result.new_store.index)),
+        np.asarray(stored_vectors(rebuilt.index)),
+    )
+    assert retrieval_ids(result.new_store, DUP_QUESTIONS) == retrieval_ids(rebuilt, DUP_QUESTIONS)
+
+
+def test_a_coarse_tier_store_indexes_the_page_numbered_block_once(tmp_path):
+    corpus = write_corpus(tmp_path / "corpus", V1_NEAR_DUP_DOCS)
+    exact = _dup_store(corpus)
+    masked = _dup_store(corpus, tier=TIER_MASKED)
+    assert exact.meta["n_indexed"] == masked.meta["n_indexed"] + 2  # three footers -> one
+    assert masked.meta["duplicate_tier"] == TIER_MASKED
+    survivor = next(c for c in masked.chunks if "Колонтитул" in str(c["text"]))
+    # the merged copies differ from the survivor, so each carries its OWN text and offsets
+    copies = duplicate_occurrences(survivor)
+    assert [copy["doc_id"] for copy in copies] == ["b.md", "c.md"]
+    for copy in copies:
+        source = (corpus / str(copy["doc_id"])).read_text(encoding="utf-8")
+        assert source[copy["char_start"] : copy["char_end"]] == copy["text"] != survivor["text"]
+
+
+def test_coarse_tier_refresh_reembeds_the_copy_that_becomes_the_survivor(tmp_path):
+    """Deleting a.md promotes b.md's DIFFERENT wording; reusing a.md's row would drift."""
+    corpus = write_corpus(tmp_path / "corpus", V1_NEAR_DUP_DOCS)
+    index_dir = tmp_path / "rag"
+    _dup_store(corpus, tier=TIER_MASKED).save(index_dir)
+    write_corpus(corpus, V2_NEAR_DUP_DOCS)
+
+    result = refresh_vector_store(index_dir, corpus, embedder=CountingEmbedder(), timestamp="T")
+    rebuilt = _dup_store(corpus, tier=TIER_MASKED)
+    assert result.new_store is not None
     assert result.new_store.chunks == rebuilt.chunks
     np.testing.assert_array_equal(
         np.asarray(stored_vectors(result.new_store.index)),

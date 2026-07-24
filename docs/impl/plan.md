@@ -43,33 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### near-duplicate-chunk-collapse (optional)
+### apostrophe-variant unification before tokenization (optional)
 
-Chunk collapse is EXACT-only, and converted-PDF furniture is not always exact: the same footer
-repeats with a page number in it, the same table header repeats with one changed cell, the same
-heading repeats with different whitespace after conversion. Those chunks miss the collapse, keep
-their own index rows, and score near-ties instead of exact ties -- so they still crowd the top-k
-and can still sit inside the noise band. Measure how much residue is left after exact collapse on
-the goods corpus (cluster the surviving chunks by normalized text, then by embedding distance),
-and decide with evidence whether a normalized-text tier (casefold + whitespace + digit masking,
-reusing the corpus-conflict `hash` tier's normalizer) earns its place, since unlike exact collapse
-it can merge passages that genuinely differ.
+`llb.rag.lexical.tokenize` extracts word tokens with `[\w']+` and only THEN unifies apostrophe
+variants, so a typographic apostrophe (U+2019, the one a converted PDF emits) splits a Ukrainian
+word: `зобов’язання` indexes as `зобов` + `язання` while the keyboard form `зобов'язання` indexes
+as one token. Three lanes read that one function -- the BM25 lexical index and its query side, the
+corpus-conflict `hash` tier's `normalized_sha`, and the duplicate-collapse `normalized` tier -- so
+the same near-duplicate is invisible to all three
+([RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers)). Move the
+apostrophe translation ahead of the token regex, then measure what moves: hybrid recall on a corpus
+with apostrophe-bearing terms, the `hash` tier's duplicate yield, and the residue the `normalized`
+tier reaches.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `collapse_duplicate_chunks` in `src/llb/rag/duplicates.py`, the
-  normalizer behind the `hash` tier in `src/llb/conflicts/`, and the fragility count in
-  `src/llb/rag/noise_floor.py`.
-- User-visible outcome: the operator learns whether the remaining repetition in a converted-PDF
-  index is worth collapsing, or whether exact collapse already took all of it.
-- Scope boundary: in scope -- the residue measurement, an optional normalized tier behind a flag,
-  and an adopt-or-reject verdict with the recall/floor evidence. Out of scope -- embedding-based
-  (fuzzy) merging without a measured false-merge rate, and corpus text rewriting.
-- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` per
-  tier on the goods corpus; CI covers the normalizer's grouping on a committed fixture.
-- Acceptance gates: `make ci` green; the report states the post-exact-collapse duplicate residue,
-  and any adopted tier keeps recall@10 within the measured floor while lowering the fragile count.
-- Documentation target: [RAG core](current/rag-core.md#duplicate-chunk-collapse).
+- Dependencies: none. Change `normalize_token` / `tokenize` in `src/llb/rag/lexical.py`; the
+  duplicate tiers and the conflict hash tier reuse it unchanged.
+- User-visible outcome: Ukrainian apostrophe forms match each other on the lexical side regardless
+  of which apostrophe the source used, instead of splitting into two half-words.
+- Scope boundary: in scope -- the normalizer order, the A/B on hybrid retrieval, and the re-measured
+  hash-tier and residue yields. Out of scope -- lemmatization changes, the dense side, and rewriting
+  corpus text.
+- Data and artifact paths: `$DATA_DIR/llb/rag/hybrid/` for the A/B; existing conflict run roots.
+- Execution path: `make compare-retrieval HYBRID=1` before/after on a corpus with apostrophe terms,
+  plus `make measure-duplicate-residue` on the same store; CI covers the tokenizer on the committed
+  `samples/corpora/near_duplicate_chunks_uk_v1/` fixture, whose `Застереження` block plants exactly
+  this case.
+- Acceptance gates: `make ci` green; the report states the hybrid recall delta against the
+  measurement floor and the change in the fixture's `normalized`-tier group count.
+- Documentation target: [RAG core](current/rag-core.md) hybrid retrieval and the collapse-tier
+  section.
 
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 
@@ -549,6 +552,37 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### embedding-clustered chunk merging (optional)
+
+The measured near-duplicate residue is real but not text-reachable: on the goods corpus 20.7% of
+the exact-collapsed chunks have a neighbour at cosine >= 0.99, and the `normalized` collapse tier
+merges 26 of those 13105 pairs
+([RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers)). Only an
+embedding-side merge can reach the rest, which the collapse lane deliberately does not do because a
+false merge silently deletes a distinct passage from the index. Decide it with a measured
+false-merge rate instead of by assumption: cluster the survivors by cosine at several thresholds,
+sample the merges for human reading (the residue report's pair sampler already renders them), and
+score retrieval per threshold against the corpus's own measurement floor. Adopt only if a threshold
+lowers the fragile count without a recall regression AND its sampled false-merge rate is acceptable
+on a corpus whose facts differ by one number.
+
+- Agent status: HUMAN-GATED
+- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicate_residue.py` for
+  the clustering and the sampler, and `collapse_duplicate_chunks` for the merge itself. Human step
+  that gates completion: a reviewer reads the sampled merges at the candidate threshold and calls
+  the false-merge rate acceptable or not.
+- User-visible outcome: either an embedding-side merge tier with a measured false-merge rate, or a
+  recorded finding that the residue must be left in the index.
+- Scope boundary: in scope -- the clustering, the sampled review, the per-threshold retrieval run,
+  and the adopt-or-reject verdict. Out of scope -- learned merge policies and corpus rewriting.
+- Data and artifact paths: `$DATA_DIR/retrieval-noise-floor/<run>/`.
+- Execution path: `make measure-duplicate-residue` per threshold, then `make compare-retrieval
+  CHUNK_STRATEGIES=sentence,recursive NOISE_FLOOR=1` per candidate on the CUDA host.
+- Acceptance gates: `make ci` green; the report carries the per-threshold recall against the floor,
+  the fragile count, and the human's false-merge reading.
+- Documentation target:
+  [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers).
 
 ### multihop-ledger-human-acceptance
 

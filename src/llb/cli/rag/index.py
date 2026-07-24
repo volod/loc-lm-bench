@@ -36,6 +36,14 @@ def build_index(
         "record carrying its other occurrences as metadata; the duplicate rate is reported "
         "either way",
     ),
+    duplicate_tier: Optional[str] = typer.Option(
+        None,
+        "--duplicate-tier",
+        help="when two chunk texts count as ONE passage: exact (default, byte-identical, "
+        "loss-free) | normalized (the conflict hash tier's normalizer: casefold, apostrophes, "
+        "punctuation, whitespace) | masked (normalized plus digit-run masking, which also merges "
+        "rows that differ only in a number)",
+    ),
     lemmatize: bool = typer.Option(
         False,
         "--lemmatize",
@@ -49,10 +57,18 @@ def build_index(
     ),
 ) -> None:
     """Chunk + embed the corpus into a RAG store (FAISS by default) under the index dir."""
+    from llb.rag.duplicate_tiers import DUPLICATE_TIERS
     from llb.rag.duplicates import DuplicateStats, format_duplicate_stats
     from llb.rag.store import RagStore
     from llb.rag.vector_index import RAG_BACKENDS
 
+    if duplicate_tier is not None and duplicate_tier not in DUPLICATE_TIERS:
+        typer.echo(
+            f"[error] unknown --duplicate-tier '{duplicate_tier}'; choose one of "
+            f"{', '.join(DUPLICATE_TIERS)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     if vector_store not in RAG_BACKENDS:
         typer.echo(
             f"[error] unknown --vector-store '{vector_store}'; choose one of "
@@ -70,6 +86,7 @@ def build_index(
         retrieval_mode=mode,
         child_chunk_size=child_size,
         lexical_lemmas=lemmatize or None,
+        duplicate_tier=duplicate_tier,
     )
 
     store = RagStore.build(
@@ -83,6 +100,7 @@ def build_index(
         vector_store=vector_store,
         lexical_lemmas=cfg.lexical_lemmas,
         collapse_duplicates=not keep_duplicate_chunks,
+        duplicate_tier=cfg.duplicate_tier,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""

@@ -31,6 +31,7 @@ from llb.core.store_generations import (
     resolve_store_dir,
 )
 from llb.prep.corpus_governance import corpus_doc_fingerprints, corpus_fingerprint
+from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import expand_duplicate_chunks
 from llb.rag.lexical import Lemmatizer, LexicalIndex
 from llb.rag.refresh.diff import ManifestDiff, diff_fingerprints
@@ -200,6 +201,7 @@ def refresh_vector_store(
         vector_rows,
         collapse=bool(meta.get("collapse_duplicates", True)),
         text_rows=text_rows,
+        tier=str(meta.get("duplicate_tier", TIER_EXACT)),
     )
     if not merged.indexed:
         raise SystemExit(f"[refresh] no chunks produced from corpus at {corpus_root}")

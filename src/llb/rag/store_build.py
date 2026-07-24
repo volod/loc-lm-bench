@@ -5,6 +5,7 @@ from typing import Any, cast
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.chunking.dispatch import chunk_spans
+from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import (
     DuplicateStats,
     collapse_duplicate_chunks,
@@ -131,13 +132,15 @@ def _indexed_units(
     child_size: int,
     embedder: Any,
     collapse_duplicates: bool = True,
+    duplicate_tier: str = TIER_EXACT,
 ) -> tuple[list[ChunkRecord], list[ChunkRecord] | None, DuplicateStats]:
     """(indexed, parents, duplicates): units to embed, the parent docstore, and the duplicate rate.
 
-    With `collapse_duplicates` the INDEXED units carry one record per distinct text (see
-    `llb.rag.duplicates`); the parent docstore is never collapsed, because a parent is returned as
-    generation context for its own document. The stats are measured either way, so a store that
-    keeps its duplicates still reports what it is spending on them.
+    With `collapse_duplicates` the INDEXED units carry one record per distinct text at
+    `duplicate_tier` (see `llb.rag.duplicates` and `llb.rag.duplicate_tiers`); the parent docstore
+    is never collapsed, because a parent is returned as generation context for its own document.
+    The stats are measured at the same tier either way, so a store that keeps its duplicates still
+    reports what it is spending on them.
     """
     sem = embedder if strategy == "semantic" else None
     units = chunk_corpus(corpus_root, strategy, size, overlap, sem)
@@ -151,6 +154,6 @@ def _indexed_units(
     else:
         units_or_children, parents = units, None
     if not collapse_duplicates:
-        return units_or_children, parents, duplicate_stats(units_or_children)
-    collapse = collapse_duplicate_chunks(units_or_children)
+        return units_or_children, parents, duplicate_stats(units_or_children, duplicate_tier)
+    collapse = collapse_duplicate_chunks(units_or_children, duplicate_tier)
     return collapse.chunks, parents, collapse.stats

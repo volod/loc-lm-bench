@@ -416,6 +416,61 @@ stands everywhere and `context_order` is not a knob worth per-model tuning on th
 The rerank half of the cohort is recorded in [RAG core](rag-core.md) Reranking And Context
 Order.
 
+### Roster-wide probe cohort (2026-07-24)
+
+A second full-cohort pass on the same host, index, and item set (`ua_squad_postedited_v1`, 82
+final items, k=5, Ollama, no LIMIT cap) extends the probe to the Gemma 4, MamayLM v2.0, and
+Qwen3.6 rosters. All seven models probed 82/82 items with 0 skips and reliability 1.0.
+Artifacts: `$DATA_DIR/context-position/20260724T0{63341,63726,64807,65031,70950,71850,73314}Z/`
+(lapa, gemma4:e4b, gemma4:26b, gemma4:e2b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
+
+| model | head | middle | tail | overall | head-tail |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `batiai/qwen3.6-35b:iq3` | 0.558 | 0.602 | 0.552 | 0.571 [0.52, 0.62] | +0.005 |
+| MamayLM-Gemma-3-27B-IT v2.0 GGUF Q4_K_M | 0.583 | 0.549 | 0.561 | 0.565 [0.52, 0.61] | +0.022 |
+| MamayLM-Gemma-3-12B-IT v2.0 GGUF Q4_K_M | 0.517 | 0.507 | 0.505 | 0.510 [0.46, 0.56] | +0.012 |
+| Lapa v0.1.2-instruct GGUF Q4_K_M | 0.528 | 0.481 | 0.485 | 0.498 [0.45, 0.55] | +0.044 |
+| `gemma4:e2b` | 0.469 | 0.425 | 0.441 | 0.445 [0.40, 0.49] | +0.028 |
+| `gemma4:e4b` | 0.390 | 0.369 | 0.372 | 0.377 [0.34, 0.42] | +0.018 |
+| `gemma4:26b` | 0.315 | 0.290 | 0.268 | 0.291 [0.27, 0.32] | +0.047 |
+
+The 2026-07-10 cohort verdict holds unchanged: every head/tail CI still overlaps, so `rank`
+stands for all seven and `context_order` remains a knob not worth per-model tuning.
+
+Reproducibility, measured: Lapa and MamayLM-12B reproduced their 2026-07-10 numbers to three
+decimals on every position. `gemma4:e4b` did NOT (head 0.414 -> 0.390, tail 0.407 -> 0.372) on
+the same index and item set, so ~0.035 is that model's run-to-run noise floor and any e4b delta
+below it is unresolvable. Gemma-3-derived GGUFs are bit-stable here; the Gemma 3n/E4B kernel
+path is not.
+
+**Position score is not needle-reading skill.** `objective_score` is token F1, which is
+precision-sensitive, so it conflates whether the model FOUND the needle with how tersely it
+stated it. Scoring the same rows with `contains` (all reference tokens present) separates them
+and reverses the ranking:
+
+| model | overall F1 | needle located | F1 given located | answer length vs reference |
+| --- | ---: | ---: | ---: | ---: |
+| `batiai/qwen3.6-35b:iq3` | 0.571 | 162/246 (0.659) | 0.787 | 1.9x |
+| MamayLM-27B v2.0 | 0.565 | 155/246 (0.630) | 0.790 | 1.6x |
+| MamayLM-12B v2.0 | 0.510 | 166/246 (0.675) | 0.685 | 2.3x |
+| Lapa v0.1.2 | 0.498 | 154/246 (0.626) | 0.688 | 2.7x |
+| `gemma4:e2b` | 0.445 | 184/246 (0.748) | 0.542 | 3.9x |
+| `gemma4:e4b` | 0.377 | 193/246 (0.785) | 0.444 | 4.6x |
+| `gemma4:26b` | 0.291 | 184/246 (0.748) | 0.332 | 5.2x |
+
+The Gemma 4 collection ranks LAST on F1 and FIRST on found-rate: `gemma4:e4b` locates the
+needle on 0.785 of probes against Lapa's 0.626 (paired, +0.159 [+0.061, +0.268]), yet loses on
+F1 by 0.121 [0.052, 0.194] because it answers at 4.6x reference length. Within Gemma 4,
+verbosity rises monotonically with size while F1-given-located falls in lockstep. Among the
+Ukrainian-tuned and Qwen models the found-rate spread (0.626-0.675) is entirely inside the CIs,
+so their F1 ordering is answer style, not comprehension. Read both columns before calling one
+model a better context reader; reference answers on this fixture average 18 characters, which
+is what makes token F1 this sensitive to padding.
+
+Caveat on the Qwen row: the 16 GiB roster fallback is an IQ3 (3.5 bpw) artifact while both
+MamayLM tags are Q4_K_M (~4.5 bpw), so Qwen ties the 27B from a weaker quantization. The
+comparison is conservative in Qwen's favor, not like-for-like.
+
 ## Insufficient-Context Abstention Probe (run-eval --insufficient-context-probes)
 
 `llb run-eval --insufficient-context-probes <n>` re-runs a seeded sample of gold items with their

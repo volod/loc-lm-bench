@@ -14,6 +14,7 @@ from typing import Any
 
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.rag.chunking.corpus import chunk_corpus, iter_doc_paths
+from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import DuplicateStats, collapse_duplicate_chunks, duplicate_stats
 from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.refresh.lexical_merge import MergeEntry
@@ -168,9 +169,10 @@ def text_row_map(chunks: list[ChunkRecord]) -> dict[str, int]:
 
 def resolve_duplicates(
     merged: MergedUnits,
-    vector_rows: list[int],
+    vector_rows: list[int | None],
     collapse: bool,
     text_rows: dict[str, int] | None = None,
+    tier: str = TIER_EXACT,
 ) -> MergedUnits:
     """Point the reuse plan back at stored embedding rows, then re-collapse the merged units.
 
@@ -187,6 +189,10 @@ def resolve_duplicates(
     text reuses that row regardless of which document now carries it. Only valid where a chunk
     vector is a pure function of its text (every strategy but `late`, whose vectors are
     document-contextual), so the caller passes `None` for `late`.
+
+    `tier` re-collapses at the tier the store was built with. Under a coarser tier than `exact`,
+    expansion hands back no row for a copy whose text differs from its survivor's, so that copy is
+    re-embedded instead of inheriting a vector encoded from another wording.
     """
     rows: list[int | None] = [
         None if source is None else vector_rows[source] for source in merged.row_sources
@@ -205,10 +211,10 @@ def resolve_duplicates(
             indexed=merged.indexed,
             parents=merged.parents,
             row_sources=rows,
-            duplicates=duplicate_stats(merged.indexed),
+            duplicates=duplicate_stats(merged.indexed, tier),
             text_reused=len(reused),
         )
-    collapsed = collapse_duplicate_chunks(merged.indexed)
+    collapsed = collapse_duplicate_chunks(merged.indexed, tier)
     return MergedUnits(
         indexed=collapsed.chunks,
         parents=merged.parents,

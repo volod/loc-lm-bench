@@ -46,7 +46,8 @@ class RagStoreMeta(TypedDict):
     governance_fields: NotRequired[list[str]]
     doc_fingerprints: NotRequired[dict[str, str]]
     refreshed_from: NotRequired[str]
-    collapse_duplicates: NotRequired[bool]  # exact-duplicate chunk collapse (llb.rag.duplicates)
+    collapse_duplicates: NotRequired[bool]  # duplicate chunk collapse on/off (llb.rag.duplicates)
+    duplicate_tier: NotRequired[str]  # when two texts are one passage (llb.rag.duplicate_tiers)
     duplicates: NotRequired[JsonObject]  # its measured DuplicateStats, collapsed or not
 
 

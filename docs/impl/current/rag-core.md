@@ -298,6 +298,102 @@ occurrence, exact expansion, the tie-break, and the parent expansion) and
 fragility drop measured through `measure_noise_floor`, and refresh-equals-rebuild when the
 survivor's document is deleted) -- fake hashed-BoW embedder, no GPU.
 
+### Near-Duplicate Residue And The Collapse Tiers
+
+Shipped (near-duplicate-chunk-collapse, `src/llb/rag/duplicate_tiers.py` and
+`src/llb/rag/duplicate_residue.py`): collapse takes a TIER that decides when two chunk texts count
+as one passage, and a measurement that says how much repetition a store still holds after it.
+
+Tiers, cheapest first, each strictly coarser than the one before:
+
+| tier | two texts are one passage when | loss-free |
+| --- | --- | --- |
+| `exact` (default) | they are byte-identical | yes -- the survivor's text IS every copy's |
+| `normalized` | they share the corpus-conflict `hash` tier's normalized token stream (`llb.rag.lexical.tokenize`: casefold, apostrophe unification, punctuation strip, whitespace collapse) | no |
+| `masked` | `normalized` plus digit-run masking (`Сторінка 3` == `Сторінка 47`) | no |
+
+- Selection: `build-index --duplicate-tier <tier>` (`make build-index DUPLICATE_TIER=`),
+  `compare-retrieval --duplicate-tier <tier>` for the stores that lane BUILDS
+  (`make compare-retrieval DUPLICATE_TIER=`), or the `duplicate_tier` run-config field. The tier
+  lands in `store_meta.json` and in the measured `duplicates.tier`, so the build summary names what
+  it measured ("byte-identical to" / "normalization-equivalent to" / "digit-masked-equivalent to").
+- Reversibility holds at every tier: where a merged copy's text differs from its survivor's, the
+  copy is recorded WITH its own text, so `expand_duplicate_chunks` still reconstructs the
+  pre-collapse set exactly. It hands back no reusable embedding row for such a copy, so an
+  incremental refresh that promotes a differing copy to survivor re-embeds it instead of inheriting
+  a vector encoded from another wording -- a refreshed store still equals a rebuild under a coarse
+  tier (`tests/llb/rag/test_duplicates_store.py`).
+- A chunk whose text has no word tokens at all (a rule line, a stray bullet) falls back to its
+  verbatim text, so no tier ever merges on the absence of content.
+- What a coarse tier gives up: only `exact` guarantees the survivor's text is a verbatim slice of
+  every occurrence's offsets. `occurrence_spans` still resolves every place the passage appears --
+  span matching is by offsets -- but the indexed and quoted TEXT is one representative wording.
+
+`llb measure-duplicate-residue --store <dir>` (`make measure-duplicate-residue STORE=<dir>
+[RESIDUE_THRESHOLDS=] [RESIDUE_EXAMPLES=] [RESIDUE_OUT=<json>]`) measures the residue of a BUILT
+store without loading an embedder (it reads the persisted chunks and vectors), along two axes:
+
+- text: what each coarser tier would still collapse, with the same intra/cross census;
+- embedding: chunk pairs above each cosine band (default 0.999 / 0.99 / 0.95), the share of chunks
+  with such a neighbour, and how many of those pairs each TEXT tier reaches -- the cross-tab that
+  says whether a cheap normalizer can take the residue at all.
+
+It also samples what a merge would actually do: the top-cosine pairs no text tier merges, and the
+pairs ONLY digit masking merges (the page footer and the rate row are the same shape to it).
+
+Durable evidence (2026-07-24, goods PDF corpus at `size` 200/30, pinned e5-base, k=10, n=95, the
+same corpus/goldset/seed as the exact-collapse evidence above; reports under
+`$DATA_DIR/retrieval-noise-floor/20260724T-near-dup-residue/`).
+
+Residue left by exact collapse, per lane:
+
+| lane | indexed | `normalized` would collapse | `masked` would collapse | chunks with a >=0.99 neighbour | those pairs / reached by `normalized` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `recursive` | 3515 | 26 (25 groups) | 311 (67 groups, largest 147) | 727 (20.7%) | 13105 / 26 |
+| `sentence` | 3659 | 55 (48 groups) | 357 (68 groups, largest 221) | 772 (21.1%) | 23142 / 54 |
+
+Retrieval per tier (same items, same k, same seed):
+
+| tier | `recursive` recall@10 / MRR / fragile | `sentence` recall@10 / MRR / fragile | indexed |
+| --- | --- | --- | --- |
+| `exact` | 0.6947 / 0.46515 / 1 | 0.6316 / 0.46487 / 0 | 3515 / 3659 |
+| `normalized` | 0.6947 / 0.46565 / 0 | 0.6316 / 0.46505 / 0 | 3489 / 3604 |
+| `masked` | 0.6947 / 0.46565 / 0 | 0.6316 / 0.46505 / 0 | 3204 / 3302 |
+
+The floor is +/-0.000 on every lane and every tier, and every question-type slice is identical
+across the three tiers, so the only measured movements are the MRR digits and the fragile count.
+
+Verdict: **`exact` stays the shipped default; `normalized` is available per corpus; `masked` is
+not recommended even though this goldset cannot see its cost.**
+
+- `exact` reproduced its recorded rows to the digit under the tier refactor (0.6947/0.6316, fragile
+  1/0), which is the check that adding tiers changed nothing for stores that do not ask for one.
+- `normalized` clears the stated gate -- recall unchanged (well inside the +/-0.000 floor), MRR
+  +0.0005, and the one fragile `recursive` item removed -- but what it buys is that single item and
+  0.7-1.5% of the index, paid for with the loss-free property. Worth enabling only where the
+  residue measurement shows a materially larger group count than the 25-48 groups measured here.
+- `masked` scores IDENTICALLY to `normalized` on every row and slice while removing ~9% of the
+  index, and that is exactly the trap: the sampled merges show it merging `Поле має обмеження в 200
+  символів` with `... 2000 символів`, `в 5 символів` with `в 10 символів`, and consecutive numbered
+  steps -- genuine content differences alongside the real page footers (`**ЗСУ. Конфіденційно**
+  **N**`, a group of 147 copies). No item of this 95-question set happens to need a merged row, so
+  the retrieval metric reports no cost; the evidence against the tier is the sampled merge list,
+  not the recall. Reject it on any corpus whose facts differ by one number.
+- The residue that matters is NOT text-reachable: 20.7% of the exact-collapsed `recursive` chunks
+  have a neighbour at cosine >= 0.99, and the `normalized` tier merges 26 of those 13105 pairs.
+  Reaching the rest needs an embedding-side merge with a measured false-merge rate, which is
+  forward work, not current behavior.
+
+Tests: `tests/llb/rag/test_duplicate_tiers.py` (the normalizer's grouping and digit masking, the
+token-free fallback, the tier ladder on the committed
+`samples/corpora/near_duplicate_chunks_uk_v1/` fixture, offset-exactness and per-copy text at a
+coarse tier, exact expansion with no reusable row for a differing copy, and the residue report's
+bands/samples over hand-built vectors) plus the two coarse-tier store tests in
+`tests/llb/rag/test_duplicates_store.py` -- fake embedders, no GPU. The fixture also pins a
+LIMITATION of the reused normalizer: `tokenize` extracts word tokens BEFORE unifying apostrophe
+variants, so a typographic apostrophe (U+2019) splits a Ukrainian word and its keyboard-apostrophe
+twin does not normalize onto it.
+
 ## Store Lifecycle: Dynamic Corpus Refresh
 
 Shipped (dynamic-corpus-refresh): `llb refresh-index` (`make refresh-index CORPUS=<dir>
@@ -1306,6 +1402,46 @@ noisier measurement than a grounded one and should be quoted with that in mind.
 
 Reports: `$DATA_DIR/context-ablation/20260722T142639Z/` (MamayLM),
 `.../20260722T143030Z/` (Lapa), `.../20260722T143459Z/` (the budget-constrained skip run).
+
+#### Roster-wide ablation cohort (2026-07-24)
+
+The same lane, host, index fingerprint, and item set extended to the Gemma 4, MamayLM v2.0, and
+Qwen3.6 rosters. `rag` recall@5 is 0.951 for every row (retrieval is pinned), so all differences
+are answer-side. Throughput is the `rag` lane's measured tokens/s.
+
+| model | closed_book | rag | long_context | retrieval uplift | long-context delta | closed-book matches | rag tok/s | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `batiai/qwen3.6-35b:iq3` | 0.133 | 0.554 | 0.615 | +0.421 [+0.333, +0.503] | +0.060 [-0.008, +0.130] | 10/82 (12.2%) | 6.1 | `rag_pays_off` |
+| MamayLM-Gemma-3-27B-IT v2.0 GGUF Q4_K_M | 0.193 | 0.546 | 0.609 | +0.353 [+0.269, +0.436] | +0.063 [+0.014, +0.124] | 12/82 (14.6%) | 3.3 | `long_context_wins` |
+| MamayLM-Gemma-3-12B-IT v2.0 GGUF Q4_K_M | 0.153 | 0.501 | 0.643 | +0.348 [+0.268, +0.429] | +0.142 [+0.083, +0.206] | 10/82 (12.2%) | 11.8 | `long_context_wins` |
+| `gemma4:e4b` | 0.062 | 0.365 | 0.470 | +0.303 [+0.242, +0.364] | +0.105 [+0.056, +0.163] | 5/82 (6.1%) | 31.8 | `long_context_wins` |
+| `gemma4:26b` | 0.097 | 0.288 | 0.410 | +0.190 [+0.138, +0.240] | +0.122 [+0.081, +0.169] | 11/82 (13.4%) | 12.1 | `long_context_wins` |
+
+Reports: `$DATA_DIR/context-ablation/20260724T0{65410,70414,73659,74544,75718}Z/` (gemma4:e4b,
+gemma4:26b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
+
+What the wider cohort adds beyond the two-model result:
+
+- **Qwen3.6-35B-A3B is the only model that does not return `long_context_wins`.** Its
+  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one interval in the whole
+  evidence set that straddles zero, so the lane reports `rag_pays_off` instead. It also posts the
+  largest retrieval uplift measured (+0.421). Read together: this model loses the least to chunk
+  boundaries, which is the property that makes chunked retrieval a cheap substitute for a long
+  window rather than a compromise.
+- **A tie at the top, at very different cost.** Qwen3.6-35B and MamayLM-27B are statistically
+  indistinguishable on `rag` (0.554 vs 0.546) and on the context-position probe (paired
+  +0.006 [-0.048, +0.059]), but Qwen serves from VRAM at 13 GB with ~3B active parameters while
+  the 27B's 18 GB artifact runs at 23%/77% CPU offload -- 6.1 vs 3.3 tok/s on this lane, and
+  18.5 vs 6.5 on closed-book. Quality-first ranking calls this a tie; the tiebreak is throughput.
+- **Closed-book tracks Ukrainian specialization, not size.** MamayLM-27B leads the cohort at
+  0.193 and the Gemma 4 rows sit at 0.062-0.097, so the contamination/parametric baseline a given
+  uplift is measured against is model-specific and must be quoted with the uplift.
+- The `long_context` lane skipped nothing for any model, so no fitting-population split applies.
+
+Reproducibility, measured: MamayLM-12B reproduced its 2026-07-22 grounded lanes exactly
+(`rag` 0.501, `long_context` 0.643, `long_context_delta` +0.142 [+0.083, +0.206]) while its
+closed-book lane again landed at 0.153 against the original 0.160 -- an independent confirmation
+of the closed-book nondeterminism documented above, on a re-run 2 days later.
 
 ## Retrieval Metrics
 

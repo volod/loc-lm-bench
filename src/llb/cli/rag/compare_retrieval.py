@@ -45,6 +45,13 @@ def compare_retrieval_cmd(
     rerank_candidates: Optional[int] = typer.Option(
         None, help="rerank rows: candidate pool depth fed into the reranker (default 30)"
     ),
+    duplicate_tier: Optional[str] = typer.Option(
+        None,
+        "--duplicate-tier",
+        help="duplicate-collapse tier for the stores this run BUILDS (--strategies / --hybrid): "
+        "exact (default) | normalized | masked -- see `measure-duplicate-residue` for the "
+        "residue each tier would take",
+    ),
     noise_floor: bool = typer.Option(
         False,
         "--noise-floor",
@@ -89,6 +96,7 @@ def compare_retrieval_cmd(
         corpus_root=_compare_vector_corpus_root(goldset, None) if (strategies or hybrid) else None,
         fusion_weight=fusion_weight,
         graph_weight=graph_weight,
+        duplicate_tier=duplicate_tier,
     )
     items = load_goldset(cfg.goldset_path)
     if split:

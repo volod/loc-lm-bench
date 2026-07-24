@@ -39,6 +39,10 @@ ContextOrder = Literal["rank", "reverse_rank"]
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
 ContextStrategy = Literal["rag", "closed_book", "long_context"]
+# Duplicate-collapse tier (llb.rag.duplicate_tiers): when do two chunk texts count as ONE
+# passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
+# coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
+DuplicateTier = Literal["exact", "normalized", "masked"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 # Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
 ScorerPolicy = Literal["human", "local", "frontier"]
@@ -113,6 +117,11 @@ class RunConfigFields(BaseModel):
     # weighted RRF at query time (hybrid-retrieval-uk).
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
+
+    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates).
+    # "exact" is loss-free; the coarser tiers trade a smaller index and fewer near-ties for
+    # merging passages that differ, so they need per-corpus residue evidence before adoption.
+    duplicate_tier: DuplicateTier = "exact"
 
     # Hybrid fusion knobs (used when retrieval_mode == "hybrid"; recorded in the manifest and
     # the sweep cell fingerprint). `fusion_weight` is the dense share of the weighted RRF

@@ -52,11 +52,14 @@ def build_chunking_comparison(
     ONLY in the chunking strategy, so `compare_retrieval` demonstrates (not assumes) the best
     chunker per corpus. Stores are built in `flat` mode -- parent_child would confound the
     boundary comparison (and `late` refuses it). When `stores_root` is given each store persists
-    under `<stores_root>/<strategy>/` for reuse. Real path: needs the `[rag]` extra.
+    under `<stores_root>/<strategy>/` for reuse. Every store also shares the config's
+    `duplicate_tier`, so a tier is compared across chunkers rather than confounded with one.
+    Real path: needs the `[rag]` extra.
     """
     from pathlib import Path
 
     from llb.rag.chunking.dispatch import STRATEGIES
+    from llb.rag.duplicate_tiers import TIER_EXACT
     from llb.rag.store import RagStore
 
     unknown = [s for s in strategies if s not in STRATEGIES]
@@ -73,6 +76,7 @@ def build_chunking_comparison(
             config.chunk_overlap,
             config.embedding_model,
             mode="flat",
+            duplicate_tier=getattr(config, "duplicate_tier", TIER_EXACT),
         )
         if stores_root is not None:
             store.save(Path(stores_root) / strategy)
