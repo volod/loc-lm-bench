@@ -1,10 +1,10 @@
 """Pure end-to-end query robustness evaluation and aggregation."""
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from llb.eval.query_robustness_variants import VARIANT_CLASSES, generate_variant
+from llb.eval.query_robustness_variants import generate_variant, resolve_variant_classes
 from llb.goldset.schema import GoldItem
 
 
@@ -38,6 +38,26 @@ Progress = Callable[[str], None]
 
 
 @dataclass(frozen=True)
+class SubsetMetrics:
+    """Lane metrics restricted to the items a noise class actually perturbed.
+
+    A single-mechanism class is a no-op on any question that carries none of its trigger
+    characters -- `apostrophe_variant` cannot perturb a question without an apostrophe. Pooling
+    those untouched items back into the lane mean drags every delta toward zero and makes a real
+    effect on a handful of items unreadable, so the affected subset is measured separately
+    against the SAME items' clean baseline.
+    """
+
+    n: int
+    objective_score: float
+    recall_at_k: float
+    objective_delta: float
+    recall_delta: float
+    objective_recovery: float = 0.0
+    recall_recovery: float = 0.0
+
+
+@dataclass(frozen=True)
 class LaneMetrics:
     variant_class: str
     mitigation: str
@@ -49,6 +69,7 @@ class LaneMetrics:
     recall_delta: float
     shared_hit_n: int
     generation_delta_on_shared_hits: float
+    changed: SubsetMetrics
     objective_recovery: float = 0.0
     recall_recovery: float = 0.0
 
@@ -59,10 +80,31 @@ class RobustnessResult:
     clean_objective: float
     clean_recall: float
     lanes: tuple[LaneMetrics, ...]
+    variant_classes: tuple[str, ...] = ()
 
 
 def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _changed_metrics(
+    rows: list[dict[str, Any]],
+    clean: Mapping[str, Mapping[str, Any]],
+) -> SubsetMetrics:
+    changed = [row for row in rows if bool(row.get("variant_changed", True))]
+    objective = _mean([float(row["objective_score"]) for row in changed])
+    recall = _mean([float(row["retrieval_hit"]) for row in changed])
+    base_objective = _mean(
+        [float(clean[str(row["item_id"])]["objective_score"]) for row in changed]
+    )
+    base_recall = _mean([float(clean[str(row["item_id"])]["retrieval_hit"]) for row in changed])
+    return SubsetMetrics(
+        n=len(changed),
+        objective_score=objective,
+        recall_at_k=recall,
+        objective_delta=objective - base_objective,
+        recall_delta=recall - base_recall,
+    )
 
 
 def _lane_metrics(
@@ -98,6 +140,21 @@ def _lane_metrics(
         recall_delta=recall - clean_recall,
         shared_hit_n=len(shared),
         generation_delta_on_shared_hits=generation_delta,
+        changed=_changed_metrics(rows, clean),
+    )
+
+
+def _with_recovery(metric: LaneMetrics, raw: LaneMetrics) -> LaneMetrics:
+    """Credit a mitigation lane with what it restored, against the `off` lane of its own class."""
+    return replace(
+        metric,
+        objective_recovery=metric.objective_score - raw.objective_score,
+        recall_recovery=metric.recall_at_k - raw.recall_at_k,
+        changed=replace(
+            metric.changed,
+            objective_recovery=metric.changed.objective_score - raw.changed.objective_score,
+            recall_recovery=metric.changed.recall_at_k - raw.changed.recall_at_k,
+        ),
     )
 
 
@@ -108,9 +165,11 @@ def evaluate_query_robustness(
     *,
     seed: int,
     typo_rate: float,
+    variant_classes: Sequence[str] | None = None,
     progress: Progress | None = None,
 ) -> RobustnessResult:
     """Run every noisy class under every mitigation lane; clean rows stay external baseline rows."""
+    classes = resolve_variant_classes(variant_classes)
     clean = {str(row["item_id"]): row for row in clean_rows}
     missing = [item.id for item in items if item.id not in clean]
     if missing:
@@ -119,9 +178,9 @@ def evaluate_query_robustness(
     clean_recall = _mean([float(clean[item.id]["retrieval_hit"]) for item in items])
     all_rows: list[dict[str, Any]] = []
     metrics: list[LaneMetrics] = []
-    total = len(items) * len(VARIANT_CLASSES) * len(MITIGATION_LANES)
+    total = len(items) * len(classes) * len(MITIGATION_LANES)
     completed = 0
-    for variant_class in VARIANT_CLASSES:
+    for variant_class in classes:
         for lane in MITIGATION_LANES:
             lane_rows: list[dict[str, Any]] = []
             for item in items:
@@ -146,6 +205,7 @@ def evaluate_query_robustness(
                     "typo_rate": typo_rate,
                     "clean_question": item.question,
                     "variant_question": variant,
+                    "variant_changed": variant != item.question,
                     **score,
                     "clean_objective_score": float(clean_row["objective_score"]),
                     "clean_retrieval_hit": float(clean_row["retrieval_hit"]),
@@ -177,17 +237,9 @@ def evaluate_query_robustness(
         metric.variant_class: metric for metric in metrics if metric.mitigation == LANE_OFF.id
     }
     with_recovery = tuple(
-        LaneMetrics(
-            **{
-                **metric.__dict__,
-                "objective_recovery": metric.objective_score
-                - raw_by_class[metric.variant_class].objective_score,
-                "recall_recovery": metric.recall_at_k
-                - raw_by_class[metric.variant_class].recall_at_k,
-            }
-        )
+        _with_recovery(metric, raw_by_class[metric.variant_class])
         if metric.mitigation != LANE_OFF.id
         else metric
         for metric in metrics
     )
-    return RobustnessResult(all_rows, clean_objective, clean_recall, with_recovery)
+    return RobustnessResult(all_rows, clean_objective, clean_recall, with_recovery, classes)

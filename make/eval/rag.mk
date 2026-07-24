@@ -178,13 +178,14 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT=)
+bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT= QUERY_ROBUSTNESS_CLASSES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-query-robustness --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --corpus-root "$(CORPUS)" --split "$(SPLIT)" \
 		--top-k $(RAG_K) --typo-rate $(QUERY_ROBUSTNESS_TYPO_RATE) \
 		--max-tokens $(QUERY_ROBUSTNESS_MAX_TOKENS) \
+		$(if $(QUERY_ROBUSTNESS_CLASSES),--variant-classes "$(QUERY_ROBUSTNESS_CLASSES)",) \
 		$(if $(QUERY_ROBUSTNESS_LIMIT),--limit $(QUERY_ROBUSTNESS_LIMIT),)
 
 probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= PROBE_K= SPLIT= LIMIT=)

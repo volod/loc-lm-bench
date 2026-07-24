@@ -183,6 +183,7 @@ INCLUDE_DRAFTED ?=
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
 QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
+QUERY_ROBUSTNESS_CLASSES ?=
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml

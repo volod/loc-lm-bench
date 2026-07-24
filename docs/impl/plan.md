@@ -43,57 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### split-the-apostrophe-noise-class (optional)
-
-The robustness lane's `apostrophe_mixed_script` class applies TWO mechanisms at once: it rewrites
-every apostrophe to another variant AND substitutes Cyrillic/Latin homoglyphs at `typo_rate`
-(`src/llb/eval/query_robustness_variants.py`). A mitigation lane's recovery on that class
-therefore cannot be attributed to either mechanism, and the apostrophe half is invisible whenever
-the homoglyph half dominates -- which is why the apostrophe-tokenization change had to be measured
-with the class pinned at `typo_rate=0` instead of through the lane
-([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). Split it into two
-classes (`apostrophe_variant`, `mixed_script`), keep the combined class only if a measurement wants
-it, and re-read the recorded per-class mitigation verdicts.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `generate_variant` and the lane/report plumbing in
-  `src/llb/eval/query_robustness*.py`; the robustness evidence is in
-  [evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
-- User-visible outcome: the operator can tell whether a robustness recovery came from apostrophe
-  normalization or from homoglyph repair, instead of reading one blended number.
-- Scope boundary: in scope -- the class split, the report rows, and the re-read of each recorded
-  per-class verdict. Out of scope -- new mitigation lanes and changing the typo rate default.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
-- Execution path: `make bench-query-robustness` on the CUDA host with a live backend; CI covers the
-  two generators deterministically at a fixed seed.
-- Acceptance gates: `make ci` green; the report carries both classes with per-lane recovery, and
-  the recorded verdicts are restated per mechanism.
-- Documentation target: the robustness evidence in
-  [evaluation rigor](current/rigor-board-judge.md) and
-  [RAG core](current/rag-core.md#query-side-processing).
-
 ### apostrophe-mixed-variant retrieval fixture (optional)
 
 Neither corpus on hand can measure what apostrophe-variant tokenization buys: each is internally
 consistent about which apostrophe it uses, so index and query split identically and every recall
 number is flat before and after the fix
-([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). The case that pays is a
-corpus that MIXES variants -- a re-ingested edition, a copy-pasted appendix, two converters -- and
-the repo has no such fixture. Build one (or find a real corpus with the property), score the
-lexical lane on it, and record the retrieval delta the fix is worth when the mismatch is real.
+([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). The dedicated
+`apostrophe_variant` robustness class closed the query-side half of this question on the dense
+lane and found nothing to recover there -- all 6 apostrophe-bearing final-split questions still
+retrieve their gold evidence at k=10 when re-typed with another variant
+([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)) -- so what
+remains is the LEXICAL side on a corpus that MIXES variants: a re-ingested edition, a copy-pasted
+appendix, two converters. The repo has no such fixture. Build one (or find a real corpus with the
+property), score the lexical lane on it, and record the retrieval delta the fix is worth when the
+mismatch is real.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-retrieval --hybrid`, the `apostrophe_mixed_script` generator
-  at `typo_rate=0`, and the committed `samples/corpora/near_duplicate_chunks_uk_v1/` shape for a
-  planted fixture.
+- Dependencies: none. Reuse `compare-retrieval --hybrid`, the `apostrophe_variant` noise class
+  (`make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=apostrophe_variant`), and the committed
+  `samples/corpora/near_duplicate_chunks_uk_v1/` shape for a planted fixture.
 - User-visible outcome: a measured answer to "what does apostrophe-variant matching buy on a corpus
   that actually mixes variants", instead of a correctness argument with a flat metric.
 - Scope boundary: in scope -- the fixture (or corpus selection), the lexical-lane A/B, and the
   recorded delta. Out of scope -- changing the tokenizer again and dense-side work.
 - Data and artifact paths: `$DATA_DIR/apostrophe-normalizer/<run>/`; a committed fixture under
   `samples/` only if a planted corpus earns one.
-- Execution path: `make compare-retrieval HYBRID=1` over the mixed-variant corpus on the CUDA host;
-  CI covers the fixture's planted variant mix.
+- Execution path: `make compare-retrieval HYBRID=1` over the mixed-variant corpus on the CUDA host
+  -- the store must carry a lexical index, since the measured robustness runs used a dense-only
+  store and therefore could not exercise the tokenizer at all; CI covers the fixture's planted
+  variant mix.
 - Acceptance gates: `make ci` green; the report states the lexical-lane recall delta against the
   corpus's own measurement floor.
 - Documentation target:
@@ -439,9 +417,13 @@ Normalization casefolds the whole query, but the dense encoder is case-sensitive
 final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
 noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
 the lane ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)).
-Casefolding is a lexical-side convention that the dense side never asked for. Measure whether the
-processed query should stay cased on the dense lane while the lexical lane keeps the folded text
--- the `retrieve_queries` seam already carries separate dense and lexical text.
+The split noise classes sharpen the diagnosis: on the `apostrophe_variant` class the `normalize`
+lane loses an item (0.9756 -> 0.9634 recall@10) even though the affected-items table shows all 6
+perturbed questions retrieved perfectly in every lane -- the loss is on questions the noise class
+never touched, so it is the mitigation step acting on an otherwise clean query, not a failed
+repair. Casefolding is a lexical-side convention that the dense side never asked for. Measure
+whether the processed query should stay cased on the dense lane while the lexical lane keeps the
+folded text -- the `retrieve_queries` seam already carries separate dense and lexical text.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the split dense/lexical query seam in

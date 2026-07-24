@@ -13,6 +13,9 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
     typo_rate = metadata["typo_rate"]
     if not isinstance(typo_rate, int | float):
         raise TypeError("typo_rate metadata must be numeric")
+    classes = result.variant_classes or tuple(
+        dict.fromkeys(lane.variant_class for lane in result.lanes)
+    )
     lines = [
         "# Ukrainian query robustness benchmark",
         "",
@@ -21,6 +24,7 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         f"- split: `{metadata['split']}`",
         f"- seed: {metadata['seed']}",
         f"- keyboard/homoglyph rate: {typo_rate:.3f}",
+        f"- noise classes: {', '.join(f'`{name}`' for name in classes)}",
         f"- clean baseline: `{metadata['clean_run_dir']}`",
         f"- clean objective: {result.clean_objective:.4f}",
         f"- clean recall@k: {result.clean_recall:.4f}",
@@ -31,6 +35,9 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         "Mitigation lanes are isolated: `normalize` inverts only attributable noise, while",
         "`normalize,typos` adds corpus-vocabulary correction under the Ukrainian morphology",
         "guard, so vocabulary-correction risk is read apart from normalization recovery.",
+        "Noise classes are one mechanism each, so a recovery is attributable: `apostrophe_variant`",
+        "re-types apostrophes only and `mixed_script` substitutes homoglyphs only. The combined",
+        "`apostrophe_mixed_script` class runs only when it is requested explicitly.",
         "Recovery columns are measured against the `off` lane of the same noise class.",
         "",
         "| Class | Mitigation | N | Errors | Objective | Obj delta | Recall | Recall delta | Shared hits | Generation delta | Obj recovery | Recall recovery |",
@@ -44,7 +51,45 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
             f"{lane.generation_delta_on_shared_hits:+.4f} | {lane.objective_recovery:+.4f} | "
             f"{lane.recall_recovery:+.4f} |"
         )
+    lines.extend(_affected_section(result))
     return "\n".join(lines) + "\n"
+
+
+def _affected_section(result: RobustnessResult) -> list[str]:
+    """Repeat every lane over the items its class actually perturbed, when some were untouched."""
+    diluted = [lane for lane in result.lanes if lane.changed.n < lane.n]
+    if not diluted:
+        return []
+    untouched = {
+        lane.variant_class: lane.n - lane.changed.n for lane in diluted if lane.mitigation == "off"
+    }
+    lines = [
+        "",
+        "## Affected items only",
+        "",
+        "A single-mechanism class cannot perturb a question that carries none of its trigger",
+        "characters, and those untouched items pull every pooled delta above toward zero. The rows",
+        "below repeat each lane over the perturbed items only, against the SAME items' clean",
+        "baseline. Untouched items per class: "
+        + ", ".join(f"`{name}` {count}" for name, count in sorted(untouched.items()))
+        + ".",
+        "",
+        "| Class | Mitigation | Changed N | Objective | Obj delta | Recall | Recall delta | Obj recovery | Recall recovery |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for lane in result.lanes:
+        changed = lane.changed
+        if not changed.n:
+            # a class that perturbed nothing measured nothing; zeros here would read as a result
+            lines.append(f"| {lane.variant_class} | `{lane.mitigation}` | 0 |" + " - |" * 6)
+            continue
+        lines.append(
+            f"| {lane.variant_class} | `{lane.mitigation}` | {changed.n} | "
+            f"{changed.objective_score:.4f} | {changed.objective_delta:+.4f} | "
+            f"{changed.recall_at_k:.4f} | {changed.recall_delta:+.4f} | "
+            f"{changed.objective_recovery:+.4f} | {changed.recall_recovery:+.4f} |"
+        )
+    return lines
 
 
 def write_robustness_artifacts(

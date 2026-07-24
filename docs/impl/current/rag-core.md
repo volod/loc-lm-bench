@@ -625,9 +625,9 @@ one over the SAME chunks and the SAME dense index, so only the lexical side diff
 
 **No retrieval metric moved on either corpus**, with or without the dense lane, and the same holds
 when every question is re-typed with a different apostrophe variant (the committed
-`apostrophe_mixed_script` noise generator at `typo_rate=0`, which at that rate rewrites only
-apostrophes). That is the honest headline: this is a correctness fix, not a recall win, and no
-recorded retrieval verdict changes because of it.
+`apostrophe_variant` noise generator, which rewrites apostrophes and nothing else). That is the
+honest headline: this is a correctness fix, not a recall win, and no recorded retrieval verdict
+changes because of it.
 
 What DID move, measured:
 
@@ -655,7 +655,17 @@ Why the metrics cannot see it: only 2 of 95 goods questions and 14 of 250 SQuAD 
 an apostrophe at all, both corpora are internally consistent about which variant they use, and at
 k=10 the other query terms already retrieve those items. A corpus that MIXES variants (a
 re-ingested edition, a copy-pasted appendix) is where the fix pays, and neither corpus on hand is
-one; see the forward robustness-lane task for the measurement that would show it.
+one; see the forward mixed-variant-fixture task for the measurement that would show it.
+
+The end-to-end query side of the same question is now measured as its own noise class rather than
+inferred: `apostrophe_variant` re-types every apostrophe in the question and touches nothing else
+([evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark)). On the SQuAD
+final split all 6 apostrophe-bearing questions still retrieve their gold evidence at k=10 with an
+unmitigated re-typed apostrophe, so the dense e5 lane is variant-insensitive here and there is
+nothing for normalization to recover. Post-v2 the lexical lane cannot see the class either --
+`llb.rag.lexical.tokenize` unifies every variant, so a re-typed query and the index produce the
+same terms by construction, which IS the fix. What neither lane can be asked on these corpora is
+the mismatch case, where index and query disagree about the variant.
 
 ## Graph-Vector Fusion Retrieval
 
@@ -1076,7 +1086,10 @@ queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journ
 plus config validation in `tests/llb/core/test_config.py`.
 
 The end-to-end noise benchmark, model evidence, and model-specific default recommendation live in
-[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+[evaluation rigor](rigor-board-judge.md#ukrainian-query-robustness-benchmark). Its noise classes
+are one mechanism each (`transliteration`, `apostrophe_variant`, `mixed_script`,
+`keyboard_typos`), so what a mitigation lane recovers is attributable to the noise it inverts
+rather than blended across two mechanisms at once.
 
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
