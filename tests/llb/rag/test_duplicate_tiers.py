@@ -34,8 +34,8 @@ FIXTURE_CHUNKS = 15
 # tier -> (groups, collapsed, indexed after collapse)
 FIXTURE_TIERS = {
     TIER_EXACT: (2, 2, 13),
-    TIER_NORMALIZED: (2, 3, 12),
-    TIER_MASKED: (4, 7, 8),
+    TIER_NORMALIZED: (2, 4, 11),
+    TIER_MASKED: (4, 8, 7),
 }
 
 
@@ -92,12 +92,13 @@ def test_fixture_plants_the_documented_tier_ladder():
         assert stats["tier"] == tier
 
 
-def test_the_normalized_tier_does_not_reach_an_apostrophe_variant():
-    """The reused `hash`-tier normalizer tokenizes before unifying apostrophes (fixture README)."""
+def test_the_normalized_tier_reaches_an_apostrophe_variant():
+    """A U+2019 copy of a block normalizes onto its U+0027 twin (fixture README)."""
     chunks = [c for c in fixture_chunks() if "Застереження" in str(c["text"])]
     assert len(chunks) == 3
+    assert len({str(c["text"]) for c in chunks}) == 2  # the exact tier still sees two texts
     keys = {duplicate_key(str(c["text"]), TIER_NORMALIZED) for c in chunks}
-    assert len(keys) == 2  # the U+2019 copy keeps its own key
+    assert len(keys) == 1
 
 
 def test_collapse_at_a_coarser_tier_stays_offset_exact_and_keeps_each_copys_text():
@@ -139,7 +140,7 @@ def test_exact_tier_records_stay_free_of_a_text_key():
 def test_the_build_summary_names_the_tier_it_measured():
     line = format_duplicate_stats(duplicate_stats(fixture_chunks(), TIER_MASKED))
     assert "digit-masked-equivalent to another" in line
-    assert "8 indexed (7 collapsed)" in line
+    assert "7 indexed (8 collapsed)" in line
 
 
 def _vectors(rows: list[list[float]]):

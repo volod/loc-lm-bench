@@ -43,36 +43,61 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### apostrophe-variant unification before tokenization (optional)
+### split-the-apostrophe-noise-class (optional)
 
-`llb.rag.lexical.tokenize` extracts word tokens with `[\w']+` and only THEN unifies apostrophe
-variants, so a typographic apostrophe (U+2019, the one a converted PDF emits) splits a Ukrainian
-word: `зобов’язання` indexes as `зобов` + `язання` while the keyboard form `зобов'язання` indexes
-as one token. Three lanes read that one function -- the BM25 lexical index and its query side, the
-corpus-conflict `hash` tier's `normalized_sha`, and the duplicate-collapse `normalized` tier -- so
-the same near-duplicate is invisible to all three
-([RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers)). Move the
-apostrophe translation ahead of the token regex, then measure what moves: hybrid recall on a corpus
-with apostrophe-bearing terms, the `hash` tier's duplicate yield, and the residue the `normalized`
-tier reaches.
+The robustness lane's `apostrophe_mixed_script` class applies TWO mechanisms at once: it rewrites
+every apostrophe to another variant AND substitutes Cyrillic/Latin homoglyphs at `typo_rate`
+(`src/llb/eval/query_robustness_variants.py`). A mitigation lane's recovery on that class
+therefore cannot be attributed to either mechanism, and the apostrophe half is invisible whenever
+the homoglyph half dominates -- which is why the apostrophe-tokenization change had to be measured
+with the class pinned at `typo_rate=0` instead of through the lane
+([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). Split it into two
+classes (`apostrophe_variant`, `mixed_script`), keep the combined class only if a measurement wants
+it, and re-read the recorded per-class mitigation verdicts.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Change `normalize_token` / `tokenize` in `src/llb/rag/lexical.py`; the
-  duplicate tiers and the conflict hash tier reuse it unchanged.
-- User-visible outcome: Ukrainian apostrophe forms match each other on the lexical side regardless
-  of which apostrophe the source used, instead of splitting into two half-words.
-- Scope boundary: in scope -- the normalizer order, the A/B on hybrid retrieval, and the re-measured
-  hash-tier and residue yields. Out of scope -- lemmatization changes, the dense side, and rewriting
-  corpus text.
-- Data and artifact paths: `$DATA_DIR/llb/rag/hybrid/` for the A/B; existing conflict run roots.
-- Execution path: `make compare-retrieval HYBRID=1` before/after on a corpus with apostrophe terms,
-  plus `make measure-duplicate-residue` on the same store; CI covers the tokenizer on the committed
-  `samples/corpora/near_duplicate_chunks_uk_v1/` fixture, whose `Застереження` block plants exactly
-  this case.
-- Acceptance gates: `make ci` green; the report states the hybrid recall delta against the
-  measurement floor and the change in the fixture's `normalized`-tier group count.
-- Documentation target: [RAG core](current/rag-core.md) hybrid retrieval and the collapse-tier
-  section.
+- Dependencies: none. Reuse `generate_variant` and the lane/report plumbing in
+  `src/llb/eval/query_robustness*.py`; the robustness evidence is in
+  [evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark).
+- User-visible outcome: the operator can tell whether a robustness recovery came from apostrophe
+  normalization or from homoglyph repair, instead of reading one blended number.
+- Scope boundary: in scope -- the class split, the report rows, and the re-read of each recorded
+  per-class verdict. Out of scope -- new mitigation lanes and changing the typo rate default.
+- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
+- Execution path: `make bench-query-robustness` on the CUDA host with a live backend; CI covers the
+  two generators deterministically at a fixed seed.
+- Acceptance gates: `make ci` green; the report carries both classes with per-lane recovery, and
+  the recorded verdicts are restated per mechanism.
+- Documentation target: the robustness evidence in
+  [evaluation rigor](current/rigor-board-judge.md) and
+  [RAG core](current/rag-core.md#query-side-processing).
+
+### apostrophe-mixed-variant retrieval fixture (optional)
+
+Neither corpus on hand can measure what apostrophe-variant tokenization buys: each is internally
+consistent about which apostrophe it uses, so index and query split identically and every recall
+number is flat before and after the fix
+([RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence)). The case that pays is a
+corpus that MIXES variants -- a re-ingested edition, a copy-pasted appendix, two converters -- and
+the repo has no such fixture. Build one (or find a real corpus with the property), score the
+lexical lane on it, and record the retrieval delta the fix is worth when the mismatch is real.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `compare-retrieval --hybrid`, the `apostrophe_mixed_script` generator
+  at `typo_rate=0`, and the committed `samples/corpora/near_duplicate_chunks_uk_v1/` shape for a
+  planted fixture.
+- User-visible outcome: a measured answer to "what does apostrophe-variant matching buy on a corpus
+  that actually mixes variants", instead of a correctness argument with a flat metric.
+- Scope boundary: in scope -- the fixture (or corpus selection), the lexical-lane A/B, and the
+  recorded delta. Out of scope -- changing the tokenizer again and dense-side work.
+- Data and artifact paths: `$DATA_DIR/apostrophe-normalizer/<run>/`; a committed fixture under
+  `samples/` only if a planted corpus earns one.
+- Execution path: `make compare-retrieval HYBRID=1` over the mixed-variant corpus on the CUDA host;
+  CI covers the fixture's planted variant mix.
+- Acceptance gates: `make ci` green; the report states the lexical-lane recall delta against the
+  corpus's own measurement floor.
+- Documentation target:
+  [RAG core](current/rag-core.md#apostrophe-variant-tokenization-evidence).
 
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 

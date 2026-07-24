@@ -389,10 +389,10 @@ token-free fallback, the tier ladder on the committed
 `samples/corpora/near_duplicate_chunks_uk_v1/` fixture, offset-exactness and per-copy text at a
 coarse tier, exact expansion with no reusable row for a differing copy, and the residue report's
 bands/samples over hand-built vectors) plus the two coarse-tier store tests in
-`tests/llb/rag/test_duplicates_store.py` -- fake embedders, no GPU. The fixture also pins a
-LIMITATION of the reused normalizer: `tokenize` extracts word tokens BEFORE unifying apostrophe
-variants, so a typographic apostrophe (U+2019) splits a Ukrainian word and its keyboard-apostrophe
-twin does not normalize onto it.
+`tests/llb/rag/test_duplicates_store.py` -- fake embedders, no GPU. The fixture's `Застереження`
+block additionally pins apostrophe-variant equivalence: a U+2019 copy normalizes onto its U+0027
+twin (see [hybrid retrieval](#hybrid-retrieval-dense--bm25--rrf) for the tokenizer rule and what
+it moved).
 
 ## Store Lifecycle: Dynamic Corpus Refresh
 
@@ -505,8 +505,13 @@ Modules:
 
 - `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo)
   over the SAME offset-exact chunks the vector index holds; Ukrainian-aware token normalization
-  on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`'`,
-  punctuation strip); opt-in lemmatization via the base dependencies `pymorphy3` +
+  on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`` ` ``/`'`,
+  punctuation strip). Every apostrophe variant is an IN-WORD character for the token regex, which
+  is derived from the same variant list (`_APOSTROPHES`): a converted PDF writes `зобов’язання`
+  with U+2019, and a regex that admitted only U+0027 split that into `зобов` + `язання` -- two
+  half-words that no later unification can rejoin. Edge apostrophes of any variant are stripped
+  after unification, so `'слово'`, `` `слово` ``, and `‘слово’` all index as the bare term;
+  opt-in lemmatization via the base dependencies `pymorphy3` +
   `pymorphy3-dicts-uk`, collapsing cases/inflection to lemmas at index AND query time -- the stored
   chunk text stays byte-identical (unit-tested); `rrf_fuse` implements the weighted RRF
   (`score = w/(60+dense_rank) + (1-w)/(60+lexical_rank)`) with deterministic tie-breaks.
@@ -525,6 +530,11 @@ Modules:
   (`meta.lexical = {lemmatize, n_terms}`). Loading a hybrid store whose lexical file is missing
   refuses with a rebuild message, and `run-eval --retrieval-mode hybrid` over a dense-only store
   refuses too (`_load_store`); a non-hybrid config over a hybrid store serves dense-only.
+  The persisted file carries `LEXICAL_INDEX_VERSION`, which is the TOKENIZER generation as much as
+  the format: postings are tokenizer output, and the query is tokenized by whichever build reads
+  them, so `LexicalIndex.load` refuses a version it did not write and names the rebuild command
+  (current: `bm25-uk-v2`; `v1` predates apostrophe variants becoming in-word). Bump it whenever
+  tokenization changes.
 
 Knobs (all `RunConfig` fields, hence in the manifest and the sweep cell fingerprint):
 `retrieval_mode=hybrid`, `fusion_weight` (dense share of the RRF, default 0.5; 1.0 == dense
@@ -600,6 +610,52 @@ here. Operators who want hybrid for exact-term robustness (see the exact-term fi
 above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
 (`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
 decision hangs on it.
+
+### Apostrophe-variant tokenization evidence
+
+Durable evidence (2026-07-24, CUDA host, pinned e5-base, k=10; stores and reports under
+`$DATA_DIR/apostrophe-normalizer/`) for making every apostrophe variant an in-word character.
+Two corpora, each scored with the v1 tokenizer (unification after tokenizing) and the shipped v2
+one over the SAME chunks and the SAME dense index, so only the lexical side differs:
+
+| corpus | items | apostrophe questions | lexical terms v1 -> v2 | recall@10 (dense+BM25) v1 -> v2 | lexical-only recall@10 v1 -> v2 |
+| --- | ---: | ---: | --- | --- | --- |
+| goods PDFs (U+2019 corpus) | 95 | 2 | 4274 -> 4268 | 0.6842 -> 0.6842 | 0.5053 -> 0.5053 |
+| UA SQuAD fixture (U+0027 corpus) | 250 | 14 | 8276 -> 8276 | 0.9640 -> 0.9640 | 0.8600 -> 0.8600 |
+
+**No retrieval metric moved on either corpus**, with or without the dense lane, and the same holds
+when every question is re-typed with a different apostrophe variant (the committed
+`apostrophe_mixed_script` noise generator at `typo_rate=0`, which at that rate rewrites only
+apostrophes). That is the honest headline: this is a correctness fix, not a recall win, and no
+recorded retrieval verdict changes because of it.
+
+What DID move, measured:
+
+- **Vocabulary.** On the U+2019 corpus, 62 fragment terms (`зв`, `зобов`, `комп`, `обов`, `пам`,
+  `дистриб`, ...) disappeared and 56 whole-word terms took their place; apostrophe-bearing index
+  terms went from 1 to 57. The SQuAD corpus writes only U+0027, so its index is unchanged -- which
+  is the check that the change is a no-op where a corpus never used another variant.
+- **Variant invariance on the query side.** Across the SQuAD questions the lexical lane sees 16
+  apostrophe-bearing query terms under v2 no matter which variant was typed; under v1 that count
+  collapsed from 14 (as typed) to 2 (re-typed with another variant), i.e. 12 words silently
+  shattered into fragments. Of the 8 that the corpus can actually match, a variant-mismatched
+  query kept 1 under v1 and keeps all 8 under v2.
+- **A dead query term became live.** `з'явиться` typed with the keyboard apostrophe returned ZERO
+  BM25 candidates against the U+2019 goods corpus under v1 (its postings held `з` + `явиться`) and
+  returns hits under v2.
+- **Duplicate-collapse `normalized` tier.** It now merges an apostrophe-variant copy of a repeated
+  block (the committed near-duplicate fixture's `Застереження` group: 2 -> 3 copies). On the goods
+  corpus the measured residue is unchanged (26 / 311 collapsible for `recursive`, 55 / 357 for
+  `sentence`) -- its repeated blocks use one variant consistently.
+- **Corpus-conflict `hash` tier.** Document-level duplicate yield is unchanged on all three
+  measured corpora (goods 0, near-duplicate fixture 0, `conflicts_uk_v1` 1 group): no whole-document
+  near-duplicate in them hinges on an apostrophe.
+
+Why the metrics cannot see it: only 2 of 95 goods questions and 14 of 250 SQuAD questions contain
+an apostrophe at all, both corpora are internally consistent about which variant they use, and at
+k=10 the other query terms already retrieve those items. A corpus that MIXES variants (a
+re-ingested edition, a copy-pasted appendix) is where the fix pays, and neither corpus on hand is
+one; see the forward robustness-lane task for the measurement that would show it.
 
 ## Graph-Vector Fusion Retrieval
 
