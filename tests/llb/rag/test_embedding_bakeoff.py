@@ -9,15 +9,12 @@ import pytest
 
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.embedding_bakeoff import (
-    KIND_API,
-    KIND_LOCAL,
-    BuiltStore,
     api_lane_enabled,
     best_recall,
     run_bakeoff,
     score_candidate,
-    slugify_model,
 )
+from llb.rag.embedding_bakeoff_models import KIND_API, KIND_LOCAL, BuiltStore, slugify_model
 from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
 
@@ -209,7 +206,9 @@ def test_render_markdown_has_table_and_recommendation():
     )
     md = render_markdown(report)
     assert "| model | kind | recall@k |" in md
-    assert "Recommended embedder" in md
+    # The point-estimate leader is reported as such; the RECOMMENDATION is the paired verdict
+    # (see tests/llb/rag/test_embedding_bakeoff_uncertainty.py).
+    assert "Point-estimate leader" in md and "Verdict:" in md
     assert "build-index --embedding-model" in md
 
 

@@ -146,11 +146,13 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) (needs ".[rag]")
+compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput + paired delta vs EMBED_BASELINE) on GOLDSET; MODELS= EMBED_API_MODEL= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) EMBED_RESAMPLES= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(MODELS),--models "$(MODELS)",) \
+		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
+		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \

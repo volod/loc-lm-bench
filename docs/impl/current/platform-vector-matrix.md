@@ -291,9 +291,14 @@ fingerprint guard, and the opt-in Cohere API-row egress gate.
 ```bash
 make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10 NOISE_FLOOR=1
 llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 --noise-floor \
-  --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-large,BAAI/bge-m3
-make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply the winner
+  --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-large,BAAI/bge-m3 \
+  --baseline intfloat/multilingual-e5-base
+make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOPTED embedder
 ```
+
+Every candidate row carries a PAIRED delta interval against `--baseline` plus the win/loss/tie
+ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
+rank; see [RAG core](rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
 
 Recommended embedder for the 16 GB host: `intfloat/multilingual-e5-base`, the current default. The
 2026-07-10 `embedding-bakeoff-full-corpus` evidence (four local candidates over a verified 44-item
@@ -302,9 +307,13 @@ e5-large and bge-m3) with ~1.8x the embed throughput of the 1024-dim pair (69 vs
 GPU) and the smallest index (4.99 MB vs 6.10 MB); e5-large was the MRR winner (0.795 vs 0.740) and
 tied e5-base at recall@20. That goldset is no longer on disk, and the 2026-07-24 floor re-read on
 the accepted goldset that survives does NOT reproduce the ranking -- `bge-m3` leads there by 0.050
-recall@10 against a zero floor, and e5-base ties e5-large. The default is retained because the
-challenger's lead is two questions on 40 with no paired interval, at 3.2x the embed cost; the
-tables, the floor, and the open question are in
-[RAG core](rag-core.md#the-recommendation-re-read-against-the-floor). The paraphrase/STS `lang-uk`
-model collapses on both runs (recall@10 0.455 / 0.475). Embed VRAM peaked ~4 GB, so all candidates
-fit the 16 GB host.
+recall@10 against a zero floor, and e5-base ties e5-large. The 2026-07-24 paired re-read then
+settles the reading: on that accepted goldset the verdict is RETAIN (`bge-m3` +0.050
+`[-0.050, +0.150]`, 3 wins / 1 loss / 36 ties), while on the committed 250-item UA fixture the
+verdict is ADOPT `e5-large` (+0.020 `[+0.004, +0.040]`, 5 wins / 0 losses) -- two corpora, two
+different separated candidates, so the default stays put until an accepted operator-corpus ledger
+separates one. Tables and the full reading are in
+[RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty). The paraphrase/STS
+`lang-uk` model collapses on every run (recall@10 0.455 / 0.475 / 0.856) and is the one row that
+separates from the baseline in the negative direction on both corpora. Embed VRAM peaked ~4 GB, so
+all candidates fit the 16 GB host.

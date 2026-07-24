@@ -1,5 +1,6 @@
 """Embedder bake-off command (`compare-embeddings`): rank encoders on one gold set."""
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -9,17 +10,24 @@ from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root, _dir_size_bytes
 
+# Pure, dependency-free defaults (no FAISS / torch pulled in): safe as Typer option defaults.
+from llb.rag.embedding_bakeoff_uncertainty import (
+    DEFAULT_BASELINE_MODEL,
+    DEFAULT_RESAMPLES,
+    DEFAULT_SEED,
+)
+
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
     from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.rag.embedding_bakeoff import StoreBuilder
+    from llb.rag.embedding_bakeoff_models import StoreBuilder
 
 
 def _local_store_builder(cfg: "RunConfig", stores_dir: Path) -> "StoreBuilder":
     """Build+save one FAISS store per embedding model, timing the embed pass and measuring size."""
     import time
 
-    from llb.rag.embedding_bakeoff import BuiltStore, slugify_model
+    from llb.rag.embedding_bakeoff_models import BuiltStore, slugify_model
     from llb.rag.store import RagStore
 
     def build(model: str) -> "BuiltStore":
@@ -58,7 +66,7 @@ def _api_store_builder(
     import time
 
     from llb.rag.api_embedder import ApiEmbedder, litellm_embed
-    from llb.rag.embedding_bakeoff import KIND_API, BuiltStore, slugify_model
+    from llb.rag.embedding_bakeoff_models import KIND_API, BuiltStore, slugify_model
     from llb.rag.store import RagStore
 
     def build(model: str) -> "BuiltStore":
@@ -126,6 +134,15 @@ def compare_embeddings_cmd(
     noise_floor_replicates: Optional[int] = typer.Option(
         None, help="--noise-floor: jitter replicates per candidate (default 64)"
     ),
+    baseline: str = typer.Option(
+        DEFAULT_BASELINE_MODEL,
+        help="incumbent embedder every candidate is PAIRED against (empty disables the paired "
+        "intervals and the adopt-or-retain verdict)",
+    ),
+    resamples: int = typer.Option(
+        DEFAULT_RESAMPLES, help="paired percentile-bootstrap resamples for the delta intervals"
+    ),
+    seed: int = typer.Option(DEFAULT_SEED, help="seed for the shared bootstrap index sets"),
     out: Optional[Path] = typer.Option(
         None, help="write report.md here (default: $DATA_DIR/compare-embeddings/<ts>/report.md)"
     ),
@@ -133,18 +150,17 @@ def compare_embeddings_cmd(
     """Rank candidate embedders for Ukrainian RAG on one gold set (recall@k / MRR + throughput).
 
     Builds one store per candidate over the SAME corpus + chunking, scores the source-span metric,
-    and writes a ranked report.md with the recommended embedder. Heavy store builds stay outside
-    quick CI. The opt-in --api-model row is corpus egress (bake-off evidence only; scored retrieval
-    stays local) and is refused unless --data-classification open plus explicit consent.
+    and writes a ranked report.md carrying each candidate's PAIRED delta interval against the
+    baseline embedder plus an adopt-or-retain verdict. Heavy store builds stay outside quick CI.
+    The opt-in --api-model row is corpus egress (bake-off evidence only; scored retrieval stays
+    local) and is refused unless --data-classification open plus explicit consent.
     """
     from llb.bench.common import new_run_timestamp
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
     from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.rag.embedding_bakeoff import (
-        DEFAULT_LOCAL_CANDIDATES,
-        run_bakeoff,
-    )
+    from llb.rag.embedding_bakeoff import run_bakeoff
+    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
     cfg = load_config(
@@ -185,9 +201,16 @@ def compare_embeddings_cmd(
         consent=consent,
         noise_floor=noise_floor,
         noise_floor_replicates=noise_floor_replicates,
+        baseline=baseline.strip() or None,
+        resamples=resamples,
+        seed=seed,
     )
 
     typer.echo(format_report(report))
     report_path = out if out is not None else run_dir / "report.md"
     report_path.write_text(render_markdown(report), encoding="utf-8")
-    typer.echo(f"[compare-embeddings] wrote report -> {report_path}")
+    # The paired ledger and every interval bound also land machine-readable beside the prose: a
+    # later re-read of this recommendation needs the numbers, not a rendered table.
+    json_path = report_path.with_suffix(".json")
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    typer.echo(f"[compare-embeddings] wrote report -> {report_path} ; {json_path}")

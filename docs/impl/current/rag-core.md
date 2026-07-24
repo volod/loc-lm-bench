@@ -1404,13 +1404,18 @@ are pure + unit-tested):
 "which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
 over the SAME corpus + chunking (each under its own family convention), scores recall@k / MRR by the
 model-independent source-span metric (reusing `evaluate_retrieval`), and reports embed throughput,
-index size, dimension, and device -- ending in a written recommendation the operator applies via
-`build-index --embedding-model <winner>` + `RunConfig.embedding_model`. Artifacts:
-`$DATA_DIR/compare-embeddings/<timestamp>/report.md` plus one saved store per candidate under
+index size, dimension, and device -- ending in the adopt-or-retain verdict below, which the
+operator applies via `build-index --embedding-model <winner>` + `RunConfig.embedding_model`.
+Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and `report.json` plus one saved
+store per candidate under
 `stores/<model-slug>/`. Default local candidates: `intfloat/multilingual-e5-base` (current default),
 `intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
+The lane is four modules: `embedding_bakeoff_models.py` (the item/store seams and the row +
+report shapes every consumer reads), `embedding_bakeoff.py` (build, score, rank),
+`embedding_bakeoff_uncertainty.py` (the paired intervals and the verdict, below), and
+`embedding_bakeoff_report.py` (ASCII + Markdown rendering).
 
 `NOISE_FLOOR=1` (`--noise-floor`) adds the [measurement floor](#measurement-floor---noise-floor)
 per candidate to both the ASCII table and `report.md`, ending in the one sentence the
@@ -1418,6 +1423,40 @@ recommendation needs: how far the winner leads the runner-up and whether that le
 floor. Without it `report.md` says so explicitly instead of leaving the reader to assume a lead is
 real. This lane is where the floor matters most -- four candidates on one corpus routinely differ
 by a single item.
+
+### Paired uncertainty and the adopt-or-retain verdict
+
+The floor answers whether a gap is numeric noise; it cannot answer whether the SAME gap survives a
+different draw of questions, and on a 40-item set a "winner" is routinely two questions.
+`src/llb/rag/embedding_bakeoff_uncertainty.py` supplies the second reading, reusing
+`bootstrap_index_sets` / `paired_comparison` from the fusion sweep
+(`src/llb/rag/fusion_evidence/stats.py` -- they take metric vectors, not fusion rows):
+
+- Every candidate is retrieved ONCE per item (`retrieve_pairs`), and both the published row and its
+  per-item vectors (`item_vectors`: recall@k and reciprocal rank) come from that one pass, so a row
+  and its interval can never disagree.
+- `paired_rows` draws ONE set of resample indexes (common random numbers, seeded) and reuses it for
+  every candidate and metric, so each interval is about the DIFFERENCE against the baseline
+  embedder rather than two lanes' separate sampling noise. Each row carries
+  `paired_vs_baseline` = `{baseline, metrics: {recall_at_k, mrr}}` with the delta interval, the
+  item-level win/loss/tie ledger, and the exact sign-test p.
+- The baseline is `--baseline` (`EMBED_BASELINE=`), defaulting to the shipped
+  `intfloat/multilingual-e5-base`, because a swap recommendation is a statement about replacing
+  THAT row. A baseline the run did not score leaves the rows bare and the verdict `undecided`
+  instead of silently re-pointing the comparison. `--resamples` (`EMBED_RESAMPLES=`, default 2000)
+  and `--seed` (default 13) pin the draw.
+- `decide_verdict` states the recommendation as **adopt** or **retain**: a candidate is "separated"
+  only when its 95% paired recall@k interval lies wholly above zero. Otherwise the incumbent is
+  retained, whatever the point estimate says. `best_recall` is still reported, relabeled in
+  `report.md` as the point-estimate leader -- it is no longer the recommendation.
+- Artifacts: `report.md` (the table gains `recall delta vs <baseline>` / `w/l/t` / `sign p` columns
+  and the verdict line) plus `report.json` beside it with every interval bound and ledger, so a
+  later re-read recomputes from numbers instead of prose.
+
+Tests: `tests/llb/rag/test_embedding_bakeoff_uncertainty.py` (vector means matching the published
+row, the paired ledger, seed determinism, a baseline paired against itself at exactly zero, a
+one-item lead that does NOT separate, adopt/retain/undecided, the report columns, and the CLI's
+`report.json`) -- all over fake stores, no FAISS, no GPU.
 
 ### The recommendation re-read against the floor
 
@@ -1447,13 +1486,64 @@ What the re-read establishes:
   between those two is not reproduced either. The `lang-uk` paraphrase model collapses on both
   runs, which is the one part of the recorded reading that holds.
 - **A zero floor does not make a 2-item lead a ranking.** 0.050 on n=40 is two questions, and the
-  floor answers only the numeric-noise question; SAMPLING is now the binding constraint on this
-  lane and it has no paired interval. Settling the embedder choice is forward work in
-  [`plan.md`](../plan.md) (`embedder-bake-off-paired-uncertainty`).
+  floor answers only the numeric-noise question; SAMPLING is the binding constraint on this lane,
+  which the paired lane below measures.
 - **The default is unchanged.** `RunConfig.embedding_model` stays `intfloat/multilingual-e5-base`:
   the row that would replace it is one item-set's 2-question lead bought at 3.2x the embed cost
-  (5.5 vs 17.7 chunks/s) and 1.23x the index, and no accepted-goldset comparison with uncertainty
-  supports the swap yet.
+  (5.5 vs 17.7 chunks/s) and 1.23x the index.
+
+### The recommendation re-read with paired uncertainty
+
+CUDA host (`LLB_EMBED_DEVICE=cuda`), 2026-07-24; the four default local candidates at k=10,
+`recursive` 800/120, flat mode, 2000 resamples, seed 13, `NOISE_FLOOR=1`. Reports (`report.md` +
+`report.json`) under `$DATA_DIR/compare-embeddings/paired-uncertainty-pdf/compare-embeddings/<run>/`
+and `.../paired-uncertainty-fixture/compare-embeddings/<run>/`; the two run configs are
+`$DATA_DIR/compare-embeddings/paired-uncertainty.yaml` and `...-fixture.yaml`. Both corpora report
+a `+/-0.000` floor with 0 fragile items, so every number below is a SAMPLING statement.
+
+Accepted converted-PDF goldset (40 items, 1120 chunks) -- deltas against `e5-base`:
+
+| model | recall@10 | MRR | recall delta | w/l/t | sign p | chunks/s |
+| --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `BAAI/bge-m3` | 0.975 | 0.917 | +0.050 [-0.050, +0.150] | 3/1/36 | 0.625 | 48.1 |
+| `intfloat/multilingual-e5-large` | 0.925 | 0.871 | 0.000 [-0.075, +0.075] | 1/1/38 | 1.000 | 47.8 |
+| `intfloat/multilingual-e5-base` | 0.925 | 0.852 | 0.000 [0.000, 0.000] | 0/0/40 | 1.000 | 75.9 |
+| `lang-uk/ukr-paraphrase...` | 0.475 | 0.241 | -0.450 [-0.600, -0.275] | 1/19/20 | 0.000 | 128.2 |
+
+Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 chunks):
+
+| model | recall@10 | MRR | recall delta | w/l/t | sign p | chunks/s |
+| --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `intfloat/multilingual-e5-large` | 1.000 | 0.879 | +0.020 [+0.004, +0.040] | 5/0/245 | 0.062 | 34.5 |
+| `BAAI/bge-m3` | 0.992 | 0.849 | +0.012 [0.000, +0.028] | 3/0/247 | 0.250 | 33.3 |
+| `intfloat/multilingual-e5-base` | 0.980 | 0.847 | 0.000 [0.000, 0.000] | 0/0/250 | 1.000 | 32.0 |
+| `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
+
+Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
+**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture. What that establishes:
+
+- **The `bge-m3` lead the floor re-read surfaced is an item set, not a ranking.** +0.050 on 40
+  items is 3 wins against 1 loss with 36 questions tied; the paired interval spans zero
+  (`[-0.050, +0.150]`) and the exact sign test is p=0.625. The floor said the delta is not numeric
+  noise and the paired lane says it is not evidence of a better encoder either.
+- **The two corpora disagree, so the ranking is corpus-specific.** The PDF corpus's separated
+  candidate is none; the fixture's is `e5-large` (+0.020, 5 wins, 0 losses), where `bge-m3` --
+  the PDF leader -- does not separate (`[0.000, +0.028]`). A single-corpus bake-off cannot be read
+  as a general Ukrainian embedder ranking.
+- **The shipped default is unchanged.** `RunConfig.embedding_model` stays
+  `intfloat/multilingual-e5-base`. The one ADOPT is on a committed toy fixture whose baseline is
+  already at 0.980 recall (5 questions of headroom), its sign test is p=0.062 -- 5 discordant
+  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction -- and the same
+  candidate is flat on the accepted operator-corpus ledger while embedding 1.6x slower there
+  (47.8 vs 75.9 chunks/s) for a 1.23x index.
+- **First-hit rank is where `bge-m3` does separate on the PDF corpus.** Its MRR delta is
+  +0.064 `[+0.008, +0.137]` (5 wins / 1 loss) while its recall delta does not clear zero -- it
+  ranks the same evidence earlier without finding more of it. The verdict bar is recall@k alone,
+  so this does not adopt anything; whether a first-hit-rank gain is worth adopting under a
+  reranker or a small `top_k` is forward work in [`plan.md`](../plan.md).
+- **The lane can resolve a real gap at these sample sizes.** The `lang-uk` paraphrase row separates
+  in the NEGATIVE direction on both corpora (-0.450 and -0.124, p=0.000), so a wide interval on the
+  leaders is headroom exhaustion, not an inert statistic.
 
 Multi-objective tune (`llb tune --objectives ...`) may sample that same shortlist as a categorical
 knob; the tuner `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder
@@ -1787,7 +1877,10 @@ Verdicts re-read against the measured floors:
   item either way.
 - Embedder bake-off: the recorded `e5-base` recommendation is NOT reproduced on the accepted
   goldset that still exists, and the floor is not why -- see
-  [the bake-off re-read](#the-recommendation-re-read-against-the-floor).
+  [the bake-off re-read](#the-recommendation-re-read-against-the-floor). The paired re-read then
+  showed the challenger's lead does not clear its SAMPLING interval either, and the two scored
+  corpora separate different candidates -- see
+  [the paired re-read](#the-recommendation-re-read-with-paired-uncertainty).
 - Vector-store backends: `faiss`, `chroma`, and `qdrant` return the identical recall@10 / MRR on
   this corpus, so the `best (recall@k)` line is label order, not a ranking -- see
   [platform matrix](platform-vector-matrix.md#embedding-bake-off).
