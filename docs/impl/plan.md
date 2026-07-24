@@ -43,34 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### lexical-row-re-read-of-the-recorded-hybrid-verdicts (optional)
-
-`compare-retrieval --hybrid` now publishes a `lexical` row (BM25 alone, fusion weight 0) beside
-`dense` and the fused rows ([RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf)).
-Every recorded hybrid verdict predates it and therefore reads a fused number without knowing how
-each lane retrieved alone -- which is exactly the reading that hid a half-broken lexical lane
-behind a saturated dense one on the mixed-variant fixture
-([RAG core](current/rag-core.md#what-the-fix-is-worth-when-the-corpus-mixes-variants)). Re-run the
-recorded hybrid comparisons with the new row and re-read each `FUSION_WEIGHT` recommendation:
-a weight tuned when one lane was silently weak is a weight tuned on the wrong evidence.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-retrieval HYBRID=1 NOISE_FLOOR=1` unchanged; the row
-  ships already, so this is a re-run plus a re-read.
-- User-visible outcome: every published hybrid recommendation states what each lane retrieves on
-  its own, so a fusion weight is chosen knowing which lane carries the recall.
-- Scope boundary: in scope -- the re-runs on the corpora whose verdicts are recorded (goods PDFs,
-  quickstart accepted goldset, `exact_terms_uk`), the `lexical` row per corpus, and a keep-or-change
-  verdict per recorded `FUSION_WEIGHT`. Out of scope -- new fusion mechanics and re-tuning the
-  weight grid.
-- Data and artifact paths: each comparison keeps its existing report path.
-- Execution path: `make compare-retrieval HYBRID=1 NOISE_FLOOR=1 GOLDSET=<gs>` per recorded corpus
-  on the CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; each report carries the `lexical` row against the corpus's own
-  floor, and each recorded fusion-weight recommendation is restated as surviving or not.
-- Documentation target: the hybrid-retrieval evidence section of
-  [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
-
 ### noise-floor-for-the-remaining-comparison-lanes (optional)
 
 The measurement floor is wired into `compare-retrieval` only. `compare-embeddings` (its own
@@ -584,6 +556,42 @@ on a corpus whose facts differ by one number.
   the fragile count, and the human's false-merge reading.
 - Documentation target:
   [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers).
+
+### goods-fusion-weight-accepted-ledger
+
+Settle the goods-corpus fusion-weight verdict on an item set someone accepted. The recorded
+verdict ("the BM25 side costs recall at w=0.5, pin `FUSION_WEIGHT=0.7`") was measured on a
+verified 44-item quickstart-PDF accepted goldset that is no longer on disk, and the lexical-row
+re-read could not reproduce it: on the SAME corpus at the SAME chunking, the 95-item drafted
+goldset inverts it -- fusion ADDS recall at w=0.5 (+0.021, +0.053 with lemmas, against a
++/-0.000 floor) and w=0.7 is the worst of the three weights for the best row
+([RAG core](current/rag-core.md#lexical-row-re-read-of-the-fusion-weight-verdict)). The pin is
+already withdrawn; what remains is deciding whether the recorded verdict was an artifact of its
+item set or of the drafting, which only an accepted ledger over that corpus can answer.
+
+- Agent status: HUMAN-GATED
+- Dependencies: none in code -- `make compare-retrieval HYBRID=1 NOISE_FLOOR=1` and the
+  verification gate are both current behavior. Human step that gates completion: a reviewer
+  accepts (or rejects) enough of the drafted goods questions through
+  `make verify-review` / `make verify-accept` to produce an accepted goods ledger.
+- User-visible outcome: an operator on a converted-PDF Ukrainian corpus gets a fusion-weight
+  recommendation backed by human-reviewed questions, instead of two drafted-versus-vanished item
+  sets that disagree.
+- Scope boundary: in scope -- worksheet review, the accepted ledger, one re-run per recorded
+  weight with the `lexical` row, and a keep-or-change verdict on the recorded table. Out of scope
+  -- widening the weight grid, new fusion mechanics, and changing the shipped defaults before the
+  accepted run supports it.
+- Data and artifact paths: the drafted bundle under
+  `$DATA_DIR/graph-vector-fusion-multihop/goods-draft/` plus a new
+  `$DATA_DIR/lexical-row-reread/goods-accepted-w<weight>/` per weight.
+- Execution path: `make verify-review` then `make verify-accept` over the goods draft, then
+  `make compare-retrieval CONFIG=<cfg> GOLDSET=<accepted>/goldset.jsonl SPLIT= HYBRID=1
+  NOISE_FLOOR=1` at `FUSION_WEIGHT=0.5,0.6,0.7`.
+- Acceptance gates: every worksheet row has a decision; the three weights are scored on the
+  identical accepted item set with the `lexical` row and the corpus's floor; the recorded table is
+  restated as reproduced, corrected, or retired.
+- Documentation target: the hybrid-retrieval evidence section of
+  [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
 
 ### multihop-ledger-human-acceptance
 

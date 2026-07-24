@@ -84,15 +84,19 @@ def test_hybrid_weight_one_reproduces_the_dense_order():
 
 def test_hybrid_weight_zero_is_the_lexical_comparison_row():
     """The `lexical` row of `compare-retrieval --hybrid`: fusion weight 0 drops the dense lane
-    from candidate membership entirely, so the row is BM25 alone over the same chunks."""
+    from candidate membership entirely, so the row is BM25 alone over the same chunks -- and the
+    dense index is not searched at all, since its candidates could not survive the fusion."""
     chunks = _chunks(4)
     chunks[3]["text"] = "наказ 4821 про фінансування"
     lexical = LexicalIndex.build([c["text"] for c in chunks])
     store = _hybrid_store(chunks, [0, 1, 2], lexical, weight=0.0)
+    searched = []
+    store.index.search = lambda *args: searched.append(args) or ([[1.0]], [[0]])  # type: ignore[method-assign]
     hits = store.retrieve("наказ 4821", k=4)
     # only the lexically-matching chunk is a candidate; the dense lane contributes nothing
     assert [h["chunk_id"] for h in hits] == ["c3"]
     assert [h["rank"] for h in hits] == [1]
+    assert searched == []
 
 
 def test_chunk_filter_applies_before_fusion_on_both_sides():

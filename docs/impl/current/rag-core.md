@@ -580,16 +580,22 @@ grid/tuner coverage in
 `tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
 
 Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick CI), via
-`compare-retrieval --hybrid`:
+`compare-retrieval --hybrid`; the `lexical` column was added by the 2026-07-24 re-read below,
+which reproduced every other cell to four decimals:
 
-- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture), k=10: all four rows hold
-  recall 1.000 / MRR 1.000 -- hybrid is equal-or-better than dense on the committed goldset (the
-  gate), and the fixture is too small to discriminate further.
+- `samples/goldsets/ip_regulation_uk` (8 items, saturated fixture), k=10 and k=3: all five rows
+  hold recall 1.000 / MRR 1.000 -- hybrid is equal-or-better than dense on the committed goldset
+  (the gate), and the fixture is too small to discriminate further. The `lexical` row now shows
+  the saturation is not a fusion artifact: BM25 alone also scores 1.000 / 1.000.
 - `samples/goldsets/exact_terms_uk` (8 exact-term items), k=10: recall ties at 1.000 but hybrid
-  MRR 0.938 vs dense 0.713; at k=3 hybrid holds recall 1.000 / MRR 0.938 vs dense 0.875 / 0.688
-  -- the strict exact-term win the lexical side exists for. `hybrid+lemmas` matched plain
-  `hybrid` on both fixtures (exact numbers do not inflect). The oracle-doc row equals dense on
-  these single-document corpora by construction (a doc filter is a no-op with one doc).
+  MRR 0.938 vs dense 0.713 and `lexical` 0.781; at k=3 hybrid holds recall 1.000 / MRR 0.938
+  while dense is 0.875 / 0.688 and `lexical` 0.875 / 0.750 -- the strict exact-term win the
+  lexical side exists for. The isolated row sharpens what that win IS: the fused row beats BOTH
+  lanes alone at both cutoffs, and at k=3 it retrieves an item NEITHER lane ranked in its own top
+  3. Hybrid is buying complementarity here, not standing in for a weak dense lane.
+  `hybrid+lemmas` matched plain `hybrid` on both fixtures (exact numbers do not inflect). The
+  oracle-doc row equals dense on these single-document corpora by construction (a doc filter is a
+  no-op with one doc).
 
 Durable evidence, full corpus (2026-07-10, hybrid-comparison-full-corpus on the CUDA host,
 outside quick CI): dense vs hybrid over the verified 44-item quickstart-PDF accepted goldset
@@ -607,17 +613,54 @@ gridded across three runs:
 | hybrid+lemmas w=0.6 | 0.932 | 0.759 |
 | hybrid+lemmas w=0.7 | 0.932 | 0.753 |
 
-Fusion-knob verdict for this corpus: dense-only STAYS the default -- at the 0.5 default the
-BM25 side actively costs recall (-0.023), and only a dense-heavy `fusion_weight=0.7` climbs
-back to the dense recall while adding a small MRR gain (+0.008). The measured lemmatization
+Fusion-knob verdict as recorded for this corpus: dense-only STAYS the default -- at the 0.5
+default the BM25 side actively costs recall (-0.023), and only a dense-heavy `fusion_weight=0.7`
+climbs back to the dense recall while adding a small MRR gain (+0.008). The measured lemmatization
 delta on an inflection-rich corpus is a real but MRR-only effect: +0.020 MRR at w=0.5 with
 recall unchanged (the tiny-fixture zero was a corpus artifact, as predicted). The oracle-doc
 router headroom row is finally non-degenerate on this multi-document corpus: perfect document
 routing would buy +0.022 recall / +0.013 MRR -- modest, so a learned router stays unattractive
-here. Operators who want hybrid for exact-term robustness (see the exact-term fixture win
-above) should pin `FUSION_WEIGHT=0.7`; the end-to-end cross-check
-(`make sweep SWEEP_RAG_GRID="fusion_weight=0.5,0.7"`) is worth running once a model roster
-decision hangs on it.
+here.
+
+**The `FUSION_WEIGHT=0.7` pin from that verdict is WITHDRAWN** -- see the re-read below.
+
+### Lexical-row re-read of the fusion-weight verdict
+
+Re-read (2026-07-24, CUDA host, `compare-retrieval --hybrid --noise-floor`, reports under
+`$DATA_DIR/lexical-row-reread/`) once the `lexical` row existed. Both committed fixtures
+reproduced every recorded cell exactly, so the harness is unchanged; the full-corpus table above
+could NOT be reproduced, because its verified 44-item quickstart-PDF accepted goldset is no
+longer on disk. Two item sets that ARE on disk were run instead: the SAME 5-document goods corpus
+at the same `recursive` 800/120 chunking with its 95-item drafted goldset, and a human-accepted
+40-item PDF goldset over a single-document corpus.
+
+| corpus / item set | `dense` | `lexical` | `hybrid` w=0.5 | `hybrid+lemmas` w=0.5 | floor (r / MRR) |
+| --- | --- | --- | --- | --- | --- |
+| goods, 95 drafted (n=95) | 0.674 / 0.409 | 0.621 / 0.435 | 0.695 / 0.449 | **0.726** / **0.463** | 0.000 / 0.008 |
+| PDF, 40 accepted (n=40) | 0.925 / 0.852 | 0.875 / 0.790 | 0.925 / 0.869 | 0.925 / **0.906** | 0.000 / 0.006 |
+
+On the goods corpus the weight sweep runs `hybrid` 0.695 / 0.695 / 0.705 recall and
+`hybrid+lemmas` 0.726 / 0.726 / 0.716 at w=0.5 / 0.6 / 0.7 -- the dense-heavy weight the recorded
+verdict recommended is the WORST of the three for the best row.
+
+What the re-read changes:
+
+- **The premise of the recorded verdict does not hold on either available item set.** "The BM25
+  side actively costs recall at w=0.5" was the reason to pin 0.7; here fusion ADDS recall on the
+  goods corpus (+0.021 hybrid, +0.053 with lemmas, against a +/-0.000 recall floor) and ties it on
+  the accepted set while adding +0.054 MRR (floor +/-0.006). The pin is withdrawn: on both sets
+  `w=0.5` is at least as good as `w=0.7`, and `hybrid+lemmas` is the best row everywhere.
+- **The `lexical` row is why that premise was risky to state.** BM25 alone retrieves 0.621 on the
+  goods corpus against dense's 0.674 -- with a HIGHER MRR (0.435 vs 0.409). The lexical lane is
+  not the weak lane; whether fusing it pays is a property of the ITEM SET, not of lane strength,
+  and a fused number alone cannot tell those apart. That is the reading the row exists for.
+- **What does NOT change:** the shipped defaults. Hybrid stays opt-in (`retrieval_mode=flat`) and
+  `fusion_weight` keeps its 0.5 default, so no configuration ships differently -- only the advice
+  to pin 0.7 is retracted.
+- **What stays unsettled:** the recorded table's item set was human-accepted and the goods item
+  set is drafted, so this re-read cannot say the recorded numbers were wrong -- only that nothing
+  on hand reproduces them. Settling it needs an accepted ledger over the goods corpus; that is the
+  forward `goods-fusion-weight-accepted-ledger` task.
 
 ### Apostrophe-variant tokenization evidence
 

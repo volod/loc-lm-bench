@@ -223,14 +223,19 @@ class RagStore:
         """Fuse the dense and lexical top candidates with weighted RRF; return the top k."""
         assert self.lexical is not None
         depth = max(self.fusion_candidates, k)
-        search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), depth)
-        scores, ids = self.index.search(query_vec, max(1, search_k))
-        dense_ids = [cid for cid, _ in self._ranked_candidates(ids, scores)]
         allowed: set[int] | None = None
         if chunk_filter is not None:
             allowed = {i for i, c in enumerate(self.chunks) if chunk_filter(c)}
-            dense_ids = [cid for cid in dense_ids if cid in allowed]
-        dense_ids = dense_ids[:depth]
+        dense_ids: list[int] = []
+        # A zero-weight lane contributes neither score nor candidate membership to the fusion, so
+        # searching the dense index would only cost time -- this is the `lexical` comparison row.
+        if self.fusion_weight > 0.0:
+            search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), depth)
+            scores, ids = self.index.search(query_vec, max(1, search_k))
+            dense_ids = [cid for cid, _ in self._ranked_candidates(ids, scores)]
+            if allowed is not None:
+                dense_ids = [cid for cid in dense_ids if cid in allowed]
+            dense_ids = dense_ids[:depth]
         lexical_ids = [cid for cid, _ in self.lexical.search(question, depth, allowed)]
         fused = rrf_fuse(dense_ids, lexical_ids, self.fusion_weight)
         hits: list[ChunkRecord] = []
