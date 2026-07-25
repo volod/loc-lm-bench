@@ -3,7 +3,7 @@
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
-	compare-vector-stores run-eval \
+	compare-embedder-adoption compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -146,17 +146,36 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput + paired delta vs EMBED_BASELINE) on GOLDSET; MODELS= EMBED_API_MODEL= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) EMBED_RESAMPLES= (needs ".[rag]")
+compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput + paired delta vs EMBED_BASELINE) on GOLDSET; MODELS= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) EMBED_RESAMPLES= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
+		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
 		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
+
+compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(EMBED_BASELINE_DATA_DIR)" || { echo "ERROR: set EMBED_BASELINE_DATA_DIR=<root whose llb/rag store was built with EMBED_BASELINE>"; exit 1; }
+	@test -n "$(EMBED_CANDIDATE_DATA_DIR)" || { echo "ERROR: set EMBED_CANDIDATE_DATA_DIR=<root whose llb/rag store was built with EMBED_CANDIDATE>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-embedder-adoption $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(CORPUS),--corpus "$(CORPUS)",) \
+		--baseline-embedder "$(EMBED_BASELINE)" --baseline-data-dir "$(EMBED_BASELINE_DATA_DIR)" \
+		--candidate-embedder "$(EMBED_CANDIDATE)" --candidate-data-dir "$(EMBED_CANDIDATE_DATA_DIR)" \
+		$(if $(ADOPTION_TOP_KS),--top-ks "$(ADOPTION_TOP_KS)",) \
+		$(if $(ADOPTION_RERANKERS),--rerankers "$(ADOPTION_RERANKERS)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ADOPTION_LIMIT),--limit $(ADOPTION_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(ADOPTION_OUT_DIR),--out-dir "$(ADOPTION_OUT_DIR)",)
 
 compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

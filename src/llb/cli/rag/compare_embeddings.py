@@ -12,9 +12,11 @@ from llb.cli.rag.compare_stores import _compare_vector_corpus_root, _dir_size_by
 
 # Pure, dependency-free defaults (no FAISS / torch pulled in): safe as Typer option defaults.
 from llb.rag.embedding_bakeoff_uncertainty import (
+    DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
+    resolve_bars,
 )
 
 if TYPE_CHECKING:
@@ -139,6 +141,13 @@ def compare_embeddings_cmd(
         help="incumbent embedder every candidate is PAIRED against (empty disables the paired "
         "intervals and the adopt-or-retain verdict)",
     ),
+    adoption_bars: str = typer.Option(
+        ",".join(DEFAULT_BARS),
+        "--adoption-bars",
+        help="paired metric interval(s) a candidate must clear to be ADOPTED. `recall_at_k` (the "
+        "default) is unconditional and always kept; adding `mrr` opts into the scoped first-hit-"
+        "rank bar, for configurations where rank binds (small --k, or a cross-encoder reranker)",
+    ),
     resamples: int = typer.Option(
         DEFAULT_RESAMPLES, help="paired percentile-bootstrap resamples for the delta intervals"
     ),
@@ -163,6 +172,11 @@ def compare_embeddings_cmd(
     from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
+    try:
+        bars = resolve_bars(adoption_bars)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
     cfg = load_config(
         config,
         goldset_path=goldset,
@@ -202,6 +216,7 @@ def compare_embeddings_cmd(
         noise_floor=noise_floor,
         noise_floor_replicates=noise_floor_replicates,
         baseline=baseline.strip() or None,
+        bars=bars,
         resamples=resamples,
         seed=seed,
     )

@@ -1538,9 +1538,10 @@ Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PD
   (47.8 vs 75.9 chunks/s) for a 1.23x index.
 - **First-hit rank is where `bge-m3` does separate on the PDF corpus.** Its MRR delta is
   +0.064 `[+0.008, +0.137]` (5 wins / 1 loss) while its recall delta does not clear zero -- it
-  ranks the same evidence earlier without finding more of it. The verdict bar is recall@k alone,
-  so this does not adopt anything; whether a first-hit-rank gain is worth adopting under a
-  reranker or a small `top_k` is forward work in [`plan.md`](../plan.md).
+  ranks the same evidence earlier without finding more of it. The DEFAULT verdict bar is recall@k
+  alone, so this does not adopt anything by itself; whether that rank gain is worth adopting is
+  measured end to end in [the scoped first-hit-rank adoption
+  bar](#the-scoped-first-hit-rank-adoption-bar) below.
 - **The lane can resolve a real gap at these sample sizes.** The `lang-uk` paraphrase row separates
   in the NEGATIVE direction on both corpora (-0.450 and -0.124, p=0.000), so a wide interval on the
   leaders is headroom exhaustion, not an inert statistic.
@@ -1551,6 +1552,71 @@ or chunking fingerprint changes, prewarms the shortlist for the base chunking sh
 Optuna loop, fans out once per new chunking fingerprint, and may reload from
 `$DATA_DIR/optuna/<study>/stores/`. It never reuses a store built under a different embedder. See
 [evaluation rigor](rigor-board-judge.md#multi-objective-rag-tuner).
+
+### The scoped first-hit-rank adoption bar
+
+The bake-off adopts on recall@k alone, so an encoder that only ranks the same evidence EARLIER --
+`bge-m3` on the accepted PDF corpus, MRR +0.064 `[+0.008, +0.137]` with a recall delta spanning
+zero -- is discarded by construction. Whether that is right is a downstream fact the retrieval
+table cannot see: at a small `top_k`, or under a cross-encoder reranker that only re-sorts what it
+is handed, first-hit rank is the binding constraint; at k=10 with a generous context budget,
+ranking earlier changes nothing the answer reads. `src/llb/eval/embedder_adoption/` measures it end
+to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
+
+- **The sweep** (`make compare-embedder-adoption`, `src/llb/cli/eval/embedder_adoption.py`): each
+  CELL is one retrieval configuration (`top_k` x reranker); inside a cell both encoders score the
+  IDENTICAL items end to end (`run-eval` each) and the candidate is paired against the baseline on
+  the objective, a verbosity-robust found-rate (`contains`), token F1, recall@k, and MRR@k derived
+  from the bundle's `first_hit_rank`. ONE resample draw is shared across every cell (common random
+  numbers), so the cells are comparable to each other. Each (cell, encoder) pair is an ordinary
+  bundle under that encoder's own `$DATA_DIR/run-eval/`, so any cell is reproducible. `decide_bar`
+  reports **extend_bar** (an objective interval clears zero in some cell -> the rank gain reaches
+  the answer there), **keep_bar** (the encoder ranks better but no cell's objective clears zero ->
+  recall@k stays the sole bar), or **no_evidence** (the rank gain does not reproduce in any cell,
+  so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
+  `$DATA_DIR/embedder-adoption-bar/<run>/`. The whole comparison + verdict is fake-bundle
+  unit-tested (`tests/llb/eval/test_embedder_adoption.py`) -- no backend, store, or GPU.
+- **The second bar** (`embedding_bakeoff_uncertainty.py`): `decide_verdict` takes a `bars`
+  selection. `recall_at_k` is the default and the only UNCONDITIONAL bar; `--adoption-bars
+  recall_at_k,mrr` (`EMBED_ADOPTION_BARS=`) opts into the scoped first-hit-rank (`BAR_FIRST_HIT =
+  mrr`) bar. A candidate is adopted when it clears at least one enabled bar; the verdict records
+  which bar(s) each separated candidate cleared. Enabling the bar demonstrably flips the accepted
+  PDF bake-off from **RETAIN `e5-base`** to **ADOPT `bge-m3`** (cleared: `mrr`). The default stays
+  recall@k-only: the bar EXTENDS the decision for configurations where rank binds, it never
+  replaces the one reason to swap an encoder that holds everywhere.
+
+CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
+goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
+paired re-read used), `bge-m3` minus `e5-base`, 2000 resamples, seed 13. Report under
+`$DATA_DIR/embedder-adoption-bar/run-mamaylm12b/`.
+
+| cell | config | d objective | d recall@k | d MRR@k | reaches answer? |
+| --- | --- | ---: | ---: | ---: | :-: |
+| `k10` | k=10, no reranker | -0.010 `[-0.062, +0.037]` | +0.050 `[-0.050, +0.150]` | +0.064 `[+0.009, +0.137]` | no |
+| `k10+rerank` | k=10, bge-reranker-v2-m3 | +0.052 `[+0.011, +0.101]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | yes |
+| `k3` | k=3, no reranker | +0.034 `[+0.002, +0.073]` | +0.125 `[+0.025, +0.225]` | +0.079 `[+0.017, +0.158]` | yes |
+| `k3+rerank` | k=3, bge-reranker-v2-m3 | +0.021 `[-0.002, +0.056]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | no |
+
+Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells. What it establishes:
+
+- **At the shipped default (`k10`, no reranker) the rank gain is free, exactly as predicted.**
+  `bge-m3` ranks the evidence earlier (MRR +0.064 clears zero) but the answer does not move
+  (objective -0.010, interval spans zero, 10/14/16 win/loss/tie). At k=10 with room in the budget,
+  the model already sees the gold span whether it is ranked 1st or 3rd. This is why recall@k stays
+  the DEFAULT bar and the shipped `e5-base` default is unchanged.
+- **Under a reranker the rank gain reaches the answer.** `k10+rerank` gives objective +0.052
+  `[+0.011, +0.101]` where recall is at ceiling (bge 1.000 vs e5 0.950) -- the cross-encoder
+  re-sorts the candidate pool `bge-m3` hands it into a better first hit, and the answer improves.
+  This is the cleanest pure-rank cell: the answer moves without recall separating.
+- **At a small `top_k` it reaches the answer too, but partly as recall.** `k3` gives objective
+  +0.034 `[+0.002, +0.073]`; recall@k ALSO separates there (+0.125), because at a tight budget a
+  better ranking pulls a gold span INSIDE the k=3 cut it would otherwise miss. So the k=3 gain is
+  not pure first-hit rank -- read it as "the rank advantage becomes a recall advantage when the
+  budget is small", which is still a reason to prefer `bge-m3` at k=3.
+- **The operator takeaway.** On this corpus, run the recall@k-only bar for a generous-`top_k`,
+  no-reranker configuration (the default; `e5-base` retained, at 1.6x the embed throughput of
+  `bge-m3`). Enable `--adoption-bars recall_at_k,mrr` and adopt `bge-m3` when shipping a small
+  `top_k` or a cross-encoder reranker, where its earlier ranking is worth its 3.2x embed cost.
 
 ### Context budget
 

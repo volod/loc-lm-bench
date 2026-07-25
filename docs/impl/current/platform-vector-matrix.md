@@ -313,7 +313,12 @@ settles the reading: on that accepted goldset the verdict is RETAIN (`bge-m3` +0
 verdict is ADOPT `e5-large` (+0.020 `[+0.004, +0.040]`, 5 wins / 0 losses) -- two corpora, two
 different separated candidates, so the default stays put until an accepted operator-corpus ledger
 separates one. Tables and the full reading are in
-[RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty). The paraphrase/STS
+[RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty). Where `bge-m3` DOES
+separate on the PDF corpus is first-hit rank (MRR +0.064), and the end-to-end
+[scoped first-hit-rank bar](rag-core.md#the-scoped-first-hit-rank-adoption-bar) measures that this
+rank gain reaches the answer under a reranker (+0.052 objective) or a small `top_k` (+0.034) but is
+free at the shipped k=10 default (-0.010) -- so `--adoption-bars recall_at_k,mrr` adopts `bge-m3`
+for those two configurations while the recall@k-only default is retained for the shipped one. The paraphrase/STS
 `lang-uk` model collapses on every run (recall@10 0.455 / 0.475 / 0.856) and is the one row that
 separates from the baseline in the negative direction on both corpora. Embed VRAM peaked ~4 GB, so
 all candidates fit the 16 GB host.

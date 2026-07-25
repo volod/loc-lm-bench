@@ -135,7 +135,9 @@ def test_verdict_adopts_the_largest_separated_candidate():
     assert verdict["decision"] == DECISION_ADOPT
     assert verdict["model"] == "strong"
     assert verdict["separated"] == ["strong", "weaker"]
-    assert "paired recall@k delta" in verdict["reason"]
+    assert "recall_at_k delta" in verdict["reason"]
+    assert verdict["bars"] == ["recall_at_k"]
+    assert verdict["cleared"] == {"strong": ["recall_at_k"], "weaker": ["recall_at_k"]}
 
 
 def test_verdict_retains_the_incumbent_when_nothing_separates():

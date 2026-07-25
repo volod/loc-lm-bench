@@ -43,71 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### embedder-decision-on-a-resolvable-item-set
+### embedder-adoption-bar-second-model (optional)
 
-The embedder choice is undecidable on the item sets the repo currently has, and the paired lane
-says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are TIED between the
-leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
-consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
-retrieves 0.980, leaving 5 questions of headroom for any candidate to win
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Both sets are
-at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
-can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
-assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors
-in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
-encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
-it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
-outcome and is what would justify closing the question.
-
-- Agent status: BLOCKED BY HUMAN
-- Dependencies: the paired bake-off lane, the verdict, and `report.json` are current behavior
-  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). Human step
-  that gates completion: a reviewer accepts the enriched question set through
-  `make verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
-- User-visible outcome: either a measured embedder swap an operator can adopt, or a recorded
-  statement of how many questions a decision would need -- instead of a permanently open ranking.
-- Scope boundary: in scope -- the power target, the enriched ledger, its acceptance, and one
-  re-run per corpus with the verdict restated. Out of scope -- new candidates, fine-tuning (that
-  is `ua-embedder-domain-finetune`), and widening the verdict bar beyond recall@k.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
-- Execution path: `make compare-embeddings GOLDSET=<accepted-enriched-goldset> NOISE_FLOOR=1` on
-  the CUDA host; no new CI coverage.
-- Acceptance gates: the predeclared minimum detectable gain and split size are written down BEFORE
-  retrieval; every candidate row reports its paired interval on the accepted ledger; the verdict is
-  recorded as adopt, retain, or explicitly undecidable at the reached sample size.
-- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md) and the
-  recommendation line in [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
-
-### embedder-first-hit-rank-adoption-bar (optional)
-
-The bake-off adopts on recall@k alone, and one candidate is already separated on the OTHER metric:
-on the accepted converted-PDF ledger `BAAI/bge-m3` beats the incumbent by +0.064 MRR
-`[+0.008, +0.137]` while its recall delta spans zero -- it ranks the same evidence earlier without
-finding more of it ([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)).
-Whether that is worth adopting depends on a downstream fact the retrieval table cannot see: at a
-small `top_k`, or under a cross-encoder reranker that only re-sorts what it is given, first-hit
-rank is the binding constraint, while at k=10 with a generous context budget it is nearly free.
-Measure it end to end -- score answer quality at the shipped `top_k` and at a small one, with and
-without the reranker, on both embedders -- then either add a second, explicitly-scoped adoption bar
-to `decide_verdict` or record that recall@k stays the sole bar and why.
+The scoped first-hit-rank bar is decided on ONE generation model (`MamayLM-Gemma-3-12B`), and
+whether a first-hit-rank gain converts into a better answer is partly a property of the MODEL: a
+stronger or more instruction-following model may use an earlier-ranked span the 12B one ignored, or
+may be robust enough that even the reranked cell stops separating. The lane, its cells, and the
+`extend_bar` verdict are current behavior
+([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). Repeat the same
+four-cell sweep on a second roster model (e.g. `gemma4:31b` or `qwen3.6:27b`) over the identical
+accepted PDF ledger and record whether the two models agree that the rank gain reaches the answer
+under a reranker and at a small `top_k`, or whether `extend_bar` is a single-model artifact.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `decide_verdict` in `src/llb/rag/embedding_bakeoff_uncertainty.py`, the
-  reranking lane ([RAG core](current/rag-core.md)), and `compare-answer-quality` for the end-to-end
-  read.
-- User-visible outcome: the operator learns whether an encoder that only ranks better is worth its
-  cost on their retrieval configuration, instead of that gain being silently discarded.
-- Scope boundary: in scope -- the top_k / reranker sweep on both embedders, the verdict-bar
-  decision, and its implementation if the measurement supports one. Out of scope -- new candidates
-  and changing the recall@k bar itself.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout plus a
-  `$DATA_DIR/run-eval/` bundle per scored configuration.
-- Execution path: `make compare-embeddings` for the retrieval side, then `make run-eval` /
-  `make compare-answer-quality` per (embedder, top_k, reranker) cell on the CUDA host; CI covers a
-  second adoption bar over fake vectors if one is added.
-- Acceptance gates: `make ci` green; the report states the answer-side delta per cell with paired
-  intervals and an explicit keep-or-extend decision on the adoption bar.
-- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md).
+- Dependencies: none. Reuse `make compare-embedder-adoption` as-is with a different `MODEL`; the two
+  per-encoder stores under `$DATA_DIR/embedder-adoption-bar/stores/{e5,bge}/` already exist.
+- User-visible outcome: the operator learns whether the scoped-bar recommendation is a property of
+  the corpus and configuration or of the one model that was scored.
+- Scope boundary: in scope -- one more model, the same cells/splits/seed, and a two-model
+  comparison of the per-cell objective deltas. Out of scope -- new cells, new candidates, and any
+  change to the bar mechanics.
+- Data and artifact paths: `$DATA_DIR/embedder-adoption-bar/<run>/`.
+- Execution path: `make compare-embedder-adoption MODEL=<second-roster-model>
+  EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<pdf-corpus>
+  GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration` on the CUDA host; no new CI.
+- Acceptance gates: `make ci` green; both models score the identical item set at the same seed and
+  the report states whether they agree on the per-cell keep-or-extend reading.
+- Documentation target: the scoped first-hit-rank bar subsection of
+  [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 
 ### vector-store-bake-off-paired-uncertainty (optional)
 
@@ -686,6 +649,41 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
+
+### embedder-decision-on-a-resolvable-item-set
+
+The embedder choice is undecidable on the item sets the repo currently has, and the paired lane
+says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are TIED between the
+leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
+consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
+retrieves 0.980, leaving 5 questions of headroom for any candidate to win
+([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Both sets are
+at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
+can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
+assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors
+in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
+encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
+it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
+outcome and is what would justify closing the question.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the paired bake-off lane, the verdict, and `report.json` are current behavior
+  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). Human step
+  that gates completion: a reviewer accepts the enriched question set through
+  `make verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
+- User-visible outcome: either a measured embedder swap an operator can adopt, or a recorded
+  statement of how many questions a decision would need -- instead of a permanently open ranking.
+- Scope boundary: in scope -- the power target, the enriched ledger, its acceptance, and one
+  re-run per corpus with the verdict restated. Out of scope -- new candidates, fine-tuning (that
+  is `ua-embedder-domain-finetune`), and widening the verdict bar beyond recall@k.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
+- Execution path: `make compare-embeddings GOLDSET=<accepted-enriched-goldset> NOISE_FLOOR=1` on
+  the CUDA host; no new CI coverage.
+- Acceptance gates: the predeclared minimum detectable gain and split size are written down BEFORE
+  retrieval; every candidate row reports its paired interval on the accepted ledger; the verdict is
+  recorded as adopt, retain, or explicitly undecidable at the reached sample size.
+- Documentation target: the embedder bake-off evidence in [RAG core](current/rag-core.md) and the
+  recommendation line in [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
 
 ### multihop-ledger-human-acceptance
 

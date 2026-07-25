@@ -1,7 +1,7 @@
 """Focused embedding bakeoff report implementation."""
 
 from llb.rag.embedding_bakeoff_models import BYTES_PER_MB, BakeoffReport, CandidateResult
-from llb.rag.embedding_bakeoff_uncertainty import DECISION_ADOPT, recall_delta
+from llb.rag.embedding_bakeoff_uncertainty import BAR_RECALL, DECISION_ADOPT, recall_delta
 from llb.rag.fusion_evidence.stats import format_interval
 
 _NO_PAIRED_CELL = "-"
@@ -71,6 +71,7 @@ def render_markdown(report: BakeoffReport) -> str:
             f"- paired uncertainty: baseline `{baseline}`, {settings['resamples']} resamples, "
             f"{settings['confidence']:.0%} percentile bootstrap, seed {settings['seed']}"
         )
+        lines.append(f"- adoption bar(s): {', '.join(settings.get('bars') or [BAR_RECALL])}")
     lines += [
         "",
         "| model | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) | cost (USD) "

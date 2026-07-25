@@ -179,6 +179,20 @@ ANSWER_QUALITY_LIMIT ?=
 ANSWER_QUALITY_OUT_DIR ?=
 # Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
 INCLUDE_DRAFTED ?=
+# Embedder adoption bar (compare-embedder-adoption): the two encoders, each with the data root
+# whose llb/rag store was built with it, and the top_k x reranker grid the answers are scored on.
+# The default grid is the shipped budget plus a small one, with the pinned cross-encoder off and on
+# -- the two knobs that decide whether first-hit RANK binds at all.
+# EMBED_BASELINE is shared with compare-embeddings, where it is the incumbent every candidate is
+# paired against; the value below is the shipped `RunConfig.embedding_model`.
+EMBED_BASELINE ?= intfloat/multilingual-e5-base
+EMBED_CANDIDATE ?= BAAI/bge-m3
+EMBED_BASELINE_DATA_DIR ?=
+EMBED_CANDIDATE_DATA_DIR ?=
+ADOPTION_TOP_KS ?= 10,3
+ADOPTION_RERANKERS ?= off,on
+ADOPTION_LIMIT ?=
+ADOPTION_OUT_DIR ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

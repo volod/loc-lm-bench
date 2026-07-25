@@ -20,6 +20,7 @@ consent gate are unit-tested with fake stores/embedders -- no GPU, no FAISS, no 
 """
 
 import logging
+from collections.abc import Sequence
 from typing import Any, Callable
 
 from llb.core.contracts.rag import RetrievalPair
@@ -31,6 +32,7 @@ from llb.rag.embedding_bakeoff_models import (
     StoreBuilder,
 )
 from llb.rag.embedding_bakeoff_uncertainty import (
+    DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
@@ -133,6 +135,7 @@ def run_bakeoff(
     noise_floor: bool = False,
     noise_floor_replicates: int | None = None,
     baseline: str | None = DEFAULT_BASELINE_MODEL,
+    bars: Sequence[str] = DEFAULT_BARS,
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     seed: int = DEFAULT_SEED,
@@ -179,7 +182,7 @@ def run_bakeoff(
         "best_recall": best_recall(candidates),
     }
     _attach_uncertainty(
-        report, vectors, baseline, resamples=resamples, confidence=confidence, seed=seed
+        report, vectors, baseline, bars=bars, resamples=resamples, confidence=confidence, seed=seed
     )
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
@@ -195,6 +198,7 @@ def _attach_uncertainty(
     vectors: dict[str, MetricVectors],
     baseline: str | None,
     *,
+    bars: Sequence[str],
     resamples: int,
     confidence: float,
     seed: int,
@@ -206,6 +210,7 @@ def _attach_uncertainty(
     """
     report["uncertainty"] = {
         "baseline": baseline,
+        "bars": list(bars),
         "resamples": resamples,
         "confidence": confidence,
         "seed": seed,
@@ -218,4 +223,4 @@ def _attach_uncertainty(
     for row in report["candidates"]:
         if row["model"] in paired:
             row["paired_vs_baseline"] = paired[row["model"]]
-    report["verdict"] = decide_verdict(paired, baseline)
+    report["verdict"] = decide_verdict(paired, baseline, bars)
