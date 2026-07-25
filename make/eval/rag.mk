@@ -3,7 +3,8 @@
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
-	compare-embedder-adoption compare-adoption-models compare-vector-stores run-eval \
+	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
+	compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -184,6 +185,15 @@ compare-adoption-models: ## Do two models agree on the first-hit-rank reading? C
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-adoption-models "$(ADOPTION_REPORT_A)" "$(ADOPTION_REPORT_B)" \
 		$(if $(ADOPTION_CROSS_OUT),--out-dir "$(ADOPTION_CROSS_OUT)",)
+
+compare-adoption-roster: ## Is the reranker gain predictable in advance? Test whether a declared model property separates the models that capture it (ADOPTION_REPORTS="<dir> <dir> ..." ADOPTION_PROFILES= ADOPTION_FOCUS_CELL= ADOPTION_ROSTER_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORTS)" || { echo "ERROR: set ADOPTION_REPORTS=\"<sweep-dir> <sweep-dir> <sweep-dir> ...\" (3+)"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-roster $(ADOPTION_REPORTS) \
+		$(if $(ADOPTION_PROFILES),--profiles "$(ADOPTION_PROFILES)",) \
+		$(if $(ADOPTION_FOCUS_CELL),--focus-cell "$(ADOPTION_FOCUS_CELL)",) \
+		$(if $(ADOPTION_ROSTER_OUT),--out-dir "$(ADOPTION_ROSTER_OUT)",)
 
 compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

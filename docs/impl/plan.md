@@ -43,37 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### embedder-adoption-bar-reranker-model-dependence (optional)
+### adoption-bar-per-model-screen (optional)
 
-The scoped first-hit-rank bar reproduces across two model families at a small `top_k` but the
-RERANKER cell splits them: MamayLM-12B turned the reranked `bge-m3` candidate pool into a better
-answer (`k10+rerank` +0.052 objective, clears zero) while qwen3-14b did not (+0.024, spans zero),
-even though both saw the identical reranked contexts
-([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). Two models is enough to
-show the reranker benefit is model-dependent but not enough to say WHICH models capture it. Run the
-same four-cell sweep on two or three more roster models (a larger instruct model, a second family)
-and record whether the reranked-cell answer gain correlates with anything an operator can read off
-in advance (model size, instruction-following, family), so the reranker adoption advice is
-conditioned on the model rather than left as "confirm it yourself".
+Whether `bge-m3`'s first-hit-rank gain reaches the answer under a cross-encoder reranker is not
+predictable from a model card: across a five-model roster only one model captured it, and two
+models with the SAME declared parameter count and family landed on opposite sides
+([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). The operator advice is
+therefore "measure it on the model you ship", which currently costs a full four-cell sweep (24
+`run-eval` bundles, 40 items each, ~30-60 minutes on a 16 GiB host). Find the cheapest screen that
+reproduces the per-model reading: measure how few items and how few cells the `k10+rerank` decision
+actually needs (the recorded sweeps already carry the per-item vectors to resample from), and
+either ship a `--screen` mode that answers the question in a fraction of the runtime or record the
+minimum item count a trustworthy per-model answer requires.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-embedder-adoption` per model and `make
-  compare-adoption-models` pairwise; the two per-encoder stores under
-  `$DATA_DIR/embedder-adoption-bar/stores/{e5,bge}/` and the two recorded sweeps already exist.
-- User-visible outcome: the operator learns which model properties predict whether a cross-encoder
-  reranker makes `bge-m3`'s first-hit rank pay, instead of a per-model coin flip.
-- Scope boundary: in scope -- two to three more models, the same cells/splits/seed, and the
-  pairwise cross-model readings. Out of scope -- new cells, new encoders, and any change to the bar
-  or cross-model mechanics.
-- Data and artifact paths: `$DATA_DIR/embedder-adoption-bar/<run>/` per model plus
-  `.../cross-model/` per pair.
-- Execution path: `make compare-embedder-adoption MODEL=<roster-model>
-  EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<pdf-corpus>
-  GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration` per model, then `make
-  compare-adoption-models ADOPTION_REPORT_A=<a> ADOPTION_REPORT_B=<b>` per pair on the CUDA host;
-  no new CI.
-- Acceptance gates: `make ci` green; every model scores the identical item set at the same seed and
-  the reading states whether the reranked-cell answer gain tracks any pre-readable model property.
+- Dependencies: none. Reuse the five recorded sweeps under `$DATA_DIR/embedder-adoption-bar/` for
+  the resampling study and `make compare-embedder-adoption` with a reduced cell grid / `--limit`
+  for the confirmation runs.
+- User-visible outcome: an operator can decide the reranker question for their own model without
+  paying for the full grid, or knows the honest floor on what that decision costs.
+- Scope boundary: in scope -- the item-count/cell-count study over recorded per-item vectors, the
+  screen mode if the study supports one, and its confirmation against the full sweeps. Out of scope
+  -- new cells, new encoders, and any change to the bar, cross-model, or roster mechanics.
+- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/run-<slug>/` sweeps plus a
+  new `.../screen/<run>/`.
+- Execution path: a resampling study over the recorded `comparison.json` per-item vectors, then
+  `make compare-embedder-adoption ADOPTION_TOP_KS=10 ADOPTION_RERANKERS=on ADOPTION_LIMIT=<n>` per
+  candidate screen size on the CUDA host; CI covers the screen's decision rule over fake bundles.
+- Acceptance gates: `make ci` green; the report states the screen's agreement with the full sweep's
+  `k10+rerank` reading on all five recorded models, and names the item count it needs.
 - Documentation target: the scoped first-hit-rank bar subsection of
   [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 

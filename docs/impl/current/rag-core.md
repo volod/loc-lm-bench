@@ -1592,6 +1592,19 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   `neither` reading, plus whether their headline verdicts match. It is pure and fake-report
   unit-tested (`tests/llb/eval/test_embedder_adoption_cross_model.py`); artifacts are
   `cross_model.md` + `cross_model.json`.
+- **The roster reading** (`make compare-adoption-roster`,
+  `src/llb/eval/embedder_adoption/roster.py`): with three or more sweeps, pairwise readings cannot
+  state a trend, so this one asks whether the models that capture a cell's gain are separated from
+  the rest by a property the operator knows BEFORE spending a run. Properties are DECLARED in a
+  `--profiles` JSON (`params_b`, `family`), never inferred from the model id -- a guessed parameter
+  count would become a wrong claim. The test is a SEPARATION, not a fit: a numeric property must
+  admit a threshold with no overlap, a categorical one must have disjoint value sets AND actually
+  group models (one family per model only restates the roster). Because a handful of models split
+  cleanly by luck fairly often, a numeric separation is quoted with the probability it would arise
+  at random (`2 / C(n, k)`). A unanimous focus cell reports `insufficient_variation` rather than a
+  vacuous prediction. Verdicts: `property_predicts` / `no_property_predicts` /
+  `insufficient_variation`; artifacts `roster.md` + `roster.json`; tests in
+  `tests/llb/eval/test_embedder_adoption_roster.py`.
 
 CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
 goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
@@ -1621,34 +1634,59 @@ Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells. Wha
   better ranking pulls a gold span INSIDE the k=3 cut it would otherwise miss. So the k=3 gain is
   not pure first-hit rank -- read it as "the rank advantage becomes a recall advantage when the
   budget is small", which is still a reason to prefer `bge-m3` at k=3.
-- **The operator takeaway.** On this corpus, run the recall@k-only bar for a generous-`top_k`,
-  no-reranker configuration (the default; `e5-base` retained, at 1.6x the embed throughput of
-  `bge-m3`). Enable `--adoption-bars recall_at_k,mrr` and adopt `bge-m3` when shipping a small
-  `top_k` or a cross-encoder reranker, where its earlier ranking is worth its 3.2x embed cost.
+- **Cost, for the adoption decision.** `bge-m3` embeds at ~1/3 the throughput of `e5-base` and
+  builds a 1.23x index, so a cell that does not clear zero is not worth paying for. The
+  configuration-by-configuration recommendation is settled by the roster below, not by this one
+  model -- in particular the reranker cell does NOT generalize.
 
-Second model (`qwen3:14b`, a different family; same corpus, cells, item set, and seed;
-`$DATA_DIR/embedder-adoption-bar/run-qwen3-14b/`) and the cross-model reading
-(`$DATA_DIR/embedder-adoption-bar/cross-model/`):
+#### The five-model roster
 
-| cell | MamayLM-12B reading | qwen3-14b reading | qwen3 d objective | agree? |
-| --- | :-: | :-: | ---: | :-: |
-| `k10` | rank only | rank only | -0.019 `[-0.064, +0.026]` | yes |
-| `k10+rerank` | answer | neither | +0.024 `[-0.035, +0.087]` | NO |
-| `k3` | answer | answer | +0.050 `[+0.001, +0.103]` | yes |
-| `k3+rerank` | neither | neither | +0.007 `[-0.010, +0.028]` | yes |
+CUDA host, 2026-07-25. Four more models on the SAME corpus, cells, item set, and seed, spanning
+three families and 11.8B-27B; sweeps under `$DATA_DIR/embedder-adoption-bar/run-<slug>/`, the roster
+reading under `.../roster/` and the declared profiles in `.../model-profiles.json` (each model's
+`parameter_size` / `family` as its own model card reports it, so both are readable before a run is
+spent). Every cell reading below is that sweep's own paired interval:
 
-Both models return **extend_bar** and agree on 3 of 4 cells, so the scoped bar is not a single-model
-artifact. What the two-model reading separates:
+| model | params | family | `k10` | `k10+rerank` | `k3` | `k3+rerank` | verdict |
+| --- | ---: | :-: | :-: | :-: | :-: | :-: | :-: |
+| `lapa-v0.1.2-instruct` | 11.8B | gemma3 | rank only | neither | rank only | neither | keep_bar |
+| `MamayLM-Gemma-3-12B` | 11.8B | gemma3 | rank only | **answer** | **answer** | neither | extend_bar |
+| `qwen3:14b` | 14.8B | qwen3 | rank only | neither | **answer** | neither | extend_bar |
+| `mistral-small3.1:24b` | 24B | mistral3 | rank only | neither | **answer** | **answer** | extend_bar |
+| `MamayLM-Gemma-3-27B` | 27B | gemma3 | rank only | neither | rank only | **answer** | extend_bar |
 
-- **The small-`top_k` finding is model-independent.** Both models turn `bge-m3`'s earlier ranking
-  into a better answer at `k3` (MamayLM +0.034, qwen3 +0.050, both clear zero), and both read the
-  shipped `k10` default as `rank only` (the gain is free there). The `k3` reason for the second bar
-  reproduces across two model families.
-- **The reranker cell is model-dependent.** MamayLM turned the reranked candidate pool into a
-  better answer (`k10+rerank` +0.052, clears zero); qwen3 did not (+0.024, spans zero). So "a
-  reranker makes `bge-m3`'s first-hit rank pay" holds for one model and not the other -- an operator
-  shipping a reranker should confirm it on their own model rather than assume it, whereas the
-  small-`top_k` case is safe to adopt on this evidence.
+Roster verdict: **no_property_predicts**. What the roster establishes:
+
+- **The shipped default is settled: the rank gain is free there, unanimously.** All five models read
+  `k10` as `rank only` -- `bge-m3` ranks the evidence earlier (MRR +0.064, identical in every sweep)
+  and no model's objective interval clears zero. The recorded single-model finding now rests on
+  three families and a 2.3x parameter range, so `recall_at_k` staying the DEFAULT bar and `e5-base`
+  staying the shipped default are not one model's quirk.
+- **Neither parameter count nor family predicts the reranker cell, and the counter-examples are
+  clean.** Only MamayLM-12B captures `k10+rerank` (1 of 5). `lapa-v0.1.2` has the SAME declared
+  parameter count and family (11.8B, gemma3 -- both are Ukrainian fine-tunes of the same base) and
+  does not capture it; within one family the LARGER MamayLM-27B does not capture what the 12B does.
+  So the split is not a threshold on size and not a family label: two models an operator cannot tell
+  apart from their cards land on opposite sides. `no_property_predicts` is a measured negative, not
+  a shortage of models.
+- **The bar itself reproduces; the cell that justifies it does not.** Four of five models return
+  `extend_bar`, but via different cells -- `k3` for MamayLM-12B / qwen3 / mistral, `k3+rerank` for
+  mistral / MamayLM-27B, `k10+rerank` for MamayLM-12B alone. Every cell except the shipped `k10`
+  default justifies the second bar for SOME model, and only `lapa` captures nothing anywhere.
+- **The operator takeaway, conditioned on the configuration rather than the model.** At the shipped
+  generous-`top_k`, no-reranker default, retain `e5-base` (recall@k-only bar) -- unanimous across
+  the roster. At a small `top_k`, adopt `bge-m3` with `--adoption-bars recall_at_k,mrr`: 4 of 5
+  models turn its ranking into a better answer in at least one k=3 cell. Do NOT assume a
+  cross-encoder reranker will make it pay at k=10 -- that held for 1 of 5 models and is not
+  predictable from the model card, so measure it with `make compare-embedder-adoption` on the model
+  actually being shipped.
+
+Run note for a ~16 GiB host: a 24B/27B generator holds ~13 GiB in Ollama, leaving too little for the
+embedder and the cross-encoder, which fail with a CUDA OOM inside `retrieve`. Run those sweeps with
+`CUDA_VISIBLE_DEVICES=""` so only the ENCODERS move to the CPU -- generation stays on the GPU
+because Ollama is a separate process. Retrieval is model-independent, and the CPU-encoder sweeps
+reproduce the GPU sweeps' recall@k / MRR@k columns exactly, which is the check that the switch
+changed nothing measurable.
 
 ### Context budget
 

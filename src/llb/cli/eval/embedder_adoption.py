@@ -168,3 +168,56 @@ def compare_adoption_models_cmd(
         raise typer.Exit(code=2) from None
     typer.echo(format_cross_summary(run.report))
     typer.echo(f"[compare-adoption-models] report -> {run.paths['report']}")
+
+
+@app.command("compare-adoption-roster")
+def compare_adoption_roster_cmd(
+    reports: list[Path] = typer.Argument(
+        ..., help="three or more finished sweep comparison.json files (or their directories)"
+    ),
+    profiles: Optional[Path] = typer.Option(
+        None,
+        "--profiles",
+        help='JSON of DECLARED per-model properties, `{"<model id>": {"params_b": 12, '
+        '"family": "gemma"}}`. Declared, never inferred from the model id -- a guessed parameter '
+        "count would become a wrong claim about what predicts the gain",
+    ),
+    focus_cell: Optional[str] = typer.Option(
+        None,
+        "--focus-cell",
+        help="cell whose answer gain the property test explains (default: k10+rerank, the cell "
+        "where rank binds but recall is already at ceiling)",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None,
+        help="artifact dir (default: beside the FIRST report, in a `roster/` sibling)",
+    ),
+) -> None:
+    """Is the reranker cell's answer gain predictable from a property known BEFORE the run?
+
+    Two models showed the reranker benefit is model-dependent, which leaves the operator with a
+    coin flip. This reads a roster of finished sweeps -- same encoder pair, cells, item set, and
+    seed -- and tests whether the models that turn the rank gain into an answer are separated from
+    the rest by a declared property (parameter count, family). The test is a SEPARATION, not a fit,
+    and quotes the probability a clean split would arise by chance at this roster size, so a
+    handful of models cannot read as a law. No backend or GPU needed.
+    """
+    from llb.eval.embedder_adoption import format_roster_summary, run_roster_comparison
+
+    if len(reports) < 3:
+        typer.echo(
+            "[error] a roster reading needs at least three sweeps; "
+            "use compare-adoption-models for two",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    target = out_dir if out_dir is not None else reports[0].resolve().parent / "roster"
+    try:
+        run = run_roster_comparison(
+            reports, out_dir=target, profiles_path=profiles, focus_cell=focus_cell
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(format_roster_summary(run.report))
+    typer.echo(f"[compare-adoption-roster] report -> {run.paths['report']}")

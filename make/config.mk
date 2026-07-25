@@ -198,6 +198,12 @@ ADOPTION_OUT_DIR ?=
 ADOPTION_REPORT_A ?=
 ADOPTION_REPORT_B ?=
 ADOPTION_CROSS_OUT ?=
+# Roster reading (compare-adoption-roster): three or more sweep dirs, the DECLARED per-model
+# property file the separation test reads, and the cell whose answer gain it explains.
+ADOPTION_REPORTS ?=
+ADOPTION_PROFILES ?=
+ADOPTION_FOCUS_CELL ?=
+ADOPTION_ROSTER_OUT ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

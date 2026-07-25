@@ -85,7 +85,7 @@ def compare_models(reports: Sequence[AdoptionBarReport]) -> CrossModelReport:
     if len(reports) != 2:
         raise ValueError("the cross-model reading compares exactly two sweep reports")
     first, second = reports
-    _assert_comparable(first, second)
+    assert_comparable(first, second)
     models = [_model_id(first), _model_id(second)]
     if models[0] == models[1]:
         raise ValueError(f"both reports were scored under the same model {models[0]!r}")
@@ -115,8 +115,12 @@ def compare_models(reports: Sequence[AdoptionBarReport]) -> CrossModelReport:
     }
 
 
-def _assert_comparable(first: AdoptionBarReport, second: AdoptionBarReport) -> None:
-    """Fail loudly on any axis that would make a cross-model reading dishonest."""
+def assert_comparable(first: AdoptionBarReport, second: AdoptionBarReport) -> None:
+    """Fail loudly on any axis that would make a cross-model reading dishonest.
+
+    Shared with the roster reading, which applies it against a reference report so every model in
+    a roster is comparable to every other one.
+    """
     if (first["baseline"], first["candidate"]) != (second["baseline"], second["candidate"]):
         raise ValueError(
             "the two sweeps compared different encoder pairs "

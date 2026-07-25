@@ -29,6 +29,7 @@ from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES,
 
 if TYPE_CHECKING:
     from llb.eval.embedder_adoption.cross_model import CrossModelReport
+    from llb.eval.embedder_adoption.roster import ModelProfile, RosterReport
 
 METHOD = "embedder-adoption-bar"
 
@@ -214,3 +215,76 @@ def run_cross_model_comparison(report_paths: Sequence[Path], *, out_dir: Path) -
         "comparison": str(target / "cross_model.json"),
     }
     return CrossModelRun(cross, target, paths)
+
+
+@dataclass(frozen=True)
+class RosterRun:
+    report: "RosterReport"
+    out_dir: Path
+    paths: Mapping[str, str]
+
+
+def load_profiles(path: Path | None) -> dict[str, "ModelProfile"]:
+    """Load the declared per-model profiles (`{model id: {params_b, family}}`) from JSON.
+
+    Profiles are DECLARED, never inferred from the model id: a wrong guess at a parameter count
+    would silently turn into a wrong claim about what predicts the reranker gain.
+    """
+    from llb.eval.embedder_adoption.roster import PROPERTIES
+
+    if path is None:
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{path}: cannot load model profiles: {exc}") from None
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: model profiles must be an object keyed by model id")
+    profiles: dict[str, ModelProfile] = {}
+    for model, profile in data.items():
+        if not isinstance(profile, dict):
+            raise ValueError(f"{path}: profile for {model!r} must be an object")
+        unknown = sorted(set(profile) - set(PROPERTIES))
+        if unknown:
+            raise ValueError(
+                f"{path}: profile for {model!r} declares unknown propert(ies) "
+                f"{', '.join(unknown)}; expected any of {', '.join(PROPERTIES)}"
+            )
+        profiles[str(model)] = profile  # type: ignore[assignment]
+    return profiles
+
+
+def run_roster_comparison(
+    report_paths: Sequence[Path],
+    *,
+    out_dir: Path,
+    profiles_path: Path | None = None,
+    focus_cell: str | None = None,
+) -> RosterRun:
+    """Read N finished sweeps and persist the roster property reading."""
+    from llb.eval.embedder_adoption.cross_model import _cross_metadata
+    from llb.eval.embedder_adoption.roster import (
+        DEFAULT_FOCUS_CELL,
+        compare_roster,
+        format_roster,
+    )
+
+    reports = [load_report(path) for path in report_paths]
+    roster = compare_roster(
+        reports,
+        load_profiles(profiles_path),
+        focus_cell=focus_cell or DEFAULT_FOCUS_CELL,
+    )
+    metadata = _cross_metadata(reports)
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    payload = {**roster, "metadata": dict(metadata)}
+    (target / "roster.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (target / "roster.md").write_text(format_roster(roster, metadata=metadata), encoding="utf-8")
+    paths = {
+        "report": str(target / "roster.md"),
+        "comparison": str(target / "roster.json"),
+    }
+    return RosterRun(roster, target, paths)
