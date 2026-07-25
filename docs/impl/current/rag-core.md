@@ -2012,16 +2012,65 @@ ordinary `run-eval` bundle per (lane, split) under `$DATA_DIR/run-eval/`. CI dri
 lanes over fake bundles and the committed fixtures
 (`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
 
+An optional a priori power contract keeps a borderline row from being "resolved" by choosing a
+different confidence convention. Pass the earlier `comparison.json` as
+`CONTEXT_POWER_REFERENCE=<comparison-json>`, predeclare the smallest material objective delta as
+`CONTEXT_MDE=<delta>`, and optionally set `CONTEXT_TARGET_POWER=<share>` (default 0.80). Before the
+first model call, `src/llb/eval/context_ablation/power.py` reads the earlier per-item
+`long_context - rag` differences, estimates their paired sample SD, and writes
+`power-plan.json`. The required count is the two-sided paired normal approximation
+`ceil(((z_(1-alpha/2) + z_power) * sample_sd / MDE)^2)`, where alpha follows the report
+confidence. The completed `comparison.json` and `report.md` then record:
+
+- `separated` when the new paired interval is wholly on one side of zero;
+- `flat` when the interval is wholly inside the predeclared `[-MDE, +MDE]` detectable-effect band;
+- `undecidable` otherwise, explicitly saying whether the planned count reached the target.
+
+The power options are additive: omitting them preserves the original artifact schema and behavior.
+`tests/llb/eval/test_context_ablation_power.py` covers the item-count calculation, paired-reference
+loading, resolution states, and the guarantee that `power-plan.json` exists before lane scoring.
+
 ### Context-ablation evidence
 
 Each derived delta carries `p_positive` and a `(borderline)` flag, and the verdict names both the
 rows it was decided on -- the retrieval uplift AND the long-context delta, because `_judge` checks
 the long-context lane first
 ([how settled a paired reading is](#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-On the recorded runs that matters once: the `qwen3.6-35b` row's `rag_pays_off` rests on a settled
-uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90% interval would
-read as separated, so that verdict is one convention away from `long_context_wins`. The eight other
-recorded ablations are settled.
+The original `qwen3.6-35b` final-only row was the one exception: its `rag_pays_off` rested on a
+settled uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90%
+interval read as separated. The power-resolved run below removes that exception; every recorded
+context-ablation verdict is now settled at the neighbouring 90%, 95%, and 97.5% conventions.
+
+#### Power-resolved Qwen3.6 long-context verdict (2026-07-25)
+
+The target was declared from the earlier 82-item `final` artifact BEFORE new inference:
+minimum detectable delta +0.060 objective, 80% power, two-sided alpha 0.05. Its per-item paired SD
+was 0.3078, pricing the run at 207 items. Pooling all three verified splits of the same committed
+fixture supplied 250 items (`final,tuning,calibration`), above target; this is a diagnostic
+ablation, not a leaderboard or tuning result.
+
+| model | n | closed_book | rag | long_context | retrieval uplift | long-context delta | p_positive | resolution | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `batiai/qwen3.6-35b:iq3` | 250 | 0.121 | 0.534 | 0.593 | +0.413 [+0.363, +0.461] | +0.058 [+0.025, +0.096] | 0.9995 | separated | `long_context_wins` |
+
+The long-context row has 51 wins / 23 losses / 176 ties (two-sided sign p=0.0015), no context
+skips, and is separated at all three reported confidence conventions. The extra power therefore
+changes the earlier final-only `rag_pays_off` reading to a settled `long_context_wins`: for this
+model and corpus, chunked retrieval loses a small but real amount to whole-document context.
+Retrieval itself still pays decisively over closed-book (+0.413, `p_positive` 1.000), and 33/250
+closed-book answers match the reference (13.2%).
+
+The operator boundary remains important: `long_context` is oracle-grounded on each item's gold
+document, so this result supports sending the whole document AFTER a source is known; it does not
+remove the need to retrieve or route to that source. The forward
+[`retrieved-document-long-context-lane`](../plan.md#retrieved-document-long-context-lane) task
+owns that shippable bridge.
+
+Artifact:
+`$DATA_DIR/context-ablation/20260725T-power-resolution/{power-plan.json,comparison.json,report.md}`.
+The `final` split inside the pooled run independently reproduces the earlier grounded rows exactly
+(`rag` 0.554, `long_context` 0.615), so the changed verdict comes from added items rather than a
+changed lane.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
@@ -2083,12 +2132,12 @@ gemma4:26b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
 
 What the wider cohort adds beyond the two-model result:
 
-- **Qwen3.6-35B-A3B is the only model that does not return `long_context_wins`.** Its
-  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one interval in the whole
-  evidence set that straddles zero, so the lane reports `rag_pays_off` instead. It also posts the
-  largest retrieval uplift measured (+0.421). Read together: this model loses the least to chunk
-  boundaries, which is the property that makes chunked retrieval a cheap substitute for a long
-  window rather than a compromise.
+- **The original final-only Qwen3.6-35B-A3B row is the cohort's only `rag_pays_off`.** Its
+  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one 82-item interval that
+  straddles zero, and it posts the largest retrieval uplift measured (+0.421). The powered
+  250-item run above resolves that near-miss as `long_context_wins`, so the final-only row is kept
+  here as the reference observation that priced the larger run, not as the current operator
+  verdict.
 - **A tie at the top, at very different cost.** Qwen3.6-35B and MamayLM-27B are statistically
   indistinguishable on `rag` (0.554 vs 0.546) and on the context-position probe (paired
   +0.006 [-0.048, +0.059]), but Qwen serves from VRAM at 13 GB with ~3B active parameters while

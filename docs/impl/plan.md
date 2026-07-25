@@ -43,36 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### context-ablation-long-context-verdict-is-one-convention-from-flipping
-
-The `qwen3.6-35b` context ablation returns `rag_pays_off` on a settled uplift, but only because the
-long-context check that runs BEFORE it missed by nothing: that run's long-context delta is +0.060
-`[-0.008, +0.130]` at `p_positive` 0.960, and a 90% interval would read it as separated, which is
-`long_context_wins` ([RAG core](current/rag-core.md#context-ablation-evidence)). The two verdicts
-lead to opposite operator actions -- ship retrieval, or stuff the document -- so the lane currently
-cannot say which one this model supports. Decide it with power rather than with a convention:
-predeclare the minimum detectable long-context delta and the item count it needs, then re-run the
-ablation on a set large enough to resolve +0.060, and record whether the row separates or is
-explicitly undecidable at the reached size.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-context-strategies` and the borderline annotation that
-  measured the near-miss
-  ([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-- User-visible outcome: the operator on this model learns whether to ship retrieval or whole-document
-  stuffing, instead of a verdict that a different reporting convention would reverse.
-- Scope boundary: in scope -- the power target, one re-run at the resolved item count, and a restated
-  verdict for that model. Out of scope -- changing the ablation's decision order, the lanes, and the
-  objective metric.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies MODEL=<that model>` on a larger scored set on the
-  CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the minimum detectable delta and item count are written down
-  BEFORE the run; the report states the long-context delta with its `p_positive` and records
-  separated, flat, or undecidable at the reached size.
-- Documentation target: the context-ablation evidence subsection of
-  [RAG core](current/rag-core.md#context-ablation-evidence).
-
 ### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
 
 The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it

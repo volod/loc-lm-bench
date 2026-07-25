@@ -85,6 +85,38 @@ def _boundary_section(report: ContextAblationReport) -> list[str]:
     )
 
 
+def _power_section(report: ContextAblationReport) -> list[str]:
+    analysis = report.get("power_analysis")
+    if analysis is None:
+        return []
+    entry = next(
+        (
+            item
+            for item in reversed(report["derived"])
+            if item["label"].startswith("long_context_delta")
+        ),
+        None,
+    )
+    stability = entry["paired"].get("stability") if entry else None
+    p_positive = f"{stability['p_positive']:.4f}" if stability else "not measured"
+    reached = "yes" if analysis["target_reached"] else "no"
+    return [
+        "### Predeclared long-context resolution",
+        "",
+        f"- minimum detectable delta: {analysis['minimum_detectable_delta']:+.3f} objective",
+        f"- target: {analysis['target_power']:.0%} power at alpha={analysis['alpha']:.3f}, "
+        f"two-sided `{analysis['method']}`",
+        f"- reference: n={analysis['reference_n']}, paired sample SD "
+        f"{analysis['reference_sample_sd']:.3f}, `{analysis['reference_artifact']}`",
+        f"- required / planned items: {analysis['required_n']} / {analysis['planned_n']} "
+        f"(target reached: {reached})",
+        f"- result: **{analysis.get('resolution', 'undecidable')}** "
+        f"(direction: `{analysis.get('direction', 'none')}`, p_positive: {p_positive}) -- "
+        f"{analysis.get('reason', 'the new run has no resolution')}",
+        "",
+    ]
+
+
 def _metric_table(
     report: ContextAblationReport, pick: str | None, title: str, note: str
 ) -> list[str]:
@@ -193,6 +225,7 @@ def format_report(
     ]
     lines += _lane_list(report)
     lines.append("")
+    lines += _power_section(report)
     lines += _derived_table(report["derived"])
     lines += _boundary_section(report)
     lines += _metric_table(report, None, "Per lane", "Every scored item")
