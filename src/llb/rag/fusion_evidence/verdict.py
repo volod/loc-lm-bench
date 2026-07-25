@@ -24,6 +24,7 @@ from llb.rag.fusion_evidence.models import (
     VERDICT_NO_EVIDENCE,
     VERDICT_REJECT,
 )
+from llb.rag.fusion_evidence.stability import ReadingStability, borderline_note
 from llb.rag.fusion_evidence.stats import Interval
 
 # The two focus-slice metrics a fused row may earn its default on: recovering ANY hop the vector
@@ -36,6 +37,25 @@ def _focus_delta(row: RowReport, focus_slice: str, metric: str) -> Interval:
     if slice_report is None:
         return {"mean": 0.0, "lo": 0.0, "hi": 0.0}
     return slice_report["paired_vs_baseline"][metric]["delta"]
+
+
+def _focus_stability(row: RowReport, focus_slice: str, metric: str) -> ReadingStability | None:
+    """How settled the focus-slice reading of one gain metric is, or None on an archived report."""
+    slice_report = row["slices"].get(focus_slice)
+    if slice_report is None:
+        return None
+    return slice_report["paired_vs_baseline"][metric].get("stability")
+
+
+def _gain_note(row: RowReport, focus_slice: str) -> str:
+    """The shared borderline clause over the gain metrics this verdict was decided on.
+
+    A `reject` and an `adopt` are both cuts of the same interval, so both need to say when the cut
+    -- rather than the evidence -- is what produced them.
+    """
+    return borderline_note(
+        [(metric, _focus_stability(row, focus_slice, metric)) for metric in GAIN_METRICS]
+    )
 
 
 def _overall_delta(row: RowReport, metric: str) -> Interval:
@@ -102,23 +122,25 @@ def _judge(row: RowReport, label: str, focus_slice: str) -> tuple[str, str]:
         f"all-spans {gains[METRIC_ALL_SPANS]['mean']:+.3f} "
         f"[{gains[METRIC_ALL_SPANS]['lo']:+.3f}, {gains[METRIC_ALL_SPANS]['hi']:+.3f}]"
     )
+    note = _gain_note(row, focus_slice)
     if best_mean <= 0.0:
         return VERDICT_REJECT, (
             f"{label} does not beat the vector lane on {focus_slice} ({detail}); "
-            "fusion stays opt-in"
+            "fusion stays opt-in" + note
         )
     if best_lo <= 0.0:
         return VERDICT_INCONCLUSIVE, (
             f"{label} gains {best_mean:+.3f} on {focus_slice} but the interval includes no "
             f"difference ({detail}); fusion stays opt-in until a larger {focus_slice} slice "
-            "separates it from the vector lane"
+            "separates it from the vector lane" + note
         )
     if overall["mean"] < -OVERALL_RECALL_TOLERANCE:
         return VERDICT_REJECT, (
             f"{label} gains {best_mean:+.3f} on {focus_slice} but costs "
-            f"{overall['mean']:+.3f} overall recall@k; fusion stays opt-in"
+            f"{overall['mean']:+.3f} overall recall@k; fusion stays opt-in" + note
         )
     return VERDICT_ADOPT, (
         f"{label} gains {best_mean:+.3f} on {focus_slice} ({detail}) with "
         f"{overall['mean']:+.3f} [{overall['lo']:+.3f}, {overall['hi']:+.3f}] overall recall@k"
+        + note
     )

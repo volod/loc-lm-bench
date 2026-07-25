@@ -81,11 +81,16 @@ def chunk_corpus(
 
 
 def summarize(chunks: list[ChunkRecord]) -> ChunkSummary:
+    """Chunk-length distribution plus the oversize share that audits the `size` cap."""
     sizes = [c["char_end"] - c["char_start"] for c in chunks]
-    n = len(sizes)
+    over = [length for length, c in zip(sizes, chunks) if length > c["size"]]
+    n, total = len(sizes), sum(sizes)
     return {
         "n": n,
-        "avg": sum(sizes) // n if n else 0,
+        "avg": total // n if n else 0,
         "min": min(sizes) if sizes else 0,
         "max": max(sizes) if sizes else 0,
+        "oversize": len(over),
+        "oversize_share": len(over) / n if n else 0.0,
+        "oversize_char_share": sum(over) / total if total else 0.0,
     }

@@ -76,7 +76,9 @@ dev = [
   "mypy>=1.10",
   "pytest>=8.0",
   "textual>=0.60",
-  "ruff>=0.6",
+  # Upper bound: the formatter's output is version-sensitive, so a floating major would let a
+  # release reformat the tree under CI. Lint rules are pinned by `[tool.ruff.lint].select`.
+  "ruff>=0.6,<0.17",
   "radon>=6.0",
   "complexipy>=5.0",
   "pymarkdownlnt>=0.9.32",
@@ -115,10 +117,18 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-# Keep tool caches out of the project root, under the single $DATA_DIR temp tree (default .data/).
-# `make` exports RUFF_CACHE_DIR=$DATA_DIR/cache/ruff so a custom DATA_DIR is followed; this static
-# default covers a bare `ruff` run with the default DATA_DIR.
-cache-dir = ".data/cache/ruff"
+# NOTE: no `cache-dir` here on purpose. A static path cannot read .env, so it would keep writing
+# into the project root after an operator moved DATA_DIR. `make/config.mk` and
+# `scripts/shared/common.sh` export RUFF_CACHE_DIR=$DATA_DIR/cache/ruff instead; a bare `ruff` with
+# neither loaded uses its own gitignored `.ruff_cache/`.
+
+# The lint contract is EXPLICIT, not ruff's default set. Ruff 0.16 widened that default (import
+# sorting, pyupgrade, flake8-bugbear, implicit-concat, ...), which turned a clean tree into 1391
+# findings on a CI box that resolved a newer ruff than the dev box -- a linter upgrade must not be
+# able to fail CI on unchanged code. These four groups are the set this repo has always enforced
+# (pycodestyle errors, pyflakes); widening it is a deliberate, separate decision.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pymarkdown]
 # Enable GFM tables so the line-length rule (MD013) recognizes table rows as table tokens; without
@@ -141,7 +151,8 @@ plugins.MD026.enabled = false  # trailing punctuation in headings (sentence-styl
 [tool.mypy]
 python_version = "3.13"
 files = ["src/llb"]
-cache_dir = ".data/cache/mypy"  # keep .mypy_cache out of the root (MYPY_CACHE_DIR overrides via make)
+# Cache dir: MYPY_CACHE_DIR=$DATA_DIR/cache/mypy, exported by make/config.mk and
+# scripts/shared/common.sh -- see the ruff note above for why it is not a static path here.
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_untyped_defs = true
@@ -154,7 +165,9 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-cache_dir = ".data/cache/pytest"  # keep .pytest_cache out of the root (make passes -o for custom DATA_DIR)
+# Cache dir: pytest has no cache env var, so `make` passes -o cache_dir=$DATA_DIR/cache/pytest
+# (PYTEST_CACHE_OPT). A static path here could not follow a redirected DATA_DIR; a bare `pytest`
+# uses its own gitignored `.pytest_cache/`.
 # Pytest's default `norecursedirs` skips directories named `build`; keep this explicit list so
 # `tests/llb/build/` can mirror `src/llb/build/` and still be collected.
 norecursedirs = [".*", "__pycache__", ".eggs", "dist", "CVS", "_darcs", "{arch}", "*.egg", "venv"]

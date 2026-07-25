@@ -8,6 +8,7 @@ from llb.rag.compare import (
     ROW_DENSE,
     ROW_HYBRID,
     ROW_HYBRID_LEMMAS,
+    ROW_LEXICAL,
     ROW_ORACLE_DOC,
     Retriever,
 )
@@ -52,11 +53,14 @@ def build_chunking_comparison(
     ONLY in the chunking strategy, so `compare_retrieval` demonstrates (not assumes) the best
     chunker per corpus. Stores are built in `flat` mode -- parent_child would confound the
     boundary comparison (and `late` refuses it). When `stores_root` is given each store persists
-    under `<stores_root>/<strategy>/` for reuse. Real path: needs the `[rag]` extra.
+    under `<stores_root>/<strategy>/` for reuse. Every store also shares the config's
+    `duplicate_tier`, so a tier is compared across chunkers rather than confounded with one.
+    Real path: needs the `[rag]` extra.
     """
     from pathlib import Path
 
     from llb.rag.chunking.dispatch import STRATEGIES
+    from llb.rag.duplicate_tiers import TIER_EXACT
     from llb.rag.store import RagStore
 
     unknown = [s for s in strategies if s not in STRATEGIES]
@@ -73,6 +77,7 @@ def build_chunking_comparison(
             config.chunk_overlap,
             config.embedding_model,
             mode="flat",
+            duplicate_tier=getattr(config, "duplicate_tier", TIER_EXACT),
         )
         if stores_root is not None:
             store.save(Path(stores_root) / strategy)
@@ -110,9 +115,9 @@ def build_hybrid_comparison(
     """Build the hybrid-retrieval row set over ONE embedded corpus (hybrid-retrieval-uk).
 
     One hybrid store is built (corpus embedded once); the rows share its chunks + dense index
-    and differ only in the query path: `dense` (fusion disabled), `hybrid` (BM25 + weighted
-    RRF with the config's fusion knobs), `hybrid+lemmas` (a second lexical index with
-    Ukrainian lemmatization), and
+    and differ only in the query path: `dense` (fusion disabled), `lexical` (BM25 alone, i.e.
+    fusion weight 0), `hybrid` (BM25 + weighted RRF with the config's fusion knobs),
+    `hybrid+lemmas` (a second lexical index with Ukrainian lemmatization), and
     `dense+oracle-doc` (candidates restricted to each gold item's source doc -- the recall
     headroom a perfect document router would buy). When `stores_root` is given the hybrid
     store persists under `<stores_root>/hybrid/`. Real path: needs the `[rag]` extra.
@@ -140,8 +145,21 @@ def build_hybrid_comparison(
     dense_meta["mode"] = "flat"
     dense = RagStore(hybrid.chunks, hybrid.index, hybrid.embedder, dense_meta)  # type: ignore[arg-type]
 
+    # BM25 alone over the same chunks: fusion weight 0 drops the dense lane from the fusion
+    # entirely, so the row reads a lexical-side change without the dense lane masking it.
+    lexical_only = RagStore(
+        hybrid.chunks,
+        hybrid.index,
+        hybrid.embedder,
+        dict(hybrid.meta),  # type: ignore[arg-type]
+        lexical=hybrid.lexical,
+    )
+    lexical_only.fusion_weight = 0.0
+    lexical_only.fusion_candidates = config.fusion_candidates
+
     stores: dict[str, Retriever] = {
         ROW_DENSE: dense,
+        ROW_LEXICAL: lexical_only,
         ROW_HYBRID: hybrid,
         ROW_ORACLE_DOC: OracleDocFilter(dense, items),
     }

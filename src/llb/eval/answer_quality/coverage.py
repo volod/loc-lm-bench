@@ -19,6 +19,7 @@ from typing import Any
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.retrieval import all_spans_at_k, span_coverage_at_k
+from llb.rag.retrieval_records import record_as_chunk
 
 RETRIEVAL_FILENAME = "retrieval.jsonl"
 METRIC_ALL_SPANS = "all_spans_at_k"
@@ -26,15 +27,9 @@ METRIC_SPAN_COVERAGE = "span_coverage"
 
 
 def _as_chunks(records: list[JsonObject]) -> list[ChunkRecord]:
-    return [
-        {
-            "doc_id": str(record.get("doc_id", "")),
-            "char_start": int(record.get("char_start", 0)),
-            "char_end": int(record.get("char_end", 0)),
-            "text": "",
-        }
-        for record in records
-    ]
+    """Persisted rows back as chunks, with the occurrences of a collapsed chunk restored, so a
+    span carried by a duplicate copy counts as covered here exactly as it did in the run."""
+    return [record_as_chunk(record) for record in records]  # type: ignore[arg-type]
 
 
 def _as_spans(records: list[JsonObject]) -> list[SourceSpanRecord]:

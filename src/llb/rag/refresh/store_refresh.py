@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
-from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
+from llb.core.contracts.rag import RagStoreMeta
 from llb.core.store_generations import (
     generation_timestamp,
     new_generation_paths,
@@ -31,11 +31,20 @@ from llb.core.store_generations import (
     resolve_store_dir,
 )
 from llb.prep.corpus_governance import corpus_doc_fingerprints, corpus_fingerprint
-from llb.rag.chunking.corpus import chunk_corpus, iter_doc_paths
+from llb.rag.duplicate_tiers import TIER_EXACT
+from llb.rag.duplicates import expand_duplicate_chunks
 from llb.rag.lexical import Lemmatizer, LexicalIndex
-from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.refresh.diff import ManifestDiff, diff_fingerprints
-from llb.rag.refresh.lexical_merge import MergeEntry, merge_lexical_index
+from llb.rag.refresh.lexical_merge import merge_lexical_index
+from llb.rag.refresh.merge import (
+    MODE_PARENT_CHILD,
+    MergedUnits,
+    assemble,
+    chunk_changed_docs,
+    merged_vectors,
+    resolve_duplicates,
+    text_row_map,
+)
 from llb.rag.store import RagStore
 from llb.rag.store_build import (
     CHUNKS_FILE,
@@ -43,14 +52,11 @@ from llb.rag.store_build import (
     META_FILE,
     MODE_HYBRID,
     PARENTS_FILE,
-    _build_children,
 )
 from llb.rag.store_io import _read_jsonl
 from llb.rag.vector_index import RAG_BACKEND_FAISS, build_vector_index, load_vector_index
 
 _LOG = logging.getLogger(__name__)
-
-MODE_PARENT_CHILD = "parent_child"
 
 
 @dataclass
@@ -63,28 +69,11 @@ class VectorRefreshResult:
     generation_dir: Path | None = None
     n_reused: int = 0
     n_embedded: int = 0
+    n_reused_by_text: int = (
+        0  # of n_reused, rows a changed doc recovered by text (else re-embedded)
+    )
     old_store: RagStore | None = None
     new_store: RagStore | None = None
-
-
-@dataclass
-class _MergedUnits:
-    """The merged build-order store content plus the per-row reuse plan."""
-
-    indexed: list[ChunkRecord]
-    parents: list[ChunkRecord] | None
-    # per indexed row: the old build-order ordinal to reuse, or None for a fresh unit to embed
-    row_sources: list[int | None]
-
-    @property
-    def new_units(self) -> list[ChunkRecord]:
-        return [u for u, src in zip(self.indexed, self.row_sources) if src is None]
-
-    def lexical_entries(self) -> list[MergeEntry]:
-        return [
-            src if src is not None else str(unit["text"])
-            for unit, src in zip(self.indexed, self.row_sources)
-        ]
 
 
 def stored_vectors(index: Any) -> Any:
@@ -96,143 +85,6 @@ def stored_vectors(index: Any) -> Any:
             "rebuild the store once with `llb build-index` to enable refresh"
         )
     return vectors()
-
-
-def _group_by_doc(records: list[ChunkRecord]) -> dict[str, list[int]]:
-    """Build-order ordinals per doc_id, order preserved."""
-    out: dict[str, list[int]] = {}
-    for ordinal, record in enumerate(records):
-        out.setdefault(str(record["doc_id"]), []).append(ordinal)
-    return out
-
-
-def _chunk_changed_docs(
-    corpus_root: Path,
-    changed: set[str],
-    meta: RagStoreMeta,
-    embedder: Any,
-) -> tuple[dict[str, list[ChunkRecord]], dict[str, list[ChunkRecord]] | None]:
-    """(indexed units, parents) per changed doc, mirroring the from-scratch build path."""
-    strategy = str(meta.get("strategy", "recursive"))
-    sem = embedder if strategy == "semantic" else None
-    units = chunk_corpus(
-        corpus_root,
-        strategy,
-        int(meta.get("size", 800)),
-        int(meta.get("overlap", 120)),
-        sem,
-        only_docs=changed,
-    )
-    if str(meta.get("mode", "flat")) != MODE_PARENT_CHILD:
-        annotate_page_metadata(units, corpus_root)
-        return _records_by_doc(units), None
-    children = _build_children(
-        units, strategy, int(meta.get("child_size", 400)), int(meta.get("overlap", 120)), embedder
-    )
-    annotate_page_metadata(children, corpus_root)
-    annotate_page_metadata(units, corpus_root)
-    return _records_by_doc(children), _records_by_doc(units)
-
-
-def _records_by_doc(records: list[ChunkRecord]) -> dict[str, list[ChunkRecord]]:
-    out: dict[str, list[ChunkRecord]] = {}
-    for record in records:
-        out.setdefault(str(record["doc_id"]), []).append(record)
-    return out
-
-
-def _annotation_only_sources(
-    fresh: list[ChunkRecord], old_chunks: list[ChunkRecord], old_ordinals: list[int]
-) -> list[int | None]:
-    """Row sources for one changed doc's fresh units: old ordinals when the diff is
-    annotation-only, fresh embeds otherwise.
-
-    A modified document whose re-chunked `(char_start, char_end, text)` grid reproduces the
-    stored one exactly (sidecar-driven page-span regeneration, governance-only manifest
-    changes) has embedding rows unchanged by construction: the fresh records replace the
-    stored ones (carrying the re-annotated metadata) while every embedding row is reused.
-    """
-    if len(fresh) != len(old_ordinals):
-        return [None] * len(fresh)
-    spans_unchanged = all(
-        unit["char_start"] == old_chunks[ordinal]["char_start"]
-        and unit["char_end"] == old_chunks[ordinal]["char_end"]
-        and unit["text"] == old_chunks[ordinal]["text"]
-        for unit, ordinal in zip(fresh, old_ordinals)
-    )
-    return list(old_ordinals) if spans_unchanged else [None] * len(fresh)
-
-
-def _assemble(
-    corpus_root: Path,
-    changed: set[str],
-    old_chunks: list[ChunkRecord],
-    old_parents: list[ChunkRecord] | None,
-    new_by_doc: dict[str, list[ChunkRecord]],
-    new_parents_by_doc: dict[str, list[ChunkRecord]] | None,
-    modified: set[str] | None = None,
-) -> _MergedUnits:
-    """Interleave kept and fresh units in the exact from-scratch build order.
-
-    `modified` names the changed docs eligible for the annotation-only fast path (the diff's
-    modified class); added docs and legacy full refreshes always embed fresh rows.
-    """
-    old_ordinals = _group_by_doc(old_chunks)
-    old_parent_ordinals = _group_by_doc(old_parents) if old_parents is not None else {}
-    indexed: list[ChunkRecord] = []
-    parents: list[ChunkRecord] | None = [] if new_parents_by_doc is not None else None
-    row_sources: list[int | None] = []
-    for doc_id in iter_doc_paths(corpus_root):
-        if doc_id in changed:
-            fresh = new_by_doc.get(doc_id, [])
-            indexed.extend(fresh)
-            if modified and doc_id in modified:
-                sources = _annotation_only_sources(fresh, old_chunks, old_ordinals.get(doc_id, []))
-            else:
-                sources = [None] * len(fresh)
-            row_sources.extend(sources)
-            if parents is not None and new_parents_by_doc is not None:
-                parents.extend(new_parents_by_doc.get(doc_id, []))
-            continue
-        for ordinal in old_ordinals.get(doc_id, []):
-            indexed.append(old_chunks[ordinal])
-            row_sources.append(ordinal)
-        if parents is not None and old_parents is not None:
-            parents.extend(old_parents[ordinal] for ordinal in old_parent_ordinals.get(doc_id, []))
-    return _MergedUnits(indexed=indexed, parents=parents, row_sources=row_sources)
-
-
-def _merged_vectors(
-    old_vectors: Any,
-    merged: _MergedUnits,
-    meta: RagStoreMeta,
-    corpus_root: Path,
-    embedder: Any,
-) -> Any:
-    """The merged float32 matrix: kept rows from the old index, fresh rows from the embedder."""
-    import numpy as np
-
-    new_units = merged.new_units
-    new_vectors: Any = None
-    if new_units:
-        if str(meta.get("strategy")) == "late":
-            from llb.rag.late_encoding import encode_store_vectors
-
-            new_vectors = encode_store_vectors(new_units, corpus_root, embedder)
-        else:
-            new_vectors = embedder.encode_passages([str(u["text"]) for u in new_units])
-        new_vectors = np.asarray(new_vectors, dtype="float32")
-    old = np.asarray(old_vectors, dtype="float32")
-    dim = int(old.shape[1]) if old.size else int(new_vectors.shape[1])
-    out = np.empty((len(merged.row_sources), dim), dtype="float32")
-    fresh_row = 0
-    for row, src in enumerate(merged.row_sources):
-        if src is None:
-            out[row] = new_vectors[fresh_row]
-            fresh_row += 1
-        else:
-            out[row] = old[src]
-    return out
 
 
 def _load_old_lexical(live_dir: Path, meta: RagStoreMeta) -> LexicalIndex | None:
@@ -249,7 +101,7 @@ def _load_old_lexical(live_dir: Path, meta: RagStoreMeta) -> LexicalIndex | None
 
 def _refreshed_meta(
     meta: RagStoreMeta,
-    merged: _MergedUnits,
+    merged: MergedUnits,
     vectors: Any,
     lexical: LexicalIndex | None,
     current_fingerprints: dict[str, str],
@@ -273,6 +125,8 @@ def _refreshed_meta(
     )
     if lexical is not None:
         new_meta["lexical"] = {"lemmatize": lexical.lemmatize, "n_terms": len(lexical.postings)}
+    if merged.duplicates is not None:
+        new_meta["duplicates"] = cast(Any, merged.duplicates)
     return new_meta
 
 
@@ -326,19 +180,32 @@ def refresh_vector_store(
 
         embedder = Embedder(str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL)))
 
-    new_by_doc, new_parents_by_doc = _chunk_changed_docs(corpus_root, diff.changed, meta, embedder)
-    merged = _assemble(
-        corpus_root,
-        diff.changed,
-        old_chunks,
-        old_parents,
-        new_by_doc,
-        new_parents_by_doc,
-        modified=set(diff.modified),
+    # Duplicate collapse is undone before the per-document merge and re-applied after it, so the
+    # merge still sees every document's complete chunk list (`llb.rag.duplicates`).
+    merge_chunks, vector_rows = expand_duplicate_chunks(old_chunks)
+    new_by_doc, new_parents_by_doc = chunk_changed_docs(corpus_root, diff.changed, meta, embedder)
+    # Recover a changed doc's fresh row from any stored chunk with the same text -- valid only
+    # where the vector is a pure function of the text (`late` pools document context, so its rows
+    # cannot be reused across documents and it re-encodes each changed doc instead).
+    text_rows = None if str(meta.get("strategy")) == "late" else text_row_map(old_chunks)
+    merged = resolve_duplicates(
+        assemble(
+            corpus_root,
+            diff.changed,
+            merge_chunks,
+            old_parents,
+            new_by_doc,
+            new_parents_by_doc,
+            modified=set(diff.modified),
+        ),
+        vector_rows,
+        collapse=bool(meta.get("collapse_duplicates", True)),
+        text_rows=text_rows,
+        tier=str(meta.get("duplicate_tier", TIER_EXACT)),
     )
     if not merged.indexed:
         raise SystemExit(f"[refresh] no chunks produced from corpus at {corpus_root}")
-    vectors = _merged_vectors(stored_vectors(old_index), merged, meta, corpus_root, embedder)
+    vectors = merged_vectors(stored_vectors(old_index), merged, meta, corpus_root, embedder)
     index = build_vector_index(backend, vectors)
     lexical = (
         merge_lexical_index(old_lexical, merged.lexical_entries(), lemmatizer)
@@ -358,11 +225,12 @@ def refresh_vector_store(
     )
     n_embedded = sum(1 for src in merged.row_sources if src is None)
     _LOG.info(
-        "[refresh] %s -> %s: %s; %d rows reused, %d embedded",
+        "[refresh] %s -> %s: %s; %d rows reused (%d recovered by text), %d embedded",
         live_dir,
         generation_dir,
         diff.summary(),
         len(merged.row_sources) - n_embedded,
+        merged.text_reused,
         n_embedded,
     )
     return VectorRefreshResult(
@@ -372,6 +240,7 @@ def refresh_vector_store(
         generation_dir=generation_dir,
         n_reused=len(merged.row_sources) - n_embedded,
         n_embedded=n_embedded,
+        n_reused_by_text=merged.text_reused,
         old_store=old_store,
         new_store=new_store,
     )

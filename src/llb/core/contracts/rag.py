@@ -46,6 +46,9 @@ class RagStoreMeta(TypedDict):
     governance_fields: NotRequired[list[str]]
     doc_fingerprints: NotRequired[dict[str, str]]
     refreshed_from: NotRequired[str]
+    collapse_duplicates: NotRequired[bool]  # duplicate chunk collapse on/off (llb.rag.duplicates)
+    duplicate_tier: NotRequired[str]  # when two texts are one passage (llb.rag.duplicate_tiers)
+    duplicates: NotRequired[JsonObject]  # its measured DuplicateStats, collapsed or not
 
 
 class RetrievalMetrics(TypedDict):
@@ -58,6 +61,15 @@ class RetrievalMetrics(TypedDict):
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
 
 
+class RetrievedOccurrence(TypedDict):
+    """One other place a retrieved chunk's text appears (see `llb.rag.duplicates`)."""
+
+    doc_id: str
+    char_start: int
+    char_end: int
+    chunk_id: NotRequired[str]
+
+
 class RetrievedSpanRecord(TypedDict):
     """Bounded retrieved-span data persisted for miss analysis."""
 
@@ -67,6 +79,11 @@ class RetrievedSpanRecord(TypedDict):
     rank: int
     retrieval_score: NotRequired[float | None]
     text_preview: NotRequired[str]
+    # Present only for a chunk that collapsed byte-identical copies: the TOTAL number of places
+    # its text appears (including this one), and a bounded, gold-complete list of the others --
+    # see `llb.rag.retrieval_records`. An uncollapsed chunk carries neither key.
+    duplicate_count: NotRequired[int]
+    duplicate_occurrences: NotRequired[list[RetrievedOccurrence]]
 
 
 class CaseRetrievalRecord(TypedDict):
@@ -86,10 +103,15 @@ class CorrectnessScores(TypedDict):
 
 
 class ChunkSummary(TypedDict):
+    """Chunk-length distribution of a built store; the oversize fields audit the `size` cap."""
+
     n: int
     avg: int
     min: int
     max: int
+    oversize: int  # chunks longer than the `size` they were built with
+    oversize_share: float  # their share of the chunk COUNT
+    oversize_char_share: float  # their share of the indexed CHARACTERS
 
 
 class SquadAnswers(TypedDict):

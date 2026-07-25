@@ -116,7 +116,7 @@ def run_multi_objective_tune(
 
 def _parse_embedders(embedders: str | None) -> list[str] | None:
     """None -> bake-off shortlist; empty string -> pinned; else comma list."""
-    from llb.rag.embedding_bakeoff import DEFAULT_LOCAL_CANDIDATES
+    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
 
     if embedders is None:
         return list(DEFAULT_LOCAL_CANDIDATES)

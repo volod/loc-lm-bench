@@ -3,7 +3,11 @@
 import json
 from pathlib import Path
 import pytest
-from llb.board.miss_analysis.classify import analyze_run
+from llb.board.miss_analysis.classify import (
+    analyze_run,
+    retrieval_hit_from_record,
+    retrieved_docs_from_record,
+)
 from llb.board.miss_analysis.recommendations import refresh_recommendations
 from llb.board import miss_probe as mp
 from llb.executor import durability_journal
@@ -47,6 +51,36 @@ def test_persist_run_writes_additive_retrieval_records(tmp_path):
     assert len(first["text_preview"]) == 160  # bounded preview, never the full chunk
     assert lines[0]["gold_spans"][0]["doc_id"] == DOC_A
     assert lines[1]["retrieved"] == []
+
+
+def test_persisted_records_keep_the_places_a_collapsed_chunk_stands_for(tmp_path):
+    """End to end: a hit the run scored through a duplicate copy is a hit for miss analysis too."""
+    item = _goldset()[0]
+    gold = [span.model_dump() for span in item.source_spans]
+    survivor = {
+        "doc_id": "other.md",  # the indexed copy lives elsewhere; the gold span is on the copy
+        "chunk_id": "other.md#0000",
+        "char_start": 0,
+        "char_end": 40,
+        "text": "повторюваний блок",
+        "metadata": {
+            "duplicate_count": 2,
+            "duplicate_occurrences": [
+                {"doc_id": DOC_A, "chunk_id": f"{DOC_A}#0000", "char_start": 0, "char_end": 40}
+            ],
+        },
+    }
+    batch = CaseBatch(
+        rows=[_score_row(item.id, "ok", 0.1, 1.0)],
+        retrieval_pairs=[([survivor], gold)],
+        answers=[(item, "відповідь")],
+    )
+    record = batch_retrieval_records(batch)[0]
+    persisted = record["retrieved"][0]
+    assert persisted["duplicate_count"] == 2
+    assert [c["doc_id"] for c in persisted["duplicate_occurrences"]] == [DOC_A]
+    assert retrieval_hit_from_record(dict(record)) is True
+    assert retrieved_docs_from_record(dict(record)) == ["other.md", DOC_A]
 
 
 def test_probe_runs_miss_subset_and_confirms_retrieval_hypothesis(tmp_path):

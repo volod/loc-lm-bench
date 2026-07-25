@@ -45,6 +45,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         STEP_DECOMPOSE,
         STEP_GLOSSARY,
         STEP_HYDE,
+        STEP_NORMALIZE,
         STEP_REWRITE,
         STEP_TYPOS,
     )
@@ -67,6 +68,11 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             from llb.rag.lexical import load_uk_word_probe
 
             known_word = load_uk_word_probe()
+    plausible = None
+    if STEP_NORMALIZE in steps and config.query_prep_language_gate:
+        # Reuse the typo guard's morphology probe when it is already loaded, so the gate never
+        # pays for pymorphy3 twice on a normalize+typos lane.
+        plausible = _plausibility_probe(vocabulary, known_word)
     glossary = _load_query_glossary(config) if STEP_GLOSSARY in steps else None
     rewriter = None
     model_steps = {STEP_REWRITE, STEP_HYDE, STEP_DECOMPOSE}.intersection(steps)
@@ -97,9 +103,27 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             decomposer=decomposer,
             known_word=known_word,
             context=context,
+            plausible=plausible,
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None
+
+
+def _plausibility_probe(vocabulary: "frozenset[str] | None", probe: Any | None) -> Any:
+    """A "does this decoded token look like real Ukrainian?" probe for the normalize gate.
+
+    Corpus vocabulary answers first (free, and it covers domain terms the general dictionary
+    misses); the pymorphy3 word probe is the fallback for any Ukrainian form the corpus happens
+    not to contain. A romanized Ukrainian query clears the gate on either; foreign text clears
+    neither, so its transliteration is refused. `probe` is the already-loaded morphology probe when
+    the typo guard supplied one, else it is loaded here."""
+    if probe is None:
+        from llb.rag.lexical import load_uk_word_probe
+
+        probe = load_uk_word_probe()
+    if not vocabulary:
+        return probe
+    return lambda token: token in vocabulary or probe(token)
 
 
 def _load_query_glossary(config: RunConfig) -> Any:

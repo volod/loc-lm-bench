@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from llb.prep.pdf.repeats import REPEAT_KEEP
+
 PDF_CORPUS_MANIFEST = "pdf_corpus_manifest.json"
 PDF_CORPUS_QUALITY = "pdf_corpus_quality.json"
 PDF_CITATION_SUFFIX = ".citations.json"
@@ -167,6 +169,9 @@ class PdfCorpusItem:
     quality: PdfExtractionQuality | None = None
     source_sha256: str | None = None  # reuse key: skip reconversion when the source is unchanged
     reused: bool = False
+    # Intra-document repeated-block handling this document was converted under
+    # (`llb.prep.pdf.repeats`); part of the reuse key, since changing it changes the output.
+    repeat_blocks: str = REPEAT_KEEP
 
 
 @dataclass(frozen=True)

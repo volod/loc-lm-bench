@@ -219,7 +219,10 @@ def test_legacy_store_without_doc_fingerprints_refreshes_fully(tmp_path):
     meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     embedder = CountingEmbedder()
     result = refresh_vector_store(index_dir, corpus, embedder=embedder, timestamp=TS)
-    assert result.refreshed and result.n_reused == 0
+    # no fingerprints means every document is treated as added, so the position map reuses nothing;
+    # the text-keyed reuse still recovers unchanged a.md's rows from the store's own vectors.
+    assert result.refreshed
+    assert result.n_reused == result.n_reused_by_text > 0
     _assert_equivalent(result.new_store, build_store(corpus, CountingEmbedder()))
 
 

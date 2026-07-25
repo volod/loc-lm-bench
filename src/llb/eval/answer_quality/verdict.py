@@ -24,6 +24,7 @@ from llb.eval.answer_quality.models import (
     VERDICT_NO_GAIN,
     VERDICT_RETRIEVAL_ONLY,
 )
+from llb.rag.fusion_evidence.stability import ReadingStability, borderline_note
 from llb.rag.fusion_evidence.stats import Interval
 
 ZERO: Interval = {"mean": 0.0, "lo": 0.0, "hi": 0.0}
@@ -34,6 +35,14 @@ def _focus_delta(lane: LaneReport, focus_slice: str, metric: str) -> Interval:
     if slice_report is None:
         return ZERO
     return slice_report["paired_vs_baseline"][metric]["delta"]
+
+
+def _focus_stability(lane: LaneReport, focus_slice: str, metric: str) -> ReadingStability | None:
+    """How settled one focus-slice reading is, or None on an artifact carrying no draw."""
+    slice_report = lane["slices"].get(focus_slice)
+    if slice_report is None:
+        return None
+    return slice_report["paired_vs_baseline"][metric].get("stability")
 
 
 def _rank_key(lane: LaneReport, focus_slice: str) -> tuple[float, float, float]:
@@ -106,10 +115,18 @@ def _judge(
         f"{coverage_metric} {coverage['mean']:+.3f} "
         f"[{coverage['lo']:+.3f}, {coverage['hi']:+.3f}]"
     )
+    # Both readings the four outcomes below are cut from, so whichever branch fires says when the
+    # cut -- not the evidence -- is what produced it.
+    note = borderline_note(
+        [
+            (metric, _focus_stability(lane, focus_slice, metric))
+            for metric in (METRIC_OBJECTIVE, coverage_metric)
+        ]
+    )
     if objective["lo"] > 0.0:
         return VERDICT_ANSWER_GAIN, (
             f"{label} answers {focus_slice} better than {baseline} ({detail}); the retrieval gain "
-            "reaches the answer"
+            "reaches the answer" + note
         )
     # A coverage gain whose own interval clears zero, paired with an objective that does not, IS
     # the retrieval-only finding -- reporting it as merely `inconclusive` would throw away the
@@ -118,14 +135,15 @@ def _judge(
         return VERDICT_RETRIEVAL_ONLY, (
             f"{label} carries {coverage['mean']:+.3f} more of the {focus_slice} evidence than "
             f"{baseline}, but its objective is not separable from it ({detail}); the coverage gain "
-            "is a retrieval-only effect"
+            "is a retrieval-only effect" + note
         )
     if objective["mean"] > 0.0:
         return VERDICT_INCONCLUSIVE, (
             f"{label} gains {objective['mean']:+.3f} objective on {focus_slice} but the interval "
             f"includes no difference ({detail}); a larger {focus_slice} slice is needed to "
-            "separate it from " + baseline
+            "separate it from " + baseline + note
         )
     return VERDICT_NO_GAIN, (
         f"{label} neither retrieves nor answers {focus_slice} better than {baseline} ({detail})"
+        + note
     )

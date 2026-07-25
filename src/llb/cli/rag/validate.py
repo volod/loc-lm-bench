@@ -151,6 +151,7 @@ def _emit_query_prep_ab_report(
         hypothesizer=pipeline.hypothesizer,
         decomposer=pipeline.decomposer,
         known_word=pipeline.known_word,
+        plausible=pipeline.plausible,
     )
     report = query_prep_ab_report(
         ab_items, lambda result, depth: retrieve_prepared(store, result, depth), k, stages

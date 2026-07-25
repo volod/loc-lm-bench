@@ -29,7 +29,9 @@ from llb.prep.pdf.render import (
     default_markdown_out_dir,
     doc_id_for_pdf,
     iter_pdf_files,
+    strip_rendered_repeats,
 )
+from llb.prep.pdf.repeats import DEFAULT_MIN_REPEATS, REPEAT_KEEP, REPEAT_MODES
 from llb.prep.pdf.reuse import _previous_manifest_items, _reusable_item, _sha256_file
 
 _LOG = logging.getLogger(__name__)
@@ -43,6 +45,8 @@ def _ingest_one_pdf(
     min_chars: int,
     parser: str,
     source_sha256: str | None = None,
+    repeat_blocks: str = REPEAT_KEEP,
+    min_repeats: int = DEFAULT_MIN_REPEATS,
 ) -> PdfCorpusItem:
     source = _source_rel(pdf_root, pdf_path)
     diagnostics = inspect_pdf(pdf_path)
@@ -100,7 +104,18 @@ def _ingest_one_pdf(
             source_sha256=source_sha256,
         )
     doc_id = doc_id_for_pdf(pdf_root, pdf_path)
-    rendered = _render_doc(source, extraction)
+    rendered, census = strip_rendered_repeats(
+        _render_doc(source, extraction), repeat_blocks, min_repeats
+    )
+    if census is not None:
+        _LOG.info(
+            "[pdf-corpus] %s: %s %d repeated blocks in %d groups (%s)",
+            doc_id,
+            repeat_blocks,
+            census["handled_blocks"],
+            census["handled_groups"],
+            f"{census['groups']} repeated groups measured",
+        )
     (out_dir / doc_id).write_text(rendered.text, encoding="utf-8")
     citation_path = _write_citations(out_dir, source, doc_id, rendered, extraction, diagnostics)
     return PdfCorpusItem(
@@ -117,6 +132,7 @@ def _ingest_one_pdf(
         diagnostics=diagnostics,
         quality=quality,
         source_sha256=source_sha256,
+        repeat_blocks=repeat_blocks,
     )
 
 
@@ -129,14 +145,20 @@ def ingest_pdf_corpus(
     parser: str = PARSER_AUTO,
     extractor: PdfTextExtractor | None = None,
     refresh: bool = False,
+    repeat_blocks: str = REPEAT_KEEP,
+    min_repeats: int = DEFAULT_MIN_REPEATS,
 ) -> PdfCorpusResult:
     """Extract a local PDF directory into a `.md` corpus and write a manifest.
 
     Unchanged sources are reused from the previous manifest (fingerprinted by sha256) instead of
-    reconverted; `refresh=True` forces a full reconversion.
+    reconverted; `refresh=True` forces a full reconversion. `repeat_blocks` selects the
+    intra-document repeated-block handling (`llb.prep.pdf.repeats`) and is part of the reuse key,
+    so switching it reconverts instead of rehydrating output from the other mode.
     """
     if parser not in PDF_PARSERS:
         raise ValueError(f"unknown PDF parser: {parser!r}; choose one of {PDF_PARSERS}")
+    if repeat_blocks not in REPEAT_MODES:
+        raise ValueError(f"unknown repeat mode: {repeat_blocks!r}; choose one of {REPEAT_MODES}")
     root = Path(pdf_root)
     if not root.exists():
         raise ValueError(f"PDF root does not exist: {root}")
@@ -153,7 +175,9 @@ def ingest_pdf_corpus(
     for pdf in pdfs:
         source = _source_rel(root, pdf)
         source_sha256 = _sha256_file(pdf)
-        reused = _reusable_item(previous.get(source), source_sha256, target, min_chars, parser)
+        reused = _reusable_item(
+            previous.get(source), source_sha256, target, min_chars, parser, repeat_blocks
+        )
         if reused is not None:
             n_reused += 1
             _LOG.info("[pdf-corpus] reuse %s (unchanged source %s)", reused.doc_id, source)
@@ -161,7 +185,15 @@ def ingest_pdf_corpus(
             continue
         items.append(
             _ingest_one_pdf(
-                root, pdf, target, extractor, min_chars, parser, source_sha256=source_sha256
+                root,
+                pdf,
+                target,
+                extractor,
+                min_chars,
+                parser,
+                source_sha256=source_sha256,
+                repeat_blocks=repeat_blocks,
+                min_repeats=min_repeats,
             )
         )
     result = PdfCorpusResult(pdf_root=root, out_dir=target, items=items)

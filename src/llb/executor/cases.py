@@ -7,7 +7,6 @@ from llb.core.contracts.rag import (
     CaseRetrievalRecord,
     ChunkRecord,
     RetrievalPair,
-    RetrievedSpanRecord,
     SourceSpanRecord,
 )
 from llb.core.contracts.results import CaseScoreRow
@@ -15,6 +14,7 @@ from llb.eval import common as eval_common
 from llb.eval import graph as eval_graph
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
+from llb.rag.retrieval_records import retrieved_span
 from llb.scoring import correctness, groundedness
 
 RagState = eval_graph.RagState
@@ -31,11 +31,6 @@ class ScoreOptions:
     score_groundedness: bool = False
     cited_answers: bool = False
     context_order: str = eval_common.ORDER_RANK
-
-
-# Bounded per-chunk text carried into `retrieval.jsonl` for observability; the span coordinates
-# (not the text) drive the miss classifier, so the preview stays small like `answer_preview`.
-RETRIEVED_TEXT_PREVIEW_CHARS = 160
 
 
 @dataclass(slots=True)
@@ -59,27 +54,19 @@ def spans_as_dicts(item: GoldItem) -> list[SourceSpanRecord]:
     ]
 
 
-def _retrieved_span(chunk: ChunkRecord, rank: int) -> RetrievedSpanRecord:
-    record: RetrievedSpanRecord = {
-        "doc_id": str(chunk.get("doc_id", "")),
-        "char_start": int(chunk.get("char_start", 0)),
-        "char_end": int(chunk.get("char_end", 0)),
-        "rank": rank,
-        "text_preview": str(chunk.get("text", ""))[:RETRIEVED_TEXT_PREVIEW_CHARS],
-    }
-    score = chunk.get("retrieval_score")
-    if score is not None:
-        record["retrieval_score"] = float(score)
-    return record
-
-
 def batch_retrieval_records(batch: "CaseBatch") -> list[CaseRetrievalRecord]:
     """The per-case retrieved-spans records persisted as `retrieval.jsonl` (miss analysis):
-    what each case's context actually contained versus its gold spans."""
+    what each case's context actually contained versus its gold spans.
+
+    The item's gold spans are passed into each record so a collapsed chunk keeps the occurrences
+    that decide ITS metric, and a lane recomputing from the sidecar agrees with the run
+    (`llb.rag.retrieval_records`)."""
     return [
         {
             "item_id": item.id,
-            "retrieved": [_retrieved_span(chunk, rank) for rank, chunk in enumerate(retrieved, 1)],
+            "retrieved": [
+                retrieved_span(chunk, rank, spans) for rank, chunk in enumerate(retrieved, 1)
+            ],
             "gold_spans": spans,
         }
         for (item, _answer), (retrieved, spans) in zip(batch.answers, batch.retrieval_pairs)

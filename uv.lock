@@ -3765,7 +3765,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qdrant-client", marker = "extra == 'rag-qdrant'", specifier = "==1.18.0" },
     { name = "radon", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6,<0.17" },
     { name = "scipy", marker = "extra == 'rag'", specifier = ">=1.11" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3.0" },
     { name = "streamlit", marker = "extra == 'board'", specifier = ">=1.36" },

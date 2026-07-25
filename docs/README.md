@@ -37,8 +37,9 @@ the groups are:
 - [human-tooling/](guides/README.md#human-tooling----the-human-gates) -- the human gates:
   data verification, judge calibration, judge experiments, and the why behind them.
 - [benchmarking/](guides/README.md#benchmarking----run-compare-analyze) -- scored runs:
-  RAG core, vLLM telemetry, platform matrix, retrieval comparison, prompt systems, MLflow
-  analysis, composite headline, agentic harnesses.
+  autonomous RAG recommendation, RAG core, vLLM telemetry, platform matrix, retrieval comparison,
+  prompt systems, local fine-tuning and adapters, MLflow analysis, composite headline, agentic
+  harnesses.
 - [development/](guides/README.md#development----contributor-setup) -- contributor environment
   setup.
 

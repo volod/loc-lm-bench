@@ -38,6 +38,10 @@ docs/guides/
 | Estimate a local model's real-world knowledge cutoff | [Knowledge cutoff](benchmarking/knowledge-cutoff.md) |
 | Compare serving backends or hardware tiers | [Platform matrix](benchmarking/platform-matrix.md), [vLLM backend](benchmarking/vllm-backend.md) |
 | Compare retrieval strategies (FAISS vs GraphRAG) | [Graph vs FAISS](benchmarking/graph-vs-faiss-comparison.md) |
+| Pick a chunker, embedder, or vector backend on measured evidence | [Embedder bake-off](../impl/current/rag-core.md#embedder-conventions-and-bake-off) and [vector-store commands](../impl/current/platform-vector-matrix.md#vector-store-commands) |
+| Find out whether retrieval pays for itself at all | [Context ablation](../impl/current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation) |
+| Clean a corpus of duplicated, stale, or contradictory knowledge | [Corpus hygiene](../impl/current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection) |
+| Adapt a local model to my corpus (LoRA, distillation, adapters) | [Self-improvement loop](benchmarking/self-improvement-loop.md) |
 | Tune and compare prompt systems | [Prompt-system lane](benchmarking/prompt-system-rag.md) |
 | Analyze and compare finished runs | [MLflow analysis](benchmarking/mlflow-analysis.md) |
 | Publish a guarded composite headline | [Composite headline](benchmarking/composite-headline.md) |
@@ -124,6 +128,9 @@ provide granular commands and corpus-specific detail.
   stores and score recall/MRR head to head on one gold set.
 - [Prompt-system lane](benchmarking/prompt-system-rag.md) -- generate prompt candidates, tune on
   one split, verify generalization on the held-out final split.
+- [Self-improvement loop](benchmarking/self-improvement-loop.md) -- export a tuning-split dataset,
+  search LoRA hyperparameters, train and register adapters, distill a student, and serve the
+  result while the final split stays held out.
 - [MLflow analysis](benchmarking/mlflow-analysis.md) -- select the project experiment, compare
   metrics correctly, and inspect canonical case artifacts.
 - [Composite headline](benchmarking/composite-headline.md) -- close-out flow for the guarded

@@ -17,6 +17,7 @@ from llb.eval.context_ablation.models import (
     ItemOutcome,
 )
 from llb.rag.fusion_evidence.slices import SliceReport
+from llb.rag.fusion_evidence.stability import boundary_table, format_reading
 from llb.rag.fusion_evidence.stats import format_interval
 
 _HEADERS = {
@@ -45,19 +46,43 @@ def _derived_table(entries: Sequence[DerivedComparison]) -> list[str]:
     if not entries:
         lines.extend(["No derived delta is available: the comparison scored one lane.", ""])
         return lines
-    lines.append("| delta | candidate - reference | n | value | w/l/t | sign p | reads as |")
-    lines.append("| --- | --- | ---: | ---: | :-: | ---: | --- |")
+    lines.append(
+        "| delta | candidate - reference | n | value | w/l/t | sign p | reading | reads as |"
+    )
+    lines.append("| --- | --- | ---: | ---: | :-: | ---: | :-: | --- |")
     for entry in entries:
         paired = entry["paired"]
+        stability = paired.get("stability")
         lines.append(
             f"| `{entry['label']}` | `{entry['candidate']}` - `{entry['reference']}` "
             f"| {entry['n']} | {format_interval(paired['delta'])} "
             f"| {paired['wins']}/{paired['losses']}/{paired['ties']} "
             f"| {paired['sign_test_p']:.3f} "
+            f"| {format_reading(stability, stability['reading']) if stability else '-'} "
             f"| {_DERIVED_NOTES.get(entry['label'], entry['population'])} |"
         )
     lines.append("")
     return lines
+
+
+def _boundary_section(report: ContextAblationReport) -> list[str]:
+    """How close each derived delta sits to the cut the ablation verdict is taken from.
+
+    Both the retrieval uplift and the long-context delta are `lo > 0` cuts, so a `rag_pays_off`
+    and a `no_retrieval_gain` can each rest on a row a neighbouring convention would flip.
+    """
+    rows = [
+        (f"`{entry['label']}`", stability)
+        for entry in report["derived"]
+        if (stability := entry["paired"].get("stability")) is not None
+    ]
+    return boundary_table(
+        rows,
+        title="How close each derived delta sits to the cut",
+        key_header="delta",
+        subject="the candidate lane",
+        confidence=report["confidence"],
+    )
 
 
 def _metric_table(
@@ -169,6 +194,7 @@ def format_report(
     lines += _lane_list(report)
     lines.append("")
     lines += _derived_table(report["derived"])
+    lines += _boundary_section(report)
     lines += _metric_table(report, None, "Per lane", "Every scored item")
     other = sorted({name for lane in report["lanes"].values() for name in lane["slices"]})
     for name in other:

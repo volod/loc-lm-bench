@@ -41,6 +41,42 @@ QueryGenerator = Callable[[str], str]
 # valid Ukrainian word form (pymorphy3 `word_is_known`; `llb.rag.lexical.load_uk_word_probe`).
 KnownWordProbe = Callable[[str], bool]
 
+# Injected plausibility probe for the normalize step's language gate: True when a decoded
+# (Cyrillic) token looks like real Ukrainian -- it is in the corpus vocabulary or a valid word
+# form. Foreign-language text decodes to nonsense the probe rejects.
+PlausibilityProbe = Callable[[str], bool]
+
+
+@dataclass(frozen=True)
+class LanguageGate:
+    """The whole-query transliteration decision for the normalize step, with its evidence.
+
+    Transliteration is decided for the query as a WHOLE, not per token: a query written in a
+    foreign language decodes to Cyrillic nonsense that no later step can undo, so it is left
+    untouched. `transliterate` is the verdict; the counts are the share of the query's Latin word
+    tokens whose decoded form the plausibility probe accepted.
+    """
+
+    transliterate: bool
+    latin_tokens: int
+    plausible_tokens: int
+    threshold: float
+
+    @property
+    def plausible_share(self) -> float:
+        """Fraction of Latin word tokens that decode to plausible Ukrainian (1.0 when there are none)."""
+        return self.plausible_tokens / self.latin_tokens if self.latin_tokens else 1.0
+
+    def as_provenance(self) -> dict[str, object]:
+        """Compact per-query record of the gate decision for the A/B report and audit logs."""
+        return {
+            "transliterated": self.transliterate,
+            "latin_tokens": self.latin_tokens,
+            "plausible_tokens": self.plausible_tokens,
+            "plausible_share": round(self.plausible_share, 3),
+            "threshold": self.threshold,
+        }
+
 
 @dataclass(frozen=True)
 class QueryEdit:
@@ -68,6 +104,7 @@ class QueryPrepResult:
     hypothetical_answer: str | None = None
     decomposition: str | None = None
     subqueries: tuple[str, ...] = ()
+    normalize_gate: LanguageGate | None = None
 
     @property
     def changed(self) -> bool:
@@ -81,6 +118,11 @@ class QueryPrepResult:
                 edit.step not in {STEP_HYDE, STEP_DECOMPOSE} for edit in self.edits
             ),
         }
+        if self.normalize_gate is not None and not self.normalize_gate.transliterate:
+            # Only surfaced when the gate actually suppressed transliteration, so a normal run's
+            # provenance is unchanged and an operator sees exactly why a foreign query passed
+            # through untouched.
+            out["query_normalize_gate"] = self.normalize_gate.as_provenance()
         if self.hypothetical_answer is not None:
             out["query_hypothetical_answer"] = self.hypothetical_answer
         if self.decomposition is not None:

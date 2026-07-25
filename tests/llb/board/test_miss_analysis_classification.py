@@ -49,6 +49,51 @@ def test_transport_statuses_classify_as_artifacts(tmp_path):
     assert {m.miss_class for m in analysis.misses} == {MISS_ARTIFACT}
 
 
+def _duplicate_retrieval(item_id: str) -> dict:
+    """A hit carried by a COLLAPSED chunk: the gold span sits on the copy in DOC_A, while the
+    indexed survivor lives in DOC_B (`llb.rag.duplicates`)."""
+    return {
+        "item_id": item_id,
+        "retrieved": [
+            {
+                "doc_id": DOC_B,
+                "char_start": 0,
+                "char_end": 40,
+                "rank": 1,
+                "text_preview": "y",
+                "duplicate_count": 3,
+                "duplicate_occurrences": [{"doc_id": DOC_A, "char_start": 0, "char_end": 40}],
+            }
+        ],
+        "gold_spans": [{"doc_id": DOC_A, "char_start": 10, "char_end": 16, "text": "еталон"}],
+    }
+
+
+def test_a_span_carried_by_a_collapsed_duplicate_is_not_a_retrieval_miss(tmp_path):
+    """The record's occurrences decide the class, so the sidecar agrees with the scored run."""
+    rows = [_score_row("m-gen", "ok", 0.1, 1.0)]
+    run_dir = _write_bundle(tmp_path, rows, [_duplicate_retrieval("m-gen")])
+    miss = analyze_run(run_dir, _goldset()).misses[0]
+    assert miss.miss_class != MISS_RETRIEVAL  # the gold text WAS in context, via the copy
+    assert miss.retrieval_hit is True
+
+
+def test_a_miss_row_lists_every_document_its_context_carried(tmp_path):
+    rows = [_score_row("m-gen", "ok", 0.1, 1.0)]
+    run_dir = _write_bundle(tmp_path, rows, [_duplicate_retrieval("m-gen")])
+    miss = analyze_run(run_dir, _goldset()).misses[0]
+    assert miss.retrieved_docs == [DOC_B, DOC_A]  # the survivor's doc, then the copy's
+    assert miss.as_dict()["retrieved_docs"] == [DOC_B, DOC_A]
+
+
+def test_a_miss_row_without_duplicates_lists_the_retrieved_document(tmp_path):
+    rows = [_score_row("m-retr", "ok", 0.1, 0.0)]
+    run_dir = _write_bundle(tmp_path, rows, [_miss_retrieval("m-retr")])
+    miss = analyze_run(run_dir, _goldset()).misses[0]
+    assert miss.miss_class == MISS_RETRIEVAL
+    assert miss.retrieved_docs == [DOC_B]  # the context came from the wrong document, and says so
+
+
 def test_clusters_by_document_topic_and_question_type(tmp_path):
     analysis = _analyze(tmp_path)
     doc_rows = {row.key: row for row in analysis.clusters["document"]}

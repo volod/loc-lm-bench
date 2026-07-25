@@ -6,6 +6,7 @@ slice, bootstrap interval, and paired delta is computed from those cached per-it
 adding a graph weight to the sweep costs one retrieval pass, not one per metric.
 """
 
+from llb.rag.compare import CompareItem  # the one (question, spans) pair shape, re-used
 from llb.rag.fusion_evidence.models import (
     FOCUS_SLICE,
     AgreementReport,
@@ -119,8 +120,18 @@ def evaluate_fusion_evidence(
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     seed: int = DEFAULT_SEED,
+    noise_floor: bool = False,
+    noise_floor_replicates: int | None = None,
 ) -> FusionEvidenceReport:
-    """Score every row overall and per question-type slice, then decide on the focus slice."""
+    """Score every row overall and per question-type slice, then decide on the focus slice.
+
+    `noise_floor` additionally measures each row's measurement floor (`llb.rag.noise_floor`), so a
+    weight-to-weight recall delta is read against the band tie order alone can move. It is measured
+    TWICE -- over every item and over the focus slice alone -- because the verdict is decided on the
+    focus slice, and a floor measured on 95 items does not bound the band of a 35-item slice.
+    Sampling uncertainty stays the bootstrap intervals' job: the two are different questions and the
+    report carries both.
+    """
     if baseline not in stores:
         raise ValueError(f"baseline row {baseline!r} is not among the compared rows")
     by_row = {label: _item_vectors(store, items, k) for label, store in stores.items()}
@@ -149,7 +160,7 @@ def evaluate_fusion_evidence(
         if routing is not None:
             row["routing"] = routing
         rows[label] = row
-    return {
+    report: FusionEvidenceReport = {
         "k": k,
         "n": len(items),
         "baseline": baseline,
@@ -161,6 +172,24 @@ def evaluate_fusion_evidence(
         "focus_items": _focus_items(items, grouped[focus_slice], by_row),
         "verdict": decide(rows, baseline=baseline, focus_slice=focus_slice),
     }
+    if noise_floor:
+        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+
+        replicates = noise_floor_replicates or DEFAULT_REPLICATES
+        report["noise_floor"] = measure_noise_floor(
+            stores, _floor_items(items, all_indexes), k, replicates=replicates
+        )
+        focus_positions = grouped[focus_slice]
+        if focus_positions:
+            report["noise_floor_focus"] = measure_noise_floor(
+                stores, _floor_items(items, focus_positions), k, replicates=replicates
+            )
+    return report
+
+
+def _floor_items(items: list[EvidenceItem], positions: list[int]) -> list[CompareItem]:
+    """The `(question, spans)` pairs the floor is measured over, for one set of item positions."""
+    return [(items[i].question, items[i].spans) for i in positions]
 
 
 __all__ = [

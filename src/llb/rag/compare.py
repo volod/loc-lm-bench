@@ -11,12 +11,16 @@ seam), so it is unit-tested with fake stores -- no GPU, no FAISS, no DuckDB. Eac
 one `evaluate_retrieval` span metric, so graph and FAISS score on identical rules.
 """
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.retrieval import evaluate_retrieval
+
+if TYPE_CHECKING:  # `noise_floor` imports this module, so the type is a forward reference
+    from llb.rag.duplicates import DuplicateStats
+    from llb.rag.noise_floor import NoiseFloorReport
 
 # (question, gold source spans) -- the per-item input shared across every compared backend.
 CompareItem = tuple[str, list[SourceSpanRecord]]
@@ -26,6 +30,10 @@ ROW_DENSE = "dense"
 ROW_HYBRID = "hybrid"
 ROW_HYBRID_LEMMAS = "hybrid+lemmas"
 ROW_ORACLE_DOC = "dense+oracle-doc"
+# BM25 alone: the hybrid store queried at fusion weight 0, which `weighted_rrf_fuse` resolves to
+# an exact lexical passthrough. It is the row that reads a LEXICAL-side change (tokenizer,
+# lemmatization, normalization) without the dense lane masking it inside the fusion.
+ROW_LEXICAL = "lexical"
 # Suffix of the reranked twin row (rerank-context-order): `<label>+rerank` scores the SAME
 # store's candidates after the cross-encoder cut, so pre/post-rerank recall@k / MRR compare
 # through the one `evaluate_retrieval` metric.
@@ -46,6 +54,13 @@ class ComparisonReport(TypedDict):
     backends: dict[str, RetrievalMetrics]
     best_recall: str | None
     slices: NotRequired[dict[str, "ComparisonSlice"]]
+    # Each lane's exact-duplicate census (`llb.rag.duplicates`), present when the compared
+    # stores expose their build meta -- so a recall row is read next to how much of that
+    # lane's index is repeated text, and whether the repeats are intra- or cross-document.
+    duplicates: NotRequired[dict[str, "DuplicateStats"]]
+    # Measurement floor under numeric score noise; present only when it was asked for
+    # (`compare-retrieval --noise-floor`). See `llb.rag.noise_floor`.
+    noise_floor: NotRequired["NoiseFloorReport"]
 
 
 class ComparisonSlice(TypedDict):
@@ -128,6 +143,21 @@ def add_rerank_rows(
     return out
 
 
+def duplicate_census(stores: dict[str, Retriever]) -> dict[str, "DuplicateStats"]:
+    """Each store's measured duplicate stats, for the stores that carry build meta.
+
+    A graph or fake store has no `meta['duplicates']`, so it simply contributes no row: the census
+    is an additive reading of the lanes that were built by `RagStore.build`.
+    """
+    census: dict[str, DuplicateStats] = {}
+    for label, store in stores.items():
+        meta = getattr(store, "meta", None)
+        stats = meta.get("duplicates") if isinstance(meta, dict) else None
+        if isinstance(stats, dict):
+            census[label] = cast("DuplicateStats", stats)
+    return census
+
+
 def format_comparison(report: ComparisonReport) -> str:
     """Render an ASCII comparison table (AGENTS.md: ASCII-only, no box-drawing)."""
     backends = report["backends"]
@@ -143,6 +173,15 @@ def format_comparison(report: ComparisonReport) -> str:
             f"  {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    floor = report.get("noise_floor")
+    if floor is not None:
+        from llb.rag.noise_floor_report import format_noise_floor
+
+        lines.extend(format_noise_floor(floor))
+    for label, stats in report.get("duplicates", {}).items():
+        from llb.rag.duplicates import format_duplicate_stats
+
+        lines.append(f"  {label.ljust(width)}   {format_duplicate_stats(stats)}")
     for slice_label, slice_report in report.get("slices", {}).items():
         lines.append(f"  slice {slice_label} (n={slice_report['n']}):")
         for label in sorted(slice_report["backends"]):

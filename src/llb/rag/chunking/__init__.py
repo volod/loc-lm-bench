@@ -4,9 +4,14 @@ Every strategy returns chunks anchored to `doc_id` + character offsets, so retri
 scored against source-span gold labels by overlap (consistent with `llb.goldset.schema`).
 That offset invariant is the constraint on which splitters we can reuse.
 
+`size` is a CAP on every strategy: `dispatch.chunk_spans` runs each strategy's own boundaries
+through `cap.cap_spans`, so a unit or section longer than `size` is split on the recursive
+splitter's separators instead of being indexed whole.
+
 Strategies:
   - fixed      pure-Python fixed character window with overlap (zero deps)
-  - sentence   pure-Python: pack whole sentences up to ~size (never cut mid-sentence)
+  - sentence   pure-Python: pack whole sentences up to `size` (never cut mid-sentence; a single
+               sentence longer than `size` falls back to the shared cap split)
   - recursive  langchain `RecursiveCharacterTextSplitter` (add_start_index -> exact offsets)
   - markdown   structure-aware: headers parsed from the SOURCE (offset-exact) + recursive
                sub-split of long sections; header breadcrumbs go into chunk `metadata`
@@ -26,6 +31,7 @@ Strategies:
 Submodules (import from the specific one you need -- there is no re-export surface):
   - `spans`      primitive fixed/sentence span helpers and shared validation
   - `recursive`  the pinned langchain recursive splitter lane
+  - `cap`        the shared `size`-cap fallback split reused by every strategy
   - `structure`  markdown / heading / page structure-aware strategies + page sidecar lookup
   - `semantic`   native semantic chunking
   - `dispatch`   the `STRATEGIES` registry and the `chunk_spans` dispatcher

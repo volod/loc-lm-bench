@@ -76,6 +76,15 @@ def compare_graph_fusion_cmd(
     focus_slice: Optional[str] = typer.Option(
         None, help="question type the verdict is decided on (default: multi-hop)"
     ),
+    noise_floor: bool = typer.Option(
+        False,
+        "--noise-floor",
+        help="also measure the MEASUREMENT FLOOR per swept row (see compare-retrieval), so a "
+        "weight-to-weight recall delta is read against the band tie order alone can move",
+    ),
+    noise_floor_replicates: Optional[int] = typer.Option(
+        None, help="--noise-floor: jitter replicates per row (default 64)"
+    ),
     resamples: int = typer.Option(DEFAULT_RESAMPLES, min=0, help="bootstrap resamples"),
     confidence: float = typer.Option(DEFAULT_CONFIDENCE, min=0.5, max=0.999, help="CI level"),
     seed: int = typer.Option(DEFAULT_SEED, help="bootstrap resampling seed"),
@@ -108,6 +117,7 @@ def compare_graph_fusion_cmd(
     )
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
     from llb.rag.fusion_evidence.rows import VECTOR_ROW
+    from llb.rag.noise_floor import CANDIDATE_DEPTH_FACTOR
     from llb.rag.question_types import load_question_types_by_question
     from llb.rag.fusion_routing import HeuristicPolicy
 
@@ -138,6 +148,7 @@ def compare_graph_fusion_cmd(
         question_types,
         HeuristicPolicy(heuristic_long_question_words, heuristic_min_linked_entities),
         merge_ratios,
+        pool_depth=CANDIDATE_DEPTH_FACTOR * k if noise_floor else 0,
     )
     report = evaluate_fusion_evidence(
         rows,
@@ -148,6 +159,8 @@ def compare_graph_fusion_cmd(
         resamples=resamples,
         confidence=confidence,
         seed=seed,
+        noise_floor=noise_floor,
+        noise_floor_replicates=noise_floor_replicates,
     )
     default_dir = cfg.data_dir / FUSION_EVIDENCE_METHOD / generation_timestamp()
     target = Path(out_dir) if out_dir else default_dir

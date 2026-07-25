@@ -217,6 +217,38 @@ def test_retrieve_node_uses_processed_query_and_preserves_raw():
     assert update["query_corrections"] == 2  # two transliterations
 
 
+_UK_PLAUSIBLE = {"закон", "україни", "право"}.__contains__
+
+
+def test_pipeline_language_gate_passes_romanized_ukrainian():
+    pipeline = QueryPrep.build([STEP_NORMALIZE], plausible=_UK_PLAUSIBLE)
+    result = pipeline.process("Zakon Ukrainy")
+    assert result.processed == "закон украіни"  # still transliterated
+    assert result.normalize_gate is not None and result.normalize_gate.transliterate
+    assert "query_normalize_gate" not in result.provenance()  # only surfaced on refusal
+
+
+def test_pipeline_language_gate_leaves_foreign_query_unchanged():
+    pipeline = QueryPrep.build([STEP_NORMALIZE], plausible=_UK_PLAUSIBLE)
+    result = pipeline.process("What does the law say")
+    assert result.processed == "What does the law say"  # verbatim, not Cyrillic nonsense
+    assert result.provenance()["query_processed"] == "What does the law say"
+    gate = result.provenance()["query_normalize_gate"]
+    assert gate["transliterated"] is False and gate["plausible_tokens"] == 0
+
+
+def test_pipeline_language_gate_off_without_probe_still_transliterates():
+    # No probe wired: the gate is inert and per-token transliteration runs as before.
+    result = QueryPrep.build([STEP_NORMALIZE]).process("what does the")
+    assert result.processed != "what does the"  # mangled, exactly the pre-gate behavior
+    assert result.normalize_gate is None
+
+
+def test_language_gate_requires_normalize_step():
+    with pytest.raises(ValueError, match="normalize language gate"):
+        QueryPrep.build([STEP_TYPOS], vocabulary=frozenset({"x"}), plausible=_UK_PLAUSIBLE)
+
+
 def test_retrieve_node_without_query_prep_records_nothing():
     store = _RecordingStore([{"doc_id": "a", "text": "x", "char_start": 0, "char_end": 1}])
     node = graph.make_retrieve_node(store, k=5)
@@ -242,6 +274,45 @@ def test_build_query_prep_reads_vocabulary_from_store_chunks():
     cfg = RunConfig().with_overrides(query_prep=["typos"])
     pipeline = build_query_prep(cfg, store, None)
     assert pipeline.process("виданоо").processed == "видано"  # corrected against store vocab
+
+
+def test_build_query_prep_wires_language_gate_when_flag_on(monkeypatch):
+    from llb.core.config import RunConfig
+    from llb.executor.runner_retrieval import build_query_prep
+
+    # Fake morphology probe: only genuine Ukrainian forms are "known".
+    monkeypatch.setattr(
+        "llb.rag.lexical.load_uk_word_probe", lambda: {"закон", "право"}.__contains__
+    )
+    store = _RecordingStore(
+        [{"doc_id": "a", "text": "закон право", "char_start": 0, "char_end": 1}]
+    )
+    cfg = RunConfig().with_overrides(query_prep=["normalize"], query_prep_language_gate=True)
+    pipeline = build_query_prep(cfg, store, None)
+    assert pipeline.plausible is not None
+    assert pipeline.process("zakon pravo").processed == "закон право"  # romanized UA transliterated
+    assert pipeline.process("what does the").processed == "what does the"  # foreign left untouched
+
+
+def test_build_query_prep_language_gate_off_by_default(monkeypatch):
+    from llb.core.config import RunConfig
+    from llb.executor.runner_retrieval import build_query_prep
+
+    loaded = []
+    monkeypatch.setattr(
+        "llb.rag.lexical.load_uk_word_probe", lambda: loaded.append(True) or (lambda _t: False)
+    )
+    cfg = RunConfig().with_overrides(query_prep=["normalize"])
+    pipeline = build_query_prep(cfg, _RecordingStore([]), None)
+    assert pipeline.plausible is None and loaded == []  # gate inert, no probe loaded
+    assert pipeline.process("what does the").processed != "what does the"  # pre-gate behavior
+
+
+def test_config_language_gate_needs_normalize_step():
+    from llb.core.config import RunConfig
+
+    with pytest.raises(ValueError, match="query_prep_language_gate"):
+        RunConfig().with_overrides(query_prep=["typos"], query_prep_language_gate=True)
 
 
 def test_build_query_prep_glossary_needs_path():

@@ -20,6 +20,7 @@ from llb.prep.pdf.model import (
     PdfExtractionQuality,
     PdfParserAttempt,
 )
+from llb.prep.pdf.repeats import REPEAT_KEEP
 from dataclasses import fields
 
 
@@ -84,11 +85,14 @@ def _reusable_item(
     out_dir: Path,
     min_chars: int,
     parser: str,
+    repeat_blocks: str = REPEAT_KEEP,
 ) -> PdfCorpusItem | None:
     """Rehydrate a previous ok item when the source and conversion request still match it."""
     if not isinstance(payload, dict) or payload.get("status") != "ok":
         return None
     if payload.get("source_sha256") != source_sha256:
+        return None
+    if payload.get("repeat_blocks", REPEAT_KEEP) != repeat_blocks:
         return None
     doc_id = payload.get("doc_id")
     citation_path = payload.get("citation_path")

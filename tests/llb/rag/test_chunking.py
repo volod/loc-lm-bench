@@ -1,12 +1,19 @@
 import pytest
 
-from llb.rag.chunking.corpus import chunk_text
+from llb.core.paths import PROJECT_ROOT
+from llb.rag.chunking.cap import cap_span
+from llb.rag.chunking.corpus import chunk_text, summarize
 from llb.rag.chunking.recursive import recursive_spans
 from llb.rag.chunking.semantic import semantic_spans
 from llb.rag.chunking.spans import fixed_spans, sentence_chunk_spans, sentence_spans
 from llb.rag.chunking.structure import markdown_spans
 
 TEXT = "Перше речення. Друге речення! Третє речення?\n\nНовий абзац тут. І ще одне."
+
+# A converted-PDF style block: heading + markdown table, no sentence terminator anywhere, so
+# every unit-packing strategy would emit it as ONE oversized chunk without the shared cap.
+CAP_FIXTURE = PROJECT_ROOT / "samples" / "chunking" / "goods_table_uk.md"
+CAP_SIZE = 200
 
 
 def test_offsets_resolve_for_pure_strategies():
@@ -42,6 +49,58 @@ def test_sentence_never_cuts_midsentence():
     sentence_ends = {end for _, end in sentence_spans(TEXT)}
     for _, end in spans:
         assert end in sentence_ends or end == len(TEXT)
+
+
+# --- the shared `size` cap: no strategy indexes a unit longer than `size` ---
+
+
+def _cap_fixture_text() -> str:
+    return CAP_FIXTURE.read_text(encoding="utf-8")
+
+
+def test_cap_fixture_holds_a_terminator_free_block_longer_than_size():
+    # Guards the fixture itself: if the block ever gains a terminator the cap tests go vacuous.
+    lengths = [end - start for start, end in sentence_spans(_cap_fixture_text())]
+    assert max(lengths) > CAP_SIZE
+
+
+@pytest.mark.parametrize(
+    "strategy", ("fixed", "sentence", "late", "recursive", "markdown", "heading", "page")
+)
+def test_no_strategy_exceeds_size(strategy):
+    text = _cap_fixture_text()
+    chunks = chunk_text(text, CAP_FIXTURE.name, strategy, size=CAP_SIZE, overlap=30)
+    assert chunks
+    for c in chunks:
+        assert c["char_end"] - c["char_start"] <= CAP_SIZE
+        assert text[c["char_start"] : c["char_end"]] == c["text"]  # still offset-exact
+    assert summarize(chunks)["oversize"] == 0
+
+
+def test_sentence_cap_keeps_every_non_whitespace_character():
+    # The fallback may drop separator whitespace, but no content may go missing from the index.
+    text = _cap_fixture_text()
+    chunks = chunk_text(text, CAP_FIXTURE.name, "sentence", size=CAP_SIZE, overlap=30)
+    covered = {i for c in chunks for i in range(c["char_start"], c["char_end"])}
+    missing = [i for i, ch in enumerate(text) if not ch.isspace() and i not in covered]
+    assert not missing
+
+
+def test_cap_span_leaves_a_fitting_span_untouched():
+    text = _cap_fixture_text()
+    assert cap_span(text, 0, CAP_SIZE, CAP_SIZE, 30) == [(0, CAP_SIZE)]
+
+
+def test_summarize_reports_the_oversize_share():
+    # Hand-built records (the cap makes real oversized chunks unreachable through `chunk_text`).
+    records = [
+        {"char_start": 0, "char_end": 300, "size": 200},
+        {"char_start": 0, "char_end": 100, "size": 200},
+    ]
+    summary = summarize(records)
+    assert summary["oversize"] == 1
+    assert summary["oversize_share"] == pytest.approx(0.5)
+    assert summary["oversize_char_share"] == pytest.approx(0.75)
 
 
 @pytest.mark.slow

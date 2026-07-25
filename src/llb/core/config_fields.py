@@ -39,6 +39,10 @@ ContextOrder = Literal["rank", "reverse_rank"]
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
 ContextStrategy = Literal["rag", "closed_book", "long_context"]
+# Duplicate-collapse tier (llb.rag.duplicate_tiers): when do two chunk texts count as ONE
+# passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
+# coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
+DuplicateTier = Literal["exact", "normalized", "masked"]
 Backend = Literal["ollama", "vllm", "llamacpp"]
 # Scorer-policy seam: human review, local DeepEval judge, or budget-capped frontier judge.
 ScorerPolicy = Literal["human", "local", "frontier"]
@@ -114,6 +118,11 @@ class RunConfigFields(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
+    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates).
+    # "exact" is loss-free; the coarser tiers trade a smaller index and fewer near-ties for
+    # merging passages that differ, so they need per-corpus residue evidence before adoption.
+    duplicate_tier: DuplicateTier = "exact"
+
     # Hybrid fusion knobs (used when retrieval_mode == "hybrid"; recorded in the manifest and
     # the sweep cell fingerprint). `fusion_weight` is the dense share of the weighted RRF
     # (1.0 == dense order, 0.0 == lexical order); `fusion_candidates` is the per-side candidate
@@ -152,6 +161,12 @@ class RunConfigFields(BaseModel):
     # unchanged (it is an inflection for the lemmatization lane, not a misspelling). Off by
     # default so the pure edit-distance behavior remains explicitly selectable.
     query_prep_typo_guard: bool = False
+    # Language gate for the 'normalize' step (normalize-step-language-gate): when on, transliteration
+    # is decided for the WHOLE query -- a foreign-language question whose Latin tokens do not decode
+    # to plausible Ukrainian is left untouched instead of being mangled into unretrievable Cyrillic
+    # (`what does the` -> `wгат доес тге`). Off by default so per-token transliteration stays the
+    # explicit baseline; needs the 'normalize' step.
+    query_prep_language_gate: bool = False
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

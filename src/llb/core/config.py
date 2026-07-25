@@ -81,6 +81,8 @@ class RunConfig(RunConfigFields):
         _validate_query_prep(self.query_prep)
         if self.query_prep_typo_guard and "typos" not in self.query_prep:
             raise ValueError("query_prep_typo_guard needs the 'typos' step in query_prep")
+        if self.query_prep_language_gate and "normalize" not in self.query_prep:
+            raise ValueError("query_prep_language_gate needs the 'normalize' step in query_prep")
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         _validate_scorer_policy(self)

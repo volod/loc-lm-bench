@@ -58,9 +58,12 @@ def refresh_index(
     timestamp = generation_timestamp()
     result = refresh_vector_store(cfg.index_dir(), cfg.corpus_root, timestamp=timestamp)
     if result.refreshed:
+        by_text = (
+            f" ({result.n_reused_by_text} recovered by text)" if result.n_reused_by_text else ""
+        )
         typer.echo(
             f"[refresh-index] vector store: {result.diff.summary()}; "
-            f"{result.n_reused} rows reused, {result.n_embedded} embedded "
+            f"{result.n_reused} rows reused{by_text}, {result.n_embedded} embedded "
             f"-> {result.generation_dir}"
         )
     else:
@@ -71,9 +74,14 @@ def refresh_index(
     siblings = refresh_sibling_stores(cfg.index_dir(), cfg.corpus_root, timestamp=timestamp)
     for name, sibling in siblings:
         if sibling.refreshed:
+            by_text = (
+                f" ({sibling.n_reused_by_text} recovered by text)"
+                if sibling.n_reused_by_text
+                else ""
+            )
             typer.echo(
                 f"[refresh-index] comparison store {name}: {sibling.diff.summary()}; "
-                f"{sibling.n_reused} rows reused, {sibling.n_embedded} embedded "
+                f"{sibling.n_reused} rows reused{by_text}, {sibling.n_embedded} embedded "
                 f"-> {sibling.generation_dir}"
             )
         else:

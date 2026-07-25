@@ -3,6 +3,7 @@
 from typing import Any
 
 from llb.core.contracts.common import JsonObject
+from llb.rag.chunking.cap import cap_spans
 from llb.rag.chunking.recursive import recursive_spans
 from llb.rag.chunking.semantic import semantic_spans
 from llb.rag.chunking.spans import (
@@ -24,13 +25,29 @@ def chunk_spans(
     embedder: Any = None,
     page_spans: list[tuple[int, int]] | None = None,
 ) -> list[tuple[int, int, JsonObject]]:
-    """Unified (start, end, metadata) spans for a strategy.
+    """Unified (start, end, metadata) spans for a strategy, capped at `size`.
 
     `page_spans` feeds the `page` strategy (sidecar page char spans from `doc_page_spans`);
     without them -- a plain `.md`/`.txt` doc, or `parent_child` children re-chunking a parent
     slice whose page coordinates are unknown -- `page` falls back to `recursive`.
+
+    Every strategy's spans pass through `cap_spans`, so `size` is a hard cap here even for the
+    unit-packing strategies that would otherwise emit a longer unit whole (see `cap.py`).
     """
     validate_chunking(size, overlap)
+    spans = _strategy_spans(text, strategy, size, overlap, embedder, page_spans)
+    return cap_spans(text, spans, size, overlap)
+
+
+def _strategy_spans(
+    text: str,
+    strategy: str,
+    size: int,
+    overlap: int,
+    embedder: Any,
+    page_spans: list[tuple[int, int]] | None,
+) -> list[tuple[int, int, JsonObject]]:
+    """Raw (uncapped) spans as the selected strategy defines its own boundaries."""
     if strategy == "markdown":
         return markdown_spans(text, size, overlap)
     if strategy == "heading":

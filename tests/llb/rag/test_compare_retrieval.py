@@ -7,7 +7,13 @@ Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lig
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
-from llb.rag.compare import ROW_ORACLE_DOC, add_rerank_rows, compare_retrieval, format_comparison
+from llb.rag.compare import (
+    ROW_ORACLE_DOC,
+    add_rerank_rows,
+    compare_retrieval,
+    duplicate_census,
+    format_comparison,
+)
 from llb.rag.question_types import (
     aligned_question_types,
     load_question_types,
@@ -77,6 +83,39 @@ def test_format_comparison_is_ascii_and_lists_backends():
 def test_format_comparison_handles_no_backends():
     text = format_comparison(compare_retrieval({}, _items(), k=5))
     assert "no backends loaded" in text
+
+
+class _MetaStore(_FakeStore):
+    """A store that also carries build meta, like a real `RagStore`."""
+
+    def __init__(self, hits: list[ChunkRecord], duplicates: dict) -> None:
+        super().__init__(hits)
+        self.meta = {"duplicates": duplicates}
+
+
+def test_duplicate_census_reads_only_stores_with_build_meta():
+    stats = {
+        "n": 4,
+        "unique": 3,
+        "collapsed": 1,
+        "duplicate_chunks": 2,
+        "duplicate_share": 0.5,
+        "groups": 1,
+        "largest_group": 2,
+        "intra_document_groups": 1,
+        "cross_document_groups": 0,
+    }
+    stores = {
+        "faiss": _MetaStore([_chunk("d1", 0, 10)], stats),
+        "graph/local_khop": _FakeStore([_chunk("d1", 0, 10)]),  # no meta -> no census row
+    }
+    census = duplicate_census(stores)
+    assert set(census) == {"faiss"}
+    report = compare_retrieval(stores, _items(), k=5)
+    report["duplicates"] = census
+    rendered = format_comparison(report)
+    assert "1 intra-document, 0 cross-document" in rendered
+    assert rendered.isascii()
 
 
 def test_compare_reports_question_type_slices_without_retrieving_twice():
@@ -187,3 +226,62 @@ def test_question_type_map_omits_duplicate_question_text_with_conflicting_labels
         encoding="utf-8",
     )
     assert load_question_types_by_question(goldset) == {"unique": "comparative"}
+
+
+def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypatch):
+    """The backend lane reads the same floor as `compare-retrieval` (`--noise-floor`)."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = tmp_path / "goldset.jsonl"
+    dump_goldset(
+        [
+            GoldItem(
+                id="a",
+                question="питання",
+                reference_answer="x",
+                source_doc_id="d1",
+                source_spans=[
+                    SourceSpan(doc_id="d1", char_start=0, char_end=10, text="0123456789")
+                ],
+                provenance="ontology-drafted",
+                split="final",
+            )
+        ],
+        goldset,
+    )
+    tied = [
+        {**_chunk("d2", 20, 30), "retrieval_score": 0.5},
+        {**_chunk("d1", 0, 10), "retrieval_score": 0.5},
+    ]
+    monkeypatch.setattr(
+        "llb.rag.comparison_builders.build_vector_store_comparison",
+        lambda cfg, backends: {name: _FakeStore(tied) for name in backends},
+    )
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compare-vector-stores",
+            "--goldset",
+            str(goldset),
+            "--backends",
+            "faiss,chroma",
+            "--k",
+            "1",
+            "--noise-floor",
+            "--noise-floor-replicates",
+            "16",
+            "--out",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "noise floor" in result.output
+    floor = json.loads(out.read_text(encoding="utf-8"))["noise_floor"]
+    assert set(floor["lanes"]) == {"faiss", "chroma"}
+    # Both backends rank the same tie, so neither is distinguished from the other.
+    assert floor["floor_recall_at_k"] > 0.0 and floor["margin"]["clears_floor"] is False

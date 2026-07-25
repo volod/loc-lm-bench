@@ -1,7 +1,10 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
-	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings run-eval \
+	measure-duplicate-residue \
+	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
+	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
+	compare-adoption-screen compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -16,7 +19,7 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 # store. Without CONFIG the default corpus is the documented behavior and is always forwarded.
 BUILD_INDEX_CORPUS = $(if $(CONFIG),$(if $(filter-out file default,$(origin CORPUS)),--corpus-root "$(CORPUS)"),--corpus-root "$(CORPUS)")
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 to override; needs ".[rag]")
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 DUPLICATE_TIER=exact|normalized|masked to override; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(BUILD_INDEX_CORPUS) \
@@ -25,7 +28,17 @@ build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHU
 		$(if $(CHUNK_OVERLAP),--overlap "$(CHUNK_OVERLAP)",) \
 		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",) \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
+		$(if $(DUPLICATE_TIER),--duplicate-tier "$(DUPLICATE_TIER)",) \
 		$(if $(LEMMATIZE),--lemmatize,)
+
+measure-duplicate-residue: ## What repetition a built store still holds after collapse (STORE= or CONFIG=; RESIDUE_THRESHOLDS= RESIDUE_EXAMPLES= RESIDUE_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main measure-duplicate-residue $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(if $(STORE),--store "$(STORE)",) \
+		$(if $(RESIDUE_THRESHOLDS),--thresholds "$(RESIDUE_THRESHOLDS)",) \
+		$(if $(RESIDUE_EXAMPLES),--examples $(RESIDUE_EXAMPLES),) \
+		$(if $(RESIDUE_OUT),--out "$(RESIDUE_OUT)",)
 
 build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=...; needs ".[graph]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -58,7 +71,7 @@ validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PR
 		$(if $(QUERY_PREP_AB),--query-prep-ab,) \
 		$(if $(QUERY_PREP_OUT),--out "$(QUERY_PREP_OUT)",)
 
-compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER= are optional lanes
+compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER=, DUPLICATE_TIER=, NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
@@ -68,9 +81,12 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(GRAPH_WEIGHT),--graph-weight $(GRAPH_WEIGHT),) \
 		$(if $(RERANKER),--reranker "$(RERANKER)",) \
 		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(DUPLICATE_TIER),--duplicate-tier "$(DUPLICATE_TIER)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 NOISE_FLOOR=1 FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -85,6 +101,8 @@ compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed sh
 		$(if $(GRAPH_FUSION_SPAN_MERGE_RATIO),--graph-fusion-span-merge-ratio "$(GRAPH_FUSION_SPAN_MERGE_RATIO)",) \
 		$(if $(GRAPH_STRATEGIES),--graph-strategies "$(GRAPH_STRATEGIES)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
@@ -129,11 +147,73 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput) on GOLDSET; MODELS= EMBED_API_MODEL= (needs ".[rag]")
+compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput + paired delta vs EMBED_BASELINE) on GOLDSET; MODELS= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) EMBED_RESAMPLES= (needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main compare-embeddings --goldset "$(GOLDSET)" --k $(RAG_K) \
+	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(MODELS),--models "$(MODELS)",) \
+		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
+		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
+		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
+
+compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(EMBED_BASELINE_DATA_DIR)" || { echo "ERROR: set EMBED_BASELINE_DATA_DIR=<root whose llb/rag store was built with EMBED_BASELINE>"; exit 1; }
+	@test -n "$(EMBED_CANDIDATE_DATA_DIR)" || { echo "ERROR: set EMBED_CANDIDATE_DATA_DIR=<root whose llb/rag store was built with EMBED_CANDIDATE>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-embedder-adoption $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(CORPUS),--corpus "$(CORPUS)",) \
+		--baseline-embedder "$(EMBED_BASELINE)" --baseline-data-dir "$(EMBED_BASELINE_DATA_DIR)" \
+		--candidate-embedder "$(EMBED_CANDIDATE)" --candidate-data-dir "$(EMBED_CANDIDATE_DATA_DIR)" \
+		$(if $(ADOPTION_TOP_KS),--top-ks "$(ADOPTION_TOP_KS)",) \
+		$(if $(ADOPTION_RERANKERS),--rerankers "$(ADOPTION_RERANKERS)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ADOPTION_LIMIT),--limit $(ADOPTION_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(ADOPTION_OUT_DIR),--out-dir "$(ADOPTION_OUT_DIR)",)
+
+compare-adoption-models: ## Do two models agree on the first-hit-rank reading? Compare two finished sweeps cell by cell (ADOPTION_REPORT_A= ADOPTION_REPORT_B= ADOPTION_CROSS_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORT_A)" || { echo "ERROR: set ADOPTION_REPORT_A=<first sweep comparison.json or dir>"; exit 1; }
+	@test -n "$(ADOPTION_REPORT_B)" || { echo "ERROR: set ADOPTION_REPORT_B=<second sweep comparison.json or dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-models "$(ADOPTION_REPORT_A)" "$(ADOPTION_REPORT_B)" \
+		$(if $(ADOPTION_CROSS_OUT),--out-dir "$(ADOPTION_CROSS_OUT)",)
+
+compare-adoption-roster: ## Is the reranker gain predictable in advance? Test whether a declared model property separates the models that capture it (ADOPTION_REPORTS="<dir> <dir> ..." ADOPTION_PROFILES= ADOPTION_FOCUS_CELL= ADOPTION_ROSTER_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORTS)" || { echo "ERROR: set ADOPTION_REPORTS=\"<sweep-dir> <sweep-dir> <sweep-dir> ...\" (3+)"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-roster $(ADOPTION_REPORTS) \
+		$(if $(ADOPTION_PROFILES),--profiles "$(ADOPTION_PROFILES)",) \
+		$(if $(ADOPTION_FOCUS_CELL),--focus-cell "$(ADOPTION_FOCUS_CELL)",) \
+		$(if $(ADOPTION_ROSTER_OUT),--out-dir "$(ADOPTION_ROSTER_OUT)",)
+
+compare-adoption-screen: ## What does deciding the reranker question for ONE model cost? Resample recorded sweeps for the cheapest screen (ADOPTION_REPORTS="<dir> ..." ADOPTION_FOCUS_CELL= ADOPTION_SCREEN_SIZES= ADOPTION_SCREEN_DRAWS= ADOPTION_SCREEN_TARGET= ADOPTION_SCREEN_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORTS)" || { echo "ERROR: set ADOPTION_REPORTS=\"<sweep-dir> ...\""; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-screen $(ADOPTION_REPORTS) \
+		$(if $(ADOPTION_FOCUS_CELL),--focus-cell "$(ADOPTION_FOCUS_CELL)",) \
+		$(if $(ADOPTION_SCREEN_SIZES),--sizes "$(ADOPTION_SCREEN_SIZES)",) \
+		$(if $(ADOPTION_SCREEN_DRAWS),--draws $(ADOPTION_SCREEN_DRAWS),) \
+		$(if $(ADOPTION_SCREEN_TARGET),--target $(ADOPTION_SCREEN_TARGET),) \
+		$(if $(ADOPTION_SCREEN_OUT),--out-dir "$(ADOPTION_SCREEN_OUT)",)
+
+compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main compare-vector-stores $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(VECTOR_BACKENDS),--backends "$(VECTOR_BACKENDS)",) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_STORES_OUT),--out "$(COMPARE_STORES_OUT)",)
 
 run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= CONTEXT_STRATEGY= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -164,13 +244,14 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
 
-bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT=)
+bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT= QUERY_ROBUSTNESS_CLASSES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-query-robustness --model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --corpus-root "$(CORPUS)" --split "$(SPLIT)" \
 		--top-k $(RAG_K) --typo-rate $(QUERY_ROBUSTNESS_TYPO_RATE) \
 		--max-tokens $(QUERY_ROBUSTNESS_MAX_TOKENS) \
+		$(if $(QUERY_ROBUSTNESS_CLASSES),--variant-classes "$(QUERY_ROBUSTNESS_CLASSES)",) \
 		$(if $(QUERY_ROBUSTNESS_LIMIT),--limit $(QUERY_ROBUSTNESS_LIMIT),)
 
 probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= PROBE_K= SPLIT= LIMIT=)

@@ -228,10 +228,152 @@ make pdf-to-markdown PDF_REFRESH=1
 llb ingest-pdf-corpus --pdf-root <pdf-dir> --out-dir <out-dir> --min-chars 500 --parser auto
 ```
 
-The make alias defaults `PDF_DIR` to `$DATA_DIR/quickstart-pdf-corpus`. When `out-dir` is omitted,
-the default is `<pdf-dir>/_md`, for example `.data/quickstart-pdf-corpus/_md`. Each successful
-document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF diagnostics, page
-numbers, generated-corpus character spans, and page-local block spans when the parser exposes them.
+The converter strips PDF page furniture line-by-line while it renders (`strip_page_furniture` in
+`src/llb/prep/pdf/furniture.py`): a short line that recurs on many pages -- a running header or
+footer, a bare page number -- is dropped so a passage crossing a page break grounds contiguously.
+That pass is per-line and cross-page; the block-level intra-document handling below is a separate,
+opt-in step for whole blocks a single document repeats.
+
+#### Intra-document repeated-block handling (`--repeat-blocks`)
+
+A converted manual also repeats whole BLOCKS inside the one document -- a boilerplate procedure
+step restated in section after section, a note repeated under every table -- which the per-line
+furniture pass cannot see and which index-time [duplicate chunk
+collapse](rag-core.md#duplicate-chunk-collapse) can only hide, not fix at the source: collapse
+indexes the block once but still returns that one copy for a question about any section that
+carries it, and the document's own chunk ordinals stop tracking its reading order. Measured on the
+goods corpus every one of the 494 exact chunk-collapse groups is intra-document (0 cross-document),
+the largest block repeating 335 times in the single 637 KB manual -- so on this corpus the
+repetition is entirely a conversion-side property of one document, not shared page furniture.
+
+`llb.prep.pdf.repeats` measures and, optionally, rewrites it. `ingest-pdf-corpus` /
+`pdf-to-markdown` / `ingest-corpus` take `--repeat-blocks keep|drop|anchor` (the mode is recorded
+per manifest item and is part of the reuse key, so switching it reconverts):
+
+- `keep` (default) -- unchanged; the rendered document is byte-identical to before.
+- `drop` -- index the FIRST occurrence of a repeated block and remove the rest. Loss-free (every
+  removed copy is byte-identical to the survivor) and it shrinks the source, so the freed top-k
+  slots carry other evidence.
+- `anchor` -- keep every occurrence and prefix each with its enclosing-heading breadcrumb (glued
+  with no blank line, so every blank-line splitter keeps anchor and block in one chunk), so copies
+  under different sections stop being identical and each is retrievable in its own section.
+
+A block counts as repeated at `--min-repeats` occurrences (default 3) INSIDE one document; repeated
+markdown headings and table-header/`|`-rows are never rewritten, because they carry structure the
+tables and sections under them depend on. Both rewriting modes are offset-exact: every edit is a
+recorded `TextEdit` and `remap_span` moves a surviving offset (a dropped copy resolves onto the
+survivor of its identical text), so page-citation sidecars and gold spans follow the rewrite; a
+span that straddles a rewrite has no single image and is refused rather than moved.
+
+`make strip-corpus-repeats` (`llb strip-corpus-repeats`) runs the same census or rewrite on an
+ALREADY-converted `_md` corpus -- the common case, since the corpus outlives its source PDFs. It
+never edits in place: `REPEAT_MODE=keep` (default) reports only, `drop`/`anchor` write a NEW root
+under `REPEAT_OUT=` with the citation sidecars remapped, and `GOLDSET=` remaps a gold set's span
+offsets onto the rewritten corpus (dropping and naming any item whose evidence straddles a rewrite)
+so the same questions stay scoreable.
+
+```bash
+make strip-corpus-repeats CORPUS=<md-corpus>                       # census only, writes nothing
+make strip-corpus-repeats CORPUS=<md-corpus> REPEAT_MODE=drop REPEAT_OUT=<new-root> GOLDSET=<gs>
+llb ingest-pdf-corpus --pdf-root <pdf-dir> --repeat-blocks drop    # at conversion time
+```
+
+Retrieval verdict (CUDA host, pinned e5-base, `sentence`/`recursive` at `size=200`, k=10, seed 13,
+exact collapse ON in every lane; the 89 goods items whose gold spans survive both rewrites, so the
+three lanes score one item set; floor `+/-0.000` throughout; reports under
+`$DATA_DIR/retrieval-noise-floor/20260723T-intra-repeats/`):
+
+| lane | recursive recall@10 | sentence recall@10 | dup% (recursive) | corpus chars |
+| --- | ---: | ---: | ---: | ---: |
+| `keep` (baseline) | 0.708 | 0.640 | 37.7% | 681627 |
+| `drop` | 0.730 | 0.674 | 24.8% | 531011 |
+| `anchor` | 0.685 | 0.685 | 34.9% | 755943 |
+
+Verdict: ADOPT `drop` as an available conversion-side option, KEEP `keep` as the default, REJECT
+`anchor`. `drop` lifts recall@10 by +0.022 (`recursive`) / +0.034 (`sentence`) -- both clear of the
+`+/-0.000` floor -- while cutting the intra-document duplicate share the index carries from 37.7% to
+24.8% and shrinking the source 22%. The gain is not about ties (exact collapse already drove the
+floor to zero): a top-10 that no longer must re-list one boilerplate block carries more distinct
+evidence, and unlike collapse the survivor now sits in its first section only. `anchor` helps
+`sentence` (+0.045) but regresses `recursive` (-0.023) and, by making copies textually distinct,
+defeats the cheaper exact collapse and inflates the index -- so it is not a default, only a probe
+for a corpus whose repeated blocks genuinely belong to several sections at once. `drop` stays
+opt-in because it is not loss-free at the QUESTION level: on the goods corpus it removes 5 of 95
+items from the scored set (their gold span straddled a removed block), 3 of which the baseline
+could retrieve -- the per-question audit below quantifies exactly that cost, which is the operator's
+call to make per corpus.
+
+##### Per-question yield audit (`audit-repeat-yield`)
+
+The pooled recall verdict above is measured on the items that SURVIVE the rewrite, so it cannot
+show what `drop` cost the questions it moved. `make audit-repeat-yield` (`llb audit-repeat-yield`,
+`src/llb/prep/pdf/repeat_yield.py`) measures that directly: it runs the `drop` strip, indexes the
+keep and drop corpora identically, retrieves each item on its own corpus (baseline against the
+original spans, drop against the remapped spans), and classifies every item -- `held` (hit both
+sides), `lost` (hit -> miss), `recovered` (miss -> hit), `dropped_from_set` (evidence straddled a
+rewrite, item removed). The goldset remap tags each item's change as `unmoved`, `rehomed` (its
+evidence moved onto a survivor), or `dropped`, so the report separates a re-homing from a
+corpus-wide ranking side-effect. It ends in an ADOPT/HOLD verdict naming any question the strip
+cost that retrieval could previously answer.
+
+```bash
+make audit-repeat-yield CORPUS=<md-corpus> GOLDSET=<gs> CHUNK_STRATEGY=sentence CHUNK_SIZE=200
+```
+
+Measured on the goods corpus (CUDA host, pinned e5-base, `size=200`, k=10, all 95 items; reports
+under `$DATA_DIR/retrieval-noise-floor/20260723T-repeat-yield-<strategy>/`):
+
+| strategy | kept recall@10 keep -> drop | held | recovered | lost (re-home) | dropped-from-set | answerable lost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `sentence` | 0.633 -> 0.667 (+0.033) | 56 | 4 | 1 (unmoved flip) | 5 | 4 |
+| `recursive` | 0.700 -> 0.722 (+0.022) | 63 | 2 | 0 | 5 | 3 |
+
+Both strategies return HOLD, and the audit resolves exactly where the pooled gain and the hidden
+cost each come from:
+
+- Re-homing itself is harmless to retrieval. NO item whose evidence moved onto a survivor became a
+  miss under either strategy -- the survivor is byte-identical text and retrieval still reaches it.
+  The one `sentence` `lost` item was `unmoved`: a corpus-wide ranking side-effect of removing other
+  blocks, not the re-homing.
+- The pooled gain is real and comes from `recovered` items (4 `sentence` / 2 `recursive`): a top-10
+  no longer padded with repeated boilerplate surfaces evidence the baseline missed.
+- The genuine cost is the 5 items `drop` removes from the scored set entirely -- their gold span
+  STRADDLED a removed block boundary, so `remap_span` cannot map it to one contiguous image. 3 of
+  those 5 the baseline could retrieve. This is the concrete question-level cost the survivor-only
+  pooled number hid, and `--recover-straddle` below removes it.
+
+###### Straddle recovery (`--recover-straddle`)
+
+A straddling gold span is `<tail of a removed copy> + <head of the block after it>`; the removed
+copy's text still exists on the survivor and the following block stays in place, so the span is not
+truly lost -- it just maps to two non-contiguous images. `remap_span_split` (`--recover-straddle`
+on `strip-corpus-repeats` and `audit-repeat-yield`, `REPEAT_RECOVER=1`) splits the span at every
+edit boundary it crosses, re-anchors each piece (the removed part onto the survivor, the kept part
+by shift), and keeps the item with several spans instead of dropping it. Because `recall_at_k`
+credits an item when ANY of its spans is covered, the split preserves the original retrieval
+semantics, and each piece is verified against the stripped text so an off-by-one remap fails loudly.
+
+Re-run with recovery on (same corpus, k, splits; reports under
+`$DATA_DIR/retrieval-noise-floor/20260723T-straddle-recover-<strategy>/`):
+
+| strategy | kept recall@10 keep -> drop | dropped-from-set | answerable lost | verdict |
+| --- | --- | ---: | ---: | --- |
+| `sentence` | 0.632 -> 0.663 (+0.032) | 0 (was 5) | 1 (was 4) | HOLD |
+| `recursive` | 0.695 -> 0.716 (+0.021) | 0 (was 5) | 0 (was 3) | ADOPT |
+
+Recovery does exactly what its design predicts: all 5 straddlers re-enter the scored set, every one
+of the 3 previously answerable-lost items becomes `held` (retrieval reaches the recovered survivor
+piece), and the pooled kept-recall is unchanged within the `+/-0.000` floor. `recursive` flips to
+ADOPT -- the strip now costs zero answerable questions. `sentence` still returns HOLD, but for a
+reason unrelated to the strip's rewrites: its one remaining `lost` item (`...-onto-81`) is `unmoved`
+and was `lost` in the no-recovery audit too -- a corpus-wide ranking side-effect of removing
+boilerplate distractors, which no straddle handling can address. So with `--recover-straddle` the
+straddle cost of `drop` is fully recovered, and what remains is only the ordinary ranking noise any
+index edit produces.
+
+Each successful document gets a `pdf-<digest>.citations.json` sidecar with source PDF, parser, PDF
+diagnostics, page numbers, generated-corpus character spans, and page-local block spans when the
+parser exposes them.
 The same directory also contains `pdf_corpus_manifest.json` and `pdf_corpus_quality.json`; the
 quality report records parser attempts, diagnostics, page coverage, citation coverage, structure
 markers, and the selection score.
@@ -825,6 +967,17 @@ with the measured human review-pass evidence recorded at the end of this section
   `item_provenance.jsonl`) and a `<source.pdf> p.N[-M]` citation resolved through the PDF lane's
   `*.citations.json` sidecars, so the reviewer can check the original page without leaving the
   terminal.
+- **Ambiguous-evidence guard** -- an optional `span_occurrences` column carries how many times an
+  item's primary gold span text appears verbatim across the whole corpus (`span_occurrences.py`).
+  An item whose span repeats is ambiguous by construction: the answer text exists in several
+  places, the retrieval metric credits any of them, and the reviewer could not otherwise tell that
+  the span they are accepting is not unique. The count comes from the draft-time
+  `span_occurrences.jsonl` sidecar when present, else a direct corpus scan of the sampled items;
+  the review card adds an `== ambiguous evidence: this span text appears in N places ...` line so
+  the reviewer decides whether the question is uniquely answerable. The guard fires above one
+  occurrence (`OCCURRENCE_FLAG_THRESHOLD`) and only annotates -- it never rejects an item or
+  changes the retrieval metric. The column and sidecar are BOTH absent when every sampled span is
+  unique, so an all-unique bundle keeps its worksheet byte-for-byte.
 - **Accept-with-edit re-grounding** -- the `e` command captures an edited reference answer and
   re-grounds it IMMEDIATELY against the bundle corpus (resolved via `sample_manifest.json`); an
   edit that is not a verbatim corpus span is refused on the spot, an accept over a stale edit is
@@ -1015,6 +1168,12 @@ candidates + the generated `query_glossary.json`). The lane's retrieval behavior
 durable deltas live in the [RAG core](rag-core.md) query-side-processing section.
 
 ## Corpus Hygiene: Conflict Detection (corpus-conflict-detection)
+
+This lane owns DOCUMENT-level duplication and contradiction, which needs a human decision. The
+chunk-level counterpart is automatic and separate: exact-duplicate chunk text inside one index is
+collapsed at build time
+([duplicate chunk collapse](rag-core.md#duplicate-chunk-collapse)), which changes no corpus byte
+and reports its rate in `store_meta.json`.
 
 `llb audit-corpus-conflicts` (`make audit-corpus-conflicts CORPUS=<dir> EFFORT=<tier>`) reports
 duplicated, stale, and mutually inconsistent knowledge in a corpus. It is **detection only**: no

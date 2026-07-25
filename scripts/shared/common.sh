@@ -17,7 +17,23 @@ llb_load_env() {
   DATA_DIR="${DATA_DIR:-$PROJECT_ROOT/.data}"
   case "$DATA_DIR" in /*) ;; *) DATA_DIR="$PROJECT_ROOT/$DATA_DIR" ;; esac
   export DATA_DIR
+  llb_export_tool_caches
   llb_export_uv_link_mode
+}
+
+# Point every tool cache at $DATA_DIR/cache/<tool>, so a redirected DATA_DIR takes the caches with
+# it and `rm -rf $DATA_DIR` still clears every temporary artifact. Resolving them HERE rather than
+# as static paths in pyproject.toml is what honors a custom DATA_DIR: a config file cannot read
+# .env, so a literal default there would keep writing into the project root after an operator
+# moved DATA_DIR elsewhere (AGENTS.md: never hardcode, resolve from the project root + .env).
+# `make/config.mk` exports the same values for make-driven runs -- Make cannot source this file.
+# A tool invoked with neither layer loaded falls back to its OWN default (.ruff_cache/,
+# .mypy_cache/, .pytest_cache/), which is gitignored and never masquerades as $DATA_DIR.
+llb_export_tool_caches() {
+  export RUFF_CACHE_DIR="${RUFF_CACHE_DIR:-$DATA_DIR/cache/ruff}"
+  export MYPY_CACHE_DIR="${MYPY_CACHE_DIR:-$DATA_DIR/cache/mypy}"
+  export DEEPEVAL_CACHE_FOLDER="${DEEPEVAL_CACHE_FOLDER:-$DATA_DIR/cache/deepeval}"
+  export DEEPEVAL_RESULTS_FOLDER="${DEEPEVAL_RESULTS_FOLDER:-$DATA_DIR/cache/deepeval/results}"
 }
 
 # Device id (st_dev) of PATH, resolved against the nearest existing ancestor -- the path may

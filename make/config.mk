@@ -1,8 +1,11 @@
 # Shared variables and exported environment for loc-lm-bench make targets.
 # Tool caches live under one $DATA_DIR/cache/<tool> tree (not the project root), so the root stays
-# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars override
-# the static pyproject defaults, so the caches follow a custom DATA_DIR. deepeval reads
-# DEEPEVAL_CACHE_FOLDER (its `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
+# clean and `rm -rf $DATA_DIR` clears every temporary artifact in one shot. These env vars are the
+# ONLY place the cache locations are set for make-driven runs -- pyproject.toml deliberately holds
+# no static cache path, since a config file cannot read .env and would not follow a custom
+# DATA_DIR. `llb_export_tool_caches` in scripts/shared/common.sh exports the same values for
+# shell-driven runs (Make cannot source that file). deepeval reads DEEPEVAL_CACHE_FOLDER (its
+# `.deepeval` keystore) and DEEPEVAL_RESULTS_FOLDER.
 LLB_CACHE_DIR := $(DATA_DIR)/cache
 export RUFF_CACHE_DIR := $(LLB_CACHE_DIR)/ruff
 export MYPY_CACHE_DIR := $(LLB_CACHE_DIR)/mypy
@@ -176,10 +179,42 @@ ANSWER_QUALITY_LIMIT ?=
 ANSWER_QUALITY_OUT_DIR ?=
 # Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
 INCLUDE_DRAFTED ?=
+# Embedder adoption bar (compare-embedder-adoption): the two encoders, each with the data root
+# whose llb/rag store was built with it, and the top_k x reranker grid the answers are scored on.
+# The default grid is the shipped budget plus a small one, with the pinned cross-encoder off and on
+# -- the two knobs that decide whether first-hit RANK binds at all.
+# EMBED_BASELINE is shared with compare-embeddings, where it is the incumbent every candidate is
+# paired against; the value below is the shipped `RunConfig.embedding_model`.
+EMBED_BASELINE ?= intfloat/multilingual-e5-base
+EMBED_CANDIDATE ?= BAAI/bge-m3
+EMBED_BASELINE_DATA_DIR ?=
+EMBED_CANDIDATE_DATA_DIR ?=
+ADOPTION_TOP_KS ?= 10,3
+ADOPTION_RERANKERS ?= off,on
+ADOPTION_LIMIT ?=
+ADOPTION_OUT_DIR ?=
+# Cross-model reading (compare-adoption-models): two finished sweep comparison.json files (or their
+# dirs) and where to write the per-cell agreement report.
+ADOPTION_REPORT_A ?=
+ADOPTION_REPORT_B ?=
+ADOPTION_CROSS_OUT ?=
+# Roster reading (compare-adoption-roster): three or more sweep dirs, the DECLARED per-model
+# property file the separation test reads, and the cell whose answer gain it explains.
+ADOPTION_REPORTS ?=
+ADOPTION_PROFILES ?=
+ADOPTION_FOCUS_CELL ?=
+ADOPTION_ROSTER_OUT ?=
+# Screen cost study (compare-adoption-screen): the item counts to measure, how many subsamples per
+# count, and the agreement a count must reach before it is called a usable screen.
+ADOPTION_SCREEN_SIZES ?=
+ADOPTION_SCREEN_DRAWS ?=
+ADOPTION_SCREEN_TARGET ?=
+ADOPTION_SCREEN_OUT ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
 QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
+QUERY_ROBUSTNESS_CLASSES ?=
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml

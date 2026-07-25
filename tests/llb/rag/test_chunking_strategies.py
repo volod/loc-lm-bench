@@ -232,13 +232,14 @@ def test_build_chunking_comparison_builds_flat_store_per_strategy(monkeypatch, t
         def retrieve(self, question, k):
             return []
 
-    def fake_build(corpus_root, strategy, size, overlap, model, mode):
-        assert (corpus_root, size, overlap, model, mode) == (
+    def fake_build(corpus_root, strategy, size, overlap, model, mode, duplicate_tier):
+        assert (corpus_root, size, overlap, model, mode, duplicate_tier) == (
             tmp_path,
             300,
             30,
             "fake-embedder",
             "flat",
+            "exact",  # the default tier travels into every per-strategy store
         )
         return FakeStore(strategy)
 

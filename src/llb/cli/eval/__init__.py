@@ -7,6 +7,7 @@ from llb.cli.eval import (  # noqa: F401
     analysis,
     answer_quality,
     context_ablation,
+    embedder_adoption,
     frontier_judge,
     judge,
     query_robustness,

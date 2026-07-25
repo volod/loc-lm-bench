@@ -94,18 +94,18 @@ class FusedReplay:
         self.router = router
 
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]:
-        vector_hits, graph_hits = self._lane_hits(question, k)
-        graph_weight = (
-            self.router.graph_weight(question) if self.router is not None else self.graph_weight
-        )
-        return fuse_lane_hits(
-            vector_hits,
-            graph_hits,
-            graph_weight,
-            k,
-            span_identity=self.span_identity,
-            merge_ratio=self.merge_ratio,
-        )
+        return self._fused(question, k, k)
+
+    def retrieve_candidate_pool(self, question: str, k: int, candidates: int) -> list[ChunkRecord]:
+        """This row's OWN ranking for `k`, cut at `candidates` instead -- the floor's pool seam.
+
+        The measurement floor needs candidates below the cut to perturb, and it must perturb the
+        ranking the row published: `retrieve(question, 3k)` would fuse a 3k-deep per-lane pool,
+        which is a DIFFERENT row (that is exactly what the candidate-depth knob sweeps). Here the
+        lanes are asked at the row's own depth and only the final cut moves, so the pool's top-k
+        is the published row by construction.
+        """
+        return self._fused(question, k, candidates)
 
     def routing_decision(self, question: str) -> RoutingDecision | None:
         """Expose the route for the evidence report without coupling it to this concrete class."""
@@ -113,10 +113,31 @@ class FusedReplay:
 
     def lane_agreement(self, question: str, k: int) -> int:
         """Candidates BOTH lanes returned in this row's pool -- the sweep's agreement diagnostic."""
-        return lane_agreement(*self._lane_hits(question, k), self.span_identity, self.merge_ratio)
+        vector_hits, graph_hits = self._lane_hits(question, lane_depth(self.depth, k))
+        return lane_agreement(vector_hits, graph_hits, self.span_identity, self.merge_ratio)
 
-    def _lane_hits(self, question: str, k: int) -> tuple[list[ChunkRecord], list[ChunkRecord]]:
+    def _fused(self, question: str, k: int, cut: int) -> list[ChunkRecord]:
+        """Fuse this row's lanes at the depth `k` implies, then cut the result at `cut`."""
+        graph_weight = self._graph_weight(question)
         depth = lane_depth(self.depth, k)
+        if graph_weight in (0.0, 1.0):
+            # A passthrough row IS one lane's ranking, so its extension past k is that lane's
+            # deeper candidates -- nothing is fused, and no fusion knob applies.
+            depth = max(depth, cut)
+        vector_hits, graph_hits = self._lane_hits(question, depth)
+        return fuse_lane_hits(
+            vector_hits,
+            graph_hits,
+            graph_weight,
+            cut,
+            span_identity=self.span_identity,
+            merge_ratio=self.merge_ratio,
+        )
+
+    def _graph_weight(self, question: str) -> float:
+        return self.router.graph_weight(question) if self.router is not None else self.graph_weight
+
+    def _lane_hits(self, question: str, depth: int) -> tuple[list[ChunkRecord], list[ChunkRecord]]:
         return self.vector.retrieve(question, depth), self.graph.retrieve(question, depth)
 
 
@@ -132,17 +153,22 @@ def build_sweep_rows(
     question_types: dict[str, str] | None = None,
     heuristic_policy: HeuristicPolicy = DEFAULT_HEURISTIC_POLICY,
     merge_ratios: tuple[float, ...] = DEFAULT_SPAN_MERGE_RATIOS,
+    pool_depth: int = 0,
 ) -> dict[str, Retriever]:
     """`vector` + a graph row per strategy + a fused row per (strategy, weight, depth, identity).
 
     Depths are resolved against `k` first (a request below `k` is lifted to `k`) and then
     de-duplicated, so two requested depths that resolve to the same pool produce one row rather
     than two identical ones under different labels.
+
+    `pool_depth` only widens what each lane CACHES, for the measurement floor's candidate pool
+    (`llb.rag.noise_floor`). No row's ranking can move with it: every row still asks its lanes for
+    its own depth, and a lane's top-d is the prefix of its top-d' for any d' > d.
     """
     depths = tuple(dict.fromkeys(lane_depth(depth, k) for depth in candidates)) or (k,)
     if routed_graph_weight is not None and not 0.0 <= routed_graph_weight <= 1.0:
         raise ValueError(f"graph weight must be within [0, 1], got {routed_graph_weight}")
-    cache_depth = max(depths)
+    cache_depth = max((*depths, pool_depth))
     vector_cache = LaneCache(vector, questions, cache_depth)
     rows: dict[str, Retriever] = {VECTOR_ROW: vector_cache}
     for strategy, store in graphs.items():

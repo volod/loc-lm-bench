@@ -1,6 +1,6 @@
 """Production wiring for clean baseline plus noisy query probe lanes."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ from llb.eval.query_robustness import (
     evaluate_query_robustness,
 )
 from llb.eval.query_robustness_report import write_robustness_artifacts
+from llb.eval.query_robustness_variants import resolve_variant_classes
 from llb.executor.cases import score_case, spans_as_dicts
 from llb.executor.runner import run_eval
 from llb.executor.runner_backend import _make_launcher
@@ -84,12 +85,14 @@ def run_query_robustness(
     split: str = "final",
     limit: int | None = None,
     typo_rate: float = 0.08,
+    variant_classes: Sequence[str] | None = None,
     progress: Callable[[str], None] | None = None,
     emit_clean: bool = True,
 ) -> QueryRobustnessRun:
     """Persist an ordinary clean run, then the isolated noisy probe bundle."""
     if not 0 < typo_rate <= 1:
         raise ValueError("typo_rate must be greater than 0 and at most 1")
+    classes = resolve_variant_classes(variant_classes)
     baseline_config = _baseline_config(config)
     items = _select_eval_items(baseline_config, None, split, limit)
     if not items:
@@ -113,6 +116,7 @@ def run_query_robustness(
             execute,
             seed=baseline_config.seed,
             typo_rate=typo_rate,
+            variant_classes=classes,
             progress=progress,
         )
 
@@ -124,6 +128,7 @@ def run_query_robustness(
         "split": split,
         "seed": baseline_config.seed,
         "typo_rate": typo_rate,
+        "variant_classes": list(classes),
         "clean_run_dir": clean_run_dir,
     }
     paths = write_robustness_artifacts(result, out_dir, metadata)
