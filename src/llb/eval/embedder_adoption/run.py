@@ -30,6 +30,7 @@ from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES,
 if TYPE_CHECKING:
     from llb.eval.embedder_adoption.cross_model import CrossModelReport
     from llb.eval.embedder_adoption.roster import ModelProfile, RosterReport
+    from llb.eval.embedder_adoption.screen import ScreenReport
 
 METHOD = "embedder-adoption-bar"
 
@@ -288,3 +289,39 @@ def run_roster_comparison(
         "comparison": str(target / "roster.json"),
     }
     return RosterRun(roster, target, paths)
+
+
+@dataclass(frozen=True)
+class ScreenRun:
+    report: "ScreenReport"
+    out_dir: Path
+    paths: Mapping[str, str]
+
+
+def run_screen_study_over_paths(
+    report_paths: Sequence[Path], *, out_dir: Path, focus_cell: str | None = None, **kwargs: object
+) -> ScreenRun:
+    """Read finished sweeps and persist the per-model screen cost study."""
+    from llb.eval.embedder_adoption.cross_model import _cross_metadata
+    from llb.eval.embedder_adoption.roster import DEFAULT_FOCUS_CELL
+    from llb.eval.embedder_adoption.screen import format_screen, run_screen_study
+
+    reports = [load_report(path) for path in report_paths]
+    study = run_screen_study(
+        reports,
+        focus_cell=focus_cell or DEFAULT_FOCUS_CELL,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    metadata = _cross_metadata(reports)
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    payload = {**study, "metadata": dict(metadata)}
+    (target / "screen.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (target / "screen.md").write_text(format_screen(study, metadata=metadata), encoding="utf-8")
+    paths = {
+        "report": str(target / "screen.md"),
+        "comparison": str(target / "screen.json"),
+    }
+    return ScreenRun(study, target, paths)

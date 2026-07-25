@@ -204,6 +204,12 @@ ADOPTION_REPORTS ?=
 ADOPTION_PROFILES ?=
 ADOPTION_FOCUS_CELL ?=
 ADOPTION_ROSTER_OUT ?=
+# Screen cost study (compare-adoption-screen): the item counts to measure, how many subsamples per
+# count, and the agreement a count must reach before it is called a usable screen.
+ADOPTION_SCREEN_SIZES ?=
+ADOPTION_SCREEN_DRAWS ?=
+ADOPTION_SCREEN_TARGET ?=
+ADOPTION_SCREEN_OUT ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08

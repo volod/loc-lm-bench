@@ -4,7 +4,7 @@
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
 	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
-	compare-vector-stores run-eval \
+	compare-adoption-screen compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -194,6 +194,17 @@ compare-adoption-roster: ## Is the reranker gain predictable in advance? Test wh
 		$(if $(ADOPTION_PROFILES),--profiles "$(ADOPTION_PROFILES)",) \
 		$(if $(ADOPTION_FOCUS_CELL),--focus-cell "$(ADOPTION_FOCUS_CELL)",) \
 		$(if $(ADOPTION_ROSTER_OUT),--out-dir "$(ADOPTION_ROSTER_OUT)",)
+
+compare-adoption-screen: ## What does deciding the reranker question for ONE model cost? Resample recorded sweeps for the cheapest screen (ADOPTION_REPORTS="<dir> ..." ADOPTION_FOCUS_CELL= ADOPTION_SCREEN_SIZES= ADOPTION_SCREEN_DRAWS= ADOPTION_SCREEN_TARGET= ADOPTION_SCREEN_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORTS)" || { echo "ERROR: set ADOPTION_REPORTS=\"<sweep-dir> ...\""; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-screen $(ADOPTION_REPORTS) \
+		$(if $(ADOPTION_FOCUS_CELL),--focus-cell "$(ADOPTION_FOCUS_CELL)",) \
+		$(if $(ADOPTION_SCREEN_SIZES),--sizes "$(ADOPTION_SCREEN_SIZES)",) \
+		$(if $(ADOPTION_SCREEN_DRAWS),--draws $(ADOPTION_SCREEN_DRAWS),) \
+		$(if $(ADOPTION_SCREEN_TARGET),--target $(ADOPTION_SCREEN_TARGET),) \
+		$(if $(ADOPTION_SCREEN_OUT),--out-dir "$(ADOPTION_SCREEN_OUT)",)
 
 compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

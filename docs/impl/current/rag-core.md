@@ -1605,6 +1605,15 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   vacuous prediction. Verdicts: `property_predicts` / `no_property_predicts` /
   `insufficient_variation`; artifacts `roster.md` + `roster.json`; tests in
   `tests/llb/eval/test_embedder_adoption_roster.py`.
+- **The screen cost study** (`make compare-adoption-screen`,
+  `src/llb/eval/embedder_adoption/screen.py`): since the reranker answer must be measured per
+  model, this measures what measuring costs. It re-derives each sweep's per-item deltas from the
+  `run-eval` bundles the sweep names (the artifact persists aggregates only), CHECKS that they
+  reproduce the sweep's own recorded reading before trusting them, then subsamples at a range of
+  item counts and reports how often a screen that size reaches the same reading. `screen_supported`
+  is claimed only when EVERY model survives the smaller set -- a screen that reproduces four models
+  and loses the fifth is precisely the screen that reports "no gain" when there is one. Artifacts
+  `screen.md` + `screen.json`; tests in `tests/llb/eval/test_embedder_adoption_screen.py`.
 
 CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
 goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
@@ -1687,6 +1696,55 @@ embedder and the cross-encoder, which fail with a CUDA OOM inside `retrieve`. Ru
 because Ollama is a separate process. Retrieval is model-independent, and the CPU-encoder sweeps
 reproduce the GPU sweeps' recall@k / MRR@k columns exactly, which is the check that the switch
 changed nothing measurable.
+
+#### What the per-model answer costs
+
+Because the reranker reading has to be measured per model, what it COSTS is part of the
+recommendation. CUDA host, 2026-07-25; study over the five recorded sweeps
+(`$DATA_DIR/embedder-adoption-bar/screen/`), confirmation run under `.../screen-confirm-mamaylm12b/`.
+The cost splits into two axes that behave completely differently:
+
+- **Dropping the other cells is free, and it is the whole saving.** The reranker question lives in
+  ONE cell, so `--top-ks 10 --rerankers on` scores 6 bundles instead of 24. A confirmation run of
+  MamayLM-12B that way reproduced the full sweep's `k10+rerank` row BIT-IDENTICALLY on every paired
+  metric (objective +0.052 `[+0.011, +0.101]`, and likewise MRR@k and recall@k) and reached the same
+  `extend_bar` verdict, in **6m40s against ~18 minutes** -- 4x fewer bundles, 2.7x wall clock
+  (the reranked cell costs more per bundle than the plain ones, which is why the time saving is
+  smaller than the bundle saving).
+- **Cutting the ITEM set is not available.** Fewer items widen the paired interval while the rule
+  stays "the interval clears zero", so a screen can only LOSE a detection, never invent one. How
+  often each model's `k10+rerank` reading survives a subsample of N items, 120 draws per size:
+
+| model | full reading | n=10 | n=15 | n=20 | n=25 | n=30 | n=35 |
+| --- | :-: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `MamayLM-Gemma-3-12B` | **answer** | 11% | 29% | 38% | 49% | 59% | 82% |
+| `lapa-v0.1.2` | neither | 96% | 90% | 87% | 82% | 78% | 76% |
+| `qwen3:14b` | neither | 94% | 91% | 92% | 95% | 98% | 99% |
+| `mistral-small3.1:24b` | neither | 97% | 100% | 98% | 100% | 100% | 100% |
+| `MamayLM-Gemma-3-27B` | neither | 88% | 84% | 89% | 97% | 98% | 99% |
+
+Verdict: **full_set_required**. What the table establishes:
+
+- **The one positive reading needs the whole ledger.** MamayLM-12B is the only model whose reranked
+  gain reaches the answer, and a screen reproduces that at 11% on 10 items and still only 82% on 35
+  -- below the 90% target even at 7/8 of the set. Halving the items would have told the operator the
+  reranker does not pay, on the one model where it does.
+- **The bias is one-directional, which makes a cheap screen actively misleading here.** Every
+  disagreement in the table is a `neither` where the full set says `answer`, or an `answer` where
+  the full set says `neither` on a borderline row; no model ever flipped from `neither` to a
+  confident `answer` it did not earn. A screen's errors are systematically "reports no gain", so
+  its failures look like a clean negative result rather than like noise.
+- **`lapa` is a knife-edge row, not a clean negative.** Its agreement FALLS as the subsample grows
+  (96% -> 76%), and every disagreement is `answer`: its full-set objective delta is
+  +0.024 `[-0.000, +0.059]`, a lower bound sitting on zero. The binary reading prints `neither`, but
+  the honest statement is "too close to call" -- read that row as undecided rather than as evidence
+  the reranker does not pay for `lapa`.
+- **The recipe.** To decide the reranker question for a model being shipped, run the full accepted
+  ledger at one cell:
+  `make compare-embedder-adoption MODEL=<model> ADOPTION_TOP_KS=10 ADOPTION_RERANKERS=on
+  EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<corpus>
+  GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration`. Do not reach for `ADOPTION_LIMIT`
+  to make it cheaper.
 
 ### Context budget
 

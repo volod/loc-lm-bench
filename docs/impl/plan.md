@@ -43,35 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### adoption-bar-per-model-screen (optional)
+### adoption-cell-reading-reports-a-binary-on-borderline-evidence (optional)
 
-Whether `bge-m3`'s first-hit-rank gain reaches the answer under a cross-encoder reranker is not
-predictable from a model card: across a five-model roster only one model captured it, and two
-models with the SAME declared parameter count and family landed on opposite sides
-([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). The operator advice is
-therefore "measure it on the model you ship", which currently costs a full four-cell sweep (24
-`run-eval` bundles, 40 items each, ~30-60 minutes on a 16 GiB host). Find the cheapest screen that
-reproduces the per-model reading: measure how few items and how few cells the `k10+rerank` decision
-actually needs (the recorded sweeps already carry the per-item vectors to resample from), and
-either ship a `--screen` mode that answers the question in a fraction of the runtime or record the
-minimum item count a trustworthy per-model answer requires.
+Every adoption-bar reading is a BINARY (`answer` / `rank only` / `neither`) cut from a continuous
+interval, and a row sitting on the cut is printed as a clean negative. `lapa-v0.1.2` is the measured
+case: its `k10+rerank` objective delta is +0.024 `[-0.000, +0.059]`, a lower bound exactly on zero,
+so it prints `neither` -- yet its screen agreement FALLS as the subsample grows (96% at n=10 to 76%
+at n=35) with every disagreement landing on `answer`, which is the signature of a row that is one
+item from flipping ([RAG core](current/rag-core.md#what-the-per-model-answer-costs)). An operator
+reading the roster table cannot tell that row apart from `mistral`, whose `neither` is stable at
+100%. Add a third state to the reading vocabulary -- `borderline`, for a delta whose interval bound
+sits within some measured distance of zero -- or report a stability figure per row, so a knife-edge
+verdict cannot be read as settled evidence. Derive the threshold from the recorded sweeps rather
+than picking one: the screen study already measures how each row's reading behaves under
+resampling.
 
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the five recorded sweeps under `$DATA_DIR/embedder-adoption-bar/` for
-  the resampling study and `make compare-embedder-adoption` with a reduced cell grid / `--limit`
-  for the confirmation runs.
-- User-visible outcome: an operator can decide the reranker question for their own model without
-  paying for the full grid, or knows the honest floor on what that decision costs.
-- Scope boundary: in scope -- the item-count/cell-count study over recorded per-item vectors, the
-  screen mode if the study supports one, and its confirmation against the full sweeps. Out of scope
-  -- new cells, new encoders, and any change to the bar, cross-model, or roster mechanics.
-- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/run-<slug>/` sweeps plus a
-  new `.../screen/<run>/`.
-- Execution path: a resampling study over the recorded `comparison.json` per-item vectors, then
-  `make compare-embedder-adoption ADOPTION_TOP_KS=10 ADOPTION_RERANKERS=on ADOPTION_LIMIT=<n>` per
-  candidate screen size on the CUDA host; CI covers the screen's decision rule over fake bundles.
-- Acceptance gates: `make ci` green; the report states the screen's agreement with the full sweep's
-  `k10+rerank` reading on all five recorded models, and names the item count it needs.
+- Agent status: CLEAR
+- Dependencies: none. Reuse `cell_reading` / `reading_from_deltas` and the recorded five-model
+  sweeps plus their screen curves under `$DATA_DIR/embedder-adoption-bar/`.
+- User-visible outcome: the operator can tell a settled `neither` from a row that is one question
+  away from flipping, instead of reading both as the same negative result.
+- Scope boundary: in scope -- the extra reading state or per-row stability figure, its threshold
+  derived from the recorded curves, and re-rendering the roster/cross-model/screen tables with it.
+  Out of scope -- changing the adopt bar itself, the cell grid, and the sweep mechanics.
+- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/` sweeps and
+  `.../screen/`; no new roots and no new heavy run (the curves are already recorded).
+- Execution path: pure re-analysis over the recorded artifacts, then re-render the readings; CI
+  covers the new state's boundaries over fake delta vectors.
+- Acceptance gates: `make ci` green; every recorded row keeps its current reading except those the
+  study shows are unstable, and `lapa`'s `k10+rerank` row is no longer presented as a settled
+  negative.
 - Documentation target: the scoped first-hit-rank bar subsection of
   [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 
