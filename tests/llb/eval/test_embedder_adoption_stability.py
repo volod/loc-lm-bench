@@ -8,16 +8,16 @@ import pytest
 
 from llb.eval.embedder_adoption import READING_ANSWER, READING_NEITHER, READING_RANK_ONLY
 from llb.eval.embedder_adoption.models import ItemDeltas
-from llb.eval.embedder_adoption.stability import (
+from llb.eval.embedder_adoption.stability import row_stability
+from llb.rag.fusion_evidence.stability import (
     LOOSER_CONFIDENCE,
     SIDE_ABOVE,
     SIDE_BELOW,
     decision_probability,
     exceedance,
     format_reading,
-    row_stability,
 )
-from llb.rag.fusion_evidence.stats import bootstrap_index_sets
+from llb.rag.fusion_evidence.stats import bootstrap_index_sets, bootstrap_samples
 
 
 def _deltas(objective: list[float], rr: list[float] | None = None) -> ItemDeltas:
@@ -33,16 +33,19 @@ def _deltas(objective: list[float], rr: list[float] | None = None) -> ItemDeltas
 
 def test_exceedance_is_the_share_of_resamples_above_zero():
     idx = bootstrap_index_sets(20, 400, 13)
-    assert exceedance([1.0] * 20, idx) == 1.0
-    assert exceedance([-1.0] * 20, idx) == 0.0
+
+    def share(values):
+        return exceedance(bootstrap_samples(values, idx))
+
+    assert share([1.0] * 20) == 1.0
+    assert share([-1.0] * 20) == 0.0
     # A symmetric spread straddles zero, so it lands near a half.
-    mixed = exceedance([1.0] * 10 + [-1.0] * 10, idx)
-    assert 0.3 < mixed < 0.7
+    assert 0.3 < share([1.0] * 10 + [-1.0] * 10) < 0.7
 
 
 def test_exceedance_of_nothing_is_zero_not_a_crash():
-    assert exceedance([], bootstrap_index_sets(0, 10, 13)) == 0.0
-    assert exceedance([1.0], []) == 0.0
+    assert exceedance(bootstrap_samples([], bootstrap_index_sets(0, 10, 13))) == 0.0
+    assert exceedance(bootstrap_samples([1.0], [])) == 0.0
 
 
 def test_the_decision_probability_matches_the_interval_rule():

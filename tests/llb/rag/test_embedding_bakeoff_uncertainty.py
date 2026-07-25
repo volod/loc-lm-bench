@@ -9,15 +9,17 @@ from llb.rag.embedding_bakeoff import run_bakeoff, score_candidate
 from llb.rag.embedding_bakeoff_models import BuiltStore
 from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 from llb.rag.embedding_bakeoff_uncertainty import (
-    DECISION_ADOPT,
-    DECISION_RETAIN,
-    DECISION_UNDECIDED,
     METRIC_MRR,
     METRIC_RECALL,
-    decide_verdict,
     item_vectors,
     paired_rows,
     recall_delta,
+)
+from llb.rag.embedding_bakeoff_verdict import (
+    DECISION_ADOPT,
+    DECISION_RETAIN,
+    DECISION_UNDECIDED,
+    decide_verdict,
     separates_from_baseline,
 )
 

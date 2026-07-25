@@ -1449,14 +1449,87 @@ different draw of questions, and on a 40-item set a "winner" is routinely two qu
   only when its 95% paired recall@k interval lies wholly above zero. Otherwise the incumbent is
   retained, whatever the point estimate says. `best_recall` is still reported, relabeled in
   `report.md` as the point-estimate leader -- it is no longer the recommendation.
-- Artifacts: `report.md` (the table gains `recall delta vs <baseline>` / `w/l/t` / `sign p` columns
-  and the verdict line) plus `report.json` beside it with every interval bound and ledger, so a
-  later re-read recomputes from numbers instead of prose.
+- Artifacts: `report.md` (the table gains `recall delta vs <baseline>` / `w/l/t` / `sign p` /
+  `recall reading` columns, a boundary table, and the verdict line) plus `report.json` beside it
+  with every interval bound and ledger, so a later re-read recomputes from numbers instead of prose.
+- `decide_verdict` and the bar helpers live in `src/llb/rag/embedding_bakeoff_verdict.py`, split
+  from the paired statistics so the sentence an operator acts on stays separately readable.
 
 Tests: `tests/llb/rag/test_embedding_bakeoff_uncertainty.py` (vector means matching the published
 row, the paired ledger, seed determinism, a baseline paired against itself at exactly zero, a
 one-item lead that does NOT separate, adopt/retain/undecided, the report columns, and the CLI's
 `report.json`) -- all over fake stores, no FAISS, no GPU.
+
+#### How settled a paired reading is -- `p_positive` and the borderline flag
+
+Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:
+does the delta's lower bound clear zero. A row whose bound sits ON zero therefore prints exactly
+like a row that missed by a mile -- the bake-off's `retain`, the fusion sweep's `reject`, the
+ablation's `no_retrieval_gain` and the answer lane's `no_gain` were all stated in the same words
+whether the evidence was decisive or the convention was. `src/llb/rag/fusion_evidence/stability.py`
+is the one place that vocabulary lives, and every lane reports it:
+
+- **`p_positive`** is the share of paired resamples in which the candidate is ahead -- the
+  CONTINUOUS quantity the reading thresholds, since a 95% percentile interval clears zero exactly
+  when `p_positive > 0.975`. **`borderline`** is raised when the reading would change at either
+  NEIGHBOURING conventional level, looser (90%) or tighter (97.5%). The check is two-sided on
+  purpose: `side: below` is a negative that would clear a looser bar (an undecided negative),
+  `side: above` is a positive a tighter bar would drop (a positive resting on the convention). No
+  constant is fitted to the data; all three levels are conventions the repo already reports at.
+- **It rides on `paired_comparison`, so no lane wires it.** Every paired delta in the repo goes
+  through that one function, which now attaches a `stability` block to each `PairedComparison`.
+  That reaches the embedder bake-off, the fusion sweep, the context ablation, and the
+  answer-quality slices at once -- and any future lane for free.
+- **It is free, not a second computation.** The resample MEANS a percentile bound is read off are
+  the same draw the exceedance probability counts, so `paired_comparison` draws once, sorts once,
+  and reads three percentile cuts plus the exceedance off that sorted array
+  (`bootstrap_samples` / `_ordered_percentiles` / `separation_stability`). Measured at n=95,
+  2000 resamples: **2.36 ms before, 2.39 ms after (+1%)**, against 9.96 ms (4.2x) for the naive
+  bolt-on of three extra intervals plus a second pass.
+- **The annotation is omitted rather than faked** when no resample was drawn (`p_positive` is a
+  share OF resamples, and a zero would read as a settled negative) or when the reporting confidence
+  sits outside the two conventions the flag is defined against.
+- **Every verdict reason carries the shared clause.** `borderline_note` produces ONE phrasing for
+  all four lanes, and each lane passes the rows its verdict was DECIDED ON -- not only the one its
+  sentence quotes, because the ablation's `rag_pays_off` is reached by the long-context check
+  failing first. Each lane's `report.md` also renders a `boundary_table` over those rows, and the
+  bake-off / ablation tables gain a per-row `reading` cell that prints `flat (borderline)`.
+- **A lane whose reading is richer than separated/flat supplies its own states.** The embedder
+  adoption bar reads `answer` / `rank only` / `neither`, so it computes its reading at each of the
+  three levels and hands them to `stability_from_readings`, producing the identical
+  `ReadingStability` shape ([the scoped first-hit-rank bar](#the-scoped-first-hit-rank-adoption-bar)).
+- No adoption rule, confidence convention, or metric changed. Tests:
+  `tests/llb/rag/test_paired_stability.py` (the shared annotation, the assembly, the rendering, the
+  clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
+  own verdict).
+
+Re-render evidence (2026-07-25, from the recorded artifacts on disk, no new run): every recorded
+paired block of the three lanes whose artifacts persist per-item values was rebuilt with the same
+resamples / confidence / seed and diffed field by field -- **1222 blocks over 6 fusion sweeps, 3
+answer-quality comparisons, and 9 context ablations reproduced their recorded interval, ledger, and
+verdict decision exactly**, with only the additive `stability` blocks and the qualified reasons
+new. 139 of those blocks (11.4%) are borderline. The bake-off's recorded artifacts persist
+aggregates without per-item vectors, so they cannot be rebuilt from disk; the invariance there is
+the same function, checked differentially against the pre-annotation code path over 4000 randomized
+configurations spanning every recorded `(n, resamples, seed, confidence)` -- **zero delta
+mismatches** -- with a compact sweep of that check kept in CI.
+
+What the annotation found on evidence already recorded:
+
+- **The context ablation's one `rag_pays_off` row is settled, but the verdict above it is not.** On
+  `qwen3.6-35b` over the 82-item UA fixture the retrieval uplift is +0.421 `[+0.333, +0.503]` at
+  `p_positive` 1.000 -- decisive. The LONG-CONTEXT delta on the same run is +0.060 `[-0.008, +0.130]`
+  at `p_positive` 0.960, which a 90% interval would read as separated. Since `_judge` checks the
+  long-context lane FIRST, that run's `rag_pays_off` is one convention away from
+  `long_context_wins`, and the reason now says so. The other eight recorded ablations are settled.
+- **Three of six recorded fusion sweeps now qualify their `inconclusive`.** The deciding gain
+  metric sits on the cut in `20260722T100231Z`, `20260722T102219Z-depth`, and
+  `20260724T-noise-floor`; the three `adopt` sweeps have borderline rows elsewhere in the grid but
+  a settled winner, so their reasons stay unqualified -- the clause is scoped to the deciding row
+  rather than fired on any unsettled row anywhere.
+- **Two of three recorded answer-quality comparisons qualify their `retrieval_only`.** The
+  coverage-versus-objective split that verdict rests on is itself a near-miss in the drafted
+  multi-hop bundle and the overlap-policy re-run.
 
 ### The recommendation re-read against the floor
 
@@ -1614,16 +1687,15 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   is claimed only when EVERY model survives the smaller set -- a screen that reproduces four models
   and loses the fifth is precisely the screen that reports "no gain" when there is one. Artifacts
   `screen.md` + `screen.json`; tests in `tests/llb/eval/test_embedder_adoption_screen.py`.
-- **The borderline annotation** (`src/llb/eval/embedder_adoption/stability.py`): every reading is a
-  binary cut of a continuous interval, so a row whose bound sits ON zero prints exactly like one
-  that missed by a mile. Two additive signals fix that without touching the bar. `p_positive` is the
-  share of paired resamples in which the candidate is ahead -- the quantity the reading actually
-  thresholds, since a 95% interval clears zero exactly when `p_positive > 0.975`. And a reading is
-  marked `(borderline)` when either NEIGHBOURING conventional level would change it -- looser (90%)
-  or tighter (97.5%) -- a statement about robustness to an arbitrary convention, with no constant
-  fitted to the data. The check is two-sided on purpose: `side: below` is a negative that would
-  clear a looser bar (an undecided negative), `side: above` is a positive a tighter bar would drop
-  (a positive resting on the convention). Readings and verdicts are never altered. Tests in
+- **The borderline annotation** (`src/llb/eval/embedder_adoption/stability.py`): the repo-wide
+  `p_positive` / `(borderline)` qualifier described under
+  [how settled a paired reading is](#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag),
+  specialised to this lane's THREE-state reading. `separated` / `flat` is what a single paired delta
+  cuts; the adoption bar reads `answer` / `rank only` / `neither` by checking the objective delta
+  first and first-hit rank second, so it computes that reading at each of the three conventional
+  levels and hands them to the shared `stability_from_readings`. The persisted field, the boundary
+  table, and the qualified verdict clause are then the identical ones the bake-off, fusion sweep,
+  ablation, and answer lane report. Readings and verdicts are never altered. Tests in
   `tests/llb/eval/test_embedder_adoption_stability.py`.
 - **Where the annotation is measured: inside the SWEEP itself.** `compare_cells` builds each cell's
   per-item delta vectors anyway, and the sweep already draws ONE resample index set shared by every
@@ -1941,6 +2013,15 @@ lanes over fake bundles and the committed fixtures
 (`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
 
 ### Context-ablation evidence
+
+Each derived delta carries `p_positive` and a `(borderline)` flag, and the verdict names both the
+rows it was decided on -- the retrieval uplift AND the long-context delta, because `_judge` checks
+the long-context lane first
+([how settled a paired reading is](#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
+On the recorded runs that matters once: the `qwen3.6-35b` row's `rag_pays_off` rests on a settled
+uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90% interval would
+read as separated, so that verdict is one convention away from `long_context_wins`. The eight other
+recorded ablations are settled.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,

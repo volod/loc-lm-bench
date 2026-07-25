@@ -16,6 +16,8 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     DEFAULT_BASELINE_MODEL,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
+)
+from llb.rag.embedding_bakeoff_verdict import (
     resolve_bars,
 )
 

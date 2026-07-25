@@ -17,7 +17,7 @@ from llb.eval.embedder_adoption.roster import (
     PROPERTY_PARAMS,
     RosterReport,
 )
-from llb.eval.embedder_adoption.stability import boundary_table, format_reading, reading_label
+from llb.rag.fusion_evidence.stability import boundary_table, format_reading, reading_label
 
 
 def _profile_cell(profile: Mapping[str, object], name: str) -> str:

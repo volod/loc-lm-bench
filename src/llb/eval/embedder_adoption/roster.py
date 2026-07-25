@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 from typing_extensions import NotRequired, TypedDict
 
 if TYPE_CHECKING:
-    from llb.eval.embedder_adoption.stability import RowStability
+    from llb.rag.fusion_evidence.stability import ReadingStability as RowStability
 
 from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,

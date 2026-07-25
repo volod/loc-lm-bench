@@ -22,7 +22,7 @@ from llb.eval.embedder_adoption.models import (
     AdoptionBarReport,
     CellReport,
 )
-from llb.eval.embedder_adoption.stability import boundary_table, format_reading
+from llb.rag.fusion_evidence.stability import boundary_table, format_reading
 from llb.rag.fusion_evidence.stats import format_interval
 
 _HEADERS = {

@@ -38,9 +38,11 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
     MetricVectors,
-    decide_verdict,
     item_vectors,
     paired_rows,
+)
+from llb.rag.embedding_bakeoff_verdict import (
+    decide_verdict,
 )
 from llb.rag.retrieval import evaluate_retrieval
 

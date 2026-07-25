@@ -52,13 +52,11 @@ from llb.eval.embedder_adoption.screen import (
 )
 from llb.eval.embedder_adoption.verdict import decide_bar
 from llb.eval.embedder_adoption.stability import (
-    BORDERLINE_MARK,
-    SIDE_ABOVE,
-    SIDE_BELOW,
     RowStability,
     reading_from_deltas,
     row_stability,
 )
+from llb.rag.fusion_evidence.stability import BORDERLINE_MARK, SIDE_ABOVE, SIDE_BELOW
 from llb.eval.embedder_adoption.run import (
     load_profiles,
     load_report,

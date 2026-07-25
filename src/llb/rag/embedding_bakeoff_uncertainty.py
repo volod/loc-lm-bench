@@ -16,18 +16,16 @@ Pure and dependency-free: vectors come from the `.retrieve` seam, so the whole l
 with fake stores (no FAISS, no GPU).
 """
 
-from collections.abc import Sequence
-
 from typing_extensions import TypedDict
 
 from llb.core.contracts.rag import RetrievalPair
+from llb.rag.fusion_evidence.stability import ReadingStability
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
     PairedComparison,
     bootstrap_index_sets,
-    format_interval,
     paired_comparison,
 )
 from llb.rag.retrieval import recall_at_k, reciprocal_rank
@@ -40,10 +38,6 @@ METRICS = (METRIC_RECALL, METRIC_MRR)
 # The incumbent the deltas are measured against: the shipped `RunConfig.embedding_model`. A swap
 # recommendation is a statement about replacing THIS row, so it is the natural baseline.
 DEFAULT_BASELINE_MODEL = "intfloat/multilingual-e5-base"
-
-DECISION_ADOPT = "adopt"
-DECISION_RETAIN = "retain"
-DECISION_UNDECIDED = "undecided"
 
 # Adoption bars: the paired metric interval(s) a candidate must clear to be adopted.
 #
@@ -93,6 +87,10 @@ class BakeoffVerdict(TypedDict):
     separated: list[str]  # candidates clearing at least one enabled bar
     bars: list[str]  # the adoption bars this verdict was decided on
     cleared: dict[str, list[str]]  # per separated candidate, which bars it cleared
+    # Per candidate, the enabled bars whose separation reading a neighbouring conventional
+    # confidence level would change. A qualifier on the decision, never a third outcome: a
+    # borderline bar still counts exactly where it counted.
+    borderline: dict[str, list[str]]
     reason: str
 
 
@@ -136,134 +134,11 @@ def paired_rows(
     }
 
 
+def bar_stability(paired: PairedRow, bar: str) -> ReadingStability | None:
+    """How settled one bar's separation reading is, or None on an artifact carrying no draw."""
+    return paired["metrics"][bar].get("stability")
+
+
 def recall_delta(paired: PairedRow) -> PairedComparison:
     """The recall@k paired delta -- the metric the unconditional adoption bar is read on."""
     return paired["metrics"][METRIC_RECALL]
-
-
-def resolve_bars(spec: str | None) -> tuple[str, ...]:
-    """Parse a comma-separated adoption-bar selection; empty/None keeps the recall@k-only default.
-
-    `recall_at_k` is always kept: the second bar EXTENDS the decision, it never replaces the one
-    unconditional reason to swap an encoder.
-    """
-    names = [token.strip() for token in (spec or "").split(",") if token.strip()]
-    if not names:
-        return DEFAULT_BARS
-    unknown = [name for name in names if name not in BARS]
-    if unknown:
-        raise ValueError(
-            f"unknown adoption bar(s) {', '.join(unknown)}: expected any of {', '.join(BARS)}"
-        )
-    selected = dict.fromkeys([BAR_RECALL, *names])
-    return tuple(bar for bar in BARS if bar in selected)
-
-
-def cleared_bars(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> list[str]:
-    """The enabled bars whose paired interval lies wholly above zero, in `BARS` order."""
-    return [bar for bar in BARS if bar in bars and paired["metrics"][bar]["delta"]["lo"] > 0.0]
-
-
-def separates_from_baseline(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> bool:
-    """True when the candidate clears at least one ENABLED adoption bar."""
-    return bool(cleared_bars(paired, bars))
-
-
-def decide_verdict(
-    paired: dict[str, PairedRow],
-    baseline: str | None,
-    bars: Sequence[str] = DEFAULT_BARS,
-) -> BakeoffVerdict:
-    """Adopt the best separated candidate, else retain the incumbent (never rank on a point gap).
-
-    "Separated" is deliberately the strict reading: the 95% paired interval of an ENABLED bar's
-    delta excludes zero. A candidate that merely leads on the point estimate is exactly the case
-    this lane exists to refuse.
-
-    `bars` defaults to recall@k alone. Adding `BAR_FIRST_HIT` opts the run into the scoped
-    first-hit-rank bar, which an operator enables when their retrieval configuration makes rank
-    binding rather than as a general widening of the recommendation.
-    """
-    if baseline is None or not paired:
-        return _verdict(
-            DECISION_UNDECIDED,
-            None,
-            baseline,
-            bars,
-            reason=(
-                "the baseline embedder was not scored in this run, so no paired delta is defined"
-            ),
-        )
-    cleared = {
-        model: cleared_bars(row, bars)
-        for model, row in paired.items()
-        if model != baseline and separates_from_baseline(row, bars)
-    }
-    if not cleared:
-        return _verdict(
-            DECISION_RETAIN,
-            baseline,
-            baseline,
-            bars,
-            reason=(
-                f"no candidate clears an adoption bar ({', '.join(bars)}) against `{baseline}`, "
-                "so the ranking is not supported by this item set"
-            ),
-        )
-    separated = sorted(cleared, key=lambda model: _rank_key(paired[model], cleared[model]))
-    winner = separated[0]
-    return _verdict(
-        DECISION_ADOPT,
-        winner,
-        baseline,
-        bars,
-        separated=separated,
-        cleared=cleared,
-        reason=_adopt_reason(winner, baseline, paired[winner], cleared[winner]),
-    )
-
-
-def _rank_key(paired: PairedRow, cleared: Sequence[str]) -> tuple[int, float, float]:
-    """Most bars cleared wins; then the larger recall gain, then the larger first-hit gain.
-
-    Bar COUNT leads because clearing both bars is strictly more evidence than clearing either, and
-    recall@k breaks the tie because it is the bar that holds in every configuration.
-    """
-    return (
-        -len(cleared),
-        -paired["metrics"][METRIC_RECALL]["delta"]["mean"],
-        -paired["metrics"][METRIC_MRR]["delta"]["mean"],
-    )
-
-
-def _adopt_reason(winner: str, baseline: str, paired: PairedRow, cleared: Sequence[str]) -> str:
-    """Name the bar(s) the winner cleared and quote each one's interval and ledger."""
-    detail = "; ".join(
-        f"{bar} delta {format_interval(paired['metrics'][bar]['delta'])}, "
-        f"{paired['metrics'][bar]['wins']}/{paired['metrics'][bar]['losses']}/"
-        f"{paired['metrics'][bar]['ties']} win/loss/tie, "
-        f"sign-test p={paired['metrics'][bar]['sign_test_p']:.3f}"
-        for bar in cleared
-    )
-    return f"`{winner}` clears {', '.join(cleared)} against `{baseline}`: {detail}"
-
-
-def _verdict(
-    decision: str,
-    model: str | None,
-    baseline: str | None,
-    bars: Sequence[str],
-    *,
-    separated: list[str] | None = None,
-    cleared: dict[str, list[str]] | None = None,
-    reason: str,
-) -> BakeoffVerdict:
-    return {
-        "decision": decision,
-        "model": model,
-        "baseline": baseline,
-        "separated": list(separated or []),
-        "bars": list(bars),
-        "cleared": dict(cleared or {}),
-        "reason": reason,
-    }

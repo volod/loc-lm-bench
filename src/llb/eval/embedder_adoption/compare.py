@@ -27,15 +27,11 @@ from llb.eval.embedder_adoption.models import (
     ItemDeltas,
     LaneMetrics,
 )
-from llb.eval.embedder_adoption.stability import (
-    LOOSER_CONFIDENCE,
-    TIGHTER_CONFIDENCE,
-    RowStability,
-    stability_from_index_sets,
-)
+from llb.eval.embedder_adoption.stability import RowStability, stability_from_index_sets
 from llb.eval.embedder_adoption.verdict import decide_bar
 from llb.eval.paired_cases import CaseRows, lane_vectors, shared_item_ids
 from llb.rag.fusion_evidence.slices import MetricVectors
+from llb.rag.fusion_evidence.stability import LOOSER_CONFIDENCE, TIGHTER_CONFIDENCE
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,

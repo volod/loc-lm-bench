@@ -599,6 +599,14 @@ does with it. `llb compare-answer-quality` (`make compare-answer-quality`) close
 scores the identical item set END TO END under two retrieval lanes with the standard `run-eval`,
 then compares the ANSWERS per question-type slice with the same paired bootstrap the sweep uses.
 
+Both this lane and the fusion sweep read a `lo > 0` cut, so both state how far the row their
+verdict was decided on sits from it: every paired delta carries `p_positive` and a `(borderline)`
+flag, the reason gains a shared clause when a neighbouring conventional level would read it
+differently, and `report.md` renders a boundary table over the focus slice. Two of the three
+recorded answer-quality comparisons and three of the six recorded fusion sweeps are now qualified
+that way; see
+[how settled a paired reading is](rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag).
+
 Three properties make the comparison readable:
 
 - **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`,

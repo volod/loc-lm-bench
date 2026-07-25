@@ -27,6 +27,7 @@ from llb.eval.context_ablation.models import (
     VERDICT_RAG_PAYS_OFF,
     VERDICT_RETRIEVAL_INCONCLUSIVE,
 )
+from llb.rag.fusion_evidence.stability import borderline_note
 
 
 def _by_label(derived: Sequence[DerivedComparison]) -> dict[str, DerivedComparison]:
@@ -38,6 +39,21 @@ def _detail(entry: DerivedComparison) -> str:
     return (
         f"{entry['label']} {delta['mean']:+.3f} [{delta['lo']:+.3f}, {delta['hi']:+.3f}] "
         f"(n={entry['n']})"
+    )
+
+
+def _note(*entries: DerivedComparison | None) -> str:
+    """The shared borderline clause over the derived deltas this verdict was decided on.
+
+    `no_retrieval_gain` and `rag_pays_off` are two sides of one cut, so both have to say when a
+    neighbouring conventional level would have landed on the other side.
+    """
+    return borderline_note(
+        [
+            (entry["label"], entry["paired"].get("stability"))
+            for entry in entries
+            if entry is not None
+        ]
     )
 
 
@@ -98,23 +114,25 @@ def _judge(
         f"the closed-book lane already answers {contamination['n_contaminated']}/"
         f"{contamination['n']} items ({contamination['rate']:.0%})"
     )
+    cut = _note(uplift, long_context)
     if long_context is not None and long_context["paired"]["delta"]["lo"] > 0.0:
         return VERDICT_LONG_CONTEXT_WINS, (
             f"laying the whole source document into the prompt beats chunked retrieval "
-            f"({_detail(long_context)}); {note}"
+            f"({_detail(long_context)}); {note}" + cut
         )
     uplift_delta = uplift["paired"]["delta"]
     if uplift_delta["lo"] > 0.0:
         return VERDICT_RAG_PAYS_OFF, (
             f"retrieval buys a measured gain over answering from the weights "
-            f"({_detail(uplift)}); {note}"
+            f"({_detail(uplift)}); {note}" + cut
         )
     if uplift_delta["mean"] > 0.0:
         return VERDICT_RETRIEVAL_INCONCLUSIVE, (
             f"retrieval gains {uplift_delta['mean']:+.3f} objective but the interval includes no "
             f"difference ({_detail(uplift)}); a larger scored set is needed to separate the lanes, "
-            f"and {note}"
+            f"and {note}" + cut
         )
     return VERDICT_NO_RETRIEVAL_GAIN, (
         f"retrieval does not answer better than the model's own weights ({_detail(uplift)}); {note}"
+        + cut
     )

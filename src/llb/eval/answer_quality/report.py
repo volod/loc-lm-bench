@@ -17,6 +17,7 @@ from llb.eval.answer_quality.models import (
 )
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.models import ROUTED_ROW_PREFIX
+from llb.rag.fusion_evidence.stability import boundary_table
 from llb.rag.fusion_evidence.stats import format_interval
 
 _HEADERS = {
@@ -66,6 +67,36 @@ def _metric_table(
         )
     lines.append("")
     return lines
+
+
+def _boundary_section(report: AnswerQualityReport) -> list[str]:
+    """How close each lane's FOCUS-slice objective and coverage readings sit to the cut.
+
+    Those are the two readings `_judge` cuts its four outcomes from, so they are the two whose
+    knife-edge rows would otherwise print as settled results.
+    """
+    focus = report["focus_slice"]
+    baseline = report["baseline"]
+    metrics = (METRIC_OBJECTIVE, report["verdict"]["coverage_metric"])
+    rows = []
+    for label in sorted(report["lanes"]):
+        if label == baseline:
+            continue
+        slice_report = report["lanes"][label]["slices"].get(focus)
+        if slice_report is None:
+            continue
+        for metric in metrics:
+            paired = slice_report["paired_vs_baseline"].get(metric)
+            stability = paired.get("stability") if paired else None
+            if stability is not None:
+                rows.append((f"`{label}` {_HEADERS.get(metric, metric)}", stability))
+    return boundary_table(
+        rows,
+        title=f"How close each lane sits to the cut ({focus})",
+        key_header="lane / metric",
+        subject="the candidate lane",
+        confidence=report["confidence"],
+    )
 
 
 def _item_table(report: AnswerQualityReport) -> list[str]:
@@ -181,6 +212,7 @@ def format_report(
     ]
     lines += _lane_list(report)
     lines.append("")
+    lines += _boundary_section(report)
     lines += _lane_decisions(report)
     lines += _routing_outcomes(report)
     lines += _metric_table(

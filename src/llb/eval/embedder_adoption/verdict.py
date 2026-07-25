@@ -17,12 +17,7 @@ from llb.eval.embedder_adoption.models import (
     BarVerdict,
     CellReport,
 )
-from llb.eval.embedder_adoption.stability import (
-    LOOSER_CONFIDENCE,
-    SIDE_ABOVE,
-    TIGHTER_CONFIDENCE,
-    RowStability,
-)
+from llb.rag.fusion_evidence.stability import borderline_note, unsettled
 from llb.rag.fusion_evidence.stats import format_interval
 
 
@@ -31,39 +26,15 @@ def _separated(cells: Sequence[CellReport], metric: str) -> list[str]:
     return [cell["label"] for cell in cells if cell["paired"][metric]["delta"]["lo"] > 0.0]
 
 
-def _unsettled(cell: CellReport) -> RowStability | None:
-    """This cell's stability when a neighbouring convention would read it differently, else None."""
-    stability = cell.get("stability")
-    return stability if stability is not None and stability["borderline"] else None
-
-
 def _qualifier(cells: Sequence[CellReport], named: Sequence[str]) -> str:
-    """The clause that says the cell the verdict just named sits ON the cut, or "" when none does.
+    """The shared borderline clause over the cells this verdict just named, or "" when settled.
 
     Without it the one-model recipe prints the same unqualified `extend_bar` / `keep_bar` sentence
     whether its deciding cell cleared zero comfortably or by nothing at all -- exactly the binary
     the roster table stopped showing.
     """
-    marked = [
-        (cell["label"], entry)
-        for cell in cells
-        if cell["label"] in named and (entry := _unsettled(cell)) is not None
-    ]
-    if not marked:
-        return ""
-    detail = "; ".join(
-        f"`{label}` p_positive {entry['p_positive']:.3f}, "
-        + (
-            f"a {TIGHTER_CONFIDENCE:.3f} interval would read it `{entry['tighter_reading']}`"
-            if entry["side"] == SIDE_ABOVE
-            else f"a {LOOSER_CONFIDENCE:.2f} interval would read it `{entry['looser_reading']}`"
-        )
-        for label, entry in marked
-    )
-    return (
-        f". BORDERLINE: {len(marked)} of the cell(s) this verdict names rest(s) on a reading a "
-        f"neighbouring conventional confidence level would change ({detail}), so read it as too "
-        "close to call rather than as settled evidence"
+    return borderline_note(
+        [(cell["label"], cell.get("stability")) for cell in cells if cell["label"] in named]
     )
 
 
@@ -94,7 +65,9 @@ def decide_bar(cells: Sequence[CellReport], *, baseline: str, candidate: str) ->
         "candidate": candidate,
         "answer_cells": answer_cells,
         "rank_cells": rank_cells,
-        "borderline_cells": [cell["label"] for cell in cells if _unsettled(cell) is not None],
+        "borderline_cells": [
+            cell["label"] for cell in cells if unsettled(cell.get("stability")) is not None
+        ],
         "reason": "",
     }
     if answer_cells:

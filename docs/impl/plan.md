@@ -43,36 +43,65 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### adoption-borderline-annotation-on-the-other-paired-lanes (optional)
+### context-ablation-long-context-verdict-is-one-convention-from-flipping
 
-The borderline annotation is now a property of the embedder adoption sweep only, but the reading it
-protects against -- a binary cut of a continuous paired interval, printed identically whether the
-bound cleared by a mile or by nothing -- is the shape EVERY paired lane in the repo reports in: the
-embedder bake-off's adopt-or-retain verdict, the fusion sweep's per-row deltas, the context
-ablation's per-lane uplift, and the answer-quality slices. Each already draws the shared resample
-index sets `p_positive` needs, so the annotation is a per-row addition rather than new statistics.
-Lift `p_positive` / the two neighbouring readings out of `stability.py` into the shared
-`rag/fusion_evidence/stats.py` layer and wire it into those verdicts, so no lane keeps quoting an
-unqualified adopt-or-retain on a row that sits on the cut.
+The `qwen3.6-35b` context ablation returns `rag_pays_off` on a settled uplift, but only because the
+long-context check that runs BEFORE it missed by nothing: that run's long-context delta is +0.060
+`[-0.008, +0.130]` at `p_positive` 0.960, and a 90% interval would read it as separated, which is
+`long_context_wins` ([RAG core](current/rag-core.md#context-ablation-evidence)). The two verdicts
+lead to opposite operator actions -- ship retrieval, or stuff the document -- so the lane currently
+cannot say which one this model supports. Decide it with power rather than with a convention:
+predeclare the minimum detectable long-context delta and the item count it needs, then re-run the
+ablation on a set large enough to resolve +0.060, and record whether the row separates or is
+explicitly undecidable at the reached size.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `make compare-context-strategies` and the borderline annotation that
+  measured the near-miss
+  ([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
+- User-visible outcome: the operator on this model learns whether to ship retrieval or whole-document
+  stuffing, instead of a verdict that a different reporting convention would reverse.
+- Scope boundary: in scope -- the power target, one re-run at the resolved item count, and a restated
+  verdict for that model. Out of scope -- changing the ablation's decision order, the lanes, and the
+  objective metric.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
+- Execution path: `make compare-context-strategies MODEL=<that model>` on a larger scored set on the
+  CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the minimum detectable delta and item count are written down
+  BEFORE the run; the report states the long-context delta with its `p_positive` and records
+  separated, flat, or undecidable at the reached size.
+- Documentation target: the context-ablation evidence subsection of
+  [RAG core](current/rag-core.md#context-ablation-evidence).
+
+### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
+
+The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it
+reports how far its deciding row sits from the cut
+([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
+Three uncertainty lanes do NOT go through that function and so still quote unqualified binaries:
+the sidecar-free routing calibration (`src/llb/rag/fusion_calibration/evaluate.py`, which draws its
+own index sets and reads route precision/recall through `bootstrap_ratio`), the measurement floor
+(`src/llb/rag/noise_floor.py`, whose fragile-count reading is a different statistic entirely), and
+the query-robustness lane's per-noise-class deltas. Decide per lane whether the same qualifier
+applies -- `bootstrap_ratio` can carry it the same way `bootstrap_interval` now does -- or record
+why that lane's reading is not a `lo > 0` cut and needs a different honesty signal.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `exceedance` / `stability_from_index_sets` / `boundary_table` in
-  `src/llb/eval/embedder_adoption/stability.py` -- they already take pre-drawn index sets -- and
-  the paired-verdict seams named in
-  [RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
-- User-visible outcome: every adopt-or-retain verdict in the repo states how far its deciding row
-  sits from the cut, instead of only which side it landed on.
-- Scope boundary: in scope -- generalizing the annotation, wiring it into the bake-off / fusion /
-  ablation / answer-quality verdict reasons and reports, and re-rendering recorded artifacts. Out
-  of scope -- changing any adoption rule, the confidence conventions, and the metrics themselves.
-- Data and artifact paths: additive fields in each lane's existing comparison artifact; no new
-  roots and no new heavy run.
-- Execution path: re-render the recorded artifacts of each lane and confirm no recorded number
-  moves; CI covers the annotation per lane over the existing fixtures.
-- Acceptance gates: `make ci` green; every touched lane's recorded intervals, means, and verdict
-  decisions reproduce exactly, with only the additive fields and qualified reasons new.
+- Dependencies: none. Reuse `separation_stability` / `stability_from_readings` / `borderline_note` /
+  `boundary_table` in `src/llb/rag/fusion_evidence/stability.py`; `bootstrap_ratio` already computes
+  the resample distribution the exceedance would be counted from.
+- User-visible outcome: no uncertainty lane in the repo keeps stating a threshold result without
+  saying how close it sits to the threshold.
+- Scope boundary: in scope -- extending the annotation to `bootstrap_ratio`, wiring the three lanes
+  or recording why a lane is excluded, and re-rendering their recorded artifacts. Out of scope --
+  changing any threshold, the routing policy, and the floor's own definition.
+- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
+- Execution path: re-render the recorded artifacts and confirm no recorded number moves; CI covers
+  the annotation per lane over the existing fixtures.
+- Acceptance gates: `make ci` green; each of the three lanes either carries the qualifier with its
+  recorded numbers reproducing exactly, or has a recorded reason it does not.
 - Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
-  the evidence section of each lane that gains the annotation.
+  the sidecar-free calibration and measurement-floor sections.
 
 ### vector-store-bake-off-paired-uncertainty (optional)
 
