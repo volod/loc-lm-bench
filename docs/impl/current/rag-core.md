@@ -1623,24 +1623,46 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   or tighter (97.5%) -- a statement about robustness to an arbitrary convention, with no constant
   fitted to the data. The check is two-sided on purpose: `side: below` is a negative that would
   clear a looser bar (an undecided negative), `side: above` is a positive a tighter bar would drop
-  (a positive resting on the convention). The
-  roster reads both from the run bundles a sweep names and degrades silently when those are gone,
-  so an archived roster still reports; readings and verdicts are never altered. Tests in
+  (a positive resting on the convention). Readings and verdicts are never altered. Tests in
   `tests/llb/eval/test_embedder_adoption_stability.py`.
+- **Where the annotation is measured: inside the SWEEP itself.** `compare_cells` builds each cell's
+  per-item delta vectors anyway, and the sweep already draws ONE resample index set shared by every
+  cell and metric, so `stability_from_index_sets` annotates the very intervals the sweep publishes
+  rather than re-drawing beside them. Each cell persists a `stability` block in `comparison.json`
+  (`reading`, `p_positive`, `looser_reading`, `tighter_reading`, `borderline`, `side`), `report.md`
+  gains a per-cell `reading` column and a `How close each cell sits to the cut` table, the terminal
+  summary prints `p_positive` per cell, and `decide_bar`'s reason QUALIFIES the cell it names --
+  `keep_bar` on a near-miss now says "read it as too close to call rather than as settled
+  evidence" and names which neighbouring level would flip it, plus a `borderline_cells` list on the
+  verdict. This is why the ONE-model recipe below is as honest as the five-model table: an operator
+  never had to assemble a roster to learn their `extend_bar` rests on a knife-edge row. `decide_bar`
+  and its qualifier live in `src/llb/eval/embedder_adoption/verdict.py`, split from the per-cell
+  statistics so the sentence an operator acts on stays separately readable. The
+  annotation is skipped (and the artifact carries none) when the sweep drew no resamples or the
+  reporting confidence sits outside the two neighbouring conventions, because `p_positive` would
+  not mean what it says. The roster READS the sweep's persisted value and needs no bundles at all;
+  sweeps recorded before the field existed fall back to re-deriving it from the run bundles they
+  name, at that sweep's own confidence, and degrade silently when those bundles are gone, so an
+  archived roster still reports. The two paths are checked equal in CI over fake bundles
+  (`tests/llb/eval/test_embedder_adoption_borderline.py`, which also covers the persisted fields,
+  the report rendering, and both sides of the qualified verdict reason) and were checked equal on
+  all 20 recorded cells (below).
 
 CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
 goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
 paired re-read used), `bge-m3` minus `e5-base`, 2000 resamples, seed 13. Report under
 `$DATA_DIR/embedder-adoption-bar/run-mamaylm12b/`.
 
-| cell | config | d objective | d recall@k | d MRR@k | reaches answer? |
-| --- | --- | ---: | ---: | ---: | :-: |
-| `k10` | k=10, no reranker | -0.010 `[-0.062, +0.037]` | +0.050 `[-0.050, +0.150]` | +0.064 `[+0.009, +0.137]` | no |
-| `k10+rerank` | k=10, bge-reranker-v2-m3 | +0.052 `[+0.011, +0.101]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | yes |
-| `k3` | k=3, no reranker | +0.034 `[+0.002, +0.073]` | +0.125 `[+0.025, +0.225]` | +0.079 `[+0.017, +0.158]` | yes |
-| `k3+rerank` | k=3, bge-reranker-v2-m3 | +0.021 `[-0.002, +0.056]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | no |
+| cell | config | d objective | d recall@k | d MRR@k | reading | p_positive |
+| --- | --- | ---: | ---: | ---: | :-: | ---: |
+| `k10` | k=10, no reranker | -0.010 `[-0.062, +0.037]` | +0.050 `[-0.050, +0.150]` | +0.064 `[+0.009, +0.137]` | rank only | 0.368 |
+| `k10+rerank` | k=10, bge-reranker-v2-m3 | +0.052 `[+0.011, +0.101]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | **answer** | 0.995 |
+| `k3` | k=3, no reranker | +0.034 `[+0.002, +0.073]` | +0.125 `[+0.025, +0.225]` | +0.079 `[+0.017, +0.158]` | **answer** (borderline) | 0.981 |
+| `k3+rerank` | k=3, bge-reranker-v2-m3 | +0.021 `[-0.002, +0.056]` | +0.050 `[0.000, +0.125]` | +0.050 `[0.000, +0.125]` | neither (borderline) | 0.954 |
 
-Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells. What it establishes:
+Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells, and the sweep's own
+reason adds that one of the two (`k3`, p_positive 0.981) is a reading a 97.5% interval would drop.
+What it establishes:
 
 - **At the shipped default (`k10`, no reranker) the rank gain is free, exactly as predicted.**
   `bge-m3` ranks the evidence earlier (MRR +0.064 clears zero) but the answer does not move
@@ -1656,6 +1678,12 @@ Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells. Wha
   better ranking pulls a gold span INSIDE the k=3 cut it would otherwise miss. So the k=3 gain is
   not pure first-hit rank -- read it as "the rank advantage becomes a recall advantage when the
   budget is small", which is still a reason to prefer `bge-m3` at k=3.
+- **Two of the four cells rest on the cut, and this one run says so.** `k3` clears at 0.981 against
+  a 0.975 threshold (a 97.5% interval reads it `rank only`) and `k3+rerank` misses at 0.954 (a 90%
+  interval reads it `answer`), while `k10+rerank` at 0.995 and `k10` at 0.368 are settled. So the
+  strongest statement this single sweep supports is "the reranked k=10 cell is a settled answer
+  gain, and the k=3 pair is too close to call in either direction" -- which is what the operator
+  running the recipe reads off the terminal, not something they learn later from a roster.
 - **Cost, for the adoption decision.** `bge-m3` embeds at ~1/3 the throughput of `e5-base` and
   builds a 1.23x index, so a cell that does not clear zero is not worth paying for. The
   configuration-by-configuration recommendation is settled by the roster below, not by this one
@@ -1759,15 +1787,18 @@ Verdict: **full_set_required**. What the table establishes:
   `make compare-embedder-adoption MODEL=<model> ADOPTION_TOP_KS=10 ADOPTION_RERANKERS=on
   EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<corpus>
   GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration`. Do not reach for `ADOPTION_LIMIT`
-  to make it cheaper.
+  to make it cheaper. That single run reports its own `p_positive` and marks the cell `(borderline)`
+  when a neighbouring convention would read it differently, and the `extend_bar` / `keep_bar`
+  sentence names which -- so the one-cell recipe answers the same question the roster does, with no
+  second command to run.
 
 #### Which readings are settled, and which are the cut talking
 
-The roster table prints one of three readings per row, but at n=40 several rows sit close enough to
-the `lo > 0` cut that the threshold, not the evidence, decided them. `p_positive` places every row
-on that scale (the reading clears zero exactly when it exceeds 0.975), measured over the sweep's own
-2000 resamples; the roster reports it for the focus cell and marks any reading a 90% interval would
-change:
+Every adoption reading -- in a single sweep and in the roster alike -- prints one of three states,
+but at n=40 several rows sit close enough to the `lo > 0` cut that the threshold, not the evidence,
+decided them. `p_positive` places every row on that scale (the reading clears zero exactly when it
+exceeds 0.975), measured over the sweep's own 2000 resamples. Each SWEEP now persists and renders it
+per cell, and the roster reports it per model for the focus cell:
 
 | model | at 90% | `k10+rerank` (95%) | at 97.5% | p_positive | settled? |
 | --- | :-: | :-: | :-: | ---: | :-: |
@@ -1795,6 +1826,14 @@ change:
   honest restatement is **4 of 5 capture a k=3 gain, 2 of them settled** -- still the strongest
   case for the scoped bar, and still far better supported than the reranker cell, but not the four
   independent confirmations the bare table implied.
+- **The sweep's own measurement agrees with the roster's on all 20 cells.** The five recorded
+  sweeps were rebuilt from the `run-eval` bundles they name and re-rendered in place (originals kept
+  beside them as `comparison.pre-borderline.json` / `report.pre-borderline.md`). Every rebuilt cell
+  reproduced its recorded paired intervals, per-lane means, item set, and verdict decision exactly,
+  and every cell's newly persisted `stability` equalled what `row_stability` measures from those
+  same bundles -- so the annotation an operator's own one-model run prints is the same number the
+  roster table quotes, not a second estimate of it. The sweep reports mark the same 4 of 20 rows.
+  The re-rendered `roster/` and `screen/` artifacts reproduce their recorded tables unchanged.
 
 ### Context budget
 

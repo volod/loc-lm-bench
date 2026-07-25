@@ -10,7 +10,7 @@ cell, so the bake-off's adoption bar is kept or extended on measurement rather t
 """
 
 from llb.eval.embedder_adoption.cells import build_cells, cell_config, parse_rerankers, parse_top_ks
-from llb.eval.embedder_adoption.compare import compare_cells, decide_bar, with_reciprocal_rank
+from llb.eval.embedder_adoption.compare import compare_cells, with_reciprocal_rank
 from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,
     READING_NEITHER,
@@ -26,6 +26,7 @@ from llb.eval.embedder_adoption.models import (
     DECISION_NO_EVIDENCE,
     CellSpec,
     EmbedderLane,
+    ItemDeltas,
 )
 from llb.eval.embedder_adoption.report import format_report, format_summary
 from llb.eval.embedder_adoption.roster_report import format_roster, format_roster_summary
@@ -46,9 +47,17 @@ from llb.eval.embedder_adoption.screen import (
     decide_screen,
     format_screen,
     format_screen_summary,
-    reading_from_deltas,
     run_screen_study,
     screen_model,
+)
+from llb.eval.embedder_adoption.verdict import decide_bar
+from llb.eval.embedder_adoption.stability import (
+    BORDERLINE_MARK,
+    SIDE_ABOVE,
+    SIDE_BELOW,
+    RowStability,
+    reading_from_deltas,
+    row_stability,
 )
 from llb.eval.embedder_adoption.run import (
     load_profiles,
@@ -70,12 +79,17 @@ __all__ = [
     "DECISION_SCREEN_SUPPORTED",
     "DEFAULT_FOCUS_CELL",
     "DEFAULT_SCREEN_SIZES",
+    "BORDERLINE_MARK",
     "READING_ANSWER",
     "READING_NEITHER",
     "READING_RANK_ONLY",
+    "SIDE_ABOVE",
+    "SIDE_BELOW",
     "CellSpec",
     "EmbedderLane",
+    "ItemDeltas",
     "ModelProfile",
+    "RowStability",
     "build_cells",
     "cell_config",
     "cell_item_deltas",
@@ -99,6 +113,7 @@ __all__ = [
     "parse_rerankers",
     "parse_top_ks",
     "reading_from_deltas",
+    "row_stability",
     "run_adoption_bar_sweep",
     "run_cross_model_comparison",
     "run_roster_comparison",

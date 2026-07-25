@@ -17,9 +17,7 @@ from llb.eval.embedder_adoption.roster import (
     PROPERTY_PARAMS,
     RosterReport,
 )
-from llb.eval.embedder_adoption.stability import decision_probability, format_reading
-
-_READING_LABEL = {"answer": "answer", "rank_only": "rank only", "neither": "neither"}
+from llb.eval.embedder_adoption.stability import boundary_table, format_reading, reading_label
 
 
 def _profile_cell(profile: Mapping[str, object], name: str) -> str:
@@ -30,38 +28,22 @@ def _profile_cell(profile: Mapping[str, object], name: str) -> str:
 def _boundary_table(report: RosterReport) -> list[str]:
     """How close each model's FOCUS-cell reading sits to the cut that produced it.
 
-    `p_positive` is the continuous quantity the reading thresholds, so this is the table that tells
-    a settled negative apart from one that missed by nothing.
+    The same table the SWEEP report renders per cell, so the roster and a one-model run place a
+    knife-edge row on one shared scale.
     """
     focus = next(cell for cell in report["cells"] if cell["label"] == report["focus_cell"])
     stability = focus.get("stability") or {}
-    if not stability:
-        return []
-    threshold = decision_probability()
-    lines = [
-        f"### How close `{report['focus_cell']}` sits to the cut",
-        "",
-        f"`p_positive` is the share of paired resamples in which `{report['candidate']}` is ahead; "
-        f"the reading clears zero exactly when it exceeds {threshold:.3f}. A row is unsettled when "
-        "either neighbouring convention would read it differently.",
-        "",
-        "| model | at 90% | reading (95%) | at 97.5% | p_positive | settled? |",
-        "| --- | :-: | :-: | :-: | ---: | :-: |",
+    rows = [
+        (f"`{model.split('/')[-1]}`", stability[model])
+        for model in report["models"]
+        if model in stability
     ]
-    for model in report["models"]:
-        entry = stability.get(model)
-        if entry is None:
-            continue
-        side = f"NO ({entry['side']})" if entry["borderline"] else "yes"
-        lines.append(
-            f"| `{model.split('/')[-1]}` "
-            f"| {_READING_LABEL.get(entry['looser_reading'], entry['looser_reading'])} "
-            f"| {_READING_LABEL.get(entry['reading'], entry['reading'])} "
-            f"| {_READING_LABEL.get(entry['tighter_reading'], entry['tighter_reading'])} "
-            f"| {entry['p_positive']:.3f} | {side} |"
-        )
-    lines.append("")
-    return lines
+    return boundary_table(
+        rows,
+        title=f"How close `{report['focus_cell']}` sits to the cut",
+        key_header="model",
+        subject=f"`{report['candidate']}`",
+    )
 
 
 def format_roster(
@@ -121,7 +103,7 @@ def format_roster(
     for model in report["models"]:
         profile = report["profiles"].get(model, {})
         values = " | ".join(_profile_cell(profile, name) for name in PROPERTIES)
-        reading = _READING_LABEL.get(focus["readings"][model], focus["readings"][model])
+        reading = reading_label(focus["readings"][model])
         lines.append(f"| `{model}` | {values} | {reading} |")
     lines += ["", "### Property separation", ""]
     if not verdict["separations"]:

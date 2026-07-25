@@ -24,7 +24,7 @@ from llb.eval.embedder_adoption import (
     screen_model,
 )
 from llb.eval.embedder_adoption.run import run_screen_study_over_paths
-from llb.eval.embedder_adoption.screen import ItemDeltas
+from llb.eval.embedder_adoption.models import ItemDeltas
 from llb.rag.fusion_evidence.stats import bootstrap_index_sets
 
 FOCUS = "k10+rerank"

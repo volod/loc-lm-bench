@@ -43,37 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### adoption-single-sweep-carries-no-borderline-signal (optional)
+### adoption-borderline-annotation-on-the-other-paired-lanes (optional)
 
-The borderline annotation only exists in the ROSTER reading, because it is measured from the run
-bundles during re-analysis and the sweep artifact itself persists aggregates only. But the
-documented per-model recipe is a SINGLE sweep -- `make compare-embedder-adoption ADOPTION_TOP_KS=10
-ADOPTION_RERANKERS=on` on the model being shipped
-([RAG core](current/rag-core.md#what-the-per-model-answer-costs)) -- and that run prints
-`extend_bar` or `keep_bar` with no indication of whether the deciding row sits on the cut. An
-operator following the recipe therefore gets exactly the unqualified binary the roster now refuses
-to show. Carry `p_positive` and the two neighbouring readings into the sweep's own
-`comparison.json` and `report.md` so a one-model run is as honest as the five-model table, and make
-`decide_bar`'s reason say when the cell it names is borderline.
+The borderline annotation is now a property of the embedder adoption sweep only, but the reading it
+protects against -- a binary cut of a continuous paired interval, printed identically whether the
+bound cleared by a mile or by nothing -- is the shape EVERY paired lane in the repo reports in: the
+embedder bake-off's adopt-or-retain verdict, the fusion sweep's per-row deltas, the context
+ablation's per-lane uplift, and the answer-quality slices. Each already draws the shared resample
+index sets `p_positive` needs, so the annotation is a per-row addition rather than new statistics.
+Lift `p_positive` / the two neighbouring readings out of `stability.py` into the shared
+`rag/fusion_evidence/stats.py` layer and wire it into those verdicts, so no lane keeps quoting an
+unqualified adopt-or-retain on a row that sits on the cut.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `row_stability` in `src/llb/eval/embedder_adoption/stability.py` (it
-  already takes the per-item deltas the sweep holds in memory) and the recorded sweeps under
-  `$DATA_DIR/embedder-adoption-bar/` to confirm the persisted values match the roster's.
-- User-visible outcome: an operator running the one-model recipe sees that their `extend_bar` rests
-  on a knife-edge row, instead of learning it only if they later assemble a roster.
-- Scope boundary: in scope -- computing the stability inside the sweep, persisting it per cell,
-  rendering it in the sweep report, and qualifying the verdict reason. Out of scope -- changing
-  which reading the bar adopts on, the cell grid, and the neighbouring confidence levels.
-- Data and artifact paths: additive fields in the existing
-  `$DATA_DIR/embedder-adoption-bar/<run>/comparison.json`; no new roots and no new heavy run.
-- Execution path: re-render the five recorded sweeps and check each cell's persisted `p_positive`
-  equals what the roster measures from the same bundles; CI covers the persisted fields over fake
-  bundles.
-- Acceptance gates: `make ci` green; every recorded sweep's persisted stability matches the
-  roster's for the same cell, and the sweep report marks the same 4 of 20 rows the roster does.
-- Documentation target: the scoped first-hit-rank bar subsection of
-  [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
+- Dependencies: none. Reuse `exceedance` / `stability_from_index_sets` / `boundary_table` in
+  `src/llb/eval/embedder_adoption/stability.py` -- they already take pre-drawn index sets -- and
+  the paired-verdict seams named in
+  [RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
+- User-visible outcome: every adopt-or-retain verdict in the repo states how far its deciding row
+  sits from the cut, instead of only which side it landed on.
+- Scope boundary: in scope -- generalizing the annotation, wiring it into the bake-off / fusion /
+  ablation / answer-quality verdict reasons and reports, and re-rendering recorded artifacts. Out
+  of scope -- changing any adoption rule, the confidence conventions, and the metrics themselves.
+- Data and artifact paths: additive fields in each lane's existing comparison artifact; no new
+  roots and no new heavy run.
+- Execution path: re-render the recorded artifacts of each lane and confirm no recorded number
+  moves; CI covers the annotation per lane over the existing fixtures.
+- Acceptance gates: `make ci` green; every touched lane's recorded intervals, means, and verdict
+  decisions reproduce exactly, with only the additive fields and qualified reasons new.
+- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
+  the evidence section of each lane that gains the annotation.
 
 ### vector-store-bake-off-paired-uncertainty (optional)
 

@@ -23,31 +23,22 @@ unit-tested in the lightweight CI install -- no numpy, no backend, no GPU.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from random import Random
 
 from typing_extensions import NotRequired, TypedDict
 
 from llb.eval.embedder_adoption.compare import with_reciprocal_rank
-from llb.eval.embedder_adoption.cross_model import (
-    READING_ANSWER,
-    READING_NEITHER,
-    READING_RANK_ONLY,
-    model_id,
-)
+from llb.eval.embedder_adoption.cross_model import model_id
 from llb.eval.embedder_adoption.models import (
     DEFAULT_FOCUS_CELL,
     METRIC_OBJECTIVE,
     METRIC_RECIPROCAL_RANK,
     AdoptionBarReport,
+    ItemDeltas,
 )
-from llb.rag.fusion_evidence.stats import (
-    DEFAULT_CONFIDENCE,
-    DEFAULT_SEED,
-    bootstrap_index_sets,
-    bootstrap_interval,
-)
+from llb.eval.embedder_adoption.stability import reading_from_deltas, reading_label
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_SEED, bootstrap_index_sets
 
 # Item counts the screen is measured at. The full accepted ledger is 40, so these span "one split's
 # worth" (~13) up to nearly the whole set.
@@ -65,34 +56,6 @@ DECISION_SCREEN_SUPPORTED = "screen_supported"
 DECISION_FULL_SET_REQUIRED = "full_set_required"
 
 METRICS = (METRIC_OBJECTIVE, METRIC_RECIPROCAL_RANK)
-
-
-@dataclass(frozen=True)
-class ItemDeltas:
-    """Per-item candidate-minus-baseline deltas of one cell, aligned across the two encoders.
-
-    A dataclass rather than a mapping: the two vectors are always read together and always by name,
-    and it keeps a subsample from being built with mismatched lengths.
-    """
-
-    item_ids: list[str]
-    objective: list[float]
-    reciprocal_rank: list[float]
-
-    def __post_init__(self) -> None:
-        if not len(self.item_ids) == len(self.objective) == len(self.reciprocal_rank):
-            raise ValueError("item ids, objective, and reciprocal-rank deltas must align")
-
-    def __len__(self) -> int:
-        return len(self.item_ids)
-
-    def take(self, indexes: Sequence[int]) -> "ItemDeltas":
-        """The same deltas restricted to `indexes` -- one screen-sized subsample."""
-        return ItemDeltas(
-            [self.item_ids[i] for i in indexes],
-            [self.objective[i] for i in indexes],
-            [self.reciprocal_rank[i] for i in indexes],
-        )
 
 
 class SizeAgreement(TypedDict):
@@ -145,24 +108,6 @@ class ScreenReport(TypedDict):
     models: list[ModelScreen]
     verdict: ScreenVerdict
     metadata: NotRequired[dict[str, object]]
-
-
-def reading_from_deltas(
-    deltas: ItemDeltas,
-    index_sets: list[list[int]],
-    confidence: float = DEFAULT_CONFIDENCE,
-) -> str:
-    """The `answer` / `rank only` / `neither` reading of one delta vector pair.
-
-    Identical rule to `cross_model.cell_reading` -- the objective first, then first-hit rank --
-    but read straight off per-item deltas so a SUBSET of items can be judged the same way the whole
-    set was.
-    """
-    if bootstrap_interval(deltas.objective, index_sets, confidence)["lo"] > 0.0:
-        return READING_ANSWER
-    if bootstrap_interval(deltas.reciprocal_rank, index_sets, confidence)["lo"] > 0.0:
-        return READING_RANK_ONLY
-    return READING_NEITHER
 
 
 def cell_item_deltas(report: AdoptionBarReport, cell_label: str) -> ItemDeltas:
@@ -400,13 +345,6 @@ def _bundle_count(report: AdoptionBarReport, only_cell: str | None = None) -> in
     )
 
 
-_READING_LABEL = {
-    READING_ANSWER: "answer",
-    READING_RANK_ONLY: "rank only",
-    READING_NEITHER: "neither",
-}
-
-
 def format_screen(
     report: ScreenReport,
     *,
@@ -448,7 +386,7 @@ def format_screen(
         )
         floor = str(entry["min_size"]) if entry["min_size"] is not None else "none"
         short = entry["model"].split("/")[-1]
-        reading = _READING_LABEL.get(entry["full_reading"], entry["full_reading"])
+        reading = reading_label(entry["full_reading"])
         lines.append(f"| `{short}` | {reading} | {cells} | {floor} |")
     lines += [
         "",
@@ -477,7 +415,7 @@ def format_screen_summary(report: ScreenReport) -> str:
         floor = str(entry["min_size"]) if entry["min_size"] is not None else "none"
         lines.append(
             f"  {entry['model'].split('/')[-1][:34].ljust(34)} "
-            f"{_READING_LABEL.get(entry['full_reading'], entry['full_reading']):>10} "
+            f"{reading_label(entry['full_reading']):>10} "
             f"{cells}   {floor:>4}"
         )
     lines.append(f"  verdict: {verdict['decision'].upper()} -- {verdict['reason']}")

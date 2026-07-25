@@ -297,14 +297,28 @@ def test_roster_round_trips_through_disk(tmp_path: Path):
 # --- borderline annotation ----------------------------------------------------------------
 
 
-def test_stability_is_absent_when_the_run_bundles_are_gone():
-    """An archived roster still reads: the annotation is additive, never load-bearing."""
+def test_the_roster_reads_the_stability_each_sweep_persisted_without_touching_a_bundle():
+    """A sweep measures its own cells, so a roster over it needs no run bundles at all."""
     roster = compare_roster(
         [_report(model=m, focus_answers=a) for m, a in (("a", True), ("b", False), ("c", False))],
         {},
         focus_cell=FOCUS,
         measure_stability=True,  # the fake reports name no real bundles
     )
+    focus = next(cell for cell in roster["cells"] if cell["label"] == FOCUS)
+    assert set(focus["stability"]) == {"a", "b", "c"}
+    assert roster["verdict"]["decision"] == DECISION_NO_PROPERTY_PREDICTS
+
+
+def test_stability_is_absent_for_a_sweep_that_carries_none_and_whose_bundles_are_gone():
+    """An archived roster still reads: the annotation is additive, never load-bearing."""
+    reports = [
+        _report(model=m, focus_answers=a) for m, a in (("a", True), ("b", False), ("c", False))
+    ]
+    for report in reports:  # a sweep recorded before the annotation existed
+        for cell in report["cells"]:
+            cell.pop("stability", None)
+    roster = compare_roster(reports, {}, focus_cell=FOCUS, measure_stability=True)
     assert all("stability" not in cell for cell in roster["cells"])
     assert roster["verdict"]["decision"] == DECISION_NO_PROPERTY_PREDICTS
     assert format_roster(roster).count("borderline") >= 0  # renders without a stability map

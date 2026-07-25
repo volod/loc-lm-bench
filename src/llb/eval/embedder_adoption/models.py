@@ -13,8 +13,10 @@ the answer-side delta per cell is what decides whether the bake-off gets a secon
 bar (`llb.rag.embedding_bakeoff_uncertainty.BAR_FIRST_HIT`) or keeps recall@k as its sole bar.
 """
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -24,6 +26,9 @@ from llb.eval.answer_quality.models import (
     METRIC_TOKEN_F1,
 )
 from llb.rag.fusion_evidence.stats import Interval, PairedComparison
+
+if TYPE_CHECKING:
+    from llb.eval.embedder_adoption.stability import RowStability
 
 # Per-case columns compared inside every cell. `objective_score` is the decision metric.
 # `contains` is the verbosity-robust found-rate companion: token F1 mixes finding the needle with
@@ -89,6 +94,36 @@ class CellSpec(NamedTuple):
         return f"k{self.top_k}{CELL_RERANK_MARKER if self.reranker else ''}"
 
 
+@dataclass(frozen=True)
+class ItemDeltas:
+    """Per-item candidate-minus-baseline deltas of one cell, aligned across the two encoders.
+
+    A dataclass rather than a mapping: the two vectors are always read together and always by name,
+    and it keeps a subsample from being built with mismatched lengths. The sweep builds it from the
+    vectors it already holds in memory; the screen and roster re-derive it from the run bundles a
+    finished sweep names, and both orders are the sorted shared item ids, so the two agree exactly.
+    """
+
+    item_ids: list[str]
+    objective: list[float]
+    reciprocal_rank: list[float]
+
+    def __post_init__(self) -> None:
+        if not len(self.item_ids) == len(self.objective) == len(self.reciprocal_rank):
+            raise ValueError("item ids, objective, and reciprocal-rank deltas must align")
+
+    def __len__(self) -> int:
+        return len(self.item_ids)
+
+    def take(self, indexes: Sequence[int]) -> "ItemDeltas":
+        """The same deltas restricted to `indexes` -- one screen-sized subsample."""
+        return ItemDeltas(
+            [self.item_ids[i] for i in indexes],
+            [self.objective[i] for i in indexes],
+            [self.reciprocal_rank[i] for i in indexes],
+        )
+
+
 class LaneMetrics(TypedDict):
     """One encoder's per-metric means inside one cell, with bootstrap bounds."""
 
@@ -105,6 +140,10 @@ class CellReport(TypedDict):
     n: int
     lanes: dict[str, LaneMetrics]
     paired: dict[str, PairedComparison]
+    # How settled this cell's binary reading is (`llb.eval.embedder_adoption.stability`), measured
+    # from the SAME per-item deltas and the SAME resample draw the intervals above came from.
+    # Absent only when the sweep drew no resamples, where an exceedance probability has no meaning.
+    stability: NotRequired["RowStability"]
 
 
 class BarVerdict(TypedDict):
@@ -117,6 +156,9 @@ class BarVerdict(TypedDict):
     answer_cells: list[str]
     # Cells whose paired RECIPROCAL-RANK delta clears zero -- where the premise holds at all.
     rank_cells: list[str]
+    # Cells a neighbouring conventional confidence level would read differently. A qualifier on the
+    # cells above, never a fourth outcome: a borderline cell still counts where it counted.
+    borderline_cells: list[str]
     reason: str
 
 

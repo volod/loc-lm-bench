@@ -193,7 +193,12 @@ def _roster_cell(
 
 
 def _measure(report: AdoptionBarReport, label: str) -> "RowStability | None":
-    """This sweep's stability for one cell, or `None` when its run bundles are unreachable.
+    """This sweep's stability for one cell, or `None` when it cannot be obtained.
+
+    Prefers the value the SWEEP itself persisted -- it was measured from the same deltas and the
+    same resample draw the published intervals came from, so it needs no bundles at all. Sweeps
+    recorded before the sweep carried the annotation fall back to re-deriving it from the run
+    bundles they name, at that sweep's own confidence so the two paths cannot disagree.
 
     Imported lazily and failure-tolerant on purpose: stability is an additive annotation, so a
     roster over archived artifacts must still produce its table and verdict.
@@ -201,11 +206,21 @@ def _measure(report: AdoptionBarReport, label: str) -> "RowStability | None":
     from llb.eval.embedder_adoption.screen import cell_item_deltas
     from llb.eval.embedder_adoption.stability import row_stability
 
+    cell = next((entry for entry in report["cells"] if entry["label"] == label), None)
+    if cell is None:
+        return None
+    persisted = cell.get("stability")
+    if persisted is not None:
+        return persisted
     try:
-        deltas = cell_item_deltas(report, label)
+        return row_stability(
+            cell_item_deltas(report, label),
+            resamples=report["resamples"],
+            confidence=report["confidence"],
+            seed=report["seed"],
+        )
     except (ValueError, OSError):
         return None
-    return row_stability(deltas, resamples=report["resamples"], seed=report["seed"])
 
 
 def decide_roster(
