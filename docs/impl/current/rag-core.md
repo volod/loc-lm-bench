@@ -1584,6 +1584,14 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   PDF bake-off from **RETAIN `e5-base`** to **ADOPT `bge-m3`** (cleared: `mrr`). The default stays
   recall@k-only: the bar EXTENDS the decision for configurations where rank binds, it never
   replaces the one reason to swap an encoder that holds everywhere.
+- **The cross-model reading** (`make compare-adoption-models`,
+  `src/llb/eval/embedder_adoption/cross_model.py`): whether a rank gain reaches the answer is partly
+  a property of the MODEL, so `compare-adoption-models <sweep-A> <sweep-B>` reads two finished
+  sweeps -- same encoder pair, cell grid, item set, and seed, each guarded so a mismatched pair is a
+  hard error -- and states per cell whether the two models reach the same `answer` / `rank only` /
+  `neither` reading, plus whether their headline verdicts match. It is pure and fake-report
+  unit-tested (`tests/llb/eval/test_embedder_adoption_cross_model.py`); artifacts are
+  `cross_model.md` + `cross_model.json`.
 
 CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
 goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
@@ -1617,6 +1625,30 @@ Verdict: **extend_bar** -- the answer-side gain clears zero in 2 of 4 cells. Wha
   no-reranker configuration (the default; `e5-base` retained, at 1.6x the embed throughput of
   `bge-m3`). Enable `--adoption-bars recall_at_k,mrr` and adopt `bge-m3` when shipping a small
   `top_k` or a cross-encoder reranker, where its earlier ranking is worth its 3.2x embed cost.
+
+Second model (`qwen3:14b`, a different family; same corpus, cells, item set, and seed;
+`$DATA_DIR/embedder-adoption-bar/run-qwen3-14b/`) and the cross-model reading
+(`$DATA_DIR/embedder-adoption-bar/cross-model/`):
+
+| cell | MamayLM-12B reading | qwen3-14b reading | qwen3 d objective | agree? |
+| --- | :-: | :-: | ---: | :-: |
+| `k10` | rank only | rank only | -0.019 `[-0.064, +0.026]` | yes |
+| `k10+rerank` | answer | neither | +0.024 `[-0.035, +0.087]` | NO |
+| `k3` | answer | answer | +0.050 `[+0.001, +0.103]` | yes |
+| `k3+rerank` | neither | neither | +0.007 `[-0.010, +0.028]` | yes |
+
+Both models return **extend_bar** and agree on 3 of 4 cells, so the scoped bar is not a single-model
+artifact. What the two-model reading separates:
+
+- **The small-`top_k` finding is model-independent.** Both models turn `bge-m3`'s earlier ranking
+  into a better answer at `k3` (MamayLM +0.034, qwen3 +0.050, both clear zero), and both read the
+  shipped `k10` default as `rank only` (the gain is free there). The `k3` reason for the second bar
+  reproduces across two model families.
+- **The reranker cell is model-dependent.** MamayLM turned the reranked candidate pool into a
+  better answer (`k10+rerank` +0.052, clears zero); qwen3 did not (+0.024, spans zero). So "a
+  reranker makes `bge-m3`'s first-hit rank pay" holds for one model and not the other -- an operator
+  shipping a reranker should confirm it on their own model rather than assume it, whereas the
+  small-`top_k` case is safe to adopt on this evidence.
 
 ### Context budget
 

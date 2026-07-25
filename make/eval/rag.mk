@@ -3,7 +3,7 @@
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
-	compare-embedder-adoption compare-vector-stores run-eval \
+	compare-embedder-adoption compare-adoption-models compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	probe-context-position analyze-misses
 
@@ -176,6 +176,14 @@ compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the a
 		$(if $(ADOPTION_LIMIT),--limit $(ADOPTION_LIMIT),) \
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ADOPTION_OUT_DIR),--out-dir "$(ADOPTION_OUT_DIR)",)
+
+compare-adoption-models: ## Do two models agree on the first-hit-rank reading? Compare two finished sweeps cell by cell (ADOPTION_REPORT_A= ADOPTION_REPORT_B= ADOPTION_CROSS_OUT=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(ADOPTION_REPORT_A)" || { echo "ERROR: set ADOPTION_REPORT_A=<first sweep comparison.json or dir>"; exit 1; }
+	@test -n "$(ADOPTION_REPORT_B)" || { echo "ERROR: set ADOPTION_REPORT_B=<second sweep comparison.json or dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-adoption-models "$(ADOPTION_REPORT_A)" "$(ADOPTION_REPORT_B)" \
+		$(if $(ADOPTION_CROSS_OUT),--out-dir "$(ADOPTION_CROSS_OUT)",)
 
 compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

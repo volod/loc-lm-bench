@@ -133,3 +133,38 @@ def compare_embedder_adoption_cmd(
         raise typer.Exit(code=2) from None
     typer.echo(format_summary(run.report))
     typer.echo(f"[compare-embedder-adoption] report -> {run.paths['report']}")
+
+
+@app.command("compare-adoption-models")
+def compare_adoption_models_cmd(
+    reports: list[Path] = typer.Argument(
+        ...,
+        help="exactly two finished sweep comparison.json files (or their directories) to compare",
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None,
+        help="artifact dir for the cross-model report (default: beside the FIRST report, "
+        "in a `cross-model/` sibling)",
+    ),
+) -> None:
+    """Do two generation models agree on the scoped first-hit-rank reading, cell by cell?
+
+    The `compare-embedder-adoption` verdict is decided from ONE model's answers, but whether a
+    first-hit-rank gain converts into a better answer is partly a property of the MODEL. This reads
+    two finished sweeps -- same encoder pair, cells, item set, and seed -- and states per cell
+    whether the two models reach the same keep-or-extend reading, so `extend_bar` is confirmed as a
+    corpus/configuration property or exposed as a single-model artifact. No backend or GPU needed.
+    """
+    from llb.eval.embedder_adoption import format_cross_summary, run_cross_model_comparison
+
+    if len(reports) != 2:
+        typer.echo("[error] name exactly two sweep reports to compare", err=True)
+        raise typer.Exit(code=2)
+    target = out_dir if out_dir is not None else reports[0].resolve().parent / "cross-model"
+    try:
+        run = run_cross_model_comparison(reports, out_dir=target)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(format_cross_summary(run.report))
+    typer.echo(f"[compare-adoption-models] report -> {run.paths['report']}")

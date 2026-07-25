@@ -43,32 +43,37 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### embedder-adoption-bar-second-model (optional)
+### embedder-adoption-bar-reranker-model-dependence (optional)
 
-The scoped first-hit-rank bar is decided on ONE generation model (`MamayLM-Gemma-3-12B`), and
-whether a first-hit-rank gain converts into a better answer is partly a property of the MODEL: a
-stronger or more instruction-following model may use an earlier-ranked span the 12B one ignored, or
-may be robust enough that even the reranked cell stops separating. The lane, its cells, and the
-`extend_bar` verdict are current behavior
-([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). Repeat the same
-four-cell sweep on a second roster model (e.g. `gemma4:31b` or `qwen3.6:27b`) over the identical
-accepted PDF ledger and record whether the two models agree that the rank gain reaches the answer
-under a reranker and at a small `top_k`, or whether `extend_bar` is a single-model artifact.
+The scoped first-hit-rank bar reproduces across two model families at a small `top_k` but the
+RERANKER cell splits them: MamayLM-12B turned the reranked `bge-m3` candidate pool into a better
+answer (`k10+rerank` +0.052 objective, clears zero) while qwen3-14b did not (+0.024, spans zero),
+even though both saw the identical reranked contexts
+([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). Two models is enough to
+show the reranker benefit is model-dependent but not enough to say WHICH models capture it. Run the
+same four-cell sweep on two or three more roster models (a larger instruct model, a second family)
+and record whether the reranked-cell answer gain correlates with anything an operator can read off
+in advance (model size, instruction-following, family), so the reranker adoption advice is
+conditioned on the model rather than left as "confirm it yourself".
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-embedder-adoption` as-is with a different `MODEL`; the two
-  per-encoder stores under `$DATA_DIR/embedder-adoption-bar/stores/{e5,bge}/` already exist.
-- User-visible outcome: the operator learns whether the scoped-bar recommendation is a property of
-  the corpus and configuration or of the one model that was scored.
-- Scope boundary: in scope -- one more model, the same cells/splits/seed, and a two-model
-  comparison of the per-cell objective deltas. Out of scope -- new cells, new candidates, and any
-  change to the bar mechanics.
-- Data and artifact paths: `$DATA_DIR/embedder-adoption-bar/<run>/`.
-- Execution path: `make compare-embedder-adoption MODEL=<second-roster-model>
+- Dependencies: none. Reuse `make compare-embedder-adoption` per model and `make
+  compare-adoption-models` pairwise; the two per-encoder stores under
+  `$DATA_DIR/embedder-adoption-bar/stores/{e5,bge}/` and the two recorded sweeps already exist.
+- User-visible outcome: the operator learns which model properties predict whether a cross-encoder
+  reranker makes `bge-m3`'s first-hit rank pay, instead of a per-model coin flip.
+- Scope boundary: in scope -- two to three more models, the same cells/splits/seed, and the
+  pairwise cross-model readings. Out of scope -- new cells, new encoders, and any change to the bar
+  or cross-model mechanics.
+- Data and artifact paths: `$DATA_DIR/embedder-adoption-bar/<run>/` per model plus
+  `.../cross-model/` per pair.
+- Execution path: `make compare-embedder-adoption MODEL=<roster-model>
   EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<pdf-corpus>
-  GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration` on the CUDA host; no new CI.
-- Acceptance gates: `make ci` green; both models score the identical item set at the same seed and
-  the report states whether they agree on the per-cell keep-or-extend reading.
+  GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration` per model, then `make
+  compare-adoption-models ADOPTION_REPORT_A=<a> ADOPTION_REPORT_B=<b>` per pair on the CUDA host;
+  no new CI.
+- Acceptance gates: `make ci` green; every model scores the identical item set at the same seed and
+  the reading states whether the reranked-cell answer gain tracks any pre-readable model property.
 - Documentation target: the scoped first-hit-rank bar subsection of
   [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 

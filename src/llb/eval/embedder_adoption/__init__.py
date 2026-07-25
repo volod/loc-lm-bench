@@ -11,6 +11,15 @@ cell, so the bake-off's adoption bar is kept or extended on measurement rather t
 
 from llb.eval.embedder_adoption.cells import build_cells, cell_config, parse_rerankers, parse_top_ks
 from llb.eval.embedder_adoption.compare import compare_cells, decide_bar, with_reciprocal_rank
+from llb.eval.embedder_adoption.cross_model import (
+    READING_ANSWER,
+    READING_NEITHER,
+    READING_RANK_ONLY,
+    cell_reading,
+    compare_models,
+    format_cross_model,
+    format_cross_summary,
+)
 from llb.eval.embedder_adoption.models import (
     DECISION_EXTEND_BAR,
     DECISION_KEEP_BAR,
@@ -19,22 +28,35 @@ from llb.eval.embedder_adoption.models import (
     EmbedderLane,
 )
 from llb.eval.embedder_adoption.report import format_report, format_summary
-from llb.eval.embedder_adoption.run import run_adoption_bar_sweep
+from llb.eval.embedder_adoption.run import (
+    load_report,
+    run_adoption_bar_sweep,
+    run_cross_model_comparison,
+)
 
 __all__ = [
     "DECISION_EXTEND_BAR",
     "DECISION_KEEP_BAR",
     "DECISION_NO_EVIDENCE",
+    "READING_ANSWER",
+    "READING_NEITHER",
+    "READING_RANK_ONLY",
     "CellSpec",
     "EmbedderLane",
     "build_cells",
     "cell_config",
+    "cell_reading",
     "compare_cells",
+    "compare_models",
     "decide_bar",
+    "format_cross_model",
+    "format_cross_summary",
     "format_report",
     "format_summary",
+    "load_report",
     "parse_rerankers",
     "parse_top_ks",
     "run_adoption_bar_sweep",
+    "run_cross_model_comparison",
     "with_reciprocal_rank",
 ]

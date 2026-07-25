@@ -14,6 +14,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
@@ -25,6 +26,9 @@ from llb.eval.embedder_adoption.report import format_report
 from llb.eval.paired_cases import CaseRows
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
+
+if TYPE_CHECKING:
+    from llb.eval.embedder_adoption.cross_model import CrossModelReport
 
 METHOD = "embedder-adoption-bar"
 
@@ -162,3 +166,51 @@ def write_artifacts(
         "report": str(out_dir / "report.md"),
         "comparison": str(out_dir / "comparison.json"),
     }
+
+
+@dataclass(frozen=True)
+class CrossModelRun:
+    report: "CrossModelReport"
+    out_dir: Path
+    paths: Mapping[str, str]
+
+
+def load_report(path: Path) -> AdoptionBarReport:
+    """Load one finished sweep's `comparison.json` (or its directory) as an `AdoptionBarReport`."""
+    target = Path(path)
+    if target.is_dir():
+        target = target / "comparison.json"
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{target}: cannot load an adoption-bar comparison: {exc}") from None
+    if not isinstance(data, dict) or "cells" not in data or "verdict" not in data:
+        raise ValueError(f"{target}: not an adoption-bar comparison.json (no cells/verdict)")
+    return data  # type: ignore[return-value]
+
+
+def run_cross_model_comparison(report_paths: Sequence[Path], *, out_dir: Path) -> CrossModelRun:
+    """Read two finished sweeps and persist the per-cell cross-model agreement report."""
+    from llb.eval.embedder_adoption.cross_model import (
+        _cross_metadata,
+        compare_models,
+        format_cross_model,
+    )
+
+    reports = [load_report(path) for path in report_paths]
+    cross = compare_models(reports)
+    metadata = _cross_metadata(reports)
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    payload = {**cross, "metadata": dict(metadata)}
+    (target / "cross_model.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (target / "cross_model.md").write_text(
+        format_cross_model(cross, metadata=metadata), encoding="utf-8"
+    )
+    paths = {
+        "report": str(target / "cross_model.md"),
+        "comparison": str(target / "cross_model.json"),
+    }
+    return CrossModelRun(cross, target, paths)

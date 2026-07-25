@@ -193,6 +193,11 @@ ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=
 ADOPTION_OUT_DIR ?=
+# Cross-model reading (compare-adoption-models): two finished sweep comparison.json files (or their
+# dirs) and where to write the per-cell agreement report.
+ADOPTION_REPORT_A ?=
+ADOPTION_REPORT_B ?=
+ADOPTION_CROSS_OUT ?=
 # Query robustness probe: full split by default, bounded answers, deterministic character noise.
 QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
