@@ -292,3 +292,37 @@ def test_roster_round_trips_through_disk(tmp_path: Path):
     assert persisted["verdict"]["decision"] == DECISION_PROPERTY_PREDICTS
     assert persisted["metadata"]["goldset"] == "gs.jsonl"
     assert Path(run.paths["report"]).read_text(encoding="utf-8").startswith("# Embedder adoption")
+
+
+# --- borderline annotation ----------------------------------------------------------------
+
+
+def test_stability_is_absent_when_the_run_bundles_are_gone():
+    """An archived roster still reads: the annotation is additive, never load-bearing."""
+    roster = compare_roster(
+        [_report(model=m, focus_answers=a) for m, a in (("a", True), ("b", False), ("c", False))],
+        {},
+        focus_cell=FOCUS,
+        measure_stability=True,  # the fake reports name no real bundles
+    )
+    assert all("stability" not in cell for cell in roster["cells"])
+    assert roster["verdict"]["decision"] == DECISION_NO_PROPERTY_PREDICTS
+    assert format_roster(roster).count("borderline") >= 0  # renders without a stability map
+
+
+def test_measuring_stability_never_changes_a_reading_or_the_verdict():
+    spec = [("a", True), ("b", False), ("c", False)]
+    off = compare_roster(
+        [_report(model=m, focus_answers=x) for m, x in spec],
+        {},
+        focus_cell=FOCUS,
+        measure_stability=False,
+    )
+    on = compare_roster(
+        [_report(model=m, focus_answers=x) for m, x in spec],
+        {},
+        focus_cell=FOCUS,
+        measure_stability=True,
+    )
+    assert [c["readings"] for c in off["cells"]] == [c["readings"] for c in on["cells"]]
+    assert off["verdict"]["decision"] == on["verdict"]["decision"]

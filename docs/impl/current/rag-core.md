@@ -1614,6 +1614,16 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   is claimed only when EVERY model survives the smaller set -- a screen that reproduces four models
   and loses the fifth is precisely the screen that reports "no gain" when there is one. Artifacts
   `screen.md` + `screen.json`; tests in `tests/llb/eval/test_embedder_adoption_screen.py`.
+- **The borderline annotation** (`src/llb/eval/embedder_adoption/stability.py`): every reading is a
+  binary cut of a continuous interval, so a row whose bound sits ON zero prints exactly like one
+  that missed by a mile. Two additive signals fix that without touching the bar. `p_positive` is the
+  share of paired resamples in which the candidate is ahead -- the quantity the reading actually
+  thresholds, since a 95% interval clears zero exactly when `p_positive > 0.975`. And a reading is
+  marked `(borderline)` when a LOOSER but equally conventional level (90%) would change it: a
+  statement about robustness to an arbitrary convention, with no constant fitted to the data. The
+  roster reads both from the run bundles a sweep names and degrades silently when those are gone,
+  so an archived roster still reports; readings and verdicts are never altered. Tests in
+  `tests/llb/eval/test_embedder_adoption_stability.py`.
 
 CUDA host, 2026-07-25; `MamayLM-Gemma-3-12B-IT-v2.0` (Q4_K_M, Ollama), the accepted converted-PDF
 goldset (40 items over final+tuning+calibration, the same 1120-chunk `recursive` 800/120 corpus the
@@ -1745,6 +1755,36 @@ Verdict: **full_set_required**. What the table establishes:
   EMBED_BASELINE_DATA_DIR=<e5-root> EMBED_CANDIDATE_DATA_DIR=<bge-root> CORPUS=<corpus>
   GOLDSET=<accepted>/goldset.jsonl SPLIT=final,tuning,calibration`. Do not reach for `ADOPTION_LIMIT`
   to make it cheaper.
+
+#### Which readings are settled, and which are the cut talking
+
+The roster table prints one of three readings per row, but at n=40 several rows sit close enough to
+the `lo > 0` cut that the threshold, not the evidence, decided them. `p_positive` places every row
+on that scale (the reading clears zero exactly when it exceeds 0.975), measured over the sweep's own
+2000 resamples; the roster reports it for the focus cell and marks any reading a 90% interval would
+change:
+
+| model | `k10+rerank` reading | p_positive | at 90% | settled? |
+| --- | :-: | ---: | :-: | :-: |
+| `lapa-v0.1.2` | neither | 0.969 | answer | **NO** |
+| `MamayLM-Gemma-3-12B` | answer | 0.995 | answer | yes |
+| `MamayLM-Gemma-3-27B` | neither | 0.803 | neither | yes |
+| `qwen3:14b` | neither | 0.767 | neither | yes |
+| `mistral-small3.1:24b` | neither | 0.380 | neither | yes |
+
+- **`lapa` is not a negative result, it is an undecided one.** Its `neither` sits at 0.969 against a
+  0.975 cut and becomes `answer` at 90%, so it now prints `neither (borderline)`. The three settled
+  negatives are at 0.380-0.803, nowhere near the line. Before this annotation those four rows were
+  typographically identical, which is what made the roster's "1 of 5 models capture it" read as
+  four clean negatives instead of three plus one too close to call. The verdict is unchanged --
+  `no_property_predicts` still holds, since `borderline` is a qualifier and never an `answer`.
+- **The flag is deliberately one-sided, and the k=3 evidence shows why that matters.** It marks
+  readings that FAIL the bar but would pass a looser one, because that is the failure mode that
+  reads as settled negative evidence. It does NOT mark readings that pass but only just: the three
+  `k3` `answer` rows sit at p_positive 0.978 (`qwen3`), 0.981 (`MamayLM-12B`) and 0.988
+  (`mistral`) -- all above 0.975, none of them by much. Read the roster's "4 of 5 models capture a
+  k=3 gain" with that in mind; the `p_positive` column is what exposes it, and widening the flag to
+  both sides is forward work in [`plan.md`](../plan.md).
 
 ### Context budget
 

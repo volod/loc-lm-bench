@@ -28,6 +28,7 @@ from llb.eval.embedder_adoption.models import (
     EmbedderLane,
 )
 from llb.eval.embedder_adoption.report import format_report, format_summary
+from llb.eval.embedder_adoption.roster_report import format_roster, format_roster_summary
 from llb.eval.embedder_adoption.roster import (
     DECISION_INSUFFICIENT_VARIATION,
     DECISION_NO_PROPERTY_PREDICTS,
@@ -36,8 +37,6 @@ from llb.eval.embedder_adoption.roster import (
     ModelProfile,
     compare_roster,
     decide_roster,
-    format_roster,
-    format_roster_summary,
 )
 from llb.eval.embedder_adoption.screen import (
     DECISION_FULL_SET_REQUIRED,

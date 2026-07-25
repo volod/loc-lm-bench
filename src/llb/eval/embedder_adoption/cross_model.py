@@ -68,7 +68,7 @@ def cell_reading(cell: CellReport) -> str:
     return READING_NEITHER
 
 
-def _model_id(report: AdoptionBarReport) -> str:
+def model_id(report: AdoptionBarReport) -> str:
     """The generation model a sweep was scored under (from its metadata, else a stable fallback)."""
     meta = report.get("metadata") or {}
     model = meta.get("model")
@@ -86,7 +86,7 @@ def compare_models(reports: Sequence[AdoptionBarReport]) -> CrossModelReport:
         raise ValueError("the cross-model reading compares exactly two sweep reports")
     first, second = reports
     assert_comparable(first, second)
-    models = [_model_id(first), _model_id(second)]
+    models = [model_id(first), model_id(second)]
     if models[0] == models[1]:
         raise ValueError(f"both reports were scored under the same model {models[0]!r}")
     cells: list[CellAgreement] = []

@@ -49,6 +49,11 @@ COLUMN_FIRST_HIT_RANK = "first_hit_rank"
 # Cell label markers: `k10`, `k3+rerank`.
 CELL_RERANK_MARKER = "+rerank"
 
+# The cell the model-dependence question is about: a generous `top_k` WITH the cross-encoder,
+# where first-hit rank is binding but recall is already at ceiling, so a gain there is the purest
+# "the reranker made the encoder's ranking pay" signal.
+DEFAULT_FOCUS_CELL = "k10+rerank"
+
 # Sweep decisions -- what the measurement says about the bake-off's adoption bar.
 # The rank gain reached the answers in at least one cell: the scoped first-hit bar is justified.
 DECISION_EXTEND_BAR = "extend_bar"

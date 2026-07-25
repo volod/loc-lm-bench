@@ -264,11 +264,9 @@ def run_roster_comparison(
 ) -> RosterRun:
     """Read N finished sweeps and persist the roster property reading."""
     from llb.eval.embedder_adoption.cross_model import _cross_metadata
-    from llb.eval.embedder_adoption.roster import (
-        DEFAULT_FOCUS_CELL,
-        compare_roster,
-        format_roster,
-    )
+    from llb.eval.embedder_adoption.models import DEFAULT_FOCUS_CELL
+    from llb.eval.embedder_adoption.roster import compare_roster
+    from llb.eval.embedder_adoption.roster_report import format_roster
 
     reports = [load_report(path) for path in report_paths]
     roster = compare_roster(
@@ -303,7 +301,7 @@ def run_screen_study_over_paths(
 ) -> ScreenRun:
     """Read finished sweeps and persist the per-model screen cost study."""
     from llb.eval.embedder_adoption.cross_model import _cross_metadata
-    from llb.eval.embedder_adoption.roster import DEFAULT_FOCUS_CELL
+    from llb.eval.embedder_adoption.models import DEFAULT_FOCUS_CELL
     from llb.eval.embedder_adoption.screen import format_screen, run_screen_study
 
     reports = [load_report(path) for path in report_paths]

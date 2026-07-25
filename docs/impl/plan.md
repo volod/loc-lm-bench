@@ -43,36 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### adoption-cell-reading-reports-a-binary-on-borderline-evidence (optional)
+### adoption-borderline-flag-is-one-sided (optional)
 
-Every adoption-bar reading is a BINARY (`answer` / `rank only` / `neither`) cut from a continuous
-interval, and a row sitting on the cut is printed as a clean negative. `lapa-v0.1.2` is the measured
-case: its `k10+rerank` objective delta is +0.024 `[-0.000, +0.059]`, a lower bound exactly on zero,
-so it prints `neither` -- yet its screen agreement FALLS as the subsample grows (96% at n=10 to 76%
-at n=35) with every disagreement landing on `answer`, which is the signature of a row that is one
-item from flipping ([RAG core](current/rag-core.md#what-the-per-model-answer-costs)). An operator
-reading the roster table cannot tell that row apart from `mistral`, whose `neither` is stable at
-100%. Add a third state to the reading vocabulary -- `borderline`, for a delta whose interval bound
-sits within some measured distance of zero -- or report a stability figure per row, so a knife-edge
-verdict cannot be read as settled evidence. Derive the threshold from the recorded sweeps rather
-than picking one: the screen study already measures how each row's reading behaves under
-resampling.
+The `borderline` annotation marks a reading that a LOOSER confidence level would change, which
+catches rows that miss the bar by nothing but never rows that pass it by nothing. The measured gap:
+the three `k3` `answer` rows sit at `p_positive` 0.978, 0.981 and 0.988 against a 0.975 cut -- all
+three clear the bar, none by much, and none is flagged, while `lapa`'s 0.969 on the other side is
+([RAG core](current/rag-core.md#which-readings-are-settled-and-which-are-the-cut-talking)). That
+asymmetry is defensible for the adopt decision, whose strictness is deliberate, but the roster's
+"4 of 5 models capture a k=3 gain" claim leans on exactly those unflagged near-misses. Extend the
+flag to both sides -- a reading is also unsettled when a modestly TIGHTER conventional level (97.5%)
+would drop it -- and re-read whether the recorded k=3 and cross-model conclusions survive being
+restated with the near-miss positives marked. Check first whether a two-sided flag marks so many
+rows that it stops discriminating: at n=40 nearly every positive in the roster is within 0.02 of
+the cut, and a flag that fires on everything says nothing.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `cell_reading` / `reading_from_deltas` and the recorded five-model
-  sweeps plus their screen curves under `$DATA_DIR/embedder-adoption-bar/`.
-- User-visible outcome: the operator can tell a settled `neither` from a row that is one question
-  away from flipping, instead of reading both as the same negative result.
-- Scope boundary: in scope -- the extra reading state or per-row stability figure, its threshold
-  derived from the recorded curves, and re-rendering the roster/cross-model/screen tables with it.
-  Out of scope -- changing the adopt bar itself, the cell grid, and the sweep mechanics.
-- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/` sweeps and
-  `.../screen/`; no new roots and no new heavy run (the curves are already recorded).
-- Execution path: pure re-analysis over the recorded artifacts, then re-render the readings; CI
-  covers the new state's boundaries over fake delta vectors.
-- Acceptance gates: `make ci` green; every recorded row keeps its current reading except those the
-  study shows are unstable, and `lapa`'s `k10+rerank` row is no longer presented as a settled
-  negative.
+- Dependencies: none. Reuse `row_stability` / `format_reading` in
+  `src/llb/eval/embedder_adoption/stability.py` and the recorded sweeps under
+  `$DATA_DIR/embedder-adoption-bar/`.
+- User-visible outcome: a near-miss `answer` is as visible as a near-miss `neither`, so the
+  roster's positive claims carry the same caveat its negative ones now do.
+- Scope boundary: in scope -- the second (tighter) comparison level, the discrimination check over
+  the recorded rows, and re-rendering the roster tables. Out of scope -- changing the adopt bar,
+  the cell grid, and the sweep mechanics.
+- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/` sweeps and `.../roster/`;
+  no new roots and no new heavy run.
+- Execution path: pure re-analysis over the recorded artifacts, then re-render; CI covers the
+  two-sided boundaries over fake delta vectors.
+- Acceptance gates: `make ci` green; the report states how many of the recorded rows a two-sided
+  flag marks, and either adopts it or records that it fires too broadly to discriminate at n=40.
 - Documentation target: the scoped first-hit-rank bar subsection of
   [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 

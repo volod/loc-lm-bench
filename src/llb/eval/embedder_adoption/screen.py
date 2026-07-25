@@ -34,13 +34,14 @@ from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,
     READING_NEITHER,
     READING_RANK_ONLY,
+    model_id,
 )
 from llb.eval.embedder_adoption.models import (
+    DEFAULT_FOCUS_CELL,
     METRIC_OBJECTIVE,
     METRIC_RECIPROCAL_RANK,
     AdoptionBarReport,
 )
-from llb.eval.embedder_adoption.roster import DEFAULT_FOCUS_CELL, model_id
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_SEED,

@@ -20,20 +20,21 @@ heavy sweeps, never during one.
 
 import math
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from typing_extensions import NotRequired, TypedDict
+
+if TYPE_CHECKING:
+    from llb.eval.embedder_adoption.stability import RowStability
 
 from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,
     assert_comparable,
     cell_reading,
+    model_id,
 )
-from llb.eval.embedder_adoption.models import AdoptionBarReport
+from llb.eval.embedder_adoption.models import DEFAULT_FOCUS_CELL, AdoptionBarReport
 
-# The cell the task is about: a generous `top_k` WITH the cross-encoder, where first-hit rank is
-# binding but recall is already at ceiling, so a gain there is the purest "the reranker made the
-# encoder's ranking pay" signal.
-DEFAULT_FOCUS_CELL = "k10+rerank"
 
 # Pre-readable model properties: known from the model card before any run is spent. Numeric
 # properties are tested for a threshold split, categorical ones for disjoint value sets.
@@ -67,6 +68,10 @@ class RosterCell(TypedDict):
     readings: dict[str, str]  # model id -> READING_*
     unanimous: bool
     answer_models: list[str]
+    # How settled each reading is (`llb.eval.embedder_adoption.stability`). Measured from the run
+    # bundles the sweep names, so it is absent when those bundles are no longer on disk -- the
+    # reading itself never depends on it.
+    stability: NotRequired[dict[str, "RowStability"]]
 
 
 class PropertySeparation(TypedDict):
@@ -108,23 +113,21 @@ class RosterReport(TypedDict):
     metadata: NotRequired[dict[str, object]]
 
 
-def model_id(report: AdoptionBarReport) -> str:
-    """The generation model a sweep was scored under (from its metadata, else a stable fallback)."""
-    meta = report.get("metadata") or {}
-    model = meta.get("model")
-    return str(model) if model else f"{report['candidate']}-vs-{report['baseline']}"
-
-
 def compare_roster(
     reports: Sequence[AdoptionBarReport],
     profiles: Mapping[str, ModelProfile] | None = None,
     *,
     focus_cell: str = DEFAULT_FOCUS_CELL,
+    measure_stability: bool = True,
 ) -> RosterReport:
     """Read N finished sweeps and state whether a declared property predicts the focus-cell gain.
 
     Every report is checked against the FIRST one for comparability, so a roster mixing item sets,
     seeds, cell grids, or encoder pairs fails loudly rather than producing a meaningless split.
+
+    `measure_stability` additionally re-reads each sweep's run bundles to mark readings that a
+    looser confidence level would change. It never alters a reading or the verdict, and it degrades
+    silently when the bundles are gone, so an archived roster still reports.
     """
     if len(reports) < 3:
         raise ValueError(
@@ -141,7 +144,7 @@ def compare_roster(
         )
     declared = {model: dict(profiles.get(model, {})) for model in models} if profiles else {}
     cells = [
-        _roster_cell(label, reports, models)
+        _roster_cell(label, reports, models, measure_stability)
         for label in (cell["label"] for cell in reference["cells"])
     ]
     if not any(cell["label"] == focus_cell for cell in cells):
@@ -165,19 +168,44 @@ def compare_roster(
 
 
 def _roster_cell(
-    label: str, reports: Sequence[AdoptionBarReport], models: Sequence[str]
+    label: str,
+    reports: Sequence[AdoptionBarReport],
+    models: Sequence[str],
+    measure_stability: bool = False,
 ) -> RosterCell:
     readings: dict[str, str] = {}
+    stability: dict[str, "RowStability"] = {}
     for model, report in zip(models, reports):
         cell = next(entry for entry in report["cells"] if entry["label"] == label)
         readings[model] = cell_reading(cell)
+        if measure_stability:
+            measured = _measure(report, label)
+            if measured is not None:
+                stability[model] = measured
     answer_models = [model for model in models if readings[model] == READING_ANSWER]
     return {
         "label": label,
         "readings": readings,
+        **({"stability": stability} if stability else {}),  # type: ignore[typeddict-item]
         "unanimous": len(set(readings.values())) == 1,
         "answer_models": answer_models,
     }
+
+
+def _measure(report: AdoptionBarReport, label: str) -> "RowStability | None":
+    """This sweep's stability for one cell, or `None` when its run bundles are unreachable.
+
+    Imported lazily and failure-tolerant on purpose: stability is an additive annotation, so a
+    roster over archived artifacts must still produce its table and verdict.
+    """
+    from llb.eval.embedder_adoption.screen import cell_item_deltas
+    from llb.eval.embedder_adoption.stability import row_stability
+
+    try:
+        deltas = cell_item_deltas(report, label)
+    except (ValueError, OSError):
+        return None
+    return row_stability(deltas, resamples=report["resamples"], seed=report["seed"])
 
 
 def decide_roster(
@@ -345,99 +373,3 @@ def _threshold_chance(inside: int, outside: int) -> float:
 def _span(values: Sequence[float]) -> str:
     lo, hi = min(values), max(values)
     return f"{lo:g}" if lo == hi else f"{lo:g}-{hi:g}"
-
-
-_READING_LABEL = {"answer": "answer", "rank_only": "rank only", "neither": "neither"}
-
-
-def _profile_cell(profile: Mapping[str, object], name: str) -> str:
-    value = profile.get(name)
-    return "-" if value is None else f"{value:g}" if isinstance(value, float) else str(value)
-
-
-def format_roster(
-    report: RosterReport,
-    *,
-    metadata: Mapping[str, object] | None = None,
-    title: str = "Embedder adoption bar: is the reranker gain predictable in advance?",
-) -> str:
-    """The roster Markdown artifact: the verdict, the per-cell readings, the property table."""
-    verdict = report["verdict"]
-    meta = dict(metadata or {})
-    lines = [f"# {title}", ""]
-    for key in ("split", "grounding", "goldset", "corpus"):
-        if key in meta:
-            lines.append(f"- {key}: `{meta[key]}`")
-    lines += [
-        f"- encoder pair: `{report['candidate']}` vs `{report['baseline']}`",
-        f"- scored items: {report['n']} (identical set and seed in every sweep)",
-        f"- roster: {len(report['models'])} models",
-        f"- focus cell: `{report['focus_cell']}`",
-        f"- verdict: **{verdict['decision']}** -- {verdict['reason']}",
-        "",
-        "### Per-cell reading by model",
-        "",
-        "| model | "
-        + " | ".join(f"`{cell['label']}`" for cell in report["cells"])
-        + " | sweep verdict |",
-        "| --- | " + " | ".join([":-:"] * len(report["cells"])) + " | :-: |",
-    ]
-    for model in report["models"]:
-        readings = " | ".join(
-            _READING_LABEL.get(cell["readings"][model], cell["readings"][model])
-            for cell in report["cells"]
-        )
-        lines.append(f"| `{model}` | {readings} | {report['verdicts'][model]} |")
-    lines += [
-        "",
-        "`answer` = the rank gain reached the answer (objective interval clears zero); "
-        "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation.",
-        "",
-        "### Declared model properties",
-        "",
-        "| model | "
-        + " | ".join(f"{name}" for name in PROPERTIES)
-        + f" | `{report['focus_cell']}` |",
-        # Numeric properties read right-aligned, categorical ones centred.
-        "| --- | "
-        + " | ".join("---:" if name in NUMERIC_PROPERTIES else ":-:" for name in PROPERTIES)
-        + " | :-: |",
-    ]
-    focus = next(cell for cell in report["cells"] if cell["label"] == report["focus_cell"])
-    for model in report["models"]:
-        profile = report["profiles"].get(model, {})
-        values = " | ".join(_profile_cell(profile, name) for name in PROPERTIES)
-        reading = _READING_LABEL.get(focus["readings"][model], focus["readings"][model])
-        lines.append(f"| `{model}` | {values} | {reading} |")
-    lines += ["", "### Property separation", ""]
-    if not verdict["separations"]:
-        lines.append("No property was tested: the focus cell has no split to explain.")
-    for entry in verdict["separations"]:
-        mark = "SEPARATES" if entry["separates"] else "does not separate"
-        lines.append(f"- `{entry['property']}` -- **{mark}**: {entry['reason']}")
-        if entry["missing"]:
-            lines.append(f"  - undeclared for: {', '.join(f'`{m}`' for m in entry['missing'])}")
-    lines.append("")
-    return "\n".join(lines) + "\n"
-
-
-def format_roster_summary(report: RosterReport) -> str:
-    """One-screen ASCII summary for the terminal."""
-    verdict = report["verdict"]
-    focus = next(cell for cell in report["cells"] if cell["label"] == report["focus_cell"])
-    lines = [
-        f"[compare-adoption-roster] n={report['n']} models={len(report['models'])} "
-        f"focus={report['focus_cell']}",
-        f"  {'model'.ljust(34)} {'params':>7} {'family':>12}   {report['focus_cell']}",
-    ]
-    for model in report["models"]:
-        profile = report["profiles"].get(model, {})
-        reading = _READING_LABEL.get(focus["readings"][model], focus["readings"][model])
-        lines.append(
-            f"  {model.split('/')[-1][:34].ljust(34)} "
-            f"{_profile_cell(profile, PROPERTY_PARAMS):>7} "
-            f"{_profile_cell(profile, PROPERTY_FAMILY):>12}   {reading}"
-        )
-    lines.append(f"  verdict: {verdict['decision'].upper()} -- {verdict['reason']}")
-    return "\n".join(lines)
