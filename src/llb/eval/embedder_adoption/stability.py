@@ -30,14 +30,21 @@ from typing_extensions import TypedDict
 from llb.eval.embedder_adoption.screen import ItemDeltas, reading_from_deltas
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_SEED, bootstrap_index_sets
 
-# The looser conventional confidence the reading is re-checked at. 90% and 95% are both standard
-# reporting levels, so a reading that differs between them is decided by the convention rather than
-# by the evidence. Not fitted to any recorded row.
-BORDERLINE_CONFIDENCE = 0.90
+# The two neighbouring conventional confidences the reading is re-checked at. All three levels are
+# standard reporting conventions, so a reading that differs across them was decided by the
+# convention rather than by the evidence. Neither is fitted to a recorded row.
+LOOSER_CONFIDENCE = 0.90
+TIGHTER_CONFIDENCE = 0.975
 
-# Marks a reading that flips between the reporting and the looser confidence level. It is a
-# QUALIFIER on the three readings, never a fourth outcome the bar can adopt on.
+# Marks a reading that flips at either neighbouring level. It is a QUALIFIER on the three readings,
+# never a fourth outcome the bar can adopt on.
 BORDERLINE_MARK = "borderline"
+
+# Which side of the cut a borderline row sits on. `below` fails the bar but would clear a looser
+# one; `above` clears it but a tighter one would drop it. The distinction matters to an operator:
+# `below` is an undecided negative, `above` is a positive resting on the convention.
+SIDE_BELOW = "below"
+SIDE_ABOVE = "above"
 
 
 class RowStability(TypedDict):
@@ -47,9 +54,12 @@ class RowStability(TypedDict):
     # Share of paired resamples in which the objective delta is above zero. The reading's own
     # threshold in this scale is `1 - (1 - confidence) / 2` (0.975 at the default 95%).
     p_positive: float
-    # The reading a `borderline_confidence` interval would give; equal to `reading` when settled.
+    # What a looser / tighter interval would read; both equal `reading` when the row is settled.
     looser_reading: str
+    tighter_reading: str
     borderline: bool
+    # SIDE_BELOW / SIDE_ABOVE, or None when settled.
+    side: str | None
 
 
 def exceedance(values: Sequence[float], index_sets: Sequence[Sequence[int]]) -> float:
@@ -77,28 +87,36 @@ def row_stability(
     *,
     resamples: int,
     confidence: float = DEFAULT_CONFIDENCE,
-    borderline_confidence: float = BORDERLINE_CONFIDENCE,
+    looser_confidence: float = LOOSER_CONFIDENCE,
+    tighter_confidence: float = TIGHTER_CONFIDENCE,
     seed: int = DEFAULT_SEED,
 ) -> RowStability:
-    """The reading, its exceedance probability, and whether a looser interval would change it.
+    """The reading, its exceedance probability, and whether a neighbouring level would change it.
 
-    Both readings are drawn from the SAME resample index sets, so the only thing that differs
+    The check is TWO-SIDED: a row that fails the bar but would clear a looser one is an undecided
+    negative, and a row that clears the bar but a tighter one would drop is a positive resting on
+    the convention. Reporting only the first would leave every near-miss `answer` looking settled.
+
+    All three readings are drawn from the SAME resample index sets, so the only thing that differs
     between them is the percentile cut -- the comparison isolates the confidence convention rather
     than mixing in a second draw's noise.
     """
-    if borderline_confidence >= confidence:
+    if not looser_confidence < confidence < tighter_confidence:
         raise ValueError(
-            f"the borderline confidence ({borderline_confidence}) must be LOOSER than the "
-            f"reporting confidence ({confidence}); a tighter level would flag every row"
+            f"the neighbouring levels must straddle the reporting confidence: "
+            f"{looser_confidence} < {confidence} < {tighter_confidence}"
         )
     index_sets = bootstrap_index_sets(len(deltas), resamples, seed)
     reading = reading_from_deltas(deltas, index_sets, confidence)
-    looser = reading_from_deltas(deltas, index_sets, borderline_confidence)
+    looser = reading_from_deltas(deltas, index_sets, looser_confidence)
+    tighter = reading_from_deltas(deltas, index_sets, tighter_confidence)
     return {
         "reading": reading,
         "p_positive": exceedance(deltas.objective, index_sets),
         "looser_reading": looser,
-        "borderline": looser != reading,
+        "tighter_reading": tighter,
+        "borderline": looser != reading or tighter != reading,
+        "side": SIDE_BELOW if looser != reading else (SIDE_ABOVE if tighter != reading else None),
     }
 
 

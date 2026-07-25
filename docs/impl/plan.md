@@ -43,36 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### adoption-borderline-flag-is-one-sided (optional)
+### adoption-single-sweep-carries-no-borderline-signal (optional)
 
-The `borderline` annotation marks a reading that a LOOSER confidence level would change, which
-catches rows that miss the bar by nothing but never rows that pass it by nothing. The measured gap:
-the three `k3` `answer` rows sit at `p_positive` 0.978, 0.981 and 0.988 against a 0.975 cut -- all
-three clear the bar, none by much, and none is flagged, while `lapa`'s 0.969 on the other side is
-([RAG core](current/rag-core.md#which-readings-are-settled-and-which-are-the-cut-talking)). That
-asymmetry is defensible for the adopt decision, whose strictness is deliberate, but the roster's
-"4 of 5 models capture a k=3 gain" claim leans on exactly those unflagged near-misses. Extend the
-flag to both sides -- a reading is also unsettled when a modestly TIGHTER conventional level (97.5%)
-would drop it -- and re-read whether the recorded k=3 and cross-model conclusions survive being
-restated with the near-miss positives marked. Check first whether a two-sided flag marks so many
-rows that it stops discriminating: at n=40 nearly every positive in the roster is within 0.02 of
-the cut, and a flag that fires on everything says nothing.
+The borderline annotation only exists in the ROSTER reading, because it is measured from the run
+bundles during re-analysis and the sweep artifact itself persists aggregates only. But the
+documented per-model recipe is a SINGLE sweep -- `make compare-embedder-adoption ADOPTION_TOP_KS=10
+ADOPTION_RERANKERS=on` on the model being shipped
+([RAG core](current/rag-core.md#what-the-per-model-answer-costs)) -- and that run prints
+`extend_bar` or `keep_bar` with no indication of whether the deciding row sits on the cut. An
+operator following the recipe therefore gets exactly the unqualified binary the roster now refuses
+to show. Carry `p_positive` and the two neighbouring readings into the sweep's own
+`comparison.json` and `report.md` so a one-model run is as honest as the five-model table, and make
+`decide_bar`'s reason say when the cell it names is borderline.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `row_stability` / `format_reading` in
-  `src/llb/eval/embedder_adoption/stability.py` and the recorded sweeps under
-  `$DATA_DIR/embedder-adoption-bar/`.
-- User-visible outcome: a near-miss `answer` is as visible as a near-miss `neither`, so the
-  roster's positive claims carry the same caveat its negative ones now do.
-- Scope boundary: in scope -- the second (tighter) comparison level, the discrimination check over
-  the recorded rows, and re-rendering the roster tables. Out of scope -- changing the adopt bar,
-  the cell grid, and the sweep mechanics.
-- Data and artifact paths: the existing `$DATA_DIR/embedder-adoption-bar/` sweeps and `.../roster/`;
-  no new roots and no new heavy run.
-- Execution path: pure re-analysis over the recorded artifacts, then re-render; CI covers the
-  two-sided boundaries over fake delta vectors.
-- Acceptance gates: `make ci` green; the report states how many of the recorded rows a two-sided
-  flag marks, and either adopts it or records that it fires too broadly to discriminate at n=40.
+- Dependencies: none. Reuse `row_stability` in `src/llb/eval/embedder_adoption/stability.py` (it
+  already takes the per-item deltas the sweep holds in memory) and the recorded sweeps under
+  `$DATA_DIR/embedder-adoption-bar/` to confirm the persisted values match the roster's.
+- User-visible outcome: an operator running the one-model recipe sees that their `extend_bar` rests
+  on a knife-edge row, instead of learning it only if they later assemble a roster.
+- Scope boundary: in scope -- computing the stability inside the sweep, persisting it per cell,
+  rendering it in the sweep report, and qualifying the verdict reason. Out of scope -- changing
+  which reading the bar adopts on, the cell grid, and the neighbouring confidence levels.
+- Data and artifact paths: additive fields in the existing
+  `$DATA_DIR/embedder-adoption-bar/<run>/comparison.json`; no new roots and no new heavy run.
+- Execution path: re-render the five recorded sweeps and check each cell's persisted `p_positive`
+  equals what the roster measures from the same bundles; CI covers the persisted fields over fake
+  bundles.
+- Acceptance gates: `make ci` green; every recorded sweep's persisted stability matches the
+  roster's for the same cell, and the sweep report marks the same 4 of 20 rows the roster does.
 - Documentation target: the scoped first-hit-rank bar subsection of
   [RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar).
 

@@ -42,20 +42,23 @@ def _boundary_table(report: RosterReport) -> list[str]:
         f"### How close `{report['focus_cell']}` sits to the cut",
         "",
         f"`p_positive` is the share of paired resamples in which `{report['candidate']}` is ahead; "
-        f"the reading clears zero exactly when it exceeds {threshold:.3f}.",
+        f"the reading clears zero exactly when it exceeds {threshold:.3f}. A row is unsettled when "
+        "either neighbouring convention would read it differently.",
         "",
-        "| model | reading | p_positive | at 90% | settled? |",
-        "| --- | :-: | ---: | :-: | :-: |",
+        "| model | at 90% | reading (95%) | at 97.5% | p_positive | settled? |",
+        "| --- | :-: | :-: | :-: | ---: | :-: |",
     ]
     for model in report["models"]:
         entry = stability.get(model)
         if entry is None:
             continue
+        side = f"NO ({entry['side']})" if entry["borderline"] else "yes"
         lines.append(
-            f"| `{model.split('/')[-1]}` | {_READING_LABEL.get(entry['reading'], entry['reading'])} "
-            f"| {entry['p_positive']:.3f} "
+            f"| `{model.split('/')[-1]}` "
             f"| {_READING_LABEL.get(entry['looser_reading'], entry['looser_reading'])} "
-            f"| {'NO' if entry['borderline'] else 'yes'} |"
+            f"| {_READING_LABEL.get(entry['reading'], entry['reading'])} "
+            f"| {_READING_LABEL.get(entry['tighter_reading'], entry['tighter_reading'])} "
+            f"| {entry['p_positive']:.3f} | {side} |"
         )
     lines.append("")
     return lines
@@ -98,8 +101,8 @@ def format_roster(
         "",
         "`answer` = the rank gain reached the answer (objective interval clears zero); "
         "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation. `(borderline)` marks a reading a 90% interval would change -- the cut decided "
-        "it, not the evidence.",
+        "separation. `(borderline)` marks a reading that a 90% or a 97.5% interval would change -- "
+        "the cut decided it, not the evidence.",
         "",
     ]
     lines += _boundary_table(report)

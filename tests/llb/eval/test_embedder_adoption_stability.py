@@ -9,7 +9,9 @@ import pytest
 from llb.eval.embedder_adoption import READING_ANSWER, READING_NEITHER, READING_RANK_ONLY
 from llb.eval.embedder_adoption.screen import ItemDeltas
 from llb.eval.embedder_adoption.stability import (
-    BORDERLINE_CONFIDENCE,
+    LOOSER_CONFIDENCE,
+    SIDE_ABOVE,
+    SIDE_BELOW,
     decision_probability,
     exceedance,
     format_reading,
@@ -56,7 +58,9 @@ def test_a_decisive_reading_is_settled_at_both_levels():
     stability = row_stability(_deltas([0.5] * 30), resamples=400)
     assert stability["reading"] == READING_ANSWER
     assert stability["looser_reading"] == READING_ANSWER
+    assert stability["tighter_reading"] == READING_ANSWER
     assert stability["borderline"] is False
+    assert stability["side"] is None
     assert stability["p_positive"] == 1.0
 
 
@@ -72,11 +76,25 @@ def test_a_reading_that_a_looser_interval_would_change_is_borderline():
     # (measured: p_positive ~= 0.970, between the 90% cut at 0.950 and the 95% cut at 0.975).
     deltas = _deltas([1.0] * 8 + [-1.0] * 2 + [0.0] * 20)
     stability = row_stability(deltas, resamples=2000)
-    cut_95, cut_90 = decision_probability(0.95), decision_probability(BORDERLINE_CONFIDENCE)
+    cut_95, cut_90 = decision_probability(0.95), decision_probability(LOOSER_CONFIDENCE)
     assert cut_90 < stability["p_positive"] < cut_95
     assert stability["reading"] == READING_NEITHER
     assert stability["looser_reading"] == READING_ANSWER
     assert stability["borderline"] is True
+    assert stability["side"] == SIDE_BELOW
+
+
+def test_a_reading_that_only_just_clears_the_bar_is_borderline_above():
+    """The two-sided half: it PASSES at 95% but a 97.5% interval would drop it."""
+    # Measured on the recorded k3 rows: p_positive just over the 0.975 cut, under 0.9875.
+    deltas = _deltas([1.0] * 9 + [-1.0] * 2 + [0.0] * 19)
+    stability = row_stability(deltas, resamples=2000)
+    assert decision_probability(0.95) < stability["p_positive"] < decision_probability(0.975)
+    assert stability["reading"] == READING_ANSWER
+    assert stability["looser_reading"] == READING_ANSWER  # a looser level agrees
+    assert stability["tighter_reading"] != READING_ANSWER  # a tighter one drops it
+    assert stability["borderline"] is True
+    assert stability["side"] == SIDE_ABOVE
 
 
 def test_the_borderline_check_reuses_one_resample_draw():
@@ -96,10 +114,11 @@ def test_a_rank_only_row_can_be_borderline_on_the_objective():
     assert stability["borderline"] is True
 
 
-def test_a_tighter_borderline_level_is_refused():
-    """A level at or above the reporting confidence would flag essentially every row."""
-    with pytest.raises(ValueError, match="must be LOOSER"):
-        row_stability(_deltas([0.5] * 10), resamples=100, borderline_confidence=0.99)
+def test_the_neighbouring_levels_must_straddle_the_reporting_confidence():
+    with pytest.raises(ValueError, match="must straddle"):
+        row_stability(_deltas([0.5] * 10), resamples=100, looser_confidence=0.99)
+    with pytest.raises(ValueError, match="must straddle"):
+        row_stability(_deltas([0.5] * 10), resamples=100, tighter_confidence=0.90)
 
 
 # --- rendering ----------------------------------------------------------------------------
