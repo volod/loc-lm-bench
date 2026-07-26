@@ -46,9 +46,18 @@ def format_margin(margin: FloorMargin) -> str:
         if margin["clears_floor"]
         else "does NOT clear the floor -- the two lanes are not distinguished"
     )
+    clearance = margin.get("clearance", margin["delta"] - margin["floor"])
+    floor_multiple = margin.get(
+        "floor_multiple",
+        margin["delta"] / margin["floor"] if margin["floor"] > 0.0 else None,
+    )
+    distance = f"clearance {clearance:+.3f}"
+    if floor_multiple is not None:
+        distance += f", {floor_multiple:.2f}x the floor"
     return (
         f"top two: {margin['leader']} leads {margin['runner_up']} by "
-        f"{margin['delta']:.3f} recall@k against a +/-{margin['floor']:.3f} floor -- {verdict}"
+        f"{margin['delta']:.3f} recall@k against a +/-{margin['floor']:.3f} floor "
+        f"({distance}) -- {verdict}"
     )
 
 

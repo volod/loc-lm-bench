@@ -845,6 +845,15 @@ retrieval caches, then evaluated that one policy on the untouched 31-item final 
 | tuning | 9/7/14/1 | 0.562 [0.333, 0.800] | 0.900 [0.667, 1.000] | +0.050 [0.000, +0.150] | +0.048 [0.000, +0.143] |
 | final | 8/6/14/3 | 0.571 [0.308, 0.833] | 0.727 [0.444, 1.000] | +0.091 [0.000, +0.227] | +0.000 [-0.150, +0.150] |
 
+Route precision and recall now carry the lower-bound qualifier produced inside `bootstrap_ratio`:
+the same draw supplies `p_positive`, readings at 90% / 95% / 97.5%, and `borderline`, without a
+paired sign-test gate because these are count ratios rather than paired deltas. `report.md` renders
+all tuning rows plus frozen final in **Route-quality threshold stability**. Re-rendering the
+recorded gold-item order reproduced all 38 ratio point estimates and bounds exactly; 2 rows are
+borderline, both on tuning `w16/e0` (precision and recall, `p_positive` 0.954): they clear a 90%
+lower-bound cut but not 95%. Those descriptive rows did not select the frozen policy and do not
+change the verdict.
+
 Verdict: **no recommendation**. The frozen policy's tuning coverage interval touches zero, so it
 does not pass the predeclared positive-gain gate. Final points in the same positive direction but
 does not repair a failed tuning gate, and its single-span interval includes regression. The

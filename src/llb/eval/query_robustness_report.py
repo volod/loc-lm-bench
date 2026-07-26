@@ -7,6 +7,8 @@ from pathlib import Path
 
 from llb.core.fsutil import atomic_write_text
 from llb.eval.query_robustness import RobustnessResult
+from llb.rag.fusion_evidence.stability import format_reading
+from llb.rag.fusion_evidence.stats import PairedComparison, format_interval
 
 
 def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> str:
@@ -28,6 +30,7 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         f"- clean baseline: `{metadata['clean_run_dir']}`",
         f"- clean objective: {result.clean_objective:.4f}",
         f"- clean recall@k: {result.clean_recall:.4f}",
+        f"- paired bootstrap: {result.resamples} resamples at {result.confidence * 100:g}%",
         "",
         "Variant rows are probe-only and live in `robustness.jsonl`; they never enter the clean",
         "run's `scores.jsonl` or correctness aggregates. Generation delta is measured only on",
@@ -51,8 +54,57 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
             f"{lane.generation_delta_on_shared_hits:+.4f} | {lane.objective_recovery:+.4f} | "
             f"{lane.recall_recovery:+.4f} |"
         )
+    lines.extend(_uncertainty_section(result))
     lines.extend(_affected_section(result))
     return "\n".join(lines) + "\n"
+
+
+def _uncertainty_section(result: RobustnessResult) -> list[str]:
+    """Every signed delta on the scale that decides its three-state paired reading."""
+    lines = [
+        "",
+        "## Paired uncertainty by noise class",
+        "",
+        "Each delta is paired by item. `p_positive` is the share of the same bootstrap resamples",
+        "where the first named lane is above its reference: values near 1 support improvement,",
+        "values near 0 support degradation, and middle values are indistinguishable. A reading is",
+        "`borderline` when 90%, the reporting level, and 97.5% do not agree. Directional claims",
+        "also require enough differing items for the exact sign test to reach the stated level.",
+        "`*_delta` compares the named mitigation lane with clean; `*_recovery` compares it with",
+        "the unmitigated lane of the same noise class.",
+        "",
+        "| Class | Mitigation | Scope | Comparison | Delta | Reading | p_positive | Settled? |",
+        "| --- | --- | --- | --- | ---: | :-: | ---: | :-: |",
+    ]
+    for lane in result.lanes:
+        lines.extend(
+            _uncertainty_rows(lane.variant_class, lane.mitigation, "all", lane.comparisons)
+        )
+    return lines
+
+
+def _uncertainty_rows(
+    variant_class: str,
+    mitigation: str,
+    scope: str,
+    comparisons: Mapping[str, PairedComparison],
+) -> list[str]:
+    lines: list[str] = []
+    for name, comparison in comparisons.items():
+        delta = comparison["delta"]
+        stability = comparison.get("stability")
+        reading = (
+            format_reading(stability, stability["reading"])
+            if stability is not None
+            else "unannotated"
+        )
+        p_positive = f"{stability['p_positive']:.3f}" if stability is not None else "-"
+        settled = ("no" if stability["borderline"] else "yes") if stability is not None else "-"
+        lines.append(
+            f"| {variant_class} | `{mitigation}` | {scope} | `{name}` "
+            f"| {format_interval(delta)} | {reading} | {p_positive} | {settled} |"
+        )
+    return lines
 
 
 def _affected_section(result: RobustnessResult) -> list[str]:
@@ -88,6 +140,28 @@ def _affected_section(result: RobustnessResult) -> list[str]:
             f"{changed.objective_score:.4f} | {changed.objective_delta:+.4f} | "
             f"{changed.recall_at_k:.4f} | {changed.recall_delta:+.4f} | "
             f"{changed.objective_recovery:+.4f} | {changed.recall_recovery:+.4f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "### Affected-subset paired uncertainty",
+            "",
+            "These are the same paired readings restricted to questions the generator changed.",
+            "",
+            "| Class | Mitigation | Scope | Comparison | Delta | Reading | p_positive | Settled? |",
+            "| --- | --- | --- | --- | ---: | :-: | ---: | :-: |",
+        ]
+    )
+    for lane in result.lanes:
+        if not lane.changed.n:
+            continue
+        lines.extend(
+            _uncertainty_rows(
+                lane.variant_class,
+                lane.mitigation,
+                "changed",
+                lane.changed.comparisons,
+            )
         )
     return lines
 

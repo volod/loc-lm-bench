@@ -4,7 +4,13 @@ from llb.rag.fusion_calibration.models import PolicyResult, RoutingCalibrationRe
 from llb.rag.fusion_evidence.evidence_gate import (
     evidence_gate_summary,
 )
-from llb.rag.fusion_evidence.stats import discordant_pairs, format_interval, gated_readings
+from llb.rag.fusion_evidence.stability import ReadingStability, boundary_table
+from llb.rag.fusion_evidence.stats import (
+    BootstrapRatio,
+    discordant_pairs,
+    format_interval,
+    gated_readings,
+)
 
 
 def _row(label: str, result: PolicyResult) -> str:
@@ -44,6 +50,33 @@ def _gate_summary(report: RoutingCalibrationReport) -> list[str]:
     )
 
 
+def _route_quality_boundaries(report: RoutingCalibrationReport) -> list[str]:
+    """The non-paired lower-bound cuts behind route precision and recall."""
+    rows: list[tuple[str, ReadingStability]] = []
+
+    def add(label: str, metric: str, estimate: BootstrapRatio) -> None:
+        stability = estimate.get("stability")
+        if stability is not None:
+            rows.append((f"{label} {metric}", stability))
+
+    for label in sorted(report["tuning"]):
+        route = report["tuning"][label]["route"]
+        add(f"tuning `{label}`", "precision", route["precision"])
+        add(f"tuning `{label}`", "recall", route["recall"])
+    final_route = report["final"]["route"]
+    add(f"final `{report['frozen_policy']}`", "precision", final_route["precision"])
+    add(f"final `{report['frozen_policy']}`", "recall", final_route["recall"])
+    return boundary_table(
+        rows,
+        title="Route-quality threshold stability",
+        key_header="row",
+        subject="the route metric",
+        confidence=report["confidence"],
+        evidence_counts=False,
+        positive_event="the route metric is above zero",
+    )
+
+
 def format_report(report: RoutingCalibrationReport) -> str:
     """Render tuning grid first and the one frozen final result second."""
     lines = [
@@ -75,6 +108,7 @@ def format_report(report: RoutingCalibrationReport) -> str:
     lines += _table(report["tuning"])
     lines += ["## Frozen policy on final", ""]
     lines += _table({report["frozen_policy"]: report["final"]})
+    lines += _route_quality_boundaries(report)
     lines += ["## Frozen final routing errors", ""]
     errors = report["final"]["route_errors"]
     if not errors:

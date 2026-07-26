@@ -33,6 +33,7 @@ from llb.rag.fusion_evidence.stability import (
 from llb.rag.fusion_evidence.stats import (
     bootstrap_index_sets,
     bootstrap_interval,
+    bootstrap_ratio,
     bootstrap_samples,
     paired_comparison,
 )
@@ -97,6 +98,22 @@ def test_the_interval_is_unchanged_by_carrying_the_annotation():
                     resamples,
                     confidence,
                 )
+
+
+def test_a_bootstrap_ratio_carries_the_same_cut_annotation_without_a_sign_test_gate():
+    """Three positive events put a non-negative route ratio just below the default lower-bound cut."""
+    n = 30
+    estimate = bootstrap_ratio(
+        [i < 3 for i in range(n)],
+        [True] * n,
+        bootstrap_index_sets(n, 5000, SEED),
+    )
+    stability = estimate["stability"]
+    assert estimate == {**estimate, "mean": 0.1}
+    assert stability["reading"] == READING_FLAT
+    assert stability["looser_reading"] == READING_SEPARATED
+    assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
+    assert "discordant" not in stability and "pairs" not in stability
 
 
 # --- the flag is two-sided and discriminating ----------------------------------------------

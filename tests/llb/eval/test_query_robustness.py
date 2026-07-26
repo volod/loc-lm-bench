@@ -28,7 +28,13 @@ from llb.eval.query_robustness_variants import (
     generate_variant,
     parse_variant_classes,
 )
+from llb.eval.query_robustness_uncertainty import (
+    READING_DEGRADED,
+    READING_INDISTINGUISHABLE,
+    directional_comparison,
+)
 from llb.goldset.schema import GoldItem
+from llb.rag.fusion_evidence.stats import bootstrap_index_sets
 
 
 def _item() -> GoldItem:
@@ -46,6 +52,22 @@ def _item() -> GoldItem:
 
 
 APOSTROPHE_QUESTION = "Який закон про пам'ять?"
+
+
+def test_signed_delta_stability_marks_a_degradation_near_miss_as_borderline():
+    n = 30
+    candidate = [0.0 if i < 6 else (1.0 if i == 6 else 0.0) for i in range(n)]
+    baseline = [1.0 if i < 6 else 0.0 for i in range(n)]
+    comparison = directional_comparison(
+        candidate,
+        baseline,
+        bootstrap_index_sets(n, 2000, 13),
+    )
+    stability = comparison["stability"]
+    assert stability["reading"] == READING_INDISTINGUISHABLE
+    assert stability["looser_reading"] == READING_DEGRADED
+    assert stability["borderline"] is True
+    assert stability["p_positive"] < 0.05
 
 
 @pytest.mark.parametrize("variant_class", ALL_VARIANT_CLASSES)
@@ -219,6 +241,14 @@ def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
     report = (out / "report.md").read_text(encoding="utf-8")
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_NORMALIZE.id}` |" in report
     assert f"| {MIXED_SCRIPT} | `{LANE_NORMALIZE.id}` |" in report
+    assert "## Paired uncertainty by noise class" in report
+    assert "p_positive" in report
+    assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | changed |" not in report
+    transliteration = lanes[(TRANSLITERATION, LANE_OFF.id)]
+    assert transliteration.comparisons["recall_delta"]["delta"]["mean"] == (
+        transliteration.recall_delta
+    )
+    assert "stability" in transliteration.comparisons["recall_delta"]
     # the untouched apostrophe rows carry no measurement, so the subset table dashes them out
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 0 | - | - | - | - | - | - |" in report
 

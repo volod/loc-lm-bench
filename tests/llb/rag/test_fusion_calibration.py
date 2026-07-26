@@ -101,7 +101,12 @@ def test_calibration_selects_on_tuning_and_scores_only_the_frozen_policy_on_fina
     assert set(report["tuning"]) == {"w5/e0", "w5/e2"}
     assert report["final"]["policy"]["label"] == "w5/e0"
     assert vector.calls == len(questions) and graph.calls == len(questions)
-    assert "Final is evaluated" in format_report(report)
+    rendered = format_report(report)
+    assert "Final is evaluated" in rendered
+    assert "Route-quality threshold stability" in rendered
+    assert "p_positive" in rendered
+    assert "stability" in report["final"]["route"]["precision"]
+    assert "stability" in report["final"]["route"]["recall"]
     assert report["final"]["route_errors"] == []
 
 

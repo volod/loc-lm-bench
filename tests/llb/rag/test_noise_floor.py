@@ -155,6 +155,7 @@ def test_margin_reads_the_top_two_lanes_against_the_floor():
     margin = measure_noise_floor(stores, _items(), k=2, replicates=REPLICATES)["margin"]
     assert margin["leader"] == "hit" and margin["runner_up"] == "miss"
     assert margin["delta"] == 1.0 and margin["floor"] == 0.0
+    assert margin["clearance"] == 1.0 and margin["floor_multiple"] is None
     assert margin["clears_floor"] is True
 
 
@@ -164,8 +165,11 @@ def test_margin_of_a_lead_inside_the_floor_does_not_clear_it():
     report = measure_noise_floor(stores, _items(), k=3, replicates=REPLICATES)
     margin = report["margin"]
     assert margin["delta"] == 0.0 and margin["floor"] > 0.0
+    assert margin["clearance"] == -margin["floor"] and margin["floor_multiple"] == 0.0
     assert margin["clears_floor"] is False
-    assert "does NOT clear the floor" in "\n".join(format_noise_floor(report))
+    rendered = "\n".join(format_noise_floor(report))
+    assert "clearance" in rendered and "0.00x the floor" in rendered
+    assert "does NOT clear the floor" in rendered
 
 
 def test_margin_of_a_single_lane_has_nothing_to_clear():

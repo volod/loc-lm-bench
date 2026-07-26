@@ -43,36 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
-
-The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it
-reports how far its deciding row sits from the cut
-([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-Three uncertainty lanes do NOT go through that function and so still quote unqualified binaries:
-the sidecar-free routing calibration (`src/llb/rag/fusion_calibration/evaluate.py`, which draws its
-own index sets and reads route precision/recall through `bootstrap_ratio`), the measurement floor
-(`src/llb/rag/noise_floor.py`, whose fragile-count reading is a different statistic entirely), and
-the query-robustness lane's per-noise-class deltas. Decide per lane whether the same qualifier
-applies -- `bootstrap_ratio` can carry it the same way `bootstrap_interval` now does -- or record
-why that lane's reading is not a `lo > 0` cut and needs a different honesty signal.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `separation_stability` / `stability_from_readings` / `borderline_note` /
-  `boundary_table` in `src/llb/rag/fusion_evidence/stability.py`; `bootstrap_ratio` already computes
-  the resample distribution the exceedance would be counted from.
-- User-visible outcome: no uncertainty lane in the repo keeps stating a threshold result without
-  saying how close it sits to the threshold.
-- Scope boundary: in scope -- extending the annotation to `bootstrap_ratio`, wiring the three lanes
-  or recording why a lane is excluded, and re-rendering their recorded artifacts. Out of scope --
-  changing any threshold, the routing policy, and the floor's own definition.
-- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
-- Execution path: re-render the recorded artifacts and confirm no recorded number moves; CI covers
-  the annotation per lane over the existing fixtures.
-- Acceptance gates: `make ci` green; each of the three lanes either carries the qualifier with its
-  recorded numbers reproducing exactly, or has a recorded reason it does not.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
-  the sidecar-free calibration and measurement-floor sections.
-
 ### widen-the-multihop-drafted-slice-to-a-decidable-size
 
 Every open multi-hop question in the repo -- the fusion sweeps' span-identity row and all three

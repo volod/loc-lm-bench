@@ -1557,6 +1557,40 @@ is the one place that vocabulary lives, and every lane reports it:
   clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
   own verdict).
 
+The three remaining uncertainty shapes now state their own distance from their actual cut instead
+of borrowing a paired-delta interpretation that does not fit:
+
+- `bootstrap_ratio` returns a `BootstrapRatio` whose optional `stability` block is read from the
+  SAME sorted draw as its interval. Route precision and recall therefore carry `p_positive`, the
+  90% / reporting / 97.5% readings, and `borderline`, but no discordant count or exact-sign gate:
+  a count ratio is not a paired delta. The sidecar-free calibration renders these rows through the
+  shared `boundary_table(..., evidence_counts=False)` path.
+- Query robustness is genuinely paired but directional. Its new
+  `query_robustness_uncertainty.py` seam reads `improved` / `degraded` /
+  `indistinguishable` at all three levels, gates either directional claim on the exact sign-test
+  minimum, and records the ordinary interval / win-loss ledger / `p_positive` shape. Both
+  lane-versus-clean deltas and mitigation-versus-off recoveries are computed for all items and the
+  affected subset. `query_robustness_summary.py` can rebuild the aggregates from persisted case
+  rows without executing a model, while `query_robustness_report.py` renders the paired table.
+- The measurement floor is not a sampling CI: `clears_floor` compares the leader's fixed recall
+  gap with the widest score-jitter band. Its honest continuous signal is therefore `clearance =
+  delta - floor` plus `floor_multiple = delta / floor` (or null when the measured floor is zero),
+  not `p_positive`. Both fields are additive in `noise_floor.margin` and appear in the shared
+  ASCII/Markdown reading. `fragile_items` remains a descriptive count with no pass/fail cut; the
+  margin is the floor lane's only binary reading.
+
+Recorded-artifact re-render on 2026-07-26 rebuilt the sidecar-free calibration from its gold-item
+order, both current query-robustness reports from their persisted per-case rows, and the graph
+fusion floor from its stored lane bands. All pre-existing point estimates, interval bounds,
+aggregate table cells, thresholds, and decisions reproduced exactly. Of 38 route precision/recall
+rows, 2 are borderline; each 100-reading query report has 2 borderline rows and no
+minimum-evidence relabeling. The recorded graph-fusion leader's +0.0105 recall gap against a
++/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Host-artifact regression
+coverage lives in `tests/llb/rag/test_remaining_uncertainty_artifacts.py`; focused fixture coverage
+also lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`, and
+`tests/llb/eval/test_query_robustness.py`. Host validation completed `make ci` with 2,221 tests
+passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
+
 Re-render evidence (2026-07-25, from the recorded artifacts on disk, no new run): every recorded
 paired block of the three lanes whose artifacts persist per-item values was rebuilt with the same
 resamples / confidence / seed and diffed field by field -- **1222 blocks over 6 fusion sweeps, 3
@@ -2475,7 +2509,10 @@ Two properties the multi-lane wiring needed:
   by), their gap, and whether that gap exceeds the floor. It is rendered as one sentence, because
   a lane comparison names ONE winner and a winner whose lead is inside the floor has not been
   distinguished from the runner-up -- which is exactly how a bake-off's sub-item delta becomes a
-  recommendation.
+  recommendation. The same margin now persists its signed `clearance` (`delta - floor`) and
+  `floor_multiple` (`delta / floor`, null at a zero floor), so the binary never appears without
+  its distance from the cut. This is deliberately not called `p_positive`: the floor is a
+  deterministic range over score perturbations, not a paired bootstrap confidence interval.
 - **A FUSED row is perturbed at its own depth.** Most lanes extend cleanly -- a dense store's top-k
   is the prefix of its top-3k -- but a fused row's ranking depends on how deep each lane was asked,
   so retrieving `3k` from it would answer for a DIFFERENT row (that is the

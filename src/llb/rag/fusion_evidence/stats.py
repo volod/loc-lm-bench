@@ -60,6 +60,12 @@ class Interval(TypedDict):
     hi: float
 
 
+class BootstrapRatio(Interval):
+    """A count ratio whose lower-bound reading is qualified from the same bootstrap draw."""
+
+    stability: NotRequired[ReadingStability]
+
+
 class PairedComparison(TypedDict):
     """A candidate-minus-baseline delta plus the item-level win/loss/tie ledger behind it."""
 
@@ -122,6 +128,19 @@ def bootstrap_interval(
     return {"mean": point, "lo": lo, "hi": hi}
 
 
+def interval_from_ordered_samples(
+    values: list[float],
+    ordered_samples: list[float],
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> Interval:
+    """An interval from an already-sorted bootstrap draw, without resampling or sorting again."""
+    point = _mean(values)
+    if not values or not ordered_samples:
+        return {"mean": point, "lo": point, "hi": point}
+    lo, hi = _ordered_percentiles(ordered_samples, confidence)
+    return {"mean": point, "lo": lo, "hi": hi}
+
+
 def separation_stability(
     ordered_samples: list[float],
     confidence: float = DEFAULT_CONFIDENCE,
@@ -159,16 +178,43 @@ def separation_stability(
     )
 
 
+def ratio_stability(
+    ordered_samples: list[float],
+    confidence: float = DEFAULT_CONFIDENCE,
+    *,
+    looser_confidence: float = LOOSER_CONFIDENCE,
+    tighter_confidence: float = TIGHTER_CONFIDENCE,
+) -> ReadingStability:
+    """How settled a ratio's `lo > 0` reading is, without a paired sign-test gate.
+
+    A route precision/recall ratio is a bootstrap estimate over one lane, not a paired delta.
+    Its lower-bound cut therefore has the same confidence sensitivity and `p_positive` scale as a
+    paired interval, but no discordant-pair ledger and no exact sign-test reachability rule.
+    """
+
+    def read(level: float) -> str:
+        lo, _ = _ordered_percentiles(ordered_samples, level)
+        return READING_SEPARATED if lo > 0.0 else READING_FLAT
+
+    return stability_from_readings(
+        reading=read(confidence),
+        looser_reading=read(looser_confidence),
+        tighter_reading=read(tighter_confidence),
+        p_positive=exceedance(ordered_samples),
+    )
+
+
 def bootstrap_ratio(
     numerators: list[bool],
     denominators: list[bool],
     index_sets: list[list[int]],
     confidence: float = DEFAULT_CONFIDENCE,
-) -> Interval:
+) -> BootstrapRatio:
     """Bootstrap a ratio of counts, such as route precision or recall.
 
     A zero denominator yields 0.0: a router making no positive prediction has zero measured
-    precision, not perfect precision or missing evidence.
+    precision, not perfect precision or missing evidence. When a draw exists, the result carries
+    an ungated lower-bound stability block derived from those same ratio samples.
     """
     if len(numerators) != len(denominators):
         raise ValueError("ratio needs one denominator flag per numerator flag")
@@ -179,10 +225,15 @@ def bootstrap_ratio(
 
     all_indexes = list(range(len(numerators)))
     point = ratio(all_indexes)
+    estimate: BootstrapRatio = {"mean": point, "lo": point, "hi": point}
     if not numerators or not index_sets:
-        return {"mean": point, "lo": point, "hi": point}
-    lo, hi = _percentiles([ratio(indexes) for indexes in index_sets], confidence)
-    return {"mean": point, "lo": lo, "hi": hi}
+        return estimate
+    ordered = sorted(ratio(indexes) for indexes in index_sets)
+    lo, hi = _ordered_percentiles(ordered, confidence)
+    estimate.update({"lo": lo, "hi": hi})
+    if brackets(confidence):
+        estimate["stability"] = ratio_stability(ordered, confidence)
+    return estimate
 
 
 def sign_test_p(wins: int, losses: int) -> float:

@@ -38,11 +38,7 @@ from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.evidence_gate import (
     DEFAULT_CONFIDENCE,
-    READING_INSUFFICIENT_EVIDENCE,
-    level_label,
-    minimum_discordant_pairs,
     reading_label,
-    resolving_item_count,
 )
 
 # The two neighbouring conventional confidences a reading is re-checked at. All three levels are
@@ -135,8 +131,8 @@ def stability_from_readings(
     looser_reading: str,
     tighter_reading: str,
     p_positive: float,
-    discordant: int,
-    pairs: int,
+    discordant: int | None = None,
+    pairs: int | None = None,
 ) -> ReadingStability:
     """Assemble the flag and the side from three already-computed readings of the same draw.
 
@@ -150,11 +146,11 @@ def stability_from_readings(
     ITS OWN level already, because the reachable item count is a function of the level: a caller
     gates where it reads, and this function only records what came out.
 
-    `pairs` is recorded beside `discordant` for the same reason the gate needs both: the two
-    together are the discordance RATE, which is what prices the item set a withdrawn reading would
-    need before it could be read at all.
+    When supplied, `pairs` is recorded beside `discordant` for the same reason the paired gate
+    needs both: together they are the discordance RATE that prices a withdrawn reading's item set.
+    Non-paired bootstrap ratios omit both fields and therefore never imply an exact-sign gate.
     """
-    return {
+    stability: ReadingStability = {
         "reading": reading,
         "p_positive": p_positive,
         "looser_reading": looser_reading,
@@ -163,9 +159,11 @@ def stability_from_readings(
         "side": SIDE_BELOW
         if looser_reading != reading
         else (SIDE_ABOVE if tighter_reading != reading else None),
-        "discordant": discordant,
-        "pairs": pairs,
     }
+    if discordant is not None and pairs is not None:
+        stability["discordant"] = discordant
+        stability["pairs"] = pairs
+    return stability
 
 
 def format_reading(stability: ReadingStability | None, reading: str) -> str:
@@ -217,24 +215,6 @@ def unsettled(stability: ReadingStability | None) -> ReadingStability | None:
     return stability if stability is not None and stability["borderline"] else None
 
 
-def _resolving_cell(stability: ReadingStability, confidence: float) -> str:
-    """The item count that would make a reading of this row reachable, or `-` when there is none.
-
-    Priced for every row short of the bound, not only the ones whose reading was withdrawn: a
-    `flat` row on three differing items could not have shown a difference at this level whichever
-    way its interval fell, and that is worth telling apart from a tie measured on wide evidence.
-
-    `-` covers both rows that need nothing (the level is already reachable) and rows whose rate
-    prices nothing (no item differed, or the artifact predates the recorded pair count).
-    """
-    discordant = stability.get("discordant")
-    pairs = stability.get("pairs")
-    if discordant is None or pairs is None:
-        return "-"
-    required = resolving_item_count(discordant, pairs, confidence)
-    return "-" if required is None else str(required)
-
-
 def boundary_table(
     rows: Sequence[tuple[str, ReadingStability]],
     *,
@@ -242,42 +222,18 @@ def boundary_table(
     key_header: str,
     subject: str,
     confidence: float = DEFAULT_CONFIDENCE,
+    evidence_counts: bool = True,
+    positive_event: str | None = None,
 ) -> list[str]:
-    """Where each row sits on the continuous scale its binary reading cut, as Markdown lines.
+    """Render through the presentation module while preserving the established import seam."""
+    from llb.rag.fusion_evidence.stability_report import boundary_table as render
 
-    Shared by every lane's report, so a knife-edge row is placed on one scale rather than on as
-    many differently-worded tables as the repo has comparisons.
-    """
-    if not rows:
-        return []
-    lines = [
-        f"### {title}",
-        "",
-        f"`p_positive` is the share of paired resamples in which {subject} is ahead; the reading "
-        f"clears zero exactly when it exceeds {decision_probability(confidence):.3f}. A row is "
-        "unsettled when either neighbouring convention would read it differently. `d` is the "
-        "number of items the two lanes differ on: below "
-        f"{minimum_discordant_pairs(confidence)} of them the level is unreachable whatever the "
-        f"interval says, and the reading is `{reading_label(READING_INSUFFICIENT_EVIDENCE)}` "
-        f"(the neighbouring levels need {minimum_discordant_pairs(LOOSER_CONFIDENCE)} and "
-        f"{minimum_discordant_pairs(TIGHTER_CONFIDENCE)}). `n to reach` prices ANY row short of "
-        "that bound, whatever its interval says: the items its own discordance rate would need "
-        "before the level becomes reachable at all -- a floor on the item set, not an effect size "
-        "it could then resolve. A `flat` row carrying one is a reading that could not have shown a "
-        "difference, which is not the same as one that looked and found none.",
-        "",
-        f"| {key_header} | at {level_label(LOOSER_CONFIDENCE)} | reading ({level_label(confidence)}) "
-        f"| at {level_label(TIGHTER_CONFIDENCE)} | p_positive | d | n to reach | settled? |",
-        "| --- | :-: | :-: | :-: | ---: | ---: | ---: | :-: |",
-    ]
-    for key, entry in rows:
-        settled = f"NO ({entry['side']})" if entry["borderline"] else "yes"
-        discordant = entry.get("discordant")
-        lines.append(
-            f"| {key} | {reading_label(entry['looser_reading'])} "
-            f"| {reading_label(entry['reading'])} | {reading_label(entry['tighter_reading'])} "
-            f"| {entry['p_positive']:.3f} | {'-' if discordant is None else discordant} "
-            f"| {_resolving_cell(entry, confidence)} | {settled} |"
-        )
-    lines.append("")
-    return lines
+    return render(
+        rows,
+        title=title,
+        key_header=key_header,
+        subject=subject,
+        confidence=confidence,
+        evidence_counts=evidence_counts,
+        positive_event=positive_event,
+    )

@@ -98,7 +98,14 @@ def test_bootstrap_ratio_handles_route_precision_and_a_zero_denominator():
     measured = bootstrap_ratio([True, False, False], [True, True, False], index_sets)
     assert measured["mean"] == pytest.approx(0.5)
     assert measured["lo"] <= measured["mean"] <= measured["hi"]
-    assert bootstrap_ratio([False], [False], [[0]]) == {"mean": 0.0, "lo": 0.0, "hi": 0.0}
+    empty_route = bootstrap_ratio([False], [False], [[0]])
+    assert {key: empty_route[key] for key in ("mean", "lo", "hi")} == {
+        "mean": 0.0,
+        "lo": 0.0,
+        "hi": 0.0,
+    }
+    assert empty_route["stability"]["reading"] == "flat"
+    assert empty_route["stability"]["borderline"] is False
 
 
 def test_sign_test_is_two_sided_and_symmetric():
