@@ -56,7 +56,11 @@ from llb.eval.embedder_adoption.stability import (
     reading_from_deltas,
     row_stability,
 )
-from llb.rag.fusion_evidence.stability import BORDERLINE_MARK, SIDE_ABOVE, SIDE_BELOW
+from llb.rag.fusion_evidence.stability import (
+    BORDERLINE_MARK,
+    SIDE_ABOVE,
+    SIDE_BELOW,
+)
 from llb.eval.embedder_adoption.run import (
     load_profiles,
     load_report,

@@ -43,6 +43,107 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
+### re-decide-the-relabeled-fusion-and-bakeoff-readings
+
+The minimum-evidence gate downgraded eight recorded verdicts without re-running anything
+([the gate re-read](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)), and two of
+them are recommendations an operator may still be acting on: the fusion sweep's `overlap`
+span-identity row (recorded `adopt`, now `inconclusive` on 4 differing items) and the committed
+fixture's `adopt intfloat/multilingual-e5-large` (now `retain` on 5). Neither moved a shipped
+default, so nothing is broken -- but both questions are now OPEN rather than answered, and the
+lanes that would answer them are already planned. Decide what each open question needs: a larger
+multi-hop slice for the span-identity row (it rides on `multihop-ledger-human-acceptance`), and for
+the encoder row either a resolvable item set (`embedder-decision-on-a-resolvable-item-set`) or a
+recorded statement that the question is undecidable at the sample sizes the repo has. The
+deliverable is the decision plus the recorded reading, not a new statistic.
+
+- Agent status: CLEAR
+- Dependencies: none to write the readings; the RUNS it may call for belong to
+  `multihop-ledger-human-acceptance` and `embedder-decision-on-a-resolvable-item-set`. Reuse the
+  gate seam in `src/llb/rag/fusion_evidence/evidence_gate.py` and each lane's verdict module.
+- User-visible outcome: no recommendation in the docs is left in the state "recorded as adopted,
+  re-read as unsupported" without saying what would settle it.
+- Scope boundary: in scope -- the per-lane re-read statement, the item count each open question
+  would need (via the shared power contract once it exists), and a pointer from every affected
+  evidence section. Out of scope -- changing any shipped default on the strength of a downgraded
+  reading, and re-running a heavy lane before its own task calls for it.
+- Data and artifact paths: none new; the re-read under
+  `$DATA_DIR/paired-reading-audit/<run>/` is the input.
+- Execution path: no run; CI already covers the gate per lane.
+- Acceptance gates: `make ci` green; each of the eight relabeled verdicts is either restated with
+  the item count that would resolve it or recorded as undecidable at the reached sample size.
+- Documentation target: the span-identity and answer-quality sections of
+  [GraphRAG](current/graphrag-backend.md) and the bake-off sections of
+  [RAG core](current/rag-core.md).
+
+### paired-power-contract-for-every-lane
+
+The a priori power contract exists in exactly one lane and is hardcoded to one delta: it reads
+`long_context - rag` per item and prices the run before inference
+([RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation)).
+Two planned items -- `embedder-decision-on-a-resolvable-item-set` and
+`fusion-routing-calibration-power` -- require predeclaring a minimum detectable gain and the split
+size it needs, and there is no shared tool that computes either. Promote the contract into the paired
+statistics seam so any lane can declare an MDE and get its item count, and add the two readings the
+current version cannot give: the RESOLVABLE MDE at the reached n (invert the same arithmetic:
+`(z + z_power) * sd / sqrt(n)`), which is what an undecidable result should report instead of
+silently ending, and a realized-versus-planned SD check, because `target_reached` is currently
+computed from the REFERENCE item set's variance and never re-checked against the run's own.
+
+- Agent status: CLEAR
+- Dependencies: none. Move and generalize `src/llb/eval/context_ablation/power.py` into
+  `src/llb/rag/fusion_evidence/` beside the paired statistics; the ablation keeps its behavior
+  through the shared seam.
+- User-visible outcome: any lane can state "this question needs N items" before spending a run, and
+  an undecidable result reports the effect size the item set COULD have resolved instead of only
+  that it did not resolve this one.
+- Scope boundary: in scope -- the shared module, the per-lane delta selector, the resolvable-MDE
+  reading, the realized-SD check, and wiring the bake-off and fusion lanes to accept a declared MDE.
+  Out of scope -- post-hoc power (an achieved-power number computed from the observed effect is not a
+  reading this repo should publish), changing the ablation's recorded behavior, and picking MDEs for
+  the operator.
+- Data and artifact paths: `power-plan.json` beside each lane's existing comparison artifact; no new
+  roots.
+- Execution path: no heavy run -- the ablation's recorded plan must reproduce byte-identically
+  through the shared module; CI covers the item count, the inverted MDE, the realized-SD check, and
+  the plan-before-inference ordering per lane.
+- Acceptance gates: `make ci` green; `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json`
+  reproduces exactly; the bake-off and fusion lanes accept a declared MDE and report the resolvable
+  MDE at their reached n; a run whose realized SD exceeds the planned SD enough to miss the target
+  says so rather than reporting `target_reached`.
+- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
+  paired-uncertainty subsection it moves beside.
+
+### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
+
+The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it
+reports how far its deciding row sits from the cut
+([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
+Three uncertainty lanes do NOT go through that function and so still quote unqualified binaries:
+the sidecar-free routing calibration (`src/llb/rag/fusion_calibration/evaluate.py`, which draws its
+own index sets and reads route precision/recall through `bootstrap_ratio`), the measurement floor
+(`src/llb/rag/noise_floor.py`, whose fragile-count reading is a different statistic entirely), and
+the query-robustness lane's per-noise-class deltas. Decide per lane whether the same qualifier
+applies -- `bootstrap_ratio` can carry it the same way `bootstrap_interval` now does -- or record
+why that lane's reading is not a `lo > 0` cut and needs a different honesty signal.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse `separation_stability` / `stability_from_readings` / `borderline_note` /
+  `boundary_table` in `src/llb/rag/fusion_evidence/stability.py`; `bootstrap_ratio` already computes
+  the resample distribution the exceedance would be counted from.
+- User-visible outcome: no uncertainty lane in the repo keeps stating a threshold result without
+  saying how close it sits to the threshold.
+- Scope boundary: in scope -- extending the annotation to `bootstrap_ratio`, wiring the three lanes
+  or recording why a lane is excluded, and re-rendering their recorded artifacts. Out of scope --
+  changing any threshold, the routing policy, and the floor's own definition.
+- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
+- Execution path: re-render the recorded artifacts and confirm no recorded number moves; CI covers
+  the annotation per lane over the existing fixtures.
+- Acceptance gates: `make ci` green; each of the three lanes either carries the qualifier with its
+  recorded numbers reproducing exactly, or has a recorded reason it does not.
+- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
+  the sidecar-free calibration and measurement-floor sections.
+
 ### headline-objective-verbosity-decomposition
 
 The leaderboard ranks on normalized token F1, which merges two different failures into one number:
@@ -83,38 +184,6 @@ verbosity component is DECLARED, not one that removes it.
 - Documentation target: [RAG core](current/rag-core.md#scoring) and the ranking policy in
   [evaluation rigor](current/rigor-board-judge.md).
 
-### paired-reading-minimum-evidence-gate
-
-A `separated` reading is published whenever a paired interval's lower bound clears zero, with no
-check that the evidence could support one: 74% of the separated readings in the recorded artifacts
-rest on fewer than 6 discordant items, the point below which the exact two-sided sign test the SAME
-block reports (`2 * 0.5^d`) cannot reach 0.05 under any arrangement of the data, and a 2-item slice
-with 2 wins prints `+1.000 [+1.000, +1.000]` beside its own `sign_test_p` of 0.5
-([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Add the gate to the one
-place the reading is produced: when the reporting level is unreachable for the block's discordant
-count, the reading becomes `insufficient_evidence` rather than `separated`, every renderer prints
-that state, and no verdict may be DECIDED on such a row. The bound is derived from the reporting
-confidence, not fitted, so it needs no new constant.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `paired_comparison` / `sign_test_p` in
-  `src/llb/rag/fusion_evidence/stats.py` and the reading vocabulary in
-  `src/llb/rag/fusion_evidence/stability.py`, which already owns every lane's reading state.
-- User-visible outcome: a report never states a difference more confidently than its item count can
-  support, and an operator stops reading tiny per-slice rows as findings.
-- Scope boundary: in scope -- the reachability rule, the new reading state, its rendering in every
-  lane's table and boundary block, the verdict guard, and a re-render of the recorded artifacts. Out
-  of scope -- changing any threshold, interval, or adoption rule, and dropping the affected rows from
-  the reports (they stay, correctly labeled).
-- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
-- Execution path: re-render the recorded artifacts and confirm no recorded interval, ledger, or
-  point estimate moves; CI covers the rule at the boundary (5, 6, and 7 discordant items) and the
-  verdict guard per lane over the existing fixtures.
-- Acceptance gates: `make ci` green; every recorded number reproduces exactly with only the reading
-  state added; each lane's report states how many rows the gate relabeled; no recorded verdict is
-  left resting on a relabeled row without saying so.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md).
-
 ### randomization-calibrated-paired-reading
 
 The percentile-bootstrap `lo > 0` cut is anti-conservative exactly where the repo uses it most: on
@@ -130,8 +199,10 @@ maintained rather than asserted: the empirical size of the shipped rule on commi
 CI assertion, not a one-off measurement.
 
 - Agent status: RUN NEEDED
-- Dependencies: `paired-reading-minimum-evidence-gate` (the reachability state is what the
-  calibrated reading falls back to when there is nothing to randomize over). Reuse
+- Dependencies: none. `separates()` in `src/llb/rag/fusion_evidence/stats.py` is already the one
+  separation test every lane cuts on and it already falls back to `insufficient_evidence` when
+  there is nothing to randomize over, so the calibrated reading replaces its interval half in one
+  place ([the gate](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)). Reuse
   `bootstrap_index_sets` / `paired_comparison` and the `stability` block that already rides on every
   paired delta.
 - User-visible outcome: an adopt decision on a 40-item ledger has the error rate it claims, so a
@@ -182,9 +253,11 @@ to report the per-row one.
   procedure against a brute-force family at small n and the per-lane family declaration over fixtures.
 - Acceptance gates: `make ci` green; every recorded grid verdict is restated as surviving or not
   surviving its own family adjustment, explicitly including the `graph_fusion_span_identity`
-  `overlap` reading that a shipped default is gated on
-  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)); no shipped default changes on
-  this task alone.
+  `overlap` row that the `exact`-to-`overlap` default flip would be decided on -- the minimum-
+  evidence gate already reads that row as unsupported at its item count
+  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)), so the family adjustment must
+  say whether it would ALSO have failed selection had the item count been there; no shipped default
+  changes on this task alone.
 - Documentation target: the fusion evidence section of [GraphRAG](current/graphrag-backend.md) and
   the paired-uncertainty subsection of [RAG core](current/rag-core.md).
 
@@ -220,44 +293,6 @@ baseline lane with the standard verdict.
   flat.
 - Documentation target: the chunking-strategies and hybrid-retrieval evidence in
   [RAG core](current/rag-core.md).
-
-### paired-power-contract-for-every-lane
-
-The a priori power contract exists in exactly one lane and is hardcoded to one delta: it reads
-`long_context - rag` per item and prices the run before inference
-([RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation)).
-Two planned items -- `embedder-decision-on-a-resolvable-item-set` and
-`fusion-routing-calibration-power` -- require predeclaring a minimum detectable gain and the split
-size it needs, and there is no shared tool that computes either. Promote the contract into the paired
-statistics seam so any lane can declare an MDE and get its item count, and add the two readings the
-current version cannot give: the RESOLVABLE MDE at the reached n (invert the same arithmetic:
-`(z + z_power) * sd / sqrt(n)`), which is what an undecidable result should report instead of
-silently ending, and a realized-versus-planned SD check, because `target_reached` is currently
-computed from the REFERENCE item set's variance and never re-checked against the run's own.
-
-- Agent status: CLEAR
-- Dependencies: none. Move and generalize `src/llb/eval/context_ablation/power.py` into
-  `src/llb/rag/fusion_evidence/` beside the paired statistics; the ablation keeps its behavior
-  through the shared seam.
-- User-visible outcome: any lane can state "this question needs N items" before spending a run, and
-  an undecidable result reports the effect size the item set COULD have resolved instead of only
-  that it did not resolve this one.
-- Scope boundary: in scope -- the shared module, the per-lane delta selector, the resolvable-MDE
-  reading, the realized-SD check, and wiring the bake-off and fusion lanes to accept a declared MDE.
-  Out of scope -- post-hoc power (an achieved-power number computed from the observed effect is not a
-  reading this repo should publish), changing the ablation's recorded behavior, and picking MDEs for
-  the operator.
-- Data and artifact paths: `power-plan.json` beside each lane's existing comparison artifact; no new
-  roots.
-- Execution path: no heavy run -- the ablation's recorded plan must reproduce byte-identically
-  through the shared module; CI covers the item count, the inverted MDE, the realized-SD check, and
-  the plan-before-inference ordering per lane.
-- Acceptance gates: `make ci` green; `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json`
-  reproduces exactly; the bake-off and fusion lanes accept a declared MDE and report the resolvable
-  MDE at their reached n; a run whose realized SD exceeds the planned SD enough to miss the target
-  says so rather than reporting `target_reached`.
-- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
-  paired-uncertainty subsection it moves beside.
 
 ### agent-context-management-policies
 
@@ -505,36 +540,6 @@ Ukrainian baseline.
 - Documentation target: the query-robustness section of
   [evaluation rigor](current/rigor-board-judge.md) and the query-side processing section of
   [RAG core](current/rag-core.md).
-
-### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
-
-The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it
-reports how far its deciding row sits from the cut
-([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-Three uncertainty lanes do NOT go through that function and so still quote unqualified binaries:
-the sidecar-free routing calibration (`src/llb/rag/fusion_calibration/evaluate.py`, which draws its
-own index sets and reads route precision/recall through `bootstrap_ratio`), the measurement floor
-(`src/llb/rag/noise_floor.py`, whose fragile-count reading is a different statistic entirely), and
-the query-robustness lane's per-noise-class deltas. Decide per lane whether the same qualifier
-applies -- `bootstrap_ratio` can carry it the same way `bootstrap_interval` now does -- or record
-why that lane's reading is not a `lo > 0` cut and needs a different honesty signal.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `separation_stability` / `stability_from_readings` / `borderline_note` /
-  `boundary_table` in `src/llb/rag/fusion_evidence/stability.py`; `bootstrap_ratio` already computes
-  the resample distribution the exceedance would be counted from.
-- User-visible outcome: no uncertainty lane in the repo keeps stating a threshold result without
-  saying how close it sits to the threshold.
-- Scope boundary: in scope -- extending the annotation to `bootstrap_ratio`, wiring the three lanes
-  or recording why a lane is excluded, and re-rendering their recorded artifacts. Out of scope --
-  changing any threshold, the routing policy, and the floor's own definition.
-- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
-- Execution path: re-render the recorded artifacts and confirm no recorded number moves; CI covers
-  the annotation per lane over the existing fixtures.
-- Acceptance gates: `make ci` green; each of the three lanes either carries the qualifier with its
-  recorded numbers reproducing exactly, or has a recorded reason it does not.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
-  the sidecar-free calibration and measurement-floor sections.
 
 ### vector-store-bake-off-paired-uncertainty (optional)
 

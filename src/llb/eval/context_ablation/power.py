@@ -23,6 +23,11 @@ from llb.eval.context_ablation.models import (
     DerivedComparison,
     LongContextPowerAnalysis,
 )
+from llb.rag.fusion_evidence.evidence_gate import (
+    minimum_discordant_pairs,
+    reaches_reporting_level,
+)
+from llb.rag.fusion_evidence.stats import discordant_pairs
 
 POWER_METHOD = "paired-normal-approximation"
 DEFAULT_TARGET_POWER = 0.80
@@ -142,17 +147,32 @@ def resolve_power_analysis(
         return cast(LongContextPowerAnalysis, result)
     delta = entry["paired"]["delta"]
     margin = plan["minimum_detectable_delta"]
-    if delta["lo"] > 0.0:
+    confidence = 1.0 - plan["alpha"]
+    # A one-sided bound clearing zero is a separation CLAIM, so it goes through the same gate every
+    # other lane reads: an interval drawn from too few differing items cannot resolve a direction,
+    # whichever side of zero it sits on.
+    resolvable = reaches_reporting_level(discordant_pairs(entry["paired"]), confidence)
+    if delta["lo"] > 0.0 and resolvable:
         result.update(
             resolution=POWER_RESOLUTION_SEPARATED,
             direction=LANE_LONG_CONTEXT,
             reason="the paired interval is wholly above zero",
         )
-    elif delta["hi"] < 0.0:
+    elif delta["hi"] < 0.0 and resolvable:
         result.update(
             resolution=POWER_RESOLUTION_SEPARATED,
             direction=LANE_RAG,
             reason="the paired interval is wholly below zero",
+        )
+    elif not resolvable and not (delta["lo"] >= -margin and delta["hi"] <= margin):
+        result.update(
+            resolution=POWER_RESOLUTION_UNDECIDABLE,
+            direction="none",
+            reason=(
+                f"the two lanes differ on only {discordant_pairs(entry['paired'])} items, fewer "
+                f"than the {minimum_discordant_pairs(confidence)} an exact sign test needs to "
+                "reach this level, so the interval cannot resolve a direction"
+            ),
         )
     elif delta["lo"] >= -margin and delta["hi"] <= margin:
         result.update(

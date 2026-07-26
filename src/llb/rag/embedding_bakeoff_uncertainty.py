@@ -19,7 +19,9 @@ with fake stores (no FAISS, no GPU).
 from typing_extensions import TypedDict
 
 from llb.core.contracts.rag import RetrievalPair
-from llb.rag.fusion_evidence.stability import ReadingStability
+from llb.rag.fusion_evidence.stability import (
+    ReadingStability,
+)
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,

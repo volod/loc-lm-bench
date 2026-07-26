@@ -445,11 +445,17 @@ What the run establishes:
   questions at depth 10 is not fusion; it is two disjoint rankings trading result seats. Containment
   is the common case the exact rule could not see: `overlap` finds a shared candidate for 47-53 of
   95 questions at depth 10 and 87-93 at depth 50.
-- **The multi-hop gain becomes separable from zero.** The best `exact` row gains +0.086
-  [+0.000, +0.200] multi-hop recall (interval touches zero, `inconclusive`); the best `overlap` row,
-  `fused/global_community@0.30/d50/ioverlap`, gains +0.114 [+0.029, +0.229] with 4 wins, 0 losses,
-  31 ties, and does not pay for it overall (+0.063 [-0.011, +0.137]). The lane's verdict on this
-  ledger is therefore **adopt**.
+- **The multi-hop gain becomes separable from zero -- on four questions.** The best `exact` row
+  gains +0.086 [+0.000, +0.200] multi-hop recall (interval touches zero, `inconclusive`); the best
+  `overlap` row, `fused/global_community@0.30/d50/ioverlap`, gains +0.114 [+0.029, +0.229] with
+  4 wins, 0 losses, 31 ties, and does not pay for it overall (+0.063 [-0.011, +0.137]). The lane's
+  recorded verdict on this ledger was **adopt**. Under the shipped minimum-evidence gate that
+  deciding row reads `insufficient_evidence` and the verdict is **inconclusive**: four differing
+  items cannot reach 95% on the exact sign test the same row prints
+  ([the gate](rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)), and the selection study
+  puts the same row at FWER-adjusted p 0.14-0.29
+  ([the audit](rag-core.md#audit-of-the-lo--0-cut-itself)). The interval, the ledger, and every
+  number in the tables above are unchanged; what changed is what may be read off them.
 - **Candidate depth is now a live knob, and only because of the identity rule.** Under `exact`,
   all 10 (strategy, weight) pairs are byte-identical at depth 10 and 50; under `overlap`, all 10
   differ. Depth 50 is what turns `local_khop@0.30` from +0.029 to +0.057 multi-hop recall and from
@@ -461,9 +467,10 @@ What the run establishes:
   at weight 0.10; under `overlap` it is weight 0.30 -- unsurprising once a graph vote reinforces a
   chunk instead of displacing it, since a graph candidate no longer costs a result seat.
 
-Verdict: `graph_fusion_span_identity` ships **opt-in with `exact` as the default**, despite the
-adopt. The evidence is measured on the DRAFTED multi-hop ledger (see the boundary above), and the
-project's standing rule is that a drafted slice does not move a default. `overlap` with
+Verdict: `graph_fusion_span_identity` ships **opt-in with `exact` as the default**. The recorded
+adopt never moved it -- the evidence is measured on the DRAFTED multi-hop ledger (see the boundary
+above), and the project's standing rule is that a drafted slice does not move a default -- so no
+shipped default rested on the reading the gate has since downgraded to `inconclusive`. `overlap` with
 `graph_fusion_candidates=50` is the setting to enable when multi-hop retrieval coverage is the
 goal -- but the end-to-end run below measures an answer-side cost on the factoid slice, so it is
 not a free upgrade (see
@@ -671,6 +678,14 @@ turns none of it into better answers: the objective is 0.321 versus 0.326, an in
 zero with 9 wins against 8 losses. Paying for a graph build buys multi-hop RETRIEVAL on this
 corpus, not multi-hop ANSWERS.
 
+Under the shipped minimum-evidence gate that verdict is **`no_gain`**, and the same downgrade
+applies to the two three-lane runs below: the coverage half of every `retrieval_only` here rests on
+4-5 differing items (`4/0/31` above), fewer than the 6 the exact sign test needs to reach 95%
+([the gate](rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)) -- which the `sign p` column
+of these tables already showed at 0.062-0.125. No number in any of the tables moves; the
+retrieval-only READING is what the 35-item slice cannot support. The answer-side conclusion is
+unaffected: the objective was flat before the gate and is flat after it.
+
 Two things corroborate the measurement:
 
 - **The retrieval columns reproduce the sweep exactly.** Scored through `run-eval` rather than
@@ -719,10 +734,11 @@ Multi-hop slice (n=35), lane minus vector, 95% paired bootstrap CI:
 | exact `@0.10/d10` | -0.005 [-0.071, +0.072] | **+0.057 [+0.014, +0.114]** | +0.086 [+0.000, +0.200] | +0.029 [+0.000, +0.086] |
 | overlap `@0.30/d50` | -0.000 [-0.075, +0.078] | **+0.071 [+0.014, +0.129]** | +0.114 [+0.029, +0.229] | +0.029 [+0.000, +0.086] |
 
-Verdict: **`retrieval_only` for BOTH lanes.** The overlap row carries the most multi-hop evidence
-of any lane measured (span coverage 0.443 versus the vector lane's 0.371, 5 wins and 0 losses) and
-converts none of it into better answers: its multi-hop objective is 0.326 against the vector lane's
-0.326 -- a delta of -0.000 with 12 wins against 7 losses, pure churn.
+Verdict: **`retrieval_only` for BOTH lanes** (**`no_gain`** under the minimum-evidence gate, for
+the reason given in the two-lane run above -- 4 and 5 differing items). The overlap row carries the
+most multi-hop evidence of any lane measured (span coverage 0.443 versus the vector lane's 0.371,
+5 wins and 0 losses) and converts none of it into better answers: its multi-hop objective is 0.326
+against the vector lane's 0.326 -- a delta of -0.000 with 12 wins against 7 losses, pure churn.
 
 The new finding is on the other side of the ledger:
 
@@ -770,7 +786,8 @@ Multi-hop slice (n=35), routed minus vector, 95% paired bootstrap CI:
 The routed row is retrieval-identical to the best fixed overlap row on every multi-hop metric:
 recall 0.800, all-spans 0.086, and span coverage 0.443. It therefore keeps the full measured
 multi-hop gain, including both intervals that clear zero. The answer verdict remains
-**`retrieval_only`** because objective 0.326 is unchanged from vector despite the extra evidence.
+**`retrieval_only`** because objective 0.326 is unchanged from vector despite the extra evidence
+(**`no_gain`** under the minimum-evidence gate: that coverage delta is 5 differing items).
 
 The safety result is exact on the slice that motivated routing:
 

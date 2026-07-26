@@ -22,6 +22,11 @@ from llb.eval.embedder_adoption.models import (
     AdoptionBarReport,
     CellReport,
 )
+from llb.rag.fusion_evidence.evidence_gate import (
+    READING_INSUFFICIENT_EVIDENCE,
+    reading_label,
+)
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, separates
 
 # One model's per-cell reading -- the same three outcomes `decide_bar` reasons over, but stated per
 # cell rather than pooled into one verdict.
@@ -55,16 +60,21 @@ class CrossModelReport(TypedDict):
     metadata: NotRequired[dict[str, object]]
 
 
-def cell_reading(cell: CellReport) -> str:
+def cell_reading(cell: CellReport, confidence: float = DEFAULT_CONFIDENCE) -> str:
     """The keep-or-extend reading of ONE cell: did the rank gain reach the answer, or only rank?
 
     Same order as `decide_bar`: the answer is checked before rank, because a cell whose objective
-    clears zero is an answer-quality result even if its rank delta also separates.
+    clears zero is an answer-quality result even if its rank delta also separates. A metric that
+    clears zero on too few differing items ends the reading at `insufficient_evidence` -- the same
+    rule and the same order `stability.reading_from_deltas` applies to the raw delta vectors.
     """
-    if cell["paired"][METRIC_OBJECTIVE]["delta"]["lo"] > 0.0:
-        return READING_ANSWER
-    if cell["paired"][METRIC_RECIPROCAL_RANK]["delta"]["lo"] > 0.0:
-        return READING_RANK_ONLY
+    for metric, reading in (
+        (METRIC_OBJECTIVE, READING_ANSWER),
+        (METRIC_RECIPROCAL_RANK, READING_RANK_ONLY),
+    ):
+        comparison = cell["paired"][metric]
+        if comparison["delta"]["lo"] > 0.0:
+            return reading if separates(comparison, confidence) else READING_INSUFFICIENT_EVIDENCE
     return READING_NEITHER
 
 
@@ -91,7 +101,10 @@ def compare_models(reports: Sequence[AdoptionBarReport]) -> CrossModelReport:
         raise ValueError(f"both reports were scored under the same model {models[0]!r}")
     cells: list[CellAgreement] = []
     for cell_a, cell_b in zip(first["cells"], second["cells"]):
-        readings = {models[0]: cell_reading(cell_a), models[1]: cell_reading(cell_b)}
+        readings = {
+            models[0]: cell_reading(cell_a, first["confidence"]),
+            models[1]: cell_reading(cell_b, second["confidence"]),
+        }
         cells.append(
             {
                 "label": cell_a["label"],
@@ -145,13 +158,6 @@ def _cross_metadata(reports: Sequence[AdoptionBarReport]) -> dict[str, object]:
     return {key: meta[key] for key in ("goldset", "corpus", "split", "grounding") if key in meta}
 
 
-_READING_LABEL = {
-    READING_ANSWER: "answer",
-    READING_RANK_ONLY: "rank only",
-    READING_NEITHER: "neither",
-}
-
-
 def _headline(report: CrossModelReport) -> str:
     """One sentence: do the two models agree on the bar, and how uniformly per cell?"""
     verdicts = report["verdicts"]
@@ -195,16 +201,14 @@ def format_cross_model(
         "| --- | " + " | ".join([":-:"] * len(report["models"])) + " | :-: |",
     ]
     for cell in report["cells"]:
-        readings = " | ".join(
-            _READING_LABEL.get(cell["readings"][model], cell["readings"][model])
-            for model in report["models"]
-        )
+        readings = " | ".join(reading_label(cell["readings"][model]) for model in report["models"])
         lines.append(f"| `{cell['label']}` | {readings} | {'yes' if cell['agree'] else 'NO'} |")
     lines += [
         "",
         "Each cell is one model's keep-or-extend reading: `answer` = the rank gain reached the "
         "answer (objective interval clears zero); `rank only` = the encoder ranks earlier but the "
-        "answer does not move; `neither` = no separation.",
+        "answer does not move; `neither` = no separation; `insufficient evidence` = the interval "
+        "clears zero on too few differing items for the reporting level to be reachable.",
         "",
         "### Headline verdict per model",
         "",
@@ -225,8 +229,7 @@ def format_cross_summary(report: CrossModelReport) -> str:
     ]
     for cell in report["cells"]:
         readings = " ".join(
-            f"{_READING_LABEL.get(cell['readings'][model], cell['readings'][model]):>20}"
-            for model in report["models"]
+            f"{reading_label(cell['readings'][model]):>20}" for model in report["models"]
         )
         lines.append(f"  {cell['label'].ljust(12)} {readings}   {'yes' if cell['agree'] else 'NO'}")
     verdicts = " ".join(f"{m.split('/')[-1]}={d}" for m, d in report["verdicts"].items())

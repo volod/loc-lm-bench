@@ -13,6 +13,11 @@ exceedance probability counts, so one pass yields both the binary reading and th
 quantity it thresholds. Every lane that reports a paired delta therefore gains the qualifier
 without wiring it.
 
+The same block also carries the minimum-evidence GATE: `separates` is the one separation test every
+verdict cuts on, and it reads the discordant-item ledger beside the interval, because an interval
+drawn from a handful of differing items can clear zero at a level its own exact sign test could
+never reach (`llb.rag.fusion_evidence.stability`).
+
 Pure Python and dependency-free (no numpy) so the fusion-evidence lane imports in the lightweight
 CI install. Index sets are drawn once per report from a seeded `random.Random`, then shared by
 every row and metric (common random numbers): deterministic, and it keeps the cost linear in the
@@ -20,16 +25,23 @@ number of replicates instead of multiplying by rows x metrics.
 """
 
 import math
+from collections.abc import Iterable, Sequence
 from random import Random
 
 from typing_extensions import NotRequired, TypedDict
 
+from llb.rag.fusion_evidence.evidence_gate import (
+    READING_FLAT,
+    READING_INSUFFICIENT_EVIDENCE,
+    READING_SEPARATED,
+    apply_evidence_gate,
+    evidence_gate_note,
+    reaches_reporting_level,
+)
 from llb.rag.fusion_evidence.stability import (
     LOOSER_CONFIDENCE,
-    READING_FLAT,
-    READING_SEPARATED,
-    TIGHTER_CONFIDENCE,
     ReadingStability,
+    TIGHTER_CONFIDENCE,
     brackets,
     exceedance,
     stability_from_readings,
@@ -114,6 +126,7 @@ def separation_stability(
     ordered_samples: list[float],
     confidence: float = DEFAULT_CONFIDENCE,
     *,
+    discordant: int,
     looser_confidence: float = LOOSER_CONFIDENCE,
     tighter_confidence: float = TIGHTER_CONFIDENCE,
 ) -> ReadingStability:
@@ -122,17 +135,23 @@ def separation_stability(
     The binary reading every paired lane cuts, taken at the reporting level and at both
     neighbouring conventions off the same sorted samples, plus the exceedance probability the cut
     thresholds. Cheap by construction: no extra resampling and no extra sort.
+
+    `discordant` is the count of items the two lanes actually differ on, which gates each level at
+    its own reachable minimum -- so a row separated on too few items reads `insufficient_evidence`
+    rather than as a difference, at whichever of the three levels cannot support it.
     """
 
     def read(level: float) -> str:
         lo, _ = _ordered_percentiles(ordered_samples, level)
-        return READING_SEPARATED if lo > 0.0 else READING_FLAT
+        reading = READING_SEPARATED if lo > 0.0 else READING_FLAT
+        return apply_evidence_gate(reading, discordant=discordant, confidence=level)
 
     return stability_from_readings(
         reading=read(confidence),
         looser_reading=read(looser_confidence),
         tighter_reading=read(tighter_confidence),
         p_positive=exceedance(ordered_samples),
+        discordant=discordant,
     )
 
 
@@ -203,8 +222,68 @@ def paired_comparison(
     lo, hi = _ordered_percentiles(ordered, confidence)
     comparison["delta"] = {"mean": point, "lo": lo, "hi": hi}
     if brackets(confidence):
-        comparison["stability"] = separation_stability(ordered, confidence)
+        comparison["stability"] = separation_stability(
+            ordered, confidence, discordant=wins + losses
+        )
     return comparison
+
+
+def discordant_pairs(comparison: PairedComparison) -> int:
+    """Items the two lanes differ on -- the evidence both the sign test and the gate are read on."""
+    return comparison["wins"] + comparison["losses"]
+
+
+def discordant_deltas(deltas: list[float]) -> int:
+    """The same count read straight off a per-item delta vector, for a lane holding no ledger."""
+    return sum(1 for delta in deltas if delta != 0.0)
+
+
+def separates(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> bool:
+    """The one separation test every verdict in the repo cuts on.
+
+    Two conditions, not one: the paired interval must clear zero AND the block must differ on
+    enough items for that level to be reachable at all. Reading only the interval is what let a
+    2-item slice publish `+1.000 [+1.000, +1.000]` beside its own sign-test p of 0.5.
+
+    Deliberately computed from the ledger rather than from a persisted `stability` block, so it
+    holds on a run that drew no resamples and on an artifact recorded before the annotation existed.
+    """
+    return comparison["delta"]["lo"] > 0.0 and reaches_reporting_level(
+        discordant_pairs(comparison), confidence
+    )
+
+
+def reading_of(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> str:
+    """`separated` / `insufficient_evidence` / `flat` for one paired delta."""
+    if comparison["delta"]["lo"] <= 0.0:
+        return READING_FLAT
+    return READING_SEPARATED if separates(comparison, confidence) else READING_INSUFFICIENT_EVIDENCE
+
+
+def gated_readings(
+    comparisons: Iterable[PairedComparison], confidence: float = DEFAULT_CONFIDENCE
+) -> tuple[int, int]:
+    """`(relabeled, total)` over a report's paired blocks -- what each lane's report states."""
+    readings = [reading_of(comparison, confidence) for comparison in comparisons]
+    return sum(reading == READING_INSUFFICIENT_EVIDENCE for reading in readings), len(readings)
+
+
+def evidence_gate_clause(
+    rows: Sequence[tuple[str, PairedComparison]], confidence: float = DEFAULT_CONFIDENCE
+) -> str:
+    """The shared insufficient-evidence clause over the rows a verdict was decided on, else "".
+
+    The counterpart of `borderline_note`: same call shape, same place in every lane's reason, so a
+    verdict that stopped short of a separation says WHY in the one phrasing the repo uses.
+    """
+    return evidence_gate_note(
+        [
+            (label, discordant_pairs(comparison))
+            for label, comparison in rows
+            if comparison["delta"]["lo"] > 0.0
+        ],
+        confidence,
+    )
 
 
 def format_interval(interval: Interval, places: int = 3) -> str:

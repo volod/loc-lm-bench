@@ -1541,8 +1541,9 @@ reporting level, and what selecting a row out of a grid does to it. Method: a pa
 JOINTLY across a family so the real cross-row correlation survives, with the repo's own resample
 index sets, seed, and nearest-rank percentile convention; 4000 flips for the rate studies and
 20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
-under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`; productionizing each finding is forward
-work in [`plan.md`](../plan.md).
+under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability finding below is now
+shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
+productionizing the size and selection findings is forward work in [`plan.md`](../plan.md).
 
 - **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
   **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
@@ -1569,6 +1570,90 @@ work in [`plan.md`](../plan.md).
 
 The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
 nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
+
+#### The minimum-evidence gate on a paired reading
+
+The reachability finding above is a rule, not a caveat, and it ships as one. A paired block's
+evidence is its DISCORDANT items -- the pairs where the two lanes actually differ, since ties carry
+no information about direction -- and the exact two-sided sign test each block already prints beside
+its interval bounds what `d` of them can ever show. Its smallest attainable p is `2 * 0.5^d` (every
+pair falling the same way), so below that many items the reporting level is unreachable whatever the
+interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place that rule lives:
+
+- **The bound is derived from the reporting confidence, so no constant is introduced.**
+  `minimum_discordant_pairs` solves `2 * 0.5^d <= 1 - confidence`: **5 items at 90%, 6 at 95%, 7 at
+  97.5%**. `apply_evidence_gate` relabels a claim resting on fewer than that
+  **`insufficient_evidence`**, a state no lane may adopt on. Only a CLAIM is gated: a `flat` reading
+  (or a richer lane's `neither`) says nothing was found, which a thin item set is entitled to say.
+- **One separation test, used by every verdict.** `separates()` in `stats.py` is
+  `delta.lo > 0 AND the block differs on enough items`, and it replaced the bare `lo > 0` cut in
+  every lane that had one: the fusion sweep's adopt, the bake-off's adoption bars, the ablation's
+  long-context and uplift checks, the answer lane's gain and retrieval-only checks, the adoption
+  bar's per-cell reading, the sidecar-free routing gate's coverage half (its single-span half is a
+  non-inferiority check, not a separation, and is unchanged), and the long-context power
+  resolution's direction. It reads the persisted win/loss ledger rather than a `stability` block,
+  so it holds on a run that drew no resamples and on an artifact recorded before the annotation.
+- **The gate and the borderline flag are one scale.** The bound moves WITH the level, so a row that
+  differs on exactly 6 items reads `separated` at 95% and `insufficient_evidence` at 97.5% -- which
+  is precisely a `borderline` row, `side: above`, and it is now marked as one automatically.
+- **Every renderer prints the state.** The per-row `reading` cell of the bake-off, ablation, and
+  adoption tables; the boundary block's new `d` column (the discordant count, persisted in
+  `ReadingStability`); a `Minimum evidence: N of M paired readings are insufficient evidence` line
+  in each lane's report; and the shared `. INSUFFICIENT EVIDENCE: ...` clause on any verdict reason
+  whose deciding row the gate relabeled -- the same call shape as the borderline clause.
+- No threshold, interval, confidence convention, adoption rule, or row RANKING changed. A sweep
+  still selects the same `best_row`; what the gate decides is whether that row's gain may be read
+  as a separation.
+
+Tests: `tests/llb/rag/test_paired_minimum_evidence.py` -- the derived bound against the sign test's
+own arithmetic, the reading at 5 / 6 / 7 discordant items, that the interval / ledger / point
+estimate / sign-test p are untouched when the reading is relabeled, that the two discordant counts
+(ledger and delta vector) agree, and the verdict guard driven end to end per lane.
+
+Re-read of the recorded evidence base (2026-07-26, read-only, no new inference; harness and output
+under `$DATA_DIR/paired-reading-audit/20260726T-minimum-evidence-gate/`). Recorded artifacts on disk
+were NOT rewritten -- they stay as produced, and this is what the gate says about them:
+
+| lane | artifacts | paired blocks | read `separated` | relabeled |
+| --- | ---: | ---: | ---: | ---: |
+| fusion sweep | 6 | 7008 | 874 | 695 (79.5%) |
+| answer quality | 3 | 210 | 14 | 12 (85.7%) |
+| context ablation | 10 | 111 | 73 | 2 (2.7%) |
+| adoption bar | 5 | 100 | 27 | 10 (37.0%) |
+| embedder bake-off | 4 | 32 | 6 | 2 (33.3%) |
+
+- **No recorded number moves.** Every block whose per-item vectors the artifacts persist (all
+  derived ablation deltas, all focus-slice fusion blocks) was rebuilt with that artifact's own
+  resamples / confidence / seed and diffed field by field: **0 fields differ** across delta, bounds,
+  win/loss/tie ledger, and exact sign-test p. The gate touches the reading string and nothing else.
+- **Eight recorded verdicts are restated.** Three fusion sweeps' `adopt` becomes `inconclusive`:
+  the deciding row (`fused/global_community@0.30/d50/ioverlap`, focus slice n=35) gains +0.114
+  recall@k on **4 differing items** -- the same row the selection study above put at FWER-adjusted
+  p 0.14-0.29. Three answer-quality `retrieval_only` verdicts become `no_gain`: their coverage half
+  rests on 4-5 differing items. Both committed-fixture bake-off runs' `adopt
+  intfloat/multilingual-e5-large` becomes `retain`: +0.020 recall@10 on n=250 is **5 wins and 0
+  losses**, which the recorded reading already flagged by hand as unable to reach 0.05 on the exact
+  sign test. The gate makes that automatic rather than a footnote.
+- **The dense-only lanes hold, as the audit predicted.** No ablation verdict changes; the only two
+  relabeled ablation blocks are a side `retrieval_hit` reading on one early 4-item run, never a
+  deciding uplift. No adoption-bar verdict changes either: the relabeled cells are the `k3` cell's
+  `retrieval_hit` and `reciprocal_rank` readings (5 differing items) in all five roster sweeps, so
+  `k3` drops out of `rank_cells` while the objective-side `extend_bar` / `keep_bar` calls stand.
+- **What the fusion share means.** 79.5% of that lane's separated readings are per-SLICE rows on
+  slices of a handful of items; the overall rows and the focus slice (n=35) are where the verdicts
+  are read, and only the deciding row named above changes a verdict.
+
+Live confirmation, CUDA host 2026-07-26 (`LLB_EMBED_DEVICE=cuda make compare-embeddings
+CONFIG=$DATA_DIR/compare-embeddings/paired-uncertainty-fixture.yaml
+GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl SPLIT= NOISE_FLOOR=1`, report under
+`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T121757.672014Z-73f58e382297/`):
+the bake-off whose recorded verdict the re-read downgrades was re-run end to end through the real
+encoders. **Every number reproduces bit-identically** -- all four candidates' recall@10, MRR, dim,
+indexed count, index bytes, each paired delta bound, each win/loss/tie ledger, each exact sign-test
+p, and the whole measurement floor block: 0 fields differ against the recorded `report.json`. The
+verdict is the only thing that moved, `adopt` -> **`retain`**, and the reason states both qualifiers
+at once: `e5-large`'s recall bar differs on 5 items (below the 6 needed at 95%), and it is
+borderline because a 90% interval -- which needs only 5 -- would read it `separated`.
 
 ### The recommendation re-read against the floor
 
@@ -1632,7 +1717,9 @@ Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 
 | `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
-**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture. What that establishes:
+**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped
+minimum-evidence gate now reads as **RETAIN** as well, because that adopt rests on 5 differing items
+([the gate](#the-minimum-evidence-gate-on-a-paired-reading)). What the run establishes:
 
 - **The `bge-m3` lead the floor re-read surfaced is an item set, not a ranking.** +0.050 on 40
   items is 3 wins against 1 loss with 36 questions tied; the paired interval spans zero
@@ -1645,7 +1732,8 @@ Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PD
 - **The shipped default is unchanged.** `RunConfig.embedding_model` stays
   `intfloat/multilingual-e5-base`. The one ADOPT is on a committed toy fixture whose baseline is
   already at 0.980 recall (5 questions of headroom), its sign test is p=0.062 -- 5 discordant
-  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction -- and the same
+  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction, which is
+  exactly the rule the gate now applies for every lane -- and the same
   candidate is flat on the accepted operator-corpus ledger while embedding 1.6x slower there
   (47.8 vs 75.9 chunks/s) for a 1.23x index.
 - **First-hit rank is where `bge-m3` does separate on the PDF corpus.** Its MRR delta is

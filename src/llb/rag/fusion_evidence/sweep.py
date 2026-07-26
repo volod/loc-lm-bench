@@ -170,7 +170,7 @@ def evaluate_fusion_evidence(
         "seed": seed,
         "rows": rows,
         "focus_items": _focus_items(items, grouped[focus_slice], by_row),
-        "verdict": decide(rows, baseline=baseline, focus_slice=focus_slice),
+        "verdict": decide(rows, baseline=baseline, focus_slice=focus_slice, confidence=confidence),
     }
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor

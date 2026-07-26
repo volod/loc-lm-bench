@@ -13,10 +13,12 @@ from random import Random
 
 import pytest
 
-from llb.rag.fusion_evidence.stability import (
-    LOOSER_CONFIDENCE,
+from llb.rag.fusion_evidence.evidence_gate import (
     READING_FLAT,
     READING_SEPARATED,
+)
+from llb.rag.fusion_evidence.stability import (
+    LOOSER_CONFIDENCE,
     SIDE_ABOVE,
     SIDE_BELOW,
     TIGHTER_CONFIDENCE,
@@ -145,9 +147,14 @@ def test_a_confidence_outside_the_two_conventions_carries_no_annotation():
 def test_stability_from_readings_accepts_a_richer_reading_than_separated_or_flat():
     """The adoption bar reads three states; the shared assembly must not assume two."""
     stability = stability_from_readings(
-        reading="neither", looser_reading="answer", tighter_reading="neither", p_positive=0.969
+        reading="neither",
+        looser_reading="answer",
+        tighter_reading="neither",
+        p_positive=0.969,
+        discordant=12,
     )
     assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
+    assert stability["discordant"] == 12
 
 
 def test_unsettled_and_format_reading_only_mark_a_borderline_row():

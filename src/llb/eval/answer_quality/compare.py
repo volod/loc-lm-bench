@@ -129,6 +129,7 @@ def compare_answer_quality(
             baseline=baseline,
             focus_slice=focus_slice,
             coverage=coverage_metric(metrics),
+            confidence=confidence,
         ),
     }
 

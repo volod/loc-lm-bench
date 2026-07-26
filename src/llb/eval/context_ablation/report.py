@@ -17,8 +17,14 @@ from llb.eval.context_ablation.models import (
     ItemOutcome,
 )
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_evidence.stability import boundary_table, format_reading
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+    format_reading,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -63,6 +69,14 @@ def _derived_table(entries: Sequence[DerivedComparison]) -> list[str]:
         )
     lines.append("")
     return lines
+
+
+def _gate_summary(report: ContextAblationReport) -> list[str]:
+    """How many of the derived deltas the minimum-evidence gate relabeled."""
+    gated, total = gated_readings(
+        [entry["paired"] for entry in report["derived"]], report["confidence"]
+    )
+    return evidence_gate_summary(gated, total, report["confidence"], subject="derived delta")
 
 
 def _boundary_section(report: ContextAblationReport) -> list[str]:
@@ -227,6 +241,7 @@ def format_report(
     lines.append("")
     lines += _power_section(report)
     lines += _derived_table(report["derived"])
+    lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _metric_table(report, None, "Per lane", "Every scored item")
     other = sorted({name for lane in report["lanes"].values() for name in lane["slices"]})

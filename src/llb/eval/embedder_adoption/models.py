@@ -28,7 +28,9 @@ from llb.eval.answer_quality.models import (
 from llb.rag.fusion_evidence.stats import Interval, PairedComparison
 
 if TYPE_CHECKING:
-    from llb.rag.fusion_evidence.stability import ReadingStability as RowStability
+    from llb.rag.fusion_evidence.stability import (
+        ReadingStability as RowStability,
+    )
 
 # Per-case columns compared inside every cell. `objective_score` is the decision metric.
 # `contains` is the verbosity-robust found-rate companion: token F1 mixes finding the needle with

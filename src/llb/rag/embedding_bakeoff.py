@@ -225,4 +225,4 @@ def _attach_uncertainty(
     for row in report["candidates"]:
         if row["model"] in paired:
             row["paired_vs_baseline"] = paired[row["model"]]
-    report["verdict"] = decide_verdict(paired, baseline, bars)
+    report["verdict"] = decide_verdict(paired, baseline, bars, confidence)

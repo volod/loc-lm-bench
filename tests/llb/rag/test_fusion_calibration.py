@@ -40,8 +40,18 @@ LONG_SINGLE = "alpha beta gamma delta epsilon zeta eta"
 SHORT_MULTI = "one two"
 
 
+# The routing gate reads a multi-span coverage SEPARATION, which the minimum-evidence rule cannot
+# grant on fewer than six differing questions, so every split carries that many multi-hop items.
+MULTI_N = 6
+
+
 def _multi(item_id: str, question: str) -> EvidenceItem:
     return EvidenceItem(item_id, question, [_span("d1"), _span("d2")], "multi-hop")
+
+
+def _multis(prefix: str, question: str) -> list[EvidenceItem]:
+    """`MULTI_N` multi-hop items whose questions differ only by a trailing index token."""
+    return [_multi(f"{prefix}{i}", f"{question} {i}") for i in range(MULTI_N)]
 
 
 def _single(item_id: str, question: str) -> EvidenceItem:
@@ -66,8 +76,8 @@ def test_zero_entity_threshold_makes_length_sufficient_without_a_sidecar():
 
 
 def test_calibration_selects_on_tuning_and_scores_only_the_frozen_policy_on_final():
-    tuning = [_multi("tm", LONG_MULTI), _single("ts", LONG_SINGLE)]
-    final = [_multi("fm", LONG_MULTI), _single("fs", "short fact")]
+    tuning = [*_multis("tm", LONG_MULTI), _single("ts", LONG_SINGLE)]
+    final = [*_multis("fm", LONG_MULTI), _single("fs", "short fact")]
     questions = [item.question for item in [*tuning, *final]]
     vector = _Store({question: [_chunk("d1"), _chunk("noise")] for question in questions})
     graph = _Store({question: [_chunk("d2")] for question in questions})
@@ -96,8 +106,8 @@ def test_calibration_selects_on_tuning_and_scores_only_the_frozen_policy_on_fina
 
 
 def test_final_gate_can_veto_a_policy_selected_on_tuning():
-    tuning = [_multi("tm", LONG_MULTI), _single("ts", "short fact")]
-    final = [_multi("fm", SHORT_MULTI), _single("fs", "brief fact")]
+    tuning = [*_multis("tm", LONG_MULTI), _single("ts", "short fact")]
+    final = [*_multis("fm", SHORT_MULTI), _single("fs", "brief fact")]
     questions = [item.question for item in [*tuning, *final]]
     vector = _Store({question: [_chunk("d1"), _chunk("noise")] for question in questions})
     graph = _Store({question: [_chunk("d2")] for question in questions})
@@ -122,11 +132,12 @@ def test_final_gate_can_veto_a_policy_selected_on_tuning():
     assert report["recommended_policy"] is None
     assert report["final"]["route_errors"] == [
         {
-            "item_id": "fm",
+            "item_id": f"fm{i}",
             "predicted": "vector",
             "expected": "graph",
             "signals": ("entity_requirement_disabled",),
         }
+        for i in range(MULTI_N)
     ]
     assert "Frozen final routing errors" in format_report(report)
 

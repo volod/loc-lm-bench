@@ -27,7 +27,10 @@ from llb.eval.context_ablation.models import (
     VERDICT_RAG_PAYS_OFF,
     VERDICT_RETRIEVAL_INCONCLUSIVE,
 )
-from llb.rag.fusion_evidence.stability import borderline_note
+from llb.rag.fusion_evidence.stability import (
+    borderline_note,
+)
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, evidence_gate_clause, separates
 
 
 def _by_label(derived: Sequence[DerivedComparison]) -> dict[str, DerivedComparison]:
@@ -42,19 +45,17 @@ def _detail(entry: DerivedComparison) -> str:
     )
 
 
-def _note(*entries: DerivedComparison | None) -> str:
-    """The shared borderline clause over the derived deltas this verdict was decided on.
+def _note(*entries: DerivedComparison | None, confidence: float = DEFAULT_CONFIDENCE) -> str:
+    """The shared qualifier clauses over the derived deltas this verdict was decided on.
 
     `no_retrieval_gain` and `rag_pays_off` are two sides of one cut, so both have to say when a
-    neighbouring conventional level would have landed on the other side.
+    neighbouring conventional level would have landed on the other side -- and when a lane's delta
+    clears zero on too few differing items for the cut to mean anything at all.
     """
+    measured = [entry for entry in entries if entry is not None]
     return borderline_note(
-        [
-            (entry["label"], entry["paired"].get("stability"))
-            for entry in entries
-            if entry is not None
-        ]
-    )
+        [(entry["label"], entry["paired"].get("stability")) for entry in measured]
+    ) + evidence_gate_clause([(entry["label"], entry["paired"]) for entry in measured], confidence)
 
 
 def _long_context_entry(by_label: Mapping[str, DerivedComparison]) -> DerivedComparison | None:
@@ -76,6 +77,7 @@ def decide(
     *,
     baseline: str,
     n: int,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> ContextAblationVerdict:
     """Name the lane the evidence supports, and say what its delta amounts to."""
     verdict: ContextAblationVerdict = {
@@ -98,7 +100,7 @@ def decide(
     if n == 0:
         verdict["reason"] = "no item was scored"
         return verdict
-    decision, reason = _judge(uplift, long_context, contamination)
+    decision, reason = _judge(uplift, long_context, contamination, confidence)
     verdict["decision"] = decision
     verdict["reason"] = reason
     return verdict
@@ -108,20 +110,21 @@ def _judge(
     uplift: DerivedComparison,
     long_context: DerivedComparison | None,
     contamination: ContaminationReport,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> tuple[str, str]:
     """The `(decision, reason)` for one measured ablation."""
     note = (
         f"the closed-book lane already answers {contamination['n_contaminated']}/"
         f"{contamination['n']} items ({contamination['rate']:.0%})"
     )
-    cut = _note(uplift, long_context)
-    if long_context is not None and long_context["paired"]["delta"]["lo"] > 0.0:
+    cut = _note(uplift, long_context, confidence=confidence)
+    if long_context is not None and separates(long_context["paired"], confidence):
         return VERDICT_LONG_CONTEXT_WINS, (
             f"laying the whole source document into the prompt beats chunked retrieval "
             f"({_detail(long_context)}); {note}" + cut
         )
     uplift_delta = uplift["paired"]["delta"]
-    if uplift_delta["lo"] > 0.0:
+    if separates(uplift["paired"], confidence):
         return VERDICT_RAG_PAYS_OFF, (
             f"retrieval buys a measured gain over answering from the weights "
             f"({_detail(uplift)}); {note}" + cut

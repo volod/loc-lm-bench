@@ -27,10 +27,14 @@ from llb.eval.embedder_adoption.cross_model import (
     READING_RANK_ONLY,
 )
 from llb.eval.embedder_adoption.models import ItemDeltas
+from llb.rag.fusion_evidence.evidence_gate import (
+    READING_INSUFFICIENT_EVIDENCE,
+    reaches_reporting_level,
+)
 from llb.rag.fusion_evidence.stability import (
     LOOSER_CONFIDENCE,
-    TIGHTER_CONFIDENCE,
     ReadingStability,
+    TIGHTER_CONFIDENCE,
     assert_neighbouring_levels,
     exceedance,
     stability_from_readings,
@@ -41,6 +45,7 @@ from llb.rag.fusion_evidence.stats import (
     bootstrap_index_sets,
     bootstrap_interval,
     bootstrap_samples,
+    discordant_deltas,
 )
 
 # This lane's rows carry the shared shape; the alias keeps the local name its call sites read by.
@@ -57,12 +62,24 @@ def reading_from_deltas(
     Identical rule to `cross_model.cell_reading` -- the objective first, then first-hit rank --
     but read straight off per-item deltas, so a SUBSET of the items or a different percentile cut
     can be judged exactly the way the whole set at the reporting level was.
+
+    Each state is gated on ITS OWN metric's discordant count, since that is the evidence the claim
+    would rest on. The order is preserved through the gate: a metric that clears zero on too few
+    differing items ends the reading at `insufficient_evidence` rather than falling through to the
+    next state, because "the answer did not move" is exactly the thing this row cannot establish.
     """
     if bootstrap_interval(deltas.objective, index_sets, confidence)["lo"] > 0.0:
-        return READING_ANSWER
+        return _gate(deltas.objective, READING_ANSWER, confidence)
     if bootstrap_interval(deltas.reciprocal_rank, index_sets, confidence)["lo"] > 0.0:
-        return READING_RANK_ONLY
+        return _gate(deltas.reciprocal_rank, READING_RANK_ONLY, confidence)
     return READING_NEITHER
+
+
+def _gate(values: list[float], reading: str, confidence: float) -> str:
+    """`reading`, or `insufficient_evidence` when too few items differ to support the claim."""
+    if reaches_reporting_level(discordant_deltas(values), confidence):
+        return reading
+    return READING_INSUFFICIENT_EVIDENCE
 
 
 def stability_from_index_sets(
@@ -86,6 +103,9 @@ def stability_from_index_sets(
         looser_reading=reading_from_deltas(deltas, index_sets, looser_confidence),
         tighter_reading=reading_from_deltas(deltas, index_sets, tighter_confidence),
         p_positive=exceedance(bootstrap_samples(deltas.objective, index_sets)),
+        # The objective's count, matching `p_positive`: it is the metric the leading state of this
+        # lane's reading is decided on.
+        discordant=discordant_deltas(deltas.objective),
     )
 
 

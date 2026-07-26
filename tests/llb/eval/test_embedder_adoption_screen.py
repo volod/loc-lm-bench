@@ -199,6 +199,17 @@ def _bundle(path: Path, rows: list[dict]) -> str:
     return str(path)
 
 
+def _paired(mean: float, lo: float, hi: float, *, wins: int, losses: int = 0) -> dict:
+    """A finished paired block, ledger included -- the gate reads the ledger, not only the bounds."""
+    return {
+        "delta": {"mean": mean, "lo": lo, "hi": hi},
+        "wins": wins,
+        "losses": losses,
+        "ties": 0,
+        "sign_test_p": 0.0,
+    }
+
+
 def _sweep_report(tmp_path: Path, *, base: list[dict], cand: list[dict], model="m") -> dict:
     """A finished-sweep shape whose focus cell names real bundles on disk."""
     return {
@@ -231,8 +242,8 @@ def _sweep_report(tmp_path: Path, *, base: list[dict], cand: list[dict], model="
                     CANDIDATE: {"run_dirs": [_bundle(tmp_path / "f-c", cand)], "metrics": {}},
                 },
                 "paired": {
-                    "objective_score": {"delta": {"mean": 0.5, "lo": 0.4, "hi": 0.6}},
-                    "reciprocal_rank": {"delta": {"mean": 0.5, "lo": 0.4, "hi": 0.6}},
+                    metric: _paired(0.5, 0.4, 0.6, wins=len(base))
+                    for metric in ("objective_score", "reciprocal_rank")
                 },
             },
         ],
@@ -302,8 +313,8 @@ def test_the_study_refuses_vectors_that_disagree_with_the_recorded_reading(tmp_p
     sweep = _wide_sweep(tmp_path, "a")
     # The bundles say a large answer gain; claim the sweep recorded no separation at all.
     sweep["cells"][1]["paired"] = {
-        "objective_score": {"delta": {"mean": 0.0, "lo": -0.1, "hi": 0.1}},
-        "reciprocal_rank": {"delta": {"mean": 0.0, "lo": -0.1, "hi": 0.1}},
+        metric: _paired(0.0, -0.1, 0.1, wins=12, losses=12)
+        for metric in ("objective_score", "reciprocal_rank")
     }
     with pytest.raises(ValueError, match="do not reproduce the recorded reading"):
         run_screen_study([sweep], focus_cell=FOCUS, sizes=(10,), draws=5, resamples=100)

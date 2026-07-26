@@ -16,7 +16,14 @@ Two additive signals fix that, and neither changes any adoption rule:
   not a fitted threshold: no constant is tuned to the data, and all three levels compared are ones
   the repo already reports at.
 
-This module is the VOCABULARY and the assembly; the percentile arithmetic stays in `stats.py`,
+A reading also has to be ENTITLED to what it says, which is a different question from how settled
+it is: `llb.rag.fusion_evidence.evidence_gate` owns the reading vocabulary and relabels a claim
+that rests on too few differing items `insufficient_evidence`. This module imports that vocabulary
+and records the discordant count beside every annotation, because the gate's own bound moves with
+the confidence level -- so a row can read `separated` here and `insufficient_evidence` one
+convention tighter, which is precisely a `borderline` row.
+
+This module is the ASSEMBLY of a row's readings; the percentile arithmetic stays in `stats.py`,
 which imports from here (never the other way round). A lane whose reading is richer than
 separated/flat -- the embedder adoption bar reads three states -- computes its own reading at each
 of the three levels and hands them to `stability_from_readings`, so every lane persists and renders
@@ -27,9 +34,15 @@ Pure Python and dependency-free, so it imports and is unit-tested in the lightwe
 
 from collections.abc import Sequence
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
-DEFAULT_CONFIDENCE = 0.95
+from llb.rag.fusion_evidence.evidence_gate import (
+    DEFAULT_CONFIDENCE,
+    READING_INSUFFICIENT_EVIDENCE,
+    level_label,
+    minimum_discordant_pairs,
+    reading_label,
+)
 
 # The two neighbouring conventional confidences a reading is re-checked at. All three levels are
 # standard reporting conventions, so a reading that differs across them was decided by the
@@ -46,11 +59,6 @@ BORDERLINE_MARK = "borderline"
 # `below` is an undecided negative, `above` is a positive resting on the convention.
 SIDE_BELOW = "below"
 SIDE_ABOVE = "above"
-
-# The two-state reading of ONE paired delta -- what most lanes cut from their interval. A lane with
-# a richer reading supplies its own state names through `stability_from_readings`.
-READING_SEPARATED = "separated"
-READING_FLAT = "flat"
 
 
 class ReadingStability(TypedDict):
@@ -70,6 +78,9 @@ class ReadingStability(TypedDict):
     borderline: bool
     # SIDE_BELOW / SIDE_ABOVE, or None when settled.
     side: str | None
+    # Items whose two lanes differ -- the evidence the sign test and the gate are read on, measured
+    # on the metric `p_positive` comes from. Absent on an artifact recorded before the gate existed.
+    discordant: NotRequired[int]
 
 
 def decision_probability(confidence: float = DEFAULT_CONFIDENCE) -> float:
@@ -115,7 +126,12 @@ def exceedance(samples: Sequence[float]) -> float:
 
 
 def stability_from_readings(
-    *, reading: str, looser_reading: str, tighter_reading: str, p_positive: float
+    *,
+    reading: str,
+    looser_reading: str,
+    tighter_reading: str,
+    p_positive: float,
+    discordant: int,
 ) -> ReadingStability:
     """Assemble the flag and the side from three already-computed readings of the same draw.
 
@@ -125,7 +141,9 @@ def stability_from_readings(
 
     All three readings must come from the SAME resample draw, so the only thing that differs
     between them is the percentile cut -- the comparison isolates the confidence convention rather
-    than mixing in a second draw's noise.
+    than mixing in a second draw's noise. Each is expected to have passed `apply_evidence_gate` at
+    ITS OWN level already, because the reachable item count is a function of the level: a caller
+    gates where it reads, and this function only records what came out.
     """
     return {
         "reading": reading,
@@ -136,12 +154,8 @@ def stability_from_readings(
         "side": SIDE_BELOW
         if looser_reading != reading
         else (SIDE_ABOVE if tighter_reading != reading else None),
+        "discordant": discordant,
     }
-
-
-def reading_label(reading: str) -> str:
-    """`rank_only` -> `rank only` -- the one rendering of a reading every table shares."""
-    return reading.replace("_", " ")
 
 
 def format_reading(stability: ReadingStability | None, reading: str) -> str:
@@ -193,11 +207,6 @@ def unsettled(stability: ReadingStability | None) -> ReadingStability | None:
     return stability if stability is not None and stability["borderline"] else None
 
 
-def _level(confidence: float) -> str:
-    """`0.975` -> `97.5%` -- a percentage that keeps the half point the 97.5% level needs."""
-    return f"{confidence * 100:g}%"
-
-
 def boundary_table(
     rows: Sequence[tuple[str, ReadingStability]],
     *,
@@ -218,18 +227,25 @@ def boundary_table(
         "",
         f"`p_positive` is the share of paired resamples in which {subject} is ahead; the reading "
         f"clears zero exactly when it exceeds {decision_probability(confidence):.3f}. A row is "
-        "unsettled when either neighbouring convention would read it differently.",
+        "unsettled when either neighbouring convention would read it differently. `d` is the "
+        "number of items the two lanes differ on: below "
+        f"{minimum_discordant_pairs(confidence)} of them the level is unreachable whatever the "
+        f"interval says, and the reading is `{reading_label(READING_INSUFFICIENT_EVIDENCE)}` "
+        f"(the neighbouring levels need {minimum_discordant_pairs(LOOSER_CONFIDENCE)} and "
+        f"{minimum_discordant_pairs(TIGHTER_CONFIDENCE)}).",
         "",
-        f"| {key_header} | at {_level(LOOSER_CONFIDENCE)} | reading ({_level(confidence)}) "
-        f"| at {_level(TIGHTER_CONFIDENCE)} | p_positive | settled? |",
-        "| --- | :-: | :-: | :-: | ---: | :-: |",
+        f"| {key_header} | at {level_label(LOOSER_CONFIDENCE)} | reading ({level_label(confidence)}) "
+        f"| at {level_label(TIGHTER_CONFIDENCE)} | p_positive | d | settled? |",
+        "| --- | :-: | :-: | :-: | ---: | ---: | :-: |",
     ]
     for key, entry in rows:
         settled = f"NO ({entry['side']})" if entry["borderline"] else "yes"
+        discordant = entry.get("discordant")
         lines.append(
             f"| {key} | {reading_label(entry['looser_reading'])} "
             f"| {reading_label(entry['reading'])} | {reading_label(entry['tighter_reading'])} "
-            f"| {entry['p_positive']:.3f} | {settled} |"
+            f"| {entry['p_positive']:.3f} | {'-' if discordant is None else discordant} "
+            f"| {settled} |"
         )
     lines.append("")
     return lines

@@ -17,7 +17,13 @@ from llb.eval.embedder_adoption.roster import (
     PROPERTY_PARAMS,
     RosterReport,
 )
-from llb.rag.fusion_evidence.stability import boundary_table, format_reading, reading_label
+from llb.rag.fusion_evidence.evidence_gate import (
+    reading_label,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+    format_reading,
+)
 
 
 def _profile_cell(profile: Mapping[str, object], name: str) -> str:
@@ -83,8 +89,9 @@ def format_roster(
         "",
         "`answer` = the rank gain reached the answer (objective interval clears zero); "
         "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation. `(borderline)` marks a reading that a 90% or a 97.5% interval would change -- "
-        "the cut decided it, not the evidence.",
+        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
+        "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
+        "97.5% interval would change -- the cut decided it, not the evidence.",
         "",
     ]
     lines += _boundary_table(report)

@@ -22,8 +22,14 @@ from llb.eval.embedder_adoption.models import (
     AdoptionBarReport,
     CellReport,
 )
-from llb.rag.fusion_evidence.stability import boundary_table, format_reading
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+    format_reading,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -42,6 +48,7 @@ def _cell_note(cell: CellReport) -> str:
 def _delta_table(report: AdoptionBarReport) -> list[str]:
     """One row per cell: the candidate-minus-baseline paired delta on every metric."""
     metrics = list(report["metrics"])
+    confidence = report["confidence"]
     lines = [
         "### Answer-side delta per cell",
         "",
@@ -60,17 +67,27 @@ def _delta_table(report: AdoptionBarReport) -> list[str]:
             f"| `{cell['label']}` | {_cell_note(cell)} | {deltas} "
             f"| {objective['wins']}/{objective['losses']}/{objective['ties']} "
             f"| {objective['sign_test_p']:.3f} "
-            f"| {format_reading(cell.get('stability'), cell_reading(cell))} |"
+            f"| {format_reading(cell.get('stability'), cell_reading(cell, confidence))} |"
         )
     lines += [
         "",
         "`answer` = the rank gain reached the answer (the objective interval clears zero); "
         "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation. `(borderline)` marks a reading that a 90% or a 97.5% interval would change -- "
-        "the cut decided it, not the evidence.",
+        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
+        "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
+        "97.5% interval would change -- the cut decided it, not the evidence.",
         "",
     ]
     return lines
+
+
+def _gate_summary(report: AdoptionBarReport) -> list[str]:
+    """How many of the sweep's per-cell paired readings the minimum-evidence gate relabeled."""
+    comparisons = [
+        cell["paired"][metric] for cell in report["cells"] for metric in report["metrics"]
+    ]
+    gated, total = gated_readings(comparisons, report["confidence"])
+    return evidence_gate_summary(gated, total, report["confidence"])
 
 
 def _boundary_table(report: AdoptionBarReport) -> list[str]:
@@ -144,6 +161,7 @@ def format_report(
         "",
     ]
     lines += _delta_table(report)
+    lines += _gate_summary(report)
     lines += _boundary_table(report)
     lines += _lane_table(report)
     lines += _bundle_list(report)
@@ -165,7 +183,8 @@ def format_summary(report: AdoptionBarReport) -> str:
             f"  {cell['label'].ljust(12)} "
             f"{format_interval(cell['paired'][METRIC_OBJECTIVE]['delta']):>22} "
             f"{format_interval(cell['paired'][METRIC_RECIPROCAL_RANK]['delta']):>22} "
-            f"{p_positive:>7}   {format_reading(stability, cell_reading(cell))}"
+            f"{p_positive:>7}   "
+            f"{format_reading(stability, cell_reading(cell, report['confidence']))}"
         )
     lines.append(f"  verdict: {verdict['decision'].upper()} -- {verdict['reason']}")
     return "\n".join(lines)
