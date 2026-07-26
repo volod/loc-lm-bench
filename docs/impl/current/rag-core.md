@@ -1531,6 +1531,45 @@ What the annotation found on evidence already recorded:
   coverage-versus-objective split that verdict rests on is itself a near-miss in the drafted
   multi-hop bundle and the overlap-policy re-run.
 
+#### Audit of the `lo > 0` cut itself
+
+2026-07-26. The borderline flag says how close a reading sits to the cut. This audit asked what the
+cut
+COSTS -- its false-positive rate, whether the exact test in the same block could even reach the
+reporting level, and what selecting a row out of a grid does to it. Method: a paired sign-flip
+(randomization) null over the per-item delta vectors the recorded artifacts persist, applied
+JOINTLY across a family so the real cross-row correlation survives, with the repo's own resample
+index sets, seed, and nearest-rank percentile convention; 4000 flips for the rate studies and
+20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
+under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`; productionizing each finding is forward
+work in [`plan.md`](../plan.md).
+
+- **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
+  **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
+  the inflation tracks the DISCORDANT-item count rather than n: the cells with 7-9 non-tied items
+  land at 0.062-0.078, those with 24-27 at 0.036-0.037. On the 82- and 250-item ablation lanes it is
+  0.024-0.036, near nominal. On synthetic symmetric deltas it is at or below nominal at every size,
+  so the inflation is driven by SKEW plus sparsity, which is exactly the regime a token-F1 delta on
+  a small accepted ledger sits in.
+- **Reachability.** Across 7408 paired blocks in the recorded fusion sweeps, adoption sweeps,
+  context ablations, and answer-quality comparisons, 971 read `separated`, and **719 of those (74%)
+  carry fewer than 6 discordant items** -- the point where the exact two-sided sign test the same
+  block reports (`2 * 0.5^d`) cannot reach 0.05 under ANY arrangement of the data. Most are slice
+  rows: 576 of the 712 separated fusion SLICE readings come from slices of <= 5 items, where a
+  2-item slice with 2 wins prints `+1.000 [+1.000, +1.000]` beside its own `sign_test_p` of 0.5.
+- **Selection.** A fusion sweep publishes 408-3048 paired cuts (17-127 rows x 4 metrics x slices)
+  and then reads ONE selected `best_row`. Re-read under a Westfall-Young max-statistic sign-flip
+  null over the family the row was selected from, the three recorded `adopt` sweeps' deciding row
+  (`fused/global_community@0.30/d50/ioverlap`, focus slice n=35) gives raw randomization p 0.063
+  (recall@k), 0.031 (span coverage), 0.032 (MRR), and **FWER-adjusted p 0.14-0.29** -- so neither
+  the selection adjustment nor the unadjusted randomization test reproduces the recorded reading at
+  the same 2.5% level. The `any cell clears zero` rule of the adoption sweep fires on 13.7%-16.4% of
+  null draws over its 4 cells, and 44.1% over the 20-cell roster (0.82 expected false positives per
+  roster).
+
+The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
+nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
+
 ### The recommendation re-read against the floor
 
 CUDA host, 2026-07-24; report under
@@ -2355,6 +2394,45 @@ Otherwise it is diagnostic and objective correctness ranks alone.
 
 `src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
 throughput, then lower VRAM when telemetry is available.
+
+### Measured: the headline objective is partly a verbosity ranking
+
+2026-07-26. Token F1 is a single number over two different things -- whether the answer carries the reference
+fact, and how much else it carries -- and the recorded evidence base contains the one comparison
+that separates them: the context-ablation `rag` lanes score the SAME 82-item committed fixture under
+PINNED retrieval (recall@5 = 0.951 for every row), so all differences are answer-side. Read-only
+audit over those bundles, harness and output under
+`$DATA_DIR/paired-reading-audit/20260726T100856Z/verbosity{_probe.py,.txt}`:
+
+| model | median completion tokens | objective (token F1) | contains | exact | r(len, objective) | items found | implied token precision when found |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `batiai/qwen3.6-35b:iq3` | 10 | 0.554 | 0.659 | 0.329 | -0.305 | 54 | 0.709 |
+| MamayLM-Gemma-3-27B v2.0 | 9 | 0.546 | 0.622 | 0.329 | -0.219 | 51 | 0.712 |
+| MamayLM-Gemma-3-12B v2.0 | 10 | 0.501 | 0.634 | 0.293 | -0.363 | 52 | 0.650 |
+| `lapa-v0.1.2-instruct` | 10 | 0.496 | 0.610 | 0.329 | -0.541 | 50 | 0.655 |
+| `gemma4:e4b` | 25 | 0.365 | 0.756 | 0.122 | -0.331 | 62 | 0.339 |
+| `gemma4:26b` | 33 | 0.288 | 0.720 | 0.012 | -0.367 | 59 | 0.230 |
+
+On an item where `contains` is 1.0 the reference tokens are all present, so token recall is 1.0 and
+`F1 = 2P/(1+P)` inverts to the token PRECISION the answer paid; that is the last column, computed
+only over each model's own found items.
+
+- **The two readings rank the roster in nearly opposite orders.** `gemma4:26b` is LAST by the
+  headline objective (0.288) and SECOND by found-rate (0.720); it states the reference on 59 of 82
+  items where the objective leader states it on 54. `gemma4:e4b` finds the most (62) and ranks 5th.
+- **Length is the mechanism, and it is measured.** The two Gemma 4 rows emit 2.5x-3.3x the
+  completion tokens of the rest (median 25 and 33 against 9-10) and pay for it in precision on
+  exactly the items they got right (0.339 and 0.230 against 0.650-0.712). Answer length correlates
+  negatively with the objective for EVERY model (r -0.22 to -0.54).
+- **Neither number is the right headline on its own.** `contains` rewards the same verbosity the
+  objective punishes -- an answer that repeats the whole context would score 1.0 -- and the shipped
+  `eval.rag` system prompt does ask for a short answer ("Відповідай стисло"), so part of the Gemma 4
+  penalty is a real instruction-following failure. What the single number cannot do is say WHICH of
+  the two happened, and the leaderboard currently ranks on it alone.
+
+Deciding the ranking policy from a measured length-sensitivity study is forward work
+([`plan.md`](../plan.md#headline-objective-verbosity-decomposition)); no ranking or metric changed
+here.
 
 ### Groundedness and citation metrics (groundedness-citation-metrics)
 
