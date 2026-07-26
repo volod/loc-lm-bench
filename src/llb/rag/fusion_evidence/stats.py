@@ -127,6 +127,7 @@ def separation_stability(
     confidence: float = DEFAULT_CONFIDENCE,
     *,
     discordant: int,
+    pairs: int,
     looser_confidence: float = LOOSER_CONFIDENCE,
     tighter_confidence: float = TIGHTER_CONFIDENCE,
 ) -> ReadingStability:
@@ -138,7 +139,9 @@ def separation_stability(
 
     `discordant` is the count of items the two lanes actually differ on, which gates each level at
     its own reachable minimum -- so a row separated on too few items reads `insufficient_evidence`
-    rather than as a difference, at whichever of the three levels cannot support it.
+    rather than as a difference, at whichever of the three levels cannot support it. `pairs` is the
+    count it came out of, recorded beside it so a gated row carries the rate that prices the item
+    set it would take to resolve.
     """
 
     def read(level: float) -> str:
@@ -152,6 +155,7 @@ def separation_stability(
         tighter_reading=read(tighter_confidence),
         p_positive=exceedance(ordered_samples),
         discordant=discordant,
+        pairs=pairs,
     )
 
 
@@ -223,7 +227,7 @@ def paired_comparison(
     comparison["delta"] = {"mean": point, "lo": lo, "hi": hi}
     if brackets(confidence):
         comparison["stability"] = separation_stability(
-            ordered, confidence, discordant=wins + losses
+            ordered, confidence, discordant=wins + losses, pairs=len(deltas)
         )
     return comparison
 
@@ -231,6 +235,11 @@ def paired_comparison(
 def discordant_pairs(comparison: PairedComparison) -> int:
     """Items the two lanes differ on -- the evidence both the sign test and the gate are read on."""
     return comparison["wins"] + comparison["losses"]
+
+
+def compared_pairs(comparison: PairedComparison) -> int:
+    """Items compared, ties included -- the denominator of the block's discordance rate."""
+    return comparison["wins"] + comparison["losses"] + comparison["ties"]
 
 
 def discordant_deltas(deltas: list[float]) -> int:
@@ -274,11 +283,12 @@ def evidence_gate_clause(
     """The shared insufficient-evidence clause over the rows a verdict was decided on, else "".
 
     The counterpart of `borderline_note`: same call shape, same place in every lane's reason, so a
-    verdict that stopped short of a separation says WHY in the one phrasing the repo uses.
+    verdict that stopped short of a separation says WHY in the one phrasing the repo uses -- and,
+    through `open_question_note`, what item count would let it say something else.
     """
     return evidence_gate_note(
         [
-            (label, discordant_pairs(comparison))
+            (label, discordant_pairs(comparison), compared_pairs(comparison))
             for label, comparison in rows
             if comparison["delta"]["lo"] > 0.0
         ],

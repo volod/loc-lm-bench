@@ -163,9 +163,9 @@ def test_a_report_states_how_many_readings_the_gate_relabeled():
 
 def test_the_shared_clause_names_the_thin_rows_and_stays_quiet_otherwise():
     assert evidence_gate_note([]) == ""
-    assert evidence_gate_note([("recall", BOUND)]) == ""
-    clause = evidence_gate_note([("recall", BOUND - 1), ("mrr", 1)])
-    assert "INSUFFICIENT EVIDENCE" in clause and "`recall` differs on 5" in clause
+    assert evidence_gate_note([("recall", BOUND, 40)]) == ""
+    clause = evidence_gate_note([("recall", BOUND - 1, 40), ("mrr", 1, 40)])
+    assert "INSUFFICIENT EVIDENCE" in clause and "`recall` differs on 5 of 40" in clause
     assert "2 of the rows" in clause
     # A row that never cleared zero is not "insufficient evidence", it is a measured non-result.
     assert evidence_gate_clause([("recall", _unanimous(0))]) == ""

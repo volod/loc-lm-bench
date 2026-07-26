@@ -43,38 +43,41 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### re-decide-the-relabeled-fusion-and-bakeoff-readings
+### widen-the-multihop-drafted-slice-to-a-decidable-size
 
-The minimum-evidence gate downgraded eight recorded verdicts without re-running anything
-([the gate re-read](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)), and two of
-them are recommendations an operator may still be acting on: the fusion sweep's `overlap`
-span-identity row (recorded `adopt`, now `inconclusive` on 4 differing items) and the committed
-fixture's `adopt intfloat/multilingual-e5-large` (now `retain` on 5). Neither moved a shipped
-default, so nothing is broken -- but both questions are now OPEN rather than answered, and the
-lanes that would answer them are already planned. Decide what each open question needs: a larger
-multi-hop slice for the span-identity row (it rides on `multihop-ledger-human-acceptance`), and for
-the encoder row either a resolvable item set (`embedder-decision-on-a-resolvable-item-set`) or a
-recorded statement that the question is undecidable at the sample sizes the repo has. The
-deliverable is the decision plus the recorded reading, not a new statistic.
+Every open multi-hop question in the repo -- the fusion sweeps' span-identity row and all three
+answer-quality coverage rows -- rides on ONE drafted slice of 35 items, and that slice is too small
+to decide any of them: the deciding rows differ on 4-5 items, which prices a floor of 42-53
+multi-hop items before 95% is reachable at all
+([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human
+acceptance can only SHRINK a drafted ledger, so `multihop-ledger-human-acceptance` cannot settle
+these rows at the current size whatever the reviewer decides -- the drafting has to be widened
+first, with headroom for review attrition (a 60-70 item draft to land >= 53 accepted). Re-draft the
+multi-hop slice on the same fusion corpus with the multi-hop yield knobs documented in
+[data prep](current/data-prep.md), de-duplicating against the existing bundle so the accepted items
+are added to rather than redrawn, and hand the wider worksheet to the acceptance task.
 
-- Agent status: CLEAR
-- Dependencies: none to write the readings; the RUNS it may call for belong to
-  `multihop-ledger-human-acceptance` and `embedder-decision-on-a-resolvable-item-set`. Reuse the
-  gate seam in `src/llb/rag/fusion_evidence/evidence_gate.py` and each lane's verdict module.
-- User-visible outcome: no recommendation in the docs is left in the state "recorded as adopted,
-  re-read as unsupported" without saying what would settle it.
-- Scope boundary: in scope -- the per-lane re-read statement, the item count each open question
-  would need (via the shared power contract once it exists), and a pointer from every affected
-  evidence section. Out of scope -- changing any shipped default on the strength of a downgraded
-  reading, and re-running a heavy lane before its own task calls for it.
-- Data and artifact paths: none new; the re-read under
-  `$DATA_DIR/paired-reading-audit/<run>/` is the input.
-- Execution path: no run; CI already covers the gate per lane.
-- Acceptance gates: `make ci` green; each of the eight relabeled verdicts is either restated with
-  the item count that would resolve it or recorded as undecidable at the reached sample size.
-- Documentation target: the span-identity and answer-quality sections of
-  [GraphRAG](current/graphrag-backend.md) and the bake-off sections of
-  [RAG core](current/rag-core.md).
+- Agent status: RUN NEEDED
+- Dependencies: none, and it must land BEFORE `multihop-ledger-human-acceptance`, whose re-runs
+  would otherwise reproduce the same unreadable rows. Reuse the drafting lane with
+  `DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 DRAFT_DEDUP_AGAINST=<existing bundle>` and the
+  existing stratified worksheet builder.
+- User-visible outcome: the reviewer is handed a multi-hop worksheet whose accepted size can
+  actually decide the graph-weight and span-identity questions, instead of one that re-states them.
+- Scope boundary: in scope -- the wider draft, its dedup against the existing bundle, the
+  span-exactness and Ukrainian gates the drafting already applies, and a recorded statement of the
+  drafted size against the 53-item floor. Out of scope -- accepting the items (that is the human
+  task), re-running the sweep or the answer-quality lane on the drafted set, and lowering the floor
+  by changing any confidence convention.
+- Data and artifact paths: a new drafted bundle beside the existing one under
+  `$DATA_DIR/graph-vector-fusion-multihop/`; no new root.
+- Execution path: the drafting run on the CUDA host; CI covers the dedup and the multi-span
+  contract over fixtures, as it already does for the drafting lane.
+- Acceptance gates: `make ci` green; the drafted multi-hop slice reaches at least the item count
+  the floor names with review headroom; every drafted item is span-exact and re-grounds >= 2
+  distinct spans; no item duplicates the existing bundle.
+- Documentation target: the drafting section of [data prep](current/data-prep.md) and the
+  graph-vector fusion evidence section of [GraphRAG](current/graphrag-backend.md).
 
 ### paired-power-contract-for-every-lane
 
@@ -93,7 +96,12 @@ computed from the REFERENCE item set's variance and never re-checked against the
 - Agent status: CLEAR
 - Dependencies: none. Move and generalize `src/llb/eval/context_ablation/power.py` into
   `src/llb/rag/fusion_evidence/` beside the paired statistics; the ablation keeps its behavior
-  through the shared seam.
+  through the shared seam. The VARIANCE-free half of the same question already ships beside it:
+  `resolving_item_count` in `src/llb/rag/fusion_evidence/evidence_gate.py` prices the item count a
+  withdrawn reading needs from its discordance rate alone
+  ([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)), so the
+  MDE contract must state which of the two floors binds a lane rather than publishing a second,
+  competing item count.
 - User-visible outcome: any lane can state "this question needs N items" before spending a run, and
   an undecidable result reports the effect size the item set COULD have resolved instead of only
   that it did not resolve this one.
@@ -1136,7 +1144,11 @@ assemble a ledger enriched with questions the incumbent currently MISSES (mine t
 in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
 encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
 it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
-outcome and is what would justify closing the question.
+outcome and is what would justify closing the question. The size the ENRICHMENT has to buy is
+already priced: the withdrawn `e5-large` adopt differs on 5 of 250 items, and at that rate the
+reporting level needs 300 items, which no committed goldset reaches -- so plain "more questions" is
+not the route, raising the discordance rate is (double the rate, halve the floor)
+([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)).
 
 - Agent status: BLOCKED BY HUMAN
 - Dependencies: `paired-power-contract-for-every-lane` supplies the item count the predeclared gain
@@ -1170,7 +1182,11 @@ is span-exact and Ukrainian-gated by construction, but only a reviewer can say w
 shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
-- Dependencies: the drafting, sweep, and store lanes are current behavior. Human step that gates
+- Dependencies: `widen-the-multihop-drafted-slice-to-a-decidable-size` -- at the current 35 drafted
+  items the deciding rows differ on 4-5, which cannot reach 95% whatever the reviewer accepts, and
+  acceptance only shrinks a ledger
+  ([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). The
+  drafting, sweep, and store lanes are current behavior. Human step that gates
   completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
   specifically whether the question is answerable ONLY with both cited spans -- and signs off on
   the resulting accepted ledger.

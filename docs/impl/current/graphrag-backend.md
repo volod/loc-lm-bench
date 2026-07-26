@@ -456,6 +456,12 @@ What the run establishes:
   puts the same row at FWER-adjusted p 0.14-0.29
   ([the audit](rag-core.md#audit-of-the-lo--0-cut-itself)). The interval, the ledger, and every
   number in the tables above are unchanged; what changed is what may be read off them.
+- **What that withdrawn reading needs is recorded, not left open-ended.** At its own discordance
+  rate (4 differing items of 35) the 95% level is unreachable below **53 multi-hop items**
+  ([the re-decision](rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human acceptance
+  can only SHRINK a drafted ledger, so the accepted-ledger re-run below cannot settle this row at
+  the current drafted size of 35 -- widening the multi-hop drafting is the prerequisite, tracked in
+  [`plan.md`](../plan.md).
 - **Candidate depth is now a live knob, and only because of the identity rule.** Under `exact`,
   all 10 (strategy, weight) pairs are byte-identical at depth 10 and 50; under `overlap`, all 10
   differ. Depth 50 is what turns `local_khop@0.30` from +0.029 to +0.057 multi-hop recall and from
@@ -685,6 +691,12 @@ applies to the two three-lane runs below: the coverage half of every `retrieval_
 of these tables already showed at 0.062-0.125. No number in any of the tables moves; the
 retrieval-only READING is what the 35-item slice cannot support. The answer-side conclusion is
 unaffected: the objective was flat before the gate and is flat after it.
+
+That withdrawn coverage reading is priced with the same rule as the sweep's: at 4 of 35 differing
+items it needs **53 multi-hop items** to be readable at 95%, and the routed run's 5 of 35 needs
+**42** ([the re-decision](rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). All three
+comparisons ride on the one drafted slice, so a single wider accepted ledger settles all of them or
+none.
 
 Two things corroborate the measurement:
 

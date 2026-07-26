@@ -106,6 +106,7 @@ def stability_from_index_sets(
         # The objective's count, matching `p_positive`: it is the metric the leading state of this
         # lane's reading is decided on.
         discordant=discordant_deltas(deltas.objective),
+        pairs=len(deltas),
     )
 
 

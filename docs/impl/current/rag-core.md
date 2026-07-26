@@ -1633,7 +1633,9 @@ were NOT rewritten -- they stay as produced, and this is what the gate says abou
   rests on 4-5 differing items. Both committed-fixture bake-off runs' `adopt
   intfloat/multilingual-e5-large` becomes `retain`: +0.020 recall@10 on n=250 is **5 wins and 0
   losses**, which the recorded reading already flagged by hand as unable to reach 0.05 on the exact
-  sign test. The gate makes that automatic rather than a footnote.
+  sign test. The gate makes that automatic rather than a footnote. Each of the eight is restated
+  with the item count that would settle it in
+  [the re-decision](#the-re-decision-what-a-withdrawn-reading-needs) below.
 - **The dense-only lanes hold, as the audit predicted.** No ablation verdict changes; the only two
   relabeled ablation blocks are a side `retrieval_hit` reading on one early 4-item run, never a
   deciding uplift. No adoption-bar verdict changes either: the relabeled cells are the `k3` cell's
@@ -1654,6 +1656,82 @@ p, and the whole measurement floor block: 0 fields differ against the recorded `
 verdict is the only thing that moved, `adopt` -> **`retain`**, and the reason states both qualifiers
 at once: `e5-large`'s recall bar differs on 5 items (below the 6 needed at 95%), and it is
 borderline because a 90% interval -- which needs only 5 -- would read it `separated`.
+
+#### The re-decision: what a withdrawn reading needs
+
+A withdrawn reading is an OPEN question, not a measured absence of a difference, and the two must
+not print alike: two of the eight verdicts the gate downgraded are recommendations an operator may
+still be acting on. Every withdrawn row therefore states what would settle it, from the same
+arithmetic the bound comes from. `resolving_item_count` in
+`src/llb/rag/fusion_evidence/evidence_gate.py` inverts the gate: at the block's own discordance
+RATE, `d` differing items out of `n` extrapolate to `minimum_discordant_pairs(confidence) * n / d`
+items before the level becomes reachable at all.
+
+- **It is a floor on the ITEM SET, not a detectable effect.** Below it no arrangement of the data
+  could reach the level; above it only effects large enough to survive the interval are resolved.
+  Reading it as "run this many items and the question is answered" is the one misreading to avoid
+  -- that is what an a priori MDE contract prices, and the repo prices it separately.
+- **It moves with the reporting convention, exactly as the bound it inverts does** (4 of 35 needs
+  44 items at 90%, 53 at 95%, 62 at 97.5%), so nothing new is tuned.
+- **Every renderer carries it.** The shared `. OPEN QUESTION: ...` clause rides on the
+  insufficient-evidence clause in every lane's verdict reason, so no lane can withdraw a reading
+  without stating its price; the boundary table gains an `n to reach` column (backed by the new
+  `pairs` field in `ReadingStability`, additive and absent on artifacts recorded before it); and
+  the `Minimum evidence:` line says a relabeled row is an open question rather than "no difference".
+  The column prices ANY row short of the bound, including a `flat` one -- a reading that could not
+  have shown a difference is not the same as one that looked and found none.
+
+Re-decision of the recorded evidence base (2026-07-26, read-only, no new inference; harness and
+output under `$DATA_DIR/paired-reading-audit/20260726T-open-question-restatement/`). All eight
+withdrawn verdicts, restated with what each one needs:
+
+| lane | runs | recorded -> re-read | deciding row | differs | floor | what would settle it |
+| --- | ---: | --- | --- | ---: | ---: | --- |
+| fusion sweep | 3 | `adopt` -> `inconclusive` | `fused/global_community@0.30/d50/ioverlap` recall@k, multi-hop | 4 of 35 | 53 | a multi-hop slice of >= 53 ACCEPTED items |
+| answer quality | 2 | `retrieval_only` -> `no_gain` | `fused/global_community@0.10/d10` span coverage, multi-hop | 4 of 35 | 53 | the same accepted slice |
+| answer quality | 1 | `retrieval_only` -> `no_gain` | `routed/global_community@0.30/d50/ioverlap` span coverage | 5 of 35 | 42 | the same accepted slice |
+| embedder bake-off | 2 | `adopt` -> `retain` | `intfloat/multilingual-e5-large` recall@10 | 5 of 250 | 300 | nothing this repo has -- undecidable at these sample sizes |
+
+- **The three fusion sweeps and the three answer-quality comparisons ride on one item set**, the
+  drafted multi-hop slice of 35. The floor says the accepted slice must reach 53 items (42 for the
+  routed coverage row), and human acceptance can only SHRINK a drafted ledger -- so the re-run
+  planned as `multihop-ledger-human-acceptance` cannot resolve the span-identity row at the current
+  drafted size whatever the reviewer decides. Widening the drafting is the prerequisite, and that
+  is stated where the work is tracked in [`plan.md`](../plan.md).
+- **The encoder question is undecidable at the sample sizes this repo has, and that is now
+  recorded.** `e5-large` leads `e5-base` on 5 of 250 committed-fixture items (0 losses, 245 ties);
+  at that 2% rate the level needs 300 items, and the largest committed goldset is 250
+  (`ua_squad_postedited_v1`) -- the next largest is 60. The route out is not simply "more items":
+  `embedder-decision-on-a-resolvable-item-set` enriches the ledger with questions the incumbent
+  MISSES, which raises the discordance rate and lowers the floor proportionally (double the rate,
+  halve the items). Until such a ledger is accepted, the recommendation stands on the incumbent by
+  `retain`, not by evidence of equivalence.
+- **Census over the whole recorded base**: 723 withdrawn readings, all priced (median floor 6
+  items, min 6, max 300). 719 of them sit at or below the largest committed goldset -- most are the
+  handful-of-items fusion slice rows, which need only a few more items each. The 4 that do not are
+  the same `e5-large` recall bar across every re-run of the fixture bake-off, which is exactly the
+  one open question this repo cannot currently close.
+- **No number, threshold, interval, or adoption rule changed.** The re-decision is a statement
+  appended to readings the gate had already withdrawn.
+
+Tests: `tests/llb/rag/test_paired_open_question.py` -- the floor as the smallest item count whose
+rate reaches the bound (and that one item fewer does not), the two unpriced cases (already
+reachable, nothing differing), the movement across the three conventions, the shared clause, the
+table column including the archived-artifact fallback, the recorded prices the table above quotes,
+that no committed goldset reaches the encoder floor, and the withdrawn verdict of each affected
+lane naming its own item count end to end.
+
+Live confirmation, CUDA host 2026-07-26 (same command as above; report under
+`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T125150.260342Z-3cdf0a4eb1db/`):
+the fixture bake-off was re-run end to end through the real encoders once more. **Every retrieval
+number reproduces bit-identically** against the pre-re-decision run -- 0 fields differ across all
+four candidates' recall@10, MRR, dim, indexed count, index bytes, every paired delta bound, every
+win/loss/tie ledger, every exact sign-test p, and the whole measurement-floor block. Three fields
+move, none of them a measurement of retrieval: the wall-clock embed seconds (and the chunks/s
+derived from them), the `pairs` count now persisted in each `stability` block, and the verdict
+reason, which now ends with the open-question clause naming
+`intfloat/multilingual-e5-large recall_at_k`, its 5 of 250 differing items, and the 300-item floor.
+The verdict itself stays `retain`.
 
 ### The recommendation re-read against the floor
 
@@ -1719,7 +1797,11 @@ Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
 **ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped
 minimum-evidence gate now reads as **RETAIN** as well, because that adopt rests on 5 differing items
-([the gate](#the-minimum-evidence-gate-on-a-paired-reading)). What the run establishes:
+([the gate](#the-minimum-evidence-gate-on-a-paired-reading)). That withdrawn adopt is an OPEN
+question, and the item set it would take to close it is recorded: 300 items at the observed 2%
+discordance rate, which no committed goldset reaches, so the encoder choice is **undecidable at the
+sample sizes this repo has** ([the re-decision](#the-re-decision-what-a-withdrawn-reading-needs)).
+What the run establishes:
 
 - **The `bge-m3` lead the floor re-read surfaced is an item set, not a ranking.** +0.050 on 40
   items is 3 wins against 1 loss with 36 questions tied; the paired interval spans zero

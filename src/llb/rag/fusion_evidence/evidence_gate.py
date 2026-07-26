@@ -20,12 +20,20 @@ why a row can read `separated` at the reporting level and `insufficient_evidence
 tighter -- exactly the flip the borderline flag in `llb.rag.fusion_evidence.stability` exists to
 mark, on the same scale.
 
+A relabeled reading leaves an OPEN QUESTION, not a finding of no difference, so this module also
+says what would close it. `resolving_item_count` prices the item set: at the block's own observed
+discordance rate, how many items it takes before the reporting level is reachable at all. That is a
+FLOOR on the item count derived from the same arithmetic as the bound -- necessary, not sufficient,
+and not a power target: it says nothing about the effect size the larger set could resolve, which
+is what an a priori MDE contract prices.
+
 This module owns the reading VOCABULARY and the gate. `stability.py` (how settled a reading is) and
 `stats.py` (the percentile arithmetic) both import from here, never the other way round.
 
 Pure Python and dependency-free, so it imports and is unit-tested in the lightweight CI install.
 """
 
+import math
 from collections.abc import Sequence
 
 DEFAULT_CONFIDENCE = 0.95
@@ -36,8 +44,9 @@ READING_SEPARATED = "separated"
 READING_FLAT = "flat"
 
 # The gate's own state: the delta's interval clears zero, but too few items differ for the
-# reporting level to be reachable, so the row states no difference. It is NOT a third outcome any
-# lane may adopt on -- it is the absence of a readable one.
+# reporting level to be reachable, so the row states nothing. It is NOT a third outcome any lane
+# may adopt on -- it is the absence of a readable one, and it is an OPEN question rather than a
+# measured absence of a difference (`resolving_item_count` prices what would close it).
 READING_INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
@@ -100,24 +109,52 @@ def apply_evidence_gate(
     return READING_INSUFFICIENT_EVIDENCE
 
 
+def resolving_item_count(
+    discordant: int, pairs: int, confidence: float = DEFAULT_CONFIDENCE
+) -> int | None:
+    """Items this block would need, at its OWN discordance rate, for `confidence` to be reachable.
+
+    The gate is a statement about DISCORDANT items, so the item count that answers it follows from
+    the rate at which this comparison produces them: `d` differing items out of `n` extrapolates to
+    `minimum_discordant_pairs(confidence) * n / d`, rounded up.
+
+    A floor, and only that. It is the point below which no arrangement of the data could reach the
+    level, so a set smaller than it cannot decide the question whatever the effect is; a set larger
+    than it still resolves only effects big enough to survive the interval. Reading it as "run this
+    many items and the question is answered" is the one misreading to avoid -- what that would need
+    is an a priori minimum detectable effect, which this repo prices separately.
+
+    None when the level is already reachable (nothing to resolve) or when nothing differed, since a
+    rate of zero extrapolates to no item count at all.
+    """
+    if pairs <= 0 or discordant <= 0 or reaches_reporting_level(discordant, confidence):
+        return None
+    return math.ceil(minimum_discordant_pairs(confidence) * pairs / discordant)
+
+
+def _gated(marked: Sequence[tuple[str, int, int]], confidence: float) -> list[tuple[str, int, int]]:
+    """The named rows whose discordant count cannot reach `confidence`, in the order given."""
+    return [row for row in marked if not reaches_reporting_level(row[1], confidence)]
+
+
 def evidence_gate_note(
-    marked: Sequence[tuple[str, int]], confidence: float = DEFAULT_CONFIDENCE
+    marked: Sequence[tuple[str, int, int]], confidence: float = DEFAULT_CONFIDENCE
 ) -> str:
     """The clause a verdict appends when a row it named cannot support a separation, else "".
 
     ONE phrasing, shared by every lane, exactly as `borderline_note` is. Pass every row the verdict
-    would otherwise have been DECIDED ON together with its discordant count; rows that clear the
-    reachable minimum drop out, and the clause is empty when none is left.
+    would otherwise have been DECIDED ON as `(label, discordant, pairs)`; rows that clear the
+    reachable minimum drop out, and the clause is empty when none is left. The item count that
+    would resolve each surviving row is appended by `open_question_note`, so a verdict never states
+    that a reading was withdrawn without stating what would restore it.
     """
-    gated = [
-        (label, discordant)
-        for label, discordant in marked
-        if not reaches_reporting_level(discordant, confidence)
-    ]
+    gated = _gated(marked, confidence)
     if not gated:
         return ""
     needed = minimum_discordant_pairs(confidence)
-    detail = "; ".join(f"`{label}` differs on {discordant}" for label, discordant in gated)
+    detail = "; ".join(
+        f"`{label}` differs on {discordant} of {pairs}" for label, discordant, pairs in gated
+    )
     subject = "the row" if len(gated) == 1 else f"{len(gated)} of the rows"
     verb = "carries" if len(gated) == 1 else "carry"
     return (
@@ -125,6 +162,40 @@ def evidence_gate_note(
         f"than the {needed} differing items an exact sign test needs to reach "
         f"{level_label(confidence)} ({detail}), so the reading is not a separation and the decision "
         "does not rest on it"
+    ) + open_question_note(gated, confidence)
+
+
+def _resolving_detail(
+    label: str, discordant: int, pairs: int, confidence: float = DEFAULT_CONFIDENCE
+) -> str:
+    """``recall_at_k` 4 of 35 -> 53 items` -- one row's price, or why it has none."""
+    required = resolving_item_count(discordant, pairs, confidence)
+    if required is None:
+        return f"`{label}` has no differing item, so its rate prices no item count"
+    return f"`{label}` {discordant} of {pairs} -> {required} items"
+
+
+def open_question_note(
+    marked: Sequence[tuple[str, int, int]], confidence: float = DEFAULT_CONFIDENCE
+) -> str:
+    """The clause that says what would settle a reading the gate withdrew, else "".
+
+    A relabeled row is an unanswered question, not an answer of no difference, and the two must not
+    print alike -- an operator acting on a recorded recommendation needs to know which one they are
+    holding and what it would take to close it.
+    """
+    gated = _gated(marked, confidence)
+    if not gated:
+        return ""
+    detail = "; ".join(
+        _resolving_detail(label, discordant, pairs, confidence)
+        for label, discordant, pairs in gated
+    )
+    return (
+        ". OPEN QUESTION: this is an unanswered comparison rather than a measured absence of a "
+        f"difference; at each row's own discordance rate {level_label(confidence)} stays "
+        f"unreachable below the item count named here ({detail}), which is a floor on the item set "
+        "and not a minimum-detectable-effect target"
     )
 
 
@@ -143,7 +214,8 @@ def evidence_gate_summary(
         f"Minimum evidence: **{n_gated} of {n_rows}** paired {subject}s are "
         f"`{reading_label(READING_INSUFFICIENT_EVIDENCE)}` -- the delta's interval clears zero but "
         f"fewer than {needed} items differ, which is the fewest an exact two-sided sign test needs "
-        f"to reach {level_label(confidence)} under any arrangement of the data. Such a row states "
-        "no difference and no verdict is decided on it.",
+        f"to reach {level_label(confidence)} under any arrangement of the data. No verdict is "
+        "decided on such a row, and it is an OPEN question rather than a measured absence of a "
+        "difference: the `n to reach` column prices the item set that would close it.",
         "",
     ]

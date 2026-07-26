@@ -42,6 +42,7 @@ from llb.rag.fusion_evidence.evidence_gate import (
     level_label,
     minimum_discordant_pairs,
     reading_label,
+    resolving_item_count,
 )
 
 # The two neighbouring conventional confidences a reading is re-checked at. All three levels are
@@ -81,6 +82,9 @@ class ReadingStability(TypedDict):
     # Items whose two lanes differ -- the evidence the sign test and the gate are read on, measured
     # on the metric `p_positive` comes from. Absent on an artifact recorded before the gate existed.
     discordant: NotRequired[int]
+    # Items compared, ties included. Carried beside `discordant` so a relabeled row can price the
+    # item set that would resolve it from its own discordance rate; absent on the same artifacts.
+    pairs: NotRequired[int]
 
 
 def decision_probability(confidence: float = DEFAULT_CONFIDENCE) -> float:
@@ -132,6 +136,7 @@ def stability_from_readings(
     tighter_reading: str,
     p_positive: float,
     discordant: int,
+    pairs: int,
 ) -> ReadingStability:
     """Assemble the flag and the side from three already-computed readings of the same draw.
 
@@ -144,6 +149,10 @@ def stability_from_readings(
     than mixing in a second draw's noise. Each is expected to have passed `apply_evidence_gate` at
     ITS OWN level already, because the reachable item count is a function of the level: a caller
     gates where it reads, and this function only records what came out.
+
+    `pairs` is recorded beside `discordant` for the same reason the gate needs both: the two
+    together are the discordance RATE, which is what prices the item set a withdrawn reading would
+    need before it could be read at all.
     """
     return {
         "reading": reading,
@@ -155,6 +164,7 @@ def stability_from_readings(
         if looser_reading != reading
         else (SIDE_ABOVE if tighter_reading != reading else None),
         "discordant": discordant,
+        "pairs": pairs,
     }
 
 
@@ -207,6 +217,24 @@ def unsettled(stability: ReadingStability | None) -> ReadingStability | None:
     return stability if stability is not None and stability["borderline"] else None
 
 
+def _resolving_cell(stability: ReadingStability, confidence: float) -> str:
+    """The item count that would make a reading of this row reachable, or `-` when there is none.
+
+    Priced for every row short of the bound, not only the ones whose reading was withdrawn: a
+    `flat` row on three differing items could not have shown a difference at this level whichever
+    way its interval fell, and that is worth telling apart from a tie measured on wide evidence.
+
+    `-` covers both rows that need nothing (the level is already reachable) and rows whose rate
+    prices nothing (no item differed, or the artifact predates the recorded pair count).
+    """
+    discordant = stability.get("discordant")
+    pairs = stability.get("pairs")
+    if discordant is None or pairs is None:
+        return "-"
+    required = resolving_item_count(discordant, pairs, confidence)
+    return "-" if required is None else str(required)
+
+
 def boundary_table(
     rows: Sequence[tuple[str, ReadingStability]],
     *,
@@ -232,11 +260,15 @@ def boundary_table(
         f"{minimum_discordant_pairs(confidence)} of them the level is unreachable whatever the "
         f"interval says, and the reading is `{reading_label(READING_INSUFFICIENT_EVIDENCE)}` "
         f"(the neighbouring levels need {minimum_discordant_pairs(LOOSER_CONFIDENCE)} and "
-        f"{minimum_discordant_pairs(TIGHTER_CONFIDENCE)}).",
+        f"{minimum_discordant_pairs(TIGHTER_CONFIDENCE)}). `n to reach` prices ANY row short of "
+        "that bound, whatever its interval says: the items its own discordance rate would need "
+        "before the level becomes reachable at all -- a floor on the item set, not an effect size "
+        "it could then resolve. A `flat` row carrying one is a reading that could not have shown a "
+        "difference, which is not the same as one that looked and found none.",
         "",
         f"| {key_header} | at {level_label(LOOSER_CONFIDENCE)} | reading ({level_label(confidence)}) "
-        f"| at {level_label(TIGHTER_CONFIDENCE)} | p_positive | d | settled? |",
-        "| --- | :-: | :-: | :-: | ---: | ---: | :-: |",
+        f"| at {level_label(TIGHTER_CONFIDENCE)} | p_positive | d | n to reach | settled? |",
+        "| --- | :-: | :-: | :-: | ---: | ---: | ---: | :-: |",
     ]
     for key, entry in rows:
         settled = f"NO ({entry['side']})" if entry["borderline"] else "yes"
@@ -245,7 +277,7 @@ def boundary_table(
             f"| {key} | {reading_label(entry['looser_reading'])} "
             f"| {reading_label(entry['reading'])} | {reading_label(entry['tighter_reading'])} "
             f"| {entry['p_positive']:.3f} | {'-' if discordant is None else discordant} "
-            f"| {settled} |"
+            f"| {_resolving_cell(entry, confidence)} | {settled} |"
         )
     lines.append("")
     return lines

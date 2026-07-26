@@ -152,9 +152,10 @@ def test_stability_from_readings_accepts_a_richer_reading_than_separated_or_flat
         tighter_reading="neither",
         p_positive=0.969,
         discordant=12,
+        pairs=40,
     )
     assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
-    assert stability["discordant"] == 12
+    assert stability["discordant"] == 12 and stability["pairs"] == 40
 
 
 def test_unsettled_and_format_reading_only_mark_a_borderline_row():

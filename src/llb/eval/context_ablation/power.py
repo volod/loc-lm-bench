@@ -26,8 +26,9 @@ from llb.eval.context_ablation.models import (
 from llb.rag.fusion_evidence.evidence_gate import (
     minimum_discordant_pairs,
     reaches_reporting_level,
+    resolving_item_count,
 )
-from llb.rag.fusion_evidence.stats import discordant_pairs
+from llb.rag.fusion_evidence.stats import PairedComparison, compared_pairs, discordant_pairs
 
 POWER_METHOD = "paired-normal-approximation"
 DEFAULT_TARGET_POWER = 0.80
@@ -125,6 +126,20 @@ def plan_from_artifact(
     }
 
 
+def _resolving_clause(paired: PairedComparison, confidence: float) -> str:
+    """What an unreachable long-context reading would need, in the repo's shared phrasing.
+
+    The plan's item count prices an EFFECT the run can detect; this prices the discordance the
+    LEVEL needs before any effect is readable. A run can reach the first and miss the second, which
+    is exactly the case this branch fires on, so the resolution states both rather than only the
+    one the plan happened to declare.
+    """
+    required = resolving_item_count(discordant_pairs(paired), compared_pairs(paired), confidence)
+    if required is None:
+        return ""
+    return f"; at that discordance rate the level needs about {required} paired items"
+
+
 def _long_context_entry(report: ContextAblationReport) -> DerivedComparison | None:
     by_label = {entry["label"]: entry for entry in report["derived"]}
     return by_label.get(DERIVED_LONG_CONTEXT_DELTA_FITTING) or by_label.get(
@@ -172,6 +187,7 @@ def resolve_power_analysis(
                 f"the two lanes differ on only {discordant_pairs(entry['paired'])} items, fewer "
                 f"than the {minimum_discordant_pairs(confidence)} an exact sign test needs to "
                 "reach this level, so the interval cannot resolve a direction"
+                f"{_resolving_clause(entry['paired'], confidence)}"
             ),
         )
     elif delta["lo"] >= -margin and delta["hi"] <= margin:
