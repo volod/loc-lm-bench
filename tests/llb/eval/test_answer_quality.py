@@ -342,7 +342,9 @@ def test_a_bundle_without_the_sidecar_keeps_its_rows_unchanged(tmp_path: Path):
 
 def test_the_verdict_prefers_the_graded_coverage_metric_the_sidecar_supplied():
     """`all_spans_at_k` is uniformly 0.0 on a hard multi-hop slice; graded coverage still moves."""
-    ids = ["q0", "q1", "q2", "q3"]
+    # Six items: the fewest a coverage separation can be read on at 95%, so the assertion is
+    # about which METRIC the verdict reads rather than about the minimum-evidence gate.
+    ids = [f"q{i}" for i in range(6)]
     vector = [dict(_row(i, 0.0), all_spans_at_k=0.0, span_coverage=0.0) for i in ids]
     fused = [dict(_row(i, 0.0), all_spans_at_k=0.0, span_coverage=0.5) for i in ids]
     report = compare_answer_quality(_lanes(vector, fused), _types(*ids), baseline=VECTOR)

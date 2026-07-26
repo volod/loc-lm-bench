@@ -38,7 +38,9 @@ from llb.eval.embedder_adoption.models import (
     ItemDeltas,
 )
 from llb.eval.embedder_adoption.stability import reading_from_deltas
-from llb.rag.fusion_evidence.stability import reading_label
+from llb.rag.fusion_evidence.evidence_gate import (
+    reading_label,
+)
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_SEED, bootstrap_index_sets
 
 # Item counts the screen is measured at. The full accepted ledger is 40, so these span "one split's

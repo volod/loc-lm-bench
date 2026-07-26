@@ -345,9 +345,11 @@ def test_a_model_that_answers_as_well_from_its_weights_records_no_retrieval_gain
 
 
 def test_the_verdict_reads_the_fitting_delta_so_skips_cannot_sink_the_long_context_lane():
-    ids = [f"q{i}" for i in range(10)]
-    long_rows = [_row(i, 1.0) for i in ids[:4]]
-    long_rows += [_row(i, 0.0, hit=0.0, status=eval_common.CONTEXT_OVERFLOW) for i in ids[4:]]
+    # Six items fit -- the fewest whose exact sign test can reach 95%, so the fitting subset is
+    # readable on its own and the verdict turns on WHICH population it reads, not on the count.
+    ids = [f"q{i}" for i in range(16)]
+    long_rows = [_row(i, 1.0) for i in ids[:6]]
+    long_rows += [_row(i, 0.0, hit=0.0, status=eval_common.CONTEXT_OVERFLOW) for i in ids[6:]]
     report = compare_context_strategies(
         _lanes([_row(i, 0.0) for i in ids], [_row(i, 0.5) for i in ids], long_rows),
         _types(*ids),

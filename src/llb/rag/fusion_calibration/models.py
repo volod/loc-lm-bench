@@ -2,7 +2,7 @@
 
 from typing_extensions import TypedDict
 
-from llb.rag.fusion_evidence.stats import Interval, PairedComparison
+from llb.rag.fusion_evidence.stats import BootstrapRatio, PairedComparison
 
 
 class PolicySpec(TypedDict):
@@ -16,8 +16,8 @@ class RouteQuality(TypedDict):
     false_positive: int
     true_negative: int
     false_negative: int
-    precision: Interval
-    recall: Interval
+    precision: BootstrapRatio
+    recall: BootstrapRatio
 
 
 class RouteError(TypedDict):

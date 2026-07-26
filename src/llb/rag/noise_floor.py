@@ -85,6 +85,8 @@ class FloorMargin(TypedDict):
     delta: float  # leader recall@k - runner-up recall@k (0.0 when there is no runner-up)
     floor: float  # the floor the delta is read against (`floor_recall_at_k`)
     clears_floor: bool
+    clearance: NotRequired[float]  # signed distance from the cut: `delta - floor`
+    floor_multiple: NotRequired[float | None]  # `delta / floor`; null at a zero floor
 
 
 class NoiseFloorReport(TypedDict):
@@ -143,7 +145,7 @@ def measure_noise_floor(
         "floor_recall_at_k": _worst(lanes, "recall_at_k"),
         "floor_mrr": _worst(lanes, "mrr"),
     }
-    margin = _margin(lanes, report["floor_recall_at_k"])
+    margin = floor_margin(lanes, report["floor_recall_at_k"])
     if margin is not None:
         report["margin"] = margin
     return report
@@ -165,7 +167,7 @@ def _candidate_pool(store: Retriever, question: str, k: int, candidates: int) ->
     return store.retrieve(question, candidates)
 
 
-def _margin(lanes: dict[str, LaneFloor], floor: float) -> FloorMargin | None:
+def floor_margin(lanes: dict[str, LaneFloor], floor: float) -> FloorMargin | None:
     """Read the top two lanes' recall@k gap against the floor.
 
     Ranked recall first, then MRR, then label -- the order every comparison table in the repo
@@ -195,6 +197,8 @@ def _margin(lanes: dict[str, LaneFloor], floor: float) -> FloorMargin | None:
         "delta": delta,
         "floor": floor,
         "clears_floor": runner_up is not None and delta > floor,
+        "clearance": delta - floor,
+        "floor_multiple": delta / floor if floor > 0.0 else None,
     }
 
 

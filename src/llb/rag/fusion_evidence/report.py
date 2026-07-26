@@ -12,9 +12,15 @@ from llb.rag.fusion_evidence.models import (
     METRIC_RECALL,
     FusionEvidenceReport,
 )
+from llb.rag.fusion_evidence.power_report import power_summary
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_evidence.stability import boundary_table
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _HEADLINE_METRICS = (METRIC_RECALL, METRIC_ALL_SPANS, METRIC_COVERAGE, METRIC_MRR)
 _HEADERS = {
@@ -60,6 +66,23 @@ def _metric_table(
         )
     lines.append("")
     return lines
+
+
+def _gate_summary(report: FusionEvidenceReport) -> list[str]:
+    """How many of this sweep's paired readings the minimum-evidence gate relabeled.
+
+    Counted over EVERY published cut -- every row, every slice, every metric -- rather than over
+    the focus rows the verdict was taken from, because a sweep publishes hundreds of them and the
+    thin ones are concentrated in the small slices a reader scans last.
+    """
+    comparisons = [
+        comparison
+        for row in report["rows"].values()
+        for slice_report in (row["overall"], *row["slices"].values())
+        for comparison in slice_report["paired_vs_baseline"].values()
+    ]
+    gated, total = gated_readings(comparisons, report["confidence"])
+    return evidence_gate_summary(gated, total, report["confidence"])
 
 
 def _boundary_section(report: FusionEvidenceReport) -> list[str]:
@@ -193,6 +216,9 @@ def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fu
         + (f" -- {verdict['reason']}" if verdict["reason"] else ""),
         "",
     ]
+    if analysis := report.get("power_analysis"):
+        lines += power_summary(analysis, title="Predeclared paired-power contract")
+    lines += _gate_summary(report)
     lines += _metric_table(
         report,
         report["focus_slice"],

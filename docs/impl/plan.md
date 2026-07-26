@@ -43,65 +43,438 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### context-ablation-long-context-verdict-is-one-convention-from-flipping
+### widen-the-multihop-drafted-slice-to-a-decidable-size
 
-The `qwen3.6-35b` context ablation returns `rag_pays_off` on a settled uplift, but only because the
-long-context check that runs BEFORE it missed by nothing: that run's long-context delta is +0.060
-`[-0.008, +0.130]` at `p_positive` 0.960, and a 90% interval would read it as separated, which is
-`long_context_wins` ([RAG core](current/rag-core.md#context-ablation-evidence)). The two verdicts
-lead to opposite operator actions -- ship retrieval, or stuff the document -- so the lane currently
-cannot say which one this model supports. Decide it with power rather than with a convention:
-predeclare the minimum detectable long-context delta and the item count it needs, then re-run the
-ablation on a set large enough to resolve +0.060, and record whether the row separates or is
-explicitly undecidable at the reached size.
+Every open multi-hop question in the repo -- the fusion sweeps' span-identity row and all three
+answer-quality coverage rows -- rides on ONE drafted slice of 35 items, and that slice is too small
+to decide any of them: the deciding rows differ on 4-5 items, which prices a floor of 42-53
+multi-hop items before 95% is reachable at all
+([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human
+acceptance can only SHRINK a drafted ledger, so `multihop-ledger-human-acceptance` cannot settle
+these rows at the current size whatever the reviewer decides -- the drafting has to be widened
+first, with headroom for review attrition (a 60-70 item draft to land >= 53 accepted). Re-draft the
+multi-hop slice on the same fusion corpus with the multi-hop yield knobs documented in
+[data prep](current/data-prep.md), de-duplicating against the existing bundle so the accepted items
+are added to rather than redrawn, and hand the wider worksheet to the acceptance task.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-context-strategies` and the borderline annotation that
-  measured the near-miss
-  ([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-- User-visible outcome: the operator on this model learns whether to ship retrieval or whole-document
-  stuffing, instead of a verdict that a different reporting convention would reverse.
-- Scope boundary: in scope -- the power target, one re-run at the resolved item count, and a restated
-  verdict for that model. Out of scope -- changing the ablation's decision order, the lanes, and the
-  objective metric.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies MODEL=<that model>` on a larger scored set on the
-  CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the minimum detectable delta and item count are written down
-  BEFORE the run; the report states the long-context delta with its `p_positive` and records
-  separated, flat, or undecidable at the reached size.
-- Documentation target: the context-ablation evidence subsection of
-  [RAG core](current/rag-core.md#context-ablation-evidence).
+- Dependencies: none, and it must land BEFORE `multihop-ledger-human-acceptance`, whose re-runs
+  would otherwise reproduce the same unreadable rows. Reuse the drafting lane with
+  `DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 DRAFT_DEDUP_AGAINST=<existing bundle>` and the
+  existing stratified worksheet builder.
+- User-visible outcome: the reviewer is handed a multi-hop worksheet whose accepted size can
+  actually decide the graph-weight and span-identity questions, instead of one that re-states them.
+- Scope boundary: in scope -- the wider draft, its dedup against the existing bundle, the
+  span-exactness and Ukrainian gates the drafting already applies, and a recorded statement of the
+  drafted size against the 53-item floor. Out of scope -- accepting the items (that is the human
+  task), re-running the sweep or the answer-quality lane on the drafted set, and lowering the floor
+  by changing any confidence convention.
+- Data and artifact paths: a new drafted bundle beside the existing one under
+  `$DATA_DIR/graph-vector-fusion-multihop/`; no new root.
+- Execution path: the drafting run on the CUDA host; CI covers the dedup and the multi-span
+  contract over fixtures, as it already does for the drafting lane.
+- Acceptance gates: `make ci` green; the drafted multi-hop slice reaches at least the item count
+  the floor names with review headroom; every drafted item is span-exact and re-grounds >= 2
+  distinct spans; no item duplicates the existing bundle.
+- Documentation target: the drafting section of [data prep](current/data-prep.md) and the
+  graph-vector fusion evidence section of [GraphRAG](current/graphrag-backend.md).
 
-### borderline-annotation-on-the-remaining-uncertainty-lanes (optional)
+### headline-objective-verbosity-decomposition
 
-The `p_positive` / borderline qualifier now rides on `paired_comparison`, so every lane built on it
-reports how far its deciding row sits from the cut
-([RAG core](current/rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-Three uncertainty lanes do NOT go through that function and so still quote unqualified binaries:
-the sidecar-free routing calibration (`src/llb/rag/fusion_calibration/evaluate.py`, which draws its
-own index sets and reads route precision/recall through `bootstrap_ratio`), the measurement floor
-(`src/llb/rag/noise_floor.py`, whose fragile-count reading is a different statistic entirely), and
-the query-robustness lane's per-noise-class deltas. Decide per lane whether the same qualifier
-applies -- `bootstrap_ratio` can carry it the same way `bootstrap_interval` now does -- or record
-why that lane's reading is not a `lo > 0` cut and needs a different honesty signal.
+The leaderboard ranks on normalized token F1, which merges two different failures into one number:
+not carrying the reference fact, and carrying it inside a longer answer. On the one item set where
+several models are scored identically under pinned retrieval, the found-rate ranks the roster in
+nearly the opposite order to the objective, and the models the objective ranks last are the ones
+that state the reference on the MOST items
+([scoring](current/rag-core.md#measured-the-headline-objective-is-partly-a-verbosity-ranking)).
+Split the headline into the parts it currently merges: report token PRECISION and RECALL beside the
+F1 (F1 hides which side is losing), the verbosity-robust found-rate, and a completion-length column
+per row, then measure the objective's length sensitivity across the roster on a fixed item set and
+state a ranking policy that is explicit about how much of the score is answer format. Keep the
+instruction-following reading separate and honest: the shipped `eval.rag` system prompt does ask for
+a short answer, so a length penalty is partly legitimate -- the deliverable is a ranking whose
+verbosity component is DECLARED, not one that removes it.
 
-- Agent status: CLEAR
-- Dependencies: none. Reuse `separation_stability` / `stability_from_readings` / `borderline_note` /
-  `boundary_table` in `src/llb/rag/fusion_evidence/stability.py`; `bootstrap_ratio` already computes
-  the resample distribution the exceedance would be counted from.
-- User-visible outcome: no uncertainty lane in the repo keeps stating a threshold result without
-  saying how close it sits to the threshold.
-- Scope boundary: in scope -- extending the annotation to `bootstrap_ratio`, wiring the three lanes
-  or recording why a lane is excluded, and re-rendering their recorded artifacts. Out of scope --
-  changing any threshold, the routing policy, and the floor's own definition.
-- Data and artifact paths: additive fields in the existing artifacts of each lane; no new roots.
-- Execution path: re-render the recorded artifacts and confirm no recorded number moves; CI covers
-  the annotation per lane over the existing fixtures.
-- Acceptance gates: `make ci` green; each of the three lanes either carries the qualifier with its
-  recorded numbers reproducing exactly, or has a recorded reason it does not.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) plus
-  the sidecar-free calibration and measurement-floor sections.
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `src/llb/scoring/correctness.py` (the F1 already computes both sides
+  internally), the `completion_tokens` field every `scores.jsonl` row carries, and
+  `src/llb/scoring/aggregate.py` for the leaderboard policy.
+- User-visible outcome: an operator can tell "this model does not know the answer" from "this model
+  knows the answer and is wordy", and the recommended model stops depending on which of the two the
+  headline silently penalizes.
+- Scope boundary: in scope -- the precision/recall/found-rate/length columns, the length-sensitivity
+  study across the recorded roster, and an explicit ranking-policy decision (keep F1, adopt a
+  composite, or rank on a length-controlled statistic). Out of scope -- judge-based scoring changes,
+  prompt rewording, and re-running any retrieval lane.
+- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
+  the study under `$DATA_DIR/verbosity-sensitivity/<run>/`.
+- Execution path: re-score the recorded roster bundles for the study (no new inference needed for
+  the recorded models), then one fresh `make run-eval` per policy candidate to confirm the columns;
+  CI covers the decomposition on committed fixtures including a verbose-but-correct and a
+  terse-but-wrong case.
+- Acceptance gates: `make ci` green; every recorded bundle's existing `objective_score` reproduces
+  bit-identically (the split is additive); the study reports the per-model rank under each candidate
+  policy plus the correlation between answer length and score; the chosen policy is recorded with
+  the reason, and any leaderboard rank it changes is named.
+- Documentation target: [RAG core](current/rag-core.md#scoring) and the ranking policy in
+  [evaluation rigor](current/rigor-board-judge.md).
+
+### randomization-calibrated-paired-reading
+
+The percentile-bootstrap `lo > 0` cut is anti-conservative exactly where the repo uses it most: on
+the 20 recorded adoption cells (n=40) it fires on 3.0%-7.8% of paired sign-flip null draws against
+the 2.5% its interval implies, worst where the discordant count is smallest, while the 82- and
+250-item ablation lanes sit near nominal
+([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Every adopt-or-retain
+call on a small accepted ledger therefore rests on a test whose real size is up to 3x its nominal
+one. Add the exact paired randomization p (sign-flip over the per-item deltas, the same draw
+structure the bootstrap already builds), persist it beside `p_positive`, and let the reading be
+decided by the calibrated quantity. Ship a null-calibration harness with it so the claim is
+maintained rather than asserted: the empirical size of the shipped rule on committed fixtures is a
+CI assertion, not a one-off measurement.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. `separates()` in `src/llb/rag/fusion_evidence/stats.py` is already the one
+  separation test every lane cuts on and it already falls back to `insufficient_evidence` when
+  there is nothing to randomize over, so the calibrated reading replaces its interval half in one
+  place ([the gate](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)). Reuse
+  `bootstrap_index_sets` / `paired_comparison` and the `stability` block that already rides on every
+  paired delta.
+- User-visible outcome: an adopt decision on a 40-item ledger has the error rate it claims, so a
+  swap recommendation is not an artifact of the interval's small-sample behavior.
+- Scope boundary: in scope -- the randomization p, its persistence and rendering, the reading rule,
+  the CI size harness, and a re-read of every recorded artifact that persists per-item vectors. Out
+  of scope -- replacing the bootstrap INTERVAL (the reported delta bounds stay), changing the
+  confidence conventions, and BCa/studentized variants unless the size harness shows the
+  randomization p is unavailable for a lane.
+- Data and artifact paths: additive fields in the existing artifacts; the re-read under
+  `$DATA_DIR/paired-reading-audit/<run>/`.
+- Execution path: the re-read runs from recorded artifacts on the CUDA host (no new inference); CI
+  covers the p against a brute-force enumeration at small n and asserts the empirical size on
+  committed fixture deltas.
+- Acceptance gates: `make ci` green; the size harness shows the shipped rule at or below its nominal
+  level on every committed fixture; the re-read names every recorded verdict whose reading changes,
+  including the adoption sweeps' `extend_bar` cells and the bake-off's `adopt` rows.
+- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) and each
+  affected lane's evidence section.
+
+### selection-adjusted-grid-verdicts
+
+Three lanes decide by SELECTING a row out of a grid and then reading that row as if it were the only
+comparison made: the fusion sweep's `best_row` (17-127 rows x 4 metrics x slices, 408-3048 paired
+cuts per sweep), the adoption bar's `extend_bar` (fires when ANY of 4 cells clears zero), and the
+bake-off's adopt (any candidate that separates). Measured against a joint sign-flip null, the
+`any cell` rule fires on 13.7%-16.4% of null draws over 4 cells and 44.1% over the 20-cell roster,
+and the three recorded `adopt` fusion sweeps' deciding row carries an FWER-adjusted p of 0.14-0.29
+([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Add family-wise control
+where a verdict selects: declare the family a verdict chose from, compute a Westfall-Young
+max-statistic step-down adjusted p over it (the same sign-flip draw, so the correlation between rows
+is respected rather than assumed away), and gate adoption on the adjusted reading while continuing
+to report the per-row one.
+
+- Agent status: RUN NEEDED
+- Dependencies: `randomization-calibrated-paired-reading` (the max-statistic procedure is built on
+  the same sign-flip draw). Reuse each lane's verdict module -- `src/llb/rag/fusion_evidence/verdict.py`,
+  `src/llb/eval/embedder_adoption/verdict.py`, `src/llb/rag/embedding_bakeoff_verdict.py`.
+- User-visible outcome: a grid sweep's recommendation carries the error rate of the SEARCH that
+  produced it, so an operator stops adopting the luckiest cell of a wide sweep.
+- Scope boundary: in scope -- the family declaration per lane, the adjusted p, the gated verdict, and
+  a re-read of every recorded sweep restating whether its verdict survives. Out of scope -- narrowing
+  any grid, changing the metrics, and correcting rows the verdict did not select from (they stay
+  per-row readings, labeled as such).
+- Data and artifact paths: additive fields in the existing artifacts; the re-read under
+  `$DATA_DIR/paired-reading-audit/<run>/`.
+- Execution path: the re-read runs from recorded artifacts on the CUDA host; CI covers the step-down
+  procedure against a brute-force family at small n and the per-lane family declaration over fixtures.
+- Acceptance gates: `make ci` green; every recorded grid verdict is restated as surviving or not
+  surviving its own family adjustment, explicitly including the `graph_fusion_span_identity`
+  `overlap` row that the `exact`-to-`overlap` default flip would be decided on -- the minimum-
+  evidence gate already reads that row as unsupported at its item count
+  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)), so the family adjustment must
+  say whether it would ALSO have failed selection had the item count been there; no shipped default
+  changes on this task alone.
+- Documentation target: the fusion evidence section of [GraphRAG](current/graphrag-backend.md) and
+  the paired-uncertainty subsection of [RAG core](current/rag-core.md).
+
+### retrieval-comparison-paired-uncertainty
+
+`compare-retrieval` is the lane that decides the chunker recommendation, the hybrid fusion weight,
+and the reranker row, and it is the only comparison lane in the repo with no paired uncertainty at
+all: it publishes point estimates plus the measurement floor, and the floor answers only whether a
+gap is numeric noise ([RAG core](current/rag-core.md#measurement-floor---noise-floor)). Every other
+lane -- the embedder bake-off, the fusion sweep, the ablation, the answer-quality comparison, the
+adoption bar -- reports a paired delta against a named baseline with a win/loss/tie ledger and an
+adopt-or-retain verdict. Give this one the same treatment: retrieve once per item per lane, keep the
+per-item metric vectors, draw one shared resample index set, and report each lane's delta against a
+baseline lane with the standard verdict.
+
+- Agent status: RUN NEEDED
+- Dependencies: none, and it should land BEFORE `chunker-bake-off-under-the-size-cap`, which would
+  otherwise record another point-estimate ranking. Reuse
+  `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes metric vectors, not embedder
+  rows) and the lane seam in `src/llb/rag/compare.py` / `src/llb/rag/comparison_builders.py`.
+- User-visible outcome: a chunker or fusion-weight recommendation states whether the winning lane
+  would still win on a different draw of questions, instead of ranking three-decimal point estimates.
+- Scope boundary: in scope -- the per-item vectors, the paired columns, the baseline-lane selection,
+  the verdict, and a re-run on both scored corpora. Out of scope -- new strategies, new lanes, and
+  any change to the retrieval metrics or the floor.
+- Data and artifact paths: the existing `compare-retrieval` report plus per-item vectors in its JSON;
+  no new roots.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=... NOISE_FLOOR=1` on the CUDA host; CI
+  covers the paired columns over the fake retrievers the lane is already tested with.
+- Acceptance gates: `make ci` green; every recorded row's point estimate reproduces exactly; each row
+  carries a paired delta against the baseline lane and the report states adopt or retain; the
+  recorded `sentence`-versus-`recursive` and fusion-weight readings are restated as separated or
+  flat.
+- Documentation target: the chunking-strategies and hybrid-retrieval evidence in
+  [RAG core](current/rag-core.md).
+
+### agent-context-management-policies
+
+The agent episode loop rebuilds its prompt from the FULL transcript of every tool call and
+observation on every step (`build_agent_prompt` / `run_episode` in
+`src/llb/bench/agentic/episode.py`) with no budget check, no observation cap, and no compaction, so
+a single large tool result grows the prompt for the rest of the episode and can push it past the
+served window with no typed status to show for it -- `AgenticCaseRow` records `n_steps` and
+`n_tool_calls` but no prompt size, so the overflow is not even observable after the fact. The
+context-policy lane already establishes the shape this needs, but it ranks policies over question
+CHAINS, not tool episodes ([extended workflows](current/extended-workflows.md#context-policy-comparison)).
+Give the agent loop the same treatment: make context management a POLICY row and measure it.
+Policies to compare, each a fresh episode over the identical task set: `full` (today's behavior, the
+baseline row), `observation_cap` (each observation trimmed to a budget, head and tail kept with an
+explicit elision marker so the model can tell it was trimmed), `keep_last_n` (older steps dropped
+whole), and `compact` (a model-written running summary of the older steps once the prompt crosses a
+share of the window, the agent-loop counterpart of the chain lane's `summary`). Add the missing
+guard underneath them: resolve the model's usable window once per run and check each step's prompt
+with `fits_context_chars` before the call, terminating the episode as `context_overflow` -- the
+status already in the shared taxonomy (`src/llb/eval/common.py`) that the ablation lane uses --
+rather than sending a prompt that cannot fit.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the policy-row pattern, board tier, and recommendation section of
+  `bench-chain-context` (`src/llb/bench/chain_context_policy.py`,
+  `src/llb/board/chain_context.py`, `format_chain_context_section_md`), the window arithmetic in
+  `src/llb/optimize/tuning_space.py`, and the injectable `complete` / `ToolWorld` seams the agentic
+  suite is already unit-tested over.
+- User-visible outcome: an operator gets a measured answer to "how should my agent spend its
+  context window", and an episode that cannot fit says so instead of failing as a wrong answer.
+- Scope boundary: in scope -- the four policy rows, the per-step budget guard, the new per-episode
+  telemetry (prompt tokens per step, observation bytes, compactions, trimmed observations), and a
+  best-policy-per-model reading with paired intervals. Out of scope -- new tools, new tasks, changes
+  to the tool world or the success checks, and changing the shipped `loop` behavior before the
+  comparison supports it.
+- Data and artifact paths: one run bundle per policy under `$DATA_DIR/agentic-context/<run>/`,
+  tagged with the policy exactly as the per-harness and per-chain-policy bundles are.
+- Execution path: `make bench-agentic-context AGENT_CONTEXT_POLICIES=full,observation_cap,keep_last_n,compact
+  MODEL=<model> BACKEND=<backend>` on the CUDA host, plus one run against a task set with
+  deliberately large observations so the guard is exercised; CI drives every policy and the guard
+  over the fake endpoint with no GPU.
+- Acceptance gates: `make ci` green; the `full` policy reproduces the recorded agentic rows exactly
+  (the policy seam adds nothing to the baseline path); no episode in any policy sends a prompt over
+  the resolved window; every policy carries completion rate, steps, tool calls, and prompt tokens
+  with a paired delta against `full`; the reading names the best policy per model or states that the
+  policies are flat against each other at this task count.
+- Documentation target: a context-management subsection beside
+  [agentic harness comparison](current/extended-workflows.md#agentic-harness-comparison), and the
+  agentic section of [category suite](current/category-benchmark-suite.md#agentic).
+
+### agent-harness-loop-policy-recommendation
+
+The harness comparison varies the FRAMEWORK and holds the loop policy fixed
+([extended workflows](current/extended-workflows.md#agentic-harness-comparison)), so the loop's own
+constants have never been measured on anything. Two of them decide episodes: `DEFAULT_MAX_STEPS = 6`
+is a guess, and a tool call the parser cannot read is treated as the FINAL ANSWER and ends the
+episode (`parse_tool_call` returning `None` in `src/llb/bench/agentic/episode.py`), so a model that
+emits almost-valid JSON is scored as though it chose to stop -- a formatting failure and a reasoning
+failure become the same number. Sweep the loop policy the way the framework is swept and recommend
+one per model: `max_steps` over a small grid, the malformed-call policy (`answer`, today's behavior,
+versus `repair_once` -- reprompt once with the schema and the parse error -- versus `strict`, which
+counts the step as failed and continues), and repeated-identical-call handling (allow versus a
+recorded no-op with a note back to the model). Report completion rate against COST, because a step
+budget buys completion with tokens and wall clock, and a recommendation that ignores the price is
+not usable on a 16 GiB host.
+
+- Agent status: RUN NEEDED
+- Dependencies: `agent-context-management-policies` supplies the per-step prompt-size telemetry the
+  cost side reads; land it first. Reuse the harness resolution and comparison seam in
+  `src/llb/bench/agentic/run.py` and `src/llb/board/harnesses.py`, and the tool-call parser in
+  `src/llb/scoring/tool_calls.py`.
+- User-visible outcome: the operator gets a per-model loop configuration with evidence -- how many
+  steps to allow, and whether to repair a malformed tool call -- instead of inheriting three
+  constants nobody measured.
+- Scope boundary: in scope -- the knob sweep, the malformed-call rate reported SEPARATELY from
+  completion so a repair gain is attributable to formatting rather than to reasoning, the
+  cost columns, and the per-model recommendation. Out of scope -- new harness frameworks, changes to
+  the tool catalog or world, trajectory-judge changes, and changing the shipped defaults before a
+  paired delta supports it.
+- Data and artifact paths: one bundle per policy cell under `$DATA_DIR/agentic-loop-policy/<run>/`;
+  the comparison beside it.
+- Execution path: `make bench-agentic-loop AGENT_MAX_STEPS=4,6,10 AGENT_MALFORMED_POLICY=answer,repair_once,strict
+  MODEL=<model> BACKEND=<backend>` on the CUDA host over at least two roster models, since a
+  repair policy is a property of the model's formatting behavior; CI covers each policy's branch
+  over the fake endpoint, including a completion the parser cannot read.
+- Acceptance gates: `make ci` green; the `answer` policy at `max_steps=6` reproduces the recorded
+  agentic rows exactly; every cell reports completion, malformed-call rate, steps, tool calls, and
+  prompt tokens with a paired delta against that baseline cell; a default changes only when its
+  delta clears zero under the standard verdict; the recommendation states the cost of each
+  recommended knob.
+- Documentation target: the agentic harness section of
+  [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
+
+### agent-operating-profile-recommendation
+
+Every ingredient of an agent configuration is measured somewhere in this repo and nowhere together:
+`llb recommend` renders host-adaptive model picks plus separate miss-analysis, self-improvement,
+fine-tune-campaign, and context-policy sections (`src/llb/board/recommend/sections.py`), the
+context-order recommendation comes out of the position probe, the retrieval knobs out of the
+comparison lanes, the prompt-system id out of `prompt-system-compare`, and the adapter out of the
+registry. An operator wanting to stand up an agent must read five sections and hand-assemble, and
+nothing checks that the pieces were measured on the same corpus, store, or model. Compose them:
+`llb recommend --agent-profile` emits ONE `agent_profile.json` plus a markdown rationale naming
+model and backend, prompt-system id, adapter (or none), context policy, context order, `top_k` /
+reranker / context budget, and the loop policy. Each field carries its value, the artifact path the
+value came from, that lane's own verdict and uncertainty, and its freshness -- and a field whose
+lane never ran is emitted as `unmeasured`, never as a default dressed up as a recommendation, which
+is the whole failure mode a composed profile invites.
+
+- Agent status: RUN NEEDED
+- Dependencies: `agent-context-management-policies` and `agent-harness-loop-policy-recommendation`
+  supply the two agent-side fields; the rest are current behavior. Reuse `src/llb/board/recommend/`
+  (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
+  ([extended workflows](current/extended-workflows.md#staleness)), and the shared borderline
+  vocabulary in `src/llb/rag/fusion_evidence/stability.py` so a field resting on a knife-edge row is
+  marked the same way every lane marks it.
+- User-visible outcome: one artifact an operator (or a runtime) can act on, where every recommended
+  value is traceable to the run that measured it and every gap is visible as a gap.
+- Scope boundary: in scope -- the composition, the per-field evidence/verdict/freshness record, the
+  `unmeasured` state, the consistency guard (fields measured against a different corpus, store
+  fingerprint, or model are refused rather than mixed), the JSON schema, and the markdown rationale.
+  Out of scope -- running any lane on the operator's behalf, inventing a value for an unmeasured
+  field, ranking policy changes, and shipping a runtime that consumes the profile.
+- Data and artifact paths: `$DATA_DIR/agent-profile/<run>/{agent_profile.json,profile.md}`, composed
+  from the existing per-lane roots; no new evidence root.
+- Execution path: `make recommend-agent-profile` after the component lanes have run on the CUDA
+  host; CI covers composition, the `unmeasured` state, the consistency guard, and the staleness
+  demotion over fixture bundles -- no GPU.
+- Acceptance gates: `make ci` green; a profile built with no bundles at all is entirely `unmeasured`
+  and still a valid artifact; every populated field's evidence path resolves and its verdict matches
+  the lane artifact it cites; a stale adapter or a store whose retrieval fingerprint changed demotes
+  every field that depends on it, with the changed knob named; the recommended values replay as
+  `run-eval` / `bench-agentic` flags that reproduce the recommended configuration.
+- Documentation target: a recommendation-composition section in
+  [extended workflows](current/extended-workflows.md) and the recommendation entry in
+  [overview](current/overview.md).
+
+### reranker-bake-off
+
+The cross-encoder is pinned to one model (`BAAI/bge-reranker-v2-m3`, `DEFAULT_RERANKER` in
+`src/llb/rag/rerank.py`) and has never been compared with anything, while the adoption evidence shows
+the reranked cell is where a retrieval change actually reaches the answer for some models
+([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). A reranker is also the
+cheapest place to buy first-hit rank on a 16 GiB host, and the multilingual cross-encoder field has
+moved. Bake off the current candidates that cover Ukrainian -- `BAAI/bge-reranker-v2-m3` (incumbent),
+`jinaai/jina-reranker-v2-base-multilingual`, `Alibaba-NLP/gte-multilingual-reranker-base`,
+`mixedbread-ai/mxbai-rerank-base-v2`, `Qwen/Qwen3-Reranker-0.6B` -- on the accepted ledger at a fixed
+encoder and chunking, reporting recall@k / MRR / first-hit rank with the standard paired verdict plus
+the cost columns a reranker is actually chosen on (rerank latency per query, VRAM while the generator
+is resident).
+
+- Agent status: RUN NEEDED
+- Dependencies: `retrieval-comparison-paired-uncertainty` (the verdict machinery), and it feeds
+  `embedder-decision-on-a-resolvable-item-set`. Reuse `CrossEncoderReranker` and the `+rerank` row
+  seam in `src/llb/rag/compare.py`.
+- User-visible outcome: the shipped reranker is a measured choice with a cost, not a default nobody
+  has questioned, and the operator learns whether the rank gain is worth the second model in VRAM.
+- Scope boundary: in scope -- the candidate lane, the paired verdict, the latency/VRAM columns, and a
+  keep-or-swap recommendation. Out of scope -- reranker fine-tuning, hosted rerankers, listwise/LLM
+  rerankers, and changing `rerank_candidates` defaults before the bake-off supports it.
+- Data and artifact paths: `$DATA_DIR/compare-rerankers/<run>/{report.md,report.json}`.
+- Execution path: `make compare-rerankers GOLDSET=<accepted> CORPUS=<dir> NOISE_FLOOR=1` on the CUDA
+  host; a candidate that needs `trust_remote_code` is refused unless explicitly opted into, and a
+  candidate that does not fit beside the generator is reported as skipped with its measured
+  footprint rather than silently omitted. CI covers scoring, ranking, and the verdict over a fake
+  cross-encoder -- no download, no GPU.
+- Acceptance gates: `make ci` green; every candidate is scored on the identical item set at the same
+  seed with its own documented query/passage input format; each row carries a paired delta against
+  the incumbent plus rerank latency; the report states keep or swap and names the cost of the swap.
+- Documentation target: [RAG core](current/rag-core.md#reranking-and-context-order-rerank-context-order)
+  and the recommendation line in [platform matrix](current/platform-vector-matrix.md).
+
+### embedder-candidate-roster-refresh
+
+The bake-off's default candidate list is the 2023-2024 multilingual generation, and the paired lane
+now says the choice is undecidable on the item sets the repo has partly because the candidates are
+close together ([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)).
+Add the current multilingual retrieval encoders that fit a 16 GiB host beside the incumbents --
+`intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
+`jinaai/jina-embeddings-v3`, `Qwen/Qwen3-Embedding-0.6B` -- and register each one's convention
+FIRST. That registration is the substance of the task, not a detail: `embedding_family` resolves by
+substring, so `multilingual-e5-large-instruct` currently resolves to the plain `e5` family and would
+be scored with the plain `query:` / `passage:` prefixes instead of its instruction format, and an
+unrecognized id
+falls through to `plain` with no instruction at all -- the exact silent recall loss the family table
+exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-off)).
+
+- Agent status: RUN NEEDED
+- Dependencies: none, but the decision it feeds is `embedder-decision-on-a-resolvable-item-set`.
+  Reuse `src/llb/rag/embedding.py` (family table, query/passage conventions) and the bake-off lane
+  unchanged.
+- User-visible outcome: the Ukrainian embedder recommendation is made against the encoders an
+  operator would actually consider today, each scored under its own documented convention.
+- Scope boundary: in scope -- the family entries and their unit tests, the candidate list, VRAM/
+  throughput/index-size measurement per candidate, and a re-run of the paired bake-off on both scored
+  corpora. Out of scope -- fine-tuning (that is `ua-embedder-domain-finetune`), late-interaction /
+  multi-vector retrieval, hosted API encoders beyond the existing opt-in row, and changing the
+  shipped default before a candidate separates.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
+- Execution path: `make compare-embeddings MODELS=<roster> NOISE_FLOOR=1` on the CUDA host; a
+  candidate requiring `trust_remote_code` is opt-in and recorded as such. CI covers each new family's
+  query/passage convention against its model card's documented format and asserts that an unknown id
+  does not silently resolve to `plain`.
+- Acceptance gates: `make ci` green; every candidate's convention is unit-tested and cited; the
+  incumbent rows reproduce their recorded numbers; each new row carries its paired delta, throughput,
+  index size, and peak VRAM; the verdict is recorded as adopt, retain, or undecidable at the reached
+  sample size.
+- Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
+  [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
+
+### cross-lingual-query-lane
+
+The query-robustness lane perturbs CHARACTERS -- transliteration, apostrophe variants, mixed script,
+keyboard typos ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark))
+-- and never changes the LANGUAGE of the query. Ukrainian deployments routinely receive Russian and
+code-switched questions against a Ukrainian corpus, and the repo already treats Russian as a
+first-class second language on the security side, where a model that refuses in Ukrainian and
+complies in Russian is a measured finding
+([category suite](current/category-benchmark-suite.md)). Retrieval and answering have no equivalent.
+Add a query-language lane: a committed Russian and mixed UA/RU variant of an existing gold set's
+QUESTIONS with the gold spans and documents unchanged (so retrieval is scored by the same
+source-span metric), then report recall@k, MRR, and answer quality per language against the
+Ukrainian baseline.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the variant-class seam in `src/llb/eval/query_robustness_variants.py`,
+  the lane runner, and the per-class reporting; the drafted variants ride the existing
+  drafted-grounding rules until a reviewer accepts them.
+- User-visible outcome: an operator learns whether their Ukrainian RAG stack answers a Russian
+  question about a Ukrainian document, and whether the loss is in retrieval or in generation.
+- Scope boundary: in scope -- the committed variant fixture, the language lane, the per-language
+  retrieval and answer reporting, and a mitigation reading (does query normalization or translation
+  in `query_prep` recover the loss). Out of scope -- multilingual corpora, translating the CORPUS,
+  a translation model in the shipped query path before the measurement supports it, and any change
+  to the security lane's Russian probes.
+- Data and artifact paths: `samples/goldsets/<fixture>_ru/` for the committed variants;
+  `$DATA_DIR/query-robustness/<run>/` for the lane output.
+- Execution path: `make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed`
+  on the CUDA host; CI covers variant generation, the unchanged-span invariant, and the per-language
+  report over fixtures.
+- Acceptance gates: `make ci` green; every variant item keeps its gold spans byte-identical and
+  passes `validate-goldset`; the report carries recall@k and answer quality per language with paired
+  intervals against the Ukrainian baseline; the reading states whether the loss is retrieval-side or
+  answer-side, and the fixture is marked drafted until a reviewer accepts it.
+- Documentation target: the query-robustness section of
+  [evaluation rigor](current/rigor-board-judge.md) and the query-side processing section of
+  [RAG core](current/rag-core.md).
 
 ### vector-store-bake-off-paired-uncertainty (optional)
 
@@ -173,7 +546,9 @@ strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the go
 that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
+- Dependencies: `retrieval-comparison-paired-uncertainty` -- without it this re-run can only record
+  another point-estimate ranking, and the recorded winner's margin is smaller than one item on the
+  sets involved. Then reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
   row can be read against the corpus's own floor
   ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
@@ -212,7 +587,7 @@ recall falls at the same time, so treat it as a diagnostic, not a recommendation
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,
   the sweep lane, and the existing query-decomposition step in
-  [RAG core](current/rag-core.md#query-side-processing).
+  [RAG core](current/rag-core.md#query-side-processing-uk-query-processing).
 - User-visible outcome: the operator learns whether multi-hop evidence coverage is limited by the
   retrieval budget or by the query, instead of tuning ranking knobs that provably cannot move it.
 - Scope boundary: in scope -- the k sweep, the per-hop probe, and a written diagnosis. Out of scope
@@ -500,8 +875,8 @@ folded text -- the `retrieve_queries` seam already carries separate dense and le
 The restoration constraints ship with three unswept design constants: the surface-compatibility
 budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
 ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
-context ([RAG core](current/rag-core.md#query-side-processing)). Each was chosen to be
-conservative, and nothing measures what the conservatism costs: a budget of 1 would admit a token
+context ([RAG core](current/rag-core.md#query-side-processing-uk-query-processing)). Each was chosen
+to be conservative, and nothing measures what the conservatism costs: a budget of 1 admits a token
 that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words stay
 untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and the
 edit-precision audit per setting, and pin each value with evidence or expose it.
@@ -530,9 +905,11 @@ independent multi-span tuning/final ledger, declare its minimum detectable gain 
 before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
 
 - Agent status: BLOCKED BY HUMAN
-- Dependencies: `multihop-ledger-human-acceptance` must provide a non-empty accepted multi-span
-  ledger. Human step that gates completion: accept enough additional genuinely multi-span
-  questions to meet the predeclared split sizes.
+- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
+  non-empty accepted multi-span ledger. Human
+  step that gates completion: accept enough additional genuinely multi-span questions to meet the
+  predeclared split sizes.
 - User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
   artifact before changing the fallback defaults.
 - Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
@@ -695,10 +1072,16 @@ assemble a ledger enriched with questions the incumbent currently MISSES (mine t
 in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
 encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
 it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
-outcome and is what would justify closing the question.
+outcome and is what would justify closing the question. The size the ENRICHMENT has to buy is
+already priced: the withdrawn `e5-large` adopt differs on 5 of 250 items, and at that rate the
+reporting level needs 300 items, which no committed goldset reaches -- so plain "more questions" is
+not the route, raising the discordance rate is (double the rate, halve the floor)
+([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)).
 
 - Agent status: BLOCKED BY HUMAN
-- Dependencies: the paired bake-off lane, the verdict, and `report.json` are current behavior
+- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+  supplies the item count the predeclared gain needs; the paired bake-off lane, the verdict, and
+  `report.json` are current behavior
   ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). Human step
   that gates completion: a reviewer accepts the enriched question set through
   `make verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
@@ -728,7 +1111,11 @@ is span-exact and Ukrainian-gated by construction, but only a reviewer can say w
 shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
-- Dependencies: the drafting, sweep, and store lanes are current behavior. Human step that gates
+- Dependencies: `widen-the-multihop-drafted-slice-to-a-decidable-size` -- at the current 35 drafted
+  items the deciding rows differ on 4-5, which cannot reach 95% whatever the reviewer accepts, and
+  acceptance only shrinks a ledger
+  ([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). The
+  drafting, sweep, and store lanes are current behavior. Human step that gates
   completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
   specifically whether the question is answerable ONLY with both cited spans -- and signs off on
   the resulting accepted ledger.

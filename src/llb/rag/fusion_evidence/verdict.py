@@ -24,19 +24,41 @@ from llb.rag.fusion_evidence.models import (
     VERDICT_NO_EVIDENCE,
     VERDICT_REJECT,
 )
-from llb.rag.fusion_evidence.stability import ReadingStability, borderline_note
-from llb.rag.fusion_evidence.stats import Interval
+from llb.rag.fusion_evidence.stability import (
+    ReadingStability,
+    borderline_note,
+)
+from llb.rag.fusion_evidence.stats import (
+    DEFAULT_CONFIDENCE,
+    Interval,
+    PairedComparison,
+    evidence_gate_clause,
+    separates,
+)
 
 # The two focus-slice metrics a fused row may earn its default on: recovering ANY hop the vector
 # lane missed, or completing the evidence of an item it only half-covered.
 GAIN_METRICS = (METRIC_RECALL, METRIC_ALL_SPANS)
 
+_ZERO: Interval = {"mean": 0.0, "lo": 0.0, "hi": 0.0}
+_NO_COMPARISON: PairedComparison = {
+    "delta": _ZERO,
+    "wins": 0,
+    "losses": 0,
+    "ties": 0,
+    "sign_test_p": 1.0,
+}
 
-def _focus_delta(row: RowReport, focus_slice: str, metric: str) -> Interval:
+
+def _focus_paired(row: RowReport, focus_slice: str, metric: str) -> PairedComparison:
     slice_report = row["slices"].get(focus_slice)
     if slice_report is None:
-        return {"mean": 0.0, "lo": 0.0, "hi": 0.0}
-    return slice_report["paired_vs_baseline"][metric]["delta"]
+        return _NO_COMPARISON
+    return slice_report["paired_vs_baseline"][metric]
+
+
+def _focus_delta(row: RowReport, focus_slice: str, metric: str) -> Interval:
+    return _focus_paired(row, focus_slice, metric)["delta"]
 
 
 def _focus_stability(row: RowReport, focus_slice: str, metric: str) -> ReadingStability | None:
@@ -72,8 +94,19 @@ def _rank_key(row: RowReport, focus_slice: str) -> tuple[float, float, float, fl
     )
 
 
-def decide(rows: dict[str, RowReport], *, baseline: str, focus_slice: str) -> Verdict:
-    """Pick the best fused row on the focus slice and state whether it earns a default."""
+def decide(
+    rows: dict[str, RowReport],
+    *,
+    baseline: str,
+    focus_slice: str,
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> Verdict:
+    """Pick the best fused row on the focus slice and state whether it earns a default.
+
+    The ranking is untouched by the minimum-evidence gate on purpose: which row leads is a summary
+    of the grid, and re-ordering it would be an adoption-rule change. What the gate decides is
+    whether the leading row's gain may be READ as a separation.
+    """
     focus_n = _focus_n(rows, baseline, focus_slice)
     verdict: Verdict = {
         "focus_slice": focus_slice,
@@ -95,7 +128,7 @@ def decide(rows: dict[str, RowReport], *, baseline: str, focus_slice: str) -> Ve
         verdict["reason"] = f"the scored set has no {focus_slice} item"
         return verdict
     best = max(sorted(candidates), key=lambda label: _rank_key(candidates[label], focus_slice))
-    decision, reason = _judge(candidates[best], best, focus_slice)
+    decision, reason = _judge(candidates[best], best, focus_slice, confidence)
     verdict["best_row"] = best
     verdict["decision"] = decision
     verdict["reason"] = reason
@@ -110,28 +143,40 @@ def _focus_n(rows: dict[str, RowReport], baseline: str, focus_slice: str) -> int
     return slice_report["n"] if slice_report else 0
 
 
-def _judge(row: RowReport, label: str, focus_slice: str) -> tuple[str, str]:
+def _judge(
+    row: RowReport, label: str, focus_slice: str, confidence: float = DEFAULT_CONFIDENCE
+) -> tuple[str, str]:
     """The `(decision, reason)` for the winning fused row."""
-    gains = {metric: _focus_delta(row, focus_slice, metric) for metric in GAIN_METRICS}
+    paired = {metric: _focus_paired(row, focus_slice, metric) for metric in GAIN_METRICS}
+    gains = {metric: comparison["delta"] for metric, comparison in paired.items()}
     overall = _overall_delta(row, METRIC_RECALL)
     best_mean = max(gain["mean"] for gain in gains.values())
-    best_lo = max(gain["lo"] for gain in gains.values())
+    separated = [
+        metric for metric, comparison in paired.items() if separates(comparison, confidence)
+    ]
     detail = (
         f"recall {gains[METRIC_RECALL]['mean']:+.3f} "
         f"[{gains[METRIC_RECALL]['lo']:+.3f}, {gains[METRIC_RECALL]['hi']:+.3f}], "
         f"all-spans {gains[METRIC_ALL_SPANS]['mean']:+.3f} "
         f"[{gains[METRIC_ALL_SPANS]['lo']:+.3f}, {gains[METRIC_ALL_SPANS]['hi']:+.3f}]"
     )
-    note = _gain_note(row, focus_slice)
+    note = _gain_note(row, focus_slice) + evidence_gate_clause(
+        [(metric, paired[metric]) for metric in GAIN_METRICS], confidence
+    )
     if best_mean <= 0.0:
         return VERDICT_REJECT, (
             f"{label} does not beat the vector lane on {focus_slice} ({detail}); "
             "fusion stays opt-in" + note
         )
-    if best_lo <= 0.0:
+    if not separated:
+        limit = (
+            "the interval includes no difference"
+            if all(gain["lo"] <= 0.0 for gain in gains.values())
+            else "no gain clear of zero rests on enough differing items to be read as one"
+        )
         return VERDICT_INCONCLUSIVE, (
-            f"{label} gains {best_mean:+.3f} on {focus_slice} but the interval includes no "
-            f"difference ({detail}); fusion stays opt-in until a larger {focus_slice} slice "
+            f"{label} gains {best_mean:+.3f} on {focus_slice} but {limit} "
+            f"({detail}); fusion stays opt-in until a larger {focus_slice} slice "
             "separates it from the vector lane" + note
         )
     if overall["mean"] < -OVERALL_RECALL_TOLERANCE:

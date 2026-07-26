@@ -7,6 +7,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
+from llb.eval.context_ablation.power import DEFAULT_TARGET_POWER
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
 
 
@@ -41,6 +42,21 @@ def compare_context_strategies_cmd(
     seed: int = typer.Option(DEFAULT_SEED, help="bootstrap resampling seed"),
     out_dir: Optional[Path] = typer.Option(
         None, help="artifact dir (default: $DATA_DIR/context-ablation/<timestamp>/)"
+    ),
+    power_reference: Optional[Path] = typer.Option(
+        None,
+        help="earlier comparison.json whose paired long-context variance prices the new item count",
+    ),
+    minimum_detectable_delta: Optional[float] = typer.Option(
+        None,
+        min=0.001,
+        help="smallest material objective delta the predeclared run is powered to distinguish",
+    ),
+    target_power: float = typer.Option(
+        DEFAULT_TARGET_POWER,
+        min=0.501,
+        max=0.999,
+        help="target power for the paired normal-approximation item count",
     ),
 ) -> None:
     """Score one item set under three context lanes and report whether RAG pays for itself.
@@ -84,6 +100,9 @@ def compare_context_strategies_cmd(
             seed=seed,
             out_dir=out_dir,
             verified_only=not include_drafted,
+            power_reference=power_reference,
+            minimum_detectable_delta=minimum_detectable_delta,
+            target_power=target_power,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

@@ -24,17 +24,37 @@ from llb.eval.answer_quality.models import (
     VERDICT_NO_GAIN,
     VERDICT_RETRIEVAL_ONLY,
 )
-from llb.rag.fusion_evidence.stability import ReadingStability, borderline_note
-from llb.rag.fusion_evidence.stats import Interval
+from llb.rag.fusion_evidence.stability import (
+    ReadingStability,
+    borderline_note,
+)
+from llb.rag.fusion_evidence.stats import (
+    DEFAULT_CONFIDENCE,
+    Interval,
+    PairedComparison,
+    evidence_gate_clause,
+    separates,
+)
 
 ZERO: Interval = {"mean": 0.0, "lo": 0.0, "hi": 0.0}
+NO_COMPARISON: PairedComparison = {
+    "delta": ZERO,
+    "wins": 0,
+    "losses": 0,
+    "ties": 0,
+    "sign_test_p": 1.0,
+}
+
+
+def _focus_paired(lane: LaneReport, focus_slice: str, metric: str) -> PairedComparison:
+    slice_report = lane["slices"].get(focus_slice)
+    if slice_report is None:
+        return NO_COMPARISON
+    return slice_report["paired_vs_baseline"][metric]
 
 
 def _focus_delta(lane: LaneReport, focus_slice: str, metric: str) -> Interval:
-    slice_report = lane["slices"].get(focus_slice)
-    if slice_report is None:
-        return ZERO
-    return slice_report["paired_vs_baseline"][metric]["delta"]
+    return _focus_paired(lane, focus_slice, metric)["delta"]
 
 
 def _focus_stability(lane: LaneReport, focus_slice: str, metric: str) -> ReadingStability | None:
@@ -58,6 +78,7 @@ def decide(
     baseline: str,
     focus_slice: str,
     coverage: str = METRIC_RETRIEVAL_HIT,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> AnswerQualityVerdict:
     """Judge every candidate lane on the focus slice and name the strongest one.
 
@@ -85,7 +106,9 @@ def decide(
         return verdict
     decisions: dict[str, LaneDecision] = {}
     for label in sorted(candidates):
-        decision, reason = _judge(candidates[label], label, baseline, focus_slice, coverage)
+        decision, reason = _judge(
+            candidates[label], label, baseline, focus_slice, coverage, confidence
+        )
         decisions[label] = {"decision": decision, "reason": reason}
     best = max(sorted(candidates), key=lambda label: _rank_key(candidates[label], focus_slice))
     verdict["best_lane"] = best
@@ -104,11 +127,18 @@ def _focus_n(lanes: dict[str, LaneReport], baseline: str, focus_slice: str) -> i
 
 
 def _judge(
-    lane: LaneReport, label: str, baseline: str, focus_slice: str, coverage_metric: str
+    lane: LaneReport,
+    label: str,
+    baseline: str,
+    focus_slice: str,
+    coverage_metric: str,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> tuple[str, str]:
     """The `(decision, reason)` for one candidate lane against the baseline."""
-    objective = _focus_delta(lane, focus_slice, METRIC_OBJECTIVE)
-    coverage = _focus_delta(lane, focus_slice, coverage_metric)
+    paired_objective = _focus_paired(lane, focus_slice, METRIC_OBJECTIVE)
+    paired_coverage = _focus_paired(lane, focus_slice, coverage_metric)
+    objective = paired_objective["delta"]
+    coverage = paired_coverage["delta"]
     detail = (
         f"objective {objective['mean']:+.3f} "
         f"[{objective['lo']:+.3f}, {objective['hi']:+.3f}], "
@@ -122,8 +152,10 @@ def _judge(
             (metric, _focus_stability(lane, focus_slice, metric))
             for metric in (METRIC_OBJECTIVE, coverage_metric)
         ]
+    ) + evidence_gate_clause(
+        [(METRIC_OBJECTIVE, paired_objective), (coverage_metric, paired_coverage)], confidence
     )
-    if objective["lo"] > 0.0:
+    if separates(paired_objective, confidence):
         return VERDICT_ANSWER_GAIN, (
             f"{label} answers {focus_slice} better than {baseline} ({detail}); the retrieval gain "
             "reaches the answer" + note
@@ -131,7 +163,7 @@ def _judge(
     # A coverage gain whose own interval clears zero, paired with an objective that does not, IS
     # the retrieval-only finding -- reporting it as merely `inconclusive` would throw away the
     # measured half of the result.
-    if coverage["lo"] > 0.0:
+    if separates(paired_coverage, confidence):
         return VERDICT_RETRIEVAL_ONLY, (
             f"{label} carries {coverage['mean']:+.3f} more of the {focus_slice} evidence than "
             f"{baseline}, but its objective is not separable from it ({detail}); the coverage gain "

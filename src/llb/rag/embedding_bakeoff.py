@@ -130,6 +130,7 @@ def run_bakeoff(
     corpus_root: str,
     local_models: list[str],
     build_local: StoreBuilder,
+    item_ids: Sequence[str] | None = None,
     api_model: str | None = None,
     build_api: StoreBuilder | None = None,
     data_classification: str | None = None,
@@ -157,6 +158,8 @@ def run_bakeoff(
     measurement floor is measured over the SAME items, so the recommendation is published beside
     the delta it has to clear rather than as a bare third decimal.
     """
+    if item_ids is not None and len(item_ids) != len(items):
+        raise ValueError("the embedder paired ledger needs one item id per scored item")
     candidates: list[CandidateResult] = []
     stores: dict[str, Any] = {}
     vectors: dict[str, MetricVectors] = {}
@@ -182,6 +185,16 @@ def run_bakeoff(
         "corpus_root": corpus_root,
         "candidates": candidates,
         "best_recall": best_recall(candidates),
+        "paired_items": [
+            {
+                "item_id": item_ids[index] if item_ids is not None else str(index),
+                "models": {
+                    model: {metric: values[metric][index] for metric in values}
+                    for model, values in vectors.items()
+                },
+            }
+            for index in range(len(items))
+        ],
     }
     _attach_uncertainty(
         report, vectors, baseline, bars=bars, resamples=resamples, confidence=confidence, seed=seed
@@ -225,4 +238,4 @@ def _attach_uncertainty(
     for row in report["candidates"]:
         if row["model"] in paired:
             row["paired_vs_baseline"] = paired[row["model"]]
-    report["verdict"] = decide_verdict(paired, baseline, bars)
+    report["verdict"] = decide_verdict(paired, baseline, bars, confidence)

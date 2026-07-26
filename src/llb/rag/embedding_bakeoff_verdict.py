@@ -23,8 +23,16 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     PairedRow,
     bar_stability,
 )
-from llb.rag.fusion_evidence.stability import borderline_note, unsettled
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.stability import (
+    borderline_note,
+    unsettled,
+)
+from llb.rag.fusion_evidence.stats import (
+    DEFAULT_CONFIDENCE,
+    evidence_gate_clause,
+    format_interval,
+    separates,
+)
 
 DECISION_ADOPT = "adopt"
 DECISION_RETAIN = "retain"
@@ -49,14 +57,27 @@ def resolve_bars(spec: str | None) -> tuple[str, ...]:
     return tuple(bar for bar in BARS if bar in selected)
 
 
-def cleared_bars(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> list[str]:
-    """The enabled bars whose paired interval lies wholly above zero, in `BARS` order."""
-    return [bar for bar in BARS if bar in bars and paired["metrics"][bar]["delta"]["lo"] > 0.0]
+def cleared_bars(
+    paired: PairedRow,
+    bars: Sequence[str] = DEFAULT_BARS,
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> list[str]:
+    """The enabled bars this candidate separates on, in `BARS` order.
+
+    "Separates" is the shared two-part test: the paired interval lies wholly above zero AND the
+    win/loss ledger differs on enough items for that reading to be reachable. A candidate ahead on
+    two questions out of forty clears the first half and not the second.
+    """
+    return [bar for bar in BARS if bar in bars and separates(paired["metrics"][bar], confidence)]
 
 
-def separates_from_baseline(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> bool:
+def separates_from_baseline(
+    paired: PairedRow,
+    bars: Sequence[str] = DEFAULT_BARS,
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> bool:
     """True when the candidate clears at least one ENABLED adoption bar."""
-    return bool(cleared_bars(paired, bars))
+    return bool(cleared_bars(paired, bars, confidence))
 
 
 def borderline_bars(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> list[str]:
@@ -75,6 +96,7 @@ def decide_verdict(
     paired: dict[str, PairedRow],
     baseline: str | None,
     bars: Sequence[str] = DEFAULT_BARS,
+    confidence: float = DEFAULT_CONFIDENCE,
 ) -> BakeoffVerdict:
     """Adopt the best separated candidate, else retain the incumbent (never rank on a point gap).
 
@@ -106,9 +128,9 @@ def decide_verdict(
         if model != baseline and (marked := borderline_bars(row, bars))
     }
     cleared = {
-        model: cleared_bars(row, bars)
+        model: cleared_bars(row, bars, confidence)
         for model, row in paired.items()
-        if model != baseline and separates_from_baseline(row, bars)
+        if model != baseline and separates_from_baseline(row, bars, confidence)
     }
     if not cleared:
         return _verdict(
@@ -121,7 +143,8 @@ def decide_verdict(
                 f"no candidate clears an adoption bar ({', '.join(bars)}) against `{baseline}`, "
                 "so the ranking is not supported by this item set"
             )
-            + _near_miss_note(paired, borderline),
+            + _near_miss_note(paired, borderline)
+            + _gate_note(paired, baseline, bars, confidence),
         )
     separated = sorted(cleared, key=lambda model: _rank_key(paired[model], cleared[model]))
     winner = separated[0]
@@ -137,6 +160,29 @@ def decide_verdict(
         + borderline_note(
             [(f"{winner} {bar}", bar_stability(paired[winner], bar)) for bar in cleared[winner]]
         ),
+    )
+
+
+def _gate_note(
+    paired: dict[str, PairedRow],
+    baseline: str,
+    bars: Sequence[str],
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> str:
+    """The clause that tells a `retain` reached on thin evidence from one reached on wide evidence.
+
+    Without it a candidate that leads on two of forty questions and a candidate that is genuinely
+    level with the incumbent produce the same sentence.
+    """
+    return evidence_gate_clause(
+        [
+            (f"{model} {bar}", row["metrics"][bar])
+            for model, row in sorted(paired.items())
+            if model != baseline
+            for bar in BARS
+            if bar in bars
+        ],
+        confidence,
     )
 
 

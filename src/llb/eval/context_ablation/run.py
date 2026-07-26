@@ -26,6 +26,13 @@ from llb.eval.context_ablation.lanes import default_lanes, lane_config
 from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     ContextAblationReport,
+    LongContextPowerAnalysis,
+)
+from llb.eval.context_ablation.power import (
+    DEFAULT_TARGET_POWER,
+    plan_from_artifact,
+    resolve_power_analysis,
+    write_power_plan,
 )
 from llb.eval.context_ablation.report import format_report
 from llb.eval.paired_cases import CaseRows
@@ -98,6 +105,9 @@ def run_context_ablation(
     out_dir: Path | None = None,
     verified_only: bool = True,
     run_lane: LaneRunner | None = None,
+    power_reference: Path | None = None,
+    minimum_detectable_delta: float | None = None,
+    target_power: float = DEFAULT_TARGET_POWER,
 ) -> ContextAblationRun:
     """Score the selected items under every context lane and persist the comparison."""
     selection = list(lanes) if lanes else default_lanes()
@@ -111,6 +121,16 @@ def run_context_ablation(
     if not splits:
         raise ValueError("name at least one gold split to score")
     items_by_split = select_items(config, splits, limit, verified_only)
+    target = Path(out_dir) if out_dir is not None else default_out_dir(config)
+    power_plan = _prepare_power_plan(
+        power_reference,
+        minimum_detectable_delta,
+        target_power,
+        confidence,
+        sum(len(items) for items in items_by_split.values()),
+    )
+    if power_plan is not None:
+        write_power_plan(power_plan, target / "power-plan.json")
     rows, run_dirs = score_lanes(
         config,
         selection,
@@ -126,9 +146,32 @@ def run_context_ablation(
         confidence=confidence,
         seed=seed,
     )
-    target = Path(out_dir) if out_dir is not None else default_out_dir(config)
+    if power_plan is not None:
+        report["power_analysis"] = resolve_power_analysis(report, power_plan)
     paths = write_artifacts(report, target, metadata=_metadata(config, splits, verified_only))
+    if power_plan is not None:
+        paths["power_plan"] = str(target / "power-plan.json")
     return ContextAblationRun(report, target, paths)
+
+
+def _prepare_power_plan(
+    reference: Path | None,
+    minimum_detectable_delta: float | None,
+    target_power: float,
+    confidence: float,
+    planned_n: int,
+) -> LongContextPowerAnalysis | None:
+    if reference is None and minimum_detectable_delta is None:
+        return None
+    if reference is None or minimum_detectable_delta is None:
+        raise ValueError("power planning needs both power_reference and minimum_detectable_delta")
+    return plan_from_artifact(
+        reference,
+        minimum_detectable_delta=minimum_detectable_delta,
+        target_power=target_power,
+        confidence=confidence,
+        planned_n=planned_n,
+    )
 
 
 def default_out_dir(config: RunConfig) -> Path:

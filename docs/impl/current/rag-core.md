@@ -1460,6 +1460,60 @@ row, the paired ledger, seed determinism, a baseline paired against itself at ex
 one-item lead that does NOT separate, adopt/retain/undecided, the report columns, and the CLI's
 `report.json`) -- all over fake stores, no FAISS, no GPU.
 
+#### Paired-power contract for comparison lanes
+
+`src/llb/rag/fusion_evidence/power.py` is the shared a priori sensitivity seam beside the paired
+bootstrap. A lane supplies an earlier per-item candidate-minus-baseline delta vector, a
+predeclared minimum detectable effect (MDE), its reporting confidence, target power, and the
+planned item count. Before retrieval or inference, the seam writes `power-plan.json` and prices:
+
+- the two-sided paired normal-approximation variance floor,
+  `ceil(((z_(1-alpha/2) + z_power) * sample_sd / MDE)^2)`;
+- the exact-sign-test discordance floor at the reference ledger's differing-item rate; and
+- one `required_n`, the larger floor, plus `binding_floor` (`variance`, `discordance`, or `both`).
+
+The completed comparison repeats both floors with the run's own per-item SD and discordance rate.
+It replaces the planned `target_reached` reading with that realized check, retains
+`planned_target_reached` for audit, and reports
+`resolvable_mde = (z_(1-alpha/2) + z_power) * realized_sd / sqrt(realized_n)`. This is sensitivity
+at the reached item count, not post-hoc achieved power computed from the observed effect.
+An undecidable result therefore states both what effect the item set could resolve and whether
+realized variance or discordance made the declared target miss.
+
+Lane selectors and artifacts:
+
+- Context ablation selects fitting `long_context - rag` objective deltas. Its adapter remains
+  `src/llb/eval/context_ablation/power.py`; the recorded
+  `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json` regenerates
+  byte-identically through the shared seam.
+- Embedder bake-off selects `--power-candidate` against `--baseline` and either `recall_at_k` or
+  `mrr` via `--power-metric`. `report.json` now retains `paired_items`, the per-item metric ledger
+  with gold item ids needed to price and audit a later run.
+- Graph-vector fusion selects `--power-row` against the vector baseline and one
+  `--power-metric` on the declared focus slice. Its existing `focus_items` ledger supplies the
+  paired deltas. Details and its Make variables are in
+  [GraphRAG](graphrag-backend.md#the-graph-weight-sweep-lane).
+
+Use the existing workflow targets; MDE selection remains an operator decision:
+
+```bash
+make compare-embeddings GOLDSET=<goldset-jsonl> \
+  EMBED_POWER_REFERENCE=<earlier-report-json> EMBED_POWER_CANDIDATE=<candidate-model> \
+  EMBED_POWER_METRIC=recall_at_k EMBED_MDE=<minimum-gain>
+
+make compare-graph-fusion GOLDSET=<goldset-jsonl> \
+  FUSION_POWER_REFERENCE=<earlier-comparison-json> FUSION_POWER_ROW=<fusion-row> \
+  FUSION_POWER_METRIC=recall_at_k FUSION_MDE=<minimum-gain>
+```
+
+`tests/llb/rag/test_paired_power.py` covers exact legacy reproduction, item-count arithmetic,
+inverted MDE, and realized-SD rechecking.
+`tests/llb/rag/test_paired_power_contract.py` covers both selectors, artifact output, and the
+plan-before-build/retrieval order. The context-specific regression suite remains
+`tests/llb/eval/test_context_ablation_power.py`. Host validation on 2026-07-26 completed
+`make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy model run belongs to
+this delivery.
+
 #### How settled a paired reading is -- `p_positive` and the borderline flag
 
 Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:
@@ -1503,6 +1557,40 @@ is the one place that vocabulary lives, and every lane reports it:
   clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
   own verdict).
 
+The three remaining uncertainty shapes now state their own distance from their actual cut instead
+of borrowing a paired-delta interpretation that does not fit:
+
+- `bootstrap_ratio` returns a `BootstrapRatio` whose optional `stability` block is read from the
+  SAME sorted draw as its interval. Route precision and recall therefore carry `p_positive`, the
+  90% / reporting / 97.5% readings, and `borderline`, but no discordant count or exact-sign gate:
+  a count ratio is not a paired delta. The sidecar-free calibration renders these rows through the
+  shared `boundary_table(..., evidence_counts=False)` path.
+- Query robustness is genuinely paired but directional. Its new
+  `query_robustness_uncertainty.py` seam reads `improved` / `degraded` /
+  `indistinguishable` at all three levels, gates either directional claim on the exact sign-test
+  minimum, and records the ordinary interval / win-loss ledger / `p_positive` shape. Both
+  lane-versus-clean deltas and mitigation-versus-off recoveries are computed for all items and the
+  affected subset. `query_robustness_summary.py` can rebuild the aggregates from persisted case
+  rows without executing a model, while `query_robustness_report.py` renders the paired table.
+- The measurement floor is not a sampling CI: `clears_floor` compares the leader's fixed recall
+  gap with the widest score-jitter band. Its honest continuous signal is therefore `clearance =
+  delta - floor` plus `floor_multiple = delta / floor` (or null when the measured floor is zero),
+  not `p_positive`. Both fields are additive in `noise_floor.margin` and appear in the shared
+  ASCII/Markdown reading. `fragile_items` remains a descriptive count with no pass/fail cut; the
+  margin is the floor lane's only binary reading.
+
+Recorded-artifact re-render on 2026-07-26 rebuilt the sidecar-free calibration from its gold-item
+order, both current query-robustness reports from their persisted per-case rows, and the graph
+fusion floor from its stored lane bands. All pre-existing point estimates, interval bounds,
+aggregate table cells, thresholds, and decisions reproduced exactly. Of 38 route precision/recall
+rows, 2 are borderline; each 100-reading query report has 2 borderline rows and no
+minimum-evidence relabeling. The recorded graph-fusion leader's +0.0105 recall gap against a
++/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Host-artifact regression
+coverage lives in `tests/llb/rag/test_remaining_uncertainty_artifacts.py`; focused fixture coverage
+also lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`, and
+`tests/llb/eval/test_query_robustness.py`. Host validation completed `make ci` with 2,221 tests
+passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
+
 Re-render evidence (2026-07-25, from the recorded artifacts on disk, no new run): every recorded
 paired block of the three lanes whose artifacts persist per-item values was rebuilt with the same
 resamples / confidence / seed and diffed field by field -- **1222 blocks over 6 fusion sweeps, 3
@@ -1530,6 +1618,208 @@ What the annotation found on evidence already recorded:
 - **Two of three recorded answer-quality comparisons qualify their `retrieval_only`.** The
   coverage-versus-objective split that verdict rests on is itself a near-miss in the drafted
   multi-hop bundle and the overlap-policy re-run.
+
+#### Audit of the `lo > 0` cut itself
+
+2026-07-26. The borderline flag says how close a reading sits to the cut. This audit asked what the
+cut
+COSTS -- its false-positive rate, whether the exact test in the same block could even reach the
+reporting level, and what selecting a row out of a grid does to it. Method: a paired sign-flip
+(randomization) null over the per-item delta vectors the recorded artifacts persist, applied
+JOINTLY across a family so the real cross-row correlation survives, with the repo's own resample
+index sets, seed, and nearest-rank percentile convention; 4000 flips for the rate studies and
+20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
+under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability finding below is now
+shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
+productionizing the size and selection findings is forward work in [`plan.md`](../plan.md).
+
+- **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
+  **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
+  the inflation tracks the DISCORDANT-item count rather than n: the cells with 7-9 non-tied items
+  land at 0.062-0.078, those with 24-27 at 0.036-0.037. On the 82- and 250-item ablation lanes it is
+  0.024-0.036, near nominal. On synthetic symmetric deltas it is at or below nominal at every size,
+  so the inflation is driven by SKEW plus sparsity, which is exactly the regime a token-F1 delta on
+  a small accepted ledger sits in.
+- **Reachability.** Across 7408 paired blocks in the recorded fusion sweeps, adoption sweeps,
+  context ablations, and answer-quality comparisons, 971 read `separated`, and **719 of those (74%)
+  carry fewer than 6 discordant items** -- the point where the exact two-sided sign test the same
+  block reports (`2 * 0.5^d`) cannot reach 0.05 under ANY arrangement of the data. Most are slice
+  rows: 576 of the 712 separated fusion SLICE readings come from slices of <= 5 items, where a
+  2-item slice with 2 wins prints `+1.000 [+1.000, +1.000]` beside its own `sign_test_p` of 0.5.
+- **Selection.** A fusion sweep publishes 408-3048 paired cuts (17-127 rows x 4 metrics x slices)
+  and then reads ONE selected `best_row`. Re-read under a Westfall-Young max-statistic sign-flip
+  null over the family the row was selected from, the three recorded `adopt` sweeps' deciding row
+  (`fused/global_community@0.30/d50/ioverlap`, focus slice n=35) gives raw randomization p 0.063
+  (recall@k), 0.031 (span coverage), 0.032 (MRR), and **FWER-adjusted p 0.14-0.29** -- so neither
+  the selection adjustment nor the unadjusted randomization test reproduces the recorded reading at
+  the same 2.5% level. The `any cell clears zero` rule of the adoption sweep fires on 13.7%-16.4% of
+  null draws over its 4 cells, and 44.1% over the 20-cell roster (0.82 expected false positives per
+  roster).
+
+The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
+nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
+
+#### The minimum-evidence gate on a paired reading
+
+The reachability finding above is a rule, not a caveat, and it ships as one. A paired block's
+evidence is its DISCORDANT items -- the pairs where the two lanes actually differ, since ties carry
+no information about direction -- and the exact two-sided sign test each block already prints beside
+its interval bounds what `d` of them can ever show. Its smallest attainable p is `2 * 0.5^d` (every
+pair falling the same way), so below that many items the reporting level is unreachable whatever the
+interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place that rule lives:
+
+- **The bound is derived from the reporting confidence, so no constant is introduced.**
+  `minimum_discordant_pairs` solves `2 * 0.5^d <= 1 - confidence`: **5 items at 90%, 6 at 95%, 7 at
+  97.5%**. `apply_evidence_gate` relabels a claim resting on fewer than that
+  **`insufficient_evidence`**, a state no lane may adopt on. Only a CLAIM is gated: a `flat` reading
+  (or a richer lane's `neither`) says nothing was found, which a thin item set is entitled to say.
+- **One separation test, used by every verdict.** `separates()` in `stats.py` is
+  `delta.lo > 0 AND the block differs on enough items`, and it replaced the bare `lo > 0` cut in
+  every lane that had one: the fusion sweep's adopt, the bake-off's adoption bars, the ablation's
+  long-context and uplift checks, the answer lane's gain and retrieval-only checks, the adoption
+  bar's per-cell reading, the sidecar-free routing gate's coverage half (its single-span half is a
+  non-inferiority check, not a separation, and is unchanged), and the long-context power
+  resolution's direction. It reads the persisted win/loss ledger rather than a `stability` block,
+  so it holds on a run that drew no resamples and on an artifact recorded before the annotation.
+- **The gate and the borderline flag are one scale.** The bound moves WITH the level, so a row that
+  differs on exactly 6 items reads `separated` at 95% and `insufficient_evidence` at 97.5% -- which
+  is precisely a `borderline` row, `side: above`, and it is now marked as one automatically.
+- **Every renderer prints the state.** The per-row `reading` cell of the bake-off, ablation, and
+  adoption tables; the boundary block's new `d` column (the discordant count, persisted in
+  `ReadingStability`); a `Minimum evidence: N of M paired readings are insufficient evidence` line
+  in each lane's report; and the shared `. INSUFFICIENT EVIDENCE: ...` clause on any verdict reason
+  whose deciding row the gate relabeled -- the same call shape as the borderline clause.
+- No threshold, interval, confidence convention, adoption rule, or row RANKING changed. A sweep
+  still selects the same `best_row`; what the gate decides is whether that row's gain may be read
+  as a separation.
+
+Tests: `tests/llb/rag/test_paired_minimum_evidence.py` -- the derived bound against the sign test's
+own arithmetic, the reading at 5 / 6 / 7 discordant items, that the interval / ledger / point
+estimate / sign-test p are untouched when the reading is relabeled, that the two discordant counts
+(ledger and delta vector) agree, and the verdict guard driven end to end per lane.
+
+Re-read of the recorded evidence base (2026-07-26, read-only, no new inference; harness and output
+under `$DATA_DIR/paired-reading-audit/20260726T-minimum-evidence-gate/`). Recorded artifacts on disk
+were NOT rewritten -- they stay as produced, and this is what the gate says about them:
+
+| lane | artifacts | paired blocks | read `separated` | relabeled |
+| --- | ---: | ---: | ---: | ---: |
+| fusion sweep | 6 | 7008 | 874 | 695 (79.5%) |
+| answer quality | 3 | 210 | 14 | 12 (85.7%) |
+| context ablation | 10 | 111 | 73 | 2 (2.7%) |
+| adoption bar | 5 | 100 | 27 | 10 (37.0%) |
+| embedder bake-off | 4 | 32 | 6 | 2 (33.3%) |
+
+- **No recorded number moves.** Every block whose per-item vectors the artifacts persist (all
+  derived ablation deltas, all focus-slice fusion blocks) was rebuilt with that artifact's own
+  resamples / confidence / seed and diffed field by field: **0 fields differ** across delta, bounds,
+  win/loss/tie ledger, and exact sign-test p. The gate touches the reading string and nothing else.
+- **Eight recorded verdicts are restated.** Three fusion sweeps' `adopt` becomes `inconclusive`:
+  the deciding row (`fused/global_community@0.30/d50/ioverlap`, focus slice n=35) gains +0.114
+  recall@k on **4 differing items** -- the same row the selection study above put at FWER-adjusted
+  p 0.14-0.29. Three answer-quality `retrieval_only` verdicts become `no_gain`: their coverage half
+  rests on 4-5 differing items. Both committed-fixture bake-off runs' `adopt
+  intfloat/multilingual-e5-large` becomes `retain`: +0.020 recall@10 on n=250 is **5 wins and 0
+  losses**, which the recorded reading already flagged by hand as unable to reach 0.05 on the exact
+  sign test. The gate makes that automatic rather than a footnote. Each of the eight is restated
+  with the item count that would settle it in
+  [the re-decision](#the-re-decision-what-a-withdrawn-reading-needs) below.
+- **The dense-only lanes hold, as the audit predicted.** No ablation verdict changes; the only two
+  relabeled ablation blocks are a side `retrieval_hit` reading on one early 4-item run, never a
+  deciding uplift. No adoption-bar verdict changes either: the relabeled cells are the `k3` cell's
+  `retrieval_hit` and `reciprocal_rank` readings (5 differing items) in all five roster sweeps, so
+  `k3` drops out of `rank_cells` while the objective-side `extend_bar` / `keep_bar` calls stand.
+- **What the fusion share means.** 79.5% of that lane's separated readings are per-SLICE rows on
+  slices of a handful of items; the overall rows and the focus slice (n=35) are where the verdicts
+  are read, and only the deciding row named above changes a verdict.
+
+Live confirmation, CUDA host 2026-07-26 (`LLB_EMBED_DEVICE=cuda make compare-embeddings
+CONFIG=$DATA_DIR/compare-embeddings/paired-uncertainty-fixture.yaml
+GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl SPLIT= NOISE_FLOOR=1`, report under
+`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T121757.672014Z-73f58e382297/`):
+the bake-off whose recorded verdict the re-read downgrades was re-run end to end through the real
+encoders. **Every number reproduces bit-identically** -- all four candidates' recall@10, MRR, dim,
+indexed count, index bytes, each paired delta bound, each win/loss/tie ledger, each exact sign-test
+p, and the whole measurement floor block: 0 fields differ against the recorded `report.json`. The
+verdict is the only thing that moved, `adopt` -> **`retain`**, and the reason states both qualifiers
+at once: `e5-large`'s recall bar differs on 5 items (below the 6 needed at 95%), and it is
+borderline because a 90% interval -- which needs only 5 -- would read it `separated`.
+
+#### The re-decision: what a withdrawn reading needs
+
+A withdrawn reading is an OPEN question, not a measured absence of a difference, and the two must
+not print alike: two of the eight verdicts the gate downgraded are recommendations an operator may
+still be acting on. Every withdrawn row therefore states what would settle it, from the same
+arithmetic the bound comes from. `resolving_item_count` in
+`src/llb/rag/fusion_evidence/evidence_gate.py` inverts the gate: at the block's own discordance
+RATE, `d` differing items out of `n` extrapolate to `minimum_discordant_pairs(confidence) * n / d`
+items before the level becomes reachable at all.
+
+- **It is a floor on the ITEM SET, not a detectable effect.** Below it no arrangement of the data
+  could reach the level; above it only effects large enough to survive the interval are resolved.
+  Reading it as "run this many items and the question is answered" is the one misreading to avoid
+  -- that is what an a priori MDE contract prices, and the repo prices it separately.
+- **It moves with the reporting convention, exactly as the bound it inverts does** (4 of 35 needs
+  44 items at 90%, 53 at 95%, 62 at 97.5%), so nothing new is tuned.
+- **Every renderer carries it.** The shared `. OPEN QUESTION: ...` clause rides on the
+  insufficient-evidence clause in every lane's verdict reason, so no lane can withdraw a reading
+  without stating its price; the boundary table gains an `n to reach` column (backed by the new
+  `pairs` field in `ReadingStability`, additive and absent on artifacts recorded before it); and
+  the `Minimum evidence:` line says a relabeled row is an open question rather than "no difference".
+  The column prices ANY row short of the bound, including a `flat` one -- a reading that could not
+  have shown a difference is not the same as one that looked and found none.
+
+Re-decision of the recorded evidence base (2026-07-26, read-only, no new inference; harness and
+output under `$DATA_DIR/paired-reading-audit/20260726T-open-question-restatement/`). All eight
+withdrawn verdicts, restated with what each one needs:
+
+| lane | runs | recorded -> re-read | deciding row | differs | floor | what would settle it |
+| --- | ---: | --- | --- | ---: | ---: | --- |
+| fusion sweep | 3 | `adopt` -> `inconclusive` | `fused/global_community@0.30/d50/ioverlap` recall@k, multi-hop | 4 of 35 | 53 | a multi-hop slice of >= 53 ACCEPTED items |
+| answer quality | 2 | `retrieval_only` -> `no_gain` | `fused/global_community@0.10/d10` span coverage, multi-hop | 4 of 35 | 53 | the same accepted slice |
+| answer quality | 1 | `retrieval_only` -> `no_gain` | `routed/global_community@0.30/d50/ioverlap` span coverage | 5 of 35 | 42 | the same accepted slice |
+| embedder bake-off | 2 | `adopt` -> `retain` | `intfloat/multilingual-e5-large` recall@10 | 5 of 250 | 300 | nothing this repo has -- undecidable at these sample sizes |
+
+- **The three fusion sweeps and the three answer-quality comparisons ride on one item set**, the
+  drafted multi-hop slice of 35. The floor says the accepted slice must reach 53 items (42 for the
+  routed coverage row), and human acceptance can only SHRINK a drafted ledger -- so the re-run
+  planned as `multihop-ledger-human-acceptance` cannot resolve the span-identity row at the current
+  drafted size whatever the reviewer decides. Widening the drafting is the prerequisite, and that
+  is stated where the work is tracked in [`plan.md`](../plan.md).
+- **The encoder question is undecidable at the sample sizes this repo has, and that is now
+  recorded.** `e5-large` leads `e5-base` on 5 of 250 committed-fixture items (0 losses, 245 ties);
+  at that 2% rate the level needs 300 items, and the largest committed goldset is 250
+  (`ua_squad_postedited_v1`) -- the next largest is 60. The route out is not simply "more items":
+  `embedder-decision-on-a-resolvable-item-set` enriches the ledger with questions the incumbent
+  MISSES, which raises the discordance rate and lowers the floor proportionally (double the rate,
+  halve the items). Until such a ledger is accepted, the recommendation stands on the incumbent by
+  `retain`, not by evidence of equivalence.
+- **Census over the whole recorded base**: 723 withdrawn readings, all priced (median floor 6
+  items, min 6, max 300). 719 of them sit at or below the largest committed goldset -- most are the
+  handful-of-items fusion slice rows, which need only a few more items each. The 4 that do not are
+  the same `e5-large` recall bar across every re-run of the fixture bake-off, which is exactly the
+  one open question this repo cannot currently close.
+- **No number, threshold, interval, or adoption rule changed.** The re-decision is a statement
+  appended to readings the gate had already withdrawn.
+
+Tests: `tests/llb/rag/test_paired_open_question.py` -- the floor as the smallest item count whose
+rate reaches the bound (and that one item fewer does not), the two unpriced cases (already
+reachable, nothing differing), the movement across the three conventions, the shared clause, the
+table column including the archived-artifact fallback, the recorded prices the table above quotes,
+that no committed goldset reaches the encoder floor, and the withdrawn verdict of each affected
+lane naming its own item count end to end.
+
+Live confirmation, CUDA host 2026-07-26 (same command as above; report under
+`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T125150.260342Z-3cdf0a4eb1db/`):
+the fixture bake-off was re-run end to end through the real encoders once more. **Every retrieval
+number reproduces bit-identically** against the pre-re-decision run -- 0 fields differ across all
+four candidates' recall@10, MRR, dim, indexed count, index bytes, every paired delta bound, every
+win/loss/tie ledger, every exact sign-test p, and the whole measurement-floor block. Three fields
+move, none of them a measurement of retrieval: the wall-clock embed seconds (and the chunks/s
+derived from them), the `pairs` count now persisted in each `stability` block, and the verdict
+reason, which now ends with the open-question clause naming
+`intfloat/multilingual-e5-large recall_at_k`, its 5 of 250 differing items, and the 300-item floor.
+The verdict itself stays `retain`.
 
 ### The recommendation re-read against the floor
 
@@ -1593,7 +1883,13 @@ Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 
 | `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
-**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture. What that establishes:
+**ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped
+minimum-evidence gate now reads as **RETAIN** as well, because that adopt rests on 5 differing items
+([the gate](#the-minimum-evidence-gate-on-a-paired-reading)). That withdrawn adopt is an OPEN
+question, and the item set it would take to close it is recorded: 300 items at the observed 2%
+discordance rate, which no committed goldset reaches, so the encoder choice is **undecidable at the
+sample sizes this repo has** ([the re-decision](#the-re-decision-what-a-withdrawn-reading-needs)).
+What the run establishes:
 
 - **The `bge-m3` lead the floor re-read surfaced is an item set, not a ranking.** +0.050 on 40
   items is 3 wins against 1 loss with 36 questions tied; the paired interval spans zero
@@ -1606,7 +1902,8 @@ Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PD
 - **The shipped default is unchanged.** `RunConfig.embedding_model` stays
   `intfloat/multilingual-e5-base`. The one ADOPT is on a committed toy fixture whose baseline is
   already at 0.980 recall (5 questions of headroom), its sign test is p=0.062 -- 5 discordant
-  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction -- and the same
+  pairs cannot reach 0.05 on an exact two-sided sign test whatever their direction, which is
+  exactly the rule the gate now applies for every lane -- and the same
   candidate is flat on the accepted operator-corpus ledger while embedding 1.6x slower there
   (47.8 vs 75.9 chunks/s) for a 1.23x index.
 - **First-hit rank is where `bge-m3` does separate on the PDF corpus.** Its MRR delta is
@@ -2012,16 +2309,70 @@ ordinary `run-eval` bundle per (lane, split) under `$DATA_DIR/run-eval/`. CI dri
 lanes over fake bundles and the committed fixtures
 (`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
 
+An optional a priori power contract keeps a borderline row from being "resolved" by choosing a
+different confidence convention. Its context adapter delegates arithmetic and realized
+sensitivity to the
+[shared comparison-lane contract](#paired-power-contract-for-comparison-lanes). Pass the earlier
+`comparison.json` as
+`CONTEXT_POWER_REFERENCE=<comparison-json>`, predeclare the smallest material objective delta as
+`CONTEXT_MDE=<delta>`, and optionally set `CONTEXT_TARGET_POWER=<share>` (default 0.80). Before the
+first model call, `src/llb/eval/context_ablation/power.py` reads the earlier per-item
+`long_context - rag` differences, estimates their paired sample SD, and writes
+`power-plan.json`. The required count is the two-sided paired normal approximation
+`ceil(((z_(1-alpha/2) + z_power) * sample_sd / MDE)^2)`, where alpha follows the report
+confidence. The completed `comparison.json` and `report.md` re-check the item target against
+realized SD, report the resolvable MDE at the reached item count, and record:
+
+- `separated` when the new paired interval is wholly on one side of zero;
+- `flat` when the interval is wholly inside the predeclared `[-MDE, +MDE]` detectable-effect band;
+- `undecidable` otherwise, explicitly saying whether the run's realized variance reached the
+  target.
+
+The power options are additive: omitting them preserves the original artifact schema and behavior.
+`tests/llb/eval/test_context_ablation_power.py` covers the item-count calculation, paired-reference
+loading, resolution states, and the guarantee that `power-plan.json` exists before lane scoring.
+
 ### Context-ablation evidence
 
 Each derived delta carries `p_positive` and a `(borderline)` flag, and the verdict names both the
 rows it was decided on -- the retrieval uplift AND the long-context delta, because `_judge` checks
 the long-context lane first
 ([how settled a paired reading is](#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag)).
-On the recorded runs that matters once: the `qwen3.6-35b` row's `rag_pays_off` rests on a settled
-uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90% interval would
-read as separated, so that verdict is one convention away from `long_context_wins`. The eight other
-recorded ablations are settled.
+The original `qwen3.6-35b` final-only row was the one exception: its `rag_pays_off` rested on a
+settled uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90%
+interval read as separated. The power-resolved run below removes that exception; every recorded
+context-ablation verdict is now settled at the neighbouring 90%, 95%, and 97.5% conventions.
+
+#### Power-resolved Qwen3.6 long-context verdict (2026-07-25)
+
+The target was declared from the earlier 82-item `final` artifact BEFORE new inference:
+minimum detectable delta +0.060 objective, 80% power, two-sided alpha 0.05. Its per-item paired SD
+was 0.3078, pricing the run at 207 items. Pooling all three verified splits of the same committed
+fixture supplied 250 items (`final,tuning,calibration`), above target; this is a diagnostic
+ablation, not a leaderboard or tuning result.
+
+| model | n | closed_book | rag | long_context | retrieval uplift | long-context delta | p_positive | resolution | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `batiai/qwen3.6-35b:iq3` | 250 | 0.121 | 0.534 | 0.593 | +0.413 [+0.363, +0.461] | +0.058 [+0.025, +0.096] | 0.9995 | separated | `long_context_wins` |
+
+The long-context row has 51 wins / 23 losses / 176 ties (two-sided sign p=0.0015), no context
+skips, and is separated at all three reported confidence conventions. The extra power therefore
+changes the earlier final-only `rag_pays_off` reading to a settled `long_context_wins`: for this
+model and corpus, chunked retrieval loses a small but real amount to whole-document context.
+Retrieval itself still pays decisively over closed-book (+0.413, `p_positive` 1.000), and 33/250
+closed-book answers match the reference (13.2%).
+
+The operator boundary remains important: `long_context` is oracle-grounded on each item's gold
+document, so this result supports sending the whole document AFTER a source is known; it does not
+remove the need to retrieve or route to that source. The forward
+[`retrieved-document-long-context-lane`](../plan.md#retrieved-document-long-context-lane) task
+owns that shippable bridge.
+
+Artifact:
+`$DATA_DIR/context-ablation/20260725T-power-resolution/{power-plan.json,comparison.json,report.md}`.
+The `final` split inside the pooled run independently reproduces the earlier grounded rows exactly
+(`rag` 0.554, `long_context` 0.615), so the changed verdict comes from added items rather than a
+changed lane.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
@@ -2083,12 +2434,12 @@ gemma4:26b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
 
 What the wider cohort adds beyond the two-model result:
 
-- **Qwen3.6-35B-A3B is the only model that does not return `long_context_wins`.** Its
-  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one interval in the whole
-  evidence set that straddles zero, so the lane reports `rag_pays_off` instead. It also posts the
-  largest retrieval uplift measured (+0.421). Read together: this model loses the least to chunk
-  boundaries, which is the property that makes chunked retrieval a cheap substitute for a long
-  window rather than a compromise.
+- **The original final-only Qwen3.6-35B-A3B row is the cohort's only `rag_pays_off`.** Its
+  `long_context_delta` is +0.060 [-0.008, +0.130] (sign p=0.210), the one 82-item interval that
+  straddles zero, and it posts the largest retrieval uplift measured (+0.421). The powered
+  250-item run above resolves that near-miss as `long_context_wins`, so the final-only row is kept
+  here as the reference observation that priced the larger run, not as the current operator
+  verdict.
 - **A tie at the top, at very different cost.** Qwen3.6-35B and MamayLM-27B are statistically
   indistinguishable on `rag` (0.554 vs 0.546) and on the context-position probe (paired
   +0.006 [-0.048, +0.059]), but Qwen serves from VRAM at 13 GB with ~3B active parameters while
@@ -2158,7 +2509,10 @@ Two properties the multi-lane wiring needed:
   by), their gap, and whether that gap exceeds the floor. It is rendered as one sentence, because
   a lane comparison names ONE winner and a winner whose lead is inside the floor has not been
   distinguished from the runner-up -- which is exactly how a bake-off's sub-item delta becomes a
-  recommendation.
+  recommendation. The same margin now persists its signed `clearance` (`delta - floor`) and
+  `floor_multiple` (`delta / floor`, null at a zero floor), so the binary never appears without
+  its distance from the cut. This is deliberately not called `p_positive`: the floor is a
+  deterministic range over score perturbations, not a paired bootstrap confidence interval.
 - **A FUSED row is perturbed at its own depth.** Most lanes extend cleanly -- a dense store's top-k
   is the prefix of its top-3k -- but a fused row's ranking depends on how deep each lane was asked,
   so retrieving `3k` from it would answer for a DIFFERENT row (that is the
@@ -2306,6 +2660,45 @@ Otherwise it is diagnostic and objective correctness ranks alone.
 
 `src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
 throughput, then lower VRAM when telemetry is available.
+
+### Measured: the headline objective is partly a verbosity ranking
+
+2026-07-26. Token F1 is a single number over two different things -- whether the answer carries the reference
+fact, and how much else it carries -- and the recorded evidence base contains the one comparison
+that separates them: the context-ablation `rag` lanes score the SAME 82-item committed fixture under
+PINNED retrieval (recall@5 = 0.951 for every row), so all differences are answer-side. Read-only
+audit over those bundles, harness and output under
+`$DATA_DIR/paired-reading-audit/20260726T100856Z/verbosity{_probe.py,.txt}`:
+
+| model | median completion tokens | objective (token F1) | contains | exact | r(len, objective) | items found | implied token precision when found |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `batiai/qwen3.6-35b:iq3` | 10 | 0.554 | 0.659 | 0.329 | -0.305 | 54 | 0.709 |
+| MamayLM-Gemma-3-27B v2.0 | 9 | 0.546 | 0.622 | 0.329 | -0.219 | 51 | 0.712 |
+| MamayLM-Gemma-3-12B v2.0 | 10 | 0.501 | 0.634 | 0.293 | -0.363 | 52 | 0.650 |
+| `lapa-v0.1.2-instruct` | 10 | 0.496 | 0.610 | 0.329 | -0.541 | 50 | 0.655 |
+| `gemma4:e4b` | 25 | 0.365 | 0.756 | 0.122 | -0.331 | 62 | 0.339 |
+| `gemma4:26b` | 33 | 0.288 | 0.720 | 0.012 | -0.367 | 59 | 0.230 |
+
+On an item where `contains` is 1.0 the reference tokens are all present, so token recall is 1.0 and
+`F1 = 2P/(1+P)` inverts to the token PRECISION the answer paid; that is the last column, computed
+only over each model's own found items.
+
+- **The two readings rank the roster in nearly opposite orders.** `gemma4:26b` is LAST by the
+  headline objective (0.288) and SECOND by found-rate (0.720); it states the reference on 59 of 82
+  items where the objective leader states it on 54. `gemma4:e4b` finds the most (62) and ranks 5th.
+- **Length is the mechanism, and it is measured.** The two Gemma 4 rows emit 2.5x-3.3x the
+  completion tokens of the rest (median 25 and 33 against 9-10) and pay for it in precision on
+  exactly the items they got right (0.339 and 0.230 against 0.650-0.712). Answer length correlates
+  negatively with the objective for EVERY model (r -0.22 to -0.54).
+- **Neither number is the right headline on its own.** `contains` rewards the same verbosity the
+  objective punishes -- an answer that repeats the whole context would score 1.0 -- and the shipped
+  `eval.rag` system prompt does ask for a short answer ("Відповідай стисло"), so part of the Gemma 4
+  penalty is a real instruction-following failure. What the single number cannot do is say WHICH of
+  the two happened, and the leaderboard currently ranks on it alone.
+
+Deciding the ranking policy from a measured length-sensitivity study is forward work
+([`plan.md`](../plan.md#headline-objective-verbosity-decomposition)); no ranking or metric changed
+here.
 
 ### Groundedness and citation metrics (groundedness-citation-metrics)
 

@@ -4,14 +4,22 @@ from llb.rag.embedding_bakeoff_models import BYTES_PER_MB, BakeoffReport, Candid
 from llb.rag.embedding_bakeoff_uncertainty import (
     BARS,
     BAR_RECALL,
+    DEFAULT_CONFIDENCE,
     bar_stability,
     recall_delta,
 )
 from llb.rag.embedding_bakeoff_verdict import (
     DECISION_ADOPT,
 )
-from llb.rag.fusion_evidence.stability import boundary_table, format_reading
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.power_report import power_summary
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+    format_reading,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _NO_PAIRED_CELL = "-"
 
@@ -38,6 +46,20 @@ def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str]:
         f"{delta['sign_test_p']:.3f}",
         format_reading(stability, stability["reading"]) if stability else _NO_PAIRED_CELL,
     )
+
+
+def _gate_summary(report: BakeoffReport) -> list[str]:
+    """How many of the bake-off's per-bar paired readings the minimum-evidence gate relabeled."""
+    settings = report.get("uncertainty")
+    confidence = settings["confidence"] if settings else DEFAULT_CONFIDENCE
+    comparisons = [
+        paired["metrics"][bar]
+        for row in report["candidates"]
+        if (paired := row.get("paired_vs_baseline")) is not None
+        for bar in BARS
+    ]
+    gated, total = gated_readings(comparisons, confidence)
+    return evidence_gate_summary(gated, total, confidence)
 
 
 def _boundary_section(report: BakeoffReport) -> list[str]:
@@ -103,6 +125,9 @@ def render_markdown(report: BakeoffReport) -> str:
         f"- items scored: {report['n']}",
         f"- cutoff: recall@{report['k']} / MRR",
     ]
+    if analysis := report.get("power_analysis"):
+        lines.append("")
+        lines += power_summary(analysis, title="Predeclared paired-power contract")
     if settings is not None:
         lines.append(
             f"- paired uncertainty: baseline `{baseline}`, {settings['resamples']} resamples, "
@@ -133,6 +158,7 @@ def render_markdown(report: BakeoffReport) -> str:
         f"`build-index --embedding-model <model>` and set `RunConfig.embedding_model` to match.",
         "",
     ]
+    lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _floor_section(report)
     return "\n".join(lines)

@@ -25,7 +25,9 @@ from typing import TYPE_CHECKING
 from typing_extensions import NotRequired, TypedDict
 
 if TYPE_CHECKING:
-    from llb.rag.fusion_evidence.stability import ReadingStability as RowStability
+    from llb.rag.fusion_evidence.stability import (
+        ReadingStability as RowStability,
+    )
 
 from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,
@@ -177,7 +179,7 @@ def _roster_cell(
     stability: dict[str, "RowStability"] = {}
     for model, report in zip(models, reports):
         cell = next(entry for entry in report["cells"] if entry["label"] == label)
-        readings[model] = cell_reading(cell)
+        readings[model] = cell_reading(cell, report["confidence"])
         if measure_stability:
             measured = _measure(report, label)
             if measured is not None:

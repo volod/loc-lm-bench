@@ -26,6 +26,9 @@ from llb.rag.fusion_evidence.models import (
     VERDICT_REJECT,
 )
 from llb.rag.fusion_evidence.rows import VECTOR_ROW, LaneCache
+from llb.rag.fusion_evidence.evidence_gate import (
+    READING_INSUFFICIENT_EVIDENCE,
+)
 from llb.rag.fusion_evidence.stats import bootstrap_index_sets, paired_comparison, sign_test_p
 
 
@@ -95,7 +98,14 @@ def test_bootstrap_ratio_handles_route_precision_and_a_zero_denominator():
     measured = bootstrap_ratio([True, False, False], [True, True, False], index_sets)
     assert measured["mean"] == pytest.approx(0.5)
     assert measured["lo"] <= measured["mean"] <= measured["hi"]
-    assert bootstrap_ratio([False], [False], [[0]]) == {"mean": 0.0, "lo": 0.0, "hi": 0.0}
+    empty_route = bootstrap_ratio([False], [False], [[0]])
+    assert {key: empty_route[key] for key in ("mean", "lo", "hi")} == {
+        "mean": 0.0,
+        "lo": 0.0,
+        "hi": 0.0,
+    }
+    assert empty_route["stability"]["reading"] == "flat"
+    assert empty_route["stability"]["borderline"] is False
 
 
 def test_sign_test_is_two_sided_and_symmetric():
@@ -281,14 +291,21 @@ def test_depth_equal_to_k_reproduces_the_default_fused_row_exactly():
 # --- evaluation + verdict -----------------------------------------------------------------
 
 
-def _fusion_report(**kwargs):
-    """One multi-hop item the vector lane half-covers and the graph lane completes."""
+# The minimum-evidence gate needs at least `minimum_discordant_pairs(0.95)` = 6 differing items
+# before a separation may be read at all, so a fixture that means to reach `adopt` carries that
+# many multi-hop items rather than the one a bootstrap would happily print `+1.000` for.
+_MULTI_HOP_N = 6
+
+
+def _fusion_report(multi_hop: int = _MULTI_HOP_N, **kwargs):
+    """Multi-hop items the vector lane half-covers and the graph lane completes, plus a factoid."""
+    questions = [f"q{i}" for i in range(multi_hop)]
     items = [
-        _multi_hop_item("mh-1", "q1"),
-        EvidenceItem("f-1", "q2", [_span("d1", 0, 10)], "factoid"),
+        *(_multi_hop_item(f"mh-{i}", question) for i, question in enumerate(questions)),
+        EvidenceItem("f-1", "qf", [_span("d1", 0, 10)], "factoid"),
     ]
-    vector = _ByQuestion({"q1": [_chunk("d1", 0, 10)], "q2": [_chunk("d1", 0, 10)]})
-    graph = _ByQuestion({"q1": [_chunk("d2", 0, 10)], "q2": []})
+    vector = _ByQuestion({q: [_chunk("d1", 0, 10)] for q in [*questions, "qf"]})
+    graph = _ByQuestion({q: [_chunk("d2", 0, 10)] for q in questions} | {"qf": []})
     rows = build_sweep_rows(
         vector, {"local_khop": graph}, [i.question for i in items], k=10, weights=(0.0, 0.3)
     )
@@ -298,17 +315,32 @@ def _fusion_report(**kwargs):
 def test_fusion_that_completes_the_multi_hop_evidence_is_adopted():
     report = _fusion_report()
     focus = report["rows"]["fused/local_khop@0.30/d10"]["slices"]["multi-hop"]
-    assert focus["n"] == 1
+    assert focus["n"] == _MULTI_HOP_N
     assert focus["metrics"][METRIC_ALL_SPANS]["mean"] == 1.0
     assert (
         report["rows"][VECTOR_ROW]["slices"]["multi-hop"]["metrics"][METRIC_ALL_SPANS]["mean"]
         == 0.0
     )
-    assert focus["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == 1
+    assert focus["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == _MULTI_HOP_N
     verdict = report["verdict"]
     assert verdict["decision"] == VERDICT_ADOPT
     assert verdict["best_row"] == "fused/local_khop@0.30/d10"
-    assert verdict["focus_n"] == 1
+    assert verdict["focus_n"] == _MULTI_HOP_N
+
+
+def test_the_same_gain_on_too_few_items_is_not_adopted():
+    """The identical fixture one item short of the reachable minimum states no separation."""
+    report = _fusion_report(multi_hop=_MULTI_HOP_N - 1)
+    focus = report["rows"]["fused/local_khop@0.30/d10"]["slices"]["multi-hop"]
+    # Same point estimate, same interval, same unanimous ledger -- only the reading changes.
+    assert focus["paired_vs_baseline"][METRIC_ALL_SPANS]["delta"]["lo"] > 0.0
+    assert focus["paired_vs_baseline"][METRIC_ALL_SPANS]["stability"]["reading"] == (
+        READING_INSUFFICIENT_EVIDENCE
+    )
+    verdict = report["verdict"]
+    assert verdict["decision"] == VERDICT_INCONCLUSIVE
+    assert "INSUFFICIENT EVIDENCE" in verdict["reason"]
+    assert format_report(report).count("insufficient evidence") > 0
 
 
 def test_zero_weight_fused_row_ties_the_vector_baseline_exactly():
@@ -331,25 +363,37 @@ def test_no_multi_hop_item_yields_no_evidence_not_a_recommendation():
 
 
 def test_a_multi_hop_gain_paid_for_in_overall_recall_is_rejected():
-    # A heavy graph share completes the multi-hop item's second span but crowds the factoid's
-    # only gold chunk out of the top-k: a real gain that the overall lane pays for.
+    # A heavy graph share completes each multi-hop item's second span but crowds the factoids'
+    # only gold chunk out of the top-k: a real gain that the overall lane pays for. Both slices
+    # carry enough differing items for their readings to be reachable, so what the verdict turns
+    # on is the overall cost, not the item count.
+    multi = [f"q{i}" for i in range(_MULTI_HOP_N)]
+    factoid = [f"f{i}" for i in range(_MULTI_HOP_N)]
     items = [
-        _multi_hop_item("mh-1", "q1"),
-        EvidenceItem("f-1", "q2", [_span("d1", 0, 10)], "factoid"),
+        *(_multi_hop_item(f"mh-{i}", question) for i, question in enumerate(multi)),
+        *(
+            EvidenceItem(f"f-{i}", q, [_span("d1", 0, 10)], "factoid")
+            for i, q in enumerate(factoid)
+        ),
     ]
     vector = _ByQuestion(
         {
-            "q1": [_chunk("d1", 0, 10), _chunk("d3", 0, 10)],
-            "q2": [_chunk("d8", 0, 10), _chunk("d1", 0, 10)],
+            **{q: [_chunk("d1", 0, 10), _chunk("d3", 0, 10)] for q in multi},
+            **{q: [_chunk("d8", 0, 10), _chunk("d1", 0, 10)] for q in factoid},
         }
     )
     graph = _ByQuestion(
-        {"q1": [_chunk("d2", 0, 10)], "q2": [_chunk("d7", 0, 10), _chunk("d6", 0, 10)]}
+        {
+            **{q: [_chunk("d2", 0, 10)] for q in multi},
+            **{q: [_chunk("d7", 0, 10), _chunk("d6", 0, 10)] for q in factoid},
+        }
     )
-    rows = build_sweep_rows(vector, {"local_khop": graph}, ["q1", "q2"], k=2, weights=(0.9,))
+    rows = build_sweep_rows(vector, {"local_khop": graph}, multi + factoid, k=2, weights=(0.9,))
     report = evaluate_fusion_evidence(rows, items, 2, baseline=VECTOR_ROW, resamples=50)
     fused = report["rows"]["fused/local_khop@0.90/d2"]
-    assert fused["slices"]["multi-hop"]["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == 1
+    assert (
+        fused["slices"]["multi-hop"]["paired_vs_baseline"][METRIC_ALL_SPANS]["wins"] == _MULTI_HOP_N
+    )
     assert fused["overall"]["paired_vs_baseline"][METRIC_RECALL]["delta"]["mean"] < 0
     assert report["verdict"]["decision"] == VERDICT_REJECT
     assert "overall recall@k" in report["verdict"]["reason"]

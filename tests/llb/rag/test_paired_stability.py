@@ -13,10 +13,12 @@ from random import Random
 
 import pytest
 
-from llb.rag.fusion_evidence.stability import (
-    LOOSER_CONFIDENCE,
+from llb.rag.fusion_evidence.evidence_gate import (
     READING_FLAT,
     READING_SEPARATED,
+)
+from llb.rag.fusion_evidence.stability import (
+    LOOSER_CONFIDENCE,
     SIDE_ABOVE,
     SIDE_BELOW,
     TIGHTER_CONFIDENCE,
@@ -31,6 +33,7 @@ from llb.rag.fusion_evidence.stability import (
 from llb.rag.fusion_evidence.stats import (
     bootstrap_index_sets,
     bootstrap_interval,
+    bootstrap_ratio,
     bootstrap_samples,
     paired_comparison,
 )
@@ -97,6 +100,22 @@ def test_the_interval_is_unchanged_by_carrying_the_annotation():
                 )
 
 
+def test_a_bootstrap_ratio_carries_the_same_cut_annotation_without_a_sign_test_gate():
+    """Three positive events put a non-negative route ratio just below the default lower-bound cut."""
+    n = 30
+    estimate = bootstrap_ratio(
+        [i < 3 for i in range(n)],
+        [True] * n,
+        bootstrap_index_sets(n, 5000, SEED),
+    )
+    stability = estimate["stability"]
+    assert estimate == {**estimate, "mean": 0.1}
+    assert stability["reading"] == READING_FLAT
+    assert stability["looser_reading"] == READING_SEPARATED
+    assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
+    assert "discordant" not in stability and "pairs" not in stability
+
+
 # --- the flag is two-sided and discriminating ----------------------------------------------
 
 
@@ -145,9 +164,15 @@ def test_a_confidence_outside_the_two_conventions_carries_no_annotation():
 def test_stability_from_readings_accepts_a_richer_reading_than_separated_or_flat():
     """The adoption bar reads three states; the shared assembly must not assume two."""
     stability = stability_from_readings(
-        reading="neither", looser_reading="answer", tighter_reading="neither", p_positive=0.969
+        reading="neither",
+        looser_reading="answer",
+        tighter_reading="neither",
+        p_positive=0.969,
+        discordant=12,
+        pairs=40,
     )
     assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
+    assert stability["discordant"] == 12 and stability["pairs"] == 40
 
 
 def test_unsettled_and_format_reading_only_mark_a_borderline_row():

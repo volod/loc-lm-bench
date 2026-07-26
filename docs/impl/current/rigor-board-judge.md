@@ -533,6 +533,24 @@ Latin acronyms, keyboard grave normalization, embedded homoglyph repair, short-t
 and alphabetic/numeric candidate separation, plus the ambiguity-aware restoration constraints
 documented in [RAG core](rag-core.md#query-side-processing).
 
+Every per-class delta now carries paired uncertainty rather than a point-only sign.
+`query_robustness_uncertainty.py` reads three states at the reporting confidence and neighbouring
+90% / 97.5% conventions: `improved`, `degraded`, or `indistinguishable`. It reports the same
+interval, win/loss/tie ledger, exact sign-test p, `p_positive`, and `(borderline)` qualifier for
+lane-versus-clean deltas and mitigation-versus-`off` recoveries, both pooled and affected-only.
+Either directional claim also needs enough differing items for the exact sign test to reach the
+level. `query_robustness_summary.py` rebuilds all of that directly from `robustness.jsonl` plus the
+clean case rows, which makes a recorded run re-renderable without another model call.
+
+The 2026-07-24 MamayLM and Lapa artifacts were re-rendered through that seam with 2,000 resamples,
+seed 13, and 95% reporting confidence. Every existing aggregate table cell reproduced exactly.
+Each report has 100 paired readings, 2 borderline, and zero minimum-evidence relabelings; retrieval
+is shared, so the two qualifications are identical. On pooled `keyboard_typos`, `normalize`
+recall is -0.073 `[-0.146, -0.012]`, `degraded (borderline)`, `p_positive` 0.004: the 95% claim is
+dropped at 97.5%. On the 81 changed items it is -0.062 `[-0.136, 0.000]`,
+`indistinguishable (borderline)`, `p_positive` 0.009: a 90% interval would call it degraded. This
+qualifies the already documented normalization cost; it does not change the recommendation.
+
 CUDA-host evidence (2026-07-24, supersedes the 2026-07-21 and 2026-07-22 runs, which measured the
 combined class): RTX 4060 Ti 16 GiB, Ollama, the full committed `ua_squad_postedited_v1` final
 split (n=82), seed 13, 8 percent character noise, k=10, `intfloat/multilingual-e5-base`, 96 answer

@@ -17,6 +17,7 @@ from llb.rag.fusion_evidence.stats import (
     bootstrap_index_sets,
     bootstrap_ratio,
     paired_comparison,
+    separates,
 )
 from llb.rag.fusion_routing import HeuristicPolicy, QuestionTypeRouter, ROUTE_GRAPH, ROUTE_VECTOR
 from llb.rag.retrieval import recall_at_k, span_coverage_at_k
@@ -177,7 +178,11 @@ def _evaluate_policy(
         bootstrap_index_sets(len(single), resamples, seed),
         confidence,
     )
-    gate = multi_comparison["delta"]["lo"] > 0.0 and single_comparison["delta"]["lo"] >= 0.0
+    # The multi-span half is a SEPARATION claim, so it goes through the shared gate: a routed row
+    # that beats the vector lane on a handful of differing questions cannot support one. The
+    # single-span half is a non-inferiority check ("costs nothing"), which is not a separation and
+    # is left exactly as it was.
+    gate = separates(multi_comparison, confidence) and single_comparison["delta"]["lo"] >= 0.0
     return {
         "policy": _policy_spec(policy),
         "n": len(items),

@@ -11,7 +11,7 @@ without any evidence at all.
 The lanes are DIAGNOSTIC. `rag` stays the leaderboard row; nothing here changes a ranking policy.
 """
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.stats import PairedComparison
@@ -49,6 +49,10 @@ VERDICT_RAG_PAYS_OFF = "rag_pays_off"
 VERDICT_RETRIEVAL_INCONCLUSIVE = "retrieval_inconclusive"
 VERDICT_NO_RETRIEVAL_GAIN = "no_retrieval_gain"
 VERDICT_NO_EVIDENCE = "no_evidence"
+
+POWER_RESOLUTION_SEPARATED = "separated"
+POWER_RESOLUTION_FLAT = "flat"
+POWER_RESOLUTION_UNDECIDABLE = "undecidable"
 
 
 class LaneReport(TypedDict):
@@ -103,6 +107,34 @@ class ContextAblationVerdict(TypedDict):
     skipped: dict[str, int]
 
 
+class LongContextPowerAnalysis(TypedDict):
+    """Predeclared sensitivity target plus the reading reached by the new item set."""
+
+    method: str
+    reference_artifact: str
+    reference_n: int
+    reference_mean: float
+    reference_sample_sd: float
+    minimum_detectable_delta: float
+    target_power: float
+    alpha: float
+    required_n: int
+    planned_n: int
+    target_reached: bool
+    planned_target_reached: NotRequired[bool]
+    realized_n: NotRequired[int]
+    realized_mean: NotRequired[float]
+    realized_sample_sd: NotRequired[float]
+    realized_required_n: NotRequired[int]
+    realized_evidence_floor_n: NotRequired[int | None]
+    realized_binding_floor: NotRequired[str]
+    resolvable_mde: NotRequired[float]
+    realized_sd_exceeds_plan: NotRequired[bool]
+    resolution: NotRequired[str]
+    direction: NotRequired[str]
+    reason: NotRequired[str]
+
+
 class ContextAblationReport(TypedDict):
     """The full lane artifact: per-lane slices, derived deltas, contamination, item ledger."""
 
@@ -118,3 +150,4 @@ class ContextAblationReport(TypedDict):
     contamination: ContaminationReport
     items: list[ItemOutcome]
     verdict: ContextAblationVerdict
+    power_analysis: NotRequired[LongContextPowerAnalysis]

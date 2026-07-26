@@ -17,8 +17,14 @@ from llb.eval.context_ablation.models import (
     ItemOutcome,
 )
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_evidence.stability import boundary_table, format_reading
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+    format_reading,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -65,6 +71,14 @@ def _derived_table(entries: Sequence[DerivedComparison]) -> list[str]:
     return lines
 
 
+def _gate_summary(report: ContextAblationReport) -> list[str]:
+    """How many of the derived deltas the minimum-evidence gate relabeled."""
+    gated, total = gated_readings(
+        [entry["paired"] for entry in report["derived"]], report["confidence"]
+    )
+    return evidence_gate_summary(gated, total, report["confidence"], subject="derived delta")
+
+
 def _boundary_section(report: ContextAblationReport) -> list[str]:
     """How close each derived delta sits to the cut the ablation verdict is taken from.
 
@@ -83,6 +97,52 @@ def _boundary_section(report: ContextAblationReport) -> list[str]:
         subject="the candidate lane",
         confidence=report["confidence"],
     )
+
+
+def _power_section(report: ContextAblationReport) -> list[str]:
+    analysis = report.get("power_analysis")
+    if analysis is None:
+        return []
+    entry = next(
+        (
+            item
+            for item in reversed(report["derived"])
+            if item["label"].startswith("long_context_delta")
+        ),
+        None,
+    )
+    stability = entry["paired"].get("stability") if entry else None
+    p_positive = f"{stability['p_positive']:.4f}" if stability else "not measured"
+    reached = "yes" if analysis["target_reached"] else "no"
+    planned_reached = (
+        "yes" if analysis.get("planned_target_reached", analysis["target_reached"]) else "no"
+    )
+    lines = [
+        "### Predeclared long-context resolution",
+        "",
+        f"- minimum detectable delta: {analysis['minimum_detectable_delta']:+.3f} objective",
+        f"- target: {analysis['target_power']:.0%} power at alpha={analysis['alpha']:.3f}, "
+        f"two-sided `{analysis['method']}`",
+        f"- reference: n={analysis['reference_n']}, paired sample SD "
+        f"{analysis['reference_sample_sd']:.3f}, `{analysis['reference_artifact']}`",
+        f"- required / planned items: {analysis['required_n']} / {analysis['planned_n']} "
+        f"(planned target reached: {planned_reached})",
+    ]
+    if "realized_sample_sd" in analysis:
+        lines += [
+            f"- realized paired SD / resolvable MDE: {analysis['realized_sample_sd']:.3f} / "
+            f"{analysis['resolvable_mde']:+.3f}",
+            f"- realized required / reached items: {analysis['realized_required_n']} / "
+            f"{analysis['realized_n']} (target reached: {reached}; binding floor: "
+            f"{analysis['realized_binding_floor']})",
+        ]
+    lines += [
+        f"- result: **{analysis.get('resolution', 'undecidable')}** "
+        f"(direction: `{analysis.get('direction', 'none')}`, p_positive: {p_positive}) -- "
+        f"{analysis.get('reason', 'the new run has no resolution')}",
+        "",
+    ]
+    return lines
 
 
 def _metric_table(
@@ -193,7 +253,9 @@ def format_report(
     ]
     lines += _lane_list(report)
     lines.append("")
+    lines += _power_section(report)
     lines += _derived_table(report["derived"])
+    lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _metric_table(report, None, "Per lane", "Every scored item")
     other = sorted({name for lane in report["lanes"].values() for name in lane["slices"]})

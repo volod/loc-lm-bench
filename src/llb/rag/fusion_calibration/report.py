@@ -1,7 +1,16 @@
 """ASCII Markdown report for tuning-only selection and frozen-final routing evidence."""
 
 from llb.rag.fusion_calibration.models import PolicyResult, RoutingCalibrationReport
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import ReadingStability, boundary_table
+from llb.rag.fusion_evidence.stats import (
+    BootstrapRatio,
+    discordant_pairs,
+    format_interval,
+    gated_readings,
+)
 
 
 def _row(label: str, result: PolicyResult) -> str:
@@ -14,7 +23,7 @@ def _row(label: str, result: PolicyResult) -> str:
         f"| {route['true_positive']}/{route['false_positive']}/"
         f"{route['true_negative']}/{route['false_negative']} "
         f"| {format_interval(route['precision'])} | {format_interval(route['recall'])} "
-        f"| {format_interval(multi['delta'])} "
+        f"| {format_interval(multi['delta'])} | {discordant_pairs(multi)} "
         f"| {format_interval(single['delta'])} | {gate} |"
     )
 
@@ -22,12 +31,50 @@ def _row(label: str, result: PolicyResult) -> str:
 def _table(results: dict[str, PolicyResult]) -> list[str]:
     lines = [
         "| policy | graph/vector | tp/fp/tn/fn | precision | recall | multi coverage delta "
-        "| single recall delta | gate |",
-        "| --- | ---: | :-: | ---: | ---: | ---: | ---: | :-: |",
+        "| d | single recall delta | gate |",
+        "| --- | ---: | :-: | ---: | ---: | ---: | ---: | ---: | :-: |",
     ]
     lines.extend(_row(label, results[label]) for label in sorted(results))
     lines.append("")
     return lines
+
+
+def _gate_summary(report: RoutingCalibrationReport) -> list[str]:
+    """How many multi-span coverage readings the minimum-evidence gate relabeled."""
+    results = [*report["tuning"].values(), report["final"]]
+    gated, total = gated_readings(
+        [result["multi_span_coverage"] for result in results], report["confidence"]
+    )
+    return evidence_gate_summary(
+        gated, total, report["confidence"], subject="multi-span coverage reading"
+    )
+
+
+def _route_quality_boundaries(report: RoutingCalibrationReport) -> list[str]:
+    """The non-paired lower-bound cuts behind route precision and recall."""
+    rows: list[tuple[str, ReadingStability]] = []
+
+    def add(label: str, metric: str, estimate: BootstrapRatio) -> None:
+        stability = estimate.get("stability")
+        if stability is not None:
+            rows.append((f"{label} {metric}", stability))
+
+    for label in sorted(report["tuning"]):
+        route = report["tuning"][label]["route"]
+        add(f"tuning `{label}`", "precision", route["precision"])
+        add(f"tuning `{label}`", "recall", route["recall"])
+    final_route = report["final"]["route"]
+    add(f"final `{report['frozen_policy']}`", "precision", final_route["precision"])
+    add(f"final `{report['frozen_policy']}`", "recall", final_route["recall"])
+    return boundary_table(
+        rows,
+        title="Route-quality threshold stability",
+        key_header="row",
+        subject="the route metric",
+        confidence=report["confidence"],
+        evidence_counts=False,
+        positive_event="the route metric is above zero",
+    )
 
 
 def format_report(report: RoutingCalibrationReport) -> str:
@@ -49,12 +96,19 @@ def format_report(report: RoutingCalibrationReport) -> str:
         "without a single-span recall interval below zero. Final is evaluated only for that",
         "frozen policy and must independently pass the same gate before recommendation.",
         "",
+        "`d` is the number of multi-span questions the routed and vector lanes differ on. The",
+        "coverage half of the gate is a separation claim, so it also requires enough differing",
+        "questions for the reporting level to be reachable; the single-span half is a",
+        "non-inferiority check and is read on the interval alone.",
+        "",
         "## Tuning threshold grid",
         "",
     ]
+    lines += _gate_summary(report)
     lines += _table(report["tuning"])
     lines += ["## Frozen policy on final", ""]
     lines += _table({report["frozen_policy"]: report["final"]})
+    lines += _route_quality_boundaries(report)
     lines += ["## Frozen final routing errors", ""]
     errors = report["final"]["route_errors"]
     if not errors:

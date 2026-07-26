@@ -173,7 +173,14 @@ def compare_context_strategies(
         "derived": derived,
         "contamination": contamination,
         "items": _items(item_ids, question_types, by_lane, set(contamination["item_ids"])),
-        "verdict": decide(lane_reports, derived, contamination, baseline=baseline, n=len(item_ids)),
+        "verdict": decide(
+            lane_reports,
+            derived,
+            contamination,
+            baseline=baseline,
+            n=len(item_ids),
+            confidence=confidence,
+        ),
     }
 
 

@@ -17,8 +17,13 @@ from llb.eval.answer_quality.models import (
 )
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.models import ROUTED_ROW_PREFIX
-from llb.rag.fusion_evidence.stability import boundary_table
-from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.evidence_gate import (
+    evidence_gate_summary,
+)
+from llb.rag.fusion_evidence.stability import (
+    boundary_table,
+)
+from llb.rag.fusion_evidence.stats import format_interval, gated_readings
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -67,6 +72,18 @@ def _metric_table(
         )
     lines.append("")
     return lines
+
+
+def _gate_summary(report: AnswerQualityReport) -> list[str]:
+    """How many of this comparison's paired readings the minimum-evidence gate relabeled."""
+    comparisons = [
+        comparison
+        for lane in report["lanes"].values()
+        for slice_report in (lane["overall"], *lane["slices"].values())
+        for comparison in slice_report["paired_vs_baseline"].values()
+    ]
+    gated, total = gated_readings(comparisons, report["confidence"])
+    return evidence_gate_summary(gated, total, report["confidence"])
 
 
 def _boundary_section(report: AnswerQualityReport) -> list[str]:
@@ -212,6 +229,7 @@ def format_report(
     ]
     lines += _lane_list(report)
     lines.append("")
+    lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _lane_decisions(report)
     lines += _routing_outcomes(report)
