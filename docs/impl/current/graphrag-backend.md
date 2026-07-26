@@ -199,6 +199,15 @@ FINAL split alone unless it is cleared. Every fusion evidence run recorded here 
 ledger and therefore passes `SPLIT=` explicitly; the report header's `scored items` count is the
 check that the intended selection was used.
 
+The lane also accepts the shared
+[paired-power contract](rag-core.md#paired-power-contract-for-comparison-lanes). Declare one
+focus-slice row and metric before retrieval with
+`FUSION_POWER_REFERENCE=<earlier-comparison-json>`, `FUSION_POWER_ROW=<fusion-row>`,
+`FUSION_POWER_METRIC=<metric>`, and `FUSION_MDE=<minimum-gain>`;
+`FUSION_TARGET_POWER=<share>` overrides the 0.80 default. `power-plan.json` is written beside
+`comparison.json` before the first retrieval, and the completed report states the realized SD,
+binding variance-or-discordance floor, resolvable MDE, and resolution.
+
 `ROUTED_GRAPH_WEIGHT` (`--routed-graph-weight`, default 0.3) also emits
 `routed/<strategy>@<weight>/d<depth>[/i<identity>]`. Its weight is applied only to questions the
 router calls multi-span; all other questions use the exact vector endpoint. The report records

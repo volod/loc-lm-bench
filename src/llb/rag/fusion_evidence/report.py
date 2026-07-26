@@ -12,6 +12,7 @@ from llb.rag.fusion_evidence.models import (
     METRIC_RECALL,
     FusionEvidenceReport,
 )
+from llb.rag.fusion_evidence.power_report import power_summary
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.evidence_gate import (
     evidence_gate_summary,
@@ -215,6 +216,8 @@ def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fu
         + (f" -- {verdict['reason']}" if verdict["reason"] else ""),
         "",
     ]
+    if analysis := report.get("power_analysis"):
+        lines += power_summary(analysis, title="Predeclared paired-power contract")
     lines += _gate_summary(report)
     lines += _metric_table(
         report,

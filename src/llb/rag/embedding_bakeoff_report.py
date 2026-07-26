@@ -11,6 +11,7 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 from llb.rag.embedding_bakeoff_verdict import (
     DECISION_ADOPT,
 )
+from llb.rag.fusion_evidence.power_report import power_summary
 from llb.rag.fusion_evidence.evidence_gate import (
     evidence_gate_summary,
 )
@@ -124,6 +125,9 @@ def render_markdown(report: BakeoffReport) -> str:
         f"- items scored: {report['n']}",
         f"- cutoff: recall@{report['k']} / MRR",
     ]
+    if analysis := report.get("power_analysis"):
+        lines.append("")
+        lines += power_summary(analysis, title="Predeclared paired-power contract")
     if settings is not None:
         lines.append(
             f"- paired uncertainty: baseline `{baseline}`, {settings['resamples']} resamples, "

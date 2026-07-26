@@ -8,6 +8,8 @@ import typer
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
+from llb.rag.fusion_evidence.models import METRICS, METRIC_RECALL
+from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 
 FUSION_EVIDENCE_METHOD = "graph-vector-fusion-multihop"
 DEFAULT_WEIGHT_GRID = "0,0.1,0.2,0.3,0.5,0.7,1.0"
@@ -88,6 +90,25 @@ def compare_graph_fusion_cmd(
     resamples: int = typer.Option(DEFAULT_RESAMPLES, min=0, help="bootstrap resamples"),
     confidence: float = typer.Option(DEFAULT_CONFIDENCE, min=0.5, max=0.999, help="CI level"),
     seed: int = typer.Option(DEFAULT_SEED, help="bootstrap resampling seed"),
+    power_reference: Optional[Path] = typer.Option(
+        None,
+        help="earlier comparison.json whose selected focus-row variance prices this item set",
+    ),
+    power_row: Optional[str] = typer.Option(
+        None, help="fusion row whose paired delta versus vector the power contract selects"
+    ),
+    power_metric: str = typer.Option(
+        METRIC_RECALL, help=f"paired focus-slice metric selected for power: {','.join(METRICS)}"
+    ),
+    minimum_detectable_delta: Optional[float] = typer.Option(
+        None, min=0.001, help="smallest material paired retrieval gain to distinguish"
+    ),
+    target_power: float = typer.Option(
+        DEFAULT_TARGET_POWER,
+        min=0.501,
+        max=0.999,
+        help="target power for the paired normal-approximation item count",
+    ),
     out_dir: Optional[Path] = typer.Option(
         None, help=f"artifact dir (default: $DATA_DIR/{FUSION_EVIDENCE_METHOD}/<timestamp>/)"
     ),
@@ -116,6 +137,7 @@ def compare_graph_fusion_cmd(
         parse_weights,
     )
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
+    from llb.rag.fusion_evidence.fusion_power import prepare_fusion_power, resolve_fusion_power
     from llb.rag.fusion_evidence.rows import VECTOR_ROW
     from llb.rag.noise_floor import CANDIDATE_DEPTH_FACTOR
     from llb.rag.question_types import load_question_types_by_question
@@ -134,6 +156,24 @@ def compare_graph_fusion_cmd(
     if not items:
         typer.echo("[error] the gold set selection is empty", err=True)
         raise typer.Exit(code=2)
+    default_dir = cfg.data_dir / FUSION_EVIDENCE_METHOD / generation_timestamp()
+    target = Path(out_dir) if out_dir else default_dir
+    selected_focus = focus_slice or FOCUS_SLICE
+    try:
+        power_plan = prepare_fusion_power(
+            power_reference,
+            row=power_row,
+            metric=power_metric,
+            minimum_detectable_delta=minimum_detectable_delta,
+            target_power=target_power,
+            confidence=confidence,
+            planned_n=sum(item.question_type == selected_focus for item in items),
+            focus_slice=selected_focus,
+            plan_path=target / "power-plan.json",
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
     vector, graphs = _load_lanes(cfg, graph_strategies)
     question_types = load_question_types_by_question(cfg.goldset_path) if routing_sidecar else {}
     rows = build_sweep_rows(
@@ -155,15 +195,19 @@ def compare_graph_fusion_cmd(
         items,
         k,
         baseline=VECTOR_ROW,
-        focus_slice=focus_slice or FOCUS_SLICE,
+        focus_slice=selected_focus,
         resamples=resamples,
         confidence=confidence,
         seed=seed,
         noise_floor=noise_floor,
         noise_floor_replicates=noise_floor_replicates,
     )
-    default_dir = cfg.data_dir / FUSION_EVIDENCE_METHOD / generation_timestamp()
-    target = Path(out_dir) if out_dir else default_dir
+    if power_plan is not None:
+        try:
+            report["power_analysis"] = resolve_fusion_power(report, power_plan)
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2) from None
     target.mkdir(parents=True, exist_ok=True)
     (target / "comparison.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"

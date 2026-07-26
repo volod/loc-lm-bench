@@ -86,7 +86,7 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
-compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed share, candidate depth, span identity, and merge threshold (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_HIDE_ROUTING_SIDECAR=1 NOISE_FLOOR=1 FUSION_OUT_DIR=)
+compare-graph-fusion: ## Sweep graph fusion with paired evidence (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_POWER_REFERENCE= FUSION_POWER_ROW= FUSION_MDE= FUSION_POWER_METRIC= FUSION_TARGET_POWER= FUSION_HIDE_ROUTING_SIDECAR=1 NOISE_FLOOR=1 FUSION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-graph-fusion $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -96,6 +96,11 @@ compare-graph-fusion: ## Sweep fixed graph shares plus a question-type-routed sh
 		$(if $(FUSION_HIDE_ROUTING_SIDECAR),--no-routing-sidecar,) \
 		$(if $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),--heuristic-long-question-words $(FUSION_HEURISTIC_LONG_QUESTION_WORDS),) \
 		$(if $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),--heuristic-min-linked-entities $(FUSION_HEURISTIC_MIN_LINKED_ENTITIES),) \
+		$(if $(FUSION_POWER_REFERENCE),--power-reference "$(FUSION_POWER_REFERENCE)",) \
+		$(if $(FUSION_POWER_ROW),--power-row "$(FUSION_POWER_ROW)",) \
+		$(if $(FUSION_POWER_METRIC),--power-metric "$(FUSION_POWER_METRIC)",) \
+		$(if $(FUSION_MDE),--minimum-detectable-delta "$(FUSION_MDE)",) \
+		$(if $(FUSION_TARGET_POWER),--target-power "$(FUSION_TARGET_POWER)",) \
 		$(if $(GRAPH_FUSION_CANDIDATES),--graph-fusion-candidates "$(GRAPH_FUSION_CANDIDATES)",) \
 		$(if $(GRAPH_FUSION_SPAN_IDENTITY),--graph-fusion-span-identity "$(GRAPH_FUSION_SPAN_IDENTITY)",) \
 		$(if $(GRAPH_FUSION_SPAN_MERGE_RATIO),--graph-fusion-span-merge-ratio "$(GRAPH_FUSION_SPAN_MERGE_RATIO)",) \
@@ -150,7 +155,7 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + throughput + paired delta vs EMBED_BASELINE) on GOLDSET; MODELS= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) EMBED_RESAMPLES= (needs ".[rag]")
+compare-embeddings: ## Rank UA embedders with paired evidence (GOLDSET= MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES=; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
@@ -158,6 +163,12 @@ compare-embeddings: ## embedding-bakeoff-uk: rank UA embedders (recall@k/MRR + t
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
 		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
 		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
+		$(if $(EMBED_CONFIDENCE),--confidence $(EMBED_CONFIDENCE),) \
+		$(if $(EMBED_POWER_REFERENCE),--power-reference "$(EMBED_POWER_REFERENCE)",) \
+		$(if $(EMBED_POWER_CANDIDATE),--power-candidate "$(EMBED_POWER_CANDIDATE)",) \
+		$(if $(EMBED_POWER_METRIC),--power-metric "$(EMBED_POWER_METRIC)",) \
+		$(if $(EMBED_MDE),--minimum-detectable-delta "$(EMBED_MDE)",) \
+		$(if $(EMBED_TARGET_POWER),--target-power "$(EMBED_TARGET_POWER)",) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \

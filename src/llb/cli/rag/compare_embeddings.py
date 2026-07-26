@@ -14,9 +14,13 @@ from llb.cli.rag.compare_stores import _compare_vector_corpus_root, _dir_size_by
 from llb.rag.embedding_bakeoff_uncertainty import (
     DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
+    DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
+    METRICS,
+    METRIC_RECALL,
 )
+from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 from llb.rag.embedding_bakeoff_verdict import (
     resolve_bars,
 )
@@ -153,7 +157,29 @@ def compare_embeddings_cmd(
     resamples: int = typer.Option(
         DEFAULT_RESAMPLES, help="paired percentile-bootstrap resamples for the delta intervals"
     ),
+    confidence: float = typer.Option(
+        DEFAULT_CONFIDENCE, min=0.5, max=0.999, help="paired bootstrap CI level"
+    ),
     seed: int = typer.Option(DEFAULT_SEED, help="seed for the shared bootstrap index sets"),
+    power_reference: Optional[Path] = typer.Option(
+        None,
+        help="earlier report.json whose selected paired metric variance prices this item set",
+    ),
+    power_candidate: Optional[str] = typer.Option(
+        None, help="candidate model whose delta versus --baseline the power contract selects"
+    ),
+    power_metric: str = typer.Option(
+        METRIC_RECALL, help=f"paired metric selected for power: {','.join(METRICS)}"
+    ),
+    minimum_detectable_delta: Optional[float] = typer.Option(
+        None, min=0.001, help="smallest material paired metric gain to distinguish"
+    ),
+    target_power: float = typer.Option(
+        DEFAULT_TARGET_POWER,
+        min=0.501,
+        max=0.999,
+        help="target power for the paired normal-approximation item count",
+    ),
     out: Optional[Path] = typer.Option(
         None, help="write report.md here (default: $DATA_DIR/compare-embeddings/<ts>/report.md)"
     ),
@@ -172,6 +198,7 @@ def compare_embeddings_cmd(
     from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.rag.embedding_bakeoff import run_bakeoff
     from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
+    from llb.rag.embedding_bakeoff_power import prepare_embedding_power, resolve_embedding_power
     from llb.rag.embedding_bakeoff_report import format_report, render_markdown
 
     try:
@@ -193,6 +220,21 @@ def compare_embeddings_cmd(
     _, run_ts = new_run_timestamp()
     run_dir = cfg.data_dir / "compare-embeddings" / run_ts
     stores_dir = run_dir / "stores"
+    report_path = out if out is not None else run_dir / "report.md"
+    try:
+        power_plan = prepare_embedding_power(
+            power_reference,
+            candidate=power_candidate,
+            metric=power_metric,
+            minimum_detectable_delta=minimum_detectable_delta,
+            target_power=target_power,
+            confidence=confidence,
+            planned_n=len(items),
+            plan_path=report_path.parent / "power-plan.json",
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
     stores_dir.mkdir(parents=True, exist_ok=True)
 
     egress_log = ProvenanceLog()
@@ -211,6 +253,7 @@ def compare_embeddings_cmd(
         corpus_root=str(cfg.corpus_root),
         local_models=local_models,
         build_local=_local_store_builder(cfg, stores_dir),
+        item_ids=[item.id for item in items],
         api_model=api_model,
         build_api=_api_store_builder(cfg, stores_dir, egress_log, max_usd),
         data_classification=data_classification,
@@ -220,11 +263,18 @@ def compare_embeddings_cmd(
         baseline=baseline.strip() or None,
         bars=bars,
         resamples=resamples,
+        confidence=confidence,
         seed=seed,
     )
+    if power_plan is not None:
+        try:
+            report["power_analysis"] = resolve_embedding_power(report, power_plan)
+        except ValueError as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=2) from None
 
     typer.echo(format_report(report))
-    report_path = out if out is not None else run_dir / "report.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(render_markdown(report), encoding="utf-8")
     # The paired ledger and every interval bound also land machine-readable beside the prose: a
     # later re-read of this recommendation needs the numbers, not a rendered table.

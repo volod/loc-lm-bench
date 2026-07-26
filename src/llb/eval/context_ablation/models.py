@@ -121,6 +121,15 @@ class LongContextPowerAnalysis(TypedDict):
     required_n: int
     planned_n: int
     target_reached: bool
+    planned_target_reached: NotRequired[bool]
+    realized_n: NotRequired[int]
+    realized_mean: NotRequired[float]
+    realized_sample_sd: NotRequired[float]
+    realized_required_n: NotRequired[int]
+    realized_evidence_floor_n: NotRequired[int | None]
+    realized_binding_floor: NotRequired[str]
+    resolvable_mde: NotRequired[float]
+    realized_sd_exceeds_plan: NotRequired[bool]
     resolution: NotRequired[str]
     direction: NotRequired[str]
     reason: NotRequired[str]

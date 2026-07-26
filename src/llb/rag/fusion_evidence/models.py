@@ -7,7 +7,7 @@ what cost to everything else? That needs three things the flat table lacks -- a 
 reviewer can actually read.
 """
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -162,6 +162,7 @@ class FusionEvidenceReport(TypedDict):
     rows: dict[str, RowReport]
     focus_items: list[ItemOutcome]
     verdict: Verdict
+    power_analysis: NotRequired[dict[str, Any]]
     # Measurement floor per swept row, present only when it was asked for
     # (`compare-graph-fusion --noise-floor`). The sweep publishes three-decimal recall@k rows
     # across a dozen weights, so the floor states which of them are separated at all. It is

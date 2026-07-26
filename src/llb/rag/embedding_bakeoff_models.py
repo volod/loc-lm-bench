@@ -98,6 +98,10 @@ class BakeoffReport(TypedDict):
     uncertainty: NotRequired[UncertaintySettings]
     # Adopt-or-retain: point-estimate rank order is NOT the recommendation; this is.
     verdict: NotRequired[BakeoffVerdict]
+    # Per-item metric vectors retained so a later run can price a declared paired delta before
+    # rebuilding any store. Item order is the stable identity this pure lane receives.
+    paired_items: NotRequired[list[dict[str, Any]]]
+    power_analysis: NotRequired[dict[str, Any]]
     # Measurement floor across the candidate stores, present only when it was asked for
     # (`compare-embeddings --noise-floor`). This lane is exactly where a sub-item recall delta
     # gets read as a recommendation, so the floor states whether the winner is separated from

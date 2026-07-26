@@ -1460,6 +1460,60 @@ row, the paired ledger, seed determinism, a baseline paired against itself at ex
 one-item lead that does NOT separate, adopt/retain/undecided, the report columns, and the CLI's
 `report.json`) -- all over fake stores, no FAISS, no GPU.
 
+#### Paired-power contract for comparison lanes
+
+`src/llb/rag/fusion_evidence/power.py` is the shared a priori sensitivity seam beside the paired
+bootstrap. A lane supplies an earlier per-item candidate-minus-baseline delta vector, a
+predeclared minimum detectable effect (MDE), its reporting confidence, target power, and the
+planned item count. Before retrieval or inference, the seam writes `power-plan.json` and prices:
+
+- the two-sided paired normal-approximation variance floor,
+  `ceil(((z_(1-alpha/2) + z_power) * sample_sd / MDE)^2)`;
+- the exact-sign-test discordance floor at the reference ledger's differing-item rate; and
+- one `required_n`, the larger floor, plus `binding_floor` (`variance`, `discordance`, or `both`).
+
+The completed comparison repeats both floors with the run's own per-item SD and discordance rate.
+It replaces the planned `target_reached` reading with that realized check, retains
+`planned_target_reached` for audit, and reports
+`resolvable_mde = (z_(1-alpha/2) + z_power) * realized_sd / sqrt(realized_n)`. This is sensitivity
+at the reached item count, not post-hoc achieved power computed from the observed effect.
+An undecidable result therefore states both what effect the item set could resolve and whether
+realized variance or discordance made the declared target miss.
+
+Lane selectors and artifacts:
+
+- Context ablation selects fitting `long_context - rag` objective deltas. Its adapter remains
+  `src/llb/eval/context_ablation/power.py`; the recorded
+  `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json` regenerates
+  byte-identically through the shared seam.
+- Embedder bake-off selects `--power-candidate` against `--baseline` and either `recall_at_k` or
+  `mrr` via `--power-metric`. `report.json` now retains `paired_items`, the per-item metric ledger
+  with gold item ids needed to price and audit a later run.
+- Graph-vector fusion selects `--power-row` against the vector baseline and one
+  `--power-metric` on the declared focus slice. Its existing `focus_items` ledger supplies the
+  paired deltas. Details and its Make variables are in
+  [GraphRAG](graphrag-backend.md#the-graph-weight-sweep-lane).
+
+Use the existing workflow targets; MDE selection remains an operator decision:
+
+```bash
+make compare-embeddings GOLDSET=<goldset-jsonl> \
+  EMBED_POWER_REFERENCE=<earlier-report-json> EMBED_POWER_CANDIDATE=<candidate-model> \
+  EMBED_POWER_METRIC=recall_at_k EMBED_MDE=<minimum-gain>
+
+make compare-graph-fusion GOLDSET=<goldset-jsonl> \
+  FUSION_POWER_REFERENCE=<earlier-comparison-json> FUSION_POWER_ROW=<fusion-row> \
+  FUSION_POWER_METRIC=recall_at_k FUSION_MDE=<minimum-gain>
+```
+
+`tests/llb/rag/test_paired_power.py` covers exact legacy reproduction, item-count arithmetic,
+inverted MDE, and realized-SD rechecking.
+`tests/llb/rag/test_paired_power_contract.py` covers both selectors, artifact output, and the
+plan-before-build/retrieval order. The context-specific regression suite remains
+`tests/llb/eval/test_context_ablation_power.py`. Host validation on 2026-07-26 completed
+`make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy model run belongs to
+this delivery.
+
 #### How settled a paired reading is -- `p_positive` and the borderline flag
 
 Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:
@@ -2222,18 +2276,23 @@ lanes over fake bundles and the committed fixtures
 (`tests/llb/eval/test_context_ablation.py`), no backend or GPU.
 
 An optional a priori power contract keeps a borderline row from being "resolved" by choosing a
-different confidence convention. Pass the earlier `comparison.json` as
+different confidence convention. Its context adapter delegates arithmetic and realized
+sensitivity to the
+[shared comparison-lane contract](#paired-power-contract-for-comparison-lanes). Pass the earlier
+`comparison.json` as
 `CONTEXT_POWER_REFERENCE=<comparison-json>`, predeclare the smallest material objective delta as
 `CONTEXT_MDE=<delta>`, and optionally set `CONTEXT_TARGET_POWER=<share>` (default 0.80). Before the
 first model call, `src/llb/eval/context_ablation/power.py` reads the earlier per-item
 `long_context - rag` differences, estimates their paired sample SD, and writes
 `power-plan.json`. The required count is the two-sided paired normal approximation
 `ceil(((z_(1-alpha/2) + z_power) * sample_sd / MDE)^2)`, where alpha follows the report
-confidence. The completed `comparison.json` and `report.md` then record:
+confidence. The completed `comparison.json` and `report.md` re-check the item target against
+realized SD, report the resolvable MDE at the reached item count, and record:
 
 - `separated` when the new paired interval is wholly on one side of zero;
 - `flat` when the interval is wholly inside the predeclared `[-MDE, +MDE]` detectable-effect band;
-- `undecidable` otherwise, explicitly saying whether the planned count reached the target.
+- `undecidable` otherwise, explicitly saying whether the run's realized variance reached the
+  target.
 
 The power options are additive: omitting them preserves the original artifact schema and behavior.
 `tests/llb/eval/test_context_ablation_power.py` covers the item-count calculation, paired-reference
