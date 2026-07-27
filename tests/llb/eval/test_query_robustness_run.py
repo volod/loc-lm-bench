@@ -1,5 +1,7 @@
 """Focused tests split from ``test_query_robustness.py``."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,8 @@ from llb.eval.query_robustness import (
     LANE_NORMALIZE_TYPOS,
     LANE_OFF,
     MITIGATION_LANES,
+    LaneMetrics,
+    RobustnessResult,
     evaluate_query_robustness,
 )
 from llb.eval.query_robustness_report import write_robustness_artifacts
@@ -32,43 +36,41 @@ from llb.eval.query_robustness_variants import (
 from llb.goldset.schema import GoldItem
 
 
-def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    item = _item()
-    guard_loaded = []
+@dataclass
+class _GuardLoader:
+    calls: list[bool]
 
-    def load_guard():
-        guard_loaded.append(True)
+    def __call__(self) -> Callable[[str], bool]:
+        self.calls.append(True)
         return lambda _token: False
 
-    monkeypatch.setattr("llb.rag.lexical.load_uk_word_probe", load_guard)
-    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
-    executor = make_query_executor(RunConfig(top_k=1, max_tokens=16), FakeStore(), FakeEndpoint())
-    clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
-    result = evaluate_query_robustness([item], clean_rows, executor, seed=13, typo_rate=0.1)
 
+def _lane_index(result: RobustnessResult) -> dict[tuple[str, str], LaneMetrics]:
+    return {(lane.variant_class, lane.mitigation): lane for lane in result.lanes}
+
+
+def _assert_probe_matrix(result: RobustnessResult, guard_loaded: list[bool]) -> None:
     assert len(result.rows) == len(VARIANT_CLASSES) * len(MITIGATION_LANES)
-    assert guard_loaded == [True]  # only the vocabulary-correction lane loads the morphology probe
+    assert guard_loaded == [True]
     assert all(row["probe"] is True for row in result.rows)
-    lanes = {(lane.variant_class, lane.mitigation): lane for lane in result.lanes}
     assert {lane.mitigation for lane in result.lanes} == {lane.id for lane in MITIGATION_LANES}
+
+
+def _assert_mitigation_recovery(lanes: dict[tuple[str, str], LaneMetrics]) -> None:
     for variant_class in (TRANSLITERATION, MIXED_SCRIPT, KEYBOARD_TYPOS):
         assert lanes[(variant_class, LANE_OFF.id)].recall_at_k == 0.0
         assert lanes[(variant_class, LANE_NORMALIZE_TYPOS.id)].recall_at_k == 1.0
         assert lanes[(variant_class, LANE_NORMALIZE_TYPOS.id)].recall_recovery == 1.0
-    # the isolated lanes separate the two mechanisms: normalization alone inverts the noise it can
-    # attribute (script and transliteration), and only keyboard typos need vocabulary correction
+
     assert lanes[(TRANSLITERATION, LANE_NORMALIZE.id)].recall_at_k == 1.0
     assert lanes[(MIXED_SCRIPT, LANE_NORMALIZE.id)].recall_at_k == 1.0
     assert lanes[(KEYBOARD_TYPOS, LANE_NORMALIZE.id)].recall_at_k == 0.0
-    # each mechanism is its own class, so a recovery is attributable to one of them; the combined
-    # class is opt-in, and a class with nothing to perturb reproduces the clean rows exactly
-    assert APOSTROPHE_MIXED_SCRIPT not in {lane.variant_class for lane in result.lanes}
+    assert APOSTROPHE_MIXED_SCRIPT not in {lane.variant_class for lane in lanes.values()}
     assert lanes[(APOSTROPHE_VARIANT, LANE_OFF.id)].recall_at_k == 1.0
     assert lanes[(APOSTROPHE_VARIANT, LANE_OFF.id)].changed.n == 0
 
-    out = tmp_path / "query-robustness" / "run"
+
+def _write_probe_artifacts(result: RobustnessResult, out: Path) -> str:
     paths = write_robustness_artifacts(
         result,
         out,
@@ -86,19 +88,45 @@ def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
     assert len((out / "robustness.jsonl").read_text(encoding="utf-8").splitlines()) == len(
         result.rows
     )
-    report = (out / "report.md").read_text(encoding="utf-8")
+    return (out / "report.md").read_text(encoding="utf-8")
+
+
+def _assert_report_content(report: str) -> None:
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_NORMALIZE.id}` |" in report
     assert f"| {MIXED_SCRIPT} | `{LANE_NORMALIZE.id}` |" in report
     assert "## Paired uncertainty by noise class" in report
     assert "p_positive" in report
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | changed |" not in report
+    assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 0 | - | - | - | - | - | - |" in report
+
+
+def _assert_uncertainty_payload(lanes: dict[tuple[str, str], LaneMetrics]) -> None:
     transliteration = lanes[(TRANSLITERATION, LANE_OFF.id)]
     assert transliteration.comparisons["recall_delta"]["delta"]["mean"] == (
         transliteration.recall_delta
     )
     assert "stability" in transliteration.comparisons["recall_delta"]
-    # the untouched apostrophe rows carry no measurement, so the subset table dashes them out
-    assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 0 | - | - | - | - | - | - |" in report
+
+
+def test_fake_store_endpoint_measure_mitigation_and_keep_probe_rows_separate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    item = _item()
+    guard_loaded: list[bool] = []
+
+    monkeypatch.setattr("llb.rag.lexical.load_uk_word_probe", _GuardLoader(guard_loaded))
+    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
+    executor = make_query_executor(RunConfig(top_k=1, max_tokens=16), FakeStore(), FakeEndpoint())
+    clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
+    result = evaluate_query_robustness([item], clean_rows, executor, seed=13, typo_rate=0.1)
+
+    _assert_probe_matrix(result, guard_loaded)
+    lanes = _lane_index(result)
+    _assert_mitigation_recovery(lanes)
+    out = tmp_path / "query-robustness" / "run"
+    report = _write_probe_artifacts(result, out)
+    _assert_report_content(report)
+    _assert_uncertainty_payload(lanes)
 
 
 def test_items_a_class_cannot_perturb_are_reported_apart_from_the_affected_subset(
