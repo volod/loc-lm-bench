@@ -27,6 +27,8 @@ from llb.rag.store_build import (
     META_FILE,
 )
 
+pytestmark = pytest.mark.heavy_env
+
 
 def test_noop_when_corpus_unchanged(tmp_path):
     corpus = write_corpus(tmp_path / "corpus", V1_DOCS)

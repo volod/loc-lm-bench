@@ -22,6 +22,8 @@ from llb.rag.refresh.siblings import (
 )
 from llb.rag.refresh.store_refresh import refresh_vector_store
 
+pytestmark = pytest.mark.heavy_env
+
 
 def test_sidecar_only_change_reannotates_the_documents_chunks(tmp_path):
     corpus = write_corpus(tmp_path / "corpus", V1_DOCS)

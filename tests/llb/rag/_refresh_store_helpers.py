@@ -6,10 +6,11 @@ from-scratch rebuild on the same corpus state: chunk records, embedding matrices
 postings, and ranked retrieval must be identical, and only the changed documents' chunks may
 reach the embedder.
 
-The module is marked `heavy_env`: these tests are quick and run in the default local environment,
-but are deselected by `make ci-github`, whose base `[dev]` environment lacks the store extras.
-The default local environment includes FAISS, Chroma, and Qdrant. The LanceDB parameter is marked
-`opt_in_env` because that adapter remains an explicitly installed lane.
+The helper module and both importing test modules are marked `heavy_env`: module marks do not
+propagate through imports. These tests are quick and run in the default local environment, but are
+deselected by `make ci-github`, whose base `[dev]` environment lacks the store extras. The default
+local environment includes FAISS, Chroma, and Qdrant. The LanceDB parameter is marked `opt_in_env`
+because that adapter remains an explicitly installed lane.
 """
 
 import numpy as np
