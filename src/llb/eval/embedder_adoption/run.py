@@ -14,7 +14,6 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
@@ -26,11 +25,6 @@ from llb.eval.embedder_adoption.report import format_report
 from llb.eval.paired_cases import CaseRows
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
-
-if TYPE_CHECKING:
-    from llb.eval.embedder_adoption.cross_model import CrossModelReport
-    from llb.eval.embedder_adoption.roster import ModelProfile, RosterReport
-    from llb.eval.embedder_adoption.screen import ScreenReport
 
 METHOD = "embedder-adoption-bar"
 
@@ -168,158 +162,3 @@ def write_artifacts(
         "report": str(out_dir / "report.md"),
         "comparison": str(out_dir / "comparison.json"),
     }
-
-
-@dataclass(frozen=True)
-class CrossModelRun:
-    report: "CrossModelReport"
-    out_dir: Path
-    paths: Mapping[str, str]
-
-
-def load_report(path: Path) -> AdoptionBarReport:
-    """Load one finished sweep's `comparison.json` (or its directory) as an `AdoptionBarReport`."""
-    target = Path(path)
-    if target.is_dir():
-        target = target / "comparison.json"
-    try:
-        data = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{target}: cannot load an adoption-bar comparison: {exc}") from None
-    if not isinstance(data, dict) or "cells" not in data or "verdict" not in data:
-        raise ValueError(f"{target}: not an adoption-bar comparison.json (no cells/verdict)")
-    return data  # type: ignore[return-value]
-
-
-def run_cross_model_comparison(report_paths: Sequence[Path], *, out_dir: Path) -> CrossModelRun:
-    """Read two finished sweeps and persist the per-cell cross-model agreement report."""
-    from llb.eval.embedder_adoption.cross_model import (
-        _cross_metadata,
-        compare_models,
-        format_cross_model,
-    )
-
-    reports = [load_report(path) for path in report_paths]
-    cross = compare_models(reports)
-    metadata = _cross_metadata(reports)
-    target = Path(out_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    payload = {**cross, "metadata": dict(metadata)}
-    (target / "cross_model.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (target / "cross_model.md").write_text(
-        format_cross_model(cross, metadata=metadata), encoding="utf-8"
-    )
-    paths = {
-        "report": str(target / "cross_model.md"),
-        "comparison": str(target / "cross_model.json"),
-    }
-    return CrossModelRun(cross, target, paths)
-
-
-@dataclass(frozen=True)
-class RosterRun:
-    report: "RosterReport"
-    out_dir: Path
-    paths: Mapping[str, str]
-
-
-def load_profiles(path: Path | None) -> dict[str, "ModelProfile"]:
-    """Load the declared per-model profiles (`{model id: {params_b, family}}`) from JSON.
-
-    Profiles are DECLARED, never inferred from the model id: a wrong guess at a parameter count
-    would silently turn into a wrong claim about what predicts the reranker gain.
-    """
-    from llb.eval.embedder_adoption.roster import PROPERTIES
-
-    if path is None:
-        return {}
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{path}: cannot load model profiles: {exc}") from None
-    if not isinstance(data, dict):
-        raise ValueError(f"{path}: model profiles must be an object keyed by model id")
-    profiles: dict[str, ModelProfile] = {}
-    for model, profile in data.items():
-        if not isinstance(profile, dict):
-            raise ValueError(f"{path}: profile for {model!r} must be an object")
-        unknown = sorted(set(profile) - set(PROPERTIES))
-        if unknown:
-            raise ValueError(
-                f"{path}: profile for {model!r} declares unknown propert(ies) "
-                f"{', '.join(unknown)}; expected any of {', '.join(PROPERTIES)}"
-            )
-        profiles[str(model)] = profile  # type: ignore[assignment]
-    return profiles
-
-
-def run_roster_comparison(
-    report_paths: Sequence[Path],
-    *,
-    out_dir: Path,
-    profiles_path: Path | None = None,
-    focus_cell: str | None = None,
-) -> RosterRun:
-    """Read N finished sweeps and persist the roster property reading."""
-    from llb.eval.embedder_adoption.cross_model import _cross_metadata
-    from llb.eval.embedder_adoption.models import DEFAULT_FOCUS_CELL
-    from llb.eval.embedder_adoption.roster import compare_roster
-    from llb.eval.embedder_adoption.roster_report import format_roster
-
-    reports = [load_report(path) for path in report_paths]
-    roster = compare_roster(
-        reports,
-        load_profiles(profiles_path),
-        focus_cell=focus_cell or DEFAULT_FOCUS_CELL,
-    )
-    metadata = _cross_metadata(reports)
-    target = Path(out_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    payload = {**roster, "metadata": dict(metadata)}
-    (target / "roster.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (target / "roster.md").write_text(format_roster(roster, metadata=metadata), encoding="utf-8")
-    paths = {
-        "report": str(target / "roster.md"),
-        "comparison": str(target / "roster.json"),
-    }
-    return RosterRun(roster, target, paths)
-
-
-@dataclass(frozen=True)
-class ScreenRun:
-    report: "ScreenReport"
-    out_dir: Path
-    paths: Mapping[str, str]
-
-
-def run_screen_study_over_paths(
-    report_paths: Sequence[Path], *, out_dir: Path, focus_cell: str | None = None, **kwargs: object
-) -> ScreenRun:
-    """Read finished sweeps and persist the per-model screen cost study."""
-    from llb.eval.embedder_adoption.cross_model import _cross_metadata
-    from llb.eval.embedder_adoption.models import DEFAULT_FOCUS_CELL
-    from llb.eval.embedder_adoption.screen import format_screen, run_screen_study
-
-    reports = [load_report(path) for path in report_paths]
-    study = run_screen_study(
-        reports,
-        focus_cell=focus_cell or DEFAULT_FOCUS_CELL,
-        **kwargs,  # type: ignore[arg-type]
-    )
-    metadata = _cross_metadata(reports)
-    target = Path(out_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    payload = {**study, "metadata": dict(metadata)}
-    (target / "screen.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (target / "screen.md").write_text(format_screen(study, metadata=metadata), encoding="utf-8")
-    paths = {
-        "report": str(target / "screen.md"),
-        "comparison": str(target / "screen.json"),
-    }
-    return ScreenRun(study, target, paths)

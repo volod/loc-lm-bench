@@ -23,7 +23,8 @@ from llb.eval.context_ablation.models import (
 )
 from llb.eval.paired_cases import CaseRows, rows_by_item
 from llb.rag.fusion_evidence.slices import MetricVectors
-from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, paired_comparison
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
+from llb.rag.fusion_evidence.paired import paired_comparison
 
 POPULATION_ALL = "all"
 POPULATION_FITTING = "fitting"

@@ -22,8 +22,6 @@ pairs so the false-merge rate is read rather than assumed.
 
 from typing import Any
 
-from typing_extensions import TypedDict
-
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.duplicate_tiers import (
     COARSE_TIERS,
@@ -32,7 +30,8 @@ from llb.rag.duplicate_tiers import (
     TIER_NORMALIZED,
     duplicate_key,
 )
-from llb.rag.duplicates import DuplicateStats, duplicate_stats
+from llb.rag.duplicates import duplicate_stats
+from llb.rag.duplicate_residue_models import NearDuplicateBand, ResiduePair, ResidueReport
 
 # Cosine bands to report. 0.99+ is "the ranking cannot tell these apart"; 0.95 is still a very
 # close neighbour for a sentence encoder over Ukrainian prose.
@@ -44,39 +43,6 @@ DEFAULT_EXAMPLES = 8
 DEFAULT_BLOCK = 512
 
 _TEXT_PREVIEW_CHARS = 120
-
-
-class NearDuplicateBand(TypedDict):
-    """Chunk pairs above one cosine band, and how many of them a TEXT tier would merge."""
-
-    threshold: float
-    pairs: int
-    chunks: int  # chunks with at least one neighbour in the band
-    chunk_share: float
-    normalized_pairs: int  # of `pairs`, those the `normalized` tier merges
-    masked_pairs: int  # of `pairs`, those the `masked` tier merges
-
-
-class ResiduePair(TypedDict):
-    """One near-duplicate pair, for a human reading of what the residue actually is."""
-
-    cosine: float
-    same_document: bool
-    normalized_equal: bool
-    masked_equal: bool
-    a: str  # "<doc_id>@<char_start>: <text preview>"
-    b: str
-
-
-class ResidueReport(TypedDict):
-    """Post-collapse residue of one store: the text tiers, the cosine bands, and samples."""
-
-    n_indexed: int
-    store_tier: str
-    tiers: dict[str, DuplicateStats]
-    bands: list[NearDuplicateBand]
-    near_duplicate_examples: list[ResiduePair]  # top-cosine pairs no text tier merges
-    digit_merge_examples: list[ResiduePair]  # pairs ONLY the digit-masking tier merges
 
 
 def measure_duplicate_residue(

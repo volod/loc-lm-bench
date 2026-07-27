@@ -3,11 +3,11 @@
 import pytest
 
 from llb.rag.lexical import (
-    LexicalIndex,
     normalize_token,
     rrf_fuse,
     tokenize,
 )
+from llb.rag.lexical_index import LexicalIndex
 
 
 def test_normalize_token_unifies_apostrophe_variants_and_casefolds():

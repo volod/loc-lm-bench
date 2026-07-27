@@ -71,6 +71,8 @@ DEFAULT_QUESTION_TYPE = QUESTION_TYPE_FACTOID
 # the draft set; deterministic ordering keeps a resume reproducible.
 MULTI_HOP_DEPTH = 2
 DEFAULT_MULTI_HOP_MAX_PATHS = 40
+MAX_MULTI_HOP_NOVELTY_QUESTIONS = 24
+MULTI_HOP_NEAR_DUP_ANSWER_COSINE_THRESHOLD = 0.95
 MULTI_HOP_DIFFICULTY = "hard"  # a chain question is inherently harder than a single-span factoid
 MULTI_HOP_MIN_SPANS = 2  # a multi-hop item must carry at least this many grounded spans
 

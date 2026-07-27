@@ -14,7 +14,8 @@ import random
 import pytest
 
 from llb.conflicts.tree import SemanticPrefixTree
-from llb.conflicts.vectorops import VectorSet, angular_distance
+from llb.conflicts.vector_math import angular_distance
+from llb.conflicts.vectorops import VectorSet
 from llb.rag.refresh.diff import ManifestDiff
 from llb.conflicts.tree_refresh import refresh_tree, tree_is_reusable, tree_meta
 

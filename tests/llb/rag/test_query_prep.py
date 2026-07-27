@@ -2,10 +2,6 @@
 
 import pytest
 
-from llb.rag.query_prep.glossary import (
-    Glossary,
-    GlossaryEntry,
-)
 from llb.rag.query_prep.normalize import (
     apply_normalize,
     cyrillic_to_latin,
@@ -211,52 +207,3 @@ def test_pipeline_threads_typo_guard_probe():
         ("typos",), vocabulary=vocab, known_word={"документами"}.__contains__
     )
     assert pipeline.process("документами").processed == "документами"
-
-
-# --------------------------------------------------------------------------------------------
-# glossary: deterministic alias expansion + builder
-# --------------------------------------------------------------------------------------------
-
-
-def _glossary():
-    return Glossary(
-        (
-            GlossaryEntry("інтелектуальна власність", ("ІВ", "intelektualna vlasnist")),
-            GlossaryEntry("авторське право", ()),
-        )
-    )
-
-
-# --------------------------------------------------------------------------------------------
-# rewrite: off by default, injected callable
-# --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
-# pipeline: ordering, exact no-op, dependency validation
-# --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
-# A/B report over a fake retriever
-# --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
-# graph wiring: raw question preserved, processed query retrieved with, both recorded
-# --------------------------------------------------------------------------------------------
-
-
-class _RecordingStore:
-    def __init__(self, chunks):
-        self.chunks = chunks  # mirrors RagStore.chunks (query-prep reads it for the vocabulary)
-        self.seen: list[str] = []
-
-    def retrieve(self, question, k):
-        self.seen.append(question)
-        return self.chunks[:k]
-
-
-# --------------------------------------------------------------------------------------------
-# runner resolver: dependency wiring from RunConfig + store + launcher
-# --------------------------------------------------------------------------------------------

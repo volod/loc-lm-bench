@@ -21,7 +21,11 @@ from llb.prep.pdf.model import (
     RenderedPdfDoc,
 )
 from llb.prep.pdf.repeat_corpus import remap_citation_pages
-from llb.prep.pdf.repeats import REPEAT_KEEP, RepeatCensus, rewrite_repeated_blocks
+from llb.prep.pdf.repeats import (
+    REPEAT_KEEP,
+    rewrite_repeated_blocks,
+)
+from llb.prep.pdf.repeat_models import RepeatCensus
 
 
 def iter_pdf_files(pdf_root: Path | str) -> list[Path]:

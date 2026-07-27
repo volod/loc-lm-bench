@@ -30,7 +30,11 @@ from llb.eval.context_ablation.models import (
 from llb.rag.fusion_evidence.stability import (
     borderline_note,
 )
-from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, evidence_gate_clause, separates
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
+from llb.rag.fusion_evidence.paired import (
+    evidence_gate_clause,
+    separates,
+)
 
 
 def _by_label(derived: Sequence[DerivedComparison]) -> dict[str, DerivedComparison]:

@@ -2,7 +2,7 @@
 
 import json
 
-from llb.prep.corpus_governance import (
+from llb.prep.corpus_fingerprints import (
     CORPUS_MANIFEST,
     corpus_doc_fingerprints,
     corpus_fingerprint,

@@ -14,7 +14,7 @@ The lanes are DIAGNOSTIC. `rag` stays the leaderboard row; nothing here changes 
 from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_evidence.stats import PairedComparison
+from llb.rag.fusion_evidence.paired import PairedComparison
 
 # The three context lanes; each label is also the `RunConfig.context_strategy` it selects, so a
 # lane's numbers are reproducible by re-running `run-eval --context-strategy <label>`.

@@ -8,6 +8,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
+from llb.cli.rag import fusion_inputs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
 
 DEFAULT_LONG_WORD_GRID = "10,12,14,16,18,20"
@@ -42,11 +43,6 @@ def calibrate_fusion_routing_cmd(
     out_dir: Optional[Path] = typer.Option(None, help="artifact directory"),
 ) -> None:
     """Tune without sidecar labels, freeze one policy, then score only that policy on final."""
-    from llb.cli.rag.fusion_evidence import (
-        FUSION_EVIDENCE_METHOD,
-        _evidence_items,
-        _load_lanes,
-    )
     from llb.core.store_generations import generation_timestamp
     from llb.rag.fusion_calibration import (
         calibrate_routing,
@@ -66,12 +62,12 @@ def calibrate_fusion_routing_cmd(
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
-    tuning_items = _evidence_items(cfg, tuning_split)
-    final_items = _evidence_items(cfg, final_split)
+    tuning_items = fusion_inputs.evidence_items(cfg, tuning_split)
+    final_items = fusion_inputs.evidence_items(cfg, final_split)
     if not tuning_items or not final_items:
         typer.echo("[error] tuning and final selections must both be non-empty", err=True)
         raise typer.Exit(code=2)
-    vector, graphs = _load_lanes(cfg, graph_strategy)
+    vector, graphs = fusion_inputs.load_lanes(cfg, graph_strategy)
     graph = graphs.get(graph_strategy)
     if graph is None:
         typer.echo(f"[error] graph strategy was not loaded: {graph_strategy}", err=True)
@@ -94,7 +90,9 @@ def calibrate_fusion_routing_cmd(
         seed=seed,
     )
     default = (
-        cfg.data_dir / FUSION_EVIDENCE_METHOD / f"{generation_timestamp()}-routing-calibration"
+        cfg.data_dir
+        / fusion_inputs.FUSION_EVIDENCE_METHOD
+        / f"{generation_timestamp()}-routing-calibration"
     )
     target = Path(out_dir) if out_dir is not None else default
     target.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,14 @@ from llb.rag.query_prep.base import (
     PlausibilityProbe,
     QueryEdit,
 )
-from llb.scoring.security_cases import CYRILLIC_TO_LATIN_CONFUSABLES
+from llb.rag.query_prep.normalization_tables import (
+    CYRILLIC_TO_LATIN,
+    LATIN_ACRONYM_MAX_CHARS,
+    LATIN_KEYS_LONGEST_FIRST,
+    LATIN_TO_CYRILLIC,
+    LATIN_TO_UKRAINIAN_CONFUSABLES,
+    ROMANIZE_DROP,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -20,56 +27,6 @@ _LOG = logging.getLogger(__name__)
 # genuinely romanized Ukrainian query decodes (near-)entirely to known forms, while foreign text
 # decodes to none, so the boundary is not delicate.
 LANGUAGE_GATE_MIN_PLAUSIBLE_SHARE = 0.5
-
-# Reversible-ish Ukrainian romanization used to invert Latin-typed terms back to Cyrillic.
-CYRILLIC_TO_LATIN: dict[str, str] = {
-    "а": "a",
-    "б": "b",
-    "в": "v",
-    "г": "h",
-    "ґ": "g",
-    "д": "d",
-    "е": "e",
-    "є": "ye",
-    "ж": "zh",
-    "з": "z",
-    "и": "y",
-    "і": "i",
-    "ї": "yi",
-    "й": "j",
-    "к": "k",
-    "л": "l",
-    "м": "m",
-    "н": "n",
-    "о": "o",
-    "п": "p",
-    "р": "r",
-    "с": "s",
-    "т": "t",
-    "у": "u",
-    "ф": "f",
-    "х": "kh",
-    "ц": "c",
-    "ч": "ch",
-    "ш": "sh",
-    "щ": "shch",
-    "ю": "yu",
-    "я": "ya",
-}
-# Latin -> Cyrillic, matched longest-first so digraphs (`shch`, `kh`, `ye`) win over single letters.
-LATIN_TO_CYRILLIC: dict[str, str] = {lat: cyr for cyr, lat in CYRILLIC_TO_LATIN.items()}
-_LATIN_KEYS_LONGEST_FIRST: tuple[str, ...] = tuple(sorted(LATIN_TO_CYRILLIC, key=len, reverse=True))
-
-# Characters dropped when romanizing (the soft sign and apostrophe variants have no Latin form).
-_ROMANIZE_DROP = frozenset("ь'’ʼ")
-LATIN_ACRONYM_MAX_CHARS = 5
-
-# Latin look-alikes that are safe to repair only inside a token that also contains Cyrillic.
-LATIN_TO_UKRAINIAN_CONFUSABLES: dict[str, str] = {
-    latin: cyrillic
-    for cyrillic, latin in CYRILLIC_TO_LATIN_CONFUSABLES.items()
-    if cyrillic in "авеікмнорстух"
-}
 
 
 def _is_latin_word(token: str) -> bool:
@@ -84,7 +41,7 @@ def _decode_romanized_segment(segment: str) -> str:
     out: list[str] = []
     i = 0
     while i < len(segment):
-        for key in _LATIN_KEYS_LONGEST_FIRST:
+        for key in LATIN_KEYS_LONGEST_FIRST:
             if segment.startswith(key, i):
                 out.append(LATIN_TO_CYRILLIC[key])
                 i += len(key)
@@ -110,7 +67,7 @@ def _romanize_cyrillic_run(text: str) -> str:
     encoded: list[str] = []
     source: list[str] = []
     for char in text:
-        if char in _ROMANIZE_DROP:
+        if char in ROMANIZE_DROP:
             continue
         code = CYRILLIC_TO_LATIN[char]
         candidate = "".join(encoded) + code
@@ -143,7 +100,7 @@ def cyrillic_to_latin(text: str) -> str:
 
     for raw_char in text:
         char = raw_char.casefold()
-        if char in CYRILLIC_TO_LATIN or (char in _ROMANIZE_DROP and run):
+        if char in CYRILLIC_TO_LATIN or (char in ROMANIZE_DROP and run):
             run.append(char)
         else:
             flush()

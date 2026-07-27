@@ -6,7 +6,11 @@ Pure: the input is per-item delta vectors, so the whole borderline lane is unit-
 
 import pytest
 
-from llb.eval.embedder_adoption import READING_ANSWER, READING_NEITHER, READING_RANK_ONLY
+from llb.eval.embedder_adoption.cross_model import (
+    READING_ANSWER,
+    READING_NEITHER,
+    READING_RANK_ONLY,
+)
 from llb.eval.embedder_adoption.models import ItemDeltas
 from llb.eval.embedder_adoption.stability import row_stability
 from llb.rag.fusion_evidence.stability import (

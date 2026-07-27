@@ -58,7 +58,8 @@ def build_index(
 ) -> None:
     """Chunk + embed the corpus into a RAG store (FAISS by default) under the index dir."""
     from llb.rag.duplicate_tiers import DUPLICATE_TIERS
-    from llb.rag.duplicates import DuplicateStats, format_duplicate_stats
+    from llb.rag.duplicates import format_duplicate_stats
+    from llb.rag.duplicate_models import DuplicateStats
     from llb.rag.store import RagStore
     from llb.rag.vector_index import RAG_BACKENDS
 

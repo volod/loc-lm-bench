@@ -19,7 +19,8 @@ from llb.rag.fusion_evidence.stability import (
     boundary_table,
     format_reading,
 )
-from llb.rag.fusion_evidence.stats import format_interval, gated_readings
+from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.paired import gated_readings
 
 _NO_PAIRED_CELL = "-"
 

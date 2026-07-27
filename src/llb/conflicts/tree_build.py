@@ -8,7 +8,8 @@ tree, which a persisted structure has to guarantee.
 
 from llb.conflicts.constants import SPLIT_ITERATIONS
 from llb.conflicts.tree_node import TreeNode, node_bounds, node_geometry
-from llb.conflicts.vectorops import METRIC_EUCLIDEAN, Vector, VectorSet
+from llb.conflicts.vector_math import METRIC_EUCLIDEAN, Vector
+from llb.conflicts.vectorops import VectorSet
 
 
 class NodeCounter:

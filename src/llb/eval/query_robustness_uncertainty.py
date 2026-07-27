@@ -25,9 +25,11 @@ from llb.rag.fusion_evidence.stability import (
 )
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
-    PairedComparison,
     bootstrap_samples,
     interval_from_ordered_samples,
+)
+from llb.rag.fusion_evidence.paired import (
+    PairedComparison,
     paired_comparison,
 )
 

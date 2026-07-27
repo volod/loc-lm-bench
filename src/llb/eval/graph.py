@@ -13,17 +13,14 @@ in `llb.eval.common`; see that module for the failure-taxonomy contract.
 import time
 from typing import Any, Callable, cast
 
-from typing_extensions import TypedDict
-
-from llb.core.contracts.common import ChatMessage, UsageRecord
-from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
+from llb.core.contracts.common import ChatMessage
+from llb.core.contracts.rag import SourceSpanRecord
 from llb.eval import common as eval_common
+from llb.eval.graph_contracts import ContextSource, RagState
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
 
 __all__ = [
-    "ContextSource",
-    "RagState",
     "SYSTEM_PROMPT",
     "build_messages",
     "build_rag_graph",
@@ -36,29 +33,6 @@ __all__ = [
 SYSTEM_PROMPT = render_text("eval.rag.system")
 
 
-class RagState(TypedDict, total=False):
-    question: str
-    gold_spans: list[SourceSpanRecord]
-    retrieved: list[ChunkRecord]
-    context: str
-    answer: str
-    status: str
-    error: str | None
-    usage: UsageRecord
-    # Per-stage wall-clock (rerank-context-order): retrieval always, rerank when a reranking
-    # store is wired. Generation latency stays in `usage` (from the backend's ChatResult).
-    retrieve_latency_s: float
-    rerank_latency_s: float
-    # Query-side processing lane (uk-query-processing): the processed query actually retrieved
-    # with and the number of transformations applied. The raw query stays in `question`, so both
-    # forms are recoverable per case; absent when the lane is off.
-    query_processed: str
-    query_corrections: int
-    query_hypothetical_answer: str
-    query_decomposition: str
-    query_subqueries: list[str]
-
-
 # Generation prompt ids: the baseline RAG chat, the cited-answer variant that requires `[i]`
 # chunk citations for factual claims (groundedness-citation-metrics), and the closed-book variant
 # that lays NO context into the prompt at all (rag-vs-long-context-ablation).
@@ -66,12 +40,10 @@ CHAT_TEMPLATE = "eval.rag.chat"
 CITED_ANSWER_TEMPLATE = "eval.rag.cited_answer"
 CLOSED_BOOK_TEMPLATE = "eval.rag.closed_book"
 
+
 # A context source REPLACES store retrieval for a diagnostic context lane. It returns the same
 # partial state update the retrieve node would (`retrieved` / `context`, plus an optional terminal
 # `status`), so the graph, the per-case scoring, and the run-bundle shape are all unchanged.
-ContextSource = Callable[[RagState], RagState]
-
-
 def generation_template(cited: bool = False) -> str:
     """The generation prompt id for this run's answer style."""
     return CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE

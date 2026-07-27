@@ -10,13 +10,19 @@ Vectors are L2-normalized on load, so a dot product IS the cosine similarity -- 
 FAISS relies on for its inner-product index.
 """
 
-import math
 from typing import Any
 
-Vector = list[float]
-METRIC_ANGULAR = "angular"
-METRIC_EUCLIDEAN = "euclidean"
-METRICS = (METRIC_ANGULAR, METRIC_EUCLIDEAN)
+from llb.conflicts.vector_math import (
+    METRICS,
+    METRIC_ANGULAR,
+    METRIC_EUCLIDEAN,
+    Vector,
+    angular_distance,
+    dot,
+    normalize,
+    vector_distance,
+)
+from llb.conflicts.vector_batches import cross_group_similarities
 
 
 def _import_numpy() -> Any:
@@ -47,7 +53,7 @@ class VectorSet:
         self._np = _import_numpy() if use_numpy else None
         self.metric = metric
         prepared = (
-            [_normalize(row) for row in rows]
+            [normalize(row) for row in rows]
             if metric == METRIC_ANGULAR
             else [list(row) for row in rows]
         )
@@ -82,14 +88,14 @@ class VectorSet:
 
     def similarity(self, left: int, right: int) -> float:
         """Cosine similarity between two stored rows."""
-        return _dot(self._rows[left], self._rows[right])
+        return dot(self._rows[left], self._rows[right])
 
     def similarity_to(self, vector: Vector, indices: list[int]) -> list[float]:
         """Cosine similarity of `vector` against each row in `indices`, in order."""
         if self._np is not None and self._matrix is not None and indices:
             block = self._matrix[indices]
             return [float(value) for value in block @ self._np.asarray(vector, dtype="float64")]
-        return [_dot(vector, self._rows[index]) for index in indices]
+        return [dot(vector, self._rows[index]) for index in indices]
 
     def distance(self, left: int, right: int) -> float:
         """Metric distance between two rows."""
@@ -120,7 +126,7 @@ class VectorSet:
             left = self._matrix[[pair[0] for pair in pairs]]
             right = self._matrix[[pair[1] for pair in pairs]]
             return [float(value) for value in (left * right).sum(axis=1)]
-        return [_dot(self._rows[left], self._rows[right]) for left, right in pairs]
+        return [dot(self._rows[left], self._rows[right]) for left, right in pairs]
 
     def pairs_above_candidates(
         self,
@@ -157,32 +163,13 @@ class VectorSet:
         if len(indices) != len(groups):
             raise ValueError("indices and groups must be the same length")
         if self._np is not None and self._matrix is not None:
-            return self._cross_group_numpy(indices, groups)
+            return cross_group_similarities(self._matrix, self._np, indices, groups, 512)
         return [
-            _dot(self._rows[indices[i]], self._rows[indices[j]])
+            dot(self._rows[indices[i]], self._rows[indices[j]])
             for i in range(len(indices))
             for j in range(i + 1, len(indices))
             if groups[i] != groups[j]
         ]
-
-    def _cross_group_numpy(
-        self, indices: list[int], groups: list[int], block: int = 512
-    ) -> list[float]:
-        numpy = self._np
-        if numpy is None or self._matrix is None:  # pragma: no cover - guarded by the caller
-            raise RuntimeError("numpy path requested without a numpy matrix")
-        matrix = self._matrix[indices]
-        labels = numpy.asarray(groups)
-        row_index = numpy.arange(len(indices))
-        out: list[float] = []
-        for start in range(0, len(indices), block):
-            stop = min(start + block, len(indices))
-            similarities = matrix[start:stop] @ matrix.T
-            # Upper triangle only (each unordered pair once) and different groups only.
-            rows = row_index[start:stop][:, None]
-            keep = (rows < row_index[None, :]) & (labels[start:stop][:, None] != labels[None, :])
-            out.extend(float(value) for value in similarities[keep])
-        return out
 
     def centered(self) -> "VectorSet":
         """This set with the corpus mean direction removed, then renormalized.
@@ -214,7 +201,7 @@ class VectorSet:
             (left, right, similarity)
             for left in range(len(self._rows))
             for right in range(left + 1, len(self._rows))
-            if (similarity := _dot(self._rows[left], self._rows[right])) >= threshold
+            if (similarity := dot(self._rows[left], self._rows[right])) >= threshold
         ]
 
     def _pairs_above_numpy(
@@ -238,7 +225,7 @@ class VectorSet:
         if self._matrix is not None:
             mean = self._matrix[indices].mean(axis=0)
             values = [float(value) for value in mean]
-            return _normalize(values) if self.metric == METRIC_ANGULAR else values
+            return normalize(values) if self.metric == METRIC_ANGULAR else values
         total = [0.0] * self.dim
         for index in indices:
             row = self._rows[index]
@@ -247,7 +234,7 @@ class VectorSet:
         mean = [value / len(indices) for value in total]
         if self.metric == METRIC_EUCLIDEAN:
             return mean
-        normalized = _normalize(mean)
+        normalized = normalize(mean)
         return normalized if any(normalized) else list(self._rows[indices[0]])
 
     def numpy_matrix(self) -> Any:
@@ -258,32 +245,3 @@ class VectorSet:
         return (
             self._matrix if self._matrix is not None else numpy.asarray(self._rows, dtype="float64")
         )
-
-
-def _dot(a: Vector, b: Vector) -> float:
-    return sum(x * y for x, y in zip(a, b))
-
-
-def _normalize(vector: Vector) -> Vector:
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm == 0.0:
-        return list(vector)
-    return [value / norm for value in vector]
-
-
-def angular_distance(cosine: float) -> float:
-    """Angular distance in radians for a cosine similarity.
-
-    Unlike cosine similarity, angular distance is a true metric, so the triangle inequality holds
-    -- which is what makes the tree's pruning bound sound rather than heuristic.
-    """
-    return math.acos(max(-1.0, min(1.0, cosine)))
-
-
-def vector_distance(metric: str, a: Vector, b: Vector) -> float:
-    """Distance between arbitrary vectors under a supported tree metric."""
-    if metric == METRIC_ANGULAR:
-        return angular_distance(_dot(a, b))
-    if metric == METRIC_EUCLIDEAN:
-        return math.sqrt(sum((left - right) ** 2 for left, right in zip(a, b)))
-    raise ValueError(f"unknown vector metric {metric!r}")

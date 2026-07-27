@@ -435,16 +435,20 @@ modified document, and unchanged documents in a legacy full refresh all reuse th
 regardless of which document now carries the text. It is only applied where a chunk vector is a
 pure function of its text; the `late` strategy pools document context, so it passes `text_rows`
 as `None` and re-encodes each changed document instead. The merged store preserves the exact
-from-scratch build order, so a refresh is identical to a rebuild on the same corpus state; CI
-proves the
-equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB, hybrid BM25, parent_child, graph,
-and the `late` chunking strategy via a token-level fake embedder) over add/modify/delete fixture
-cases in `tests/llb/rag/test_refresh_store.py` and `tests/llb/graph/test_graph_refresh.py`,
-plus annotation-only (sidecar regeneration) cases asserting zero embedder calls in flat,
-hybrid, and parent_child modes and a same-span text-edit guard. `tests/llb/rag/test_duplicates_store.py`
-covers the text-keyed reuse: the shared block is recovered from the store's own vectors when the
-edited document is the one that carried its survivor, and the refreshed store still matches a
-rebuild byte for byte. The
+from-scratch build order, so a refresh is identical to a rebuild on the same corpus state. The
+full-extra local suite proves the equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB,
+hybrid BM25, parent_child, graph, and the `late` chunking strategy via a token-level fake
+embedder) over add/modify/delete fixture cases in
+`tests/llb/rag/test_refresh_store_core.py`,
+`tests/llb/rag/test_refresh_store_metadata.py`, and
+`tests/llb/graph/test_graph_refresh.py`, plus annotation-only (sidecar regeneration) cases
+asserting zero embedder calls in flat, hybrid, and parent_child modes and a same-span text-edit
+guard. Both split refresh-store modules carry `pytest.mark.heavy_env` directly because Pytest
+module marks do not propagate from their imported helper; `make ci-github` therefore deselects
+these FAISS-dependent cases in its base `[dev]`-only environment.
+`tests/llb/rag/test_duplicates_store.py` covers the text-keyed reuse: the shared block is
+recovered from the store's own vectors when the edited document is the one that carried its
+survivor, and the refreshed store still matches a rebuild byte for byte. The
 hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
 postings invert back to exact per-chunk term counts, so unchanged chunks are never re-tokenized
 or re-lemmatized. A `late`-strategy refresh re-runs `encode_store_vectors` for the changed

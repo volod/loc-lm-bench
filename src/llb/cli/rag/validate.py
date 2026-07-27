@@ -1,13 +1,15 @@
 """Retrieval validation + query-glossary commands."""
 
 from pathlib import Path
-from contextlib import nullcontext
-from typing import Any, Optional
+from typing import Optional
 
 import typer
 
 from llb.cli.app import app
-from llb.cli.helpers import load_config
+from llb.cli.rag.retrieval_validation import (
+    RetrievalValidationRequest,
+    run_retrieval_validation,
+)
 
 
 @app.command("validate-retrieval")
@@ -55,113 +57,23 @@ def validate_retrieval(
     out: Optional[Path] = typer.Option(None, help="write the A/B JSON report here"),
 ) -> None:
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
-    from llb.executor.cases import spans_as_dicts
-    from llb.executor.runner_backend import _make_launcher
-    from llb.executor.runner_retrieval import _load_store, build_query_prep
-    from llb.goldset.schema import load_goldset
-    from llb.rag import retrieval
-    from llb.rag.query_prep.pipeline import QueryPrep
-    from llb.rag.query_prep.retrieval import retrieve_prepared
-
-    steps = [s.strip() for s in query_prep.split(",") if s.strip()] if query_prep else []
-    cfg = load_config(
-        config,
-        goldset_path=goldset,
+    request = RetrievalValidationRequest(
+        config=config,
+        goldset=goldset,
+        k=k,
+        split=split,
         retrieval_backend=retrieval_backend,
         retrieval_strategy=retrieval_strategy,
         graph_weight=graph_weight,
-        query_prep=steps or None,
-        query_glossary_path=query_glossary,
-        query_prep_typo_guard=query_prep_typo_guard or None,
+        query_prep=query_prep,
+        query_glossary=query_glossary,
+        query_prep_typo_guard=query_prep_typo_guard,
+        query_prep_ab=query_prep_ab,
+        query_prep_model=query_prep_model,
+        query_prep_backend=query_prep_backend,
+        out=out,
     )
-    store = _load_store(cfg)
-    items = load_goldset(cfg.goldset_path)
-    if split:
-        items = [it for it in items if it.split == split]
-    ab_items = [(it.question, spans_as_dicts(it)) for it in items]
-
-    model_steps = {"rewrite", "hyde", "decompose"}.intersection(steps)
-    if model_steps and query_prep_model is None:
-        typer.echo(
-            "[error] model-backed query prep needs --query-prep-model",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    endpoint_cfg = cfg.with_overrides(
-        model=query_prep_model,
-        backend=query_prep_backend or ("ollama" if query_prep_model else None),
-    )
-    launcher = _make_launcher(endpoint_cfg) if model_steps else None
-    with launcher if launcher is not None else nullcontext(None) as active:
-        pipeline = build_query_prep(endpoint_cfg, store, active) or QueryPrep.build(())
-        if query_prep_ab:
-            _emit_query_prep_ab_report(
-                ab_items,
-                store,
-                k,
-                steps,
-                out,
-                pipeline=pipeline,
-                endpoint={"model": endpoint_cfg.model, "backend": endpoint_cfg.backend}
-                if model_steps
-                else None,
-            )
-            return
-
-        pairs = [
-            (retrieve_prepared(store, pipeline.process(question), k), spans)
-            for question, spans in ab_items
-        ]
-        metrics = retrieval.evaluate_retrieval(pairs, k)
-        gate = (
-            "PASS" if metrics["recall_at_k"] >= 0.8 else "BELOW 0.8 (retrieval is the bottleneck)"
-        )
-        lane = f" query-prep={','.join(steps)}" if steps else ""
-        typer.echo(
-            f"[validate-retrieval] n={metrics['n']} recall@{k}={metrics['recall_at_k']:.3f} "
-            f"mrr={metrics['mrr']:.3f}{lane} -> {gate}"
-        )
-
-
-def _emit_query_prep_ab_report(
-    ab_items: list[Any],
-    store: Any,
-    k: int,
-    steps: list[str],
-    out: Optional[Path],
-    *,
-    pipeline: Any,
-    endpoint: dict[str, str] | None,
-) -> None:
-    """Print (and optionally write) the per-step cumulative query-prep A/B retrieval report."""
-    import json
-
-    from llb.rag.query_prep.report import (
-        cumulative_pipelines,
-        format_query_prep_ab,
-        query_prep_ab_report,
-    )
-    from llb.rag.query_prep.retrieval import retrieve_prepared
-
-    stages = cumulative_pipelines(
-        steps,
-        vocabulary=pipeline.vocabulary,
-        glossary=pipeline.glossary,
-        rewriter=pipeline.rewriter,
-        hypothesizer=pipeline.hypothesizer,
-        decomposer=pipeline.decomposer,
-        known_word=pipeline.known_word,
-        plausible=pipeline.plausible,
-    )
-    report = query_prep_ab_report(
-        ab_items, lambda result, depth: retrieve_prepared(store, result, depth), k, stages
-    )
-    if endpoint is not None:
-        report["endpoint"] = endpoint
-    typer.echo(format_query_prep_ab(report))
-    if out is not None:
-        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")
+    run_retrieval_validation(request)
 
 
 @app.command("build-query-glossary")

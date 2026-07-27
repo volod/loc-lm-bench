@@ -7,7 +7,8 @@ node without importing each other.
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.conflicts.vectorops import Vector, VectorSet
+from llb.conflicts.vector_math import Vector
+from llb.conflicts.vectorops import VectorSet
 
 TREE_VERSION = "semantic-prefix-tree-v3"
 

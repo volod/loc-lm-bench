@@ -30,13 +30,18 @@ def run_draft(request: DraftRequest) -> None:
         cli_error("provide --corpus-root and --model, or --resume <bundle>")
 
     adapter = _extraction_adapter(request.extractor, request.spacy_model)
+    dedup_against_dirs = _split_dir_list(request.dedup_against)
     _validate_draft_inputs(
         request.drop_nonretrievable_needles,
         request.retrieval_index_dir,
         request.graph_dir,
         request.rejection_feedback,
+        request.reuse_extraction_bundle,
+        request.multi_hop,
+        request.multi_hop_only,
+        request.carry_forward_multi_hop,
+        dedup_against_dirs,
     )
-    dedup_against_dirs = _split_dir_list(request.dedup_against)
     if request.endpoint == "frontier":
         if not request.egress_consent:
             _confirm_frontier_egress(request.corpus_root, request.model)
@@ -78,6 +83,7 @@ def run_draft(request: DraftRequest) -> None:
             request.corpus_root,
             endpoints,
             extraction_adapter=adapter,
+            reuse_extraction_bundle=request.reuse_extraction_bundle,
             max_items=request.max_items,
             seed=request.seed,
             out_dir=resolved_out_dir,
@@ -90,10 +96,12 @@ def run_draft(request: DraftRequest) -> None:
             drop_nonretrievable_needles=request.drop_nonretrievable_needles,
             coverage_target=request.coverage_target,
             multi_hop=request.multi_hop,
+            multi_hop_only=request.multi_hop_only,
             chains=request.chains,
             multi_hop_max_paths=request.multi_hop_max_paths,
             multi_hop_bridge_fill=request.multi_hop_bridge_fill,
             dedup_against=dedup_against_dirs,
+            carry_forward_multi_hop=request.carry_forward_multi_hop,
             graph_dir=request.graph_dir,
             rejection_feedback=request.rejection_feedback,
             resume=resuming,

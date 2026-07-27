@@ -35,8 +35,8 @@ from llb.rag.fusion_evidence.stats import (
     bootstrap_interval,
     bootstrap_ratio,
     bootstrap_samples,
-    paired_comparison,
 )
+from llb.rag.fusion_evidence.paired import paired_comparison
 
 RESAMPLES = 2000
 SEED = 13

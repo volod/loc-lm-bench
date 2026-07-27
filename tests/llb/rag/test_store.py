@@ -148,7 +148,7 @@ def test_stale_store_message_flags_changed_corpus_manifest(tmp_path):
     corpus = tmp_path / "corpus"
     ingest_corpus(root, corpus, min_chars=50, default_language="en")
 
-    from llb.prep.corpus_governance import corpus_fingerprint
+    from llb.prep.corpus_fingerprints import corpus_fingerprint
 
     meta = {"corpus_fingerprint": corpus_fingerprint(corpus)}
     assert stale_store_message(meta, corpus, tmp_path / "rag") is None

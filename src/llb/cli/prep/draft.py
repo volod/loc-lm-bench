@@ -52,6 +52,12 @@ def prepare_goldset_draft_cmd(
     extractor: str = typer.Option(
         "llm", help="llm (default) | spacy (opt-in Python-native uk_core_news NER, no egress)"
     ),
+    reuse_extraction_bundle: Optional[Path] = typer.Option(
+        None,
+        "--reuse-extraction-bundle",
+        help="reuse extraction.jsonl from an earlier bundle over the same corpus; skips extraction "
+        "model calls while replaying ontology induction and drafting",
+    ),
     spacy_model: str = typer.Option(
         "uk_core_news_sm", help="spaCy pipeline (with --extractor spacy)"
     ),
@@ -164,6 +170,11 @@ def prepare_goldset_draft_cmd(
         "--multi-hop",
         help="yield-max: also draft multi-span chain questions walked from the knowledge graph",
     ),
+    multi_hop_only: bool = typer.Option(
+        False,
+        "--multi-hop-only",
+        help="skip flat QA drafting and emit only multi-hop rows (requires --multi-hop)",
+    ),
     chains: bool = typer.Option(
         False,
         "--chains",
@@ -183,6 +194,12 @@ def prepare_goldset_draft_cmd(
     dedup_against: Optional[str] = typer.Option(
         None,
         help="yield-max: comma-separated prior bundle dirs; drop pinned-E5 near-duplicate questions",
+    ),
+    carry_forward_multi_hop: bool = typer.Option(
+        False,
+        "--carry-forward-multi-hop",
+        help="after dedup, include the prior bundles' labeled multi-hop rows in the output so one "
+        "worksheet contains the complete widened slice (requires --dedup-against)",
     ),
     graph_dir: Optional[Path] = typer.Option(
         None,

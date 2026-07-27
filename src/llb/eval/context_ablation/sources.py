@@ -24,7 +24,8 @@ from llb.eval.context_ablation.models import (
     LANE_LONG_CONTEXT,
     LANE_RAG,
 )
-from llb.eval.graph import CLOSED_BOOK_TEMPLATE, ContextSource, RagState
+from llb.eval.graph import CLOSED_BOOK_TEMPLATE
+from llb.eval.graph_contracts import ContextSource, RagState
 
 # True when a context of that many characters fits the model's usable window.
 FitsContext = Callable[[int], bool]

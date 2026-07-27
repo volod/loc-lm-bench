@@ -2,7 +2,8 @@
 
 from typing_extensions import TypedDict
 
-from llb.rag.fusion_evidence.stats import BootstrapRatio, PairedComparison
+from llb.rag.fusion_evidence.stats import BootstrapRatio
+from llb.rag.fusion_evidence.paired import PairedComparison
 
 
 class PolicySpec(TypedDict):

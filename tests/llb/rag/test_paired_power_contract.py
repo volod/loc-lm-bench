@@ -81,7 +81,7 @@ def test_embedder_lane_writes_the_plan_before_building_and_reports_realized_mde(
 
         return build
 
-    monkeypatch.setattr("llb.cli.rag.compare_embeddings._local_store_builder", builder)
+    monkeypatch.setattr("llb.cli.rag.compare_embeddings.local_store_builder", builder)
     result = CliRunner().invoke(
         app,
         [
@@ -147,9 +147,9 @@ def test_fusion_lane_writes_the_plan_before_retrieval_and_reports_realized_mde(
         )
         for i in range(4)
     ]
-    monkeypatch.setattr("llb.cli.rag.fusion_evidence._evidence_items", lambda cfg, split: items)
+    monkeypatch.setattr("llb.cli.rag.fusion_inputs.evidence_items", lambda cfg, split: items)
     monkeypatch.setattr(
-        "llb.cli.rag.fusion_evidence._load_lanes",
+        "llb.cli.rag.fusion_inputs.load_lanes",
         lambda cfg, strategies: (_EmptyStore(plan_path), {}),
     )
     monkeypatch.setattr(

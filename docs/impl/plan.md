@@ -43,41 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### widen-the-multihop-drafted-slice-to-a-decidable-size
+### relation-stratified-multihop-expansion-if-review-attrits (optional)
 
-Every open multi-hop question in the repo -- the fusion sweeps' span-identity row and all three
-answer-quality coverage rows -- rides on ONE drafted slice of 35 items, and that slice is too small
-to decide any of them: the deciding rows differ on 4-5 items, which prices a floor of 42-53
-multi-hop items before 95% is reachable at all
-([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human
-acceptance can only SHRINK a drafted ledger, so `multihop-ledger-human-acceptance` cannot settle
-these rows at the current size whatever the reviewer decides -- the drafting has to be widened
-first, with headroom for review attrition (a 60-70 item draft to land >= 53 accepted). Re-draft the
-multi-hop slice on the same fusion corpus with the multi-hop yield knobs documented in
-[data prep](current/data-prep.md), de-duplicating against the existing bundle so the accepted items
-are added to rather than redrawn, and hand the wider worksheet to the acceptance task.
+The current 61-row worksheet has only eight rows of rejection headroom above its 53-item decision
+floor, and 42 rows draw both spans from one goods manual
+([the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)). If review accepts
+fewer than 53 rows, widen from relation/document strata rather than the graph walk's stable order:
+allocate the path budget across relation pairs, same-document versus cross-document pairs, and
+source documents before model drafting, then reuse the current question/answer duplicate gate.
 
 - Agent status: RUN NEEDED
-- Dependencies: none, and it must land BEFORE `multihop-ledger-human-acceptance`, whose re-runs
-  would otherwise reproduce the same unreadable rows. Reuse the drafting lane with
-  `DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 DRAFT_DEDUP_AGAINST=<existing bundle>` and the
-  existing stratified worksheet builder.
-- User-visible outcome: the reviewer is handed a multi-hop worksheet whose accepted size can
-  actually decide the graph-weight and span-identity questions, instead of one that re-states them.
-- Scope boundary: in scope -- the wider draft, its dedup against the existing bundle, the
-  span-exactness and Ukrainian gates the drafting already applies, and a recorded statement of the
-  drafted size against the 53-item floor. Out of scope -- accepting the items (that is the human
-  task), re-running the sweep or the answer-quality lane on the drafted set, and lowering the floor
-  by changing any confidence convention.
-- Data and artifact paths: a new drafted bundle beside the existing one under
-  `$DATA_DIR/graph-vector-fusion-multihop/`; no new root.
-- Execution path: the drafting run on the CUDA host; CI covers the dedup and the multi-span
-  contract over fixtures, as it already does for the drafting lane.
-- Acceptance gates: `make ci` green; the drafted multi-hop slice reaches at least the item count
-  the floor names with review headroom; every drafted item is span-exact and re-grounds >= 2
-  distinct spans; no item duplicates the existing bundle.
-- Documentation target: the drafting section of [data prep](current/data-prep.md) and the
-  graph-vector fusion evidence section of [GraphRAG](current/graphrag-backend.md).
+- Dependencies: trigger only if `multihop-ledger-human-acceptance` retains fewer than 53 rows or its
+  rejection ledger shows concentrated failures in the dominant source/relation strata.
+- User-visible outcome: a replacement review worksheet with enough diverse rows to restore the
+  predeclared decision floor instead of another larger but topic-concentrated pass.
+- Scope boundary: in scope -- deterministic path strata, an exhaustion report, incremental
+  extraction reuse, and another audited worksheet. Out of scope -- changing the confidence
+  convention, accepting rows automatically, or changing graph retrieval.
+- Data and artifact paths: another sibling bundle under
+  `$DATA_DIR/graph-vector-fusion-multihop/`.
+- Execution path: extend `make widen-multihop-draft` with path-stratum targets, then run it on the
+  CUDA host against the latest reviewed ledger.
+- Acceptance gates: `make ci` green; the new path report covers every requested stratum or marks it
+  exhausted; the combined worksheet restores at least eight rows of headroom above 53; exact-span,
+  Ukrainian, and duplicate audits pass.
+- Documentation target: the widening section of [data prep](current/data-prep.md) and the handoff
+  evidence in [GraphRAG](current/graphrag-backend.md).
 
 ### headline-objective-verbosity-decomposition
 
@@ -986,6 +977,177 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
   [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
   adopt-or-reject verdict.
 
+### typed-rag-answer-envelope
+
+The RAG answer path emits FREE TEXT and every answer-side signal is recovered from that text after
+the fact by a heuristic: `classify_response` maps a completion to a status with regex markers,
+`is_abstention` reads first-person refusal stems, `parse_citations` scrapes `[i]` markers out of
+prose, and groundedness re-segments the answer into "sentence-ish claims" by punctuation
+([RAG core](current/rag-core.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
+The repo already validates typed model output with Pydantic -- but only inside the structured-output
+BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
+the completion satisfies it (`src/llb/scoring/structured_schema.py`); nothing on the answer path an
+operator would actually ship is typed. Two consequences: the measured citation gap is unreadable
+(the durable 3B run scored citation validity 0.000 because the model mostly did not cite at all, a
+FORMAT failure scored as a grounding failure), and there is nowhere for a semantic validator to
+attach -- checking business rules requires a typed object to check, which is the door this task
+builds. Ship an `AnswerEnvelope` at the generation boundary -- the Ukrainian `answer`, `claims[]`
+(claim text, the chunk indices it cites, and an optional subject/relation/object triple typed
+against the closed 13-type entity vocabulary), an explicit `abstained` flag, and the evidence spans
+-- parsed and validated in ONE place, with a completion that does not satisfy it ending in a typed
+status rather than being scored as a wrong answer.
+
+- Agent status: RUN NEEDED
+- Dependencies: none, and it must land before `ontology-validated-answer-gate` (which validates the
+  object this task defines). Reuse `build_model` / `parse_output` / `is_conformant` in
+  `src/llb/scoring/structured_schema.py` wholesale (they take a field schema, not a benchmark case),
+  the status taxonomy and `format_context` numbering in `src/llb/eval/common.py`, the claim
+  segmentation and citation parsing in `src/llb/scoring/groundedness.py`, and the
+  `eval.rag.cited_answer` template as the envelope prompt's starting point.
+- User-visible outcome: an operator can tell a model that does not KNOW the answer from a model that
+  cannot EMIT the answer in the requested shape, and every answer-side metric reads a declared field
+  instead of a regex over prose.
+- Scope boundary: in scope -- the envelope model, the boundary parse/validate function, the two new
+  statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
+  envelope, because the two call for different fixes and today collapse into one number), one
+  bounded `repair_once` reprompt carrying the validation error (the same policy shape
+  `agent-harness-loop-policy-recommendation` sweeps for tool calls), the per-case columns, and a
+  roster conformance study. Out of scope -- any SEMANTIC check on the envelope's contents (that is
+  `ontology-validated-answer-gate`), changing the headline objective, constrained/grammar decoding
+  in the backends, and making the envelope the default before the study supports it.
+- Data and artifact paths: additive per-case columns (`envelope_status`, `n_claims`, `repaired`) in
+  the standard `$DATA_DIR/run-eval/` bundles; the conformance study under
+  `$DATA_DIR/answer-envelope/<run>/`.
+- Execution path: `make run-eval ANSWER_FORMAT=envelope MODEL=<model> BACKEND=<backend>` over at
+  least two roster models on the CUDA host, since envelope conformance is a property of the MODEL;
+  CI drives parse, validate, repair, and each terminal status over the fake completer -- no GPU.
+- Acceptance gates: `make ci` green; with the envelope off every recorded bundle reproduces
+  bit-identically (the seam adds nothing to the free-text path); the study reports per-model
+  conformance, `schema_invalid` rate, and repair rate SEPARATELY from correctness, so a repair gain
+  is attributable to formatting rather than to reasoning; each claim's cited indices are validated
+  in prompt-layout order, so `reverse_rank` renumbering is respected exactly as citation validity
+  already respects it; an envelope answer's objective score matches the free-text score of the same
+  `answer` string.
+- Documentation target: the scoring and groundedness sections of
+  [RAG core](current/rag-core.md#scoring), plus a validation-architecture subsection that names the
+  boundary.
+
+### ontology-axiom-layer
+
+The induced ontology is a type INVENTORY, not a set of constraints: `induce_ontology` emits entity
+and relation types with counts, confidence, and examples under the `MAX_ENTITY_TYPES` /
+`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/induce.py`, `models.py`), and nothing in that
+artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact` creates
+a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the fact, and
+the approved schema states that rule outright ("no grounded fact is dropped",
+[graph ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one
+patent has two different durations, that one work has two exclusive owners, or that one entity is
+both `PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts
+into gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
+validation architecture: an AXIOM layer over the closed vocabulary and the induced relations --
+functional and inverse-functional properties (at most one object per subject, and vice versa),
+`domain`/`range` type constraints per relation, disjoint entity-type pairs, symmetry/asymmetry/
+irreflexivity, and cardinality bounds -- plus a checker that reads an extraction ledger and reports
+every violation with the axiom it breaks and BOTH offending facts' evidence spans.
+
+Serialize the axioms as RDFS/OWL Turtle (`owl:FunctionalProperty`, `owl:InverseFunctionalProperty`,
+`owl:disjointWith`, `rdfs:domain`, `rdfs:range`) so the constraint set is standard, diffable, and
+reviewable by someone who does not read this codebase -- but keep the SHIPPED checker pure Python
+over the existing typed models, so no runtime dependency is added, matching the optional-extras
+discipline the rest of the repo keeps. A standard reasoner (`rdflib` + `owlrl` behind an
+`[ontology]` extra, marked `heavy_env`) rides along in CI as a CROSS-CHECK only: it must agree with
+the in-repo checker on the committed axiom fixture, and a disagreement is a bug in the in-repo
+checker. That keeps OWL semantics as the reference without letting a reasoner into the answer path.
+
+- Agent status: RUN NEEDED
+- Dependencies: none in code. Reuse the closed vocabulary and `normalize_entity_type` in
+  `src/llb/prep/ontology/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
+  models in `src/llb/prep/ontology/models.py`, the caps and confidence blend in
+  `src/llb/prep/ontology/constants.py`, the fact ingestion seam in `src/llb/graph/build.py`, and the
+  violation-report renderer pattern from `src/llb/conflicts/report.py`.
+- User-visible outcome: a corpus ledger whose logical inconsistencies are visible and named before
+  they become gold questions or retrieved evidence, and a constraint set an operator can read,
+  version, and hand to a domain expert.
+- Scope boundary: in scope -- the axiom schema and its Turtle serialization, the pure checker, the
+  reasoner cross-check, the violation report, the base-rate measurement over the committed corpora,
+  and an opt-in `--refuse-violations` build flag. Out of scope -- inferring axioms from corpus
+  frequency and shipping them unreviewed (a frequency-induced axiom only restates what the extractor
+  emitted; acceptance is `ontology-axiom-signoff`), full OWL DL reasoning, changing the 13-type
+  vocabulary or the relation caps, deleting any fact by default, and touching retrieval.
+- Data and artifact paths: the candidate axiom set committed at `samples/ontology/axioms_uk_v1.ttl`
+  plus its typed JSON form beside it; violation reports under `$DATA_DIR/ontology-validation/<run>/`.
+- Execution path: `make validate-ontology-axioms EXTRACTION=<bundle>/extraction.jsonl
+  AXIOMS=samples/ontology/axioms_uk_v1.ttl` over the drafted bundles of both quickstart corpora on
+  the CUDA host (extraction ledgers already exist; no new inference unless a bundle is missing); CI
+  covers each axiom class over a committed fixture carrying one planted violation per class plus the
+  reasoner cross-check.
+- Acceptance gates: `make ci` green; the pure checker and the `owlrl` reasoner return the identical
+  violation set on the committed fixture; the report states the base rate per axiom class on both
+  quickstart corpora, and a corpus with ZERO violations is recorded as a measured finding (that
+  axiom class buys nothing on that corpus) rather than as a silent pass; the graph build is
+  byte-identical unless `--refuse-violations` is passed; every reported violation cites both facts'
+  exact spans, so a reviewer can adjudicate without re-reading the corpus.
+- Documentation target: the ontology-assisted drafting section of
+  [robustness and ontology](current/robustness-ontology-backends.md#ontology-assisted-drafting) and
+  a constraints section in [graph ontology schema](../design/graph-ontology-schema.md).
+
+### ontology-validated-answer-gate
+
+Compose the two halves into the shipped two-step gate -- Pydantic at the door, the ontology at the
+ledger. Step one is `typed-rag-answer-envelope`: the completion either parses into a typed answer
+object or ends in a typed status. Step two is new: the envelope's asserted triples are checked
+against the accepted axiom set AND against the corpus ledger the retrieved context came from, so an
+answer that violates a functional property, a `domain`/`range` constraint, or a disjointness pair --
+or that contradicts a ledger fact whose evidence is IN the retrieved chunks -- ends as
+`ontology_violation` or takes one bounded repair instead of being scored as a fluent answer. This is
+the step no existing signal covers: groundedness asks whether the answer's tokens appear in a chunk,
+which a semantically impossible answer assembled from real chunk tokens passes cleanly.
+
+The measurement has to be read honestly, because the obvious failure mode of any validator is
+refusing correct work: report the gate's CATCH rate (violations caught per 100 answers) and its
+FALSE-REJECTION rate (answers the gate rejects that the reference scores correct) as separate
+numbers, report abstention rate and answered-item count beside the objective, and read the objective
+delta on the items the UNGATED lane also answered -- otherwise a gate that improves the mean by
+declining the hard items looks like a win.
+
+- Agent status: RUN NEEDED
+- Dependencies: `typed-rag-answer-envelope` (the typed object to validate) and
+  `ontology-axiom-layer` (the axioms to validate it against); enabling an axiom at answer time also
+  needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than defaulted.
+  Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff_uncertainty.py` and
+  `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
+  `compare-answer-quality`, and the ledger lookup in `src/llb/graph/retrieval.py`.
+- User-visible outcome: an operator learns whether semantic validation of RAG answers is worth its
+  cost on their corpus -- how many logically impossible answers it stops, how many correct answers
+  it wrongly refuses, and what the repair round trip costs in tokens and wall clock.
+- Scope boundary: in scope -- the ledger-side check, the `ontology_violation` status, the bounded
+  repair, the catch / false-rejection / cost columns, a per-axiom-class adopt-or-reject verdict, and
+  a committed violation fixture. Out of scope -- rewriting the answer on the model's behalf beyond
+  the one repair, judge-based validation, changing the headline objective, enabling any axiom class
+  by default before its measured numbers support it, and inventing a ledger fact the corpus does not
+  carry.
+- Data and artifact paths: `$DATA_DIR/answer-validation/<run>/` for the lane comparison; the
+  fixture at `samples/benchmarks/ontology_violations_uk.json` (the layout its sibling case files
+  already use), carrying one planted violating answer per
+  axiom class PLUS correct answers a naive checker would reject (a legitimately multi-valued
+  relation, a paraphrased entity that normalizes to the same node, an entity typed `MISC` by
+  fallback), so the false-rejection number is measured on adversarial cases rather than asserted.
+- Execution path: `make compare-answer-validation VALIDATION_LANES=off,pydantic,pydantic+ontology
+  MODEL=<model> GOLDSET=<accepted> AXIOMS=<signed-ttl>` over at least two roster models on the CUDA
+  host; CI drives all three lanes, both statuses, and the repair path over the fake completer and a
+  fake ledger -- no GPU.
+- Acceptance gates: `make ci` green; the `off` lane reproduces the recorded run bundles exactly; the
+  fixture's planted violations are caught at 100% per axiom class and the adversarial correct
+  answers produce a NAMED false-rejection rate, not a claim of zero; the heavy run reports the
+  objective delta against `off` on the commonly-answered items with a paired interval and the
+  standard adopt-or-retain verdict, plus abstention rate, answered count, repair rate, and added
+  tokens/latency per answer; an axiom class ships enabled only when its catch rate clears its
+  false-rejection rate under that verdict, and every class that does not is recorded as measured-and-
+  not-adopted; an unsigned axiom file is refused with a named error rather than silently enabled.
+- Documentation target: a two-step answer-validation section in
+  [RAG core](current/rag-core.md#scoring) beside the groundedness metrics, and the adopt-or-reject
+  record per axiom class in [product decisions](current/scope-boundaries.md).
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
@@ -1111,12 +1273,9 @@ is span-exact and Ukrainian-gated by construction, but only a reviewer can say w
 shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `widen-the-multihop-drafted-slice-to-a-decidable-size` -- at the current 35 drafted
-  items the deciding rows differ on 4-5, which cannot reach 95% whatever the reviewer accepts, and
-  acceptance only shrinks a ledger
-  ([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). The
-  drafting, sweep, and store lanes are current behavior. Human step that gates
-  completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
+- Dependencies: the [widened handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)
+  supplies a 61-row worksheet against a 53-item decision floor. Human step that gates completion:
+  a reviewer decides `accept`/`reject` for every row of that worksheet --
   specifically whether the question is answerable ONLY with both cited spans -- and signs off on
   the resulting accepted ledger.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
@@ -1129,20 +1288,23 @@ shared-bridge question genuinely needs both facts.
   ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). Out of scope -- graph schema
   changes and fusion mechanics (the candidate-depth and span-identity verdicts are current
   behavior in [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)).
-- Data and artifact paths: the existing drafted bundle and worksheet plus a new
+- Data and artifact paths: the widened drafted bundle and worksheet named in
+  [the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff), plus a new
   `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
   `answer-quality/` comparison.
-- Execution path: the stratified worksheet is already drawn beside the bundle, so start at
-  `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
-  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
+- Execution path: start at `make verify-review VERIFY_WS=<widened-multi-hop-worksheet>`, then
+  `make verify-accept VERIFY_WS=<widened-multi-hop-worksheet>
+  BUNDLE=<widened-multi-hop-bundle>`, then
+  `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
   GRAPH_FUSION_CANDIDATES=k,50 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap`,
   then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
   sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
   the drafted-grounding escape.
-- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
-  multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
+- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps at least 53
+  multi-hop rows; the re-run sweep reports the same rows with paired intervals and the human
   records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
-  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
+  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`. If fewer
+  than 53 survive, trigger `relation-stratified-multihop-expansion-if-review-attrits`.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 
@@ -1271,6 +1433,52 @@ the human judge both the reviewer experience and the recommendation quality.
   as new forward tasks before this item leaves the file.
 - Documentation target: `current/auto-rag.md` acceptance evidence and
   [human evaluation guide](../guides/human-tooling/human-in-the-loop-evaluation.md).
+
+### ontology-axiom-signoff
+
+Accept or reject each candidate axiom from `ontology-axiom-layer`, one at a time, before any of them
+can gate an answer. An axiom is BUSINESS LOGIC, not a measurement: whether "has owner" admits one
+value or many, whether `PERSON` and `ORG` are genuinely disjoint in this domain, and whether a
+relation's range is closed are claims about the world that no corpus statistic can settle. Inducing
+them from corpus frequency would only restate what the extractor happened to emit -- the same
+circularity the conflict tier already hit, where the null and the observed population turned out to
+be the same set ([data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)) --
+and the cost of a wrong axiom is asymmetric and silent: at the ledger it deletes a true fact from
+the report's attention, and at the answer gate it converts correct answers into `ontology_violation`.
+The corpus cannot review itself here, which is why this is the one piece of the validation
+architecture that sits in this section. The existing signed type-vocabulary review is the
+precedent for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
+
+- Agent status: HUMAN-GATED
+- Dependencies: `ontology-axiom-layer` supplies the candidate axioms, their Turtle rendering, and
+  the per-axiom evidence (supporting facts, contradicting facts, and the measured base rate on both
+  quickstart corpora). Reuse the review-workbench ledger pattern
+  ([review workbench](current/review-workbench.md)) so the decisions are recorded the same way every
+  other review ledger is. Human step that gates completion: a domain reviewer decides `accept` or
+  `reject` for EVERY candidate axiom and signs the resulting axiom file.
+- User-visible outcome: a signed, dated constraint set an operator can point the answer gate at,
+  where every enabled axiom is a decision someone made rather than a statistic the corpus produced.
+- Scope boundary: in scope -- the per-axiom review worksheet (each axiom rendered as Turtle plus a
+  Ukrainian-language gloss and its supporting/contradicting facts with exact spans), the review
+  pass, the signed axiom file, and a recorded reason per rejection. Out of scope -- authoring new
+  axiom CLASSES (that is `ontology-axiom-layer`), changing the 13-type vocabulary or the relation
+  caps, and enabling any axiom the reviewer did not accept.
+- Data and artifact paths: the worksheet under `$DATA_DIR/ontology-validation/<run>/axiom_review.jsonl`;
+  the signed set committed at `samples/ontology/axioms_uk_v1.ttl` with the sign-off line in its
+  header, mirroring the dated sign-off convention of
+  [graph ontology schema](../design/graph-ontology-schema.md).
+- Execution path: `make validate-ontology-axioms` to regenerate the candidates and their evidence,
+  then `make review-workbench REVIEW_PATH=<axiom-review-jsonl>`; no GPU is required for the review
+  itself.
+- Acceptance gates: every candidate axiom has a decision and every rejection has a stated reason;
+  the committed axiom file contains only accepted axioms and carries the reviewer name and date;
+  re-running the checker over both quickstart corpora with the signed set reports its violation base
+  rate per accepted axiom; `ontology-validated-answer-gate` refuses to enable an axiom absent from
+  the signed file.
+- Documentation target: the ontology-assisted drafting section of
+  [robustness and ontology](current/robustness-ontology-backends.md#ontology-assisted-drafting), the
+  constraints section of [graph ontology schema](../design/graph-ontology-schema.md), and the
+  trust boundary in [product decisions](current/scope-boundaries.md).
 
 ## Adding Future Tasks
 

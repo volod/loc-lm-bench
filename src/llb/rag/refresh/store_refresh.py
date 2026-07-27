@@ -30,21 +30,22 @@ from llb.core.store_generations import (
     publish_generation,
     resolve_store_dir,
 )
-from llb.prep.corpus_governance import corpus_doc_fingerprints, corpus_fingerprint
+from llb.prep.corpus_fingerprints import corpus_doc_fingerprints, corpus_fingerprint
 from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import expand_duplicate_chunks
-from llb.rag.lexical import Lemmatizer, LexicalIndex
+from llb.rag.lexical import Lemmatizer
+from llb.rag.lexical_index import LexicalIndex
 from llb.rag.refresh.diff import ManifestDiff, diff_fingerprints
 from llb.rag.refresh.lexical_merge import merge_lexical_index
 from llb.rag.refresh.merge import (
     MODE_PARENT_CHILD,
-    MergedUnits,
     assemble,
     chunk_changed_docs,
     merged_vectors,
     resolve_duplicates,
     text_row_map,
 )
+from llb.rag.refresh.merge_models import MergedUnits
 from llb.rag.store import RagStore
 from llb.rag.store_build import (
     CHUNKS_FILE,

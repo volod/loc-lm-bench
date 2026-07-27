@@ -84,14 +84,14 @@ def compare_embedder_adoption_cmd(
     the bake-off's adoption bar. Each pair persists an ordinary run bundle under its encoder's own
     `$DATA_DIR/run-eval/`; only the comparison is new.
     """
-    from llb.eval.embedder_adoption import (
-        EmbedderLane,
+    from llb.eval.embedder_adoption.models import EmbedderLane
+    from llb.eval.embedder_adoption.cells import (
         build_cells,
-        format_summary,
         parse_rerankers,
         parse_top_ks,
-        run_adoption_bar_sweep,
     )
+    from llb.eval.embedder_adoption.report import format_summary
+    from llb.eval.embedder_adoption.run import run_adoption_bar_sweep
 
     overrides: dict[str, object] = {"model": model, "backend": backend, "goldset_path": goldset}
     if corpus is not None:
@@ -155,7 +155,8 @@ def compare_adoption_models_cmd(
     whether the two models reach the same keep-or-extend reading, so `extend_bar` is confirmed as a
     corpus/configuration property or exposed as a single-model artifact. No backend or GPU needed.
     """
-    from llb.eval.embedder_adoption import format_cross_summary, run_cross_model_comparison
+    from llb.eval.embedder_adoption.cross_model import format_cross_summary
+    from llb.eval.embedder_adoption.comparison_run import run_cross_model_comparison
 
     if len(reports) != 2:
         typer.echo("[error] name exactly two sweep reports to compare", err=True)
@@ -202,7 +203,8 @@ def compare_adoption_roster_cmd(
     and quotes the probability a clean split would arise by chance at this roster size, so a
     handful of models cannot read as a law. No backend or GPU needed.
     """
-    from llb.eval.embedder_adoption import format_roster_summary, run_roster_comparison
+    from llb.eval.embedder_adoption.roster_report import format_roster_summary
+    from llb.eval.embedder_adoption.comparison_run import run_roster_comparison
 
     if len(reports) < 3:
         typer.echo(
@@ -221,63 +223,3 @@ def compare_adoption_roster_cmd(
         raise typer.Exit(code=2) from None
     typer.echo(format_roster_summary(run.report))
     typer.echo(f"[compare-adoption-roster] report -> {run.paths['report']}")
-
-
-@app.command("compare-adoption-screen")
-def compare_adoption_screen_cmd(
-    reports: list[Path] = typer.Argument(
-        ..., help="finished sweep comparison.json files (or their directories) to study"
-    ),
-    focus_cell: Optional[str] = typer.Option(
-        None, "--focus-cell", help="cell the screen must reproduce (default: k10+rerank)"
-    ),
-    sizes: Optional[str] = typer.Option(
-        None,
-        "--sizes",
-        help="comma-separated screen item counts to measure (default: 10,15,20,25,30,35)",
-    ),
-    draws: Optional[int] = typer.Option(None, "--draws", help="subsamples drawn per size"),
-    target: Optional[float] = typer.Option(
-        None,
-        "--target",
-        min=0.5,
-        max=1.0,
-        help="agreement a size must reach to count as a usable screen (default 0.90)",
-    ),
-    seed: Optional[int] = typer.Option(None, help="seed for the subsample draws"),
-    out_dir: Optional[Path] = typer.Option(
-        None, help="artifact dir (default: beside the FIRST report, in a `screen/` sibling)"
-    ),
-) -> None:
-    """How cheaply can the reranker question be decided for ONE model?
-
-    The reranker question lives in a single cell, so scoring only that cell is an exact 4x saving
-    over the full grid. Cutting the ITEM set is not free: fewer items widen the paired interval and
-    the reading rule is "the interval clears zero", so a screen can only lose a detection. This
-    resamples the recorded per-item deltas at a range of item counts and reports, per model, how
-    often a screen that size reproduces the full-set reading -- ending in the honest floor on what
-    a per-model answer costs. Reads finished sweeps only; no backend or GPU.
-    """
-    from llb.eval.embedder_adoption import format_screen_summary
-    from llb.eval.embedder_adoption.run import run_screen_study_over_paths
-
-    options: dict[str, object] = {}
-    if sizes:
-        try:
-            options["sizes"] = [int(token) for token in sizes.split(",") if token.strip()]
-        except ValueError:
-            typer.echo("[error] --sizes must be comma-separated integers", err=True)
-            raise typer.Exit(code=2) from None
-    for name, value in (("draws", draws), ("target", target), ("seed", seed)):
-        if value is not None:
-            options[name] = value
-    target_dir = out_dir if out_dir is not None else reports[0].resolve().parent / "screen"
-    try:
-        run = run_screen_study_over_paths(
-            reports, out_dir=target_dir, focus_cell=focus_cell, **options
-        )
-    except ValueError as exc:
-        typer.echo(f"[error] {exc}", err=True)
-        raise typer.Exit(code=2) from None
-    typer.echo(format_screen_summary(run.report))
-    typer.echo(f"[compare-adoption-screen] report -> {run.paths['report']}")

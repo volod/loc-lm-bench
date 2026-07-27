@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from llb.executor.cases import ScoreOptions
 from llb.executor.runner_retrieval import build_query_prep
 
-RagState = eval_graph.RagState
+from llb.eval.graph_contracts import RagState
 
 
 def _load_eval_items(

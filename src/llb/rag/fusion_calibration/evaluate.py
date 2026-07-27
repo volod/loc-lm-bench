@@ -3,10 +3,14 @@
 from llb.rag.fusion import fuse_lane_hits, lane_depth
 from llb.rag.fusion_calibration.models import (
     PolicyResult,
-    PolicySpec,
     RouteError,
-    RouteQuality,
     RoutingCalibrationReport,
+)
+from llb.rag.fusion_calibration.policy import (
+    decision_reason,
+    policy_spec,
+    route_quality,
+    selection_key,
 )
 from llb.rag.fusion_evidence.models import EvidenceItem, Retriever
 from llb.rag.fusion_evidence.rows import LaneCache
@@ -15,7 +19,8 @@ from llb.rag.fusion_evidence.stats import (
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
     bootstrap_index_sets,
-    bootstrap_ratio,
+)
+from llb.rag.fusion_evidence.paired import (
     paired_comparison,
     separates,
 )
@@ -70,7 +75,7 @@ def calibrate_routing(
         )
         for policy in policies
     }
-    frozen = max(policies, key=lambda policy: _selection_key(tuning[policy.label]))
+    frozen = max(policies, key=lambda policy: selection_key(tuning[policy.label]))
     final_questions = [item.question for item in final_items]
     final_vector = LaneCache(vector, final_questions, depth)
     final_graph = LaneCache(graph, final_questions, depth)
@@ -90,7 +95,7 @@ def calibrate_routing(
     validated = tuning[frozen.label]["recommendation_gate"] and final["recommendation_gate"]
     recommended = frozen.label if validated else None
     decision = DECISION_RECOMMEND if recommended else DECISION_NO_RECOMMENDATION
-    reason = _reason(tuning[frozen.label], final, recommended is not None)
+    reason = decision_reason(tuning[frozen.label], final, recommended is not None)
     return {
         "k": k,
         "graph_strategy": graph_strategy,
@@ -165,7 +170,7 @@ def _evaluate_policy(
     route_sets = bootstrap_index_sets(len(items), resamples, seed)
     multi = [i for i, is_multi in enumerate(actual) if is_multi]
     single = [i for i, is_multi in enumerate(actual) if not is_multi]
-    route = _route_quality(predicted, actual, route_sets, confidence)
+    route = route_quality(predicted, actual, route_sets, confidence)
     multi_comparison = paired_comparison(
         [routed_coverage[i] for i in multi],
         [vector_coverage[i] for i in multi],
@@ -184,7 +189,7 @@ def _evaluate_policy(
     # is left exactly as it was.
     gate = separates(multi_comparison, confidence) and single_comparison["delta"]["lo"] >= 0.0
     return {
-        "policy": _policy_spec(policy),
+        "policy": policy_spec(policy),
         "n": len(items),
         "multi_span_n": len(multi),
         "single_span_n": len(single),
@@ -196,66 +201,3 @@ def _evaluate_policy(
         "single_span_recall": single_comparison,
         "recommendation_gate": gate,
     }
-
-
-def _route_quality(
-    predicted: list[bool],
-    actual: list[bool],
-    index_sets: list[list[int]],
-    confidence: float,
-) -> RouteQuality:
-    true_positive = [guess and truth for guess, truth in zip(predicted, actual)]
-    return {
-        "true_positive": sum(true_positive),
-        "false_positive": sum(guess and not truth for guess, truth in zip(predicted, actual)),
-        "true_negative": sum(not guess and not truth for guess, truth in zip(predicted, actual)),
-        "false_negative": sum(not guess and truth for guess, truth in zip(predicted, actual)),
-        "precision": bootstrap_ratio(true_positive, predicted, index_sets, confidence),
-        "recall": bootstrap_ratio(true_positive, actual, index_sets, confidence),
-    }
-
-
-def _policy_spec(policy: HeuristicPolicy) -> PolicySpec:
-    return {
-        "label": policy.label,
-        "long_question_words": policy.long_question_words,
-        "min_linked_entities": policy.min_linked_entities,
-    }
-
-
-def _selection_key(result: PolicyResult) -> tuple[float, float, float, float, float, int, int]:
-    multi = result["multi_span_coverage"]["delta"]
-    single = result["single_span_recall"]["delta"]
-    route = result["route"]
-    policy = result["policy"]
-    return (
-        float(result["recommendation_gate"]),
-        multi["lo"],
-        multi["mean"],
-        single["lo"],
-        route["precision"]["mean"],
-        policy["long_question_words"],
-        policy["min_linked_entities"],
-    )
-
-
-def _reason(tuning: PolicyResult, final: PolicyResult, recommended: bool) -> str:
-    tuning_multi = tuning["multi_span_coverage"]["delta"]
-    tuning_single = tuning["single_span_recall"]["delta"]
-    final_multi = final["multi_span_coverage"]["delta"]
-    final_single = final["single_span_recall"]["delta"]
-    if recommended:
-        status = "clears the tuning and final gates"
-    elif tuning["recommendation_gate"]:
-        status = "clears the tuning gate but not the final gate"
-    else:
-        status = "does not clear the tuning gate"
-    return (
-        f"{tuning['policy']['label']} {status}: tuning multi-span coverage "
-        f"{tuning_multi['mean']:+.3f} [{tuning_multi['lo']:+.3f}, {tuning_multi['hi']:+.3f}], "
-        f"single-span recall {tuning_single['mean']:+.3f} "
-        f"[{tuning_single['lo']:+.3f}, {tuning_single['hi']:+.3f}]; final multi-span coverage "
-        f"{final_multi['mean']:+.3f} [{final_multi['lo']:+.3f}, {final_multi['hi']:+.3f}], "
-        f"single-span recall {final_single['mean']:+.3f} "
-        f"[{final_single['lo']:+.3f}, {final_single['hi']:+.3f}]"
-    )

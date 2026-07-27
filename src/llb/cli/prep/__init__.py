@@ -14,6 +14,7 @@ from llb.cli.prep import (  # noqa: F401
     draft_compare,
     draft_compare_local,
     goldset,
+    multihop_expansion,
     repeat_yield,
     security,
 )

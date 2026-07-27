@@ -13,7 +13,12 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
-from llb.prep.pdf.repeats import StrippedDoc, remap_span, remap_span_split, span_rehomed
+from llb.prep.pdf.repeat_models import StrippedDoc
+from llb.prep.pdf.repeat_spans import (
+    remap_span,
+    remap_span_split,
+    span_rehomed,
+)
 
 
 class GoldsetRemap(TypedDict):

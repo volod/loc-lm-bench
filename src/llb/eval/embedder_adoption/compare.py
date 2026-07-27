@@ -41,8 +41,8 @@ from llb.rag.fusion_evidence.stats import (
     DEFAULT_SEED,
     bootstrap_index_sets,
     bootstrap_interval,
-    paired_comparison,
 )
+from llb.rag.fusion_evidence.paired import paired_comparison
 
 logger = logging.getLogger(__name__)
 

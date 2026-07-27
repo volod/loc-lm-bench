@@ -1,17 +1,17 @@
 """Fixed and question-routed graph fusion with multi-hop evidence."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
+from llb.cli.rag import fusion_inputs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
 from llb.rag.fusion_evidence.models import METRICS, METRIC_RECALL
 from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 
-FUSION_EVIDENCE_METHOD = "graph-vector-fusion-multihop"
 DEFAULT_WEIGHT_GRID = "0,0.1,0.2,0.3,0.5,0.7,1.0"
 # Default to the historical single depth (each lane asked for exactly the scored `k`), so the
 # command's out-of-the-box row set is unchanged until an operator asks for a deeper pool.
@@ -110,7 +110,9 @@ def compare_graph_fusion_cmd(
         help="target power for the paired normal-approximation item count",
     ),
     out_dir: Optional[Path] = typer.Option(
-        None, help=f"artifact dir (default: $DATA_DIR/{FUSION_EVIDENCE_METHOD}/<timestamp>/)"
+        None,
+        help=f"artifact dir (default: $DATA_DIR/"
+        f"{fusion_inputs.FUSION_EVIDENCE_METHOD}/<timestamp>/)",
     ),
 ) -> None:
     """Compare fixed graph shares plus question routing on the multi-hop slice.
@@ -152,11 +154,11 @@ def compare_graph_fusion_cmd(
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
-    items = _evidence_items(cfg, split)
+    items = fusion_inputs.evidence_items(cfg, split)
     if not items:
         typer.echo("[error] the gold set selection is empty", err=True)
         raise typer.Exit(code=2)
-    default_dir = cfg.data_dir / FUSION_EVIDENCE_METHOD / generation_timestamp()
+    default_dir = cfg.data_dir / fusion_inputs.FUSION_EVIDENCE_METHOD / generation_timestamp()
     target = Path(out_dir) if out_dir else default_dir
     selected_focus = focus_slice or FOCUS_SLICE
     try:
@@ -174,7 +176,7 @@ def compare_graph_fusion_cmd(
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
-    vector, graphs = _load_lanes(cfg, graph_strategies)
+    vector, graphs = fusion_inputs.load_lanes(cfg, graph_strategies)
     question_types = load_question_types_by_question(cfg.goldset_path) if routing_sidecar else {}
     rows = build_sweep_rows(
         vector,
@@ -223,48 +225,3 @@ def compare_graph_fusion_cmd(
         else f"[compare-graph-fusion] {verdict['decision']}"
     )
     typer.echo(f"[compare-graph-fusion] report -> {target / 'report.md'}")
-
-
-def _evidence_items(cfg: Any, split: Optional[str]) -> list[Any]:
-    """Load the gold selection as `EvidenceItem`s carrying their question-type slice."""
-    from llb.executor.cases import spans_as_dicts
-    from llb.goldset.schema import load_goldset
-    from llb.rag.fusion_evidence import EvidenceItem
-    from llb.rag.question_types import load_question_types
-
-    items = load_goldset(cfg.goldset_path)
-    if split:
-        items = [item for item in items if item.split == split]
-    types = load_question_types(cfg.goldset_path)
-    return [
-        EvidenceItem(item.id, item.question, spans_as_dicts(item), types.get(item.id))
-        for item in items
-    ]
-
-
-def _load_lanes(cfg: Any, graph_strategies: Optional[str]) -> tuple[Any, dict[str, Any]]:
-    """The built vector store plus one loaded graph store per compared strategy."""
-    from llb.executor.runner_retrieval import _load_store
-    from llb.graph.constants import (
-        BACKEND_GRAPH,
-        STRATEGY_GLOBAL_COMMUNITY,
-        STRATEGY_LOCAL_KHOP,
-    )
-
-    selected = (
-        [name.strip() for name in graph_strategies.split(",") if name.strip()]
-        if graph_strategies
-        else [STRATEGY_LOCAL_KHOP, STRATEGY_GLOBAL_COMMUNITY]
-    )
-    try:
-        vector = _load_store(cfg.with_overrides(retrieval_backend="faiss"))
-        graphs = {
-            strategy: _load_store(
-                cfg.with_overrides(retrieval_backend=BACKEND_GRAPH, retrieval_strategy=strategy)
-            )
-            for strategy in selected
-        }
-    except (FileNotFoundError, SystemExit) as exc:
-        typer.echo(f"[error] a compared store is not built: {exc}", err=True)
-        raise typer.Exit(code=2) from None
-    return vector, graphs

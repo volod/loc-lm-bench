@@ -117,3 +117,13 @@ the full local test flow and Markdown lint. `scripts/code_quality.sh` reports lo
 cyclomatic complexity, and cognitive complexity so maintainers can split code at functional seams.
 The ~250-line source-file target is soft; cohesive schemas and regular lookup families may remain
 whole.
+
+The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
+accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and
+named matching/report helpers; the multi-hop expansion audit uses a check accumulator that builds
+the final report. Retrieval validation passes an immutable request into
+`cli/rag/retrieval_validation.py`, autonomous verification scoring lives in
+`auto_rag/verification_auto.py`, and query-prep dependency checks are table-driven. The query
+robustness integration test uses a module-level morphology-loader callable and named assertion /
+artifact phases. The repository-wide Radon D-or-worse scan is empty; focused coverage lives in the
+ontology, auto-RAG verification, query-prep, and query-robustness test suites.

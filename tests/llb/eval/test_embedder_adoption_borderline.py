@@ -14,18 +14,20 @@ import json
 from pathlib import Path
 
 from llb.core.config import RunConfig
-from llb.eval.embedder_adoption import (
+from llb.eval.embedder_adoption.models import (
     DECISION_EXTEND_BAR,
     DECISION_KEEP_BAR,
     EmbedderLane,
-    build_cells,
-    cell_item_deltas,
-    compare_cells,
+)
+from llb.eval.embedder_adoption.cells import build_cells
+from llb.eval.embedder_adoption.screen_data import cell_item_deltas
+from llb.eval.embedder_adoption.compare import compare_cells
+from llb.eval.embedder_adoption.report import (
     format_report,
     format_summary,
-    row_stability,
-    run_adoption_bar_sweep,
 )
+from llb.eval.embedder_adoption.stability import row_stability
+from llb.eval.embedder_adoption.run import run_adoption_bar_sweep
 from llb.eval.embedder_adoption.models import METRIC_OBJECTIVE, CellSpec, ItemDeltas
 from llb.goldset.schema import GoldItem
 

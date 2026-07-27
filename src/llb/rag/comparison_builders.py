@@ -124,7 +124,8 @@ def build_hybrid_comparison(
     """
     from pathlib import Path
 
-    from llb.rag.lexical import LexicalIndex, load_uk_lemmatizer
+    from llb.rag.lexical import load_uk_lemmatizer
+    from llb.rag.lexical_index import LexicalIndex
     from llb.rag.store import MODE_HYBRID, RagStore
 
     hybrid = RagStore.build(

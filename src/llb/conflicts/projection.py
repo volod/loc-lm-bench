@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.conflicts.vectorops import METRIC_EUCLIDEAN, VectorSet
+from llb.conflicts.vector_math import METRIC_EUCLIDEAN
+from llb.conflicts.vectorops import VectorSet
 
 PROJECTION_VERSION = "conflict-pca-v1"
 

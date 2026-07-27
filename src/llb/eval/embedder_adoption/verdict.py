@@ -23,8 +23,10 @@ from llb.rag.fusion_evidence.stability import (
 )
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
-    evidence_gate_clause,
     format_interval,
+)
+from llb.rag.fusion_evidence.paired import (
+    evidence_gate_clause,
     separates,
 )
 

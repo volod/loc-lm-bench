@@ -17,7 +17,7 @@ from llb.goldset.schema import load_goldset
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.comparison_builders import OracleDocFilter
 from llb.rag.filters import metadata_filter
-from llb.rag.lexical import LexicalIndex
+from llb.rag.lexical_index import LexicalIndex
 from llb.rag.retrieval import evaluate_retrieval
 from llb.rag.store import RagStore
 from llb.rag.store_build import LEXICAL_FILE, META_FILE, MODE_HYBRID

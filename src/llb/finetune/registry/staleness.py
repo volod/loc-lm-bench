@@ -64,7 +64,7 @@ def retrieval_fingerprint_for(index_dir: Path | str | None) -> JsonObject | None
     """Read retrieval knobs from store metadata, or return None when unavailable."""
     if index_dir is None:
         return None
-    from llb.rag.store import META_FILE
+    from llb.rag.store_build import META_FILE
 
     path = resolve_project_path(index_dir) / META_FILE
     if not path.is_file():
@@ -103,7 +103,7 @@ def corpus_digest_for(corpus_root: Path | str | None) -> str | None:
     root = resolve_project_path(corpus_root)
     if not root.is_dir():
         return None
-    from llb.prep.corpus_governance import corpus_fingerprint
+    from llb.prep.corpus_fingerprints import corpus_fingerprint
 
     try:
         return corpus_fingerprint(root)

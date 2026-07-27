@@ -6,7 +6,11 @@ from typing import Any
 
 from llb.eval.query_robustness_variants import generate_variant, resolve_variant_classes
 from llb.goldset.schema import GoldItem
-from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, PairedComparison
+from llb.rag.fusion_evidence.stats import (
+    DEFAULT_CONFIDENCE,
+    DEFAULT_RESAMPLES,
+)
+from llb.rag.fusion_evidence.paired import PairedComparison
 
 
 @dataclass(frozen=True)

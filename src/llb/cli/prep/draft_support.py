@@ -13,6 +13,11 @@ def _validate_draft_inputs(
     retrieval_index_dir: Optional[Path],
     graph_dir: Optional[Path],
     rejection_feedback: Optional[Path],
+    reuse_extraction_bundle: Optional[Path],
+    multi_hop: bool,
+    multi_hop_only: bool,
+    carry_forward_multi_hop: bool,
+    dedup_against: Optional[list[Path | str]],
 ) -> None:
     """Fail fast (exit 2) on option combinations and paths that cannot work."""
     if drop_nonretrievable_needles and retrieval_index_dir is None:
@@ -23,6 +28,17 @@ def _validate_draft_inputs(
         cli_error(f"graph store dir not found: {graph_dir}")
     if rejection_feedback is not None and not rejection_feedback.is_file():
         cli_error(f"rejection feedback file not found: {rejection_feedback}")
+    if reuse_extraction_bundle is not None:
+        extraction = reuse_extraction_bundle / "extraction.jsonl"
+        if not extraction.is_file():
+            cli_error(f"reuse extraction bundle has no extraction.jsonl: {reuse_extraction_bundle}")
+    if multi_hop_only and not multi_hop:
+        cli_error("--multi-hop-only requires --multi-hop")
+    if carry_forward_multi_hop and not dedup_against:
+        cli_error("--carry-forward-multi-hop requires --dedup-against")
+    for bundle in dedup_against or []:
+        if not (Path(bundle) / "goldset.jsonl").is_file():
+            cli_error(f"dedup bundle has no goldset.jsonl: {bundle}")
 
 
 def _extraction_adapter(extractor: str, spacy_model: str) -> Any:

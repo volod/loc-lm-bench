@@ -5,7 +5,7 @@ from llb.core.config_validation import (
     DEFAULT_EMBEDDING_MODEL,
 )
 from llb.core.contracts.rag import RagStoreMeta
-from llb.prep.corpus_governance import corpus_fingerprint
+from llb.prep.corpus_fingerprints import corpus_fingerprint
 
 
 def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | None:

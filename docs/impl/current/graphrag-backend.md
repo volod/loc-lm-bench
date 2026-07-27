@@ -319,6 +319,32 @@ What the run establishes:
   reproducing the accepted-ledger run's ordering on a second, multi-document corpus.
 - **Graph weight 0.0 is an exact vector passthrough**: 0 wins, 0 losses, 95 ties on every metric.
 
+### Widened multi-hop review handoff
+
+CUDA-host drafting evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260727T-widened-draft-final/`. The
+`make widen-multihop-draft` lane reused the five-document `goods-draft` extraction, drafted only
+multi-hop paths with the same 12B MamayLM model at a 16,384-token context, excluded prior
+evidence-span pairs before generation, and carried prior rows into one worksheet. The final
+incremental pass made 40 local drafting calls (232.1 model-seconds, zero extraction calls), grounded
+14 candidates, rejected five duplicates, and added nine rows to the 52-row carried ledger.
+
+The handoff contains **61 multi-hop rows**, split 21 calibration / 20 tuning / 20 final. Every row
+has exactly two distinct, exact-grounded spans and passes the Ukrainian output gate; 18 rows cross
+document boundaries. The complete 61-row worksheet is `verify_sample.csv`. Its
+`multihop_expansion_report.json` records `ready_for_human_review: true`, the 53 accepted-item
+decision floor, and **eight rows of review headroom**. The drafting task is therefore large enough
+to hand to review, but not large enough to absorb arbitrary attrition: rejecting nine or more rows
+would make the downstream comparison undecidable again.
+
+Two failed approaches are useful operational findings. Post-generation question-only dedup over
+the first 120-path pass kept only 14 additions and produced 49 combined rows. Supplying the full
+prior-question ledger to every prompt doubled model latency (537 to 1,140 model-seconds per
+120-call pass) and produced no additions. The retained implementation instead caps novelty
+guidance at 24 recent questions and uses an exact-question guard plus paired question/answer E5
+similarity (0.90 / 0.95) for multi-hop rows. The final report records every rejected
+candidate/nearest-prior pair, so the boundary remains auditable.
+
 ### The sweep re-read against its measurement floor
 
 CUDA host, 2026-07-24; evidence under

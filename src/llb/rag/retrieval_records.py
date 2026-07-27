@@ -25,9 +25,9 @@ from llb.core.contracts.rag import (
 from llb.rag.duplicates import (
     COUNT_KEY,
     OCCURRENCES_KEY,
-    DuplicateOccurrence,
     duplicate_occurrences,
 )
+from llb.rag.duplicate_models import DuplicateOccurrence
 from llb.rag.retrieval import chunk_hits_any
 
 # Bounded per-chunk text carried into `retrieval.jsonl` for observability; the span coordinates

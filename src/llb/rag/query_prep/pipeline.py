@@ -28,6 +28,52 @@ from llb.rag.query_prep.rewrite import apply_rewrite
 from llb.rag.query_prep.typos import apply_typos
 
 
+def _validate_steps(
+    ordered: tuple[str, ...],
+    *,
+    vocabulary: frozenset[str] | None,
+    glossary: Glossary | None,
+    rewriter: Rewriter | None,
+    hypothesizer: QueryGenerator | None,
+    decomposer: QueryGenerator | None,
+    known_word: KnownWordProbe | None,
+    context: VocabularyContext | None,
+    plausible: PlausibilityProbe | None,
+) -> None:
+    """Validate the ordered step contract and all dependency wiring."""
+    unknown = [step for step in ordered if step not in QUERY_PREP_STEPS]
+    if unknown:
+        raise ValueError(
+            f"unknown query-prep step(s): {unknown}; choose from {list(QUERY_PREP_STEPS)}"
+        )
+    if len(set(ordered)) != len(ordered):
+        raise ValueError(f"duplicate query-prep step(s): {ordered}")
+
+    required_dependencies = (
+        (STEP_TYPOS, vocabulary, "the 'typos' step needs a corpus vocabulary"),
+        (STEP_GLOSSARY, glossary, "the 'glossary' step needs a query glossary"),
+        (STEP_REWRITE, rewriter, "the 'rewrite' step needs a rewrite endpoint callable"),
+        (STEP_HYDE, hypothesizer, "the 'hyde' step needs a hypothetical-answer endpoint callable"),
+        (
+            STEP_DECOMPOSE,
+            decomposer,
+            "the 'decompose' step needs a decomposition endpoint callable",
+        ),
+    )
+    for step, dependency, message in required_dependencies:
+        if step in ordered and dependency is None:
+            raise ValueError(message)
+
+    optional_dependencies = (
+        (known_word, STEP_TYPOS, "the typo morphology guard needs the 'typos' step"),
+        (context, STEP_TYPOS, "the query-context index needs the 'typos' step"),
+        (plausible, STEP_NORMALIZE, "the normalize language gate needs the 'normalize' step"),
+    )
+    for optional_dependency, required_step, message in optional_dependencies:
+        if optional_dependency is not None and required_step not in ordered:
+            raise ValueError(message)
+
+
 @dataclass
 class QueryPrep:
     """An ordered pipeline of query-prep steps with their resolved dependencies.
@@ -63,29 +109,17 @@ class QueryPrep:
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
-        unknown = [step for step in ordered if step not in QUERY_PREP_STEPS]
-        if unknown:
-            raise ValueError(
-                f"unknown query-prep step(s): {unknown}; choose from {list(QUERY_PREP_STEPS)}"
-            )
-        if len(set(ordered)) != len(ordered):
-            raise ValueError(f"duplicate query-prep step(s): {ordered}")
-        if STEP_TYPOS in ordered and vocabulary is None:
-            raise ValueError("the 'typos' step needs a corpus vocabulary")
-        if known_word is not None and STEP_TYPOS not in ordered:
-            raise ValueError("the typo morphology guard needs the 'typos' step")
-        if context is not None and STEP_TYPOS not in ordered:
-            raise ValueError("the query-context index needs the 'typos' step")
-        if plausible is not None and STEP_NORMALIZE not in ordered:
-            raise ValueError("the normalize language gate needs the 'normalize' step")
-        if STEP_GLOSSARY in ordered and glossary is None:
-            raise ValueError("the 'glossary' step needs a query glossary")
-        if STEP_REWRITE in ordered and rewriter is None:
-            raise ValueError("the 'rewrite' step needs a rewrite endpoint callable")
-        if STEP_HYDE in ordered and hypothesizer is None:
-            raise ValueError("the 'hyde' step needs a hypothetical-answer endpoint callable")
-        if STEP_DECOMPOSE in ordered and decomposer is None:
-            raise ValueError("the 'decompose' step needs a decomposition endpoint callable")
+        _validate_steps(
+            ordered,
+            vocabulary=vocabulary,
+            glossary=glossary,
+            rewriter=rewriter,
+            hypothesizer=hypothesizer,
+            decomposer=decomposer,
+            known_word=known_word,
+            context=context,
+            plausible=plausible,
+        )
         return cls(
             steps=ordered,
             vocabulary=vocabulary if vocabulary is not None else frozenset(),

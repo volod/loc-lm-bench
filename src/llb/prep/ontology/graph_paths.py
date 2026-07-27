@@ -89,7 +89,11 @@ def _two_hop_seed(
 
 
 def walk_two_hop_paths(
-    graph: KnowledgeGraph, *, max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS, seed: int = 13
+    graph: KnowledgeGraph,
+    *,
+    max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
+    seed: int = 13,
+    excluded_span_pairs: set[_SpanPair] | None = None,
 ) -> list[MultiHopSeed]:
     """Emit up to `max_paths` distinct 2-hop `A -r1-> B -r2-> C` seeds, deterministically.
 
@@ -101,7 +105,7 @@ def walk_two_hop_paths(
     del seed  # walk order is deterministic by node/edge id; kept for API symmetry
     by_id = graph.node_by_id()
     seeds: list[MultiHopSeed] = []
-    seen_pairs: set[_SpanPair] = set()
+    seen_pairs: set[_SpanPair] = set(excluded_span_pairs or ())
     candidates = _iter_two_hop_seeds(graph, by_id, seen_pairs)
     if _extend_capped(seeds, candidates, max_paths):
         _LOG.info("[ontology] multi-hop: %d 2-hop seeds (capped)", len(seeds))
@@ -178,7 +182,11 @@ def _bridge_pair_seed(
 
 
 def walk_chain_paths(
-    graph: KnowledgeGraph, *, max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS, seed: int = 13
+    graph: KnowledgeGraph,
+    *,
+    max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
+    seed: int = 13,
+    excluded_span_pairs: set[_SpanPair] | None = None,
 ) -> list[MultiHopSeed]:
     """Build chain-review seeds, filling sparse directed paths with shared-topic fact pairs.
 
@@ -186,12 +194,18 @@ def walk_chain_paths(
     two distinct facts incident on the same bridge node provide ordered topic context without
     weakening the flat multi-hop runner's stricter directed-path semantics.
     """
-    seeds = walk_two_hop_paths(graph, max_paths=max_paths, seed=seed)
+    seeds = walk_two_hop_paths(
+        graph,
+        max_paths=max_paths,
+        seed=seed,
+        excluded_span_pairs=excluded_span_pairs,
+    )
     if len(seeds) >= max_paths:
         return seeds
 
     by_id = graph.node_by_id()
-    seen_pairs = {_seed_pair_key(item) for item in seeds}
+    seen_pairs = set(excluded_span_pairs or ())
+    seen_pairs.update(_seed_pair_key(item) for item in seeds)
     candidates = _iter_bridge_pair_seeds(graph, by_id, seen_pairs)
     if _extend_capped(seeds, candidates, max_paths):
         _LOG.info("[ontology] chains: %d graph-path seeds (capped)", len(seeds))
