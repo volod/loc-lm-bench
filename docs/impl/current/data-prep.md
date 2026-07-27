@@ -493,6 +493,38 @@ bridge or end entity in its reference answer and still has to re-ground >= 2 dis
 so the multi-span contract is unchanged; only the supply of candidate paths widens. The strict walk
 remains the default, because a directed chain is the stronger multi-hop claim.
 
+### Widening a multi-hop review slice
+
+`make widen-multihop-draft` turns a prior ontology-draft bundle into one larger, reviewable
+multi-hop ledger. Set `MULTIHOP_DRAFT_PRIOR_BUNDLE=<bundle>`,
+`MULTIHOP_DRAFT_OUT=<new-bundle>`, and `MULTIHOP_DRAFT_MODEL=<model>`. For an incremental pass,
+set `MULTIHOP_DRAFT_DEDUP_AGAINST=<original-bundle>,<latest-bundle>` so flat questions in the
+original draft and multi-hop additions in the latest ledger both remain inside the semantic
+duplicate boundary.
+
+The target composes four reusable `prepare-goldset-draft` controls:
+
+- `DRAFT_REUSE_EXTRACTION_BUNDLE=<bundle>` verifies and reuses its `extraction.jsonl`, avoiding
+  repeated extraction calls over unchanged corpus bytes;
+- `DRAFT_MULTI_HOP_ONLY=1` skips flat-question drafting;
+- prior multi-hop evidence-span pairs are excluded before the path cap is applied, so the model
+  call budget counts unseen graph paths rather than redraws;
+- `DRAFT_CARRY_FORWARD_MULTI_HOP=1` prepends the prior labeled multi-hop rows, collapses inherited
+  exact-question duplicates, and emits one complete `verify_sample.csv`.
+
+Prior questions are also supplied to the multi-hop prompt as bounded novelty guidance. This is an
+efficiency hint, not an acceptance shortcut: the pinned-E5 `DRAFT_DEDUP_AGAINST` filter still
+decides which new drafts survive. Flat rows retain the question-only 0.90 cosine rule. Multi-hop
+rows always drop an exact normalized-question repeat; a non-exact row is dropped only when its
+question cosine is at least 0.90 and its reference-answer cosine against the same prior row is at
+least 0.95. The nearest prior question, answer, and both similarities are recorded for every
+rejection. This keeps common domain wording from erasing a distinct two-fact answer while
+preserving an inspectable duplicate boundary. The final `audit-multihop-draft` gate writes
+`multihop_expansion_report.json` and fails unless the combined ledger meets the declared draft
+minimum, records prior-question dedup, contains only Ukrainian-gated multi-hop rows, and every row
+re-grounds at least two distinct exact spans. The default gate records the 53 accepted-item
+decision floor and requires 60 drafted rows to leave review headroom.
+
 ### Yield-max empirical acceptance
 
 The 2026-07-12 local acceptance preparation compares coverage-target sampling with the flat

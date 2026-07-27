@@ -21,6 +21,7 @@ from llb.prep.ontology.constants import (
     MULTI_HOP_DIFFICULTY,
     MULTI_HOP_ID_PREFIX,
     MULTI_HOP_MIN_SPANS,
+    MAX_MULTI_HOP_NOVELTY_QUESTIONS,
     PROVENANCE_KIND,
     QUESTION_TYPE_MULTI_HOP,
 )
@@ -59,16 +60,46 @@ def chain_context(doc_texts: dict[str, str], seed: MultiHopSeed) -> str:
     return "\n---\n".join(windows)
 
 
-def multi_hop_prompt(seed: MultiHopSeed, context: str) -> str:
+def _novelty_block(avoid_questions: list[str]) -> str:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for question in avoid_questions:
+        normalized = " ".join(question.casefold().split())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(question.strip())
+    unique = unique[-MAX_MULTI_HOP_NOVELTY_QUESTIONS:]
+    if not unique:
+        return ""
+    rows = "\n".join(f"- {question}" for question in unique)
+    return (
+        "УНИКАЙ змісту та формулювання попередніх запитань нижче. Створи інший намір, "
+        "що природно випливає саме з поточного ланцюжка:\n"
+        f"{rows}\n"
+    )
+
+
+def multi_hop_prompt(
+    seed: MultiHopSeed, context: str, avoid_questions: list[str] | None = None
+) -> str:
     """One multi-hop UA question whose answer needs both facts of the chain."""
     return render_text(
         "prep.ontology.multi_hop",
-        {"chain_line": _chain_line(seed), "context": context},
+        {
+            "chain_line": _chain_line(seed),
+            "novelty_block": _novelty_block(avoid_questions or []),
+            "context": context,
+        },
     )
 
 
 def draft_multi_hop(
-    complete: LLMComplete, docs: list[DocRecord], seeds: list[MultiHopSeed]
+    complete: LLMComplete,
+    docs: list[DocRecord],
+    seeds: list[MultiHopSeed],
+    *,
+    avoid_questions: list[str] | None = None,
 ) -> list[dict[str, Any] | None]:
     """Draft one raw multi-hop QA dict per seed (None on failure), aligned index-for-index."""
     doc_texts = {doc.doc_id: doc.text for doc in docs}
@@ -76,7 +107,7 @@ def draft_multi_hop(
     for seed in seeds:
         context = chain_context(doc_texts, seed)
         try:
-            payload = parse_json_block(complete(multi_hop_prompt(seed, context)))
+            payload = parse_json_block(complete(multi_hop_prompt(seed, context, avoid_questions)))
         except json.JSONDecodeError:
             _LOG.warning("[ontology] unparseable multi-hop draft; skipping")
             drafts.append(None)

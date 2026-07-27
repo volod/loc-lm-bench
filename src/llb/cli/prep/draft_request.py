@@ -23,6 +23,7 @@ class DraftRequest:
     doc_limit: Optional[int]
     seed: int
     extractor: str
+    reuse_extraction_bundle: Optional[Path]
     spacy_model: str
     max_tokens: int
     extract_max_chars: Optional[int]
@@ -49,10 +50,12 @@ class DraftRequest:
     drop_nonretrievable_needles: bool
     coverage_target: Optional[int]
     multi_hop: bool
+    multi_hop_only: bool
     chains: bool
     multi_hop_max_paths: int
     multi_hop_bridge_fill: bool
     dedup_against: Optional[str]
+    carry_forward_multi_hop: bool
     graph_dir: Optional[Path]
     rejection_feedback: Optional[Path]
     require_passed_gates: bool

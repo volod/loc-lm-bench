@@ -169,6 +169,8 @@ def _provenance(
         provenance["seed_coverage"] = result.coverage_report
     if result.dedup_report is not None:
         provenance["dedup"] = result.dedup_report
+    if result.carry_forward_report is not None:
+        provenance["multi_hop_carry_forward"] = result.carry_forward_report
     if result.applied_feedback is not None:
         provenance["applied_feedback"] = result.applied_feedback
     return provenance

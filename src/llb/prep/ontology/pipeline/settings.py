@@ -48,15 +48,18 @@ class DraftSettings:
     extract_max_chars: int | None = None
     extract_chunk_overlap: int | None = None
     extract_concurrency: int | None = None
+    reuse_extraction_bundle: Path | str | None = None
     retrieval_index_dir: Path | str | None = None
     retrieval_k: int = 10
     drop_nonretrievable_needles: bool = False
     coverage_target: int | None = None
     multi_hop: bool = False
+    multi_hop_only: bool = False
     chains: bool = False
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS
     multi_hop_bridge_fill: bool = False
     dedup_against: list[Path | str] | None = None
+    carry_forward_multi_hop: bool = False
     graph_dir: Path | str | None = None
     rejection_feedback: Path | str | None = None
 
@@ -70,6 +73,9 @@ class DraftSettings:
         self.extract_max_chars = meta.get("extract_max_chars", self.extract_max_chars)
         self.extract_chunk_overlap = meta.get("extract_chunk_overlap", self.extract_chunk_overlap)
         self.extract_concurrency = meta.get("extract_concurrency", self.extract_concurrency)
+        self.reuse_extraction_bundle = (
+            meta.get("reuse_extraction_bundle") or self.reuse_extraction_bundle
+        )
         self.retrieval_index_dir = meta.get("retrieval_index_dir") or self.retrieval_index_dir
         self.retrieval_k = int(meta.get("retrieval_k", self.retrieval_k))
         self.drop_nonretrievable_needles = bool(
@@ -78,6 +84,7 @@ class DraftSettings:
         coverage = meta.get("coverage_target", self.coverage_target)
         self.coverage_target = int(coverage) if coverage is not None else None
         self.multi_hop = bool(meta.get("multi_hop", self.multi_hop))
+        self.multi_hop_only = bool(meta.get("multi_hop_only", self.multi_hop_only))
         self.chains = bool(meta.get("chains", self.chains))
         self.multi_hop_max_paths = int(meta.get("multi_hop_max_paths", self.multi_hop_max_paths))
         self.multi_hop_bridge_fill = bool(
@@ -85,6 +92,9 @@ class DraftSettings:
         )
         dedup = meta.get("dedup_against")
         self.dedup_against = list(dedup) if dedup is not None else self.dedup_against
+        self.carry_forward_multi_hop = bool(
+            meta.get("carry_forward_multi_hop", self.carry_forward_multi_hop)
+        )
         self.graph_dir = meta.get("graph_dir") or self.graph_dir
         self.rejection_feedback = meta.get("rejection_feedback") or self.rejection_feedback
 
@@ -95,6 +105,10 @@ class DraftSettings:
             raise ValueError("extract_concurrency must be >= 1 when set")
         if self.retrieval_k < 1:
             raise ValueError("retrieval_k must be >= 1")
+        if self.multi_hop_only and not self.multi_hop:
+            raise ValueError("multi_hop_only requires multi_hop")
+        if self.carry_forward_multi_hop and not self.dedup_against:
+            raise ValueError("carry_forward_multi_hop requires dedup_against")
 
     @property
     def resolved_extract_max_chars(self) -> int:
@@ -126,17 +140,20 @@ class DraftSettings:
             "extract_max_chars": self.resolved_extract_max_chars,
             "extract_chunk_overlap": self.resolved_extract_overlap,
             "extract_concurrency": self.resolved_extract_concurrency,
+            "reuse_extraction_bundle": _opt_str(self.reuse_extraction_bundle),
             "retrieval_index_dir": _opt_str(self.retrieval_index_dir),
             "retrieval_k": self.retrieval_k,
             "drop_nonretrievable_needles": self.drop_nonretrievable_needles,
             "coverage_target": self.coverage_target,
             "multi_hop": self.multi_hop,
+            "multi_hop_only": self.multi_hop_only,
             "chains": self.chains,
             "multi_hop_max_paths": self.multi_hop_max_paths,
             "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
             "dedup_against": [str(path) for path in self.dedup_against]
             if self.dedup_against
             else None,
+            "carry_forward_multi_hop": self.carry_forward_multi_hop,
             "graph_dir": _opt_str(self.graph_dir),
             "rejection_feedback": _opt_str(self.rejection_feedback),
         }
@@ -150,14 +167,17 @@ class DraftSettings:
             "extract_max_chars": self.resolved_extract_max_chars,
             "extract_chunk_overlap": self.resolved_extract_overlap,
             "extract_concurrency": self.resolved_extract_concurrency,
+            "reuse_extraction_bundle": _opt_str(self.reuse_extraction_bundle),
             "coverage_target": self.coverage_target,
             "multi_hop": self.multi_hop,
+            "multi_hop_only": self.multi_hop_only,
             "chains": self.chains,
             "multi_hop_max_paths": self.multi_hop_max_paths,
             "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
             "dedup_against": [str(path) for path in self.dedup_against]
             if self.dedup_against
             else None,
+            "carry_forward_multi_hop": self.carry_forward_multi_hop,
             "graph_dir": _opt_str(self.graph_dir),
             "rejection_feedback": _opt_str(self.rejection_feedback),
             "needle_retrieval_index_dir": _opt_str(self.retrieval_index_dir),
@@ -186,5 +206,6 @@ class PipelineResult:
     item_labels: dict[str, ItemLabels] = field(default_factory=dict)
     coverage_report: dict[str, object] | None = None
     dedup_report: dict[str, object] | None = None
+    carry_forward_report: dict[str, object] | None = None
     applied_feedback: dict[str, object] | None = None
     endpoint_logs: EndpointLogs = field(default_factory=EndpointLogs)

@@ -896,7 +896,7 @@
       "descriptor": "prep/ontology/multi_hop.prompt.json",
       "template": {
         "path": "prep/ontology/multi_hop.txt",
-        "sha256": "5c022a8807a5a333659b231c30d4cc17e0350275d72acc0c9140d33011575caa"
+        "sha256": "e18b5c2230ec4ce7018f4e9da084617c589b5cf6e9c795a32f6ae5b5234f9412"
       }
     },
     "prep.text_analysis_corpus.doc": {

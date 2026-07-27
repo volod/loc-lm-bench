@@ -15,7 +15,6 @@ from llb.goldset.schema import GoldItem
 from llb.prep.frontier_telemetry import LLMComplete
 from llb.prep.ontology.coverage import build_seeds, select_seeds
 from llb.prep.ontology.coverage_report import coverage_report
-from llb.prep.ontology.dedup import QuestionEmbedder
 from llb.prep.ontology.draft import draft_items
 from llb.prep.ontology.induce import ontology_constraints
 from llb.prep.ontology.models import (
@@ -59,6 +58,8 @@ def _multi_hop_stage(
     max_paths: int,
     seed: int,
     bridge_fill: bool = False,
+    excluded_span_pairs: set[tuple[tuple[str, int, int], tuple[str, int, int]]] | None = None,
+    avoid_questions: list[str] | None = None,
     graph: "KnowledgeGraph | None" = None,
 ) -> tuple[list[GoldItem], dict[str, ItemLabels]]:
     """Walk 2-hop graph paths and draft multi-span multi-hop chain items (yield-max).
@@ -79,8 +80,13 @@ def _multi_hop_stage(
     if graph is None:
         graph = _load_path_graph(graph_dir, extractions, docs, ontology)
     walk = walk_chain_paths if bridge_fill else walk_two_hop_paths
-    seeds = walk(graph, max_paths=max_paths, seed=seed)
-    raw = draft_multi_hop(complete, docs, seeds)
+    seeds = walk(
+        graph,
+        max_paths=max_paths,
+        seed=seed,
+        excluded_span_pairs=excluded_span_pairs,
+    )
+    raw = draft_multi_hop(complete, docs, seeds, avoid_questions=avoid_questions)
     return build_multi_hop_items(docs, seeds, raw)
 
 
@@ -100,29 +106,6 @@ def _chain_stage(
     graph = _load_path_graph(graph_dir, extractions, docs, ontology)
     seeds = walk_chain_paths(graph, max_paths=max_paths, seed=seed)
     return build_chain_items(docs, seeds)
-
-
-def _dedup_stage(
-    items: list[GoldItem],
-    labels: dict[str, ItemLabels],
-    *,
-    dedup_against: list[Path | str],
-    embedder: QuestionEmbedder | None,
-) -> tuple[list[GoldItem], dict[str, ItemLabels], dict[str, object]]:
-    """Drop near-duplicates of prior-bundle questions (pinned E5); prune their labels (yield-max)."""
-    from llb.prep.ontology.dedup import (
-        E5QuestionEmbedder,
-        NearDuplicateFilter,
-        load_prior_questions,
-    )
-
-    prior = load_prior_questions(dedup_against)
-    resolved = embedder if embedder is not None else E5QuestionEmbedder()
-    kept, report = NearDuplicateFilter(prior, resolved).filter(items)
-    kept_ids = {item.id for item in kept}
-    kept_labels = {item_id: label for item_id, label in labels.items() if item_id in kept_ids}
-    report["prior_bundles"] = [str(path) for path in dedup_against]
-    return kept, kept_labels, report
 
 
 def _feedback_adjusted_hint(
@@ -194,6 +177,11 @@ def _graph_stages(
 ) -> tuple[list[GoldItem], dict[str, ItemLabels], list[ChainItem]]:
     """Optional graph-walk stages: multi-hop items and ordered question chains."""
     if settings.multi_hop:
+        from llb.prep.ontology.dedup import load_prior_questions
+        from llb.prep.ontology.pipeline.expansion import prior_multihop_span_pairs
+
+        excluded_span_pairs = prior_multihop_span_pairs(settings.dedup_against or [])
+        avoid_questions = load_prior_questions(settings.dedup_against or [])
         mh_items, mh_labels = _multi_hop_stage(
             complete,
             docs,
@@ -203,6 +191,8 @@ def _graph_stages(
             max_paths=settings.multi_hop_max_paths,
             seed=settings.seed,
             bridge_fill=settings.multi_hop_bridge_fill,
+            excluded_span_pairs=excluded_span_pairs,
+            avoid_questions=avoid_questions,
         )
         items = items + mh_items
         item_labels = {**item_labels, **mh_labels}

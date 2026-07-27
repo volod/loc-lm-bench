@@ -1,6 +1,6 @@
 ## Goldset ingestion and ontology-assisted draft generation.
 
-.PHONY: ingest-uk-squad prepare-goldset-draft
+.PHONY: ingest-uk-squad prepare-goldset-draft widen-multihop-draft
 
 ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft (draft is robust backend prep)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -56,6 +56,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ -n "$(DRAFT_EXTRACT_MAX_CHARS)" ]; then args+=(--extract-max-chars "$(DRAFT_EXTRACT_MAX_CHARS)"); fi; \
 	if [ -n "$(DRAFT_EXTRACT_CHUNK_OVERLAP)" ]; then args+=(--extract-chunk-overlap "$(DRAFT_EXTRACT_CHUNK_OVERLAP)"); fi; \
 	if [ -n "$(DRAFT_CONCURRENCY)" ]; then args+=(--concurrency "$(DRAFT_CONCURRENCY)"); fi; \
+	if [ -n "$(DRAFT_REUSE_EXTRACTION_BUNDLE)" ]; then args+=(--reuse-extraction-bundle "$(DRAFT_REUSE_EXTRACTION_BUNDLE)"); fi; \
 	if [ -n "$(DRAFT_OUT_DIR)" ]; then args+=(--out-dir "$(DRAFT_OUT_DIR)"); fi; \
 	if [ -n "$(DRAFT_RESUME)" ]; then args+=(--resume "$(DRAFT_RESUME)"); fi; \
 	if [ -n "$(DRAFT_RETRIEVAL_INDEX_DIR)" ]; then args+=(--retrieval-index-dir "$(DRAFT_RETRIEVAL_INDEX_DIR)" --retrieval-k "$(DRAFT_RETRIEVAL_K)"); fi; \
@@ -63,12 +64,32 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ "$(DRAFT_REQUIRE_PASSED_GATES)" = "1" ]; then args+=(--require-passed-gates); fi; \
 	if [ -n "$(DRAFT_COVERAGE_TARGET)" ]; then args+=(--coverage-target "$(DRAFT_COVERAGE_TARGET)"); fi; \
 	if [ "$(DRAFT_MULTI_HOP)" = "1" ]; then args+=(--multi-hop); fi; \
+	if [ "$(DRAFT_MULTI_HOP_ONLY)" = "1" ]; then args+=(--multi-hop-only); fi; \
 	if [ "$(DRAFT_CHAINS)" = "1" ]; then args+=(--chains); fi; \
 	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
 	if [ "$(DRAFT_MULTI_HOP_BRIDGE_FILL)" = "1" ]; then args+=(--multi-hop-bridge-fill); fi; \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
+	if [ "$(DRAFT_CARRY_FORWARD_MULTI_HOP)" = "1" ]; then args+=(--carry-forward-multi-hop); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
 	if [ -n "$(DRAFT_REJECTION_FEEDBACK)" ]; then args+=(--rejection-feedback "$(DRAFT_REJECTION_FEEDBACK)"); fi; \
 	if [ "$(DRAFT_NO_THINK)" = "1" ]; then args+=(--no-think); fi; \
 	if [ -n "$(DRAFT_NUM_CTX)" ]; then args+=(--num-ctx "$(DRAFT_NUM_CTX)"); fi; \
 	$(PY) -m llb.main prepare-goldset-draft "$${args[@]}"
+
+widen-multihop-draft: ## Reuse a prior extraction and produce one deduplicated multi-hop review ledger
+	@test -n "$(MULTIHOP_DRAFT_PRIOR_BUNDLE)" || { echo "ERROR: set MULTIHOP_DRAFT_PRIOR_BUNDLE=<bundle>"; exit 2; }
+	@test -f "$(MULTIHOP_DRAFT_PRIOR_BUNDLE)/goldset.jsonl" || { echo "ERROR: prior bundle has no goldset.jsonl"; exit 2; }
+	@test -n "$(MULTIHOP_DRAFT_OUT)" || { echo "ERROR: set MULTIHOP_DRAFT_OUT=<new-bundle>"; exit 2; }
+	$(MAKE) --no-print-directory prepare-goldset-draft \
+		DRAFT_CORPUS="$(MULTIHOP_DRAFT_PRIOR_BUNDLE)/corpus" \
+		DRAFT_MODEL="$(MULTIHOP_DRAFT_MODEL)" \
+		DRAFT_OUT_DIR="$(MULTIHOP_DRAFT_OUT)" \
+		DRAFT_REUSE_EXTRACTION_BUNDLE="$(MULTIHOP_DRAFT_PRIOR_BUNDLE)" \
+		DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_ONLY=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 \
+		DRAFT_MULTI_HOP_MAX_PATHS="$(MULTIHOP_DRAFT_MAX_PATHS)" \
+		DRAFT_DEDUP_AGAINST="$(MULTIHOP_DRAFT_DEDUP_AGAINST)" \
+		DRAFT_CARRY_FORWARD_MULTI_HOP=1 DRAFT_VERIFY_N=100000 \
+		DRAFT_REQUIRE_PASSED_GATES=1
+	$(PY) -m llb.main audit-multihop-draft --bundle "$(MULTIHOP_DRAFT_OUT)" \
+		--decision-floor "$(MULTIHOP_DRAFT_DECISION_FLOOR)" \
+		--minimum-items "$(MULTIHOP_DRAFT_MIN_ITEMS)"

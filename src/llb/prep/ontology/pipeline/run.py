@@ -11,7 +11,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
 
-from llb.goldset.schema import Split
+from llb.goldset.schema import GoldItem, Split
 from llb.goldset.splits import assign_splits
 from llb.prep.frontier_telemetry import DraftBudgetExceeded
 from llb.prep.ontology.constants import DEFAULT_MAX_ITEMS, DEFAULT_MULTI_HOP_MAX_PATHS
@@ -26,19 +26,20 @@ from llb.prep.ontology.extract import (
 from llb.prep.ontology.induce import induce_ontology
 from llb.prep.ontology.inventory import inventory_corpus
 from llb.prep.ontology.journal import ExtractionJournal
-from llb.prep.ontology.models import DraftSeed
+from llb.prep.ontology.models import DraftSeed, ItemLabels
 from llb.prep.ontology.pipeline.bundle import (
     _load_retrieval_store,
     _write_bundle,
     write_budget_abort,
 )
+from llb.prep.ontology.pipeline.deduplication import deduplicate_drafts
 from llb.prep.ontology.pipeline.journaling import (
     _prepare_bundle_dir,
     default_out_dir,
     load_journal_meta,
 )
 from llb.prep.ontology.pipeline.settings import DraftSettings, PipelineResult
-from llb.prep.ontology.pipeline.stages import _dedup_stage, _draft_stage, _graph_stages
+from llb.prep.ontology.pipeline.stages import _draft_stage, _graph_stages
 
 
 def draft_goldset(
@@ -54,15 +55,18 @@ def draft_goldset(
     extract_max_chars: int | None = None,
     extract_chunk_overlap: int | None = None,
     extract_concurrency: int | None = None,
+    reuse_extraction_bundle: Path | str | None = None,
     retrieval_index_dir: Path | str | None = None,
     retrieval_k: int = 10,
     drop_nonretrievable_needles: bool = False,
     coverage_target: int | None = None,
     multi_hop: bool = False,
+    multi_hop_only: bool = False,
     chains: bool = False,
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
     multi_hop_bridge_fill: bool = False,
     dedup_against: list[Path | str] | None = None,
+    carry_forward_multi_hop: bool = False,
     graph_dir: Path | str | None = None,
     dedup_embedder: QuestionEmbedder | None = None,
     rejection_feedback: Path | str | None = None,
@@ -93,15 +97,18 @@ def draft_goldset(
         extract_max_chars=extract_max_chars,
         extract_chunk_overlap=extract_chunk_overlap,
         extract_concurrency=extract_concurrency,
+        reuse_extraction_bundle=reuse_extraction_bundle,
         retrieval_index_dir=retrieval_index_dir,
         retrieval_k=retrieval_k,
         drop_nonretrievable_needles=drop_nonretrievable_needles,
         coverage_target=coverage_target,
         multi_hop=multi_hop,
+        multi_hop_only=multi_hop_only,
         chains=chains,
         multi_hop_max_paths=multi_hop_max_paths,
         multi_hop_bridge_fill=multi_hop_bridge_fill,
         dedup_against=dedup_against,
+        carry_forward_multi_hop=carry_forward_multi_hop,
         graph_dir=graph_dir,
         rejection_feedback=rejection_feedback,
     )
@@ -164,31 +171,55 @@ def _execute_pipeline(
     started: float,
 ) -> PipelineResult:
     """Run the model stages after resumability and budget artifacts are ready."""
-    adapter = extraction_adapter or LLMExtractionAdapter(
-        completers.extraction,
-        max_chars=settings.resolved_extract_max_chars,
-        chunk_overlap=settings.resolved_extract_overlap,
-        concurrency=settings.resolved_extract_concurrency,
-        journal=journal,
-    )
     docs = inventory_corpus(Path(settings.corpus_root))
     if settings.doc_limit is not None:
         docs = docs[: settings.doc_limit]
-    extractions = extract_corpus(docs, adapter)
+    if settings.reuse_extraction_bundle is not None:
+        from llb.prep.ontology.pipeline.expansion import reused_extractions
+
+        extractions = reused_extractions(settings.reuse_extraction_bundle, docs)
+    else:
+        adapter = extraction_adapter or LLMExtractionAdapter(
+            completers.extraction,
+            max_chars=settings.resolved_extract_max_chars,
+            chunk_overlap=settings.resolved_extract_overlap,
+            concurrency=settings.resolved_extract_concurrency,
+            journal=journal,
+        )
+        extractions = extract_corpus(docs, adapter)
     ontology = induce_ontology(extractions)
-    items, item_labels, seed_info, applied_feedback = _draft_stage(
-        completers.drafting, docs, extractions, ontology, settings
-    )
+    if settings.multi_hop_only:
+        items: list[GoldItem] = []
+        item_labels: dict[str, ItemLabels] = {}
+        seed_info: dict[str, object] = {"seeds": [], "coverage": None, "draft_parsed": 0}
+        applied_feedback = None
+    else:
+        items, item_labels, seed_info, applied_feedback = _draft_stage(
+            completers.drafting, docs, extractions, ontology, settings
+        )
     items, item_labels, chain_items = _graph_stages(
         completers.drafting, docs, extractions, ontology, settings, items, item_labels
     )
     dedup_report: dict[str, object] | None = None
     if settings.dedup_against:
-        items, item_labels, dedup_report = _dedup_stage(
+        items, item_labels, dedup_report = deduplicate_drafts(
             items,
             item_labels,
             dedup_against=settings.dedup_against,
             embedder=dedup_embedder,
+        )
+        if settings.multi_hop:
+            from llb.prep.ontology.pipeline.expansion import prior_multihop_span_pairs
+
+            dedup_report["excluded_prior_span_pairs"] = len(
+                prior_multihop_span_pairs(settings.dedup_against)
+            )
+    carry_forward_report: dict[str, object] | None = None
+    if settings.carry_forward_multi_hop:
+        from llb.prep.ontology.pipeline.expansion import carry_forward_multi_hop
+
+        items, item_labels, carry_forward_report = carry_forward_multi_hop(
+            items, item_labels, settings.dedup_against or [], docs
         )
     splits = assign_splits([item.id for item in items], seed=settings.seed)
     for item in items:
@@ -208,6 +239,7 @@ def _execute_pipeline(
         item_labels=item_labels,
         coverage_report=cast("dict[str, object] | None", seed_info["coverage"]),
         dedup_report=dedup_report,
+        carry_forward_report=carry_forward_report,
         applied_feedback=applied_feedback,
         endpoint_logs=endpoint_logs,
     )

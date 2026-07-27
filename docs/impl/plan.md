@@ -43,41 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### widen-the-multihop-drafted-slice-to-a-decidable-size
+### relation-stratified-multihop-expansion-if-review-attrits (optional)
 
-Every open multi-hop question in the repo -- the fusion sweeps' span-identity row and all three
-answer-quality coverage rows -- rides on ONE drafted slice of 35 items, and that slice is too small
-to decide any of them: the deciding rows differ on 4-5 items, which prices a floor of 42-53
-multi-hop items before 95% is reachable at all
-([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human
-acceptance can only SHRINK a drafted ledger, so `multihop-ledger-human-acceptance` cannot settle
-these rows at the current size whatever the reviewer decides -- the drafting has to be widened
-first, with headroom for review attrition (a 60-70 item draft to land >= 53 accepted). Re-draft the
-multi-hop slice on the same fusion corpus with the multi-hop yield knobs documented in
-[data prep](current/data-prep.md), de-duplicating against the existing bundle so the accepted items
-are added to rather than redrawn, and hand the wider worksheet to the acceptance task.
+The current 61-row worksheet has only eight rows of rejection headroom above its 53-item decision
+floor, and 42 rows draw both spans from one goods manual
+([the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)). If review accepts
+fewer than 53 rows, widen from relation/document strata rather than the graph walk's stable order:
+allocate the path budget across relation pairs, same-document versus cross-document pairs, and
+source documents before model drafting, then reuse the current question/answer duplicate gate.
 
 - Agent status: RUN NEEDED
-- Dependencies: none, and it must land BEFORE `multihop-ledger-human-acceptance`, whose re-runs
-  would otherwise reproduce the same unreadable rows. Reuse the drafting lane with
-  `DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 DRAFT_DEDUP_AGAINST=<existing bundle>` and the
-  existing stratified worksheet builder.
-- User-visible outcome: the reviewer is handed a multi-hop worksheet whose accepted size can
-  actually decide the graph-weight and span-identity questions, instead of one that re-states them.
-- Scope boundary: in scope -- the wider draft, its dedup against the existing bundle, the
-  span-exactness and Ukrainian gates the drafting already applies, and a recorded statement of the
-  drafted size against the 53-item floor. Out of scope -- accepting the items (that is the human
-  task), re-running the sweep or the answer-quality lane on the drafted set, and lowering the floor
-  by changing any confidence convention.
-- Data and artifact paths: a new drafted bundle beside the existing one under
-  `$DATA_DIR/graph-vector-fusion-multihop/`; no new root.
-- Execution path: the drafting run on the CUDA host; CI covers the dedup and the multi-span
-  contract over fixtures, as it already does for the drafting lane.
-- Acceptance gates: `make ci` green; the drafted multi-hop slice reaches at least the item count
-  the floor names with review headroom; every drafted item is span-exact and re-grounds >= 2
-  distinct spans; no item duplicates the existing bundle.
-- Documentation target: the drafting section of [data prep](current/data-prep.md) and the
-  graph-vector fusion evidence section of [GraphRAG](current/graphrag-backend.md).
+- Dependencies: trigger only if `multihop-ledger-human-acceptance` retains fewer than 53 rows or its
+  rejection ledger shows concentrated failures in the dominant source/relation strata.
+- User-visible outcome: a replacement review worksheet with enough diverse rows to restore the
+  predeclared decision floor instead of another larger but topic-concentrated pass.
+- Scope boundary: in scope -- deterministic path strata, an exhaustion report, incremental
+  extraction reuse, and another audited worksheet. Out of scope -- changing the confidence
+  convention, accepting rows automatically, or changing graph retrieval.
+- Data and artifact paths: another sibling bundle under
+  `$DATA_DIR/graph-vector-fusion-multihop/`.
+- Execution path: extend `make widen-multihop-draft` with path-stratum targets, then run it on the
+  CUDA host against the latest reviewed ledger.
+- Acceptance gates: `make ci` green; the new path report covers every requested stratum or marks it
+  exhausted; the combined worksheet restores at least eight rows of headroom above 53; exact-span,
+  Ukrainian, and duplicate audits pass.
+- Documentation target: the widening section of [data prep](current/data-prep.md) and the handoff
+  evidence in [GraphRAG](current/graphrag-backend.md).
 
 ### headline-objective-verbosity-decomposition
 
@@ -1111,12 +1102,9 @@ is span-exact and Ukrainian-gated by construction, but only a reviewer can say w
 shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `widen-the-multihop-drafted-slice-to-a-decidable-size` -- at the current 35 drafted
-  items the deciding rows differ on 4-5, which cannot reach 95% whatever the reviewer accepts, and
-  acceptance only shrinks a ledger
-  ([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). The
-  drafting, sweep, and store lanes are current behavior. Human step that gates
-  completion: a reviewer decides `accept`/`reject` for every row of the multi-hop worksheet --
+- Dependencies: the [widened handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)
+  supplies a 61-row worksheet against a 53-item decision floor. Human step that gates completion:
+  a reviewer decides `accept`/`reject` for every row of that worksheet --
   specifically whether the question is answerable ONLY with both cited spans -- and signs off on
   the resulting accepted ledger.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
@@ -1129,20 +1117,23 @@ shared-bridge question genuinely needs both facts.
   ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). Out of scope -- graph schema
   changes and fusion mechanics (the candidate-depth and span-identity verdicts are current
   behavior in [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)).
-- Data and artifact paths: the existing drafted bundle and worksheet plus a new
+- Data and artifact paths: the widened drafted bundle and worksheet named in
+  [the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff), plus a new
   `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
   `answer-quality/` comparison.
-- Execution path: the stratified worksheet is already drawn beside the bundle, so start at
-  `make verify-review VERIFY_WS=<worksheet>`, then `make verify-accept VERIFY_WS=<worksheet>
-  BUNDLE=<multi-hop-bundle>`, then `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
+- Execution path: start at `make verify-review VERIFY_WS=<widened-multi-hop-worksheet>`, then
+  `make verify-accept VERIFY_WS=<widened-multi-hop-worksheet>
+  BUNDLE=<widened-multi-hop-bundle>`, then
+  `make compare-graph-fusion GOLDSET=<accepted>/goldset.jsonl
   GRAPH_FUSION_CANDIDATES=k,50 GRAPH_FUSION_SPAN_IDENTITY=exact,overlap`,
   then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
   sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
   the drafted-grounding escape.
-- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps a non-empty
-  multi-hop slice; the re-run sweep reports the same rows with paired intervals and the human
+- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps at least 53
+  multi-hop rows; the re-run sweep reports the same rows with paired intervals and the human
   records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
-  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
+  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`. If fewer
+  than 53 survive, trigger `relation-stratified-multihop-expansion-if-review-attrits`.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 

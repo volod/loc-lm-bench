@@ -12,7 +12,11 @@ from llb.prep.ontology.graph_paths import walk_chain_paths, walk_two_hop_paths
 from llb.prep.ontology.models import (
     DocRecord,
 )
-from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
+from llb.prep.ontology.multi_hop import (
+    build_multi_hop_items,
+    draft_multi_hop,
+    multi_hop_prompt,
+)
 from ontology_yield_helpers import CHAIN_DOC, _chain_graph
 
 
@@ -25,6 +29,29 @@ def test_walk_two_hop_paths_builds_a_distinct_span_chain():
     # the two hops cite DISTINCT spans -> a genuine multi-span question
     keys = {(s.evidence.char_start, s.evidence.char_end) for s in seed.steps}
     assert len(keys) == 2
+
+
+def test_walk_two_hop_paths_excludes_prior_evidence_before_applying_cap():
+    first = walk_two_hop_paths(_chain_graph(), max_paths=1)
+    pair = tuple(
+        sorted(
+            (
+                step.evidence.doc_id,
+                step.evidence.char_start,
+                step.evidence.char_end,
+            )
+            for step in first[0].steps
+        )
+    )
+
+    assert (
+        walk_two_hop_paths(
+            _chain_graph(),
+            max_paths=1,
+            excluded_span_pairs={pair},
+        )
+        == []
+    )
 
 
 def test_walk_two_hop_paths_skips_when_no_bridge_node():
@@ -44,6 +71,15 @@ def test_walk_two_hop_paths_skips_when_no_bridge_node():
         ],
     )
     assert walk_two_hop_paths(graph, max_paths=10) == []
+
+
+def test_multi_hop_prompt_deduplicates_prior_question_avoidance():
+    seed = walk_two_hop_paths(_chain_graph(), max_paths=1)[0]
+    prior = "Яке майно не відображається у списку?"
+    prompt = multi_hop_prompt(seed, CHAIN_DOC, [prior, f"  {prior}  "])
+
+    assert "УНИКАЙ змісту" in prompt
+    assert prompt.count(prior) == 1
 
 
 def test_walk_chain_paths_fills_from_shared_topic_facts():
@@ -165,7 +201,7 @@ def test_multi_hop_stage_bridge_fill_recovers_a_sparse_graph():
     def complete(_prompt: str) -> str:
         return json.dumps(
             {
-                "question": "Яка організація поєднує обидві згадані компанії?",
+                "question": "Яка організація поєднує Beta з іншою згаданою компанією?",
                 "reference_answer": "Їх поєднує Alpha.",
             }
         )

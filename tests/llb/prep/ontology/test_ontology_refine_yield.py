@@ -29,12 +29,78 @@ def test_near_duplicate_filter_drops_paraphrase_of_prior_question():
     assert [item.id for item in kept] == ["keep"]
     assert report["dropped"] == 1 and report["dropped_ids"] == ["dup"]
     assert report["prior_questions"] == 1
+    assert report["dropped_detail"] == [
+        {
+            "id": "dup",
+            "max_similarity": 1.0,
+            "nearest_prior_question": "Яка столиця України?",
+            "candidate_question": "Яка столиця України?",
+        }
+    ]
 
 
 def test_near_duplicate_filter_no_prior_keeps_all():
     items = [_item("a", "q1"), _item("b", "q2")]
     kept, report = NearDuplicateFilter([], FakeEmbedder()).filter(items)
     assert kept == items and report["dropped"] == 0
+
+
+def test_near_duplicate_filter_does_not_embed_an_empty_partition():
+    class CountingEmbedder:
+        calls = 0
+
+        def embed(self, texts):
+            self.calls += 1
+            return [[1.0] for _text in texts]
+
+    embedder = CountingEmbedder()
+    kept, report = NearDuplicateFilter(["prior"], embedder).filter([])
+
+    assert kept == []
+    assert report["checked"] == 0
+    assert embedder.calls == 0
+
+
+def test_answer_aware_filter_keeps_same_question_with_a_different_answer():
+    class SimilarQuestionEmbedder:
+        def embed(self, texts):
+            return [
+                [1.0, 0.0]
+                if "майно передали" in text or "майно саме передали" in text
+                else [0.0, 1.0 if "Перше" in text else -1.0]
+                for text in texts
+            ]
+
+    items = [
+        _item("same", "Яке майно саме передали?").model_copy(
+            update={"reference_answer": "Інше майно"}
+        )
+    ]
+    kept, report = NearDuplicateFilter(
+        ["Яке майно передали?"],
+        SimilarQuestionEmbedder(),
+        threshold=0.9,
+        prior_answers=["Перше майно"],
+    ).filter(items)
+
+    assert kept == items
+    assert report["dropped"] == 0
+
+
+def test_answer_aware_filter_always_drops_an_exact_question():
+    items = [
+        _item("same", "Яке майно передали?").model_copy(update={"reference_answer": "Інше майно"})
+    ]
+    kept, report = NearDuplicateFilter(
+        ["Яке майно передали?"],
+        FakeEmbedder(),
+        threshold=0.9,
+        prior_answers=["Перше майно"],
+        answer_threshold=0.95,
+    ).filter(items)
+
+    assert kept == []
+    assert report["dropped"] == 1
 
 
 def test_load_prior_questions_reads_prior_bundle_goldsets(tmp_path):
