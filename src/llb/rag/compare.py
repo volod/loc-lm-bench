@@ -19,8 +19,8 @@ from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanReco
 from llb.rag.retrieval import evaluate_retrieval
 
 if TYPE_CHECKING:  # `noise_floor` imports this module, so the type is a forward reference
-    from llb.rag.duplicates import DuplicateStats
-    from llb.rag.noise_floor import NoiseFloorReport
+    from llb.rag.duplicate_models import DuplicateStats
+    from llb.rag.noise_floor_models import NoiseFloorReport
 
 # (question, gold source spans) -- the per-item input shared across every compared backend.
 CompareItem = tuple[str, list[SourceSpanRecord]]

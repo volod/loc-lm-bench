@@ -16,14 +16,15 @@ from llb.eval.answer_quality.models import (
     AnswerQualityReport,
 )
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_evidence.models import ROUTED_ROW_PREFIX
 from llb.rag.fusion_evidence.evidence_gate import (
     evidence_gate_summary,
 )
 from llb.rag.fusion_evidence.stability import (
     boundary_table,
 )
-from llb.rag.fusion_evidence.stats import format_interval, gated_readings
+from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.paired import gated_readings
+from llb.eval.answer_quality.report_routing import routing_outcomes
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -32,7 +33,6 @@ _HEADERS = {
     METRIC_ALL_SPANS: "all-spans@k",
     METRIC_SPAN_COVERAGE: "span coverage",
 }
-_FACTOID_SLICE = "factoid"
 
 
 def _headline_metrics(report: AnswerQualityReport) -> list[str]:
@@ -154,48 +154,6 @@ def _lane_decisions(report: AnswerQualityReport) -> list[str]:
     return lines
 
 
-def _routing_outcomes(report: AnswerQualityReport) -> list[str]:
-    """Plain-language safety reading for routed lanes: focus gain plus factoid passthrough."""
-    routed = {
-        label: lane
-        for label, lane in report["lanes"].items()
-        if label.startswith(ROUTED_ROW_PREFIX)
-    }
-    if not routed:
-        return []
-    coverage = report["verdict"]["coverage_metric"]
-    lines = ["### Routing outcome", ""]
-    for label in sorted(routed):
-        lane = routed[label]
-        focus = lane["slices"].get(report["focus_slice"])
-        factoid = lane["slices"].get(_FACTOID_SLICE)
-        if focus is None or factoid is None:
-            lines.append(f"- `{label}`: the focus or factoid slice is absent; no routing claim.")
-            continue
-        focus_delta = focus["paired_vs_baseline"][coverage]["delta"]
-        factoid_pair = factoid["paired_vs_baseline"][METRIC_OBJECTIVE]
-        factoid_delta = factoid_pair["delta"]
-        exact_factoid = (
-            factoid_delta["mean"] == 0.0
-            and factoid_delta["lo"] == 0.0
-            and factoid_delta["hi"] == 0.0
-        )
-        conclusion = (
-            "keeps the measured focus-slice coverage gain and makes factoid answers an exact "
-            "baseline passthrough"
-            if focus_delta["mean"] > 0.0 and exact_factoid
-            else "does not establish both a focus-slice coverage gain and exact factoid passthrough"
-        )
-        lines.append(
-            f"- `{label}`: {coverage} {format_interval(focus_delta)} on "
-            f"{report['focus_slice']}; factoid objective {format_interval(factoid_delta)} "
-            f"({factoid_pair['wins']}/{factoid_pair['losses']}/{factoid_pair['ties']} w/l/t); "
-            f"{conclusion}."
-        )
-    lines.append("")
-    return lines
-
-
 def _lane_list(report: AnswerQualityReport) -> list[str]:
     """One entry per lane, naming the run bundle(s) its per-case scores came from."""
     lines = []
@@ -232,7 +190,7 @@ def format_report(
     lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _lane_decisions(report)
-    lines += _routing_outcomes(report)
+    lines += routing_outcomes(report)
     lines += _metric_table(
         report,
         report["focus_slice"],

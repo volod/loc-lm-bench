@@ -17,9 +17,11 @@ from typing_extensions import TypedDict
 
 from llb.rag.fusion_evidence.stats import (
     Interval,
-    PairedComparison,
     bootstrap_index_sets,
     bootstrap_interval,
+)
+from llb.rag.fusion_evidence.paired import (
+    PairedComparison,
     paired_comparison,
 )
 

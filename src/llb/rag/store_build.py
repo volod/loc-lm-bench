@@ -7,11 +7,11 @@ from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.chunking.dispatch import chunk_spans
 from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import (
-    DuplicateStats,
     collapse_duplicate_chunks,
     duplicate_occurrences,
     duplicate_stats,
 )
+from llb.rag.duplicate_models import DuplicateStats
 
 CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
 

@@ -6,14 +6,9 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.cli.helpers import load_config, resolve_registered_adapter
-
-
-def _parse_query_prep(steps: Optional[str]) -> Optional[list[str]]:
-    """Parse a comma-separated --query-prep list into ordered steps (None leaves the config)."""
-    if steps is None:
-        return None
-    return [step.strip() for step in steps.split(",") if step.strip()]
+from llb.cli.eval.run_config import config_overrides
+from llb.cli.eval.run_execution import execute_eval
+from llb.cli.helpers import load_config
 
 
 @app.command("run-eval")
@@ -213,58 +208,12 @@ def run_eval_cmd(
     ),
 ) -> None:
     """Run the skeleton on one model and print a ranked row + write the manifest."""
-    from llb.executor.runner import run_eval
-    from llb.prompt_system.selection import (
-        prompt_system_id_from_package_path,
-        resolve_prompt_package,
-    )
-
-    cfg = load_config(
-        config,
-        model=model,
-        backend=backend,
-        goldset_path=goldset,
-        max_model_len=max_model_len,
-        gpu_memory_utilization=gpu_memory_utilization,
-        n_gpu_layers=gpu_layers,
-        judge_model=judge_model,
-        judge_base_url=judge_base_url,
-        scorer_policy=scorer_policy,
-        scorer_egress_consent=scorer_egress_consent or None,
-        frontier_max_usd=frontier_max_usd,
-        frontier_max_calls=frontier_max_calls,
-        retrieval_backend=retrieval_backend,
-        retrieval_strategy=retrieval_strategy,
-        retrieval_mode=retrieval_mode,
-        acl_label=acl,
-        fusion_weight=fusion_weight,
-        fusion_candidates=fusion_candidates,
-        graph_weight=graph_weight,
-        graph_fusion_candidates=graph_fusion_candidates,
-        graph_fusion_span_identity=graph_fusion_span_identity,
-        graph_fusion_span_merge_ratio=graph_fusion_span_merge_ratio,
-        graph_fusion_router=graph_fusion_router,
-        reranker=reranker,
-        rerank_candidates=rerank_candidates,
-        context_order=context_order,
-        context_strategy=context_strategy,
-        query_prep=_parse_query_prep(query_prep),
-        query_glossary_path=query_glossary,
-        query_prep_typo_guard=query_prep_typo_guard or None,
-        score_semantic=score_semantic,
-        cited_answers=cited_answers,
-        score_groundedness=score_groundedness,
-        insufficient_context_probes=insufficient_context_probes,
-        measure_telemetry=telemetry,
-    )
-    if adapter is not None:
-        cfg = cfg.with_overrides(adapter_path=resolve_registered_adapter(cfg.data_dir, adapter))
-    selected_prompt = None
-    prompt_id = prompt_system or prompt_system_id_from_package_path(prompt_package)
-    if prompt_id is not None:
-        selected_prompt = resolve_prompt_package(cfg.data_dir, prompt_id, prompt_package)
-    run_eval(
+    cfg = load_config(config, **config_overrides(locals()))
+    execute_eval(
         cfg,
+        adapter=adapter,
+        prompt_system=prompt_system,
+        prompt_package=prompt_package,
         split=split,
         limit=limit,
         judge_rho=judge_rho,
@@ -274,8 +223,4 @@ def run_eval_cmd(
         resume=resume,
         max_case_retries=max_case_retries,
         retry_backoff_s=retry_backoff_s,
-        prompt_package=selected_prompt.package if selected_prompt is not None else None,
-        prompt_system_provenance=(
-            selected_prompt.provenance if selected_prompt is not None else None
-        ),
     )

@@ -24,10 +24,10 @@ from llb.prep.pdf.model import PdfTextExtractor
 from llb.prep.pdf.render import default_markdown_out_dir
 from llb.prep.corpus_governance import (
     DEFAULT_SOURCE_SYSTEM,
-    manifest_items_fingerprint,
     preserve_ingestion_time,
     utc_ingestion_time,
 )
+from llb.prep.corpus_fingerprints import manifest_items_fingerprint
 from llb.prep.corpus_ingest_text import (
     CORPUS_MANIFEST,
     CorpusIngestResult,

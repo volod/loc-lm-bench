@@ -20,7 +20,9 @@ from llb.rag.fusion_evidence.evidence_gate import (
 from llb.rag.fusion_evidence.stability import (
     boundary_table,
 )
-from llb.rag.fusion_evidence.stats import format_interval, gated_readings
+from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.report_floor import floor_section
 
 _HEADLINE_METRICS = (METRIC_RECALL, METRIC_ALL_SPANS, METRIC_COVERAGE, METRIC_MRR)
 _HEADERS = {
@@ -237,30 +239,6 @@ def format_report(report: FusionEvidenceReport, *, title: str = "Graph-vector fu
         lines += _metric_table(report, name, f"Slice: {name}", "Context slice")
     lines += _agreement_table(report)
     lines += _routing_table(report)
-    lines += _floor_section(report)
+    lines += floor_section(report)
     lines += _item_table(report)
     return "\n".join(lines)
-
-
-def _floor_section(report: FusionEvidenceReport) -> list[str]:
-    """The measurement floor per swept row, when it was measured.
-
-    A sweep publishes a dozen rows that differ in the third decimal; the floor is what separates
-    "this weight retrieves more" from "this weight breaks ties differently". The focus slice gets
-    its own block, because the verdict is read there and a floor over every item does not bound
-    the band of a slice a third its size.
-    """
-    floor = report.get("noise_floor")
-    if floor is None:
-        return []
-    from llb.rag.noise_floor_report import render_noise_floor_markdown
-
-    lines = render_noise_floor_markdown(floor, scored="every item")
-    focus = report.get("noise_floor_focus")
-    if focus is not None:
-        lines += render_noise_floor_markdown(
-            focus,
-            title=f"Measurement floor: {report['focus_slice']}",
-            scored=f"{report['focus_slice']} items",
-        )
-    return lines

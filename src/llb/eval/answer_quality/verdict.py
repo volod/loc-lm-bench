@@ -31,6 +31,8 @@ from llb.rag.fusion_evidence.stability import (
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     Interval,
+)
+from llb.rag.fusion_evidence.paired import (
     PairedComparison,
     evidence_gate_clause,
     separates,

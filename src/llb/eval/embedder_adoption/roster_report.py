@@ -10,7 +10,7 @@ a row sitting on the cut cannot be read as settled evidence (`llb.eval.embedder_
 
 from collections.abc import Mapping
 
-from llb.eval.embedder_adoption.roster import (
+from llb.eval.embedder_adoption.roster_models import (
     NUMERIC_PROPERTIES,
     PROPERTIES,
     PROPERTY_FAMILY,

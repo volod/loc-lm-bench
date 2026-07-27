@@ -21,7 +21,7 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 )
 
 if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra retrieval pass
-    from llb.rag.noise_floor import NoiseFloorReport
+    from llb.rag.noise_floor_models import NoiseFloorReport
 
 # (question, gold source spans) -- the per-item input shared across every candidate.
 BakeoffItem = tuple[str, list[SourceSpanRecord]]

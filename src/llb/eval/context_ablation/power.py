@@ -23,7 +23,10 @@ from llb.rag.fusion_evidence.evidence_gate import (
     reaches_reporting_level,
     resolving_item_count,
 )
-from llb.rag.fusion_evidence.stats import compared_pairs, discordant_pairs
+from llb.rag.fusion_evidence.paired import (
+    compared_pairs,
+    discordant_pairs,
+)
 
 
 def _reference_deltas(payload: dict[str, Any]) -> list[float]:

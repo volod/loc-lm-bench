@@ -1,7 +1,9 @@
 # RAG evaluation, prompt-system, benchmark, and pipeline targets.
 ##@ Evaluation and Pipelines
 
-include $(PROJECT_ROOT)/make/eval/rag.mk
+include $(PROJECT_ROOT)/make/eval/rag_store.mk
+include $(PROJECT_ROOT)/make/eval/rag_comparison.mk
+include $(PROJECT_ROOT)/make/eval/rag_run.mk
 include $(PROJECT_ROOT)/make/eval/finetune.mk
 include $(PROJECT_ROOT)/make/eval/workflows.mk
 include $(PROJECT_ROOT)/make/eval/prompt-system.mk

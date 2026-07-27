@@ -1446,8 +1446,8 @@ be the same set ([data prep](current/data-prep.md#known-limitation-there-is-no-i
 and the cost of a wrong axiom is asymmetric and silent: at the ledger it deletes a true fact from
 the report's attention, and at the answer gate it converts correct answers into `ontology_violation`.
 The corpus cannot review itself here, which is why this is the one piece of the validation
-architecture that sits in this section. The existing type-vocabulary sign-off is the precedent for
-the form ([graph ontology schema](../design/graph-ontology-schema.md), signed 2026-06-26).
+architecture that sits in this section. The existing signed type-vocabulary review is the
+precedent for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
 
 - Agent status: HUMAN-GATED
 - Dependencies: `ontology-axiom-layer` supplies the candidate axioms, their Turtle rendering, and

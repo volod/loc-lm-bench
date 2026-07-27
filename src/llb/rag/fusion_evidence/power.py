@@ -17,7 +17,7 @@ from statistics import NormalDist
 from typing import Any
 
 from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
-from llb.rag.fusion_evidence.stats import (
+from llb.rag.fusion_evidence.paired import (
     PairedComparison,
     compared_pairs,
     discordant_deltas,

@@ -25,7 +25,6 @@ from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
 from llb.core.contracts.hardware import BackendMetadata
 from llb.core.contracts.runs import EvalResult
-from llb.eval import graph as eval_graph
 from llb.executor import durability, durability_journal
 from llb.executor.cases import batch_retrieval_records
 from llb.executor.reporting import emit_summary
@@ -58,7 +57,8 @@ from llb.rag import retrieval
 from llb.scoring.leaderboard import format_table
 from llb.tracking.manifest import RunManifest, persist_run
 
-RagState = eval_graph.RagState
+from llb.eval.graph_contracts import RagState
+
 _LOG = logging.getLogger(__name__)
 
 # Manifest marker for a run scored over items no reviewer has accepted (`verified_only=False`).

@@ -84,6 +84,46 @@ schedule, finalist-resume, Optuna-resume, and pick-resume modules. Validation: `
 Ruff formatting/lint, mypy over 558 source files, and 1,477 lightweight tests with 42 slow tests
 deselected; `make lint-md` also passes.
 
+The long-module readability refactor validated on 2026-07-27 split every Python file from the
+reported top-20 list at a domain boundary while leaving `make/config.mk` intact:
+
+- embedder-adoption screen contracts, bundle recovery, sampling, rendering, sweep execution,
+  cross-model execution, roster contracts, and property-separation statistics have focused owner
+  modules under `eval/embedder_adoption/`;
+- corpus governance metadata and corpus fingerprinting have separate owners in
+  `prep/corpus_governance.py` and `prep/corpus_fingerprints.py`;
+- paired evidence interpretation lives in `rag/fusion_evidence/paired.py`, separate from bootstrap
+  primitives in `rag/fusion_evidence/stats.py`;
+- fourteen catch-all test modules are grouped into behavior-named test files with shared setup in
+  adjacent intent-named helper modules.
+
+Every Python module produced by the split is at most 234 lines. Cohesive pre-existing classes,
+algorithms, reports, and command surfaces outside the supplied list remain whole under the
+soft-limit rule. Validation: `make ci` passes Ruff format/lint, mypy over 735 source files, and
+2,230 lightweight tests with 45 tests deselected.
+
+The follow-up long-module refactor validated on 2026-07-27 reduces every module in the next
+reported list to at most 247 lines, except the intentionally unified `make/config.mk`. Symbols
+move to one canonical owner and all callers import that owner directly; there are no forwarding
+exports, legacy aliases, or compatibility modules.
+
+- RAG store construction and persistence, lexical indexing, duplicate/noise-floor contracts, and
+  conflict-vector scalar and batch operations have focused owner modules.
+- PDF repeat contracts and offset remapping, fusion-policy evaluation, report-only sections, graph
+  state contracts, and CLI execution/input helpers are separated from their orchestrators.
+- Embedder-adoption screen registration is a distinct command module, and the RAG Make targets are
+  directly included from store, comparison, and run target-family files.
+- Refresh-merge contracts, duplicate-residue contracts, normalization tables, answer-routing
+  report text, and query-preparation test fixtures have focused owners after the next files surfaced
+  at the soft-limit boundary.
+- Four catch-all test modules are split by statistics/verdict, comparison/CLI, audit/CLI, and
+  gate/report behavior with adjacent shared fixtures.
+
+All tracked Python and shell files are now at or below 250 lines; `make/config.mk` remains the one
+intentional larger code/config file. Validation: `make ci` passes Ruff format/lint, mypy over 757
+source files, and 2,230 lightweight tests with 45 tests deselected. `scripts/code_quality.sh`,
+`git diff --check`, and the direct-owner stale-import audit also pass.
+
 `scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,
 `track_c`, and `dispatch`.

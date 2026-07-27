@@ -25,12 +25,14 @@ from llb.prep.pdf.repeat_goldset import GoldsetRemap, remap_goldset
 from llb.prep.pdf.repeats import (
     DEFAULT_MIN_REPEATS,
     REPEAT_KEEP,
+    rewrite_repeated_blocks,
+)
+from llb.prep.pdf.repeat_models import (
     RepeatCensus,
     StrippedDoc,
     TextEdit,
-    remap_span,
-    rewrite_repeated_blocks,
 )
+from llb.prep.pdf.repeat_spans import remap_span
 
 CORPUS_SUFFIXES = (".md", ".txt")
 REPEAT_REPORT_NAME = "repeat_strip.json"

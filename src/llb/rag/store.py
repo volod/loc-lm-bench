@@ -5,7 +5,6 @@ surfaces their generation-sized parents; hybrid retrieval fuses dense and lexica
 an optional candidate filter.
 """
 
-import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,34 +17,20 @@ from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.embedding import Embedder
 from llb.rag.filters import ChunkFilter
-from llb.rag.late_encoding import encode_store_vectors
-from llb.rag.lexical import Lemmatizer, LexicalIndex, rrf_fuse
-from llb.rag.page_metadata import annotate_page_metadata
-from llb.core.store_generations import resolve_store_dir
-from llb.prep.corpus_governance import (
-    GOVERNANCE_FIELDS,
-    corpus_doc_fingerprints,
-    corpus_fingerprint,
+from llb.rag.lexical import (
+    Lemmatizer,
+    rrf_fuse,
 )
-from llb.rag.vector_index import (
-    RAG_BACKEND_FAISS,
-    VectorIndex,
-    build_vector_index,
-    load_vector_index,
-    save_vector_index,
-)
+from llb.rag.lexical_index import LexicalIndex
+from llb.rag.vector_index import RAG_BACKEND_FAISS, VectorIndex
 from llb.rag.store_build import (
-    CHUNKS_FILE,
-    LEXICAL_FILE,
-    META_FILE,
     MODE_HYBRID,
-    PARENTS_FILE,
     _children_to_parents,
-    _indexed_units,
-    _validate_build_params,
     order_by_score,
 )
-from llb.rag.store_io import _read_jsonl, _renumber, _write_jsonl
+from llb.rag.store_factory import build_store_parts
+from llb.rag.store_persistence import load_store, save_store
+from llb.rag.store_io import _renumber
 
 
 class RagStore:
@@ -110,63 +95,29 @@ class RagStore:
         count as the same passage (`llb.rag.duplicate_tiers`); only the default `exact` tier is
         loss-free.
         """
-        _validate_build_params(mode, strategy, child_size)
-        embedder = embedder if embedder is not None else Embedder(embedding_model)
-        embedding_model = getattr(embedder, "model_name", embedding_model)
-        indexed, parents, duplicates = _indexed_units(
-            Path(corpus_root),
+        parts = build_store_parts(
+            corpus_root,
             strategy,
             size,
             overlap,
+            embedding_model,
             mode,
             child_size,
+            vector_store,
             embedder,
-            collapse_duplicates=collapse_duplicates,
-            duplicate_tier=duplicate_tier,
+            lexical_lemmas,
+            lemmatizer,
+            collapse_duplicates,
+            duplicate_tier,
         )
-
-        # Attach page/section provenance from PDF citation sidecars (strategy-independent,
-        # additive metadata only). Coverage is measured over the INDEXED units; parents are
-        # annotated too so their metadata surfaces on parent_child retrieval hits.
-        page_coverage = annotate_page_metadata(indexed, corpus_root)
-        if parents is not None:
-            annotate_page_metadata(parents, corpus_root)
-
-        if strategy == "late":
-            # Late chunking: pool whole-document token embeddings per chunk span instead of
-            # encoding each chunk text in isolation (see `llb.rag.late_encoding`).
-            vectors = encode_store_vectors(indexed, corpus_root, embedder)
-        else:
-            vectors = embedder.encode_passages([c["text"] for c in indexed])
-        index = build_vector_index(vector_store, vectors)
-        lexical = None
-        if mode == MODE_HYBRID:
-            lexical = LexicalIndex.build(
-                [c["text"] for c in indexed], lemmatize=lexical_lemmas, lemmatizer=lemmatizer
-            )
-        meta: RagStoreMeta = {
-            "mode": mode,
-            "strategy": strategy,
-            "size": size,
-            "overlap": overlap,
-            "child_size": child_size,
-            "embedding_model": embedding_model,
-            "n_indexed": len(indexed),
-            "n_parents": len(parents) if parents else 0,
-            "dim": int(vectors.shape[1]),
-            "backend": vector_store,
-            "page_annotation_coverage": round(page_coverage, 4),
-            "corpus_fingerprint": corpus_fingerprint(corpus_root),
-            "doc_fingerprints": corpus_doc_fingerprints(corpus_root),
-            "corpus_manifest": "corpus_manifest.json",
-            "governance_fields": list(GOVERNANCE_FIELDS),
-            "collapse_duplicates": collapse_duplicates,
-            "duplicate_tier": duplicate_tier,
-            "duplicates": dict(duplicates),
-        }
-        if lexical is not None:
-            meta["lexical"] = {"lemmatize": lexical.lemmatize, "n_terms": len(lexical.postings)}
-        return cls(indexed, index, embedder, meta, parents=parents, lexical=lexical)
+        return cls(
+            parts.chunks,
+            parts.index,
+            parts.embedder,
+            parts.meta,
+            parents=parts.parents,
+            lexical=parts.lexical,
+        )
 
     def retrieve(
         self, question: str, k: int, chunk_filter: ChunkFilter | None = None
@@ -271,36 +222,24 @@ class RagStore:
         return order_by_score(candidates, self.chunks)
 
     def save(self, index_dir: Path | str) -> None:
-        index_dir = Path(index_dir)
-        index_dir.mkdir(parents=True, exist_ok=True)
-        _write_jsonl(self.chunks, index_dir / CHUNKS_FILE)
-        if self.parents is not None:
-            _write_jsonl(self.parents, index_dir / PARENTS_FILE)
-        if self.lexical is not None:
-            self.lexical.save(index_dir / LEXICAL_FILE)
-        save_vector_index(self.index, self.backend, index_dir)
-        (index_dir / META_FILE).write_text(
-            json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        save_store(
+            index_dir,
+            self.chunks,
+            self.index,
+            self.backend,
+            self.meta,
+            self.parents,
+            self.lexical,
         )
 
     @classmethod
     def load(cls, index_dir: Path | str) -> "RagStore":
-        # A refresh publishes immutable `generations/<ts>/` children; resolve the live one.
-        index_dir = resolve_store_dir(index_dir, META_FILE)
-        chunks = _read_jsonl(index_dir / CHUNKS_FILE)
-        meta = json.loads((index_dir / META_FILE).read_text(encoding="utf-8"))
-        lexical = None
-        if meta.get("mode") == MODE_HYBRID:
-            lexical_path = index_dir / LEXICAL_FILE
-            if not lexical_path.is_file():
-                raise SystemExit(
-                    f"[rag] the hybrid store at {index_dir} is missing its lexical index "
-                    f"({LEXICAL_FILE}); rebuild it with `build-index --retrieval-mode hybrid`."
-                )
-            lexical = LexicalIndex.load(lexical_path)
-        index = load_vector_index(meta.get("backend", RAG_BACKEND_FAISS), index_dir)
-        embedder = Embedder(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
-        parents = None
-        if meta.get("mode") == "parent_child":
-            parents = _read_jsonl(index_dir / PARENTS_FILE)
-        return cls(chunks, index, embedder, meta, parents=parents, lexical=lexical)
+        loaded = load_store(index_dir)
+        return cls(
+            loaded.chunks,
+            loaded.index,
+            loaded.embedder,
+            loaded.meta,
+            parents=loaded.parents,
+            lexical=loaded.lexical,
+        )

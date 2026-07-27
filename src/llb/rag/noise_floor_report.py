@@ -6,7 +6,11 @@ and one Markdown block instead of each shaping the same numbers. The measurement
 free of presentation.
 """
 
-from llb.rag.noise_floor import FloorMargin, MetricSpread, NoiseFloorReport
+from llb.rag.noise_floor_models import (
+    FloorMargin,
+    MetricSpread,
+    NoiseFloorReport,
+)
 
 
 def format_noise_floor(report: NoiseFloorReport) -> list[str]:

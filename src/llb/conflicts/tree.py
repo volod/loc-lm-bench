@@ -30,13 +30,13 @@ from typing import Any
 from llb.conflicts.constants import DEFAULT_LEAF_SIZE, TREE_BOUND_EPSILON
 from llb.conflicts.tree_build import NodeCounter, build_node
 from llb.conflicts.tree_node import TREE_VERSION, TreeNode
-from llb.conflicts.vectorops import (
+from llb.conflicts.vector_math import (
     METRIC_ANGULAR,
     METRIC_EUCLIDEAN,
-    VectorSet,
     angular_distance,
     vector_distance,
 )
+from llb.conflicts.vectorops import VectorSet
 
 
 class SemanticPrefixTree:

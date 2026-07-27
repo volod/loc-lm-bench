@@ -11,13 +11,12 @@ from llb.core.contracts.rag import (
 )
 from llb.core.contracts.results import CaseScoreRow
 from llb.eval import common as eval_common
-from llb.eval import graph as eval_graph
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
 from llb.scoring import correctness, groundedness
 
-RagState = eval_graph.RagState
+from llb.eval.graph_contracts import RagState
 
 
 @dataclass(slots=True, frozen=True)

@@ -2,13 +2,14 @@
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.cli.rag.compare_stores import _compare_vector_corpus_root, _dir_size_bytes
+from llb.cli.rag.compare_stores import _compare_vector_corpus_root
+from llb.cli.rag.embedding_stores import api_store_builder, local_store_builder
 
 # Pure, dependency-free defaults (no FAISS / torch pulled in): safe as Typer option defaults.
 from llb.rag.embedding_bakeoff_uncertainty import (
@@ -24,85 +25,6 @@ from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 from llb.rag.embedding_bakeoff_verdict import (
     resolve_bars,
 )
-
-if TYPE_CHECKING:
-    from llb.core.config import RunConfig
-    from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.rag.embedding_bakeoff_models import StoreBuilder
-
-
-def _local_store_builder(cfg: "RunConfig", stores_dir: Path) -> "StoreBuilder":
-    """Build+save one FAISS store per embedding model, timing the embed pass and measuring size."""
-    import time
-
-    from llb.rag.embedding_bakeoff_models import BuiltStore, slugify_model
-    from llb.rag.store import RagStore
-
-    def build(model: str) -> "BuiltStore":
-        started = time.perf_counter()
-        store = RagStore.build(
-            cfg.corpus_root,
-            cfg.strategy,
-            cfg.chunk_size,
-            cfg.chunk_overlap,
-            model,
-            mode=cfg.retrieval_mode,
-            child_size=cfg.child_chunk_size,
-            lexical_lemmas=cfg.lexical_lemmas,
-        )
-        embed_seconds = time.perf_counter() - started
-        out_dir = stores_dir / slugify_model(model)
-        store.save(out_dir)
-        device = None
-        resolve = getattr(store.embedder, "_resolve_device", None)
-        if callable(resolve):
-            device = resolve()
-        return BuiltStore(
-            store=store,
-            embed_seconds=embed_seconds,
-            index_bytes=_dir_size_bytes(out_dir),
-            device=device,
-        )
-
-    return build
-
-
-def _api_store_builder(
-    cfg: "RunConfig", stores_dir: Path, log: "ProvenanceLog", max_usd: Optional[float]
-) -> "StoreBuilder":
-    """Build+save the API-embedded store (corpus egress); records cost from the litellm embed log."""
-    import time
-
-    from llb.rag.api_embedder import ApiEmbedder, litellm_embed
-    from llb.rag.embedding_bakeoff_models import KIND_API, BuiltStore, slugify_model
-    from llb.rag.store import RagStore
-
-    def build(model: str) -> "BuiltStore":
-        embedder = ApiEmbedder(model, litellm_embed(model, log=log, max_usd=max_usd))
-        started = time.perf_counter()
-        store = RagStore.build(
-            cfg.corpus_root,
-            cfg.strategy,
-            cfg.chunk_size,
-            cfg.chunk_overlap,
-            model,
-            mode=cfg.retrieval_mode,
-            child_size=cfg.child_chunk_size,
-            embedder=embedder,
-            lexical_lemmas=cfg.lexical_lemmas,
-        )
-        embed_seconds = time.perf_counter() - started
-        out_dir = stores_dir / slugify_model(model)
-        store.save(out_dir)
-        return BuiltStore(
-            store=store,
-            embed_seconds=embed_seconds,
-            index_bytes=_dir_size_bytes(out_dir),
-            kind=KIND_API,
-            cost_usd=log.summary()["total_cost_usd"],
-        )
-
-    return build
 
 
 @app.command("compare-embeddings")
@@ -252,10 +174,10 @@ def compare_embeddings_cmd(
         k,
         corpus_root=str(cfg.corpus_root),
         local_models=local_models,
-        build_local=_local_store_builder(cfg, stores_dir),
+        build_local=local_store_builder(cfg, stores_dir),
         item_ids=[item.id for item in items],
         api_model=api_model,
-        build_api=_api_store_builder(cfg, stores_dir, egress_log, max_usd),
+        build_api=api_store_builder(cfg, stores_dir, egress_log, max_usd),
         data_classification=data_classification,
         consent=consent,
         noise_floor=noise_floor,

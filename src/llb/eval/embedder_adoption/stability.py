@@ -45,8 +45,8 @@ from llb.rag.fusion_evidence.stats import (
     bootstrap_index_sets,
     bootstrap_interval,
     bootstrap_samples,
-    discordant_deltas,
 )
+from llb.rag.fusion_evidence.paired import discordant_deltas
 
 # This lane's rows carry the shared shape; the alias keeps the local name its call sites read by.
 RowStability = ReadingStability

@@ -8,7 +8,8 @@ from pathlib import Path
 from llb.core.fsutil import atomic_write_text
 from llb.eval.query_robustness import RobustnessResult
 from llb.rag.fusion_evidence.stability import format_reading
-from llb.rag.fusion_evidence.stats import PairedComparison, format_interval
+from llb.rag.fusion_evidence.stats import format_interval
+from llb.rag.fusion_evidence.paired import PairedComparison
 
 
 def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> str:

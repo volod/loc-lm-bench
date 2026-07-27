@@ -9,18 +9,17 @@ from pathlib import Path
 
 import pytest
 
-from llb.eval.embedder_adoption import (
+from llb.eval.embedder_adoption.cross_model import (
     READING_ANSWER,
     READING_NEITHER,
     READING_RANK_ONLY,
     cell_reading,
-    compare_cells,
     compare_models,
     format_cross_model,
     format_cross_summary,
-    load_report,
-    run_cross_model_comparison,
 )
+from llb.eval.embedder_adoption.compare import compare_cells
+from llb.eval.embedder_adoption.comparison_run import load_report, run_cross_model_comparison
 from llb.eval.embedder_adoption.models import CellSpec
 
 BASELINE = "intfloat/multilingual-e5-base"

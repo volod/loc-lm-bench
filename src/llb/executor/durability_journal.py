@@ -8,12 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 from llb.core.contracts.runs import DurabilityStatus
-from llb.eval import graph as eval_graph
 from llb.executor.cases import spans_as_dicts
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.schema import GoldItem
 
-RagState = eval_graph.RagState
+from llb.eval.graph_contracts import RagState
 
 _LOG = logging.getLogger(__name__)
 

@@ -25,7 +25,8 @@ from llb.eval.answer_quality.models import (
     METRIC_RETRIEVAL_HIT,
     METRIC_TOKEN_F1,
 )
-from llb.rag.fusion_evidence.stats import Interval, PairedComparison
+from llb.rag.fusion_evidence.stats import Interval
+from llb.rag.fusion_evidence.paired import PairedComparison
 
 if TYPE_CHECKING:
     from llb.rag.fusion_evidence.stability import (

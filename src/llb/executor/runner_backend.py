@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 
 from llb.backends.base import BackendLauncher
 from llb.core.config import RunConfig
-from llb.eval import graph as eval_graph
 from llb.executor.runner_retrieval import _load_store
 from llb.executor.runner_setup import _default_runner_fn
 from llb.goldset.schema import GoldItem
@@ -23,7 +22,8 @@ from llb.goldset.schema import GoldItem
 if TYPE_CHECKING:
     from llb.core.contracts.hardware import ContentionReport
 
-RagState = eval_graph.RagState
+from llb.eval.graph_contracts import RagState
+
 _LOG = logging.getLogger(__name__)
 
 

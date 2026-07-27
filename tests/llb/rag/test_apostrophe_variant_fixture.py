@@ -14,7 +14,7 @@ import pytest
 
 from llb.goldset.schema import load_goldset
 from llb.rag.chunking.corpus import chunk_corpus
-from llb.rag.lexical import LexicalIndex
+from llb.rag.lexical_index import LexicalIndex
 from llb.rag.retrieval import evaluate_retrieval
 
 FIXTURE = Path("samples/goldsets/apostrophe_variants_uk")

@@ -7,8 +7,10 @@ from llb.rag.fusion_evidence.evidence_gate import (
 from llb.rag.fusion_evidence.stability import ReadingStability, boundary_table
 from llb.rag.fusion_evidence.stats import (
     BootstrapRatio,
-    discordant_pairs,
     format_interval,
+)
+from llb.rag.fusion_evidence.paired import (
+    discordant_pairs,
     gated_readings,
 )
 

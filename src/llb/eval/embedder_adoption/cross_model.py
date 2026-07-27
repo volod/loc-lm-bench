@@ -26,7 +26,8 @@ from llb.rag.fusion_evidence.evidence_gate import (
     READING_INSUFFICIENT_EVIDENCE,
     reading_label,
 )
-from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, separates
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
+from llb.rag.fusion_evidence.paired import separates
 
 # One model's per-cell reading -- the same three outcomes `decide_bar` reasons over, but stated per
 # cell rather than pooled into one verdict.

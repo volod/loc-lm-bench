@@ -11,7 +11,8 @@ from llb.rag.fusion_evidence.power import (
     resolvable_mde,
     resolve_power_analysis,
 )
-from llb.rag.fusion_evidence.stats import bootstrap_index_sets, paired_comparison
+from llb.rag.fusion_evidence.stats import bootstrap_index_sets
+from llb.rag.fusion_evidence.paired import paired_comparison
 
 
 def test_the_recorded_context_plan_reproduces_exactly_through_the_shared_seam():

@@ -19,7 +19,7 @@ from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
 
 if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra pass per row
-    from llb.rag.noise_floor import NoiseFloorReport
+    from llb.rag.noise_floor_models import NoiseFloorReport
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"

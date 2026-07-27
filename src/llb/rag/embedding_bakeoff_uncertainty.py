@@ -26,8 +26,10 @@ from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
-    PairedComparison,
     bootstrap_index_sets,
+)
+from llb.rag.fusion_evidence.paired import (
+    PairedComparison,
     paired_comparison,
 )
 from llb.rag.retrieval import recall_at_k, reciprocal_rank

@@ -1,6 +1,6 @@
 """Incremental BM25 merge == LexicalIndex.build over the merged texts (exact equivalence)."""
 
-from llb.rag.lexical import LexicalIndex
+from llb.rag.lexical_index import LexicalIndex
 from llb.rag.refresh.lexical_merge import invert_postings, merge_lexical_index
 
 OLD_TEXTS = [

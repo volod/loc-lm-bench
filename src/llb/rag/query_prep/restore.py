@@ -36,7 +36,8 @@ from llb.rag.query_prep.base import (
     QueryEdit,
 )
 from llb.rag.query_prep.distance import damerau_levenshtein
-from llb.rag.query_prep.normalize import LATIN_TO_UKRAINIAN_CONFUSABLES, cyrillic_to_latin
+from llb.rag.query_prep.normalization_tables import LATIN_TO_UKRAINIAN_CONFUSABLES
+from llb.rag.query_prep.normalize import cyrillic_to_latin
 
 _LOG = logging.getLogger(__name__)
 

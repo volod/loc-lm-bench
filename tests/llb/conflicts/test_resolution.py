@@ -30,7 +30,7 @@ from llb.conflicts.resolution_policy import (
     POLICY_PREFER_NEWER,
     resolve_finding,
 )
-from llb.prep.corpus_governance import corpus_doc_fingerprints
+from llb.prep.corpus_fingerprints import corpus_doc_fingerprints
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.review.adapters.conflicts import ConflictResolutionAdapter
 from llb.review.registry import open_review

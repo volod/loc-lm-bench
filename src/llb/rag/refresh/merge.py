@@ -8,43 +8,21 @@ and assembles the merged embedding matrix. Keeping it separate is what makes "a 
 equals a rebuild" a property of one readable unit.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.rag.chunking.corpus import chunk_corpus, iter_doc_paths
 from llb.rag.duplicate_tiers import TIER_EXACT
-from llb.rag.duplicates import DuplicateStats, collapse_duplicate_chunks, duplicate_stats
+from llb.rag.duplicates import (
+    collapse_duplicate_chunks,
+    duplicate_stats,
+)
 from llb.rag.page_metadata import annotate_page_metadata
-from llb.rag.refresh.lexical_merge import MergeEntry
+from llb.rag.refresh.merge_models import MergedUnits
 from llb.rag.store_build import _build_children
 
 MODE_PARENT_CHILD = "parent_child"
-
-
-@dataclass
-class MergedUnits:
-    """The merged build-order store content plus the per-row reuse plan."""
-
-    indexed: list[ChunkRecord]
-    parents: list[ChunkRecord] | None
-    # per indexed row: the stored embedding row to reuse, or None for a fresh unit to embed
-    row_sources: list[int | None]
-    duplicates: DuplicateStats | None = None  # measured after the merge, None when not collapsed
-    # kept rows whose embedding was recovered by TEXT (a changed doc re-introduced text the store
-    # already held), i.e. the encoder calls the text-keyed reuse saved beyond the position map.
-    text_reused: int = 0
-
-    @property
-    def new_units(self) -> list[ChunkRecord]:
-        return [u for u, src in zip(self.indexed, self.row_sources) if src is None]
-
-    def lexical_entries(self) -> list[MergeEntry]:
-        return [
-            src if src is not None else str(unit["text"])
-            for unit, src in zip(self.indexed, self.row_sources)
-        ]
 
 
 def group_by_doc(records: list[ChunkRecord]) -> dict[str, list[int]]:
