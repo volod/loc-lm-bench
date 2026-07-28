@@ -345,6 +345,15 @@ guidance at 24 recent questions and uses an exact-question guard plus paired que
 similarity (0.90 / 0.95) for multi-hop rows. The final report records every rejected
 candidate/nearest-prior pair, so the boundary remains auditable.
 
+The generalized follow-on widening lane now selects paths by ordered relation pair, document mode,
+and source document before drafting. It emits an explicit coverage/exhaustion artifact and derives
+review headroom from the carried ledger rather than embedding this handoff's item counts in code.
+The CUDA acceptance run, including the non-PDF carry-label and intra-batch duplicate fixes it
+surfaced, is recorded in
+[Widening a multi-hop review slice](data-prep.md#widening-a-multi-hop-review-slice). That bounded
+run validates the reusable mechanics; the goods worksheet above remains subject to its human
+acceptance task.
+
 ### The sweep re-read against its measurement floor
 
 CUDA host, 2026-07-24; evidence under

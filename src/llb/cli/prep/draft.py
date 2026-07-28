@@ -5,8 +5,8 @@ from typing import Optional
 
 import typer
 
+import llb.prep.ontology.constants as ontology_constants
 from llb.cli.app import app
-from llb.prep.ontology.constants import DEFAULT_MULTI_HOP_MAX_PATHS, EXTRACT_CONCURRENCY
 
 
 @app.command("prepare-goldset-draft")
@@ -73,7 +73,7 @@ def prepare_goldset_draft_cmd(
         None, min=0, help="overlap between extraction windows when a document is split"
     ),
     concurrency: int = typer.Option(
-        EXTRACT_CONCURRENCY,
+        ontology_constants.EXTRACT_CONCURRENCY,
         "--concurrency",
         "--extract-concurrency",
         min=1,
@@ -181,7 +181,7 @@ def prepare_goldset_draft_cmd(
         help="also write chains.jsonl with ordered chain-of-questions items from graph paths",
     ),
     multi_hop_max_paths: int = typer.Option(
-        DEFAULT_MULTI_HOP_MAX_PATHS,
+        ontology_constants.DEFAULT_MULTI_HOP_MAX_PATHS,
         min=1,
         help="cap on 2-hop graph paths drafted when --multi-hop is set",
     ),
@@ -190,6 +190,27 @@ def prepare_goldset_draft_cmd(
         "--multi-hop-bridge-fill",
         help="fill sparse directed 2-hop paths with shared-bridge fact pairs, so an extracted "
         "graph with few object-to-subject links still yields a measurable multi-hop slice",
+    ),
+    multi_hop_path_stratified: bool = typer.Option(
+        False,
+        "--multi-hop-path-stratified",
+        help="allocate the path budget across relation pairs, same/cross-document paths, "
+        "and source documents before drafting",
+    ),
+    multi_hop_relation_pair_target: int = typer.Option(
+        ontology_constants.DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+        min=1,
+        help="minimum selected paths per observed relation pair in stratified mode",
+    ),
+    multi_hop_document_mode_target: int = typer.Option(
+        ontology_constants.DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
+        min=1,
+        help="minimum selected paths for same-document and cross-document strata",
+    ),
+    multi_hop_source_document_target: int = typer.Option(
+        ontology_constants.DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
+        min=1,
+        help="minimum selected paths citing each source document in stratified mode",
     ),
     dedup_against: Optional[str] = typer.Option(
         None,

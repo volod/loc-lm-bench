@@ -54,6 +54,10 @@ class DraftRequest:
     chains: bool
     multi_hop_max_paths: int
     multi_hop_bridge_fill: bool
+    multi_hop_path_stratified: bool
+    multi_hop_relation_pair_target: int
+    multi_hop_document_mode_target: int
+    multi_hop_source_document_target: int
     dedup_against: Optional[str]
     carry_forward_multi_hop: bool
     graph_dir: Optional[Path]

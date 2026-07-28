@@ -123,7 +123,19 @@ def labeled_multi_hop_ids(bundle: Path) -> set[str]:
         row = json.loads(line)
         if row.get("question_type") == _MULTI_HOP:
             ids.add(str(row["id"]))
+    if not ids and _is_multi_hop_only_bundle(bundle):
+        return {item.id for item in load_goldset(bundle / "goldset.jsonl")}
     return ids
+
+
+def _is_multi_hop_only_bundle(bundle: Path) -> bool:
+    """Recover labels when a text-only bundle has no PDF citation-needle rows."""
+    provenance = bundle / PROVENANCE_FILENAME
+    if not provenance.is_file():
+        return False
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    settings = payload.get("settings") if isinstance(payload, dict) else None
+    return bool(settings.get("multi_hop_only")) if isinstance(settings, dict) else False
 
 
 def prior_multihop_span_pairs(bundles: list[Path | str]) -> set[SpanPair]:

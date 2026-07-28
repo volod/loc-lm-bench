@@ -68,6 +68,12 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	if [ "$(DRAFT_CHAINS)" = "1" ]; then args+=(--chains); fi; \
 	if [ -n "$(DRAFT_MULTI_HOP_MAX_PATHS)" ]; then args+=(--multi-hop-max-paths "$(DRAFT_MULTI_HOP_MAX_PATHS)"); fi; \
 	if [ "$(DRAFT_MULTI_HOP_BRIDGE_FILL)" = "1" ]; then args+=(--multi-hop-bridge-fill); fi; \
+	if [ "$(DRAFT_MULTI_HOP_PATH_STRATIFIED)" = "1" ]; then args+=(--multi-hop-path-stratified); fi; \
+	args+=( \
+	  --multi-hop-relation-pair-target "$(DRAFT_MULTI_HOP_RELATION_PAIR_TARGET)" \
+	  --multi-hop-document-mode-target "$(DRAFT_MULTI_HOP_DOCUMENT_MODE_TARGET)" \
+	  --multi-hop-source-document-target "$(DRAFT_MULTI_HOP_SOURCE_DOCUMENT_TARGET)" \
+	); \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
 	if [ "$(DRAFT_CARRY_FORWARD_MULTI_HOP)" = "1" ]; then args+=(--carry-forward-multi-hop); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
@@ -87,9 +93,12 @@ widen-multihop-draft: ## Reuse a prior extraction and produce one deduplicated m
 		DRAFT_REUSE_EXTRACTION_BUNDLE="$(MULTIHOP_DRAFT_PRIOR_BUNDLE)" \
 		DRAFT_MULTI_HOP=1 DRAFT_MULTI_HOP_ONLY=1 DRAFT_MULTI_HOP_BRIDGE_FILL=1 \
 		DRAFT_MULTI_HOP_MAX_PATHS="$(MULTIHOP_DRAFT_MAX_PATHS)" \
+		DRAFT_MULTI_HOP_PATH_STRATIFIED="$(MULTIHOP_DRAFT_PATH_STRATIFIED)" \
+		DRAFT_MULTI_HOP_RELATION_PAIR_TARGET="$(MULTIHOP_DRAFT_RELATION_PAIR_TARGET)" \
+		DRAFT_MULTI_HOP_DOCUMENT_MODE_TARGET="$(MULTIHOP_DRAFT_DOCUMENT_MODE_TARGET)" \
+		DRAFT_MULTI_HOP_SOURCE_DOCUMENT_TARGET="$(MULTIHOP_DRAFT_SOURCE_DOCUMENT_TARGET)" \
 		DRAFT_DEDUP_AGAINST="$(MULTIHOP_DRAFT_DEDUP_AGAINST)" \
 		DRAFT_CARRY_FORWARD_MULTI_HOP=1 DRAFT_VERIFY_N=100000 \
 		DRAFT_REQUIRE_PASSED_GATES=1
 	$(PY) -m llb.main audit-multihop-draft --bundle "$(MULTIHOP_DRAFT_OUT)" \
-		--decision-floor "$(MULTIHOP_DRAFT_DECISION_FLOOR)" \
-		--minimum-items "$(MULTIHOP_DRAFT_MIN_ITEMS)"
+		--minimum-headroom-fraction "$(MULTIHOP_DRAFT_MIN_HEADROOM_FRACTION)"

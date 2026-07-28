@@ -11,9 +11,13 @@ from llb.prep.ontology.endpoint_config import (
     EndpointConfig,
     EndpointPlan,
 )
-from llb.prep.ontology.models import DocRecord, ItemLabels
+from llb.prep.ontology.models import (
+    DocRecord,
+    ItemLabels,
+)
 from llb.prep.ontology.pipeline.expansion import (
     carry_forward_multi_hop,
+    labeled_multi_hop_ids,
     prior_multihop_span_pairs,
     reused_extractions,
 )
@@ -126,6 +130,31 @@ def test_carry_forward_builds_one_collision_free_multihop_ledger(tmp_path):
     assert repeated_report["dropped_carried_exact_duplicates"] == 1
 
 
+def test_multihop_only_bundle_recovers_labels_without_pdf_needles(tmp_path):
+    bundle = tmp_path / "text-only"
+    bundle.mkdir()
+    item = GoldItem(
+        id="multi-hop",
+        question="Який зв'язок потребує двох фактів?",
+        reference_answer="Відповідь поєднує обидва факти.",
+        source_doc_id="a.md",
+        source_spans=[
+            SourceSpan(doc_id="a.md", char_start=0, char_end=1, text="a"),
+            SourceSpan(doc_id="a.md", char_start=2, char_end=3, text="b"),
+        ],
+        provenance="ontology-drafted",
+        split="final",
+    )
+    dump_goldset([item], bundle / "goldset.jsonl")
+    (bundle / "needle_items.jsonl").write_text("", encoding="utf-8")
+    (bundle / "provenance.json").write_text(
+        json.dumps({"settings": {"multi_hop_only": True}}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert labeled_multi_hop_ids(bundle) == {"multi-hop"}
+
+
 def test_span_pair_exclusion_skips_an_unlabeled_dedup_bundle(tmp_path):
     bundle = tmp_path / "ordinary"
     bundle.mkdir()
@@ -164,6 +193,7 @@ def test_pipeline_reuses_extraction_and_skips_flat_drafting(tmp_path):
         reuse_extraction_bundle=source,
         multi_hop=True,
         multi_hop_only=True,
+        multi_hop_path_stratified=True,
     )
 
     assert result.items
@@ -172,4 +202,7 @@ def test_pipeline_reuses_extraction_and_skips_flat_drafting(tmp_path):
     provenance = json.loads((widened / "provenance.json").read_text(encoding="utf-8"))
     assert provenance["settings"]["reuse_extraction_bundle"] == str(source)
     assert provenance["settings"]["multi_hop_only"] is True
+    assert provenance["settings"]["multi_hop_path_stratified"] is True
+    assert provenance["multi_hop_path_strata"]["all_requested_covered_or_exhausted"] is True
+    assert (widened / "multihop_path_strata.json").is_file()
     assert provenance["stages"]["draft_attempts"] == 0

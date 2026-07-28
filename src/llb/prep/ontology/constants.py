@@ -71,6 +71,10 @@ DEFAULT_QUESTION_TYPE = QUESTION_TYPE_FACTOID
 # the draft set; deterministic ordering keeps a resume reproducible.
 MULTI_HOP_DEPTH = 2
 DEFAULT_MULTI_HOP_MAX_PATHS = 40
+DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET = 1
+DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET = 1
+DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET = 1
+DEFAULT_MULTI_HOP_REVIEW_HEADROOM_FRACTION = 0.15
 MAX_MULTI_HOP_NOVELTY_QUESTIONS = 24
 MULTI_HOP_NEAR_DUP_ANSWER_COSINE_THRESHOLD = 0.95
 MULTI_HOP_DIFFICULTY = "hard"  # a chain question is inherently harder than a single-span factoid
@@ -106,6 +110,7 @@ PDF_ONTOLOGY_REPORT_FILENAME = "pdf_ontology_report.json"
 PROMPT_DICTIONARY_FILENAME = "prompt_dictionary_candidates.jsonl"
 NEEDLE_GOLDSET_FILENAME = "needle_items.jsonl"
 CHAINS_FILENAME = "chains.jsonl"
+MULTI_HOP_PATH_STRATA_FILENAME = "multihop_path_strata.json"
 PROMPT_DICTIONARY_MAX_EXAMPLES = 5
 # Per-document, per-window extraction journal + its settings sidecar. The journal lets an
 # interrupted multi-hour draft resume the extraction stage instead of re-spending model calls;

@@ -43,32 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### relation-stratified-multihop-expansion-if-review-attrits (optional)
+### experiment-derived-acceptance-gates (optional)
 
-The current 61-row worksheet has only eight rows of rejection headroom above its 53-item decision
-floor, and 42 rows draw both spans from one goods manual
-([the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)). If review accepts
-fewer than 53 rows, widen from relation/document strata rather than the graph walk's stable order:
-allocate the path budget across relation pairs, same-document versus cross-document pairs, and
-source documents before model drafting, then reuse the current question/answer duplicate gate.
+Audit absolute row, sample, and trial minima used as decision gates across the plan, Make
+configuration, and CLI defaults. Classify each number as a safety/resource cap, deterministic test
+fixture, display sample, or inferential gate; keep the first three explicit, but replace
+inferential constants with a declared minimum detectable effect and paired-power target,
+confidence-interval precision, relative retention/headroom requirement, or adaptive
+stability/stopping rule. Start with `ua-model-roster-long-run`, chain acceptance, and verification
+sample defaults, where a generic operator can otherwise inherit thresholds chosen for one corpus.
 
-- Agent status: RUN NEEDED
-- Dependencies: trigger only if `multihop-ledger-human-acceptance` retains fewer than 53 rows or its
-  rejection ledger shows concentrated failures in the dominant source/relation strata.
-- User-visible outcome: a replacement review worksheet with enough diverse rows to restore the
-  predeclared decision floor instead of another larger but topic-concentrated pass.
-- Scope boundary: in scope -- deterministic path strata, an exhaustion report, incremental
-  extraction reuse, and another audited worksheet. Out of scope -- changing the confidence
-  convention, accepting rows automatically, or changing graph retrieval.
-- Data and artifact paths: another sibling bundle under
-  `$DATA_DIR/graph-vector-fusion-multihop/`.
-- Execution path: extend `make widen-multihop-draft` with path-stratum targets, then run it on the
-  CUDA host against the latest reviewed ledger.
-- Acceptance gates: `make ci` green; the new path report covers every requested stratum or marks it
-  exhausted; the combined worksheet restores at least eight rows of headroom above 53; exact-span,
-  Ukrainian, and duplicate audits pass.
-- Documentation target: the widening section of [data prep](current/data-prep.md) and the handoff
-  evidence in [GraphRAG](current/graphrag-backend.md).
+- Agent status: CLEAR
+- Dependencies: reuse the shared paired-power contract and uncertainty reports in
+  [RAG core](current/rag-core.md#paired-power-contract-for-comparison-lanes).
+- User-visible outcome: experiment gates scale with the item set and claimed decision instead of
+  silently treating one corpus's count as a universal quality threshold.
+- Scope boundary: in scope -- the inventory, classification report, derived-gate helpers, explicit
+  operator overrides, migration of inferential defaults, and regression tests. Out of scope --
+  changing fixed fixture cardinalities, hardware safety caps, or benchmark-standard metric
+  cutoffs.
+- Data and artifact paths: a machine-readable gate inventory under
+  `$DATA_DIR/acceptance-gate-audit/<run>/`; code changes remain in the owning command modules.
+- Execution path: add a code-quality audit for unexplained absolute inferential gates, migrate each
+  owning workflow, and exercise derived targets on small and large committed fixtures.
+- Acceptance gates: `make ci` green; every retained absolute threshold is classified and justified;
+  every inferential gate records its assumptions and derived target in the run artifact; scaling
+  fixtures prove that changing corpus size or expected discordance changes the target without code
+  edits.
+- Documentation target: the paired-power section of [RAG core](current/rag-core.md) and each
+  migrated workflow's current topic.
 
 ### headline-objective-verbosity-decomposition
 
@@ -837,11 +840,12 @@ other encoder.
 
 ### ua-model-roster-long-run (optional)
 
-Confirm the refreshed-roster ranking at research scale: run at least 10 multi-objective trials
-per viable addition, use a tuning screen of at least 8 cases, score the full held-out final split,
-and add the public Ukrainian screen tracks before making a default-model adoption decision. Report
-bootstrap uncertainty and quality/latency Pareto tradeoffs so a small-sample rank reversal cannot
-silently change the recommended model.
+Confirm the refreshed-roster ranking at research scale: predeclare a minimum detectable objective
+gain and ranking-stability criterion, derive the tuning-screen size from paired power, and run
+multi-objective trials until the stability rule or a declared resource budget stops the search.
+Score the full held-out final split and add the public Ukrainian screen tracks before making a
+default-model adoption decision. Report bootstrap uncertainty and quality/latency Pareto tradeoffs
+so a small-sample rank reversal cannot silently change the recommended model.
 
 - Agent status: RUN NEEDED
 - Dependencies: use the roster/runtime behavior in
@@ -855,8 +859,9 @@ silently change the recommended model.
   current-doc evidence section.
 - Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
   final split, then run the public screen for both finalists.
-- Acceptance gates: `make ci` green; at least 10 trials per finalist; no final-split leakage into
-  tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
+- Acceptance gates: `make ci` green; the search artifact records the effect, power, stability, and
+  stopping assumptions plus the derived screen size and consumed trial budget; no final-split
+  leakage into tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
 ### normalize-casefold-dense-lane-cost (optional)
@@ -1302,10 +1307,12 @@ shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
 - Dependencies: the [widened handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)
-  supplies a 61-row worksheet against a 53-item decision floor. Human step that gates completion:
-  a reviewer decides `accept`/`reject` for every row of that worksheet --
-  specifically whether the question is answerable ONLY with both cited spans -- and signs off on
-  the resulting accepted ledger.
+  supplies the worksheet, while the
+  [paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes) derives
+  the accepted-ledger requirement from a predeclared minimum detectable retrieval gain, expected
+  discordance, confidence, and power. Human step that gates completion: a reviewer decides
+  `accept`/`reject` for every worksheet row -- specifically whether the question is answerable ONLY
+  with both cited spans -- and signs off on the resulting accepted ledger.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
   human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
   genuine multi-hop questions and the slice must come from another source.
@@ -1328,11 +1335,15 @@ shared-bridge question genuinely needs both facts.
   then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
   sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
   the drafted-grounding escape.
-- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps at least 53
-  multi-hop rows; the re-run sweep reports the same rows with paired intervals and the human
-  records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
-  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`. If fewer
-  than 53 survive, trigger `relation-stratified-multihop-expansion-if-review-attrits`.
+- Acceptance gates: every worksheet row has a decision; the accepted ledger satisfies its
+  predeclared paired-power requirement; retention is reported by relation pair, document mode, and
+  source document with uncertainty; the re-run sweep reports the same rows with paired intervals
+  and the human records the adopt-or-reject verdict per graph strategy and per span-identity
+  policy; the answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
+  If power remains insufficient or rejection failures are statistically concentrated in a
+  stratum, run the relation-stratified widening workflow from
+  [data prep](current/data-prep.md#widening-a-multi-hop-review-slice) against the latest reviewed
+  ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 

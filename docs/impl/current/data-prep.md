@@ -507,10 +507,24 @@ The target composes four reusable `prepare-goldset-draft` controls:
 - `DRAFT_REUSE_EXTRACTION_BUNDLE=<bundle>` verifies and reuses its `extraction.jsonl`, avoiding
   repeated extraction calls over unchanged corpus bytes;
 - `DRAFT_MULTI_HOP_ONLY=1` skips flat-question drafting;
+- `DRAFT_MULTI_HOP_PATH_STRATIFIED=1` allocates the bounded call budget across observed ordered
+  relation pairs, same-document versus cross-document paths, and source documents before
+  drafting;
 - prior multi-hop evidence-span pairs are excluded before the path cap is applied, so the model
   call budget counts unseen graph paths rather than redraws;
 - `DRAFT_CARRY_FORWARD_MULTI_HOP=1` prepends the prior labeled multi-hop rows, collapses inherited
   exact-question duplicates, and emits one complete `verify_sample.csv`.
+
+The three independent per-stratum targets are
+`MULTIHOP_DRAFT_RELATION_PAIR_TARGET`,
+`MULTIHOP_DRAFT_DOCUMENT_MODE_TARGET`, and
+`MULTIHOP_DRAFT_SOURCE_DOCUMENT_TARGET`. The deterministic allocator writes
+`multihop_path_strata.json` and the same payload in provenance. Every category reports its target,
+available candidates, selected paths, and one of `covered`, `exhausted`, or `budget-exhausted`.
+Only the first two states satisfy readiness: `budget-exhausted` means known candidates remain and
+the operator must raise the path budget or narrow the requested strata. Documents with no
+candidate path and an unavailable same/cross-document mode are recorded as exhausted rather than
+silently omitted.
 
 Prior questions are also supplied to the multi-hop prompt as bounded novelty guidance. This is an
 efficiency hint, not an acceptance shortcut: the pinned-E5 `DRAFT_DEDUP_AGAINST` filter still
@@ -520,10 +534,28 @@ question cosine is at least 0.90 and its reference-answer cosine against the sam
 least 0.95. The nearest prior question, answer, and both similarities are recorded for every
 rejection. This keeps common domain wording from erasing a distinct two-fact answer while
 preserving an inspectable duplicate boundary. The final `audit-multihop-draft` gate writes
-`multihop_expansion_report.json` and fails unless the combined ledger meets the declared draft
-minimum, records prior-question dedup, contains only Ukrainian-gated multi-hop rows, and every row
-re-grounds at least two distinct exact spans. The default gate records the 53 accepted-item
-decision floor and requires 60 drafted rows to leave review headroom.
+`multihop_expansion_report.json` and fails unless the combined ledger meets a declared relative
+headroom requirement, records prior-question dedup, contains only Ukrainian-gated multi-hop rows,
+and every row re-grounds at least two distinct exact spans. The required combined size is derived
+from the carried ledger and `MULTIHOP_DRAFT_MIN_HEADROOM_FRACTION`; no corpus-specific accepted-row
+floor is embedded in the command. Exact normalized questions are collapsed within the new batch
+before the prior-bundle semantic comparison, and both rejection kinds remain in dedup provenance.
+For text-only bundles, where the PDF citation-needle sidecar is intentionally empty, a
+`multi_hop_only` provenance setting provides the lossless label fallback needed for carry-forward
+and prior-span exclusion.
+
+CUDA acceptance evidence is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260728T-relation-strata-cuda/`. The final bounded lane used
+the committed seven-document Ukrainian conflict corpus and `qwen3:14b`. Its initial bundle supplied
+one carried multi-hop row. The widening pass reused all 48 extracted facts with zero extraction
+calls, selected all 30 unseen candidates, and spent 30 drafting calls. Of 22 grounded model rows,
+three exact intra-batch repeats and one prior-bundle near-duplicate were rejected, leaving 18 new
+rows plus the carried row in one worksheet. Five selected paths were same-document and 25 were
+cross-document; six source documents were covered and the document with no available path was
+explicitly exhausted. The final audit reports exact spans and Ukrainian output for every row,
+`path_strata_ready: true`, relative review headroom of 18.0 against the declared 0.15 minimum, and
+`ready_for_human_review: true`. This small carried baseline validates the workflow and gate
+composition; it is not a substitute for the human-reviewed goods ledger.
 
 ### Yield-max empirical acceptance
 
