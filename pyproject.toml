@@ -13,6 +13,7 @@ dependencies = [
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
   "huggingface-hub>=0.24",
+  "httpx>=0.27",
   "openai>=1.40",
   "pymupdf4llm",
   # Ukrainian lemmatization and word-form validation are runtime retrieval behavior. Keep the

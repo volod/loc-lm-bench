@@ -2,7 +2,7 @@
 ##@ Models and Serving
 
 .PHONY: \
-	build-vllm build-llamacpp prep-models prep-serving-targets list-models \
+	build-vllm build-llamacpp download-model prep-models prep-serving-targets list-models \
 	detect-gpu-vram gen-serving-config
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
@@ -10,6 +10,26 @@ build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one 
 
 build-llamacpp: ## Build CUDA llama-server for the llama.cpp launcher; CUDA_ARCH=/LLAMACPP_REF= override
 	bash "$(PROJECT_ROOT)/scripts/build_llamacpp.sh"
+
+download-model: ## Download a huge model with resume/checksums; MODEL_DOWNLOAD_ID=/TARGET= required
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(MODEL_DOWNLOAD_ID)" || { echo "ERROR: set MODEL_DOWNLOAD_ID=<model-id>"; exit 1; }
+	@test -n "$(MODEL_DOWNLOAD_TARGET)" || { echo "ERROR: set MODEL_DOWNLOAD_TARGET=<local-dir>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	$(PY) -m llb.main download-model "$(MODEL_DOWNLOAD_ID)" "$(MODEL_DOWNLOAD_TARGET)" \
+		--provider "$(MODEL_DOWNLOAD_PROVIDER)" --chunk-mib "$(MODEL_DOWNLOAD_CHUNK_MIB)" \
+		--session-gib "$(MODEL_DOWNLOAD_SESSION_GIB)" \
+		--bandwidth-fraction "$(MODEL_DOWNLOAD_BANDWIDTH_FRACTION)" \
+		--timeout-seconds "$(MODEL_DOWNLOAD_TIMEOUT_SECONDS)" \
+		--retries "$(MODEL_DOWNLOAD_RETRIES)" \
+		--max-rate-wait-seconds "$(MODEL_DOWNLOAD_MAX_RATE_WAIT_SECONDS)" \
+		--min-free-gib "$(MODEL_DOWNLOAD_MIN_FREE_GIB)" \
+		--min-free-percent "$(MODEL_DOWNLOAD_MIN_FREE_PERCENT)" \
+		$(if $(MODEL_DOWNLOAD_REVISION),--revision "$(MODEL_DOWNLOAD_REVISION)",) \
+		$(if $(MODEL_DOWNLOAD_MAX_MIBPS),--max-mib-per-second "$(MODEL_DOWNLOAD_MAX_MIBPS)",) \
+		$(if $(MODEL_DOWNLOAD_VERIFY_COMPLETED),--verify-completed,) \
+		$(if $(MODEL_DOWNLOAD_VERIFY_ONLY),--verify-only,) \
+		$(if $(MODEL_DOWNLOAD_DRY_RUN),--dry-run,)
 
 prep-models: ## Detect GPU, pull Ollama tags + cache vLLM HF weights (MODELS_MANIFEST=, PREP_BACKEND=, gated needs HF_TOKEN)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
