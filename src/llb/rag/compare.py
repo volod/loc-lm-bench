@@ -11,16 +11,24 @@ seam), so it is unit-tested with fake stores -- no GPU, no FAISS, no DuckDB. Eac
 one `evaluate_retrieval` span metric, so graph and FAISS score on identical rules.
 """
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from typing_extensions import NotRequired, TypedDict
 
-from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
+from llb.core.contracts.rag import (
+    ChunkRecord,
+    RetrievalMetrics,
+    RetrievalPair,
+    SourceSpanRecord,
+)
 from llb.rag.retrieval import evaluate_retrieval
 
 if TYPE_CHECKING:  # `noise_floor` imports this module, so the type is a forward reference
     from llb.rag.duplicate_models import DuplicateStats
+    from llb.rag.embedding_bakeoff_uncertainty import MetricVectors, PairedRow
     from llb.rag.noise_floor_models import NoiseFloorReport
+    from llb.rag.retrieval_comparison_uncertainty import RetrievalComparisonVerdict
 
 # (question, gold source spans) -- the per-item input shared across every compared backend.
 CompareItem = tuple[str, list[SourceSpanRecord]]
@@ -51,8 +59,11 @@ class ComparisonReport(TypedDict):
 
     k: int
     n: int
-    backends: dict[str, RetrievalMetrics]
+    backends: dict[str, "ComparisonLane"]
     best_recall: str | None
+    paired_items: list["ComparisonItemOutcome"]
+    uncertainty: "ComparisonUncertainty"
+    verdict: "RetrievalComparisonVerdict"
     slices: NotRequired[dict[str, "ComparisonSlice"]]
     # Each lane's exact-duplicate census (`llb.rag.duplicates`), present when the compared
     # stores expose their build meta -- so a recall row is read next to how much of that
@@ -68,9 +79,26 @@ class ComparisonSlice(TypedDict):
     backends: dict[str, RetrievalMetrics]
 
 
+class ComparisonLane(RetrievalMetrics):
+    paired_vs_baseline: NotRequired["PairedRow"]
+
+
+class ComparisonItemOutcome(TypedDict):
+    item_id: str
+    lanes: dict[str, dict[str, float]]
+
+
+class ComparisonUncertainty(TypedDict):
+    baseline: str | None
+    eligible_lanes: list[str]
+    resamples: int
+    confidence: float
+    seed: int
+
+
 def _retrieve_pairs(
     stores: dict[str, Retriever], items: list[CompareItem], k: int
-) -> dict[str, list[Any]]:
+) -> dict[str, list[RetrievalPair]]:
     return {
         label: [(store.retrieve(question, k), spans) for question, spans in items]
         for label, store in stores.items()
@@ -103,24 +131,110 @@ def compare_retrieval(
     items: list[CompareItem],
     k: int,
     slice_labels: list[str | None] | None = None,
+    *,
+    item_ids: Sequence[str] | None = None,
+    baseline: str | None = None,
+    eligible_lanes: Sequence[str] | None = None,
+    resamples: int | None = None,
+    confidence: float | None = None,
+    seed: int | None = None,
 ) -> ComparisonReport:
-    """Score each backend over the same items, with optional aligned question-type slices."""
+    """Score each backend once and attach paired uncertainty against a named baseline lane."""
+    from llb.rag.embedding_bakeoff_uncertainty import item_vectors, paired_rows
+    from llb.rag.fusion_evidence.stats import (
+        DEFAULT_CONFIDENCE,
+        DEFAULT_RESAMPLES,
+        DEFAULT_SEED,
+    )
+
+    resamples = DEFAULT_RESAMPLES if resamples is None else resamples
+    confidence = DEFAULT_CONFIDENCE if confidence is None else confidence
+    seed = DEFAULT_SEED if seed is None else seed
     if slice_labels is not None and len(slice_labels) != len(items):
         raise ValueError("retrieval slice labels must align one-to-one with items")
+    if item_ids is not None and len(item_ids) != len(items):
+        raise ValueError("retrieval item ids must align one-to-one with items")
+    if baseline is not None and baseline not in stores:
+        raise ValueError(f"retrieval baseline lane `{baseline}` was not scored")
+    baseline = baseline if baseline is not None else next(iter(stores), None)
+    eligible = list(eligible_lanes) if eligible_lanes is not None else list(stores)
+    unknown_eligible = [lane for lane in eligible if lane not in stores]
+    if unknown_eligible:
+        raise ValueError(f"unknown retrieval verdict lane(s): {', '.join(unknown_eligible)}")
+    if baseline is not None and baseline not in eligible:
+        eligible.insert(0, baseline)
     pairs_by_backend = _retrieve_pairs(stores, items, k)
-    per_backend = {label: evaluate_retrieval(pairs, k) for label, pairs in pairs_by_backend.items()}
+    vectors: dict[str, "MetricVectors"] = {
+        label: item_vectors(pairs, k) for label, pairs in pairs_by_backend.items()
+    }
+    paired = (
+        paired_rows(
+            vectors,
+            baseline,
+            resamples=resamples,
+            confidence=confidence,
+            seed=seed,
+        )
+        if baseline is not None
+        else {}
+    )
+    per_backend: dict[str, ComparisonLane] = {}
+    for label, pairs in pairs_by_backend.items():
+        row = cast(ComparisonLane, evaluate_retrieval(pairs, k))
+        if label in paired:
+            row["paired_vs_baseline"] = paired[label]
+        per_backend[label] = row
+    best_eligible = _best_recall(
+        {lane: per_backend[lane] for lane in eligible if lane in per_backend}
+    )
+    from llb.rag.retrieval_comparison_uncertainty import (
+        decide_verdict,
+        selection_adjustment,
+    )
+
+    adjustment = selection_adjustment(
+        vectors,
+        baseline,
+        eligible,
+        resamples=resamples,
+        seed=seed,
+    )
     report: ComparisonReport = {
         "k": k,
         "n": len(items),
         "backends": per_backend,
         "best_recall": _best_recall(per_backend),
+        "paired_items": [
+            {
+                "item_id": item_ids[index] if item_ids is not None else str(index),
+                "lanes": {
+                    lane: {metric: values[metric][index] for metric in values}
+                    for lane, values in vectors.items()
+                },
+            }
+            for index in range(len(items))
+        ],
+        "uncertainty": {
+            "baseline": baseline,
+            "eligible_lanes": eligible,
+            "resamples": resamples,
+            "confidence": confidence,
+            "seed": seed,
+        },
+        "verdict": decide_verdict(
+            paired,
+            baseline=baseline,
+            winner=best_eligible,
+            confidence=confidence,
+            adjustment=adjustment,
+        ),
     }
     if slice_labels is not None:
         report["slices"] = _slice_reports(pairs_by_backend, slice_labels, k)
     return report
 
 
-def _best_recall(per_backend: dict[str, RetrievalMetrics]) -> str | None:
+def _best_recall(per_backend: Mapping[str, RetrievalMetrics]) -> str | None:
     """Label with the highest recall@k (tie-break: higher MRR, then label order)."""
     if not per_backend:
         return None
@@ -172,34 +286,7 @@ def duplicate_census(stores: dict[str, Retriever]) -> dict[str, "DuplicateStats"
 
 
 def format_comparison(report: ComparisonReport) -> str:
-    """Render an ASCII comparison table (AGENTS.md: ASCII-only, no box-drawing)."""
-    backends = report["backends"]
-    lines = [f"[compare-retrieval] n={report['n']} k={report['k']}"]
-    if not backends:
-        lines.append("  (no backends loaded)")
-        return "\n".join(lines)
-    width = max(len(label) for label in backends)
-    lines.append(f"  {'backend'.ljust(width)}   recall@k      mrr")
-    for label in sorted(backends):
-        metrics = backends[label]
-        lines.append(
-            f"  {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
-        )
-    lines.append(f"  best (recall@k): {report['best_recall']}")
-    floor = report.get("noise_floor")
-    if floor is not None:
-        from llb.rag.noise_floor_report import format_noise_floor
+    """Render an ASCII comparison report without coupling scoring to its presentation."""
+    from llb.rag.retrieval_comparison_report import format_comparison as render
 
-        lines.extend(format_noise_floor(floor))
-    for label, stats in report.get("duplicates", {}).items():
-        from llb.rag.duplicates import format_duplicate_stats
-
-        lines.append(f"  {label.ljust(width)}   {format_duplicate_stats(stats)}")
-    for slice_label, slice_report in report.get("slices", {}).items():
-        lines.append(f"  slice {slice_label} (n={slice_report['n']}):")
-        for label in sorted(slice_report["backends"]):
-            metrics = slice_report["backends"][label]
-            lines.append(
-                f"    {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
-            )
-    return "\n".join(lines)
+    return render(report)

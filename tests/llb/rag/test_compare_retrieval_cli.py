@@ -151,3 +151,60 @@ def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypa
     assert set(floor["lanes"]) == {"faiss", "chroma"}
     # Both backends rank the same tie, so neither is distinguished from the other.
     assert floor["floor_recall_at_k"] > 0.0 and floor["margin"]["clears_floor"] is False
+
+
+def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    bundle = tmp_path / "bundle"
+    (bundle / "corpus").mkdir(parents=True)
+    goldset = bundle / "goldset.jsonl"
+    dump_goldset(
+        [
+            GoldItem(
+                id="paired-a",
+                question="питання",
+                reference_answer="x",
+                source_doc_id="d1",
+                source_spans=[
+                    SourceSpan(doc_id="d1", char_start=0, char_end=10, text="0123456789")
+                ],
+                provenance="ontology-drafted",
+                split="final",
+            )
+        ],
+        goldset,
+    )
+    monkeypatch.setattr(
+        "llb.cli.rag.compare_retrieval._build_compare_stores",
+        lambda cfg, strategies, hybrid, compare_items: {
+            "sentence": _FakeStore([_chunk("d1", 0, 10)]),
+            "recursive": _FakeStore([_chunk("d1", 0, 10)]),
+        },
+    )
+    out = tmp_path / "nested" / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compare-retrieval",
+            "--goldset",
+            str(goldset),
+            "--strategies",
+            "sentence,recursive",
+            "--resamples",
+            "50",
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Verdict: RETAIN `recursive`" in result.output
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["uncertainty"]["baseline"] == "recursive"
+    assert report["paired_items"][0]["item_id"] == "paired-a"
+    assert "paired_vs_baseline" in report["backends"]["sentence"]

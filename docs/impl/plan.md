@@ -43,39 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### retrieval-comparison-paired-uncertainty
-
-`compare-retrieval` is the lane that decides the chunker recommendation, the hybrid fusion weight,
-and the reranker row, and it is the only comparison lane in the repo with no paired uncertainty at
-all: it publishes point estimates plus the measurement floor, and the floor answers only whether a
-gap is numeric noise ([RAG core](current/rag-core.md#measurement-floor---noise-floor)). Every other
-lane -- the embedder bake-off, the fusion sweep, the ablation, the answer-quality comparison, the
-adoption bar -- reports a paired delta against a named baseline with a win/loss/tie ledger and an
-adopt-or-retain verdict. Give this one the same treatment: retrieve once per item per lane, keep the
-per-item metric vectors, draw one shared resample index set, and report each lane's delta against a
-baseline lane with the standard verdict.
-
-- Agent status: RUN NEEDED
-- Dependencies: none, and it should land BEFORE `chunker-bake-off-under-the-size-cap`, which would
-  otherwise record another point-estimate ranking. Reuse
-  `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes metric vectors, not embedder
-  rows) and the lane seam in `src/llb/rag/compare.py` / `src/llb/rag/comparison_builders.py`.
-- User-visible outcome: a chunker or fusion-weight recommendation states whether the winning lane
-  would still win on a different draw of questions, instead of ranking three-decimal point estimates.
-- Scope boundary: in scope -- the per-item vectors, the paired columns, the baseline-lane selection,
-  the verdict, and a re-run on both scored corpora. Out of scope -- new strategies, new lanes, and
-  any change to the retrieval metrics or the floor.
-- Data and artifact paths: the existing `compare-retrieval` report plus per-item vectors in its JSON;
-  no new roots.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=... NOISE_FLOOR=1` on the CUDA host; CI
-  covers the paired columns over the fake retrievers the lane is already tested with.
-- Acceptance gates: `make ci` green; every recorded row's point estimate reproduces exactly; each row
-  carries a paired delta against the baseline lane and the report states adopt or retain; the
-  recorded `sentence`-versus-`recursive` and fusion-weight readings are restated as separated or
-  flat.
-- Documentation target: the chunking-strategies and hybrid-retrieval evidence in
-  [RAG core](current/rag-core.md).
-
 ### agent-context-management-policies
 
 The agent episode loop rebuilds its prompt from the FULL transcript of every tool call and
@@ -228,7 +195,8 @@ the cost columns a reranker is actually chosen on (rerank latency per query, VRA
 is resident).
 
 - Agent status: RUN NEEDED
-- Dependencies: `retrieval-comparison-paired-uncertainty` (the verdict machinery), and it feeds
+- Dependencies: reuse the paired lane and verdict machinery documented in
+  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict); this task feeds
   `embedder-decision-on-a-resolvable-item-set`. Reuse `CrossEncoderReranker` and the `+rerank` row
   seam in `src/llb/rag/compare.py`.
 - User-visible outcome: the shipped reranker is a measured choice with a cost, not a default nobody
@@ -424,10 +392,10 @@ strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the go
 that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
 
 - Agent status: RUN NEEDED
-- Dependencies: `retrieval-comparison-paired-uncertainty` -- without it this re-run can only record
-  another point-estimate ranking, and the recorded winner's margin is smaller than one item on the
-  sets involved. Then reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
-  row can be read against the corpus's own floor
+- Dependencies: use the paired verdict in
+  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict), because the recorded
+  winner's margin is smaller than one item on the sets involved. Reuse `make compare-retrieval`
+  with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own floor
   ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
   `size` the operator asked for.
