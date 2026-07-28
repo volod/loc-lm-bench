@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from llb.rag.fusion_evidence.stability import (
         ReadingStability as RowStability,
     )
+    from llb.rag.fusion_evidence.selection import SelectionAdjustment
 
 # Per-case columns compared inside every cell. `objective_score` is the decision metric.
 # `contains` is the verbosity-robust found-rate companion: token F1 mixes finding the needle with
@@ -163,6 +164,9 @@ class BarVerdict(TypedDict):
     # cells above, never a fourth outcome: a borderline cell still counts where it counted.
     borderline_cells: list[str]
     reason: str
+    # Per-cell readings before accounting for having searched the whole objective grid.
+    per_row_answer_cells: NotRequired[list[str]]
+    selection_adjustment: NotRequired["SelectionAdjustment"]
 
 
 class AdoptionBarReport(TypedDict):

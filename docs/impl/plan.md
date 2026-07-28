@@ -43,45 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### selection-adjusted-grid-verdicts
-
-Three lanes decide by SELECTING a row out of a grid and then reading that row as if it were the only
-comparison made: the fusion sweep's `best_row` (17-127 rows x 4 metrics x slices, 408-3048 paired
-cuts per sweep), the adoption bar's `extend_bar` (fires when ANY of 4 cells clears zero), and the
-bake-off's adopt (any candidate that separates). Measured against a joint sign-flip null, the
-`any cell` rule fires on 13.7%-16.4% of null draws over 4 cells and 44.1% over the 20-cell roster,
-and the three recorded `adopt` fusion sweeps' deciding row carries an FWER-adjusted p of 0.14-0.29
-([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Add family-wise control
-where a verdict selects: declare the family a verdict chose from, compute a Westfall-Young
-max-statistic step-down adjusted p over it (the same sign-flip draw, so the correlation between rows
-is respected rather than assumed away), and gate adoption on the adjusted reading while continuing
-to report the per-row one.
-
-- Agent status: RUN NEEDED
-- Dependencies: use the shared sign-flip draw and calibrated per-row p described in
-  [RAG core](current/rag-core.md#randomization-calibrated-paired-readings). Reuse each lane's verdict
-  module -- `src/llb/rag/fusion_evidence/verdict.py`,
-  `src/llb/eval/embedder_adoption/verdict.py`, `src/llb/rag/embedding_bakeoff_verdict.py`.
-- User-visible outcome: a grid sweep's recommendation carries the error rate of the SEARCH that
-  produced it, so an operator stops adopting the luckiest cell of a wide sweep.
-- Scope boundary: in scope -- the family declaration per lane, the adjusted p, the gated verdict, and
-  a re-read of every recorded sweep restating whether its verdict survives. Out of scope -- narrowing
-  any grid, changing the metrics, and correcting rows the verdict did not select from (they stay
-  per-row readings, labeled as such).
-- Data and artifact paths: additive fields in the existing artifacts; the re-read under
-  `$DATA_DIR/paired-reading-audit/<run>/`.
-- Execution path: the re-read runs from recorded artifacts on the CUDA host; CI covers the step-down
-  procedure against a brute-force family at small n and the per-lane family declaration over fixtures.
-- Acceptance gates: `make ci` green; every recorded grid verdict is restated as surviving or not
-  surviving its own family adjustment, explicitly including the `graph_fusion_span_identity`
-  `overlap` row that the `exact`-to-`overlap` default flip would be decided on -- the minimum-
-  evidence gate already reads that row as unsupported at its item count
-  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)), so the family adjustment must
-  say whether it would ALSO have failed selection had the item count been there; no shipped default
-  changes on this task alone.
-- Documentation target: the fusion evidence section of [GraphRAG](current/graphrag-backend.md) and
-  the paired-uncertainty subsection of [RAG core](current/rag-core.md).
-
 ### retrieval-comparison-paired-uncertainty
 
 `compare-retrieval` is the lane that decides the chunker recommendation, the hybrid fusion weight,

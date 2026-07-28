@@ -103,6 +103,30 @@ def test_a_rank_gain_that_reaches_the_answer_in_one_cell_extends_the_bar():
     assert "k3" in verdict["reason"]
 
 
+def test_per_cell_answer_gains_must_survive_the_four_cell_selection_family():
+    ids = _ids(7)
+    labels = ("k10", "k10+rerank", "k3", "k3+rerank")
+    cells = {}
+    for loss, label in enumerate(labels):
+        baseline = [_row(item_id, 0.5, rank=3) for item_id in ids]
+        candidate = [
+            _row(item_id, 0.25 if index == loss else 1.0, rank=1)
+            for index, item_id in enumerate(ids)
+        ]
+        cells[label] = (baseline, candidate)
+    report = _sweep(cells)
+    verdict = report["verdict"]
+
+    assert verdict["per_row_answer_cells"] == list(labels)
+    assert verdict["answer_cells"] == []
+    assert verdict["decision"] == DECISION_KEEP_BAR
+    assert verdict["selection_adjustment"]["family_size"] == 4
+    assert all(
+        entry["unadjusted_p"] <= 0.025 < entry["adjusted_p"]
+        for entry in verdict["selection_adjustment"]["p_values"].values()
+    )
+
+
 def test_a_rank_gain_that_never_reaches_the_answer_keeps_recall_as_the_sole_bar():
     """The measured negative: the encoder does rank better and the answers do not move."""
     ids = _ids(12)

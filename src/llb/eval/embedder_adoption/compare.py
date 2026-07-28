@@ -28,7 +28,7 @@ from llb.eval.embedder_adoption.models import (
     LaneMetrics,
 )
 from llb.eval.embedder_adoption.stability import RowStability, stability_from_index_sets
-from llb.eval.embedder_adoption.verdict import decide_bar
+from llb.eval.embedder_adoption.verdict import adjust_selection_family, decide_bar
 from llb.eval.paired_cases import CaseRows, lane_vectors, shared_item_ids
 from llb.rag.fusion_evidence.slices import MetricVectors
 from llb.rag.fusion_evidence.stability import (
@@ -104,6 +104,17 @@ def compare_cells(
         )
         for cell, cell_rows in cells
     ]
+    objective_deltas = {
+        cell.label: _cell_metric_delta(
+            lanes, cell.label, item_ids, candidate, baseline, METRIC_OBJECTIVE
+        )
+        for cell, _cell_rows in cells
+    }
+    adjustment = adjust_selection_family(
+        objective_deltas,
+        resamples=resamples,
+        index_sets=index_sets,
+    )
     return {
         "baseline": baseline,
         "candidate": candidate,
@@ -114,7 +125,11 @@ def compare_cells(
         "seed": seed,
         "cells": reports,
         "verdict": decide_bar(
-            reports, baseline=baseline, candidate=candidate, confidence=confidence
+            reports,
+            baseline=baseline,
+            candidate=candidate,
+            confidence=confidence,
+            adjustment=adjustment,
         ),
     }
 
@@ -203,3 +218,18 @@ def _cell_stability(
 
 def _delta(candidate: MetricVectors, baseline: MetricVectors, metric: str) -> list[float]:
     return [c - b for c, b in zip(candidate[metric], baseline[metric])]
+
+
+def _cell_metric_delta(
+    lanes: Mapping[str, CaseRows],
+    cell: str,
+    item_ids: Sequence[str],
+    candidate: str,
+    baseline: str,
+    metric: str,
+) -> list[float]:
+    vectors = {
+        model: lane_vectors(lanes[f"{cell}/{model}"], item_ids, [metric])
+        for model in (candidate, baseline)
+    }
+    return _delta(vectors[candidate], vectors[baseline], metric)

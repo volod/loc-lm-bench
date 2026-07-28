@@ -19,6 +19,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Whether RAG pays for itself: closed-book vs rag vs long-context lanes | [RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation) |
 | How much repeated text an index still holds, and which collapse tier to build with | [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers) |
 | Whether a paired verdict may be read at all, and the item count an unreadable one needs | [RAG core](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading) |
+| Family-wise error control when a verdict selects a grid row, cell, or candidate | [RAG core](current/rag-core.md#selection-adjusted-grid-verdicts) |
 | Predeclared MDE, paired-power item counts, and realized sensitivity in comparison lanes | [RAG core](current/rag-core.md#paired-power-contract-for-comparison-lanes) |
 | vLLM launcher, telemetry fields, backend build rules | [Backend telemetry](current/backend-telemetry.md) |
 | Model resolution, sweeps, tuning, joint-search, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |

@@ -18,7 +18,7 @@ def audit_paired_readings_cmd(
         None, help="output directory (default: DATA_DIR/paired-reading-audit/<timestamp>)"
     ),
 ) -> None:
-    """Re-read vector-backed artifacts without inference and name every changed verdict."""
+    """Re-read vector-backed artifacts with per-row and selection-adjusted inference."""
     from llb.rag.paired_reading_audit import audit_paired_readings
     from llb.rag.paired_reading_audit_report import format_audit
 

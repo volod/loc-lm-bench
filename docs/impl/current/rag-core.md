@@ -1641,7 +1641,8 @@ under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability findi
 shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
 the per-test size finding is now enforced by
 [randomization-calibrated paired readings](#randomization-calibrated-paired-readings); selection
-control remains forward work in [`plan.md`](../plan.md).
+control is now enforced by
+[selection-adjusted grid verdicts](#selection-adjusted-grid-verdicts).
 
 - **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
   **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
@@ -1664,7 +1665,7 @@ control remains forward work in [`plan.md`](../plan.md).
   the selection adjustment nor the unadjusted randomization test reproduces the recorded reading at
   the same 2.5% level. The `any cell clears zero` rule of the adoption sweep fires on 13.7%-16.4% of
   null draws over its 4 cells, and 44.1% over the 20-cell roster (0.82 expected false positives per
-  roster).
+  roster). The maintained implementation and full recorded-artifact re-read are below.
 
 The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
 nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
@@ -1712,6 +1713,74 @@ Host validation used the RTX PRO 3000 Blackwell GPU (12,227 MiB) with the instal
 MamayLM-Gemma-3-12B model available. The audit path deliberately made no inference, as its contract
 is to re-read persisted vectors. Implementation coverage also includes the shared stability,
 minimum-evidence, lane-verdict, adoption-borderline, query-robustness, and artifact-audit tests.
+
+#### Selection-adjusted grid verdicts
+
+2026-07-28. Verdicts that SEARCH a grid now carry the error rate of that search. The shared
+implementation is `src/llb/rag/fusion_evidence/selection.py`: it applies one aligned item-level
+sign-flip draw to every hypothesis in a declared family, computes a studentized max statistic, and
+returns Westfall-Young STEP-DOWN adjusted p-values. Joint signs preserve the measured cross-row
+correlation. Item columns that are zero for the whole family are removed before choosing exact
+versus Monte Carlo inference; up to 16 active items are enumerated, while larger families use at
+least 20,000 deterministic draws with the plus-one correction. The adjusted p is cut at the same
+`(1 - confidence) / 2` one-sided alpha as the per-row calibrated p.
+
+The lane declarations are narrow and explicit:
+
+- The fusion verdict selects from every non-baseline fused/routed row x all four metrics on its
+  FOCUS slice. Its `best_row` ranking is unchanged, but a recall/all-spans gain must clear both its
+  ordinary `PairedComparison` and the selected family.
+- The adoption-bar verdict adjusts the objective delta over every scored cell because only
+  `objective_score in ANY cell` can trigger `extend_bar`. Its rank-only evidence remains a per-row
+  reading: it can retain the existing bar or say the premise was absent, but cannot extend it.
+- The embedder bake-off adjusts every non-baseline candidate x ENABLED adoption bar. A candidate
+  enters `separated`, `cleared`, and the adopt ranking only when its bar survives that family.
+
+Each verdict persists an additive `selection_adjustment` block with the method, statistic,
+exact/Monte-Carlo provenance, draw count, seed, item count, family size, and each hypothesis's
+marginal and adjusted p. The adoption and bake-off verdicts also preserve their pre-adjustment
+positive cells/candidates in `per_row_answer_cells` / `per_row_cleared`; the existing row tables
+continue to print the calibrated per-row p. Lane adapters live in
+`fusion_evidence/selection_family.py`, `eval/embedder_adoption/verdict.py`, and
+`embedding_bakeoff_selection.py`.
+
+CUDA-host re-read: `make audit-paired-readings
+PAIRED_READING_AUDIT_OUT=$DATA_DIR/paired-reading-audit/<run>` produced
+`$DATA_DIR/paired-reading-audit/20260728T-selection-adjusted-grid-verdicts/`. It reconstituted 14
+vector-backed grid artifacts and 7,129 paired blocks:
+
+| lane | grid artifacts | selected family survives | adjusted verdict |
+| --- | ---: | ---: | --- |
+| fusion sweep | 6 | 0 | three historical `adopt` calls become `inconclusive`; three stay `inconclusive` |
+| adoption bar | 6 | 1 | five full sweeps do not survive; the one-cell confirmation stays `extend_bar` |
+| embedder bake-off | 2 | 0 | both canonical corpus runs stay `retain` |
+
+The fusion row that would decide an `exact` to `overlap` default change,
+`fused/global_community@0.30/d50/ioverlap`, has a family-draw marginal recall p of 0.0628 and a
+step-down adjusted p of **0.2310** in the span-identity, routing, and merge-ratio grids. It
+therefore ALSO fails selection even if a larger accepted item set removed the current
+minimum-evidence failure. No shipped default changes on this reading.
+
+The adoption result shows why the family matters. MamayLM-12B's best full-grid objective cell moves
+from marginal p 0.0145 to adjusted p 0.0438; Mistral's two strongest cells move from 0.0184 and
+0.0045 to 0.0560. The one-cell MamayLM confirmation has no search multiplicity and stays at
+adjusted p 0.0157. On the regenerated 250-item fixture bake-off, E5-large recall moves from a
+family-draw marginal p of 0.0307 to adjusted p 0.0458 and remains `retain`; the accepted 40-item PDF
+run is flatter still.
+
+Seven historical bake-off JSON files persist aggregate intervals but no aligned `paired_items`, so
+their cross-candidate correlation is unrecoverable rather than guessed. The audit lists each one as
+legacy and uses fresh vector-backed runs of the same canonical 250-item fixture and 40-item accepted
+PDF corpus. `make compare-embeddings CONFIG=<config>` now lets the config own its goldset and split
+unless either is explicitly overridden on the make command line; this prevents the repository-wide
+fixture and `final` defaults from silently changing a recorded family.
+
+Coverage is in `tests/llb/rag/test_selection_adjustment.py` plus the fusion, adoption-bar,
+bake-off-verdict, and paired-reading-audit suites. The shared procedure is checked against an
+independent brute-force family; lane fixtures include a case where every per-row reading clears but
+the family-wise verdict does not. Host validation used an NVIDIA GeForce RTX 4060 Ti (16,380 MiB,
+CUDA 13.2), regenerated both bake-offs through their Make configs, and completed `make ci` with
+2,354 tests passing and 45 slow/opt-in tests deselected.
 
 #### The minimum-evidence gate on a paired reading
 

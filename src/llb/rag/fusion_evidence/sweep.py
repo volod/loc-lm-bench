@@ -34,6 +34,7 @@ from llb.rag.fusion_evidence.stats import (
     DEFAULT_SEED,
     bootstrap_index_sets,
 )
+from llb.rag.fusion_evidence.selection_family import adjust_fusion_selection
 from llb.rag.fusion_evidence.verdict import decide
 from llb.rag.retrieval import all_spans_at_k, recall_at_k, reciprocal_rank, span_coverage_at_k
 
@@ -160,6 +161,13 @@ def evaluate_fusion_evidence(
         if routing is not None:
             row["routing"] = routing
         rows[label] = row
+    adjustment = adjust_fusion_selection(
+        by_row,
+        baseline=baseline,
+        indexes=grouped[focus_slice],
+        resamples=resamples,
+        index_sets=per_slice_sets[focus_slice],
+    )
     report: FusionEvidenceReport = {
         "k": k,
         "n": len(items),
@@ -170,7 +178,13 @@ def evaluate_fusion_evidence(
         "seed": seed,
         "rows": rows,
         "focus_items": _focus_items(items, grouped[focus_slice], by_row),
-        "verdict": decide(rows, baseline=baseline, focus_slice=focus_slice, confidence=confidence),
+        "verdict": decide(
+            rows,
+            baseline=baseline,
+            focus_slice=focus_slice,
+            confidence=confidence,
+            adjustment=adjustment,
+        ),
     }
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
