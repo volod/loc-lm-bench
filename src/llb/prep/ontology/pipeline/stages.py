@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING
 from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier_telemetry import LLMComplete
+from llb.prep.ontology.constants import (
+    DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
+    DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+    DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
+)
 from llb.prep.ontology.coverage import build_seeds, select_seeds
 from llb.prep.ontology.coverage_report import coverage_report
 from llb.prep.ontology.draft import draft_items
@@ -58,9 +63,14 @@ def _multi_hop_stage(
     max_paths: int,
     seed: int,
     bridge_fill: bool = False,
+    path_stratified: bool = False,
+    relation_pair_target: int = DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+    document_mode_target: int = DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
+    source_document_target: int = DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
     excluded_span_pairs: set[tuple[tuple[str, int, int], tuple[str, int, int]]] | None = None,
     avoid_questions: list[str] | None = None,
     graph: "KnowledgeGraph | None" = None,
+    path_report: dict[str, object] | None = None,
 ) -> tuple[list[GoldItem], dict[str, ItemLabels]]:
     """Walk 2-hop graph paths and draft multi-span multi-hop chain items (yield-max).
 
@@ -74,18 +84,28 @@ def _multi_hop_stage(
     `graph` is the injection seam: pass a built `KnowledgeGraph` to skip the store load entirely
     (tests drive the stage with no DuckDB, no store on disk, and no extraction).
     """
-    from llb.prep.ontology.graph_paths import walk_chain_paths, walk_two_hop_paths
     from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
+    from llb.prep.ontology.path_strata import PathStratumTargets
+    from llb.prep.ontology.pipeline.multihop_paths import select_multi_hop_paths
 
     if graph is None:
         graph = _load_path_graph(graph_dir, extractions, docs, ontology)
-    walk = walk_chain_paths if bridge_fill else walk_two_hop_paths
-    seeds = walk(
+    seeds, report = select_multi_hop_paths(
         graph,
         max_paths=max_paths,
         seed=seed,
+        bridge_fill=bridge_fill,
+        stratified=path_stratified,
+        targets=PathStratumTargets(
+            relation_pair=relation_pair_target,
+            document_mode=document_mode_target,
+            source_document=source_document_target,
+        ),
+        source_documents=[doc.doc_id for doc in docs],
         excluded_span_pairs=excluded_span_pairs,
     )
+    if report is not None and path_report is not None:
+        path_report.update(report)
     raw = draft_multi_hop(complete, docs, seeds, avoid_questions=avoid_questions)
     return build_multi_hop_items(docs, seeds, raw)
 
@@ -174,8 +194,16 @@ def _graph_stages(
     settings: DraftSettings,
     items: list[GoldItem],
     item_labels: dict[str, ItemLabels],
-) -> tuple[list[GoldItem], dict[str, ItemLabels], list[ChainItem]]:
+) -> tuple[
+    list[GoldItem],
+    dict[str, ItemLabels],
+    list[ChainItem],
+    dict[str, object] | None,
+]:
     """Optional graph-walk stages: multi-hop items and ordered question chains."""
+    path_strata: dict[str, object] | None = (
+        {} if settings.multi_hop and settings.multi_hop_path_stratified else None
+    )
     if settings.multi_hop:
         from llb.prep.ontology.dedup import load_prior_questions
         from llb.prep.ontology.pipeline.expansion import prior_multihop_span_pairs
@@ -191,8 +219,13 @@ def _graph_stages(
             max_paths=settings.multi_hop_max_paths,
             seed=settings.seed,
             bridge_fill=settings.multi_hop_bridge_fill,
+            path_stratified=settings.multi_hop_path_stratified,
+            relation_pair_target=settings.multi_hop_relation_pair_target,
+            document_mode_target=settings.multi_hop_document_mode_target,
+            source_document_target=settings.multi_hop_source_document_target,
             excluded_span_pairs=excluded_span_pairs,
             avoid_questions=avoid_questions,
+            path_report=path_strata,
         )
         items = items + mh_items
         item_labels = {**item_labels, **mh_labels}
@@ -206,4 +239,4 @@ def _graph_stages(
             max_paths=settings.multi_hop_max_paths,
             seed=settings.seed,
         )
-    return items, item_labels, chain_items
+    return items, item_labels, chain_items, path_strata

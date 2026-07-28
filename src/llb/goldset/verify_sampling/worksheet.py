@@ -23,6 +23,12 @@ from llb.goldset.verify_base import (
     write_worksheet_rows,
 )
 from llb.goldset.verify_sampling.rows import sample_chain_rows, sample_gold_rows
+from llb.goldset.verify_sampling.planning import (
+    DEFAULT_EXPECTED_REJECT_RATE,
+    DEFAULT_SAMPLE_CONFIDENCE,
+    DEFAULT_SAMPLE_PRECISION,
+    sample_size_plan,
+)
 from llb.goldset.verify_sampling.strata import (
     draw_chain_sample,
     draw_stratified_sample,
@@ -64,7 +70,15 @@ def write_sample_manifest(
 
 
 def build_sample_worksheet(
-    bundle: Path, out_path: Path, *, n: int, seed: int = 13, kind: str = KIND_AUTO
+    bundle: Path,
+    out_path: Path,
+    *,
+    n: int | None = None,
+    seed: int = 13,
+    kind: str = KIND_AUTO,
+    confidence: float = DEFAULT_SAMPLE_CONFIDENCE,
+    precision: float = DEFAULT_SAMPLE_PRECISION,
+    expected_reject_rate: float = DEFAULT_EXPECTED_REJECT_RATE,
 ) -> tuple[int, dict[str, int]]:
     """Draw a stratified sample and persist its worksheet and manifest."""
     bundle = Path(bundle)
@@ -73,14 +87,32 @@ def build_sample_worksheet(
     strata_sizes: dict[str, int] = {}
     if resolved_kind == KIND_CHAINS:
         chains = load_chains(find_chains(bundle))
-        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        population_keys = [chain_stratum_key(chain) for chain in chains]
+        plan = sample_size_plan(
+            len(chains),
+            len(set(population_keys)),
+            requested_size=n,
+            confidence=confidence,
+            precision=precision,
+            expected_reject_rate=expected_reject_rate,
+        )
+        chain_sample = draw_chain_sample(chains, int(plan["selected_target"]), seed=seed)
         rows = sample_chain_rows(bundle, chain_sample)
         keys = [chain_stratum_key(chain) for chain in chain_sample]
         sample_size = len(chain_sample)
         population_size = len(chains)
     else:
         items = load_goldset(find_goldset(bundle))
-        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        population_keys = [stratum_key(item) for item in items]
+        plan = sample_size_plan(
+            len(items),
+            len(set(population_keys)),
+            requested_size=n,
+            confidence=confidence,
+            precision=precision,
+            expected_reject_rate=expected_reject_rate,
+        )
+        gold_sample = draw_stratified_sample(items, int(plan["selected_target"]), seed=seed)
         rows = sample_gold_rows(bundle, gold_sample, synthetic=synthetic)
         keys = [stratum_key(item) for item in gold_sample]
         sample_size = len(gold_sample)
@@ -99,18 +131,36 @@ def build_sample_worksheet(
             "sample_size": sample_size,
             "population": population_size,
             "strata": strata_sizes,
+            "acceptance_gate": plan,
         },
     )
     return sample_size, strata_sizes
 
 
 def merge_sample_worksheet(
-    bundle: Path, out_path: Path, *, n: int, seed: int = 13, kind: str = KIND_AUTO
+    bundle: Path,
+    out_path: Path,
+    *,
+    n: int | None = None,
+    seed: int = 13,
+    kind: str = KIND_AUTO,
+    confidence: float = DEFAULT_SAMPLE_CONFIDENCE,
+    precision: float = DEFAULT_SAMPLE_PRECISION,
+    expected_reject_rate: float = DEFAULT_EXPECTED_REJECT_RATE,
 ) -> tuple[int, int]:
     """Enlarge a worksheet additively while preserving all existing decisions."""
     out_path = Path(out_path)
     if not out_path.is_file():
-        size, _ = build_sample_worksheet(bundle, out_path, n=n, seed=seed, kind=kind)
+        size, _ = build_sample_worksheet(
+            bundle,
+            out_path,
+            n=n,
+            seed=seed,
+            kind=kind,
+            confidence=confidence,
+            precision=precision,
+            expected_reject_rate=expected_reject_rate,
+        )
         return size, size
     bundle = Path(bundle)
     manifest_kind = _worksheet_sample_kind(out_path)
@@ -118,8 +168,18 @@ def merge_sample_worksheet(
     existing_rows, fieldnames = load_worksheet(out_path)
     existing_ids = {(row.get("item_id") or "").strip() for row in existing_rows}
     synthetic = bundle_is_synthetic(bundle) if resolved_kind == KIND_GOLDSET else False
+    population, population_strata = population_shape(bundle, resolved_kind)
+    plan = sample_size_plan(
+        population,
+        population_strata,
+        requested_size=n,
+        confidence=confidence,
+        precision=precision,
+        expected_reject_rate=expected_reject_rate,
+    )
+    selected_n = int(plan["selected_target"])
     new_rows, population = new_sample_rows(
-        bundle, resolved_kind, n, seed, existing_ids, synthetic=synthetic
+        bundle, resolved_kind, selected_n, seed, existing_ids, synthetic=synthetic
     )
     if not new_rows:
         return 0, len(existing_rows)
@@ -136,10 +196,20 @@ def merge_sample_worksheet(
             "sample_size": len(all_rows),
             "population": population,
             "merged_added": len(new_rows),
+            "acceptance_gate": plan,
         },
         merge_existing=True,
     )
     return len(new_rows), len(all_rows)
+
+
+def population_shape(bundle: Path, resolved_kind: str) -> tuple[int, int]:
+    """Return population and non-empty stratum counts for sample planning."""
+    if resolved_kind == KIND_CHAINS:
+        chains = load_chains(find_chains(bundle))
+        return len(chains), len({chain_stratum_key(chain) for chain in chains})
+    items = load_goldset(find_goldset(bundle))
+    return len(items), len({stratum_key(item) for item in items})
 
 
 def new_sample_rows(

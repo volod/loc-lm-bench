@@ -1,11 +1,9 @@
 """What a paired reading is allowed to SAY, and the item count that entitles it to say it.
 
-Every adopt-or-retain call in this repo is a binary cut of a paired interval: does the delta's
-lower bound clear zero. That test is silent about how much evidence produced it. A paired block's
-evidence is its DISCORDANT items -- the pairs where the two lanes actually differ, since the ties
-carry no information about the direction -- and a percentile bootstrap of a handful of them prints
-exactly like a decisive result: a 2-item slice with 2 wins publishes `+1.000 [+1.000, +1.000]`,
-because resampling two differing items can only ever draw those two.
+Every adopt-or-retain call cuts a calibrated paired randomization p. A paired block's evidence is
+its DISCORDANT items -- the pairs where the two lanes actually differ, since ties carry no
+directional information. This module owns the separate question of whether that count can support
+the requested reporting level at all.
 
 The exact two-sided sign test the same block already reports bounds what `d` discordant items can
 ever show. Its smallest attainable p is `2 * 0.5^d` -- every pair falling the same way, the most
@@ -43,8 +41,8 @@ DEFAULT_CONFIDENCE = 0.95
 READING_SEPARATED = "separated"
 READING_FLAT = "flat"
 
-# The gate's own state: the delta's interval clears zero, but too few items differ for the
-# reporting level to be reachable, so the row states nothing. It is NOT a third outcome any lane
+# The gate's own state: a positive interval rests on too few differing items for the reporting
+# level to be reachable, so the row states nothing. It is NOT a third outcome any lane
 # may adopt on -- it is the absence of a readable one, and it is an OPEN question rather than a
 # measured absence of a difference (`resolving_item_count` prices what would close it).
 READING_INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -212,8 +210,8 @@ def evidence_gate_summary(
     needed = minimum_discordant_pairs(confidence)
     return [
         f"Minimum evidence: **{n_gated} of {n_rows}** paired {subject}s are "
-        f"`{reading_label(READING_INSUFFICIENT_EVIDENCE)}` -- the delta's interval clears zero but "
-        f"fewer than {needed} items differ, which is the fewest an exact two-sided sign test needs "
+        f"`{reading_label(READING_INSUFFICIENT_EVIDENCE)}` -- a positive interval rests on "
+        f"fewer than {needed} differing items, the minimum an exact two-sided sign test needs "
         f"to reach {level_label(confidence)} under any arrangement of the data. No verdict is "
         "decided on such a row, and it is an OPEN question rather than a measured absence of a "
         "difference: the `n to reach` column prices the item set that would close it.",

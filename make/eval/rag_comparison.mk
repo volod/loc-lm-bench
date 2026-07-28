@@ -155,4 +155,10 @@ compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qd
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_STORES_OUT),--out "$(COMPARE_STORES_OUT)",)
+PAIRED_READING_AUDIT_OUT ?=
+
+.PHONY: audit-paired-readings
+audit-paired-readings: ## Re-read recorded paired artifacts with the calibrated randomization rule
+	$(PY) -m llb.main audit-paired-readings \
+		$(if $(PAIRED_READING_AUDIT_OUT),--out-dir "$(PAIRED_READING_AUDIT_OUT)",)
 

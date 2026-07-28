@@ -131,10 +131,10 @@ make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> DRAFT_NO
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<hf-vllm-model> \
   DRAFT_BACKEND=vllm DRAFT_NO_THINK=1 DRAFT_NUM_CTX=16384
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<local-model> \
-  DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_CONCURRENCY=2 DRAFT_VERIFY_N=30
+  DRAFT_DOC_LIMIT=1 DRAFT_EXTRACT_MAX_CHARS=12000 DRAFT_CONCURRENCY=2 DRAFT_VERIFY_DERIVE=1
 llb prepare-goldset-draft --corpus-root <dir> --model <local-model> \
   --max-tokens 2048 --temperature 0 --timeout 300 --no-think \
-  --doc-limit 1 --extract-max-chars 12000 --concurrency 2 --verification-sample-size 30
+  --doc-limit 1 --extract-max-chars 12000 --concurrency 2 --derive-verification-sample
 llb prepare-goldset-draft --corpus-root <dir> --model <hf-vllm-model> \
   --backend vllm --no-think --num-ctx 16384 --doc-limit 1
 llb prepare-goldset-draft --corpus-root <dir> --model <model> --extractor spacy

@@ -18,10 +18,8 @@ from llb.rag.fusion_evidence.evidence_gate import (
     READING_SEPARATED,
 )
 from llb.rag.fusion_evidence.stability import (
-    LOOSER_CONFIDENCE,
     SIDE_ABOVE,
     SIDE_BELOW,
-    TIGHTER_CONFIDENCE,
     borderline_note,
     boundary_table,
     decision_probability,
@@ -68,36 +66,32 @@ def test_the_decision_probability_is_exactly_the_interval_rule():
     assert decision_probability(0.90) == pytest.approx(0.95)
 
 
-def test_the_persisted_reading_matches_the_interval_the_row_publishes():
-    """A row whose delta clears zero must read `separated`, and one that does not must read `flat`."""
-    for wins, losses in ((20, 0), (6, 1), (7, 1), (2, 8)):
-        row = _paired(wins, losses)
-        separated = row["delta"]["lo"] > 0.0
-        expected = READING_SEPARATED if separated else READING_FLAT
-        assert row["stability"]["reading"] == expected, (wins, losses)
+def test_the_persisted_reading_is_calibrated_even_when_the_interval_disagrees():
+    row = _paired(7, 1)
+    assert row["delta"]["lo"] > 0.0
+    assert row["randomization_p"] == pytest.approx(9 / 256)
+    assert row["stability"]["reading"] == READING_FLAT
 
 
-def test_the_interval_is_unchanged_by_carrying_the_annotation():
+@pytest.mark.parametrize("n", [1, 2, 5, 12, 35, 40, 82, 95])
+@pytest.mark.parametrize("resamples", [0, 50, RESAMPLES])
+@pytest.mark.parametrize("confidence", [0.90, 0.95, 0.975, 0.99])
+def test_the_interval_is_unchanged_by_carrying_the_annotation(
+    n: int, resamples: int, confidence: float
+):
     """Nothing recorded may move: the bounds must equal what the plain interval helper returns.
 
     `bootstrap_interval` is the pre-annotation code path, so this is a differential check against
     it -- swept across the shapes and settings the repo's recorded artifacts were produced at,
     because that is what says a recorded number could not have moved.
     """
-    rng = Random(SEED)
-    for n in (1, 2, 5, 12, 35, 40, 82, 95):
-        for resamples in (0, 50, RESAMPLES):
-            for confidence in (0.90, 0.95, 0.975, 0.99):
-                candidate = [rng.random() for _ in range(n)]
-                baseline = [rng.random() for _ in range(n)]
-                index_sets = bootstrap_index_sets(n, resamples, SEED)
-                deltas = [c - b for c, b in zip(candidate, baseline)]
-                row = paired_comparison(candidate, baseline, index_sets, confidence)
-                assert row["delta"] == bootstrap_interval(deltas, index_sets, confidence), (
-                    n,
-                    resamples,
-                    confidence,
-                )
+    rng = Random(f"{SEED}:{n}:{resamples}:{confidence}")
+    candidate = [rng.random() for _ in range(n)]
+    baseline = [rng.random() for _ in range(n)]
+    index_sets = bootstrap_index_sets(n, resamples, SEED)
+    deltas = [c - b for c, b in zip(candidate, baseline)]
+    row = paired_comparison(candidate, baseline, index_sets, confidence)
+    assert row["delta"] == bootstrap_interval(deltas, index_sets, confidence)
 
 
 def test_a_bootstrap_ratio_carries_the_same_cut_annotation_without_a_sign_test_gate():
@@ -120,20 +114,18 @@ def test_a_bootstrap_ratio_carries_the_same_cut_annotation_without_a_sign_test_g
 
 
 def test_a_near_miss_negative_is_marked_below_the_cut():
-    """The undecided negative: fails at 95%, would clear a 90% bar."""
-    stability = _paired(6, 1)["stability"]
-    assert decision_probability(LOOSER_CONFIDENCE) < stability["p_positive"]
-    assert stability["p_positive"] < decision_probability(0.95)
+    """The calibrated p fails at 95% but clears the looser 90% bar."""
+    stability = _paired(7, 1)["stability"]
+    assert 0.025 < stability["randomization_p"] <= 0.05
     assert stability["reading"] == READING_FLAT
     assert stability["looser_reading"] == READING_SEPARATED
     assert stability["borderline"] is True and stability["side"] == SIDE_BELOW
 
 
 def test_a_near_miss_positive_is_marked_above_the_cut():
-    """The other half: it PASSES at 95% but a 97.5% interval would drop it."""
-    stability = _paired(7, 1)["stability"]
-    assert decision_probability(0.95) < stability["p_positive"]
-    assert stability["p_positive"] < decision_probability(TIGHTER_CONFIDENCE)
+    """The other half: it passes at 95% but a 97.5% convention drops it."""
+    stability = _paired(6, 0)["stability"]
+    assert 0.0125 < stability["randomization_p"] <= 0.025
     assert stability["reading"] == READING_SEPARATED
     assert stability["borderline"] is True and stability["side"] == SIDE_ABOVE
 
@@ -177,7 +169,7 @@ def test_stability_from_readings_accepts_a_richer_reading_than_separated_or_flat
 
 def test_unsettled_and_format_reading_only_mark_a_borderline_row():
     settled = _paired(20, 0)["stability"]
-    marked = _paired(6, 1)["stability"]
+    marked = _paired(7, 1)["stability"]
     assert unsettled(settled) is None and unsettled(marked) is marked
     assert unsettled(None) is None
     assert format_reading(settled, READING_SEPARATED) == "separated"
@@ -190,27 +182,27 @@ def test_the_shared_clause_is_empty_when_every_named_row_is_settled():
 
 
 def test_the_shared_clause_names_the_row_the_side_and_the_level_that_would_flip_it():
-    note = borderline_note([("recall_at_k", _paired(6, 1)["stability"])])
+    note = borderline_note([("recall_at_k", _paired(7, 1)["stability"])])
     assert "BORDERLINE" in note and "below the cut" not in note
-    assert "`recall_at_k`" in note and "p_positive" in note
-    assert "0.90 interval would read it `separated`" in note
+    assert "`recall_at_k`" in note and "randomization p" in note
+    assert "0.90 convention would read it `separated`" in note
     assert "too close to call" in note
-    above = borderline_note([("mrr", _paired(7, 1)["stability"])])
-    assert "0.975 interval would read it `flat`" in above
+    above = borderline_note([("mrr", _paired(6, 0)["stability"])])
+    assert "0.975 convention would read it `insufficient_evidence`" in above
 
 
 def test_the_clause_counts_the_rows_when_several_are_unsettled():
     note = borderline_note(
-        [("recall_at_k", _paired(6, 1)["stability"]), ("mrr", _paired(7, 1)["stability"])]
+        [("recall_at_k", _paired(7, 1)["stability"]), ("mrr", _paired(6, 0)["stability"])]
     )
     assert "2 of the rows" in note
 
 
 def test_the_boundary_table_is_ascii_and_empty_when_nothing_was_measured():
-    rows = [("`bge-m3` recall_at_k", _paired(6, 1)["stability"])]
+    rows = [("`bge-m3` recall_at_k", _paired(7, 1)["stability"])]
     lines = boundary_table(rows, title="T", key_header="row", subject="the candidate")
     text = "\n".join(lines)
-    assert "### T" in text and "p_positive" in text and "NO (below)" in text
+    assert "### T" in text and "randomization p" in text and "NO (below)" in text
     assert "at 90%" in text and "at 97.5%" in text
     assert text.isascii()
     assert boundary_table([], title="T", key_header="row", subject="x") == []

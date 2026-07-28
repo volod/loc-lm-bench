@@ -6,39 +6,74 @@ from typing import Any, cast
 
 from llb.core.contracts.models import ModelSpec
 
+_INTEGER_ARCH_FIELDS = (
+    ("vocab_size", "vocab_size"),
+    ("hidden_size", "hidden_size"),
+    ("num_hidden_layers", "n_layers"),
+    ("max_position_embeddings", "max_context"),
+    ("sliding_window", "sliding_window"),
+    ("sliding_window_pattern", "sliding_window_pattern"),
+)
+_ATTENTION_LAYER_TYPES = {"full_attention", "sliding_attention"}
+
+
+def _nested_text_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("text_config")
+    return value if isinstance(value, dict) else {}
+
+
+def _config_value(config: dict[str, Any], text: dict[str, Any], key: str) -> Any:
+    return text.get(key, config.get(key))
+
+
+def _copy_integer_arch_fields(
+    out: dict[str, Any], config: dict[str, Any], text: dict[str, Any]
+) -> None:
+    for source, destination in _INTEGER_ARCH_FIELDS:
+        value = _config_value(config, text, source)
+        if isinstance(value, int) and not isinstance(value, bool):
+            out[destination] = value
+
+
+def _copy_tied_embeddings(
+    out: dict[str, Any], config: dict[str, Any], text: dict[str, Any]
+) -> None:
+    value = config.get("tie_word_embeddings", text.get("tie_word_embeddings"))
+    if isinstance(value, bool):
+        out["tie_word_embeddings"] = value
+
+
+def _copy_layer_architecture(
+    out: dict[str, Any], config: dict[str, Any], text: dict[str, Any]
+) -> None:
+    layer_types = _config_value(config, text, "layer_types")
+    if not isinstance(layer_types, list) or not layer_types:
+        return
+    full_attention_layers = layer_types.count("full_attention")
+    has_non_kv_attention = any(
+        layer_type not in _ATTENTION_LAYER_TYPES for layer_type in layer_types
+    )
+    if full_attention_layers and has_non_kv_attention:
+        out["kv_layers"] = full_attention_layers
+    if "sliding_window_pattern" not in out and 0 < full_attention_layers < len(layer_types):
+        out["sliding_window_pattern"] = max(2, len(layer_types) // full_attention_layers)
+
+
+def _copy_kv_dimension(out: dict[str, Any], config: dict[str, Any], text: dict[str, Any]) -> None:
+    n_kv_heads = _config_value(config, text, "num_key_value_heads")
+    head_dim = _config_value(config, text, "head_dim")
+    if isinstance(n_kv_heads, int) and isinstance(head_dim, int):
+        out["kv_dim"] = n_kv_heads * head_dim
+
 
 def arch_from_config(config: dict[str, Any]) -> dict[str, Any]:
     """Extract planning fields from a Hugging Face config, including nested text config."""
-    text = config["text_config"] if isinstance(config.get("text_config"), dict) else {}
+    text = _nested_text_config(config)
     out: dict[str, Any] = {}
-    for key, dest in (
-        ("vocab_size", "vocab_size"),
-        ("hidden_size", "hidden_size"),
-        ("num_hidden_layers", "n_layers"),
-        ("max_position_embeddings", "max_context"),
-        ("sliding_window", "sliding_window"),
-        ("sliding_window_pattern", "sliding_window_pattern"),
-    ):
-        value = text.get(key, config.get(key))
-        if isinstance(value, int) and not isinstance(value, bool):
-            out[dest] = value
-    tie = config.get("tie_word_embeddings", text.get("tie_word_embeddings"))
-    if isinstance(tie, bool):
-        out["tie_word_embeddings"] = tie
-    layer_types = text.get("layer_types", config.get("layer_types"))
-    if isinstance(layer_types, list) and layer_types:
-        full = sum(1 for layer_type in layer_types if layer_type == "full_attention")
-        has_non_kv_attention = any(
-            layer_type not in {"full_attention", "sliding_attention"} for layer_type in layer_types
-        )
-        if full and has_non_kv_attention:
-            out["kv_layers"] = full
-        if "sliding_window_pattern" not in out and 0 < full < len(layer_types):
-            out["sliding_window_pattern"] = max(2, len(layer_types) // full)
-    n_kv_heads = text.get("num_key_value_heads", config.get("num_key_value_heads"))
-    head_dim = text.get("head_dim", config.get("head_dim"))
-    if isinstance(n_kv_heads, int) and isinstance(head_dim, int):
-        out["kv_dim"] = n_kv_heads * head_dim
+    _copy_integer_arch_fields(out, config, text)
+    _copy_tied_embeddings(out, config, text)
+    _copy_layer_architecture(out, config, text)
+    _copy_kv_dimension(out, config, text)
     return out
 
 

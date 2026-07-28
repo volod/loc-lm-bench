@@ -96,6 +96,46 @@ def resolve_corpus_root(goldset: Path, corpus_root: Path | None) -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+def _agreement_sources(
+    goldset: Path | None, corpus_root: Path | None
+) -> tuple[dict[str, GoldItem], Path | None]:
+    if goldset is None:
+        _LOG.warning("[frontier-judge] no gold set; grounding on the reference answer alone")
+        return {}, None
+    gold_by_id = {item.id: item for item in load_goldset(goldset)}
+    resolved_root = resolve_corpus_root(Path(goldset), corpus_root)
+    if resolved_root is None:
+        _LOG.warning("[frontier-judge] no corpus root; grounding on gold span text alone")
+    return gold_by_id, resolved_root
+
+
+def _agreement_item(
+    row: dict[str, str],
+    gold_by_id: dict[str, GoldItem],
+    corpus_root: Path | None,
+    cache: dict[str, str | None],
+    window: int,
+) -> AgreementItem | None:
+    answer = (row.get("model_answer") or "").strip()
+    if not answer:
+        return None
+    item_id = row.get("item_id", "")
+    gold = gold_by_id.get(item_id)
+    contexts = (
+        _gold_contexts(gold, corpus_root, cache, window)
+        if gold is not None
+        else [context for context in [(row.get("reference_answer") or "").strip()] if context]
+    )
+    return AgreementItem(
+        item_id=item_id,
+        question=(row.get("question") or "").strip(),
+        answer=answer,
+        contexts=contexts,
+        human_rating=_optional_float(row.get("human_rating", "")),
+        local_rating=_optional_float(row.get("judge_rating", "")),
+    )
+
+
 def load_agreement_items(
     worksheet: Path,
     *,
@@ -112,40 +152,16 @@ def load_agreement_items(
     pass the gold set whenever the agreement evidence is meant to be durable.
     """
     rows, _ = load_worksheet(Path(worksheet))
-    gold_by_id: dict[str, GoldItem] = {}
-    resolved_root: Path | None = None
-    if goldset is not None:
-        gold_by_id = {item.id: item for item in load_goldset(goldset)}
-        resolved_root = resolve_corpus_root(Path(goldset), corpus_root)
-        if resolved_root is None:
-            _LOG.warning("[frontier-judge] no corpus root; grounding on gold span text alone")
-    else:
-        _LOG.warning("[frontier-judge] no gold set; grounding on the reference answer alone")
-
+    gold_by_id, resolved_root = _agreement_sources(goldset, corpus_root)
     cache: dict[str, str | None] = {}
     items: list[AgreementItem] = []
     skipped = 0
     for row in rows:
-        answer = (row.get("model_answer") or "").strip()
-        if not answer:
+        item = _agreement_item(row, gold_by_id, resolved_root, cache, window)
+        if item is None:
             skipped += 1
             continue
-        item_id = row.get("item_id", "")
-        gold = gold_by_id.get(item_id)
-        if gold is not None:
-            contexts = _gold_contexts(gold, resolved_root, cache, window)
-        else:
-            contexts = [c for c in [(row.get("reference_answer") or "").strip()] if c]
-        items.append(
-            AgreementItem(
-                item_id=item_id,
-                question=(row.get("question") or "").strip(),
-                answer=answer,
-                contexts=contexts,
-                human_rating=_optional_float(row.get("human_rating", "")),
-                local_rating=_optional_float(row.get("judge_rating", "")),
-            )
-        )
+        items.append(item)
     if skipped:
         _LOG.info("[frontier-judge] skipped %d worksheet rows without a model_answer", skipped)
     if limit is not None:

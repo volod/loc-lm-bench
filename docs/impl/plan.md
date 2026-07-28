@@ -43,112 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### relation-stratified-multihop-expansion-if-review-attrits (optional)
-
-The current 61-row worksheet has only eight rows of rejection headroom above its 53-item decision
-floor, and 42 rows draw both spans from one goods manual
-([the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)). If review accepts
-fewer than 53 rows, widen from relation/document strata rather than the graph walk's stable order:
-allocate the path budget across relation pairs, same-document versus cross-document pairs, and
-source documents before model drafting, then reuse the current question/answer duplicate gate.
-
-- Agent status: RUN NEEDED
-- Dependencies: trigger only if `multihop-ledger-human-acceptance` retains fewer than 53 rows or its
-  rejection ledger shows concentrated failures in the dominant source/relation strata.
-- User-visible outcome: a replacement review worksheet with enough diverse rows to restore the
-  predeclared decision floor instead of another larger but topic-concentrated pass.
-- Scope boundary: in scope -- deterministic path strata, an exhaustion report, incremental
-  extraction reuse, and another audited worksheet. Out of scope -- changing the confidence
-  convention, accepting rows automatically, or changing graph retrieval.
-- Data and artifact paths: another sibling bundle under
-  `$DATA_DIR/graph-vector-fusion-multihop/`.
-- Execution path: extend `make widen-multihop-draft` with path-stratum targets, then run it on the
-  CUDA host against the latest reviewed ledger.
-- Acceptance gates: `make ci` green; the new path report covers every requested stratum or marks it
-  exhausted; the combined worksheet restores at least eight rows of headroom above 53; exact-span,
-  Ukrainian, and duplicate audits pass.
-- Documentation target: the widening section of [data prep](current/data-prep.md) and the handoff
-  evidence in [GraphRAG](current/graphrag-backend.md).
-
-### headline-objective-verbosity-decomposition
-
-The leaderboard ranks on normalized token F1, which merges two different failures into one number:
-not carrying the reference fact, and carrying it inside a longer answer. On the one item set where
-several models are scored identically under pinned retrieval, the found-rate ranks the roster in
-nearly the opposite order to the objective, and the models the objective ranks last are the ones
-that state the reference on the MOST items
-([scoring](current/rag-core.md#measured-the-headline-objective-is-partly-a-verbosity-ranking)).
-Split the headline into the parts it currently merges: report token PRECISION and RECALL beside the
-F1 (F1 hides which side is losing), the verbosity-robust found-rate, and a completion-length column
-per row, then measure the objective's length sensitivity across the roster on a fixed item set and
-state a ranking policy that is explicit about how much of the score is answer format. Keep the
-instruction-following reading separate and honest: the shipped `eval.rag` system prompt does ask for
-a short answer, so a length penalty is partly legitimate -- the deliverable is a ranking whose
-verbosity component is DECLARED, not one that removes it.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/scoring/correctness.py` (the F1 already computes both sides
-  internally), the `completion_tokens` field every `scores.jsonl` row carries, and
-  `src/llb/scoring/aggregate.py` for the leaderboard policy.
-- User-visible outcome: an operator can tell "this model does not know the answer" from "this model
-  knows the answer and is wordy", and the recommended model stops depending on which of the two the
-  headline silently penalizes.
-- Scope boundary: in scope -- the precision/recall/found-rate/length columns, the length-sensitivity
-  study across the recorded roster, and an explicit ranking-policy decision (keep F1, adopt a
-  composite, or rank on a length-controlled statistic). Out of scope -- judge-based scoring changes,
-  prompt rewording, and re-running any retrieval lane.
-- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
-  the study under `$DATA_DIR/verbosity-sensitivity/<run>/`.
-- Execution path: re-score the recorded roster bundles for the study (no new inference needed for
-  the recorded models), then one fresh `make run-eval` per policy candidate to confirm the columns;
-  CI covers the decomposition on committed fixtures including a verbose-but-correct and a
-  terse-but-wrong case.
-- Acceptance gates: `make ci` green; every recorded bundle's existing `objective_score` reproduces
-  bit-identically (the split is additive); the study reports the per-model rank under each candidate
-  policy plus the correlation between answer length and score; the chosen policy is recorded with
-  the reason, and any leaderboard rank it changes is named.
-- Documentation target: [RAG core](current/rag-core.md#scoring) and the ranking policy in
-  [evaluation rigor](current/rigor-board-judge.md).
-
-### randomization-calibrated-paired-reading
-
-The percentile-bootstrap `lo > 0` cut is anti-conservative exactly where the repo uses it most: on
-the 20 recorded adoption cells (n=40) it fires on 3.0%-7.8% of paired sign-flip null draws against
-the 2.5% its interval implies, worst where the discordant count is smallest, while the 82- and
-250-item ablation lanes sit near nominal
-([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Every adopt-or-retain
-call on a small accepted ledger therefore rests on a test whose real size is up to 3x its nominal
-one. Add the exact paired randomization p (sign-flip over the per-item deltas, the same draw
-structure the bootstrap already builds), persist it beside `p_positive`, and let the reading be
-decided by the calibrated quantity. Ship a null-calibration harness with it so the claim is
-maintained rather than asserted: the empirical size of the shipped rule on committed fixtures is a
-CI assertion, not a one-off measurement.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. `separates()` in `src/llb/rag/fusion_evidence/stats.py` is already the one
-  separation test every lane cuts on and it already falls back to `insufficient_evidence` when
-  there is nothing to randomize over, so the calibrated reading replaces its interval half in one
-  place ([the gate](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)). Reuse
-  `bootstrap_index_sets` / `paired_comparison` and the `stability` block that already rides on every
-  paired delta.
-- User-visible outcome: an adopt decision on a 40-item ledger has the error rate it claims, so a
-  swap recommendation is not an artifact of the interval's small-sample behavior.
-- Scope boundary: in scope -- the randomization p, its persistence and rendering, the reading rule,
-  the CI size harness, and a re-read of every recorded artifact that persists per-item vectors. Out
-  of scope -- replacing the bootstrap INTERVAL (the reported delta bounds stay), changing the
-  confidence conventions, and BCa/studentized variants unless the size harness shows the
-  randomization p is unavailable for a lane.
-- Data and artifact paths: additive fields in the existing artifacts; the re-read under
-  `$DATA_DIR/paired-reading-audit/<run>/`.
-- Execution path: the re-read runs from recorded artifacts on the CUDA host (no new inference); CI
-  covers the p against a brute-force enumeration at small n and asserts the empirical size on
-  committed fixture deltas.
-- Acceptance gates: `make ci` green; the size harness shows the shipped rule at or below its nominal
-  level on every committed fixture; the re-read names every recorded verdict whose reading changes,
-  including the adoption sweeps' `extend_bar` cells and the bake-off's `adopt` rows.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) and each
-  affected lane's evidence section.
-
 ### selection-adjusted-grid-verdicts
 
 Three lanes decide by SELECTING a row out of a grid and then reading that row as if it were the only
@@ -164,8 +58,9 @@ is respected rather than assumed away), and gate adoption on the adjusted readin
 to report the per-row one.
 
 - Agent status: RUN NEEDED
-- Dependencies: `randomization-calibrated-paired-reading` (the max-statistic procedure is built on
-  the same sign-flip draw). Reuse each lane's verdict module -- `src/llb/rag/fusion_evidence/verdict.py`,
+- Dependencies: use the shared sign-flip draw and calibrated per-row p described in
+  [RAG core](current/rag-core.md#randomization-calibrated-paired-readings). Reuse each lane's verdict
+  module -- `src/llb/rag/fusion_evidence/verdict.py`,
   `src/llb/eval/embedder_adoption/verdict.py`, `src/llb/rag/embedding_bakeoff_verdict.py`.
 - User-visible outcome: a grid sweep's recommendation carries the error rate of the SEARCH that
   produced it, so an operator stops adopting the luckiest cell of a wide sweep.
@@ -301,9 +196,10 @@ not usable on a 16 GiB host.
 - Data and artifact paths: one bundle per policy cell under `$DATA_DIR/agentic-loop-policy/<run>/`;
   the comparison beside it.
 - Execution path: `make bench-agentic-loop AGENT_MAX_STEPS=4,6,10 AGENT_MALFORMED_POLICY=answer,repair_once,strict
-  MODEL=<model> BACKEND=<backend>` on the CUDA host over at least two roster models, since a
-  repair policy is a property of the model's formatting behavior; CI covers each policy's branch
-  over the fake endpoint, including a completion the parser cannot read.
+  MODEL=<model> BACKEND=<backend>` on the CUDA host over roster-family strata until the declared
+  family-coverage and paired-precision targets are reached, since a repair policy is a property of
+  the model's formatting behavior; CI covers each policy's branch over the fake endpoint, including
+  a completion the parser cannot read.
 - Acceptance gates: `make ci` green; the `answer` policy at `max_steps=6` reproduces the recorded
   agentic rows exactly; every cell reports completion, malformed-call rate, steps, tool calls, and
   prompt tokens with a paired delta against that baseline cell; a default changes only when its
@@ -428,6 +324,36 @@ exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-
   sample size.
 - Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
   [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
+
+### blackwell-encoder-throughput-decomposition (optional)
+
+The current 12 GiB host rerun preserves the embedder quality verdict but shows a much wider
+architecture-dependent CUDA throughput spread than the earlier workstation run
+([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Separate
+cold model load, first-kernel compilation, and steady-state encoding before using those rates in a
+host recommendation.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Keep the retrieval item set, encoder conventions, batch shape, and power
+  limit fixed so the benchmark isolates runtime behavior.
+- User-visible outcome: the 12 GiB Blackwell recommendation distinguishes a genuinely slow encoder
+  from one whose first load or kernel compilation dominates a one-pass bake-off.
+- Scope boundary: in scope -- cold and warm timing fields, adaptive warm repetitions until a
+  declared relative-precision target or resource cap, peak VRAM and power, CPU versus CUDA
+  comparison, and inspection of kernel fallbacks. Out of scope -- changing retrieval metrics,
+  model fine-tuning, or adopting a different encoder.
+- Data and artifact paths: additive timing fields under
+  `$DATA_DIR/compare-embeddings/<run>/` and a host summary under
+  `$DATA_DIR/encoder-throughput/<run>/`.
+- Execution path: add a reusable warmup/repetition option to `make compare-embeddings`, then run the
+  four incumbent encoders on the 311-chunk committed corpus with the GPU power limit held fixed.
+  CI covers timing aggregation with an injected clock and fake encoders.
+- Acceptance gates: `make ci` green; reports split load/compile time from steady encoding, publish
+  the median, spread, stopping precision, and cap over the warm passes, record
+  device/driver/power/VRAM, and state whether the current rate ordering survives the warm
+  measurement.
+- Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md) and the
+  host result in [host validation](current/host-validation.md).
 
 ### cross-lingual-query-lane
 
@@ -809,11 +735,12 @@ other encoder.
 
 ### ua-model-roster-long-run (optional)
 
-Confirm the refreshed-roster ranking at research scale: run at least 10 multi-objective trials
-per viable addition, use a tuning screen of at least 8 cases, score the full held-out final split,
-and add the public Ukrainian screen tracks before making a default-model adoption decision. Report
-bootstrap uncertainty and quality/latency Pareto tradeoffs so a small-sample rank reversal cannot
-silently change the recommended model.
+Confirm the refreshed-roster ranking at research scale: predeclare a minimum detectable objective
+gain and ranking-stability criterion, derive the tuning-screen size from paired power, and run
+multi-objective trials until the stability rule or a declared resource budget stops the search.
+Score the full held-out final split and add the public Ukrainian screen tracks before making a
+default-model adoption decision. Report bootstrap uncertainty and quality/latency Pareto tradeoffs
+so a small-sample rank reversal cannot silently change the recommended model.
 
 - Agent status: RUN NEEDED
 - Dependencies: use the roster/runtime behavior in
@@ -827,8 +754,9 @@ silently change the recommended model.
   current-doc evidence section.
 - Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
   final split, then run the public screen for both finalists.
-- Acceptance gates: `make ci` green; at least 10 trials per finalist; no final-split leakage into
-  tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
+- Acceptance gates: `make ci` green; the search artifact records the effect, power, stability, and
+  stopping assumptions plus the derived screen size and consumed trial budget; no final-split
+  leakage into tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
 
 ### normalize-casefold-dense-lane-cost (optional)
@@ -1133,9 +1061,9 @@ declining the hard items looks like a win.
   relation, a paraphrased entity that normalizes to the same node, an entity typed `MISC` by
   fallback), so the false-rejection number is measured on adversarial cases rather than asserted.
 - Execution path: `make compare-answer-validation VALIDATION_LANES=off,pydantic,pydantic+ontology
-  MODEL=<model> GOLDSET=<accepted> AXIOMS=<signed-ttl>` over at least two roster models on the CUDA
-  host; CI drives all three lanes, both statuses, and the repair path over the fake completer and a
-  fake ledger -- no GPU.
+  MODEL=<model> GOLDSET=<accepted> AXIOMS=<signed-ttl>` over roster-family strata until the declared
+  family-coverage and paired-precision targets are reached; CI drives all three lanes, both
+  statuses, and the repair path over the fake completer and a fake ledger -- no GPU.
 - Acceptance gates: `make ci` green; the `off` lane reproduces the recorded run bundles exactly; the
   fixture's planted violations are caught at 100% per axiom class and the adversarial correct
   answers produce a NAMED false-rejection rate, not a claim of zero; the heavy run reports the
@@ -1220,6 +1148,32 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
 
+### calibrate-headline-format-weight
+
+Calibrate the fact/format tradeoff against adversarial context-copy answers and human pairwise
+utility labels, then retain or revise the declared weight without changing the decomposition
+contract ([current scoring](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)).
+Sweep predeclared weights over matched terse, fluent-but-wrong, verbose-supported, and
+context-copy cases; measure agreement with the accepted labels and stability across model
+families; require a held-out confirmation before changing the default.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: a reviewer-accepted pairwise preference ledger covering the four answer shapes.
+- User-visible outcome: the explicit format share is grounded in operator utility and resists a
+  model that raises recall by repeating retrieved context.
+- Scope boundary: in scope -- fixture and worksheet generation, weight sweep, family-stratified
+  agreement, uncertainty, and an adopt-or-retain verdict. Out of scope -- prompt rewriting,
+  judge-model substitution, and changing the precision/recall/found-rate columns.
+- Data and artifact paths: accepted labels under `$DATA_DIR/review/headline-format/`; sweep
+  artifacts under `$DATA_DIR/verbosity-sensitivity/<run>/weight-calibration/`.
+- Execution path: agent prepares and validates the blinded worksheet; human reviewers accept the
+  pairwise labels; agent runs the deterministic sweep and CUDA-host family confirmation.
+- Acceptance gates: `make ci` green; all answer-shape strata are represented; held-out agreement
+  and confidence intervals are reported per family; any default-weight change names every roster
+  rank it changes.
+- Documentation target: [RAG core](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)
+  and the ranking policy in [evaluation rigor](current/rigor-board-judge.md).
+
 ### embedder-decision-on-a-resolvable-item-set
 
 The embedder choice is undecidable on the item sets the repo currently has, and the paired lane
@@ -1274,10 +1228,12 @@ shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
 - Dependencies: the [widened handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)
-  supplies a 61-row worksheet against a 53-item decision floor. Human step that gates completion:
-  a reviewer decides `accept`/`reject` for every row of that worksheet --
-  specifically whether the question is answerable ONLY with both cited spans -- and signs off on
-  the resulting accepted ledger.
+  supplies the worksheet, while the
+  [paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes) derives
+  the accepted-ledger requirement from a predeclared minimum detectable retrieval gain, expected
+  discordance, confidence, and power. Human step that gates completion: a reviewer decides
+  `accept`/`reject` for every worksheet row -- specifically whether the question is answerable ONLY
+  with both cited spans -- and signs off on the resulting accepted ledger.
 - User-visible outcome: a graph-weight recommendation for multi-hop retrieval backed by a
   human-accepted ledger, or a recorded finding that shared-bridge drafting does not produce
   genuine multi-hop questions and the slice must come from another source.
@@ -1300,11 +1256,15 @@ shared-bridge question genuinely needs both facts.
   then `make compare-answer-quality GOLDSET=<accepted>/goldset.jsonl FUSION_COMPARISON=<that
   sweep>/comparison.json` -- WITHOUT `INCLUDE_DRAFTED`, since an accepted ledger no longer needs
   the drafted-grounding escape.
-- Acceptance gates: every worksheet row has a decision; the accepted ledger keeps at least 53
-  multi-hop rows; the re-run sweep reports the same rows with paired intervals and the human
-  records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
-  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`. If fewer
-  than 53 survive, trigger `relation-stratified-multihop-expansion-if-review-attrits`.
+- Acceptance gates: every worksheet row has a decision; the accepted ledger satisfies its
+  predeclared paired-power requirement; retention is reported by relation pair, document mode, and
+  source document with uncertainty; the re-run sweep reports the same rows with paired intervals
+  and the human records the adopt-or-reject verdict per graph strategy and per span-identity
+  policy; the answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
+  If power remains insufficient or rejection failures are statistically concentrated in a
+  stratum, run the relation-stratified widening workflow from
+  [data prep](current/data-prep.md#widening-a-multi-hop-review-slice) against the latest reviewed
+  ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
 

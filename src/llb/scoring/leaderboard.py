@@ -1,8 +1,13 @@
-"""Focused leaderboard implementation."""
+"""Focused leaderboard implementation.
+
+RAG rows may provide a declared fact/format ``ranking_score``; other tiers and legacy rows rank on
+their objective. A trusted judge blends with that tier-specific base quality.
+"""
 
 import random
 from dataclasses import dataclass, field
 from llb.core.contracts.results import LeaderboardRow
+from llb.scoring.verbosity import policy_description
 
 DEFAULT_WEIGHT_JUDGE = 0.5
 
@@ -22,10 +27,18 @@ class ModelResult:
     peak_vram_mb: float | None = None
     judge_score: float | None = None
     semantic_score: float | None = None
+    # RAG-only declared policy. Other benchmark tiers and legacy bundles leave this absent and
+    # continue to rank on objective_score.
+    ranking_score: float | None = None
+    token_precision: float | None = None
+    token_recall: float | None = None
+    found_rate: float | None = None
+    mean_completion_tokens: float | None = None
     feasible: bool = True
     tier: str = TIER_PRIVATE
     # Per-case score series -> bootstrap CIs (optional; aligned by case order).
     case_objectives: list[float] = field(default_factory=list)
+    case_ranking: list[float] = field(default_factory=list)
     case_semantic: list[float] = field(default_factory=list)
     case_judge: list[float] = field(default_factory=list)
 
@@ -33,27 +46,29 @@ class ModelResult:
 def per_case_quality(
     result: ModelResult, judge_trusted: bool, weight_judge: float = DEFAULT_WEIGHT_JUDGE
 ) -> list[float]:
-    """The per-case HEADLINE quality series used for the rank-uncertainty CI: the trusted-judge
-    blend per case when judge ratings are present, else the per-case objective scores."""
-    if (
-        judge_trusted
-        and result.case_judge
-        and len(result.case_judge) == len(result.case_objectives)
-    ):
+    """The per-case headline series: declared RAG ranking scores when present, else objectives."""
+    base = result.case_ranking or result.case_objectives
+    if judge_trusted and result.case_judge and len(result.case_judge) == len(base):
         return [
             (1.0 - weight_judge) * obj + weight_judge * jud
-            for obj, jud in zip(result.case_objectives, result.case_judge)
+            for obj, jud in zip(base, result.case_judge)
         ]
-    return list(result.case_objectives)
+    return list(base)
+
+
+def base_quality(result: ModelResult) -> float:
+    """Declared tier quality before an optional trusted-judge blend."""
+    return result.ranking_score if result.ranking_score is not None else result.objective_score
 
 
 def headline_quality(
     result: ModelResult, judge_trusted: bool, weight_judge: float = DEFAULT_WEIGHT_JUDGE
 ) -> float:
-    """Blend objective + judge when trusted; objective alone otherwise."""
+    """Blend tier base quality + judge when trusted; base quality alone otherwise."""
+    base = base_quality(result)
     if judge_trusted and result.judge_score is not None:
-        return (1.0 - weight_judge) * result.objective_score + weight_judge * result.judge_score
-    return result.objective_score
+        return (1.0 - weight_judge) * base + weight_judge * result.judge_score
+    return base
 
 
 def _vram_key(result: ModelResult) -> float:
@@ -87,7 +102,7 @@ def rank_results(
 def _row(
     r: ModelResult, rank: int | None, judge_trusted: bool, weight_judge: float
 ) -> LeaderboardRow:
-    return {
+    row: LeaderboardRow = {
         "rank": rank,
         "model": r.model,
         "backend": r.backend,
@@ -100,6 +115,15 @@ def _row(
         "feasible": r.feasible,
         "n_cases": r.n_cases,
     }
+    if r.token_precision is not None:
+        row["token_precision"] = round(r.token_precision, 4)
+    if r.token_recall is not None:
+        row["token_recall"] = round(r.token_recall, 4)
+    if r.found_rate is not None:
+        row["found_rate"] = round(r.found_rate, 4)
+    if r.mean_completion_tokens is not None:
+        row["mean_completion_tokens"] = round(r.mean_completion_tokens, 1)
+    return row
 
 
 def _table_cell(row: LeaderboardRow, key: str) -> str:
@@ -109,6 +133,16 @@ def _table_cell(row: LeaderboardRow, key: str) -> str:
         "backend": row["backend"],
         "quality": f"{row['quality']:.3f}",
         "objective": f"{row['objective']:.3f}",
+        "precision": (
+            "-" if row.get("token_precision") is None else f"{row['token_precision']:.3f}"
+        ),
+        "recall": "-" if row.get("token_recall") is None else f"{row['token_recall']:.3f}",
+        "found": "-" if row.get("found_rate") is None else f"{row['found_rate']:.3f}",
+        "len": (
+            "-"
+            if row.get("mean_completion_tokens") is None
+            else f"{row['mean_completion_tokens']:.1f}"
+        ),
         "judge": "-" if row.get("judge") is None else f"{row['judge']:.3f}",
         "reliab": f"{row['reliability']:.3f}",
         "tok/s": f"{row['tokens_per_s']:.1f}",
@@ -122,6 +156,8 @@ def format_table(rows: list[LeaderboardRow]) -> str:
     """Render ranked rows as an ASCII table (judge column omitted when always demoted)."""
     show_judge = any(row.get("judge") is not None for row in rows)
     headers = ["rank", "model", "backend", "quality", "objective"]
+    if any(row.get("token_precision") is not None for row in rows):
+        headers += ["precision", "recall", "found", "len"]
     if show_judge:
         headers.append("judge")
     headers += ["reliab", "tok/s", "vram_mb", "feasible"]
@@ -132,7 +168,10 @@ def format_table(rows: list[LeaderboardRow]) -> str:
         max(len(h), *(len(r[i]) for r in table)) if table else len(h) for i, h in enumerate(headers)
     ]
     line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)).rstrip()
-    out = [line, "  ".join("-" * widths[i] for i in range(len(headers)))]
+    out = []
+    if any(row.get("token_precision") is not None for row in rows):
+        out.append(f"policy: quality = {policy_description()}; objective = token F1")
+    out += [line, "  ".join("-" * widths[i] for i in range(len(headers)))]
     for r in table:
         out.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))).rstrip())
     return "\n".join(out)

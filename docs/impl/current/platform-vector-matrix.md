@@ -204,6 +204,66 @@ actually writes), and from `HF_HUB_CACHE` / `HF_HOME` / `--cache-dir` (default
 `~/.cache/huggingface/hub`). `--dry-run` previews the disk plan (`[disk: ...]`) without
 downloading.
 
+## Provider-Aware Bounded Model Downloads
+
+`make download-model` caches very large open models without handing an unbounded snapshot to a
+provider SDK. The shared implementation under `src/llb/backends/model_download/` resolves a moving
+provider reference once, persists the immutable revision and file identities under
+`.llb-model-download/state.json`, and transfers verified HTTP ranges into the requested target.
+Every completed chunk is flushed, read back, SHA-256 checked, and atomically checkpointed. A later
+invocation resumes from the verified tail; `MODEL_DOWNLOAD_VERIFY_COMPLETED=1` performs the deeper
+whole-cache scan needed to detect storage corruption after a prior session.
+
+The provider adapters preserve each provider's usable local shape:
+
+- `huggingface` (alias `hf`) pins the Hub commit and verifies LFS SHA-256 or Git blob SHA-1 before
+  publishing each normal snapshot file. `HF_TOKEN` supports gated/private repositories.
+- `ollama` resolves the public Ollama OCI manifest, verifies every content-addressed blob, writes the
+  standard `blobs/sha256-*` store, and publishes the tag manifest last under
+  `manifests/registry.ollama.ai/`. Point `OLLAMA_MODELS` at the target when serving that store.
+- `github-release` (alias `github`) pins a release and downloads its assets through the GitHub API.
+  It refuses assets that lack the provider's server-side SHA-256 digest instead of recording an
+  unverifiable cache. `GITHUB_TOKEN` raises API limits and permits accessible private releases.
+
+For example, a bounded Hugging Face session is:
+
+```text
+make download-model \
+  MODEL_DOWNLOAD_PROVIDER=huggingface \
+  MODEL_DOWNLOAD_ID=moonshotai/Kimi-K3 \
+  MODEL_DOWNLOAD_TARGET=<model-dir> \
+  MODEL_DOWNLOAD_SESSION_GIB=32 \
+  MODEL_DOWNLOAD_CHUNK_MIB=64
+```
+
+Use `MODEL_DOWNLOAD_DRY_RUN=1` to resolve the immutable revision and exact provider-reported size
+without creating the target. `MODEL_DOWNLOAD_MAX_MIBPS` is an explicit ceiling; the adaptive
+`MODEL_DOWNLOAD_BANDWIDTH_FRACTION` defaults to 0.8 and paces each verified chunk against an EWMA of
+the observed end-to-end transfer rate. The per-invocation byte budget may stop inside a large shard,
+so no provider file has to fit inside one session.
+
+Disk protection is evaluated before every network chunk. The remaining free space must cover the
+next chunk plus the larger of `MODEL_DOWNLOAD_MIN_FREE_GIB` and
+`MODEL_DOWNLOAD_MIN_FREE_PERCENT` of the destination filesystem (defaults: 1 GiB and 5%). Thus a
+large data volume keeps a proportional safety margin while a small volume still retains an absolute
+floor. A nonblocking target lock prevents concurrent writers; state replacement and final-file
+publication are atomic; 429 responses honor `Retry-After`/rate-limit reset hints; transient network
+and server failures use bounded retries; 401/403 errors preserve the last checkpoint and never
+persist tokens. Set `MODEL_DOWNLOAD_VERIFY_ONLY=1` for an offline integrity pass after the snapshot
+has been cached.
+
+Live provider validation used metadata-only reads for all three adapters: Kimi-K3 resolved to 118
+files / 1.42 TiB at commit `9f62e4e9fffbd0a83ddd60e1c209d828994b3569`; Ollama
+`tinyllama:latest` resolved to 6 files / 608.16 MiB at manifest
+`sha256:2644915ede352ea7bdfaff0bfac0be74c719d5d5202acb63a6fb095b52f394a4`; and the
+latest `ggml-org/llama.cpp` GitHub release resolved to 25 checksum-bearing assets / 2.40 GiB.
+Two real Kimi sessions capped at 10.49 KiB each then exercised cross-process resume: the second
+started the partial `README.md` at the prior 5,429-byte checkpoint and advanced it to 16,166 bytes
+without re-fetching completed files. Separate 10.49 KiB live transfer smokes validated the immutable
+Ollama blob and GitHub asset URLs; the Ollama manifest remained unpublished while its model blob was
+partial, as required by the store-visibility contract. The temporary partial-download roots were
+removed after validation.
+
 ## llama.cpp Binary Lookup
 
 The llama.cpp launcher first checks the project-managed binary under

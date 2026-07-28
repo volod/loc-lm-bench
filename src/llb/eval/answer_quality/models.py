@@ -38,11 +38,11 @@ COVERAGE_PRIORITY = (METRIC_SPAN_COVERAGE, METRIC_ALL_SPANS, METRIC_RETRIEVAL_HI
 # The slice the verdict is decided on; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
 
-# The candidate lane's objective beats the baseline with its paired interval clear of zero.
+# The candidate lane's calibrated objective test separates from the baseline.
 VERDICT_ANSWER_GAIN = "answer_quality_gain"
 # The candidate retrieves more evidence but does not turn it into better answers.
 VERDICT_RETRIEVAL_ONLY = "retrieval_only"
-# A positive objective point estimate whose paired interval still includes no difference.
+# A positive objective point estimate whose calibrated paired test does not separate.
 VERDICT_INCONCLUSIVE = "inconclusive"
 VERDICT_NO_GAIN = "no_gain"
 VERDICT_NO_EVIDENCE = "no_evidence"

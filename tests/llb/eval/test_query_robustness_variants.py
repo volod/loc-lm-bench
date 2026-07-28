@@ -28,8 +28,8 @@ from llb.rag.fusion_evidence.stats import bootstrap_index_sets
 
 def test_signed_delta_stability_marks_a_degradation_near_miss_as_borderline():
     n = 30
-    candidate = [0.0 if i < 6 else (1.0 if i == 6 else 0.0) for i in range(n)]
-    baseline = [1.0 if i < 6 else 0.0 for i in range(n)]
+    candidate = [0.0 if i < 7 else (1.0 if i == 7 else 0.0) for i in range(n)]
+    baseline = [1.0 if i < 7 else 0.0 for i in range(n)]
     comparison = directional_comparison(
         candidate,
         baseline,

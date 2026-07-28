@@ -65,10 +65,16 @@ def _desc_ranks(scores: list[float]) -> list[float]:
 
 
 def quality_signals(results: list[ModelResult], judge_trusted: bool) -> list[str]:
-    """Which quality axes every model shares: objective always; judge only when trusted +
-    present for all; semantic only when present for all. The average-rank headline uses these,
-    so it never rewards a model just for having an extra (missing-elsewhere) signal."""
-    signals = ["objective_score"]
+    """Quality axes every model shares: declared RAG policy when complete, else objective.
+
+    Judge is included only when trusted and present for all; semantic only when present for all.
+    The average-rank headline never rewards an extra signal missing elsewhere in the cohort.
+    """
+    signals = (
+        ["ranking_score"]
+        if results and all(r.ranking_score is not None for r in results)
+        else ["objective_score"]
+    )
     if judge_trusted and all(r.judge_score is not None for r in results):
         signals.append("judge_score")
     if all(r.semantic_score is not None for r in results):
@@ -230,6 +236,14 @@ def _board_row(
         "feasible": r.feasible,
         "n_cases": r.n_cases,
     }
+    if r.token_precision is not None:
+        row["token_precision"] = round(r.token_precision, 4)
+    if r.token_recall is not None:
+        row["token_recall"] = round(r.token_recall, 4)
+    if r.found_rate is not None:
+        row["found_rate"] = round(r.found_rate, 4)
+    if r.mean_completion_tokens is not None:
+        row["mean_completion_tokens"] = round(r.mean_completion_tokens, 1)
     if ci is not None:
         row["quality_ci"] = ci
     # Per-signal CIs are recorded only when that signal's per-case series is present, so the

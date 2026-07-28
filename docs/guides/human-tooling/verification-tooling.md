@@ -51,7 +51,7 @@ Step-by-step for a real-corpus bundle (details in
 
 ```bash
 make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus
-make verify-sample  BUNDLE=<bundle> VERIFY_N=30
+make verify-sample  BUNDLE=<bundle>
 make verify-review  VERIFY_WS=<bundle>/verify_sample.csv     # the human step
 make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv VERIFY_TOLERANCE=0.05
 ```
@@ -65,7 +65,7 @@ ledger items may become `verified=true`.
 
 | Command | What it does | Needs |
 | --- | --- | --- |
-| `make verify-sample` | Draws a **stratified sample** from a draft bundle and writes a verification worksheet + a `sample_manifest.json` (size + strata). `VERIFY_ANNOTATORS=<k>` writes the same sample as `k` per-reviewer worksheets. | nothing (offline; reads the bundle) |
+| `make verify-sample` | Derives and draws a **stratified sample** from a draft bundle, then writes a worksheet + `sample_manifest.json` (gate plan, size, strata). `VERIFY_N=<n>` overrides the derived target; `VERIFY_ANNOTATORS=<k>` writes the same sample as `k` per-reviewer worksheets. | nothing (offline; reads the bundle) |
 | `make verify-review` | **Interactive verifier**: walk the sample item by item, run the four checks against the corpus, accept/reject. | nothing (offline; CSV only) |
 | `make verify-adjudicate` | Multi-annotator only: writes the **agreement report** (Cohen's/Fleiss' kappa) and draws disagreements into `adjudication.csv`. | nothing (offline; CSV only) |
 | `make verify-accept` | Computes the reject rate vs tolerance under the chosen policy (`VERIFY_ACCEPT_POLICY=global\|per-stratum\|weighted`) and emits the **accepted-ledger** bundle. | nothing (offline; CSV only) |
@@ -142,7 +142,7 @@ lands `verified=false` with its gold file as `goldset.jsonl`. This is the normal
 ### 1. Draw the stratified sample
 
 ```
-make verify-sample BUNDLE=$DATA_DIR/prepare-goldset/<ts> VERIFY_N=30
+make verify-sample BUNDLE=$DATA_DIR/prepare-goldset/<ts>
 ```
 
 This allocates `VERIFY_N` across the strata (provenance x split x source-doc) -- proportional to
@@ -266,7 +266,7 @@ labels were *authored*, not drawn from a real corpus. Verify that each planted l
 matches what the synthetic doc says (`p` = pass, `P` = fail), then accept/reject as usual.
 
 ```
-make verify-sample  BUNDLE=$DATA_DIR/prepare-goldset/<synthetic-ts> VERIFY_N=30
+make verify-sample  BUNDLE=$DATA_DIR/prepare-goldset/<synthetic-ts>
 make verify-review  VERIFY_WS=$DATA_DIR/prepare-goldset/<synthetic-ts>/verify_sample.csv
 make verify-accept  BUNDLE=$DATA_DIR/prepare-goldset/<synthetic-ts> \
     VERIFY_WS=$DATA_DIR/prepare-goldset/<synthetic-ts>/verify_sample.csv
@@ -335,7 +335,7 @@ When one reviewer's judgment is not enough (a high-stakes goldset, or you want m
 inter-annotator agreement), run the same gate with several annotators:
 
 ```bash
-make verify-sample     BUNDLE=<bundle> VERIFY_N=30 VERIFY_ANNOTATORS=2
+make verify-sample     BUNDLE=<bundle> VERIFY_ANNOTATORS=2
 make verify-review     VERIFY_WS=<bundle>/verify_sample.r1.csv    # reviewer 1
 make verify-review     VERIFY_WS=<bundle>/verify_sample.r2.csv    # reviewer 2, independently
 make verify-adjudicate BUNDLE=<bundle>

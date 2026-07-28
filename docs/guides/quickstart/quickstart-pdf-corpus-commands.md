@@ -45,7 +45,7 @@ cp -R $PDF_MD/*.md $PDF_MD/*.citations.json $PDF_DRAFT_MD/
 # Output/result: goldset.jsonl, ontology.json, extraction.jsonl, provenance, and verify_sample.csv.
 make prepare-goldset-draft DRAFT_CORPUS=$PDF_DRAFT_MD \
   DRAFT_MODEL=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M \
-  DRAFT_ENDPOINT=local DRAFT_MAX_ITEMS=180 DRAFT_VERIFY_N=40 DRAFT_NO_THINK=1 \
+  DRAFT_ENDPOINT=local DRAFT_MAX_ITEMS=180 DRAFT_VERIFY_DERIVE=1 DRAFT_NO_THINK=1 \
   DRAFT_OUT_DIR=$PDF_DRAFT DRAFT_TIMEOUT=900
 
 # Optional bounded probe for debugging only.

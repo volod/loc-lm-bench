@@ -23,6 +23,18 @@ def test_token_f1_perfect():
     assert correctness.token_f1("Київ столиця", "столиця Київ") == 1.0
 
 
+def test_token_precision_recall_separates_verbose_correct_from_terse_partial():
+    verbose = correctness.answer_correctness(
+        "Kyiv capital with additional explanatory words", "Kyiv capital"
+    )
+    terse = correctness.answer_correctness("Kyiv", "Kyiv capital")
+
+    assert verbose["token_recall"] == 1.0
+    assert verbose["token_precision"] < 0.5
+    assert terse["token_precision"] == 1.0
+    assert terse["token_recall"] == 0.5
+
+
 def test_contains_all_reference_tokens():
     # `contains` is exact-token (no stemming): every reference surface form must appear.
     assert correctness.contains("Київ це столиця держави", "Київ столиця") == 1.0

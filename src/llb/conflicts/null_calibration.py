@@ -11,6 +11,65 @@ from llb.conflicts.null_distribution import NullDistribution
 _LOG = logging.getLogger(__name__)
 
 
+def _warn_explicit_override(
+    explicit: float, quantile: float | None, max_candidate_pairs: int | None
+) -> None:
+    if quantile is None and max_candidate_pairs is None:
+        return
+    _LOG.warning(
+        "[conflicts] --cos-threshold %.3f given alongside a calibration knob; "
+        "the explicit threshold wins and the calibration is recorded only",
+        explicit,
+    )
+
+
+def _resolve_quantile(
+    distribution: NullDistribution,
+    quantile: float | None,
+    max_candidate_pairs: int | None,
+) -> float | None:
+    if quantile is None and max_candidate_pairs is not None:
+        return distribution.quantile_for_top_n(max_candidate_pairs)
+    if quantile is not None and max_candidate_pairs is not None:
+        _LOG.warning(
+            "[conflicts] --cos-quantile %.6f overrides --max-candidate-pairs %d",
+            quantile,
+            max_candidate_pairs,
+        )
+    return quantile
+
+
+def _warn_unresolvable_quantile(distribution: NullDistribution, resolved_quantile: float) -> None:
+    if distribution.exhaustive or resolved_quantile <= distribution.resolvable_quantile():
+        return
+    _LOG.warning(
+        "[conflicts] quantile %.8f is finer than the %d-pair sample can resolve "
+        "(floor %.8f); the threshold pins to the sample maximum and UNDERSTATES the "
+        "tail -- raise --null-sample-pairs for a trustworthy calibration",
+        resolved_quantile,
+        distribution.n_pairs,
+        distribution.resolvable_quantile(),
+    )
+
+
+def _calibrated_threshold(
+    distribution: NullDistribution, resolved_quantile: float
+) -> tuple[float, str, float]:
+    _warn_unresolvable_quantile(distribution, resolved_quantile)
+    calibrated = distribution.quantile(resolved_quantile)
+    _LOG.info(
+        "[conflicts] quantile %.6f over %d %s pairs (%d comparable) -> "
+        "cos_threshold %.4f, rank cutoff ~%.0f",
+        resolved_quantile,
+        distribution.n_pairs,
+        "exhaustive" if distribution.exhaustive else "sampled",
+        distribution.total_pairs,
+        calibrated,
+        (1.0 - resolved_quantile) * distribution.total_pairs,
+    )
+    return calibrated, "calibrated", resolved_quantile
+
+
 def resolve_cos_threshold(
     *,
     explicit: float | None,
@@ -26,46 +85,11 @@ def resolve_cos_threshold(
     estimate, and one who names a raw quantile is deliberately reaching past the budget knob.
     """
     if explicit is not None:
-        if quantile is not None or max_candidate_pairs is not None:
-            _LOG.warning(
-                "[conflicts] --cos-threshold %.3f given alongside a calibration knob; "
-                "the explicit threshold wins and the calibration is recorded only",
-                explicit,
-            )
+        _warn_explicit_override(explicit, quantile, max_candidate_pairs)
         return explicit, "explicit", None
-    if distribution is not None:
-        resolved_quantile = quantile
-        if resolved_quantile is None and max_candidate_pairs is not None:
-            resolved_quantile = distribution.quantile_for_top_n(max_candidate_pairs)
-        elif resolved_quantile is not None and max_candidate_pairs is not None:
-            _LOG.warning(
-                "[conflicts] --cos-quantile %.6f overrides --max-candidate-pairs %d",
-                resolved_quantile,
-                max_candidate_pairs,
-            )
-        if resolved_quantile is not None:
-            if (
-                not distribution.exhaustive
-                and resolved_quantile > distribution.resolvable_quantile()
-            ):
-                _LOG.warning(
-                    "[conflicts] quantile %.8f is finer than the %d-pair sample can resolve "
-                    "(floor %.8f); the threshold pins to the sample maximum and UNDERSTATES the "
-                    "tail -- raise --null-sample-pairs for a trustworthy calibration",
-                    resolved_quantile,
-                    distribution.n_pairs,
-                    distribution.resolvable_quantile(),
-                )
-            calibrated = distribution.quantile(resolved_quantile)
-            _LOG.info(
-                "[conflicts] quantile %.6f over %d %s pairs (%d comparable) -> "
-                "cos_threshold %.4f, rank cutoff ~%.0f",
-                resolved_quantile,
-                distribution.n_pairs,
-                "exhaustive" if distribution.exhaustive else "sampled",
-                distribution.total_pairs,
-                calibrated,
-                (1.0 - resolved_quantile) * distribution.total_pairs,
-            )
-            return calibrated, "calibrated", resolved_quantile
+    if distribution is None:
+        return default, "default", None
+    resolved_quantile = _resolve_quantile(distribution, quantile, max_candidate_pairs)
+    if resolved_quantile is not None:
+        return _calibrated_threshold(distribution, resolved_quantile)
     return default, "default", None

@@ -15,6 +15,7 @@ from llb.prep.ontology.models import (
     ItemLabels,
     OntologyCandidate,
 )
+from llb.prep.ontology.pipeline.deduplication import deduplicate_drafts
 from llb.prep.ontology.refine import refine_drafts_labeled
 from ontology_yield_helpers import CHAIN_DOC, FakeEmbedder, FakeNeedleRetriever, _item, _span
 
@@ -113,6 +114,27 @@ def test_load_prior_questions_reads_prior_bundle_goldsets(tmp_path):
     )
     assert load_prior_questions([bundle]) == ["Питання одне?", "Питання два?"]
     assert load_prior_questions([tmp_path / "missing"]) == []  # missing bundle skipped
+
+
+def test_deduplicate_drafts_drops_exact_questions_within_the_new_batch():
+    items = [
+        _item("first", "Яке майно передали?"),
+        _item("repeat", "  яке МАЙНО   передали?  "),
+        _item("other", "Коли майно передали?"),
+    ]
+    labels = {item.id: ItemLabels(question_type="multi-hop", difficulty="hard") for item in items}
+
+    kept, kept_labels, report = deduplicate_drafts(
+        items,
+        labels,
+        dedup_against=[],
+        embedder=FakeEmbedder(),
+    )
+
+    assert [item.id for item in kept] == ["first", "other"]
+    assert set(kept_labels) == {"first", "other"}
+    assert report["intra_batch_exact_dropped"] == 1
+    assert report["dropped_ids"] == ["repeat"]
 
 
 def test_refine_labeled_tags_question_type_and_difficulty():

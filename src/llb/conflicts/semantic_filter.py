@@ -71,14 +71,13 @@ def _numeric_fraction(tokens: list[str]) -> float:
     return sum(token.isdigit() for token in tokens) / len(tokens) if tokens else 0.0
 
 
-def repeated_metadata_ordinals(chunks: list[ChunkRecord], candidates: set[int]) -> set[int]:
-    """Repeated structured metadata blocks among otherwise claim-sized body chunks.
-
-    A heading must occur in multiple documents and at most once in every participating document.
-    Pairwise token coverage supplies the near-identical-block check; numeric density distinguishes
-    variable publication/registry records from repeated claim prose under ordinary shared section
-    names. Both signals are structural and derived from the current corpus.
-    """
+def _metadata_groups(
+    chunks: list[ChunkRecord], candidates: set[int]
+) -> tuple[
+    dict[tuple[str, ...], list[int]],
+    dict[int, list[str]],
+    dict[int, set[str]],
+]:
     groups: dict[tuple[str, ...], list[int]] = defaultdict(list)
     token_lists: dict[int, list[str]] = {}
     token_sets: dict[int, set[str]] = {}
@@ -90,28 +89,57 @@ def repeated_metadata_ordinals(chunks: list[ChunkRecord], candidates: set[int]) 
         tokens = tokenize(chunks[ordinal]["text"])
         token_lists[ordinal] = tokens
         token_sets[ordinal] = set(tokens)
+    return groups, token_lists, token_sets
 
+
+def _is_cross_document_group(chunks: list[ChunkRecord], ordinals: list[int]) -> bool:
+    per_doc = Counter(chunks[ordinal]["doc_id"] for ordinal in ordinals)
+    return len(per_doc) >= MIN_METADATA_BLOCK_DOCUMENTS and max(per_doc.values()) <= 1
+
+
+def _is_metadata_pair(
+    left: int,
+    right: int,
+    token_lists: dict[int, list[str]],
+    token_sets: dict[int, set[str]],
+) -> bool:
+    if _numeric_fraction(token_lists[left]) < MIN_METADATA_NUMERIC_TOKEN_FRACTION:
+        return False
+    if _numeric_fraction(token_lists[right]) < MIN_METADATA_NUMERIC_TOKEN_FRACTION:
+        return False
+    shared = token_sets[left] & token_sets[right]
+    if len(shared) < MIN_METADATA_SHARED_TOKENS:
+        return False
+    coverage = min(len(shared) / len(token_sets[ordinal]) for ordinal in (left, right))
+    return coverage >= MIN_METADATA_SHARED_COVERAGE
+
+
+def _metadata_ordinals_in_group(
+    ordinals: list[int],
+    token_lists: dict[int, list[str]],
+    token_sets: dict[int, set[str]],
+) -> set[int]:
+    excluded: set[int] = set()
+    for position, left in enumerate(ordinals):
+        for right in ordinals[position + 1 :]:
+            if _is_metadata_pair(left, right, token_lists, token_sets):
+                excluded.update((left, right))
+    return excluded
+
+
+def repeated_metadata_ordinals(chunks: list[ChunkRecord], candidates: set[int]) -> set[int]:
+    """Repeated structured metadata blocks among otherwise claim-sized body chunks.
+
+    A heading must occur in multiple documents and at most once in every participating document.
+    Pairwise token coverage supplies the near-identical-block check; numeric density distinguishes
+    variable publication/registry records from repeated claim prose under ordinary shared section
+    names. Both signals are structural and derived from the current corpus.
+    """
+    groups, token_lists, token_sets = _metadata_groups(chunks, candidates)
     excluded: set[int] = set()
     for ordinals in groups.values():
-        per_doc = Counter(chunks[ordinal]["doc_id"] for ordinal in ordinals)
-        if len(per_doc) < MIN_METADATA_BLOCK_DOCUMENTS or max(per_doc.values()) > 1:
-            continue
-        for position, left in enumerate(ordinals):
-            left_tokens = token_lists[left]
-            if _numeric_fraction(left_tokens) < MIN_METADATA_NUMERIC_TOKEN_FRACTION:
-                continue
-            for right in ordinals[position + 1 :]:
-                right_tokens = token_lists[right]
-                if _numeric_fraction(right_tokens) < MIN_METADATA_NUMERIC_TOKEN_FRACTION:
-                    continue
-                shared = token_sets[left] & token_sets[right]
-                if len(shared) < MIN_METADATA_SHARED_TOKENS:
-                    continue
-                left_coverage = len(shared) / len(token_sets[left])
-                right_coverage = len(shared) / len(token_sets[right])
-                if min(left_coverage, right_coverage) < MIN_METADATA_SHARED_COVERAGE:
-                    continue
-                excluded.update((left, right))
+        if _is_cross_document_group(chunks, ordinals):
+            excluded.update(_metadata_ordinals_in_group(ordinals, token_lists, token_sets))
     return excluded
 
 

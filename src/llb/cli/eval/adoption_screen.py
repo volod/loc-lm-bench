@@ -37,9 +37,9 @@ def compare_adoption_screen_cmd(
     """How cheaply can the reranker question be decided for ONE model?
 
     The reranker question lives in a single cell, so scoring only that cell is an exact 4x saving
-    over the full grid. Cutting the ITEM set is not free: fewer items widen the paired interval and
-    the reading rule is "the interval clears zero", so a screen can only lose a detection. This
-    resamples the recorded per-item deltas at a range of item counts and reports, per model, how
+    over the full grid. Cutting the ITEM set is not free: a smaller ledger can either lose or invent
+    a calibrated separation. This resamples the recorded per-item deltas at a range of item counts
+    and reports, per model, how
     often a screen that size reproduces the full-set reading -- ending in the honest floor on what
     a per-model answer costs. Reads finished sweeps only; no backend or GPU.
     """

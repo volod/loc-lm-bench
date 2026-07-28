@@ -9,6 +9,9 @@ class CaseScoreRow(TypedDict):
     status: str
     objective_score: float
     token_f1: float
+    token_precision: float
+    token_recall: float
+    ranking_score: float
     exact: float
     contains: float
     retrieval_hit: float
@@ -39,6 +42,10 @@ class LeaderboardRow(TypedDict):
     backend: str
     quality: float
     objective: float
+    token_precision: NotRequired[float]
+    token_recall: NotRequired[float]
+    found_rate: NotRequired[float]
+    mean_completion_tokens: NotRequired[float]
     judge: float | None
     reliability: float
     tokens_per_s: float
@@ -59,6 +66,10 @@ class BoardRow(TypedDict):
     judge_ci: NotRequired[tuple[float, float]]
     avg_rank: float
     objective: float
+    token_precision: NotRequired[float]
+    token_recall: NotRequired[float]
+    found_rate: NotRequired[float]
+    mean_completion_tokens: NotRequired[float]
     judge: float | None
     semantic: float | None
     reliability: float

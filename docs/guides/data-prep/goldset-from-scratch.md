@@ -140,7 +140,7 @@ Ollama tags to exist before starting.
 
 | GPU tier | Qwen baseline | Gemma probe | context |
 | --- | --- | --- | ---: |
-| 12 GiB | `qwen3:8b` | `gemma4:e2b` | 8192 |
+| 12 GiB | `qwen3:14b` | `gemma4:e4b` | 8192 |
 | 16 GiB | `qwen3:14b` | `gemma4:e4b` | 8192 |
 | 24 GiB | `qwen3:30b` | `gemma4:26b` | 8192 |
 | 32 GiB | `qwen3:30b` | `gemma4:31b` | 16384 |
@@ -230,7 +230,7 @@ to `verified=true`. A clean sample accepts the bundle; a dirty one sends the dra
 [verification-tooling manual](../human-tooling/verification-tooling.md)):
 
 ```
-make verify-sample  BUNDLE=$BUNDLE VERIFY_N=30            # stratified sample -> verify_sample.csv
+make verify-sample  BUNDLE=$BUNDLE                        # derived sample -> verify_sample.csv
 make verify-review  VERIFY_WS=$BUNDLE/verify_sample.csv   # interactive: four checks per item
 make verify-accept  BUNDLE=$BUNDLE VERIFY_WS=$BUNDLE/verify_sample.csv VERIFY_TOLERANCE=0.05
 ```

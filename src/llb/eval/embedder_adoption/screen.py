@@ -7,11 +7,11 @@ ship". That advice is only useful if measuring is cheap. A full sweep is 24 `run
 three is an exact 4x saving with no statistical cost at all -- the surviving cell is byte-identical
 to the one the full sweep would have run.
 
-What is NOT free is shrinking the ITEM set, and this module measures that honestly. Fewer items
-widen the paired interval, and the reading rule is "the interval clears zero", so a screen can only
-lose detections, never invent them. The study resamples the recorded per-item deltas at a range of
-item counts and reports, per model, how often a screen of that size reproduces the full-set reading
--- so the answer is a measured floor rather than a guess.
+What is NOT free is shrinking the ITEM set, and this module measures that honestly. A subsample can
+either lose or invent a separation under the calibrated randomization rule. The study resamples
+the recorded per-item deltas at a range of item counts and reports, per model, how often a screen
+of that size reproduces the full-set reading -- so the answer is a measured floor rather than a
+guess.
 
 Per-item deltas are re-derived from each sweep's own `run-eval` bundles (the sweep artifact stores
 aggregates only), and the re-derivation is CHECKED against the sweep's recorded reading before any

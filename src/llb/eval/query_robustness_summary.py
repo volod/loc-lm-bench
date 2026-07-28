@@ -1,17 +1,16 @@
 """Aggregation and paired uncertainty over persisted query-robustness case rows."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import Any
 
 from llb.eval.query_robustness import (
-    LANE_OFF,
     MITIGATION_LANES,
     LaneMetrics,
     RobustnessResult,
     SubsetMetrics,
 )
-from llb.eval.query_robustness_uncertainty import delta_comparisons, recovery_comparisons
+from llb.eval.query_robustness_recovery import add_recovery
+from llb.eval.query_robustness_uncertainty import delta_comparisons
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
@@ -103,49 +102,6 @@ def _lane_metrics(
     )
 
 
-def _with_recovery(
-    metric: LaneMetrics,
-    raw: LaneMetrics,
-    rows: list[dict[str, Any]],
-    raw_rows: list[dict[str, Any]],
-    *,
-    resamples: int,
-    confidence: float,
-    seed: int,
-) -> LaneMetrics:
-    """Credit a mitigation lane with what it restored against its class's unmitigated lane."""
-    changed = [row for row in rows if bool(row.get("variant_changed", True))]
-    raw_changed = [row for row in raw_rows if bool(row.get("variant_changed", True))]
-    return replace(
-        metric,
-        objective_recovery=metric.objective_score - raw.objective_score,
-        recall_recovery=metric.recall_at_k - raw.recall_at_k,
-        changed=replace(
-            metric.changed,
-            objective_recovery=metric.changed.objective_score - raw.changed.objective_score,
-            recall_recovery=metric.changed.recall_at_k - raw.changed.recall_at_k,
-            comparisons={
-                **metric.changed.comparisons,
-                **recovery_comparisons(
-                    changed,
-                    raw_changed,
-                    bootstrap_index_sets(len(changed), resamples, seed),
-                    confidence,
-                ),
-            },
-        ),
-        comparisons={
-            **metric.comparisons,
-            **recovery_comparisons(
-                rows,
-                raw_rows,
-                bootstrap_index_sets(len(rows), resamples, seed),
-                confidence,
-            ),
-        },
-    )
-
-
 def _group_rows(
     rows: list[dict[str, Any]],
     item_ids: list[str],
@@ -166,6 +122,19 @@ def _group_rows(
     return [by_id[item_id] for item_id in item_ids]
 
 
+def _clean_baseline(
+    rows: list[dict[str, Any]], clean_rows: Sequence[Mapping[str, Any]]
+) -> tuple[dict[str, Mapping[str, Any]], list[str], float, float]:
+    clean = {str(row["item_id"]): row for row in clean_rows}
+    item_ids = list(dict.fromkeys(str(row["item_id"]) for row in rows))
+    missing = [item_id for item_id in item_ids if item_id not in clean]
+    if missing:
+        raise ValueError(f"clean baseline is missing item ids: {missing[:3]}")
+    clean_objective = _mean([float(clean[item_id]["objective_score"]) for item_id in item_ids])
+    clean_recall = _mean([float(clean[item_id]["retrieval_hit"]) for item_id in item_ids])
+    return clean, item_ids, clean_objective, clean_recall
+
+
 def summarize_query_robustness(
     rows: list[dict[str, Any]],
     clean_rows: Sequence[Mapping[str, Any]],
@@ -177,13 +146,7 @@ def summarize_query_robustness(
 ) -> RobustnessResult:
     """Rebuild every aggregate and its paired annotation from persisted per-case rows."""
     classes = tuple(variant_classes)
-    clean = {str(row["item_id"]): row for row in clean_rows}
-    item_ids = list(dict.fromkeys(str(row["item_id"]) for row in rows))
-    missing = [item_id for item_id in item_ids if item_id not in clean]
-    if missing:
-        raise ValueError(f"clean baseline is missing item ids: {missing[:3]}")
-    clean_objective = _mean([float(clean[item_id]["objective_score"]) for item_id in item_ids])
-    clean_recall = _mean([float(clean[item_id]["retrieval_hit"]) for item_id in item_ids])
+    clean, item_ids, clean_objective, clean_recall = _clean_baseline(rows, clean_rows)
     grouped = {
         (variant_class, lane.id): _group_rows(rows, item_ids, variant_class, lane.id)
         for variant_class in classes
@@ -204,22 +167,12 @@ def summarize_query_robustness(
         for variant_class in classes
         for lane in MITIGATION_LANES
     ]
-    raw_by_class = {
-        metric.variant_class: metric for metric in metrics if metric.mitigation == LANE_OFF.id
-    }
-    with_recovery = tuple(
-        _with_recovery(
-            metric,
-            raw_by_class[metric.variant_class],
-            grouped[(metric.variant_class, metric.mitigation)],
-            grouped[(metric.variant_class, LANE_OFF.id)],
-            resamples=resamples,
-            confidence=confidence,
-            seed=seed,
-        )
-        if metric.mitigation != LANE_OFF.id
-        else metric
-        for metric in metrics
+    with_recovery = add_recovery(
+        metrics,
+        grouped,
+        resamples=resamples,
+        confidence=confidence,
+        seed=seed,
     )
     return RobustnessResult(
         rows,

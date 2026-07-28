@@ -14,6 +14,8 @@ prices the current docs quote -- including the encoder row, which no committed g
 Pure: value vectors and dict rows, so the whole vertical runs in the lightweight CI install.
 """
 
+from pathlib import Path
+
 from llb.rag.fusion_evidence.evidence_gate import (
     resolving_item_count,
 )
@@ -91,29 +93,55 @@ def test_the_long_context_resolution_prices_its_undecidable_direction():
     from llb.eval.context_ablation.models import (
         DERIVED_LONG_CONTEXT_DELTA,
         LANE_LONG_CONTEXT,
+        LANE_RAG,
         POWER_RESOLUTION_UNDECIDABLE,
     )
-    from llb.eval.context_ablation.power import resolve_power_analysis
+    from llb.rag.fusion_evidence.power import plan_from_deltas, resolve_power_analysis
 
     n = 82
+    candidate = [1.0 if i < BOUND - 1 else 0.0 for i in range(n)]
+    baseline = [0.0] * n
+    deltas = [
+        candidate_value - baseline_value
+        for candidate_value, baseline_value in zip(candidate, baseline)
+    ]
     entry = {
         "label": DERIVED_LONG_CONTEXT_DELTA,
         "candidate": LANE_LONG_CONTEXT,
-        "reference": "rag",
+        "reference": LANE_RAG,
         "n": n,
         "population": "all",
         "paired": paired_comparison(
-            [1.0 if i < BOUND - 1 else 0.0 for i in range(n)],
-            [0.0] * n,
+            candidate,
+            baseline,
             bootstrap_index_sets(n, RESAMPLES, SEED),
             DEFAULT_CONFIDENCE,
         ),
     }
-    plan = {
-        "alpha": round(1.0 - DEFAULT_CONFIDENCE, 12),
-        "minimum_detectable_delta": 0.01,
-        "target_reached": True,
-    }
-    resolved = resolve_power_analysis({"derived": [entry]}, plan)  # type: ignore[arg-type]
+    plan = plan_from_deltas(
+        Path("reference.json"),
+        deltas,
+        minimum_detectable_delta=0.01,
+        target_power=0.8,
+        confidence=DEFAULT_CONFIDENCE,
+        planned_n=n,
+        selector={
+            "lane": "compare-context-strategies",
+            "candidate": LANE_LONG_CONTEXT,
+            "baseline": LANE_RAG,
+            "metric": "objective_score",
+            "population": "all",
+        },
+    )
+    resolved = resolve_power_analysis(
+        plan,
+        deltas,
+        entry["paired"],
+        candidate=LANE_LONG_CONTEXT,
+        baseline=LANE_RAG,
+    )
     assert resolved["resolution"] == POWER_RESOLUTION_UNDECIDABLE
-    assert f"about {resolving_item_count(BOUND - 1, n)} paired items" in resolved["reason"]
+    assert (
+        f"realized discordance floor is {resolving_item_count(BOUND - 1, n)} items"
+        in resolved["reason"]
+    )

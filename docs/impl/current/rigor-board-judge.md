@@ -230,12 +230,21 @@ the final board.
 
 Ranking guards:
 
-- average rank across shared quality signals rather than a silent arbitrary blend;
+- RAG base quality is an explicit 75% token-recall / 25% token-precision composite, with the
+  unchanged token-F1 objective, found-rate, and mean completion length displayed beside it;
+- average rank across shared quality signals rather than a silent undeclared blend;
 - bootstrap confidence intervals from per-case series;
 - unresolved marks when adjacent CIs overlap;
 - Pareto marks over quality, throughput, and VRAM;
 - hard rejection of mixed tiers or incompatible judge cohorts;
 - duplicate model-config rejection before ranking.
+
+The RAG policy lives in `src/llb/scoring/verbosity.py`. New run bundles persist both the aggregate
+and aligned per-case `ranking_score`, so board CIs, Pareto quality, best-per-model selection,
+tuning quality, and quality-per-watt all read the same score. The run table prints the formula
+above the columns. Category tiers and legacy RAG bundles have no `ranking_score` and therefore
+continue to use their own objective. The measured policy decision and rank changes are recorded
+in [RAG core](rag-core.md#headline-decomposition-and-declared-ranking-policy).
 
 `src/llb/board/` loads run bundles and renders Streamlit views. Loading is split by concern:
 `runs`, `categories`, `harnesses`, `prompt_systems`, and `io`. The board uses final private runs

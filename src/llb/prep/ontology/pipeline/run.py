@@ -1,10 +1,6 @@
-"""The `draft_goldset` orchestrator: run stages 1-7 in order and (by default) write the bundle.
+"""Run inventory, extraction, ontology, sampling, drafting, refinement, and bundle emission.
 
-    1 inventory -> 2 extract -> 3 induce ontology -> 4 sample coverage
-    -> 5 draft QA -> 6 ground/dedup/reject -> 7 emit bundle
-
-`complete` and `extraction_adapter` are injectable, so the whole flow is unit-tested with a fake
-endpoint and never needs a server or a provider key.
+Model and extraction adapters are injectable so tests exercise the complete flow without a server.
 """
 
 from pathlib import Path
@@ -14,7 +10,13 @@ from typing import Any, cast
 from llb.goldset.schema import GoldItem, Split
 from llb.goldset.splits import assign_splits
 from llb.prep.frontier_telemetry import DraftBudgetExceeded
-from llb.prep.ontology.constants import DEFAULT_MAX_ITEMS, DEFAULT_MULTI_HOP_MAX_PATHS
+from llb.prep.ontology.constants import (
+    DEFAULT_MAX_ITEMS,
+    DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
+    DEFAULT_MULTI_HOP_MAX_PATHS,
+    DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+    DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
+)
 from llb.prep.ontology.dedup import QuestionEmbedder
 from llb.prep.ontology.endpoint import build_completers
 from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointLogs, EndpointPlan
@@ -65,6 +67,10 @@ def draft_goldset(
     chains: bool = False,
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS,
     multi_hop_bridge_fill: bool = False,
+    multi_hop_path_stratified: bool = False,
+    multi_hop_relation_pair_target: int = DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+    multi_hop_document_mode_target: int = DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
+    multi_hop_source_document_target: int = DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
     dedup_against: list[Path | str] | None = None,
     carry_forward_multi_hop: bool = False,
     graph_dir: Path | str | None = None,
@@ -73,19 +79,10 @@ def draft_goldset(
     write: bool = True,
     resume: bool = False,
 ) -> PipelineResult:
-    """Run stages 1-7 and (by default) write the bundle. Returns the in-memory result.
+    """Run the draft stages and return the in-memory result, writing its bundle by default.
 
-    Yield-max knobs: `coverage_target` drafts up to N seeds per stratum bucket instead of the flat
-    `max_items` cap; `multi_hop` also drafts multi-span questions walked from the knowledge
-    graph (built in-run, or loaded from `graph_dir`); `chains` emits ordered chain-of-questions
-    rows from the same graph paths; `dedup_against` drops questions that are pinned-E5
-    near-duplicates of the listed prior bundles. `rejection_feedback`
-    (draft-feedback-rejection-reasons) points at a verify-gate `rejection_reasons.json`; its
-    dominant reject codes tighten the draft prompts deterministically, and the applied hints +
-    file digest land in provenance. `resume=True` re-enters an existing bundle: it reads
-    the pinned settings from the journal meta, reuses journaled extraction windows instead of
-    re-calling the model, and replays the deterministic seed/draft/emit stages -- producing the same
-    bundle as an uninterrupted run.
+    Coverage, graph paths, prior-bundle dedup, rejection feedback, and resumable journal replay are
+    configured by the keyword arguments and recorded through `DraftSettings`.
     """
     started = perf_counter()
     resolved_out = Path(out_dir) if out_dir is not None else default_out_dir()
@@ -107,6 +104,10 @@ def draft_goldset(
         chains=chains,
         multi_hop_max_paths=multi_hop_max_paths,
         multi_hop_bridge_fill=multi_hop_bridge_fill,
+        multi_hop_path_stratified=multi_hop_path_stratified,
+        multi_hop_relation_pair_target=multi_hop_relation_pair_target,
+        multi_hop_document_mode_target=multi_hop_document_mode_target,
+        multi_hop_source_document_target=multi_hop_source_document_target,
         dedup_against=dedup_against,
         carry_forward_multi_hop=carry_forward_multi_hop,
         graph_dir=graph_dir,
@@ -197,7 +198,7 @@ def _execute_pipeline(
         items, item_labels, seed_info, applied_feedback = _draft_stage(
             completers.drafting, docs, extractions, ontology, settings
         )
-    items, item_labels, chain_items = _graph_stages(
+    items, item_labels, chain_items, path_strata = _graph_stages(
         completers.drafting, docs, extractions, ontology, settings, items, item_labels
     )
     dedup_report: dict[str, object] | None = None
@@ -241,5 +242,6 @@ def _execute_pipeline(
         dedup_report=dedup_report,
         carry_forward_report=carry_forward_report,
         applied_feedback=applied_feedback,
+        multi_hop_path_strata=path_strata,
         endpoint_logs=endpoint_logs,
     )

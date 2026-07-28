@@ -17,6 +17,7 @@ LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
 
 # Hugging Face downloads (gated models and datasets)
 HF_TOKEN = "HF_TOKEN"
+GITHUB_TOKEN = "GITHUB_TOKEN"
 
 # Candidate inference endpoints (RunConfig + backends)
 OLLAMA_HOST = "OLLAMA_HOST"
@@ -59,6 +60,7 @@ MAX_JOBS = "MAX_JOBS"
 DOCUMENTED_ENV_VARS = (
     DATA_DIR,
     HF_TOKEN,
+    GITHUB_TOKEN,
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
     GEMINI_API_KEY,

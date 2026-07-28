@@ -68,6 +68,36 @@ class ComparisonSlice(TypedDict):
     backends: dict[str, RetrievalMetrics]
 
 
+def _retrieve_pairs(
+    stores: dict[str, Retriever], items: list[CompareItem], k: int
+) -> dict[str, list[Any]]:
+    return {
+        label: [(store.retrieve(question, k), spans) for question, spans in items]
+        for label, store in stores.items()
+    }
+
+
+def _slice_reports(
+    pairs_by_backend: dict[str, list[Any]],
+    slice_labels: list[str | None],
+    k: int,
+) -> dict[str, ComparisonSlice]:
+    labels = sorted({label for label in slice_labels if label} | {"comparative", "multi-hop"})
+    return {
+        slice_label: {
+            "n": slice_labels.count(slice_label),
+            "backends": {
+                backend: evaluate_retrieval(
+                    [pair for pair, label in zip(pairs, slice_labels) if label == slice_label],
+                    k,
+                )
+                for backend, pairs in pairs_by_backend.items()
+            },
+        }
+        for slice_label in labels
+    }
+
+
 def compare_retrieval(
     stores: dict[str, Retriever],
     items: list[CompareItem],
@@ -77,12 +107,8 @@ def compare_retrieval(
     """Score each backend over the same items, with optional aligned question-type slices."""
     if slice_labels is not None and len(slice_labels) != len(items):
         raise ValueError("retrieval slice labels must align one-to-one with items")
-    per_backend: dict[str, RetrievalMetrics] = {}
-    pairs_by_backend: dict[str, list[Any]] = {}
-    for label, store in stores.items():
-        pairs = [(store.retrieve(question, k), spans) for question, spans in items]
-        pairs_by_backend[label] = pairs
-        per_backend[label] = evaluate_retrieval(pairs, k)
+    pairs_by_backend = _retrieve_pairs(stores, items, k)
+    per_backend = {label: evaluate_retrieval(pairs, k) for label, pairs in pairs_by_backend.items()}
     report: ComparisonReport = {
         "k": k,
         "n": len(items),
@@ -90,20 +116,7 @@ def compare_retrieval(
         "best_recall": _best_recall(per_backend),
     }
     if slice_labels is not None:
-        labels = sorted({label for label in slice_labels if label} | {"comparative", "multi-hop"})
-        report["slices"] = {
-            slice_label: {
-                "n": sum(label == slice_label for label in slice_labels),
-                "backends": {
-                    backend: evaluate_retrieval(
-                        [pair for pair, label in zip(pairs, slice_labels) if label == slice_label],
-                        k,
-                    )
-                    for backend, pairs in pairs_by_backend.items()
-                },
-            }
-            for slice_label in labels
-        }
+        report["slices"] = _slice_reports(pairs_by_backend, slice_labels, k)
     return report
 
 

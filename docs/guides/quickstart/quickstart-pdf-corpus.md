@@ -202,7 +202,7 @@ Default full-draft knobs:
 - `QUICKSTART_DRAFT_MODEL=auto`
 - `QUICKSTART_MODEL_SELECTION=auto`
 - `QUICKSTART_DRAFT_MAX_ITEMS=180`
-- `QUICKSTART_DRAFT_VERIFY_N=40`
+- verification sample at 95% confidence and 0.10 precision, scaled to the drafted population
 - `QUICKSTART_DRAFT_TIMEOUT=900`
 
 Optional bounded probe for debugging only:

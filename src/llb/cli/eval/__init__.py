@@ -11,7 +11,9 @@ from llb.cli.eval import (  # noqa: F401
     embedder_adoption,
     frontier_judge,
     judge,
+    paired_reading_audit,
     query_robustness,
     run,
     screen,
+    verbosity,
 )

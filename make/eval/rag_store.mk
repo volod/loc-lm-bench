@@ -59,6 +59,7 @@ refresh-index: ## Incrementally refresh built stores after corpus edits + drift 
 validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 QUERY_PREP_OUT= for model-backed A/B
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main validate-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(BUILD_INDEX_CORPUS) \
 		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
 		$(if $(RETRIEVAL_BACKEND),--retrieval-backend "$(RETRIEVAL_BACKEND)",) \
 		$(if $(RETRIEVAL_STRATEGY),--retrieval-strategy "$(RETRIEVAL_STRATEGY)",) \
@@ -70,4 +71,3 @@ validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PR
 		$(if $(QUERY_PREP_BACKEND),--query-prep-backend "$(QUERY_PREP_BACKEND)",) \
 		$(if $(QUERY_PREP_AB),--query-prep-ab,) \
 		$(if $(QUERY_PREP_OUT),--out "$(QUERY_PREP_OUT)",)
-

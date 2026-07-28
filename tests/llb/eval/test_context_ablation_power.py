@@ -84,7 +84,7 @@ def test_plan_reads_paired_variance_and_records_whether_the_planned_set_reaches_
     assert plan["target_reached"]
 
 
-def test_resolution_is_separated_only_when_the_new_interval_clears_zero():
+def test_resolution_is_separated_only_when_the_new_interval_clears_zero(tmp_path: Path):
     ids = [f"q{i}" for i in range(20)]
     lanes = {
         LANE_CLOSED_BOOK: [_row(item_id, 0.0) for item_id in ids],
@@ -92,19 +92,15 @@ def test_resolution_is_separated_only_when_the_new_interval_clears_zero():
         LANE_LONG_CONTEXT: [_row(item_id, 0.6) for item_id in ids],
     }
     report = compare_context_strategies(lanes, {}, resamples=200)
-    plan = {
-        "method": "paired-normal-approximation",
-        "reference_artifact": "prior.json",
-        "reference_n": 20,
-        "reference_mean": 0.1,
-        "reference_sample_sd": 0.2,
-        "minimum_detectable_delta": 0.06,
-        "target_power": 0.8,
-        "alpha": 0.05,
-        "required_n": 20,
-        "planned_n": 20,
-        "target_reached": True,
-    }
+    reference = tmp_path / "prior.json"
+    _reference(reference, [-0.2, 0.2] * 10)
+    plan = plan_from_artifact(
+        reference,
+        minimum_detectable_delta=0.06,
+        target_power=0.8,
+        confidence=0.95,
+        planned_n=20,
+    )
     resolved = resolve_power_analysis(report, plan)
     assert resolved["resolution"] == POWER_RESOLUTION_SEPARATED
     assert resolved["direction"] == LANE_LONG_CONTEXT

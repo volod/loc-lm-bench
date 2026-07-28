@@ -1,10 +1,6 @@
-"""Write the self-contained draft bundle and its provenance: the `verified=false` goldset, a copy
-of the corpus, the induced ontology, the per-document extraction, calibration artifacts, and a
-provenance record linking ontology / extraction / endpoint / prompt / model / cost / doc hashes.
+"""Write the self-contained draft bundle, calibration artifacts, and traceable provenance.
 
-`_write_bundle` is the emit stage; `_provenance` and `_prompt_fingerprints` build the traceability
-record, and `_log_calibration_gates` surfaces the calibration roll-up as a WARNING (never fatal --
-the human verification gate remains the real block on scoring).
+Calibration failures are warnings; human verification remains the scoring gate.
 """
 
 import hashlib
@@ -22,6 +18,7 @@ from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     EXTRACTION_FILENAME,
     GOLDSET_FILENAME,
+    MULTI_HOP_PATH_STRATA_FILENAME,
     ONTOLOGY_FILENAME,
     PROVENANCE_FILENAME,
     PROVENANCE_KIND,
@@ -173,6 +170,8 @@ def _provenance(
         provenance["multi_hop_carry_forward"] = result.carry_forward_report
     if result.applied_feedback is not None:
         provenance["applied_feedback"] = result.applied_feedback
+    if result.multi_hop_path_strata is not None:
+        provenance["multi_hop_path_strata"] = result.multi_hop_path_strata
     return provenance
 
 
@@ -215,6 +214,16 @@ def _write_bundle(
         json.dumps(_provenance(result, endpoints, seed, settings), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if result.multi_hop_path_strata is not None:
+        (out_dir / MULTI_HOP_PATH_STRATA_FILENAME).write_text(
+            json.dumps(
+                result.multi_hop_path_strata,
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     result.calibration_report = write_calibration_artifacts(
         out_dir,
         result.docs,

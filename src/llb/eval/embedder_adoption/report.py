@@ -30,7 +30,7 @@ from llb.rag.fusion_evidence.stability import (
     format_reading,
 )
 from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 
 _HEADERS = {
     METRIC_OBJECTIVE: "objective",
@@ -58,8 +58,8 @@ def _delta_table(report: AdoptionBarReport) -> list[str]:
         "",
         "| cell | config | "
         + " | ".join(f"d {_HEADERS.get(metric, metric)}" for metric in metrics)
-        + " | objective w/l/t | sign p | reading |",
-        "| --- | --- | " + " | ".join(["---:"] * len(metrics)) + " | :-: | ---: | :-: |",
+        + " | objective w/l/t | sign p | rand p | reading |",
+        "| --- | --- | " + " | ".join(["---:"] * len(metrics)) + " | :-: | ---: | ---: | :-: |",
     ]
     for cell in report["cells"]:
         objective = cell["paired"][METRIC_OBJECTIVE]
@@ -67,14 +67,14 @@ def _delta_table(report: AdoptionBarReport) -> list[str]:
         lines.append(
             f"| `{cell['label']}` | {_cell_note(cell)} | {deltas} "
             f"| {objective['wins']}/{objective['losses']}/{objective['ties']} "
-            f"| {objective['sign_test_p']:.3f} "
+            f"| {objective['sign_test_p']:.3f} | {format_randomization_p(objective)} "
             f"| {format_reading(cell.get('stability'), cell_reading(cell, confidence))} |"
         )
     lines += [
         "",
-        "`answer` = the rank gain reached the answer (the objective interval clears zero); "
+        "`answer` = the calibrated objective sign-flip test separates; "
         "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
+        "separation; `insufficient evidence` = a positive interval rests on too few differing items "
         "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
         "97.5% interval would change -- the cut decided it, not the evidence.",
         "",

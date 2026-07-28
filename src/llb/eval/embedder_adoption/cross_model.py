@@ -74,8 +74,11 @@ def cell_reading(cell: CellReport, confidence: float = DEFAULT_CONFIDENCE) -> st
         (METRIC_RECIPROCAL_RANK, READING_RANK_ONLY),
     ):
         comparison = cell["paired"][metric]
-        if comparison["delta"]["lo"] > 0.0:
-            return reading if separates(comparison, confidence) else READING_INSUFFICIENT_EVIDENCE
+        if separates(comparison, confidence):
+            return reading
+        stability = comparison.get("stability")
+        if stability is not None and stability.get("reading") == READING_INSUFFICIENT_EVIDENCE:
+            return READING_INSUFFICIENT_EVIDENCE
     return READING_NEITHER
 
 
@@ -206,8 +209,8 @@ def format_cross_model(
         lines.append(f"| `{cell['label']}` | {readings} | {'yes' if cell['agree'] else 'NO'} |")
     lines += [
         "",
-        "Each cell is one model's keep-or-extend reading: `answer` = the rank gain reached the "
-        "answer (objective interval clears zero); `rank only` = the encoder ranks earlier but the "
+        "Each cell is one model's keep-or-extend reading: `answer` = the calibrated objective "
+        "test separates; `rank only` = the encoder ranks earlier but the "
         "answer does not move; `neither` = no separation; `insufficient evidence` = the interval "
         "clears zero on too few differing items for the reporting level to be reachable.",
         "",

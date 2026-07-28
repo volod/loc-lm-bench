@@ -2,6 +2,7 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(BUILD_INDEX_CORPUS) \
 		--model "$(MODEL)" --backend "$(BACKEND)" \
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		$(if $(RETRIEVAL_BACKEND),--retrieval-backend "$(RETRIEVAL_BACKEND)",) \
@@ -26,6 +27,14 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+analyze-verbosity: ## Compare fixed-item RAG bundles under F1, recall, found-rate, and declared format policy (RUN_DIRS="...")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(RUN_DIRS)" || { echo "ERROR: set RUN_DIRS='<bundle> <bundle> ...'"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main analyze-verbosity \
+		$(foreach dir,$(RUN_DIRS),--run-dir "$(dir)") \
+		$(if $(VERBOSITY_OUT),--out-dir "$(VERBOSITY_OUT)",)
 
 bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT= QUERY_ROBUSTNESS_CLASSES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

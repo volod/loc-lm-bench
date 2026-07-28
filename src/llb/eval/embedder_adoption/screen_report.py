@@ -32,8 +32,8 @@ def format_screen(
         "### Screen agreement with the full-set reading",
         "",
         "How often a screen of N items reproduces the same `k10+rerank` reading the whole ledger "
-        'gives. Fewer items widen the paired interval and the rule is "the interval clears zero", '
-        "so a screen can only LOSE a detection, never invent one.",
+        "gives. A smaller ledger can either lose or invent a calibrated separation, so agreement "
+        "with the full reading is measured in both directions.",
         "",
         "| model | full reading | "
         + " | ".join(f"n={size}" for size in report["sizes"])

@@ -142,7 +142,7 @@ section below; run the steps in order and check each gate before moving on.
 
    ```bash
    make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
-   make verify-sample  BUNDLE=<bundle> VERIFY_N=30
+   make verify-sample  BUNDLE=<bundle>
    make verify-review  VERIFY_WS=<bundle>/verify_sample.csv
    make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
    ```
@@ -438,7 +438,7 @@ goldset drafts through cross-check and the human verification gate exactly as an
 
 ```bash
 make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
-make verify-sample  BUNDLE=<bundle> VERIFY_N=30
+make verify-sample  BUNDLE=<bundle>
 make verify-review  VERIFY_WS=<bundle>/verify_sample.csv
 make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
 ```
@@ -563,7 +563,7 @@ make validate-goldset GOLDSET=<canonical.jsonl> CORPUS=<canonical-corpus>
 
 # 5. Mechanical cross-check, then the human verification gate (required)
 make cross-check-goldset BUNDLE=<bundle> CROSS_CHECK_MODEL=<second-model>
-make verify-sample  BUNDLE=<bundle> VERIFY_N=40
+make verify-sample  BUNDLE=<bundle>
 make verify-review  VERIFY_WS=<bundle>/verify_sample.csv
 make verify-accept  BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
 

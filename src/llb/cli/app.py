@@ -3,7 +3,7 @@
 Commands by area:
   build-index / validate-retrieval / run-eval        RAG core (retrieve -> generate -> score)
   score-external-rag                                 human-score an external RAG answer log
-  prep-models / list-models / build-vllm             RAG/vLLM model prep + feasibility + vLLM build
+  download-model / prep-models / list-models          bounded model cache + model feasibility
   detect-gpu-vram / gen-serving-config             per-GPU-tier serve + run-eval artifacts
   resolve-models                                     backend resolver pick the backend that can serve a model
   sweep                                              hard-isolation cell-per-model sweep (resume)

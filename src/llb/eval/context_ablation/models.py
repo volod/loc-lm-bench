@@ -121,6 +121,10 @@ class LongContextPowerAnalysis(TypedDict):
     required_n: int
     planned_n: int
     target_reached: bool
+    selector: dict[str, str]
+    variance_required_n: int
+    evidence_floor_n: int | None
+    binding_floor: str
     planned_target_reached: NotRequired[bool]
     realized_n: NotRequired[int]
     realized_mean: NotRequired[float]

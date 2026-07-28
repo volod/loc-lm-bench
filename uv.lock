@@ -3622,6 +3622,7 @@ name = "llb"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "langchain-text-splitters" },
     { name = "openai" },
@@ -3737,6 +3738,7 @@ requires-dist = [
     { name = "duckdb", marker = "extra == 'track'", specifier = ">=1.0" },
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = ">=1.8" },
     { name = "gguf", marker = "extra == 'finetune'", specifier = ">=0.10" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "lancedb", marker = "extra == 'rag-lancedb'", specifier = "==0.33.0" },
     { name = "langchain-text-splitters", specifier = "==1.1.2" },

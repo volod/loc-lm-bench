@@ -92,6 +92,78 @@ class RobustnessResult:
     confidence: float = DEFAULT_CONFIDENCE
 
 
+def _probe_row(
+    item: GoldItem,
+    variant_class: str,
+    lane: MitigationLane,
+    clean_row: Mapping[str, Any],
+    execute: QueryExecutor,
+    *,
+    seed: int,
+    typo_rate: float,
+) -> dict[str, Any]:
+    variant = generate_variant(
+        item.question,
+        variant_class,
+        item_id=item.id,
+        seed=seed,
+        typo_rate=typo_rate,
+    )
+    row = {
+        "probe": True,
+        "item_id": item.id,
+        "variant_class": variant_class,
+        "mitigation": lane.id,
+        "mitigated": lane.mitigated,
+        "mitigation_steps": list(lane.steps),
+        "mitigation_typo_guard": lane.typo_guard,
+        "seed": seed,
+        "typo_rate": typo_rate,
+        "clean_question": item.question,
+        "variant_question": variant,
+        "variant_changed": variant != item.question,
+        **dict(execute(item, variant, lane)),
+        "clean_objective_score": float(clean_row["objective_score"]),
+        "clean_retrieval_hit": float(clean_row["retrieval_hit"]),
+    }
+    row["objective_delta"] = float(row["objective_score"]) - float(clean_row["objective_score"])
+    row["recall_delta"] = float(row["retrieval_hit"]) - float(clean_row["retrieval_hit"])
+    return row
+
+
+def _evaluate_lane(
+    items: list[GoldItem],
+    variant_class: str,
+    lane: MitigationLane,
+    clean: Mapping[str, Mapping[str, Any]],
+    execute: QueryExecutor,
+    *,
+    seed: int,
+    typo_rate: float,
+    progress: Progress | None,
+    completed: int,
+    total: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for offset, item in enumerate(items, start=1):
+        rows.append(
+            _probe_row(
+                item,
+                variant_class,
+                lane,
+                clean[item.id],
+                execute,
+                seed=seed,
+                typo_rate=typo_rate,
+            )
+        )
+        count = completed + offset
+        if count % 10 == 0 or count == total:
+            if progress is not None:
+                progress(f"[query-robustness] completed {count}/{total} variant cases")
+    return rows
+
+
 def summarize_query_robustness(
     rows: list[dict[str, Any]],
     clean_rows: Sequence[Mapping[str, Any]],
@@ -137,45 +209,20 @@ def evaluate_query_robustness(
     completed = 0
     for variant_class in classes:
         for lane in MITIGATION_LANES:
-            lane_rows: list[dict[str, Any]] = []
-            for item in items:
-                variant = generate_variant(
-                    item.question,
-                    variant_class,
-                    item_id=item.id,
-                    seed=seed,
-                    typo_rate=typo_rate,
-                )
-                score = dict(execute(item, variant, lane))
-                clean_row = clean[item.id]
-                row = {
-                    "probe": True,
-                    "item_id": item.id,
-                    "variant_class": variant_class,
-                    "mitigation": lane.id,
-                    "mitigated": lane.mitigated,
-                    "mitigation_steps": list(lane.steps),
-                    "mitigation_typo_guard": lane.typo_guard,
-                    "seed": seed,
-                    "typo_rate": typo_rate,
-                    "clean_question": item.question,
-                    "variant_question": variant,
-                    "variant_changed": variant != item.question,
-                    **score,
-                    "clean_objective_score": float(clean_row["objective_score"]),
-                    "clean_retrieval_hit": float(clean_row["retrieval_hit"]),
-                }
-                row["objective_delta"] = float(row["objective_score"]) - float(
-                    clean_row["objective_score"]
-                )
-                row["recall_delta"] = float(row["retrieval_hit"]) - float(
-                    clean_row["retrieval_hit"]
-                )
-                lane_rows.append(row)
-                all_rows.append(row)
-                completed += 1
-                if progress is not None and (completed % 10 == 0 or completed == total):
-                    progress(f"[query-robustness] completed {completed}/{total} variant cases")
+            lane_rows = _evaluate_lane(
+                items,
+                variant_class,
+                lane,
+                clean,
+                execute,
+                seed=seed,
+                typo_rate=typo_rate,
+                progress=progress,
+                completed=completed,
+                total=total,
+            )
+            all_rows.extend(lane_rows)
+            completed += len(lane_rows)
     return summarize_query_robustness(
         all_rows,
         clean_rows,

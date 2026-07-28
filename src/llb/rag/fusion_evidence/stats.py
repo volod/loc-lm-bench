@@ -6,12 +6,8 @@ PAIRED percentile bootstrap over the same item index sets, so the candidate and 
 always resampled together and their delta keeps the per-item pairing that makes a small slice
 readable at all.
 
-Every paired delta also carries its `stability`: how close the `lo > 0` reading sits to the cut
-that produced it (`llb.rag.fusion_evidence.stability`). That annotation is FREE rather than a
-second computation -- the resample means a percentile bound is read off are the same draw the
-exceedance probability counts, so one pass yields both the binary reading and the continuous
-quantity it thresholds. Every lane that reports a paired delta therefore gains the qualifier
-without wiring it.
+Every paired delta also carries its `stability`: the calibrated sign-flip p that decides the
+reading, the bootstrap exceedance diagnostic, and the neighbouring-confidence readings.
 
 The same block also carries the minimum-evidence GATE: `separates` is the one separation test every
 verdict cuts on, and it reads the discordant-item ledger beside the interval, because an interval
@@ -30,8 +26,10 @@ from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.evidence_gate import (
     READING_FLAT,
+    READING_INSUFFICIENT_EVIDENCE,
     READING_SEPARATED,
     apply_evidence_gate,
+    reaches_reporting_level,
 )
 from llb.rag.fusion_evidence.stability import (
     LOOSER_CONFIDENCE,
@@ -41,6 +39,7 @@ from llb.rag.fusion_evidence.stability import (
     exceedance,
     stability_from_readings,
 )
+from llb.rag.fusion_evidence.randomization import randomization_separates
 
 DEFAULT_RESAMPLES = 2000
 DEFAULT_CONFIDENCE = 0.95
@@ -126,10 +125,13 @@ def separation_stability(
     *,
     discordant: int,
     pairs: int,
+    randomization_p: float,
+    randomization_method: str,
+    randomization_samples: int,
     looser_confidence: float = LOOSER_CONFIDENCE,
     tighter_confidence: float = TIGHTER_CONFIDENCE,
 ) -> ReadingStability:
-    """How settled the `lo > 0` reading of one SORTED bootstrap draw is.
+    """How settled the calibrated reading beside one sorted bootstrap draw is.
 
     The binary reading every paired lane cuts, taken at the reporting level and at both
     neighbouring conventions off the same sorted samples, plus the exceedance probability the cut
@@ -143,8 +145,15 @@ def separation_stability(
     """
 
     def read(level: float) -> str:
-        lo, _ = _ordered_percentiles(ordered_samples, level)
-        reading = READING_SEPARATED if lo > 0.0 else READING_FLAT
+        if randomization_separates(randomization_p, level):
+            reading = READING_SEPARATED
+        else:
+            lo, _ = _ordered_percentiles(ordered_samples, level)
+            reading = (
+                READING_INSUFFICIENT_EVIDENCE
+                if lo > 0.0 and not reaches_reporting_level(discordant, level)
+                else READING_FLAT
+            )
         return apply_evidence_gate(reading, discordant=discordant, confidence=level)
 
     return stability_from_readings(
@@ -152,6 +161,9 @@ def separation_stability(
         looser_reading=read(looser_confidence),
         tighter_reading=read(tighter_confidence),
         p_positive=exceedance(ordered_samples),
+        randomization_p=randomization_p,
+        randomization_method=randomization_method,
+        randomization_samples=randomization_samples,
         discordant=discordant,
         pairs=pairs,
     )

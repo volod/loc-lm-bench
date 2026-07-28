@@ -1,6 +1,7 @@
 """Readiness audit for a widened multi-hop draft ledger."""
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,6 +16,15 @@ from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.pipeline.expansion import labeled_multi_hop_ids
 
 
+def minimum_combined_items(carried_items: int, minimum_headroom_fraction: float) -> int:
+    """Translate a corpus-relative headroom requirement into a combined-ledger size."""
+    if carried_items < 0:
+        raise ValueError("carried_items must be non-negative")
+    if not 0.0 <= minimum_headroom_fraction <= 1.0:
+        raise ValueError("minimum_headroom_fraction must be between zero and one")
+    return math.ceil(carried_items * (1.0 + minimum_headroom_fraction))
+
+
 @dataclass
 class _ExpansionAudit:
     """Accumulate independent readiness checks, then build the public report."""
@@ -24,6 +34,8 @@ class _ExpansionAudit:
     labeled_ids: set[str]
     carry: object
     dedup: object
+    path_strata: object
+    path_stratified: bool
     validation_errors: list[str]
     texts: dict[str, str]
     errors: list[str] = field(default_factory=list)
@@ -32,12 +44,17 @@ class _ExpansionAudit:
     def load(cls, root: Path) -> "_ExpansionAudit":
         items = load_goldset(root / "goldset.jsonl")
         provenance = json.loads((root / "provenance.json").read_text(encoding="utf-8"))
+        settings = provenance.get("settings")
         return cls(
             root=root,
             items=items,
             labeled_ids=labeled_multi_hop_ids(root),
             carry=provenance.get("multi_hop_carry_forward", {}),
             dedup=provenance.get("dedup", {}),
+            path_strata=provenance.get("multi_hop_path_strata", {}),
+            path_stratified=bool(
+                settings.get("multi_hop_path_stratified") if isinstance(settings, dict) else False
+            ),
             validation_errors=list(validate_items(items, root / "corpus")["errors"]),
             texts={doc.doc_id: doc.text for doc in inventory_corpus(root / "corpus")},
         )
@@ -70,11 +87,28 @@ class _ExpansionAudit:
         if checked != dropped + new_items:
             self.errors.append("dedup accounting does not cover every newly drafted item")
 
-    def check_minimum(self, minimum_items: int) -> None:
-        drafted = len(self.items)
-        if drafted < minimum_items:
+    def check_headroom(self, minimum_headroom_fraction: float) -> None:
+        carry = self.carry if isinstance(self.carry, dict) else {}
+        carried = int(carry.get("carried_items", 0))
+        if carried <= 0:
+            self.errors.append("the expansion has no carried review baseline")
+            return
+        required = minimum_combined_items(carried, minimum_headroom_fraction)
+        if len(self.items) < required:
             self.errors.append(
-                f"drafted multi-hop size {drafted} is below required minimum {minimum_items}"
+                f"drafted multi-hop size {len(self.items)} is below the relative "
+                f"headroom requirement {required}"
+            )
+
+    def check_path_strata(self) -> None:
+        if not self.path_stratified:
+            return
+        if not isinstance(self.path_strata, dict):
+            self.errors.append("stratified expansion has no path-strata report")
+            return
+        if not self.path_strata.get("all_requested_covered_or_exhausted"):
+            self.errors.append(
+                "one or more requested path strata are neither covered nor exhausted"
             )
 
     @property
@@ -97,19 +131,25 @@ class _ExpansionAudit:
     def _distinct_span_count(item: GoldItem) -> int:
         return len({(span.doc_id, span.char_start, span.char_end) for span in item.source_spans})
 
-    def report(self, *, decision_floor: int, minimum_items: int) -> dict[str, object]:
+    def report(self, *, minimum_headroom_fraction: float) -> dict[str, object]:
         drafted = len(self.items)
         has_carry = isinstance(self.carry, dict)
         carry = self.carry if isinstance(self.carry, dict) else {}
         dedup = self.dedup if isinstance(self.dedup, dict) else {}
+        path_strata = self.path_strata if isinstance(self.path_strata, dict) else {}
+        carried = int(carry.get("carried_items", 0))
+        added = max(0, drafted - carried)
         return {
             "kind": "multihop-draft-expansion-audit",
             "bundle": str(self.root),
             "drafted_multi_hop_items": drafted,
-            "decision_floor": decision_floor,
-            "review_headroom": drafted - decision_floor,
-            "minimum_items": minimum_items,
-            "carried_items": int(carry.get("carried_items", 0)),
+            "carried_items": carried,
+            "added_items": added,
+            "review_headroom_fraction": (added / carried) if carried else 0.0,
+            "minimum_headroom_fraction": minimum_headroom_fraction,
+            "minimum_combined_items": (
+                minimum_combined_items(carried, minimum_headroom_fraction) if carried else None
+            ),
             "new_items": int(carry.get("new_items", 0)) if has_carry else drafted,
             "dedup_prior_questions": int(dedup.get("prior_questions", 0)),
             "dedup_dropped": int(dedup.get("dropped", 0)),
@@ -117,18 +157,26 @@ class _ExpansionAudit:
             "dedup_answer_threshold": MULTI_HOP_NEAR_DUP_ANSWER_COSINE_THRESHOLD,
             "all_rows_span_exact": self.all_span_exact and not self.validation_errors,
             "all_rows_ukrainian": self.all_ukrainian,
+            "path_stratified": self.path_stratified,
+            "path_strata_ready": (
+                bool(path_strata.get("all_requested_covered_or_exhausted"))
+                if self.path_stratified
+                else None
+            ),
             "ready_for_human_review": not self.errors,
             "errors": self.errors,
         }
 
 
 def audit_multihop_expansion(
-    bundle: Path | str, *, decision_floor: int, minimum_items: int
+    bundle: Path | str, *, minimum_headroom_fraction: float
 ) -> dict[str, object]:
     """Audit the widened review ledger and return a machine-readable readiness report."""
+    minimum_combined_items(0, minimum_headroom_fraction)
     audit = _ExpansionAudit.load(Path(bundle))
     audit.check_item_contract()
     audit.check_language_and_duplicates()
     audit.check_dedup_accounting()
-    audit.check_minimum(minimum_items)
-    return audit.report(decision_floor=decision_floor, minimum_items=minimum_items)
+    audit.check_headroom(minimum_headroom_fraction)
+    audit.check_path_strata()
+    return audit.report(minimum_headroom_fraction=minimum_headroom_fraction)

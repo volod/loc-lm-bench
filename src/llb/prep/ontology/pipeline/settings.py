@@ -13,7 +13,10 @@ from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
 from llb.prep.ontology.constants import (
     DEFAULT_MAX_ITEMS,
+    DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
     DEFAULT_MULTI_HOP_MAX_PATHS,
+    DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
+    DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
     EXTRACT_CHUNK_OVERLAP,
     EXTRACT_CONCURRENCY,
     EXTRACT_MAX_CHARS,
@@ -26,10 +29,6 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
 )
 from llb.prep.ontology.endpoint_config import EndpointLogs
-
-
-def _opt_str(value: Path | str | None) -> str | None:
-    return str(value) if value is not None else None
 
 
 @dataclass
@@ -58,6 +57,10 @@ class DraftSettings:
     chains: bool = False
     multi_hop_max_paths: int = DEFAULT_MULTI_HOP_MAX_PATHS
     multi_hop_bridge_fill: bool = False
+    multi_hop_path_stratified: bool = False
+    multi_hop_relation_pair_target: int = DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET
+    multi_hop_document_mode_target: int = DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET
+    multi_hop_source_document_target: int = DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET
     dedup_against: list[Path | str] | None = None
     carry_forward_multi_hop: bool = False
     graph_dir: Path | str | None = None
@@ -90,6 +93,27 @@ class DraftSettings:
         self.multi_hop_bridge_fill = bool(
             meta.get("multi_hop_bridge_fill", self.multi_hop_bridge_fill)
         )
+        self.multi_hop_path_stratified = bool(
+            meta.get("multi_hop_path_stratified", self.multi_hop_path_stratified)
+        )
+        self.multi_hop_relation_pair_target = int(
+            meta.get(
+                "multi_hop_relation_pair_target",
+                self.multi_hop_relation_pair_target,
+            )
+        )
+        self.multi_hop_document_mode_target = int(
+            meta.get(
+                "multi_hop_document_mode_target",
+                self.multi_hop_document_mode_target,
+            )
+        )
+        self.multi_hop_source_document_target = int(
+            meta.get(
+                "multi_hop_source_document_target",
+                self.multi_hop_source_document_target,
+            )
+        )
         dedup = meta.get("dedup_against")
         self.dedup_against = list(dedup) if dedup is not None else self.dedup_against
         self.carry_forward_multi_hop = bool(
@@ -109,6 +133,15 @@ class DraftSettings:
             raise ValueError("multi_hop_only requires multi_hop")
         if self.carry_forward_multi_hop and not self.dedup_against:
             raise ValueError("carry_forward_multi_hop requires dedup_against")
+        if (
+            min(
+                self.multi_hop_relation_pair_target,
+                self.multi_hop_document_mode_target,
+                self.multi_hop_source_document_target,
+            )
+            < 1
+        ):
+            raise ValueError("multi-hop path stratum targets must be >= 1")
 
     @property
     def resolved_extract_max_chars(self) -> int:
@@ -132,59 +165,15 @@ class DraftSettings:
 
     def pinned_payload(self) -> dict[str, object]:
         """Determinism-critical settings recorded in the journal meta sidecar for resume."""
-        return {
-            "corpus_root": self.corpus_root,
-            "seed": self.seed,
-            "max_items": self.max_items,
-            "doc_limit": self.doc_limit,
-            "extract_max_chars": self.resolved_extract_max_chars,
-            "extract_chunk_overlap": self.resolved_extract_overlap,
-            "extract_concurrency": self.resolved_extract_concurrency,
-            "reuse_extraction_bundle": _opt_str(self.reuse_extraction_bundle),
-            "retrieval_index_dir": _opt_str(self.retrieval_index_dir),
-            "retrieval_k": self.retrieval_k,
-            "drop_nonretrievable_needles": self.drop_nonretrievable_needles,
-            "coverage_target": self.coverage_target,
-            "multi_hop": self.multi_hop,
-            "multi_hop_only": self.multi_hop_only,
-            "chains": self.chains,
-            "multi_hop_max_paths": self.multi_hop_max_paths,
-            "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
-            "dedup_against": [str(path) for path in self.dedup_against]
-            if self.dedup_against
-            else None,
-            "carry_forward_multi_hop": self.carry_forward_multi_hop,
-            "graph_dir": _opt_str(self.graph_dir),
-            "rejection_feedback": _opt_str(self.rejection_feedback),
-        }
+        from llb.prep.ontology.pipeline.settings_payload import pinned_payload
+
+        return pinned_payload(self)
 
     def provenance_settings(self, resumed: bool) -> dict[str, object]:
         """The `settings` block of the bundle provenance record."""
-        return {
-            "max_items": self.max_items,
-            "seed": self.seed,
-            "doc_limit": self.doc_limit,
-            "extract_max_chars": self.resolved_extract_max_chars,
-            "extract_chunk_overlap": self.resolved_extract_overlap,
-            "extract_concurrency": self.resolved_extract_concurrency,
-            "reuse_extraction_bundle": _opt_str(self.reuse_extraction_bundle),
-            "coverage_target": self.coverage_target,
-            "multi_hop": self.multi_hop,
-            "multi_hop_only": self.multi_hop_only,
-            "chains": self.chains,
-            "multi_hop_max_paths": self.multi_hop_max_paths,
-            "multi_hop_bridge_fill": self.multi_hop_bridge_fill,
-            "dedup_against": [str(path) for path in self.dedup_against]
-            if self.dedup_against
-            else None,
-            "carry_forward_multi_hop": self.carry_forward_multi_hop,
-            "graph_dir": _opt_str(self.graph_dir),
-            "rejection_feedback": _opt_str(self.rejection_feedback),
-            "needle_retrieval_index_dir": _opt_str(self.retrieval_index_dir),
-            "needle_retrieval_k": self.retrieval_k,
-            "drop_nonretrievable_needles": self.drop_nonretrievable_needles,
-            "resumed": resumed,
-        }
+        from llb.prep.ontology.pipeline.settings_payload import provenance_settings
+
+        return provenance_settings(self, resumed=resumed)
 
 
 @dataclass
@@ -208,4 +197,5 @@ class PipelineResult:
     dedup_report: dict[str, object] | None = None
     carry_forward_report: dict[str, object] | None = None
     applied_feedback: dict[str, object] | None = None
+    multi_hop_path_strata: dict[str, object] | None = None
     endpoint_logs: EndpointLogs = field(default_factory=EndpointLogs)

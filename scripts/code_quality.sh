@@ -204,6 +204,8 @@ if [ ! -x "$RADON" ] || [ ! -x "$COMPLEXIPY" ] || [ ! -x "$PYMARKDOWN" ] || [ ! 
 fi
 
 llb_check_root_files
+llb_report_if_output "experiment acceptance-gate inventory" \
+  "$PYTHON" -m llb.quality.acceptance_gates --check
 llb_markdown_scan "project root markdown" "${ROOT_MARKDOWN[@]}"
 
 llb_check_shell_scripts

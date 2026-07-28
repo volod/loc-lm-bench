@@ -99,14 +99,9 @@ def plan_from_deltas(
     target_power: float,
     confidence: float,
     planned_n: int,
-    selector: dict[str, str] | None = None,
+    selector: dict[str, str],
 ) -> PowerAnalysis:
-    """Build a pre-inference declaration from an earlier paired item ledger.
-
-    Omitting `selector` emits the original context-ablation schema exactly. That compatibility path
-    is intentional: its recorded `power-plan.json` is a reproducibility fixture. New shared-lane
-    contracts name their selected delta and combine the variance and discordance floors.
-    """
+    """Build a current pre-inference declaration from an earlier paired item ledger."""
     sd = sample_sd(deltas)
     alpha = round(1.0 - confidence, 12)
     variance_n = required_sample_size(
@@ -125,8 +120,6 @@ def plan_from_deltas(
         "planned_n": planned_n,
         "target_reached": planned_n >= variance_n,
     }
-    if selector is None:
-        return plan
     evidence_n = evidence_floor_n(deltas, confidence)
     required_n, binding = _combined_floor(variance_n, evidence_n)
     plan.update(

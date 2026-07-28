@@ -43,7 +43,7 @@ def test_a_consistent_objective_gain_is_an_answer_quality_gain():
 def test_a_gain_whose_interval_includes_zero_stays_inconclusive():
     verdict = _report([0.0] * 12, [1.0] + [0.0] * 11)["verdict"]
     assert verdict["decision"] == VERDICT_INCONCLUSIVE
-    assert "includes no difference" in verdict["reason"]
+    assert "calibrated test does not separate" in verdict["reason"]
 
 
 def test_better_retrieval_that_does_not_reach_the_answer_is_a_retrieval_only_effect():

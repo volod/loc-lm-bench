@@ -64,7 +64,7 @@ def _generic_verification_instruction(ref: Path | None = None) -> str:
     return "\n".join(
         [
             "Create or point at one of the accepted human verification gate artifacts:",
-            "make verify-sample BUNDLE=<bundle> VERIFY_N=<n>",
+            "make verify-sample BUNDLE=<bundle>",
             "make verify-review VERIFY_WS=<bundle>/verify_sample.csv",
             "make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv",
             (

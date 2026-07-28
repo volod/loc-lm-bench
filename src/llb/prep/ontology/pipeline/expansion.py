@@ -4,7 +4,7 @@ import json
 from itertools import combinations
 from pathlib import Path
 
-from llb.goldset.schema import GoldItem, load_goldset
+from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.graph.ingest import load_extractions
 from llb.prep.ontology.constants import (
     EXTRACTION_FILENAME,
@@ -46,50 +46,69 @@ def _source_document_fingerprints(bundle: Path) -> dict[str, tuple[str, int]]:
     return fingerprints
 
 
-def reused_extractions(bundle: Path | str, docs: list[DocRecord]) -> list[DocExtraction]:
-    """Load a prior bundle's extraction only when it exactly covers the current corpus."""
-    source = Path(bundle)
-    expected = _source_document_fingerprints(source)
-    current = {doc.doc_id: (doc.sha256, doc.n_chars) for doc in docs}
-    if current != expected:
-        changed = sorted(
-            doc_id
-            for doc_id in current.keys() & expected.keys()
-            if current[doc_id] != expected[doc_id]
-        )
-        missing = sorted(expected.keys() - current.keys())
-        extra = sorted(current.keys() - expected.keys())
-        raise ValueError(
-            "reuse extraction bundle does not match the current corpus fingerprints "
-            f"(changed={changed}, missing={missing}, extra={extra}): {source}"
-        )
-    extractions = load_extractions(source / EXTRACTION_FILENAME)
-    doc_ids = {doc.doc_id for doc in docs}
+def _fingerprint_mismatch(
+    current: dict[str, tuple[str, int]], expected: dict[str, tuple[str, int]]
+) -> tuple[list[str], list[str], list[str]]:
+    changed = sorted(
+        doc_id for doc_id in current.keys() & expected.keys() if current[doc_id] != expected[doc_id]
+    )
+    missing = sorted(expected.keys() - current.keys())
+    extra = sorted(current.keys() - expected.keys())
+    return changed, missing, extra
+
+
+def _validate_extraction_ids(
+    extractions: list[DocExtraction], doc_ids: set[str], source: Path
+) -> None:
     extraction_ids = [extraction.doc_id for extraction in extractions]
     if len(extraction_ids) != len(set(extraction_ids)):
         raise ValueError(f"reuse extraction bundle has duplicate document ids: {source}")
-    if set(extraction_ids) != doc_ids:
-        missing = sorted(doc_ids - set(extraction_ids))
-        extra = sorted(set(extraction_ids) - doc_ids)
-        raise ValueError(
-            "reuse extraction bundle does not match the current corpus "
-            f"(missing={missing}, extra={extra}): {source}"
-        )
-    texts = {doc.doc_id: doc.text for doc in docs}
+    if set(extraction_ids) == doc_ids:
+        return
+    missing = sorted(doc_ids - set(extraction_ids))
+    extra = sorted(set(extraction_ids) - doc_ids)
+    raise ValueError(
+        "reuse extraction bundle does not match the current corpus "
+        f"(missing={missing}, extra={extra}): {source}"
+    )
+
+
+def _extraction_spans(extraction: DocExtraction) -> list[SourceSpan]:
+    return [
+        *(span for entity in extraction.entities for span in entity.mentions),
+        *(event.evidence for event in extraction.events),
+        *(claim.evidence for claim in extraction.claims),
+        *(fact.evidence for fact in extraction.facts),
+    ]
+
+
+def _validate_extraction_spans(extractions: list[DocExtraction], texts: dict[str, str]) -> None:
     for extraction in extractions:
-        spans = [
-            *(span for entity in extraction.entities for span in entity.mentions),
-            *(event.evidence for event in extraction.events),
-            *(claim.evidence for claim in extraction.claims),
-            *(fact.evidence for fact in extraction.facts),
-        ]
-        for span in spans:
+        for span in _extraction_spans(extraction):
             text = texts[span.doc_id]
             if text[span.char_start : span.char_end] != span.text:
                 raise ValueError(
                     "reuse extraction span does not ground in the current corpus: "
                     f"{span.doc_id}:{span.char_start}-{span.char_end}"
                 )
+
+
+def reused_extractions(bundle: Path | str, docs: list[DocRecord]) -> list[DocExtraction]:
+    """Load a prior bundle's extraction only when it exactly covers the current corpus."""
+    source = Path(bundle)
+    expected = _source_document_fingerprints(source)
+    current = {doc.doc_id: (doc.sha256, doc.n_chars) for doc in docs}
+    if current != expected:
+        changed, missing, extra = _fingerprint_mismatch(current, expected)
+        raise ValueError(
+            "reuse extraction bundle does not match the current corpus fingerprints "
+            f"(changed={changed}, missing={missing}, extra={extra}): {source}"
+        )
+    extractions = load_extractions(source / EXTRACTION_FILENAME)
+    doc_ids = {doc.doc_id for doc in docs}
+    _validate_extraction_ids(extractions, doc_ids, source)
+    texts = {doc.doc_id: doc.text for doc in docs}
+    _validate_extraction_spans(extractions, texts)
     return extractions
 
 
@@ -104,7 +123,19 @@ def labeled_multi_hop_ids(bundle: Path) -> set[str]:
         row = json.loads(line)
         if row.get("question_type") == _MULTI_HOP:
             ids.add(str(row["id"]))
+    if not ids and _is_multi_hop_only_bundle(bundle):
+        return {item.id for item in load_goldset(bundle / "goldset.jsonl")}
     return ids
+
+
+def _is_multi_hop_only_bundle(bundle: Path) -> bool:
+    """Recover labels when a text-only bundle has no PDF citation-needle rows."""
+    provenance = bundle / PROVENANCE_FILENAME
+    if not provenance.is_file():
+        return False
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    settings = payload.get("settings") if isinstance(payload, dict) else None
+    return bool(settings.get("multi_hop_only")) if isinstance(settings, dict) else False
 
 
 def prior_multihop_span_pairs(bundles: list[Path | str]) -> set[SpanPair]:
@@ -136,32 +167,30 @@ def _validate_carried_item(item: GoldItem, texts: dict[str, str], bundle: Path) 
             )
 
 
-def carry_forward_multi_hop(
-    items: list[GoldItem],
-    labels: dict[str, ItemLabels],
-    bundles: list[Path | str],
-    docs: list[DocRecord],
-) -> tuple[list[GoldItem], dict[str, ItemLabels], dict[str, object]]:
-    """Prepend prior labeled multi-hop rows, keeping one collision-free review ledger."""
-    texts = {doc.doc_id: doc.text for doc in docs}
+def _selected_multi_hop_items(bundle: Path) -> list[GoldItem]:
+    selected_ids = labeled_multi_hop_ids(bundle)
+    selected = [item for item in load_goldset(bundle / "goldset.jsonl") if item.id in selected_ids]
+    if len(selected) != len(selected_ids):
+        raise ValueError(f"carry-forward labels do not match goldset rows: {bundle}")
+    return selected
+
+
+def _collect_carried_items(
+    bundles: list[Path | str], texts: dict[str, str]
+) -> tuple[list[GoldItem], set[str], list[dict[str, object]], int]:
     carried: list[GoldItem] = []
     seen_ids: set[str] = set()
     seen_questions: set[str] = set()
-    dropped_exact_duplicates = 0
     sources: list[dict[str, object]] = []
+    dropped = 0
     for raw_bundle in bundles:
         bundle = Path(raw_bundle)
-        selected_ids = labeled_multi_hop_ids(bundle)
-        selected = [
-            item for item in load_goldset(bundle / "goldset.jsonl") if item.id in selected_ids
-        ]
-        if len(selected) != len(selected_ids):
-            raise ValueError(f"carry-forward labels do not match goldset rows: {bundle}")
+        selected = _selected_multi_hop_items(bundle)
         for item in selected:
             _validate_carried_item(item, texts, bundle)
             normalized = _normalized_question(item.question)
             if normalized in seen_questions:
-                dropped_exact_duplicates += 1
+                dropped += 1
                 continue
             if item.id in seen_ids:
                 raise ValueError(f"duplicate carried multi-hop item id: {item.id}")
@@ -169,7 +198,12 @@ def carry_forward_multi_hop(
             seen_questions.add(normalized)
             carried.append(item)
         sources.append({"bundle": str(bundle), "labeled_items": len(selected)})
+    return carried, seen_ids, sources, dropped
 
+
+def _rewrite_colliding_ids(
+    items: list[GoldItem], labels: dict[str, ItemLabels], seen_ids: set[str]
+) -> int:
     rewritten = 0
     for index, item in enumerate(items):
         if item.id not in seen_ids:
@@ -180,6 +214,19 @@ def carry_forward_multi_hop(
         labels[item.id] = labels.pop(old_id)
         seen_ids.add(item.id)
         rewritten += 1
+    return rewritten
+
+
+def carry_forward_multi_hop(
+    items: list[GoldItem],
+    labels: dict[str, ItemLabels],
+    bundles: list[Path | str],
+    docs: list[DocRecord],
+) -> tuple[list[GoldItem], dict[str, ItemLabels], dict[str, object]]:
+    """Prepend prior labeled multi-hop rows, keeping one collision-free review ledger."""
+    texts = {doc.doc_id: doc.text for doc in docs}
+    carried, seen_ids, sources, dropped_exact_duplicates = _collect_carried_items(bundles, texts)
+    rewritten = _rewrite_colliding_ids(items, labels, seen_ids)
 
     carried_labels = {
         item.id: ItemLabels(question_type=_MULTI_HOP, difficulty=_HARD) for item in carried

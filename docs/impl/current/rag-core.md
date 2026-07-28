@@ -1486,10 +1486,9 @@ realized variance or discordance made the declared target miss.
 
 Lane selectors and artifacts:
 
-- Context ablation selects fitting `long_context - rag` objective deltas. Its adapter remains
-  `src/llb/eval/context_ablation/power.py`; the recorded
-  `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json` regenerates
-  byte-identically through the shared seam.
+- Context ablation selects fitting `long_context - rag` objective deltas through
+  `src/llb/eval/context_ablation/power.py` and emits the same current selector, variance floor,
+  discordance floor, and binding-floor fields as the other lanes.
 - Embedder bake-off selects `--power-candidate` against `--baseline` and either `recall_at_k` or
   `mrr` via `--power-metric`. `report.json` now retains `paired_items`, the per-item metric ledger
   with gold item ids needed to price and audit a later run.
@@ -1510,40 +1509,44 @@ make compare-graph-fusion GOLDSET=<goldset-jsonl> \
   FUSION_POWER_METRIC=recall_at_k FUSION_MDE=<minimum-gain>
 ```
 
-`tests/llb/rag/test_paired_power.py` covers exact legacy reproduction, item-count arithmetic,
-inverted MDE, and realized-SD rechecking.
+`tests/llb/rag/test_paired_power.py` covers item-count arithmetic, inverted MDE, and realized-SD
+rechecking.
 `tests/llb/rag/test_paired_power_contract.py` covers both selectors, artifact output, and the
 plan-before-build/retrieval order. The context-specific regression suite remains
 `tests/llb/eval/test_context_ablation_power.py`. Host validation on 2026-07-26 completed
 `make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy model run belongs to
 this delivery.
 
+The repository-wide count audit reuses this distinction between inferential evidence and resource
+budgets. `src/llb/quality/acceptance_gate_registry.py` declares each retained row, trial, finalist,
+and sample control; `src/llb/quality/acceptance_gates.py` discovers matching Make and Typer
+defaults, rejects unexplained controls, and writes the machine inventory through
+`make acceptance-gate-audit`. Trial counts in joint search, screening, knowledge-cutoff fitting,
+and finetuning remain explicit because they cap optimizer work rather than establish uncertainty.
+Human verification row defaults and chain promotion counts moved to finite-population precision
+and relative-retention plans; their workflow details are in
+[data prep](data-prep.md#experiment-derived-verification-and-acceptance-gates).
+
 #### How settled a paired reading is -- `p_positive` and the borderline flag
 
-Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:
-does the delta's lower bound clear zero. A row whose bound sits ON zero therefore prints exactly
-like a row that missed by a mile -- the bake-off's `retain`, the fusion sweep's `reject`, the
-ablation's `no_retrieval_gain` and the answer lane's `no_gain` were all stated in the same words
-whether the evidence was decisive or the convention was. `src/llb/rag/fusion_evidence/stability.py`
-is the one place that vocabulary lives, and every lane reports it:
+Every adopt-or-retain call cuts the calibrated one-sided sign-flip p at the alpha corresponding to
+the reported two-sided confidence convention. `src/llb/rag/fusion_evidence/stability.py` owns the
+shared persisted shape:
 
-- **`p_positive`** is the share of paired resamples in which the candidate is ahead -- the
-  CONTINUOUS quantity the reading thresholds, since a 95% percentile interval clears zero exactly
-  when `p_positive > 0.975`. **`borderline`** is raised when the reading would change at either
+- **`randomization_p`** is the decision-driving quantity. **`p_positive`** remains the diagnostic
+  share of paired bootstrap resamples in which the candidate is ahead. **`borderline`** is raised
+  when the calibrated reading would change at either
   NEIGHBOURING conventional level, looser (90%) or tighter (97.5%). The check is two-sided on
   purpose: `side: below` is a negative that would clear a looser bar (an undecided negative),
   `side: above` is a positive a tighter bar would drop (a positive resting on the convention). No
   constant is fitted to the data; all three levels are conventions the repo already reports at.
-- **It rides on `paired_comparison`, so no lane wires it.** Every paired delta in the repo goes
+- **It rides on `paired_comparison`, so no two-state lane wires it.** Every paired delta goes
   through that one function, which now attaches a `stability` block to each `PairedComparison`.
   That reaches the embedder bake-off, the fusion sweep, the context ablation, and the
   answer-quality slices at once -- and any future lane for free.
-- **It is free, not a second computation.** The resample MEANS a percentile bound is read off are
-  the same draw the exceedance probability counts, so `paired_comparison` draws once, sorts once,
-  and reads three percentile cuts plus the exceedance off that sorted array
-  (`bootstrap_samples` / `_ordered_percentiles` / `separation_stability`). Measured at n=95,
-  2000 resamples: **2.36 ms before, 2.39 ms after (+1%)**, against 9.96 ms (4.2x) for the naive
-  bolt-on of three extra intervals plus a second pass.
+- **The bootstrap draw is still single-pass.** Its sorted means supply the unchanged percentile
+  interval and `p_positive`; the sign-flip engine uses the same configured draw count and a stable
+  seed derived from the shared index sets.
 - **The annotation is omitted rather than faked** when no resample was drawn (`p_positive` is a
   share OF resamples, and a zero would read as a settled negative) or when the reporting confidence
   sits outside the two conventions the flag is defined against.
@@ -1556,7 +1559,8 @@ is the one place that vocabulary lives, and every lane reports it:
   adoption bar reads `answer` / `rank only` / `neither`, so it computes its reading at each of the
   three levels and hands them to `stability_from_readings`, producing the identical
   `ReadingStability` shape ([the scoped first-hit-rank bar](#the-scoped-first-hit-rank-adoption-bar)).
-- No adoption rule, confidence convention, or metric changed. Tests:
+- The confidence conventions, metrics, percentile intervals, and row rankings stay unchanged.
+  The separation rule changed from the percentile lower bound to the calibrated p. Tests:
   `tests/llb/rag/test_paired_stability.py` (the shared annotation, the assembly, the rendering, the
   clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
   own verdict).
@@ -1589,11 +1593,11 @@ fusion floor from its stored lane bands. All pre-existing point estimates, inter
 aggregate table cells, thresholds, and decisions reproduced exactly. Of 38 route precision/recall
 rows, 2 are borderline; each 100-reading query report has 2 borderline rows and no
 minimum-evidence relabeling. The recorded graph-fusion leader's +0.0105 recall gap against a
-+/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Host-artifact regression
-coverage lives in `tests/llb/rag/test_remaining_uncertainty_artifacts.py`; focused fixture coverage
-also lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`, and
-`tests/llb/eval/test_query_robustness.py`. Host validation completed `make ci` with 2,221 tests
-passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
++/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Current implementation
+coverage lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`,
+`tests/llb/eval/test_query_robustness_run.py`, and
+`tests/llb/eval/test_query_robustness_variants.py`. Host validation completed `make ci` with 2,221
+tests passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
 
 Re-render evidence (2026-07-25, from the recorded artifacts on disk, no new run): every recorded
 paired block of the three lanes whose artifacts persist per-item values was rebuilt with the same
@@ -1635,7 +1639,9 @@ index sets, seed, and nearest-rank percentile convention; 4000 flips for the rat
 20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
 under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability finding below is now
 shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
-productionizing the size and selection findings is forward work in [`plan.md`](../plan.md).
+the per-test size finding is now enforced by
+[randomization-calibrated paired readings](#randomization-calibrated-paired-readings); selection
+control remains forward work in [`plan.md`](../plan.md).
 
 - **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
   **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
@@ -1663,6 +1669,50 @@ productionizing the size and selection findings is forward work in [`plan.md`](.
 The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
 nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
 
+#### Randomization-calibrated paired readings
+
+2026-07-28. `src/llb/rag/fusion_evidence/randomization.py` makes the audit's per-row remedy the
+shared decision rule. It tests the candidate-ahead mean under sign exchangeability of the non-zero
+per-item deltas. Equal-magnitude ledgers use an exact binomial tail at any item count, arbitrary
+ledgers with at most 16 discordant items are enumerated exactly, and larger arbitrary ledgers use a
+deterministic Monte Carlo tail with the plus-one correction. Each `PairedComparison` persists
+`randomization_p`, `randomization_method`, and `randomization_samples`; the same values ride beside
+`p_positive` in its `stability` block.
+
+- `separates()` cuts `randomization_p <= (1 - confidence) / 2` and then applies the existing
+  minimum-evidence gate. The percentile bootstrap remains the interval estimator: its point,
+  bounds, resample count, seed convention, and the exact sign-test ledger are unchanged. Archived
+  aggregate-only blocks without a calibrated p retain their historical reading until a
+  vector-backed audit can rebuild them.
+- The three-state adoption reading (`answer` / `rank only` / `neither`) calibrates its objective
+  and reciprocal-rank vectors separately while preserving objective-first order. Directional
+  query-robustness rows test both sign-flip directions and persist the p for the observed direction.
+  Fusion, answer quality, context ablation, the embedder bake-off, and adoption-bar verdicts all
+  reach the shared `separates()` path.
+- Reports render `rand p` beside `sign p`; boundary tables render the decision-driving
+  randomization p beside diagnostic `p_positive`. The existing borderline qualifier now compares
+  the calibrated reading at 90%, the reporting level, and 97.5%.
+- The maintained null harness is
+  `tests/fixtures/paired_randomization_null.json` plus
+  `tests/llb/rag/test_paired_randomization.py`. It checks the implementation against independent
+  brute-force enumeration and enumerates every null assignment of three committed sparse/skewed
+  fixtures. Their empirical one-sided sizes are 1.5625%, 2.34375%, and 2.34375%, all at or below
+  the nominal 2.5%.
+- `make audit-paired-readings` reconstitutes vector-backed embedder bake-off, adoption-bar, and
+  context-ablation artifacts without model calls, lists every comparison reading that changes,
+  and restates every artifact verdict. The CUDA-host re-read is under
+  `$DATA_DIR/paired-reading-audit/20260728T-randomization-calibrated/`: the two vector-backed
+  artifacts available on this host supplied 19 paired blocks; the recorded bake-off stayed
+  `retain`, the context ablation stayed `long_context_wins`, and no per-row reading changed. The
+  host inventory contained no adoption-bar comparison bundle to re-read. The audit's fixture test
+  covers the previously vulnerable bake-off `adopt` shape and confirms it is restated `retain`
+  when its calibrated p is 0.0352.
+
+Host validation used the RTX PRO 3000 Blackwell GPU (12,227 MiB) with the installed
+MamayLM-Gemma-3-12B model available. The audit path deliberately made no inference, as its contract
+is to re-read persisted vectors. Implementation coverage also includes the shared stability,
+minimum-evidence, lane-verdict, adoption-borderline, query-robustness, and artifact-audit tests.
+
 #### The minimum-evidence gate on a paired reading
 
 The reachability finding above is a rule, not a caveat, and it ships as one. A paired block's
@@ -1677,14 +1727,14 @@ interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place t
   97.5%**. `apply_evidence_gate` relabels a claim resting on fewer than that
   **`insufficient_evidence`**, a state no lane may adopt on. Only a CLAIM is gated: a `flat` reading
   (or a richer lane's `neither`) says nothing was found, which a thin item set is entitled to say.
-- **One separation test, used by every verdict.** `separates()` in `stats.py` is
-  `delta.lo > 0 AND the block differs on enough items`, and it replaced the bare `lo > 0` cut in
+- **One separation test, used by every verdict.** `separates()` in `paired.py` is
+  `randomization_p <= (1 - confidence) / 2 AND the block differs on enough items`, and it is used in
   every lane that had one: the fusion sweep's adopt, the bake-off's adoption bars, the ablation's
   long-context and uplift checks, the answer lane's gain and retrieval-only checks, the adoption
   bar's per-cell reading, the sidecar-free routing gate's coverage half (its single-span half is a
   non-inferiority check, not a separation, and is unchanged), and the long-context power
-  resolution's direction. It reads the persisted win/loss ledger rather than a `stability` block,
-  so it holds on a run that drew no resamples and on an artifact recorded before the annotation.
+  resolution's direction. Aggregate-only archived comparisons fall back to their historical
+  interval reading until their vectors can be reconstituted.
 - **The gate and the borderline flag are one scale.** The bound moves WITH the level, so a row that
   differs on exactly 6 items reads `separated` at 95% and `insufficient_evidence` at 97.5% -- which
   is precisely a `borderline` row, `side: above`, and it is now marked as one automatically.
@@ -1693,9 +1743,8 @@ interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place t
   `ReadingStability`); a `Minimum evidence: N of M paired readings are insufficient evidence` line
   in each lane's report; and the shared `. INSUFFICIENT EVIDENCE: ...` clause on any verdict reason
   whose deciding row the gate relabeled -- the same call shape as the borderline clause.
-- No threshold, interval, confidence convention, adoption rule, or row RANKING changed. A sweep
-  still selects the same `best_row`; what the gate decides is whether that row's gain may be read
-  as a separation.
+- The calibrated task changes the separation half; this gate still owns only the evidence-count
+  entitlement. A sweep keeps the same percentile intervals and row ranking.
 
 Tests: `tests/llb/rag/test_paired_minimum_evidence.py` -- the derived bound against the sign test's
 own arithmetic, the reading at 5 / 6 / 7 discordant items, that the interval / ledger / point
@@ -1886,6 +1935,15 @@ Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 
 | `intfloat/multilingual-e5-base` | 0.980 | 0.847 | 0.000 [0.000, 0.000] | 0/0/250 | 1.000 | 32.0 |
 | `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
 
+The 2026-07-28 rerun on the 12,227 MiB RTX PRO 3000 Blackwell reproduced every
+host-independent field above exactly: the four recall/MRR values, all paired bounds and ledgers,
+the zero measurement floor with no fragile items, and the `retain` verdict with the 300-item open
+question for e5-large. Every row records `device=cuda`. Throughput on this 80 W laptop GPU was
+25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model;
+the architecture-dependent spread needs a warm/load-separated benchmark before it is treated as
+a model recommendation. Artifact:
+`$DATA_DIR/compare-embeddings/20260728T110500Z-blackwell12/{report.md,report.json}`.
+
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
 **ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped
 minimum-evidence gate now reads as **RETAIN** as well, because that adopt rests on 5 differing items
@@ -1944,10 +2002,10 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   from the bundle's `first_hit_rank`. ONE resample draw is shared across every cell (common random
   numbers), so the cells are comparable to each other. Each (cell, encoder) pair is an ordinary
   bundle under that encoder's own `$DATA_DIR/run-eval/`, so any cell is reproducible. `decide_bar`
-  reports **extend_bar** (an objective interval clears zero in some cell -> the rank gain reaches
-  the answer there), **keep_bar** (the encoder ranks better but no cell's objective clears zero ->
-  recall@k stays the sole bar), or **no_evidence** (the rank gain does not reproduce in any cell,
-  so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
+  reports **extend_bar** (a cell's calibrated objective test separates -> the rank gain reaches the
+  answer there), **keep_bar** (the encoder ranks better but no calibrated objective test
+  separates -> recall@k stays the sole bar), or **no_evidence** (the rank gain does not reproduce
+  in any cell, so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
   `$DATA_DIR/embedder-adoption-bar/<run>/`. The whole comparison + verdict is fake-bundle
   unit-tested (`tests/llb/eval/test_embedder_adoption.py`) -- no backend, store, or GPU.
 - **The second bar** (`embedding_bakeoff_uncertainty.py`): `decide_verdict` takes a `bars`
@@ -2068,7 +2126,9 @@ CUDA host, 2026-07-25. Four more models on the SAME corpus, cells, item set, and
 three families and 11.8B-27B; sweeps under `$DATA_DIR/embedder-adoption-bar/run-<slug>/`, the roster
 reading under `.../roster/` and the declared profiles in `.../model-profiles.json` (each model's
 `parameter_size` / `family` as its own model card reports it, so both are readable before a run is
-spent). Every cell reading below is that sweep's own paired interval:
+spent). The table preserves each sweep's HISTORICAL percentile reading. Its source bundles are not
+present on the current host, so these rows could not be reconstituted by the calibrated audit and
+must not be read as current randomization verdicts:
 
 | model | params | family | `k10` | `k10+rerank` | `k3` | `k3+rerank` | verdict |
 | --- | ---: | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -2082,7 +2142,8 @@ Roster verdict: **no_property_predicts**. What the roster establishes:
 
 - **The shipped default is settled: the rank gain is free there, unanimously.** All five models read
   `k10` as `rank only` -- `bge-m3` ranks the evidence earlier (MRR +0.064, identical in every sweep)
-  and no model's objective interval clears zero. The recorded single-model finding now rests on
+  and no recorded objective interval clears zero. This is historical percentile evidence; a new
+  sweep applies the calibrated test. The recorded single-model finding rests on
   three families and a 2.3x parameter range, so `recall_at_k` staying the DEFAULT bar and `e5-base`
   staying the shipped default are not one model's quirk.
 - **Neither parameter count nor family predicts the reranker cell, and the counter-examples are
@@ -2127,9 +2188,10 @@ The cost splits into two axes that behave completely differently:
   `extend_bar` verdict, in **6m40s against ~18 minutes** -- 4x fewer bundles, 2.7x wall clock
   (the reranked cell costs more per bundle than the plain ones, which is why the time saving is
   smaller than the bundle saving).
-- **Cutting the ITEM set is not available.** Fewer items widen the paired interval while the rule
-  stays "the interval clears zero", so a screen can only LOSE a detection, never invent one. How
-  often each model's `k10+rerank` reading survives a subsample of N items, 120 draws per size:
+- **Cutting the ITEM set is not available.** A smaller ledger can either lose or invent a
+  calibrated separation, so the screen measures agreement with the full reading in both
+  directions. How often each model's `k10+rerank` reading survives a subsample of N items, 120
+  draws per size:
 
 | model | full reading | n=10 | n=15 | n=20 | n=25 | n=30 | n=35 |
 | --- | :-: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -2163,15 +2225,14 @@ Verdict: **full_set_required**. What the table establishes:
   to make it cheaper. That single run reports its own `p_positive` and marks the cell `(borderline)`
   when a neighbouring convention would read it differently, and the `extend_bar` / `keep_bar`
   sentence names which -- so the one-cell recipe answers the same question the roster does, with no
-  second command to run.
+  second command to run. New runs report `randomization_p` beside `p_positive`.
 
-#### Which readings are settled, and which are the cut talking
+#### Historical percentile stability of the adoption roster
 
-Every adoption reading -- in a single sweep and in the roster alike -- prints one of three states,
-but at n=40 several rows sit close enough to the `lo > 0` cut that the threshold, not the evidence,
-decided them. `p_positive` places every row on that scale (the reading clears zero exactly when it
-exceeds 0.975), measured over the sweep's own 2000 resamples. Each SWEEP now persists and renders it
-per cell, and the roster reports it per model for the focus cell:
+This table records the retired `lo > 0` reading and remains useful as the audit trail explaining why
+calibration was needed. It is not a current verdict table: the source bundles are absent from the
+host inventory, so no randomization p can be reconstructed for these cells. New sweeps persist and
+render `randomization_p` per cell; `p_positive` remains diagnostic.
 
 | model | at 90% | `k10+rerank` (95%) | at 97.5% | p_positive | settled? |
 | --- | :-: | :-: | :-: | ---: | :-: |
@@ -2377,6 +2438,18 @@ Artifact:
 The `final` split inside the pooled run independently reproduces the earlier grounded rows exactly
 (`rag` 0.554, `long_context` 0.615), so the changed verdict comes from added items rather than a
 changed lane.
+
+#### MamayLM 12B rerun on 12 GiB Blackwell (2026-07-28)
+
+The full 82-item `final` comparison used the fitting Ukrainian MamayLM Gemma 3 12B Q4_K_M model on
+the RTX PRO 3000 Blackwell and the same 311-chunk e5-base store. Closed-book scored 0.155, RAG
+0.510, and oracle whole-document context 0.624. Retrieval uplift was +0.356
+`[+0.272, +0.438]` with 49/4/29 wins/losses/ties; long-context minus RAG was +0.114
+`[+0.051, +0.180]`. Both readings are separated at the neighbouring confidence conventions, no
+item was skipped, 11/82 closed-book answers matched, and the verdict remained
+`long_context_wins`. A new powered run was unnecessary for this host/model pair because the
+82-item long-context reading is not borderline. Artifact:
+`$DATA_DIR/context-ablation/20260728T113000Z-blackwell12-mamaylm12b/`.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
@@ -2651,19 +2724,22 @@ lifecycle and readiness checks.
 
 ## Scoring
 
-`src/llb/scoring/correctness.py` computes objective correctness using normalized token-F1 with
-exact and contains helpers. `--score-semantic` records a pinned-embedder cosine signal for
-paraphrases and morphology; it is kept separate from the objective unless a ranking policy
+`src/llb/scoring/correctness.py` computes objective correctness using normalized token F1 and
+persists its token precision and token recall components beside exact match and the strict
+all-reference-tokens `contains` signal. `--score-semantic` records a pinned-embedder cosine signal
+for paraphrases and morphology; it is kept separate from the objective unless a ranking policy
 explicitly uses it.
 
 `src/llb/scoring/judge/model.py` owns the calibration gate and outcome policy;
 `src/llb/scoring/judge/scorer.py` normalizes scores and handles empty answers; and
 `src/llb/scoring/judge/deepeval_adapter.py` runs the optional local DeepEval integration. The judge
 enters ranking only when the caller supplies a calibration rho that clears the trust threshold.
-Otherwise it is diagnostic and objective correctness ranks alone.
+Otherwise it is diagnostic and the declared base quality ranks alone.
 
-`src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
-throughput, then lower VRAM when telemetry is available.
+`src/llb/scoring/aggregate.py` produces leaderboard rows. RAG base quality is 75% token recall
+(fact coverage) plus 25% token precision (answer-format adherence); `objective` remains token F1
+for continuity. The policy favors base quality first, then throughput, then lower VRAM when
+telemetry is available.
 
 ### Measured: the headline objective is partly a verbosity ranking
 
@@ -2700,9 +2776,58 @@ only over each model's own found items.
   penalty is a real instruction-following failure. What the single number cannot do is say WHICH of
   the two happened, and the leaderboard currently ranks on it alone.
 
-Deciding the ranking policy from a measured length-sensitivity study is forward work
-([`plan.md`](../plan.md#headline-objective-verbosity-decomposition)); no ranking or metric changed
-here.
+### Headline decomposition and declared ranking policy
+
+Shipped 2026-07-28. Each new `scores.jsonl` row carries `token_precision`, `token_recall`, and
+`ranking_score` beside the unchanged `objective_score` / `token_f1`, `contains`, and
+`completion_tokens`. The run manifest and leaderboard aggregate those into precision, recall,
+found-rate, and mean-completion-token columns. `quality` is now the declared
+`recall_75_precision_25` score for decomposed RAG rows:
+
+```text
+quality = 0.75 * token_recall + 0.25 * token_precision
+```
+
+Fact coverage is primary because a RAG answer that omits the reference fact has failed its main
+job. Format remains a material quarter of the score because `eval.rag` explicitly asks for a
+short answer. Token F1 remains the stable `objective` column, so the change does not rewrite
+historical correctness values. Legacy bundles without decomposition columns continue to rank on
+their objective rather than receiving fabricated components. A trusted judge, when available,
+blends with the declared base quality; all category tiers retain their existing objectives.
+`quality_per_watt` uses the same declared quality.
+
+`make analyze-verbosity RUN_DIRS="<bundle> <bundle> ..."` runs the maintained fixed-item study in
+`src/llb/eval/verbosity_sensitivity.py` and writes `report.{json,md}` under
+`$DATA_DIR/verbosity-sensitivity/<run>/`. It refuses bundles with different ordered item IDs,
+duplicate models, missing decomposition columns, or an `objective_score` that is not
+bit-identical to `token_f1`. The JSON contains each model's rank under token F1, recall-only,
+found-rate, and the selected policy, plus per-model and roster length correlations.
+
+CUDA-host evidence over three locally installed models on the same 82-item final fixture, flat
+recursive retrieval, and pinned recall@5 = 0.951 is under
+`$DATA_DIR/verbosity-sensitivity/20260728T142750.517338Z-c0d8009a807d/`. Candidate inference ran
+on the RTX PRO 3000 Blackwell GPU while the pinned embedder stayed on CPU for VRAM headroom:
+
+| model | precision | recall | token F1 | found-rate | policy quality | mean completion tokens | r(length, F1) | F1 rank | policy rank |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gemma4:e4b` | 0.274 | 0.814 | 0.358 | 0.768 | 0.679 | 29.9 | -0.335 | 3 | 1 |
+| `qwen3:14b` | 0.380 | 0.727 | 0.440 | 0.622 | 0.640 | 34.8 | -0.462 | 2 | 2 |
+| MamayLM-Gemma-3-12B v2.0 | 0.467 | 0.688 | 0.510 | 0.634 | 0.633 | 17.3 | -0.385 | 1 | 3 |
+
+Length versus token F1 is negative within every model and across the three-row roster
+(`r=-0.665`). Length versus the selected policy is positive across this small roster (`r=0.381`),
+which makes the policy tradeoff visible instead of silently treating brevity as correctness.
+The named rank changes are MamayLM from F1 rank 1 to policy rank 3 and Gemma 4 E4B from F1 rank 3
+to policy rank 1. Qwen3 stays rank 2. The raw run bundles are:
+
+- `$DATA_DIR/run-eval/20260728T141559.740730Z-2cda419dc495/` (MamayLM)
+- `$DATA_DIR/run-eval/20260728T141903.934343Z-8f357a77ea1a/` (Qwen3)
+- `$DATA_DIR/run-eval/20260728T142339.216084Z-ddc692ec71d8/` (Gemma 4 E4B)
+
+The per-case decomposition, verbose-correct / terse-partial fixture, rank reversal, legacy-bundle
+refusal, ASCII report, aggregate rendering, board reload, and unchanged token-F1 objective are
+covered by `tests/llb/scoring/test_correctness.py`, `tests/llb/scoring/test_aggregate.py`,
+`tests/llb/eval/test_verbosity_sensitivity.py`, and the executor / board suites.
 
 ### Groundedness and citation metrics (groundedness-citation-metrics)
 

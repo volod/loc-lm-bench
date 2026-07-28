@@ -13,6 +13,11 @@ from llb.goldset.verify_base import (
     SAMPLE_KINDS,
 )
 from llb.goldset.verify_sampling.worksheet import build_sample_worksheet, merge_sample_worksheet
+from llb.goldset.verify_sampling.planning import (
+    DEFAULT_EXPECTED_REJECT_RATE,
+    DEFAULT_SAMPLE_CONFIDENCE,
+    DEFAULT_SAMPLE_PRECISION,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -25,7 +30,26 @@ def build_parser() -> argparse.ArgumentParser:
     sample = sub.add_parser("sample", help="draw a stratified sample -> worksheet")
     sample.add_argument("--bundle", required=True, type=Path)
     sample.add_argument("--out", required=True, type=Path)
-    sample.add_argument("-n", "--size", type=int, default=30)
+    sample.add_argument(
+        "-n",
+        "--size",
+        type=int,
+        default=None,
+        help="explicit row target (default: derive from confidence, precision, and population)",
+    )
+    sample.add_argument("--confidence", type=float, default=DEFAULT_SAMPLE_CONFIDENCE)
+    sample.add_argument(
+        "--precision",
+        type=float,
+        default=DEFAULT_SAMPLE_PRECISION,
+        help="maximum planned half-width for the reject-rate estimate",
+    )
+    sample.add_argument(
+        "--expected-reject-rate",
+        type=float,
+        default=DEFAULT_EXPECTED_REJECT_RATE,
+        help="planning proportion (0.5 is conservative)",
+    )
     sample.add_argument("--seed", type=int, default=13)
     sample.add_argument("--kind", choices=SAMPLE_KINDS, default=KIND_AUTO)
     sample.add_argument("--merge", action="store_true")
@@ -65,6 +89,9 @@ def run_sample(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
             annotators=args.annotators,
             seed=args.seed,
             kind=args.kind,
+            confidence=args.confidence,
+            precision=args.precision,
+            expected_reject_rate=args.expected_reject_rate,
         )
         for path in paths:
             _LOG.info("[verify] reviewer worksheet: make verify-review VERIFY_WS=%s", path)
@@ -72,12 +99,26 @@ def run_sample(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
         return 0
     if args.merge:
         added, total = merge_sample_worksheet(
-            args.bundle, args.out, n=args.size, seed=args.seed, kind=args.kind
+            args.bundle,
+            args.out,
+            n=args.size,
+            seed=args.seed,
+            kind=args.kind,
+            confidence=args.confidence,
+            precision=args.precision,
+            expected_reject_rate=args.expected_reject_rate,
         )
         _LOG.info("[verify] merged %d new item(s) -> %d total in %s", added, total, args.out)
     else:
         size, strata = build_sample_worksheet(
-            args.bundle, args.out, n=args.size, seed=args.seed, kind=args.kind
+            args.bundle,
+            args.out,
+            n=args.size,
+            seed=args.seed,
+            kind=args.kind,
+            confidence=args.confidence,
+            precision=args.precision,
+            expected_reject_rate=args.expected_reject_rate,
         )
         _LOG.info("[verify] sampled %d item(s) across %d strata -> %s", size, len(strata), args.out)
     _LOG.info("[verify] review: make verify-review VERIFY_WS=%s", args.out)

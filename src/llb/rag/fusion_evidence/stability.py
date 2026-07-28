@@ -1,35 +1,26 @@
-"""Is a paired row's reading settled evidence, or is it the threshold talking?
+"""Is a paired row's calibrated reading settled evidence, or is the threshold talking?
 
-Every adopt-or-retain call in this repo is a BINARY cut of a continuous paired interval by one
-test: does the delta's lower bound clear zero. A row whose bound sits ON zero therefore prints
-exactly like a row that missed by a mile -- the bake-off's `retain`, the fusion sweep's `reject`,
-the ablation's `no_retrieval_gain` and the answer lane's `no_gain` are all stated in the same words
-whether the evidence was decisive or the convention was.
+Every adopt-or-retain call cuts the one-sided paired sign-flip p-value at the alpha corresponding
+to its two-sided confidence convention.  A row close to that cut otherwise prints exactly like one
+that missed by a mile.
 
 Two additive signals fix that, and neither changes any adoption rule:
 
-- `p_positive`, the share of paired resamples in which the candidate is ahead. It is the CONTINUOUS
-  quantity the reading thresholds: a 95% percentile interval clears zero exactly when
-  `p_positive > 0.975`, so one number says both what the reading is and how far from the cut it sits.
+- `randomization_p`, the calibrated quantity the reading thresholds, persisted beside the
+  bootstrap diagnostic `p_positive`.
 - `borderline`, a flag raised when the reading would CHANGE under a looser or a tighter but equally
   conventional confidence level. That is a statement about robustness to an arbitrary convention,
   not a fitted threshold: no constant is tuned to the data, and all three levels compared are ones
   the repo already reports at.
 
-A reading also has to be ENTITLED to what it says, which is a different question from how settled
-it is: `llb.rag.fusion_evidence.evidence_gate` owns the reading vocabulary and relabels a claim
-that rests on too few differing items `insufficient_evidence`. This module imports that vocabulary
-and records the discordant count beside every annotation, because the gate's own bound moves with
-the confidence level -- so a row can read `separated` here and `insufficient_evidence` one
-convention tighter, which is precisely a `borderline` row.
-
-This module is the ASSEMBLY of a row's readings; the percentile arithmetic stays in `stats.py`,
-which imports from here (never the other way round). A lane whose reading is richer than
+A reading also has to be entitled to what it says. The evidence gate relabels a claim resting on
+too few differing items `insufficient_evidence`; its bound moves with the confidence level, so that
+change itself can make a row borderline.
+A lane whose reading is richer than
 separated/flat -- the embedder adoption bar reads three states -- computes its own reading at each
 of the three levels and hands them to `stability_from_readings`, so every lane persists and renders
 the identical shape.
 
-Pure Python and dependency-free, so it imports and is unit-tested in the lightweight CI install.
 """
 
 from collections.abc import Sequence
@@ -69,7 +60,12 @@ class ReadingStability(TypedDict):
     # Share of paired resamples in which the delta is above zero. The reading's own threshold in
     # this scale is `1 - (1 - confidence) / 2` (0.975 at the default 95%).
     p_positive: float
-    # What a looser / tighter interval would read; both equal `reading` when the row is settled.
+    # One-sided paired sign-flip p-value.  This is the calibrated quantity the reading is cut on;
+    # p_positive remains beside it as the bootstrap diagnostic and for archived-artifact context.
+    randomization_p: NotRequired[float]
+    randomization_method: NotRequired[str]
+    randomization_samples: NotRequired[int]
+    # What a looser / tighter confidence convention reads; both equal `reading` when settled.
     looser_reading: str
     tighter_reading: str
     borderline: bool
@@ -131,6 +127,9 @@ def stability_from_readings(
     looser_reading: str,
     tighter_reading: str,
     p_positive: float,
+    randomization_p: float | None = None,
+    randomization_method: str | None = None,
+    randomization_samples: int | None = None,
     discordant: int | None = None,
     pairs: int | None = None,
 ) -> ReadingStability:
@@ -163,6 +162,12 @@ def stability_from_readings(
     if discordant is not None and pairs is not None:
         stability["discordant"] = discordant
         stability["pairs"] = pairs
+    if randomization_p is not None:
+        stability["randomization_p"] = randomization_p
+    if randomization_method is not None:
+        stability["randomization_method"] = randomization_method
+    if randomization_samples is not None:
+        stability["randomization_samples"] = randomization_samples
     return stability
 
 
@@ -179,13 +184,19 @@ def format_reading(stability: ReadingStability | None, reading: str) -> str:
 
 
 def borderline_detail(stability: ReadingStability) -> str:
-    """`p_positive 0.981, a 0.975 interval would read it `flat`` -- one row's distance from the cut."""
+    """One row's distance from the decision cut and the neighbouring reading that changes it."""
     flip = (
-        f"a {TIGHTER_CONFIDENCE:.3f} interval would read it `{stability['tighter_reading']}`"
+        f"a {TIGHTER_CONFIDENCE:.3f} convention would read it `{stability['tighter_reading']}`"
         if stability["side"] == SIDE_ABOVE
-        else f"a {LOOSER_CONFIDENCE:.2f} interval would read it `{stability['looser_reading']}`"
+        else f"a {LOOSER_CONFIDENCE:.2f} convention would read it `{stability['looser_reading']}`"
     )
-    return f"p_positive {stability['p_positive']:.3f}, {flip}"
+    calibrated = stability.get("randomization_p")
+    prefix = (
+        f"randomization p {calibrated:.4f}, p_positive {stability['p_positive']:.3f}"
+        if calibrated is not None
+        else f"p_positive {stability['p_positive']:.3f}"
+    )
+    return f"{prefix}, {flip}"
 
 
 def borderline_note(rows: Sequence[tuple[str, ReadingStability | None]]) -> str:

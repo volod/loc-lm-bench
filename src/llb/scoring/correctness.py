@@ -6,7 +6,9 @@ complementary signals over Unicode-normalized text so casing and punctuation do 
 matching:
 
   - exact:    normalized strings are identical (strict, sparse)
-  - token_f1: SQuAD-style token overlap F1 (graded, the headline objective signal)
+  - token_precision: overlap / generated tokens (answer-format component)
+  - token_recall: overlap / reference tokens (fact-coverage component)
+  - token_f1: harmonic mean of token precision and recall (the stable legacy objective)
   - contains: all reference tokens appear in the prediction (recall-ish, lenient)
 
 `score` is token_f1 -- a single graded number for ranking. Semantic-embedding similarity
@@ -44,12 +46,12 @@ def exact_match(prediction: str, reference: str) -> float:
     return 1.0 if normalize(prediction) == normalize(reference) and normalize(reference) else 0.0
 
 
-def token_f1(prediction: str, reference: str) -> float:
-    """SQuAD-style token-overlap F1 over normalized tokens."""
+def token_precision_recall(prediction: str, reference: str) -> tuple[float, float]:
+    """SQuAD-style token-overlap precision and recall over normalized tokens."""
     pred = _tokens(prediction)
     ref = _tokens(reference)
     if not pred or not ref:
-        return 0.0
+        return 0.0, 0.0
     ref_counts: dict[str, int] = {}
     for tok in ref:
         ref_counts[tok] = ref_counts.get(tok, 0) + 1
@@ -58,9 +60,17 @@ def token_f1(prediction: str, reference: str) -> float:
         pred_counts[tok] = pred_counts.get(tok, 0) + 1
     overlap = sum(min(count, ref_counts.get(tok, 0)) for tok, count in pred_counts.items())
     if overlap == 0:
-        return 0.0
+        return 0.0, 0.0
     precision = overlap / len(pred)
     recall = overlap / len(ref)
+    return precision, recall
+
+
+def token_f1(prediction: str, reference: str) -> float:
+    """SQuAD-style token-overlap F1 over normalized tokens."""
+    precision, recall = token_precision_recall(prediction, reference)
+    if precision == 0.0 or recall == 0.0:
+        return 0.0
     return 2 * precision * recall / (precision + recall)
 
 
@@ -96,10 +106,13 @@ def answer_correctness(prediction: str, reference: str, embedder: Any = None) ->
     is supplied, a `semantic` signal is added (recorded, not yet blended into `score`;
     blending weights are a tuning decision).
     """
-    f1 = token_f1(prediction, reference)
+    precision, recall = token_precision_recall(prediction, reference)
+    f1 = 0.0 if precision == 0.0 else 2 * precision * recall / (precision + recall)
     out: CorrectnessScores = {
         "exact": exact_match(prediction, reference),
         "token_f1": f1,
+        "token_precision": precision,
+        "token_recall": recall,
         "contains": contains(prediction, reference),
         "score": f1,
     }

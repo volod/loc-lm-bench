@@ -13,6 +13,11 @@ from llb.rag.fusion_evidence.evidence_gate import (
     reaches_reporting_level,
 )
 from llb.rag.fusion_evidence.stability import ReadingStability, brackets
+from llb.rag.fusion_evidence.randomization import (
+    paired_randomization,
+    randomization_separates,
+    seed_from_index_sets,
+)
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     Interval,
@@ -31,6 +36,9 @@ class PairedComparison(TypedDict):
     losses: int
     ties: int
     sign_test_p: float
+    randomization_p: NotRequired[float]
+    randomization_method: NotRequired[str]
+    randomization_samples: NotRequired[int]
     stability: NotRequired[ReadingStability]
 
 
@@ -42,6 +50,12 @@ def sign_test_p(wins: int, losses: int) -> float:
     extreme = min(wins, losses)
     tail = sum(math.comb(decided, i) for i in range(extreme + 1)) / (2.0**decided)
     return min(1.0, 2.0 * tail)
+
+
+def format_randomization_p(comparison: PairedComparison, places: int = 4) -> str:
+    """Artifact cell for the calibrated p, or a dash on an archived uncalibrated block."""
+    value = comparison.get("randomization_p")
+    return "-" if value is None else f"{value:.{places}f}"
 
 
 def paired_comparison(
@@ -72,9 +86,21 @@ def paired_comparison(
     ordered = sorted(bootstrap_samples(deltas, index_sets))
     lo, hi = _ordered_percentiles(ordered, confidence)
     comparison["delta"] = {"mean": point, "lo": lo, "hi": hi}
+    randomization = paired_randomization(
+        deltas, resamples=len(index_sets), seed=seed_from_index_sets(index_sets)
+    )
+    comparison["randomization_p"] = randomization["p_value"]
+    comparison["randomization_method"] = randomization["method"]
+    comparison["randomization_samples"] = randomization["samples"]
     if brackets(confidence):
         comparison["stability"] = separation_stability(
-            ordered, confidence, discordant=wins + losses, pairs=len(deltas)
+            ordered,
+            confidence,
+            discordant=wins + losses,
+            pairs=len(deltas),
+            randomization_p=randomization["p_value"],
+            randomization_method=randomization["method"],
+            randomization_samples=randomization["samples"],
         )
     return comparison
 
@@ -95,15 +121,28 @@ def discordant_deltas(deltas: list[float]) -> int:
 
 
 def separates(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> bool:
-    """Whether the interval clears zero and the sign test can reach this level."""
-    return comparison["delta"]["lo"] > 0.0 and reaches_reporting_level(
-        discordant_pairs(comparison), confidence
-    )
+    """Whether the calibrated sign-flip p clears alpha and the claim is reachable."""
+    if "randomization_p" in comparison:
+        clears = randomization_separates(comparison["randomization_p"], confidence)
+    else:
+        # Archived blocks have no calibrated p.  Preserve their historical reading until a
+        # vector-backed audit can reconstitute it rather than inventing one from aggregates.
+        clears = comparison["delta"]["lo"] > 0.0
+    return clears and reaches_reporting_level(discordant_pairs(comparison), confidence)
 
 
 def reading_of(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> str:
     """Return the separated, insufficient-evidence, or flat reading."""
-    if comparison["delta"]["lo"] <= 0.0:
+    calibrated = "randomization_p" in comparison and randomization_separates(
+        comparison["randomization_p"], confidence
+    )
+    if not calibrated and "randomization_p" in comparison:
+        if comparison["delta"]["lo"] > 0.0 and not reaches_reporting_level(
+            discordant_pairs(comparison), confidence
+        ):
+            return READING_INSUFFICIENT_EVIDENCE
+        return READING_FLAT
+    if "randomization_p" not in comparison and comparison["delta"]["lo"] <= 0.0:
         return READING_FLAT
     return READING_SEPARATED if separates(comparison, confidence) else READING_INSUFFICIENT_EVIDENCE
 
@@ -124,7 +163,7 @@ def evidence_gate_clause(
         [
             (label, discordant_pairs(comparison), compared_pairs(comparison))
             for label, comparison in rows
-            if comparison["delta"]["lo"] > 0.0
+            if reading_of(comparison, confidence) == READING_INSUFFICIENT_EVIDENCE
         ],
         confidence,
     )

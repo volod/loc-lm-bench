@@ -23,6 +23,12 @@ from llb.rag.fusion_evidence.stability import (
     exceedance,
     stability_from_readings,
 )
+from llb.rag.fusion_evidence.randomization import (
+    RandomizationResult,
+    paired_randomization,
+    randomization_separates,
+    seed_from_index_sets,
+)
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     bootstrap_samples,
@@ -44,15 +50,14 @@ RECALL_RECOVERY = "recall_recovery"
 
 
 def _reading(
-    deltas: list[float],
-    ordered_samples: list[float],
+    positive: RandomizationResult,
+    negative: RandomizationResult,
     confidence: float,
     discordant: int,
 ) -> str:
-    interval = interval_from_ordered_samples(deltas, ordered_samples, confidence)
-    if interval["lo"] > 0.0:
+    if randomization_separates(positive["p_value"], confidence):
         claim = READING_IMPROVED
-    elif interval["hi"] < 0.0:
+    elif randomization_separates(negative["p_value"], confidence):
         claim = READING_DEGRADED
     else:
         return READING_INDISTINGUISHABLE
@@ -80,14 +85,26 @@ def directional_comparison(
         return comparison
     ordered = sorted(bootstrap_samples(deltas, index_sets))
     comparison["delta"] = interval_from_ordered_samples(deltas, ordered, confidence)
+    discordant = comparison["wins"] + comparison["losses"]
+    seed = seed_from_index_sets(index_sets)
+    positive = paired_randomization(deltas, resamples=len(index_sets), seed=seed)
+    negative = paired_randomization(
+        [-value for value in deltas], resamples=len(index_sets), seed=seed
+    )
+    decision_test = positive if positive["p_value"] <= negative["p_value"] else negative
+    comparison["randomization_p"] = decision_test["p_value"]
+    comparison["randomization_method"] = decision_test["method"]
+    comparison["randomization_samples"] = decision_test["samples"]
     if not brackets(confidence):
         return comparison
-    discordant = comparison["wins"] + comparison["losses"]
     comparison["stability"] = stability_from_readings(
-        reading=_reading(deltas, ordered, confidence, discordant),
-        looser_reading=_reading(deltas, ordered, LOOSER_CONFIDENCE, discordant),
-        tighter_reading=_reading(deltas, ordered, TIGHTER_CONFIDENCE, discordant),
+        reading=_reading(positive, negative, confidence, discordant),
+        looser_reading=_reading(positive, negative, LOOSER_CONFIDENCE, discordant),
+        tighter_reading=_reading(positive, negative, TIGHTER_CONFIDENCE, discordant),
         p_positive=exceedance(ordered),
+        randomization_p=decision_test["p_value"],
+        randomization_method=decision_test["method"],
+        randomization_samples=decision_test["samples"],
         discordant=discordant,
         pairs=len(deltas),
     )
