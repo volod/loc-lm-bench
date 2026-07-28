@@ -66,16 +66,17 @@ def _uncertainty_section(result: RobustnessResult) -> list[str]:
         "",
         "## Paired uncertainty by noise class",
         "",
-        "Each delta is paired by item. `p_positive` is the share of the same bootstrap resamples",
-        "where the first named lane is above its reference: values near 1 support improvement,",
-        "values near 0 support degradation, and middle values are indistinguishable. A reading is",
+        "Each delta is paired by item. `rand p` is the calibrated sign-flip probability in the",
+        "observed direction and drives the reading; `p_positive` is the diagnostic share of",
+        "bootstrap resamples where the first named lane is above its reference. A reading is",
         "`borderline` when 90%, the reporting level, and 97.5% do not agree. Directional claims",
         "also require enough differing items for the exact sign test to reach the stated level.",
         "`*_delta` compares the named mitigation lane with clean; `*_recovery` compares it with",
         "the unmitigated lane of the same noise class.",
         "",
-        "| Class | Mitigation | Scope | Comparison | Delta | Reading | p_positive | Settled? |",
-        "| --- | --- | --- | --- | ---: | :-: | ---: | :-: |",
+        "| Class | Mitigation | Scope | Comparison | Delta | Reading | rand p | p_positive "
+        "| Settled? |",
+        "| --- | --- | --- | --- | ---: | :-: | ---: | ---: | :-: |",
     ]
     for lane in result.lanes:
         lines.extend(
@@ -100,10 +101,14 @@ def _uncertainty_rows(
             else "unannotated"
         )
         p_positive = f"{stability['p_positive']:.3f}" if stability is not None else "-"
+        randomization_p = (
+            f"{comparison['randomization_p']:.4f}" if "randomization_p" in comparison else "-"
+        )
         settled = ("no" if stability["borderline"] else "yes") if stability is not None else "-"
         lines.append(
             f"| {variant_class} | `{mitigation}` | {scope} | `{name}` "
-            f"| {format_interval(delta)} | {reading} | {p_positive} | {settled} |"
+            f"| {format_interval(delta)} | {reading} | {randomization_p} "
+            f"| {p_positive} | {settled} |"
         )
     return lines
 
@@ -149,8 +154,9 @@ def _affected_section(result: RobustnessResult) -> list[str]:
             "",
             "These are the same paired readings restricted to questions the generator changed.",
             "",
-            "| Class | Mitigation | Scope | Comparison | Delta | Reading | p_positive | Settled? |",
-            "| --- | --- | --- | --- | ---: | :-: | ---: | :-: |",
+            "| Class | Mitigation | Scope | Comparison | Delta | Reading | rand p | p_positive "
+            "| Settled? |",
+            "| --- | --- | --- | --- | ---: | :-: | ---: | ---: | :-: |",
         ]
     )
     for lane in result.lanes:

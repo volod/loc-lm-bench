@@ -1,7 +1,7 @@
 """Turn the three lanes into one sentence about whether retrieval pays for itself.
 
-The gate reads the paired INTERVAL, never the point estimate: on a few dozen items a positive mean
-whose interval includes no difference is not a finding. The order below is deliberate --
+The gate reads the calibrated paired sign-flip p, never the point estimate. The order below is
+deliberate --
 `long_context_wins` is checked first because a measured long-context gain answers the operator's
 question outright ("stuff the document instead"), and it can happen even when the retrieval uplift
 over closed-book is itself separable from zero.
@@ -135,8 +135,8 @@ def _judge(
         )
     if uplift_delta["mean"] > 0.0:
         return VERDICT_RETRIEVAL_INCONCLUSIVE, (
-            f"retrieval gains {uplift_delta['mean']:+.3f} objective but the interval includes no "
-            f"difference ({_detail(uplift)}); a larger scored set is needed to separate the lanes, "
+            f"retrieval gains {uplift_delta['mean']:+.3f} objective but the calibrated test does "
+            f"not separate ({_detail(uplift)}); a larger scored set is needed to separate the lanes, "
             f"and {note}" + cut
         )
     return VERDICT_NO_RETRIEVAL_GAIN, (

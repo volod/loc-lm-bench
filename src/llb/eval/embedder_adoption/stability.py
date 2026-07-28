@@ -39,6 +39,12 @@ from llb.rag.fusion_evidence.stability import (
     exceedance,
     stability_from_readings,
 )
+from llb.rag.fusion_evidence.randomization import (
+    RandomizationResult,
+    paired_randomization,
+    randomization_separates,
+    seed_from_index_sets,
+)
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_SEED,
@@ -68,10 +74,34 @@ def reading_from_deltas(
     differing items ends the reading at `insufficient_evidence` rather than falling through to the
     next state, because "the answer did not move" is exactly the thing this row cannot establish.
     """
-    if bootstrap_interval(deltas.objective, index_sets, confidence)["lo"] > 0.0:
+    seed = seed_from_index_sets(index_sets)
+    objective = paired_randomization(deltas.objective, resamples=len(index_sets), seed=seed)
+    reciprocal_rank = paired_randomization(
+        deltas.reciprocal_rank, resamples=len(index_sets), seed=seed
+    )
+    return _reading_from_tests(deltas, objective, reciprocal_rank, index_sets, confidence)
+
+
+def _reading_from_tests(
+    deltas: ItemDeltas,
+    objective: RandomizationResult,
+    reciprocal_rank: RandomizationResult,
+    index_sets: list[list[int]],
+    confidence: float,
+) -> str:
+    """Three-state reading from the two calibrated tests, preserving objective-first order."""
+    if randomization_separates(objective["p_value"], confidence):
         return _gate(deltas.objective, READING_ANSWER, confidence)
-    if bootstrap_interval(deltas.reciprocal_rank, index_sets, confidence)["lo"] > 0.0:
+    if bootstrap_interval(deltas.objective, index_sets, confidence)[
+        "lo"
+    ] > 0.0 and not reaches_reporting_level(discordant_deltas(deltas.objective), confidence):
+        return READING_INSUFFICIENT_EVIDENCE
+    if randomization_separates(reciprocal_rank["p_value"], confidence):
         return _gate(deltas.reciprocal_rank, READING_RANK_ONLY, confidence)
+    if bootstrap_interval(deltas.reciprocal_rank, index_sets, confidence)[
+        "lo"
+    ] > 0.0 and not reaches_reporting_level(discordant_deltas(deltas.reciprocal_rank), confidence):
+        return READING_INSUFFICIENT_EVIDENCE
     return READING_NEITHER
 
 
@@ -98,11 +128,30 @@ def stability_from_index_sets(
     thing differing between them is the percentile cut.
     """
     assert_neighbouring_levels(confidence, looser_confidence, tighter_confidence)
+    seed = seed_from_index_sets(index_sets)
+    objective = paired_randomization(deltas.objective, resamples=len(index_sets), seed=seed)
+    reciprocal_rank = paired_randomization(
+        deltas.reciprocal_rank, resamples=len(index_sets), seed=seed
+    )
+    reading = _reading_from_tests(deltas, objective, reciprocal_rank, index_sets, confidence)
+    decision_test = (
+        objective
+        if reading in (READING_ANSWER, READING_INSUFFICIENT_EVIDENCE)
+        or objective["p_value"] <= reciprocal_rank["p_value"]
+        else reciprocal_rank
+    )
     return stability_from_readings(
-        reading=reading_from_deltas(deltas, index_sets, confidence),
-        looser_reading=reading_from_deltas(deltas, index_sets, looser_confidence),
-        tighter_reading=reading_from_deltas(deltas, index_sets, tighter_confidence),
+        reading=reading,
+        looser_reading=_reading_from_tests(
+            deltas, objective, reciprocal_rank, index_sets, looser_confidence
+        ),
+        tighter_reading=_reading_from_tests(
+            deltas, objective, reciprocal_rank, index_sets, tighter_confidence
+        ),
         p_positive=exceedance(bootstrap_samples(deltas.objective, index_sets)),
+        randomization_p=decision_test["p_value"],
+        randomization_method=decision_test["method"],
+        randomization_samples=decision_test["samples"],
         # The objective's count, matching `p_positive`: it is the metric the leading state of this
         # lane's reading is decided on.
         discordant=discordant_deltas(deltas.objective),

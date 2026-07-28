@@ -66,9 +66,7 @@ def cleared_bars(
 ) -> list[str]:
     """The enabled bars this candidate separates on, in `BARS` order.
 
-    "Separates" is the shared two-part test: the paired interval lies wholly above zero AND the
-    win/loss ledger differs on enough items for that reading to be reachable. A candidate ahead on
-    two questions out of forty clears the first half and not the second.
+    "Separates" is the shared calibrated sign-flip test plus the minimum-evidence gate.
     """
     return [bar for bar in BARS if bar in bars and separates(paired["metrics"][bar], confidence)]
 
@@ -102,9 +100,8 @@ def decide_verdict(
 ) -> BakeoffVerdict:
     """Adopt the best separated candidate, else retain the incumbent (never rank on a point gap).
 
-    "Separated" is deliberately the strict reading: the 95% paired interval of an ENABLED bar's
-    delta excludes zero. A candidate that merely leads on the point estimate is exactly the case
-    this lane exists to refuse.
+    "Separated" is deliberately the strict calibrated randomization reading. A candidate that
+    merely leads on the point estimate is exactly the case this lane exists to refuse.
 
     `bars` defaults to recall@k alone. Adding `BAR_FIRST_HIT` opts the run into the scoped
     first-hit-rank bar, which an operator enables when their retrieval configuration makes rank

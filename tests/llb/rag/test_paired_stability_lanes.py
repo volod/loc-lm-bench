@@ -14,7 +14,7 @@ RESAMPLES = 2000
 SEED = 13
 
 
-def _near_miss(n: int = 30, wins: int = 6, losses: int = 1) -> tuple[list[float], list[float]]:
+def _near_miss(n: int = 30, wins: int = 7, losses: int = 1) -> tuple[list[float], list[float]]:
     """Candidate/baseline vectors whose paired delta lands just BELOW the 95% cut."""
     return (
         [1.0 if i < wins else 0.0 for i in range(n)],

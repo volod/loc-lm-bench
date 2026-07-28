@@ -2,12 +2,11 @@
 
 The gate is on the OBJECTIVE, not on retrieval: a fused lane that retrieves more evidence but
 answers no better has produced a retrieval-only effect, and saying so is the point of this lane.
-As in the fusion-evidence verdict, the decision reads the paired INTERVAL rather than the point
-estimate -- a multi-hop slice is a few dozen items, so a positive mean whose interval includes no
-difference is never an adopt.
+As in the fusion-evidence verdict, the decision reads the calibrated paired sign-flip p rather than
+the point estimate or bootstrap interval.
 
 Order matters. `retrieval_only` is checked BEFORE `inconclusive`, because a coverage gain whose own
-interval clears zero is a MEASURED result about the retrieval half; calling that case
+calibrated test separates is a MEASURED result about the retrieval half; calling that case
 `inconclusive` on the strength of a +0.011 objective would report the noisy half and drop the
 measured one.
 """
@@ -162,7 +161,7 @@ def _judge(
             f"{label} answers {focus_slice} better than {baseline} ({detail}); the retrieval gain "
             "reaches the answer" + note
         )
-    # A coverage gain whose own interval clears zero, paired with an objective that does not, IS
+    # A coverage gain whose calibrated test separates while the objective's does not IS
     # the retrieval-only finding -- reporting it as merely `inconclusive` would throw away the
     # measured half of the result.
     if separates(paired_coverage, confidence):
@@ -173,8 +172,8 @@ def _judge(
         )
     if objective["mean"] > 0.0:
         return VERDICT_INCONCLUSIVE, (
-            f"{label} gains {objective['mean']:+.3f} objective on {focus_slice} but the interval "
-            f"includes no difference ({detail}); a larger {focus_slice} slice is needed to "
+            f"{label} gains {objective['mean']:+.3f} objective on {focus_slice} but the calibrated "
+            f"test does not separate ({detail}); a larger {focus_slice} slice is needed to "
             "separate it from " + baseline + note
         )
     return VERDICT_NO_GAIN, (

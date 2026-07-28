@@ -5,10 +5,9 @@ recovering multi-hop evidence the vector lane misses WITHOUT paying for it in ov
 everywhere is a reject, not an adopt: it would add a graph build and a second retrieval lane for
 nothing.
 
-The gate is on the INTERVAL, not the point estimate. A multi-hop slice is a dozen or a few dozen
-items, so a `+0.086` mean recall gain whose paired bootstrap interval is `[0.000, 0.200]` is a
-plausible gain and no more -- calling that an adopt would waste the uncertainty this lane exists to
-produce. Such a row is `inconclusive`: the direction is recorded, the recommendation is not.
+The gate is on the calibrated paired sign-flip p, not the point estimate or percentile interval.
+A positive mean that does not clear the randomization cut is plausible gain and no more. Such a row
+is `inconclusive`: the direction is recorded, the recommendation is not.
 """
 
 from llb.rag.fusion_evidence.models import (
@@ -74,7 +73,7 @@ def _focus_stability(row: RowReport, focus_slice: str, metric: str) -> ReadingSt
 def _gain_note(row: RowReport, focus_slice: str) -> str:
     """The shared borderline clause over the gain metrics this verdict was decided on.
 
-    A `reject` and an `adopt` are both cuts of the same interval, so both need to say when the cut
+    A `reject` and an `adopt` are both cuts of the same calibrated p, so both need to say when the cut
     -- rather than the evidence -- is what produced them.
     """
     return borderline_note(
@@ -172,7 +171,7 @@ def _judge(
         )
     if not separated:
         limit = (
-            "the interval includes no difference"
+            "the calibrated randomization test does not separate"
             if all(gain["lo"] <= 0.0 for gain in gains.values())
             else "no gain clear of zero rests on enough differing items to be read as one"
         )

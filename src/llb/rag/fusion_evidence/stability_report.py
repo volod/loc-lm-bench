@@ -15,6 +15,7 @@ from llb.rag.fusion_evidence.stability import (
     ReadingStability,
     decision_probability,
 )
+from llb.rag.fusion_evidence.randomization import randomization_alpha
 
 
 def _resolving_cell(stability: ReadingStability, confidence: float) -> str:
@@ -39,19 +40,28 @@ def boundary_table(
     """Where each row sits on the continuous scale its binary reading cut."""
     if not rows:
         return []
+    calibrated = any("randomization_p" in entry for _, entry in rows)
+    explanation = (
+        f"`randomization p` is the calibrated one-sided sign-flip probability for "
+        f"{positive_event or f'{subject} being ahead'}; the reading separates when it is at most "
+        f"{randomization_alpha(confidence):.4f}. `p_positive` remains the share of bootstrap "
+        "resamples above zero."
+        if calibrated
+        else f"`p_positive` is the share of paired resamples in which "
+        f"{positive_event or f'{subject} is ahead'}; the reading clears zero exactly when it "
+        f"exceeds {decision_probability(confidence):.3f}."
+    )
     lines = [
         f"### {title}",
         "",
-        f"`p_positive` is the share of paired resamples in which "
-        f"{positive_event or f'{subject} is ahead'}; the reading "
-        f"clears zero exactly when it exceeds {decision_probability(confidence):.3f}. A row is "
-        "unsettled when either neighbouring convention would read it differently.",
+        f"{explanation} A row is unsettled when either neighbouring convention would read it "
+        "differently.",
     ]
     if evidence_counts:
         lines[-1] += _evidence_explanation(confidence)
-    lines.extend(_header(key_header, confidence, evidence_counts))
+    lines.extend(_header(key_header, confidence, evidence_counts, calibrated))
     for key, entry in rows:
-        lines.append(_row(key, entry, confidence, evidence_counts))
+        lines.append(_row(key, entry, confidence, evidence_counts, calibrated))
     lines.append("")
     return lines
 
@@ -70,18 +80,29 @@ def _evidence_explanation(confidence: float) -> str:
     )
 
 
-def _header(key_header: str, confidence: float, evidence_counts: bool) -> list[str]:
+def _header(
+    key_header: str, confidence: float, evidence_counts: bool, calibrated: bool
+) -> list[str]:
     common = (
         f"| {key_header} | at {level_label(LOOSER_CONFIDENCE)} | reading "
-        f"({level_label(confidence)}) | at {level_label(TIGHTER_CONFIDENCE)} | p_positive "
+        f"({level_label(confidence)}) | at {level_label(TIGHTER_CONFIDENCE)} "
+        + ("| randomization p | p_positive " if calibrated else "| p_positive ")
     )
     return [
         "",
         (common + "| d | n to reach | settled? |" if evidence_counts else common + "| settled? |"),
         (
-            "| --- | :-: | :-: | :-: | ---: | ---: | ---: | :-: |"
+            (
+                "| --- | :-: | :-: | :-: | ---: | ---: | ---: | ---: | :-: |"
+                if calibrated
+                else "| --- | :-: | :-: | :-: | ---: | ---: | ---: | :-: |"
+            )
             if evidence_counts
-            else "| --- | :-: | :-: | :-: | ---: | :-: |"
+            else (
+                "| --- | :-: | :-: | :-: | ---: | ---: | :-: |"
+                if calibrated
+                else "| --- | :-: | :-: | :-: | ---: | :-: |"
+            )
         ),
     ]
 
@@ -91,12 +112,17 @@ def _row(
     entry: ReadingStability,
     confidence: float,
     evidence_counts: bool,
+    calibrated: bool,
 ) -> str:
     settled = f"NO ({entry['side']})" if entry["borderline"] else "yes"
     core = (
         f"| {key} | {reading_label(entry['looser_reading'])} "
         f"| {reading_label(entry['reading'])} | {reading_label(entry['tighter_reading'])} "
-        f"| {entry['p_positive']:.3f} "
+        + (
+            f"| {entry['randomization_p']:.4f} | {entry['p_positive']:.3f} "
+            if calibrated
+            else f"| {entry['p_positive']:.3f} "
+        )
     )
     if not evidence_counts:
         return core + f"| {settled} |"

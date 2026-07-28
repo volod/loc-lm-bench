@@ -138,7 +138,7 @@ def test_a_noisy_uplift_stays_inconclusive_instead_of_claiming_rag_pays_off():
         _lanes([_row(i, 0.0) for i in ids], rag), _types(*ids), resamples=200
     )
     assert report["verdict"]["decision"] == VERDICT_RETRIEVAL_INCONCLUSIVE
-    assert "includes no difference" in report["verdict"]["reason"]
+    assert "calibrated test does not separate" in report["verdict"]["reason"]
 
 
 def test_a_model_that_answers_as_well_from_its_weights_records_no_retrieval_gain():

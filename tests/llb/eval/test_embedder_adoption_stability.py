@@ -14,7 +14,6 @@ from llb.eval.embedder_adoption.cross_model import (
 from llb.eval.embedder_adoption.models import ItemDeltas
 from llb.eval.embedder_adoption.stability import row_stability
 from llb.rag.fusion_evidence.stability import (
-    LOOSER_CONFIDENCE,
     SIDE_ABOVE,
     SIDE_BELOW,
     decision_probability,
@@ -78,13 +77,10 @@ def test_a_flat_reading_is_settled_too():
 
 
 def test_a_reading_that_a_looser_interval_would_change_is_borderline():
-    """The measured lapa case: just misses at 95%, clears at 90%."""
-    # A small positive mean with enough spread to put p_positive between the two cut points
-    # (measured: p_positive ~= 0.970, between the 90% cut at 0.950 and the 95% cut at 0.975).
-    deltas = _deltas([1.0] * 8 + [-1.0] * 2 + [0.0] * 20)
+    """A calibrated p just misses at 95% and clears at 90%."""
+    deltas = _deltas([1.0] * 9 + [-1.0] * 2 + [0.0] * 19)
     stability = row_stability(deltas, resamples=2000)
-    cut_95, cut_90 = decision_probability(0.95), decision_probability(LOOSER_CONFIDENCE)
-    assert cut_90 < stability["p_positive"] < cut_95
+    assert 0.025 < stability["randomization_p"] <= 0.05
     assert stability["reading"] == READING_NEITHER
     assert stability["looser_reading"] == READING_ANSWER
     assert stability["borderline"] is True
@@ -94,9 +90,9 @@ def test_a_reading_that_a_looser_interval_would_change_is_borderline():
 def test_a_reading_that_only_just_clears_the_bar_is_borderline_above():
     """The two-sided half: it PASSES at 95% but a 97.5% interval would drop it."""
     # Measured on the recorded k3 rows: p_positive just over the 0.975 cut, under 0.9875.
-    deltas = _deltas([1.0] * 9 + [-1.0] * 2 + [0.0] * 19)
+    deltas = _deltas([1.0] * 6 + [0.0] * 24)
     stability = row_stability(deltas, resamples=2000)
-    assert decision_probability(0.95) < stability["p_positive"] < decision_probability(0.975)
+    assert 0.0125 < stability["randomization_p"] <= 0.025
     assert stability["reading"] == READING_ANSWER
     assert stability["looser_reading"] == READING_ANSWER  # a looser level agrees
     assert stability["tighter_reading"] != READING_ANSWER  # a tighter one drops it
@@ -114,7 +110,7 @@ def test_the_borderline_check_reuses_one_resample_draw():
 
 def test_a_rank_only_row_can_be_borderline_on_the_objective():
     """The reading is three-state, so the flag tracks the READING, not one metric."""
-    objective = [1.0] * 8 + [-1.0] * 2 + [0.0] * 20
+    objective = [1.0] * 9 + [-1.0] * 2 + [0.0] * 19
     stability = row_stability(_deltas(objective, [0.5] * 30), resamples=2000)
     assert stability["reading"] == READING_RANK_ONLY  # objective misses, rank clears
     assert stability["looser_reading"] == READING_ANSWER
@@ -134,7 +130,7 @@ def test_the_neighbouring_levels_must_straddle_the_reporting_confidence():
 def test_format_reading_marks_only_borderline_rows():
     settled = row_stability(_deltas([0.5] * 30), resamples=400)
     assert format_reading(settled, READING_ANSWER) == "answer"
-    marked = row_stability(_deltas([1.0] * 8 + [-1.0] * 2 + [0.0] * 20), resamples=2000)
+    marked = row_stability(_deltas([1.0] * 9 + [-1.0] * 2 + [0.0] * 19), resamples=2000)
     assert format_reading(marked, READING_NEITHER) == "neither (borderline)"
 
 

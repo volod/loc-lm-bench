@@ -88,9 +88,8 @@ def _lanes(tmp_path: Path) -> list[EmbedderLane]:
 def _near_miss_pair(ids: list[str], wins: int, losses: int) -> tuple[list[dict], list[dict]]:
     """A cell whose objective delta lands close to the cut: `wins` items up, `losses` items down.
 
-    Measured at 30 items and 2000 resamples: 6/1 gives p_positive 0.973 (`neither`, a 90% interval
-    would call it `answer`) and 8/2 gives 0.9755 (`answer`, a 97.5% interval would drop it) -- the
-    two sides the flag is meant to tell apart.
+    The exact sign-flip tail puts 7/1 at p=0.0352 (separates at 90%, not 95%) and 6/0 at p=0.0156
+    (separates at 95%, not 97.5% because that level also needs seven discordant items).
     """
     up, down = set(ids[:wins]), set(ids[wins : wins + losses])
     return (
@@ -119,7 +118,7 @@ def test_every_cell_carries_the_stability_of_its_own_reading():
 def test_the_persisted_stability_is_measured_from_the_sweeps_own_resample_draw():
     """Not a second draw beside the intervals: the same one, so the annotation matches the row."""
     ids = _ids(30)
-    rows = {"k3": _near_miss_pair(ids, wins=6, losses=1)}
+    rows = {"k3": _near_miss_pair(ids, wins=7, losses=1)}
     report = _sweep(rows, resamples=2000)
     cell = report["cells"][0]
     deltas = ItemDeltas(
@@ -143,7 +142,7 @@ def test_a_knife_edge_negative_is_marked_and_the_keep_reason_says_so():
         {
             # The rank premise holds so the sweep can decide at all, and the objective just misses.
             "k10": ([_row(i, 1.0, rank=3) for i in ids], [_row(i, 1.0, rank=1) for i in ids]),
-            "k3": _near_miss_pair(ids, wins=6, losses=1),
+            "k3": _near_miss_pair(ids, wins=7, losses=1),
         },
         resamples=2000,
     )
@@ -154,7 +153,7 @@ def test_a_knife_edge_negative_is_marked_and_the_keep_reason_says_so():
     assert verdict["decision"] == DECISION_KEEP_BAR  # the decision itself never moves
     assert verdict["borderline_cells"] == ["k3"]
     assert "BORDERLINE" in verdict["reason"] and "too close to call" in verdict["reason"]
-    assert "0.90 interval would read it `answer`" in verdict["reason"]
+    assert "0.90 convention would read it `answer`" in verdict["reason"]
     text = format_report(report)
     assert "### How close each cell sits to the cut" in text
     assert "p_positive" in text and "neither (borderline)" in text
@@ -165,13 +164,13 @@ def test_a_knife_edge_negative_is_marked_and_the_keep_reason_says_so():
 def test_an_extend_bar_resting_on_a_near_miss_positive_is_qualified_too():
     """The two-sided half: the cell that SCOPES the second bar can itself be on the cut."""
     ids = _ids(30)
-    report = _sweep({"k3": _near_miss_pair(ids, wins=8, losses=2)}, resamples=2000)
+    report = _sweep({"k3": _near_miss_pair(ids, wins=6, losses=0)}, resamples=2000)
     cell = report["cells"][0]
     assert cell["stability"]["side"] == "above"
     verdict = report["verdict"]
     assert verdict["decision"] == DECISION_EXTEND_BAR
     assert verdict["answer_cells"] == ["k3"] and verdict["borderline_cells"] == ["k3"]
-    assert "0.975 interval would read it `neither`" in verdict["reason"]
+    assert "0.975 convention would read it `insufficient_evidence`" in verdict["reason"]
 
 
 def test_a_settled_verdict_reason_carries_no_borderline_clause():
@@ -206,7 +205,7 @@ def test_the_persisted_stability_equals_what_a_roster_re_derives_from_the_same_b
     """
 
     ids = _ids(30)
-    near_miss = set(ids[:6]), set(ids[6:7])
+    near_miss = set(ids[:7]), set(ids[7:8])
     goldset = tmp_path / "goldset.jsonl"
     goldset.write_text(
         "".join(_gold_item(i).model_dump_json(exclude_none=True) + "\n" for i in ids),

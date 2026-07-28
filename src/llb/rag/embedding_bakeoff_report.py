@@ -20,7 +20,7 @@ from llb.rag.fusion_evidence.stability import (
     format_reading,
 )
 from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 
 _NO_PAIRED_CELL = "-"
 
@@ -30,21 +30,22 @@ def _throughput(row: CandidateResult) -> float:
     return row["n_indexed"] / row["embed_seconds"] if row["embed_seconds"] > 0 else 0.0
 
 
-def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str]:
-    """`delta [lo, hi]`, `w/l/t`, `sign p`, reading for one row (dashes when there is no baseline).
+def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str, str]:
+    """Delta, ledger, sign p, randomization p, and reading (dashes without a baseline).
 
     The reading column is what keeps a `flat` that missed by a mile from printing exactly like one
     that missed by nothing -- the whole point of the borderline annotation.
     """
     paired = row.get("paired_vs_baseline")
     if paired is None:
-        return (_NO_PAIRED_CELL,) * 4
+        return (_NO_PAIRED_CELL,) * 5
     delta = recall_delta(paired)
     stability = bar_stability(paired, BAR_RECALL)
     return (
         format_interval(delta["delta"]),
         f"{delta['wins']}/{delta['losses']}/{delta['ties']}",
         f"{delta['sign_test_p']:.3f}",
+        format_randomization_p(delta),
         format_reading(stability, stability["reading"]) if stability else _NO_PAIRED_CELL,
     )
 
@@ -100,7 +101,7 @@ def format_report(report: BakeoffReport) -> str:
     lines.append(header)
     for row in sorted(rows, key=lambda c: (-c["recall_at_k"], -c["mrr"], c["model"])):
         size_mb = row["index_bytes"] / BYTES_PER_MB
-        delta, ledger, _p, _reading = _paired_cells(row)
+        delta, ledger, _sign_p, _randomization_p, _reading = _paired_cells(row)
         lines.append(
             f"  {row['model'].ljust(width)}   {row['recall_at_k']:8.3f} {row['mrr']:7.3f} "
             f"{row['dim']:6d} {_throughput(row):9.1f} {size_mb:9.2f}   {delta:>22} {ledger:>12}"
@@ -138,19 +139,21 @@ def render_markdown(report: BakeoffReport) -> str:
     lines += [
         "",
         "| model | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) | cost (USD) "
-        f"| recall delta vs {baseline or 'baseline'} | w/l/t | sign p | recall reading |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: | ---: | :-: |",
+        f"| recall delta vs {baseline or 'baseline'} | w/l/t | sign p | rand p "
+        "| recall reading |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
+        "| ---: | ---: | :-: |",
     ]
     for row in sorted(
         report["candidates"], key=lambda c: (-c["recall_at_k"], -c["mrr"], c["model"])
     ):
         cost = f"{row['cost_usd']:.4f}" if "cost_usd" in row else "-"
         size_mb = row["index_bytes"] / BYTES_PER_MB
-        delta, ledger, sign_p, reading = _paired_cells(row)
+        delta, ledger, sign_p, randomization_p, reading = _paired_cells(row)
         lines.append(
             f"| `{row['model']}` | {row['kind']} | {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
             f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} | {cost} "
-            f"| {delta} | {ledger} | {sign_p} | {reading} |"
+            f"| {delta} | {ledger} | {sign_p} | {randomization_p} | {reading} |"
         )
     lines += ["", *_verdict_lines(report), ""]
     lines += [

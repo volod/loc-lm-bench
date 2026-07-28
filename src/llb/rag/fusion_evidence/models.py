@@ -82,7 +82,7 @@ METRICS = (METRIC_RECALL, METRIC_ALL_SPANS, METRIC_COVERAGE, METRIC_MRR)
 
 VERDICT_ADOPT = "adopt"
 VERDICT_REJECT = "reject"
-# A positive point estimate whose paired interval still includes no difference.
+# A positive point estimate whose calibrated paired test does not separate.
 VERDICT_INCONCLUSIVE = "inconclusive"
 VERDICT_NO_EVIDENCE = "no_evidence"
 

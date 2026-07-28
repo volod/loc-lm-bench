@@ -23,7 +23,7 @@ from llb.rag.fusion_evidence.stability import (
     boundary_table,
 )
 from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 from llb.eval.answer_quality.report_routing import routing_outcomes
 
 _HEADERS = {
@@ -57,8 +57,10 @@ def _metric_table(
         return lines
     metrics = _headline_metrics(report)
     header = " | ".join(_HEADERS.get(metric, metric) for metric in metrics)
-    lines.append(f"| lane | {header} | objective delta vs {report['baseline']} | w/l/t | sign p |")
-    lines.append("| --- | " + " | ".join(["---:"] * len(metrics)) + " | ---: | :-: | ---: |")
+    lines.append(
+        f"| lane | {header} | objective delta vs {report['baseline']} | w/l/t | sign p | rand p |"
+    )
+    lines.append("| --- | " + " | ".join(["---:"] * len(metrics)) + " | ---: | :-: | ---: | ---: |")
     for label in sorted(selected):
         entry = selected[label]
         cells = [format_interval(entry["metrics"][metric]) for metric in metrics]
@@ -68,7 +70,7 @@ def _metric_table(
             + " | ".join(cells)
             + f" | {format_interval(paired['delta'])} "
             + f"| {paired['wins']}/{paired['losses']}/{paired['ties']} "
-            + f"| {paired['sign_test_p']:.3f} |"
+            + f"| {paired['sign_test_p']:.3f} | {format_randomization_p(paired)} |"
         )
     lines.append("")
     return lines

@@ -3,9 +3,9 @@
 Split out of `roster.py` so the reading logic and its presentation stay separately readable, the
 same seam `embedding_bakeoff_report.py` uses for the bake-off.
 
-A reading that a looser-but-conventional confidence level would change is marked `(borderline)`,
-and the focus cell also prints `p_positive` -- the continuous quantity the reading thresholds -- so
-a row sitting on the cut cannot be read as settled evidence (`llb.eval.embedder_adoption.stability`).
+A reading that a looser-but-conventional confidence level would change is marked `(borderline)`.
+The focus cell prints calibrated `randomization_p` beside diagnostic `p_positive`, so a row sitting
+on the cut cannot be read as settled evidence (`llb.eval.embedder_adoption.stability`).
 """
 
 from collections.abc import Mapping
@@ -133,9 +133,9 @@ def format_roster(
     lines += _reading_table(report)
     lines += [
         "",
-        "`answer` = the rank gain reached the answer (objective interval clears zero); "
+        "`answer` = the calibrated objective sign-flip test separates; "
         "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
+        "separation; `insufficient evidence` = a positive interval rests on too few differing items "
         "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
         "97.5% interval would change -- the cut decided it, not the evidence.",
         "",

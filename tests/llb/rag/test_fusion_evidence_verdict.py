@@ -162,4 +162,4 @@ def test_a_gain_whose_interval_includes_zero_is_inconclusive_not_adopted():
     delta = focus["paired_vs_baseline"][METRIC_RECALL]["delta"]
     assert delta["mean"] == pytest.approx(0.25) and delta["lo"] == 0.0
     assert report["verdict"]["decision"] == VERDICT_INCONCLUSIVE
-    assert "includes no difference" in report["verdict"]["reason"]
+    assert "calibrated randomization test does not separate" in report["verdict"]["reason"]

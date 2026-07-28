@@ -1529,30 +1529,24 @@ and relative-retention plans; their workflow details are in
 
 #### How settled a paired reading is -- `p_positive` and the borderline flag
 
-Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:
-does the delta's lower bound clear zero. A row whose bound sits ON zero therefore prints exactly
-like a row that missed by a mile -- the bake-off's `retain`, the fusion sweep's `reject`, the
-ablation's `no_retrieval_gain` and the answer lane's `no_gain` were all stated in the same words
-whether the evidence was decisive or the convention was. `src/llb/rag/fusion_evidence/stability.py`
-is the one place that vocabulary lives, and every lane reports it:
+Every adopt-or-retain call cuts the calibrated one-sided sign-flip p at the alpha corresponding to
+the reported two-sided confidence convention. `src/llb/rag/fusion_evidence/stability.py` owns the
+shared persisted shape:
 
-- **`p_positive`** is the share of paired resamples in which the candidate is ahead -- the
-  CONTINUOUS quantity the reading thresholds, since a 95% percentile interval clears zero exactly
-  when `p_positive > 0.975`. **`borderline`** is raised when the reading would change at either
+- **`randomization_p`** is the decision-driving quantity. **`p_positive`** remains the diagnostic
+  share of paired bootstrap resamples in which the candidate is ahead. **`borderline`** is raised
+  when the calibrated reading would change at either
   NEIGHBOURING conventional level, looser (90%) or tighter (97.5%). The check is two-sided on
   purpose: `side: below` is a negative that would clear a looser bar (an undecided negative),
   `side: above` is a positive a tighter bar would drop (a positive resting on the convention). No
   constant is fitted to the data; all three levels are conventions the repo already reports at.
-- **It rides on `paired_comparison`, so no lane wires it.** Every paired delta in the repo goes
+- **It rides on `paired_comparison`, so no two-state lane wires it.** Every paired delta goes
   through that one function, which now attaches a `stability` block to each `PairedComparison`.
   That reaches the embedder bake-off, the fusion sweep, the context ablation, and the
   answer-quality slices at once -- and any future lane for free.
-- **It is free, not a second computation.** The resample MEANS a percentile bound is read off are
-  the same draw the exceedance probability counts, so `paired_comparison` draws once, sorts once,
-  and reads three percentile cuts plus the exceedance off that sorted array
-  (`bootstrap_samples` / `_ordered_percentiles` / `separation_stability`). Measured at n=95,
-  2000 resamples: **2.36 ms before, 2.39 ms after (+1%)**, against 9.96 ms (4.2x) for the naive
-  bolt-on of three extra intervals plus a second pass.
+- **The bootstrap draw is still single-pass.** Its sorted means supply the unchanged percentile
+  interval and `p_positive`; the sign-flip engine uses the same configured draw count and a stable
+  seed derived from the shared index sets.
 - **The annotation is omitted rather than faked** when no resample was drawn (`p_positive` is a
   share OF resamples, and a zero would read as a settled negative) or when the reporting confidence
   sits outside the two conventions the flag is defined against.
@@ -1565,7 +1559,8 @@ is the one place that vocabulary lives, and every lane reports it:
   adoption bar reads `answer` / `rank only` / `neither`, so it computes its reading at each of the
   three levels and hands them to `stability_from_readings`, producing the identical
   `ReadingStability` shape ([the scoped first-hit-rank bar](#the-scoped-first-hit-rank-adoption-bar)).
-- No adoption rule, confidence convention, or metric changed. Tests:
+- The confidence conventions, metrics, percentile intervals, and row rankings stay unchanged.
+  The separation rule changed from the percentile lower bound to the calibrated p. Tests:
   `tests/llb/rag/test_paired_stability.py` (the shared annotation, the assembly, the rendering, the
   clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
   own verdict).
@@ -1644,7 +1639,9 @@ index sets, seed, and nearest-rank percentile convention; 4000 flips for the rat
 20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
 under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability finding below is now
 shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
-productionizing the size and selection findings is forward work in [`plan.md`](../plan.md).
+the per-test size finding is now enforced by
+[randomization-calibrated paired readings](#randomization-calibrated-paired-readings); selection
+control remains forward work in [`plan.md`](../plan.md).
 
 - **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
   **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
@@ -1672,6 +1669,50 @@ productionizing the size and selection findings is forward work in [`plan.md`](.
 The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
 nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
 
+#### Randomization-calibrated paired readings
+
+2026-07-28. `src/llb/rag/fusion_evidence/randomization.py` makes the audit's per-row remedy the
+shared decision rule. It tests the candidate-ahead mean under sign exchangeability of the non-zero
+per-item deltas. Equal-magnitude ledgers use an exact binomial tail at any item count, arbitrary
+ledgers with at most 16 discordant items are enumerated exactly, and larger arbitrary ledgers use a
+deterministic Monte Carlo tail with the plus-one correction. Each `PairedComparison` persists
+`randomization_p`, `randomization_method`, and `randomization_samples`; the same values ride beside
+`p_positive` in its `stability` block.
+
+- `separates()` cuts `randomization_p <= (1 - confidence) / 2` and then applies the existing
+  minimum-evidence gate. The percentile bootstrap remains the interval estimator: its point,
+  bounds, resample count, seed convention, and the exact sign-test ledger are unchanged. Archived
+  aggregate-only blocks without a calibrated p retain their historical reading until a
+  vector-backed audit can rebuild them.
+- The three-state adoption reading (`answer` / `rank only` / `neither`) calibrates its objective
+  and reciprocal-rank vectors separately while preserving objective-first order. Directional
+  query-robustness rows test both sign-flip directions and persist the p for the observed direction.
+  Fusion, answer quality, context ablation, the embedder bake-off, and adoption-bar verdicts all
+  reach the shared `separates()` path.
+- Reports render `rand p` beside `sign p`; boundary tables render the decision-driving
+  randomization p beside diagnostic `p_positive`. The existing borderline qualifier now compares
+  the calibrated reading at 90%, the reporting level, and 97.5%.
+- The maintained null harness is
+  `tests/fixtures/paired_randomization_null.json` plus
+  `tests/llb/rag/test_paired_randomization.py`. It checks the implementation against independent
+  brute-force enumeration and enumerates every null assignment of three committed sparse/skewed
+  fixtures. Their empirical one-sided sizes are 1.5625%, 2.34375%, and 2.34375%, all at or below
+  the nominal 2.5%.
+- `make audit-paired-readings` reconstitutes vector-backed embedder bake-off, adoption-bar, and
+  context-ablation artifacts without model calls, lists every comparison reading that changes,
+  and restates every artifact verdict. The CUDA-host re-read is under
+  `$DATA_DIR/paired-reading-audit/20260728T-randomization-calibrated/`: the two vector-backed
+  artifacts available on this host supplied 19 paired blocks; the recorded bake-off stayed
+  `retain`, the context ablation stayed `long_context_wins`, and no per-row reading changed. The
+  host inventory contained no adoption-bar comparison bundle to re-read. The audit's fixture test
+  covers the previously vulnerable bake-off `adopt` shape and confirms it is restated `retain`
+  when its calibrated p is 0.0352.
+
+Host validation used the RTX PRO 3000 Blackwell GPU (12,227 MiB) with the installed
+MamayLM-Gemma-3-12B model available. The audit path deliberately made no inference, as its contract
+is to re-read persisted vectors. Implementation coverage also includes the shared stability,
+minimum-evidence, lane-verdict, adoption-borderline, query-robustness, and artifact-audit tests.
+
 #### The minimum-evidence gate on a paired reading
 
 The reachability finding above is a rule, not a caveat, and it ships as one. A paired block's
@@ -1686,14 +1727,14 @@ interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place t
   97.5%**. `apply_evidence_gate` relabels a claim resting on fewer than that
   **`insufficient_evidence`**, a state no lane may adopt on. Only a CLAIM is gated: a `flat` reading
   (or a richer lane's `neither`) says nothing was found, which a thin item set is entitled to say.
-- **One separation test, used by every verdict.** `separates()` in `stats.py` is
-  `delta.lo > 0 AND the block differs on enough items`, and it replaced the bare `lo > 0` cut in
+- **One separation test, used by every verdict.** `separates()` in `paired.py` is
+  `randomization_p <= (1 - confidence) / 2 AND the block differs on enough items`, and it is used in
   every lane that had one: the fusion sweep's adopt, the bake-off's adoption bars, the ablation's
   long-context and uplift checks, the answer lane's gain and retrieval-only checks, the adoption
   bar's per-cell reading, the sidecar-free routing gate's coverage half (its single-span half is a
   non-inferiority check, not a separation, and is unchanged), and the long-context power
-  resolution's direction. It reads the persisted win/loss ledger rather than a `stability` block,
-  so it holds on a run that drew no resamples and on an artifact recorded before the annotation.
+  resolution's direction. Aggregate-only archived comparisons fall back to their historical
+  interval reading until their vectors can be reconstituted.
 - **The gate and the borderline flag are one scale.** The bound moves WITH the level, so a row that
   differs on exactly 6 items reads `separated` at 95% and `insufficient_evidence` at 97.5% -- which
   is precisely a `borderline` row, `side: above`, and it is now marked as one automatically.
@@ -1702,9 +1743,8 @@ interval says. `src/llb/rag/fusion_evidence/evidence_gate.py` is the one place t
   `ReadingStability`); a `Minimum evidence: N of M paired readings are insufficient evidence` line
   in each lane's report; and the shared `. INSUFFICIENT EVIDENCE: ...` clause on any verdict reason
   whose deciding row the gate relabeled -- the same call shape as the borderline clause.
-- No threshold, interval, confidence convention, adoption rule, or row RANKING changed. A sweep
-  still selects the same `best_row`; what the gate decides is whether that row's gain may be read
-  as a separation.
+- The calibrated task changes the separation half; this gate still owns only the evidence-count
+  entitlement. A sweep keeps the same percentile intervals and row ranking.
 
 Tests: `tests/llb/rag/test_paired_minimum_evidence.py` -- the derived bound against the sign test's
 own arithmetic, the reading at 5 / 6 / 7 discordant items, that the interval / ledger / point
@@ -1962,10 +2002,10 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   from the bundle's `first_hit_rank`. ONE resample draw is shared across every cell (common random
   numbers), so the cells are comparable to each other. Each (cell, encoder) pair is an ordinary
   bundle under that encoder's own `$DATA_DIR/run-eval/`, so any cell is reproducible. `decide_bar`
-  reports **extend_bar** (an objective interval clears zero in some cell -> the rank gain reaches
-  the answer there), **keep_bar** (the encoder ranks better but no cell's objective clears zero ->
-  recall@k stays the sole bar), or **no_evidence** (the rank gain does not reproduce in any cell,
-  so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
+  reports **extend_bar** (a cell's calibrated objective test separates -> the rank gain reaches the
+  answer there), **keep_bar** (the encoder ranks better but no calibrated objective test
+  separates -> recall@k stays the sole bar), or **no_evidence** (the rank gain does not reproduce
+  in any cell, so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
   `$DATA_DIR/embedder-adoption-bar/<run>/`. The whole comparison + verdict is fake-bundle
   unit-tested (`tests/llb/eval/test_embedder_adoption.py`) -- no backend, store, or GPU.
 - **The second bar** (`embedding_bakeoff_uncertainty.py`): `decide_verdict` takes a `bars`
@@ -2086,7 +2126,9 @@ CUDA host, 2026-07-25. Four more models on the SAME corpus, cells, item set, and
 three families and 11.8B-27B; sweeps under `$DATA_DIR/embedder-adoption-bar/run-<slug>/`, the roster
 reading under `.../roster/` and the declared profiles in `.../model-profiles.json` (each model's
 `parameter_size` / `family` as its own model card reports it, so both are readable before a run is
-spent). Every cell reading below is that sweep's own paired interval:
+spent). The table preserves each sweep's HISTORICAL percentile reading. Its source bundles are not
+present on the current host, so these rows could not be reconstituted by the calibrated audit and
+must not be read as current randomization verdicts:
 
 | model | params | family | `k10` | `k10+rerank` | `k3` | `k3+rerank` | verdict |
 | --- | ---: | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -2100,7 +2142,8 @@ Roster verdict: **no_property_predicts**. What the roster establishes:
 
 - **The shipped default is settled: the rank gain is free there, unanimously.** All five models read
   `k10` as `rank only` -- `bge-m3` ranks the evidence earlier (MRR +0.064, identical in every sweep)
-  and no model's objective interval clears zero. The recorded single-model finding now rests on
+  and no recorded objective interval clears zero. This is historical percentile evidence; a new
+  sweep applies the calibrated test. The recorded single-model finding rests on
   three families and a 2.3x parameter range, so `recall_at_k` staying the DEFAULT bar and `e5-base`
   staying the shipped default are not one model's quirk.
 - **Neither parameter count nor family predicts the reranker cell, and the counter-examples are
@@ -2145,9 +2188,10 @@ The cost splits into two axes that behave completely differently:
   `extend_bar` verdict, in **6m40s against ~18 minutes** -- 4x fewer bundles, 2.7x wall clock
   (the reranked cell costs more per bundle than the plain ones, which is why the time saving is
   smaller than the bundle saving).
-- **Cutting the ITEM set is not available.** Fewer items widen the paired interval while the rule
-  stays "the interval clears zero", so a screen can only LOSE a detection, never invent one. How
-  often each model's `k10+rerank` reading survives a subsample of N items, 120 draws per size:
+- **Cutting the ITEM set is not available.** A smaller ledger can either lose or invent a
+  calibrated separation, so the screen measures agreement with the full reading in both
+  directions. How often each model's `k10+rerank` reading survives a subsample of N items, 120
+  draws per size:
 
 | model | full reading | n=10 | n=15 | n=20 | n=25 | n=30 | n=35 |
 | --- | :-: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -2181,15 +2225,14 @@ Verdict: **full_set_required**. What the table establishes:
   to make it cheaper. That single run reports its own `p_positive` and marks the cell `(borderline)`
   when a neighbouring convention would read it differently, and the `extend_bar` / `keep_bar`
   sentence names which -- so the one-cell recipe answers the same question the roster does, with no
-  second command to run.
+  second command to run. New runs report `randomization_p` beside `p_positive`.
 
-#### Which readings are settled, and which are the cut talking
+#### Historical percentile stability of the adoption roster
 
-Every adoption reading -- in a single sweep and in the roster alike -- prints one of three states,
-but at n=40 several rows sit close enough to the `lo > 0` cut that the threshold, not the evidence,
-decided them. `p_positive` places every row on that scale (the reading clears zero exactly when it
-exceeds 0.975), measured over the sweep's own 2000 resamples. Each SWEEP now persists and renders it
-per cell, and the roster reports it per model for the focus cell:
+This table records the retired `lo > 0` reading and remains useful as the audit trail explaining why
+calibration was needed. It is not a current verdict table: the source bundles are absent from the
+host inventory, so no randomization p can be reconstructed for these cells. New sweeps persist and
+render `randomization_p` per cell; `p_positive` remains diagnostic.
 
 | model | at 90% | `k10+rerank` (95%) | at 97.5% | p_positive | settled? |
 | --- | :-: | :-: | :-: | ---: | :-: |

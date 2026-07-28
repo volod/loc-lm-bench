@@ -179,3 +179,20 @@ def test_a_reading_recorded_before_the_pair_count_existed_prices_nothing():
     assert next(line for line in lines if line.startswith("| archived ")).split("|")[
         -3
     ].strip() == ("-")
+
+
+def test_an_archived_uncalibrated_boundary_table_keeps_its_columns_aligned():
+    archived = dict(_unanimous(BOUND + 6)["stability"])
+    archived.pop("randomization_p")
+    archived.pop("randomization_method")
+    archived.pop("randomization_samples")
+    lines = boundary_table(
+        [("archived", archived)],  # type: ignore[list-item]
+        title="Where each reading sits",
+        key_header="row",
+        subject="the candidate",
+    )
+    header = next(line for line in lines if line.startswith("| row "))
+    separator = lines[lines.index(header) + 1]
+    row = next(line for line in lines if line.startswith("| archived "))
+    assert header.count("|") == separator.count("|") == row.count("|")

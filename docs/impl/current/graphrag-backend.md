@@ -175,7 +175,7 @@ Three things separate it from the flat comparison:
 - **Uncertainty.** A multi-hop slice is tens of items, so every cell carries a paired percentile
   bootstrap interval over shared resample index sets, plus the item-level win/loss/tie ledger and
   an exact two-sided sign test. The verdict gates on the INTERVAL: a positive mean whose interval
-  still includes no difference is recorded as `inconclusive`, never as an adopt.
+  still fails the calibrated paired test is recorded as `inconclusive`, never as an adopt.
 - **One retrieval pass per lane.** Neither lane's ranking depends on the weight or on the
   candidate depth, so the sweep retrieves each lane once at the DEEPEST compared pool and re-fuses
   those same candidates through the production `fuse_lane_hits` at every (weight, depth) point.
@@ -656,10 +656,11 @@ does with it. `llb compare-answer-quality` (`make compare-answer-quality`) close
 scores the identical item set END TO END under two retrieval lanes with the standard `run-eval`,
 then compares the ANSWERS per question-type slice with the same paired bootstrap the sweep uses.
 
-Both this lane and the fusion sweep read a `lo > 0` cut, so both state how far the row their
-verdict was decided on sits from it: every paired delta carries `p_positive` and a `(borderline)`
-flag, the reason gains a shared clause when a neighbouring conventional level would read it
-differently, and `report.md` renders a boundary table over the focus slice. Two of the three
+Both this lane and the fusion sweep read the calibrated paired sign-flip p, so both state how far
+the deciding row sits from the cut: every paired delta carries `randomization_p`, diagnostic
+`p_positive`, and a `(borderline)` flag; the reason gains a shared clause when a neighbouring
+confidence convention would read it differently, and `report.md` renders a boundary table over
+the focus slice. Two of the three
 recorded answer-quality comparisons and three of the six recorded fusion sweeps are now qualified
 that way; see
 [how settled a paired reading is](rag-core.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag).
@@ -684,8 +685,8 @@ Three properties make the comparison readable:
   hard multi-hop slice the gate can be near-zero for every lane and therefore blind to a lane that
   nonetheless carried more evidence.
 
-The verdict is one of `answer_quality_gain` (the objective delta's interval clears zero),
-`retrieval_only` (the coverage delta's interval clears zero while the objective's does not),
+The verdict is one of `answer_quality_gain` (the objective randomization test separates),
+`retrieval_only` (the coverage test separates while the objective's does not),
 `inconclusive`, or `no_gain`. `retrieval_only` is checked BEFORE `inconclusive` on purpose: a
 measured coverage gain paired with a noisy objective is a result about retrieval, and reporting it
 as merely inconclusive would drop the half that was measured.

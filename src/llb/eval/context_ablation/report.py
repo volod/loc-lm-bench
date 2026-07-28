@@ -25,7 +25,7 @@ from llb.rag.fusion_evidence.stability import (
     format_reading,
 )
 from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 from llb.eval.context_ablation.report_power import power_section
 
 _HEADERS = {
@@ -55,9 +55,10 @@ def _derived_table(entries: Sequence[DerivedComparison]) -> list[str]:
         lines.extend(["No derived delta is available: the comparison scored one lane.", ""])
         return lines
     lines.append(
-        "| delta | candidate - reference | n | value | w/l/t | sign p | reading | reads as |"
+        "| delta | candidate - reference | n | value | w/l/t | sign p | rand p | reading "
+        "| reads as |"
     )
-    lines.append("| --- | --- | ---: | ---: | :-: | ---: | :-: | --- |")
+    lines.append("| --- | --- | ---: | ---: | :-: | ---: | ---: | :-: | --- |")
     for entry in entries:
         paired = entry["paired"]
         stability = paired.get("stability")
@@ -65,7 +66,7 @@ def _derived_table(entries: Sequence[DerivedComparison]) -> list[str]:
             f"| `{entry['label']}` | `{entry['candidate']}` - `{entry['reference']}` "
             f"| {entry['n']} | {format_interval(paired['delta'])} "
             f"| {paired['wins']}/{paired['losses']}/{paired['ties']} "
-            f"| {paired['sign_test_p']:.3f} "
+            f"| {paired['sign_test_p']:.3f} | {format_randomization_p(paired)} "
             f"| {format_reading(stability, stability['reading']) if stability else '-'} "
             f"| {_DERIVED_NOTES.get(entry['label'], entry['population'])} |"
         )
@@ -84,8 +85,8 @@ def _gate_summary(report: ContextAblationReport) -> list[str]:
 def _boundary_section(report: ContextAblationReport) -> list[str]:
     """How close each derived delta sits to the cut the ablation verdict is taken from.
 
-    Both the retrieval uplift and the long-context delta are `lo > 0` cuts, so a `rag_pays_off`
-    and a `no_retrieval_gain` can each rest on a row a neighbouring convention would flip.
+    Both the retrieval uplift and long-context delta use the calibrated paired cut, so either
+    verdict can rest on a row a neighbouring convention would flip.
     """
     rows = [
         (f"`{entry['label']}`", stability)
@@ -117,8 +118,10 @@ def _metric_table(
         lines.extend(["No item falls in this slice, so no metric is measured here.", ""])
         return lines
     header = " | ".join(_HEADERS.get(metric, metric) for metric in METRICS)
-    lines.append(f"| lane | {header} | objective delta vs {report['baseline']} | w/l/t | sign p |")
-    lines.append("| --- | " + " | ".join(["---:"] * len(METRICS)) + " | ---: | :-: | ---: |")
+    lines.append(
+        f"| lane | {header} | objective delta vs {report['baseline']} | w/l/t | sign p | rand p |"
+    )
+    lines.append("| --- | " + " | ".join(["---:"] * len(METRICS)) + " | ---: | :-: | ---: | ---: |")
     for label in sorted(selected):
         entry = selected[label]
         cells = [format_interval(entry["metrics"][metric]) for metric in METRICS]
@@ -128,7 +131,7 @@ def _metric_table(
             + " | ".join(cells)
             + f" | {format_interval(paired['delta'])} "
             + f"| {paired['wins']}/{paired['losses']}/{paired['ties']} "
-            + f"| {paired['sign_test_p']:.3f} |"
+            + f"| {paired['sign_test_p']:.3f} | {format_randomization_p(paired)} |"
         )
     lines.append("")
     return lines

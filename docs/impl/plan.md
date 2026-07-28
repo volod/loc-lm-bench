@@ -43,46 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-
-### randomization-calibrated-paired-reading
-
-The percentile-bootstrap `lo > 0` cut is anti-conservative exactly where the repo uses it most: on
-the 20 recorded adoption cells (n=40) it fires on 3.0%-7.8% of paired sign-flip null draws against
-the 2.5% its interval implies, worst where the discordant count is smallest, while the 82- and
-250-item ablation lanes sit near nominal
-([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Every adopt-or-retain
-call on a small accepted ledger therefore rests on a test whose real size is up to 3x its nominal
-one. Add the exact paired randomization p (sign-flip over the per-item deltas, the same draw
-structure the bootstrap already builds), persist it beside `p_positive`, and let the reading be
-decided by the calibrated quantity. Ship a null-calibration harness with it so the claim is
-maintained rather than asserted: the empirical size of the shipped rule on committed fixtures is a
-CI assertion, not a one-off measurement.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. `separates()` in `src/llb/rag/fusion_evidence/stats.py` is already the one
-  separation test every lane cuts on and it already falls back to `insufficient_evidence` when
-  there is nothing to randomize over, so the calibrated reading replaces its interval half in one
-  place ([the gate](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)). Reuse
-  `bootstrap_index_sets` / `paired_comparison` and the `stability` block that already rides on every
-  paired delta.
-- User-visible outcome: an adopt decision on a 40-item ledger has the error rate it claims, so a
-  swap recommendation is not an artifact of the interval's small-sample behavior.
-- Scope boundary: in scope -- the randomization p, its persistence and rendering, the reading rule,
-  the CI size harness, and a re-read of every recorded artifact that persists per-item vectors. Out
-  of scope -- replacing the bootstrap INTERVAL (the reported delta bounds stay), changing the
-  confidence conventions, and BCa/studentized variants unless the size harness shows the
-  randomization p is unavailable for a lane.
-- Data and artifact paths: additive fields in the existing artifacts; the re-read under
-  `$DATA_DIR/paired-reading-audit/<run>/`.
-- Execution path: the re-read runs from recorded artifacts on the CUDA host (no new inference); CI
-  covers the p against a brute-force enumeration at small n and asserts the empirical size on
-  committed fixture deltas.
-- Acceptance gates: `make ci` green; the size harness shows the shipped rule at or below its nominal
-  level on every committed fixture; the re-read names every recorded verdict whose reading changes,
-  including the adoption sweeps' `extend_bar` cells and the bake-off's `adopt` rows.
-- Documentation target: the paired-uncertainty subsection of [RAG core](current/rag-core.md) and each
-  affected lane's evidence section.
-
 ### selection-adjusted-grid-verdicts
 
 Three lanes decide by SELECTING a row out of a grid and then reading that row as if it were the only
@@ -98,8 +58,9 @@ is respected rather than assumed away), and gate adoption on the adjusted readin
 to report the per-row one.
 
 - Agent status: RUN NEEDED
-- Dependencies: `randomization-calibrated-paired-reading` (the max-statistic procedure is built on
-  the same sign-flip draw). Reuse each lane's verdict module -- `src/llb/rag/fusion_evidence/verdict.py`,
+- Dependencies: use the shared sign-flip draw and calibrated per-row p described in
+  [RAG core](current/rag-core.md#randomization-calibrated-paired-readings). Reuse each lane's verdict
+  module -- `src/llb/rag/fusion_evidence/verdict.py`,
   `src/llb/eval/embedder_adoption/verdict.py`, `src/llb/rag/embedding_bakeoff_verdict.py`.
 - User-visible outcome: a grid sweep's recommendation carries the error rate of the SEARCH that
   produced it, so an operator stops adopting the luckiest cell of a wide sweep.

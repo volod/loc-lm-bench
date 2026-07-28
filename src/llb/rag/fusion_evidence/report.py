@@ -21,7 +21,7 @@ from llb.rag.fusion_evidence.stability import (
     boundary_table,
 )
 from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import gated_readings
+from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 from llb.rag.fusion_evidence.report_floor import floor_section
 
 _HEADLINE_METRICS = (METRIC_RECALL, METRIC_ALL_SPANS, METRIC_COVERAGE, METRIC_MRR)
@@ -51,9 +51,11 @@ def _metric_table(
         lines.extend(["No item falls in this slice, so no metric is measured here.", ""])
         return lines
     header = " | ".join(_HEADERS[metric] for metric in _HEADLINE_METRICS)
-    lines.append(f"| row | {header} | recall delta vs {report['baseline']} | w/l/t | sign p |")
     lines.append(
-        "| --- | " + " | ".join(["---:"] * len(_HEADLINE_METRICS)) + " | ---: | :-: | ---: |"
+        f"| row | {header} | recall delta vs {report['baseline']} | w/l/t | sign p | rand p |"
+    )
+    lines.append(
+        "| --- | " + " | ".join(["---:"] * len(_HEADLINE_METRICS)) + " | ---: | :-: | ---: | ---: |"
     )
     for label in sorted(selected):
         entry = selected[label]
@@ -64,7 +66,7 @@ def _metric_table(
             + " | ".join(cells)
             + f" | {format_interval(paired['delta'])} "
             + f"| {paired['wins']}/{paired['losses']}/{paired['ties']} "
-            + f"| {paired['sign_test_p']:.3f} |"
+            + f"| {paired['sign_test_p']:.3f} | {format_randomization_p(paired)} |"
         )
     lines.append("")
     return lines
