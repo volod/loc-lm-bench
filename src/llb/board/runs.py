@@ -68,7 +68,25 @@ def record_from_manifest(
         peak_vram_mb=telemetry.get("peak_vram_mb"),
         judge_score=mean_or_none(case_judge),
         semantic_score=mean_or_none(case_semantic),
+        ranking_score=(
+            float(metrics["ranking_score"]) if metrics.get("ranking_score") is not None else None
+        ),
+        token_precision=(
+            float(metrics["token_precision"])
+            if metrics.get("token_precision") is not None
+            else None
+        ),
+        token_recall=(
+            float(metrics["token_recall"]) if metrics.get("token_recall") is not None else None
+        ),
+        found_rate=float(metrics["found_rate"]) if metrics.get("found_rate") is not None else None,
+        mean_completion_tokens=(
+            float(metrics["mean_completion_tokens"])
+            if metrics.get("mean_completion_tokens") is not None
+            else None
+        ),
         case_objectives=read_case_objectives(run_dir),
+        case_ranking=read_case_series(run_dir, "ranking_score"),
         case_semantic=case_semantic,
         case_judge=case_judge,
     )

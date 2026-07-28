@@ -15,6 +15,7 @@ from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
 from llb.scoring import correctness, groundedness
+from llb.scoring.verbosity import ranking_score
 
 from llb.eval.graph_contracts import RagState
 
@@ -91,6 +92,9 @@ def score_case(
         "status": status,
         "objective_score": corr["score"],
         "token_f1": corr["token_f1"],
+        "token_precision": corr["token_precision"],
+        "token_recall": corr["token_recall"],
+        "ranking_score": ranking_score(corr["token_precision"], corr["token_recall"]),
         "exact": corr["exact"],
         "contains": corr["contains"],
         "retrieval_hit": retrieval.recall_at_k(retrieved, spans, len(retrieved)),

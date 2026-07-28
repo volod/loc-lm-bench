@@ -43,45 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### headline-objective-verbosity-decomposition
-
-The leaderboard ranks on normalized token F1, which merges two different failures into one number:
-not carrying the reference fact, and carrying it inside a longer answer. On the one item set where
-several models are scored identically under pinned retrieval, the found-rate ranks the roster in
-nearly the opposite order to the objective, and the models the objective ranks last are the ones
-that state the reference on the MOST items
-([scoring](current/rag-core.md#measured-the-headline-objective-is-partly-a-verbosity-ranking)).
-Split the headline into the parts it currently merges: report token PRECISION and RECALL beside the
-F1 (F1 hides which side is losing), the verbosity-robust found-rate, and a completion-length column
-per row, then measure the objective's length sensitivity across the roster on a fixed item set and
-state a ranking policy that is explicit about how much of the score is answer format. Keep the
-instruction-following reading separate and honest: the shipped `eval.rag` system prompt does ask for
-a short answer, so a length penalty is partly legitimate -- the deliverable is a ranking whose
-verbosity component is DECLARED, not one that removes it.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/scoring/correctness.py` (the F1 already computes both sides
-  internally), the `completion_tokens` field every `scores.jsonl` row carries, and
-  `src/llb/scoring/aggregate.py` for the leaderboard policy.
-- User-visible outcome: an operator can tell "this model does not know the answer" from "this model
-  knows the answer and is wordy", and the recommended model stops depending on which of the two the
-  headline silently penalizes.
-- Scope boundary: in scope -- the precision/recall/found-rate/length columns, the length-sensitivity
-  study across the recorded roster, and an explicit ranking-policy decision (keep F1, adopt a
-  composite, or rank on a length-controlled statistic). Out of scope -- judge-based scoring changes,
-  prompt rewording, and re-running any retrieval lane.
-- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
-  the study under `$DATA_DIR/verbosity-sensitivity/<run>/`.
-- Execution path: re-score the recorded roster bundles for the study (no new inference needed for
-  the recorded models), then one fresh `make run-eval` per policy candidate to confirm the columns;
-  CI covers the decomposition on committed fixtures including a verbose-but-correct and a
-  terse-but-wrong case.
-- Acceptance gates: `make ci` green; every recorded bundle's existing `objective_score` reproduces
-  bit-identically (the split is additive); the study reports the per-model rank under each candidate
-  policy plus the correlation between answer length and score; the chosen policy is recorded with
-  the reason, and any leaderboard rank it changes is named.
-- Documentation target: [RAG core](current/rag-core.md#scoring) and the ranking policy in
-  [evaluation rigor](current/rigor-board-judge.md).
 
 ### randomization-calibrated-paired-reading
 
@@ -1225,6 +1186,32 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
+
+### calibrate-headline-format-weight
+
+Calibrate the fact/format tradeoff against adversarial context-copy answers and human pairwise
+utility labels, then retain or revise the declared weight without changing the decomposition
+contract ([current scoring](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)).
+Sweep predeclared weights over matched terse, fluent-but-wrong, verbose-supported, and
+context-copy cases; measure agreement with the accepted labels and stability across model
+families; require a held-out confirmation before changing the default.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: a reviewer-accepted pairwise preference ledger covering the four answer shapes.
+- User-visible outcome: the explicit format share is grounded in operator utility and resists a
+  model that raises recall by repeating retrieved context.
+- Scope boundary: in scope -- fixture and worksheet generation, weight sweep, family-stratified
+  agreement, uncertainty, and an adopt-or-retain verdict. Out of scope -- prompt rewriting,
+  judge-model substitution, and changing the precision/recall/found-rate columns.
+- Data and artifact paths: accepted labels under `$DATA_DIR/review/headline-format/`; sweep
+  artifacts under `$DATA_DIR/verbosity-sensitivity/<run>/weight-calibration/`.
+- Execution path: agent prepares and validates the blinded worksheet; human reviewers accept the
+  pairwise labels; agent runs the deterministic sweep and CUDA-host family confirmation.
+- Acceptance gates: `make ci` green; all answer-shape strata are represented; held-out agreement
+  and confidence intervals are reported per family; any default-weight change names every roster
+  rank it changes.
+- Documentation target: [RAG core](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)
+  and the ranking policy in [evaluation rigor](current/rigor-board-judge.md).
 
 ### embedder-decision-on-a-resolvable-item-set
 

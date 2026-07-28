@@ -15,6 +15,7 @@ from llb.scoring.leaderboard import (
     per_case_quality,
     rank_results,
 )
+from llb.scoring.verbosity import ranking_score
 
 
 def make(
@@ -81,6 +82,22 @@ def test_format_table_is_ascii():
     table = format_table(rows)
     assert "rank" in table and table.isascii()
     assert all(line == line.rstrip() for line in table.splitlines())
+
+
+def test_rag_decomposition_is_rendered_and_drives_quality():
+    result = make("wordy", objective=0.4)
+    result.ranking_score = ranking_score(0.2, 0.8)
+    result.token_precision = 0.2
+    result.token_recall = 0.8
+    result.found_rate = 0.7
+    result.mean_completion_tokens = 42.0
+
+    row = rank_results([result])[0]
+
+    assert row["objective"] == 0.4
+    assert row["quality"] == 0.65
+    assert row["token_precision"] == 0.2
+    assert "precision" in format_table([row])
 
 
 # --- ranking rigor N-model rigor -------------------------------------------------------------------

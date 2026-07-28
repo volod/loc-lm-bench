@@ -38,6 +38,18 @@ def _aggregate(
         else observed_tokens_per_s
     )
     peak_vram = telemetry.get("peak_vram_mb")
+    token_precision = _mean(case_rows, "token_precision")
+    token_recall = _mean(case_rows, "token_recall")
+    ranking = _mean(case_rows, "ranking_score")
+    found_rate = _mean(case_rows, "contains")
+    completion_lengths = [
+        float(row["completion_tokens"])
+        for row in case_rows
+        if row["status"] == eval_common.OK and row["completion_tokens"] > 0
+    ]
+    mean_completion_tokens = (
+        sum(completion_lengths) / len(completion_lengths) if completion_lengths else 0.0
+    )
     result = ModelResult(
         model=config.model,
         backend=config.backend,
@@ -47,6 +59,13 @@ def _aggregate(
         tokens_per_s=tokens_per_s,
         peak_vram_mb=float(peak_vram) if isinstance(peak_vram, int | float) else None,
         judge_score=judge_score,
+        ranking_score=ranking,
+        token_precision=token_precision,
+        token_recall=token_recall,
+        found_rate=found_rate,
+        mean_completion_tokens=mean_completion_tokens,
+        case_objectives=[float(row["objective_score"]) for row in case_rows],
+        case_ranking=[float(row["ranking_score"]) for row in case_rows],
         feasible=True,
     )
     # The judge is trusted only when calibrated AND it actually produced a score this run.
@@ -54,6 +73,11 @@ def _aggregate(
     rows = rank_results([result], judge_trusted=trusted)
     metrics: RunMetrics = {
         "objective_score": objective,
+        "ranking_score": ranking,
+        "token_precision": token_precision,
+        "token_recall": token_recall,
+        "found_rate": found_rate,
+        "mean_completion_tokens": mean_completion_tokens,
         "reliability": reliability,
         "tokens_per_s": tokens_per_s,
     }
@@ -61,7 +85,7 @@ def _aggregate(
     if isinstance(mean_power, int | float) and mean_power > 0:
         metrics["mean_power_w"] = round(float(mean_power), 2)
         metrics["tokens_per_watt"] = round(tokens_per_s / float(mean_power), 4)
-        metrics["quality_per_watt"] = round(objective * tokens_per_s / float(mean_power), 4)
+        metrics["quality_per_watt"] = round(ranking * tokens_per_s / float(mean_power), 4)
     stage = _stage_latency(case_rows)
     if stage:
         metrics["stage_latency"] = stage
@@ -69,6 +93,11 @@ def _aggregate(
         metrics["judge_score"] = round(judge_score, 4)
     _attach_answer_side_metrics(metrics, case_rows)
     return rows, metrics
+
+
+def _mean(case_rows: list[CaseScoreRow], key: str) -> float:
+    values = [float(row[key]) for row in case_rows]  # type: ignore[literal-required]
+    return sum(values) / len(values) if values else 0.0
 
 
 def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:

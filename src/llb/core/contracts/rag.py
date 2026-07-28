@@ -97,6 +97,8 @@ class CaseRetrievalRecord(TypedDict):
 class CorrectnessScores(TypedDict):
     score: float
     token_f1: float
+    token_precision: float
+    token_recall: float
     exact: float
     contains: float
     semantic: NotRequired[float]

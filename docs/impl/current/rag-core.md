@@ -2681,19 +2681,22 @@ lifecycle and readiness checks.
 
 ## Scoring
 
-`src/llb/scoring/correctness.py` computes objective correctness using normalized token-F1 with
-exact and contains helpers. `--score-semantic` records a pinned-embedder cosine signal for
-paraphrases and morphology; it is kept separate from the objective unless a ranking policy
+`src/llb/scoring/correctness.py` computes objective correctness using normalized token F1 and
+persists its token precision and token recall components beside exact match and the strict
+all-reference-tokens `contains` signal. `--score-semantic` records a pinned-embedder cosine signal
+for paraphrases and morphology; it is kept separate from the objective unless a ranking policy
 explicitly uses it.
 
 `src/llb/scoring/judge/model.py` owns the calibration gate and outcome policy;
 `src/llb/scoring/judge/scorer.py` normalizes scores and handles empty answers; and
 `src/llb/scoring/judge/deepeval_adapter.py` runs the optional local DeepEval integration. The judge
 enters ranking only when the caller supplies a calibration rho that clears the trust threshold.
-Otherwise it is diagnostic and objective correctness ranks alone.
+Otherwise it is diagnostic and the declared base quality ranks alone.
 
-`src/llb/scoring/aggregate.py` produces leaderboard rows. The policy favors quality first, then
-throughput, then lower VRAM when telemetry is available.
+`src/llb/scoring/aggregate.py` produces leaderboard rows. RAG base quality is 75% token recall
+(fact coverage) plus 25% token precision (answer-format adherence); `objective` remains token F1
+for continuity. The policy favors base quality first, then throughput, then lower VRAM when
+telemetry is available.
 
 ### Measured: the headline objective is partly a verbosity ranking
 
@@ -2730,9 +2733,58 @@ only over each model's own found items.
   penalty is a real instruction-following failure. What the single number cannot do is say WHICH of
   the two happened, and the leaderboard currently ranks on it alone.
 
-Deciding the ranking policy from a measured length-sensitivity study is forward work
-([`plan.md`](../plan.md#headline-objective-verbosity-decomposition)); no ranking or metric changed
-here.
+### Headline decomposition and declared ranking policy
+
+Shipped 2026-07-28. Each new `scores.jsonl` row carries `token_precision`, `token_recall`, and
+`ranking_score` beside the unchanged `objective_score` / `token_f1`, `contains`, and
+`completion_tokens`. The run manifest and leaderboard aggregate those into precision, recall,
+found-rate, and mean-completion-token columns. `quality` is now the declared
+`recall_75_precision_25` score for decomposed RAG rows:
+
+```text
+quality = 0.75 * token_recall + 0.25 * token_precision
+```
+
+Fact coverage is primary because a RAG answer that omits the reference fact has failed its main
+job. Format remains a material quarter of the score because `eval.rag` explicitly asks for a
+short answer. Token F1 remains the stable `objective` column, so the change does not rewrite
+historical correctness values. Legacy bundles without decomposition columns continue to rank on
+their objective rather than receiving fabricated components. A trusted judge, when available,
+blends with the declared base quality; all category tiers retain their existing objectives.
+`quality_per_watt` uses the same declared quality.
+
+`make analyze-verbosity RUN_DIRS="<bundle> <bundle> ..."` runs the maintained fixed-item study in
+`src/llb/eval/verbosity_sensitivity.py` and writes `report.{json,md}` under
+`$DATA_DIR/verbosity-sensitivity/<run>/`. It refuses bundles with different ordered item IDs,
+duplicate models, missing decomposition columns, or an `objective_score` that is not
+bit-identical to `token_f1`. The JSON contains each model's rank under token F1, recall-only,
+found-rate, and the selected policy, plus per-model and roster length correlations.
+
+CUDA-host evidence over three locally installed models on the same 82-item final fixture, flat
+recursive retrieval, and pinned recall@5 = 0.951 is under
+`$DATA_DIR/verbosity-sensitivity/20260728T142750.517338Z-c0d8009a807d/`. Candidate inference ran
+on the RTX PRO 3000 Blackwell GPU while the pinned embedder stayed on CPU for VRAM headroom:
+
+| model | precision | recall | token F1 | found-rate | policy quality | mean completion tokens | r(length, F1) | F1 rank | policy rank |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gemma4:e4b` | 0.274 | 0.814 | 0.358 | 0.768 | 0.679 | 29.9 | -0.335 | 3 | 1 |
+| `qwen3:14b` | 0.380 | 0.727 | 0.440 | 0.622 | 0.640 | 34.8 | -0.462 | 2 | 2 |
+| MamayLM-Gemma-3-12B v2.0 | 0.467 | 0.688 | 0.510 | 0.634 | 0.633 | 17.3 | -0.385 | 1 | 3 |
+
+Length versus token F1 is negative within every model and across the three-row roster
+(`r=-0.665`). Length versus the selected policy is positive across this small roster (`r=0.381`),
+which makes the policy tradeoff visible instead of silently treating brevity as correctness.
+The named rank changes are MamayLM from F1 rank 1 to policy rank 3 and Gemma 4 E4B from F1 rank 3
+to policy rank 1. Qwen3 stays rank 2. The raw run bundles are:
+
+- `$DATA_DIR/run-eval/20260728T141559.740730Z-2cda419dc495/` (MamayLM)
+- `$DATA_DIR/run-eval/20260728T141903.934343Z-8f357a77ea1a/` (Qwen3)
+- `$DATA_DIR/run-eval/20260728T142339.216084Z-ddc692ec71d8/` (Gemma 4 E4B)
+
+The per-case decomposition, verbose-correct / terse-partial fixture, rank reversal, legacy-bundle
+refusal, ASCII report, aggregate rendering, board reload, and unchanged token-F1 objective are
+covered by `tests/llb/scoring/test_correctness.py`, `tests/llb/scoring/test_aggregate.py`,
+`tests/llb/eval/test_verbosity_sensitivity.py`, and the executor / board suites.
 
 ### Groundedness and citation metrics (groundedness-citation-metrics)
 

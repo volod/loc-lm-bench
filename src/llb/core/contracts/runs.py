@@ -14,6 +14,11 @@ if TYPE_CHECKING:
 
 class RunMetrics(TypedDict):
     objective_score: float
+    ranking_score: NotRequired[float]
+    token_precision: NotRequired[float]
+    token_recall: NotRequired[float]
+    found_rate: NotRequired[float]
+    mean_completion_tokens: NotRequired[float]
     reliability: float
     tokens_per_s: float
     mean_power_w: NotRequired[float]

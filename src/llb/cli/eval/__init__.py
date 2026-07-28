@@ -14,4 +14,5 @@ from llb.cli.eval import (  # noqa: F401
     query_robustness,
     run,
     screen,
+    verbosity,
 )

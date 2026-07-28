@@ -15,6 +15,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Gold data, verification, calibration, ingestion, chunking | [Data prep](current/data-prep.md) |
 | Unified terminal review UI, adapters, keys, ledger compatibility | [Review workbench](current/review-workbench.md) |
 | RAG run path, retrieval, scoring, manifests, MLflow | [RAG core](current/rag-core.md) |
+| Headline token precision/recall/found-rate decomposition and declared format weight | [RAG core](current/rag-core.md#headline-decomposition-and-declared-ranking-policy) |
 | Whether RAG pays for itself: closed-book vs rag vs long-context lanes | [RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation) |
 | How much repeated text an index still holds, and which collapse tier to build with | [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers) |
 | Whether a paired verdict may be read at all, and the item count an unreadable one needs | [RAG core](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading) |
