@@ -70,11 +70,25 @@ def _split_dir_list(value: Optional[str]) -> Optional[list[Path | str]]:
     return [Path(part.strip()) for part in value.split(",") if part.strip()]
 
 
-def _write_verification_sample(out_dir: Path, n: int, seed: int) -> None:
+def _write_verification_sample(
+    out_dir: Path,
+    n: int | None,
+    seed: int,
+    *,
+    confidence: float,
+    precision: float,
+) -> None:
     from llb.goldset.verify_sampling.worksheet import build_sample_worksheet
 
     worksheet = out_dir / "verify_sample.csv"
-    sample_size, _strata = build_sample_worksheet(out_dir, worksheet, n=n, seed=seed)
+    sample_size, _strata = build_sample_worksheet(
+        out_dir,
+        worksheet,
+        n=n,
+        seed=seed,
+        confidence=confidence,
+        precision=precision,
+    )
     typer.echo(f"[prepare-goldset-draft] verification sample: {sample_size} rows -> {worksheet}")
 
 

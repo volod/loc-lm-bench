@@ -146,7 +146,24 @@ def prepare_goldset_draft_cmd(
     verification_sample_size: int = typer.Option(
         0,
         min=0,
-        help="also write verify_sample.csv for human review (0 leaves review to make verify-sample)",
+        help="explicit verify_sample.csv row override (0 disables unless --derive-verification-sample)",
+    ),
+    derive_verification_sample: bool = typer.Option(
+        False,
+        "--derive-verification-sample",
+        help="write verify_sample.csv using the confidence/precision-derived row target",
+    ),
+    verification_sample_confidence: float = typer.Option(
+        0.95,
+        min=0.01,
+        max=0.99,
+        help="confidence used to derive the verification sample target",
+    ),
+    verification_sample_precision: float = typer.Option(
+        0.10,
+        min=0.001,
+        max=0.99,
+        help="planned reject-rate interval half-width for the verification sample",
     ),
     retrieval_index_dir: Optional[Path] = typer.Option(
         None,

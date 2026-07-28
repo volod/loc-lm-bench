@@ -37,8 +37,11 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --max-tokens "$(DRAFT_MAX_TOKENS)" \
 	  --temperature "$(DRAFT_TEMPERATURE)" \
 	  --timeout "$(DRAFT_TIMEOUT)" \
-	  --verification-sample-size "$(DRAFT_VERIFY_N)" \
+	  --verification-sample-confidence "$(DRAFT_VERIFY_CONFIDENCE)" \
+	  --verification-sample-precision "$(DRAFT_VERIFY_PRECISION)" \
 	); \
+	if [ -n "$(DRAFT_VERIFY_N)" ]; then args+=(--verification-sample-size "$(DRAFT_VERIFY_N)"); fi; \
+	if [ "$(DRAFT_VERIFY_DERIVE)" = "1" ]; then args+=(--derive-verification-sample); fi; \
 	if [ -n "$(DRAFT_BASE_URL)" ]; then args+=(--base-url "$(DRAFT_BASE_URL)"); fi; \
 	if [ -n "$(DRAFT_LOCAL_MODEL)" ]; then args+=(--local-model "$(DRAFT_LOCAL_MODEL)"); fi; \
 	if [ "$(DRAFT_ENDPOINT)" = "frontier" ] && [ -n "$(DRAFT_MAX_USD)" ]; then args+=(--max-usd "$(DRAFT_MAX_USD)"); fi; \

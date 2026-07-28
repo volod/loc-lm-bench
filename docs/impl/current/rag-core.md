@@ -1517,6 +1517,16 @@ plan-before-build/retrieval order. The context-specific regression suite remains
 `make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy model run belongs to
 this delivery.
 
+The repository-wide count audit reuses this distinction between inferential evidence and resource
+budgets. `src/llb/quality/acceptance_gate_registry.py` declares each retained row, trial, finalist,
+and sample control; `src/llb/quality/acceptance_gates.py` discovers matching Make and Typer
+defaults, rejects unexplained controls, and writes the machine inventory through
+`make acceptance-gate-audit`. Trial counts in joint search, screening, knowledge-cutoff fitting,
+and finetuning remain explicit because they cap optimizer work rather than establish uncertainty.
+Human verification row defaults and chain promotion counts moved to finite-population precision
+and relative-retention plans; their workflow details are in
+[data prep](data-prep.md#experiment-derived-verification-and-acceptance-gates).
+
 #### How settled a paired reading is -- `p_positive` and the borderline flag
 
 Every adopt-or-retain call in the repo is a BINARY cut of a continuous paired interval by one test:

@@ -282,9 +282,10 @@ question-answering gold set, every evaluation category, and the graph ontology d
    analog of the `calibration-*` tooling: a stratified-sample worksheet, an interactive per-item
    review, and an acceptance report that emits the accepted-ledger. The worksheet IS the state
    (atomic CSV rewrite per edit), so you can stop and resume mid-sample.
-3. **Draw a stratified sample.** `make verify-sample BUNDLE=<bundle> VERIFY_N=<size>` allocates the
-   budget across strata (provenance x split x source-doc; the synthetic flag is a bundle-level fact
-   from `provenance.json`, so the planted check applies to all items or none) and writes
+3. **Draw a stratified sample.** `make verify-sample BUNDLE=<bundle>` derives a confidence/precision
+   target from the population and allocates it across strata (provenance x split x source-doc; the
+   synthetic flag is a bundle-level fact from `provenance.json`, so the planted check applies to
+   all items or none). `VERIFY_N=<size>` is an explicit override. The command writes
    `sample_manifest.json` documenting the size + per-stratum counts. A few dozen across strata is
    typical for an acceptance check. Need more later? `VERIFY_MERGE=1` enlarges the worksheet
    additively -- decided rows are preserved byte-for-byte and never re-shown.

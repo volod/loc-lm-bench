@@ -43,36 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### experiment-derived-acceptance-gates (optional)
-
-Audit absolute row, sample, and trial minima used as decision gates across the plan, Make
-configuration, and CLI defaults. Classify each number as a safety/resource cap, deterministic test
-fixture, display sample, or inferential gate; keep the first three explicit, but replace
-inferential constants with a declared minimum detectable effect and paired-power target,
-confidence-interval precision, relative retention/headroom requirement, or adaptive
-stability/stopping rule. Start with `ua-model-roster-long-run`, chain acceptance, and verification
-sample defaults, where a generic operator can otherwise inherit thresholds chosen for one corpus.
-
-- Agent status: CLEAR
-- Dependencies: reuse the shared paired-power contract and uncertainty reports in
-  [RAG core](current/rag-core.md#paired-power-contract-for-comparison-lanes).
-- User-visible outcome: experiment gates scale with the item set and claimed decision instead of
-  silently treating one corpus's count as a universal quality threshold.
-- Scope boundary: in scope -- the inventory, classification report, derived-gate helpers, explicit
-  operator overrides, migration of inferential defaults, and regression tests. Out of scope --
-  changing fixed fixture cardinalities, hardware safety caps, or benchmark-standard metric
-  cutoffs.
-- Data and artifact paths: a machine-readable gate inventory under
-  `$DATA_DIR/acceptance-gate-audit/<run>/`; code changes remain in the owning command modules.
-- Execution path: add a code-quality audit for unexplained absolute inferential gates, migrate each
-  owning workflow, and exercise derived targets on small and large committed fixtures.
-- Acceptance gates: `make ci` green; every retained absolute threshold is classified and justified;
-  every inferential gate records its assumptions and derived target in the run artifact; scaling
-  fixtures prove that changing corpus size or expected discordance changes the target without code
-  edits.
-- Documentation target: the paired-power section of [RAG core](current/rag-core.md) and each
-  migrated workflow's current topic.
-
 ### headline-objective-verbosity-decomposition
 
 The leaderboard ranks on normalized token F1, which merges two different failures into one number:
@@ -304,9 +274,10 @@ not usable on a 16 GiB host.
 - Data and artifact paths: one bundle per policy cell under `$DATA_DIR/agentic-loop-policy/<run>/`;
   the comparison beside it.
 - Execution path: `make bench-agentic-loop AGENT_MAX_STEPS=4,6,10 AGENT_MALFORMED_POLICY=answer,repair_once,strict
-  MODEL=<model> BACKEND=<backend>` on the CUDA host over at least two roster models, since a
-  repair policy is a property of the model's formatting behavior; CI covers each policy's branch
-  over the fake endpoint, including a completion the parser cannot read.
+  MODEL=<model> BACKEND=<backend>` on the CUDA host over roster-family strata until the declared
+  family-coverage and paired-precision targets are reached, since a repair policy is a property of
+  the model's formatting behavior; CI covers each policy's branch over the fake endpoint, including
+  a completion the parser cannot read.
 - Acceptance gates: `make ci` green; the `answer` policy at `max_steps=6` reproduces the recorded
   agentic rows exactly; every cell reports completion, malformed-call rate, steps, tool calls, and
   prompt tokens with a paired delta against that baseline cell; a default changes only when its
@@ -445,9 +416,10 @@ host recommendation.
   limit fixed so the benchmark isolates runtime behavior.
 - User-visible outcome: the 12 GiB Blackwell recommendation distinguishes a genuinely slow encoder
   from one whose first load or kernel compilation dominates a one-pass bake-off.
-- Scope boundary: in scope -- cold and warm timing fields, at least three warm repetitions per
-  encoder, peak VRAM and power, CPU versus CUDA comparison, and inspection of kernel fallbacks. Out
-  of scope -- changing retrieval metrics, model fine-tuning, or adopting a different encoder.
+- Scope boundary: in scope -- cold and warm timing fields, adaptive warm repetitions until a
+  declared relative-precision target or resource cap, peak VRAM and power, CPU versus CUDA
+  comparison, and inspection of kernel fallbacks. Out of scope -- changing retrieval metrics,
+  model fine-tuning, or adopting a different encoder.
 - Data and artifact paths: additive timing fields under
   `$DATA_DIR/compare-embeddings/<run>/` and a host summary under
   `$DATA_DIR/encoder-throughput/<run>/`.
@@ -455,8 +427,9 @@ host recommendation.
   four incumbent encoders on the 311-chunk committed corpus with the GPU power limit held fixed.
   CI covers timing aggregation with an injected clock and fake encoders.
 - Acceptance gates: `make ci` green; reports split load/compile time from steady encoding, publish
-  the median and spread over at least three warm passes, record device/driver/power/VRAM, and state
-  whether the current rate ordering survives the warm measurement.
+  the median, spread, stopping precision, and cap over the warm passes, record
+  device/driver/power/VRAM, and state whether the current rate ordering survives the warm
+  measurement.
 - Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md) and the
   host result in [host validation](current/host-validation.md).
 
@@ -1166,9 +1139,9 @@ declining the hard items looks like a win.
   relation, a paraphrased entity that normalizes to the same node, an entity typed `MISC` by
   fallback), so the false-rejection number is measured on adversarial cases rather than asserted.
 - Execution path: `make compare-answer-validation VALIDATION_LANES=off,pydantic,pydantic+ontology
-  MODEL=<model> GOLDSET=<accepted> AXIOMS=<signed-ttl>` over at least two roster models on the CUDA
-  host; CI drives all three lanes, both statuses, and the repair path over the fake completer and a
-  fake ledger -- no GPU.
+  MODEL=<model> GOLDSET=<accepted> AXIOMS=<signed-ttl>` over roster-family strata until the declared
+  family-coverage and paired-precision targets are reached; CI drives all three lanes, both
+  statuses, and the repair path over the fake completer and a fake ledger -- no GPU.
 - Acceptance gates: `make ci` green; the `off` lane reproduces the recorded run bundles exactly; the
   fixture's planted violations are caught at 100% per axiom class and the adversarial correct
   answers produce a NAMED false-rejection rate, not a claim of zero; the heavy run reports the

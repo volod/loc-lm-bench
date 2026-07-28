@@ -2,7 +2,8 @@
 ##@ Development
 
 .PHONY: \
-	demo-eval mlflow board recommend venv apt-deps test test-fast format ci ci-checks ci-github lint-md
+	demo-eval mlflow board recommend acceptance-gate-audit venv apt-deps test test-fast format \
+	ci ci-checks ci-github lint-md
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -53,6 +54,10 @@ recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_
 		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),) \
 		$(if $(RECOMMEND_JSON_OUT),--json-out "$(RECOMMEND_JSON_OUT)",) \
 		$(if $(filter 1 true yes,$(RECOMMEND_NO_CHART)),--no-chart,)
+
+acceptance-gate-audit: ## Classify experiment counts and write $DATA_DIR/acceptance-gate-audit/<run>/
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.acceptance_gates
 
 venv: ## Create/update .venv + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 to skip
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
@@ -115,6 +120,7 @@ ci-checks:
 	$(VENV)/bin/ruff format --check src tests
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
+	$(PY) -m llb.quality.acceptance_gates --check
 
 ci: ci-checks ## Format check + lint + type check + LIGHTWEIGHT unit tests (full local install)
 	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)

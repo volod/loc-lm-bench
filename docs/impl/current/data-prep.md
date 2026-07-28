@@ -635,11 +635,12 @@ all 32 chains. The deterministic chain worksheet samples 20 of the 32 candidates
 `kind=chains`, seed 13, and a single source-document stratum. The converted source and bundle do
 not contain the prior restricted corpus markers.
 
-Human review accepted all 20 sampled chains. `make chain-goldset-finalize` enforced the minimum
-10-chain gate, required every row to carry `verified=true`, validated the accepted ledger, and
-promoted `samples/goldsets/chain_context_uk_v1`. The committed fixture contains 20 chains and a
-compact 36-span corpus rather than the complete copyrighted source publication; promotion remaps
-every span offset and validates the result before making the destination visible.
+Human review accepted all 20 sampled chains. That run used an explicit 10-chain promotion
+override. `make chain-goldset-finalize` required every row to carry `verified=true`, validated the
+accepted ledger, and promoted `samples/goldsets/chain_context_uk_v1`. The committed fixture
+contains 20 chains and a compact 36-span corpus rather than the complete copyrighted source
+publication; promotion remaps every span offset and validates the result before making the
+destination visible.
 
 #### Complete chain-goldset workflow
 
@@ -665,18 +666,15 @@ export CHAIN_FIXTURE="$PWD/samples/goldsets/<fixture-name>"
    ```
 
 2. Run the non-human pipeline shortcut. It drafts chains, requires calibration to pass, validates
-   every generated chain against the copied corpus, requires at least `CHAIN_MIN_ACCEPTED`
-   candidates, and writes a deterministic review worksheet. A failed stage stops the target
-   immediately:
+   every generated chain against the copied corpus, derives the review size from the resulting
+   population, and writes a deterministic worksheet. A failed stage stops the target immediately:
 
    ```bash
    make chain-goldset-pipeline \
      CHAIN_CORPUS="$CHAIN_CORPUS" \
      CHAIN_BUNDLE="$CHAIN_BUNDLE" \
      CHAIN_WS="$CHAIN_WS" \
-     CHAIN_VERIFY_N=20 \
      CHAIN_MAX_PATHS=80 \
-     CHAIN_MIN_ACCEPTED=10 \
      DRAFT_MODEL=gemma4:e4b \
      DRAFT_BACKEND=ollama \
      DRAFT_MAX_ITEMS=20 \
@@ -711,14 +709,15 @@ export CHAIN_FIXTURE="$PWD/samples/goldsets/<fixture-name>"
    ```bash
    make chain-goldset-finalize \
      CHAIN_BUNDLE="$CHAIN_BUNDLE" \
-     CHAIN_FIXTURE="$CHAIN_FIXTURE" \
-     CHAIN_MIN_ACCEPTED=10
+     CHAIN_FIXTURE="$CHAIN_FIXTURE"
    ```
 
-   Finalization refuses a missing accepted ledger, fewer than the required chain count, any
-   `verified=false` row, a structural or span validation error, or an existing destination. On
-   success it creates `chains.jsonl`, `corpus/`, and `fixture_manifest.json`, then runs
-   `validate-goldset` once more against the promoted fixture.
+   Finalization derives the required count as `ceil(reviewed sample size *
+   CHAIN_MIN_RETENTION_FRACTION)` (default retention 0.50). `CHAIN_MIN_ACCEPTED=<n>` remains an
+   explicit override. The fixture manifest records the reviewed count, retention assumption,
+   derived target, override, and selected target. Finalization also refuses a missing accepted
+   ledger, any `verified=false` row, a structural or span validation error, or an existing
+   destination.
 
 For an interrupted extraction, resume only the draft stage, then run validation and sampling again:
 
@@ -733,7 +732,6 @@ make validate-goldset \
 make verify-sample \
   BUNDLE="$CHAIN_BUNDLE" \
   VERIFY_KIND=chains \
-  VERIFY_N=20 \
   VERIFY_WS="$CHAIN_WS"
 ```
 
@@ -752,7 +750,7 @@ verification, compaction, offset-remapping, and atomic-promotion gate exposed by
 `make chain-goldset-finalize`.
 
 ```bash
-make verify-sample BUNDLE=<bundle> VERIFY_KIND=chains VERIFY_N=<n>
+make verify-sample BUNDLE=<bundle> VERIFY_KIND=chains
 make verify-review VERIFY_WS=<bundle>/verify_sample.csv VERIFY_ORDER=confidence
 make verify-accept VERIFY_WS=<bundle>/verify_sample.csv BUNDLE=<bundle>
 ```
@@ -786,8 +784,9 @@ born-digital.
 
 `quickstart-pdf-corpus-draft` is the full-quality path, not a small subset. It defaults to
 `QUICKSTART_PDF_DRAFT_DOCS=all`, `QUICKSTART_DRAFT_MODEL=auto`,
-`QUICKSTART_DRAFT_MAX_ITEMS=180`, `QUICKSTART_DRAFT_VERIFY_N=40`, and
-`QUICKSTART_DRAFT_NUM_CTX=16384`. The default `QUICKSTART_MODEL_SELECTION=auto` resolves the
+`QUICKSTART_DRAFT_MAX_ITEMS=180`, a verification target derived at 95% confidence and 0.10
+precision, and `QUICKSTART_DRAFT_NUM_CTX=16384`. The default
+`QUICKSTART_MODEL_SELECTION=auto` resolves the
 most capable Gemma 4 target from the CUDA serving-tier manifest, filtering out vLLM rows whose
 configured `max_model_len` is below `QUICKSTART_DRAFT_NUM_CTX`. On 12 GB hosts the PDF drafter
 uses the offloaded vLLM target `google/gemma-4-12B-it-qat-w4a16-ct` with `max_model_len=16384`,
@@ -1004,7 +1003,7 @@ The verification path has a mechanical half and a human half.
 
 ```bash
 make cross-check-goldset BUNDLE=<draft> CROSS_CHECK_MODEL=<model>
-make verify-sample BUNDLE=<draft> VERIFY_N=<n>
+make verify-sample BUNDLE=<draft>
 make verify-review VERIFY_WS=<worksheet>
 make verify-accept VERIFY_WS=<worksheet> BUNDLE=<draft>
 ```
@@ -1022,7 +1021,39 @@ persistence in small helpers so the loop reads as worksheet orchestration.
 The accepted ledger writes copied corpus files plus canonical `verified=true` rows; chain samples
 write `accepted/chains.jsonl`, while flat goldset samples write `accepted/goldset.jsonl`.
 `prepare-goldset-draft` can also write the first worksheet in the same run with
-`--verification-sample-size <n>`; the make wrapper exposes this as `DRAFT_VERIFY_N=<n>`.
+`--derive-verification-sample`; the make wrapper exposes this as `DRAFT_VERIFY_DERIVE=1`.
+`--verification-sample-size <n>` / `DRAFT_VERIFY_N=<n>` remains an explicit override.
+
+### Experiment-derived verification and acceptance gates
+
+`verify-sample` no longer inherits a universal row count. With no `VERIFY_N`, it prices a
+conservative reject-rate proportion estimate from `VERIFY_CONFIDENCE=0.95`,
+`VERIFY_PRECISION=0.10`, expected reject rate 0.50, and the actual finite population. The result is
+also floored at the number of non-empty strata and capped at the population. For example, the
+default target is 17 rows for a 20-item population and 66 for 200 items. `VERIFY_N=<n>` still wins
+as an operator override.
+
+Every `sample_manifest.json` carries an `acceptance_gate` object with the method, assumptions,
+derived target, override, selected target, and whether an override reaches the derived target.
+Single- and multi-reviewer sampling, additive merges, draft-time worksheet creation, and the PDF
+quick-start all use the same helper in `verify_sampling/planning.py`.
+
+Chain promotion uses the sibling relative gate in `goldset/chain_acceptance.py`: by default it
+requires half of the reviewed sample to survive into the accepted chain ledger, rather than a
+corpus-independent count. `fixture_manifest.json` persists the same derivation fields.
+
+`make acceptance-gate-audit` writes `inventory.json` and `report.md` under
+`$DATA_DIR/acceptance-gate-audit/<run>/`. The inventory classifies retained trial counts as
+resource budgets, finalist minima as structural safety controls, and migrated row/count defaults
+as inferential gates. The retired `ua-model-roster-long-run` name is recorded as absent; its live
+joint-search successor controls are explicitly resource/structural. `make ci` and
+`scripts/code_quality.sh` run the check-only form, which fails on an unexplained absolute trial,
+sample, or acceptance control.
+
+The 2026-07-28 inventory at
+`$DATA_DIR/acceptance-gate-audit/20260728T135530Z/inventory.json` passed with 27 declarations, 20
+live absolute-control discoveries, and no findings. Validation completed with `make lint-md` and
+`make ci`; the latter passed 2,332 tests with 43 slow or opt-in tests deselected.
 
 The rationale is anti-anchoring and auditability: automated cross-check context can be shown to a
 reviewer, but it is hidden by default; the accepted ledger is a new reviewed artifact rather than an
@@ -1101,10 +1132,10 @@ using `x <code>`) keeps `rejection_reasons.json` actionable.
 `draw_stratified_sample` allocates through `stratum_quotas`: a floor of one per non-empty stratum
 (largest strata first when `n` cannot cover them all) plus a deterministic largest-remainder
 top-up, each stratum
-capped at its own size -- so `verify-sample VERIFY_N=<n>` draws exactly `min(n, population)`
-rows at every seed while staying seeded-reproducible. The sibling `sample_manifest.json`
-records the final per-stratum allocation. The allocation invariants are covered in
-`tests/llb/goldset/test_goldset_verify.py`.
+capped at its own size. An explicit `VERIFY_N=<n>` therefore draws exactly
+`min(n, population)` rows at every seed, while the default draws the derived target. Both paths
+stay seeded-reproducible. The sibling `sample_manifest.json` records the final per-stratum
+allocation and gate plan. The allocation invariants are covered in the goldset sampling tests.
 
 ### Rejection feedback into re-drafting
 

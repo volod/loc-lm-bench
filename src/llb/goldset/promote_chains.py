@@ -11,6 +11,10 @@ import sys
 import tempfile
 from typing import Any
 
+from llb.goldset.chain_acceptance import (
+    DEFAULT_MIN_RETENTION_FRACTION,
+    retention_gate_plan,
+)
 from llb.goldset.chains import ChainItem, dump_chains, load_chains, validate_chains
 from llb.goldset.schema import SourceSpan
 
@@ -118,11 +122,16 @@ def promote_chain_bundle(
     bundle: Path,
     output_dir: Path,
     *,
-    min_chains: int = 10,
+    min_chains: int | None = None,
+    min_retention_fraction: float = DEFAULT_MIN_RETENTION_FRACTION,
 ) -> dict[str, Any]:
     """Validate and promote accepted chains with an exact-span-only corpus."""
-    if min_chains < 1:
-        raise ValueError("min_chains must be at least 1")
+    gate = retention_gate_plan(
+        bundle,
+        min_chains=min_chains,
+        min_retention_fraction=min_retention_fraction,
+    )
+    required_chains = int(gate["selected_target"])
     accepted = bundle / _ACCEPTED_DIR
     chains_path = accepted / _CHAINS_FILE
     corpus_root = accepted / _CORPUS_DIR
@@ -134,8 +143,10 @@ def promote_chain_bundle(
         raise ValueError(f"fixture destination already exists: {output_dir}")
 
     chains = load_chains(chains_path)
-    if len(chains) < min_chains:
-        raise ValueError(f"accepted chains {len(chains)} is below required minimum {min_chains}")
+    if len(chains) < required_chains:
+        raise ValueError(
+            f"accepted chains {len(chains)} is below required minimum {required_chains}"
+        )
     unverified = [chain.chain_id for chain in chains if not chain.verified]
     if unverified:
         raise ValueError(f"accepted ledger contains unverified chains: {', '.join(unverified[:5])}")
@@ -154,7 +165,8 @@ def promote_chain_bundle(
             "kind": "verified-chain-fixture",
             "verified": True,
             "chains": len(compact_chains),
-            "minimum_required": min_chains,
+            "acceptance_gate": gate,
+            "minimum_required": required_chains,
             "compact_corpus": True,
             "documents": documents,
         }
@@ -180,9 +192,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--bundle", required=True, type=Path, help="reviewed draft bundle")
     parser.add_argument("--out", required=True, type=Path, help="new fixture directory")
-    parser.add_argument("--min-chains", type=int, default=10, help="minimum accepted chain count")
+    parser.add_argument(
+        "--min-chains",
+        type=int,
+        default=None,
+        help="explicit accepted-chain minimum (default: derive from reviewed sample retention)",
+    )
+    parser.add_argument(
+        "--min-retention-fraction",
+        type=float,
+        default=DEFAULT_MIN_RETENTION_FRACTION,
+        help="minimum retained fraction of the reviewed sample",
+    )
     args = parser.parse_args(argv)
-    promote_chain_bundle(args.bundle, args.out, min_chains=args.min_chains)
+    promote_chain_bundle(
+        args.bundle,
+        args.out,
+        min_chains=args.min_chains,
+        min_retention_fraction=args.min_retention_fraction,
+    )
     return 0
 
 

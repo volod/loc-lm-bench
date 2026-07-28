@@ -130,7 +130,7 @@ unverified ids.
 Fix an invalid reference with the same human verification gate loop:
 
 ```sh
-make verify-sample BUNDLE=<bundle> VERIFY_N=<n>
+make verify-sample BUNDLE=<bundle>
 make verify-review VERIFY_WS=<bundle>/verify_sample.csv
 make verify-accept BUNDLE=<bundle> VERIFY_WS=<bundle>/verify_sample.csv
 ```

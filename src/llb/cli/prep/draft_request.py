@@ -45,6 +45,9 @@ class DraftRequest:
     vllm_startup_timeout: float
     out_dir: Optional[Path]
     verification_sample_size: int
+    derive_verification_sample: bool
+    verification_sample_confidence: float
+    verification_sample_precision: float
     retrieval_index_dir: Optional[Path]
     retrieval_k: int
     drop_nonretrievable_needles: bool

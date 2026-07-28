@@ -17,6 +17,12 @@ from llb.goldset.verify_base import (
     write_worksheet_rows,
 )
 from llb.goldset.verify_multi.common import reviewer_id, reviewer_worksheet_path
+from llb.goldset.verify_sampling.planning import (
+    DEFAULT_EXPECTED_REJECT_RATE,
+    DEFAULT_SAMPLE_CONFIDENCE,
+    DEFAULT_SAMPLE_PRECISION,
+    sample_size_plan,
+)
 from llb.goldset.verify_sampling.rows import sample_chain_rows, sample_gold_rows
 from llb.goldset.verify_sampling.strata import (
     draw_chain_sample,
@@ -29,10 +35,13 @@ def build_multi_reviewer_worksheets(
     bundle: Path,
     out_path: Path,
     *,
-    n: int,
+    n: int | None,
     annotators: int,
     seed: int = 13,
     kind: str = "auto",
+    confidence: float = DEFAULT_SAMPLE_CONFIDENCE,
+    precision: float = DEFAULT_SAMPLE_PRECISION,
+    expected_reject_rate: float = DEFAULT_EXPECTED_REJECT_RATE,
 ) -> list[Path]:
     """Draw one sample and write identical context rows for every reviewer."""
     if annotators < 2:
@@ -44,14 +53,32 @@ def build_multi_reviewer_worksheets(
     strata_sizes: dict[str, int] = {}
     if resolved_kind == KIND_CHAINS:
         chains = load_chains(find_chains(bundle))
-        chain_sample = draw_chain_sample(chains, n, seed=seed)
+        keys = [chain_stratum_key(chain) for chain in chains]
+        plan = sample_size_plan(
+            len(chains),
+            len(set(keys)),
+            requested_size=n,
+            confidence=confidence,
+            precision=precision,
+            expected_reject_rate=expected_reject_rate,
+        )
+        chain_sample = draw_chain_sample(chains, int(plan["selected_target"]), seed=seed)
         rows = sample_chain_rows(bundle, chain_sample)
         keys = [chain_stratum_key(chain) for chain in chain_sample]
         sample_size = len(chain_sample)
         population_size = len(chains)
     else:
         items = load_goldset(find_goldset(bundle))
-        gold_sample = draw_stratified_sample(items, n, seed=seed)
+        keys = [stratum_key(item) for item in items]
+        plan = sample_size_plan(
+            len(items),
+            len(set(keys)),
+            requested_size=n,
+            confidence=confidence,
+            precision=precision,
+            expected_reject_rate=expected_reject_rate,
+        )
+        gold_sample = draw_stratified_sample(items, int(plan["selected_target"]), seed=seed)
         rows = sample_gold_rows(bundle, gold_sample, synthetic=synthetic)
         keys = [stratum_key(item) for item in gold_sample]
         sample_size = len(gold_sample)
@@ -77,6 +104,7 @@ def build_multi_reviewer_worksheets(
         "sample_size": sample_size,
         "population": population_size,
         "strata": strata_sizes,
+        "acceptance_gate": plan,
     }
     atomic_write_text(
         out_path.with_name(SAMPLE_MANIFEST), json.dumps(manifest, ensure_ascii=False, indent=2)

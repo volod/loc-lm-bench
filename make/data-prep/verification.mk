@@ -31,10 +31,14 @@ cross-check-goldset: ## Data gate: a SECOND frontier re-confirms grounding/suppo
 	@test -n "$(CROSS_CHECK_MODEL)" || { echo "ERROR: set CROSS_CHECK_MODEL=<second-frontier id, != the drafter>"; exit 1; }
 	$(PY) -m llb.main cross-check-goldset --goldset "$(BUNDLE)/goldset.jsonl" --corpus "$(BUNDLE)/corpus" --model "$(CROSS_CHECK_MODEL)"
 
-verify-sample: ## human verification gate: draw a stratified sample from a draft BUNDLE -> verification worksheet (VERIFY_KIND=auto|goldset|chains, VERIFY_N=, VERIFY_SEED=, VERIFY_MERGE=1, VERIFY_ANNOTATORS=k)
+verify-sample: ## human verification gate: derive and draw a stratified sample (VERIFY_N= overrides; VERIFY_CONFIDENCE=, VERIFY_PRECISION=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<draft dir with goldset.jsonl + corpus/>"; exit 1; }
-	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" -n $(VERIFY_N) --seed $(VERIFY_SEED) --kind "$(VERIFY_KIND)" $(if $(VERIFY_MERGE),--merge) $(if $(VERIFY_ANNOTATORS),--annotators $(VERIFY_ANNOTATORS))
+	$(PY) -m llb.goldset.verify sample --bundle "$(BUNDLE)" --out "$(VERIFY_WS)" \
+		$(if $(VERIFY_N),-n $(VERIFY_N),) --seed $(VERIFY_SEED) --kind "$(VERIFY_KIND)" \
+		--confidence "$(VERIFY_CONFIDENCE)" --precision "$(VERIFY_PRECISION)" \
+		--expected-reject-rate "$(VERIFY_EXPECTED_REJECT_RATE)" \
+		$(if $(VERIFY_MERGE),--merge) $(if $(VERIFY_ANNOTATORS),--annotators $(VERIFY_ANNOTATORS))
 
 verify-review: ## human verification gate: interactively verify the sampled items (VERIFY_WS=path, VERIFY_ORDER=confidence, SHOW_CROSSCHECK=1 to reveal, START=N, CLEAR=1 to reset)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -50,7 +54,7 @@ verify-accept: ## human verification gate: acceptance report + emit the accepted
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<the draft dir the sample came from>"; exit 1; }
 	$(PY) -m llb.goldset.verify accept --worksheet "$(VERIFY_WS)" --bundle "$(BUNDLE)" --tolerance $(VERIFY_TOLERANCE) $(if $(VERIFY_ACCEPT_POLICY),--policy $(VERIFY_ACCEPT_POLICY)) $(foreach t,$(VERIFY_STRATUM_TOLERANCES),--stratum-tolerance "$(t)")
 
-chain-goldset-pipeline: ## Draft, validate, gate, and sample chains (CHAIN_CORPUS=, CHAIN_BUNDLE=, CHAIN_WS=, CHAIN_MIN_ACCEPTED=10)
+chain-goldset-pipeline: ## Draft, validate, and derive a chain review sample (CHAIN_VERIFY_N= overrides)
 	@test -n "$(CHAIN_CORPUS)" || { echo "ERROR: set CHAIN_CORPUS=<converted-corpus-dir>"; exit 1; }
 	@test -n "$(CHAIN_BUNDLE)" || { echo "ERROR: set CHAIN_BUNDLE=<new-draft-bundle-dir>"; exit 1; }
 	$(MAKE) --no-print-directory prepare-goldset-draft DRAFT_CORPUS="$(CHAIN_CORPUS)" \
@@ -58,22 +62,17 @@ chain-goldset-pipeline: ## Draft, validate, gate, and sample chains (CHAIN_CORPU
 		DRAFT_MULTI_HOP_MAX_PATHS="$(CHAIN_MAX_PATHS)" DRAFT_REQUIRE_PASSED_GATES=1
 	$(MAKE) --no-print-directory validate-goldset CHAINS="$(CHAIN_BUNDLE)/chains.jsonl" \
 		CORPUS="$(CHAIN_BUNDLE)/corpus"
-	@chain_count="$$(wc -l < "$(CHAIN_BUNDLE)/chains.jsonl")"; \
-	if [ "$$chain_count" -lt "$(CHAIN_MIN_ACCEPTED)" ]; then \
-		echo "ERROR: generated chains $$chain_count is below review minimum $(CHAIN_MIN_ACCEPTED)" >&2; \
-		exit 1; \
-	fi; \
-	echo "[chain-goldset] candidate gate: $$chain_count >= $(CHAIN_MIN_ACCEPTED)"
 	$(MAKE) --no-print-directory verify-sample BUNDLE="$(CHAIN_BUNDLE)" VERIFY_KIND=chains \
 		VERIFY_N="$(CHAIN_VERIFY_N)" VERIFY_WS="$(CHAIN_WS)"
 	@echo "[chain-goldset] review: make verify-review VERIFY_WS=$(CHAIN_WS)"
 
-chain-goldset-finalize: ## Gate accepted chains and promote a compact fixture (CHAIN_BUNDLE=, CHAIN_FIXTURE=, CHAIN_MIN_ACCEPTED=10)
+chain-goldset-finalize: ## Promote chains using reviewed-sample retention (CHAIN_MIN_RETENTION_FRACTION=; CHAIN_MIN_ACCEPTED= overrides)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(CHAIN_BUNDLE)" || { echo "ERROR: set CHAIN_BUNDLE=<reviewed-draft-bundle-dir>"; exit 1; }
 	@test -n "$(CHAIN_FIXTURE)" || { echo "ERROR: set CHAIN_FIXTURE=<new-samples-fixture-dir>"; exit 1; }
 	$(PY) -m llb.goldset.promote_chains --bundle "$(CHAIN_BUNDLE)" \
-		--out "$(CHAIN_FIXTURE)" --min-chains "$(CHAIN_MIN_ACCEPTED)"
+		--out "$(CHAIN_FIXTURE)" --min-retention-fraction "$(CHAIN_MIN_RETENTION_FRACTION)" \
+		$(if $(CHAIN_MIN_ACCEPTED),--min-chains "$(CHAIN_MIN_ACCEPTED)",)
 	$(MAKE) --no-print-directory validate-goldset CHAINS="$(CHAIN_FIXTURE)/chains.jsonl" \
 		CORPUS="$(CHAIN_FIXTURE)/corpus"
 

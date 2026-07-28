@@ -116,8 +116,14 @@ def run_draft(request: DraftRequest) -> None:
     finally:
         if launched_vllm is not None:
             launched_vllm.stop()
-    if request.verification_sample_size:
-        _write_verification_sample(result.out_dir, request.verification_sample_size, request.seed)
+    if request.verification_sample_size or request.derive_verification_sample:
+        _write_verification_sample(
+            result.out_dir,
+            request.verification_sample_size or None,
+            request.seed,
+            confidence=request.verification_sample_confidence,
+            precision=request.verification_sample_precision,
+        )
     typer.echo(
         f"[prepare-goldset-draft] {len(result.items)} drafted items (verified=false; "
         f"endpoint={request.endpoint}, egress={endpoints.egress}) -> {result.out_dir}"
