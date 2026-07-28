@@ -38,6 +38,13 @@ def test_adaptive_model_profiles_cover_supported_gpu_tiers():
         assert selection["policy"] == "gpu-tier-qwen-gemma"
 
 
+def test_12_gib_profile_uses_the_evidence_grade_pair():
+    profile = LOCAL_COMPARE_PROFILES[12]
+    assert profile.baseline_model == "qwen3:14b"
+    assert profile.probe_model == "gemma4:e4b"
+    assert profile.num_ctx == 8192
+
+
 def test_sequential_local_compare_unloads_between_models_and_writes_stats(tmp_path):
     unloads: list[list[str] | None] = []
     endpoint = {

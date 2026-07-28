@@ -15,6 +15,9 @@ from llb.cli.rag.retrieval_validation import (
 @app.command("validate-retrieval")
 def validate_retrieval(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    corpus_root: Optional[Path] = typer.Option(
+        None, help="corpus directory whose persisted index should be validated"
+    ),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
     k: int = typer.Option(10, help="recall@k cutoff (Premise 4 gate is recall@10 >= 0.8)"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
@@ -59,6 +62,7 @@ def validate_retrieval(
     """Score the configured backend's retrieval over the gold set (does not rank models)."""
     request = RetrievalValidationRequest(
         config=config,
+        corpus_root=corpus_root,
         goldset=goldset,
         k=k,
         split=split,

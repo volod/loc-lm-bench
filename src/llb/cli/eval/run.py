@@ -14,6 +14,9 @@ from llb.cli.helpers import load_config
 @app.command("run-eval")
 def run_eval_cmd(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
+    corpus_root: Optional[Path] = typer.Option(
+        None, help="corpus directory whose persisted index should be queried"
+    ),
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
     backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),

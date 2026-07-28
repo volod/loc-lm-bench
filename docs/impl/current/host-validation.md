@@ -9,7 +9,7 @@ network, model downloads, and GPU-dependent paths.
 make validate-goldset
 make build-index
 make validate-retrieval RAG_K=10
-make run-eval MODEL=llama3.2:3b BACKEND=ollama LIMIT=20 TELEMETRY=1
+make run-eval MODEL=<fitting-ua-model> BACKEND=ollama LIMIT=20 TELEMETRY=1
 ```
 
 Expected properties:
@@ -57,6 +57,48 @@ llb gen-serving-config
 
 When testing VRAM contention, prefer `--evict` or `--wait` before manual process intervention. The
 contention guard should abort before launching a doomed vLLM server when headroom is insufficient.
+
+## RTX PRO 3000 Blackwell 12 GiB Acceptance
+
+The 2026-07-28 acceptance run used an NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU
+(12,227 MiB, compute capability 12.0), driver 610.43.02, PyTorch 2.11.0+cu130, and vLLM 0.24.0.
+`make detect-gpu-vram` selected tier 12, and `make gen-serving-config` persisted the detected GPU
+identity and memory rather than an override-only tier.
+
+The host run exposed and fixed one shared configuration gap. The generated serving YAML and the
+`validate-retrieval` / `run-eval` CLI plus make paths now carry `corpus_root`; before that change,
+the published gold set could be paired with the unrelated default corpus and a freshly rebuilt
+store immediately read as stale. Regression coverage lives in
+`tests/llb/inference/test_inference_generate.py`,
+`tests/llb/rag/test_validate_retrieval_cli.py`, and
+`tests/llb/eval/test_run_eval_cli.py`.
+
+Acceptance results:
+
+- The 250-item published gold set passed validation. A CPU-pinned e5-base rebuild wrote 311 chunks,
+  and `make validate-retrieval RAG_K=10` scored the 82-item final split at recall@10 0.976 and MRR
+  0.838.
+- The generated Gemma 4 12B vLLM config ran one item with embeddings on CPU. The contention guard
+  accepted 0.90 utilization with 11,696 MiB free; native sampling, Triton attention, Marlin W4A16,
+  16 GiB CPU weight offload, and 32 GiB KV offload served a 16,384-token context at 3.32 tok/s and
+  11,511 MiB peak VRAM. The load took 246.07 seconds, chiefly CUDA-graph capture. FlashInfer 0.6.12
+  could not supply its sampler on SM 12.0 and the recorded native-sampler fallback worked. Artifact:
+  `$DATA_DIR/run-eval/20260728T065519.474285Z-2f08bcd131d7/`.
+- The 20-item Ollama path used the Ukrainian MamayLM Gemma 3 12B Q4_K_M model with CUDA embeddings.
+  It scored objective 0.406, reliability 1.0, retrieval recall@5 0.900 / MRR 0.787, 39.16 tok/s,
+  and 9,932 MiB peak VRAM. Artifact:
+  `$DATA_DIR/run-eval/20260728T075902.053333Z-7e94edc3fe16/`.
+- llama.cpp was not an available backend on this host (`llama-server` was absent), so no llama.cpp
+  cell was claimed.
+- The repository gate selects only current implementation coverage: obsolete unpublished-artifact
+  compatibility checks were removed rather than skipped. It passes 2,226 tests with 43
+  opt-in/slow tests deselected and zero runtime skips. Ruff format/check, mypy, Markdown lint, and
+  the code-quality report also passed. `ollama ps` was empty after the evidence runs.
+
+The recent paired embedder, context-ablation, and local drafting evidence reruns are recorded in
+[RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty),
+[RAG core](rag-core.md#context-ablation-evidence), and
+[data prep](data-prep.md#sequential-local-qwengemma-draft-comparison).
 
 ## Category Smoke Path
 

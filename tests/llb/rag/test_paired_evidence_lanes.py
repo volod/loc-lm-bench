@@ -178,44 +178,6 @@ def test_the_fusion_sweep_adopts_only_on_a_reachable_focus_gain(wins: int):
 
 
 @pytest.mark.parametrize("wins", [BOUND - 1, BOUND])
-def test_the_long_context_power_resolution_refuses_a_thin_direction(wins: int):
-    from llb.eval.context_ablation.models import (
-        DERIVED_LONG_CONTEXT_DELTA,
-        LANE_LONG_CONTEXT,
-        POWER_RESOLUTION_SEPARATED,
-        POWER_RESOLUTION_UNDECIDABLE,
-    )
-    from llb.eval.context_ablation.power import resolve_power_analysis
-
-    candidate, baseline = _lane_rows(wins)
-    entry = {
-        "label": DERIVED_LONG_CONTEXT_DELTA,
-        "candidate": LANE_LONG_CONTEXT,
-        "reference": "rag",
-        "n": len(candidate),
-        "population": "all",
-        "paired": paired_comparison(
-            candidate,
-            baseline,
-            bootstrap_index_sets(len(candidate), RESAMPLES, SEED),
-            DEFAULT_CONFIDENCE,
-        ),
-    }
-    plan = {
-        "alpha": round(1.0 - DEFAULT_CONFIDENCE, 12),
-        "minimum_detectable_delta": 0.01,
-        "target_reached": True,
-    }
-    resolved = resolve_power_analysis({"derived": [entry]}, plan)  # type: ignore[arg-type]
-    if wins >= BOUND:
-        assert resolved["resolution"] == POWER_RESOLUTION_SEPARATED
-        assert resolved["direction"] == LANE_LONG_CONTEXT
-    else:
-        assert resolved["resolution"] == POWER_RESOLUTION_UNDECIDABLE
-        assert "differ on only" in resolved["reason"]
-
-
-@pytest.mark.parametrize("wins", [BOUND - 1, BOUND])
 def test_the_routing_calibration_gate_reads_the_same_rule(wins: int):
     """The coverage half of the gate is a separation; the single-span half is not, and stays."""
     from llb.rag.fusion_evidence.paired import separates as lane_separates

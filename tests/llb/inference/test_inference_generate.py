@@ -54,6 +54,7 @@ def test_generate_serving_configs_for_tier_12_uses_offloaded_long_context_12b(
     assert "max_model_len: 16384" in cfg
     assert "cpu_offload_gb: 16" in cfg
     assert "kv_offloading_size_gb: 32" in cfg
+    assert "corpus_root: samples/goldsets/ua_squad_postedited_v1/corpus" in cfg
     vllm_serve = (out / "serve_gemma_4_12b_vllm.sh").read_text(encoding="utf-8")
     assert "--cpu-offload-gb 16" in vllm_serve
     assert "--kv-offloading-size 32" in vllm_serve

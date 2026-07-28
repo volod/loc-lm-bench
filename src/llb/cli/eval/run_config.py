@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Optional
 
 _CONFIG_OPTIONS = {
+    "corpus_root": "corpus_root",
     "model": "model",
     "backend": "backend",
     "goldset": "goldset_path",

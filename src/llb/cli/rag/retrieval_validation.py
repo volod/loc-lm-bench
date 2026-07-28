@@ -19,6 +19,7 @@ class RetrievalValidationRequest:
     """Resolved CLI inputs for one retrieval validation run."""
 
     config: Path | None
+    corpus_root: Path | None
     goldset: Path | None
     k: int
     split: str | None
@@ -47,6 +48,7 @@ def _load_validation_inputs(
 
     cfg = load_config(
         request.config,
+        corpus_root=request.corpus_root,
         goldset_path=request.goldset,
         retrieval_backend=request.retrieval_backend,
         retrieval_strategy=request.retrieval_strategy,

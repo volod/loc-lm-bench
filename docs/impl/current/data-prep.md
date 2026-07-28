@@ -934,6 +934,18 @@ the higher-yield baseline and Gemma as the faster probe on this small fixture; r
 does not distinguish them. `ollama ps` was empty after the run, confirming final unload. Runtime
 artifacts follow `<comparison-root>/{comparison.json,baseline/,probe/}`.
 
+The 12 GiB profile now uses the same evidence-grade `qwen3:14b` / `gemma4:e4b` pair. Its former
+E2B probe was below the project's >=7B live-evidence floor and was not installed on the Blackwell
+host, while both larger local artifacts fit sequentially. The override-free 2026-07-28 run on the
+12,227 MiB RTX PRO 3000 Blackwell parsed 12/12 drafts in both lanes and passed both calibration
+gates. Qwen kept 8/12 (66.7%) with 52.134 seconds of draft-call latency; Gemma kept 6/12 (50.0%)
+with 21.326 seconds. The 16.7-point yield advantage and Gemma latency advantage have the same
+direction as the reviewed 16 GiB result. This new bundle is not human-reviewed, so it supports host
+fit, parsing, calibration, and sequential unload only; it does not add a human accept-rate claim.
+Artifact: `$DATA_DIR/draft-compare-local/20260728T095500Z-blackwell12-default/`. The selector
+regression is in `tests/llb/prep/ontology/test_local_compare.py`, and the operator table is in
+`docs/guides/data-prep/goldset-from-scratch.md`.
+
 `make draft-compare-analyze DRAFT_COMPARE_OUT_DIR=<comparison-root>` reads `comparison.json`, both
 lane provenance files, and the live worksheets. It prints model order, shared-seed counts, parsed
 and kept ratios, calibration, calls, latency, review progress, human accept rates, and lane deltas.

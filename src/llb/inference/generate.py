@@ -95,6 +95,9 @@ def _emit_target(
         "top_k": str(eval_defaults.get("top_k", 5)),
         "retrieval_mode": str(eval_defaults.get("retrieval_mode", "flat")),
         "measure_telemetry": str(eval_defaults.get("measure_telemetry", True)).lower(),
+        "corpus_root": str(
+            eval_defaults.get("corpus_root", "samples/goldsets/ua_squad_postedited_v1/corpus")
+        ),
         "goldset_path": str(
             eval_defaults.get(
                 "goldset_path", "samples/goldsets/ua_squad_postedited_v1/goldset.jsonl"

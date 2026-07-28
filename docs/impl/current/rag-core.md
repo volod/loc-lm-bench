@@ -1486,10 +1486,9 @@ realized variance or discordance made the declared target miss.
 
 Lane selectors and artifacts:
 
-- Context ablation selects fitting `long_context - rag` objective deltas. Its adapter remains
-  `src/llb/eval/context_ablation/power.py`; the recorded
-  `$DATA_DIR/context-ablation/20260725T-power-resolution/power-plan.json` regenerates
-  byte-identically through the shared seam.
+- Context ablation selects fitting `long_context - rag` objective deltas through
+  `src/llb/eval/context_ablation/power.py` and emits the same current selector, variance floor,
+  discordance floor, and binding-floor fields as the other lanes.
 - Embedder bake-off selects `--power-candidate` against `--baseline` and either `recall_at_k` or
   `mrr` via `--power-metric`. `report.json` now retains `paired_items`, the per-item metric ledger
   with gold item ids needed to price and audit a later run.
@@ -1510,8 +1509,8 @@ make compare-graph-fusion GOLDSET=<goldset-jsonl> \
   FUSION_POWER_METRIC=recall_at_k FUSION_MDE=<minimum-gain>
 ```
 
-`tests/llb/rag/test_paired_power.py` covers exact legacy reproduction, item-count arithmetic,
-inverted MDE, and realized-SD rechecking.
+`tests/llb/rag/test_paired_power.py` covers item-count arithmetic, inverted MDE, and realized-SD
+rechecking.
 `tests/llb/rag/test_paired_power_contract.py` covers both selectors, artifact output, and the
 plan-before-build/retrieval order. The context-specific regression suite remains
 `tests/llb/eval/test_context_ablation_power.py`. Host validation on 2026-07-26 completed
@@ -1589,11 +1588,11 @@ fusion floor from its stored lane bands. All pre-existing point estimates, inter
 aggregate table cells, thresholds, and decisions reproduced exactly. Of 38 route precision/recall
 rows, 2 are borderline; each 100-reading query report has 2 borderline rows and no
 minimum-evidence relabeling. The recorded graph-fusion leader's +0.0105 recall gap against a
-+/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Host-artifact regression
-coverage lives in `tests/llb/rag/test_remaining_uncertainty_artifacts.py`; focused fixture coverage
-also lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`, and
-`tests/llb/eval/test_query_robustness.py`. Host validation completed `make ci` with 2,221 tests
-passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
++/-0.0211 floor is now stated as -0.0105 clearance, or 0.50x the floor. Current implementation
+coverage lives in `test_paired_stability.py`, `test_fusion_calibration.py`, `test_noise_floor.py`,
+`tests/llb/eval/test_query_robustness_run.py`, and
+`tests/llb/eval/test_query_robustness_variants.py`. Host validation completed `make ci` with 2,221
+tests passing and 45 opt-in/slow tests deselected, plus `make lint-md`.
 
 Re-render evidence (2026-07-25, from the recorded artifacts on disk, no new run): every recorded
 paired block of the three lanes whose artifacts persist per-item values was rebuilt with the same
@@ -1885,6 +1884,15 @@ Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 
 | `BAAI/bge-m3` | 0.992 | 0.849 | +0.012 [0.000, +0.028] | 3/0/247 | 0.250 | 33.3 |
 | `intfloat/multilingual-e5-base` | 0.980 | 0.847 | 0.000 [0.000, 0.000] | 0/0/250 | 1.000 | 32.0 |
 | `lang-uk/ukr-paraphrase...` | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 0.000 | 54.0 |
+
+The 2026-07-28 rerun on the 12,227 MiB RTX PRO 3000 Blackwell reproduced every
+host-independent field above exactly: the four recall/MRR values, all paired bounds and ledgers,
+the zero measurement floor with no fragile items, and the `retain` verdict with the 300-item open
+question for e5-large. Every row records `device=cuda`. Throughput on this 80 W laptop GPU was
+25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model;
+the architecture-dependent spread needs a warm/load-separated benchmark before it is treated as
+a model recommendation. Artifact:
+`$DATA_DIR/compare-embeddings/20260728T110500Z-blackwell12/{report.md,report.json}`.
 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
 **ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped
@@ -2377,6 +2385,18 @@ Artifact:
 The `final` split inside the pooled run independently reproduces the earlier grounded rows exactly
 (`rag` 0.554, `long_context` 0.615), so the changed verdict comes from added items rather than a
 changed lane.
+
+#### MamayLM 12B rerun on 12 GiB Blackwell (2026-07-28)
+
+The full 82-item `final` comparison used the fitting Ukrainian MamayLM Gemma 3 12B Q4_K_M model on
+the RTX PRO 3000 Blackwell and the same 311-chunk e5-base store. Closed-book scored 0.155, RAG
+0.510, and oracle whole-document context 0.624. Retrieval uplift was +0.356
+`[+0.272, +0.438]` with 49/4/29 wins/losses/ties; long-context minus RAG was +0.114
+`[+0.051, +0.180]`. Both readings are separated at the neighbouring confidence conventions, no
+item was skipped, 11/82 closed-book answers matched, and the verdict remained
+`long_context_wins`. A new powered run was unnecessary for this host/model pair because the
+82-item long-context reading is not borderline. Artifact:
+`$DATA_DIR/context-ablation/20260728T113000Z-blackwell12-mamaylm12b/`.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,

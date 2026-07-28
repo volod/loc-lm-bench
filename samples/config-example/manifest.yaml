@@ -17,6 +17,7 @@ eval_defaults:
   top_k: 5
   retrieval_mode: flat
   measure_telemetry: true
+  corpus_root: samples/goldsets/ua_squad_postedited_v1/corpus
   goldset_path: samples/goldsets/ua_squad_postedited_v1/goldset.jsonl
 
 vllm_defaults:

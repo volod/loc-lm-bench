@@ -15,7 +15,7 @@ class LocalCompareProfile:
 
 
 LOCAL_COMPARE_PROFILES = {
-    12: LocalCompareProfile(12, "qwen3:8b", "gemma4:e2b", 8192),
+    12: LocalCompareProfile(12, "qwen3:14b", "gemma4:e4b", 8192),
     16: LocalCompareProfile(16, "qwen3:14b", "gemma4:e4b", 8192),
     24: LocalCompareProfile(24, "qwen3:30b", "gemma4:26b", 8192),
     32: LocalCompareProfile(32, "qwen3:30b", "gemma4:31b", 16384),
