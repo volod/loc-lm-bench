@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from llb.bench.agentic.context import ContextTelemetry
 from llb.bench.common import JudgeScorer, LLMComplete, Mirror
 from llb.bench.tool_world import ToolWorld
+from llb.eval.common import CONTEXT_OVERFLOW
 from llb.core.contracts.benchmarks import AgenticCaseRow, ToolDef
 from llb.core.contracts.results import BoardRow
 from llb.core.contracts.judging import JudgeDiagnostics
@@ -33,6 +35,10 @@ HARNESS_NAMES = (HARNESS_LOOP, HARNESS_LANGGRAPH, HARNESS_CREWAI)
 
 STATUS_COMPLETED = "completed"
 STATUS_INCOMPLETE = "incomplete"
+# A step's prompt did not fit the resolved window, so it was NEVER SENT and the episode ended
+# there. Reused verbatim from the shared eval taxonomy (the context-ablation lane raises the same
+# status for the same reason) so one vocabulary covers "the context did not fit" everywhere.
+STATUS_CONTEXT_OVERFLOW = CONTEXT_OVERFLOW
 
 # Success-assertion kinds (over the final env-state / answer).
 ASSERT_FILE_EQUALS = "file_equals"
@@ -72,6 +78,9 @@ class Episode:
     answer: str
     world: ToolWorld
     transcript: list[tuple[str, dict[str, Any], str]]
+    # Context accounting (agent context-management policies). Defaulted so every harness that
+    # builds an `Episode` without the policy-aware loop keeps working and simply reports nothing.
+    telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
 
 
 class Harness(Protocol):

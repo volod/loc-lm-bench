@@ -9,6 +9,22 @@
         "sha256": "46fbaf4bc5e3e03acb355dbbc819f0520f7dcc4f14429f5fe298581c2a552940"
       }
     },
+    "bench.agentic.compact_summary": {
+      "kind": "text",
+      "descriptor": "bench/agentic/compact_summary.prompt.json",
+      "template": {
+        "path": "bench/agentic/compact_summary.txt",
+        "sha256": "f1f84f149f0ee1377b5ad2800eb39ad2703eface3e4f398de729a985fc6c06b3"
+      }
+    },
+    "bench.agentic.context_recommendation": {
+      "kind": "text",
+      "descriptor": "bench/agentic/context_recommendation.prompt.json",
+      "template": {
+        "path": "bench/agentic/context_recommendation.txt",
+        "sha256": "b58a266a4df1243b63f7cc01f5e11f699dfbadd47bae07eea679d9ea11d698e8"
+      }
+    },
     "bench.agentic.history_block": {
       "kind": "text",
       "descriptor": "bench/agentic/history_block.prompt.json",

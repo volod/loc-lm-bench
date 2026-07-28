@@ -256,10 +256,21 @@ judge attachment, and artifact persistence into named helper phases.
 llb bench-agentic --tasks samples/benchmarks/agentic_tasks_uk.json --harness loop --model <model>
 llb prepare-agentic-search --corpus-root <corpus> --out <tasks.json>
 llb bench-agentic-compare --model <model>
+llb bench-agentic-context --tasks <tasks.json> --model <model>
 ```
 
 Harness names are `loop`, `langgraph`, and `crewai`. Harness comparison fixes the model and task
 set so orchestration is the variable.
+
+The loop's context handling is its own comparison axis. `run_episode` takes a `ContextPolicy`
+(`full` / `observation_cap` / `keep_last_n` / `compact`, default `full` -- the whole transcript) and
+a `ContextBudget`, and checks every step's prompt against the resolved window before the call: a
+prompt that does not fit is never sent and the episode ends as `context_overflow` rather than as a
+wrong answer. Each case row carries the context accounting (`max_prompt_tokens`,
+`total_prompt_tokens`, `observation_bytes`, `n_compactions`, `n_trimmed_observations`) alongside
+the completion headline. `bench-agentic-context` ranks the four policies for one model; the lane,
+its paired reading, and its bundles are documented in
+[extended workflows](extended-workflows.md#agent-context-management-policies).
 
 ## Summarization
 

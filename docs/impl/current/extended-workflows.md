@@ -1,7 +1,7 @@
 # Extended Workflows
 
 Extended workflows cover comparison axes that sit beside the main RAG leaderboard: agentic
-harnesses, judge diagnostics, and prompt-system packages.
+harnesses, agent context-management policies, judge diagnostics, and prompt-system packages.
 
 ## Agentic Harness Comparison
 
@@ -36,6 +36,139 @@ The `[crewai]` extra is a standalone install lane in `uv`: upstream CrewAI pins 
 LanceDB, and `tomli` ranges than the repo's RAG/vector/dev extras. `pyproject.toml` declares those
 extra conflicts so `uv lock` stays resolvable while `uv pip install -e ".[crewai]"` still works for
 host validation.
+
+## Agent Context-Management Policies
+
+`bench-agentic-context` ranks how the agent LOOP spends its context window for ONE fixed model over
+one task set. It is the agent-side sibling of the chain-context lane below: the model, the task set,
+the tool world, the success checks, and the step budget are held FIXED and only the
+context-management policy varies, so every difference it reports is attributable to context
+handling. Every policy runs a fresh episode through the pure `loop` harness -- context management is
+a property of the loop, not of a framework.
+
+Core locations:
+
+- `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
+  assembly, compaction, and the per-episode telemetry;
+- `src/llb/bench/agentic/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
+  resolution from the served model's usable window;
+- `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
+  policy-aware `run_episode`;
+- `src/llb/bench/agentic_context.py`: the four-policy run + persistence;
+- `src/llb/bench/agentic_context_report.py`: the paired reading, the policy table, and the
+  recommendation;
+- `src/llb/board/agentic_context.py`: one-model policy comparison board rows;
+- `src/llb/prompts/templates/bench/agentic/compact_summary.*`: the reviewable compaction prompt.
+
+The four policies (each a fresh episode over the identical task set):
+
+- `full` -- the whole transcript verbatim; today's shipped behavior and the BASELINE row every
+  other policy is paired against. Its prompt is byte-identical to the pre-policy loop's, so the
+  baseline reproduces the recorded agentic rows exactly;
+- `observation_cap` -- every observation trimmed to a char budget, HEAD and TAIL kept around an
+  explicit elision marker naming the dropped char count, so the model can tell it is reading a
+  fragment rather than a short tool result;
+- `keep_last_n` -- only the last N steps survive, with a marker line announcing how many were
+  dropped so a missing step is visible instead of looking like it never happened;
+- `compact` -- once the prompt crosses a share of the usable window, a model-written running summary
+  replaces the older steps (the agent-loop counterpart of the chain lane's `summary`). One recent
+  step stays verbatim; when the prompt was blown by that most recent observation there are no older
+  steps to fold, and the whole transcript is summarized rather than letting the policy degenerate
+  into `full`. The summary marker carries the count of steps it stands in for, so a folded step is
+  never silently absent. Two rules keep the policy honest: at most ONE compaction per step (if the
+  compacted prompt still does not fit, the guard is what ends the episode, not another round of
+  summarizing), and the summarize call is ITSELF capped at the trigger size -- its input is the
+  transcript that just blew the step prompt, so an uncapped summarizer is the one call in the loop
+  guaranteed to overflow, and it would return a silently truncated summary the policy then trusts
+  for the rest of the episode. An empty summary is treated as a no-op rather than folding those
+  steps away with nothing standing in for them.
+
+Underneath all four sits the guard the loop never had. `ContextBudget` resolves the served model's
+usable prompt budget ONCE per run through the same window arithmetic every other lane uses
+(`effective_max_context` / `fits_context_chars` in `src/llb/optimize/tuning_space.py`: host planner
+cap, model window, served `max_model_len`, explicit `context_budget`), and each step's prompt is
+checked before the call. A prompt that does not fit is NEVER SENT: the episode terminates as
+`context_overflow` -- the status already in the shared taxonomy (`src/llb/eval/common.py`) that the
+context-ablation lane raises for the same reason -- so an unusable configuration is a typed outcome
+instead of a wrong answer. An unresolvable window (no model spec, no served cap, no explicit budget)
+refuses nothing, matching `fits_context_chars`: an unknown model never silently declares a prompt
+unusable.
+
+Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after
+the fact: `max_prompt_tokens`, `total_prompt_tokens`, `observation_bytes` (counted BEFORE any policy
+trim, so `full` and `observation_cap` stay comparable on it), `n_compactions`, and
+`n_trimmed_observations` per case row. A policy changes what the model SEES, never what the run
+reports the agent did -- the persisted transcript and the trajectory judge read the full executed
+record even when `compact` has folded it out of the prompt.
+
+Every non-baseline policy carries a paired delta against `full` on four metrics -- completion,
+steps, tool calls, and prompt tokens -- over SHARED bootstrap index sets, so an interval is about
+the DIFFERENCE and not about two lanes' separate sampling noise. The statistics are
+`llb.rag.fusion_evidence` wholesale (`paired_comparison`, `bootstrap_index_sets`,
+`apply_evidence_gate`), including the `insufficient_evidence` relabel when a positive interval rests
+on too few differing tasks for the reporting level to be reachable. The recommendation names the
+best policy per model only on a SEPARATED completion delta; otherwise it states that the policies
+are flat at this task count and falls back to the cheapest prompt among policies that do not
+overflow more often than the baseline.
+
+```bash
+llb bench-agentic-context --tasks <tasks.json> --model <model> --backend <backend> \
+  --policies full,observation_cap,keep_last_n,compact
+llb bench-agentic-context-compare --model <model>
+make bench-agentic-context MODEL=<model> BACKEND=<backend> \
+  AGENT_CONTEXT_POLICIES=full,observation_cap,keep_last_n,compact
+```
+
+`AGENT_CONTEXT_MAX_PROMPT_CHARS` (or `--max-prompt-chars`) forces the budget instead of resolving
+it, which is how the guard is exercised on purpose. Each policy persists its OWN bundle under
+`$DATA_DIR/agentic-context/<timestamp>/` tagged with the policy (mirroring the per-harness and
+per-chain-policy bundles); provenance records the policy, its settings, the `task_set_digest` that
+proves both policies ran the same set, the resolved `max_prompt_chars`, the overflow count, and the
+`paired_vs_full` block. The bundles live under their own method root, so they are never mixed into
+the harness comparison or the category composite, which both read `agentic`.
+
+CI drives every policy, the compaction path, and the guard over the fake endpoint with no GPU
+(`tests/llb/bench/test_agentic_context.py`), including the assertion that the `full` policy's prompt
+is byte-identical to the pre-policy loop's and that no episode in any policy sends a prompt over the
+resolved window.
+
+### Context-policy evidence on the 16 GB RTX 4060 Ti host
+
+Run date 2026-07-28. `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama, 24 tasks (the committed 4-task UA
+seed plus 20 generated `search` tasks over the 250-document `ua_squad_postedited_v1` corpus, whose
+observations run
+20k-36k chars), all four policies in one ~46 min invocation, 377 model calls at 5.7 tok/s. Ollama
+serves a 4096 window here regardless of the GGUF advertising 131072, so the run declared
+`--max-model-len 4096` and the guard resolved a 9216-char prompt budget. Bundles under
+`.data/agentic-context/20260728T2034*` (one per policy).
+
+| policy | completion | steps | max prompt tok | overflow | reliability | d(prompt-tok) vs `full` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `full` | 0.458 | 2.42 | 3950 | 10 | 0.417 | baseline |
+| `observation_cap` | 0.458 | 4.33 | 1527 | 0 | 0.667 | -2423 [-3679, -1208] |
+| `keep_last_n` | 0.458 | 2.42 | 3930 | 10 | 0.417 | -20 [-53, -2] |
+| `compact` | 0.458 | 4.42 | 997 | 0 | 0.417 | -2953 [-4432, -1478] |
+
+The headline reading is FLAT and is recorded as flat: all four policies complete the identical 11 of
+24 tasks, item for item, so no policy separates from `full` on completion at this task count and the
+recommendation names `compact` on CONTEXT COST alone. The cost side does separate -- `compact` runs
+on a quarter of `full`'s prompt with its interval clear of zero.
+
+The result worth reading is WHY the completion ties, and it is the whole argument for the typed
+status. The 10 `search-locate` tasks answer at step 2-3 under every policy, before the transcript
+grows enough for context management to matter. The 10 `search-count` tasks fail under every policy --
+but for two DIFFERENT reasons that the completion number alone cannot tell apart: `full` and
+`keep_last_n` overflow at step 1 and never get to try, while `observation_cap` and `compact` run all
+six steps on evidence they can see and still count wrong. Without `context_overflow` those twenty
+failures are one indistinguishable bucket, and the pre-policy loop reported exactly that.
+
+Two policy findings fall out. `keep_last_n` is nearly a no-op here (-20 prompt tokens, the same 10
+overflows): with a 6-step budget and 3 steps kept, the one oversized observation that blew the prompt
+is always INSIDE the kept window, so dropping older steps cannot reach it -- the policy is aimed at
+long transcripts, and this failure is a single fat observation. And the two policies that do fit the
+window are lossy in a task-dependent way: a `count` question needs the whole hit list, which is
+precisely what a positional trim and a summary destroy, so surviving the window and answering
+correctly are not the same win.
 
 ## Context-Policy Comparison
 
