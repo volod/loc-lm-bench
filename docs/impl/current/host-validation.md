@@ -169,3 +169,13 @@ the final report. Retrieval validation passes an immutable request into
 robustness integration test uses a module-level morphology-loader callable and named assertion /
 artifact phases. The repository-wide Radon D-or-worse scan is empty; focused coverage lives in the
 ontology, auto-RAG verification, query-prep, and query-robustness test suites.
+
+The cognitive-complexity cleanup extends that separation across backend planning, review
+workflows, conflict resolution and filtering, query robustness, incremental refresh, ontology
+expansion, retrieval fusion, and reporting. Complex branches now live in named policy,
+validation, selection, and rendering helpers. Stateful assembly uses
+`rag/refresh/merge_assembly.py`; tree leaf filtering, robustness recovery, and hybrid-store
+retrieval use focused owner modules. Launcher and morphology closures are module-level callable
+adapters. The repository-wide Complexipy scan at the configured maximum of 15 is empty, and the
+refactored source files remain within the 250-line soft target. Focused verification covers the
+affected backend, review, conflict, evaluation, graph, ontology, retrieval, and scoring paths.

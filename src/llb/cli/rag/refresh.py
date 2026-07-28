@@ -17,6 +17,48 @@ if TYPE_CHECKING:
 REFRESH_METHOD = "refresh"
 
 
+def _echo_vector_refresh(result: "VectorRefreshResult") -> None:
+    if not result.refreshed:
+        typer.echo(f"[refresh-index] corpus unchanged; store at {result.source_dir} is current")
+        return
+    by_text = f" ({result.n_reused_by_text} recovered by text)" if result.n_reused_by_text else ""
+    typer.echo(
+        f"[refresh-index] vector store: {result.diff.summary()}; "
+        f"{result.n_reused} rows reused{by_text}, {result.n_embedded} embedded "
+        f"-> {result.generation_dir}"
+    )
+
+
+def _echo_sibling_refresh(name: str, sibling: "VectorRefreshResult") -> None:
+    if not sibling.refreshed:
+        typer.echo(f"[refresh-index] comparison store {name} is current")
+        return
+    by_text = f" ({sibling.n_reused_by_text} recovered by text)" if sibling.n_reused_by_text else ""
+    typer.echo(
+        f"[refresh-index] comparison store {name}: {sibling.diff.summary()}; "
+        f"{sibling.n_reused} rows reused{by_text}, {sibling.n_embedded} embedded "
+        f"-> {sibling.generation_dir}"
+    )
+
+
+def _echo_drift(drift: "RetrievalDrift | None", threshold: float) -> None:
+    if drift is None:
+        return
+    typer.echo(
+        f"[refresh-index] drift over {drift.n_items} gold items: "
+        f"recall@{drift.k} {drift.old_recall:.3f} -> {drift.new_recall:.3f} "
+        f"({drift.delta_recall:+.3f}), mrr {drift.old_mrr:.3f} -> {drift.new_mrr:.3f} "
+        f"({drift.delta_mrr:+.3f})"
+    )
+    message = (
+        "[refresh-index] RE-TUNE RECOMMENDED: the delta crosses the threshold "
+        f"({threshold}); re-run the tuner over the refreshed store"
+        if drift.retune_recommended
+        else f"[refresh-index] no re-tune needed (deltas under {threshold})"
+    )
+    typer.echo(message)
+
+
 @app.command("refresh-index")
 def refresh_index(
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
@@ -57,35 +99,13 @@ def refresh_index(
     cfg = load_config(config, corpus_root=corpus_root, goldset_path=goldset)
     timestamp = generation_timestamp()
     result = refresh_vector_store(cfg.index_dir(), cfg.corpus_root, timestamp=timestamp)
-    if result.refreshed:
-        by_text = (
-            f" ({result.n_reused_by_text} recovered by text)" if result.n_reused_by_text else ""
-        )
-        typer.echo(
-            f"[refresh-index] vector store: {result.diff.summary()}; "
-            f"{result.n_reused} rows reused{by_text}, {result.n_embedded} embedded "
-            f"-> {result.generation_dir}"
-        )
-    else:
-        typer.echo(f"[refresh-index] corpus unchanged; store at {result.source_dir} is current")
+    _echo_vector_refresh(result)
 
     # Per-strategy comparison stores under the index dir (compare-retrieval layout) diff their
     # own recorded fingerprints, so they refresh even when the main store is current.
     siblings = refresh_sibling_stores(cfg.index_dir(), cfg.corpus_root, timestamp=timestamp)
     for name, sibling in siblings:
-        if sibling.refreshed:
-            by_text = (
-                f" ({sibling.n_reused_by_text} recovered by text)"
-                if sibling.n_reused_by_text
-                else ""
-            )
-            typer.echo(
-                f"[refresh-index] comparison store {name}: {sibling.diff.summary()}; "
-                f"{sibling.n_reused} rows reused{by_text}, {sibling.n_embedded} embedded "
-                f"-> {sibling.generation_dir}"
-            )
-        else:
-            typer.echo(f"[refresh-index] comparison store {name} is current")
+        _echo_sibling_refresh(name, sibling)
 
     _refresh_graph_if_present(cfg, skip_graph, graph_extraction, timestamp)
 
@@ -95,19 +115,7 @@ def refresh_index(
     drift = _measure_drift_if_goldset(cfg, result, k, threshold)
     report_dir = cfg.data_dir / REFRESH_METHOD / timestamp
     _json_path, md_path = write_drift_report(report_dir, result.diff, drift, result.generation_dir)
-    if drift is not None:
-        typer.echo(
-            f"[refresh-index] drift over {drift.n_items} gold items: "
-            f"recall@{drift.k} {drift.old_recall:.3f} -> {drift.new_recall:.3f} "
-            f"({drift.delta_recall:+.3f}), mrr {drift.old_mrr:.3f} -> {drift.new_mrr:.3f} "
-            f"({drift.delta_mrr:+.3f})"
-        )
-        typer.echo(
-            "[refresh-index] RE-TUNE RECOMMENDED: the delta crosses the threshold "
-            f"({threshold}); re-run the tuner over the refreshed store"
-            if drift.retune_recommended
-            else f"[refresh-index] no re-tune needed (deltas under {threshold})"
-        )
+    _echo_drift(drift, threshold)
     typer.echo(f"[refresh-index] drift report -> {md_path}")
 
 

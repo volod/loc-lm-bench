@@ -29,6 +29,7 @@ from llb.rag.store_build import (
     order_by_score,
 )
 from llb.rag.store_factory import build_store_parts
+from llb.rag.store_hybrid import allowed_chunk_ids, dense_hybrid_ids, hybrid_chunks
 from llb.rag.store_persistence import load_store, save_store
 from llb.rag.store_io import _renumber
 
@@ -174,28 +175,20 @@ class RagStore:
         """Fuse the dense and lexical top candidates with weighted RRF; return the top k."""
         assert self.lexical is not None
         depth = max(self.fusion_candidates, k)
-        allowed: set[int] | None = None
-        if chunk_filter is not None:
-            allowed = {i for i, c in enumerate(self.chunks) if chunk_filter(c)}
-        dense_ids: list[int] = []
-        # A zero-weight lane contributes neither score nor candidate membership to the fusion, so
-        # searching the dense index would only cost time -- this is the `lexical` comparison row.
-        if self.fusion_weight > 0.0:
-            search_k = len(self.chunks) if chunk_filter else min(len(self.chunks), depth)
-            scores, ids = self.index.search(query_vec, max(1, search_k))
-            dense_ids = [cid for cid, _ in self._ranked_candidates(ids, scores)]
-            if allowed is not None:
-                dense_ids = [cid for cid in dense_ids if cid in allowed]
-            dense_ids = dense_ids[:depth]
+        allowed = allowed_chunk_ids(self.chunks, chunk_filter)
+        dense_ids = dense_hybrid_ids(
+            self.chunks,
+            self.index,
+            self._ranked_candidates,
+            query_vec,
+            depth,
+            chunk_filter,
+            allowed,
+            self.fusion_weight,
+        )
         lexical_ids = [cid for cid, _ in self.lexical.search(question, depth, allowed)]
         fused = rrf_fuse(dense_ids, lexical_ids, self.fusion_weight)
-        hits: list[ChunkRecord] = []
-        for rank, (cid, score) in enumerate(fused[:k], 1):
-            chunk = cast(ChunkRecord, dict(self.chunks[cid]))
-            chunk["retrieval_score"] = float(score)
-            chunk["rank"] = rank
-            hits.append(chunk)
-        return hits
+        return hybrid_chunks(self.chunks, fused, k)
 
     def _search(self, query_vec: Any, search_k: int) -> list[ChunkRecord]:
         """Return ranked indexed units for an already encoded query.

@@ -77,27 +77,25 @@ def test_the_persisted_reading_matches_the_interval_the_row_publishes():
         assert row["stability"]["reading"] == expected, (wins, losses)
 
 
-def test_the_interval_is_unchanged_by_carrying_the_annotation():
+@pytest.mark.parametrize("n", [1, 2, 5, 12, 35, 40, 82, 95])
+@pytest.mark.parametrize("resamples", [0, 50, RESAMPLES])
+@pytest.mark.parametrize("confidence", [0.90, 0.95, 0.975, 0.99])
+def test_the_interval_is_unchanged_by_carrying_the_annotation(
+    n: int, resamples: int, confidence: float
+):
     """Nothing recorded may move: the bounds must equal what the plain interval helper returns.
 
     `bootstrap_interval` is the pre-annotation code path, so this is a differential check against
     it -- swept across the shapes and settings the repo's recorded artifacts were produced at,
     because that is what says a recorded number could not have moved.
     """
-    rng = Random(SEED)
-    for n in (1, 2, 5, 12, 35, 40, 82, 95):
-        for resamples in (0, 50, RESAMPLES):
-            for confidence in (0.90, 0.95, 0.975, 0.99):
-                candidate = [rng.random() for _ in range(n)]
-                baseline = [rng.random() for _ in range(n)]
-                index_sets = bootstrap_index_sets(n, resamples, SEED)
-                deltas = [c - b for c, b in zip(candidate, baseline)]
-                row = paired_comparison(candidate, baseline, index_sets, confidence)
-                assert row["delta"] == bootstrap_interval(deltas, index_sets, confidence), (
-                    n,
-                    resamples,
-                    confidence,
-                )
+    rng = Random(f"{SEED}:{n}:{resamples}:{confidence}")
+    candidate = [rng.random() for _ in range(n)]
+    baseline = [rng.random() for _ in range(n)]
+    index_sets = bootstrap_index_sets(n, resamples, SEED)
+    deltas = [c - b for c, b in zip(candidate, baseline)]
+    row = paired_comparison(candidate, baseline, index_sets, confidence)
+    assert row["delta"] == bootstrap_interval(deltas, index_sets, confidence)
 
 
 def test_a_bootstrap_ratio_carries_the_same_cut_annotation_without_a_sign_test_gate():

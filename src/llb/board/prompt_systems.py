@@ -176,11 +176,9 @@ def rag_prompt_system_comparison(
     return rows, table, [r.prompt_system for r in ordered]
 
 
-def knowledge_tree_ab_comparison(data_dir: Path | str, model: str) -> KnowledgeTreeABResult | None:
-    """Compare the best evaluated tree with the best evaluated no-tree control."""
-    records = [
-        record for record in load_rag_prompt_system_records(data_dir) if record.model == model
-    ]
+def _best_tree_and_baseline(
+    records: list[RagPromptSystemRunRecord],
+) -> tuple[RagPromptSystemRunRecord, RagPromptSystemRunRecord] | None:
     baselines = [record for record in records if not record.knowledge_tree]
     trees = [record for record in records if record.knowledge_tree]
     if not baselines or not trees:
@@ -191,26 +189,46 @@ def knowledge_tree_ab_comparison(data_dir: Path | str, model: str) -> KnowledgeT
         (record for record in baselines if record.prompt_system == baseline_id),
         max(baselines, key=lambda record: record.result.objective_score),
     )
+    return tree, baseline
+
+
+def _aligned_objective_delta(
+    tree: RagPromptSystemRunRecord, baseline: RagPromptSystemRunRecord
+) -> tuple[float, tuple[float, float] | None]:
     base_cases = baseline.result.case_objectives
     tree_cases = tree.result.case_objectives
-    if base_cases and len(base_cases) == len(tree_cases):
-        differences = [candidate - control for candidate, control in zip(tree_cases, base_cases)]
-        delta = sum(differences) / len(differences)
-        ci = bootstrap_mean_ci(differences)
-    else:
-        delta = tree.result.objective_score - baseline.result.objective_score
-        ci = None
-    conclusion = "inconclusive"
-    if ci is not None and ci[0] > 0:
-        conclusion = "helps"
-    elif ci is not None and ci[1] < 0:
-        conclusion = "hurts"
+    if not base_cases or len(base_cases) != len(tree_cases):
+        return tree.result.objective_score - baseline.result.objective_score, None
+    differences = [candidate - control for candidate, control in zip(tree_cases, base_cases)]
+    return sum(differences) / len(differences), bootstrap_mean_ci(differences)
+
+
+def _ab_conclusion(ci: tuple[float, float] | None) -> str:
+    if ci is None:
+        return "inconclusive"
+    if ci[0] > 0:
+        return "helps"
+    if ci[1] < 0:
+        return "hurts"
+    return "inconclusive"
+
+
+def knowledge_tree_ab_comparison(data_dir: Path | str, model: str) -> KnowledgeTreeABResult | None:
+    """Compare the best evaluated tree with the best evaluated no-tree control."""
+    records = [
+        record for record in load_rag_prompt_system_records(data_dir) if record.model == model
+    ]
+    selected = _best_tree_and_baseline(records)
+    if selected is None:
+        return None
+    tree, baseline = selected
+    delta, ci = _aligned_objective_delta(tree, baseline)
     return KnowledgeTreeABResult(
         baseline_id=baseline.prompt_system,
         tree_id=tree.prompt_system,
         delta=round(delta, 4),
         ci=ci,
-        conclusion=conclusion,
+        conclusion=_ab_conclusion(ci),
         depth=_tree_int(tree.knowledge_tree.get("depth")),
         budget_tokens=_tree_int(tree.knowledge_tree.get("budget_tokens")),
     )

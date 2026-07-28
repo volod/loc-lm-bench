@@ -19,7 +19,7 @@ import logging
 import math
 import re
 from collections.abc import Callable, Hashable, Sequence
-from typing import TypeVar
+from typing import Any, TypeVar
 
 _LOG = logging.getLogger(__name__)
 
@@ -50,6 +50,69 @@ LEXICAL_INDEX_VERSION = "bm25-uk-v2"
 RankedId = TypeVar("RankedId", bound=Hashable)
 
 
+class _CachedLemmatizer:
+    def __init__(self, analyzer: Any):
+        self.analyzer = analyzer
+        self.cache: dict[str, str] = {}
+
+    def __call__(self, token: str) -> str:
+        hit = self.cache.get(token)
+        if hit is None:
+            parses = self.analyzer.parse(token)
+            hit = parses[0].normal_form if parses else token
+            self.cache[token] = hit
+        return hit
+
+
+class _CachedWordProbe:
+    def __init__(self, analyzer: Any):
+        self.analyzer = analyzer
+        self.cache: dict[str, bool] = {}
+
+    def __call__(self, token: str) -> bool:
+        hit = self.cache.get(token)
+        if hit is None:
+            hit = bool(self.analyzer.word_is_known(token))
+            self.cache[token] = hit
+        return hit
+
+
+def _validate_rrf_inputs(
+    rankings: Sequence[Sequence[RankedId]], weights: Sequence[float], k_const: int
+) -> float:
+    if len(rankings) != len(weights):
+        raise ValueError("RRF rankings and weights must have the same length")
+    if k_const < 0:
+        raise ValueError(f"RRF k constant must be non-negative, got {k_const}")
+    if any(not math.isfinite(weight) or weight < 0.0 for weight in weights):
+        raise ValueError(f"RRF weights must be non-negative, got {list(weights)}")
+    total_weight = sum(weights)
+    if total_weight <= 0.0:
+        raise ValueError("RRF weights must contain at least one positive value")
+    return total_weight
+
+
+def _add_rrf_lane(
+    ranking: Sequence[RankedId],
+    weight: float,
+    lane: int,
+    k_const: int,
+    scores: dict[RankedId, float],
+    tie_keys: dict[RankedId, tuple[int, int, int]],
+    encounter: int,
+) -> int:
+    seen: set[RankedId] = set()
+    for rank, item in enumerate(ranking, 1):
+        if item in seen:
+            continue
+        seen.add(item)
+        scores[item] = scores.get(item, 0.0) + weight / (k_const + rank)
+        if item not in tie_keys:
+            tie_keys[item] = (lane, rank, encounter)
+            encounter += 1
+    return encounter
+
+
 def normalize_token(token: str) -> str:
     """Casefold + apostrophe unification + edge-apostrophe strip (matching side only).
 
@@ -77,17 +140,7 @@ def load_uk_lemmatizer() -> Lemmatizer:
     import pymorphy3
 
     analyzer = pymorphy3.MorphAnalyzer(lang="uk")
-    cache: dict[str, str] = {}
-
-    def lemma(token: str) -> str:
-        hit = cache.get(token)
-        if hit is None:
-            parses = analyzer.parse(token)
-            hit = parses[0].normal_form if parses else token
-            cache[token] = hit
-        return hit
-
-    return lemma
+    return _CachedLemmatizer(analyzer)
 
 
 def load_uk_word_probe() -> Callable[[str], bool]:
@@ -101,16 +154,7 @@ def load_uk_word_probe() -> Callable[[str], bool]:
     import pymorphy3
 
     analyzer = pymorphy3.MorphAnalyzer(lang="uk")
-    cache: dict[str, bool] = {}
-
-    def known(token: str) -> bool:
-        hit = cache.get(token)
-        if hit is None:
-            hit = bool(analyzer.word_is_known(token))
-            cache[token] = hit
-        return hit
-
-    return known
+    return _CachedWordProbe(analyzer)
 
 
 def ukrainian_lemma(token: str) -> str:
@@ -152,30 +196,20 @@ def weighted_rrf_fuse(
     disabled lane. Ties prefer the earliest lane, then the best rank in that lane, then stable
     encounter order. Duplicate ids inside one lane keep their first rank.
     """
-    if len(rankings) != len(weights):
-        raise ValueError("RRF rankings and weights must have the same length")
-    if k_const < 0:
-        raise ValueError(f"RRF k constant must be non-negative, got {k_const}")
-    if any(not math.isfinite(weight) or weight < 0.0 for weight in weights):
-        raise ValueError(f"RRF weights must be non-negative, got {list(weights)}")
-    total_weight = sum(weights)
-    if total_weight <= 0.0:
-        raise ValueError("RRF weights must contain at least one positive value")
-
+    total_weight = _validate_rrf_inputs(rankings, weights, k_const)
     scores: dict[RankedId, float] = {}
     tie_keys: dict[RankedId, tuple[int, int, int]] = {}
     encounter = 0
     for lane, (ranking, raw_weight) in enumerate(zip(rankings, weights)):
         if raw_weight == 0.0:
             continue
-        weight = raw_weight / total_weight
-        seen: set[RankedId] = set()
-        for rank, item in enumerate(ranking, 1):
-            if item in seen:
-                continue
-            seen.add(item)
-            scores[item] = scores.get(item, 0.0) + weight / (k_const + rank)
-            if item not in tie_keys:
-                tie_keys[item] = (lane, rank, encounter)
-                encounter += 1
+        encounter = _add_rrf_lane(
+            ranking,
+            raw_weight / total_weight,
+            lane,
+            k_const,
+            scores,
+            tie_keys,
+            encounter,
+        )
     return sorted(scores.items(), key=lambda pair: (-pair[1], tie_keys[pair[0]]))

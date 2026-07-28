@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from llb.conflicts.constants import (
@@ -25,6 +26,14 @@ ACTION_ESCALATE = "escalate"
 
 STATUS_ACCEPTED = "accepted"
 STATUS_REVIEW_REQUIRED = "review_required"
+
+
+@dataclass(frozen=True)
+class _Resolution:
+    action: str = ACTION_KEEP_BOTH
+    target_side: str | None = None
+    rationale: str = "relation carries distinct or complementary knowledge"
+    status: str = STATUS_ACCEPTED
 
 
 def finding_id(finding: JsonObject) -> str:
@@ -59,55 +68,76 @@ def _duplicate_target(finding: JsonObject) -> str:
     return "a" if str(a["doc_id"]) > str(b["doc_id"]) else "b"
 
 
+def _duplicate_resolution(finding: JsonObject) -> _Resolution:
+    if finding.get("tier") == "semantic":
+        return _Resolution(
+            action=ACTION_ESCALATE,
+            status=STATUS_REVIEW_REQUIRED,
+            rationale="semantic candidate is not adjudicated deletion authority",
+        )
+    return _Resolution(
+        action=ACTION_DROP_DUPLICATE,
+        target_side=_duplicate_target(finding),
+        rationale="remove one redundant copy; preserve the newer or stable canonical side",
+    )
+
+
+def _supersession_resolution(finding: JsonObject, policy: str) -> _Resolution:
+    target_side = _older_side(finding)
+    if policy == POLICY_PREFER_NEWER and target_side is not None:
+        return _Resolution(
+            action=ACTION_PREFER_NEWER,
+            target_side=target_side,
+            rationale="governance orders the editions; suppress the older claim",
+        )
+    return _Resolution(
+        action=ACTION_ESCALATE,
+        target_side=target_side,
+        status=STATUS_REVIEW_REQUIRED,
+        rationale="supersession requires explicit review under this policy",
+    )
+
+
+def _resolution_for_relation(finding: JsonObject, policy: str, relation: str) -> _Resolution:
+    if relation == REL_DUPLICATE:
+        return _duplicate_resolution(finding)
+    if relation == REL_SUPERSEDED_BY:
+        return _supersession_resolution(finding, policy)
+    if relation == REL_CONTRADICTS:
+        return _Resolution(
+            action=ACTION_ESCALATE,
+            status=STATUS_REVIEW_REQUIRED,
+            rationale="undated contradiction cannot be resolved from governance",
+        )
+    if relation in (REL_SUBSUMES, REL_SUBSUMED_BY):
+        return _Resolution(
+            rationale="subsumption is not deletion authority; retain and annotate both sides"
+        )
+    if relation == REL_COMPLEMENTARY:
+        return _Resolution()
+    return _Resolution(
+        action=ACTION_ESCALATE,
+        status=STATUS_REVIEW_REQUIRED,
+        rationale=f"unknown relation {relation!r} requires review",
+    )
+
+
 def resolve_finding(finding: JsonObject, policy: str) -> JsonObject:
     """Choose one safe action; uncertain contradictions remain human work."""
     if policy not in POLICIES:
         raise ValueError(f"unknown resolution policy {policy!r}; choose one of {POLICIES}")
     relation = str(finding.get("relation", ""))
-    action = ACTION_KEEP_BOTH
-    target_side: str | None = None
-    rationale = "relation carries distinct or complementary knowledge"
-    status = STATUS_ACCEPTED
-
-    if relation == REL_DUPLICATE:
-        if finding.get("tier") == "semantic":
-            action = ACTION_ESCALATE
-            status = STATUS_REVIEW_REQUIRED
-            rationale = "semantic candidate is not adjudicated deletion authority"
-        else:
-            action = ACTION_DROP_DUPLICATE
-            target_side = _duplicate_target(finding)
-            rationale = "remove one redundant copy; preserve the newer or stable canonical side"
-    elif relation == REL_SUPERSEDED_BY:
-        target_side = _older_side(finding)
-        if policy == POLICY_PREFER_NEWER and target_side is not None:
-            action = ACTION_PREFER_NEWER
-            rationale = "governance orders the editions; suppress the older claim"
-        else:
-            action = ACTION_ESCALATE
-            status = STATUS_REVIEW_REQUIRED
-            rationale = "supersession requires explicit review under this policy"
-    elif relation == REL_CONTRADICTS:
-        action = ACTION_ESCALATE
-        status = STATUS_REVIEW_REQUIRED
-        rationale = "undated contradiction cannot be resolved from governance"
-    elif relation in (REL_SUBSUMES, REL_SUBSUMED_BY):
-        rationale = "subsumption is not deletion authority; retain and annotate both sides"
-    elif relation != REL_COMPLEMENTARY:
-        action = ACTION_ESCALATE
-        status = STATUS_REVIEW_REQUIRED
-        rationale = f"unknown relation {relation!r} requires review"
-
-    target = _side(finding, target_side) if target_side is not None else None
+    resolution = _resolution_for_relation(finding, policy, relation)
+    target = _side(finding, resolution.target_side) if resolution.target_side is not None else None
     return {
         "finding_id": finding_id(finding),
         "relation": relation,
         "tier": str(finding.get("tier", "")),
-        "action": action,
-        "status": status,
-        "target_side": target_side,
+        "action": resolution.action,
+        "status": resolution.status,
+        "target_side": resolution.target_side,
         "target_doc_id": target.get("doc_id") if target is not None else None,
-        "rationale": rationale,
+        "rationale": resolution.rationale,
         "a": dict(_side(finding, "a")),
         "b": dict(_side(finding, "b")),
         "staleness": dict(finding.get("staleness") or {}),

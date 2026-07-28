@@ -14,6 +14,7 @@ from llb.bench.knowledge_cutoff.translation_artifacts import (
     write_models_jsonl,
 )
 from llb.bench.knowledge_cutoff.translation_models import (
+    TranslationDraft,
     source_hash,
     translation_hash,
     validate_translation,
@@ -80,6 +81,45 @@ def review_bundle_status(bundle_dir: Path) -> dict[str, int | bool]:
     }
 
 
+def _accepted_translation(
+    event: CutoffEvent,
+    row: dict[str, str],
+    draft: TranslationDraft,
+) -> tuple[CutoffEvent, CutoffEvent] | None:
+    if row["decision"] not in (ACCEPT, REJECT):
+        raise ValueError(f"{event.id}: translation review is undecided")
+    if row["decision"] == REJECT:
+        return None
+    if any(row[column] != PASS for column in CHECK_COLS):
+        raise ValueError(f"{event.id}: accepted translation needs all four checks to pass")
+    expected_source_hash = source_hash(event)
+    if (
+        row["source_hash"] != expected_source_hash
+        or draft.source_hash != expected_source_hash
+        or row.get("translation_hash") != translation_hash(draft)
+    ):
+        raise ValueError(f"{event.id}: source identity mismatch")
+    translated = event.model_copy(
+        update={"mcq_question": draft.question_uk, "mcq_choices": draft.choices_uk}
+    )
+    return event, translated
+
+
+def _review_summary(
+    bundle_dir: Path, reviewer: str, source_rows: int, accepted: int
+) -> dict[str, Any]:
+    manifest = json.loads((bundle_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    return {
+        "schema_version": 1,
+        "reviewer": reviewer.strip(),
+        "resolved_revision": manifest["resolved_revision"],
+        "source_rows": source_rows,
+        "accepted_rows": accepted,
+        "excluded_rows": source_rows - accepted,
+        "complete": True,
+    }
+
+
 def freeze_reviewed_bundle(bundle_dir: Path, *, reviewer: str) -> dict[str, Any]:
     """Mechanically gate and freeze accepted translations into aligned event files."""
     if not reviewer.strip():
@@ -92,45 +132,19 @@ def freeze_reviewed_bundle(bundle_dir: Path, *, reviewer: str) -> dict[str, Any]
     by_id = {row["item_id"]: row for row in rows}
     accepted_en: list[CutoffEvent] = []
     accepted_uk: list[CutoffEvent] = []
-    rejected = 0
     for event in events:
-        row = by_id[event.id]
-        if row["decision"] not in (ACCEPT, REJECT):
-            raise ValueError(f"{event.id}: translation review is undecided")
-        if row["decision"] == REJECT:
-            rejected += 1
+        accepted = _accepted_translation(event, by_id[event.id], drafts[event.id])
+        if accepted is None:
             continue
-        if any(row[column] != PASS for column in CHECK_COLS):
-            raise ValueError(f"{event.id}: accepted translation needs all four checks to pass")
-        draft = drafts[event.id]
-        if (
-            row["source_hash"] != source_hash(event)
-            or draft.source_hash != source_hash(event)
-            or row.get("translation_hash") != translation_hash(draft)
-        ):
-            raise ValueError(f"{event.id}: source identity mismatch")
-        accepted_en.append(event)
-        accepted_uk.append(
-            event.model_copy(
-                update={"mcq_question": draft.question_uk, "mcq_choices": draft.choices_uk}
-            )
-        )
+        source_event, translated_event = accepted
+        accepted_en.append(source_event)
+        accepted_uk.append(translated_event)
     if not accepted_en:
         raise ValueError("review excluded every translation")
     write_models_jsonl(bundle_dir / REVIEWED_EN_FILENAME, accepted_en)
     write_models_jsonl(bundle_dir / REVIEWED_UK_FILENAME, accepted_uk)
     write_worksheet_rows(bundle_dir / "translation_review.accepted.csv", rows, fields)
-    summary = {
-        "schema_version": 1,
-        "reviewer": reviewer.strip(),
-        "resolved_revision": json.loads(
-            (bundle_dir / MANIFEST_FILENAME).read_text(encoding="utf-8")
-        )["resolved_revision"],
-        "source_rows": len(events),
-        "accepted_rows": len(accepted_en),
-        "excluded_rows": rejected,
-        "complete": True,
-    }
+    summary = _review_summary(bundle_dir, reviewer, len(events), len(accepted_en))
     atomic_write_text(
         bundle_dir / REVIEW_SUMMARY_FILENAME,
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",

@@ -19,18 +19,11 @@ from llb.rag.duplicates import (
     duplicate_stats,
 )
 from llb.rag.page_metadata import annotate_page_metadata
+from llb.rag.refresh.merge_assembly import MergeAssemblyBuilder
 from llb.rag.refresh.merge_models import MergedUnits
 from llb.rag.store_build import _build_children
 
 MODE_PARENT_CHILD = "parent_child"
-
-
-def group_by_doc(records: list[ChunkRecord]) -> dict[str, list[int]]:
-    """Build-order ordinals per doc_id, order preserved."""
-    out: dict[str, list[int]] = {}
-    for ordinal, record in enumerate(records):
-        out.setdefault(str(record["doc_id"]), []).append(ordinal)
-    return out
 
 
 def chunk_changed_docs(
@@ -68,28 +61,6 @@ def _records_by_doc(records: list[ChunkRecord]) -> dict[str, list[ChunkRecord]]:
     return out
 
 
-def _annotation_only_sources(
-    fresh: list[ChunkRecord], old_chunks: list[ChunkRecord], old_ordinals: list[int]
-) -> list[int | None]:
-    """Row sources for one changed doc's fresh units: old ordinals when the diff is
-    annotation-only, fresh embeds otherwise.
-
-    A modified document whose re-chunked `(char_start, char_end, text)` grid reproduces the
-    stored one exactly (sidecar-driven page-span regeneration, governance-only manifest
-    changes) has embedding rows unchanged by construction: the fresh records replace the
-    stored ones (carrying the re-annotated metadata) while every embedding row is reused.
-    """
-    if len(fresh) != len(old_ordinals):
-        return [None] * len(fresh)
-    spans_unchanged = all(
-        unit["char_start"] == old_chunks[ordinal]["char_start"]
-        and unit["char_end"] == old_chunks[ordinal]["char_end"]
-        and unit["text"] == old_chunks[ordinal]["text"]
-        for unit, ordinal in zip(fresh, old_ordinals)
-    )
-    return list(old_ordinals) if spans_unchanged else [None] * len(fresh)
-
-
 def assemble(
     corpus_root: Path,
     changed: set[str],
@@ -104,29 +75,23 @@ def assemble(
     `modified` names the changed docs eligible for the annotation-only fast path (the diff's
     modified class); added docs and legacy full refreshes always embed fresh rows.
     """
-    old_ordinals = group_by_doc(old_chunks)
-    old_parent_ordinals = group_by_doc(old_parents) if old_parents is not None else {}
-    indexed: list[ChunkRecord] = []
-    parents: list[ChunkRecord] | None = [] if new_parents_by_doc is not None else None
-    row_sources: list[int | None] = []
+    builder = MergeAssemblyBuilder(
+        old_chunks,
+        old_parents,
+        include_parents=new_parents_by_doc is not None,
+    )
     for doc_id in iter_doc_paths(corpus_root):
         if doc_id in changed:
             fresh = new_by_doc.get(doc_id, [])
-            indexed.extend(fresh)
-            if modified and doc_id in modified:
-                sources = _annotation_only_sources(fresh, old_chunks, old_ordinals.get(doc_id, []))
-            else:
-                sources = [None] * len(fresh)
-            row_sources.extend(sources)
-            if parents is not None and new_parents_by_doc is not None:
-                parents.extend(new_parents_by_doc.get(doc_id, []))
+            builder.add_fresh(
+                doc_id,
+                fresh,
+                (new_parents_by_doc.get(doc_id, []) if new_parents_by_doc is not None else []),
+                annotation_only=bool(modified and doc_id in modified),
+            )
             continue
-        for ordinal in old_ordinals.get(doc_id, []):
-            indexed.append(old_chunks[ordinal])
-            row_sources.append(ordinal)
-        if parents is not None and old_parents is not None:
-            parents.extend(old_parents[ordinal] for ordinal in old_parent_ordinals.get(doc_id, []))
-    return MergedUnits(indexed=indexed, parents=parents, row_sources=row_sources)
+        builder.add_reused(doc_id)
+    return builder.build()
 
 
 def text_row_map(chunks: list[ChunkRecord]) -> dict[str, int]:

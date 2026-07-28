@@ -2,36 +2,80 @@
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
 from llb.core.config import RunConfig
 
-if TYPE_CHECKING:
-    pass
 _LOG = logging.getLogger(__name__)
+
+
+@dataclass
+class _CachedLauncherGenerator:
+    """Callable adapter that memoizes one launcher-backed query transformation."""
+
+    config: RunConfig
+    launcher: Any
+    prompt_id: str
+    cache: dict[str, str] = field(default_factory=dict)
+
+    def __call__(self, query: str) -> str:
+        from llb.prompts.registry import render_chat
+
+        if query in self.cache:
+            return self.cache[query]
+        messages = render_chat(self.prompt_id, {"query": query})
+        result = self.launcher.chat(
+            messages,
+            max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
+            timeout=self.config.request_timeout_s,
+        )
+        generated = result.text or ""
+        self.cache[query] = generated
+        return generated
 
 
 def _launcher_generator(config: RunConfig, launcher: Any, prompt_id: str) -> Callable[[str], str]:
     """Local-LLM query generator over the run's backend endpoint seam."""
-    from llb.prompts.registry import render_chat
+    return _CachedLauncherGenerator(config, launcher, prompt_id)
 
-    cache: dict[str, str] = {}
 
-    def generate(query: str) -> str:
-        if query in cache:
-            return cache[query]
-        messages = render_chat(prompt_id, {"query": query})
-        result = launcher.chat(
-            messages,
-            max_tokens=config.max_tokens,
-            temperature=config.temperature,
-            timeout=config.request_timeout_s,
-        )
-        generated = result.text or ""
-        cache[query] = generated
-        return generated
+def _query_vocabulary(
+    config: RunConfig, store: Any, steps: list[str], typo_step: str
+) -> tuple[frozenset[str] | None, Any | None, Any | None]:
+    if typo_step not in steps:
+        return None, None, None
+    from llb.rag.query_prep.restore import VocabularyContext
 
-    return generate
+    chunks = getattr(store, "chunks", None) or []
+    context = VocabularyContext.build(str(chunk.get("text", "")) for chunk in chunks)
+    known_word = None
+    if config.query_prep_typo_guard:
+        from llb.rag.lexical import load_uk_word_probe
+
+        known_word = load_uk_word_probe()
+    return context.tokens, known_word, context
+
+
+def _validate_model_steps(steps: list[str], launcher: Any | None, model_steps: set[str]) -> None:
+    enabled = model_steps.intersection(steps)
+    if enabled and launcher is None:
+        joined = ",".join(sorted(enabled))
+        raise SystemExit(f"[run-eval] query_prep '{joined}' needs a backend launcher")
+
+
+def _optional_generator(
+    config: RunConfig,
+    launcher: Any | None,
+    steps: list[str],
+    step: str,
+    prompt_id: str,
+) -> Callable[[str], str] | None:
+    if step not in steps:
+        return None
+    return _launcher_generator(config, launcher, prompt_id)
 
 
 def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any | None:
@@ -50,48 +94,22 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         STEP_TYPOS,
     )
     from llb.rag.query_prep.pipeline import QueryPrep
-    from llb.rag.query_prep.restore import VocabularyContext
 
     steps = list(config.query_prep)
     if not steps:
         return None
-    vocabulary = None
-    known_word = None
-    context = None
-    if STEP_TYPOS in steps:
-        chunks = getattr(store, "chunks", None) or []
-        # One pass builds both the in-vocabulary set and the co-occurrence postings the
-        # restoration constraints score candidates with.
-        context = VocabularyContext.build(str(chunk.get("text", "")) for chunk in chunks)
-        vocabulary = context.tokens
-        if config.query_prep_typo_guard:
-            from llb.rag.lexical import load_uk_word_probe
-
-            known_word = load_uk_word_probe()
-    plausible = None
-    if STEP_NORMALIZE in steps and config.query_prep_language_gate:
-        # Reuse the typo guard's morphology probe when it is already loaded, so the gate never
-        # pays for pymorphy3 twice on a normalize+typos lane.
-        plausible = _plausibility_probe(vocabulary, known_word)
+    vocabulary, known_word, context = _query_vocabulary(config, store, steps, STEP_TYPOS)
+    plausible = (
+        _plausibility_probe(vocabulary, known_word)
+        if STEP_NORMALIZE in steps and config.query_prep_language_gate
+        else None
+    )
     glossary = _load_query_glossary(config) if STEP_GLOSSARY in steps else None
-    rewriter = None
-    model_steps = {STEP_REWRITE, STEP_HYDE, STEP_DECOMPOSE}.intersection(steps)
-    if model_steps:
-        if launcher is None:
-            joined = ",".join(sorted(model_steps))
-            raise SystemExit(f"[run-eval] query_prep '{joined}' needs a backend launcher")
-    rewriter = (
-        _launcher_generator(config, launcher, "eval.rag.query_rewrite")
-        if STEP_REWRITE in steps
-        else None
-    )
-    hypothesizer = (
-        _launcher_generator(config, launcher, "eval.rag.query_hyde") if STEP_HYDE in steps else None
-    )
-    decomposer = (
-        _launcher_generator(config, launcher, "eval.rag.query_decompose")
-        if STEP_DECOMPOSE in steps
-        else None
+    _validate_model_steps(steps, launcher, {STEP_REWRITE, STEP_HYDE, STEP_DECOMPOSE})
+    rewriter = _optional_generator(config, launcher, steps, STEP_REWRITE, "eval.rag.query_rewrite")
+    hypothesizer = _optional_generator(config, launcher, steps, STEP_HYDE, "eval.rag.query_hyde")
+    decomposer = _optional_generator(
+        config, launcher, steps, STEP_DECOMPOSE, "eval.rag.query_decompose"
     )
     try:
         return QueryPrep.build(

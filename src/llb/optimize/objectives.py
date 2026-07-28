@@ -179,19 +179,18 @@ def nondominated_trials(trials: Sequence[Any], objectives: Sequence[str]) -> lis
 
 def _dominates(left: Sequence[float], right: Sequence[float], directions: Sequence[str]) -> bool:
     """True when ``left`` is at least as good on every objective and better on one."""
-    not_worse = True
     strictly_better = False
     for lval, rval, direction in zip(left, right, directions):
-        if direction == "maximize":
-            if lval < rval:
-                not_worse = False
-                break
-            if lval > rval:
-                strictly_better = True
-        else:
-            if lval > rval:
-                not_worse = False
-                break
-            if lval < rval:
-                strictly_better = True
-    return not_worse and strictly_better
+        comparison = _objective_comparison(lval, rval, direction)
+        if comparison < 0:
+            return False
+        strictly_better = strictly_better or comparison > 0
+    return strictly_better
+
+
+def _objective_comparison(left: float, right: float, direction: str) -> int:
+    """Return positive when left is better, zero when tied, and negative when worse."""
+    if left == right:
+        return 0
+    left_is_better = left > right if direction == "maximize" else left < right
+    return 1 if left_is_better else -1

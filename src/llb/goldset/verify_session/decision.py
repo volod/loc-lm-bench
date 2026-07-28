@@ -95,6 +95,45 @@ def _reject_code_for(cmd: Command, row: dict[str, str], emit: Callable[[str], No
     return explicit
 
 
+def _prepare_translation_acceptance(row: dict[str, str], emit: Callable[[str], None]) -> bool:
+    if row.get("review_profile", "") != TRANSLATION_PROFILE:
+        return True
+    failed = [column for column in CHECK_COLS if row.get(column, "") == FAIL]
+    if failed:
+        emit(
+            "[verify] BLOCKED: translation acceptance conflicts with failed checks: "
+            + ", ".join(failed)
+        )
+        return False
+    for column in CHECK_COLS:
+        if not row.get(column, ""):
+            row[column] = PASS
+    return True
+
+
+def _accept_row(row: dict[str, str], ctx: "SessionContext") -> bool:
+    if not _prepare_translation_acceptance(row, ctx.emit):
+        return False
+    if not _edit_still_grounds(ctx.corpus_root, row):
+        ctx.emit(
+            "[verify] BLOCKED: the edited answer no longer matches a verbatim span of "
+            f"{row.get('span_doc_id', '')} -- re-ground it with `e` before accepting."
+        )
+        return False
+    _set_decision(row, ACCEPT)
+    row["reject_code"] = ""
+    return True
+
+
+def _reject_row(cmd: Command, row: dict[str, str], ctx: "SessionContext") -> bool:
+    code = _reject_code_for(cmd, row, ctx.emit)
+    if code is None:
+        return False
+    _set_decision(row, REJECT)
+    row["reject_code"] = code
+    return True
+
+
 def _handle_decision_action(
     cmd: Command,
     row: dict[str, str],
@@ -103,33 +142,13 @@ def _handle_decision_action(
     ctx: "SessionContext",
 ) -> tuple[int, bool]:
     if cmd.kind == ACCEPT_CMD:
-        if row.get("review_profile", "") == TRANSLATION_PROFILE:
-            failed = [column for column in CHECK_COLS if row.get(column, "") == FAIL]
-            if failed:
-                ctx.emit(
-                    "[verify] BLOCKED: translation acceptance conflicts with failed checks: "
-                    + ", ".join(failed)
-                )
-                return idx, True
-            for column in CHECK_COLS:
-                if not row.get(column, ""):
-                    row[column] = PASS
-        if not _edit_still_grounds(ctx.corpus_root, row):
-            ctx.emit(
-                "[verify] BLOCKED: the edited answer no longer matches a verbatim span of "
-                f"{row.get('span_doc_id', '')} -- re-ground it with `e` before accepting."
-            )
-            return idx, True
-        _set_decision(row, ACCEPT)
-        row["reject_code"] = ""
+        decided = _accept_row(row, ctx)
     elif cmd.kind == REJECT_CMD:
-        code = _reject_code_for(cmd, row, ctx.emit)
-        if code is None:
-            return idx, True
-        _set_decision(row, REJECT)
-        row["reject_code"] = code
+        decided = _reject_row(cmd, row, ctx)
     else:
         return idx, False
+    if not decided:
+        return idx, True
 
     _save(ctx.path, ctx.rows, ctx.fieldnames)
     ctx.stats.on_decision()

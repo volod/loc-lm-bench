@@ -9,6 +9,19 @@ from llb.prep.ontology.dedup import QuestionEmbedder
 from llb.prep.ontology.models import ItemLabels
 
 
+def _partition_items(
+    items: list[GoldItem], labels: dict[str, ItemLabels]
+) -> tuple[list[GoldItem], list[GoldItem]]:
+    multi_hop_ids = {
+        item.id
+        for item in items
+        if (label := labels.get(item.id)) and label.question_type == "multi-hop"
+    }
+    multi_hop_items = [item for item in items if item.id in multi_hop_ids]
+    flat_items = [item for item in items if item.id not in multi_hop_ids]
+    return flat_items, multi_hop_items
+
+
 def deduplicate_drafts(
     items: list[GoldItem],
     labels: dict[str, ItemLabels],
@@ -27,13 +40,7 @@ def deduplicate_drafts(
     prior_questions = [item.question for item in prior_items]
     prior_answers = [item.reference_answer for item in prior_items]
     resolved = embedder if embedder is not None else E5QuestionEmbedder()
-    multi_hop_ids = {
-        item.id
-        for item in items
-        if (label := labels.get(item.id)) and label.question_type == "multi-hop"
-    }
-    multi_hop_items = [item for item in items if item.id in multi_hop_ids]
-    flat_items = [item for item in items if item.id not in multi_hop_ids]
+    flat_items, multi_hop_items = _partition_items(items, labels)
     kept_flat, flat_report = NearDuplicateFilter(prior_questions, resolved).filter(flat_items)
     kept_multi_hop, multi_hop_report = NearDuplicateFilter(
         prior_questions,

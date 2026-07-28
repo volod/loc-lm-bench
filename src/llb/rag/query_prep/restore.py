@@ -162,6 +162,49 @@ def _rank_key(
     return (distance, known_penalty, suffix_penalty, -cooccurrence, candidate)
 
 
+def _compatible_candidates(
+    token: str,
+    candidates: Sequence[tuple[int, str]],
+    provenance: TokenProvenance | None,
+) -> tuple[list[tuple[int, str]], bool]:
+    compatible = [
+        (distance, candidate)
+        for distance, candidate in candidates
+        if provenance is None or surface_distance(candidate, provenance) <= SURFACE_MAX_DISTANCE
+    ]
+    short = len(token.replace(_SEPARATORS, "")) <= AMBIGUOUS_TOKEN_MAX_CHARS
+    allows_resize = provenance is not None and provenance.kind == KIND_TRANSLITERATE
+    if short and not allows_resize:
+        compatible = [pair for pair in compatible if len(pair[1]) == len(token)]
+    return compatible, short
+
+
+def _log_incompatible(
+    token: str,
+    candidates: Sequence[tuple[int, str]],
+    provenance: TokenProvenance | None,
+) -> None:
+    if candidates:
+        _LOG.debug(
+            "[query-prep] no restoration of %r is compatible with the typed form %r",
+            token,
+            provenance.noisy if provenance is not None else token,
+        )
+
+
+def _is_ambiguous_short_token(
+    token: str, ranked: list[tuple[int, int, int, int, str]], short: bool
+) -> bool:
+    if len(ranked) <= 1 or not short or ranked[1][:-1] != ranked[0][:-1]:
+        return False
+    _LOG.info(
+        "[query-prep] ambiguous restoration of %r (%s tie); left unchanged",
+        token,
+        " / ".join(key[-1] for key in ranked[:2]),
+    )
+    return True
+
+
 def select_restoration(
     token: str,
     candidates: Sequence[tuple[int, str]],
@@ -177,21 +220,9 @@ def select_restoration(
     every candidate would resize a short token, or the survivors are indistinguishable on every
     signal and the token is short enough that an alphabetical tie-break would be a guess.
     """
-    compatible = [
-        (distance, candidate)
-        for distance, candidate in candidates
-        if provenance is None or surface_distance(candidate, provenance) <= SURFACE_MAX_DISTANCE
-    ]
-    short = len(token.replace(_SEPARATORS, "")) <= AMBIGUOUS_TOKEN_MAX_CHARS
-    if short and (provenance is None or provenance.kind != KIND_TRANSLITERATE):
-        compatible = [pair for pair in compatible if len(pair[1]) == len(token)]
+    compatible, short = _compatible_candidates(token, candidates, provenance)
     if not compatible:
-        if candidates:
-            _LOG.debug(
-                "[query-prep] no restoration of %r is compatible with the typed form %r",
-                token,
-                provenance.noisy if provenance is not None else token,
-            )
+        _log_incompatible(token, candidates, provenance)
         return None
     ranked = sorted(
         (
@@ -199,12 +230,6 @@ def select_restoration(
             for distance, candidate in compatible
         )
     )
-    best = ranked[0]
-    if len(ranked) > 1 and short and ranked[1][:-1] == best[:-1]:
-        _LOG.info(
-            "[query-prep] ambiguous restoration of %r (%s tie); left unchanged",
-            token,
-            " / ".join(key[-1] for key in ranked[:2]),
-        )
+    if _is_ambiguous_short_token(token, ranked, short):
         return None
-    return best[-1]
+    return ranked[0][-1]

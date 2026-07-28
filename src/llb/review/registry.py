@@ -2,6 +2,7 @@
 
 import csv
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from llb.review.adapters import (
@@ -16,37 +17,60 @@ from llb.review.adapters import (
 from llb.review.core import ReviewAdapter
 
 
+def _open_review_directory(path: Path) -> ReviewAdapter:
+    signatures: tuple[tuple[str, Callable[[Path], ReviewAdapter]], ...] = (
+        ("comparison.json", DraftCompareAdapter),
+        ("translation_review.csv", KnowledgeCutoffAdapter),
+        ("candidates.json", PromptSystemAdapter),
+    )
+    for filename, adapter in signatures:
+        if (path / filename).is_file():
+            return adapter(path)
+    raise ValueError(f"cannot detect a review ledger in directory: {path}")
+
+
+def _open_csv_review(path: Path) -> ReviewAdapter | None:
+    if path.suffix.lower() != ".csv":
+        return None
+    fields = _csv_fields(path)
+    if "human_rating" in fields and "model_answer" in fields:
+        return JudgeCalibrationAdapter(path)
+    if "decision" not in fields or "item_id" not in fields:
+        return None
+    if "review_profile" in fields and _translation_profile(path):
+        return KnowledgeCutoffAdapter(path)
+    return GoldsetVerifyAdapter(path)
+
+
+def _open_jsonl_review(path: Path) -> ReviewAdapter | None:
+    if path.suffix.lower() != ".jsonl":
+        return None
+    if _is_conflict_resolution(path):
+        return ConflictResolutionAdapter(path)
+    if _is_external_rag(path):
+        return ExternalRagAdapter(path)
+    return None
+
+
+def _open_review_file(path: Path) -> ReviewAdapter:
+    if path.name == "comparison.json":
+        return DraftCompareAdapter(path)
+    if path.name == "candidates.json" or _is_candidate_json(path):
+        return PromptSystemAdapter(path)
+    adapter = _open_csv_review(path) or _open_jsonl_review(path)
+    if adapter is not None:
+        return adapter
+    raise ValueError(f"unrecognized review ledger: {path}")
+
+
 def open_review(path: Path | str) -> ReviewAdapter:
     """Open the one adapter whose existing ledger signature matches ``path``."""
     value = Path(path)
     if value.is_dir():
-        if (value / "comparison.json").is_file():
-            return DraftCompareAdapter(value)
-        if (value / "translation_review.csv").is_file():
-            return KnowledgeCutoffAdapter(value)
-        if (value / "candidates.json").is_file():
-            return PromptSystemAdapter(value)
-        raise ValueError(f"cannot detect a review ledger in directory: {value}")
+        return _open_review_directory(value)
     if not value.is_file():
         raise ValueError(f"review path not found: {value}")
-    if value.name == "comparison.json":
-        return DraftCompareAdapter(value)
-    if value.name == "candidates.json" or _is_candidate_json(value):
-        return PromptSystemAdapter(value)
-    if value.suffix.lower() == ".csv":
-        fields = _csv_fields(value)
-        if "human_rating" in fields and "model_answer" in fields:
-            return JudgeCalibrationAdapter(value)
-        if "decision" in fields and "item_id" in fields:
-            if "review_profile" in fields and _translation_profile(value):
-                return KnowledgeCutoffAdapter(value)
-            return GoldsetVerifyAdapter(value)
-    if value.suffix.lower() == ".jsonl":
-        if _is_conflict_resolution(value):
-            return ConflictResolutionAdapter(value)
-        if _is_external_rag(value):
-            return ExternalRagAdapter(value)
-    raise ValueError(f"unrecognized review ledger: {value}")
+    return _open_review_file(value)
 
 
 def _csv_fields(path: Path) -> list[str]:

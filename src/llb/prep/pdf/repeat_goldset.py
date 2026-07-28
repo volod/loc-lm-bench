@@ -30,6 +30,28 @@ class GoldsetRemap(TypedDict):
     rehomed: list[str]  # remapped ids whose evidence sat on a dropped copy (now on the survivor)
 
 
+def _remap_item(
+    item: GoldItem,
+    stripped: dict[str, StrippedDoc],
+    recover_straddle: bool,
+) -> tuple[GoldItem | None, bool]:
+    remapped = [
+        _remap_gold_span(span, stripped.get(span.doc_id), recover_straddle)
+        for span in item.source_spans
+    ]
+    if any(spans is None for spans, _ in remapped):
+        return None, False
+    moved = [piece for spans, _ in remapped for piece in (spans or [])]
+    was_rehomed = any(rehomed for _, rehomed in remapped)
+    return item.model_copy(update={"source_spans": moved}), was_rehomed
+
+
+def _write_remapped_goldset(path: Path | str, items: list[GoldItem]) -> None:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(item.model_dump_json() + "\n" for item in items), encoding="utf-8")
+
+
 def remap_goldset(
     goldset: Path | str | None,
     goldset_out: Path | str | None,
@@ -48,21 +70,15 @@ def remap_goldset(
     dropped: list[str] = []
     rehomed: list[str] = []
     for item in items:
-        remapped = [
-            _remap_gold_span(span, stripped.get(span.doc_id), recover_straddle)
-            for span in item.source_spans
-        ]
-        if any(spans is None for spans, _ in remapped):
+        remapped_item, was_rehomed = _remap_item(item, stripped, recover_straddle)
+        if remapped_item is None:
             dropped.append(item.id)
             continue
-        moved = [piece for spans, _ in remapped for piece in (spans or [])]
-        if any(was_rehomed for _, was_rehomed in remapped):
+        if was_rehomed:
             rehomed.append(item.id)
-        kept.append(item.model_copy(update={"source_spans": moved}))
+        kept.append(remapped_item)
     if goldset_out is not None:
-        out = Path(goldset_out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text("".join(item.model_dump_json() + "\n" for item in kept), encoding="utf-8")
+        _write_remapped_goldset(goldset_out, kept)
     return {"items": len(items), "remapped": len(kept), "dropped": dropped, "rehomed": rehomed}
 
 

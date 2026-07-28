@@ -8,6 +8,27 @@ import typer
 from llb.cli.helpers import cli_error
 
 
+def _validate_optional_path(path: Optional[Path], *, kind: str, label: str) -> None:
+    if path is None:
+        return
+    exists = path.is_dir() if kind == "directory" else path.is_file()
+    if not exists:
+        cli_error(f"{label} not found: {path}")
+
+
+def _validate_extraction_bundle(bundle: Optional[Path]) -> None:
+    if bundle is None:
+        return
+    if not (bundle / "extraction.jsonl").is_file():
+        cli_error(f"reuse extraction bundle has no extraction.jsonl: {bundle}")
+
+
+def _validate_dedup_bundles(bundles: Optional[list[Path | str]]) -> None:
+    for bundle in bundles or []:
+        if not (Path(bundle) / "goldset.jsonl").is_file():
+            cli_error(f"dedup bundle has no goldset.jsonl: {bundle}")
+
+
 def _validate_draft_inputs(
     drop_nonretrievable_needles: bool,
     retrieval_index_dir: Optional[Path],
@@ -22,23 +43,15 @@ def _validate_draft_inputs(
     """Fail fast (exit 2) on option combinations and paths that cannot work."""
     if drop_nonretrievable_needles and retrieval_index_dir is None:
         cli_error("--drop-nonretrievable-needles requires --retrieval-index-dir")
-    if retrieval_index_dir is not None and not retrieval_index_dir.is_dir():
-        cli_error(f"retrieval index dir not found: {retrieval_index_dir}")
-    if graph_dir is not None and not graph_dir.is_dir():
-        cli_error(f"graph store dir not found: {graph_dir}")
-    if rejection_feedback is not None and not rejection_feedback.is_file():
-        cli_error(f"rejection feedback file not found: {rejection_feedback}")
-    if reuse_extraction_bundle is not None:
-        extraction = reuse_extraction_bundle / "extraction.jsonl"
-        if not extraction.is_file():
-            cli_error(f"reuse extraction bundle has no extraction.jsonl: {reuse_extraction_bundle}")
+    _validate_optional_path(retrieval_index_dir, kind="directory", label="retrieval index dir")
+    _validate_optional_path(graph_dir, kind="directory", label="graph store dir")
+    _validate_optional_path(rejection_feedback, kind="file", label="rejection feedback file")
+    _validate_extraction_bundle(reuse_extraction_bundle)
     if multi_hop_only and not multi_hop:
         cli_error("--multi-hop-only requires --multi-hop")
     if carry_forward_multi_hop and not dedup_against:
         cli_error("--carry-forward-multi-hop requires --dedup-against")
-    for bundle in dedup_against or []:
-        if not (Path(bundle) / "goldset.jsonl").is_file():
-            cli_error(f"dedup bundle has no goldset.jsonl: {bundle}")
+    _validate_dedup_bundles(dedup_against)
 
 
 def _extraction_adapter(extractor: str, spacy_model: str) -> Any:

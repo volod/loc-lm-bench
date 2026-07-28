@@ -30,6 +30,7 @@ from typing import Any
 from llb.conflicts.constants import DEFAULT_LEAF_SIZE, TREE_BOUND_EPSILON
 from llb.conflicts.tree_build import NodeCounter, build_node
 from llb.conflicts.tree_node import TREE_VERSION, TreeNode
+from llb.conflicts.tree_query import filtered_leaf_pairs
 from llb.conflicts.vector_math import (
     METRIC_ANGULAR,
     METRIC_EUCLIDEAN,
@@ -95,14 +96,15 @@ class SemanticPrefixTree:
             if left_id != right_id and self._prune(left, right, distance_threshold):
                 continue
             if left.is_leaf and right.is_leaf:
-                leaf_pairs = _leaf_pairs(left, right, same_node=left_id == right_id)
-                if vectors is not None:
-                    leaf_pairs = {
-                        pair
-                        for pair in leaf_pairs
-                        if vectors.distance(*pair) <= distance_threshold + TREE_BOUND_EPSILON
-                    }
-                pairs.update(leaf_pairs)
+                pairs.update(
+                    filtered_leaf_pairs(
+                        left,
+                        right,
+                        same_node=left_id == right_id,
+                        vectors=vectors,
+                        distance_threshold=distance_threshold,
+                    )
+                )
                 continue
             stack.extend(self._descend(left, right))
         return sorted(pairs)
@@ -208,18 +210,6 @@ class SemanticPrefixTree:
             int(payload["leaf_size"]),
             str(payload.get("metric", METRIC_ANGULAR)),
         )
-
-
-def _leaf_pairs(left: TreeNode, right: TreeNode, *, same_node: bool) -> set[tuple[int, int]]:
-    """Every unordered member pair across two leaves (or within one)."""
-    if same_node:
-        members = left.members
-        return {
-            (min(members[i], members[j]), max(members[i], members[j]))
-            for i in range(len(members))
-            for j in range(i + 1, len(members))
-        }
-    return {(min(a, b), max(a, b)) for a in left.members for b in right.members if a != b}
 
 
 def _box_distance(left: TreeNode, right: TreeNode) -> float:

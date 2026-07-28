@@ -31,7 +31,7 @@ from llb.graph.ingest import load_extractions, load_ontology
 from llb.graph.store import GraphStore
 from llb.prep.ontology.constants import EXTRACTION_FILENAME, ONTOLOGY_FILENAME
 from llb.prep.ontology.inventory import inventory_corpus
-from llb.prep.ontology.models import DocExtraction, OntologyCandidate
+from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 from llb.rag.refresh.diff import ManifestDiff, diff_fingerprints
 
 _LOG = logging.getLogger(__name__)
@@ -46,6 +46,53 @@ class GraphRefreshResult:
     source_dir: Path
     generation_dir: Path | None = None
     store: GraphStore | None = None
+
+
+def _load_recorded_fingerprints(meta: dict[str, object], live_dir: Path) -> dict[str, str]:
+    recorded = meta.get("doc_fingerprints")
+    if isinstance(recorded, dict):
+        return {str(doc_id): str(sha) for doc_id, sha in recorded.items()}
+    _LOG.warning(
+        "[refresh] graph store at %s records no doc_fingerprints (built before refresh "
+        "support); treating every document as changed",
+        live_dir,
+    )
+    return {}
+
+
+def _require_graph_extractions(live_dir: Path) -> list[DocExtraction]:
+    extraction_path = live_dir / EXTRACTION_FILENAME
+    if extraction_path.is_file():
+        return load_extractions(extraction_path)
+    raise SystemExit(
+        f"[refresh] the graph store at {live_dir} has no persisted {EXTRACTION_FILENAME}; "
+        "rebuild it once with `llb build-graph` (which now saves its inputs) to enable "
+        "incremental refresh"
+    )
+
+
+def _merge_extractions(
+    docs: list[DocRecord],
+    diff: ManifestDiff,
+    old_extractions: list[DocExtraction],
+    extraction_update: list[DocExtraction] | None,
+) -> list[DocExtraction]:
+    updates = {extraction.doc_id: extraction for extraction in (extraction_update or [])}
+    missing = sorted(doc_id for doc_id in diff.changed if doc_id not in updates)
+    if missing:
+        raise SystemExit(
+            "[refresh] extraction rows missing for changed documents: "
+            + ", ".join(missing)
+            + "; re-extract just those documents and pass the file via --graph-extraction, "
+            "or skip the graph store with --skip-graph"
+        )
+    unchanged = set(diff.unchanged)
+    kept = {e.doc_id: e for e in old_extractions if e.doc_id in unchanged}
+    return [
+        updates[doc.doc_id] if doc.doc_id in diff.changed else kept[doc.doc_id]
+        for doc in docs
+        if doc.doc_id in diff.changed or doc.doc_id in kept
+    ]
 
 
 def save_graph_inputs(
@@ -88,44 +135,17 @@ def refresh_graph_store(
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     docs = inventory_corpus(corpus_root)
     current = {doc.doc_id: doc.sha256 for doc in docs}
-    recorded_raw = meta.get("doc_fingerprints")
-    if not isinstance(recorded_raw, dict):
-        _LOG.warning(
-            "[refresh] graph store at %s records no doc_fingerprints (built before refresh "
-            "support); treating every document as changed",
-            live_dir,
-        )
-        recorded_raw = {}
-    recorded = {str(doc_id): str(sha) for doc_id, sha in recorded_raw.items()}
+    recorded = _load_recorded_fingerprints(meta, live_dir)
     diff = diff_fingerprints(recorded, current)
     if recorded and not diff.has_changes:
         return GraphRefreshResult(diff=diff, refreshed=False, source_dir=live_dir)
 
-    extraction_path = live_dir / EXTRACTION_FILENAME
-    if not extraction_path.is_file():
-        raise SystemExit(
-            f"[refresh] the graph store at {live_dir} has no persisted {EXTRACTION_FILENAME}; "
-            "rebuild it once with `llb build-graph` (which now saves its inputs) to enable "
-            "incremental refresh"
-        )
-    old_extractions = load_extractions(extraction_path)
-    updates = {extraction.doc_id: extraction for extraction in (extraction_update or [])}
-    missing = sorted(doc_id for doc_id in diff.changed if doc_id not in updates)
-    if missing:
-        raise SystemExit(
-            "[refresh] extraction rows missing for changed documents: "
-            + ", ".join(missing)
-            + "; re-extract just those documents and pass the file via --graph-extraction, "
-            "or skip the graph store with --skip-graph"
-        )
-    unchanged = set(diff.unchanged)
-    kept = {e.doc_id: e for e in old_extractions if e.doc_id in unchanged}
-    merged: list[DocExtraction] = []
-    for doc in docs:  # inventory order == the deterministic from-scratch build order
-        if doc.doc_id in diff.changed:
-            merged.append(updates[doc.doc_id])
-        elif doc.doc_id in kept:
-            merged.append(kept[doc.doc_id])
+    merged = _merge_extractions(
+        docs,
+        diff,
+        _require_graph_extractions(live_dir),
+        extraction_update,
+    )
     ontology = load_ontology(live_dir / ONTOLOGY_FILENAME)
     store = GraphStore.build(
         merged, docs, ontology, khop_depth=int(meta.get("khop_depth", DEFAULT_KHOP_DEPTH))

@@ -52,26 +52,25 @@ def _boundary_table(report: RosterReport) -> list[str]:
     )
 
 
-def format_roster(
-    report: RosterReport,
-    *,
-    metadata: Mapping[str, object] | None = None,
-    title: str = "Embedder adoption bar: is the reranker gain predictable in advance?",
-) -> str:
-    """The roster Markdown artifact: the verdict, the per-cell readings, the property table."""
+def _metadata_lines(report: RosterReport, metadata: Mapping[str, object]) -> list[str]:
+    lines = [
+        f"- {key}: `{metadata[key]}`"
+        for key in ("split", "grounding", "goldset", "corpus")
+        if key in metadata
+    ]
     verdict = report["verdict"]
-    meta = dict(metadata or {})
-    lines = [f"# {title}", ""]
-    for key in ("split", "grounding", "goldset", "corpus"):
-        if key in meta:
-            lines.append(f"- {key}: `{meta[key]}`")
-    lines += [
+    return lines + [
         f"- encoder pair: `{report['candidate']}` vs `{report['baseline']}`",
         f"- scored items: {report['n']} (identical set and seed in every sweep)",
         f"- roster: {len(report['models'])} models",
         f"- focus cell: `{report['focus_cell']}`",
         f"- verdict: **{verdict['decision']}** -- {verdict['reason']}",
         "",
+    ]
+
+
+def _reading_table(report: RosterReport) -> list[str]:
+    lines = [
         "### Per-cell reading by model",
         "",
         "| model | "
@@ -85,23 +84,16 @@ def format_roster(
             for cell in report["cells"]
         )
         lines.append(f"| `{model}` | {readings} | {report['verdicts'][model]} |")
-    lines += [
-        "",
-        "`answer` = the rank gain reached the answer (objective interval clears zero); "
-        "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
-        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
-        "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
-        "97.5% interval would change -- the cut decided it, not the evidence.",
-        "",
-    ]
-    lines += _boundary_table(report)
-    lines += [
+    return lines
+
+
+def _property_table(report: RosterReport) -> list[str]:
+    lines = [
         "### Declared model properties",
         "",
         "| model | "
         + " | ".join(f"{name}" for name in PROPERTIES)
         + f" | `{report['focus_cell']}` |",
-        # Numeric properties read right-aligned, categorical ones centred.
         "| --- | "
         + " | ".join("---:" if name in NUMERIC_PROPERTIES else ":-:" for name in PROPERTIES)
         + " | :-: |",
@@ -112,14 +104,45 @@ def format_roster(
         values = " | ".join(_profile_cell(profile, name) for name in PROPERTIES)
         reading = reading_label(focus["readings"][model])
         lines.append(f"| `{model}` | {values} | {reading} |")
-    lines += ["", "### Property separation", ""]
+    return lines
+
+
+def _separation_lines(report: RosterReport) -> list[str]:
+    verdict = report["verdict"]
+    lines = ["", "### Property separation", ""]
     if not verdict["separations"]:
         lines.append("No property was tested: the focus cell has no split to explain.")
     for entry in verdict["separations"]:
         mark = "SEPARATES" if entry["separates"] else "does not separate"
         lines.append(f"- `{entry['property']}` -- **{mark}**: {entry['reason']}")
         if entry["missing"]:
-            lines.append(f"  - undeclared for: {', '.join(f'`{m}`' for m in entry['missing'])}")
+            missing = ", ".join(f"`{model}`" for model in entry["missing"])
+            lines.append(f"  - undeclared for: {missing}")
+    return lines
+
+
+def format_roster(
+    report: RosterReport,
+    *,
+    metadata: Mapping[str, object] | None = None,
+    title: str = "Embedder adoption bar: is the reranker gain predictable in advance?",
+) -> str:
+    """The roster Markdown artifact: the verdict, the per-cell readings, the property table."""
+    lines = [f"# {title}", ""]
+    lines += _metadata_lines(report, dict(metadata or {}))
+    lines += _reading_table(report)
+    lines += [
+        "",
+        "`answer` = the rank gain reached the answer (objective interval clears zero); "
+        "`rank only` = the encoder ranks earlier but the answer does not move; `neither` = no "
+        "separation; `insufficient evidence` = the interval clears zero on too few differing items "
+        "for the reporting level to be reachable. `(borderline)` marks a reading that a 90% or a "
+        "97.5% interval would change -- the cut decided it, not the evidence.",
+        "",
+    ]
+    lines += _boundary_table(report)
+    lines += _property_table(report)
+    lines += _separation_lines(report)
     lines.append("")
     return "\n".join(lines) + "\n"
 
