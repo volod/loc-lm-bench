@@ -62,6 +62,15 @@ class ThroughputProfile(TypedDict):
     backend_notes: NotRequired[dict[str, Any]]
 
 
+class FasterThanBaseline(TypedDict):
+    """One encoder that beats the bake-off baseline on warm chunks/s (headline device)."""
+
+    model: str
+    warm_chunks_per_s: float
+    speedup_vs_baseline: float | None
+    peak_vram_mb: float | None
+
+
 class HostThroughputSummary(TypedDict):
     """Cross-encoder host summary: warm ordering vs one-pass ordering."""
 
@@ -74,6 +83,9 @@ class HostThroughputSummary(TypedDict):
     warm_order: list[str]
     ordering_survives: bool
     verdict: str
+    # When the bake-off baseline is known, list headline-device models that beat it on warm rate.
+    baseline_model: NotRequired[str | None]
+    faster_than_baseline: NotRequired[list[FasterThanBaseline]]
 
 
 def relative_precision(samples: Sequence[float]) -> tuple[float, float, float]:
@@ -205,8 +217,43 @@ def ordering_survives(profiles: Sequence[ThroughputProfile]) -> bool:
     return rate_order(profiles, warm=False) == rate_order(profiles, warm=True)
 
 
+def models_faster_than_baseline(
+    profiles: Sequence[ThroughputProfile],
+    *,
+    baseline: str,
+    device: str,
+) -> list[FasterThanBaseline]:
+    """Headline-device encoders whose warm chunks/s beat `baseline` (excluding the baseline)."""
+    group = [p for p in profiles if p["device"] == device]
+    base = next((p for p in group if p["model"] == baseline), None)
+    if base is None:
+        return []
+    base_rate = float(base["warm_chunks_per_s"])
+    rows: list[FasterThanBaseline] = []
+    for profile in group:
+        if profile["model"] == baseline:
+            continue
+        rate = float(profile["warm_chunks_per_s"])
+        if rate <= base_rate:
+            continue
+        peak = profile.get("peak_vram_mb")
+        rows.append(
+            {
+                "model": profile["model"],
+                "warm_chunks_per_s": rate,
+                "speedup_vs_baseline": (rate / base_rate) if base_rate > 0 else None,
+                "peak_vram_mb": float(peak) if isinstance(peak, int | float) else None,
+            }
+        )
+    rows.sort(key=lambda row: (-row["warm_chunks_per_s"], row["model"]))
+    return rows
+
+
 def build_host_summary(
-    profiles: Sequence[ThroughputProfile], *, corpus_n_texts: int
+    profiles: Sequence[ThroughputProfile],
+    *,
+    corpus_n_texts: int,
+    baseline_model: str | None = None,
 ) -> HostThroughputSummary:
     """Cross-encoder summary: per-device orders, survival flag, and a one-line verdict."""
     devices = sorted({p["device"] for p in profiles})
@@ -227,6 +274,11 @@ def build_host_summary(
     one_pass = list(headline.get("one_pass_order", []))
     warm = list(headline.get("warm_order", []))
     survives = bool(headline.get("ordering_survives", True)) if headline else True
+    faster: list[FasterThanBaseline] = []
+    if baseline_model and headline_device:
+        faster = models_faster_than_baseline(
+            profiles, baseline=baseline_model, device=headline_device
+        )
 
     if not profiles:
         verdict = "no encoder profiles recorded"
@@ -250,6 +302,22 @@ def build_host_summary(
                 "ordering; prefer warm chunks/s for host recommendations "
                 f"(one-pass={one_pass}, warm={warm}). " + "; ".join(parts)
             )
+        if faster:
+            names = ", ".join(
+                f"{row['model']} ({row['warm_chunks_per_s']:.1f} c/s, "
+                f"{row['speedup_vs_baseline']:.2f}x)"
+                if row["speedup_vs_baseline"] is not None
+                else f"{row['model']} ({row['warm_chunks_per_s']:.1f} c/s)"
+                for row in faster
+            )
+            verdict += (
+                f" Faster than baseline `{baseline_model}` on warm {headline_device}: {names}."
+            )
+        elif baseline_model:
+            verdict += (
+                f" No profiled encoder beat baseline `{baseline_model}` on warm "
+                f"{headline_device} chunks/s."
+            )
     return {
         "corpus_n_texts": corpus_n_texts,
         "devices": devices,
@@ -259,6 +327,8 @@ def build_host_summary(
         "warm_order": warm,
         "ordering_survives": survives,
         "verdict": verdict,
+        "baseline_model": baseline_model,
+        "faster_than_baseline": faster,
     }
 
 
@@ -295,6 +365,20 @@ def format_host_summary(summary: HostThroughputSummary) -> str:
             f"  [{device}] survives={info['ordering_survives']} "
             f"warm={' > '.join(info['warm_order']) or '-'}"
         )
+    baseline = summary.get("baseline_model")
+    faster = summary.get("faster_than_baseline") or []
+    if baseline:
+        if faster:
+            named = ", ".join(
+                f"{row['model']}={row['warm_chunks_per_s']:.1f}c/s"
+                f"({row['speedup_vs_baseline']:.2f}x)"
+                if row.get("speedup_vs_baseline") is not None
+                else f"{row['model']}={row['warm_chunks_per_s']:.1f}c/s"
+                for row in faster
+            )
+            lines.append(f"  faster_than_baseline ({baseline}): {named}")
+        else:
+            lines.append(f"  faster_than_baseline ({baseline}): (none)")
     lines.append(f"  verdict: {summary['verdict']}")
     return "\n".join(lines)
 
@@ -307,6 +391,7 @@ def render_host_markdown(summary: HostThroughputSummary) -> str:
         f"- texts: {summary['corpus_n_texts']}",
         f"- devices: {', '.join(summary['devices']) or '-'}",
         f"- ordering survives warm measurement: `{summary['ordering_survives']}`",
+        f"- baseline: `{summary.get('baseline_model') or '-'}`",
         f"- verdict: {summary['verdict']}",
         "",
         "| model | device | load_s | first_s | compile_est_s | warm_median_s | warm_iqr_s "
@@ -325,10 +410,26 @@ def render_host_markdown(summary: HostThroughputSummary) -> str:
             f"{profile['stopping_reason']} | {profile.get('peak_vram_mb', '-')} | "
             f"{profile.get('mean_power_w', '-')} | {profile.get('power_limit_w', '-')} |"
         )
+    faster = summary.get("faster_than_baseline") or []
+    if summary.get("baseline_model"):
+        if faster:
+            named = ", ".join(
+                f"`{row['model']}` ({row['warm_chunks_per_s']:.1f} c/s, "
+                f"{row['speedup_vs_baseline']:.2f}x)"
+                if row.get("speedup_vs_baseline") is not None
+                else f"`{row['model']}` ({row['warm_chunks_per_s']:.1f} c/s)"
+                for row in faster
+            )
+            faster_line = f"- faster than baseline on warm headline device: {named}"
+        else:
+            faster_line = "- faster than baseline on warm headline device: (none)"
+    else:
+        faster_line = "- faster than baseline on warm headline device: (baseline not set)"
     lines += [
         "",
         f"- one-pass order: {' > '.join(f'`{m}`' for m in summary['one_pass_order']) or '-'}",
         f"- warm order: {' > '.join(f'`{m}`' for m in summary['warm_order']) or '-'}",
+        faster_line,
         "",
     ]
     return "\n".join(lines)
@@ -388,7 +489,7 @@ def profile_local_embedder(
             backend_notes=notes,
         )
     # Drop the weights so the next candidate does not stack VRAM on a 12 GiB host.
-    embedder._model = None
+    embedder.release()
     return profile
 
 

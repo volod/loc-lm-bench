@@ -279,25 +279,6 @@ exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-
 - Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
   [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
 
-### blackwell-encoder-roster-expansion (optional)
-
-The warm decomposition on the 12 GiB Blackwell host shows e5-base remains ~3.4x e5-large on steady
-encode while e5-large and BGE-M3 are throughput-tied
-([RAG core](current/rag-core.md#blackwell-encoder-throughput-decomposition)). Expand the
-local candidate roster with one smaller retrieval-tuned encoder (sub-base multilingual) and re-run
-`--encoder-throughput` so the host recommendation can name a cheap CUDA embedder when quality is
-flat, without changing the shipped `e5-base` default until a paired quality bar clears.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `DEFAULT_LOCAL_CANDIDATES` and the encoder-throughput knobs on
-  `make compare-embeddings`.
-- User-visible outcome: a 12 GiB host that must keep embeddings on CUDA beside a served generator
-  has a measured cheaper alternative when quality allows.
-- Scope boundary: in scope -- one additional local candidate, warm throughput + paired quality on
-  the committed fixture. Out of scope -- fine-tuning an embedder or changing the default before a
-  paired adopt.
-- Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md).
-
 ### cross-lingual-query-lane
 
 The query-robustness lane perturbs CHARACTERS -- transliteration, apostrophe variants, mixed script,
@@ -1124,7 +1105,12 @@ says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are T
 leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
 consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
 retrieves 0.980, leaving 5 questions of headroom for any candidate to win
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Both sets are
+([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). The sub-base
+roster addition `intfloat/multilingual-e5-small` is ~3x faster on warm CUDA with flat quality on
+n=82 and still RETAIN
+([RAG core](current/rag-core.md#blackwell-sub-base-encoder-roster-e5-small)) -- include it when the
+enriched ledger re-runs so a cheap CUDA swap can clear an adoption bar if the discordance is there.
+Both existing sets are
 at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
 can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
 assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors

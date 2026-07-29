@@ -253,7 +253,11 @@ def compare_embeddings_cmd(
 
     if throughput_profiles:
         n_texts = max((p["n_texts"] for p in throughput_profiles), default=0)
-        summary = build_host_summary(throughput_profiles, corpus_n_texts=n_texts)
+        summary = build_host_summary(
+            throughput_profiles,
+            corpus_n_texts=n_texts,
+            baseline_model=baseline.strip() or None,
+        )
         report["encoder_throughput"] = summary
         throughput_dir = cfg.data_dir / "encoder-throughput" / run_ts
         throughput_dir.mkdir(parents=True, exist_ok=True)

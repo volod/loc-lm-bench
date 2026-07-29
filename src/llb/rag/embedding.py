@@ -123,6 +123,17 @@ class Embedder:
         )
         return np.asarray(vectors, dtype="float32")
 
+    def release(self) -> None:
+        """Drop loaded weights and free CUDA cache so the next candidate does not stack VRAM."""
+        self._model = None
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # optional path; never fail a bake-off for cache cleanup
+            pass
+
     # --- token-level passage hooks (late chunking, `llb.rag.late_encoding`) ---
 
     def max_seq_tokens(self) -> int:

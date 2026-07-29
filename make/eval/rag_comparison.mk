@@ -117,7 +117,7 @@ compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSE
 			--encoder-min-warm "$(EMBED_ENCODER_MIN_WARM)" \
 			--encoder-max-warm "$(EMBED_ENCODER_MAX_WARM)" \
 			--encoder-max-warm-seconds "$(EMBED_ENCODER_MAX_WARM_SECONDS)" \
-			$(if $(EMBED_ENCODER_COMPARE_CPU),--encoder-compare-cpu,),) \
+			$(if $(filter 1,$(EMBED_ENCODER_COMPARE_CPU)),--encoder-compare-cpu,),) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
 compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)

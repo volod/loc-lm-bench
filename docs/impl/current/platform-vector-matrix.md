@@ -351,7 +351,8 @@ fingerprint guard, and the opt-in Cohere API-row egress gate.
 ```bash
 make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10 NOISE_FLOOR=1
 llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 --noise-floor \
-  --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-large,BAAI/bge-m3 \
+  --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-small,\
+intfloat/multilingual-e5-large,BAAI/bge-m3 \
   --baseline intfloat/multilingual-e5-base
 make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOPTED embedder
 ```
@@ -360,7 +361,11 @@ Every candidate row carries a PAIRED delta interval against `--baseline` plus th
 ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
 rank; see [RAG core](rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
 
-Recommended embedder for the 16 GB host: `intfloat/multilingual-e5-base`, the current default. The
+Recommended embedder for the 16 GB host: `intfloat/multilingual-e5-base`, the current default.
+On a 12 GiB Blackwell host that must keep embeddings on CUDA beside a served generator,
+`intfloat/multilingual-e5-small` is the measured cheap alternative (~3x warm encode, lower VRAM)
+when quality is flat -- still RETAIN until a paired adopt clears
+([RAG core](rag-core.md#blackwell-sub-base-encoder-roster-e5-small)). The
 2026-07-10 `embedding-bakeoff-full-corpus` evidence (four local candidates over a verified 44-item
 quickstart-PDF accepted goldset, 1139 chunks) put it ahead on recall@10 (0.955 vs 0.932 for
 e5-large and bge-m3) with ~1.8x the embed throughput of the 1024-dim pair (69 vs 38 chunks/s on

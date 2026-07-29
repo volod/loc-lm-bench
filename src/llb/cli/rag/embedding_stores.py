@@ -75,6 +75,11 @@ def local_store_builder(
         store.save(out_dir)
         resolve = getattr(store.embedder, "_resolve_device", None)
         device = resolve() if callable(resolve) else None
+        # Release build weights before the cold/warm profile so peak VRAM is per-candidate,
+        # not stacked across the bake-off roster (retrieve() lazy-reloads when scoring).
+        release = getattr(store.embedder, "release", None)
+        if callable(release):
+            release()
         profile = None
         if options.enabled:
             texts = [str(chunk["text"]) for chunk in store.chunks]

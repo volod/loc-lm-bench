@@ -247,3 +247,42 @@ def test_host_summary_orders_per_device_not_mixed():
     assert summary["by_device"]["cpu"]["ordering_survives"] is True
     assert summary["ordering_survives"] is False  # headline = cuda
     assert summary["warm_order"] == ["b", "a"]
+
+
+def test_faster_than_baseline_names_warm_winners():
+    base = measure_encoder_throughput(
+        "base",
+        ["t"] * 8,
+        load=lambda: None,
+        encode=lambda _t: None,
+        device="cuda",
+        clock=_step_clock([0, 1, 1, 2, 2, 2, 4, 4, 6, 6, 8]),
+        min_warm_passes=3,
+        max_warm_passes=3,
+    )
+    cheap = measure_encoder_throughput(
+        "cheap",
+        ["t"] * 8,
+        load=lambda: None,
+        encode=lambda _t: None,
+        device="cuda",
+        clock=_step_clock([0, 1, 1, 2, 2, 2, 2.5, 2.5, 3.0, 3.0, 3.5]),
+        min_warm_passes=3,
+        max_warm_passes=3,
+    )
+    slow = measure_encoder_throughput(
+        "slow",
+        ["t"] * 8,
+        load=lambda: None,
+        encode=lambda _t: None,
+        device="cuda",
+        clock=_step_clock([0, 1, 1, 2, 2, 2, 12, 12, 22, 22, 32]),
+        min_warm_passes=3,
+        max_warm_passes=3,
+    )
+    summary = build_host_summary([base, cheap, slow], corpus_n_texts=8, baseline_model="base")
+    assert [row["model"] for row in summary["faster_than_baseline"]] == ["cheap"]
+    assert summary["faster_than_baseline"][0]["speedup_vs_baseline"] == pytest.approx(4.0)
+    assert "Faster than baseline" in summary["verdict"]
+    assert "cheap=" in format_host_summary(summary)
+    assert "faster than baseline" in render_host_markdown(summary)

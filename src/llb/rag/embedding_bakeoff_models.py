@@ -30,10 +30,12 @@ BakeoffItem = tuple[str, list[SourceSpanRecord]]
 KIND_LOCAL = "local"
 KIND_API = "api"
 
-# Default LOCAL candidates for Ukrainian RAG. The current default first, then two retrieval-tuned
-# alternatives, then the paraphrase/STS model whose objective differs (why the ranking is measured).
+# Default LOCAL candidates for Ukrainian RAG. Current default first; e5-small is the cheap
+# CUDA sibling for 12 GiB hosts; then larger retrieval-tuned alternatives; then the paraphrase/
+# STS model whose objective differs (why the ranking is measured).
 DEFAULT_LOCAL_CANDIDATES = [
     "intfloat/multilingual-e5-base",  # current RunConfig default
+    "intfloat/multilingual-e5-small",  # sub-base retrieval-tuned; cheap CUDA alternative
     "intfloat/multilingual-e5-large",
     "BAAI/bge-m3",
     "lang-uk/ukr-paraphrase-multilingual-mpnet-base",

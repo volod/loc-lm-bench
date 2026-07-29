@@ -228,7 +228,8 @@ EMBED_BASELINE_DATA_DIR ?=
 EMBED_CANDIDATE_DATA_DIR ?=
 # Encoder throughput decomposition (compare-embeddings --encoder-throughput): cold load vs
 # first-pass compile+encode vs warm steady encode. EMBED_ENCODER_THROUGHPUT=1 enables it;
-# EMBED_ENCODER_COMPARE_CPU=1 also profiles CPU beside CUDA.
+# EMBED_ENCODER_COMPARE_CPU=1 also profiles CPU beside CUDA (only the literal 1 enables it;
+# EMBED_ENCODER_COMPARE_CPU=0 is off, matching other Make opt-in flags).
 EMBED_ENCODER_THROUGHPUT ?=
 EMBED_ENCODER_PRECISION ?= 0.05
 EMBED_ENCODER_MIN_WARM ?= 3
