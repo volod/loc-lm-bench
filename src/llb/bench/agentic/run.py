@@ -56,6 +56,7 @@ def run_agentic(
     data_verified: bool = False,
     verification_ref: str | None = None,
     meter: ThroughputMeter | None = None,
+    budget_provenance: dict[str, object] | None = None,
 ) -> AgenticRun:
     """Score one model's task-completion rate over the deterministic tool-world under TIER_AGENTIC.
 
@@ -108,6 +109,7 @@ def run_agentic(
                 verification_cfg=verification_cfg,
                 tokens_per_s=tokens_per_s,
                 mirror=mirror,
+                budget_provenance=budget_provenance,
             )
         )
         if persist

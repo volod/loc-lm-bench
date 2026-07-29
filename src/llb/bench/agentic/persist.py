@@ -27,7 +27,7 @@ def _agentic_metrics(result: ModelResult, reliability: float, tokens_per_s: floa
 
 
 def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
-    return {
+    config: dict[str, object] = {
         "model": request.model,
         "backend": request.backend,
         "tier": TIER_AGENTIC,
@@ -48,6 +48,9 @@ def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
         "judge_diagnostics": request.quality.outcome.diagnostics,
         **request.verification_cfg,
     }
+    if request.budget_provenance:
+        config.update(request.budget_provenance)
+    return config
 
 
 def _agentic_judge_status(

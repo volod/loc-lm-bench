@@ -165,3 +165,4 @@ class _AgenticPersistInput:
     verification_cfg: dict[str, object]
     tokens_per_s: float
     mirror: Mirror | None
+    budget_provenance: dict[str, object] | None = None

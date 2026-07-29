@@ -13,11 +13,24 @@ prompt against it. This module wraps that in the seam the episode loop needs -- 
 predicate plus the char budget the `compact` policy measures its trigger share against -- and
 imports the heavy resolution lazily so the agentic package stays importable (and unit-testable)
 without the backend/hardware stack.
+
+Live backends can disagree with the declared window (Ollama's default `num_ctx` is 4096 regardless
+of a GGUF advertising 131072). Resolution therefore takes the MINIMUM of the declared window and
+a probed `served_max_model_len`, and records which one bound the budget.
 """
 
 from dataclasses import dataclass
 from typing import Callable
 
+from llb.backends.served_window import (
+    BUDGET_SOURCE_DECLARED,
+    BUDGET_SOURCE_FIXED,
+    BUDGET_SOURCE_SERVED,
+    BUDGET_SOURCE_UNBOUNDED,
+    HttpGet,
+    bind_window,
+    probe_config_served_max_model_len,
+)
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
 
@@ -33,6 +46,9 @@ class ContextBudget:
 
     max_prompt_chars: int
     fits: Callable[[int], bool]
+    declared_max_model_len: int | None = None
+    served_max_model_len: int | None = None
+    budget_source: str = BUDGET_SOURCE_UNBOUNDED
 
     @property
     def bounded(self) -> bool:
@@ -45,6 +61,14 @@ class ContextBudget:
         a 32k window and early on a 4k one instead of being tuned per host.
         """
         return int(self.max_prompt_chars * share) if self.bounded else UNBOUNDED
+
+    def provenance(self) -> dict[str, object]:
+        """Manifest fields naming the declared window, the probed window, and which bound."""
+        return {
+            "declared_max_model_len": self.declared_max_model_len,
+            "served_max_model_len": self.served_max_model_len,
+            "budget_source": self.budget_source,
+        }
 
 
 def prompt_tokens(prompt_chars: int) -> int:
@@ -61,7 +85,11 @@ def prompt_tokens(prompt_chars: int) -> int:
 
 def unbounded_budget() -> ContextBudget:
     """The no-guard budget: every prompt fits. The default for callers with no resolved model."""
-    return ContextBudget(max_prompt_chars=UNBOUNDED, fits=lambda _chars: True)
+    return ContextBudget(
+        max_prompt_chars=UNBOUNDED,
+        fits=lambda _chars: True,
+        budget_source=BUDGET_SOURCE_UNBOUNDED,
+    )
 
 
 def fixed_budget(max_prompt_chars: int) -> ContextBudget:
@@ -71,6 +99,53 @@ def fixed_budget(max_prompt_chars: int) -> ContextBudget:
     return ContextBudget(
         max_prompt_chars=max_prompt_chars,
         fits=lambda chars: chars <= max_prompt_chars,
+        budget_source=BUDGET_SOURCE_FIXED,
+    )
+
+
+def _declared_window(
+    config: RunConfig,
+    model_spec: ModelSpec | None,
+    vram_mib: int,
+    ram_mib: int,
+) -> int:
+    """The DECLARED usable window before any live backend probe (0 == cannot bound)."""
+    from llb.optimize.tuning_space import effective_max_context
+
+    window = (
+        effective_max_context(config, model_spec, vram_mib, ram_mib)
+        if model_spec is not None
+        else UNBOUNDED
+    )
+    if config.context_budget:
+        window = min(window, config.context_budget) if window else config.context_budget
+    return window
+
+
+def _budget_from_window(
+    config: RunConfig,
+    window: int,
+    *,
+    declared_max_model_len: int,
+    served_max_model_len: int | None,
+    budget_source: str,
+) -> ContextBudget:
+    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+
+    usable_tokens = window - PROMPT_HEADROOM_TOKENS - config.max_tokens if window else UNBOUNDED
+    max_prompt_chars = max(UNBOUNDED, int(usable_tokens * CHARS_PER_TOKEN))
+
+    def fits(prompt_chars: int) -> bool:
+        # Bound against the SAME char budget the report prints, so a served-window bind cannot
+        # drift from fits_context_chars' declared-only path when model_spec is missing.
+        return max_prompt_chars <= UNBOUNDED or prompt_chars <= max_prompt_chars
+
+    return ContextBudget(
+        max_prompt_chars=max_prompt_chars,
+        fits=fits,
+        declared_max_model_len=declared_max_model_len or None,
+        served_max_model_len=served_max_model_len,
+        budget_source=budget_source,
     )
 
 
@@ -80,33 +155,44 @@ def resolve_context_budget(
     model_spec: ModelSpec | None = None,
     vram_mib: int | None = None,
     ram_mib: int | None = None,
+    served_max_model_len: int | None = None,
+    probe: bool = False,
+    http_get: HttpGet | None = None,
 ) -> ContextBudget:
-    """Resolve the served model's usable prompt budget once, for the whole run.
+    """Resolve the usable prompt budget once, for the whole run.
 
-    `fits` is `fits_context_chars` itself, so the guard and the reported budget can never drift
-    apart: `max_prompt_chars` is the largest prompt that same predicate accepts.
+    When `probe` is true (or `served_max_model_len` is passed), the budget is the MINIMUM of the
+    declared window and the probed served window. A probe miss falls back to the declared window
+    and records `budget_source=declared` with `served_max_model_len=None`.
     """
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.eval.context_ablation.sources import resolve_model_spec
-    from llb.optimize.tuning_space import (
-        CHARS_PER_TOKEN,
-        PROMPT_HEADROOM_TOKENS,
-        effective_max_context,
-        fits_context_chars,
-    )
 
     spec = (
         model_spec if model_spec is not None else resolve_model_spec(config.model, config.backend)
     )
     vram = vram_mib if vram_mib is not None else max_vram_mb(detect_gpus())
     ram = ram_mib if ram_mib is not None else detect_ram_mb()
-
-    def fits(prompt_chars: int) -> bool:
-        return fits_context_chars(config, spec, vram, ram, prompt_chars)
-
-    window = effective_max_context(config, spec, vram, ram) if spec is not None else UNBOUNDED
-    if config.context_budget:
-        window = min(window, config.context_budget) if window else config.context_budget
-    usable_tokens = window - PROMPT_HEADROOM_TOKENS - config.max_tokens if window else UNBOUNDED
-    max_prompt_chars = max(UNBOUNDED, int(usable_tokens * CHARS_PER_TOKEN))
-    return ContextBudget(max_prompt_chars=max_prompt_chars, fits=fits)
+    declared = _declared_window(config, spec, vram, ram)
+    probed = served_max_model_len
+    if probe and probed is None:
+        probed = probe_config_served_max_model_len(config, http_get=http_get)
+    window, source = bind_window(declared, probed)
+    if source == BUDGET_SOURCE_UNBOUNDED:
+        return ContextBudget(
+            max_prompt_chars=UNBOUNDED,
+            fits=lambda _chars: True,
+            declared_max_model_len=declared or None,
+            served_max_model_len=probed,
+            budget_source=BUDGET_SOURCE_UNBOUNDED,
+        )
+    # bind_window never returns "fixed"; keep declared/served as-is.
+    if source not in (BUDGET_SOURCE_DECLARED, BUDGET_SOURCE_SERVED):
+        source = BUDGET_SOURCE_DECLARED if declared > 0 else BUDGET_SOURCE_SERVED
+    return _budget_from_window(
+        config,
+        window,
+        declared_max_model_len=declared,
+        served_max_model_len=probed,
+        budget_source=source,
+    )

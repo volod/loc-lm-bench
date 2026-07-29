@@ -43,41 +43,30 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-served-window-probe
+### agent-context-policy-ollama-base-url-num-ctx (optional)
 
-The agent loop's per-step prompt guard resolves its budget from the DECLARED window -- the host
-planner cap, the model's own window, `max_model_len`, or an explicit `context_budget`
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)) -- and no
-backend is asked what it is actually serving. Ollama is the case that breaks the assumption: its
-served `num_ctx` defaults to 4096 regardless of a GGUF advertising 131072, and the llb Ollama client
-sends no `num_ctx` option at all, so a run that declares `--max-model-len 32768` gets a guard 8x
-looser than the window behind it and the backend silently truncates the prompt the guard just
-approved -- exactly the failure the guard exists to prevent, moved one layer down. Close the loop:
-probe the served window per backend (Ollama `/api/ps` reports the loaded model's `context`, vLLM
-`/v1/models` already exposes `max_model_len` via `src/llb/backends/vllm_command.py`, llama.cpp
-`/props` reports `n_ctx`), resolve the budget against the MINIMUM of declared and probed, and record
-both in the manifest so a run states which one bound it. Then either pass `num_ctx` on the Ollama
-options payload (`src/llb/backends/ollama.py` already builds one for `num_predict`) or refuse a
-declared window the backend will not honor.
+`drive_with_backend` honors Ollama `num_ctx` on the native `/api/chat` path, and
+`bench-agentic-context` warms that path before probing
+([extended workflows](current/extended-workflows.md#agent-context-management-policies)). When the
+operator passes `--base-url` pointing at Ollama's OpenAI-compatible `/v1` endpoint, chat still goes
+through `local_complete` / `extra_body.options.num_ctx`, which this host's Ollama build did not
+apply -- a declared `--max-model-len` can therefore stay unbound on that path even though the probe
++ min guard still protects against truncation. Make the `--base-url` Ollama path either use the
+native launcher (or an equivalent that reliably sets `num_ctx`) or refuse a declared window the
+OpenAI-compat endpoint will not honor, and cover it with a unit test over a fake OpenAI client that
+records the request body.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse `ContextBudget` / `resolve_context_budget` in
-  `src/llb/bench/agentic/context_budget.py`, the readiness probes in
-  `src/llb/backends/readiness.py`, and `served_max_model_len` in
-  `src/llb/backends/vllm_command.py`.
-- User-visible outcome: the overflow guard protects the window the operator's backend is really
-  serving, so an episode is never truncated behind a check that said it fit.
-- Scope boundary: in scope -- the per-backend probe, the min-of-declared-and-probed budget, the
-  manifest fields naming which bound, and the Ollama `num_ctx` decision. Out of scope -- changing the
-  policy set, the guard's status vocabulary, and any window arithmetic in
-  `src/llb/optimize/tuning_space.py`.
-- Data and artifact paths: additive `served_max_model_len` / `budget_source` fields in the existing
-  `$DATA_DIR/agentic-context/<run>/` and `$DATA_DIR/agentic/<run>/` manifests.
-- Execution path: unit tests over faked probe responses per backend; one `make bench-agentic-context`
-  smoke on the CUDA host confirming the recorded served window matches `ollama ps`.
-- Acceptance gates: `make ci` green; a declared window larger than the probed one is bound by the
-  probe and the manifest names which; a backend that cannot be probed falls back to the declared
-  window and records that it did.
+- Dependencies: none. Reuse `local_complete` in `src/llb/bench/common_backend.py` and
+  `OllamaLauncher` in `src/llb/backends/ollama.py`.
+- User-visible outcome: `--base-url` against Ollama cannot silently ignore a declared context
+  window.
+- Scope boundary: in scope -- the `--base-url` Ollama drive path and its test. Out of scope --
+  changing the probe / min budget resolution already shipped.
+- Data and artifact paths: none beyond existing manifests.
+- Execution path: unit test with a fake OpenAI client; optional CUDA confirm against `/v1`.
+- Acceptance gates: `make ci` green; a `--base-url` Ollama run with `--max-model-len` either serves
+  that window or fails closed with a typed error naming the mismatch.
 - Documentation target: the guard subsection of
   [extended workflows](current/extended-workflows.md#agent-context-management-policies).
 

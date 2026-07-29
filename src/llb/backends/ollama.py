@@ -25,11 +25,22 @@ from llb.core.contracts.common import ChatMessage
 class OllamaLauncher(BackendLauncher):
     """Serve one Ollama model over its native chat endpoint."""
 
-    def __init__(self, model: str, host: str = "http://localhost:11434", pull: bool = False):
+    def __init__(
+        self,
+        model: str,
+        host: str = "http://localhost:11434",
+        pull: bool = False,
+        num_ctx: int | None = None,
+    ):
         super().__init__(model=model, meta={"backend": "ollama", "host": host})
         self.host = host.rstrip("/")
         self.pull = pull
+        # When set, every chat request asks Ollama to serve this context length. Without it
+        # Ollama defaults to 4096 even for GGUFs that advertise a much larger window, which is
+        # exactly the silent truncation the agent-loop prompt guard exists to prevent.
+        self.num_ctx = num_ctx
         self._last: ChatResult | None = None
+        self._served_context: int | None = None
 
     def _reachable(self) -> bool:
         try:
@@ -45,16 +56,52 @@ class OllamaLauncher(BackendLauncher):
             )
         if self.pull:
             subprocess.run(["ollama", "pull", self.model], check=True)
+        self._served_context = self._read_served_context()
+        self.meta["served_context"] = self._served_context
+
+    def _read_served_context(self) -> int | None:
+        from llb.backends.served_window import parse_ollama_served_context
+
+        try:
+            with urllib.request.urlopen(f"{self.host}/api/ps", timeout=5) as resp:
+                body = resp.read().decode("utf-8", "replace")
+        except (urllib.error.URLError, OSError):
+            return None
+        return parse_ollama_served_context(body, self.model)
+
+    def served_context(self) -> int | None:
+        return self._served_context
+
+    def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
+        """Warm-load so `/api/ps` reports the `num_ctx` this launcher will serve.
+
+        Ollama keeps a previously loaded context until a request asks for a different one. Calling
+        this before a budget probe makes the probe observe the window the run will actually use.
+        """
+        if self.num_ctx is None or self.num_ctx <= 0:
+            return self._read_served_context()
+        self.chat(
+            [{"role": "user", "content": " "}],
+            max_tokens=1,
+            temperature=0.0,
+            timeout=timeout,
+        )
+        self._served_context = self._read_served_context()
+        self.meta["served_context"] = self._served_context
+        return self._served_context
 
     def chat(
         self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
     ) -> ChatResult:
+        options: dict[str, object] = {"num_predict": max_tokens, "temperature": temperature}
+        if self.num_ctx is not None and self.num_ctx > 0:
+            options["num_ctx"] = self.num_ctx
         payload = {
             "model": self.model,
             "stream": False,
             "think": False,
             "messages": messages,
-            "options": {"num_predict": max_tokens, "temperature": temperature},
+            "options": options,
         }
         request = urllib.request.Request(
             f"{self.host}/api/chat",

@@ -51,7 +51,9 @@ Core locations:
 - `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
   assembly, compaction, and the per-episode telemetry;
 - `src/llb/bench/agentic/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
-  resolution from the served model's usable window;
+  resolution from the declared + probed usable window;
+- `src/llb/backends/served_window.py`: per-backend probe of the window the runtime is actually
+  serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
   policy-aware `run_episode`;
 - `src/llb/bench/agentic_context.py`: the four-policy run + persistence;
@@ -83,16 +85,24 @@ The four policies (each a fresh episode over the identical task set):
   for the rest of the episode. An empty summary is treated as a no-op rather than folding those
   steps away with nothing standing in for them.
 
-Underneath all four sits the guard the loop never had. `ContextBudget` resolves the served model's
-usable prompt budget ONCE per run through the same window arithmetic every other lane uses
-(`effective_max_context` / `fits_context_chars` in `src/llb/optimize/tuning_space.py`: host planner
-cap, model window, served `max_model_len`, explicit `context_budget`), and each step's prompt is
-checked before the call. A prompt that does not fit is NEVER SENT: the episode terminates as
-`context_overflow` -- the status already in the shared taxonomy (`src/llb/eval/common.py`) that the
-context-ablation lane raises for the same reason -- so an unusable configuration is a typed outcome
-instead of a wrong answer. An unresolvable window (no model spec, no served cap, no explicit budget)
-refuses nothing, matching `fits_context_chars`: an unknown model never silently declares a prompt
-unusable.
+Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
+budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
+explicit `context_budget` via `effective_max_context` in `src/llb/optimize/tuning_space.py`) and a
+LIVE probe of what the backend is serving (`src/llb/backends/served_window.py`). The budget is the
+MINIMUM of those two; `budget_source` names which side bound it (`declared` or `served`), and both
+`declared_max_model_len` and `served_max_model_len` are recorded in the
+`$DATA_DIR/agentic-context/<run>/` and `$DATA_DIR/agentic/<run>/` manifests. A probe miss falls back
+to the declared window and records `served_max_model_len=null` with `budget_source=declared`. This
+closes the Ollama hole where a GGUF advertising 131072 still serves `num_ctx=4096` by default: the
+guard no longer approves prompts the backend will silently truncate. For Ollama, `bench-agentic` /
+`bench-agentic-context` drive the native `/api/chat` launcher and pass `num_ctx` from
+`--max-model-len` / `context_budget`, warming the model before the probe so `/api/ps` reports the
+window the run will actually use. Each step's prompt is checked before the call. A prompt that does
+not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already in the
+shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same reason
+-- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable window
+(no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
+`fits_context_chars`: an unknown model never silently declares a prompt unusable.
 
 Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after
 the fact: `max_prompt_tokens`, `total_prompt_tokens`, `observation_bytes` (counted BEFORE any policy
@@ -120,17 +130,27 @@ make bench-agentic-context MODEL=<model> BACKEND=<backend> \
 ```
 
 `AGENT_CONTEXT_MAX_PROMPT_CHARS` (or `--max-prompt-chars`) forces the budget instead of resolving
-it, which is how the guard is exercised on purpose. Each policy persists its OWN bundle under
+it, which is how the guard is exercised on purpose. `AGENT_CONTEXT_MAX_MODEL_LEN` (or
+`--max-model-len`) is the declared window forwarded to Ollama as `num_ctx` and compared against the
+probed served window. Each policy persists its OWN bundle under
 `$DATA_DIR/agentic-context/<timestamp>/` tagged with the policy (mirroring the per-harness and
 per-chain-policy bundles); provenance records the policy, its settings, the `task_set_digest` that
-proves both policies ran the same set, the resolved `max_prompt_chars`, the overflow count, and the
-`paired_vs_full` block. The bundles live under their own method root, so they are never mixed into
-the harness comparison or the category composite, which both read `agentic`.
+proves both policies ran the same set, the resolved `max_prompt_chars`, `declared_max_model_len`,
+`served_max_model_len`, `budget_source`, the overflow count, and the `paired_vs_full` block. The
+bundles live under their own method root, so they are never mixed into the harness comparison or the
+category composite, which both read `agentic`.
 
 CI drives every policy, the compaction path, and the guard over the fake endpoint with no GPU
-(`tests/llb/bench/test_agentic_context.py`), including the assertion that the `full` policy's prompt
-is byte-identical to the pre-policy loop's and that no episode in any policy sends a prompt over the
-resolved window.
+(`tests/llb/bench/test_agentic_context.py`, `tests/llb/backends/test_served_window.py`), including
+the assertion that the `full` policy's prompt is byte-identical to the pre-policy loop's, that no
+episode in any policy sends a prompt over the resolved window, and that a declared window larger
+than a probed one is bound by the probe.
+
+CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
+`OllamaLauncher.ensure_num_ctx(8192)`, `/api/ps` reported `context_length=8192` and
+`resolve_context_budget(..., probe=True)` with `--max-model-len 32768` bound to
+`budget_source=served` / `served_max_model_len=8192`. A `make bench-agentic-context` pass with
+`full,observation_cap` persisted those provenance fields on the agentic-context manifests.
 
 ### Context-policy evidence on the 16 GB RTX 4060 Ti host
 

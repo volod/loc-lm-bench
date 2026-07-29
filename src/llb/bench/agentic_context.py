@@ -173,6 +173,7 @@ def run_agentic_context(
             overrides=overrides,
             verification_cfg=verification_cfg,
             mirror=mirror,
+            budget_provenance=budget.provenance(),
         )
     return AgenticContextRun(
         model=model,
@@ -207,6 +208,7 @@ def _persist(
     overrides: dict[str, Any],
     verification_cfg: dict[str, object],
     mirror: Mirror | None,
+    budget_provenance: dict[str, Any] | None = None,
 ) -> None:
     for report in reports:
         config = {
@@ -219,6 +221,7 @@ def _persist(
                 max_steps=max_steps,
                 max_prompt_chars=max_prompt_chars,
                 policy_settings=overrides,
+                budget_provenance=budget_provenance,
             ),
             **verification_cfg,
         }

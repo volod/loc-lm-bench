@@ -241,9 +241,10 @@ def policy_config(
     max_steps: int,
     max_prompt_chars: int,
     policy_settings: dict[str, Any],
+    budget_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One persisted policy bundle's provenance configuration."""
-    return {
+    config: dict[str, Any] = {
         "model": model,
         "backend": backend,
         "tier": TIER_AGENTIC,
@@ -266,6 +267,9 @@ def policy_config(
         "n_context_overflow": report.n_context_overflow,
         "paired_vs_full": report.paired or None,
     }
+    if budget_provenance:
+        config.update(budget_provenance)
+    return config
 
 
 def policy_metrics(report: PolicyReport) -> RunMetrics:

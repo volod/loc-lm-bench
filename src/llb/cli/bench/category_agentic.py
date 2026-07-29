@@ -69,6 +69,9 @@ def bench_agentic_cmd(
     task_set = load_tasks_file(tasks)
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
+    from llb.bench.agentic.context_budget import resolve_context_budget
+
+    budget = resolve_context_budget(cfg, probe=True)
 
     def run(complete: LLMComplete) -> AgenticRun:
         return run_agentic(
@@ -85,6 +88,7 @@ def bench_agentic_cmd(
             data_verified=data_verified,
             verification_ref=verification_ref,
             meter=meter,
+            budget_provenance=budget.provenance(),
         )
 
     result = drive_with_backend(
@@ -163,11 +167,26 @@ def bench_agentic_context_cmd(
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     policy_list = [p.strip() for p in policies.split(",") if p.strip()]
-    budget = (
-        fixed_budget(max_prompt_chars)
-        if max_prompt_chars is not None
-        else resolve_context_budget(cfg)
-    )
+    if max_prompt_chars is not None:
+        budget = fixed_budget(max_prompt_chars)
+    else:
+        # When Ollama will be asked for an explicit num_ctx, warm the model first so /api/ps
+        # reports the window the run will actually serve -- otherwise a stale 4096 resident
+        # binds the guard 8x tighter than the backend we are about to request.
+        if cfg.backend == "ollama" and (cfg.max_model_len or cfg.context_budget):
+            from llb.backends.ollama import OllamaLauncher
+
+            warm = OllamaLauncher(
+                cfg.model,
+                host=cfg.ollama_host,
+                num_ctx=cfg.max_model_len or cfg.context_budget,
+            )
+            warm.start()
+            try:
+                warm.ensure_num_ctx(timeout=cfg.request_timeout_s)
+            finally:
+                warm.stop()
+        budget = resolve_context_budget(cfg, probe=True)
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
 
@@ -201,7 +220,10 @@ def bench_agentic_context_cmd(
     )
     typer.echo(
         f"[bench-agentic-context] model={model} policies={','.join(policy_list)} "
-        f"prompt-budget={budget.max_prompt_chars or 'unbounded'} chars"
+        f"prompt-budget={budget.max_prompt_chars or 'unbounded'} chars "
+        f"source={budget.budget_source} "
+        f"declared={budget.declared_max_model_len or '-'} "
+        f"served={budget.served_max_model_len or '-'}"
     )
     _echo_throughput("bench-agentic-context", meter)
     typer.echo(result.table)
