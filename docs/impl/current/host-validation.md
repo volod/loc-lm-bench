@@ -97,8 +97,15 @@ Acceptance results:
 
 The recent paired embedder, context-ablation, and local drafting evidence reruns are recorded in
 [RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty),
+[RAG core](rag-core.md#blackwell-encoder-throughput-decomposition),
 [RAG core](rag-core.md#context-ablation-evidence), and
 [data prep](data-prep.md#sequential-local-qwengemma-draft-comparison).
+
+Encoder throughput on this host (2026-07-29): `EMBED_ENCODER_THROUGHPUT=1` over the 311-chunk UA
+fixture at the 80 W power limit. Warm CUDA rates are 208 chunks/s for e5-base, ~62 for e5-large and
+BGE-M3, and 342 for the paraphrase model; cold load (~5.7 s) dominated the earlier one-pass rates,
+but the e5-base vs large spread survives warm measurement. Prefer warm chunks/s for host cost
+columns. Artifact: `$DATA_DIR/encoder-throughput/20260729T124909.208587Z-cb457ea736f4/`.
 
 ## Category Smoke Path
 

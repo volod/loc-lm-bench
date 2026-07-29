@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
+from llb.rag.encoder_throughput import HostThroughputSummary, ThroughputProfile
 from llb.rag.embedding_bakeoff_uncertainty import (
     BakeoffVerdict,
     PairedRow,
@@ -51,7 +52,8 @@ class BuiltStore:
     """One built candidate store plus the build measurements the report ranks on.
 
     `store` exposes `.retrieve(question, k) -> list[ChunkRecord]` and `.meta` (dim / n_indexed /
-    embedding_model). `cost_usd` is set only for the API row.
+    embedding_model). `cost_usd` is set only for the API row. `throughput_profile` is set when
+    `compare-embeddings` runs the cold/warm encoder decomposition.
     """
 
     store: Any
@@ -60,6 +62,7 @@ class BuiltStore:
     kind: str = KIND_LOCAL
     device: str | None = None
     cost_usd: float | None = None
+    throughput_profile: ThroughputProfile | None = None
 
 
 # embedding_model -> BuiltStore. The CLI binds the heavy real builder; tests inject a fake.
@@ -81,6 +84,8 @@ class CandidateResult(TypedDict):
     index_bytes: int
     device: NotRequired[str]
     cost_usd: NotRequired[float]
+    # Cold/warm encoder decomposition (optional; present when --encoder-throughput ran).
+    throughput_profile: NotRequired[ThroughputProfile]
     # Paired percentile-bootstrap delta against the baseline embedder over shared resample index
     # sets, plus the item-level ledger -- absent only when the baseline was not scored in this run.
     # This is the reading that says whether a point-estimate lead is an item set or a ranking.
@@ -107,3 +112,5 @@ class BakeoffReport(TypedDict):
     # gets read as a recommendation, so the floor states whether the winner is separated from
     # the runner-up at all. See `llb.rag.noise_floor`.
     noise_floor: NotRequired["NoiseFloorReport"]
+    # Cold/warm encoder decomposition host summary (optional; see `llb.rag.encoder_throughput`).
+    encoder_throughput: NotRequired[HostThroughputSummary]

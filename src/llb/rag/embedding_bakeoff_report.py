@@ -165,7 +165,21 @@ def render_markdown(report: BakeoffReport) -> str:
     lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _floor_section(report)
+    lines += _throughput_section(report)
     return "\n".join(lines)
+
+
+def _throughput_section(report: BakeoffReport) -> list[str]:
+    """Cold/warm encoder decomposition appendix when `--encoder-throughput` ran."""
+    summary = report.get("encoder_throughput")
+    if not summary:
+        return []
+    from llb.rag.encoder_throughput import format_host_summary, render_host_markdown
+
+    # Reuse the markdown table body (skip the H1) under an H2 in the bake-off report.
+    md = render_host_markdown(summary)
+    body = "\n".join(line for line in md.splitlines() if not line.startswith("# "))
+    return ["", "## Encoder throughput decomposition", "", body, "", format_host_summary(summary)]
 
 
 def _verdict_lines(report: BakeoffReport, prefix: str = "") -> list[str]:

@@ -226,6 +226,15 @@ EMBED_BASELINE ?= intfloat/multilingual-e5-base
 EMBED_CANDIDATE ?= BAAI/bge-m3
 EMBED_BASELINE_DATA_DIR ?=
 EMBED_CANDIDATE_DATA_DIR ?=
+# Encoder throughput decomposition (compare-embeddings --encoder-throughput): cold load vs
+# first-pass compile+encode vs warm steady encode. EMBED_ENCODER_THROUGHPUT=1 enables it;
+# EMBED_ENCODER_COMPARE_CPU=1 also profiles CPU beside CUDA.
+EMBED_ENCODER_THROUGHPUT ?=
+EMBED_ENCODER_PRECISION ?= 0.05
+EMBED_ENCODER_MIN_WARM ?= 3
+EMBED_ENCODER_MAX_WARM ?= 10
+EMBED_ENCODER_MAX_WARM_SECONDS ?= 180
+EMBED_ENCODER_COMPARE_CPU ?=
 ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=

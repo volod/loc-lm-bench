@@ -279,35 +279,24 @@ exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-
 - Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
   [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
 
-### blackwell-encoder-throughput-decomposition (optional)
+### blackwell-encoder-roster-expansion (optional)
 
-The current 12 GiB host rerun preserves the embedder quality verdict but shows a much wider
-architecture-dependent CUDA throughput spread than the earlier workstation run
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Separate
-cold model load, first-kernel compilation, and steady-state encoding before using those rates in a
-host recommendation.
+The warm decomposition on the 12 GiB Blackwell host shows e5-base remains ~3.4x e5-large on steady
+encode while e5-large and BGE-M3 are throughput-tied
+([RAG core](current/rag-core.md#blackwell-encoder-throughput-decomposition)). Expand the
+local candidate roster with one smaller retrieval-tuned encoder (sub-base multilingual) and re-run
+`--encoder-throughput` so the host recommendation can name a cheap CUDA embedder when quality is
+flat, without changing the shipped `e5-base` default until a paired quality bar clears.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Keep the retrieval item set, encoder conventions, batch shape, and power
-  limit fixed so the benchmark isolates runtime behavior.
-- User-visible outcome: the 12 GiB Blackwell recommendation distinguishes a genuinely slow encoder
-  from one whose first load or kernel compilation dominates a one-pass bake-off.
-- Scope boundary: in scope -- cold and warm timing fields, adaptive warm repetitions until a
-  declared relative-precision target or resource cap, peak VRAM and power, CPU versus CUDA
-  comparison, and inspection of kernel fallbacks. Out of scope -- changing retrieval metrics,
-  model fine-tuning, or adopting a different encoder.
-- Data and artifact paths: additive timing fields under
-  `$DATA_DIR/compare-embeddings/<run>/` and a host summary under
-  `$DATA_DIR/encoder-throughput/<run>/`.
-- Execution path: add a reusable warmup/repetition option to `make compare-embeddings`, then run the
-  four incumbent encoders on the 311-chunk committed corpus with the GPU power limit held fixed.
-  CI covers timing aggregation with an injected clock and fake encoders.
-- Acceptance gates: `make ci` green; reports split load/compile time from steady encoding, publish
-  the median, spread, stopping precision, and cap over the warm passes, record
-  device/driver/power/VRAM, and state whether the current rate ordering survives the warm
-  measurement.
-- Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md) and the
-  host result in [host validation](current/host-validation.md).
+- Dependencies: none. Reuse `DEFAULT_LOCAL_CANDIDATES` and the encoder-throughput knobs on
+  `make compare-embeddings`.
+- User-visible outcome: a 12 GiB host that must keep embeddings on CUDA beside a served generator
+  has a measured cheaper alternative when quality allows.
+- Scope boundary: in scope -- one additional local candidate, warm throughput + paired quality on
+  the committed fixture. Out of scope -- fine-tuning an embedder or changing the default before a
+  paired adopt.
+- Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md).
 
 ### cross-lingual-query-lane
 

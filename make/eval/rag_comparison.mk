@@ -95,7 +95,7 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 COMPARE_EMBEDDINGS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
 COMPARE_EMBEDDINGS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
-compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES=; needs ".[rag]")
+compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(COMPARE_EMBEDDINGS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_EMBEDDINGS_SPLIT_ARG) \
@@ -112,6 +112,12 @@ compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSE
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_EMBEDDINGS_OUT),--out "$(COMPARE_EMBEDDINGS_OUT)",) \
+		$(if $(EMBED_ENCODER_THROUGHPUT),--encoder-throughput \
+			--encoder-precision "$(EMBED_ENCODER_PRECISION)" \
+			--encoder-min-warm "$(EMBED_ENCODER_MIN_WARM)" \
+			--encoder-max-warm "$(EMBED_ENCODER_MAX_WARM)" \
+			--encoder-max-warm-seconds "$(EMBED_ENCODER_MAX_WARM_SECONDS)" \
+			$(if $(EMBED_ENCODER_COMPARE_CPU),--encoder-compare-cpu,),) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
 compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)

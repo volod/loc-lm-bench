@@ -2054,10 +2054,51 @@ The 2026-07-28 rerun on the 12,227 MiB RTX PRO 3000 Blackwell reproduced every
 host-independent field above exactly: the four recall/MRR values, all paired bounds and ledgers,
 the zero measurement floor with no fragile items, and the `retain` verdict with the 300-item open
 question for e5-large. Every row records `device=cuda`. Throughput on this 80 W laptop GPU was
-25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model;
-the architecture-dependent spread needs a warm/load-separated benchmark before it is treated as
-a model recommendation. Artifact:
+25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model in
+the one-pass store build; those rates mixed cold load with encoding, which the warm decomposition
+below separates. Artifact:
 `$DATA_DIR/compare-embeddings/20260728T110500Z-blackwell12/{report.md,report.json}`.
+
+### Blackwell encoder throughput decomposition
+
+`make compare-embeddings ... EMBED_ENCODER_THROUGHPUT=1 EMBED_ENCODER_COMPARE_CPU=1` on the same
+12,227 MiB RTX PRO 3000 Blackwell host (power limit held at 80 W) over the 311-chunk committed UA
+fixture. Each candidate records cold load, first-pass (compile+encode), and adaptive warm encodes
+until IQR/median <= 0.05 or a pass/time cap. Additive fields land on the bake-off bundle; the host
+summary is `$DATA_DIR/encoder-throughput/20260729T124909.208587Z-cb457ea736f4/`.
+
+CUDA warm rates (311 texts; median over warm passes that cleared 0.05 relative precision):
+
+| model | load_s | first_s | compile_est_s | warm_chunks/s | one_pass_chunks/s | peak_vram_MB | mean_power_W |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lang-uk/ukr-paraphrase...` | 5.72 | 0.81 | 0.00 | 342.0 | 47.6 | 9015 | 72.2 |
+| `intfloat/multilingual-e5-base` | 5.61 | 1.45 | 0.00 | 208.5 | 44.1 | 2371 | 80.7 |
+| `BAAI/bge-m3` | 5.94 | 5.04 | 0.05 | 62.4 | 28.3 | 6839 | 79.9 |
+| `intfloat/multilingual-e5-large` | 5.82 | 5.08 | 0.06 | 62.0 | 28.5 | 4597 | 77.0 |
+
+What the decomposition establishes:
+
+- **Cold load dominates the one-pass number.** Every model spends ~5.6-6.0 s loading weights; the
+  first-pass compile estimate is near zero on this torch/CUDA stack. A one-pass bake-off that
+  folds load into `embed_seconds` therefore understates steady encode by 3-7x and is not a model
+  throughput recommendation.
+- **The architecture-dependent spread survives warm measurement.** e5-base remains ~3.4x e5-large
+  on warm chunks/s (208 vs 62). The 2026-07-28 one-pass spread was not an artifact of load alone.
+- **e5-large vs BGE-M3 are tied when warm.** One-pass CUDA order puts e5-large ahead of BGE-M3 by
+  a hair; warm order flips them (62.4 vs 62.0). Prefer warm chunks/s, and do not rank those two on
+  throughput. Headline CUDA ordering does NOT survive (`ordering_survives=false`); CPU ordering
+  does.
+- **CPU twin confirms the same shape at ~10x lower rate.** paraphrase 31.9 / e5-base 20.2 /
+  BGE-M3 5.6 / e5-large 5.5 warm chunks/s. Use `LLB_EMBED_DEVICE=cpu` on this host when the GPU
+  is reserved for a served generator.
+- **Quality verdict unchanged.** The paired bake-off still RETAINs `e5-base`; throughput is a
+  cost column beside that call, not a reason to adopt the paraphrase model (its recall still
+  separates negatively).
+
+Reusable knobs: `--encoder-throughput`, `--encoder-precision`, `--encoder-min-warm`,
+`--encoder-max-warm`, `--encoder-max-warm-seconds`, `--encoder-compare-cpu` (Make:
+`EMBED_ENCODER_THROUGHPUT=1`, `EMBED_ENCODER_COMPARE_CPU=1`, ...). CI covers the aggregation with
+an injected clock and fake encoders (`tests/llb/rag/test_encoder_throughput.py`).
 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
 **ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped

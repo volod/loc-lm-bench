@@ -84,6 +84,8 @@ def score_pairs(
         result["device"] = built.device
     if built.cost_usd is not None:
         result["cost_usd"] = round(built.cost_usd, 6)
+    if built.throughput_profile is not None:
+        result["throughput_profile"] = built.throughput_profile
     return result
 
 

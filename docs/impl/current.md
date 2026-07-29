@@ -21,6 +21,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Whether a paired verdict may be read at all, and the item count an unreadable one needs | [RAG core](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading) |
 | Family-wise error control when a verdict selects a grid row, cell, or candidate | [RAG core](current/rag-core.md#selection-adjusted-grid-verdicts) |
 | Predeclared MDE, paired-power item counts, and realized sensitivity in comparison lanes | [RAG core](current/rag-core.md#paired-power-contract-for-comparison-lanes) |
+| Cold/warm encoder throughput on CUDA hosts (load vs compile vs steady encode) | [RAG core](current/rag-core.md#blackwell-encoder-throughput-decomposition) |
 | vLLM launcher, telemetry fields, backend build rules | [Backend telemetry](current/backend-telemetry.md) |
 | Model resolution, sweeps, tuning, joint-search, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |
 | VRAM planning, contention guard, llama.cpp, ontology drafting | [Robust backends](current/robustness-ontology-backends.md) |
