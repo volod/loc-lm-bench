@@ -43,42 +43,23 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-aggregate-safe-trimming
+### agent-context-policy-compact-finish-recovery (optional)
 
-Both policies that fit the window are LOSSY in a task-dependent way, and the measured run shows the
-shape of it: the ten `search-count` tasks fail under `observation_cap` and `compact` even though
-those policies ran all six steps on evidence the model could see, while the same ten fail under
-`full` for the unrelated reason that the prompt never fit ([extended
-workflows](current/extended-workflows.md#context-policy-evidence-on-the-16-gb-rtx-4060-ti-host)). A
-count question needs an AGGREGATE over the whole observation -- how many documents matched -- and a
-positional head-and-tail trim keeps neither end's count, while a free-text summary is not asked for
-one. So the lane currently prices context cost correctly and answer survival not at all, and its
-recommendation ("take `compact`, it is a quarter of the prompt") is safe only for tasks whose answer
-sits in a span rather than in a total. Give trimming an aggregate-safe path: when an observation is
-trimmed, prepend a machine-computed header of the facts a positional trim destroys (hit count,
-total length, the list of matched doc ids) so a count is answerable from the trimmed text, and give
-the compaction prompt the same header rather than hoping the summary preserves a number. Then
-re-run the four policies and report whether the `search-count` slice moves.
+Aggregate-safe headers recovered the `search-count` slice under `observation_cap` but not under
+`compact`: on the Blackwell re-run, compact still burns the 6-step budget with repeated
+compactions and never calls `finish`
+([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
+Diagnose whether compact should also apply observation-cap trimming to live steps, force a
+finish-oriented compaction cue when aggregate facts are already in the summary, or be recorded as
+inapplicable for count-heavy task sets at this step budget.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `trim_observation` and `summarize_entries` in
-  `src/llb/bench/agentic/context.py`, the paired reading in
-  `src/llb/bench/agentic_context_report.py`, and the `count` / `locate` task kinds already generated
-  by `src/llb/bench/agentic_tasks.py` as the natural per-slice split.
-- User-visible outcome: an operator who adopts a context policy on its measured cost saving does not
-  silently lose the class of questions whose answer is a total rather than a span.
-- Scope boundary: in scope -- the aggregate header, its use in both the trim and the compaction
-  input, a per-task-kind (`count` vs `locate`) breakdown of the policy table, and the re-run. Out of
-  scope -- new policies, new tools, a learned/semantic trimmer, and changing the shipped
-  `observation_cap` default before the slice moves.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout.
-- Execution path: `make bench-agentic-context` over the same 24-task generated set on the CUDA host,
-  before and after; CI covers the header's arithmetic and the per-kind split over fixtures.
-- Acceptance gates: `make ci` green; the report breaks completion out by task kind; the `count`
-  slice carries a paired delta against the pre-header `observation_cap` and `compact` rows, and the
-  verdict states whether aggregate-safe trimming recovers it or whether the loss is elsewhere.
-- Documentation target: the policy list and CUDA evidence of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+- Dependencies: none. Reuse the aggregate header path and the kind-split report.
+- User-visible outcome: an operator who prefers compact for prompt cost learns whether count tasks
+  can finish under it, or is told to use `observation_cap` for that slice.
+- Scope boundary: in scope -- compact finish behavior on the 24-task set. Out of scope -- new
+  policies or changing the observation_cap char default.
+- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
 
 ### agent-context-policy-constant-sweep (optional)
 
@@ -102,7 +83,8 @@ expose it.
   inapplicable at this step budget.
 - Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
   against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
-  content-aware trim (that is `agent-context-policy-aggregate-safe-trimming`), and changing the
+  content-aware trim beyond the delivered aggregate header
+  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)), and changing the
   shipped defaults before a paired delta supports it.
 - Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
   setting.

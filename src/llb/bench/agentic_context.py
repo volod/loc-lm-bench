@@ -35,7 +35,9 @@ from llb.bench.agentic_context_report import (
     METHOD,
     AgenticContextRun,
     PolicyReport,
+    aggregate_safe_verdict,
     build_recommendation,
+    format_kind_table,
     format_policy_table,
     known_policies,
     pair_against_baseline,
@@ -156,7 +158,13 @@ def run_agentic_context(
     _stamp_throughput(reports, meter)
     pair_against_baseline(reports)
     board, board_table = render_board([r.result for r in reports])
+    kind_table = format_kind_table(reports)
+    safe_verdict = aggregate_safe_verdict(reports)
     table = f"{board_table}\n\n{format_policy_table(reports)}"
+    if kind_table:
+        table = f"{table}\n\n{kind_table}"
+    if safe_verdict:
+        table = f"{table}\n\n{safe_verdict}"
     recommendation = build_recommendation(model, reports)
 
     if persist and data_dir is not None:
@@ -184,6 +192,8 @@ def run_agentic_context(
         recommendation=recommendation,
         task_set_digest=digest,
         max_prompt_chars=budget.max_prompt_chars,
+        kind_table=kind_table,
+        aggregate_safe_verdict=safe_verdict,
     )
 
 

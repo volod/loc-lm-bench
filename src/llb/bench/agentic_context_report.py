@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from llb.bench.agentic.context import CONTEXT_POLICIES, POLICY_FULL
+from llb.bench.agentic.context_aggregate import task_kind
 from llb.bench.agentic.model import Episode
 from llb.bench.common import mean
 from llb.core.contracts.benchmarks import AgenticCaseRow
@@ -42,6 +43,23 @@ METRIC_STEPS = "n_steps"
 METRIC_TOOL_CALLS = "n_tool_calls"
 METRIC_PROMPT_TOKENS = "max_prompt_tokens"
 METRICS = (METRIC_COMPLETION, METRIC_STEPS, METRIC_TOOL_CALLS, METRIC_PROMPT_TOKENS)
+
+# Task-kind split: the generator's search-count / search-locate ids (plus seed "other").
+KIND_COUNT = "count"
+KIND_LOCATE = "locate"
+KIND_OTHER = "other"
+KIND_ORDER = (KIND_COUNT, KIND_LOCATE, KIND_OTHER)
+
+# Pre-header count-slice completion on the 24-task 2026-07-28 evidence set: every search-count
+# failed under observation_cap/compact (ran all steps, counted wrong) and under full/keep_last_n
+# (overflow at step 1). Used so the kind table can state whether aggregate-safe trimming recovered
+# the slice without requiring a second "legacy" policy row.
+PRE_HEADER_COUNT_COMPLETION: dict[str, float] = {
+    POLICY_FULL: 0.0,
+    "observation_cap": 0.0,
+    "keep_last_n": 0.0,
+    "compact": 0.0,
+}
 
 RECOMMENDATION_TEMPLATE = "bench.agentic.context_recommendation"
 
@@ -91,6 +109,8 @@ class AgenticContextRun:
     recommendation: str
     task_set_digest: str
     max_prompt_chars: int
+    kind_table: str = ""
+    aggregate_safe_verdict: str = ""
 
 
 def pair_against_baseline(
@@ -119,6 +139,150 @@ def pair_against_baseline(
             )
             for metric in METRICS
         }
+
+
+def kind_indices(report: PolicyReport, kind: str) -> list[int]:
+    """Task indexes whose `item_id` maps to `kind` (`count` / `locate` / `other`)."""
+    return [
+        i for i, row in enumerate(report.rows) if task_kind(str(row.get("item_id", ""))) == kind
+    ]
+
+
+def kind_completion(report: PolicyReport, kind: str) -> float | None:
+    """Mean completion on one task kind; None when the set has no tasks of that kind."""
+    indexes = kind_indices(report, kind)
+    if not indexes:
+        return None
+    return mean([report.case_success[i] for i in indexes])
+
+
+def kind_overflow(report: PolicyReport, kind: str) -> int:
+    """How many tasks of `kind` ended as `context_overflow`."""
+    from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW
+
+    return sum(
+        1
+        for i in kind_indices(report, kind)
+        if report.rows[i].get("status") == STATUS_CONTEXT_OVERFLOW
+    )
+
+
+def pair_kind_completion(
+    reports: list[PolicyReport],
+    kind: str,
+    *,
+    confidence: float = DEFAULT_CONFIDENCE,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+) -> dict[str, PairedComparison]:
+    """Paired completion deltas against `full` restricted to one task kind."""
+    baseline = next((r for r in reports if r.policy == BASELINE_POLICY), None)
+    if baseline is None:
+        return {}
+    indexes = kind_indices(baseline, kind)
+    if len(indexes) < 2:
+        return {}
+    base_vec = [baseline.case_success[i] for i in indexes]
+    index_sets = bootstrap_index_sets(len(indexes), resamples, seed)
+    out: dict[str, PairedComparison] = {}
+    for report in reports:
+        if report.policy == BASELINE_POLICY:
+            continue
+        if len(report.case_success) != len(baseline.case_success):
+            continue
+        cand = [report.case_success[i] for i in indexes]
+        out[report.policy] = paired_comparison(cand, base_vec, index_sets, confidence)
+    return out
+
+
+def format_kind_table(
+    reports: list[PolicyReport],
+    *,
+    pre_header_count: dict[str, float] | None = None,
+) -> str:
+    """Per-policy completion broken out by task kind, plus count-slice vs pre-header."""
+    reference = next((r for r in reports if r.policy == BASELINE_POLICY), None) or (
+        reports[0] if reports else None
+    )
+    if reference is None or not reference.rows:
+        return ""
+    present = [k for k in KIND_ORDER if kind_indices(reference, k)]
+    if not present:
+        return ""
+    pre = pre_header_count if pre_header_count is not None else PRE_HEADER_COUNT_COMPLETION
+    header = f"{'policy':<16}" + "".join(f" {k:>10}" for k in present) + f" {'overflow-count':>14}"
+    if KIND_COUNT in present:
+        header += f" {'vs-pre-header':>14}"
+    lines = ["by task kind:", header, "-" * len(header)]
+    count_pairs = pair_kind_completion(reports, KIND_COUNT) if KIND_COUNT in present else {}
+    for report in reports:
+        cells = []
+        for kind in present:
+            value = kind_completion(report, kind)
+            cells.append(f"{value:>10.3f}" if value is not None else f"{'-':>10}")
+        row = f"{report.policy:<16}" + "".join(f" {c}" for c in cells)
+        row += f" {kind_overflow(report, KIND_COUNT):>14d}" if KIND_COUNT in present else ""
+        if KIND_COUNT in present:
+            prior = pre.get(report.policy)
+            now = kind_completion(report, KIND_COUNT)
+            if prior is None or now is None:
+                row += f" {'-':>14}"
+            else:
+                row += f" {now - prior:>+14.3f}"
+        lines.append(row)
+    if count_pairs:
+        lines.append("count-slice paired vs full:")
+        for policy, comparison in count_pairs.items():
+            delta = comparison["delta"]
+            reading = READING_SEPARATED if delta["lo"] > 0.0 or delta["hi"] < 0.0 else READING_FLAT
+            lines.append(
+                f"  {policy:<14} d(completion)={delta['mean']:+.3f} "
+                f"[{delta['lo']:+.3f}, {delta['hi']:+.3f}] "
+                f"w/l/t={comparison['wins']}/{comparison['losses']}/{comparison['ties']} "
+                f"{reading_label(reading)}"
+            )
+    return "\n".join(lines)
+
+
+def aggregate_safe_verdict(
+    reports: list[PolicyReport],
+    *,
+    pre_header_count: dict[str, float] | None = None,
+) -> str:
+    """Whether aggregate-safe trimming recovered the count slice vs the pre-header evidence."""
+    pre = pre_header_count if pre_header_count is not None else PRE_HEADER_COUNT_COMPLETION
+    reference = next((r for r in reports if r.policy == BASELINE_POLICY), None) or (
+        reports[0] if reports else None
+    )
+    if reference is None or not kind_indices(reference, KIND_COUNT):
+        return "no count-slice tasks in this set; aggregate-safe trimming not scored"
+    bits: list[str] = []
+    recovered_any = False
+    for name in ("observation_cap", "compact"):
+        report = next((r for r in reports if r.policy == name), None)
+        if report is None:
+            continue
+        now = kind_completion(report, KIND_COUNT)
+        prior = pre.get(name, 0.0)
+        if now is None:
+            continue
+        delta = now - prior
+        if delta > 0:
+            recovered_any = True
+            bits.append(f"`{name}` count {prior:.3f}->{now:.3f} (recovered {delta:+.3f})")
+        else:
+            bits.append(
+                f"`{name}` count {prior:.3f}->{now:.3f} (no recovery; loss is elsewhere or "
+                "still flat)"
+            )
+    if not bits:
+        return "count slice present but observation_cap/compact were not in this run"
+    if recovered_any:
+        return "aggregate-safe trimming recovered count-slice completion: " + "; ".join(bits)
+    return (
+        "aggregate-safe trimming did NOT move the count slice vs the pre-header evidence: "
+        + "; ".join(bits)
+    )
 
 
 def completion_reading(report: PolicyReport, *, confidence: float = DEFAULT_CONFIDENCE) -> str:
@@ -172,9 +336,17 @@ def _winner(reports: list[PolicyReport]) -> PolicyReport:
     is the one that reaches that same completion on the smallest prompt -- never a rank read off
     third-decimal noise. A policy that OVERFLOWS more often than the baseline is never named on the
     cost tie-break: it bought its cheap prompt by ending episodes early, which is the opposite of
-    the question the lane asks.
+    the question the lane asks. When `full` is absent (a one-policy re-run), pick the best
+    completion then the cheapest prompt among the reported rows.
     """
-    baseline = next(r for r in reports if r.policy == BASELINE_POLICY)
+    if not reports:
+        raise ValueError("cannot pick a context-policy winner from an empty report list")
+    baseline = next((r for r in reports if r.policy == BASELINE_POLICY), None)
+    if baseline is None:
+        return min(
+            reports,
+            key=lambda r: (-r.result.objective_score, r.metric_mean(METRIC_PROMPT_TOKENS)),
+        )
     separated = [
         r
         for r in reports
@@ -266,6 +438,7 @@ def policy_config(
         "n_trimmed_observations": int(sum(report.vector("n_trimmed_observations"))),
         "n_context_overflow": report.n_context_overflow,
         "paired_vs_full": report.paired or None,
+        "aggregate_safe": True,
     }
     if budget_provenance:
         config.update(budget_provenance)

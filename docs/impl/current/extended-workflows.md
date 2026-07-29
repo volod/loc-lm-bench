@@ -110,7 +110,9 @@ The four policies (each a fresh episode over the identical task set):
   baseline reproduces the recorded agentic rows exactly;
 - `observation_cap` -- every observation trimmed to a char budget, HEAD and TAIL kept around an
   explicit elision marker naming the dropped char count, so the model can tell it is reading a
-  fragment rather than a short tool result;
+  fragment rather than a short tool result. When trimmed, a machine-computed aggregate header
+  (`[агрегат: hits=N chars=M docs=...]`) is prepended outside the cap so a count question stays
+  answerable after a middle-of-list loss (`src/llb/bench/agentic/context_aggregate.py`);
 - `keep_last_n` -- only the last N steps survive, with a marker line announcing how many were
   dropped so a missing step is visible instead of looking like it never happened;
 - `compact` -- once the prompt crosses a share of the usable window, a model-written running summary
@@ -118,13 +120,15 @@ The four policies (each a fresh episode over the identical task set):
   step stays verbatim; when the prompt was blown by that most recent observation there are no older
   steps to fold, and the whole transcript is summarized rather than letting the policy degenerate
   into `full`. The summary marker carries the count of steps it stands in for, so a folded step is
-  never silently absent. Two rules keep the policy honest: at most ONE compaction per step (if the
-  compacted prompt still does not fit, the guard is what ends the episode, not another round of
-  summarizing), and the summarize call is ITSELF capped at the trigger size -- its input is the
-  transcript that just blew the step prompt, so an uncapped summarizer is the one call in the loop
-  guaranteed to overflow, and it would return a silently truncated summary the policy then trusts
-  for the rest of the episode. An empty summary is treated as a no-op rather than folding those
-  steps away with nothing standing in for them.
+  never silently absent. Search observations being folded also inject their aggregate headers into
+  the summary text itself (not only into the summarizer prompt), so hit counts do not depend on the
+  free-text summary remembering a number. Two rules keep the policy honest: at most ONE compaction
+  per step (if the compacted prompt still does not fit, the guard is what ends the episode, not
+  another round of summarizing), and the summarize call is ITSELF capped at the trigger size -- its
+  input is the transcript that just blew the step prompt, so an uncapped summarizer is the one call
+  in the loop guaranteed to overflow, and it would return a silently truncated summary the policy
+  then trusts for the rest of the episode. An empty summary is treated as a no-op rather than
+  folding those steps away with nothing standing in for them.
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
@@ -241,6 +245,35 @@ long transcripts, and this failure is a single fat observation. And the two poli
 window are lossy in a task-dependent way: a `count` question needs the whole hit list, which is
 precisely what a positional trim and a summary destroy, so surviving the window and answering
 correctly are not the same win.
+
+### Aggregate-safe trimming
+
+Trim and compaction now carry machine-computed aggregate headers
+(`src/llb/bench/agentic/context_aggregate.py`): hit count, total length, and matched doc ids are
+prepended when an observation is trimmed, and the same facts are injected into a compacted summary
+so a free-text summarizer cannot drop them. The report breaks completion out by task kind
+(`count` / `locate` / `other`) and states a vs-pre-header delta on the count slice.
+
+Blackwell host evidence (2026-07-29): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
+`--max-model-len 8192` (prompt budget 21504 chars), the same 24-task shape (4 seed + 10
+`search-count` + 10 `search-locate` over 250 UA docs). Bundles under
+`.data/agentic-context/20260729T1515*` (four policies) and
+`.data/agentic-context/20260729T155227*` (compact re-run after summary-injection).
+
+| policy | completion | count | locate | other | overflow | vs pre-header count |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `full` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `observation_cap` | **0.875** | **1.000** | 1.000 | 0.250 | 0 | **+1.000** |
+| `keep_last_n` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `compact` | 0.458 | 0.000 | 1.000 | 0.250 | 0 | +0.000 |
+
+Verdict: **aggregate-safe trimming recovered the count slice under `observation_cap`** (10/10
+count tasks finish in 2 steps with the correct integer; paired d(completion) vs `full` on the
+count slice is +1.000 [+1.000, +1.000]). `observation_cap` also separates on the full set
+(+0.417 [+0.208, +0.625]) and is the recommendation. **`compact` did not recover count**: episodes
+still burn the 6-step budget with repeated compactions and never call `finish` (incomplete, empty
+answer) -- the loss is elsewhere than the missing total, so the header alone is not enough for
+that policy on this model. `keep_last_n` and `full` still overflow the ten count tasks at step 1.
 
 ## Context-Policy Comparison
 

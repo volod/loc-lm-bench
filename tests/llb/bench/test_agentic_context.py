@@ -70,13 +70,36 @@ def test_trim_observation_keeps_head_and_tail_with_an_explicit_marker():
     trimmed, was_trimmed = trim_observation("A" * 100 + "Z" * 100, 50)
     assert was_trimmed is True
     assert len(trimmed) > 50  # the marker is ADDED, never counted against the kept content
-    assert trimmed.startswith("A") and trimmed.endswith("Z")
     assert "обрізано 150 символів" in trimmed
+    # Aggregate header sits above the body (chars-only for a non-search blob).
+    assert trimmed.startswith("[агрегат: chars=200]")
+    body = trimmed.split("\n", 1)[1]
+    assert body.startswith("A") and body.endswith("Z")
 
 
 def test_trim_observation_leaves_a_short_observation_untouched():
     assert trim_observation("коротко", 800) == ("коротко", False)
     assert trim_observation("будь-що", 0) == ("будь-що", False)  # cap 0 disables trimming
+
+
+def test_trim_observation_can_disable_aggregate_header():
+    trimmed, was_trimmed = trim_observation("A" * 100 + "Z" * 100, 50, aggregate_safe=False)
+    assert was_trimmed is True
+    assert not trimmed.startswith("[агрегат:")
+    assert trimmed.startswith("A") and trimmed.endswith("Z")
+
+
+def test_observation_cap_trims_search_hits_with_aggregate_header():
+    from llb.bench.agentic.context_aggregate import extract_aggregate_facts
+
+    # Middle docs carry the count; a head/tail trim without a header would lose them.
+    hits = "\n".join(f"[d{i}] body-{i}-" + ("x" * 40) for i in range(10))
+    facts = extract_aggregate_facts(hits)
+    assert facts["hits"] == 10 and facts["doc_ids"][0] == "d0"
+    trimmed, was_trimmed = trim_observation(hits, 120)
+    assert was_trimmed is True
+    assert trimmed.startswith("[агрегат: hits=10 chars=")
+    assert "docs=d0,d1,d2,d3,d4,d5,d6,d7,d8,d9]" in trimmed.split("\n", 1)[0]
 
 
 # --- policy history assembly --------------------------------------------------------------
@@ -129,6 +152,17 @@ def test_compact_folds_older_entries_and_keeps_the_full_executed_record():
     lines = policy_history_lines(policy, state)
     assert lines[0] == "- [підсумок попередніх кроків (2): стисло 2]"
     assert not any("опущено" in line for line in lines)
+
+
+def test_compact_injects_search_aggregate_facts_into_the_summary():
+    state = ContextState()
+    policy = ContextPolicy(name=POLICY_COMPACT, compact_keep_recent=1)
+    hits = "\n".join(f"[d{i}] body" for i in range(4))
+    state.record(policy, "search", {"query": "q"}, hits)
+    state.record(policy, "db_get", {"key": "k"}, "ok")
+    assert compact_state(policy, state, lambda _older: "модель забула число") is True
+    assert "hits=4" in state.summary and "docs=d0,d1,d2,d3" in state.summary
+    assert "модель забула число" in state.summary
 
 
 def test_compact_folds_the_whole_transcript_when_there_is_no_older_step():
@@ -212,9 +246,20 @@ def test_the_summarize_call_is_itself_capped_so_it_cannot_overflow():
     entries = [("search", {"query": "дані"}, BIG)]
     summarize_entries(lambda p: seen.append(p) or "стисло", entries, 500)
     assert len(seen[0]) < len(BIG) and "обрізано" in seen[0]
+    assert "[агрегат: chars=" in seen[0]  # per-entry header before the outer trim
     seen.clear()
     summarize_entries(lambda p: seen.append(p) or "стисло", entries, 0)  # 0 = no cap
     assert "обрізано" not in seen[0]
+    assert "[агрегат: chars=" in seen[0]
+
+
+def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():
+    from llb.bench.agentic.context import summarize_entries
+
+    hits = "\n".join(f"[doc-{i}] text-{i}" for i in range(5))
+    seen: list[str] = []
+    summarize_entries(lambda p: seen.append(p) or "стисло", [("search", {"query": "q"}, hits)], 0)
+    assert "hits=5" in seen[0] and "docs=doc-0,doc-1,doc-2,doc-3,doc-4" in seen[0]
 
 
 def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
@@ -317,6 +362,60 @@ def test_run_agentic_context_runs_every_policy_on_the_identical_task_set():
     assert all(len(r.case_success) == 8 for r in run.reports)
     assert run.max_prompt_chars == 6000
     assert task_set_digest(comparison_tasks()) == run.task_set_digest
+
+
+def test_kind_table_splits_count_vs_locate_and_scores_pre_header_delta():
+    from llb.bench.agentic_context_report import (
+        aggregate_safe_verdict,
+        format_kind_table,
+        kind_completion,
+    )
+
+    # Mix generator ids so the kind split is exercised; scripted complete finishes every task.
+    tasks = [
+        AgenticTask(
+            "search-count-000",
+            "скільки?",
+            setup={"corpus": {"d1": "foo"}},
+            success=[{"kind": "answer_contains", "value": "готово"}],
+        ),
+        AgenticTask(
+            "search-count-001",
+            "скільки?",
+            setup={"corpus": {"d1": "foo"}},
+            success=[{"kind": "answer_contains", "value": "готово"}],
+        ),
+        AgenticTask(
+            "search-locate-000",
+            "де?",
+            setup={"corpus": {"d1": "foo"}},
+            success=[{"kind": "answer_contains", "value": "готово"}],
+        ),
+        AgenticTask(
+            "seed-other",
+            "інше",
+            setup={"corpus": {"d1": "foo"}},
+            success=[{"kind": "answer_contains", "value": "готово"}],
+        ),
+    ]
+    run = run_agentic_context(
+        tasks,
+        model="m",
+        backend="ollama",
+        complete=comparison_complete(),
+        policies=["full", "observation_cap", "compact"],
+        budget=fixed_budget(8000),
+        persist=False,
+    )
+    assert "by task kind:" in run.kind_table
+    assert "count" in run.kind_table and "locate" in run.kind_table
+    assert "vs-pre-header" in run.kind_table
+    assert run.aggregate_safe_verdict
+    # Scripted complete answers "готово" so count completion is 1.0 vs pre-header 0.0 -> recovered.
+    cap = next(r for r in run.reports if r.policy == "observation_cap")
+    assert kind_completion(cap, "count") == 1.0
+    assert "recovered" in aggregate_safe_verdict(run.reports)
+    assert format_kind_table(run.reports).startswith("by task kind:")
 
 
 def test_every_non_baseline_policy_carries_a_paired_delta_against_full():
