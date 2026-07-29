@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from llb.backends.base import BackendLauncher, ChatResult
+from llb.backends.served_window import is_ollama_base_url as _is_ollama_base_url
 from llb.core.config import RunConfig
 from llb.core.contracts.common import ChatMessage
 from llb.bench.common import LLMComplete, _R
@@ -46,18 +47,30 @@ def local_complete(
     temperature: float = 0.0,
     timeout: float = 120.0,
     meter: ThroughputMeter | None = None,
+    num_ctx: int | None = None,
 ) -> LLMComplete:
     """A `complete` over an already-running OpenAI-compatible endpoint (no launch). Heavy imports
     stay lazy; transport errors map to an empty string via `chat_once`'s normalized result. When a
-    `meter` is given, each call's token count + latency is recorded for throughput reporting."""
+    `meter` is given, each call's token count + latency is recorded for throughput reporting.
+
+    `num_ctx` is forwarded as Ollama `options.num_ctx` via `extra_body` so a declared window is
+    actually served instead of Ollama's 4096 default.
+    """
     from llb.backends.openai_client import chat_once, make_client
 
     client = make_client(base_url)
+    extra_body = {"options": {"num_ctx": num_ctx}} if num_ctx is not None and num_ctx > 0 else None
 
     def complete(prompt: str) -> str:
         msgs: list[ChatMessage] = [{"role": "user", "content": prompt}]
         result = chat_once(
-            client, model, msgs, max_tokens=max_tokens, temperature=temperature, timeout=timeout
+            client,
+            model,
+            msgs,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            extra_body=extra_body,
         )
         if meter is not None:
             meter.record(result)
@@ -127,28 +140,70 @@ def drive_with_backend(
     honors the SAME isolation contract as the RAG sweep. When a `meter` is given it accumulates
     real generation throughput across the run's model calls (either endpoint path).
     """
-    if base_url is not None or cfg.backend == "ollama":
-        url = base_url or f"{cfg.ollama_host.rstrip('/')}/v1"
+    ollama_num_ctx = (cfg.max_model_len or cfg.context_budget) if cfg.backend == "ollama" else None
+    if base_url is not None:
+        # When the caller supplied --base-url pointing at an Ollama /v1 endpoint AND a
+        # num_ctx is declared, route through the native launcher on that same host so
+        # num_ctx is reliably honoured.  Ollama's OpenAI-compat layer silently ignores
+        # extra_body.options.num_ctx on some builds.
+        if ollama_num_ctx and _is_ollama_base_url(base_url, cfg.ollama_host):
+            from llb.backends.ollama import OllamaLauncher
+            from llb.backends.served_window import native_root
+
+            launcher = OllamaLauncher(
+                cfg.model,
+                host=native_root(base_url),
+                num_ctx=ollama_num_ctx,
+            )
+            with launcher:
+                return run(
+                    launcher_complete(
+                        launcher,
+                        max_tokens=max_tokens,
+                        timeout=cfg.request_timeout_s,
+                        meter=meter,
+                    )
+                )
         return run(
             local_complete(
                 cfg.model,
-                url,
+                base_url,
                 max_tokens=max_tokens,
                 timeout=cfg.request_timeout_s,
                 meter=meter,
+                num_ctx=ollama_num_ctx,
             )
         )
+    if cfg.backend == "ollama":
+        # Native /api/chat (not OpenAI /v1): only the native options payload reliably honors
+        # num_ctx, which is what stops Ollama's silent 4096 default from truncating prompts.
+        from llb.backends.ollama import OllamaLauncher
 
-    from llb.executor.isolation import isolate_cell
-    from llb.executor.runner_backend import _make_launcher
-
-    launcher = _make_launcher(cfg, log_dir=cfg.data_dir / "llb" / "logs")
-
-    def work() -> _R:
+        launcher = OllamaLauncher(
+            cfg.model,
+            host=cfg.ollama_host,
+            num_ctx=ollama_num_ctx,
+        )
         with launcher:
             return run(
                 launcher_complete(
                     launcher,
+                    max_tokens=max_tokens,
+                    timeout=cfg.request_timeout_s,
+                    meter=meter,
+                )
+            )
+
+    from llb.executor.isolation import isolate_cell
+    from llb.executor.runner_backend import _make_launcher
+
+    owned = _make_launcher(cfg, log_dir=cfg.data_dir / "llb" / "logs")
+
+    def work() -> _R:
+        with owned:
+            return run(
+                launcher_complete(
+                    owned,
                     max_tokens=max_tokens,
                     timeout=cfg.request_timeout_s,
                     meter=meter,

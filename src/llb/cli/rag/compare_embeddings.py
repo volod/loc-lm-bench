@@ -9,7 +9,11 @@ import typer
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
-from llb.cli.rag.embedding_stores import api_store_builder, local_store_builder
+from llb.cli.rag.embedding_stores import (
+    EncoderThroughputOptions,
+    api_store_builder,
+    local_store_builder,
+)
 
 # Pure, dependency-free defaults (no FAISS / torch pulled in): safe as Typer option defaults.
 from llb.rag.embedding_bakeoff_uncertainty import (
@@ -105,6 +109,32 @@ def compare_embeddings_cmd(
     out: Optional[Path] = typer.Option(
         None, help="write report.md here (default: $DATA_DIR/compare-embeddings/<ts>/report.md)"
     ),
+    encoder_throughput: bool = typer.Option(
+        False,
+        "--encoder-throughput",
+        help="also decompose cold load / first-pass compile+encode / warm steady encode rates "
+        "per candidate (writes additive fields + $DATA_DIR/encoder-throughput/<ts>/)",
+    ),
+    encoder_precision: float = typer.Option(
+        0.05,
+        help="--encoder-throughput: stop warm passes when IQR/median <= this relative precision",
+    ),
+    encoder_min_warm: int = typer.Option(
+        3, min=1, help="--encoder-throughput: minimum warm encode passes"
+    ),
+    encoder_max_warm: int = typer.Option(
+        10, min=1, help="--encoder-throughput: maximum warm encode passes"
+    ),
+    encoder_max_warm_seconds: float = typer.Option(
+        180.0,
+        min=1.0,
+        help="--encoder-throughput: wall-clock cap over the warm loop only",
+    ),
+    encoder_compare_cpu: bool = typer.Option(
+        False,
+        "--encoder-compare-cpu",
+        help="--encoder-throughput: also profile CPU beside the resolved CUDA device",
+    ),
 ) -> None:
     """Rank candidate embedders for Ukrainian RAG on one gold set (recall@k / MRR + throughput).
 
@@ -115,6 +145,8 @@ def compare_embeddings_cmd(
     local) and is refused unless --data-classification open plus explicit consent.
     """
     from llb.bench.common import new_run_timestamp
+    from llb.backends.telemetry_samplers import nvidia_smi_power_reader
+    from llb.cli.helpers import best_effort_gpu_readers
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
     from llb.prep.frontier_telemetry import ProvenanceLog
@@ -122,6 +154,12 @@ def compare_embeddings_cmd(
     from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_power import prepare_embedding_power, resolve_embedding_power
     from llb.rag.embedding_bakeoff_report import format_report, render_markdown
+    from llb.rag.encoder_throughput import (
+        ThroughputProfile,
+        build_host_summary,
+        format_host_summary,
+        render_host_markdown,
+    )
 
     try:
         bars = resolve_bars(adoption_bars)
@@ -160,6 +198,17 @@ def compare_embeddings_cmd(
     stores_dir.mkdir(parents=True, exist_ok=True)
 
     egress_log = ProvenanceLog()
+    throughput_profiles: list[ThroughputProfile] = []
+    vram_reader, _pid = best_effort_gpu_readers()
+    power_reader = nvidia_smi_power_reader() if encoder_throughput else None
+    throughput_opts = EncoderThroughputOptions(
+        enabled=encoder_throughput,
+        target_relative_precision=encoder_precision,
+        min_warm_passes=encoder_min_warm,
+        max_warm_passes=encoder_max_warm,
+        max_warm_seconds=encoder_max_warm_seconds,
+        compare_cpu=encoder_compare_cpu,
+    )
 
     def consent() -> bool:
         if yes:
@@ -174,7 +223,14 @@ def compare_embeddings_cmd(
         k,
         corpus_root=str(cfg.corpus_root),
         local_models=local_models,
-        build_local=local_store_builder(cfg, stores_dir),
+        build_local=local_store_builder(
+            cfg,
+            stores_dir,
+            throughput=throughput_opts,
+            vram_reader=vram_reader,
+            power_reader=power_reader,
+            profiles_out=throughput_profiles,
+        ),
         item_ids=[item.id for item in items],
         api_model=api_model,
         build_api=api_store_builder(cfg, stores_dir, egress_log, max_usd),
@@ -194,6 +250,23 @@ def compare_embeddings_cmd(
         except ValueError as exc:
             typer.echo(f"[error] {exc}", err=True)
             raise typer.Exit(code=2) from None
+
+    if throughput_profiles:
+        n_texts = max((p["n_texts"] for p in throughput_profiles), default=0)
+        summary = build_host_summary(
+            throughput_profiles,
+            corpus_n_texts=n_texts,
+            baseline_model=baseline.strip() or None,
+        )
+        report["encoder_throughput"] = summary
+        throughput_dir = cfg.data_dir / "encoder-throughput" / run_ts
+        throughput_dir.mkdir(parents=True, exist_ok=True)
+        (throughput_dir / "report.md").write_text(render_host_markdown(summary), encoding="utf-8")
+        (throughput_dir / "report.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        typer.echo(format_host_summary(summary))
+        typer.echo(f"[encoder-throughput] wrote summary -> {throughput_dir}")
 
     typer.echo(format_report(report))
     report_path.parent.mkdir(parents=True, exist_ok=True)

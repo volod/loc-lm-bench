@@ -1459,7 +1459,8 @@ operator applies via `build-index --embedding-model <winner>` + `RunConfig.embed
 Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and `report.json` plus one saved
 store per candidate under
 `stores/<model-slug>/`. Default local candidates: `intfloat/multilingual-e5-base` (current default),
-`intfloat/multilingual-e5-large`, `BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
+`intfloat/multilingual-e5-small` (cheap CUDA sibling), `intfloat/multilingual-e5-large`,
+`BAAI/bge-m3`, `lang-uk/ukr-paraphrase-multilingual-mpnet-base`.
 The store builder is an injectable seam, so scoring, ranking, the consent gate, and report shaping
 are fake-store unit-tested (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network.
 The lane is four modules: `embedding_bakeoff_models.py` (the item/store seams and the row +
@@ -1471,7 +1472,7 @@ report shapes every consumer reads), `embedding_bakeoff.py` (build, score, rank)
 per candidate to both the ASCII table and `report.md`, ending in the one sentence the
 recommendation needs: how far the winner leads the runner-up and whether that lead clears the
 floor. Without it `report.md` says so explicitly instead of leaving the reader to assume a lead is
-real. This lane is where the floor matters most -- four candidates on one corpus routinely differ
+real. This lane is where the floor matters most -- several candidates on one corpus routinely differ
 by a single item.
 
 ### Paired uncertainty and the adopt-or-retain verdict
@@ -2054,10 +2055,89 @@ The 2026-07-28 rerun on the 12,227 MiB RTX PRO 3000 Blackwell reproduced every
 host-independent field above exactly: the four recall/MRR values, all paired bounds and ledgers,
 the zero measurement floor with no fragile items, and the `retain` verdict with the 300-item open
 question for e5-large. Every row records `device=cuda`. Throughput on this 80 W laptop GPU was
-25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model;
-the architecture-dependent spread needs a warm/load-separated benchmark before it is treated as
-a model recommendation. Artifact:
+25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model in
+the one-pass store build; those rates mixed cold load with encoding, which the warm decomposition
+below separates. Artifact:
 `$DATA_DIR/compare-embeddings/20260728T110500Z-blackwell12/{report.md,report.json}`.
+
+### Blackwell encoder throughput decomposition
+
+`make compare-embeddings ... EMBED_ENCODER_THROUGHPUT=1 EMBED_ENCODER_COMPARE_CPU=1` on the same
+12,227 MiB RTX PRO 3000 Blackwell host (power limit held at 80 W) over the 311-chunk committed UA
+fixture. Each candidate records cold load, first-pass (compile+encode), and adaptive warm encodes
+until IQR/median <= 0.05 or a pass/time cap. Additive fields land on the bake-off bundle; the host
+summary is `$DATA_DIR/encoder-throughput/20260729T124909.208587Z-cb457ea736f4/`.
+
+CUDA warm rates (311 texts; median over warm passes that cleared 0.05 relative precision):
+
+| model | load_s | first_s | compile_est_s | warm_chunks/s | one_pass_chunks/s | peak_vram_MB | mean_power_W |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lang-uk/ukr-paraphrase...` | 5.72 | 0.81 | 0.00 | 342.0 | 47.6 | 9015 | 72.2 |
+| `intfloat/multilingual-e5-base` | 5.61 | 1.45 | 0.00 | 208.5 | 44.1 | 2371 | 80.7 |
+| `BAAI/bge-m3` | 5.94 | 5.04 | 0.05 | 62.4 | 28.3 | 6839 | 79.9 |
+| `intfloat/multilingual-e5-large` | 5.82 | 5.08 | 0.06 | 62.0 | 28.5 | 4597 | 77.0 |
+
+What the decomposition establishes:
+
+- **Cold load dominates the one-pass number.** Every model spends ~5.6-6.0 s loading weights; the
+  first-pass compile estimate is near zero on this torch/CUDA stack. A one-pass bake-off that
+  folds load into `embed_seconds` therefore understates steady encode by 3-7x and is not a model
+  throughput recommendation.
+- **The architecture-dependent spread survives warm measurement.** e5-base remains ~3.4x e5-large
+  on warm chunks/s (208 vs 62). The 2026-07-28 one-pass spread was not an artifact of load alone.
+- **e5-large vs BGE-M3 are tied when warm.** One-pass CUDA order puts e5-large ahead of BGE-M3 by
+  a hair; warm order flips them (62.4 vs 62.0). Prefer warm chunks/s, and do not rank those two on
+  throughput. Headline CUDA ordering does NOT survive (`ordering_survives=false`); CPU ordering
+  does.
+- **CPU twin confirms the same shape at ~10x lower rate.** paraphrase 31.9 / e5-base 20.2 /
+  BGE-M3 5.6 / e5-large 5.5 warm chunks/s. Use `LLB_EMBED_DEVICE=cpu` on this host when the GPU
+  is reserved for a served generator.
+- **Quality verdict unchanged.** The paired bake-off still RETAINs `e5-base`; throughput is a
+  cost column beside that call, not a reason to adopt the paraphrase model (its recall still
+  separates negatively).
+
+Reusable knobs: `--encoder-throughput`, `--encoder-precision`, `--encoder-min-warm`,
+`--encoder-max-warm`, `--encoder-max-warm-seconds`, `--encoder-compare-cpu` (Make:
+`EMBED_ENCODER_THROUGHPUT=1`, `EMBED_ENCODER_COMPARE_CPU=1`, ...). Only the literal
+`EMBED_ENCODER_COMPARE_CPU=1` enables the CPU twin (`=0` is off). Host summaries name
+`faster_than_baseline` when the bake-off baseline is set. `Embedder.release()` plus
+`torch.cuda.empty_cache()` runs between candidates so peak VRAM is per-encoder, not stacked.
+CI covers the aggregation with an injected clock and fake encoders
+(`tests/llb/rag/test_encoder_throughput.py`).
+
+### Blackwell sub-base encoder roster (e5-small)
+
+`DEFAULT_LOCAL_CANDIDATES` now includes `intfloat/multilingual-e5-small` (same `e5` query/passage
+convention as base/large). Full five-candidate bake-off + warm decomposition on the committed UA
+fixture (n=82 final; 311 chunks; RTX PRO 3000 / 12 GiB / ~80 W):
+`$DATA_DIR/compare-embeddings/20260729T131520.054732Z-1d36908e745c/` and
+`$DATA_DIR/encoder-throughput/20260729T131520.054732Z-1d36908e745c/`. Corrected per-candidate
+VRAM after the release fix (base vs small only):
+`$DATA_DIR/encoder-throughput/20260729T133400.407347Z-c79df0776706/`.
+
+| model | recall@10 | mrr | dim | warm CUDA c/s | peak_vram_MB (corrected) | d_recall vs base |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `intfloat/multilingual-e5-small` | 1.000 | 0.819 | 384 | ~638-642 | 1587 | +0.024 [0.000, 0.061] (2/0/80) |
+| `intfloat/multilingual-e5-base` | 0.976 | 0.838 | 768 | ~209 | 1851 | baseline |
+| `intfloat/multilingual-e5-large` | 1.000 | 0.864 | 1024 | ~62 | (see full run) | +0.024 [0.000, 0.061] (2/0/80) |
+| `BAAI/bge-m3` | 0.988 | 0.844 | 1024 | ~62 | (see full run) | +0.012 [0.000, 0.037] |
+| `lang-uk/ukr-paraphrase...` | 0.878 | 0.627 | 768 | ~334 | (see full run) | -0.098 [-0.171, -0.037] |
+
+What this establishes for a 12 GiB host that must keep embeddings on CUDA beside a served
+generator:
+
+- **Cheap CUDA alternative is named.** e5-small is ~3.05x e5-base on warm chunks/s and uses less
+  peak VRAM (~1.6 GiB vs ~1.9 GiB). The host summary lists it under `faster_than_baseline`.
+- **Quality is flat on this item set, not an adopt.** Point estimate favors e5-small (+2 recall
+  wins, 0 losses), but the paired CI includes zero and the verdict remains
+  **RETAIN `intfloat/multilingual-e5-base`**. Do not change `RunConfig.embedding_model` until a
+  resolvable item set clears an adoption bar
+  ([paired uncertainty](#the-recommendation-re-read-with-paired-uncertainty)).
+- **Paraphrase is faster but not a substitute.** It is 1.6x base on warm CUDA yet loses recall
+  (-0.098); throughput alone must not promote it.
+- **e5-small ties e5-large on recall@10 here** (both 1.000) at ~10x the warm rate and a third the
+  dimension -- useful when the operator prioritizes index/encode cost over MRR (e5-large still
+  leads MRR 0.864 vs 0.819).
 
 Recorded verdicts: **RETAIN `intfloat/multilingual-e5-base`** on the accepted PDF goldset,
 **ADOPT `intfloat/multilingual-e5-large`** on the committed fixture -- which the shipped

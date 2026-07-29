@@ -6,27 +6,66 @@ harnesses, agent context-management policies, judge diagnostics, and prompt-syst
 ## Agentic Harness Comparison
 
 The agentic benchmark can run the same task set through multiple harnesses while keeping the model,
-tools, world state, objective checks, and optional judge fixed.
+tools, world state, objective checks, optional judge, and context-management policy fixed.
 
 Core locations:
 
-- `src/llb/bench/agentic/model.py`: `Harness` protocol and harness names;
+- `src/llb/bench/agentic/model.py`: `Harness` protocol (now carries `policy` + `budget`) and harness
+  names;
 - `src/llb/bench/agentic/run.py`: runner integration;
 - `src/llb/bench/harness/base.py`: pure loop harness;
-- `src/llb/bench/harness/langgraph.py`: LangGraph agent/tool graph;
-- `src/llb/bench/harness/crewai.py`: CrewAI adapter;
-- `src/llb/board/harnesses.py`: one-model harness comparison board rows.
+- `src/llb/bench/harness/langgraph.py`: LangGraph agent/tool graph (same `step_prompt` /
+  `ContextState` seam as the loop);
+- `src/llb/bench/harness/crewai.py`: CrewAI adapter (accepts the kwargs, does not apply them);
+- `src/llb/board/harnesses.py`: one-model harness comparison board rows + prompt-size appendix.
 
 ```bash
-llb bench-agentic --harness loop --model <model> --backend <backend>
-llb bench-agentic --harness langgraph --model <model> --backend <backend>
+llb bench-agentic --harness loop --model <model> --backend <backend> \
+  --context-policy full
+llb bench-agentic --harness langgraph --model <model> --backend <backend> \
+  --context-policy observation_cap
 llb bench-agentic --harness crewai --model <model> --backend <backend>
-llb bench-agentic-compare --model <model>
-make agentic-harness-compare MODEL=<model> BACKEND=<backend>
+llb bench-agentic-compare --model <model> --context-policy observation_cap
+make agentic-harness-compare MODEL=<model> BACKEND=<backend> \
+  AGENTIC_CONTEXT_POLICY=full AGENTIC_HARNESSES='loop langgraph'
 ```
 
-The comparison fixes the model and treats harness as the row label. This avoids conflating model
-quality with orchestration behavior.
+### Protocol decision: policies transfer on the harness seam
+
+The `Harness` protocol takes optional `policy` and `budget` alongside `(task, complete, catalog,
+max_steps)`. Product rule:
+
+- `loop` and `langgraph` APPLY the requested policy to every step prompt (shared
+  `step_prompt` / `ContextState` / overflow guard), so a measured win from
+  `bench-agentic-context` is one the operator's LangGraph cell can actually run;
+- `crewai` ACCEPTS the kwargs for protocol parity but does NOT apply them -- CrewAI owns its
+  ReAct transcript. Episodes stamp `context_policy_supported=false`, and the comparison labels
+  the policy cell as `full*` / `observation_cap*` rather than silently reporting our `full`
+  assembly. Prompt sizes the framework actually sent still ride on episode telemetry.
+
+Every harness records per-step prompt sizes on `Episode.telemetry`. Bundles persist
+`context_policy`, `context_policy_supported`, and `mean_max_prompt_tokens`. The harness comparison
+keeps the best run per `(model, harness, context_policy)` and ranks harnesses under ONE fixed
+policy (explicit `--context-policy`, else the policy with the most harness coverage), so the axis
+never silently mixes framework and context management. The ranked board stays completion-only; an
+appendix table reports `prompt-tok`, the requested policy, and whether it was applied.
+
+### CUDA host evidence (2026-07-29)
+
+`MamayLM-Gemma-3-12B-IT-v2.0` on Ollama (`--max-model-len 8192`), 4-task UA seed,
+`AGENTIC_HARNESSES='loop langgraph'` (CrewAI extra not installed on this host; fake-crew CI covers
+its unsupported path):
+
+| policy | harness | completion | mean steps | mean max prompt tok | applied |
+| --- | --- | --- | --- | --- | --- |
+| `full` | loop | 0.250 | 6.00 | 906.2 | yes |
+| `full` | langgraph | 0.250 | 6.00 | 906.2 | yes |
+| `observation_cap` | loop | 0.250 | 6.00 | 906.2 | yes |
+| `observation_cap` | langgraph | 0.250 | 6.00 | 906.2 | yes |
+
+Loop and LangGraph matched item-for-item on completion and prompt tokens under both policies
+(seed-task observations sit under the 800-char cap, so `observation_cap` is a no-op on this set --
+the transfer seam is what the run proves). Bundles under `.data/agentic/20260729T12*`.
 
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
@@ -39,19 +78,23 @@ host validation.
 
 ## Agent Context-Management Policies
 
-`bench-agentic-context` ranks how the agent LOOP spends its context window for ONE fixed model over
+`bench-agentic-context` ranks how the agent spends its context window for ONE fixed model over
 one task set. It is the agent-side sibling of the chain-context lane below: the model, the task set,
 the tool world, the success checks, and the step budget are held FIXED and only the
 context-management policy varies, so every difference it reports is attributable to context
-handling. Every policy runs a fresh episode through the pure `loop` harness -- context management is
-a property of the loop, not of a framework.
+handling. Every policy runs a fresh episode through the pure `loop` harness by default; the same
+`policy`/`budget` kwargs transfer onto `langgraph` via the widened `Harness` protocol (see
+[Agentic Harness Comparison](#agentic-harness-comparison)), while CrewAI records the policy as
+unsupported because it owns its own transcript.
 
 Core locations:
 
 - `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
   assembly, compaction, and the per-episode telemetry;
 - `src/llb/bench/agentic/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
-  resolution from the served model's usable window;
+  resolution from the declared + probed usable window;
+- `src/llb/backends/served_window.py`: per-backend probe of the window the runtime is actually
+  serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
   policy-aware `run_episode`;
 - `src/llb/bench/agentic_context.py`: the four-policy run + persistence;
@@ -67,7 +110,9 @@ The four policies (each a fresh episode over the identical task set):
   baseline reproduces the recorded agentic rows exactly;
 - `observation_cap` -- every observation trimmed to a char budget, HEAD and TAIL kept around an
   explicit elision marker naming the dropped char count, so the model can tell it is reading a
-  fragment rather than a short tool result;
+  fragment rather than a short tool result. When trimmed, a machine-computed aggregate header
+  (`[агрегат: hits=N chars=M docs=...]`) is prepended outside the cap so a count question stays
+  answerable after a middle-of-list loss (`src/llb/bench/agentic/context_aggregate.py`);
 - `keep_last_n` -- only the last N steps survive, with a marker line announcing how many were
   dropped so a missing step is visible instead of looking like it never happened;
 - `compact` -- once the prompt crosses a share of the usable window, a model-written running summary
@@ -75,24 +120,40 @@ The four policies (each a fresh episode over the identical task set):
   step stays verbatim; when the prompt was blown by that most recent observation there are no older
   steps to fold, and the whole transcript is summarized rather than letting the policy degenerate
   into `full`. The summary marker carries the count of steps it stands in for, so a folded step is
-  never silently absent. Two rules keep the policy honest: at most ONE compaction per step (if the
-  compacted prompt still does not fit, the guard is what ends the episode, not another round of
-  summarizing), and the summarize call is ITSELF capped at the trigger size -- its input is the
-  transcript that just blew the step prompt, so an uncapped summarizer is the one call in the loop
-  guaranteed to overflow, and it would return a silently truncated summary the policy then trusts
-  for the rest of the episode. An empty summary is treated as a no-op rather than folding those
-  steps away with nothing standing in for them.
+  never silently absent. Search observations being folded also inject their aggregate headers into
+  the summary text itself (not only into the summarizer prompt), so hit counts do not depend on the
+  free-text summary remembering a number. Two rules keep the policy honest: at most ONE compaction
+  per step (if the compacted prompt still does not fit, the guard is what ends the episode, not
+  another round of summarizing), and the summarize call is ITSELF capped at the trigger size -- its
+  input is the transcript that just blew the step prompt, so an uncapped summarizer is the one call
+  in the loop guaranteed to overflow, and it would return a silently truncated summary the policy
+  then trusts for the rest of the episode. An empty summary is treated as a no-op rather than
+  folding those steps away with nothing standing in for them.
 
-Underneath all four sits the guard the loop never had. `ContextBudget` resolves the served model's
-usable prompt budget ONCE per run through the same window arithmetic every other lane uses
-(`effective_max_context` / `fits_context_chars` in `src/llb/optimize/tuning_space.py`: host planner
-cap, model window, served `max_model_len`, explicit `context_budget`), and each step's prompt is
-checked before the call. A prompt that does not fit is NEVER SENT: the episode terminates as
-`context_overflow` -- the status already in the shared taxonomy (`src/llb/eval/common.py`) that the
-context-ablation lane raises for the same reason -- so an unusable configuration is a typed outcome
-instead of a wrong answer. An unresolvable window (no model spec, no served cap, no explicit budget)
-refuses nothing, matching `fits_context_chars`: an unknown model never silently declares a prompt
-unusable.
+Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
+budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
+explicit `context_budget` via `effective_max_context` in `src/llb/optimize/tuning_space.py`) and a
+LIVE probe of what the backend is serving (`src/llb/backends/served_window.py`). The budget is the
+MINIMUM of those two; `budget_source` names which side bound it (`declared` or `served`), and both
+`declared_max_model_len` and `served_max_model_len` are recorded in the
+`$DATA_DIR/agentic-context/<run>/` and `$DATA_DIR/agentic/<run>/` manifests. A probe miss falls back
+to the declared window and records `served_max_model_len=null` with `budget_source=declared`. This
+closes the Ollama hole where a GGUF advertising 131072 still serves `num_ctx=4096` by default: the
+guard no longer approves prompts the backend will silently truncate. For Ollama, `bench-agentic` /
+`bench-agentic-context` always drive the native `/api/chat` launcher and pass `num_ctx` from
+`--max-model-len` / `context_budget`, warming the model before the probe so `/api/ps` reports the
+window the run will actually use. The same applies when the operator passes `--base-url` pointing
+at Ollama's OpenAI-compatible `/v1` endpoint: `drive_with_backend` detects that the URL resolves
+to the same host as `ollama_host` (`is_ollama_base_url` in `src/llb/backends/served_window.py`)
+and routes the call through the native launcher on that host rather than the OpenAI-compat
+`local_complete` path, which silently ignored `extra_body.options.num_ctx` on some Ollama builds.
+When the URL points at a different host (a non-Ollama OpenAI-compat backend), the generic
+`local_complete` path is used unchanged. Each step's prompt is checked before the call. A prompt
+that does not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already
+in the shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same
+reason -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable
+window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
+`fits_context_chars`: an unknown model never silently declares a prompt unusable.
 
 Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after
 the fact: `max_prompt_tokens`, `total_prompt_tokens`, `observation_bytes` (counted BEFORE any policy
@@ -120,17 +181,32 @@ make bench-agentic-context MODEL=<model> BACKEND=<backend> \
 ```
 
 `AGENT_CONTEXT_MAX_PROMPT_CHARS` (or `--max-prompt-chars`) forces the budget instead of resolving
-it, which is how the guard is exercised on purpose. Each policy persists its OWN bundle under
+it, which is how the guard is exercised on purpose. `AGENT_CONTEXT_MAX_MODEL_LEN` (or
+`--max-model-len`) is the declared window forwarded to Ollama as `num_ctx` and compared against the
+probed served window. Each policy persists its OWN bundle under
 `$DATA_DIR/agentic-context/<timestamp>/` tagged with the policy (mirroring the per-harness and
 per-chain-policy bundles); provenance records the policy, its settings, the `task_set_digest` that
-proves both policies ran the same set, the resolved `max_prompt_chars`, the overflow count, and the
-`paired_vs_full` block. The bundles live under their own method root, so they are never mixed into
-the harness comparison or the category composite, which both read `agentic`.
+proves both policies ran the same set, the resolved `max_prompt_chars`, `declared_max_model_len`,
+`served_max_model_len`, `budget_source`, the overflow count, and the `paired_vs_full` block. The
+bundles live under their own method root, so they are never mixed into the harness comparison or the
+category composite, which both read `agentic`.
 
 CI drives every policy, the compaction path, and the guard over the fake endpoint with no GPU
-(`tests/llb/bench/test_agentic_context.py`), including the assertion that the `full` policy's prompt
-is byte-identical to the pre-policy loop's and that no episode in any policy sends a prompt over the
-resolved window.
+(`tests/llb/bench/test_agentic_context.py`, `tests/llb/backends/test_served_window.py`), including
+the assertion that the `full` policy's prompt is byte-identical to the pre-policy loop's, that no
+episode in any policy sends a prompt over the resolved window, and that a declared window larger
+than a probed one is bound by the probe.
+
+CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
+`OllamaLauncher.ensure_num_ctx(8192)`, `/api/ps` reported `context_length=8192` and
+`resolve_context_budget(..., probe=True)` with `--max-model-len 32768` bound to
+`budget_source=served` / `served_max_model_len=8192`. A `make bench-agentic-context` pass with
+`full,observation_cap` persisted those provenance fields on the agentic-context manifests.
+
+`--base-url` routing (2026-07-29): unit test `test_drive_with_backend_routes_ollama_base_url_through_native_launcher`
+in `tests/llb/backends/test_served_window.py` confirms that when `--base-url` resolves to the same
+host as `ollama_host` and `--max-model-len` is set, `drive_with_backend` routes through
+`OllamaLauncher` (native `/api/chat`) with the correct `num_ctx` instead of `local_complete`.
 
 ### Context-policy evidence on the 16 GB RTX 4060 Ti host
 
@@ -169,6 +245,35 @@ long transcripts, and this failure is a single fat observation. And the two poli
 window are lossy in a task-dependent way: a `count` question needs the whole hit list, which is
 precisely what a positional trim and a summary destroy, so surviving the window and answering
 correctly are not the same win.
+
+### Aggregate-safe trimming
+
+Trim and compaction now carry machine-computed aggregate headers
+(`src/llb/bench/agentic/context_aggregate.py`): hit count, total length, and matched doc ids are
+prepended when an observation is trimmed, and the same facts are injected into a compacted summary
+so a free-text summarizer cannot drop them. The report breaks completion out by task kind
+(`count` / `locate` / `other`) and states a vs-pre-header delta on the count slice.
+
+Blackwell host evidence (2026-07-29): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
+`--max-model-len 8192` (prompt budget 21504 chars), the same 24-task shape (4 seed + 10
+`search-count` + 10 `search-locate` over 250 UA docs). Bundles under
+`.data/agentic-context/20260729T1515*` (four policies) and
+`.data/agentic-context/20260729T155227*` (compact re-run after summary-injection).
+
+| policy | completion | count | locate | other | overflow | vs pre-header count |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `full` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `observation_cap` | **0.875** | **1.000** | 1.000 | 0.250 | 0 | **+1.000** |
+| `keep_last_n` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `compact` | 0.458 | 0.000 | 1.000 | 0.250 | 0 | +0.000 |
+
+Verdict: **aggregate-safe trimming recovered the count slice under `observation_cap`** (10/10
+count tasks finish in 2 steps with the correct integer; paired d(completion) vs `full` on the
+count slice is +1.000 [+1.000, +1.000]). `observation_cap` also separates on the full set
+(+0.417 [+0.208, +0.625]) and is the recommendation. **`compact` did not recover count**: episodes
+still burn the 6-step budget with repeated compactions and never call `finish` (incomplete, empty
+answer) -- the loss is elsewhere than the missing total, so the header alone is not enough for
+that policy on this model. `keep_last_n` and `full` still overflow the ten count tasks at step 1.
 
 ## Context-Policy Comparison
 

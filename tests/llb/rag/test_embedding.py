@@ -37,6 +37,7 @@ def test_resolve_device_constructor_arg_overrides_env(monkeypatch):
 @pytest.mark.parametrize(
     "model, family",
     [
+        ("intfloat/multilingual-e5-small", FAMILY_E5),
         ("intfloat/multilingual-e5-base", FAMILY_E5),
         ("intfloat/multilingual-e5-large", FAMILY_E5),
         ("BAAI/bge-m3", FAMILY_BGE_M3),
@@ -49,11 +50,26 @@ def test_embedding_family_resolves_per_model(model, family):
     assert Embedder(model).family == family
 
 
-def test_e5_prefixes_query_and_passage():
-    assert apply_query_convention("intfloat/multilingual-e5-base", ["коли"]) == ["query: коли"]
-    assert apply_passage_convention("intfloat/multilingual-e5-base", ["текст"]) == [
+def test_e5_small_uses_same_prefixes_as_base():
+    # Sub-base sibling stays on the e5 query/passage convention; wrong family would cap recall.
+    assert apply_query_convention("intfloat/multilingual-e5-small", ["коли"]) == ["query: коли"]
+    assert apply_passage_convention("intfloat/multilingual-e5-small", ["текст"]) == [
         "passage: текст"
     ]
+
+
+def test_default_roster_includes_sub_base_e5_small():
+    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
+
+    assert "intfloat/multilingual-e5-small" in DEFAULT_LOCAL_CANDIDATES
+    assert DEFAULT_LOCAL_CANDIDATES[0] == "intfloat/multilingual-e5-base"
+
+
+def test_embedder_release_clears_loaded_weights():
+    embedder = Embedder("intfloat/multilingual-e5-small")
+    embedder._model = object()
+    embedder.release()
+    assert embedder._model is None
 
 
 def test_bge_m3_uses_no_prefix_on_either_side():

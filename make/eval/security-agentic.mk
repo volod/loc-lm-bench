@@ -31,11 +31,12 @@ bench-security-derived: ## One-command human-gated derived flow: scaffold worksh
 		$(if $(SECURITY_MAX_MODEL_LEN),--max-model-len "$(SECURITY_MAX_MODEL_LEN)",) \
 		--data-verified --verification-ref "$$ws"
 
-bench-agentic: ## Run one agentic harness cell (AGENTIC_HARNESS=loop|langgraph|crewai)
+bench-agentic: ## Run one agentic harness cell (AGENTIC_HARNESS=loop|langgraph|crewai AGENTIC_CONTEXT_POLICY=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic --tasks "$(AGENTIC_TASKS)" \
 		--model "$(MODEL)" --backend "$(BACKEND)" --max-steps "$(AGENTIC_MAX_STEPS)" \
-		--harness "$(AGENTIC_HARNESS)" \
+		--harness "$(AGENTIC_HARNESS)" --context-policy "$(AGENTIC_CONTEXT_POLICY)" \
 		$(if $(AGENTIC_BASE_URL),--base-url "$(AGENTIC_BASE_URL)",) \
+		$(if $(AGENTIC_MAX_MODEL_LEN),--max-model-len "$(AGENTIC_MAX_MODEL_LEN)",) \
 		$(if $(JUDGE_RHO),--judge-rho "$(JUDGE_RHO)" --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)",),)

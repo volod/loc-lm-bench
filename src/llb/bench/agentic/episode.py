@@ -73,7 +73,7 @@ def build_agent_prompt_lines(
     )
 
 
-def _step_prompt(
+def step_prompt(
     task: AgenticTask,
     catalog: dict[str, ToolDef],
     policy: ContextPolicy,
@@ -126,7 +126,7 @@ def run_episode(
     n_tool_calls = 0
     steps = 0
     for steps in range(1, max_steps + 1):
-        prompt = _step_prompt(task, catalog, policy, state, budget, complete)
+        prompt = step_prompt(task, catalog, policy, state, budget, complete)
         state.telemetry.prompt_chars.append(len(prompt))
         if not budget.fits(len(prompt)):
             # The prompt cannot fit the resolved window: end as a TYPED overflow rather than
@@ -157,6 +157,7 @@ def run_episode(
         world=world,
         transcript=state.executed,
         telemetry=state.telemetry,
+        context_policy_supported=True,
     )
 
 
@@ -195,9 +196,21 @@ def _run_episodes(
     complete: LLMComplete,
     harness: Harness,
     max_steps: int,
+    policy: ContextPolicy | None = None,
+    budget: ContextBudget | None = None,
 ) -> list[Episode]:
     catalog = tool_catalog()
-    return [harness(task, complete, catalog, max_steps=max_steps) for task in tasks]
+    return [
+        harness(
+            task,
+            complete,
+            catalog,
+            max_steps=max_steps,
+            policy=policy,
+            budget=budget,
+        )
+        for task in tasks
+    ]
 
 
 def _score_episodes(tasks: list[AgenticTask], episodes: list[Episode]) -> _ScoredAgenticEpisodes:

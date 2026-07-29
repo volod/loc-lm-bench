@@ -7,6 +7,8 @@ module makes it a POLICY ROW, exactly as `llb.bench.chain_context_policy` does f
   - ``full``            -- the whole transcript, verbatim (today's behavior, the baseline row);
   - ``observation_cap`` -- every observation trimmed to a char budget, HEAD and TAIL kept with an
     explicit elision marker so the model can tell it was trimmed rather than truncated silently;
+    when trimmed, a machine-computed aggregate header (hit count, total length, matched doc ids)
+    is prepended so a count question stays answerable after a middle-of-list loss;
   - ``keep_last_n``     -- only the last N steps survive; the dropped ones are announced as a
     marker line so a missing step is visible instead of looking like it never happened;
   - ``compact``         -- a model-written running summary replaces the older steps once the prompt
@@ -23,6 +25,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from llb.bench.agentic.context_aggregate import (
+    extract_aggregate_facts,
+    format_aggregate_header,
+    with_aggregate_header,
+)
 from llb.prompts.registry import render_text
 
 # --- policy names (the ranked row labels) --------------------------------------------------
@@ -141,11 +148,16 @@ class ContextState:
 # --- observation trimming ------------------------------------------------------------------
 
 
-def trim_observation(observation: str, cap_chars: int) -> tuple[str, bool]:
+def trim_observation(
+    observation: str, cap_chars: int, *, aggregate_safe: bool = True
+) -> tuple[str, bool]:
     """Trim to `cap_chars`, keeping the head and the tail around an explicit elision marker.
 
     Returns `(text, trimmed)`. The marker names how many chars went missing, so a model reading a
     trimmed observation can tell it is looking at a fragment rather than a short tool result.
+    When `aggregate_safe` and the observation is trimmed, a machine-computed header of hit count /
+    total length / matched doc ids is PREPENDED (outside the cap) so a count question stays
+    answerable after a positional middle-of-list loss.
     """
     if cap_chars <= 0 or len(observation) <= cap_chars:
         return observation, False
@@ -154,7 +166,10 @@ def trim_observation(observation: str, cap_chars: int) -> tuple[str, bool]:
     dropped = len(observation) - head_len - tail_len
     marker = _ELISION.format(dropped=dropped)
     tail = observation[-tail_len:] if tail_len else ""
-    return f"{observation[:head_len]}{marker}{tail}", True
+    body = f"{observation[:head_len]}{marker}{tail}"
+    if not aggregate_safe:
+        return body, True
+    return f"{format_aggregate_header(observation)}\n{body}", True
 
 
 # --- transcript rendering ------------------------------------------------------------------
@@ -204,13 +219,46 @@ def summarize_entries(
     truncated summary that the policy then trusts for the rest of the episode. `transcript_cap_chars`
     trims that input the same head-and-tail way an observation is trimmed (0 = no cap, for an
     unresolvable window where nothing is refused anyway).
+
+    Each entry's observation is enriched with an aggregate header BEFORE the joined transcript is
+    trimmed, so a free-text summary is still asked to preserve hit counts / doc ids that a
+    positional middle-of-list elision would otherwise destroy.
     """
+    enriched = [
+        (name, arguments, with_aggregate_header(observation))
+        for name, arguments, observation in entries
+    ]
+    # Outer trim is not aggregate-safe: the per-entry headers already carry the facts.
     transcript, _ = trim_observation(
-        "\n".join(format_entry(entry) for entry in entries), transcript_cap_chars
+        "\n".join(format_entry(entry) for entry in enriched),
+        transcript_cap_chars,
+        aggregate_safe=False,
     )
     return (
         complete(render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})) or ""
     ).strip()
+
+
+def fold_aggregate_headers(entries: list[TranscriptEntry]) -> str:
+    """Machine aggregate headers for search observations being folded into a summary.
+
+    The compaction prompt already carries these headers, but a free-text summary still drops
+    hit counts. Prepending the same machine facts to the summary text makes count survival
+    independent of the summarizer.
+    """
+    headers: list[str] = []
+    for _name, _arguments, observation in entries:
+        facts = extract_aggregate_facts(observation)
+        if facts["is_search_hits"]:
+            headers.append(format_aggregate_header(observation))
+    # De-dupe while preserving order (repeated identical searches collapse to one fact line).
+    seen: set[str] = set()
+    unique: list[str] = []
+    for header in headers:
+        if header not in seen:
+            seen.add(header)
+            unique.append(header)
+    return " | ".join(unique)
 
 
 def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summarize) -> bool:
@@ -228,6 +276,9 @@ def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summari
     if not older:
         return False
     summary = (summarize(older) or "").strip()
+    facts = fold_aggregate_headers(older)
+    if facts:
+        summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:
         # An empty summary would DROP those steps with nothing standing in for them, which is a
         # silent context loss rather than a compaction. Leave the transcript alone instead.

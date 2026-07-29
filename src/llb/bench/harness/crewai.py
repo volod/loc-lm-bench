@@ -6,11 +6,18 @@ harness wraps the SAME deterministic `ToolWorld` tools as crew tools and the SAM
 back into the canonical `Episode` -- so `check_success`, the scorer, and the gated judge are
 UNCHANGED and only the framework differs.
 
+CrewAI owns its conversation transcript: the harness ACCEPTS `policy`/`budget` on the shared
+`Harness` protocol so the operator can pass the same knobs as `loop`/`langgraph`, but it does NOT
+apply them. Episodes set `context_policy_supported=False` and still record the prompt sizes the
+framework actually sent, so the harness comparison never labels a CrewAI row as our `full` policy.
+
 The crew driver is injectable (`crew_runner`): a FAKE crew proves the whole adaptation path with no
 dependency / GPU (the same injectable discipline as the rest of category suite/extended workflow), so CI covers the wiring
 while the real CrewAI path is exercised only on a host that has the extra installed.
 """
 
+from llb.bench.agentic.context import ContextPolicy, ContextTelemetry
+from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     AgenticTask,
@@ -34,10 +41,14 @@ def make_crewai_harness(crew_runner: CrewRunner | None = None) -> Harness:
         catalog: dict[str, ToolDef],
         *,
         max_steps: int = DEFAULT_MAX_STEPS,
+        policy: ContextPolicy | None = None,
+        budget: ContextBudget | None = None,
     ) -> Episode:
+        del policy, budget  # accepted for protocol parity; CrewAI owns the transcript
         world = ToolWorld.from_setup(task.setup)
-        outcome = runner(task, complete, catalog, world, max_steps)
-        return episode_from_outcome(task, world, outcome)
+        telemetry = ContextTelemetry()
+        outcome = runner(task, complete, catalog, world, max_steps, telemetry=telemetry)
+        return episode_from_outcome(task, world, outcome, telemetry=telemetry)
 
     return harness
 

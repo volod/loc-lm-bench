@@ -21,6 +21,8 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Whether a paired verdict may be read at all, and the item count an unreadable one needs | [RAG core](current/rag-core.md#the-minimum-evidence-gate-on-a-paired-reading) |
 | Family-wise error control when a verdict selects a grid row, cell, or candidate | [RAG core](current/rag-core.md#selection-adjusted-grid-verdicts) |
 | Predeclared MDE, paired-power item counts, and realized sensitivity in comparison lanes | [RAG core](current/rag-core.md#paired-power-contract-for-comparison-lanes) |
+| Cold/warm encoder throughput on CUDA hosts (load vs compile vs steady encode) | [RAG core](current/rag-core.md#blackwell-encoder-throughput-decomposition) |
+| Cheap CUDA embedder (e5-small) when quality is flat on a 12 GiB host | [RAG core](current/rag-core.md#blackwell-sub-base-encoder-roster-e5-small) |
 | vLLM launcher, telemetry fields, backend build rules | [Backend telemetry](current/backend-telemetry.md) |
 | Model resolution, sweeps, tuning, joint-search, screens, board, judge, miss analysis | [Evaluation rigor](current/rigor-board-judge.md) |
 | VRAM planning, contention guard, llama.cpp, ontology drafting | [Robust backends](current/robustness-ontology-backends.md) |
@@ -30,5 +32,6 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Knowledge-graph retrieval, graph-vs-vector comparison, multi-hop retrieval and answer-quality evidence | [GraphRAG](current/graphrag-backend.md) |
 | Backend matrix, power telemetry, vector-store adapters | [Platform matrix](current/platform-vector-matrix.md) |
 | Agentic harnesses, agent context policies, judge diagnostics, prompt-system packages, local fine-tuning, adapter registry and lifecycle | [Extended workflows](current/extended-workflows.md) |
+| Aggregate-safe agent observation trim (count-slice recovery) | [Extended workflows](current/extended-workflows.md#aggregate-safe-trimming) |
 | Host acceptance checklist and repeatable smoke runs | [Host validation](current/host-validation.md) |
 | Settled scope and decision motivation | [Product decisions](current/scope-boundaries.md) |

@@ -43,80 +43,23 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-served-window-probe
+### agent-context-policy-compact-finish-recovery (optional)
 
-The agent loop's per-step prompt guard resolves its budget from the DECLARED window -- the host
-planner cap, the model's own window, `max_model_len`, or an explicit `context_budget`
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)) -- and no
-backend is asked what it is actually serving. Ollama is the case that breaks the assumption: its
-served `num_ctx` defaults to 4096 regardless of a GGUF advertising 131072, and the llb Ollama client
-sends no `num_ctx` option at all, so a run that declares `--max-model-len 32768` gets a guard 8x
-looser than the window behind it and the backend silently truncates the prompt the guard just
-approved -- exactly the failure the guard exists to prevent, moved one layer down. Close the loop:
-probe the served window per backend (Ollama `/api/ps` reports the loaded model's `context`, vLLM
-`/v1/models` already exposes `max_model_len` via `src/llb/backends/vllm_command.py`, llama.cpp
-`/props` reports `n_ctx`), resolve the budget against the MINIMUM of declared and probed, and record
-both in the manifest so a run states which one bound it. Then either pass `num_ctx` on the Ollama
-options payload (`src/llb/backends/ollama.py` already builds one for `num_predict`) or refuse a
-declared window the backend will not honor.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `ContextBudget` / `resolve_context_budget` in
-  `src/llb/bench/agentic/context_budget.py`, the readiness probes in
-  `src/llb/backends/readiness.py`, and `served_max_model_len` in
-  `src/llb/backends/vllm_command.py`.
-- User-visible outcome: the overflow guard protects the window the operator's backend is really
-  serving, so an episode is never truncated behind a check that said it fit.
-- Scope boundary: in scope -- the per-backend probe, the min-of-declared-and-probed budget, the
-  manifest fields naming which bound, and the Ollama `num_ctx` decision. Out of scope -- changing the
-  policy set, the guard's status vocabulary, and any window arithmetic in
-  `src/llb/optimize/tuning_space.py`.
-- Data and artifact paths: additive `served_max_model_len` / `budget_source` fields in the existing
-  `$DATA_DIR/agentic-context/<run>/` and `$DATA_DIR/agentic/<run>/` manifests.
-- Execution path: unit tests over faked probe responses per backend; one `make bench-agentic-context`
-  smoke on the CUDA host confirming the recorded served window matches `ollama ps`.
-- Acceptance gates: `make ci` green; a declared window larger than the probed one is bound by the
-  probe and the manifest names which; a backend that cannot be probed falls back to the declared
-  window and records that it did.
-- Documentation target: the guard subsection of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
-
-### agent-context-policy-aggregate-safe-trimming
-
-Both policies that fit the window are LOSSY in a task-dependent way, and the measured run shows the
-shape of it: the ten `search-count` tasks fail under `observation_cap` and `compact` even though
-those policies ran all six steps on evidence the model could see, while the same ten fail under
-`full` for the unrelated reason that the prompt never fit ([extended
-workflows](current/extended-workflows.md#context-policy-evidence-on-the-16-gb-rtx-4060-ti-host)). A
-count question needs an AGGREGATE over the whole observation -- how many documents matched -- and a
-positional head-and-tail trim keeps neither end's count, while a free-text summary is not asked for
-one. So the lane currently prices context cost correctly and answer survival not at all, and its
-recommendation ("take `compact`, it is a quarter of the prompt") is safe only for tasks whose answer
-sits in a span rather than in a total. Give trimming an aggregate-safe path: when an observation is
-trimmed, prepend a machine-computed header of the facts a positional trim destroys (hit count,
-total length, the list of matched doc ids) so a count is answerable from the trimmed text, and give
-the compaction prompt the same header rather than hoping the summary preserves a number. Then
-re-run the four policies and report whether the `search-count` slice moves.
+Aggregate-safe headers recovered the `search-count` slice under `observation_cap` but not under
+`compact`: on the Blackwell re-run, compact still burns the 6-step budget with repeated
+compactions and never calls `finish`
+([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
+Diagnose whether compact should also apply observation-cap trimming to live steps, force a
+finish-oriented compaction cue when aggregate facts are already in the summary, or be recorded as
+inapplicable for count-heavy task sets at this step budget.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `trim_observation` and `summarize_entries` in
-  `src/llb/bench/agentic/context.py`, the paired reading in
-  `src/llb/bench/agentic_context_report.py`, and the `count` / `locate` task kinds already generated
-  by `src/llb/bench/agentic_tasks.py` as the natural per-slice split.
-- User-visible outcome: an operator who adopts a context policy on its measured cost saving does not
-  silently lose the class of questions whose answer is a total rather than a span.
-- Scope boundary: in scope -- the aggregate header, its use in both the trim and the compaction
-  input, a per-task-kind (`count` vs `locate`) breakdown of the policy table, and the re-run. Out of
-  scope -- new policies, new tools, a learned/semantic trimmer, and changing the shipped
-  `observation_cap` default before the slice moves.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout.
-- Execution path: `make bench-agentic-context` over the same 24-task generated set on the CUDA host,
-  before and after; CI covers the header's arithmetic and the per-kind split over fixtures.
-- Acceptance gates: `make ci` green; the report breaks completion out by task kind; the `count`
-  slice carries a paired delta against the pre-header `observation_cap` and `compact` rows, and the
-  verdict states whether aggregate-safe trimming recovers it or whether the loss is elsewhere.
-- Documentation target: the policy list and CUDA evidence of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+- Dependencies: none. Reuse the aggregate header path and the kind-split report.
+- User-visible outcome: an operator who prefers compact for prompt cost learns whether count tasks
+  can finish under it, or is told to use `observation_cap` for that slice.
+- Scope boundary: in scope -- compact finish behavior on the 24-task set. Out of scope -- new
+  policies or changing the observation_cap char default.
+- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
 
 ### agent-context-policy-constant-sweep (optional)
 
@@ -140,7 +83,8 @@ expose it.
   inapplicable at this step budget.
 - Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
   against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
-  content-aware trim (that is `agent-context-policy-aggregate-safe-trimming`), and changing the
+  content-aware trim beyond the delivered aggregate header
+  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)), and changing the
   shipped defaults before a paired delta supports it.
 - Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
   setting.
@@ -151,38 +95,6 @@ expose it.
   paired intervals against the shipped values, and states a verdict per constant.
 - Documentation target: the policy list of
   [extended workflows](current/extended-workflows.md#agent-context-management-policies).
-
-### agent-context-policy-transfer-to-harnesses (optional)
-
-Context management is wired into the pure `loop` harness only: `run_episode` takes the
-`ContextPolicy` and the `ContextBudget`, while the `Harness` protocol still takes
-`(task, complete, catalog, max_steps)` and the LangGraph and CrewAI adapters build their prompts
-through `build_agent_prompt` with the full transcript
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)). So a
-measured policy win cannot be shipped to the two harnesses an operator might actually run, and the
-harness comparison is now confounded by a variable it does not name: whichever harness happens to
-truncate or drop history internally is scored against two that do not. Decide the seam -- widen the
-protocol to carry the policy and budget, or state as a product decision that context management is a
-loop-only property and record what the frameworks do with the transcript instead -- and make the
-harness comparison report the context each harness actually sent.
-
-- Agent status: CLEAR
-- Dependencies: `agent-context-management-policies`. Reuse the `Harness` protocol in
-  `src/llb/bench/agentic/model.py`, the adapters in `src/llb/bench/harness/`, and the telemetry
-  already on `Episode`.
-- User-visible outcome: a policy the lane recommends is one the operator's harness can actually
-  apply, and the harness comparison stops silently varying two things at once.
-- Scope boundary: in scope -- the protocol decision, the adapter wiring (or the recorded decision
-  not to), and the per-harness prompt-size column. Out of scope -- new harnesses, new policies, and
-  changing the harness comparison's headline metric.
-- Data and artifact paths: additive prompt-size fields in the existing `$DATA_DIR/agentic/<run>/`
-  bundles.
-- Execution path: `make agentic-harness-compare` on the CUDA host after the wiring; CI covers each
-  adapter's policy handling over the fake endpoint, with the `[eval]` / `[crewai]` extras skipped
-  when absent.
-- Acceptance gates: `make ci` green; every harness reports the prompt size it sent per step; a
-  harness that cannot accept a policy is recorded as such rather than reported as `full`.
-- Documentation target: [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
 
 ### agent-harness-loop-policy-recommendation
 
@@ -348,36 +260,6 @@ exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-
   sample size.
 - Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
   [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
-
-### blackwell-encoder-throughput-decomposition (optional)
-
-The current 12 GiB host rerun preserves the embedder quality verdict but shows a much wider
-architecture-dependent CUDA throughput spread than the earlier workstation run
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Separate
-cold model load, first-kernel compilation, and steady-state encoding before using those rates in a
-host recommendation.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Keep the retrieval item set, encoder conventions, batch shape, and power
-  limit fixed so the benchmark isolates runtime behavior.
-- User-visible outcome: the 12 GiB Blackwell recommendation distinguishes a genuinely slow encoder
-  from one whose first load or kernel compilation dominates a one-pass bake-off.
-- Scope boundary: in scope -- cold and warm timing fields, adaptive warm repetitions until a
-  declared relative-precision target or resource cap, peak VRAM and power, CPU versus CUDA
-  comparison, and inspection of kernel fallbacks. Out of scope -- changing retrieval metrics,
-  model fine-tuning, or adopting a different encoder.
-- Data and artifact paths: additive timing fields under
-  `$DATA_DIR/compare-embeddings/<run>/` and a host summary under
-  `$DATA_DIR/encoder-throughput/<run>/`.
-- Execution path: add a reusable warmup/repetition option to `make compare-embeddings`, then run the
-  four incumbent encoders on the 311-chunk committed corpus with the GPU power limit held fixed.
-  CI covers timing aggregation with an injected clock and fake encoders.
-- Acceptance gates: `make ci` green; reports split load/compile time from steady encoding, publish
-  the median, spread, stopping precision, and cap over the warm passes, record
-  device/driver/power/VRAM, and state whether the current rate ordering survives the warm
-  measurement.
-- Documentation target: the paired-uncertainty section of [RAG core](current/rag-core.md) and the
-  host result in [host validation](current/host-validation.md).
 
 ### cross-lingual-query-lane
 
@@ -1205,7 +1087,12 @@ says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are T
 leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
 consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
 retrieves 0.980, leaving 5 questions of headroom for any candidate to win
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). Both sets are
+([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). The sub-base
+roster addition `intfloat/multilingual-e5-small` is ~3x faster on warm CUDA with flat quality on
+n=82 and still RETAIN
+([RAG core](current/rag-core.md#blackwell-sub-base-encoder-roster-e5-small)) -- include it when the
+enriched ledger re-runs so a cheap CUDA swap can clear an adoption bar if the discordance is there.
+Both existing sets are
 at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
 can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
 assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors

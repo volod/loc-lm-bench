@@ -65,36 +65,55 @@ def test_loop_harness_matches_run_episode():
 
 
 def test_agent_node_stages_tool_call():
+    from llb.bench.agentic.context import ContextPolicy, ContextState
+    from llb.bench.agentic.context_budget import unbounded_budget
+
     node = lg.make_agent_node(
-        scripted(['{"name":"db_get","arguments":{"key":"k"}}']), tw.tool_catalog()
+        scripted(['{"name":"db_get","arguments":{"key":"k"}}']),
+        tw.tool_catalog(),
+        ContextPolicy(),
+        unbounded_budget(),
     )
-    update = node({"task": success_task(), "transcript": [], "n_steps": 0})
+    update = node({"task": success_task(), "context": ContextState(), "n_steps": 0})
     assert update["pending_name"] == "db_get" and update["pending_args"] == {"key": "k"}
     assert update["finished"] is False and update["n_steps"] == 1
 
 
 def test_agent_node_finish_and_prose():
-    finish = lg.make_agent_node(scripted(['{"name":"finish","arguments":{"answer":"ok"}}']), {})
-    upd = finish({"task": success_task(), "transcript": []})
+    from llb.bench.agentic.context import ContextPolicy, ContextState
+    from llb.bench.agentic.context_budget import unbounded_budget
+
+    finish = lg.make_agent_node(
+        scripted(['{"name":"finish","arguments":{"answer":"ok"}}']),
+        {},
+        ContextPolicy(),
+        unbounded_budget(),
+    )
+    upd = finish({"task": success_task(), "context": ContextState()})
     assert upd["finished"] is True and upd["answer"] == "ok"
-    prose = lg.make_agent_node(scripted(["просто відповідь"]), {})
-    upd2 = prose({"task": success_task(), "transcript": []})
+    prose = lg.make_agent_node(
+        scripted(["просто відповідь"]), {}, ContextPolicy(), unbounded_budget()
+    )
+    upd2 = prose({"task": success_task(), "context": ContextState()})
     assert upd2["finished"] is True and upd2["answer"] == "просто відповідь"
 
 
 def test_tool_node_executes_and_records():
-    node = lg.make_tool_node()
+    from llb.bench.agentic.context import ContextPolicy, ContextState
+
+    node = lg.make_tool_node(ContextPolicy())
     world = tw.ToolWorld.from_setup({})
+    context = ContextState()
     upd = node(
         {
             "world": world,
+            "context": context,
             "pending_name": "write_file",
             "pending_args": {"path": "a.txt", "content": "x"},
-            "transcript": [],
         }
     )
     assert world.files["a.txt"] == "x"
-    assert upd["n_tool_calls"] == 1 and upd["transcript"][0][0] == "write_file"
+    assert upd["n_tool_calls"] == 1 and context.executed[0][0] == "write_file"
 
 
 def test_route_after_agent_and_tool():
@@ -141,9 +160,13 @@ def test_langgraph_nodes_reproduce_the_loop(script, task, max_steps):
 # --- crewai harness (fake crew, no dependency) ---------------------------------------------
 
 
-def fake_crew_runner(task, complete, catalog, world, max_steps):
+def fake_crew_runner(task, complete, catalog, world, max_steps, *, telemetry=None):
     """A fake crew: execute calc+write against the world, then answer (proves the adaptation)."""
+    from llb.bench.agentic.episode import build_agent_prompt
+
     transcript = []
+    if telemetry is not None:
+        telemetry.prompt_chars.append(len(build_agent_prompt(task, catalog, transcript)))
     execute = crewai_runtime.make_recording_executor(world, transcript)
     execute("calculator", {"expression": "12 * (3 + 4)"})
     execute("write_file", {"path": "result.txt", "content": "84"})

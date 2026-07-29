@@ -55,7 +55,11 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
     if config.backend == "ollama":
         from llb.backends.ollama import OllamaLauncher
 
-        return OllamaLauncher(config.model, host=config.ollama_host)
+        return OllamaLauncher(
+            config.model,
+            host=config.ollama_host,
+            num_ctx=config.max_model_len or config.context_budget,
+        )
     if config.backend == "vllm":
         from llb.backends.vllm import VllmLauncher
         from llb.finetune.adapter_manifest import adapter_lora_rank

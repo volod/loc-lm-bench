@@ -74,7 +74,7 @@ def test_embedder_lane_writes_the_plan_before_building_and_reports_realized_mde(
     out = tmp_path / "embedding-run" / "report.md"
     plan_path = out.parent / "power-plan.json"
 
-    def builder(_cfg: RunConfig, _stores_dir: Path):
+    def builder(_cfg: RunConfig, _stores_dir: Path, **_kwargs):
         def build(_model: str) -> BuiltStore:
             assert plan_path.is_file()
             return BuiltStore(store=_EmptyStore(plan_path), embed_seconds=1.0, index_bytes=1)

@@ -27,7 +27,7 @@ def _agentic_metrics(result: ModelResult, reliability: float, tokens_per_s: floa
 
 
 def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
-    return {
+    config: dict[str, object] = {
         "model": request.model,
         "backend": request.backend,
         "tier": TIER_AGENTIC,
@@ -39,6 +39,9 @@ def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
         "completion_rate": request.result.objective_score,
         "mean_trajectory_steps": round(request.scored.mean_steps, 4),
         "mean_tool_calls": round(request.scored.mean_tool_calls, 4),
+        "mean_max_prompt_tokens": round(request.mean_max_prompt_tokens, 4),
+        "context_policy": request.context_policy,
+        "context_policy_supported": request.context_policy_supported,
         "completion_rate_ci": list(request.scored.completion_ci)
         if request.scored.completion_ci
         else None,
@@ -48,6 +51,9 @@ def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
         "judge_diagnostics": request.quality.outcome.diagnostics,
         **request.verification_cfg,
     }
+    if request.budget_provenance:
+        config.update(request.budget_provenance)
+    return config
 
 
 def _agentic_judge_status(

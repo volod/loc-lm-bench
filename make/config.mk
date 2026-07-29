@@ -226,6 +226,16 @@ EMBED_BASELINE ?= intfloat/multilingual-e5-base
 EMBED_CANDIDATE ?= BAAI/bge-m3
 EMBED_BASELINE_DATA_DIR ?=
 EMBED_CANDIDATE_DATA_DIR ?=
+# Encoder throughput decomposition (compare-embeddings --encoder-throughput): cold load vs
+# first-pass compile+encode vs warm steady encode. EMBED_ENCODER_THROUGHPUT=1 enables it;
+# EMBED_ENCODER_COMPARE_CPU=1 also profiles CPU beside CUDA (only the literal 1 enables it;
+# EMBED_ENCODER_COMPARE_CPU=0 is off, matching other Make opt-in flags).
+EMBED_ENCODER_THROUGHPUT ?=
+EMBED_ENCODER_PRECISION ?= 0.05
+EMBED_ENCODER_MIN_WARM ?= 3
+EMBED_ENCODER_MAX_WARM ?= 10
+EMBED_ENCODER_MAX_WARM_SECONDS ?= 180
+EMBED_ENCODER_COMPARE_CPU ?=
 ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=
@@ -281,7 +291,9 @@ AGENTIC_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_tasks_uk.json
 AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
+AGENTIC_CONTEXT_POLICY ?= full
 AGENTIC_BASE_URL ?=
+AGENTIC_MAX_MODEL_LEN ?=
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.

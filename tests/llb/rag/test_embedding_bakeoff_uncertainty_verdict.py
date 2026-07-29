@@ -172,7 +172,7 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
     }
     monkeypatch.setattr(
         "llb.cli.rag.compare_embeddings.local_store_builder",
-        lambda cfg, stores_dir: (
+        lambda cfg, stores_dir, **_kwargs: (
             lambda model: BuiltStore(store=stores[model], embed_seconds=1.0, index_bytes=100)
         ),
     )

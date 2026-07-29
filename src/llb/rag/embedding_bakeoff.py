@@ -84,6 +84,8 @@ def score_pairs(
         result["device"] = built.device
     if built.cost_usd is not None:
         result["cost_usd"] = round(built.cost_usd, 6)
+    if built.throughput_profile is not None:
+        result["throughput_profile"] = built.throughput_profile
     return result
 
 
@@ -170,6 +172,11 @@ def run_bakeoff(
         candidates.append(score_pairs(model, built, pairs, k))
         vectors[model] = item_vectors(pairs, k)
         stores[model] = built.store
+        # Free encoder weights after the retrieval pass; noise-floor / later reads reload lazily.
+        embedder = getattr(built.store, "embedder", None)
+        release = getattr(embedder, "release", None)
+        if callable(release):
+            release()
 
     for model in local_models:
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
