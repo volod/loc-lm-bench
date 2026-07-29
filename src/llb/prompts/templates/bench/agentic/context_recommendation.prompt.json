@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.context_recommendation",
+  "kind": "text",
+  "template": "context_recommendation.txt"
+}

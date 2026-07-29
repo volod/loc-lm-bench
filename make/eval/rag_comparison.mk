@@ -1,7 +1,10 @@
-compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGHT= controls the fused graph share; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER=, DUPLICATE_TIER=, NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) are optional lanes
+COMPARE_RETRIEVAL_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_RETRIEVAL_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-retrieval: ## Compare retrieval with paired evidence; RETRIEVAL_BASELINE= RETRIEVAL_RESAMPLES= RETRIEVAL_CONFIDENCE= control uncertainty; CHUNK_STRATEGIES=..., HYBRID=1, RERANKER=, NOISE_FLOOR=1 are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \
-		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(COMPARE_RETRIEVAL_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_RETRIEVAL_SPLIT_ARG) \
 		$(if $(CHUNK_STRATEGIES),--strategies "$(CHUNK_STRATEGIES)",) \
 		$(if $(HYBRID),--hybrid,) \
 		$(if $(FUSION_WEIGHT),--fusion-weight $(FUSION_WEIGHT),) \
@@ -11,6 +14,10 @@ compare-retrieval: ## Compare vector, graph, and fused recall@k/MRR; GRAPH_WEIGH
 		$(if $(DUPLICATE_TIER),--duplicate-tier "$(DUPLICATE_TIER)",) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(RETRIEVAL_BASELINE),--baseline "$(RETRIEVAL_BASELINE)",) \
+		$(if $(RETRIEVAL_RESAMPLES),--resamples $(RETRIEVAL_RESAMPLES),) \
+		$(if $(RETRIEVAL_CONFIDENCE),--confidence $(RETRIEVAL_CONFIDENCE),) \
+		$(if $(RETRIEVAL_SEED),--seed $(RETRIEVAL_SEED),) \
 		$(if $(COMPARE_RETRIEVAL_OUT),--out "$(COMPARE_RETRIEVAL_OUT)",)
 
 compare-graph-fusion: ## Sweep graph fusion with paired evidence (GOLDSET= GRAPH_WEIGHTS= ROUTED_GRAPH_WEIGHT= GRAPH_FUSION_CANDIDATES= GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,1.0 GRAPH_STRATEGIES= FUSION_FOCUS_SLICE= FUSION_POWER_REFERENCE= FUSION_POWER_ROW= FUSION_MDE= FUSION_POWER_METRIC= FUSION_TARGET_POWER= FUSION_HIDE_ROUTING_SIDECAR=1 NOISE_FLOOR=1 FUSION_OUT_DIR=)
@@ -82,10 +89,16 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 
-compare-embeddings: ## Rank UA embedders with paired evidence (GOLDSET= MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES=; needs ".[rag]")
+# A config owns its goldset and split unless the operator explicitly overrides either on the make
+# command line. Without this distinction the repository-wide fixture/default-final values silently
+# replace a config's recorded corpus and item family.
+COMPARE_EMBEDDINGS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_EMBEDDINGS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES=; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
-		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(COMPARE_EMBEDDINGS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_EMBEDDINGS_SPLIT_ARG) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
 		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
@@ -158,7 +171,6 @@ compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qd
 PAIRED_READING_AUDIT_OUT ?=
 
 .PHONY: audit-paired-readings
-audit-paired-readings: ## Re-read recorded paired artifacts with the calibrated randomization rule
+audit-paired-readings: ## Re-read selected grid verdicts with calibrated and family-wise inference
 	$(PY) -m llb.main audit-paired-readings \
 		$(if $(PAIRED_READING_AUDIT_OUT),--out-dir "$(PAIRED_READING_AUDIT_OUT)",)
-

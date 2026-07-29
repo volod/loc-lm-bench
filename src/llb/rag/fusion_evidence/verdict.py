@@ -5,9 +5,10 @@ recovering multi-hop evidence the vector lane misses WITHOUT paying for it in ov
 everywhere is a reject, not an adopt: it would add a graph build and a second retrieval lane for
 nothing.
 
-The gate is on the calibrated paired sign-flip p, not the point estimate or percentile interval.
-A positive mean that does not clear the randomization cut is plausible gain and no more. Such a row
-is `inconclusive`: the direction is recorded, the recommendation is not.
+The gate is on both the calibrated per-row sign-flip p and the selected grid family's adjusted p,
+not the point estimate or percentile interval. A positive mean that does not clear both cuts is
+plausible gain and no more. Such a row is `inconclusive`: the direction is recorded, the
+recommendation is not.
 """
 
 from llb.rag.fusion_evidence.models import (
@@ -36,6 +37,11 @@ from llb.rag.fusion_evidence.paired import (
     evidence_gate_clause,
     separates,
 )
+from llb.rag.fusion_evidence.selection import (
+    SelectionAdjustment,
+    selection_separates,
+)
+from llb.rag.fusion_evidence.selection_family import hypothesis_key
 
 # The two focus-slice metrics a fused row may earn its default on: recovering ANY hop the vector
 # lane missed, or completing the evidence of an item it only half-covered.
@@ -95,12 +101,21 @@ def _rank_key(row: RowReport, focus_slice: str) -> tuple[float, float, float, fl
     )
 
 
+def _candidates(rows: dict[str, RowReport]) -> dict[str, RowReport]:
+    return {
+        label: row
+        for label, row in rows.items()
+        if label.startswith((FUSED_ROW_PREFIX, ROUTED_ROW_PREFIX))
+    }
+
+
 def decide(
     rows: dict[str, RowReport],
     *,
     baseline: str,
     focus_slice: str,
     confidence: float = DEFAULT_CONFIDENCE,
+    adjustment: SelectionAdjustment | None = None,
 ) -> Verdict:
     """Pick the best fused row on the focus slice and state whether it earns a default.
 
@@ -117,11 +132,7 @@ def decide(
         "decision": VERDICT_NO_EVIDENCE,
         "reason": "",
     }
-    candidates = {
-        label: row
-        for label, row in rows.items()
-        if label.startswith((FUSED_ROW_PREFIX, ROUTED_ROW_PREFIX)) and label != baseline
-    }
+    candidates = {label: row for label, row in _candidates(rows).items() if label != baseline}
     if not candidates:
         verdict["reason"] = "no fused row was compared"
         return verdict
@@ -129,10 +140,12 @@ def decide(
         verdict["reason"] = f"the scored set has no {focus_slice} item"
         return verdict
     best = max(sorted(candidates), key=lambda label: _rank_key(candidates[label], focus_slice))
-    decision, reason = _judge(candidates[best], best, focus_slice, confidence)
+    decision, reason = _judge(candidates[best], best, focus_slice, confidence, adjustment)
     verdict["best_row"] = best
     verdict["decision"] = decision
     verdict["reason"] = reason
+    if adjustment is not None:
+        verdict["selection_adjustment"] = adjustment
     return verdict
 
 
@@ -145,15 +158,25 @@ def _focus_n(rows: dict[str, RowReport], baseline: str, focus_slice: str) -> int
 
 
 def _judge(
-    row: RowReport, label: str, focus_slice: str, confidence: float = DEFAULT_CONFIDENCE
+    row: RowReport,
+    label: str,
+    focus_slice: str,
+    confidence: float = DEFAULT_CONFIDENCE,
+    adjustment: SelectionAdjustment | None = None,
 ) -> tuple[str, str]:
     """The `(decision, reason)` for the winning fused row."""
     paired = {metric: _focus_paired(row, focus_slice, metric) for metric in GAIN_METRICS}
     gains = {metric: comparison["delta"] for metric, comparison in paired.items()}
     overall = _overall_delta(row, METRIC_RECALL)
     best_mean = max(gain["mean"] for gain in gains.values())
-    separated = [
+    per_row_separated = [
         metric for metric, comparison in paired.items() if separates(comparison, confidence)
+    ]
+    separated = [
+        metric
+        for metric in per_row_separated
+        if adjustment is None
+        or selection_separates(adjustment, hypothesis_key(label, metric), confidence)
     ]
     detail = (
         f"recall {gains[METRIC_RECALL]['mean']:+.3f} "
@@ -161,8 +184,10 @@ def _judge(
         f"all-spans {gains[METRIC_ALL_SPANS]['mean']:+.3f} "
         f"[{gains[METRIC_ALL_SPANS]['lo']:+.3f}, {gains[METRIC_ALL_SPANS]['hi']:+.3f}]"
     )
-    note = _gain_note(row, focus_slice) + evidence_gate_clause(
-        [(metric, paired[metric]) for metric in GAIN_METRICS], confidence
+    note = (
+        _gain_note(row, focus_slice)
+        + evidence_gate_clause([(metric, paired[metric]) for metric in GAIN_METRICS], confidence)
+        + _selection_note(label, adjustment)
     )
     if best_mean <= 0.0:
         return VERDICT_REJECT, (
@@ -171,7 +196,9 @@ def _judge(
         )
     if not separated:
         limit = (
-            "the calibrated randomization test does not separate"
+            "the family-wise selection adjustment does not separate"
+            if per_row_separated
+            else "the calibrated randomization test does not separate"
             if all(gain["lo"] <= 0.0 for gain in gains.values())
             else "no gain clear of zero rests on enough differing items to be read as one"
         )
@@ -189,4 +216,24 @@ def _judge(
         f"{label} gains {best_mean:+.3f} on {focus_slice} ({detail}) with "
         f"{overall['mean']:+.3f} [{overall['lo']:+.3f}, {overall['hi']:+.3f}] overall recall@k"
         + note
+    )
+
+
+def _selection_note(label: str, adjustment: SelectionAdjustment | None) -> str:
+    if adjustment is None:
+        return ""
+    readings = [
+        (
+            metric,
+            adjustment["p_values"][hypothesis_key(label, metric)]["unadjusted_p"],
+            adjustment["p_values"][hypothesis_key(label, metric)]["adjusted_p"],
+        )
+        for metric in GAIN_METRICS
+    ]
+    detail = ", ".join(
+        f"{metric} raw p={raw:.4f}, adjusted p={adjusted:.4f}" for metric, raw, adjusted in readings
+    )
+    return (
+        f"; selection adjustment ({adjustment['family_size']} row-metric hypotheses, "
+        f"Westfall-Young step-down max-T): {detail}"
     )

@@ -3,10 +3,11 @@
 Split out of `embedding_bakeoff_uncertainty.py` so the paired STATISTICS and the decision they
 feed stay separately readable -- the same seam `embedder_adoption/verdict.py` uses.
 
-The decision is on the INTERVAL, never the point estimate: a candidate that merely leads on the
-mean is exactly the case this lane exists to refuse. What the reason ADDS is how close the row it
-names sits to that cut, so a `retain` reached because every candidate missed by a mile no longer
-prints identically to one where a candidate sat on the line.
+The decision is on the calibrated paired reading and the selected candidate family, never the point
+estimate: a candidate that merely leads on the mean is exactly the case this lane exists to refuse.
+What the reason ADDS is how close the row it names sits to those cuts, so a `retain` reached because
+every candidate missed by a mile no longer prints identically to one where a candidate sat on the
+line.
 
 Pure: the input is finished `PairedRow`s, so the whole decision is unit-tested with plain vectors.
 """
@@ -34,6 +35,11 @@ from llb.rag.fusion_evidence.stats import (
 from llb.rag.fusion_evidence.paired import (
     evidence_gate_clause,
     separates,
+)
+from llb.rag.embedding_bakeoff_selection import hypothesis_key, selection_note
+from llb.rag.fusion_evidence.selection import (
+    SelectionAdjustment,
+    selection_separates,
 )
 
 DECISION_ADOPT = "adopt"
@@ -97,11 +103,13 @@ def decide_verdict(
     baseline: str | None,
     bars: Sequence[str] = DEFAULT_BARS,
     confidence: float = DEFAULT_CONFIDENCE,
+    adjustment: SelectionAdjustment | None = None,
 ) -> BakeoffVerdict:
     """Adopt the best separated candidate, else retain the incumbent (never rank on a point gap).
 
-    "Separated" is deliberately the strict calibrated randomization reading. A candidate that
-    merely leads on the point estimate is exactly the case this lane exists to refuse.
+    "Separated" is deliberately the strict calibrated randomization reading after the selected
+    candidate x bar family is adjusted. A point-estimate leader is exactly the case this lane
+    exists to refuse.
 
     `bars` defaults to recall@k alone. Adding `BAR_FIRST_HIT` opts the run into the scoped
     first-hit-rank bar, which an operator enables when their retrieval configuration makes rank
@@ -126,11 +134,21 @@ def decide_verdict(
         for model, row in sorted(paired.items())
         if model != baseline and (marked := borderline_bars(row, bars))
     }
-    cleared = {
+    per_row_cleared = {
         model: cleared_bars(row, bars, confidence)
         for model, row in paired.items()
         if model != baseline and separates_from_baseline(row, bars, confidence)
     }
+    cleared = {
+        model: [
+            bar
+            for bar in marked
+            if adjustment is None
+            or selection_separates(adjustment, hypothesis_key(model, bar), confidence)
+        ]
+        for model, marked in per_row_cleared.items()
+    }
+    cleared = {model: marked for model, marked in cleared.items() if marked}
     if not cleared:
         return _verdict(
             DECISION_RETAIN,
@@ -138,12 +156,20 @@ def decide_verdict(
             baseline,
             bars,
             borderline=borderline,
+            per_row_cleared=per_row_cleared,
+            adjustment=adjustment,
             reason=(
-                f"no candidate clears an adoption bar ({', '.join(bars)}) against `{baseline}`, "
+                (
+                    "no candidate survives the selection-adjusted adoption family "
+                    if per_row_cleared
+                    else "no candidate clears an adoption bar "
+                )
+                + f"({', '.join(bars)}) against `{baseline}`, "
                 "so the ranking is not supported by this item set"
             )
             + _near_miss_note(paired, borderline)
-            + _gate_note(paired, baseline, bars, confidence),
+            + _gate_note(paired, baseline, bars, confidence)
+            + selection_note(adjustment),
         )
     separated = sorted(cleared, key=lambda model: _rank_key(paired[model], cleared[model]))
     winner = separated[0]
@@ -155,10 +181,13 @@ def decide_verdict(
         separated=separated,
         cleared=cleared,
         borderline=borderline,
+        per_row_cleared=per_row_cleared,
+        adjustment=adjustment,
         reason=_adopt_reason(winner, baseline, paired[winner], cleared[winner])
         + borderline_note(
             [(f"{winner} {bar}", bar_stability(paired[winner], bar)) for bar in cleared[winner]]
-        ),
+        )
+        + selection_note(adjustment),
     )
 
 
@@ -230,9 +259,11 @@ def _verdict(
     separated: list[str] | None = None,
     cleared: dict[str, list[str]] | None = None,
     borderline: dict[str, list[str]] | None = None,
+    per_row_cleared: dict[str, list[str]] | None = None,
+    adjustment: SelectionAdjustment | None = None,
     reason: str,
 ) -> BakeoffVerdict:
-    return {
+    verdict: BakeoffVerdict = {
         "decision": decision,
         "model": model,
         "baseline": baseline,
@@ -242,3 +273,8 @@ def _verdict(
         "borderline": dict(borderline or {}),
         "reason": reason,
     }
+    if per_row_cleared is not None:
+        verdict["per_row_cleared"] = per_row_cleared
+    if adjustment is not None:
+        verdict["selection_adjustment"] = adjustment
+    return verdict

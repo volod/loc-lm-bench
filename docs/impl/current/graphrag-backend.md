@@ -496,10 +496,14 @@ What the run establishes:
   recorded verdict on this ledger was **adopt**. Under the shipped minimum-evidence gate that
   deciding row reads `insufficient_evidence` and the verdict is **inconclusive**: four differing
   items cannot reach 95% on the exact sign test the same row prints
-  ([the gate](rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)), and the selection study
-  puts the same row at FWER-adjusted p 0.14-0.29
-  ([the audit](rag-core.md#audit-of-the-lo--0-cut-itself)). The interval, the ledger, and every
-  number in the tables above are unchanged; what changed is what may be read off them.
+  ([the gate](rag-core.md#the-minimum-evidence-gate-on-a-paired-reading)). The shipped
+  selection-adjusted re-read also rejects it: the focus-slice recall hypothesis has family-draw
+  marginal p 0.0628 and Westfall-Young step-down adjusted p **0.2310** over the 44 eligible
+  fused rows x 4 metrics. Thus the `exact`-to-`overlap` default flip would fail selection even if a
+  larger accepted ledger removed the item-count gate
+  ([selection-adjusted verdicts](rag-core.md#selection-adjusted-grid-verdicts)). The interval, the
+  ledger, and every number in the tables above are unchanged; what changed is what may be read off
+  them.
 - **What that withdrawn reading needs is recorded, not left open-ended.** At its own discordance
   rate (4 differing items of 35) the 95% level is unreachable below **53 multi-hop items**
   ([the re-decision](rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)). Human acceptance

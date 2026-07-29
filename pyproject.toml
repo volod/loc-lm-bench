@@ -24,6 +24,7 @@ dependencies = [
   # pinned base dependency (never optional): the boundaries must be identical in CI and on the
   # CUDA host. Bump in lockstep with `_REQUIRED_TEXT_SPLITTERS` in llb/rag/chunking.py.
   "langchain-text-splitters==1.1.2",
+  "numpy>=2.0",
 ]
 
 [project.optional-dependencies]

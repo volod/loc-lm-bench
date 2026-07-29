@@ -12,6 +12,7 @@ from llb.eval import common as eval_common
 from llb.eval.graph import make_retrieve_node
 from llb.executor.cases import score_case
 from llb.executor.runner_metrics import _stage_latency
+from llb.goldset.schema import GoldItem
 from llb.rag.rerank import RerankingRetriever, maybe_wrap_reranker, rerank_chunks
 
 
@@ -166,11 +167,26 @@ def test_config_rejects_bad_rerank_knobs():
 
 
 def test_score_case_carries_stage_latency_and_aggregate_means():
-    from tests.llb.executor.test_runner import gold_item
-
-    item = gold_item("q1", "Яка столиця України?", "Київ", "Київ є столицею")
+    item = GoldItem(
+        id="q1",
+        lang="uk",
+        question="What is the capital?",
+        reference_answer="Kyiv",
+        source_doc_id="d1",
+        source_spans=[
+            {
+                "doc_id": "d1",
+                "char_start": 0,
+                "char_end": 4,
+                "text": "Kyiv",
+            }
+        ],
+        provenance="public-reused",
+        verified=True,
+        split="final",
+    )
     state = {
-        "answer": "Київ",
+        "answer": "Kyiv",
         "status": "ok",
         "retrieved": [],
         "usage": {"latency_s": 2.0, "tokens_per_s": 10.0, "completion_tokens": 4},

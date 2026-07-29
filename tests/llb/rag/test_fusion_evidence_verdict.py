@@ -42,6 +42,8 @@ def test_fusion_that_completes_the_multi_hop_evidence_is_adopted():
     assert verdict["decision"] == VERDICT_ADOPT
     assert verdict["best_row"] == "fused/local_khop@0.30/d10"
     assert verdict["focus_n"] == _MULTI_HOP_N
+    assert verdict["selection_adjustment"]["family_size"] == 8
+    assert "adjusted p=" in verdict["reason"]
 
 
 def test_the_same_gain_on_too_few_items_is_not_adopted():

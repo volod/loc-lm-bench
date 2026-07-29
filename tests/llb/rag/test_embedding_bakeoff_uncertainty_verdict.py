@@ -23,6 +23,7 @@ from llb.rag.embedding_bakeoff_verdict import (
     DECISION_UNDECIDED,
     decide_verdict,
 )
+from llb.rag.embedding_bakeoff_selection import adjust_bakeoff_selection
 
 
 from _embedding_bakeoff_uncertainty_helpers import (
@@ -54,6 +55,29 @@ def test_verdict_adopts_the_largest_separated_candidate():
     assert "recall_at_k delta" in verdict["reason"]
     assert verdict["bars"] == ["recall_at_k"]
     assert verdict["cleared"] == {"strong": ["recall_at_k"], "weaker": ["recall_at_k"]}
+
+
+def test_candidate_adoption_must_survive_the_selected_roster_family():
+    baseline = [0.0] * 7
+    vectors = {BASELINE: _vectors(baseline)}
+    for loss in range(4):
+        values = [-0.5 if index == loss else 1.0 for index in range(7)]
+        vectors[f"candidate-{loss}"] = _vectors(values)
+    paired = paired_rows(vectors, BASELINE, resamples=200)
+    adjustment = adjust_bakeoff_selection(
+        vectors,
+        BASELINE,
+        (METRIC_RECALL,),
+        resamples=200,
+        seed=13,
+    )
+    verdict = decide_verdict(paired, BASELINE, adjustment=adjustment)
+
+    assert verdict["per_row_cleared"] == {
+        f"candidate-{index}": [METRIC_RECALL] for index in range(4)
+    }
+    assert verdict["decision"] == DECISION_RETAIN
+    assert verdict["selection_adjustment"]["family_size"] == 4
 
 
 def test_verdict_retains_the_incumbent_when_nothing_separates():

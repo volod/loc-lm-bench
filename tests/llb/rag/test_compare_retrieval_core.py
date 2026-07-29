@@ -21,6 +21,18 @@ from _compare_retrieval_helpers import (
 )
 
 
+class _QuestionStore:
+    """Per-question hits plus a call ledger proving paired evidence reuses the scored pass."""
+
+    def __init__(self, hits: dict[str, list[dict]]) -> None:
+        self.hits = hits
+        self.calls: list[str] = []
+
+    def retrieve(self, question: str, k: int) -> list[dict]:
+        self.calls.append(question)
+        return self.hits[question][:k]
+
+
 def test_compare_scores_each_backend_and_picks_recall_winner():
     stores = {
         "faiss": _FakeStore([_chunk("d1", 0, 10)]),  # overlaps the gold span -> hit
@@ -125,3 +137,98 @@ def test_add_rerank_rows_pairs_each_backend_and_skips_the_oracle():
     assert report["backends"]["faiss"]["mrr"] == 0.5  # gold at rank 2 pre-rerank
     assert report["backends"]["faiss+rerank"]["mrr"] == 1.0  # reranked to rank 1
     assert report["best_recall"] == "faiss+rerank"
+
+
+def test_compare_keeps_item_vectors_and_adopts_a_paired_recall_winner_from_one_pass():
+    questions = [f"q{index}" for index in range(20)]
+    items = [
+        (question, [{"doc_id": "gold", "char_start": 0, "char_end": 10, "text": "g"}])
+        for question in questions
+    ]
+    miss = [_chunk("miss", 0, 10)]
+    hit = [_chunk("gold", 0, 10)]
+    baseline = _QuestionStore(
+        {question: hit if index % 2 else miss for index, question in enumerate(questions)}
+    )
+    candidate = _QuestionStore({question: hit for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": baseline, "sentence": candidate},
+        items,
+        k=1,
+        item_ids=[f"item-{index}" for index in range(20)],
+        baseline="recursive",
+    )
+
+    assert report["backends"]["recursive"]["recall_at_k"] == 0.5
+    assert report["backends"]["sentence"]["recall_at_k"] == 1.0
+    paired = report["backends"]["sentence"]["paired_vs_baseline"]["metrics"]["recall_at_k"]
+    assert paired["delta"]["mean"] == 0.5
+    assert (paired["wins"], paired["losses"], paired["ties"]) == (10, 0, 10)
+    assert report["paired_items"][0] == {
+        "item_id": "item-0",
+        "lanes": {
+            "recursive": {"recall_at_k": 0.0, "mrr": 0.0},
+            "sentence": {"recall_at_k": 1.0, "mrr": 1.0},
+        },
+    }
+    assert report["verdict"]["decision"] == "adopt"
+    assert report["verdict"]["lane"] == "sentence"
+    assert baseline.calls == questions and candidate.calls == questions
+    rendered = format_comparison(report)
+    assert "paired vs recursive" in rendered
+    assert "10/0/10" in rendered
+    assert "Verdict: ADOPT `sentence`" in rendered
+    assert rendered.isascii()
+
+
+def test_mrr_can_adopt_only_when_recall_is_itemwise_identical():
+    questions = [f"q{index}" for index in range(20)]
+    spans = [{"doc_id": "gold", "char_start": 0, "char_end": 10, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    miss = _chunk("miss", 0, 10)
+    hit = _chunk("gold", 0, 10)
+    baseline = _QuestionStore({question: [miss, hit] for question in questions})
+    candidate = _QuestionStore({question: [hit, miss] for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": baseline, "sentence": candidate},
+        items,
+        k=2,
+        baseline="recursive",
+    )
+
+    recall = report["backends"]["sentence"]["paired_vs_baseline"]["metrics"]["recall_at_k"]
+    assert (recall["wins"], recall["losses"]) == (0, 0)
+    assert report["verdict"]["decision"] == "adopt"
+    assert "itemwise-identical recall_at_k" in report["verdict"]["reason"]
+
+
+def test_compare_rejects_misaligned_item_ids_and_unknown_baseline():
+    import pytest
+
+    stores = {"faiss": _FakeStore([_chunk("d1", 0, 10)])}
+    with pytest.raises(ValueError, match="item ids"):
+        compare_retrieval(stores, _items(), k=1, item_ids=[])
+    with pytest.raises(ValueError, match="baseline"):
+        compare_retrieval(stores, _items(), k=1, baseline="missing")
+
+
+def test_disabling_resampling_cannot_turn_a_point_lead_into_adopt():
+    questions = [f"q{index}" for index in range(20)]
+    spans = [{"doc_id": "gold", "char_start": 0, "char_end": 10, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    baseline = _QuestionStore({question: [_chunk("miss", 0, 10)] for question in questions})
+    candidate = _QuestionStore({question: [_chunk("gold", 0, 10)] for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": baseline, "sentence": candidate},
+        items,
+        k=1,
+        baseline="recursive",
+        resamples=0,
+    )
+
+    assert report["verdict"]["decision"] == "retain"
+    assert "unmeasured" in report["verdict"]["reason"]
+    assert "unmeasured" in format_comparison(report)

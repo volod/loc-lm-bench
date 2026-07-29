@@ -1,6 +1,6 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-chain-context composite-headline platform-matrix
+.PHONY: agentic-harness-compare bench-agentic-context bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -9,6 +9,19 @@ agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compar
 	done
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
+
+bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context --tasks "$(AGENT_CONTEXT_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--policies "$(AGENT_CONTEXT_POLICIES)" --max-steps "$(AGENT_CONTEXT_MAX_STEPS)" \
+		--observation-cap-chars "$(AGENT_CONTEXT_OBSERVATION_CAP_CHARS)" \
+		--keep-last-n "$(AGENT_CONTEXT_KEEP_LAST_N)" \
+		--compact-share "$(AGENT_CONTEXT_COMPACT_SHARE)" \
+		$(if $(AGENT_CONTEXT_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_MAX_PROMPT_CHARS)",) \
+		$(if $(AGENT_CONTEXT_BASE_URL),--base-url "$(AGENT_CONTEXT_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_MAX_MODEL_LEN)",)
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

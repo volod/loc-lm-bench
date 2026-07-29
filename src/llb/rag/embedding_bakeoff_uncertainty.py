@@ -16,7 +16,9 @@ Pure and dependency-free: vectors come from the `.retrieve` seam, so the whole l
 with fake stores (no FAISS, no GPU).
 """
 
-from typing_extensions import TypedDict
+from typing import TYPE_CHECKING
+
+from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import RetrievalPair
 from llb.rag.fusion_evidence.stability import (
@@ -33,6 +35,9 @@ from llb.rag.fusion_evidence.paired import (
     paired_comparison,
 )
 from llb.rag.retrieval import recall_at_k, reciprocal_rank
+
+if TYPE_CHECKING:
+    from llb.rag.fusion_evidence.selection import SelectionAdjustment
 
 # Metric keys, identical to the `CandidateResult` field names so a row and its interval line up.
 METRIC_RECALL = "recall_at_k"
@@ -96,6 +101,8 @@ class BakeoffVerdict(TypedDict):
     # borderline bar still counts exactly where it counted.
     borderline: dict[str, list[str]]
     reason: str
+    per_row_cleared: NotRequired[dict[str, list[str]]]
+    selection_adjustment: NotRequired["SelectionAdjustment"]
 
 
 def item_vectors(pairs: list[RetrievalPair], k: int) -> MetricVectors:

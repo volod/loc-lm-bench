@@ -8,6 +8,11 @@ import typer
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
+from llb.rag.fusion_evidence.stats import (
+    DEFAULT_CONFIDENCE,
+    DEFAULT_RESAMPLES,
+    DEFAULT_SEED,
+)
 
 
 @app.command("compare-retrieval")
@@ -62,6 +67,17 @@ def compare_retrieval_cmd(
     noise_floor_replicates: Optional[int] = typer.Option(
         None, help="--noise-floor: jitter replicates per lane (default 64)"
     ),
+    baseline: Optional[str] = typer.Option(
+        None,
+        help="paired baseline lane (defaults by mode: recursive, dense, or faiss)",
+    ),
+    resamples: int = typer.Option(
+        DEFAULT_RESAMPLES, min=0, help="paired percentile-bootstrap resamples"
+    ),
+    confidence: float = typer.Option(
+        DEFAULT_CONFIDENCE, min=0.5, max=0.999, help="paired bootstrap confidence level"
+    ),
+    seed: int = typer.Option(DEFAULT_SEED, help="paired bootstrap seed"),
     out: Optional[Path] = typer.Option(None, help="write the JSON comparison report here"),
 ) -> None:
     """Compare retrieval backends -- or chunking strategies, or hybrid fusion -- on one gold set.
@@ -112,11 +128,22 @@ def compare_retrieval_cmd(
             CrossEncoderReranker(reranker),
             rerank_candidates or DEFAULT_RERANK_CANDIDATES,
         )
+    try:
+        paired_baseline = _comparison_baseline(stores, baseline, strategies, hybrid)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
     report = compare_retrieval(
         stores,
         compare_items,
         k,
         slice_labels=aligned_question_types(cfg.goldset_path, [it.id for it in items]),
+        item_ids=[it.id for it in items],
+        baseline=paired_baseline,
+        eligible_lanes=_verdict_lanes(stores, hybrid),
+        resamples=resamples,
+        confidence=confidence,
+        seed=seed,
     )
     census = duplicate_census(stores)
     if census:
@@ -130,6 +157,7 @@ def compare_retrieval_cmd(
     typer.echo(format_comparison(report))
     _echo_stage_latencies(stores)
     if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[compare-retrieval] wrote report -> {out}")
 
@@ -175,3 +203,31 @@ def _echo_stage_latencies(stores: dict[str, Any]) -> None:
                 f"[compare-retrieval] {label}: mean/query retrieve "
                 f"{stages['retrieve_s'] * 1000:.1f} ms + rerank {stages['rerank_s'] * 1000:.1f} ms"
             )
+
+
+def _comparison_baseline(
+    stores: dict[str, Any],
+    requested: str | None,
+    strategies: str | None,
+    hybrid: bool,
+) -> str:
+    """Resolve a stable, mode-aware baseline before any item is retrieved."""
+    if requested is not None:
+        if requested not in stores:
+            raise ValueError(
+                f"paired baseline lane `{requested}` was not scored; choose one of "
+                f"{', '.join(stores)}"
+            )
+        return requested
+    preferred = ["dense"] if hybrid else ["recursive"] if strategies else ["faiss"]
+    return next((lane for lane in preferred if lane in stores), next(iter(stores)))
+
+
+def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:
+    """Return deployable rows only: oracle and lexical diagnostics cannot receive ADOPT."""
+    from llb.rag.compare import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
+
+    excluded = {ROW_ORACLE_DOC}
+    if hybrid:
+        excluded.update({ROW_LEXICAL, f"{ROW_LEXICAL}{RERANK_ROW_SUFFIX}"})
+    return [lane for lane in stores if lane not in excluded]

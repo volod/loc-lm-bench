@@ -666,6 +666,35 @@ What the re-read changes:
   on hand reproduces them. Settling it needs an accepted ledger over the goods corpus; that is the
   forward `goods-fusion-weight-accepted-ledger` task.
 
+### Paired re-read of the fusion-weight verdict
+
+CUDA-host re-read (2026-07-28), pinned e5-base, k=10, `recursive` 800/120, 2000 paired
+resamples, 95% confidence, seed 13, and `NOISE_FLOOR=1`. The goods drafted set (n=95) and PDF
+accepted set (n=40) are the same two available item sets used by the lexical-row re-read above.
+Every point estimate reproduced exactly. Reports, configs, stores, and per-item vectors are under
+`$DATA_DIR/retrieval-comparison-paired-uncertainty/{goods,pdf}-hybrid*/`.
+
+The table gives the point-estimate winning deployable row at each weight against the named
+`dense` baseline. "Reading" is the calibrated raw paired reading; the final verdict also applies
+the deployable lane x metric family adjustment.
+
+| corpus | weight | winning row | recall delta vs dense (95% interval; w/l/t) | recall reading | MRR delta vs dense (95% interval; w/l/t) | MRR reading | verdict |
+| --- | ---: | --- | --- | --- | --- | --- | --- |
+| goods drafted | 0.5 | `hybrid+lemmas` | +0.053 [-0.011, +0.116]; 8/3/84 | flat | +0.054 [-0.001, +0.111]; 28/11/56 | separated raw; adjusted p=0.089 | retain `dense` |
+| goods drafted | 0.6 | `hybrid+lemmas` | +0.053 [+0.000, +0.116]; 7/2/86 | flat | +0.046 [-0.005, +0.098]; 28/11/56 | flat | retain `dense` |
+| goods drafted | 0.7 | `hybrid+lemmas` | +0.042 [-0.011, +0.105]; 6/2/87 | flat | +0.026 [-0.013, +0.067]; 23/10/62 | flat | retain `dense` |
+| PDF accepted | 0.5 | `hybrid+lemmas` | +0.000 [+0.000, +0.000]; 0/0/40 | flat | +0.054 [-0.019, +0.137]; 4/1/35 | flat | retain `dense` |
+| PDF accepted | 0.7 | `hybrid+lemmas` | +0.000 [+0.000, +0.000]; 0/0/40 | flat | +0.044 [-0.014, +0.115]; 4/1/35 | flat | retain `dense` |
+
+The direct weight comparison reconstructed from those persisted item vectors is flat everywhere.
+On goods, w=0.5 minus w=0.7 for `hybrid+lemmas` is +0.011 recall
+[-0.021, +0.053] (2/1/92) and +0.028 MRR [-0.002, +0.059] (15/7/73). On the accepted PDF set
+recall is itemwise identical and the MRR delta is +0.010 [-0.019, +0.050] (1/1/38). Therefore no
+available item set supports a weight preference under paired sampling: `fusion_weight=0.5`
+remains the retained default, while hybrid remains opt-in. The earlier measurement-floor claim
+that fusion "adds" recall on goods is still the exact point estimate, but it is not a
+sampling-separated gain.
+
 ### Apostrophe-variant tokenization evidence
 
 Durable evidence (2026-07-24, CUDA host, pinned e5-base, k=10; stores and reports under
@@ -1288,7 +1317,8 @@ Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,m
 corpus + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by
 recall@k / MRR on the gold set, so the best chunker is demonstrated per corpus, never assumed.
 Add `NOISE_FLOOR=1` to learn how much of a chunker delta the corpus can actually resolve
-([measurement floor](#measurement-floor---noise-floor)).
+([measurement floor](#measurement-floor---noise-floor)); the paired delta and verdict are always
+reported as described under [paired lane uncertainty](#paired-lane-uncertainty-and-verdict).
 Tests: `tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
 committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
 fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
@@ -1323,6 +1353,22 @@ still contained oversized units, and its 44-item set puts one item at 0.023 reca
 `sentence` win of +0.022 is under one item, which the
 [measurement floor](#measurement-floor---noise-floor) lane exists to make
 visible.
+
+### Paired re-read of `sentence` versus `recursive`
+
+CUDA-host re-read (2026-07-28), pinned e5-base, k=10, size 200 / overlap 30, 2000 paired
+resamples, 95% confidence, seed 13, and `NOISE_FLOOR=1`, on the 95-item drafted goods set. The
+point estimates reproduce the post-collapse rows recorded below exactly: `sentence` 0.632 and
+`recursive` 0.695 recall@10, both at a +/-0.000 recall floor. Report, config, stores, and per-item
+vectors are under
+`$DATA_DIR/retrieval-comparison-paired-uncertainty/goods-chunking/`.
+
+Against the named `recursive` baseline, `sentence` has recall delta -0.063
+[-0.137, +0.000], with a 2/8/85 win/loss/tie ledger; its calibrated reading is flat. Its MRR
+delta is -0.000 [-0.062, +0.062], 12/18/65, also flat. The verdict retains `recursive`: it is the
+point-estimate leader and the available item set does not separate the two chunkers under paired
+sampling. This result applies to the capped goods stores; the older seven-strategy accepted-PDF
+ranking remains a separate forward re-run because that exact accepted item set is unavailable.
 
 ### `size` Is A Hard Cap On Every Strategy
 
@@ -1641,7 +1687,8 @@ under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability findi
 shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
 the per-test size finding is now enforced by
 [randomization-calibrated paired readings](#randomization-calibrated-paired-readings); selection
-control remains forward work in [`plan.md`](../plan.md).
+control is now enforced by
+[selection-adjusted grid verdicts](#selection-adjusted-grid-verdicts).
 
 - **Per-test size.** On the 20 recorded adoption cells (n=40) the one-sided `lo > 0` cut fires on
   **3.0%-7.8% of null draws (mean 4.3%)** against the 2.5% its 95% two-sided interval implies, and
@@ -1664,7 +1711,7 @@ control remains forward work in [`plan.md`](../plan.md).
   the selection adjustment nor the unadjusted randomization test reproduces the recorded reading at
   the same 2.5% level. The `any cell clears zero` rule of the adoption sweep fires on 13.7%-16.4% of
   null draws over its 4 cells, and 44.1% over the 20-cell roster (0.82 expected false positives per
-  roster).
+  roster). The maintained implementation and full recorded-artifact re-read are below.
 
 The headline verdicts of the two dense-only lanes are not implicated: the ablation lanes are near
 nominal at their sample sizes, and their deciding rows carry 16-181 discordant items.
@@ -1712,6 +1759,74 @@ Host validation used the RTX PRO 3000 Blackwell GPU (12,227 MiB) with the instal
 MamayLM-Gemma-3-12B model available. The audit path deliberately made no inference, as its contract
 is to re-read persisted vectors. Implementation coverage also includes the shared stability,
 minimum-evidence, lane-verdict, adoption-borderline, query-robustness, and artifact-audit tests.
+
+#### Selection-adjusted grid verdicts
+
+2026-07-28. Verdicts that SEARCH a grid now carry the error rate of that search. The shared
+implementation is `src/llb/rag/fusion_evidence/selection.py`: it applies one aligned item-level
+sign-flip draw to every hypothesis in a declared family, computes a studentized max statistic, and
+returns Westfall-Young STEP-DOWN adjusted p-values. Joint signs preserve the measured cross-row
+correlation. Item columns that are zero for the whole family are removed before choosing exact
+versus Monte Carlo inference; up to 16 active items are enumerated, while larger families use at
+least 20,000 deterministic draws with the plus-one correction. The adjusted p is cut at the same
+`(1 - confidence) / 2` one-sided alpha as the per-row calibrated p.
+
+The lane declarations are narrow and explicit:
+
+- The fusion verdict selects from every non-baseline fused/routed row x all four metrics on its
+  FOCUS slice. Its `best_row` ranking is unchanged, but a recall/all-spans gain must clear both its
+  ordinary `PairedComparison` and the selected family.
+- The adoption-bar verdict adjusts the objective delta over every scored cell because only
+  `objective_score in ANY cell` can trigger `extend_bar`. Its rank-only evidence remains a per-row
+  reading: it can retain the existing bar or say the premise was absent, but cannot extend it.
+- The embedder bake-off adjusts every non-baseline candidate x ENABLED adoption bar. A candidate
+  enters `separated`, `cleared`, and the adopt ranking only when its bar survives that family.
+
+Each verdict persists an additive `selection_adjustment` block with the method, statistic,
+exact/Monte-Carlo provenance, draw count, seed, item count, family size, and each hypothesis's
+marginal and adjusted p. The adoption and bake-off verdicts also preserve their pre-adjustment
+positive cells/candidates in `per_row_answer_cells` / `per_row_cleared`; the existing row tables
+continue to print the calibrated per-row p. Lane adapters live in
+`fusion_evidence/selection_family.py`, `eval/embedder_adoption/verdict.py`, and
+`embedding_bakeoff_selection.py`.
+
+CUDA-host re-read: `make audit-paired-readings
+PAIRED_READING_AUDIT_OUT=$DATA_DIR/paired-reading-audit/<run>` produced
+`$DATA_DIR/paired-reading-audit/20260728T-selection-adjusted-grid-verdicts/`. It reconstituted 14
+vector-backed grid artifacts and 7,129 paired blocks:
+
+| lane | grid artifacts | selected family survives | adjusted verdict |
+| --- | ---: | ---: | --- |
+| fusion sweep | 6 | 0 | three historical `adopt` calls become `inconclusive`; three stay `inconclusive` |
+| adoption bar | 6 | 1 | five full sweeps do not survive; the one-cell confirmation stays `extend_bar` |
+| embedder bake-off | 2 | 0 | both canonical corpus runs stay `retain` |
+
+The fusion row that would decide an `exact` to `overlap` default change,
+`fused/global_community@0.30/d50/ioverlap`, has a family-draw marginal recall p of 0.0628 and a
+step-down adjusted p of **0.2310** in the span-identity, routing, and merge-ratio grids. It
+therefore ALSO fails selection even if a larger accepted item set removed the current
+minimum-evidence failure. No shipped default changes on this reading.
+
+The adoption result shows why the family matters. MamayLM-12B's best full-grid objective cell moves
+from marginal p 0.0145 to adjusted p 0.0438; Mistral's two strongest cells move from 0.0184 and
+0.0045 to 0.0560. The one-cell MamayLM confirmation has no search multiplicity and stays at
+adjusted p 0.0157. On the regenerated 250-item fixture bake-off, E5-large recall moves from a
+family-draw marginal p of 0.0307 to adjusted p 0.0458 and remains `retain`; the accepted 40-item PDF
+run is flatter still.
+
+Seven historical bake-off JSON files persist aggregate intervals but no aligned `paired_items`, so
+their cross-candidate correlation is unrecoverable rather than guessed. The audit lists each one as
+legacy and uses fresh vector-backed runs of the same canonical 250-item fixture and 40-item accepted
+PDF corpus. `make compare-embeddings CONFIG=<config>` now lets the config own its goldset and split
+unless either is explicitly overridden on the make command line; this prevents the repository-wide
+fixture and `final` defaults from silently changing a recorded family.
+
+Coverage is in `tests/llb/rag/test_selection_adjustment.py` plus the fusion, adoption-bar,
+bake-off-verdict, and paired-reading-audit suites. The shared procedure is checked against an
+independent brute-force family; lane fixtures include a case where every per-row reading clears but
+the family-wise verdict does not. Host validation used an NVIDIA GeForce RTX 4060 Ti (16,380 MiB,
+CUDA 13.2), regenerated both bake-offs through their Make configs, and completed `make ci` with
+2,354 tests passing and 45 slow/opt-in tests deselected.
 
 #### The minimum-evidence gate on a paired reading
 
@@ -2554,6 +2669,37 @@ appears, so indexing a repeated passage once neither loses nor invents a hit.
 
 This metric is not a model-ranking axis. It answers whether the retrieval layer is able to surface
 the evidence the model needs. If retrieval is poor, answer quality is capped by context quality.
+
+### Paired lane uncertainty and verdict
+
+`compare-retrieval` now derives both aggregate rows and per-item vectors from one retrieval pass
+per item per lane (`src/llb/rag/compare.py`). It reuses
+`embedding_bakeoff_uncertainty.item_vectors` / `paired_rows`, so every lane carries recall@k and
+MRR deltas against one named baseline, a percentile interval, win/loss/tie ledger, calibrated
+randomization reading, and neighbouring-confidence stability. One seeded bootstrap index set is
+shared across all lanes and both metrics. The JSON report keeps those blocks on each
+`backends` row and the aligned vectors in `paired_items`, so a weight or candidate comparison can
+be re-read without retrieving again.
+
+Baseline selection is mode-aware: `recursive` for a chunker comparison when present, `dense` for
+hybrid, `faiss` for built backend comparisons, otherwise the first scored lane. Override it with
+`--baseline` / `RETRIEVAL_BASELINE=`. `--resamples`, `--confidence`, and `--seed` have matching
+`RETRIEVAL_RESAMPLES=`, `RETRIEVAL_CONFIDENCE=`, and `RETRIEVAL_SEED=` make variables. With
+`CONFIG=`, the make alias now leaves the config's goldset and split intact unless the operator
+explicitly overrides `GOLDSET=` or `SPLIT=`.
+
+The report keeps point ranking and inference separate. It selects the best deployable row by the
+existing recall -> MRR -> label order, then applies the standard paired evidence gate plus a
+Westfall-Young lane x metric family adjustment. A positive separated recall delta may adopt the
+winner. MRR may adopt only when recall is identical on every paired item; it cannot hide an
+unresolved recall tradeoff. Disabling resampling marks the readings `unmeasured` and can never
+produce ADOPT. Otherwise the verdict retains the baseline. `dense+oracle-doc` and the lexical-only
+diagnostic row remain visible with paired columns but cannot receive ADOPT.
+Rendering is isolated in `retrieval_comparison_report.py`, and the decision is isolated in
+`retrieval_comparison_uncertainty.py`. Fake-store tests cover exact point reproduction, one-pass
+retrieval, persisted item ids/vectors, recall and MRR adoption rules, baseline validation, ASCII
+rendering, and the CLI JSON artifact. The full RAG suite runs independently; its reranker latency
+test no longer imports a fixture through a nonexistent `tests` package.
 
 ### Measurement Floor (`--noise-floor`)
 

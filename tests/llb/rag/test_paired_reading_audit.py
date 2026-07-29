@@ -77,6 +77,8 @@ def test_bakeoff_audit_names_a_recorded_adopt_that_calibration_withdraws(tmp_pat
     assert len(report["reading_changes"]) == 2
     assert report["verdicts"][0]["previous"] == "adopt"
     assert report["verdicts"][0]["calibrated"] == "retain"
+    assert report["verdicts"][0]["selection_survives"] is False
+    assert len(report["selection_readings"]) == 1
     text = format_audit(report)
-    assert "adopt | retain | YES" in text
+    assert "adopt | retain | no | YES" in text
     assert text.isascii()

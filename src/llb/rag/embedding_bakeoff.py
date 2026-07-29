@@ -44,6 +44,7 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 from llb.rag.embedding_bakeoff_verdict import (
     decide_verdict,
 )
+from llb.rag.embedding_bakeoff_selection import adjust_bakeoff_selection
 from llb.rag.retrieval import evaluate_retrieval
 
 _LOG = logging.getLogger(__name__)
@@ -238,4 +239,17 @@ def _attach_uncertainty(
     for row in report["candidates"]:
         if row["model"] in paired:
             row["paired_vs_baseline"] = paired[row["model"]]
-    report["verdict"] = decide_verdict(paired, baseline, bars, confidence)
+    adjustment = adjust_bakeoff_selection(
+        vectors,
+        baseline,
+        bars,
+        resamples=resamples,
+        seed=seed,
+    )
+    report["verdict"] = decide_verdict(
+        paired,
+        baseline,
+        bars,
+        confidence,
+        adjustment=adjustment,
+    )

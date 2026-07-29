@@ -20,6 +20,7 @@ from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
 
 if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra pass per row
     from llb.rag.noise_floor_models import NoiseFloorReport
+    from llb.rag.fusion_evidence.selection import SelectionAdjustment
 
 # The slice the lane is built to measure; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
@@ -147,6 +148,9 @@ class Verdict(TypedDict):
     best_row: str | None
     decision: str
     reason: str
+    # The declared focus-slice row x metric family the best row was selected from. Absent only on
+    # archived reports and calls that deliberately disable resampling.
+    selection_adjustment: NotRequired["SelectionAdjustment"]
 
 
 class FusionEvidenceReport(TypedDict):

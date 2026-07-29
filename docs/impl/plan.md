@@ -43,126 +43,146 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### selection-adjusted-grid-verdicts
+### agent-context-policy-served-window-probe
 
-Three lanes decide by SELECTING a row out of a grid and then reading that row as if it were the only
-comparison made: the fusion sweep's `best_row` (17-127 rows x 4 metrics x slices, 408-3048 paired
-cuts per sweep), the adoption bar's `extend_bar` (fires when ANY of 4 cells clears zero), and the
-bake-off's adopt (any candidate that separates). Measured against a joint sign-flip null, the
-`any cell` rule fires on 13.7%-16.4% of null draws over 4 cells and 44.1% over the 20-cell roster,
-and the three recorded `adopt` fusion sweeps' deciding row carries an FWER-adjusted p of 0.14-0.29
-([the audit](current/rag-core.md#audit-of-the-lo--0-cut-itself)). Add family-wise control
-where a verdict selects: declare the family a verdict chose from, compute a Westfall-Young
-max-statistic step-down adjusted p over it (the same sign-flip draw, so the correlation between rows
-is respected rather than assumed away), and gate adoption on the adjusted reading while continuing
-to report the per-row one.
+The agent loop's per-step prompt guard resolves its budget from the DECLARED window -- the host
+planner cap, the model's own window, `max_model_len`, or an explicit `context_budget`
+([extended workflows](current/extended-workflows.md#agent-context-management-policies)) -- and no
+backend is asked what it is actually serving. Ollama is the case that breaks the assumption: its
+served `num_ctx` defaults to 4096 regardless of a GGUF advertising 131072, and the llb Ollama client
+sends no `num_ctx` option at all, so a run that declares `--max-model-len 32768` gets a guard 8x
+looser than the window behind it and the backend silently truncates the prompt the guard just
+approved -- exactly the failure the guard exists to prevent, moved one layer down. Close the loop:
+probe the served window per backend (Ollama `/api/ps` reports the loaded model's `context`, vLLM
+`/v1/models` already exposes `max_model_len` via `src/llb/backends/vllm_command.py`, llama.cpp
+`/props` reports `n_ctx`), resolve the budget against the MINIMUM of declared and probed, and record
+both in the manifest so a run states which one bound it. Then either pass `num_ctx` on the Ollama
+options payload (`src/llb/backends/ollama.py` already builds one for `num_predict`) or refuse a
+declared window the backend will not honor.
 
-- Agent status: RUN NEEDED
-- Dependencies: use the shared sign-flip draw and calibrated per-row p described in
-  [RAG core](current/rag-core.md#randomization-calibrated-paired-readings). Reuse each lane's verdict
-  module -- `src/llb/rag/fusion_evidence/verdict.py`,
-  `src/llb/eval/embedder_adoption/verdict.py`, `src/llb/rag/embedding_bakeoff_verdict.py`.
-- User-visible outcome: a grid sweep's recommendation carries the error rate of the SEARCH that
-  produced it, so an operator stops adopting the luckiest cell of a wide sweep.
-- Scope boundary: in scope -- the family declaration per lane, the adjusted p, the gated verdict, and
-  a re-read of every recorded sweep restating whether its verdict survives. Out of scope -- narrowing
-  any grid, changing the metrics, and correcting rows the verdict did not select from (they stay
-  per-row readings, labeled as such).
-- Data and artifact paths: additive fields in the existing artifacts; the re-read under
-  `$DATA_DIR/paired-reading-audit/<run>/`.
-- Execution path: the re-read runs from recorded artifacts on the CUDA host; CI covers the step-down
-  procedure against a brute-force family at small n and the per-lane family declaration over fixtures.
-- Acceptance gates: `make ci` green; every recorded grid verdict is restated as surviving or not
-  surviving its own family adjustment, explicitly including the `graph_fusion_span_identity`
-  `overlap` row that the `exact`-to-`overlap` default flip would be decided on -- the minimum-
-  evidence gate already reads that row as unsupported at its item count
-  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)), so the family adjustment must
-  say whether it would ALSO have failed selection had the item count been there; no shipped default
-  changes on this task alone.
-- Documentation target: the fusion evidence section of [GraphRAG](current/graphrag-backend.md) and
-  the paired-uncertainty subsection of [RAG core](current/rag-core.md).
+- Agent status: CLEAR
+- Dependencies: none. Reuse `ContextBudget` / `resolve_context_budget` in
+  `src/llb/bench/agentic/context_budget.py`, the readiness probes in
+  `src/llb/backends/readiness.py`, and `served_max_model_len` in
+  `src/llb/backends/vllm_command.py`.
+- User-visible outcome: the overflow guard protects the window the operator's backend is really
+  serving, so an episode is never truncated behind a check that said it fit.
+- Scope boundary: in scope -- the per-backend probe, the min-of-declared-and-probed budget, the
+  manifest fields naming which bound, and the Ollama `num_ctx` decision. Out of scope -- changing the
+  policy set, the guard's status vocabulary, and any window arithmetic in
+  `src/llb/optimize/tuning_space.py`.
+- Data and artifact paths: additive `served_max_model_len` / `budget_source` fields in the existing
+  `$DATA_DIR/agentic-context/<run>/` and `$DATA_DIR/agentic/<run>/` manifests.
+- Execution path: unit tests over faked probe responses per backend; one `make bench-agentic-context`
+  smoke on the CUDA host confirming the recorded served window matches `ollama ps`.
+- Acceptance gates: `make ci` green; a declared window larger than the probed one is bound by the
+  probe and the manifest names which; a backend that cannot be probed falls back to the declared
+  window and records that it did.
+- Documentation target: the guard subsection of
+  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
 
-### retrieval-comparison-paired-uncertainty
+### agent-context-policy-aggregate-safe-trimming
 
-`compare-retrieval` is the lane that decides the chunker recommendation, the hybrid fusion weight,
-and the reranker row, and it is the only comparison lane in the repo with no paired uncertainty at
-all: it publishes point estimates plus the measurement floor, and the floor answers only whether a
-gap is numeric noise ([RAG core](current/rag-core.md#measurement-floor---noise-floor)). Every other
-lane -- the embedder bake-off, the fusion sweep, the ablation, the answer-quality comparison, the
-adoption bar -- reports a paired delta against a named baseline with a win/loss/tie ledger and an
-adopt-or-retain verdict. Give this one the same treatment: retrieve once per item per lane, keep the
-per-item metric vectors, draw one shared resample index set, and report each lane's delta against a
-baseline lane with the standard verdict.
-
-- Agent status: RUN NEEDED
-- Dependencies: none, and it should land BEFORE `chunker-bake-off-under-the-size-cap`, which would
-  otherwise record another point-estimate ranking. Reuse
-  `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes metric vectors, not embedder
-  rows) and the lane seam in `src/llb/rag/compare.py` / `src/llb/rag/comparison_builders.py`.
-- User-visible outcome: a chunker or fusion-weight recommendation states whether the winning lane
-  would still win on a different draw of questions, instead of ranking three-decimal point estimates.
-- Scope boundary: in scope -- the per-item vectors, the paired columns, the baseline-lane selection,
-  the verdict, and a re-run on both scored corpora. Out of scope -- new strategies, new lanes, and
-  any change to the retrieval metrics or the floor.
-- Data and artifact paths: the existing `compare-retrieval` report plus per-item vectors in its JSON;
-  no new roots.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=... NOISE_FLOOR=1` on the CUDA host; CI
-  covers the paired columns over the fake retrievers the lane is already tested with.
-- Acceptance gates: `make ci` green; every recorded row's point estimate reproduces exactly; each row
-  carries a paired delta against the baseline lane and the report states adopt or retain; the
-  recorded `sentence`-versus-`recursive` and fusion-weight readings are restated as separated or
-  flat.
-- Documentation target: the chunking-strategies and hybrid-retrieval evidence in
-  [RAG core](current/rag-core.md).
-
-### agent-context-management-policies
-
-The agent episode loop rebuilds its prompt from the FULL transcript of every tool call and
-observation on every step (`build_agent_prompt` / `run_episode` in
-`src/llb/bench/agentic/episode.py`) with no budget check, no observation cap, and no compaction, so
-a single large tool result grows the prompt for the rest of the episode and can push it past the
-served window with no typed status to show for it -- `AgenticCaseRow` records `n_steps` and
-`n_tool_calls` but no prompt size, so the overflow is not even observable after the fact. The
-context-policy lane already establishes the shape this needs, but it ranks policies over question
-CHAINS, not tool episodes ([extended workflows](current/extended-workflows.md#context-policy-comparison)).
-Give the agent loop the same treatment: make context management a POLICY row and measure it.
-Policies to compare, each a fresh episode over the identical task set: `full` (today's behavior, the
-baseline row), `observation_cap` (each observation trimmed to a budget, head and tail kept with an
-explicit elision marker so the model can tell it was trimmed), `keep_last_n` (older steps dropped
-whole), and `compact` (a model-written running summary of the older steps once the prompt crosses a
-share of the window, the agent-loop counterpart of the chain lane's `summary`). Add the missing
-guard underneath them: resolve the model's usable window once per run and check each step's prompt
-with `fits_context_chars` before the call, terminating the episode as `context_overflow` -- the
-status already in the shared taxonomy (`src/llb/eval/common.py`) that the ablation lane uses --
-rather than sending a prompt that cannot fit.
+Both policies that fit the window are LOSSY in a task-dependent way, and the measured run shows the
+shape of it: the ten `search-count` tasks fail under `observation_cap` and `compact` even though
+those policies ran all six steps on evidence the model could see, while the same ten fail under
+`full` for the unrelated reason that the prompt never fit ([extended
+workflows](current/extended-workflows.md#context-policy-evidence-on-the-16-gb-rtx-4060-ti-host)). A
+count question needs an AGGREGATE over the whole observation -- how many documents matched -- and a
+positional head-and-tail trim keeps neither end's count, while a free-text summary is not asked for
+one. So the lane currently prices context cost correctly and answer survival not at all, and its
+recommendation ("take `compact`, it is a quarter of the prompt") is safe only for tasks whose answer
+sits in a span rather than in a total. Give trimming an aggregate-safe path: when an observation is
+trimmed, prepend a machine-computed header of the facts a positional trim destroys (hit count,
+total length, the list of matched doc ids) so a count is answerable from the trimmed text, and give
+the compaction prompt the same header rather than hoping the summary preserves a number. Then
+re-run the four policies and report whether the `search-count` slice moves.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the policy-row pattern, board tier, and recommendation section of
-  `bench-chain-context` (`src/llb/bench/chain_context_policy.py`,
-  `src/llb/board/chain_context.py`, `format_chain_context_section_md`), the window arithmetic in
-  `src/llb/optimize/tuning_space.py`, and the injectable `complete` / `ToolWorld` seams the agentic
-  suite is already unit-tested over.
-- User-visible outcome: an operator gets a measured answer to "how should my agent spend its
-  context window", and an episode that cannot fit says so instead of failing as a wrong answer.
-- Scope boundary: in scope -- the four policy rows, the per-step budget guard, the new per-episode
-  telemetry (prompt tokens per step, observation bytes, compactions, trimmed observations), and a
-  best-policy-per-model reading with paired intervals. Out of scope -- new tools, new tasks, changes
-  to the tool world or the success checks, and changing the shipped `loop` behavior before the
-  comparison supports it.
-- Data and artifact paths: one run bundle per policy under `$DATA_DIR/agentic-context/<run>/`,
-  tagged with the policy exactly as the per-harness and per-chain-policy bundles are.
-- Execution path: `make bench-agentic-context AGENT_CONTEXT_POLICIES=full,observation_cap,keep_last_n,compact
-  MODEL=<model> BACKEND=<backend>` on the CUDA host, plus one run against a task set with
-  deliberately large observations so the guard is exercised; CI drives every policy and the guard
-  over the fake endpoint with no GPU.
-- Acceptance gates: `make ci` green; the `full` policy reproduces the recorded agentic rows exactly
-  (the policy seam adds nothing to the baseline path); no episode in any policy sends a prompt over
-  the resolved window; every policy carries completion rate, steps, tool calls, and prompt tokens
-  with a paired delta against `full`; the reading names the best policy per model or states that the
-  policies are flat against each other at this task count.
-- Documentation target: a context-management subsection beside
-  [agentic harness comparison](current/extended-workflows.md#agentic-harness-comparison), and the
-  agentic section of [category suite](current/category-benchmark-suite.md#agentic).
+- Dependencies: none. Reuse `trim_observation` and `summarize_entries` in
+  `src/llb/bench/agentic/context.py`, the paired reading in
+  `src/llb/bench/agentic_context_report.py`, and the `count` / `locate` task kinds already generated
+  by `src/llb/bench/agentic_tasks.py` as the natural per-slice split.
+- User-visible outcome: an operator who adopts a context policy on its measured cost saving does not
+  silently lose the class of questions whose answer is a total rather than a span.
+- Scope boundary: in scope -- the aggregate header, its use in both the trim and the compaction
+  input, a per-task-kind (`count` vs `locate`) breakdown of the policy table, and the re-run. Out of
+  scope -- new policies, new tools, a learned/semantic trimmer, and changing the shipped
+  `observation_cap` default before the slice moves.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout.
+- Execution path: `make bench-agentic-context` over the same 24-task generated set on the CUDA host,
+  before and after; CI covers the header's arithmetic and the per-kind split over fixtures.
+- Acceptance gates: `make ci` green; the report breaks completion out by task kind; the `count`
+  slice carries a paired delta against the pre-header `observation_cap` and `compact` rows, and the
+  verdict states whether aggregate-safe trimming recovers it or whether the loss is elsewhere.
+- Documentation target: the policy list and CUDA evidence of
+  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+
+### agent-context-policy-constant-sweep (optional)
+
+Three constants decide what the agent context policies do, and all three were chosen to be
+reasonable rather than measured: `DEFAULT_OBSERVATION_CAP_CHARS = 800`, the 60/40 head/tail split of
+that budget (`OBSERVATION_HEAD_SHARE`), and `DEFAULT_KEEP_LAST_N = 3`
+([extended workflows](current/extended-workflows.md#agent-context-management-policies)). The measured
+run makes the third one urgent in its own right: `keep_last_n` moved the prompt by 20 tokens and
+changed nothing, because at a 6-step budget with 3 steps kept the oversized observation that blew the
+prompt is always INSIDE the kept window. Either that policy needs a keep small enough to reach the
+blowup on realistic step budgets, or it is a policy for long transcripts that this task shape cannot
+exercise -- and the lane should say which. Sweep the three constants on a task set whose observations
+are large, report completion against prompt tokens per setting, and pin each value with evidence or
+expose it.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `trim_observation` in `src/llb/bench/agentic/context.py` and the paired
+  reading in `src/llb/bench/agentic_context_report.py` unchanged.
+- User-visible outcome: the shipped policy constants are measured tradeoffs between prompt cost and
+  completion, not round numbers, and `keep_last_n` is either useful at some setting or recorded as
+  inapplicable at this step budget.
+- Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
+  against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
+  content-aware trim (that is `agent-context-policy-aggregate-safe-trimming`), and changing the
+  shipped defaults before a paired delta supports it.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
+  setting.
+- Execution path: `make bench-agentic-context AGENT_CONTEXT_POLICIES=observation_cap,keep_last_n
+  AGENT_CONTEXT_OBSERVATION_CAP_CHARS=<c> AGENT_CONTEXT_KEEP_LAST_N=<n>` per setting on the CUDA
+  host; CI covers the trim's span arithmetic over committed fixtures.
+- Acceptance gates: `make ci` green; the report carries completion and prompt tokens per setting with
+  paired intervals against the shipped values, and states a verdict per constant.
+- Documentation target: the policy list of
+  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+
+### agent-context-policy-transfer-to-harnesses (optional)
+
+Context management is wired into the pure `loop` harness only: `run_episode` takes the
+`ContextPolicy` and the `ContextBudget`, while the `Harness` protocol still takes
+`(task, complete, catalog, max_steps)` and the LangGraph and CrewAI adapters build their prompts
+through `build_agent_prompt` with the full transcript
+([extended workflows](current/extended-workflows.md#agent-context-management-policies)). So a
+measured policy win cannot be shipped to the two harnesses an operator might actually run, and the
+harness comparison is now confounded by a variable it does not name: whichever harness happens to
+truncate or drop history internally is scored against two that do not. Decide the seam -- widen the
+protocol to carry the policy and budget, or state as a product decision that context management is a
+loop-only property and record what the frameworks do with the transcript instead -- and make the
+harness comparison report the context each harness actually sent.
+
+- Agent status: CLEAR
+- Dependencies: `agent-context-management-policies`. Reuse the `Harness` protocol in
+  `src/llb/bench/agentic/model.py`, the adapters in `src/llb/bench/harness/`, and the telemetry
+  already on `Episode`.
+- User-visible outcome: a policy the lane recommends is one the operator's harness can actually
+  apply, and the harness comparison stops silently varying two things at once.
+- Scope boundary: in scope -- the protocol decision, the adapter wiring (or the recorded decision
+  not to), and the per-harness prompt-size column. Out of scope -- new harnesses, new policies, and
+  changing the harness comparison's headline metric.
+- Data and artifact paths: additive prompt-size fields in the existing `$DATA_DIR/agentic/<run>/`
+  bundles.
+- Execution path: `make agentic-harness-compare` on the CUDA host after the wiring; CI covers each
+  adapter's policy handling over the fake endpoint, with the `[eval]` / `[crewai]` extras skipped
+  when absent.
+- Acceptance gates: `make ci` green; every harness reports the prompt size it sent per step; a
+  harness that cannot accept a policy is recorded as such rather than reported as `full`.
+- Documentation target: [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
 
 ### agent-harness-loop-policy-recommendation
 
@@ -181,10 +201,11 @@ budget buys completion with tokens and wall clock, and a recommendation that ign
 not usable on a 16 GiB host.
 
 - Agent status: RUN NEEDED
-- Dependencies: `agent-context-management-policies` supplies the per-step prompt-size telemetry the
-  cost side reads; land it first. Reuse the harness resolution and comparison seam in
-  `src/llb/bench/agentic/run.py` and `src/llb/board/harnesses.py`, and the tool-call parser in
-  `src/llb/scoring/tool_calls.py`.
+- Dependencies: none. The cost side reads the per-episode prompt-token telemetry every
+  `AgenticCaseRow` already carries
+  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)). Reuse the
+  harness resolution and comparison seam in `src/llb/bench/agentic/run.py` and
+  `src/llb/board/harnesses.py`, and the tool-call parser in `src/llb/scoring/tool_calls.py`.
 - User-visible outcome: the operator gets a per-model loop configuration with evidence -- how many
   steps to allow, and whether to repair a malformed tool call -- instead of inheriting three
   constants nobody measured.
@@ -225,8 +246,10 @@ lane never ran is emitted as `unmeasured`, never as a default dressed up as a re
 is the whole failure mode a composed profile invites.
 
 - Agent status: RUN NEEDED
-- Dependencies: `agent-context-management-policies` and `agent-harness-loop-policy-recommendation`
-  supply the two agent-side fields; the rest are current behavior. Reuse `src/llb/board/recommend/`
+- Dependencies: `agent-harness-loop-policy-recommendation` supplies the loop-policy field; the
+  context-policy field comes from the `agentic-context` bundles
+  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)) and the
+  rest are current behavior. Reuse `src/llb/board/recommend/`
   (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
   ([extended workflows](current/extended-workflows.md#staleness)), and the shared borderline
   vocabulary in `src/llb/rag/fusion_evidence/stability.py` so a field resting on a knife-edge row is
@@ -267,7 +290,8 @@ the cost columns a reranker is actually chosen on (rerank latency per query, VRA
 is resident).
 
 - Agent status: RUN NEEDED
-- Dependencies: `retrieval-comparison-paired-uncertainty` (the verdict machinery), and it feeds
+- Dependencies: reuse the paired lane and verdict machinery documented in
+  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict); this task feeds
   `embedder-decision-on-a-resolvable-item-set`. Reuse `CrossEncoderReranker` and the `+rerank` row
   seam in `src/llb/rag/compare.py`.
 - User-visible outcome: the shipped reranker is a measured choice with a cost, not a default nobody
@@ -463,10 +487,10 @@ strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the go
 that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
 
 - Agent status: RUN NEEDED
-- Dependencies: `retrieval-comparison-paired-uncertainty` -- without it this re-run can only record
-  another point-estimate ranking, and the recorded winner's margin is smaller than one item on the
-  sets involved. Then reuse `make compare-retrieval` unchanged, with `NOISE_FLOOR=1` so a changed
-  row can be read against the corpus's own floor
+- Dependencies: use the paired verdict in
+  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict), because the recorded
+  winner's margin is smaller than one item on the sets involved. Reuse `make compare-retrieval`
+  with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own floor
   ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
   `size` the operator asked for.

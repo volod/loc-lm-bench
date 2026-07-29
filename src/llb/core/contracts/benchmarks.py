@@ -85,6 +85,13 @@ class AgenticCaseRow(TypedDict):
     n_steps: int
     n_tool_calls: int
     trajectory_quality: NotRequired[float]
+    # Context accounting (agent context-management policies): how the episode spent its window.
+    # Absent on an episode produced by a harness that does not run the policy-aware loop.
+    max_prompt_tokens: NotRequired[int]
+    total_prompt_tokens: NotRequired[int]
+    observation_bytes: NotRequired[int]
+    n_compactions: NotRequired[int]
+    n_trimmed_observations: NotRequired[int]
     answer_preview: str
 
 

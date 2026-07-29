@@ -36,7 +36,12 @@ def _row(item_id: str, objective: float, rank: int | None = 1, hit: float = 1.0)
 
 
 def _sweep(cells: dict[str, tuple[list[dict], list[dict]]], resamples: int = 200):
-    specs = {"k10": CellSpec(10, None), "k3": CellSpec(3, None), "k3+rerank": CellSpec(3, "x")}
+    specs = {
+        "k10": CellSpec(10, None),
+        "k10+rerank": CellSpec(10, "x"),
+        "k3": CellSpec(3, None),
+        "k3+rerank": CellSpec(3, "x"),
+    }
     return compare_cells(
         [
             (specs[label], {BASELINE: base, CANDIDATE: cand})

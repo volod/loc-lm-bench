@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.compact_summary",
+  "kind": "text",
+  "template": "compact_summary.txt"
+}
