@@ -6,6 +6,8 @@ and the CrewAI crew. It adds NO behavior: it just forwards to `run_episode` with
 catalog, so the loop's results are unchanged by the agentic harness comparison refactor.
 """
 
+from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask, Episode
 from llb.bench.common import LLMComplete
@@ -18,6 +20,15 @@ def loop_harness(
     catalog: dict[str, ToolDef],
     *,
     max_steps: int = DEFAULT_MAX_STEPS,
+    policy: ContextPolicy | None = None,
+    budget: ContextBudget | None = None,
 ) -> Episode:
     """The pure loop as a `Harness`: drive one task through `run_episode` over `catalog`."""
-    return run_episode(task, complete, catalog=catalog, max_steps=max_steps)
+    return run_episode(
+        task,
+        complete,
+        catalog=catalog,
+        max_steps=max_steps,
+        policy=policy,
+        budget=budget,
+    )

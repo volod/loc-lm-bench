@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from llb.bench.agentic.context import ContextTelemetry
+from llb.bench.agentic.context import ContextPolicy, ContextTelemetry
+from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.common import JudgeScorer, LLMComplete, Mirror
 from llb.bench.tool_world import ToolWorld
 from llb.eval.common import CONTEXT_OVERFLOW
@@ -81,15 +82,22 @@ class Episode:
     # Context accounting (agent context-management policies). Defaulted so every harness that
     # builds an `Episode` without the policy-aware loop keeps working and simply reports nothing.
     telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
+    # Whether this harness APPLIED the requested context policy to the prompts it sent. False
+    # means the framework owned the transcript (CrewAI) and the comparison must not treat the
+    # row as our `full` / `observation_cap` / ... assembly -- see harness comparison docs.
+    context_policy_supported: bool = True
 
 
 class Harness(Protocol):
     """A pluggable agentic harness (agentic harness comparison): drive ONE task to a canonical `Episode`.
 
-    Every harness takes the same `(task, complete, catalog, max_steps)` and returns the same
-    `Episode` (final answer + tool-call transcript + final env-state), so `check_success`, the
-    scorer, and the gated judge are UNCHANGED across harnesses -- the framework is the only
-    variable. The pure loop (`run_episode`), the LangGraph app, and the CrewAI crew all conform.
+    Every harness takes the same `(task, complete, catalog, max_steps, policy, budget)` and returns
+    the same `Episode` (final answer + tool-call transcript + final env-state + prompt telemetry),
+    so `check_success`, the scorer, and the gated judge are UNCHANGED across harnesses -- the
+    framework is the only variable. `loop` and `langgraph` apply `policy`/`budget` to every step
+    prompt; a harness that cannot (CrewAI owns its own transcript) still accepts the kwargs, runs
+    framework-native, and sets `Episode.context_policy_supported=False` so the comparison never
+    silently labels that row as our `full` policy.
     """
 
     def __call__(
@@ -99,6 +107,8 @@ class Harness(Protocol):
         catalog: dict[str, ToolDef],
         *,
         max_steps: int = DEFAULT_MAX_STEPS,
+        policy: ContextPolicy | None = None,
+        budget: ContextBudget | None = None,
     ) -> Episode: ...
 
 
@@ -166,3 +176,6 @@ class _AgenticPersistInput:
     tokens_per_s: float
     mirror: Mirror | None
     budget_provenance: dict[str, object] | None = None
+    context_policy: str = "full"
+    context_policy_supported: bool = True
+    mean_max_prompt_tokens: float = 0.0

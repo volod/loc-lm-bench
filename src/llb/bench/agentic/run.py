@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from llb.bench.agentic.context import POLICY_FULL, ContextPolicy
+from llb.bench.agentic.context_budget import ContextBudget, prompt_tokens
 from llb.bench.agentic.episode import _resolve_harness, _run_episodes, _score_episodes
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
@@ -27,6 +29,7 @@ from llb.bench.common import (
     LLMComplete,
     Mirror,
     category_result,
+    mean,
     render_board,
     verified_data_config,
 )
@@ -44,6 +47,8 @@ def run_agentic(
     harness_name: str = HARNESS_LOOP,
     harness: "Harness | None" = None,
     prompt_system: str | None = None,
+    policy: ContextPolicy | None = None,
+    budget: ContextBudget | None = None,
     judge_model: str | None = None,
     judge_rho: float | None = None,
     judge_threshold: float = DEFAULT_THRESHOLD,
@@ -64,14 +69,25 @@ def run_agentic(
     (`judge_rho >= judge_threshold`), an opt-in trajectory-quality signal is recorded ALONGSIDE
     (per-case + mean + CI) but never folded into the headline; otherwise the judge is demoted and
     completion-rate ranks alone. `judge_scorer` is injectable for tests. A `meter` (populated by the
-    endpoint `complete`) supplies the run's real generation tok/s.
+    endpoint `complete`) supplies the run's real generation tok/s. `policy`/`budget` transfer the
+    agent context-management knobs onto harnesses that support them (`loop`, `langgraph`); a
+    harness that cannot apply them still reports the prompt sizes it sent and stamps
+    `context_policy_supported=false` on the bundle.
     """
     if not tasks:
         raise SystemExit("no agentic tasks provided")
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
-    episodes = _run_episodes(tasks, complete, _resolve_harness(harness_name, harness), max_steps)
+    resolved_policy = policy if policy is not None else ContextPolicy()
+    episodes = _run_episodes(
+        tasks,
+        complete,
+        _resolve_harness(harness_name, harness),
+        max_steps,
+        policy=resolved_policy,
+        budget=budget,
+    )
     scored = _score_episodes(tasks, episodes)
     judge_config = _JudgeConfig(
         model=judge_model,
@@ -91,6 +107,8 @@ def run_agentic(
         tokens_per_s=tokens_per_s,
     )
     board, table = render_board([result])
+    policy_supported = all(episode.context_policy_supported for episode in episodes)
+    mean_prompt = mean([float(prompt_tokens(ep.telemetry.max_prompt_chars)) for ep in episodes])
     paths = (
         _persist_agentic_run(
             _AgenticPersistInput(
@@ -110,6 +128,9 @@ def run_agentic(
                 tokens_per_s=tokens_per_s,
                 mirror=mirror,
                 budget_provenance=budget_provenance,
+                context_policy=resolved_policy.name,
+                context_policy_supported=policy_supported,
+                mean_max_prompt_tokens=mean_prompt,
             )
         )
         if persist
@@ -139,3 +160,7 @@ def load_tasks_file(path: Path | str) -> list[AgenticTask]:
     if not isinstance(raw, list):
         raise ValueError(f"{path}: expected a JSON array of agentic tasks")
     return [AgenticTask.from_record(r) for r in raw]
+
+
+# Re-export so callers that only need the default policy name do not import context.py.
+__all__ = ["run_agentic", "load_tasks_file", "POLICY_FULL"]

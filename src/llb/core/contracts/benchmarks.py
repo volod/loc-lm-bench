@@ -86,7 +86,8 @@ class AgenticCaseRow(TypedDict):
     n_tool_calls: int
     trajectory_quality: NotRequired[float]
     # Context accounting (agent context-management policies): how the episode spent its window.
-    # Absent on an episode produced by a harness that does not run the policy-aware loop.
+    # Present when the harness recorded per-step prompt sizes (loop/langgraph always; crewai when
+    # the framework actually sent prompts). Absent only on legacy episodes with empty telemetry.
     max_prompt_tokens: NotRequired[int]
     total_prompt_tokens: NotRequired[int]
     observation_bytes: NotRequired[int]

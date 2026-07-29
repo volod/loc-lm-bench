@@ -39,6 +39,9 @@ def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
         "completion_rate": request.result.objective_score,
         "mean_trajectory_steps": round(request.scored.mean_steps, 4),
         "mean_tool_calls": round(request.scored.mean_tool_calls, 4),
+        "mean_max_prompt_tokens": round(request.mean_max_prompt_tokens, 4),
+        "context_policy": request.context_policy,
+        "context_policy_supported": request.context_policy_supported,
         "completion_rate_ci": list(request.scored.completion_ci)
         if request.scored.completion_ci
         else None,

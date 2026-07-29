@@ -6,27 +6,66 @@ harnesses, agent context-management policies, judge diagnostics, and prompt-syst
 ## Agentic Harness Comparison
 
 The agentic benchmark can run the same task set through multiple harnesses while keeping the model,
-tools, world state, objective checks, and optional judge fixed.
+tools, world state, objective checks, optional judge, and context-management policy fixed.
 
 Core locations:
 
-- `src/llb/bench/agentic/model.py`: `Harness` protocol and harness names;
+- `src/llb/bench/agentic/model.py`: `Harness` protocol (now carries `policy` + `budget`) and harness
+  names;
 - `src/llb/bench/agentic/run.py`: runner integration;
 - `src/llb/bench/harness/base.py`: pure loop harness;
-- `src/llb/bench/harness/langgraph.py`: LangGraph agent/tool graph;
-- `src/llb/bench/harness/crewai.py`: CrewAI adapter;
-- `src/llb/board/harnesses.py`: one-model harness comparison board rows.
+- `src/llb/bench/harness/langgraph.py`: LangGraph agent/tool graph (same `step_prompt` /
+  `ContextState` seam as the loop);
+- `src/llb/bench/harness/crewai.py`: CrewAI adapter (accepts the kwargs, does not apply them);
+- `src/llb/board/harnesses.py`: one-model harness comparison board rows + prompt-size appendix.
 
 ```bash
-llb bench-agentic --harness loop --model <model> --backend <backend>
-llb bench-agentic --harness langgraph --model <model> --backend <backend>
+llb bench-agentic --harness loop --model <model> --backend <backend> \
+  --context-policy full
+llb bench-agentic --harness langgraph --model <model> --backend <backend> \
+  --context-policy observation_cap
 llb bench-agentic --harness crewai --model <model> --backend <backend>
-llb bench-agentic-compare --model <model>
-make agentic-harness-compare MODEL=<model> BACKEND=<backend>
+llb bench-agentic-compare --model <model> --context-policy observation_cap
+make agentic-harness-compare MODEL=<model> BACKEND=<backend> \
+  AGENTIC_CONTEXT_POLICY=full AGENTIC_HARNESSES='loop langgraph'
 ```
 
-The comparison fixes the model and treats harness as the row label. This avoids conflating model
-quality with orchestration behavior.
+### Protocol decision: policies transfer on the harness seam
+
+The `Harness` protocol takes optional `policy` and `budget` alongside `(task, complete, catalog,
+max_steps)`. Product rule:
+
+- `loop` and `langgraph` APPLY the requested policy to every step prompt (shared
+  `step_prompt` / `ContextState` / overflow guard), so a measured win from
+  `bench-agentic-context` is one the operator's LangGraph cell can actually run;
+- `crewai` ACCEPTS the kwargs for protocol parity but does NOT apply them -- CrewAI owns its
+  ReAct transcript. Episodes stamp `context_policy_supported=false`, and the comparison labels
+  the policy cell as `full*` / `observation_cap*` rather than silently reporting our `full`
+  assembly. Prompt sizes the framework actually sent still ride on episode telemetry.
+
+Every harness records per-step prompt sizes on `Episode.telemetry`. Bundles persist
+`context_policy`, `context_policy_supported`, and `mean_max_prompt_tokens`. The harness comparison
+keeps the best run per `(model, harness, context_policy)` and ranks harnesses under ONE fixed
+policy (explicit `--context-policy`, else the policy with the most harness coverage), so the axis
+never silently mixes framework and context management. The ranked board stays completion-only; an
+appendix table reports `prompt-tok`, the requested policy, and whether it was applied.
+
+### CUDA host evidence (2026-07-29)
+
+`MamayLM-Gemma-3-12B-IT-v2.0` on Ollama (`--max-model-len 8192`), 4-task UA seed,
+`AGENTIC_HARNESSES='loop langgraph'` (CrewAI extra not installed on this host; fake-crew CI covers
+its unsupported path):
+
+| policy | harness | completion | mean steps | mean max prompt tok | applied |
+| --- | --- | --- | --- | --- | --- |
+| `full` | loop | 0.250 | 6.00 | 906.2 | yes |
+| `full` | langgraph | 0.250 | 6.00 | 906.2 | yes |
+| `observation_cap` | loop | 0.250 | 6.00 | 906.2 | yes |
+| `observation_cap` | langgraph | 0.250 | 6.00 | 906.2 | yes |
+
+Loop and LangGraph matched item-for-item on completion and prompt tokens under both policies
+(seed-task observations sit under the 800-char cap, so `observation_cap` is a no-op on this set --
+the transfer seam is what the run proves). Bundles under `.data/agentic/20260729T12*`.
 
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
@@ -39,12 +78,14 @@ host validation.
 
 ## Agent Context-Management Policies
 
-`bench-agentic-context` ranks how the agent LOOP spends its context window for ONE fixed model over
+`bench-agentic-context` ranks how the agent spends its context window for ONE fixed model over
 one task set. It is the agent-side sibling of the chain-context lane below: the model, the task set,
 the tool world, the success checks, and the step budget are held FIXED and only the
 context-management policy varies, so every difference it reports is attributable to context
-handling. Every policy runs a fresh episode through the pure `loop` harness -- context management is
-a property of the loop, not of a framework.
+handling. Every policy runs a fresh episode through the pure `loop` harness by default; the same
+`policy`/`budget` kwargs transfer onto `langgraph` via the widened `Harness` protocol (see
+[Agentic Harness Comparison](#agentic-harness-comparison)), while CrewAI records the policy as
+unsupported because it owns its own transcript.
 
 Core locations:
 
@@ -103,11 +144,11 @@ to the same host as `ollama_host` (`is_ollama_base_url` in `src/llb/backends/ser
 and routes the call through the native launcher on that host rather than the OpenAI-compat
 `local_complete` path, which silently ignored `extra_body.options.num_ctx` on some Ollama builds.
 When the URL points at a different host (a non-Ollama OpenAI-compat backend), the generic
-`local_complete` path is used unchanged. Each step's prompt is checked before the call. A prompt that does
-not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already in the
-shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same reason
--- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable window
-(no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
+`local_complete` path is used unchanged. Each step's prompt is checked before the call. A prompt
+that does not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already
+in the shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same
+reason -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable
+window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
 `fits_context_chars`: an unknown model never silently declares a prompt unusable.
 
 Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after

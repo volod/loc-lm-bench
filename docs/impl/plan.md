@@ -114,38 +114,6 @@ expose it.
 - Documentation target: the policy list of
   [extended workflows](current/extended-workflows.md#agent-context-management-policies).
 
-### agent-context-policy-transfer-to-harnesses (optional)
-
-Context management is wired into the pure `loop` harness only: `run_episode` takes the
-`ContextPolicy` and the `ContextBudget`, while the `Harness` protocol still takes
-`(task, complete, catalog, max_steps)` and the LangGraph and CrewAI adapters build their prompts
-through `build_agent_prompt` with the full transcript
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)). So a
-measured policy win cannot be shipped to the two harnesses an operator might actually run, and the
-harness comparison is now confounded by a variable it does not name: whichever harness happens to
-truncate or drop history internally is scored against two that do not. Decide the seam -- widen the
-protocol to carry the policy and budget, or state as a product decision that context management is a
-loop-only property and record what the frameworks do with the transcript instead -- and make the
-harness comparison report the context each harness actually sent.
-
-- Agent status: CLEAR
-- Dependencies: `agent-context-management-policies`. Reuse the `Harness` protocol in
-  `src/llb/bench/agentic/model.py`, the adapters in `src/llb/bench/harness/`, and the telemetry
-  already on `Episode`.
-- User-visible outcome: a policy the lane recommends is one the operator's harness can actually
-  apply, and the harness comparison stops silently varying two things at once.
-- Scope boundary: in scope -- the protocol decision, the adapter wiring (or the recorded decision
-  not to), and the per-harness prompt-size column. Out of scope -- new harnesses, new policies, and
-  changing the harness comparison's headline metric.
-- Data and artifact paths: additive prompt-size fields in the existing `$DATA_DIR/agentic/<run>/`
-  bundles.
-- Execution path: `make agentic-harness-compare` on the CUDA host after the wiring; CI covers each
-  adapter's policy handling over the fake endpoint, with the `[eval]` / `[crewai]` extras skipped
-  when absent.
-- Acceptance gates: `make ci` green; every harness reports the prompt size it sent per step; a
-  harness that cannot accept a policy is recorded as such rather than reported as `full`.
-- Documentation target: [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
-
 ### agent-harness-loop-policy-recommendation
 
 The harness comparison varies the FRAMEWORK and holds the loop policy fixed

@@ -281,7 +281,9 @@ AGENTIC_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_tasks_uk.json
 AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
+AGENTIC_CONTEXT_POLICY ?= full
 AGENTIC_BASE_URL ?=
+AGENTIC_MAX_MODEL_LEN ?=
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.

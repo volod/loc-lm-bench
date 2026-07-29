@@ -2,8 +2,9 @@
 and the context-management policy comparison.
 
 Three axes over ONE fixed task set + tool world + success checks: `bench-agentic` scores one
-cell, `bench-agentic-compare` ranks the HARNESSES, and `bench-agentic-context` ranks the
-context-management POLICIES of the loop itself.
+cell (harness + optional context policy), `bench-agentic-compare` ranks the HARNESSES under one
+fixed context policy, and `bench-agentic-context` ranks the context-management POLICIES of the
+loop (and any harness that applies them).
 """
 
 from pathlib import Path
@@ -32,6 +33,12 @@ def bench_agentic_cmd(
         help="agentic harness: loop (pure) | langgraph ([eval] extra) | crewai ([crewai] extra). "
         "The comparison axis under TIER_AGENTIC; task set + scoring + judge are held fixed.",
     ),
+    context_policy: str = typer.Option(
+        "full",
+        help="agent context-management policy transferred onto harnesses that support it "
+        "(full|observation_cap|keep_last_n|compact). loop/langgraph apply it; crewai records "
+        "unsupported and still reports the prompt sizes it actually sent.",
+    ),
     max_model_len: Optional[int] = typer.Option(None, help="vLLM/llama.cpp served context window"),
     judge_model: Optional[str] = typer.Option(
         None,
@@ -54,6 +61,7 @@ def bench_agentic_cmd(
     ),
 ) -> None:
     """Score a model's task completion in the deterministic tool-world under TIER_AGENTIC."""
+    from llb.bench.agentic.context import CONTEXT_POLICIES, ContextPolicy
     from llb.bench.agentic.model import HARNESS_NAMES, AgenticRun
     from llb.bench.agentic.run import load_tasks_file, run_agentic
     from llb.bench.common import LLMComplete
@@ -65,6 +73,13 @@ def bench_agentic_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
+    if context_policy not in CONTEXT_POLICIES:
+        typer.echo(
+            f"[error] unknown --context-policy '{context_policy}'; "
+            f"choose one of {', '.join(CONTEXT_POLICIES)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     vram_reader, pid_reader = best_effort_gpu_readers()
@@ -72,6 +87,7 @@ def bench_agentic_cmd(
     from llb.bench.agentic.context_budget import resolve_context_budget
 
     budget = resolve_context_budget(cfg, probe=True)
+    policy = ContextPolicy(name=context_policy)
 
     def run(complete: LLMComplete) -> AgenticRun:
         return run_agentic(
@@ -81,6 +97,8 @@ def bench_agentic_cmd(
             complete=complete,
             max_steps=max_steps,
             harness_name=harness,
+            policy=policy,
+            budget=budget,
             judge_model=judge_model,
             judge_rho=judge_rho,
             judge_base_url=judge_base_url,
@@ -99,8 +117,10 @@ def bench_agentic_cmd(
         pid_usage_reader=pid_reader,
         meter=meter,
     )
+    supported = all(ep.context_policy_supported for ep in result.episodes)
     typer.echo(
-        f"[bench-agentic] harness={harness} "
+        f"[bench-agentic] harness={harness} context-policy={context_policy}"
+        f"{'' if supported else ' (unsupported by harness)'} "
         f"completion-rate={result.result.objective_score:.3f} "
         f"mean-steps={result.mean_steps:.2f} mean-tool-calls={result.mean_tool_calls:.2f}"
     )
@@ -266,16 +286,21 @@ def bench_agentic_context_compare_cmd(
 @app.command("bench-agentic-compare")
 def bench_agentic_compare_cmd(
     model: str = typer.Option(..., help="the candidate model to compare across harnesses"),
+    context_policy: Optional[str] = typer.Option(
+        None,
+        help="hold this context policy fixed when ranking harnesses; default = the policy with "
+        "the most harness coverage (newest on a tie)",
+    ),
 ) -> None:
     """Rank one model's agentic runs across its harnesses (loop/langgraph/crewai).
 
-    Reads the persisted `agentic` run bundles, keeps the best run per (model, harness), and ranks
-    the harnesses for the chosen model under TIER_AGENTIC -- isolating the harness effect with the
-    same bootstrap CIs as the category boards."""
+    Reads the persisted `agentic` run bundles, keeps the best run per (model, harness,
+    context_policy), and ranks the harnesses for the chosen model under ONE fixed context policy
+    -- isolating the harness effect without silently mixing context-management settings."""
     from llb.board.harnesses import harness_comparison
 
     cfg = load_config(None)
-    rows, table, harnesses = harness_comparison(cfg.data_dir, model)
+    rows, table, harnesses = harness_comparison(cfg.data_dir, model, context_policy=context_policy)
     if not rows:
         typer.echo(
             f"[bench-agentic-compare] no agentic runs for model '{model}' under {cfg.data_dir}; "

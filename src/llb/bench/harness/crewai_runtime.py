@@ -4,6 +4,8 @@ import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
+
+from llb.bench.agentic.context import ContextTelemetry
 from llb.bench.agentic.episode import build_agent_prompt
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
@@ -45,6 +47,8 @@ class CrewRunner(Protocol):
         catalog: dict[str, ToolDef],
         world: ToolWorld,
         max_steps: int,
+        *,
+        telemetry: ContextTelemetry | None = None,
     ) -> CrewOutcome: ...
 
 
@@ -94,8 +98,18 @@ def crew_tool_specs(catalog: dict[str, ToolDef], executor: ToolExecutor) -> list
     return specs
 
 
-def episode_from_outcome(task: AgenticTask, world: ToolWorld, outcome: CrewOutcome) -> Episode:
-    """Adapt a `CrewOutcome` into the canonical `Episode` (success re-checked objectively)."""
+def episode_from_outcome(
+    task: AgenticTask,
+    world: ToolWorld,
+    outcome: CrewOutcome,
+    *,
+    telemetry: ContextTelemetry | None = None,
+) -> Episode:
+    """Adapt a `CrewOutcome` into the canonical `Episode` (success re-checked objectively).
+
+    `context_policy_supported` is always False: CrewAI owns the transcript, so a measured loop
+    policy is never silently reported as applied on this harness.
+    """
     return Episode(
         success=check_success(task, world, outcome.answer),
         status=STATUS_COMPLETED if outcome.finished else STATUS_INCOMPLETE,
@@ -104,6 +118,8 @@ def episode_from_outcome(task: AgenticTask, world: ToolWorld, outcome: CrewOutco
         answer=outcome.answer,
         world=world,
         transcript=list(outcome.transcript),
+        telemetry=telemetry if telemetry is not None else ContextTelemetry(),
+        context_policy_supported=False,
     )
 
 
@@ -120,14 +136,17 @@ def run_real_crew(
     catalog: dict[str, ToolDef],
     world: ToolWorld,
     max_steps: int,
+    *,
+    telemetry: ContextTelemetry | None = None,
 ) -> CrewOutcome:
     """Drive a real single-agent CrewAI crew (lazy import; needs the `[crewai]` extra; 1.15.x).
 
     The crew's LLM is the candidate `complete` (wrapped as a `BaseLLM` subclass); the crew's tools
     execute against the SAME `world` through a recording executor, so the returned `CrewOutcome` is
-    faithful no matter how CrewAI orchestrates the ReAct turns. This path is host-only and is not run
-    in CI -- the fake-crew tests cover the adaptation; see `docs/guides/benchmarking/crewai-harness.md` for the
-    validation how-to and the actor/model/document extension guide.
+    faithful no matter how CrewAI orchestrates the ReAct turns. Prompt sizes actually sent to the
+    candidate ride on `telemetry` so the harness comparison can report them without claiming our
+    context policies applied. This path is host-only and is not run in CI -- the fake-crew tests
+    cover the adaptation; see `docs/guides/benchmarking/crewai-harness.md`.
     """
     try:
         from crewai import Agent, Crew, Task
@@ -140,9 +159,10 @@ def run_real_crew(
         os.environ.setdefault(key, value)
 
     transcript: Transcript = []
+    accounting = telemetry if telemetry is not None else ContextTelemetry()
     executor = make_recording_executor(world, transcript)
     specs = crew_tool_specs(catalog, executor)
-    llm, calls = _make_candidate_llm(complete)
+    llm, calls = _make_candidate_llm(complete, accounting)
     tools = [_build_crew_tool(spec) for spec in specs]
     agent_prompt = render_text_map("bench.harness.crewai.agent")
     agent = Agent(
@@ -154,8 +174,10 @@ def run_real_crew(
         max_iter=max_steps,
         verbose=False,
     )
+    task_description = build_agent_prompt(task, catalog, transcript)
+    accounting.prompt_chars.append(len(task_description))
     crew_task = Task(
-        description=build_agent_prompt(task, catalog, transcript),
+        description=task_description,
         expected_output=agent_prompt["expected_output"],
         agent=agent,
     )
@@ -171,13 +193,17 @@ def run_real_crew(
     )
 
 
-def _make_candidate_llm(complete: LLMComplete) -> tuple[Any, dict[str, int]]:
+def _make_candidate_llm(
+    complete: LLMComplete, telemetry: ContextTelemetry
+) -> tuple[Any, dict[str, int]]:
     """Wrap the candidate `complete` (prompt -> text) as a CrewAI `BaseLLM` subclass.
 
     `BaseLLM` is a pydantic ABC (abstract `call`), so the subclass is built lazily inside the extra;
     the call-count rides in a mutable closure dict (avoiding pydantic attribute fights). CrewAI passes
     the ReAct conversation as a message list, flattened here to the single prompt string the candidate
-    backend understands. Returns (llm, calls) so the runner can read `calls["n"]` for `n_steps`."""
+    backend understands. Each flattened prompt's size is recorded on `telemetry` -- the prompt the
+    framework actually sent, not a policy-managed reconstruction. Returns (llm, calls) so the runner
+    can read `calls["n"]` for `n_steps`."""
     from crewai.llms.base_llm import BaseLLM
 
     calls = {"n": 0}
@@ -191,6 +217,7 @@ def _make_candidate_llm(complete: LLMComplete) -> tuple[Any, dict[str, int]]:
                 prompt = "\n\n".join(
                     str(m.get("content", "")) if isinstance(m, dict) else str(m) for m in messages
                 )
+            telemetry.prompt_chars.append(len(prompt))
             return complete(prompt)
 
         def supports_function_calling(self) -> bool:
