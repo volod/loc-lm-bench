@@ -43,33 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-ollama-base-url-num-ctx (optional)
-
-`drive_with_backend` honors Ollama `num_ctx` on the native `/api/chat` path, and
-`bench-agentic-context` warms that path before probing
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)). When the
-operator passes `--base-url` pointing at Ollama's OpenAI-compatible `/v1` endpoint, chat still goes
-through `local_complete` / `extra_body.options.num_ctx`, which this host's Ollama build did not
-apply -- a declared `--max-model-len` can therefore stay unbound on that path even though the probe
-+ min guard still protects against truncation. Make the `--base-url` Ollama path either use the
-native launcher (or an equivalent that reliably sets `num_ctx`) or refuse a declared window the
-OpenAI-compat endpoint will not honor, and cover it with a unit test over a fake OpenAI client that
-records the request body.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `local_complete` in `src/llb/bench/common_backend.py` and
-  `OllamaLauncher` in `src/llb/backends/ollama.py`.
-- User-visible outcome: `--base-url` against Ollama cannot silently ignore a declared context
-  window.
-- Scope boundary: in scope -- the `--base-url` Ollama drive path and its test. Out of scope --
-  changing the probe / min budget resolution already shipped.
-- Data and artifact paths: none beyond existing manifests.
-- Execution path: unit test with a fake OpenAI client; optional CUDA confirm against `/v1`.
-- Acceptance gates: `make ci` green; a `--base-url` Ollama run with `--max-model-len` either serves
-  that window or fails closed with a typed error naming the mismatch.
-- Documentation target: the guard subsection of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
-
 ### agent-context-policy-aggregate-safe-trimming
 
 Both policies that fit the window are LOSSY in a task-dependent way, and the measured run shows the

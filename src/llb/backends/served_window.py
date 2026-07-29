@@ -175,3 +175,14 @@ def probe_config_served_max_model_len(
     return probe_served_max_model_len(
         config.backend, model=config.model, host=host, http_get=http_get
     )
+
+
+def is_ollama_base_url(base_url: str, ollama_host: str = DEFAULT_OLLAMA_HOST) -> bool:
+    """True when `base_url` points at the same host as `ollama_host`.
+
+    Ollama exposes an OpenAI-compatible `/v1` layer on the same port as its native API.
+    A caller that passes `--base-url http://localhost:11434/v1` still hits Ollama, so the
+    native launcher (which reliably honours `num_ctx`) should be used instead of the generic
+    OpenAI-compat path that may silently ignore the option.
+    """
+    return native_root(base_url) == native_root(ollama_host)

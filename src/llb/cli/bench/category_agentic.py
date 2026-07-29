@@ -173,14 +173,18 @@ def bench_agentic_context_cmd(
         # When Ollama will be asked for an explicit num_ctx, warm the model first so /api/ps
         # reports the window the run will actually serve -- otherwise a stale 4096 resident
         # binds the guard 8x tighter than the backend we are about to request.
-        if cfg.backend == "ollama" and (cfg.max_model_len or cfg.context_budget):
+        ollama_num_ctx = cfg.max_model_len or cfg.context_budget
+        if cfg.backend == "ollama" and ollama_num_ctx:
             from llb.backends.ollama import OllamaLauncher
+            from llb.backends.served_window import is_ollama_base_url, native_root
 
-            warm = OllamaLauncher(
-                cfg.model,
-                host=cfg.ollama_host,
-                num_ctx=cfg.max_model_len or cfg.context_budget,
+            # Resolve the native host: --base-url may point at the same Ollama daemon's /v1.
+            native_host = (
+                native_root(base_url)
+                if base_url and is_ollama_base_url(base_url, cfg.ollama_host)
+                else cfg.ollama_host
             )
+            warm = OllamaLauncher(cfg.model, host=native_host, num_ctx=ollama_num_ctx)
             warm.start()
             try:
                 warm.ensure_num_ctx(timeout=cfg.request_timeout_s)

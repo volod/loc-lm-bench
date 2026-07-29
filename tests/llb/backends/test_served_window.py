@@ -7,6 +7,7 @@ from llb.backends.served_window import (
     BUDGET_SOURCE_SERVED,
     BUDGET_SOURCE_UNBOUNDED,
     bind_window,
+    is_ollama_base_url,
     parse_ollama_served_context,
     probe_served_max_model_len,
 )
@@ -91,6 +92,78 @@ def test_resolve_context_budget_falls_back_to_declared_when_probe_misses():
     assert budget.declared_max_model_len == 8192
     assert budget.max_prompt_chars == int(usable * CHARS_PER_TOKEN)
     assert budget.provenance()["budget_source"] == BUDGET_SOURCE_DECLARED
+
+
+def test_is_ollama_base_url_matches_same_host():
+    assert is_ollama_base_url("http://localhost:11434/v1", "http://localhost:11434") is True
+    assert is_ollama_base_url("http://localhost:11434", "http://localhost:11434") is True
+    assert is_ollama_base_url("http://localhost:11434/v1/", "http://localhost:11434/") is True
+    assert is_ollama_base_url("http://other:11434/v1", "http://localhost:11434") is False
+    assert is_ollama_base_url("http://localhost:8000/v1", "http://localhost:11434") is False
+
+
+def test_drive_with_backend_routes_ollama_base_url_through_native_launcher(monkeypatch):
+    """When backend=ollama, base_url points at the same host, and num_ctx is set,
+    drive_with_backend must use OllamaLauncher (native /api/chat) not local_complete,
+    so num_ctx is reliably honoured."""
+    from llb.backends.base import ChatResult
+    from llb.bench.common_backend import drive_with_backend
+    from llb.core.config import RunConfig
+
+    native_calls: list[dict] = []
+
+    class _FakeLauncher:
+        def __init__(self, model, host, num_ctx=None):
+            self.model = model
+            self.host = host
+            self.num_ctx = num_ctx
+            self._last = None
+            self.meta: dict = {}
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def __enter__(self):
+            self.start()
+            return self
+
+        def __exit__(self, *exc):
+            self.stop()
+
+        def chat(self, messages, max_tokens, temperature, timeout):
+            native_calls.append({"num_ctx": self.num_ctx, "max_tokens": max_tokens})
+            return ChatResult(text="native-ok")
+
+        def served_context(self):
+            return self.num_ctx
+
+        def telemetry(self):
+            return {}
+
+    # OllamaLauncher is imported lazily inside the function; patch the module it comes from
+    # so the lazy `from llb.backends.ollama import OllamaLauncher` sees _FakeLauncher.
+    import llb.backends.ollama as _ollama_mod
+
+    monkeypatch.setattr(_ollama_mod, "OllamaLauncher", _FakeLauncher)
+    # Force the host-detection helper to always return True so no real network call is needed.
+    import llb.bench.common_backend as _cb
+
+    monkeypatch.setattr(_cb, "_is_ollama_base_url", lambda url, host: True)
+
+    cfg = RunConfig().with_overrides(
+        model="m", backend="ollama", max_model_len=8192, ollama_host="http://localhost:11434"
+    )
+    result = drive_with_backend(
+        cfg,
+        lambda complete: complete("ping"),
+        base_url="http://localhost:11434/v1",
+    )
+    assert result == "native-ok"
+    assert len(native_calls) == 1
+    assert native_calls[0]["num_ctx"] == 8192
 
 
 def test_ollama_launcher_sends_num_ctx_in_options(monkeypatch):

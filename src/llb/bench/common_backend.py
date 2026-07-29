@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from llb.backends.base import BackendLauncher, ChatResult
+from llb.backends.served_window import is_ollama_base_url as _is_ollama_base_url
 from llb.core.config import RunConfig
 from llb.core.contracts.common import ChatMessage
 from llb.bench.common import LLMComplete, _R
@@ -139,7 +140,30 @@ def drive_with_backend(
     honors the SAME isolation contract as the RAG sweep. When a `meter` is given it accumulates
     real generation throughput across the run's model calls (either endpoint path).
     """
+    ollama_num_ctx = (cfg.max_model_len or cfg.context_budget) if cfg.backend == "ollama" else None
     if base_url is not None:
+        # When the caller supplied --base-url pointing at an Ollama /v1 endpoint AND a
+        # num_ctx is declared, route through the native launcher on that same host so
+        # num_ctx is reliably honoured.  Ollama's OpenAI-compat layer silently ignores
+        # extra_body.options.num_ctx on some builds.
+        if ollama_num_ctx and _is_ollama_base_url(base_url, cfg.ollama_host):
+            from llb.backends.ollama import OllamaLauncher
+            from llb.backends.served_window import native_root
+
+            launcher = OllamaLauncher(
+                cfg.model,
+                host=native_root(base_url),
+                num_ctx=ollama_num_ctx,
+            )
+            with launcher:
+                return run(
+                    launcher_complete(
+                        launcher,
+                        max_tokens=max_tokens,
+                        timeout=cfg.request_timeout_s,
+                        meter=meter,
+                    )
+                )
         return run(
             local_complete(
                 cfg.model,
@@ -147,9 +171,7 @@ def drive_with_backend(
                 max_tokens=max_tokens,
                 timeout=cfg.request_timeout_s,
                 meter=meter,
-                num_ctx=(cfg.max_model_len or cfg.context_budget)
-                if cfg.backend == "ollama"
-                else None,
+                num_ctx=ollama_num_ctx,
             )
         )
     if cfg.backend == "ollama":
@@ -160,7 +182,7 @@ def drive_with_backend(
         launcher = OllamaLauncher(
             cfg.model,
             host=cfg.ollama_host,
-            num_ctx=cfg.max_model_len or cfg.context_budget,
+            num_ctx=ollama_num_ctx,
         )
         with launcher:
             return run(

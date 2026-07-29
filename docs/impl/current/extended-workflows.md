@@ -95,9 +95,15 @@ MINIMUM of those two; `budget_source` names which side bound it (`declared` or `
 to the declared window and records `served_max_model_len=null` with `budget_source=declared`. This
 closes the Ollama hole where a GGUF advertising 131072 still serves `num_ctx=4096` by default: the
 guard no longer approves prompts the backend will silently truncate. For Ollama, `bench-agentic` /
-`bench-agentic-context` drive the native `/api/chat` launcher and pass `num_ctx` from
+`bench-agentic-context` always drive the native `/api/chat` launcher and pass `num_ctx` from
 `--max-model-len` / `context_budget`, warming the model before the probe so `/api/ps` reports the
-window the run will actually use. Each step's prompt is checked before the call. A prompt that does
+window the run will actually use. The same applies when the operator passes `--base-url` pointing
+at Ollama's OpenAI-compatible `/v1` endpoint: `drive_with_backend` detects that the URL resolves
+to the same host as `ollama_host` (`is_ollama_base_url` in `src/llb/backends/served_window.py`)
+and routes the call through the native launcher on that host rather than the OpenAI-compat
+`local_complete` path, which silently ignored `extra_body.options.num_ctx` on some Ollama builds.
+When the URL points at a different host (a non-Ollama OpenAI-compat backend), the generic
+`local_complete` path is used unchanged. Each step's prompt is checked before the call. A prompt that does
 not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already in the
 shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same reason
 -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable window
@@ -151,6 +157,11 @@ CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
 `resolve_context_budget(..., probe=True)` with `--max-model-len 32768` bound to
 `budget_source=served` / `served_max_model_len=8192`. A `make bench-agentic-context` pass with
 `full,observation_cap` persisted those provenance fields on the agentic-context manifests.
+
+`--base-url` routing (2026-07-29): unit test `test_drive_with_backend_routes_ollama_base_url_through_native_launcher`
+in `tests/llb/backends/test_served_window.py` confirms that when `--base-url` resolves to the same
+host as `ollama_host` and `--max-model-len` is set, `drive_with_backend` routes through
+`OllamaLauncher` (native `/api/chat`) with the correct `num_ctx` instead of `local_complete`.
 
 ### Context-policy evidence on the 16 GB RTX 4060 Ti host
 
