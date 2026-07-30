@@ -43,29 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-vs-cap-long-transcript (optional)
-
-With live observation-cap trimming, `compact` recovered the count slice but never fired a
-compaction on the 24-task 6-step set (`n_compactions=0`), so it was observationally identical to
-`observation_cap`
-([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)). Measure
-`compact` versus `observation_cap` on a longer-transcript (or tighter-window) set where the compact
-trigger still fires AFTER the live trim, so the summarizer and finish cue are the active path --
-not just latent insurance -- and report whether compact then buys anything beyond the trim.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the live-trim + finish-cue compact path
-  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)). Prefer the
-  medium-observation search shrink from
-  [keep_last_n longer transcripts](current/extended-workflows.md#keep_last_n-on-longer-transcripts)
-  when a raised `max_steps` alone still leaves `n_compactions=0`.
-- User-visible outcome: an operator learns when compact is worth its summarizer cost over plain
-  `observation_cap`, instead of assuming the short-episode tie generalizes.
-- Scope boundary: in scope -- a task shape or budget where compaction fires, paired completion and
-  prompt-token deltas, and a clear prefer-compact / prefer-cap / still-tied verdict. Out of scope --
-  new policies or changing the shipped observation-cap default.
-- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
-
 ### agent-harness-loop-policy-recommendation
 
 The harness comparison varies the FRAMEWORK and holds the loop policy fixed
@@ -110,6 +87,27 @@ not usable on a 16 GiB host.
   recommended knob.
 - Documentation target: the agentic harness section of
   [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
+
+### agent-context-policy-compact-memory-dependent-transcript (optional)
+
+Build a long-transcript task set whose success requires facts from early, pre-trigger observations
+after several later tool calls, then compare `compact` against `observation_cap` with compaction
+active in enough cases to test whether summary memory changes completion rather than only cost.
+The current medium-search lane exercises the summarizer in a minority of cases and provides the
+runner, active gate, and cost contract
+([extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction)).
+
+- Agent status: RUN NEEDED
+- Dependencies: none beyond the current compact-vs-cap runner. Prefer deterministic tool-world
+  tasks with progress stored outside the transcript so the model cannot satisfy the check by
+  repeating one search; keep objective assertions and a shared task digest.
+- User-visible outcome: an operator learns whether compact is useful when old semantic state must
+  survive, complementing the medium-search result where live trim alone is enough.
+- Scope boundary: in scope -- a reviewable memory-dependent task shape, an active-compaction
+  coverage threshold declared before the run, and paired completion plus total model-input cost.
+  Out of scope -- changing the shipped policy defaults from one small evidence set.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction).
 
 ### agent-operating-profile-recommendation
 

@@ -218,6 +218,7 @@ def _make_candidate_llm(
                     str(m.get("content", "")) if isinstance(m, dict) else str(m) for m in messages
                 )
             telemetry.prompt_chars.append(len(prompt))
+            telemetry.model_input_prompt_chars += len(prompt)
             return complete(prompt)
 
         def supports_function_calling(self) -> bool:

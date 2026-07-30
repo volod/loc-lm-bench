@@ -323,6 +323,31 @@ def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():
     assert "hits=5" in seen[0] and "docs=doc-0,doc-1,doc-2,doc-3,doc-4" in seen[0]
 
 
+def test_repeated_compaction_carries_the_prior_summary_and_aggregate_facts():
+    from llb.bench.agentic.context import summarize_entries
+
+    hits = "\n".join(f"[doc-{i}] text-{i}" for i in range(3))
+    seen: list[str] = []
+    telemetry = ContextState().telemetry
+    summarize_entries(
+        lambda prompt: seen.append(prompt) or "оновлений підсумок",
+        [("search", {"query": "q"}, hits)],
+        2000,
+        prior_summary="[агрегат: hits=2 chars=10 docs=old-a,old-b]. старий підсумок",
+        telemetry=telemetry,
+    )
+    assert "попередній підсумок" in seen[0] and "старий підсумок" in seen[0]
+    assert telemetry.compaction_prompt_chars == len(seen[0])
+    assert telemetry.model_input_prompt_chars == len(seen[0])
+
+    state = ContextState(summary="[агрегат: hits=2 chars=10 docs=old-a,old-b]")
+    policy = ContextPolicy(name=POLICY_COMPACT)
+    state.record(policy, "search", {"query": "q"}, hits)
+    assert compact_state(policy, state, lambda _older: "оновлений підсумок") is True
+    assert "docs=old-a,old-b" in state.summary
+    assert "docs=doc-0,doc-1,doc-2" in state.summary
+
+
 def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
     budget, prompts = fixed_budget(6000), []
 
@@ -384,6 +409,8 @@ def test_case_row_carries_the_context_columns():
     )
     row = _row(task, episode)
     assert row["max_prompt_tokens"] > 0 and row["total_prompt_tokens"] >= row["max_prompt_tokens"]
+    assert row["total_model_input_tokens"] > 0
+    assert row["n_model_calls"] == episode.n_steps + episode.telemetry.n_compactions
     assert row["observation_bytes"] > 0
     assert row["n_trimmed_observations"] == 1 and row["n_compactions"] == 0
     json.dumps(row)  # the row stays persistable

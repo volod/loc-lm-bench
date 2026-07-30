@@ -2,6 +2,7 @@
 
 .PHONY: agentic-harness-compare bench-agentic-context bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
+	bench-agentic-context-compact-long \
 	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
@@ -55,6 +56,18 @@ bench-agentic-context-keep-long: prepare-agentic-long-transcript ## keep=1/2/3 o
 		AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN="$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)" \
 		AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS="$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)" \
 		AGENT_CONTEXT_SWEEP_BASE_URL="$(AGENT_CONTEXT_SWEEP_BASE_URL)"
+
+bench-agentic-context-compact-long: prepare-agentic-long-transcript ## Active compact vs observation_cap on long transcripts, paired incl summarizer input cost (MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-compact-vs-cap \
+		--tasks "$(AGENT_CONTEXT_COMPACT_LONG_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_COMPACT_LONG_MAX_STEPS)" \
+		--compact-share "$(AGENT_CONTEXT_COMPACT_LONG_COMPACT_SHARE)" \
+		--max-prompt-chars "$(AGENT_CONTEXT_COMPACT_LONG_MAX_PROMPT_CHARS)" \
+		$(if $(AGENT_CONTEXT_COMPACT_LONG_BASE_URL),--base-url "$(AGENT_CONTEXT_COMPACT_LONG_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN)",)
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

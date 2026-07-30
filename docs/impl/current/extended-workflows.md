@@ -161,11 +161,14 @@ window (no model spec, no served cap, no explicit budget, no probe) refuses noth
 `fits_context_chars`: an unknown model never silently declares a prompt unusable.
 
 Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after
-the fact: `max_prompt_tokens`, `total_prompt_tokens`, `observation_bytes` (counted BEFORE any policy
-trim, so `full` and `observation_cap` stay comparable on it), `n_compactions`, and
-`n_trimmed_observations` per case row. A policy changes what the model SEES, never what the run
-reports the agent did -- the persisted transcript and the trajectory judge read the full executed
-record even when `compact` has folded it out of the prompt.
+the fact: `max_prompt_tokens`, `total_prompt_tokens`, `total_model_input_tokens`,
+`compaction_prompt_tokens`, `n_model_calls`, `observation_bytes` (counted BEFORE any policy trim,
+so `full` and `observation_cap` stay comparable on it), `n_compactions`, and
+`n_trimmed_observations` per case row. `total_prompt_tokens` counts assembled controller prompts,
+including a locally refused final prompt; `total_model_input_tokens` counts only prompts actually
+sent to the model and includes compact-summary prompts. A policy changes what the model SEES, never
+what the run reports the agent did -- the persisted transcript and the trajectory judge read the
+full executed record even when `compact` has folded it out of the prompt.
 
 Every non-baseline policy carries a paired delta against `full` on four metrics -- completion,
 steps, tool calls, and prompt tokens -- over SHARED bootstrap index sets, so an interval is about
@@ -305,6 +308,52 @@ kept prompts under the compact trigger, so the finish cue was latent insurance r
 active path. Operators who prefer compact for longer transcripts can keep it on count-heavy short
 episodes; for this shape `observation_cap` is the simpler equivalent. `keep_last_n` and `full`
 still overflow the ten count tasks at step 1-2.
+
+#### Compact versus cap with active compaction
+
+`make bench-agentic-context-compact-long` reuses the medium-observation long-transcript task
+builder, raises the step ceiling to 12, and pairs `compact` directly against `observation_cap`.
+Unlike the broad four-policy lane, its baseline is the cap policy. The command fails with an
+`inactive` verdict when no compact episode records `n_compactions > 0`; an operator can then
+lengthen the transcript or tighten `AGENT_CONTEXT_COMPACT_LONG_MAX_PROMPT_CHARS`. The default
+16,000-character guard was selected because the deterministic worst-case probe keeps the cap lane
+within its window while crossing the shipped `compact_share=0.5` trigger.
+
+The cost comparison uses `total_model_input_tokens`, so compact receives no free summarizer: each
+summary prompt is included, locally refused controller prompts are excluded, and `n_model_calls`
+adds controller and summarizer calls. Repeated compactions also feed the prior running summary into
+the next summary prompt and preserve its machine aggregate headers instead of overwriting earlier
+memory. Core locations are `src/llb/bench/agentic_compact_vs_cap.py`,
+`src/llb/bench/agentic_compact_vs_cap_report.py`,
+`src/llb/cli/bench/category_agentic_compact_vs_cap.py`, and
+`tests/llb/bench/test_agentic_compact_vs_cap.py`.
+
+```bash
+make bench-agentic-context-compact-long MODEL=<model> BACKEND=<backend> \
+  AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN=8192
+```
+
+CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB):
+`MamayLM-Gemma-3-12B-IT-v2.0` on Ollama with `num_ctx=8192`, 14 medium-search tasks,
+`max_steps=12`, a 16,000-character prompt guard, 206 calls at 4.3 tok/s. Bundles are under
+`.data/agentic-compact-vs-cap/20260730T19462*`.
+
+| policy | completion | mean steps | model calls | total input tok | compactions | overflow |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `observation_cap` | 0.929 | 7.29 | 7.29 | 10461 | 0 | 0 |
+| `compact` | 0.929 | 7.29 | 7.43 | 10553 | 2 | 0 |
+
+Compaction was active in 2 of 14 episodes. Both policies completed the same 13 tasks and failed the
+same `medium-search-count-008` task at the step ceiling. The two compacted cases completed under
+both policies in the same 10 controller steps; compact added one summary call to each. Paired
+`compact - observation_cap` deltas were completion +0.000 [+0.000, +0.000], total model-input
+tokens +92 [+0, +232.5], and model calls +0.143 [+0, +0.357].
+
+Verdict: **still tied**. Once the active summarizer cost is counted, compact does not improve
+completion and its extra input/call cost does not separate clear of zero at this task count.
+Use `observation_cap` for this medium-search shape because it reaches the same observed outcome
+without the extra mechanism; retain compact as an unproven option for transcripts whose old state,
+rather than repeated search, must survive the trigger.
 
 ### Agent context-policy constants
 

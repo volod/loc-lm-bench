@@ -128,6 +128,11 @@ def test_langgraph_applies_observation_cap_like_loop():
     assert loop_ep.telemetry.n_trimmed_observations == 1
     assert graph_ep.telemetry.n_trimmed_observations == 1
     assert loop_ep.telemetry.max_prompt_chars == graph_ep.telemetry.max_prompt_chars
+    assert (
+        loop_ep.telemetry.model_input_prompt_chars
+        == graph_ep.telemetry.model_input_prompt_chars
+        > 0
+    )
     assert loop_ep.telemetry.max_prompt_chars < full_ep.telemetry.max_prompt_chars
 
 

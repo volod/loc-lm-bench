@@ -78,12 +78,25 @@ def run_policy(
     """Run one fresh episode per task under one context policy and score the batch."""
     budget = budget if budget is not None else unbounded_budget()
     catalog = tool_catalog()
-    episodes: list[Episode] = [
-        run_episode(
-            task, complete, catalog=catalog, max_steps=max_steps, policy=policy, budget=budget
+    episodes: list[Episode] = []
+    for index, task in enumerate(tasks, start=1):
+        _LOG.info(
+            "[agentic-context] policy=%s task=%d/%d id=%s",
+            policy.name,
+            index,
+            len(tasks),
+            task.id,
         )
-        for task in tasks
-    ]
+        episodes.append(
+            run_episode(
+                task,
+                complete,
+                catalog=catalog,
+                max_steps=max_steps,
+                policy=policy,
+                budget=budget,
+            )
+        )
     scored = _score_episodes(tasks, episodes)
     result = category_result(
         model=policy.name,  # the policy IS the ranked row label (the model is fixed)

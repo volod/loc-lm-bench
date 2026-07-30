@@ -90,6 +90,11 @@ class AgenticCaseRow(TypedDict):
     # the framework actually sent prompts). Absent only on legacy episodes with empty telemetry.
     max_prompt_tokens: NotRequired[int]
     total_prompt_tokens: NotRequired[int]
+    # Actual model input includes sent controller prompts plus compact-summary prompts and excludes
+    # the oversized controller prompt that the local guard refused.
+    total_model_input_tokens: NotRequired[int]
+    compaction_prompt_tokens: NotRequired[int]
+    n_model_calls: NotRequired[int]
     observation_bytes: NotRequired[int]
     n_compactions: NotRequired[int]
     n_trimmed_observations: NotRequired[int]

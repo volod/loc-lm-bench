@@ -33,6 +33,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Backend matrix, power telemetry, vector-store adapters | [Platform matrix](current/platform-vector-matrix.md) |
 | Agentic harnesses, agent context policies, judge diagnostics, prompt-system packages, local fine-tuning, adapter registry and lifecycle | [Extended workflows](current/extended-workflows.md) |
 | Aggregate-safe agent observation trim + compact finish recovery (count-slice) | [Extended workflows](current/extended-workflows.md#aggregate-safe-trimming) |
+| Active compact vs observation-cap on long transcripts, including summarizer cost | [Extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction) |
 | Agent context-policy constant sweep (cap / head-share / keep_last_n pin-or-expose) | [Extended workflows](current/extended-workflows.md#agent-context-policy-constants) |
 | keep_last_n on longer transcripts (medium-search keep grid) | [Extended workflows](current/extended-workflows.md#keep_last_n-on-longer-transcripts) |
 | Host acceptance checklist and repeatable smoke runs | [Host validation](current/host-validation.md) |

@@ -124,6 +124,8 @@ class ContextTelemetry:
     """Per-episode context accounting -- the numbers that make an overflow observable."""
 
     prompt_chars: list[int] = field(default_factory=list)
+    model_input_prompt_chars: int = 0
+    compaction_prompt_chars: int = 0
     observation_bytes: int = 0
     n_trimmed_observations: int = 0
     n_compactions: int = 0
@@ -266,7 +268,12 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
 
 
 def summarize_entries(
-    complete: Any, entries: list[TranscriptEntry], transcript_cap_chars: int = 0
+    complete: Any,
+    entries: list[TranscriptEntry],
+    transcript_cap_chars: int = 0,
+    *,
+    prior_summary: str = "",
+    telemetry: ContextTelemetry | None = None,
 ) -> str:
     """Ask the model for a running summary of the older steps (the `compact` policy's memory).
 
@@ -285,25 +292,35 @@ def summarize_entries(
         (name, arguments, with_aggregate_header(observation))
         for name, arguments, observation in entries
     ]
+    transcript_parts = (
+        [f"- [попередній підсумок: {prior_summary}]"] if prior_summary.strip() else []
+    )
+    transcript_parts.extend(format_entry(entry) for entry in enriched)
     # Outer trim is not aggregate-safe: the per-entry headers already carry the facts.
     transcript, _ = trim_observation(
-        "\n".join(format_entry(entry) for entry in enriched),
+        "\n".join(transcript_parts),
         transcript_cap_chars,
         aggregate_safe=False,
     )
-    return (
-        complete(render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})) or ""
-    ).strip()
+    prompt = render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})
+    if telemetry is not None:
+        telemetry.compaction_prompt_chars += len(prompt)
+        telemetry.model_input_prompt_chars += len(prompt)
+    return (complete(prompt) or "").strip()
 
 
-def fold_aggregate_headers(entries: list[TranscriptEntry]) -> str:
+def fold_aggregate_headers(
+    entries: list[TranscriptEntry],
+    *,
+    prior_summary: str = "",
+) -> str:
     """Machine aggregate headers for search observations being folded into a summary.
 
     The compaction prompt already carries these headers, but a free-text summary still drops
     hit counts. Prepending the same machine facts to the summary text makes count survival
     independent of the summarizer.
     """
-    headers: list[str] = []
+    headers = re.findall(r"\[агрегат: [^\]]+\]", prior_summary)
     for _name, _arguments, observation in entries:
         facts = extract_aggregate_facts(observation)
         if facts["is_search_hits"]:
@@ -333,7 +350,7 @@ def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summari
     if not older:
         return False
     summary = (summarize(older) or "").strip()
-    facts = fold_aggregate_headers(older)
+    facts = fold_aggregate_headers(older, prior_summary=state.summary)
     if facts:
         summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:

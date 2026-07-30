@@ -94,7 +94,13 @@ def step_prompt(
     trigger = budget.compaction_trigger_chars(policy.compact_share)
     if trigger <= 0 or len(prompt) <= trigger:
         return prompt
-    summarize = lambda older: summarize_entries(complete, older, trigger)  # noqa: E731
+    summarize = lambda older: summarize_entries(  # noqa: E731
+        complete,
+        older,
+        trigger,
+        prior_summary=state.summary,
+        telemetry=state.telemetry,
+    )
     if not compact_state(policy, state, summarize):
         return prompt
     return build_agent_prompt_lines(task, catalog, policy_history_lines(policy, state))
@@ -134,6 +140,7 @@ def run_episode(
             steps -= 1
             status = STATUS_CONTEXT_OVERFLOW
             break
+        state.telemetry.model_input_prompt_chars += len(prompt)
         raw = complete(prompt)
         call = parse_tool_call(raw)
         if call is None:  # the model answered in prose -> treat as the final answer
@@ -177,6 +184,9 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
         # here too: the step whose size ended the episode is the one worth seeing.
         row["max_prompt_tokens"] = prompt_tokens(telemetry.max_prompt_chars)
         row["total_prompt_tokens"] = prompt_tokens(telemetry.total_prompt_chars)
+        row["total_model_input_tokens"] = prompt_tokens(telemetry.model_input_prompt_chars)
+        row["compaction_prompt_tokens"] = prompt_tokens(telemetry.compaction_prompt_chars)
+        row["n_model_calls"] = episode.n_steps + telemetry.n_compactions
         row["observation_bytes"] = telemetry.observation_bytes
         row["n_compactions"] = telemetry.n_compactions
         row["n_trimmed_observations"] = telemetry.n_trimmed_observations

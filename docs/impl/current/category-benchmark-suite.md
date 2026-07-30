@@ -267,9 +267,10 @@ The loop's context handling is its own comparison axis. `run_episode` takes a `C
 a `ContextBudget`, and checks every step's prompt against the resolved window before the call: a
 prompt that does not fit is never sent and the episode ends as `context_overflow` rather than as a
 wrong answer. Each case row carries the context accounting (`max_prompt_tokens`,
-`total_prompt_tokens`, `observation_bytes`, `n_compactions`, `n_trimmed_observations`) alongside
-the completion headline. `bench-agentic-context` ranks the four policies for one model; the lane,
-its paired reading, and its bundles are documented in
+`total_prompt_tokens`, `total_model_input_tokens`, `compaction_prompt_tokens`, `n_model_calls`,
+`observation_bytes`, `n_compactions`, `n_trimmed_observations`) alongside the completion headline.
+`bench-agentic-context` ranks the four policies for one model; the lane, its paired reading, and its
+bundles are documented in
 [extended workflows](extended-workflows.md#agent-context-management-policies).
 
 ## Summarization

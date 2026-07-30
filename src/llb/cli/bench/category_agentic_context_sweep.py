@@ -50,35 +50,20 @@ def bench_agentic_context_sweep_cmd(
     long-transcript reading, pass ``--axes keep_last_n`` with a multi-step medium-observation
     task set and a raised ``--max-steps``.
     """
-    from llb.bench.agentic.context_budget import fixed_budget, resolve_context_budget
     from llb.bench.agentic.run import load_tasks_file
     from llb.bench.agentic_context_sweep import ConstantSweepRun, parse_axes, run_constant_sweep
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
+    from llb.cli.bench._agent_context import resolve_agent_context_budget
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     axis_list = parse_axes(axes)
-    if max_prompt_chars is not None:
-        budget = fixed_budget(max_prompt_chars)
-    else:
-        ollama_num_ctx = cfg.max_model_len or cfg.context_budget
-        if cfg.backend == "ollama" and ollama_num_ctx:
-            from llb.backends.ollama import OllamaLauncher
-            from llb.backends.served_window import is_ollama_base_url, native_root
-
-            native_host = (
-                native_root(base_url)
-                if base_url and is_ollama_base_url(base_url, cfg.ollama_host)
-                else cfg.ollama_host
-            )
-            warm = OllamaLauncher(cfg.model, host=native_host, num_ctx=ollama_num_ctx)
-            warm.start()
-            try:
-                warm.ensure_num_ctx(timeout=cfg.request_timeout_s)
-            finally:
-                warm.stop()
-        budget = resolve_context_budget(cfg, probe=True)
+    budget = resolve_agent_context_budget(
+        cfg,
+        base_url=base_url,
+        max_prompt_chars=max_prompt_chars,
+    )
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
 
