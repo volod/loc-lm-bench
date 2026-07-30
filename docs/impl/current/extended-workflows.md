@@ -119,16 +119,19 @@ The four policies (each a fresh episode over the identical task set):
   replaces the older steps (the agent-loop counterpart of the chain lane's `summary`). One recent
   step stays verbatim; when the prompt was blown by that most recent observation there are no older
   steps to fold, and the whole transcript is summarized rather than letting the policy degenerate
-  into `full`. The summary marker carries the count of steps it stands in for, so a folded step is
-  never silently absent. Search observations being folded also inject their aggregate headers into
-  the summary text itself (not only into the summarizer prompt), so hit counts do not depend on the
-  free-text summary remembering a number. Two rules keep the policy honest: at most ONE compaction
-  per step (if the compacted prompt still does not fit, the guard is what ends the episode, not
-  another round of summarizing), and the summarize call is ITSELF capped at the trigger size -- its
-  input is the transcript that just blew the step prompt, so an uncapped summarizer is the one call
-  in the loop guaranteed to overflow, and it would return a silently truncated summary the policy
-  then trusts for the rest of the episode. An empty summary is treated as a no-op rather than
-  folding those steps away with nothing standing in for them.
+  into `full`. Live steps also share the `observation_cap` trim (same char budget and aggregate
+  header), so a fat search hit does not re-blow every later prompt. When the summary already
+  carries machine hit-count facts, a finish cue names the known `hits=` value and tells the model
+  to call `finish` instead of searching again. The summary marker carries the count of steps it
+  stands in for, so a folded step is never silently absent. Search observations being folded also
+  inject their aggregate headers into the summary text itself (not only into the summarizer prompt),
+  so hit counts do not depend on the free-text summary remembering a number. Two rules keep the
+  policy honest: at most ONE compaction per step (if the compacted prompt still does not fit, the
+  guard is what ends the episode, not another round of summarizing), and the summarize call is
+  ITSELF capped at the trigger size -- its input is the transcript that just blew the step prompt,
+  so an uncapped summarizer is the one call in the loop guaranteed to overflow, and it would return
+  a silently truncated summary the policy then trusts for the rest of the episode. An empty summary
+  is treated as a no-op rather than folding those steps away with nothing standing in for them.
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
@@ -254,11 +257,19 @@ prepended when an observation is trimmed, and the same facts are injected into a
 so a free-text summarizer cannot drop them. The report breaks completion out by task kind
 (`count` / `locate` / `other`) and states a vs-pre-header delta on the count slice.
 
-Blackwell host evidence (2026-07-29): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
-`--max-model-len 8192` (prompt budget 21504 chars), the same 24-task shape (4 seed + 10
-`search-count` + 10 `search-locate` over 250 UA docs). Bundles under
-`.data/agentic-context/20260729T1515*` (four policies) and
-`.data/agentic-context/20260729T155227*` (compact re-run after summary-injection).
+`compact` also applies the same live observation-cap trim (and stamps
+`n_trimmed_observations`), and when a compacted summary already carries `hits=` facts a finish cue
+names that count and steers the model to call `finish` instead of searching again
+(`src/llb/bench/agentic/context.py`). Without those, compact burned the 6-step budget on repeated
+compactions and never finished count tasks even after summary injection.
+
+Blackwell / RTX 4060 Ti host evidence (2026-07-29 pre-recovery; 2026-07-30 post-recovery):
+`MamayLM-Gemma-3-12B-IT-v2.0` on Ollama, `--max-model-len 8192` (prompt budget 21504 chars), the
+same 24-task shape (4 seed + 10 `search-count` + 10 `search-locate` over 250 UA docs). Pre-recovery
+bundles under `.data/agentic-context/20260729T1515*` / `20260729T155227*`. Post-recovery bundles
+under `.data/agentic-context/20260730T0952*` (266 calls, 3.6 tok/s).
+
+Pre-recovery (aggregate headers on trim + summary injection only):
 
 | policy | completion | count | locate | other | overflow | vs pre-header count |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -267,13 +278,25 @@ Blackwell host evidence (2026-07-29): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
 | `keep_last_n` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
 | `compact` | 0.458 | 0.000 | 1.000 | 0.250 | 0 | +0.000 |
 
+Post-recovery (compact live trim + finish cue):
+
+| policy | completion | count | locate | other | overflow | vs pre-header count |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `full` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `observation_cap` | **0.875** | **1.000** | 1.000 | 0.250 | 0 | **+1.000** |
+| `keep_last_n` | 0.458 | 0.000 | 1.000 | 0.250 | 10 | +0.000 |
+| `compact` | **0.875** | **1.000** | 1.000 | 0.250 | 0 | **+1.000** |
+
 Verdict: **aggregate-safe trimming recovered the count slice under `observation_cap`** (10/10
-count tasks finish in 2 steps with the correct integer; paired d(completion) vs `full` on the
-count slice is +1.000 [+1.000, +1.000]). `observation_cap` also separates on the full set
-(+0.417 [+0.208, +0.625]) and is the recommendation. **`compact` did not recover count**: episodes
-still burn the 6-step budget with repeated compactions and never call `finish` (incomplete, empty
-answer) -- the loss is elsewhere than the missing total, so the header alone is not enough for
-that policy on this model. `keep_last_n` and `full` still overflow the ten count tasks at step 1.
+count tasks finish with the correct integer; paired d(completion) vs `full` on the count slice is
++1.000 [+1.000, +1.000]). **`compact` now recovers the same count slice** once live steps share
+the observation-cap trim: 10/10 count tasks complete, paired d(completion) vs `full` on the count
+slice is +1.000 [+1.000, +1.000], and mean prompt tokens match `observation_cap` (1362). On this
+6-step count-heavy set every compact count episode finished with `n_compactions=0` -- the live trim
+kept prompts under the compact trigger, so the finish cue was latent insurance rather than the
+active path. Operators who prefer compact for longer transcripts can keep it on count-heavy short
+episodes; for this shape `observation_cap` is the simpler equivalent. `keep_last_n` and `full`
+still overflow the ten count tasks at step 1-2.
 
 ## Context-Policy Comparison
 

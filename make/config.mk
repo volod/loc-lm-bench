@@ -301,6 +301,7 @@ AGENT_CONTEXT_POLICIES ?= full,observation_cap,keep_last_n,compact
 AGENT_CONTEXT_TASKS ?= $(AGENTIC_TASKS)
 AGENT_CONTEXT_MAX_STEPS ?= $(AGENTIC_MAX_STEPS)
 AGENT_CONTEXT_OBSERVATION_CAP_CHARS ?= 800
+# Also trims live steps under the compact policy (same cap + aggregate header).
 AGENT_CONTEXT_KEEP_LAST_N ?= 3
 AGENT_CONTEXT_COMPACT_SHARE ?= 0.5
 # Leave empty to resolve the served model's usable window; set to force a prompt-char budget

@@ -43,24 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-finish-recovery (optional)
-
-Aggregate-safe headers recovered the `search-count` slice under `observation_cap` but not under
-`compact`: on the Blackwell re-run, compact still burns the 6-step budget with repeated
-compactions and never calls `finish`
-([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
-Diagnose whether compact should also apply observation-cap trimming to live steps, force a
-finish-oriented compaction cue when aggregate facts are already in the summary, or be recorded as
-inapplicable for count-heavy task sets at this step budget.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the aggregate header path and the kind-split report.
-- User-visible outcome: an operator who prefers compact for prompt cost learns whether count tasks
-  can finish under it, or is told to use `observation_cap` for that slice.
-- Scope boundary: in scope -- compact finish behavior on the 24-task set. Out of scope -- new
-  policies or changing the observation_cap char default.
-- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
-
 ### agent-context-policy-constant-sweep (optional)
 
 Three constants decide what the agent context policies do, and all three were chosen to be
@@ -83,7 +65,7 @@ expose it.
   inapplicable at this step budget.
 - Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
   against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
-  content-aware trim beyond the delivered aggregate header
+  content-aware trim beyond the aggregate header
   ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)), and changing the
   shipped defaults before a paired delta supports it.
 - Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
@@ -95,6 +77,26 @@ expose it.
   paired intervals against the shipped values, and states a verdict per constant.
 - Documentation target: the policy list of
   [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+
+### agent-context-policy-compact-vs-cap-long-transcript (optional)
+
+With live observation-cap trimming, `compact` recovered the count slice but never fired a
+compaction on the 24-task 6-step set (`n_compactions=0`), so it was observationally identical to
+`observation_cap`
+([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)). Measure
+`compact` versus `observation_cap` on a longer-transcript (or tighter-window) set where the compact
+trigger still fires AFTER the live trim, so the summarizer and finish cue are the active path --
+not just latent insurance -- and report whether compact then buys anything beyond the trim.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the live-trim + finish-cue compact path
+  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
+- User-visible outcome: an operator learns when compact is worth its summarizer cost over plain
+  `observation_cap`, instead of assuming the short-episode tie generalizes.
+- Scope boundary: in scope -- a task shape or budget where compaction fires, paired completion and
+  prompt-token deltas, and a clear prefer-compact / prefer-cap / still-tied verdict. Out of scope --
+  new policies or changing the shipped observation-cap default.
+- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
 
 ### agent-harness-loop-policy-recommendation
 

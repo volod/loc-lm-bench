@@ -13,7 +13,10 @@ module makes it a POLICY ROW, exactly as `llb.bench.chain_context_policy` does f
     marker line so a missing step is visible instead of looking like it never happened;
   - ``compact``         -- a model-written running summary replaces the older steps once the prompt
     crosses a share of the usable window (the agent-loop counterpart of the chain lane's
-    ``summary``).
+    ``summary``). Live steps also get the observation-cap trim (with aggregate headers), and when
+    the summary already carries hit-count facts a finish cue tells the model to call ``finish``
+    rather than search again -- without those, compact burns the step budget on repeated
+    compactions and never answers count tasks.
 
 Everything here is pure and unit-testable over a fake ``complete``: the policy assembles a
 deterministic prompt from the transcript, and the telemetry it accumulates (prompt chars per step,
@@ -22,6 +25,7 @@ observation bytes, trims, compactions) is what makes the overflow observable aft
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -71,6 +75,16 @@ _ELISION = "[...обрізано {dropped} символів...]"
 # steps went away with nothing standing in for them, `compact` says how many the summary covers.
 _DROPPED_MARKER = "- [опущено попередніх кроків: {dropped}]"
 _SUMMARY_MARKER = "- [підсумок попередніх кроків ({dropped}): {summary}]"
+# When compaction has already folded search-hit aggregates into the summary, a count task has the
+# answer in the prompt -- but without an explicit cue the model keeps searching and burning the
+# step budget on another compaction. Name the known hit count so finish is the obvious next call.
+_FINISH_CUE = (
+    "- [підказка: hits={hits} вже в підсумку -- виклич finish з цією відповіддю, не шукай знову]"
+)
+_AGGREGATE_HITS = re.compile(r"\[агрегат: hits=(\d+)\b")
+
+# Policies that trim live observations (and stamp `n_trimmed_observations`).
+_TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
 
 # One transcript entry: the tool name, its arguments, and the observation it returned.
 TranscriptEntry = tuple[str, dict[str, Any], str]
@@ -140,7 +154,7 @@ class ContextState:
         self.entries.append(entry)
         self.executed.append(entry)
         self.telemetry.observation_bytes += len(observation.encode("utf-8"))
-        if policy.name == POLICY_OBSERVATION_CAP:
+        if policy.name in _TRIMMING_POLICIES:
             _, trimmed = trim_observation(observation, policy.observation_cap_chars)
             self.telemetry.n_trimmed_observations += 1 if trimmed else 0
 
@@ -181,18 +195,27 @@ def format_entry(entry: TranscriptEntry) -> str:
     return f"- {name}({json.dumps(arguments, ensure_ascii=False)}) -> {observation}"
 
 
+def summary_hit_count(summary: str) -> int | None:
+    """First machine-computed hit count embedded in a compacted summary, if any."""
+    match = _AGGREGATE_HITS.search(summary)
+    return int(match.group(1)) if match else None
+
+
 def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str]:
     """The history lines this policy puts in the next prompt, markers included.
 
     `full` renders every entry verbatim -- byte-identical to the pre-policy loop, which is what
-    lets the baseline row reproduce the recorded agentic rows exactly.
+    lets the baseline row reproduce the recorded agentic rows exactly. `compact` trims live
+    observations the same way `observation_cap` does so a fat search hit does not re-blow the
+    prompt every step, and when the summary already carries aggregate hit facts a finish cue
+    steers the model away from another search/compact cycle.
     """
     entries = state.entries
     dropped = state.n_dropped
     if policy.name == POLICY_KEEP_LAST_N and len(entries) > policy.keep_last_n:
         dropped += len(entries) - policy.keep_last_n
         entries = entries[-policy.keep_last_n :] if policy.keep_last_n > 0 else []
-    if policy.name == POLICY_OBSERVATION_CAP:
+    if policy.name in _TRIMMING_POLICIES:
         entries = [
             (name, arguments, trim_observation(observation, policy.observation_cap_chars)[0])
             for name, arguments, observation in entries
@@ -201,7 +224,11 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
     if state.summary:
         # The summary STANDS IN for the folded steps, so it carries their count itself -- a
         # separate "dropped" line beside it would read as a second, uncovered loss.
-        return [_SUMMARY_MARKER.format(dropped=dropped, summary=state.summary), *lines]
+        out = [_SUMMARY_MARKER.format(dropped=dropped, summary=state.summary)]
+        hits = summary_hit_count(state.summary)
+        if hits is not None:
+            out.append(_FINISH_CUE.format(hits=hits))
+        return out + lines
     return ([_DROPPED_MARKER.format(dropped=dropped)] if dropped else []) + lines
 
 

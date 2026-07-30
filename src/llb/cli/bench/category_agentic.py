@@ -156,7 +156,9 @@ def bench_agentic_context_cmd(
     ),
     max_steps: int = typer.Option(6, min=1, help="step budget per task"),
     observation_cap_chars: int = typer.Option(
-        800, min=1, help="`observation_cap`: chars kept per observation (head + tail)"
+        800,
+        min=1,
+        help="chars kept per observation under `observation_cap` and under `compact` live steps",
     ),
     keep_last_n: int = typer.Option(3, min=0, help="`keep_last_n`: most-recent steps kept whole"),
     compact_share: float = typer.Option(
