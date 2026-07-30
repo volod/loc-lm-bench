@@ -339,9 +339,7 @@ def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
         complete,
         budget=budget,
         # Cap above BIG so live trimming does not prevent the compact trigger this test measures.
-        policy=ContextPolicy(
-            name=POLICY_COMPACT, compact_share=0.5, observation_cap_chars=100_000
-        ),
+        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5, observation_cap_chars=100_000),
     )
     summarize_calls = [p for p in prompts if "Стисло підсумуй" in p]
     assert summarize_calls and all(budget.fits(len(p)) for p in summarize_calls)
