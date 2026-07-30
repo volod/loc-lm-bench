@@ -1,6 +1,6 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-agentic-context bench-chain-context composite-headline platform-matrix
+.PHONY: agentic-harness-compare bench-agentic-context bench-agentic-context-sweep bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -17,11 +17,22 @@ bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_
 		--model "$(MODEL)" --backend "$(BACKEND)" \
 		--policies "$(AGENT_CONTEXT_POLICIES)" --max-steps "$(AGENT_CONTEXT_MAX_STEPS)" \
 		--observation-cap-chars "$(AGENT_CONTEXT_OBSERVATION_CAP_CHARS)" \
+		--observation-head-share "$(AGENT_CONTEXT_OBSERVATION_HEAD_SHARE)" \
 		--keep-last-n "$(AGENT_CONTEXT_KEEP_LAST_N)" \
 		--compact-share "$(AGENT_CONTEXT_COMPACT_SHARE)" \
 		$(if $(AGENT_CONTEXT_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_MAX_PROMPT_CHARS)",) \
 		$(if $(AGENT_CONTEXT_BASE_URL),--base-url "$(AGENT_CONTEXT_BASE_URL)",) \
 		$(if $(AGENT_CONTEXT_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_MAX_MODEL_LEN)",)
+
+bench-agentic-context-sweep: ## Sweep observation_cap_chars / head_share / keep_last_n; pin or expose each (MODEL= BACKEND= AGENT_CONTEXT_SWEEP_TASKS= AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-sweep --tasks "$(AGENT_CONTEXT_SWEEP_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_SWEEP_MAX_STEPS)" \
+		$(if $(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)",) \
+		$(if $(AGENT_CONTEXT_SWEEP_BASE_URL),--base-url "$(AGENT_CONTEXT_SWEEP_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)",)
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

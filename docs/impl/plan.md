@@ -43,41 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-constant-sweep (optional)
-
-Three constants decide what the agent context policies do, and all three were chosen to be
-reasonable rather than measured: `DEFAULT_OBSERVATION_CAP_CHARS = 800`, the 60/40 head/tail split of
-that budget (`OBSERVATION_HEAD_SHARE`), and `DEFAULT_KEEP_LAST_N = 3`
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)). The measured
-run makes the third one urgent in its own right: `keep_last_n` moved the prompt by 20 tokens and
-changed nothing, because at a 6-step budget with 3 steps kept the oversized observation that blew the
-prompt is always INSIDE the kept window. Either that policy needs a keep small enough to reach the
-blowup on realistic step budgets, or it is a policy for long transcripts that this task shape cannot
-exercise -- and the lane should say which. Sweep the three constants on a task set whose observations
-are large, report completion against prompt tokens per setting, and pin each value with evidence or
-expose it.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `trim_observation` in `src/llb/bench/agentic/context.py` and the paired
-  reading in `src/llb/bench/agentic_context_report.py` unchanged.
-- User-visible outcome: the shipped policy constants are measured tradeoffs between prompt cost and
-  completion, not round numbers, and `keep_last_n` is either useful at some setting or recorded as
-  inapplicable at this step budget.
-- Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
-  against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
-  content-aware trim beyond the aggregate header
-  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)), and changing the
-  shipped defaults before a paired delta supports it.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
-  setting.
-- Execution path: `make bench-agentic-context AGENT_CONTEXT_POLICIES=observation_cap,keep_last_n
-  AGENT_CONTEXT_OBSERVATION_CAP_CHARS=<c> AGENT_CONTEXT_KEEP_LAST_N=<n>` per setting on the CUDA
-  host; CI covers the trim's span arithmetic over committed fixtures.
-- Acceptance gates: `make ci` green; the report carries completion and prompt tokens per setting with
-  paired intervals against the shipped values, and states a verdict per constant.
-- Documentation target: the policy list of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
-
 ### agent-context-policy-compact-vs-cap-long-transcript (optional)
 
 With live observation-cap trimming, `compact` recovered the count slice but never fired a
@@ -97,6 +62,25 @@ not just latent insurance -- and report whether compact then buys anything beyon
   prompt-token deltas, and a clear prefer-compact / prefer-cap / still-tied verdict. Out of scope --
   new policies or changing the shipped observation-cap default.
 - Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
+
+### agent-context-keep-last-n-long-transcript (optional)
+
+The constant sweep exposed `keep_last_n` because keep=1 is flat on completion but separates
+cheaper on prompt tokens on the 24-task 6-step set
+([extended workflows](current/extended-workflows.md#agent-context-policy-constants)). That cost win
+is still a short-episode reading: measure keep=1 versus the shipped keep=3 on a longer-transcript
+set where dropping older steps is the intended path, and report whether the cheaper cell stays flat
+on completion or finally separates.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `make bench-agentic-context-sweep` / `AGENT_CONTEXT_KEEP_LAST_N`.
+- User-visible outcome: an operator knows whether `--keep-last-n 1` is only a short-episode cost
+  tweak or a better default once transcripts grow past the current 6-step budget.
+- Scope boundary: in scope -- a longer-transcript (or higher max_steps) keep grid with paired
+  completion and prompt-token deltas. Out of scope -- rewriting the shipped default without a
+  separated completion win.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#agent-context-policy-constants).
 
 ### agent-harness-loop-policy-recommendation
 

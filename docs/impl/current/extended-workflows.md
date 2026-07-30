@@ -100,6 +100,8 @@ Core locations:
 - `src/llb/bench/agentic_context.py`: the four-policy run + persistence;
 - `src/llb/bench/agentic_context_report.py`: the paired reading, the policy table, and the
   recommendation;
+- `src/llb/bench/agentic_context_sweep.py`: the constant-grid sweep (cap / head-share / keep_last_n)
+  and pin/expose/inapplicable verdicts;
 - `src/llb/board/agentic_context.py`: one-model policy comparison board rows;
 - `src/llb/prompts/templates/bench/agentic/compact_summary.*`: the reviewable compaction prompt.
 
@@ -177,16 +179,21 @@ overflow more often than the baseline.
 
 ```bash
 llb bench-agentic-context --tasks <tasks.json> --model <model> --backend <backend> \
-  --policies full,observation_cap,keep_last_n,compact
+  --policies full,observation_cap,keep_last_n,compact \
+  --observation-cap-chars 800 --observation-head-share 0.6 --keep-last-n 3
 llb bench-agentic-context-compare --model <model>
+llb bench-agentic-context-sweep --tasks <tasks.json> --model <model> --backend <backend>
 make bench-agentic-context MODEL=<model> BACKEND=<backend> \
   AGENT_CONTEXT_POLICIES=full,observation_cap,keep_last_n,compact
+make bench-agentic-context-sweep MODEL=<model> BACKEND=<backend> \
+  AGENT_CONTEXT_SWEEP_TASKS=<tasks.json> AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=8192
 ```
 
 `AGENT_CONTEXT_MAX_PROMPT_CHARS` (or `--max-prompt-chars`) forces the budget instead of resolving
 it, which is how the guard is exercised on purpose. `AGENT_CONTEXT_MAX_MODEL_LEN` (or
 `--max-model-len`) is the declared window forwarded to Ollama as `num_ctx` and compared against the
-probed served window. Each policy persists its OWN bundle under
+probed served window. `AGENT_CONTEXT_OBSERVATION_HEAD_SHARE` (or `--observation-head-share`) is the
+fraction of the observation-cap budget kept from the head. Each policy persists its OWN bundle under
 `$DATA_DIR/agentic-context/<timestamp>/` tagged with the policy (mirroring the per-harness and
 per-chain-policy bundles); provenance records the policy, its settings, the `task_set_digest` that
 proves both policies ran the same set, the resolved `max_prompt_chars`, `declared_max_model_len`,
@@ -198,7 +205,8 @@ CI drives every policy, the compaction path, and the guard over the fake endpoin
 (`tests/llb/bench/test_agentic_context.py`, `tests/llb/backends/test_served_window.py`), including
 the assertion that the `full` policy's prompt is byte-identical to the pre-policy loop's, that no
 episode in any policy sends a prompt over the resolved window, and that a declared window larger
-than a probed one is bound by the probe.
+than a probed one is bound by the probe. The constant-sweep lane's trim arithmetic and pin/expose
+verdicts are covered in `tests/llb/bench/test_agentic_context_sweep.py`.
 
 CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
 `OllamaLauncher.ensure_num_ctx(8192)`, `/api/ps` reported `context_length=8192` and
@@ -297,6 +305,56 @@ kept prompts under the compact trigger, so the finish cue was latent insurance r
 active path. Operators who prefer compact for longer transcripts can keep it on count-heavy short
 episodes; for this shape `observation_cap` is the simpler equivalent. `keep_last_n` and `full`
 still overflow the ten count tasks at step 1-2.
+
+### Agent context-policy constants
+
+Three constants decide what `observation_cap` and `keep_last_n` do:
+`DEFAULT_OBSERVATION_CAP_CHARS` (800), `OBSERVATION_HEAD_SHARE` (0.6), and `DEFAULT_KEEP_LAST_N`
+(3). All three are CLI / Make knobs (`--observation-cap-chars`, `--observation-head-share`,
+`--keep-last-n` / `AGENT_CONTEXT_*`). `make bench-agentic-context-sweep` walks one-dimensional
+grids for each axis, pairs every non-shipped cell against the shipped value over shared bootstrap
+index sets, and states a pin / expose / inapplicable verdict per constant without rewriting the
+defaults.
+
+```bash
+make bench-agentic-context-sweep MODEL=<model> BACKEND=<backend> \
+  AGENT_CONTEXT_SWEEP_TASKS=<tasks.json> AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=8192
+```
+
+Core locations: `src/llb/bench/agentic_context_sweep.py` (grids, pairing, verdicts),
+`src/llb/cli/bench/category_agentic_context_sweep.py`, CI span arithmetic in
+`tests/llb/bench/test_agentic_context_sweep.py`. Bundles land under
+`$DATA_DIR/agentic-context-sweep/<run>/` (one per setting plus a summary manifest).
+
+CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
+`--max-model-len 8192` (prompt budget 21504 chars), the same 24-task large-observation set, 8
+unique cells (shipped `observation_cap` shared across the cap and head-share baselines), ~73 min,
+562 calls at 3.8 tok/s. Summary under `.data/agentic-context-sweep/20260730T125612*`.
+
+| axis | setting | completion | mean prompt tok | overflow | d(compl) vs shipped | d(prompt) vs shipped |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| cap | 400 | 0.708 | 1280 | 0 | -0.167 [-0.333, -0.042] | -83 [-283, +104] |
+| cap | **800** | **0.875** | 1362 | 0 | baseline | baseline |
+| cap | 1600 | 0.875 | 1323 | 0 | +0.000 [+0.000, +0.000] | -40 [-206, +135] |
+| head | 0.5 | 0.875 | 1305 | 0 | +0.000 [+0.000, +0.000] | -58 [-225, +91] |
+| head | **0.6** | **0.875** | 1362 | 0 | baseline | baseline |
+| head | 0.7 | 0.875 | 1426 | 0 | +0.000 [+0.000, +0.000] | +63 [+0.000, +190] |
+| keep | 1 | 0.500 | 3908 | 8 | +0.042 [+0.000, +0.125] | **-474 [-1145, -21]** |
+| keep | 2 | 0.500 | 4379 | 10 | +0.042 [+0.000, +0.125] | -3 [-6, -0.5] |
+| keep | **3** | 0.458 | 4382 | 10 | baseline | baseline |
+
+Verdicts:
+
+- **pin** `observation_cap_chars=800`: cap=400 separates worse on completion; cap=1600 is flat.
+  Keep the measured default.
+- **pin** `observation_head_share=0.6`: 0.5 / 0.7 are flat on completion (prompt deltas do not
+  separate clear of zero either). Keep the measured default; the knob stays operator-visible.
+- **expose** `keep_last_n=3`: keep=1 is flat on completion but separates cheaper on prompt tokens
+  (-474 [-1145, -21]) and drops overflows from 10 to 8. The knob was already CLI-exposed; the
+  shipped default stays 3 because the completion reading is flat -- operators who care about
+  prompt cost on this short-episode shape can pass `--keep-last-n 1`. The earlier "nearly a
+  no-op at keep=3" reading still holds for the shipped cell; keep=1 is the setting that starts
+  to reach the blowup.
 
 ## Context-Policy Comparison
 

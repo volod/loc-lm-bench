@@ -160,6 +160,12 @@ def bench_agentic_context_cmd(
         min=1,
         help="chars kept per observation under `observation_cap` and under `compact` live steps",
     ),
+    observation_head_share: float = typer.Option(
+        0.6,
+        min=0.01,
+        max=0.99,
+        help="fraction of the observation-cap budget kept from the HEAD (rest from the tail)",
+    ),
     keep_last_n: int = typer.Option(3, min=0, help="`keep_last_n`: most-recent steps kept whole"),
     compact_share: float = typer.Option(
         0.5, min=0.0, max=1.0, help="`compact`: share of the usable window that triggers a summary"
@@ -225,6 +231,7 @@ def bench_agentic_context_cmd(
             policies=policy_list,
             policy_overrides={
                 "observation_cap_chars": observation_cap_chars,
+                "observation_head_share": observation_head_share,
                 "keep_last_n": keep_last_n,
                 "compact_share": compact_share,
             },

@@ -53,11 +53,16 @@ CONTEXT_POLICIES: tuple[str, ...] = (
 
 # `observation_cap`: chars kept per observation. Sized so a normal tool result (a db value, a
 # calculator answer, a search hit list) is untouched and only a dumped file/corpus blob is trimmed.
+# PINNED at 800 by the 2026-07-30 constant sweep (cap=400 separates worse on completion; cap=1600
+# is flat) -- see extended-workflows.md#agent-context-policy-constants.
 DEFAULT_OBSERVATION_CAP_CHARS = 800
 # Split of the kept budget between the head and the tail of a trimmed observation. A tool result
-# usually leads with its shape and ends with its payload, so both ends carry signal.
+# usually leads with its shape and ends with its payload, so both ends carry signal. PINNED at 0.6
+# by the same sweep (0.5 / 0.7 flat on completion); exposed as `--observation-head-share`.
 OBSERVATION_HEAD_SHARE = 0.6
-# `keep_last_n`: how many most-recent steps survive in the prompt.
+# `keep_last_n`: how many most-recent steps survive in the prompt. Shipped at 3; the constant sweep
+# EXPOSES the knob because keep=1 is flat on completion but separates cheaper on prompt tokens on
+# the 24-task 6-step set -- do not silently rewrite the default from that cost-only reading.
 DEFAULT_KEEP_LAST_N = 3
 # `compact`: the share of the usable prompt budget that triggers a compaction, and how many recent
 # steps stay verbatim behind the summary (the model still needs its immediate working state).
@@ -97,6 +102,7 @@ class ContextPolicy:
 
     name: str = POLICY_FULL
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS
+    observation_head_share: float = OBSERVATION_HEAD_SHARE
     keep_last_n: int = DEFAULT_KEEP_LAST_N
     compact_share: float = DEFAULT_COMPACT_SHARE
     compact_keep_recent: int = DEFAULT_COMPACT_KEEP_RECENT
@@ -105,6 +111,10 @@ class ContextPolicy:
         if self.name not in CONTEXT_POLICIES:
             raise ValueError(
                 f"unknown context policy: {self.name!r}; choose from {CONTEXT_POLICIES}"
+            )
+        if not 0.0 < self.observation_head_share < 1.0:
+            raise ValueError(
+                f"observation_head_share must be in (0, 1), got {self.observation_head_share}"
             )
 
 
@@ -155,7 +165,11 @@ class ContextState:
         self.executed.append(entry)
         self.telemetry.observation_bytes += len(observation.encode("utf-8"))
         if policy.name in _TRIMMING_POLICIES:
-            _, trimmed = trim_observation(observation, policy.observation_cap_chars)
+            _, trimmed = trim_observation(
+                observation,
+                policy.observation_cap_chars,
+                head_share=policy.observation_head_share,
+            )
             self.telemetry.n_trimmed_observations += 1 if trimmed else 0
 
 
@@ -163,7 +177,11 @@ class ContextState:
 
 
 def trim_observation(
-    observation: str, cap_chars: int, *, aggregate_safe: bool = True
+    observation: str,
+    cap_chars: int,
+    *,
+    head_share: float = OBSERVATION_HEAD_SHARE,
+    aggregate_safe: bool = True,
 ) -> tuple[str, bool]:
     """Trim to `cap_chars`, keeping the head and the tail around an explicit elision marker.
 
@@ -171,11 +189,14 @@ def trim_observation(
     trimmed observation can tell it is looking at a fragment rather than a short tool result.
     When `aggregate_safe` and the observation is trimmed, a machine-computed header of hit count /
     total length / matched doc ids is PREPENDED (outside the cap) so a count question stays
-    answerable after a positional middle-of-list loss.
+    answerable after a positional middle-of-list loss. `head_share` is the fraction of the kept
+    budget given to the leading span (the rest goes to the tail).
     """
     if cap_chars <= 0 or len(observation) <= cap_chars:
         return observation, False
-    head_len = max(1, int(cap_chars * OBSERVATION_HEAD_SHARE))
+    if not 0.0 < head_share < 1.0:
+        raise ValueError(f"head_share must be in (0, 1), got {head_share}")
+    head_len = max(1, int(cap_chars * head_share))
     tail_len = max(0, cap_chars - head_len)
     dropped = len(observation) - head_len - tail_len
     marker = _ELISION.format(dropped=dropped)
@@ -217,7 +238,15 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
         entries = entries[-policy.keep_last_n :] if policy.keep_last_n > 0 else []
     if policy.name in _TRIMMING_POLICIES:
         entries = [
-            (name, arguments, trim_observation(observation, policy.observation_cap_chars)[0])
+            (
+                name,
+                arguments,
+                trim_observation(
+                    observation,
+                    policy.observation_cap_chars,
+                    head_share=policy.observation_head_share,
+                )[0],
+            )
             for name, arguments, observation in entries
         ]
     lines = [format_entry(entry) for entry in entries]
