@@ -52,7 +52,7 @@ def bench_agentic_context_sweep_cmd(
     """
     from llb.bench.agentic.context_budget import fixed_budget, resolve_context_budget
     from llb.bench.agentic.run import load_tasks_file
-    from llb.bench.agentic_context_sweep import parse_axes, run_constant_sweep
+    from llb.bench.agentic_context_sweep import ConstantSweepRun, parse_axes, run_constant_sweep
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
 
@@ -82,7 +82,7 @@ def bench_agentic_context_sweep_cmd(
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
 
-    def run(complete: LLMComplete):
+    def run(complete: LLMComplete) -> ConstantSweepRun:
         return run_constant_sweep(
             task_set,
             model=model,

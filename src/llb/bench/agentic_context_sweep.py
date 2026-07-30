@@ -290,8 +290,7 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
                     (
                         f"{cell.setting.label} separates on completion vs shipped "
                         f"({_delta_cell(completion)}); consider adopting it or keeping the knob "
-                        "operator-visible"
-                        + _long_transcript_note(axis, cells)
+                        "operator-visible" + _long_transcript_note(axis, cells)
                     ),
                 )
             worse.append(f"{cell.setting.label} ({_delta_cell(completion)})")
@@ -348,7 +347,6 @@ def _long_transcript_note(axis: str, cells: Sequence[SettingReport]) -> str:
             "so older steps were rarely dropped -- raise max_steps or deepen the task shape)"
         )
     return ""
-
 
 
 def format_sweep_table(settings: Sequence[SettingReport], verdicts: Sequence[AxisVerdict]) -> str:

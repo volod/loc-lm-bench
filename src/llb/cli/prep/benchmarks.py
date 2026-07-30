@@ -72,7 +72,7 @@ def prepare_agentic_long_transcript_cmd(
         build_long_transcript_tasks,
     )
 
-    tasks: list = []
+    tasks: list[dict[str, object]] = []
     if from_search_tasks is not None:
         source = _json.loads(from_search_tasks.read_text(encoding="utf-8"))
         tasks.extend(
