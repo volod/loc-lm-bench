@@ -55,32 +55,16 @@ not just latent insurance -- and report whether compact then buys anything beyon
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the live-trim + finish-cue compact path
-  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
+  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)). Prefer the
+  medium-observation search shrink from
+  [keep_last_n longer transcripts](current/extended-workflows.md#keep_last_n-on-longer-transcripts)
+  when a raised `max_steps` alone still leaves `n_compactions=0`.
 - User-visible outcome: an operator learns when compact is worth its summarizer cost over plain
   `observation_cap`, instead of assuming the short-episode tie generalizes.
 - Scope boundary: in scope -- a task shape or budget where compaction fires, paired completion and
   prompt-token deltas, and a clear prefer-compact / prefer-cap / still-tied verdict. Out of scope --
   new policies or changing the shipped observation-cap default.
 - Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
-
-### agent-context-keep-last-n-long-transcript (optional)
-
-The constant sweep exposed `keep_last_n` because keep=1 is flat on completion but separates
-cheaper on prompt tokens on the 24-task 6-step set
-([extended workflows](current/extended-workflows.md#agent-context-policy-constants)). That cost win
-is still a short-episode reading: measure keep=1 versus the shipped keep=3 on a longer-transcript
-set where dropping older steps is the intended path, and report whether the cheaper cell stays flat
-on completion or finally separates.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `make bench-agentic-context-sweep` / `AGENT_CONTEXT_KEEP_LAST_N`.
-- User-visible outcome: an operator knows whether `--keep-last-n 1` is only a short-episode cost
-  tweak or a better default once transcripts grow past the current 6-step budget.
-- Scope boundary: in scope -- a longer-transcript (or higher max_steps) keep grid with paired
-  completion and prompt-token deltas. Out of scope -- rewriting the shipped default without a
-  separated completion win.
-- Documentation target:
-  [extended workflows](current/extended-workflows.md#agent-context-policy-constants).
 
 ### agent-harness-loop-policy-recommendation
 

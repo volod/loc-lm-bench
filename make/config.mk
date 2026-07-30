@@ -314,9 +314,18 @@ AGENT_CONTEXT_MAX_MODEL_LEN ?=
 # Constant-sweep task set (large observations); defaults to the same agentic task path.
 AGENT_CONTEXT_SWEEP_TASKS ?= $(AGENT_CONTEXT_TASKS)
 AGENT_CONTEXT_SWEEP_MAX_STEPS ?= $(AGENT_CONTEXT_MAX_STEPS)
+AGENT_CONTEXT_SWEEP_AXES ?= observation_cap_chars,observation_head_share,keep_last_n
 AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS ?= $(AGENT_CONTEXT_MAX_PROMPT_CHARS)
 AGENT_CONTEXT_SWEEP_BASE_URL ?= $(AGENT_CONTEXT_BASE_URL)
 AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN ?= $(AGENT_CONTEXT_MAX_MODEL_LEN)
+# keep_last_n long-transcript lane: multi-step medium-observation tasks + raised step budget.
+AGENT_CONTEXT_KEEP_LONG_TASKS ?= $(DATA_DIR)/agentic-context/tasks_long_transcript.json
+AGENT_CONTEXT_KEEP_LONG_MAX_STEPS ?= 12
+AGENT_CONTEXT_KEEP_LONG_AXES ?= keep_last_n
+AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH ?= $(DATA_DIR)/agentic-context/tasks_24_ua_squad.json
+AGENT_CONTEXT_KEEP_LONG_MAX_MATCH_DOCS ?= 6
+AGENT_CONTEXT_KEEP_LONG_MAX_OTHER_DOCS ?= 6
+AGENT_CONTEXT_KEEP_LONG_MAX_DOC_CHARS ?= 180
 KNOWLEDGE_CUTOFF_EVENTS ?=
 KNOWLEDGE_CUTOFF_DATASET ?= apoorvumang/knowledge-cutoff-benchmark
 KNOWLEDGE_CUTOFF_REVISION ?= main

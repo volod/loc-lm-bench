@@ -21,6 +21,12 @@ def bench_agentic_context_sweep_cmd(
         None, help="OpenAI-compatible base URL of a running endpoint (skips launching)"
     ),
     max_steps: int = typer.Option(6, min=1, help="step budget per task"),
+    axes: str = typer.Option(
+        "observation_cap_chars,observation_head_share,keep_last_n",
+        help="comma-separated constant axes to sweep "
+        "(observation_cap_chars|observation_head_share|keep_last_n); "
+        "use keep_last_n alone for the long-transcript keep grid",
+    ),
     max_prompt_chars: Optional[int] = typer.Option(
         None,
         help="override the resolved per-step prompt budget (chars); default resolves the served "
@@ -38,18 +44,21 @@ def bench_agentic_context_sweep_cmd(
 ) -> None:
     """Sweep observation_cap_chars / observation_head_share / keep_last_n and pin or expose each.
 
-    Holds the model and task set fixed, walks the three one-dimensional grids, pairs every
+    Holds the model and task set fixed, walks the requested one-dimensional grids, pairs every
     non-shipped cell against the shipped default, and prints a pin / expose / inapplicable
-    verdict per constant. Does not rewrite the shipped defaults.
+    verdict per constant. Does not rewrite the shipped defaults. For the keep_last_n
+    long-transcript reading, pass ``--axes keep_last_n`` with a multi-step medium-observation
+    task set and a raised ``--max-steps``.
     """
     from llb.bench.agentic.context_budget import fixed_budget, resolve_context_budget
     from llb.bench.agentic.run import load_tasks_file
-    from llb.bench.agentic_context_sweep import run_constant_sweep
+    from llb.bench.agentic_context_sweep import parse_axes, run_constant_sweep
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
+    axis_list = parse_axes(axes)
     if max_prompt_chars is not None:
         budget = fixed_budget(max_prompt_chars)
     else:
@@ -79,6 +88,7 @@ def bench_agentic_context_sweep_cmd(
             model=model,
             backend=backend,
             complete=complete,
+            axes=axis_list,
             max_steps=max_steps,
             budget=budget,
             data_dir=cfg.data_dir,
@@ -98,7 +108,7 @@ def bench_agentic_context_sweep_cmd(
     typer.echo(
         f"[bench-agentic-context-sweep] model={model} "
         f"prompt-budget={budget.max_prompt_chars or 'unbounded'} chars "
-        f"source={budget.budget_source} "
+        f"source={budget.budget_source} axes={','.join(axis_list)} "
         f"settings={len(result.settings)} verdicts="
         + ",".join(f"{v.axis}={v.verdict}" for v in result.verdicts)
     )

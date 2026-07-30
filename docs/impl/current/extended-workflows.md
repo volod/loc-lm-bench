@@ -356,6 +356,46 @@ Verdicts:
   no-op at keep=3" reading still holds for the shipped cell; keep=1 is the setting that starts
   to reach the blowup.
 
+### keep_last_n on longer transcripts
+
+The short-episode expose of keep=1 was a cost reading on a 6-step fat-observation set. The
+follow-up lane asks whether that cheaper cell stays flat on completion once transcripts grow past
+the shipped keep. `make bench-agentic-context-keep-long` builds a medium-observation search set
+from the fat count/locate tasks (`prepare-agentic-long-transcript --from-search-tasks`, capping
+matching/other docs and rebinding success), then sweeps `keep_last_n` alone at
+`AGENT_CONTEXT_KEEP_LONG_MAX_STEPS=12`.
+
+```bash
+make bench-agentic-context-keep-long MODEL=<model> BACKEND=<backend> \
+  AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=8192
+```
+
+Core locations: `src/llb/bench/agentic_long_transcript.py` (medium-search shrink + synthetic
+pipelines for CI), `make bench-agentic-context-keep-long`, axes filter
+`AGENT_CONTEXT_SWEEP_AXES=keep_last_n`.
+
+CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
+`--max-model-len 8192`, 14 medium search tasks (from the 24-task UA-squad set), keep grid only,
+`max_steps=12`, ~41 min, 362 calls at 4.7 tok/s. Bundles under
+`.data/agentic-context-sweep/20260730T1855*`.
+
+| setting | completion | mean steps | mean prompt tok | overflow | d(compl) vs keep=3 | d(prompt) vs keep=3 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| keep=1 | **0.643** | 7.86 | 1000 | 0 | +0.214 [+0.000, +0.429] | **-283 [-394, -180]** |
+| keep=2 | **0.643** | 8.64 | 1142 | 0 | +0.214 [+0.000, +0.429] | -141 [-197, -90] |
+| keep=3 | 0.429 | 9.36 | 1283 | 0 | baseline | baseline |
+
+Verdict: **expose stays the right call on longer transcripts**. Mean steps (7.9-9.4) clear the
+shipped keep, so older steps are actually dropped -- this is not the short-episode no-op. keep=1
+(and keep=2) stay flat on completion against keep=3 (CI lower bound touches zero) while separating
+cheaper on prompt tokens; point completion is higher and mean steps are lower under keep=1, but
+without a separated completion win the shipped default stays 3. Operators who already pass
+`--keep-last-n 1` for cost on the short set can keep doing so on this longer-transcript shape.
+
+Synthetic file/db pipeline tasks remain in the module for CI over a fake `complete`; live MamayLM
+loops on repeated `read_file` for those prompts, so the CUDA evidence path is the medium-search
+shrink above.
+
 ## Context-Policy Comparison
 
 `bench-chain-context` ranks context-management POLICIES for ONE fixed model over a verified

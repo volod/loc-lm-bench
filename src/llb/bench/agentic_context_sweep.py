@@ -53,6 +53,9 @@ METHOD = "agentic-context-sweep"
 CAP_GRID: tuple[int, ...] = (400, 800, 1600)
 HEAD_SHARE_GRID: tuple[float, ...] = (0.5, 0.6, 0.7)
 KEEP_LAST_N_GRID: tuple[int, ...] = (1, 2, 3)
+# Long-transcript keep grid: same cells, but the lane runs them alone at a higher max_steps over
+# medium-observation pipeline tasks (see `agentic_long_transcript`).
+KEEP_LONG_TRANSCRIPT_GRID: tuple[int, ...] = KEEP_LAST_N_GRID
 
 AXIS_CAP = "observation_cap_chars"
 AXIS_HEAD = "observation_head_share"
@@ -118,50 +121,82 @@ def shipped_value(axis: str) -> Any:
 
 def default_grid() -> list[SweepSetting]:
     """The three one-dimensional grids the CUDA evidence run walks."""
+    return grid_for_axes(AXES)
+
+
+def keep_long_transcript_grid() -> list[SweepSetting]:
+    """Keep-only grid for the long-transcript lane (keep=1/2/3 under `keep_last_n`)."""
+    return grid_for_axes((AXIS_KEEP,), keep_values=KEEP_LONG_TRANSCRIPT_GRID)
+
+
+def grid_for_axes(
+    axes: Sequence[str],
+    *,
+    keep_values: Sequence[int] | None = None,
+) -> list[SweepSetting]:
+    """Build the requested one-dimensional grids; unknown axis names raise."""
+    unknown = [a for a in axes if a not in AXES]
+    if unknown:
+        raise SystemExit(f"unknown sweep axes: {unknown}; choose from {AXES}")
+    keep_values = tuple(keep_values) if keep_values is not None else KEEP_LAST_N_GRID
     settings: list[SweepSetting] = []
-    for cap in CAP_GRID:
-        settings.append(
-            SweepSetting(
-                axis=AXIS_CAP,
-                label=f"cap={cap}",
-                policy_name=POLICY_OBSERVATION_CAP,
-                overrides={
-                    "observation_cap_chars": cap,
-                    "observation_head_share": OBSERVATION_HEAD_SHARE,
-                    "keep_last_n": DEFAULT_KEEP_LAST_N,
-                },
-                is_shipped=cap == DEFAULT_OBSERVATION_CAP_CHARS,
+    if AXIS_CAP in axes:
+        for cap in CAP_GRID:
+            settings.append(
+                SweepSetting(
+                    axis=AXIS_CAP,
+                    label=f"cap={cap}",
+                    policy_name=POLICY_OBSERVATION_CAP,
+                    overrides={
+                        "observation_cap_chars": cap,
+                        "observation_head_share": OBSERVATION_HEAD_SHARE,
+                        "keep_last_n": DEFAULT_KEEP_LAST_N,
+                    },
+                    is_shipped=cap == DEFAULT_OBSERVATION_CAP_CHARS,
+                )
             )
-        )
-    for share in HEAD_SHARE_GRID:
-        settings.append(
-            SweepSetting(
-                axis=AXIS_HEAD,
-                label=f"head={share}",
-                policy_name=POLICY_OBSERVATION_CAP,
-                overrides={
-                    "observation_cap_chars": DEFAULT_OBSERVATION_CAP_CHARS,
-                    "observation_head_share": share,
-                    "keep_last_n": DEFAULT_KEEP_LAST_N,
-                },
-                is_shipped=share == OBSERVATION_HEAD_SHARE,
+    if AXIS_HEAD in axes:
+        for share in HEAD_SHARE_GRID:
+            settings.append(
+                SweepSetting(
+                    axis=AXIS_HEAD,
+                    label=f"head={share}",
+                    policy_name=POLICY_OBSERVATION_CAP,
+                    overrides={
+                        "observation_cap_chars": DEFAULT_OBSERVATION_CAP_CHARS,
+                        "observation_head_share": share,
+                        "keep_last_n": DEFAULT_KEEP_LAST_N,
+                    },
+                    is_shipped=share == OBSERVATION_HEAD_SHARE,
+                )
             )
-        )
-    for keep in KEEP_LAST_N_GRID:
-        settings.append(
-            SweepSetting(
-                axis=AXIS_KEEP,
-                label=f"keep={keep}",
-                policy_name=POLICY_KEEP_LAST_N,
-                overrides={
-                    "observation_cap_chars": DEFAULT_OBSERVATION_CAP_CHARS,
-                    "observation_head_share": OBSERVATION_HEAD_SHARE,
-                    "keep_last_n": keep,
-                },
-                is_shipped=keep == DEFAULT_KEEP_LAST_N,
+    if AXIS_KEEP in axes:
+        for keep in keep_values:
+            settings.append(
+                SweepSetting(
+                    axis=AXIS_KEEP,
+                    label=f"keep={keep}",
+                    policy_name=POLICY_KEEP_LAST_N,
+                    overrides={
+                        "observation_cap_chars": DEFAULT_OBSERVATION_CAP_CHARS,
+                        "observation_head_share": OBSERVATION_HEAD_SHARE,
+                        "keep_last_n": keep,
+                    },
+                    is_shipped=keep == DEFAULT_KEEP_LAST_N,
+                )
             )
-        )
     return settings
+
+
+def parse_axes(raw: str | Sequence[str] | None) -> tuple[str, ...]:
+    """Parse a comma-separated axes string (or pass-through a sequence) into known axis names."""
+    if raw is None:
+        return AXES
+    if isinstance(raw, str):
+        parts = tuple(p.strip() for p in raw.split(",") if p.strip())
+    else:
+        parts = tuple(raw)
+    return parts if parts else AXES
 
 
 def pair_against_shipped(
@@ -225,13 +260,14 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
     if axis == AXIS_KEEP:
         overflows = {c.report.n_context_overflow for c in cells}
         completions = {round(c.report.result.objective_score, 6) for c in cells}
+        keep_labels = tuple(c.setting.label for c in cells)
         if len(overflows) == 1 and len(completions) == 1 and baseline.report.n_context_overflow > 0:
             return AxisVerdict(
                 axis,
                 shipped,
                 VERDICT_INAPPLICABLE,
                 (
-                    f"every keep in {KEEP_LAST_N_GRID} completed "
+                    f"every keep in {keep_labels} completed "
                     f"{baseline.report.result.objective_score:.3f} with "
                     f"{baseline.report.n_context_overflow} overflows -- the oversized observation "
                     "that blows the prompt stays inside the kept window at this max_steps; "
@@ -255,6 +291,7 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
                         f"{cell.setting.label} separates on completion vs shipped "
                         f"({_delta_cell(completion)}); consider adopting it or keeping the knob "
                         "operator-visible"
+                        + _long_transcript_note(axis, cells)
                     ),
                 )
             worse.append(f"{cell.setting.label} ({_delta_cell(completion)})")
@@ -273,6 +310,7 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
                 (
                     f"{cell.setting.label} is flat on completion but separates cheaper on prompt "
                     f"tokens ({_delta_cell(prompt)}); expose the knob and consider the cheaper cell"
+                    + _long_transcript_note(axis, cells)
                 ),
             )
 
@@ -284,6 +322,7 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
             (
                 f"shipped {axis}={shipped}: no alternative improves completion; "
                 f"worse cells {', '.join(worse)}; keep the measured default"
+                + _long_transcript_note(axis, cells)
             ),
         )
     return AxisVerdict(
@@ -293,22 +332,38 @@ def decide_axis_verdict(axis: str, cells: Sequence[SettingReport]) -> AxisVerdic
         (
             f"shipped {axis}={shipped} is flat on completion against the grid "
             f"({', '.join(c.setting.label for c in cells)}); keep the measured default"
+            + _long_transcript_note(axis, cells)
         ),
     )
+
+
+def _long_transcript_note(axis: str, cells: Sequence[SettingReport]) -> str:
+    """Flag when a keep grid never grew past the shipped keep -- the policy was not exercised."""
+    if axis != AXIS_KEEP or not cells:
+        return ""
+    mean_steps = max(c.report.mean_steps for c in cells)
+    if mean_steps <= float(DEFAULT_KEEP_LAST_N):
+        return (
+            f" (warning: max mean_steps={mean_steps:.2f} <= shipped keep={DEFAULT_KEEP_LAST_N}, "
+            "so older steps were rarely dropped -- raise max_steps or deepen the task shape)"
+        )
+    return ""
+
 
 
 def format_sweep_table(settings: Sequence[SettingReport], verdicts: Sequence[AxisVerdict]) -> str:
     """Human-readable per-setting table plus the three axis verdicts."""
     lines = [
-        f"{'axis':<24} {'setting':<12} {'compl':>6} {'prompt':>8} {'ovfl':>4} "
+        f"{'axis':<24} {'setting':<12} {'compl':>6} {'steps':>6} {'prompt':>8} {'ovfl':>4} "
         f"{'d(compl) vs shipped':<28} {'d(prompt) vs shipped':<28}",
-        "-" * 120,
+        "-" * 130,
     ]
     for cell in settings:
         r = cell.report
         lines.append(
             f"{cell.setting.axis:<24} {cell.setting.label:<12} "
             f"{r.result.objective_score:6.3f} "
+            f"{r.mean_steps:6.2f} "
             f"{r.metric_mean(METRIC_PROMPT_TOKENS):8.1f} "
             f"{r.n_context_overflow:4d} "
             f"{_delta_cell(cell.paired.get(METRIC_COMPLETION)):<28} "
@@ -330,6 +385,7 @@ def run_constant_sweep(
     backend: str,
     complete: LLMComplete,
     settings: list[SweepSetting] | None = None,
+    axes: Sequence[str] | None = None,
     max_steps: int = DEFAULT_MAX_STEPS,
     budget: ContextBudget | None = None,
     data_dir: Path | str | None = None,
@@ -343,11 +399,15 @@ def run_constant_sweep(
     if not tasks:
         raise SystemExit("no agentic tasks provided")
     budget = budget if budget is not None else unbounded_budget()
-    grid = settings if settings is not None else default_grid()
+    if settings is not None:
+        grid = settings
+    else:
+        grid = grid_for_axes(parse_axes(axes))
     digest = task_set_digest(tasks)
     verification_cfg = verified_data_config(
         data_verified=data_verified, verification_ref=verification_ref
     )
+    present_axes = tuple(dict.fromkeys(s.axis for s in grid))
 
     # Identical (policy, overrides) cells share one episode batch -- the shipped observation_cap
     # cell is both the cap-axis and the head-share-axis baseline.
@@ -390,7 +450,8 @@ def run_constant_sweep(
 
     pair_against_shipped(cells)
     verdicts = [
-        decide_axis_verdict(axis, [c for c in cells if c.setting.axis == axis]) for axis in AXES
+        decide_axis_verdict(axis, [c for c in cells if c.setting.axis == axis])
+        for axis in present_axes
     ]
     table = format_sweep_table(cells, verdicts)
 
@@ -408,6 +469,7 @@ def run_constant_sweep(
             mirror=mirror,
             budget_provenance=budget.provenance(),
             table=table,
+            axes=present_axes,
         )
     return ConstantSweepRun(
         model=model,
@@ -434,6 +496,7 @@ def _persist(
     mirror: Mirror | None,
     budget_provenance: dict[str, Any] | None,
     table: str,
+    axes: Sequence[str] | None = None,
 ) -> None:
     """Persist one bundle per setting plus a sweep-summary manifest under the method root."""
     for cell in cells:
@@ -474,6 +537,7 @@ def _persist(
         "task_set_digest": digest,
         "max_steps": max_steps,
         "max_prompt_chars": max_prompt_chars,
+        "axes": list(axes) if axes is not None else list(AXES),
         "verdicts": [
             {
                 "axis": v.axis,

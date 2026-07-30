@@ -62,7 +62,8 @@ DEFAULT_OBSERVATION_CAP_CHARS = 800
 OBSERVATION_HEAD_SHARE = 0.6
 # `keep_last_n`: how many most-recent steps survive in the prompt. Shipped at 3; the constant sweep
 # EXPOSES the knob because keep=1 is flat on completion but separates cheaper on prompt tokens on
-# the 24-task 6-step set -- do not silently rewrite the default from that cost-only reading.
+# both the short fat-observation set and the longer medium-search set (mean_steps ~8-9) -- do not
+# silently rewrite the default from a cost-only reading.
 DEFAULT_KEEP_LAST_N = 3
 # `compact`: the share of the usable prompt budget that triggers a compaction, and how many recent
 # steps stay verbatim behind the summary (the model still needs its immediate working state).

@@ -1,6 +1,8 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-agentic-context bench-agentic-context-sweep bench-chain-context composite-headline platform-matrix
+.PHONY: agentic-harness-compare bench-agentic-context bench-agentic-context-sweep \
+	prepare-agentic-long-transcript bench-agentic-context-keep-long \
+	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -24,15 +26,35 @@ bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_
 		$(if $(AGENT_CONTEXT_BASE_URL),--base-url "$(AGENT_CONTEXT_BASE_URL)",) \
 		$(if $(AGENT_CONTEXT_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_MAX_MODEL_LEN)",)
 
-bench-agentic-context-sweep: ## Sweep observation_cap_chars / head_share / keep_last_n; pin or expose each (MODEL= BACKEND= AGENT_CONTEXT_SWEEP_TASKS= AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=)
+bench-agentic-context-sweep: ## Sweep observation_cap_chars / head_share / keep_last_n; pin or expose each (MODEL= BACKEND= AGENT_CONTEXT_SWEEP_TASKS= AGENT_CONTEXT_SWEEP_AXES= AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-sweep --tasks "$(AGENT_CONTEXT_SWEEP_TASKS)" \
 		--model "$(MODEL)" --backend "$(BACKEND)" \
 		--max-steps "$(AGENT_CONTEXT_SWEEP_MAX_STEPS)" \
+		--axes "$(AGENT_CONTEXT_SWEEP_AXES)" \
 		$(if $(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)",) \
 		$(if $(AGENT_CONTEXT_SWEEP_BASE_URL),--base-url "$(AGENT_CONTEXT_SWEEP_BASE_URL)",) \
 		$(if $(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)",)
+
+prepare-agentic-long-transcript: ## Build medium-obs keep_last_n tasks from fat search set (AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH= AGENT_CONTEXT_KEEP_LONG_TASKS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main prepare-agentic-long-transcript --out "$(AGENT_CONTEXT_KEEP_LONG_TASKS)" \
+		--from-search-tasks "$(AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH)" \
+		--max-match-docs "$(AGENT_CONTEXT_KEEP_LONG_MAX_MATCH_DOCS)" \
+		--max-other-docs "$(AGENT_CONTEXT_KEEP_LONG_MAX_OTHER_DOCS)" \
+		--max-doc-chars "$(AGENT_CONTEXT_KEEP_LONG_MAX_DOC_CHARS)"
+
+bench-agentic-context-keep-long: prepare-agentic-long-transcript ## keep=1/2/3 on long-transcript tasks at raised max_steps (MODEL= BACKEND= AGENT_CONTEXT_KEEP_LONG_MAX_STEPS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(MAKE) --no-print-directory bench-agentic-context-sweep \
+		AGENT_CONTEXT_SWEEP_TASKS="$(AGENT_CONTEXT_KEEP_LONG_TASKS)" \
+		AGENT_CONTEXT_SWEEP_MAX_STEPS="$(AGENT_CONTEXT_KEEP_LONG_MAX_STEPS)" \
+		AGENT_CONTEXT_SWEEP_AXES="$(AGENT_CONTEXT_KEEP_LONG_AXES)" \
+		AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN="$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)" \
+		AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS="$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)" \
+		AGENT_CONTEXT_SWEEP_BASE_URL="$(AGENT_CONTEXT_SWEEP_BASE_URL)"
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
