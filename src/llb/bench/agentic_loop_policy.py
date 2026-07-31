@@ -99,6 +99,7 @@ def run_agentic_loop_policy(
     repeat_power_design: dict[str, object] | None = None,
     repeat_feedback_design: dict[str, object] | None = None,
     model_family: str | None = None,
+    run_seed: int | None = None,
 ) -> AgenticLoopPolicyRun:
     """Measure every cell on the identical task set and recommend one policy per model."""
     if not tasks:
@@ -129,6 +130,7 @@ def run_agentic_loop_policy(
             tasks,
             cells=cells,
             model_family=model_family,
+            run_seed=run_seed,
         )
     resolved_budget = budget if budget is not None else unbounded_budget()
     reports = [
@@ -161,14 +163,15 @@ def run_agentic_loop_policy(
     if repeat_feedback_design is not None:
         from llb.bench.agentic_loop_feedback import (
             analyze_repeat_feedback,
-            format_repeat_feedback_table,
         )
+        from llb.bench.agentic_loop_feedback_report import format_repeat_feedback_table
 
         repeat_feedback_analysis = analyze_repeat_feedback(
             repeat_feedback_design,
             tasks,
             reports,
             model_family=model_family,
+            run_seed=run_seed,
         )
     board, board_table = render_board(
         [replace(report.run.result, model=report.cell.cell_id) for report in reports]
@@ -206,6 +209,7 @@ def run_agentic_loop_policy(
                 verification_ref=verification_ref,
             ),
             model_family=model_family,
+            run_seed=run_seed,
             repeat_power_design=repeat_power_design,
             repeat_power_analysis=repeat_power_analysis,
             repeat_feedback_design=repeat_feedback_design,

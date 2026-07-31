@@ -28,6 +28,7 @@ def persist_reports(
     budget: ContextBudget,
     verification_config: dict[str, object],
     model_family: str | None,
+    run_seed: int | None,
     repeat_power_design: dict[str, object] | None,
     repeat_power_analysis: dict[str, object] | None,
     repeat_feedback_design: dict[str, object] | None,
@@ -69,6 +70,7 @@ def persist_reports(
             "is_baseline": report.cell.is_baseline,
             "task_set_digest": task_digest,
             "model_family": model_family,
+            "run_seed": run_seed,
             "n_tasks": len(report.rows),
             "grid": {
                 "max_steps": max_steps,

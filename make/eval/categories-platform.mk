@@ -1,7 +1,8 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
 .PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-loop-repeat-power \
-	bench-agentic-loop-repeat-feedback bench-agentic-context \
+	bench-agentic-loop-repeat-feedback bench-agentic-loop-repeat-feedback-generalization \
+	bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
 	bench-agentic-context-compact-long \
@@ -53,6 +54,13 @@ bench-agentic-loop-repeat-feedback: ## Compare current, Ukrainian, and bilingual
 			AGENT_REPEATED_CALL_POLICY=allow,noop \
 			AGENT_REPEAT_FEEDBACK=current,uk,bilingual || exit 1; \
 	done
+
+bench-agentic-loop-repeat-feedback-generalization: ## Run the predeclared cross-family, multi-seed bilingual-feedback study
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-generalization \
+		--design "$(AGENT_LOOP_FEEDBACK_GENERALIZATION_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_GENERALIZATION_TASKS)"
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

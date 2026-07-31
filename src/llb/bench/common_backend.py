@@ -48,6 +48,7 @@ def local_complete(
     timeout: float = 120.0,
     meter: ThroughputMeter | None = None,
     num_ctx: int | None = None,
+    seed: int | None = None,
 ) -> LLMComplete:
     """A `complete` over an already-running OpenAI-compatible endpoint (no launch). Heavy imports
     stay lazy; transport errors map to an empty string via `chat_once`'s normalized result. When a
@@ -59,7 +60,12 @@ def local_complete(
     from llb.backends.openai_client import chat_once, make_client
 
     client = make_client(base_url)
-    extra_body = {"options": {"num_ctx": num_ctx}} if num_ctx is not None and num_ctx > 0 else None
+    options: dict[str, object] = {}
+    if num_ctx is not None and num_ctx > 0:
+        options["num_ctx"] = num_ctx
+    if seed is not None:
+        options["seed"] = seed
+    extra_body = {"options": options} if options else None
 
     def complete(prompt: str) -> str:
         msgs: list[ChatMessage] = [{"role": "user", "content": prompt}]
@@ -154,12 +160,14 @@ def drive_with_backend(
                 cfg.model,
                 host=native_root(base_url),
                 num_ctx=ollama_num_ctx,
+                seed=cfg.seed if cfg.backend == "ollama" else None,
             )
             with launcher:
                 return run(
                     launcher_complete(
                         launcher,
                         max_tokens=max_tokens,
+                        temperature=cfg.temperature,
                         timeout=cfg.request_timeout_s,
                         meter=meter,
                     )
@@ -169,9 +177,11 @@ def drive_with_backend(
                 cfg.model,
                 base_url,
                 max_tokens=max_tokens,
+                temperature=cfg.temperature,
                 timeout=cfg.request_timeout_s,
                 meter=meter,
                 num_ctx=ollama_num_ctx,
+                seed=cfg.seed if cfg.backend == "ollama" else None,
             )
         )
     if cfg.backend == "ollama":
@@ -183,12 +193,14 @@ def drive_with_backend(
             cfg.model,
             host=cfg.ollama_host,
             num_ctx=ollama_num_ctx,
+            seed=cfg.seed,
         )
         with launcher:
             return run(
                 launcher_complete(
                     launcher,
                     max_tokens=max_tokens,
+                    temperature=cfg.temperature,
                     timeout=cfg.request_timeout_s,
                     meter=meter,
                 )
@@ -205,6 +217,7 @@ def drive_with_backend(
                 launcher_complete(
                     owned,
                     max_tokens=max_tokens,
+                    temperature=cfg.temperature,
                     timeout=cfg.request_timeout_s,
                     meter=meter,
                 )

@@ -113,10 +113,11 @@ def test_drive_with_backend_routes_ollama_base_url_through_native_launcher(monke
     native_calls: list[dict] = []
 
     class _FakeLauncher:
-        def __init__(self, model, host, num_ctx=None):
+        def __init__(self, model, host, num_ctx=None, seed=None):
             self.model = model
             self.host = host
             self.num_ctx = num_ctx
+            self.seed = seed
             self._last = None
             self.meta: dict = {}
 
@@ -134,7 +135,14 @@ def test_drive_with_backend_routes_ollama_base_url_through_native_launcher(monke
             self.stop()
 
         def chat(self, messages, max_tokens, temperature, timeout):
-            native_calls.append({"num_ctx": self.num_ctx, "max_tokens": max_tokens})
+            native_calls.append(
+                {
+                    "num_ctx": self.num_ctx,
+                    "max_tokens": max_tokens,
+                    "seed": self.seed,
+                    "temperature": temperature,
+                }
+            )
             return ChatResult(text="native-ok")
 
         def served_context(self):
@@ -164,6 +172,8 @@ def test_drive_with_backend_routes_ollama_base_url_through_native_launcher(monke
     assert result == "native-ok"
     assert len(native_calls) == 1
     assert native_calls[0]["num_ctx"] == 8192
+    assert native_calls[0]["seed"] == 13
+    assert native_calls[0]["temperature"] == 0.0
 
 
 def test_ollama_launcher_sends_num_ctx_in_options(monkeypatch):

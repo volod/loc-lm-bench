@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-loop-repeat-feedback-generalization-v1",
+  "study_kind": "repeat_feedback_generalization",
+  "hypothesis": "bilingual no-op feedback produces a stable material completion gain across local model families and inference seeds without material cost regression",
+  "reference": {
+    "task_set_digest": "eb05651bf9b50f8cefd85c1dfcf2ba60f0d1a51ab031230f0fd861fceb5227cc",
+    "source_study": "agent-loop-repeat-feedback-localization-v1",
+    "sample_sd": 0.5
+  },
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "minimum_detectable_completion_gain": 0.25,
+  "variance_required_n": 32,
+  "minimum_discordant_pairs": 6,
+  "planned_n": 32,
+  "required_task_families": {
+    "calculator_verify": 8,
+    "read_verify": 8,
+    "search_verify": 8,
+    "state_mutation_verify": 8
+  },
+  "minimum_activation_rate": 0.5,
+  "minimum_activated_tasks_per_family": 2,
+  "maximum_relative_cost_increase": {
+    "total_model_input_tokens": 0.1,
+    "elapsed_s": 0.2
+  },
+  "required_model_families": ["aya", "mistral", "qwen", "gemma"],
+  "reference_model_families": ["gemma", "qwen"],
+  "minimum_additional_model_families": 2,
+  "roster": [
+    {
+      "model_family": "aya",
+      "model": "aya-expanse:8b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "mistral",
+      "model": "mistral-small3.1:24b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "qwen",
+      "model": "qwen3:14b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "gemma",
+      "model": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M",
+      "backend": "ollama"
+    }
+  ],
+  "run_seeds": [13, 29],
+  "sampling": {
+    "temperature": 0.2
+  },
+  "cross_family_adoption_rule": {
+    "minimum_supported_seeds_per_family": 2,
+    "minimum_supported_families": 3,
+    "minimum_supported_fraction": 0.75,
+    "require_additional_family_support": true
+  },
+  "repeat_feedback_variants": ["current", "bilingual"],
+  "fixed_policy": {
+    "max_steps": 6,
+    "malformed_call": "answer",
+    "repeated_call": ["allow", "noop"]
+  },
+  "max_model_len": 8192
+}

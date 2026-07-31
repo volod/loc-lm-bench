@@ -269,6 +269,50 @@ design/task contract. The run path was also exercised end to end on both predecl
 Validation on 2026-07-31: `make ci` passed 2,463 tests with 45 opt-in/slow tests deselected, and
 `make lint-md` passed.
 
+###### Seeded Cross-Family Generalization
+
+`samples/benchmarks/agentic_loop_feedback_generalization_design.json` extends the same immutable
+32-task ledger and fixed `6/answer/allow,noop` policy to four independent model families, seeds 13
+and 29, and temperature 0.2. The roster retains Qwen3 14B and MamayLM-Gemma 12B and adds Aya
+Expanse 8B and Mistral Small 3.1 24B. The predeclared adoption rule requires support on both seeds
+for a family, at least three of four supported families, and support from an added family before a
+global change is possible.
+
+`make bench-agentic-loop-repeat-feedback-generalization` validates the complete roster, task
+digest, sampling contract, and installed Ollama models before inference. Seed and temperature now
+flow through both native and OpenAI-compatible Ollama completion paths. The runner persists every
+three-cell family/seed bundle before aggregation; the aggregate records the exact coordinate grid,
+coverage, current and bilingual activation, response rate, completion and paired cost deltas, cell
+manifests, stable family routing, and the global decision. The core analysis and reporting live in
+`src/llb/bench/agentic_loop_feedback_generalization.py` and
+`src/llb/bench/agentic_loop_feedback_generalization_report.py`.
+
+CUDA-host evidence (2026-07-31), RTX 4060 Ti 16 GB:
+
+| family | seed | response | completion | completion delta | support |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Aya Expanse 8B | 13 | 0.107 | 0.312 | -0.094 | no |
+| Aya Expanse 8B | 29 | 0.037 | 0.344 | -0.219 | no |
+| Mistral Small 3.1 24B | 13 | 1.000 | 0.875 | 0.000 | no |
+| Mistral Small 3.1 24B | 29 | 1.000 | 0.906 | 0.000 | no |
+| Qwen3 14B | 13 | 0.844 | 0.844 | +0.344 | yes |
+| Qwen3 14B | 29 | 0.812 | 0.812 | +0.312 | yes |
+| MamayLM-Gemma 12B | 13 | 0.062 | 0.219 | +0.062 | no |
+| MamayLM-Gemma 12B | 29 | 0.062 | 0.219 | +0.062 | no |
+
+All eight family/seed coordinates passed task coverage and both activation gates. Qwen alone
+cleared the completion and paired cost gates on both seeds, so it routes to `bilingual`; Aya,
+Mistral, and Gemma remain on `current`. Stable support is one of four families, below the declared
+three-family threshold, and neither added family supports the variant. The global feedback default
+therefore remains `current`.
+
+The audit-complete aggregate is
+`.data/agentic-loop-policy/20260731T203955.027095Z-138f43552ed1/manifest.json`; its analysis indexes
+all 24 additive cell manifests. `tests/llb/bench/test_agentic_loop_feedback_generalization.py`
+checks the prospective design, exact family/seed grid, coordinate metadata, activation telemetry,
+stable routing, global adoption rule, reporting, and persistence.
+Validation on 2026-07-31: `make ci` passed 2,469 tests with 45 opt-in/slow tests deselected.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

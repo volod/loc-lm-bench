@@ -43,31 +43,26 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-repeat-feedback-generalization (optional)
+### agent-loop-policy-repeat-feedback-family-adaptation (optional)
 
-Test whether bilingual repeat feedback remains beneficial beyond one model family and across
-independent seeded repetitions before exposing model-family routing or reconsidering any global
-default. The current family-specific decision and reusable measurement lane are in
-[extended workflows](current/extended-workflows.md#localized-repeat-feedback-comparison).
+Test whether short, family-adapted repeat notices can improve response without weakening the
+controller contract. Cross-family seed behavior and the reusable aggregate lane are in
+[extended workflows](current/extended-workflows.md#seeded-cross-family-generalization).
 
 - Agent status: RUN NEEDED
-- Dependencies: predeclare at least two additional UA-capable local model families and multiple
-  run seeds; retain the powered task ledger, fixed `6/answer/allow,noop` policy, response telemetry,
-  and completion plus cost gates.
-- User-visible outcome: operators learn whether a bilingual notice is a stable family-level policy
-  choice or a model/run-specific effect.
-- Scope boundary: in scope -- replicate stability, additional model-family coverage, a declared
-  cross-family adoption rule, and model-family routing only if stable. Out of scope -- tuning the
-  task ledger after inference or changing the global repeat policy from a single-family result.
-- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/`, grouped
-  by model family and run seed in the comparison summary.
-- Execution path: extend the fixed-roster make workflow with a predeclared generalization design
-  and aggregate family/seed decision artifact.
-- Acceptance gates: each family/seed cell passes coverage and activation; any routed variant must
-  repeatedly clear the material completion and paired cost gates, and a global recommendation
-  requires the declared cross-family support threshold.
+- Dependencies: predeclare notice text and hypotheses before inference; keep the same powered
+  ledger, seeds, fixed policy, response telemetry, and paired completion/cost gates. Include Aya,
+  Mistral, and Gemma, whose response patterns leave room for family-specific instruction wording.
+- User-visible outcome: operators learn whether non-Qwen families need a different controller
+  notice or should remain on `current` feedback.
+- Scope boundary: in scope -- concise wording adapted to each model family's instruction style and
+  stable two-seed routing. Out of scope -- task-specific hints, ledger changes, or selecting notice
+  text after observing evaluation outcomes.
+- Acceptance gates: every candidate passes coverage and activation, clears the material completion
+  and paired cost gates on both seeds, and remains isolated to its family unless the declared
+  cross-family threshold is met.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#localized-repeat-feedback-comparison).
+  [extended workflows](current/extended-workflows.md#seeded-cross-family-generalization).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 

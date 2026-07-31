@@ -30,6 +30,7 @@ def validate_repeat_feedback_design(
     *,
     cells: list[LoopPolicyCell],
     model_family: str | None,
+    run_seed: int | None = None,
 ) -> None:
     """Validate shared power constraints plus the current/localized feedback contract."""
     validate_repeat_power_design(design, tasks, cells=cells, model_family=model_family)
@@ -38,6 +39,11 @@ def validate_repeat_feedback_design(
         raise ValueError("repeat feedback variants must be unique and start with current")
     if len(variants) < 2:
         raise ValueError("repeat feedback study needs current plus at least one candidate")
+    declared_seeds = design.get("run_seeds")
+    if declared_seeds is not None:
+        seeds = cast(list[int], declared_seeds)
+        if run_seed is None or run_seed not in seeds:
+            raise ValueError(f"run_seed must be one of the predeclared seeds: {seeds}")
 
 
 def _redirect_summary(
@@ -93,12 +99,28 @@ def _cost_gate(
     }
 
 
+def _activation_gate(
+    redirect: dict[str, object],
+    *,
+    task_count: int,
+    minimum_rate: float,
+    minimum_per_family: int,
+) -> tuple[float, bool]:
+    activation_rate = cast(int, redirect["activated_tasks"]) / task_count
+    family_passed = all(
+        cast(int, row["activated_tasks"]) >= minimum_per_family
+        for row in cast(dict[str, dict[str, object]], redirect["by_family"]).values()
+    )
+    return activation_rate, activation_rate >= minimum_rate and family_passed
+
+
 def analyze_repeat_feedback(
     design: dict[str, object],
     tasks: list[AgenticTask],
     reports: list[LoopPolicyReport],
     *,
     model_family: str | None,
+    run_seed: int | None = None,
 ) -> dict[str, object]:
     """Compare every localized notice against the current English no-op notice."""
     current = next(
@@ -119,6 +141,13 @@ def analyze_repeat_feedback(
     minimum_activation = float(cast(float, design["minimum_activation_rate"]))
     minimum_family_activation = int(cast(int, design["minimum_activated_tasks_per_family"]))
     cost_limits = cast(dict[str, float], design["maximum_relative_cost_increase"])
+    baseline_redirect = _redirect_summary(current, tasks)
+    baseline_activation_rate, baseline_activation_passed = _activation_gate(
+        baseline_redirect,
+        task_count=len(tasks),
+        minimum_rate=minimum_activation,
+        minimum_per_family=minimum_family_activation,
+    )
     analyses: dict[str, dict[str, object]] = {}
     for variant in variants[1:]:
         candidate = candidates[variant]
@@ -126,12 +155,12 @@ def analyze_repeat_feedback(
         prompt = _paired(candidate, current, METRIC_PROMPT_TOKENS, indexes)
         wall = _paired(candidate, current, METRIC_WALL_CLOCK, indexes)
         redirect = _redirect_summary(candidate, tasks)
-        family_activation_passed = all(
-            cast(int, row["activated_tasks"]) >= minimum_family_activation
-            for row in cast(dict[str, dict[str, object]], redirect["by_family"]).values()
+        activation_rate, activation_passed = _activation_gate(
+            redirect,
+            task_count=len(tasks),
+            minimum_rate=minimum_activation,
+            minimum_per_family=minimum_family_activation,
         )
-        activation_rate = cast(int, redirect["activated_tasks"]) / len(tasks)
-        activation_passed = activation_rate >= minimum_activation and family_activation_passed
         completion_delta = cast(dict[str, float], completion["delta"])
         completion_reading = reading_of(completion)
         completion_passed = completion_delta["mean"] >= mde and completion_reading == "separated"
@@ -184,6 +213,7 @@ def analyze_repeat_feedback(
     return {
         "study_id": design["study_id"],
         "model_family": model_family,
+        "run_seed": run_seed,
         "coverage_passed": True,
         "baseline_feedback_variant": DEFAULT_REPEAT_FEEDBACK,
         "task_family_counts": dict(sorted(Counter(task.family or "" for task in tasks).items())),
@@ -191,7 +221,9 @@ def analyze_repeat_feedback(
             "completion_rate": current.run.result.objective_score,
             "mean_total_model_input_tokens": current.metric_mean(METRIC_PROMPT_TOKENS),
             "mean_wall_clock_s": current.metric_mean(METRIC_WALL_CLOCK),
-            "redirect": _redirect_summary(current, tasks),
+            "activation_rate": baseline_activation_rate,
+            "activation_passed": baseline_activation_passed,
+            "redirect": baseline_redirect,
         },
         "variants": analyses,
         "recommended_feedback_variant": recommended,
@@ -202,50 +234,3 @@ def analyze_repeat_feedback(
             else "no localized variant clears every prospective gate against the current notice"
         ),
     }
-
-
-def _delta_text(row: dict[str, object], metric: str) -> str:
-    if metric == METRIC_COMPLETION:
-        comparison = cast(dict[str, object], row["completion"])["paired"]
-        delta = cast(dict[str, float], cast(dict[str, object], comparison)["delta"])
-    else:
-        gate = cast(dict[str, object], cast(dict[str, object], row["cost"])[metric])
-        delta = cast(dict[str, float], gate["paired_delta"])
-    return f"{delta['mean']:+.3f} [{delta['lo']:+.3f},{delta['hi']:+.3f}]"
-
-
-def format_repeat_feedback_table(analysis: dict[str, object]) -> str:
-    """Render redirect, completion, and cost decisions against the current notice."""
-    header = (
-        f"{'feedback':<10} {'response':>8} {'complete':>8} {'d(complete)':<23} "
-        f"{'d(prompt)':<27} {'completion-gate':<15} {'cost-gate':<9} supports"
-    )
-    lines = [header, "-" * len(header)]
-    baseline = cast(dict[str, object], analysis["baseline"])
-    redirect = cast(dict[str, object], baseline["redirect"])
-    lines.append(
-        f"{DEFAULT_REPEAT_FEEDBACK:<10} {cast(float, redirect['response_rate']):>8.3f} "
-        f"{cast(float, baseline['completion_rate']):>8.3f} {'-':<23} {'-':<27} "
-        f"{'reference':<15} {'reference':<9} -"
-    )
-    for name, row in cast(dict[str, dict[str, object]], analysis["variants"]).items():
-        response = cast(dict[str, object], row["redirect"])["response_rate"]
-        completion = cast(dict[str, object], row["completion"])
-        cost = cast(dict[str, object], row["cost"])
-        lines.append(
-            f"{name:<10} {cast(float, response):>8.3f} "
-            f"{cast(float, row['completion_rate']):>8.3f} "
-            f"{_delta_text(row, METRIC_COMPLETION):<23} "
-            f"{_delta_text(row, METRIC_PROMPT_TOKENS):<27} "
-            f"{str(completion['passed']).lower():<15} "
-            f"{str(cost['passed']).lower():<9} "
-            f"{str(row['supports_variant']).lower()}"
-        )
-    return "\n".join(lines)
-
-
-__all__ = [
-    "analyze_repeat_feedback",
-    "format_repeat_feedback_table",
-    "validate_repeat_feedback_design",
-]

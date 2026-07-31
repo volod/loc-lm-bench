@@ -312,6 +312,8 @@ AGENT_LOOP_REPEAT_POWER_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop
 AGENT_LOOP_REPEAT_POWER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_repeat_power_design.json
 AGENT_LOOP_REPEAT_POWER_ROSTER ?= gemma=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M qwen=qwen3:14b
 AGENT_LOOP_FEEDBACK_DESIGN_FILE ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_localization_design.json
+AGENT_LOOP_FEEDBACK_GENERALIZATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_generalization_design.json
+AGENT_LOOP_FEEDBACK_GENERALIZATION_TASKS ?= $(AGENT_LOOP_REPEAT_POWER_TASKS)
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.
