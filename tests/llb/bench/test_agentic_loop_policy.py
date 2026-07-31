@@ -138,8 +138,22 @@ def test_repeated_noop_is_recorded_but_does_not_execute_again():
         loop_policy=LoopPolicy(repeated_call=REPEATED_NOOP),
     )
     assert episode.success is True and episode.n_tool_calls == 2
-    assert episode.n_repeated_noops == 1
+    assert episode.n_repeated_calls == 1 and episode.n_repeated_noops == 1
     assert episode.transcript[-1][2] == REPEATED_NOOP_OBSERVATION
+
+
+def test_repeated_allow_is_counted_without_being_suppressed():
+    outputs = [
+        '{"name":"db_get","arguments":{"key":"missing"}}',
+        '{"name":"db_get","arguments":{"key":"missing"}}',
+        '{"name":"finish","arguments":{"answer":"done"}}',
+    ]
+    episode = run_episode(
+        AgenticTask("t", "inspect", success=[{"kind": "answer_contains", "value": "done"}]),
+        scripted(outputs),
+        loop_policy=LoopPolicy(repeated_call=REPEATED_ALLOW),
+    )
+    assert episode.n_repeated_calls == 1 and episode.n_repeated_noops == 0
 
 
 def test_grid_requires_the_exact_legacy_baseline():

@@ -51,10 +51,18 @@ def bench_agentic_loop_cmd(
     verification_ref: Optional[str] = typer.Option(
         None, help="verification worksheet, sample manifest, or accepted ledger"
     ),
+    repeat_power_design: Optional[Path] = typer.Option(
+        None,
+        help="prospective repeat/no-op power design; enforces its focused grid and coverage",
+    ),
+    model_family: Optional[str] = typer.Option(
+        None, help="predeclared roster family for a repeat-power run"
+    ),
 ) -> None:
     """Sweep loop decision policies and recommend one evidence-backed cell for a fixed model."""
     from llb.bench.agentic.run import load_tasks_file
     from llb.bench.agentic_loop_policy import run_agentic_loop_policy
+    from llb.bench.agentic_loop_policy_power import load_repeat_power_design
     from llb.bench.agentic_loop_policy_report import AgenticLoopPolicyRun
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
@@ -62,6 +70,9 @@ def bench_agentic_loop_cmd(
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
+    power_design = (
+        load_repeat_power_design(repeat_power_design) if repeat_power_design is not None else None
+    )
     budget = resolve_agent_context_budget(
         cfg,
         base_url=base_url,
@@ -84,6 +95,8 @@ def bench_agentic_loop_cmd(
             data_verified=data_verified,
             verification_ref=verification_ref,
             meter=meter,
+            repeat_power_design=power_design,
+            model_family=model_family,
         )
 
     result = drive_with_backend(

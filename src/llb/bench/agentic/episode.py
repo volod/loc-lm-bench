@@ -143,6 +143,7 @@ def run_episode(
     n_controller_calls = 0
     n_malformed_calls = 0
     n_repair_attempts = 0
+    n_repeated_calls = 0
     n_repeated_noops = 0
     previous_call_key: str | None = None
     steps = 0
@@ -199,13 +200,13 @@ def run_episode(
             status = STATUS_COMPLETED
             break
         current_call_key = call_key(call.name, call.arguments)
-        repeated_noop = (
-            loop_policy.repeated_call == REPEATED_NOOP and current_call_key == previous_call_key
-        )
+        repeated_call = current_call_key == previous_call_key
+        repeated_noop = loop_policy.repeated_call == REPEATED_NOOP and repeated_call
         observation = (
             REPEATED_NOOP_OBSERVATION if repeated_noop else world.execute(call.name, call.arguments)
         )
         n_tool_calls += 1
+        n_repeated_calls += 1 if repeated_call else 0
         n_repeated_noops += 1 if repeated_noop else 0
         state.record(policy, call.name, call.arguments, observation)
         previous_call_key = current_call_key
@@ -223,6 +224,7 @@ def run_episode(
         n_model_calls=n_controller_calls + state.telemetry.n_compactions,
         n_malformed_calls=n_malformed_calls,
         n_repair_attempts=n_repair_attempts,
+        n_repeated_calls=n_repeated_calls,
         n_repeated_noops=n_repeated_noops,
         elapsed_s=time.monotonic() - started,
     )

@@ -110,7 +110,7 @@ def _run_cell(
         )
         _LOG.info(
             "[agentic-loop-policy] cell=%s task=%d/%d done success=%s steps=%d calls=%d "
-            "malformed=%d noops=%d wall=%.1fs",
+            "malformed=%d repeats=%d noops=%d wall=%.1fs",
             cell.cell_id,
             task_number,
             len(tasks),
@@ -118,6 +118,7 @@ def _run_cell(
             episode.n_steps,
             episode.n_tool_calls,
             episode.n_malformed_calls,
+            episode.n_repeated_calls,
             episode.n_repeated_noops,
             episode.elapsed_s,
         )
@@ -157,11 +158,22 @@ def run_agentic_loop_policy(
     data_verified: bool = False,
     verification_ref: str | None = None,
     meter: ThroughputMeter | None = None,
+    repeat_power_design: dict[str, object] | None = None,
+    model_family: str | None = None,
 ) -> AgenticLoopPolicyRun:
     """Measure every cell on the identical task set and recommend one policy per model."""
     if not tasks:
         raise SystemExit("no agentic tasks provided")
     cells = policy_grid(max_steps, malformed_policies, repeated_call_policies)
+    if repeat_power_design is not None:
+        from llb.bench.agentic_loop_policy_power import validate_repeat_power_design
+
+        validate_repeat_power_design(
+            repeat_power_design,
+            tasks,
+            cells=cells,
+            model_family=model_family,
+        )
     resolved_budget = budget if budget is not None else unbounded_budget()
     reports = [
         _run_cell(
@@ -179,12 +191,26 @@ def run_agentic_loop_policy(
     for report in reports:
         report.run.result = replace(report.run.result, tokens_per_s=tokens_per_s)
     pair_reports(reports)
+    repeat_power_analysis = None
+    if repeat_power_design is not None:
+        from llb.bench.agentic_loop_policy_power import analyze_repeat_power
+
+        repeat_power_analysis = analyze_repeat_power(
+            repeat_power_design,
+            tasks,
+            reports,
+            model_family=model_family,
+        )
     board, board_table = render_board(
         [replace(report.run.result, model=report.cell.cell_id) for report in reports]
     )
     policy_table = format_policy_table(reports)
     table = f"{board_table}\n\n{policy_table}"
-    recommendation = build_recommendation(model, reports)
+    recommendation = build_recommendation(
+        model,
+        reports,
+        repeat_power_analysis=repeat_power_analysis,
+    )
     digest = task_set_digest(tasks)
     if persist and data_dir is not None:
         from llb.bench.agentic_loop_policy_persist import persist_reports
@@ -206,6 +232,9 @@ def run_agentic_loop_policy(
                 data_verified=data_verified,
                 verification_ref=verification_ref,
             ),
+            model_family=model_family,
+            repeat_power_design=repeat_power_design,
+            repeat_power_analysis=repeat_power_analysis,
             mirror=mirror,
         )
     return AgenticLoopPolicyRun(
@@ -216,4 +245,5 @@ def run_agentic_loop_policy(
         table=table,
         recommendation=recommendation,
         task_set_digest=digest,
+        repeat_power_analysis=repeat_power_analysis,
     )

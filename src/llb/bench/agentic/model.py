@@ -56,6 +56,7 @@ class AgenticTask:
     prompt: str
     setup: dict[str, Any] = field(default_factory=dict)
     success: list[dict[str, Any]] = field(default_factory=list)
+    family: str | None = None
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "AgenticTask":
@@ -67,6 +68,7 @@ class AgenticTask:
             prompt=str(record["prompt"]),
             setup=dict(record.get("setup", {}) or {}),
             success=[dict(a) for a in success],
+            family=str(record["family"]) if record.get("family") else None,
         )
 
 
@@ -90,6 +92,7 @@ class Episode:
     n_model_calls: int = 0
     n_malformed_calls: int = 0
     n_repair_attempts: int = 0
+    n_repeated_calls: int = 0
     n_repeated_noops: int = 0
     elapsed_s: float = 0.0
 

@@ -79,6 +79,7 @@ class AgenticCaseRow(TypedDict):
     """Per-task outcome for one agentic episode."""
 
     item_id: str
+    task_family: NotRequired[str]
     status: str
     success: float
     objective_score: float
@@ -88,6 +89,7 @@ class AgenticCaseRow(TypedDict):
     n_malformed_calls: NotRequired[int]
     malformed_call_rate: NotRequired[float]
     n_repair_attempts: NotRequired[int]
+    n_repeated_calls: NotRequired[int]
     n_repeated_noops: NotRequired[int]
     elapsed_s: NotRequired[float]
     trajectory_quality: NotRequired[float]

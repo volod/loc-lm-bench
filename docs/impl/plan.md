@@ -43,36 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-repeat-noop-power (optional)
+### agent-loop-policy-repeat-feedback-localization (optional)
 
-Determine whether repeated-call `noop` should replace `allow` by increasing independent paired
-power on repetition-prone tasks and across model families. Use the current
-[agent loop-policy lane](current/extended-workflows.md#agent-loop-policy-recommendation), predeclare
-the task-family coverage and minimum detectable completion gain, assemble enough non-duplicate
-tasks for the standard discordant-pair gate to be reachable, and run a focused
-`allow`-versus-`noop` comparison at the shipped step budget before reconsidering defaults.
+Compare the current controller repeat feedback with concise Ukrainian and bilingual variants on
+the powered repetition-prone ledger. The next policy question is whether a local model interprets
+the suppression notice and changes course; the measurement seam and baseline evidence live in
+[extended workflows](current/extended-workflows.md#powered-repeat-noop-comparison).
 
 - Agent status: RUN NEEDED
-- Dependencies: the current loop-policy runner supplies the policy branches, cost columns, paired
-  evidence, persistence, and conservative recommendation gate. Build an independent task set whose
-  success checks remain deterministic and whose workflows can naturally repeat both idempotent and
-  state-mutating calls.
-- User-visible outcome: operators learn whether suppressing identical calls generalizes beyond a
-  small seed and whether its completion effect is worth the feedback-token and wall-clock cost.
-- Scope boundary: in scope -- prospective power, repetition-activation coverage, at least two
-  locally feasible roster families, and a focused paired decision. Out of scope -- changing tool
-  semantics, treating duplicate task copies as independent evidence, or changing defaults from a
-  flat/insufficient reading.
-- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/` over the
-  independent task ledger; keep the task digest and family labels in every cell.
-- Execution path: run `make bench-agentic-loop` with `AGENT_MAX_STEPS=6`,
-  `AGENT_MALFORMED_POLICY=answer`, and `AGENT_REPEATED_CALL_POLICY=allow,noop` for each selected
-  model on the CUDA host.
-- Acceptance gates: the predeclared task and family coverage is met; repeated-call activation is
-  reported separately from completion; the paired completion and cost verdicts clear their
-  prospective targets before any default changes.
+- Dependencies: keep the task ledger, fixed `6/answer/allow,noop` cells, prospective completion and
+  cost gates, and model-family roster fixed. Add feedback text as the only experimental axis.
+- User-visible outcome: operators learn whether localized controller feedback makes suppression
+  actionable or merely adds prompt tokens.
+- Scope boundary: in scope -- concise Ukrainian and bilingual feedback variants, paired completion
+  and prompt-token comparisons, and per-family response rates. Out of scope -- changing tool
+  semantics, expanding the step budget, or changing the repeated-call default without a material
+  cross-family completion gain.
+- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/` with a
+  feedback-variant id in every cell.
+- Execution path: add a make target that runs the fixed powered roster over the feedback variants
+  on the CUDA host.
+- Acceptance gates: task/model coverage and activation gates pass; a feedback variant clears the
+  declared completion and cost targets against the current notice before it can feed a default
+  recommendation.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#agent-loop-policy-recommendation).
+  [extended workflows](current/extended-workflows.md#powered-repeat-noop-comparison).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 

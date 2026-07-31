@@ -24,6 +24,7 @@ METRIC_COMPLETION = "completion"
 METRIC_MALFORMED_RATE = "malformed_call_rate"
 METRIC_STEPS = "n_steps"
 METRIC_TOOL_CALLS = "n_tool_calls"
+METRIC_REPEATED_CALLS = "n_repeated_calls"
 METRIC_PROMPT_TOKENS = "total_model_input_tokens"
 METRIC_WALL_CLOCK = "elapsed_s"
 METRICS = (
@@ -31,6 +32,7 @@ METRICS = (
     METRIC_MALFORMED_RATE,
     METRIC_STEPS,
     METRIC_TOOL_CALLS,
+    METRIC_REPEATED_CALLS,
     METRIC_PROMPT_TOKENS,
     METRIC_WALL_CLOCK,
 )
@@ -84,6 +86,10 @@ class LoopPolicyReport:
         attempts = sum(ep.n_steps + ep.n_repair_attempts for ep in self.episodes)
         return sum(ep.n_malformed_calls for ep in self.episodes) / max(attempts, 1)
 
+    @property
+    def repeat_activation_rate(self) -> float:
+        return mean([float(episode.n_repeated_calls > 0) for episode in self.episodes])
+
 
 @dataclass(slots=True)
 class AgenticLoopPolicyRun:
@@ -94,6 +100,7 @@ class AgenticLoopPolicyRun:
     table: str
     recommendation: dict[str, object]
     task_set_digest: str
+    repeat_power_analysis: dict[str, object] | None = None
 
 
 def pair_reports(
@@ -128,9 +135,9 @@ def _delta(report: LoopPolicyReport, metric: str) -> str:
 def format_policy_table(reports: list[LoopPolicyReport]) -> str:
     """Completion, formatting failures, cost, and paired baseline deltas for every cell."""
     header = (
-        f"{'max':>3} {'malformed':<11} {'repeat':<6} {'complete':>8} {'bad-rate':>8} "
-        f"{'steps':>6} {'calls':>6} {'prompt-tok':>10} {'wall-s':>8} {'d(complete)':<23} "
-        f"{'d(prompt)':<23} reading"
+        f"{'max':>3} {'malformed':<11} {'repeat':<6} {'complete':>8} {'active':>7} "
+        f"{'repeats':>7} {'bad-rate':>8} {'steps':>6} {'calls':>6} {'prompt-tok':>10} "
+        f"{'wall-s':>8} {'d(complete)':<23} {'d(prompt)':<23} reading"
     )
     lines = [header, "-" * len(header)]
     for report in reports:
@@ -140,6 +147,8 @@ def format_policy_table(reports: list[LoopPolicyReport]) -> str:
             f"{report.cell.policy.malformed_call:<11} "
             f"{report.cell.policy.repeated_call:<6} "
             f"{report.run.result.objective_score:>8.3f} "
+            f"{report.repeat_activation_rate:>7.3f} "
+            f"{report.metric_mean(METRIC_REPEATED_CALLS):>7.2f} "
             f"{report.malformed_rate:>8.3f} "
             f"{report.metric_mean(METRIC_STEPS):>6.2f} "
             f"{report.metric_mean(METRIC_TOOL_CALLS):>6.2f} "
@@ -152,7 +161,12 @@ def format_policy_table(reports: list[LoopPolicyReport]) -> str:
     return "\n".join(lines)
 
 
-def build_recommendation(model: str, reports: list[LoopPolicyReport]) -> dict[str, object]:
+def build_recommendation(
+    model: str,
+    reports: list[LoopPolicyReport],
+    *,
+    repeat_power_analysis: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Change the baseline only for a positive completion delta under the standard verdict."""
     baseline = next(report for report in reports if report.cell.is_baseline)
     separated = [
@@ -162,6 +176,8 @@ def build_recommendation(model: str, reports: list[LoopPolicyReport]) -> dict[st
         and report.paired[METRIC_COMPLETION]["delta"]["mean"] > 0.0
         and reading_of(report.paired[METRIC_COMPLETION]) == "separated"
     ]
+    if repeat_power_analysis is not None:
+        separated = [report for report in separated if report.cell.policy.repeated_call != "noop"]
     winner = min(
         separated,
         key=lambda report: (
@@ -173,6 +189,17 @@ def build_recommendation(model: str, reports: list[LoopPolicyReport]) -> dict[st
     )
     completion_pair = winner.paired[METRIC_COMPLETION]
     changed = not winner.cell.is_baseline
+    if repeat_power_analysis is not None:
+        unchanged_reason = (
+            "family-level gates pass, but shipped defaults require the full predeclared "
+            "model-family roster"
+            if repeat_power_analysis["supports_noop"]
+            else "noop did not clear the prospective activation, completion, and paired cost gates"
+        )
+    else:
+        unchanged_reason = (
+            "no candidate has a positive paired completion delta under the standard verdict"
+        )
     return {
         "model": model,
         "max_steps": winner.cell.max_steps,
@@ -183,14 +210,22 @@ def build_recommendation(model: str, reports: list[LoopPolicyReport]) -> dict[st
         "reason": (
             "positive paired completion delta clears the standard verdict"
             if changed
-            else "no candidate has a positive paired completion delta under the standard verdict"
+            else unchanged_reason
         ),
         "completion_rate": round(winner.run.result.objective_score, 6),
         "malformed_call_rate": round(winner.malformed_rate, 6),
         "mean_steps": round(winner.metric_mean(METRIC_STEPS), 4),
         "mean_tool_calls": round(winner.metric_mean(METRIC_TOOL_CALLS), 4),
+        "repeat_activation_rate": round(winner.repeat_activation_rate, 6),
+        "mean_repeated_calls": round(winner.metric_mean(METRIC_REPEATED_CALLS), 4),
         "mean_model_calls": round(winner.metric_mean("n_model_calls"), 4),
         "mean_total_model_input_tokens": round(winner.metric_mean(METRIC_PROMPT_TOKENS), 4),
         "mean_wall_clock_s": round(winner.metric_mean(METRIC_WALL_CLOCK), 4),
         "paired_completion_vs_baseline": completion_pair,
+        **(
+            {"model_family_supports_noop": repeat_power_analysis["supports_noop"]}
+            if repeat_power_analysis is not None
+            else {}
+        ),
+        **({"repeat_power": repeat_power_analysis} if repeat_power_analysis is not None else {}),
     }

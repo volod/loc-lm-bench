@@ -26,6 +26,9 @@ def persist_reports(
     repeated_call_policies: list[str],
     budget: ContextBudget,
     verification_config: dict[str, object],
+    model_family: str | None,
+    repeat_power_design: dict[str, object] | None,
+    repeat_power_analysis: dict[str, object] | None,
     mirror: Mirror | None,
 ) -> None:
     """Write one atomic category bundle per cell, each carrying the shared comparison."""
@@ -33,6 +36,14 @@ def persist_reports(
         "comparison.md": f"# Agent loop policy comparison\n\n```\n{table}\n```\n",
         "recommendation.json": json.dumps(recommendation, indent=2, sort_keys=True) + "\n",
     }
+    if repeat_power_design is not None:
+        artifacts["study-design.json"] = (
+            json.dumps(repeat_power_design, indent=2, sort_keys=True) + "\n"
+        )
+    if repeat_power_analysis is not None:
+        artifacts["power-analysis.json"] = (
+            json.dumps(repeat_power_analysis, indent=2, sort_keys=True) + "\n"
+        )
     for report in reports:
         config: dict[str, object] = {
             "model": model,
@@ -45,6 +56,7 @@ def persist_reports(
             "repeated_call_policy": report.cell.policy.repeated_call,
             "is_baseline": report.cell.is_baseline,
             "task_set_digest": task_digest,
+            "model_family": model_family,
             "n_tasks": len(report.rows),
             "grid": {
                 "max_steps": max_steps,
@@ -55,12 +67,20 @@ def persist_reports(
             "malformed_call_rate": round(report.malformed_rate, 6),
             "mean_steps": round(report.metric_mean("n_steps"), 4),
             "mean_tool_calls": round(report.metric_mean("n_tool_calls"), 4),
+            "repeat_activation_rate": round(report.repeat_activation_rate, 6),
+            "mean_repeated_calls": round(report.metric_mean("n_repeated_calls"), 4),
             "mean_model_calls": round(report.metric_mean("n_model_calls"), 4),
             "mean_total_model_input_tokens": round(
                 report.metric_mean("total_model_input_tokens"), 4
             ),
             "mean_wall_clock_s": round(report.metric_mean("elapsed_s"), 4),
             "paired_vs_baseline": report.paired,
+            "task_family_counts": (
+                repeat_power_analysis.get("task_family_counts", {})
+                if repeat_power_analysis is not None
+                else {}
+            ),
+            "repeat_power": repeat_power_analysis,
             "recommendation": recommendation,
             **budget.provenance(),
             **verification_config,

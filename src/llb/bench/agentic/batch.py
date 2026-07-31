@@ -31,10 +31,13 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
             episode.n_malformed_calls / max(episode.n_steps + episode.n_repair_attempts, 1)
         ),
         "n_repair_attempts": episode.n_repair_attempts,
+        "n_repeated_calls": episode.n_repeated_calls,
         "n_repeated_noops": episode.n_repeated_noops,
         "elapsed_s": round(episode.elapsed_s, 6),
         "answer_preview": (episode.answer or "")[:280],
     }
+    if task.family is not None:
+        row["task_family"] = task.family
     if telemetry.prompt_chars:
         row["max_prompt_tokens"] = prompt_tokens(telemetry.max_prompt_chars)
         row["total_prompt_tokens"] = prompt_tokens(telemetry.total_prompt_chars)

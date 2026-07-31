@@ -142,6 +142,69 @@ strict continuation, repeated no-op behavior, mandatory baseline validation, pai
 recommendation gating, and per-cell comparison artifacts. The explicit default policy is also
 checked against the implicit legacy loop behavior.
 
+#### Powered Repeat-Noop Comparison
+
+The focused power lane adds a prospective study contract without changing the general loop-policy
+grid. `samples/benchmarks/agentic_loop_repeat_power_design.json` declares the model and task-family
+coverage, `+0.25` minimum detectable completion gain, 80% target power at alpha 0.05, 32 planned
+independent tasks, the six-discordant-pair evidence floor, 50% minimum activation, and maximum
+relative cost increases of 10% for model-input tokens and 20% for wall time. The prior four-task
+seed supplies the paired reference SD of 0.5; the normal approximation requires all 32 planned
+tasks, while a `+0.25` gain can supply eight discordant pairs.
+
+`samples/benchmarks/agentic_loop_repeat_power_uk.json` contains eight non-duplicate tasks in each of
+four deterministic families: repeated file reads, corpus searches, calculator calls, and state
+mutations. Every task carries its family in the task digest and per-case row. The episode telemetry
+now counts `n_repeated_calls` under both `allow` and `noop`; `n_repeated_noops` remains the separate
+suppression count. Reports show activation rate and mean repeats beside completion, while every
+cell manifest carries family counts, the prospective contract, completion and paired cost gates,
+and `power-analysis.json`.
+
+`src/llb/bench/agentic_loop_policy_power.py` validates the declaration before model inference and
+resolves its gates afterward. Its per-family support flag requires coverage, repeat activation, a
+positive separated completion delta at least as large as the declared gain, and upper paired cost
+bounds within both ceilings. A single family cannot set `changes_shipped_defaults`; that remains
+false until the full predeclared roster supports the change. The CLI accepts
+`--repeat-power-design` and `--model-family`. `make bench-agentic-loop-repeat-power` runs the fixed
+`6/answer/allow,noop` comparison over the predeclared local Gemma and Qwen families:
+
+```bash
+make bench-agentic-loop-repeat-power
+```
+
+CUDA-host evidence (2026-07-31), RTX 4060 Ti 16 GB, identical task digest
+`eb05651bf9b50f8cefd85c1dfcf2ba60f0d1a51ab031230f0fd861fceb5227cc`:
+
+| model family | policy | completion | activation | mean repeats | prompt tokens | wall seconds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| MamayLM-Gemma 12B | `allow` | 0.156 | 1.000 | 4.94 | 5180.7 | 33.46 |
+| MamayLM-Gemma 12B | `noop` | 0.156 | 1.000 | 4.94 | 5404.0 | 34.92 |
+| Qwen3 14B | `allow` | 0.562 | 1.000 | 2.75 | 3657.8 | 4.63 |
+| Qwen3 14B | `noop` | 0.562 | 1.000 | 2.75 | 3780.1 | 4.39 |
+
+MamayLM tied on all 32 completion pairs (`+0.000 [0.000, 0.000]`); its paired prompt increase was
+223.3 tokens with interval `[205.3, 238.4]`, inside the declared ceiling. Qwen had two wins, two
+losses, and 28 ties, for a net completion delta of `+0.000 [-0.125, 0.125]`. Its prompt delta was
+122.3 tokens with interval `[-216.4, 459.5]`, whose upper bound exceeds the 365.8-token ceiling;
+wall time stayed inside its ceiling for both families. Thus activation and coverage pass, but the
+material completion gate fails for both families and Qwen also fails the prompt-cost gate.
+`allow` remains the repeated-call default.
+
+The four cell bundles are:
+
+- MamayLM `allow`:
+  `.data/agentic-loop-policy/20260731T094604.022763Z-bd8879dc435f/`
+- MamayLM `noop`:
+  `.data/agentic-loop-policy/20260731T094605.300042Z-7654dc4ad227/`
+- Qwen `allow`: `.data/agentic-loop-policy/20260731T095054.804103Z-86b26eada0a8/`
+- Qwen `noop`: `.data/agentic-loop-policy/20260731T095055.716092Z-06242ba52f0a/`
+
+`tests/llb/bench/test_agentic_loop_policy_power.py` checks declaration validation, duplicate refusal,
+family coverage, activation/completion separation, recommendation gating, persistence, and the
+committed 32-task fixture. The original loop-policy suite also checks that repeated calls are
+counted without suppression under `allow`. Validation on 2026-07-31: `make ci` passed 2,460 tests
+with 45 opt-in/slow tests deselected, and `make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

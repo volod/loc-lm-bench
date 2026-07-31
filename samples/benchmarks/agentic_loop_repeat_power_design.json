@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-loop-repeat-noop-power-v1",
+  "hypothesis": "noop improves completion by at least 0.25 without material prompt-token or wall-clock regression",
+  "reference": {
+    "task_set_digest": "08ed7ef3b1abc4dbc843a711d89671632bda84a8ac0b3c59a7d5c44f94bd8686",
+    "paired_completion_deltas": [0.0, 0.0, 1.0, 0.0],
+    "sample_sd": 0.5
+  },
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "minimum_detectable_completion_gain": 0.25,
+  "variance_required_n": 32,
+  "minimum_discordant_pairs": 6,
+  "planned_n": 32,
+  "required_task_families": {
+    "calculator_verify": 8,
+    "read_verify": 8,
+    "search_verify": 8,
+    "state_mutation_verify": 8
+  },
+  "minimum_activation_rate": 0.5,
+  "minimum_activated_tasks_per_family": 2,
+  "maximum_relative_cost_increase": {
+    "total_model_input_tokens": 0.1,
+    "elapsed_s": 0.2
+  },
+  "required_model_families": ["gemma", "qwen"],
+  "fixed_policy": {
+    "max_steps": 6,
+    "malformed_call": "answer",
+    "repeated_call": ["allow", "noop"]
+  }
+}
