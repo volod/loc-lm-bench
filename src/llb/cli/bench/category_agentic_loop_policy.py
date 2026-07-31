@@ -43,6 +43,9 @@ def bench_agentic_loop_cmd(
         "allow,noop",
         help="comma-separated repeated-call policies; must include baseline allow",
     ),
+    agent_repeat_feedback: str = typer.Option(
+        "current", help="comma-separated repeat-feedback variants for noop cells"
+    ),
     max_prompt_chars: Optional[int] = typer.Option(
         None, help="override the resolved per-model prompt budget in characters"
     ),
@@ -55,8 +58,12 @@ def bench_agentic_loop_cmd(
         None,
         help="prospective repeat/no-op power design; enforces its focused grid and coverage",
     ),
+    repeat_feedback_design: Optional[Path] = typer.Option(
+        None,
+        help="prospective current-vs-localized repeat-feedback design",
+    ),
     model_family: Optional[str] = typer.Option(
-        None, help="predeclared roster family for a repeat-power run"
+        None, help="predeclared roster family for a repeat-policy study"
     ),
 ) -> None:
     """Sweep loop decision policies and recommend one evidence-backed cell for a fixed model."""
@@ -72,6 +79,11 @@ def bench_agentic_loop_cmd(
     task_set = load_tasks_file(tasks)
     power_design = (
         load_repeat_power_design(repeat_power_design) if repeat_power_design is not None else None
+    )
+    feedback_design = (
+        load_repeat_power_design(repeat_feedback_design)
+        if repeat_feedback_design is not None
+        else None
     )
     budget = resolve_agent_context_budget(
         cfg,
@@ -90,12 +102,14 @@ def bench_agentic_loop_cmd(
             max_steps=_csv_ints(agent_max_steps),
             malformed_policies=_csv_strings(agent_malformed_policy),
             repeated_call_policies=_csv_strings(agent_repeated_call_policy),
+            repeated_feedback_variants=_csv_strings(agent_repeat_feedback),
             budget=budget,
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
             meter=meter,
             repeat_power_design=power_design,
+            repeat_feedback_design=feedback_design,
             model_family=model_family,
         )
 

@@ -205,6 +205,70 @@ committed 32-task fixture. The original loop-policy suite also checks that repea
 counted without suppression under `allow`. Validation on 2026-07-31: `make ci` passed 2,460 tests
 with 45 opt-in/slow tests deselected, and `make lint-md` passed.
 
+##### Localized Repeat Feedback Comparison
+
+The repeat-feedback lane keeps that powered ledger, model roster, and fixed
+`6/answer/allow,noop` policy while adding only the controller notice as an experimental axis.
+`samples/benchmarks/agentic_loop_feedback_localization_design.json` predeclares `current`, `uk`,
+and `bilingual` variants with the same `+0.25` completion target, activation requirements, and
+paired token/wall cost ceilings. `make bench-agentic-loop-repeat-feedback` runs all four cells: one
+`allow/current` reference plus three `noop` feedback cells.
+
+`src/llb/bench/agentic/loop_policy.py` owns the validated feedback variants, while
+`src/llb/bench/agentic/episode.py` records whether a suppressed repeat is followed by a changed
+tool call or final answer. `src/llb/bench/agentic_loop_feedback.py` reports that response rate
+overall and per task family, pairs each localized cell directly against `noop/current`, and admits
+a family-level recommendation only when activation, material separated completion, prompt-token,
+and wall-time gates all pass. Each cell id and manifest includes the feedback variant;
+`feedback-study-design.json` and `feedback-analysis.json` make the prospective contract and
+decision independently inspectable. The general recommendation remains isolated from these
+experimental `noop` cells, so a one-family result cannot alter shipped defaults.
+
+CUDA-host evidence (2026-07-31), RTX 4060 Ti 16 GB, identical 32-task digest:
+
+| model family | feedback | response | completion | prompt tokens | wall seconds | support |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| MamayLM-Gemma 12B | `current` | 0.000 | 0.156 | 5404.0 | 35.13 | reference |
+| MamayLM-Gemma 12B | `uk` | 0.000 | 0.156 | 5371.3 | 33.92 | no |
+| MamayLM-Gemma 12B | `bilingual` | 0.062 | 0.219 | 5322.3 | 35.20 | no |
+| Qwen3 14B | `current` | 0.562 | 0.562 | 3780.1 | 4.43 | reference |
+| Qwen3 14B | `uk` | 0.281 | 0.312 | 4831.1 | 5.47 | no |
+| Qwen3 14B | `bilingual` | 0.875 | 0.875 | 2906.6 | 3.78 | yes |
+
+For MamayLM, bilingual feedback redirected only two search-family episodes and produced a
+`+0.062 [0.000, 0.156]` completion delta, below the target and statistically flat. For Qwen,
+bilingual feedback redirected 28 of 32 activated episodes, including five of eight calculator
+tasks, and produced a separated `+0.312 [0.156, 0.469]` completion delta with ten wins and no
+losses. Its paired prompt delta was `-873.5 [-1324.4, -424.4]` tokens and wall delta was
+`-0.64 [-1.13, -0.16]` seconds, so both cost gates passed. Ukrainian-only feedback regressed Qwen
+completion and failed both cost gates. The evidence therefore recommends bilingual feedback for
+the Qwen family only; `current` remains the cross-family and shipped default.
+
+The eight cell bundles are:
+
+- MamayLM `allow/current`:
+  `.data/agentic-loop-policy/20260731T123111.702646Z-99c26f12d1c7/`
+- MamayLM `noop/current`:
+  `.data/agentic-loop-policy/20260731T123112.592149Z-ad0261bc51cf/`
+- MamayLM `noop/uk`:
+  `.data/agentic-loop-policy/20260731T123112.777345Z-8e1b53d48e28/`
+- MamayLM `noop/bilingual`:
+  `.data/agentic-loop-policy/20260731T123112.965330Z-ea4c46af639f/`
+- Qwen `allow/current`:
+  `.data/agentic-loop-policy/20260731T124056.430200Z-95e2e6b53e49/`
+- Qwen `noop/current`:
+  `.data/agentic-loop-policy/20260731T124057.322698Z-c5209e02c44a/`
+- Qwen `noop/uk`:
+  `.data/agentic-loop-policy/20260731T124057.491186Z-5df4be92d12a/`
+- Qwen `noop/bilingual`:
+  `.data/agentic-loop-policy/20260731T124057.667031Z-a3be207406a8/`
+
+`tests/llb/bench/test_agentic_loop_feedback.py` checks exact grid construction, design validation,
+redirect telemetry, prospective decision gates, rendered reporting, persistence, and the committed
+design/task contract. The run path was also exercised end to end on both predeclared local models.
+Validation on 2026-07-31: `make ci` passed 2,463 tests with 45 opt-in/slow tests deselected, and
+`make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

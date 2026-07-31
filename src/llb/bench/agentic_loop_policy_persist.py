@@ -24,11 +24,14 @@ def persist_reports(
     max_steps: list[int],
     malformed_policies: list[str],
     repeated_call_policies: list[str],
+    repeated_feedback_variants: list[str],
     budget: ContextBudget,
     verification_config: dict[str, object],
     model_family: str | None,
     repeat_power_design: dict[str, object] | None,
     repeat_power_analysis: dict[str, object] | None,
+    repeat_feedback_design: dict[str, object] | None,
+    repeat_feedback_analysis: dict[str, object] | None,
     mirror: Mirror | None,
 ) -> None:
     """Write one atomic category bundle per cell, each carrying the shared comparison."""
@@ -40,9 +43,17 @@ def persist_reports(
         artifacts["study-design.json"] = (
             json.dumps(repeat_power_design, indent=2, sort_keys=True) + "\n"
         )
+    if repeat_feedback_design is not None:
+        artifacts["feedback-study-design.json"] = (
+            json.dumps(repeat_feedback_design, indent=2, sort_keys=True) + "\n"
+        )
     if repeat_power_analysis is not None:
         artifacts["power-analysis.json"] = (
             json.dumps(repeat_power_analysis, indent=2, sort_keys=True) + "\n"
+        )
+    if repeat_feedback_analysis is not None:
+        artifacts["feedback-analysis.json"] = (
+            json.dumps(repeat_feedback_analysis, indent=2, sort_keys=True) + "\n"
         )
     for report in reports:
         config: dict[str, object] = {
@@ -54,6 +65,7 @@ def persist_reports(
             "max_steps": report.cell.max_steps,
             "malformed_call_policy": report.cell.policy.malformed_call,
             "repeated_call_policy": report.cell.policy.repeated_call,
+            "repeat_feedback_variant": report.cell.policy.repeat_feedback,
             "is_baseline": report.cell.is_baseline,
             "task_set_digest": task_digest,
             "model_family": model_family,
@@ -62,6 +74,7 @@ def persist_reports(
                 "max_steps": max_steps,
                 "malformed_call_policy": malformed_policies,
                 "repeated_call_policy": repeated_call_policies,
+                "repeat_feedback_variant": repeated_feedback_variants,
             },
             "completion_rate": round(report.run.result.objective_score, 6),
             "malformed_call_rate": round(report.malformed_rate, 6),
@@ -76,11 +89,12 @@ def persist_reports(
             "mean_wall_clock_s": round(report.metric_mean("elapsed_s"), 4),
             "paired_vs_baseline": report.paired,
             "task_family_counts": (
-                repeat_power_analysis.get("task_family_counts", {})
-                if repeat_power_analysis is not None
-                else {}
+                (repeat_feedback_analysis or repeat_power_analysis or {}).get(
+                    "task_family_counts", {}
+                )
             ),
             "repeat_power": repeat_power_analysis,
+            "repeat_feedback": repeat_feedback_analysis,
             "recommendation": recommendation,
             **budget.provenance(),
             **verification_config,

@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic.loop_policy import (
+    DEFAULT_REPEAT_FEEDBACK,
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
     REPEATED_NOOP,
+    REPEAT_FEEDBACK_VARIANTS,
 )
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_loop_policy_report import (
@@ -89,17 +91,31 @@ def validate_repeat_power_design(
             "the discordant-pair gate"
         )
 
+    feedback_variants = cast(
+        list[str], design.get("repeat_feedback_variants", [DEFAULT_REPEAT_FEEDBACK])
+    )
+    if not feedback_variants or any(
+        name not in REPEAT_FEEDBACK_VARIANTS for name in feedback_variants
+    ):
+        raise ValueError(f"repeat_feedback_variants must come from {REPEAT_FEEDBACK_VARIANTS}")
     expected_cells = {
-        (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_ALLOW),
-        (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_NOOP),
+        (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_ALLOW, DEFAULT_REPEAT_FEEDBACK)
     }
+    expected_cells.update(
+        (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_NOOP, feedback)
+        for feedback in feedback_variants
+    )
     actual_cells = {
-        (cell.max_steps, cell.policy.malformed_call, cell.policy.repeated_call) for cell in cells
+        (
+            cell.max_steps,
+            cell.policy.malformed_call,
+            cell.policy.repeated_call,
+            cell.policy.repeat_feedback,
+        )
+        for cell in cells
     }
     if actual_cells != expected_cells:
-        raise ValueError(
-            "repeat-power design requires exactly steps=6, malformed=answer, repeat=allow,noop"
-        )
+        raise ValueError("repeat study grid does not match its fixed policy and feedback variants")
     families = cast(list[str], design["required_model_families"])
     if model_family is None or model_family not in families:
         raise ValueError(f"model_family must be one of the predeclared families: {families}")
@@ -153,7 +169,12 @@ def analyze_repeat_power(
 ) -> dict[str, object]:
     """Resolve coverage, activation, completion, and paired cost gates for one model family."""
     baseline = next(report for report in reports if report.cell.is_baseline)
-    noop = next(report for report in reports if report.cell.policy.repeated_call == REPEATED_NOOP)
+    noop = next(
+        report
+        for report in reports
+        if report.cell.policy.repeated_call == REPEATED_NOOP
+        and report.cell.policy.repeat_feedback == DEFAULT_REPEAT_FEEDBACK
+    )
     baseline_activation = _activation(baseline, tasks)
     noop_activation = _activation(noop, tasks)
     minimum_activation_rate = float(cast(float, design["minimum_activation_rate"]))

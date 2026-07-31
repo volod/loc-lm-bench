@@ -50,7 +50,7 @@ class LoopPolicyCell:
     def cell_id(self) -> str:
         return (
             f"steps={self.max_steps},malformed={self.policy.malformed_call},"
-            f"repeat={self.policy.repeated_call}"
+            f"repeat={self.policy.repeated_call},feedback={self.policy.repeat_feedback}"
         )
 
     @property
@@ -101,6 +101,7 @@ class AgenticLoopPolicyRun:
     recommendation: dict[str, object]
     task_set_digest: str
     repeat_power_analysis: dict[str, object] | None = None
+    repeat_feedback_analysis: dict[str, object] | None = None
 
 
 def pair_reports(
@@ -135,7 +136,7 @@ def _delta(report: LoopPolicyReport, metric: str) -> str:
 def format_policy_table(reports: list[LoopPolicyReport]) -> str:
     """Completion, formatting failures, cost, and paired baseline deltas for every cell."""
     header = (
-        f"{'max':>3} {'malformed':<11} {'repeat':<6} {'complete':>8} {'active':>7} "
+        f"{'max':>3} {'malformed':<11} {'repeat':<6} {'feedback':<9} {'complete':>8} {'active':>7} "
         f"{'repeats':>7} {'bad-rate':>8} {'steps':>6} {'calls':>6} {'prompt-tok':>10} "
         f"{'wall-s':>8} {'d(complete)':<23} {'d(prompt)':<23} reading"
     )
@@ -146,6 +147,7 @@ def format_policy_table(reports: list[LoopPolicyReport]) -> str:
             f"{report.cell.max_steps:>3d} "
             f"{report.cell.policy.malformed_call:<11} "
             f"{report.cell.policy.repeated_call:<6} "
+            f"{report.cell.policy.repeat_feedback:<9} "
             f"{report.run.result.objective_score:>8.3f} "
             f"{report.repeat_activation_rate:>7.3f} "
             f"{report.metric_mean(METRIC_REPEATED_CALLS):>7.2f} "
@@ -166,6 +168,7 @@ def build_recommendation(
     reports: list[LoopPolicyReport],
     *,
     repeat_power_analysis: dict[str, object] | None = None,
+    repeat_feedback_analysis: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Change the baseline only for a positive completion delta under the standard verdict."""
     baseline = next(report for report in reports if report.cell.is_baseline)
@@ -178,6 +181,8 @@ def build_recommendation(
     ]
     if repeat_power_analysis is not None:
         separated = [report for report in separated if report.cell.policy.repeated_call != "noop"]
+    if repeat_feedback_analysis is not None:
+        separated = [report for report in separated if report.cell.policy.repeated_call != "noop"]
     winner = min(
         separated,
         key=lambda report: (
@@ -189,7 +194,13 @@ def build_recommendation(
     )
     completion_pair = winner.paired[METRIC_COMPLETION]
     changed = not winner.cell.is_baseline
-    if repeat_power_analysis is not None:
+    if repeat_feedback_analysis is not None:
+        unchanged_reason = (
+            "family-level feedback gates pass, but shipped defaults require cross-family support"
+            if repeat_feedback_analysis["supports_localized_feedback"]
+            else cast(str, repeat_feedback_analysis["reason"])
+        )
+    elif repeat_power_analysis is not None:
         unchanged_reason = (
             "family-level gates pass, but shipped defaults require the full predeclared "
             "model-family roster"
@@ -205,6 +216,7 @@ def build_recommendation(
         "max_steps": winner.cell.max_steps,
         "malformed_call_policy": winner.cell.policy.malformed_call,
         "repeated_call_policy": winner.cell.policy.repeated_call,
+        "repeat_feedback_variant": winner.cell.policy.repeat_feedback,
         "changes_shipped_defaults": changed,
         "verdict": reading_of(completion_pair),
         "reason": (
@@ -228,4 +240,17 @@ def build_recommendation(
             else {}
         ),
         **({"repeat_power": repeat_power_analysis} if repeat_power_analysis is not None else {}),
+        **(
+            {
+                "repeat_feedback": repeat_feedback_analysis,
+                "model_family_supports_feedback_variant": repeat_feedback_analysis[
+                    "supports_localized_feedback"
+                ],
+                "model_family_recommended_feedback_variant": repeat_feedback_analysis[
+                    "recommended_feedback_variant"
+                ],
+            }
+            if repeat_feedback_analysis is not None
+            else {}
+        ),
     }

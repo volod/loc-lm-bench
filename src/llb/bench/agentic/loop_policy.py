@@ -20,12 +20,32 @@ REPEATED_ALLOW = "allow"
 REPEATED_NOOP = "noop"
 REPEATED_CALL_POLICIES = (REPEATED_ALLOW, REPEATED_NOOP)
 
+REPEAT_FEEDBACK_CURRENT = "current"
+REPEAT_FEEDBACK_UK = "uk"
+REPEAT_FEEDBACK_BILINGUAL = "bilingual"
+REPEAT_FEEDBACK_VARIANTS = (
+    REPEAT_FEEDBACK_CURRENT,
+    REPEAT_FEEDBACK_UK,
+    REPEAT_FEEDBACK_BILINGUAL,
+)
+
 DEFAULT_MALFORMED_POLICY = MALFORMED_ANSWER
 DEFAULT_REPEATED_CALL_POLICY = REPEATED_ALLOW
+DEFAULT_REPEAT_FEEDBACK = REPEAT_FEEDBACK_CURRENT
 
-REPEATED_NOOP_OBSERVATION = (
-    "[loop] identical consecutive tool call was not executed; revise the call or finish"
-)
+REPEATED_NOOP_OBSERVATIONS = {
+    REPEAT_FEEDBACK_CURRENT: (
+        "[loop] identical consecutive tool call was not executed; revise the call or finish"
+    ),
+    REPEAT_FEEDBACK_UK: (
+        "[loop] повторний ідентичний виклик не виконано; зміни виклик або заверши"
+    ),
+    REPEAT_FEEDBACK_BILINGUAL: (
+        "[loop] identical call not executed / повторний виклик не виконано; "
+        "change action or finish / зміни дію або заверши"
+    ),
+}
+REPEATED_NOOP_OBSERVATION = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_CURRENT]
 STRICT_MALFORMED_FEEDBACK = (
     "[loop] malformed tool call was not executed: {error}. Return one valid JSON tool call."
 )
@@ -39,6 +59,7 @@ class LoopPolicy:
 
     malformed_call: str = DEFAULT_MALFORMED_POLICY
     repeated_call: str = DEFAULT_REPEATED_CALL_POLICY
+    repeat_feedback: str = DEFAULT_REPEAT_FEEDBACK
 
     def __post_init__(self) -> None:
         if self.malformed_call not in MALFORMED_POLICIES:
@@ -51,6 +72,21 @@ class LoopPolicy:
                 f"unknown repeated-call policy: {self.repeated_call!r}; "
                 f"choose from {REPEATED_CALL_POLICIES}"
             )
+        if self.repeat_feedback not in REPEAT_FEEDBACK_VARIANTS:
+            raise ValueError(
+                f"unknown repeat-feedback variant: {self.repeat_feedback!r}; "
+                f"choose from {REPEAT_FEEDBACK_VARIANTS}"
+            )
+
+
+def repeated_noop_observation(variant: str) -> str:
+    """Resolve a validated repeat-feedback variant to its controller observation."""
+    try:
+        return REPEATED_NOOP_OBSERVATIONS[variant]
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown repeat-feedback variant: {variant!r}; choose from {REPEAT_FEEDBACK_VARIANTS}"
+        ) from exc
 
 
 def call_key(name: str, arguments: dict[str, Any]) -> str:

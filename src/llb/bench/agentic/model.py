@@ -94,6 +94,7 @@ class Episode:
     n_repair_attempts: int = 0
     n_repeated_calls: int = 0
     n_repeated_noops: int = 0
+    repeat_feedback_redirected: bool = False
     elapsed_s: float = 0.0
 
 

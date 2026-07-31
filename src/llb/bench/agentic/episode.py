@@ -23,10 +23,10 @@ from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     MALFORMED_REPAIR_ONCE,
     REPEATED_NOOP,
-    REPEATED_NOOP_OBSERVATION,
     LoopPolicy,
     call_key,
     repair_prompt,
+    repeated_noop_observation,
     strict_feedback,
 )
 from llb.bench.agentic.model import (
@@ -145,6 +145,8 @@ def run_episode(
     n_repair_attempts = 0
     n_repeated_calls = 0
     n_repeated_noops = 0
+    repeat_feedback_redirected = False
+    awaiting_redirect_key: str | None = None
     previous_call_key: str | None = None
     steps = 0
     started = time.monotonic()
@@ -192,22 +194,35 @@ def run_episode(
                 state.record_feedback(strict_feedback(parsed.error or "unreadable tool call"))
                 continue
         if call is None:  # the model answered in prose -> treat as the final answer
+            repeat_feedback_redirected = (
+                repeat_feedback_redirected or awaiting_redirect_key is not None
+            )
             answer = str(raw).strip()
             status = STATUS_COMPLETED
             break
         if call.name == FINISH:
+            repeat_feedback_redirected = (
+                repeat_feedback_redirected or awaiting_redirect_key is not None
+            )
             answer = str(call.arguments.get("answer", ""))
             status = STATUS_COMPLETED
             break
         current_call_key = call_key(call.name, call.arguments)
+        if awaiting_redirect_key is not None and current_call_key != awaiting_redirect_key:
+            repeat_feedback_redirected = True
+            awaiting_redirect_key = None
         repeated_call = current_call_key == previous_call_key
         repeated_noop = loop_policy.repeated_call == REPEATED_NOOP and repeated_call
         observation = (
-            REPEATED_NOOP_OBSERVATION if repeated_noop else world.execute(call.name, call.arguments)
+            repeated_noop_observation(loop_policy.repeat_feedback)
+            if repeated_noop
+            else world.execute(call.name, call.arguments)
         )
         n_tool_calls += 1
         n_repeated_calls += 1 if repeated_call else 0
         n_repeated_noops += 1 if repeated_noop else 0
+        if repeated_noop:
+            awaiting_redirect_key = current_call_key
         state.record(policy, call.name, call.arguments, observation)
         previous_call_key = current_call_key
     success = check_success(task, world, answer)
@@ -226,6 +241,7 @@ def run_episode(
         n_repair_attempts=n_repair_attempts,
         n_repeated_calls=n_repeated_calls,
         n_repeated_noops=n_repeated_noops,
+        repeat_feedback_redirected=repeat_feedback_redirected,
         elapsed_s=time.monotonic() - started,
     )
 

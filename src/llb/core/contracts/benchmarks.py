@@ -91,6 +91,7 @@ class AgenticCaseRow(TypedDict):
     n_repair_attempts: NotRequired[int]
     n_repeated_calls: NotRequired[int]
     n_repeated_noops: NotRequired[int]
+    repeat_feedback_redirected: NotRequired[bool]
     elapsed_s: NotRequired[float]
     trajectory_quality: NotRequired[float]
     # Context accounting (agent context-management policies): how the episode spent its window.

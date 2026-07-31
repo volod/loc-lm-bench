@@ -1,6 +1,7 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-loop-repeat-power bench-agentic-context \
+.PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-loop-repeat-power \
+	bench-agentic-loop-repeat-feedback bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
 	bench-agentic-context-compact-long \
@@ -22,7 +23,9 @@ bench-agentic-loop: ## Sweep max steps, malformed-call, and repeated-call policy
 		--agent-max-steps "$(AGENT_MAX_STEPS)" \
 		--agent-malformed-policy "$(AGENT_MALFORMED_POLICY)" \
 		--agent-repeated-call-policy "$(AGENT_REPEATED_CALL_POLICY)" \
+		--agent-repeat-feedback "$(AGENT_REPEAT_FEEDBACK)" \
 		$(if $(AGENT_LOOP_POWER_DESIGN),--repeat-power-design "$(AGENT_LOOP_POWER_DESIGN)",) \
+		$(if $(AGENT_LOOP_FEEDBACK_DESIGN),--repeat-feedback-design "$(AGENT_LOOP_FEEDBACK_DESIGN)",) \
 		$(if $(AGENT_LOOP_MODEL_FAMILY),--model-family "$(AGENT_LOOP_MODEL_FAMILY)",) \
 		$(if $(AGENT_LOOP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_LOOP_MAX_PROMPT_CHARS)",) \
 		$(if $(AGENT_LOOP_BASE_URL),--base-url "$(AGENT_LOOP_BASE_URL)",) \
@@ -37,6 +40,18 @@ bench-agentic-loop-repeat-power: ## Run the predeclared allow-vs-noop power stud
 			AGENT_LOOP_MODEL_FAMILY="$$family" MODEL="$$model" BACKEND=ollama \
 			AGENT_MAX_STEPS=6 AGENT_MALFORMED_POLICY=answer \
 			AGENT_REPEATED_CALL_POLICY=allow,noop || exit 1; \
+	done
+
+bench-agentic-loop-repeat-feedback: ## Compare current, Ukrainian, and bilingual repeat feedback over the powered roster
+	@for entry in $(AGENT_LOOP_REPEAT_POWER_ROSTER); do \
+		family="$${entry%%=*}"; model="$${entry#*=}"; \
+		$(MAKE) --no-print-directory bench-agentic-loop \
+			AGENT_LOOP_TASKS="$(AGENT_LOOP_REPEAT_POWER_TASKS)" \
+			AGENT_LOOP_FEEDBACK_DESIGN="$(AGENT_LOOP_FEEDBACK_DESIGN_FILE)" \
+			AGENT_LOOP_MODEL_FAMILY="$$family" MODEL="$$model" BACKEND=ollama \
+			AGENT_MAX_STEPS=6 AGENT_MALFORMED_POLICY=answer \
+			AGENT_REPEATED_CALL_POLICY=allow,noop \
+			AGENT_REPEAT_FEEDBACK=current,uk,bilingual || exit 1; \
 	done
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)

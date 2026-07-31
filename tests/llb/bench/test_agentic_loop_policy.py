@@ -139,6 +139,7 @@ def test_repeated_noop_is_recorded_but_does_not_execute_again():
     )
     assert episode.success is True and episode.n_tool_calls == 2
     assert episode.n_repeated_calls == 1 and episode.n_repeated_noops == 1
+    assert episode.repeat_feedback_redirected is True
     assert episode.transcript[-1][2] == REPEATED_NOOP_OBSERVATION
 
 

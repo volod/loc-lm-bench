@@ -43,6 +43,8 @@ MODULES = [
     "llb.bench.agentic.batch",
     "llb.bench.agentic.loop_policy",
     "llb.bench.agentic_loop_policy",
+    "llb.bench.agentic_loop_policy_cell",
+    "llb.bench.agentic_loop_feedback",
     "llb.bench.agentic_loop_policy_power",
     "llb.bench.agentic_loop_policy_persist",
     "llb.bench.agentic_loop_policy_report",

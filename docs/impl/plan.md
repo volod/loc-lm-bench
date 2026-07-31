@@ -43,31 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-repeat-feedback-localization (optional)
+### agent-loop-policy-repeat-feedback-generalization (optional)
 
-Compare the current controller repeat feedback with concise Ukrainian and bilingual variants on
-the powered repetition-prone ledger. The next policy question is whether a local model interprets
-the suppression notice and changes course; the measurement seam and baseline evidence live in
-[extended workflows](current/extended-workflows.md#powered-repeat-noop-comparison).
+Test whether bilingual repeat feedback remains beneficial beyond one model family and across
+independent seeded repetitions before exposing model-family routing or reconsidering any global
+default. The current family-specific decision and reusable measurement lane are in
+[extended workflows](current/extended-workflows.md#localized-repeat-feedback-comparison).
 
 - Agent status: RUN NEEDED
-- Dependencies: keep the task ledger, fixed `6/answer/allow,noop` cells, prospective completion and
-  cost gates, and model-family roster fixed. Add feedback text as the only experimental axis.
-- User-visible outcome: operators learn whether localized controller feedback makes suppression
-  actionable or merely adds prompt tokens.
-- Scope boundary: in scope -- concise Ukrainian and bilingual feedback variants, paired completion
-  and prompt-token comparisons, and per-family response rates. Out of scope -- changing tool
-  semantics, expanding the step budget, or changing the repeated-call default without a material
-  cross-family completion gain.
-- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/` with a
-  feedback-variant id in every cell.
-- Execution path: add a make target that runs the fixed powered roster over the feedback variants
-  on the CUDA host.
-- Acceptance gates: task/model coverage and activation gates pass; a feedback variant clears the
-  declared completion and cost targets against the current notice before it can feed a default
-  recommendation.
+- Dependencies: predeclare at least two additional UA-capable local model families and multiple
+  run seeds; retain the powered task ledger, fixed `6/answer/allow,noop` policy, response telemetry,
+  and completion plus cost gates.
+- User-visible outcome: operators learn whether a bilingual notice is a stable family-level policy
+  choice or a model/run-specific effect.
+- Scope boundary: in scope -- replicate stability, additional model-family coverage, a declared
+  cross-family adoption rule, and model-family routing only if stable. Out of scope -- tuning the
+  task ledger after inference or changing the global repeat policy from a single-family result.
+- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/`, grouped
+  by model family and run seed in the comparison summary.
+- Execution path: extend the fixed-roster make workflow with a predeclared generalization design
+  and aggregate family/seed decision artifact.
+- Acceptance gates: each family/seed cell passes coverage and activation; any routed variant must
+  repeatedly clear the material completion and paired cost gates, and a global recommendation
+  requires the declared cross-family support threshold.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#powered-repeat-noop-comparison).
+  [extended workflows](current/extended-workflows.md#localized-repeat-feedback-comparison).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 

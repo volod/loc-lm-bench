@@ -33,6 +33,7 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
         "n_repair_attempts": episode.n_repair_attempts,
         "n_repeated_calls": episode.n_repeated_calls,
         "n_repeated_noops": episode.n_repeated_noops,
+        "repeat_feedback_redirected": episode.repeat_feedback_redirected,
         "elapsed_s": round(episode.elapsed_s, 6),
         "answer_preview": (episode.answer or "")[:280],
     }

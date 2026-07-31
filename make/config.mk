@@ -301,14 +301,17 @@ AGENT_LOOP_TASKS ?= $(AGENTIC_TASKS)
 AGENT_MAX_STEPS ?= 4,6,10
 AGENT_MALFORMED_POLICY ?= answer,repair_once,strict
 AGENT_REPEATED_CALL_POLICY ?= allow,noop
+AGENT_REPEAT_FEEDBACK ?= current
 AGENT_LOOP_MAX_PROMPT_CHARS ?=
 AGENT_LOOP_BASE_URL ?= $(AGENTIC_BASE_URL)
 AGENT_LOOP_MAX_MODEL_LEN ?= $(AGENTIC_MAX_MODEL_LEN)
 AGENT_LOOP_POWER_DESIGN ?=
+AGENT_LOOP_FEEDBACK_DESIGN ?=
 AGENT_LOOP_MODEL_FAMILY ?=
 AGENT_LOOP_REPEAT_POWER_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_repeat_power_uk.json
 AGENT_LOOP_REPEAT_POWER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_repeat_power_design.json
 AGENT_LOOP_REPEAT_POWER_ROSTER ?= gemma=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M qwen=qwen3:14b
+AGENT_LOOP_FEEDBACK_DESIGN_FILE ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_localization_design.json
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.
