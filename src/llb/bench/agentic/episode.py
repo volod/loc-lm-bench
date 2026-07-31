@@ -6,6 +6,7 @@ reuse `build_agent_prompt` + `check_success` to produce the SAME canonical `Epis
 """
 
 import json
+import time
 
 from llb.bench.agentic.context import (
     POLICY_COMPACT,
@@ -17,7 +18,17 @@ from llb.bench.agentic.context import (
     policy_history_lines,
     summarize_entries,
 )
-from llb.bench.agentic.context_budget import ContextBudget, prompt_tokens, unbounded_budget
+from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.bench.agentic.loop_policy import (
+    MALFORMED_ANSWER,
+    MALFORMED_REPAIR_ONCE,
+    REPEATED_NOOP,
+    REPEATED_NOOP_OBSERVATION,
+    LoopPolicy,
+    call_key,
+    repair_prompt,
+    strict_feedback,
+)
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     STATUS_COMPLETED,
@@ -25,16 +36,13 @@ from llb.bench.agentic.model import (
     STATUS_INCOMPLETE,
     AgenticTask,
     Episode,
-    Harness,
-    _ScoredAgenticEpisodes,
 )
 from llb.bench.agentic.success import check_success
-from llb.bench.common import LLMComplete, mean
+from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
-from llb.core.contracts.benchmarks import AgenticCaseRow, ToolDef
+from llb.core.contracts.benchmarks import ToolDef
 from llb.prompts.registry import render_text
-from llb.scoring.leaderboard import bootstrap_mean_ci
-from llb.scoring.tool_calls import parse_tool_call
+from llb.scoring.tool_calls import parse_tool_call_detailed
 
 
 def build_agent_prompt(
@@ -114,6 +122,7 @@ def run_episode(
     max_steps: int = DEFAULT_MAX_STEPS,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
 ) -> Episode:
     """Drive one task to completion (or the step budget) in the deterministic sandbox.
 
@@ -126,11 +135,18 @@ def run_episode(
     catalog = catalog if catalog is not None else tool_catalog()
     policy = policy if policy is not None else ContextPolicy()
     budget = budget if budget is not None else unbounded_budget()
+    loop_policy = loop_policy if loop_policy is not None else LoopPolicy()
     state = ContextState()
     answer = ""
     status = STATUS_INCOMPLETE
     n_tool_calls = 0
+    n_controller_calls = 0
+    n_malformed_calls = 0
+    n_repair_attempts = 0
+    n_repeated_noops = 0
+    previous_call_key: str | None = None
     steps = 0
+    started = time.monotonic()
     for steps in range(1, max_steps + 1):
         prompt = step_prompt(task, catalog, policy, state, budget, complete)
         state.telemetry.prompt_chars.append(len(prompt))
@@ -142,18 +158,57 @@ def run_episode(
             break
         state.telemetry.model_input_prompt_chars += len(prompt)
         raw = complete(prompt)
-        call = parse_tool_call(raw)
+        n_controller_calls += 1
+        parsed = parse_tool_call_detailed(raw)
+        call = parsed.call
+        if call is None and parsed.attempted:
+            n_malformed_calls += 1
+            if loop_policy.malformed_call == MALFORMED_ANSWER:
+                answer = str(raw).strip()
+                status = STATUS_COMPLETED
+                break
+            if loop_policy.malformed_call == MALFORMED_REPAIR_ONCE:
+                repaired = repair_prompt(
+                    prompt,
+                    catalog,
+                    str(raw),
+                    parsed.error or "unreadable tool call",
+                )
+                state.telemetry.prompt_chars.append(len(repaired))
+                if not budget.fits(len(repaired)):
+                    status = STATUS_CONTEXT_OVERFLOW
+                    break
+                state.telemetry.model_input_prompt_chars += len(repaired)
+                state.telemetry.n_repair_prompts += 1
+                n_repair_attempts += 1
+                raw = complete(repaired)
+                n_controller_calls += 1
+                parsed = parse_tool_call_detailed(raw)
+                call = parsed.call
+                if call is None and parsed.attempted:
+                    n_malformed_calls += 1
+            if call is None and parsed.attempted:
+                state.record_feedback(strict_feedback(parsed.error or "unreadable tool call"))
+                continue
         if call is None:  # the model answered in prose -> treat as the final answer
-            answer = raw.strip()
+            answer = str(raw).strip()
             status = STATUS_COMPLETED
             break
         if call.name == FINISH:
             answer = str(call.arguments.get("answer", ""))
             status = STATUS_COMPLETED
             break
-        observation = world.execute(call.name, call.arguments)
+        current_call_key = call_key(call.name, call.arguments)
+        repeated_noop = (
+            loop_policy.repeated_call == REPEATED_NOOP and current_call_key == previous_call_key
+        )
+        observation = (
+            REPEATED_NOOP_OBSERVATION if repeated_noop else world.execute(call.name, call.arguments)
+        )
         n_tool_calls += 1
+        n_repeated_noops += 1 if repeated_noop else 0
         state.record(policy, call.name, call.arguments, observation)
+        previous_call_key = current_call_key
     success = check_success(task, world, answer)
     return Episode(
         success=success,
@@ -165,75 +220,18 @@ def run_episode(
         transcript=state.executed,
         telemetry=state.telemetry,
         context_policy_supported=True,
+        n_model_calls=n_controller_calls + state.telemetry.n_compactions,
+        n_malformed_calls=n_malformed_calls,
+        n_repair_attempts=n_repair_attempts,
+        n_repeated_noops=n_repeated_noops,
+        elapsed_s=time.monotonic() - started,
     )
 
 
-def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
-    telemetry = episode.telemetry
-    row: AgenticCaseRow = {
-        "item_id": task.id,
-        "status": episode.status,
-        "success": 1.0 if episode.success else 0.0,
-        "objective_score": 1.0 if episode.success else 0.0,
-        "n_steps": episode.n_steps,
-        "n_tool_calls": episode.n_tool_calls,
-        "answer_preview": (episode.answer or "")[:280],
-    }
-    if telemetry.prompt_chars:
-        # Context accounting rides ALONGSIDE the headline, never in it. A refused prompt is counted
-        # here too: the step whose size ended the episode is the one worth seeing.
-        row["max_prompt_tokens"] = prompt_tokens(telemetry.max_prompt_chars)
-        row["total_prompt_tokens"] = prompt_tokens(telemetry.total_prompt_chars)
-        row["total_model_input_tokens"] = prompt_tokens(telemetry.model_input_prompt_chars)
-        row["compaction_prompt_tokens"] = prompt_tokens(telemetry.compaction_prompt_chars)
-        row["n_model_calls"] = episode.n_steps + telemetry.n_compactions
-        row["observation_bytes"] = telemetry.observation_bytes
-        row["n_compactions"] = telemetry.n_compactions
-        row["n_trimmed_observations"] = telemetry.n_trimmed_observations
-    return row
-
-
-def _resolve_harness(harness_name: str, harness: Harness | None) -> Harness:
-    if harness is not None:
-        return harness
-    from llb.bench.harness.registry import get_harness
-
-    return get_harness(harness_name)
-
-
-def _run_episodes(
-    tasks: list[AgenticTask],
-    complete: LLMComplete,
-    harness: Harness,
-    max_steps: int,
-    policy: ContextPolicy | None = None,
-    budget: ContextBudget | None = None,
-) -> list[Episode]:
-    catalog = tool_catalog()
-    return [
-        harness(
-            task,
-            complete,
-            catalog,
-            max_steps=max_steps,
-            policy=policy,
-            budget=budget,
-        )
-        for task in tasks
-    ]
-
-
-def _score_episodes(tasks: list[AgenticTask], episodes: list[Episode]) -> _ScoredAgenticEpisodes:
-    rows = [_row(task, episode) for task, episode in zip(tasks, episodes)]
-    case_success = [1.0 if episode.success else 0.0 for episode in episodes]
-    reliability = sum(1 for episode in episodes if episode.status == STATUS_COMPLETED) / len(
-        episodes
-    )
-    return _ScoredAgenticEpisodes(
-        rows=rows,
-        case_success=case_success,
-        reliability=reliability,
-        completion_ci=bootstrap_mean_ci(case_success),
-        mean_steps=mean([episode.n_steps for episode in episodes]),
-        mean_tool_calls=mean([episode.n_tool_calls for episode in episodes]),
-    )
+# Compatibility imports for callers that used the pre-split episode module.
+from llb.bench.agentic.batch import (  # noqa: E402,F401
+    _resolve_harness,
+    _row,
+    _run_episodes,
+    _score_episodes,
+)

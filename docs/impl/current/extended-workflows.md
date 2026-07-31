@@ -67,6 +67,81 @@ Loop and LangGraph matched item-for-item on completion and prompt tokens under b
 (seed-task observations sit under the 800-char cap, so `observation_cap` is a no-op on this set --
 the transfer seam is what the run proves). Bundles under `.data/agentic/20260729T12*`.
 
+### Agent Loop-Policy Recommendation
+
+`bench-agentic-loop` measures the controller policy separately from the framework axis. It runs a
+Cartesian grid over the step budget, malformed-call handling, and repeated-identical-call handling
+while holding the model, task order, tool world, context policy, and objective checks fixed. The
+exact legacy cell (`max_steps=6`, `answer`, `allow`) is mandatory and every cell carries paired
+deltas against it.
+
+The policy vocabulary is:
+
+- `answer`: preserve legacy behavior by treating an unreadable structured response as the final
+  answer;
+- `repair_once`: send one additional bounded prompt containing the tool schemas, rejected output,
+  and parse error, then continue strictly if that repair is still malformed;
+- `strict`: count the malformed model step, execute nothing, place a parse-error note in the live
+  transcript, and continue;
+- `allow`: execute consecutive identical calls as before;
+- `noop`: record the repeated call and return an explicit controller note without executing its
+  world mutation again.
+
+`parse_tool_call_detailed` in `src/llb/scoring/tool_calls.py` preserves whether a response was a
+structured-call attempt and its parse error while the existing `parse_tool_call` API remains
+unchanged. `src/llb/bench/agentic/loop_policy.py` owns the policy constants and repair prompt;
+`src/llb/bench/agentic/episode.py` applies them; generic batch execution/scoring is split into
+`src/llb/bench/agentic/batch.py`. The grid, persistence, paired report, and CLI live in
+`src/llb/bench/agentic_loop_policy.py`, `agentic_loop_policy_persist.py`,
+`agentic_loop_policy_report.py`, and `src/llb/cli/bench/category_agentic_loop_policy.py`.
+
+Every case row reports objective completion, malformed-call count and rate, logical steps, tool and
+model calls, repair count, repeated no-ops, total model-input tokens, and wall-clock seconds.
+Completion, malformed rate, steps, tool calls, input tokens, and wall clock are all paired against
+the baseline over shared bootstrap index sets. A default changes only for a positive completion
+delta under the repository's standard paired verdict; an underpowered point gain is recorded but
+does not become a shipped recommendation.
+
+```bash
+make bench-agentic-loop MODEL=<model> BACKEND=<backend> \
+  AGENT_MAX_STEPS=4,6,10 \
+  AGENT_MALFORMED_POLICY=answer,repair_once,strict \
+  AGENT_REPEATED_CALL_POLICY=allow,noop
+```
+
+Each cell persists under `$DATA_DIR/agentic-loop-policy/<run>/`. Its manifest contains the complete
+grid, task digest, per-cell means, all paired blocks, context-budget provenance, and the per-model
+recommendation. `comparison.md` and `recommendation.json` sit beside every manifest so an operator
+can inspect or consume the decision without reconstructing the grid.
+
+CUDA-host evidence (2026-07-31): MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M ran through Ollama on the RTX
+4060 Ti 16 GB with `num_ctx=8192` (about 8.3 GiB model VRAM). The committed four-task UA seed
+covered all 18 cells in 480 model calls / 15,144 generated tokens at 5.4 tok/s:
+
+| max steps | repeat | completion | malformed rate | mean input tokens | mean wall seconds |
+| --- | --- | --- | --- | --- | --- |
+| 4 | `allow` | 0.250 | 0.000 | 3338.5 | 24.86-28.71 |
+| 4 | `noop` | 0.500 | 0.000 | 3392.2 | 25.61-29.74 |
+| 6 | `allow` | 0.250 | 0.000 | 5131.5 | 32.39-34.70 |
+| 6 | `noop` | 0.500 | 0.000 | 5299.5 | 33.24-35.00 |
+| 10 | `allow` | 0.250 | 0.000 | 8960.0 | 54.49-55.22 |
+| 10 | `noop` | 0.500 | 0.000 | 9592.2 | 56.68-57.53 |
+
+The malformed policy was inactive on this model/task set: all three settings reproduced the same
+row inside each `(max_steps, repeat)` block. `noop` improved the point estimate by `+0.250`, but its
+paired 95% interval was `[0.000, 0.750]` with only one discordant task, so the standard reading is
+flat. Raising the budget to 10 added about 3828.5 input tokens per episode under `allow` without a
+completion gain. The evidence-backed recommendation therefore retains `6/answer/allow` at 0.250
+completion, 5131.5 mean input tokens, and 34.70 mean wall seconds; shipped defaults did not change.
+The 18 bundles are under `.data/agentic-loop-policy/20260731T061934*` through
+`.data/agentic-loop-policy/20260731T061938*`.
+
+CI coverage in `tests/llb/bench/test_agentic_loop_policy.py` drives all malformed branches over the
+fake completion seam, including an unreadable JSON call repaired into a successful tool call,
+strict continuation, repeated no-op behavior, mandatory baseline validation, paired metrics,
+recommendation gating, and per-cell comparison artifacts. The explicit default policy is also
+checked against the implicit legacy loop behavior.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

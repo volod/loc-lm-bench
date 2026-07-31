@@ -24,7 +24,8 @@ from typing import Any
 
 from llb.bench.agentic.context import CONTEXT_POLICIES, ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
-from llb.bench.agentic.episode import _score_episodes, run_episode
+from llb.bench.agentic.batch import _score_episodes
+from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     STATUS_CONTEXT_OVERFLOW,

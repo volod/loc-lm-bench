@@ -1,6 +1,7 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-agentic-context bench-agentic-context-sweep \
+.PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-context \
+	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
 	bench-agentic-context-compact-long \
 	bench-chain-context composite-headline platform-matrix
@@ -12,6 +13,18 @@ agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compar
 	done
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
+
+bench-agentic-loop: ## Sweep max steps, malformed-call, and repeated-call policy; recommend one cell per model (AGENT_MAX_STEPS= AGENT_MALFORMED_POLICY= AGENT_REPEATED_CALL_POLICY= MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop --tasks "$(AGENT_LOOP_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--agent-max-steps "$(AGENT_MAX_STEPS)" \
+		--agent-malformed-policy "$(AGENT_MALFORMED_POLICY)" \
+		--agent-repeated-call-policy "$(AGENT_REPEATED_CALL_POLICY)" \
+		$(if $(AGENT_LOOP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_LOOP_MAX_PROMPT_CHARS)",) \
+		$(if $(AGENT_LOOP_BASE_URL),--base-url "$(AGENT_LOOP_BASE_URL)",) \
+		$(if $(AGENT_LOOP_MAX_MODEL_LEN),--max-model-len "$(AGENT_LOOP_MAX_MODEL_LEN)",)
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

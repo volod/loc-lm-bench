@@ -84,6 +84,12 @@ class AgenticCaseRow(TypedDict):
     objective_score: float
     n_steps: int
     n_tool_calls: int
+    n_model_calls: NotRequired[int]
+    n_malformed_calls: NotRequired[int]
+    malformed_call_rate: NotRequired[float]
+    n_repair_attempts: NotRequired[int]
+    n_repeated_noops: NotRequired[int]
+    elapsed_s: NotRequired[float]
     trajectory_quality: NotRequired[float]
     # Context accounting (agent context-management policies): how the episode spent its window.
     # Present when the harness recorded per-step prompt sizes (loop/langgraph always; crewai when
@@ -94,7 +100,6 @@ class AgenticCaseRow(TypedDict):
     # the oversized controller prompt that the local guard refused.
     total_model_input_tokens: NotRequired[int]
     compaction_prompt_tokens: NotRequired[int]
-    n_model_calls: NotRequired[int]
     observation_bytes: NotRequired[int]
     n_compactions: NotRequired[int]
     n_trimmed_observations: NotRequired[int]

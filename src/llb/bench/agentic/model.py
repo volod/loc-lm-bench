@@ -86,6 +86,12 @@ class Episode:
     # means the framework owned the transcript (CrewAI) and the comparison must not treat the
     # row as our `full` / `observation_cap` / ... assembly -- see harness comparison docs.
     context_policy_supported: bool = True
+    # Loop-policy diagnostics. Defaults keep episodes built by framework adapters compatible.
+    n_model_calls: int = 0
+    n_malformed_calls: int = 0
+    n_repair_attempts: int = 0
+    n_repeated_noops: int = 0
+    elapsed_s: float = 0.0
 
 
 class Harness(Protocol):

@@ -33,6 +33,14 @@
         "sha256": "acd9063e73a92dcfad62219937c6db7948a0463844c51c350aef6e79c8635dbd"
       }
     },
+    "bench.agentic.tool_call_repair": {
+      "kind": "text",
+      "descriptor": "bench/agentic/tool_call_repair.prompt.json",
+      "template": {
+        "path": "bench/agentic/tool_call_repair.txt",
+        "sha256": "98370152325f9d269feb8bec6f049a82dfa2e83bcc4f3c591c11216c025671e3"
+      }
+    },
     "bench.agentic.trajectory_intent": {
       "kind": "text",
       "descriptor": "bench/agentic/trajectory_intent.prompt.json",

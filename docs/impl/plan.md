@@ -43,50 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-harness-loop-policy-recommendation
+### agent-loop-policy-repeat-noop-power (optional)
 
-The harness comparison varies the FRAMEWORK and holds the loop policy fixed
-([extended workflows](current/extended-workflows.md#agentic-harness-comparison)), so the loop's own
-constants have never been measured on anything. Two of them decide episodes: `DEFAULT_MAX_STEPS = 6`
-is a guess, and a tool call the parser cannot read is treated as the FINAL ANSWER and ends the
-episode (`parse_tool_call` returning `None` in `src/llb/bench/agentic/episode.py`), so a model that
-emits almost-valid JSON is scored as though it chose to stop -- a formatting failure and a reasoning
-failure become the same number. Sweep the loop policy the way the framework is swept and recommend
-one per model: `max_steps` over a small grid, the malformed-call policy (`answer`, today's behavior,
-versus `repair_once` -- reprompt once with the schema and the parse error -- versus `strict`, which
-counts the step as failed and continues), and repeated-identical-call handling (allow versus a
-recorded no-op with a note back to the model). Report completion rate against COST, because a step
-budget buys completion with tokens and wall clock, and a recommendation that ignores the price is
-not usable on a 16 GiB host.
+Determine whether repeated-call `noop` should replace `allow` by increasing independent paired
+power on repetition-prone tasks and across model families. Use the current
+[agent loop-policy lane](current/extended-workflows.md#agent-loop-policy-recommendation), predeclare
+the task-family coverage and minimum detectable completion gain, assemble enough non-duplicate
+tasks for the standard discordant-pair gate to be reachable, and run a focused
+`allow`-versus-`noop` comparison at the shipped step budget before reconsidering defaults.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. The cost side reads the per-episode prompt-token telemetry every
-  `AgenticCaseRow` already carries
-  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)). Reuse the
-  harness resolution and comparison seam in `src/llb/bench/agentic/run.py` and
-  `src/llb/board/harnesses.py`, and the tool-call parser in `src/llb/scoring/tool_calls.py`.
-- User-visible outcome: the operator gets a per-model loop configuration with evidence -- how many
-  steps to allow, and whether to repair a malformed tool call -- instead of inheriting three
-  constants nobody measured.
-- Scope boundary: in scope -- the knob sweep, the malformed-call rate reported SEPARATELY from
-  completion so a repair gain is attributable to formatting rather than to reasoning, the
-  cost columns, and the per-model recommendation. Out of scope -- new harness frameworks, changes to
-  the tool catalog or world, trajectory-judge changes, and changing the shipped defaults before a
-  paired delta supports it.
-- Data and artifact paths: one bundle per policy cell under `$DATA_DIR/agentic-loop-policy/<run>/`;
-  the comparison beside it.
-- Execution path: `make bench-agentic-loop AGENT_MAX_STEPS=4,6,10 AGENT_MALFORMED_POLICY=answer,repair_once,strict
-  MODEL=<model> BACKEND=<backend>` on the CUDA host over roster-family strata until the declared
-  family-coverage and paired-precision targets are reached, since a repair policy is a property of
-  the model's formatting behavior; CI covers each policy's branch over the fake endpoint, including
-  a completion the parser cannot read.
-- Acceptance gates: `make ci` green; the `answer` policy at `max_steps=6` reproduces the recorded
-  agentic rows exactly; every cell reports completion, malformed-call rate, steps, tool calls, and
-  prompt tokens with a paired delta against that baseline cell; a default changes only when its
-  delta clears zero under the standard verdict; the recommendation states the cost of each
-  recommended knob.
-- Documentation target: the agentic harness section of
-  [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
+- Dependencies: the current loop-policy runner supplies the policy branches, cost columns, paired
+  evidence, persistence, and conservative recommendation gate. Build an independent task set whose
+  success checks remain deterministic and whose workflows can naturally repeat both idempotent and
+  state-mutating calls.
+- User-visible outcome: operators learn whether suppressing identical calls generalizes beyond a
+  small seed and whether its completion effect is worth the feedback-token and wall-clock cost.
+- Scope boundary: in scope -- prospective power, repetition-activation coverage, at least two
+  locally feasible roster families, and a focused paired decision. Out of scope -- changing tool
+  semantics, treating duplicate task copies as independent evidence, or changing defaults from a
+  flat/insufficient reading.
+- Data and artifact paths: additive bundles under `$DATA_DIR/agentic-loop-policy/<run>/` over the
+  independent task ledger; keep the task digest and family labels in every cell.
+- Execution path: run `make bench-agentic-loop` with `AGENT_MAX_STEPS=6`,
+  `AGENT_MALFORMED_POLICY=answer`, and `AGENT_REPEATED_CALL_POLICY=allow,noop` for each selected
+  model on the CUDA host.
+- Acceptance gates: the predeclared task and family coverage is met; repeated-call activation is
+  reported separately from completion; the paired completion and cost verdicts clear their
+  prospective targets before any default changes.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#agent-loop-policy-recommendation).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 
@@ -126,8 +112,9 @@ lane never ran is emitted as `unmeasured`, never as a default dressed up as a re
 is the whole failure mode a composed profile invites.
 
 - Agent status: RUN NEEDED
-- Dependencies: `agent-harness-loop-policy-recommendation` supplies the loop-policy field; the
-  context-policy field comes from the `agentic-context` bundles
+- Dependencies: the
+  [agent loop-policy recommendation](current/extended-workflows.md#agent-loop-policy-recommendation)
+  supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
   ([extended workflows](current/extended-workflows.md#agent-context-management-policies)) and the
   rest are current behavior. Reuse `src/llb/board/recommend/`
   (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
@@ -688,36 +675,6 @@ edit-precision audit per setting, and pin each value with evidence or expose it.
   reading of the audit calls wrong, per setting, with an explicit verdict per constant.
 - Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
-### fusion-routing-calibration-power (optional)
-
-Increase the sidecar-free routing calibration's statistical power before reconsidering its
-production defaults. The first held-out measurement cannot separate its positive retrieval deltas
-from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
-independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
-before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
-
-- Agent status: BLOCKED BY HUMAN
-- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
-  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
-  non-empty accepted multi-span ledger. Human
-  step that gates completion: accept enough additional genuinely multi-span questions to meet the
-  predeclared split sizes.
-- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
-  artifact before changing the fallback defaults.
-- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
-  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
-  a learned router, and selecting on final.
-- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
-  the accepted ledger.
-- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
-  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
-- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
-  power target; a threshold changes only if the tuning gain clears zero without single-span
-  regression and the untouched final split confirms the same direction.
-- Documentation target: the sidecar-free calibration subsections of
-  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
-
 ### conflict-null-model-research
 
 **Research task** -- the answer is not known in advance, and a negative result is a valid outcome
@@ -812,8 +769,9 @@ status rather than being scored as a wrong answer.
 - Scope boundary: in scope -- the envelope model, the boundary parse/validate function, the two new
   statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
   envelope, because the two call for different fixes and today collapse into one number), one
-  bounded `repair_once` reprompt carrying the validation error (the same policy shape
-  `agent-harness-loop-policy-recommendation` sweeps for tool calls), the per-case columns, and a
+  bounded `repair_once` reprompt carrying the validation error (the same policy shape measured by
+  the [agent loop-policy lane](current/extended-workflows.md#agent-loop-policy-recommendation) for
+  tool calls), the per-case columns, and a
   roster conformance study. Out of scope -- any SEMANTIC check on the envelope's contents (that is
   `ontology-validated-answer-gate`), changing the headline objective, constrained/grammar decoding
   in the backends, and making the envelope the default before the study supports it.
@@ -1021,6 +979,36 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
+
+### fusion-routing-calibration-power (optional)
+
+Increase the sidecar-free routing calibration's statistical power before reconsidering its
+production defaults. The first held-out measurement cannot separate its positive retrieval deltas
+from zero; see the compact result and frozen-policy diagnostics in
+[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
+independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
+before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
+  non-empty accepted multi-span ledger. Human
+  step that gates completion: accept enough additional genuinely multi-span questions to meet the
+  predeclared split sizes.
+- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
+  artifact before changing the fallback defaults.
+- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
+  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
+  a learned router, and selecting on final.
+- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
+  the accepted ledger.
+- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
+  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
+- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
+  power target; a threshold changes only if the tuning gain clears zero without single-span
+  regression and the untouched final split confirms the same direction.
+- Documentation target: the sidecar-free calibration subsections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### calibrate-headline-format-weight
 

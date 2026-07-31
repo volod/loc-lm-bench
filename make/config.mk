@@ -295,6 +295,16 @@ AGENTIC_CONTEXT_POLICY ?= full
 AGENTIC_BASE_URL ?=
 AGENTIC_MAX_MODEL_LEN ?=
 
+# Agent loop-policy grid. The exact legacy baseline (6,answer,allow) must remain in every sweep so
+# all completion and cost deltas stay paired against shipped behavior.
+AGENT_LOOP_TASKS ?= $(AGENTIC_TASKS)
+AGENT_MAX_STEPS ?= 4,6,10
+AGENT_MALFORMED_POLICY ?= answer,repair_once,strict
+AGENT_REPEATED_CALL_POLICY ?= allow,noop
+AGENT_LOOP_MAX_PROMPT_CHARS ?=
+AGENT_LOOP_BASE_URL ?= $(AGENTIC_BASE_URL)
+AGENT_LOOP_MAX_MODEL_LEN ?= $(AGENTIC_MAX_MODEL_LEN)
+
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.
 AGENT_CONTEXT_POLICIES ?= full,observation_cap,keep_last_n,compact

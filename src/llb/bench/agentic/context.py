@@ -95,6 +95,7 @@ _TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
 # One transcript entry: the tool name, its arguments, and the observation it returned.
 TranscriptEntry = tuple[str, dict[str, Any], str]
 Summarize = Callable[[list[TranscriptEntry]], str]
+LOOP_FEEDBACK = "__loop_feedback__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +130,7 @@ class ContextTelemetry:
     observation_bytes: int = 0
     n_trimmed_observations: int = 0
     n_compactions: int = 0
+    n_repair_prompts: int = 0
 
     @property
     def max_prompt_chars(self) -> int:
@@ -175,6 +177,10 @@ class ContextState:
             )
             self.telemetry.n_trimmed_observations += 1 if trimmed else 0
 
+    def record_feedback(self, message: str) -> None:
+        """Put controller feedback in the live prompt without claiming a tool executed."""
+        self.entries.append((LOOP_FEEDBACK, {}, message))
+
 
 # --- observation trimming ------------------------------------------------------------------
 
@@ -216,6 +222,8 @@ def trim_observation(
 def format_entry(entry: TranscriptEntry) -> str:
     """The one canonical transcript line: `- tool({args}) -> observation`."""
     name, arguments, observation = entry
+    if name == LOOP_FEEDBACK:
+        return f"- {observation}"
     return f"- {name}({json.dumps(arguments, ensure_ascii=False)}) -> {observation}"
 
 
