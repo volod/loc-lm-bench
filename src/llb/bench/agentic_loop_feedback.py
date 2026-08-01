@@ -33,8 +33,10 @@ def validate_repeat_feedback_design(
     run_seed: int | None = None,
 ) -> None:
     """Validate shared power constraints plus the current/localized feedback contract."""
-    validate_repeat_power_design(design, tasks, cells=cells, model_family=model_family)
-    variants = cast(list[str], design["repeat_feedback_variants"])
+    variants = feedback_variants_for_family(design, model_family)
+    power_design = dict(design)
+    power_design["repeat_feedback_variants"] = variants
+    validate_repeat_power_design(power_design, tasks, cells=cells, model_family=model_family)
     if variants[0] != DEFAULT_REPEAT_FEEDBACK or len(set(variants)) != len(variants):
         raise ValueError("repeat feedback variants must be unique and start with current")
     if len(variants) < 2:
@@ -44,6 +46,21 @@ def validate_repeat_feedback_design(
         seeds = cast(list[int], declared_seeds)
         if run_seed is None or run_seed not in seeds:
             raise ValueError(f"run_seed must be one of the predeclared seeds: {seeds}")
+
+
+def feedback_variants_for_family(design: dict[str, object], model_family: str | None) -> list[str]:
+    """Resolve the predeclared feedback cells for one family coordinate."""
+    if design.get("study_kind") != "repeat_feedback_family_adaptation":
+        return cast(list[str], design["repeat_feedback_variants"])
+    roster = cast(list[dict[str, object]], design["roster"])
+    row = next(
+        (item for item in roster if item.get("model_family") == model_family),
+        None,
+    )
+    if row is None:
+        families = [item.get("model_family") for item in roster]
+        raise ValueError(f"model_family must be one of the predeclared families: {families}")
+    return [DEFAULT_REPEAT_FEEDBACK, cast(str, row["candidate_feedback_variant"])]
 
 
 def _redirect_summary(
@@ -129,7 +146,7 @@ def analyze_repeat_feedback(
         if report.cell.policy.repeated_call == REPEATED_NOOP
         and report.cell.policy.repeat_feedback == DEFAULT_REPEAT_FEEDBACK
     )
-    variants = cast(list[str], design["repeat_feedback_variants"])
+    variants = feedback_variants_for_family(design, model_family)
     candidates = {
         report.cell.policy.repeat_feedback: report
         for report in reports

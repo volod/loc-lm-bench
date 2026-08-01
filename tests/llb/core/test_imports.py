@@ -45,6 +45,8 @@ MODULES = [
     "llb.bench.agentic_loop_policy",
     "llb.bench.agentic_loop_policy_cell",
     "llb.bench.agentic_loop_feedback",
+    "llb.bench.agentic_loop_feedback_adaptation",
+    "llb.bench.agentic_loop_feedback_adaptation_report",
     "llb.bench.agentic_loop_feedback_generalization",
     "llb.bench.agentic_loop_feedback_generalization_report",
     "llb.bench.agentic_loop_feedback_report",

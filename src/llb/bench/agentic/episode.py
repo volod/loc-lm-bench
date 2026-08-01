@@ -167,6 +167,9 @@ def run_episode(
         if call is None and parsed.attempted:
             n_malformed_calls += 1
             if loop_policy.malformed_call == MALFORMED_ANSWER:
+                repeat_feedback_redirected = (
+                    repeat_feedback_redirected or awaiting_redirect_key is not None
+                )
                 answer = str(raw).strip()
                 status = STATUS_COMPLETED
                 break

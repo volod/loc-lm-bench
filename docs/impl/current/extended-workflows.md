@@ -313,6 +313,66 @@ checks the prospective design, exact family/seed grid, coordinate metadata, acti
 stable routing, global adoption rule, reporting, and persistence.
 Validation on 2026-07-31: `make ci` passed 2,469 tests with 45 opt-in/slow tests deselected.
 
+###### Family-Adapted Repeat Feedback
+
+The family-adaptation lane tests one concise controller notice per non-Qwen family without letting
+wording leak across families. Its prospective design is
+`samples/benchmarks/agentic_loop_feedback_family_adaptation_design.json`; it fixes the powered
+32-task digest, seeds 13 and 29, temperature 0.2, the `6/answer/allow,noop` policy, a `+0.25`
+completion target, 10% prompt-token and 20% wall-time ceilings, and a two-of-three-family adoption
+threshold. The registered ASCII notices are:
+
+- `aya_direct`: `[loop] Repeated tool call skipped. Choose a different action or give the final
+  answer now.`
+- `mistral_use`: `[loop] Repeated call skipped. Use the existing result: answer now, or change the
+  tool arguments.`
+- `gemma_choice`: `[loop] Repeated call skipped. Output one different JSON tool call or the final
+  answer; do not repeat.`
+
+`make bench-agentic-loop-repeat-feedback-family-adaptation` validates the exact Aya, Mistral, and
+Gemma Ollama roster, notice text and hypotheses, sampling contract, task digest, seed grid, and
+candidate isolation before inference. The implementation lives in
+`src/llb/bench/agentic_loop_feedback_adaptation.py`, its report and persistence layer in
+`src/llb/bench/agentic_loop_feedback_adaptation_report.py`, and its CLI orchestration in
+`src/llb/cli/bench/category_agentic_loop_feedback_adaptation.py`. Each aggregate seed row exposes
+coverage, baseline and candidate activation, completion, prompt-cost, wall-cost, and combined-cost
+gate decisions in addition to response and effect values. `src/llb/bench/agentic/episode.py` also
+counts a final answer after a suppressed repeated call as a redirect, including when the
+malformed-call policy accepts that answer as the episode result.
+
+CUDA-host evidence (2026-08-01), RTX 4060 Ti 16 GB, identical 32-task digest. In the gates column,
+`C`, `P`, and `W` mean completion, prompt-token cost, and wall-time cost respectively; `-` is the
+only failed gate. Coverage and both activation checks passed in every row.
+
+| family | seed | candidate | response | completion | completion delta | prompt delta | wall delta | gates | support |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| Aya Expanse 8B | 13 | `aya_direct` | 0.643 | 0.562 | +0.156 | -227.8 | -4.91 | `-PW` | no |
+| Aya Expanse 8B | 29 | `aya_direct` | 0.667 | 0.594 | +0.031 | -412.1 | -4.56 | `-PW` | no |
+| Mistral Small 3.1 24B | 13 | `mistral_use` | 1.000 | 0.875 | 0.000 | +4.0 | -0.02 | `-PW` | no |
+| Mistral Small 3.1 24B | 29 | `mistral_use` | 1.000 | 0.906 | 0.000 | +4.4 | -0.20 | `-PW` | no |
+| MamayLM-Gemma 12B | 13 | `gemma_choice` | 0.281 | 0.375 | +0.219 | -585.3 | -1.15 | `-PW` | no |
+| MamayLM-Gemma 12B | 29 | `gemma_choice` | 0.250 | 0.375 | +0.219 | -579.4 | -1.65 | `-PW` | no |
+
+Aya's completion gains were seed-sensitive and below the material target. Mistral already
+redirected every activated candidate episode but gained no completion, so its adapted wording tied
+`current`. Gemma produced seven wins and no losses on each seed, a separated
+`+0.219 [0.094, 0.375]` completion delta, but missed the predeclared `+0.25` mean target by one of
+32 tasks. Its notice redirected all eight search tasks on both seeds, zero read and calculator
+tasks, and only one mutation task on seed 13. This stable but narrow effect does not justify a
+family-wide route.
+
+No candidate cleared the completion gate on either seed. Each family therefore has zero of two
+supporting seeds, every family remains routed to `current`, and the supported-family fraction is
+zero of three, below the declared cross-family threshold. The audit-complete aggregate is
+`.data/agentic-loop-policy/20260801T122638.618382Z-450efe8e5e90/manifest.json`; it indexes all 18
+source cell manifests and carries the explicit per-gate decisions.
+
+`tests/llb/bench/test_agentic_loop_feedback_adaptation.py` checks the immutable design, exact
+wording, family/seed grid, candidate isolation, stable routing, aggregate gate reporting,
+persistence, and an end-to-end fake run. The redirect regression is in
+`tests/llb/bench/test_agentic_loop_policy.py`. Validation on 2026-08-01: `make ci` passed 2,475
+tests with 45 opt-in/slow tests deselected.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

@@ -143,6 +143,25 @@ def test_repeated_noop_is_recorded_but_does_not_execute_again():
     assert episode.transcript[-1][2] == REPEATED_NOOP_OBSERVATION
 
 
+def test_malformed_as_answer_after_repeat_feedback_counts_as_a_redirect():
+    outputs = [
+        '{"name":"db_get","arguments":{"key":"missing"}}',
+        '{"name":"db_get","arguments":{"key":"missing"}}',
+        '{"name":"finish","arguments":',
+    ]
+    episode = run_episode(
+        AgenticTask("t", "inspect", success=[]),
+        scripted(outputs),
+        loop_policy=LoopPolicy(
+            malformed_call=MALFORMED_ANSWER,
+            repeated_call=REPEATED_NOOP,
+        ),
+    )
+    assert episode.status == STATUS_COMPLETED
+    assert episode.n_malformed_calls == 1 and episode.n_repeated_noops == 1
+    assert episode.repeat_feedback_redirected is True
+
+
 def test_repeated_allow_is_counted_without_being_suppressed():
     outputs = [
         '{"name":"db_get","arguments":{"key":"missing"}}',

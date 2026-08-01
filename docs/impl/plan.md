@@ -43,26 +43,26 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-repeat-feedback-family-adaptation (optional)
+### agent-loop-policy-gemma-feedback-task-family-transfer (optional)
 
-Test whether short, family-adapted repeat notices can improve response without weakening the
-controller contract. Cross-family seed behavior and the reusable aggregate lane are in
-[extended workflows](current/extended-workflows.md#seeded-cross-family-generalization).
+Develop a task-family-neutral Gemma repeat notice that transfers a useful redirect beyond one
+tool family. Use the diagnostic in
+[family-adapted repeat feedback](current/extended-workflows.md#family-adapted-repeat-feedback) only
+to motivate a fresh hypothesis, not to select wording or cases against the existing ledger.
 
 - Agent status: RUN NEEDED
-- Dependencies: predeclare notice text and hypotheses before inference; keep the same powered
-  ledger, seeds, fixed policy, response telemetry, and paired completion/cost gates. Include Aya,
-  Mistral, and Gemma, whose response patterns leave room for family-specific instruction wording.
-- User-visible outcome: operators learn whether non-Qwen families need a different controller
-  notice or should remain on `current` feedback.
-- Scope boundary: in scope -- concise wording adapted to each model family's instruction style and
-  stable two-seed routing. Out of scope -- task-specific hints, ledger changes, or selecting notice
-  text after observing evaluation outcomes.
-- Acceptance gates: every candidate passes coverage and activation, clears the material completion
-  and paired cost gates on both seeds, and remains isolated to its family unless the declared
-  cross-family threshold is met.
+- Dependencies: predeclare a new immutable notice, hypothesis, task ledger digest, seeds, minimum
+  task-family response coverage, material completion target, and paired cost gates before
+  inference. Keep the controller notice free of task names and expected answers.
+- User-visible outcome: operators learn whether Gemma can respond reliably to repeat suppression
+  across read, calculator, search, and mutation tools without task-specific controller hints.
+- Scope boundary: in scope -- one family-neutral candidate, a fresh balanced holdout ledger, and
+  stable two-seed routing. Out of scope -- tuning on the existing family-adaptation outcomes,
+  task-family-specific notices, or weakening the material completion threshold after inference.
+- Acceptance gates: both seeds clear coverage and activation, the predeclared response floor in at
+  least three task families, material paired completion, and prompt-token/wall-time cost gates.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#seeded-cross-family-generalization).
+  [extended workflows](current/extended-workflows.md#family-adapted-repeat-feedback).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 
