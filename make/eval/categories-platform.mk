@@ -5,6 +5,7 @@
 	bench-agentic-loop-repeat-feedback-family-adaptation \
 	bench-agentic-loop-repeat-feedback-task-family-transfer \
 	bench-agentic-loop-repeat-feedback-controller-authority-transfer \
+	bench-agentic-loop-controller-channel-authority \
 	bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
@@ -85,6 +86,13 @@ bench-agentic-loop-repeat-feedback-controller-authority-transfer: ## Run the pre
 	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-controller-authority-transfer \
 		--design "$(AGENT_LOOP_FEEDBACK_AUTHORITY_DESIGN)" \
 		--tasks "$(AGENT_LOOP_FEEDBACK_AUTHORITY_TASKS)"
+
+bench-agentic-loop-controller-channel-authority: ## Compare identical authority text as observation versus controller role
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
+		--design "$(AGENT_LOOP_CONTROLLER_CHANNEL_DESIGN)" \
+		--tasks "$(AGENT_LOOP_CONTROLLER_CHANNEL_TASKS)"
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

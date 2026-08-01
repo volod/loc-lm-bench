@@ -8,7 +8,7 @@ from llb.backends.base import BackendLauncher, ChatResult
 from llb.backends.served_window import is_ollama_base_url as _is_ollama_base_url
 from llb.core.config import RunConfig
 from llb.core.contracts.common import ChatMessage
-from llb.bench.common import LLMComplete, _R
+from llb.bench.common import LLMChat, LLMComplete, _R
 
 
 @dataclass
@@ -39,7 +39,7 @@ class ThroughputMeter:
         )
 
 
-def local_complete(
+def local_chat(
     model: str,
     base_url: str,
     *,
@@ -49,8 +49,8 @@ def local_complete(
     meter: ThroughputMeter | None = None,
     num_ctx: int | None = None,
     seed: int | None = None,
-) -> LLMComplete:
-    """A `complete` over an already-running OpenAI-compatible endpoint (no launch). Heavy imports
+) -> LLMChat:
+    """A typed-message completion over an already-running OpenAI-compatible endpoint. Heavy imports
     stay lazy; transport errors map to an empty string via `chat_once`'s normalized result. When a
     `meter` is given, each call's token count + latency is recorded for throughput reporting.
 
@@ -67,12 +67,11 @@ def local_complete(
         options["seed"] = seed
     extra_body = {"options": options} if options else None
 
-    def complete(prompt: str) -> str:
-        msgs: list[ChatMessage] = [{"role": "user", "content": prompt}]
+    def chat(messages: list[ChatMessage]) -> str:
         result = chat_once(
             client,
             model,
-            msgs,
+            messages,
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=timeout,
@@ -82,7 +81,55 @@ def local_complete(
             meter.record(result)
         return result.text
 
+    return chat
+
+
+def local_complete(
+    model: str,
+    base_url: str,
+    *,
+    max_tokens: int = 512,
+    temperature: float = 0.0,
+    timeout: float = 120.0,
+    meter: ThroughputMeter | None = None,
+    num_ctx: int | None = None,
+    seed: int | None = None,
+) -> LLMComplete:
+    """A string-prompt adapter over :func:`local_chat`."""
+    chat = local_chat(
+        model,
+        base_url,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        meter=meter,
+        num_ctx=num_ctx,
+        seed=seed,
+    )
+
+    def complete(prompt: str) -> str:
+        return chat([{"role": "user", "content": prompt}])
+
     return complete
+
+
+def launcher_chat(
+    launcher: BackendLauncher,
+    *,
+    max_tokens: int = 512,
+    temperature: float = 0.0,
+    timeout: float = 120.0,
+    meter: ThroughputMeter | None = None,
+) -> LLMChat:
+    """A typed-message completion over an already-started backend launcher."""
+
+    def chat(messages: list[ChatMessage]) -> str:
+        result = launcher.chat(messages, max_tokens, temperature, timeout)
+        if meter is not None:
+            meter.record(result)
+        return result.text
+
+    return chat
 
 
 def launcher_complete(
@@ -93,14 +140,17 @@ def launcher_complete(
     timeout: float = 120.0,
     meter: ThroughputMeter | None = None,
 ) -> LLMComplete:
-    """A `complete` over an already-started `BackendLauncher` (its OpenAI-compatible chat)."""
+    """A string-prompt adapter over :func:`launcher_chat`."""
+    chat = launcher_chat(
+        launcher,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        meter=meter,
+    )
 
     def complete(prompt: str) -> str:
-        msgs: list[ChatMessage] = [{"role": "user", "content": prompt}]
-        result = launcher.chat(msgs, max_tokens, temperature, timeout)
-        if meter is not None:
-            meter.record(result)
-        return result.text
+        return chat([{"role": "user", "content": prompt}])
 
     return complete
 

@@ -43,30 +43,26 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-controller-channel-authority (optional)
+### agent-loop-policy-controller-channel-cross-model (optional)
 
-Compare the same immutable task-neutral authority message when it is represented as a dedicated
-controller-level instruction versus a tool observation, using a fresh balanced holdout and fixed
-two-seed response, completion, and cost gates. This isolates whether models honor actual message
-authority differently from authority wording embedded in an observation; use the current
-response-versus-completion profile only as motivation
-([extended workflows](current/extended-workflows.md#controller-authority-gemma-transfer)).
+Test the unchanged observation-versus-controller message-role contract on at least one non-Gemma
+UA-capable model family, using a fresh balanced ledger and the same snapshot, activation, response,
+completion, and cost gates. The Gemma result is model-scoped and does not establish whether another
+chat template or instruction-tuning family honors structural authority differently; reuse the
+backend-neutral serializer and artifact contract documented in
+[extended workflows](current/extended-workflows.md#controller-channel-authority).
 
 - Agent status: RUN NEEDED
-- Dependencies: define a backend-neutral controller-message transcript role without changing the
-  task prompt or tool observations; predeclare exact role serialization per backend, a new ledger
-  digest, two seeds, and the same minimum three-family breadth rule before inference.
-- User-visible outcome: operators learn whether authority must be encoded structurally in the
-  transcript rather than described in controller text.
-- Scope boundary: in scope -- one fixed authority string, observation-versus-controller placement,
-  exact prompt snapshots, and per-family response/completion accounting. Out of scope --
-  task-family wording, adapting the message after outcomes, or changing shipped defaults from one
-  Gemma study.
-- Acceptance gates: prompt snapshots prove the text is identical and only its role changes; both
-  seeds clear coverage and activation; adoption still requires the response floor in at least
-  three families, material paired completion, and prompt-token/wall-time cost gates.
+- Dependencies: predeclare a fresh task digest, exact two-seed roster, and backend role mapping;
+  keep the authority text, message order, task shape, and gates unchanged so model family is the
+  only new axis.
+- User-visible outcome: operators learn whether the structural-authority result transfers beyond
+  the measured Gemma chat template before considering a runtime default.
+- Scope boundary: in scope -- one additional UA-capable family that fits the CUDA host, exact
+  prompt snapshots, and the existing paired decision. Out of scope -- adapting wording by family,
+  mixing backends within a paired seed, or changing shipped defaults from a single transfer row.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#controller-authority-gemma-transfer).
+  [extended workflows](current/extended-workflows.md#controller-channel-authority).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 

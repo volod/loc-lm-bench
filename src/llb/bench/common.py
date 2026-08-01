@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from llb.core.contracts.common import JsonObject
+from llb.core.contracts.common import ChatMessage
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.core.contracts.results import BoardRow
@@ -29,6 +30,7 @@ from llb.scoring.judge.model import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
 from llb.tracking.manifest import RunManifest, persist_run
 
 LLMComplete = Callable[[str], str]  # prompt -> raw completion text
+LLMChat = Callable[[list[ChatMessage]], str]  # typed transcript -> raw completion text
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]  # (records, model)->scores
 Mirror = Callable[[RunManifest, Path], None]
 _R = TypeVar("_R")

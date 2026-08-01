@@ -494,6 +494,64 @@ authority-specific study identity, persistence, and an end-to-end fake run. The 
 tests check per-family redirected completion accounting. Validation on 2026-08-01: `make ci`
 passed 2,483 tests with 45 opt-in/slow tests deselected, and `make lint-md` passed.
 
+###### Controller-Channel Authority
+
+The controller-channel lane isolates transcript authority from authority wording. After an
+identical repeated call is suppressed, both cells send the same task message and the same immutable
+authority text in the same message position. Only the authority message role changes:
+`observation` serializes to `user`, while `controller` serializes to `system`. The exact mapping is
+declared for native Ollama and OpenAI-compatible chat in
+`samples/benchmarks/agentic_controller_channel_authority_design.json`; typed serialization lives in
+`src/llb/bench/agentic/controller_channel.py`. This keeps the task prompt and all ordinary tool
+observations fixed and gives the agent loop a backend-neutral controller-message seam.
+
+`make bench-agentic-loop-controller-channel-authority` runs the predeclared two-seed comparison.
+The fresh 32-case ledger is
+`samples/benchmarks/agentic_controller_channel_authority.json`, balanced over eight read,
+calculator, search, and mutation cases. Its digest is
+`5d6148e0851ca749a65fd75768b388931419ae3dccf2c03be20c095c97e9ead1`. The contract fixes
+MamayLM-Gemma 3 12B Q4_K_M, seeds 211 and 257, temperature 0.2, 512 completion tokens, an
+8192-token context, six controller steps, and the same 25% response floor in at least three
+families on both seeds. Adoption also requires a paired completion gain of at least 0.125, at
+least four discordant completion pairs, and maximum relative increases of 10% for prompt tokens
+and 20% for wall time.
+
+Every source cell persists `prompt-snapshots.json`. Analysis pairs the first authority-bearing
+snapshot by task and refuses the run unless the full message content is byte-identical while only
+the final role changes. Runner, analysis, and persistence live in
+`src/llb/bench/agentic_controller_authority_run.py`,
+`src/llb/bench/agentic_controller_authority.py`, and
+`src/llb/bench/agentic_controller_authority_report.py`. The general backend adapter now exposes
+typed-message `local_chat` and `launcher_chat` callables alongside the legacy string-prompt
+adapters.
+
+CUDA-host evidence (2026-08-01), RTX 4060 Ti 16 GB, MamayLM-Gemma 3 12B Q4_K_M:
+
+| seed | gates | observation response | controller response | observation completion | controller completion | completion delta | prompt delta | wall delta |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 211 | `SA--PW` | 0.094 | 0.031 | 0.000 | 0.000 | +0.000 | +7.4 | -0.32 s |
+| 257 | `SA--PW` | 0.094 | 0.062 | 0.000 | 0.000 | +0.000 | +5.8 | -2.05 s |
+
+`S`, `A`, `R`, `C`, `P`, and `W` denote snapshot, activation, family response, completion,
+prompt-cost, and wall-cost gates. Snapshot and activation coverage passed for all 32 tasks on both
+seeds, and both paired cost gates passed. The controller role responded only in mutation: 0.125
+on seed 211 and 0.250 on seed 257, with zero redirected completions. Calculator, read, and search
+response were zero. Both placements completed 0/32 tasks on both seeds, leaving zero discordant
+completion pairs and a flat paired completion reading.
+
+Structural controller authority is therefore not supported for this Gemma model and transcript
+shape; `observation` remains the recommended placement, and no shipped default changes. The
+audit-complete aggregate is
+`$DATA_DIR/agentic-loop-policy/20260801T201419.190139Z-62e3df17e112/manifest.json`; its analysis
+links the four source manifests and all 64 paired snapshot proofs. The negative result is scoped to
+this model and serialization, not a claim that role never matters across model families.
+
+`tests/llb/bench/test_agentic_controller_authority.py` checks exact role-only serialization,
+fresh-ledger and two-seed validation, balanced family coverage, snapshot refusal, every adoption
+gate, persistence, the committed contract, and an end-to-end fake run.
+Validation on 2026-08-01: `make ci` passed 2,487 tests with 45 opt-in/slow tests deselected, and
+`make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

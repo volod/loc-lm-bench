@@ -7,6 +7,7 @@ reuse `build_agent_prompt` + `check_success` to produce the SAME canonical `Epis
 
 import json
 import time
+from collections.abc import Callable
 
 from llb.bench.agentic.context import (
     POLICY_COMPACT,
@@ -19,6 +20,12 @@ from llb.bench.agentic.context import (
     summarize_entries,
 )
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.bench.agentic.controller_channel import (
+    CONTROLLER_CHANNELS,
+    ControllerChannel,
+    serialize_controller_transcript,
+    transcript_chars,
+)
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     MALFORMED_REPAIR_ONCE,
@@ -38,7 +45,8 @@ from llb.bench.agentic.model import (
     Episode,
 )
 from llb.bench.agentic.success import check_success
-from llb.bench.common import LLMComplete
+from llb.bench.common import LLMChat, LLMComplete
+from llb.core.contracts.common import ChatMessage
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
 from llb.core.contracts.benchmarks import ToolDef
 from llb.prompts.registry import render_text
@@ -123,6 +131,10 @@ def run_episode(
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
     loop_policy: LoopPolicy | None = None,
+    chat: LLMChat | None = None,
+    feedback_channel: ControllerChannel | None = None,
+    feedback_backend: str = "ollama",
+    snapshot: Callable[[list[ChatMessage]], None] | None = None,
 ) -> Episode:
     """Drive one task to completion (or the step budget) in the deterministic sandbox.
 
@@ -136,6 +148,10 @@ def run_episode(
     policy = policy if policy is not None else ContextPolicy()
     budget = budget if budget is not None else unbounded_budget()
     loop_policy = loop_policy if loop_policy is not None else LoopPolicy()
+    if (chat is None) != (feedback_channel is None):
+        raise ValueError("chat and feedback_channel must be configured together")
+    if feedback_channel is not None and feedback_channel not in CONTROLLER_CHANNELS:
+        raise ValueError(f"unknown feedback channel: {feedback_channel!r}")
     state = ContextState()
     answer = ""
     status = STATUS_INCOMPLETE
@@ -152,15 +168,31 @@ def run_episode(
     started = time.monotonic()
     for steps in range(1, max_steps + 1):
         prompt = step_prompt(task, catalog, policy, state, budget, complete)
-        state.telemetry.prompt_chars.append(len(prompt))
-        if not budget.fits(len(prompt)):
+        messages = (
+            serialize_controller_transcript(
+                prompt,
+                state.controller_feedback,
+                backend=feedback_backend,
+            )
+            if chat is not None
+            else None
+        )
+        prompt_chars = transcript_chars(messages) if messages is not None else len(prompt)
+        state.telemetry.prompt_chars.append(prompt_chars)
+        if not budget.fits(prompt_chars):
             # The prompt cannot fit the resolved window: end as a TYPED overflow rather than
             # sending it and scoring whatever comes back as the model's answer.
             steps -= 1
             status = STATUS_CONTEXT_OVERFLOW
             break
-        state.telemetry.model_input_prompt_chars += len(prompt)
-        raw = complete(prompt)
+        state.telemetry.model_input_prompt_chars += prompt_chars
+        if messages is not None:
+            assert chat is not None
+            if snapshot is not None:
+                snapshot(messages)
+            raw = chat(messages)
+        else:
+            raw = complete(prompt)
         n_controller_calls += 1
         parsed = parse_tool_call_detailed(raw)
         call = parsed.call
@@ -180,14 +212,34 @@ def run_episode(
                     str(raw),
                     parsed.error or "unreadable tool call",
                 )
-                state.telemetry.prompt_chars.append(len(repaired))
-                if not budget.fits(len(repaired)):
+                repaired_messages: list[ChatMessage] | None = (
+                    serialize_controller_transcript(
+                        repaired,
+                        state.controller_feedback,
+                        backend=feedback_backend,
+                    )
+                    if chat is not None
+                    else None
+                )
+                repaired_chars = (
+                    transcript_chars(repaired_messages)
+                    if repaired_messages is not None
+                    else len(repaired)
+                )
+                state.telemetry.prompt_chars.append(repaired_chars)
+                if not budget.fits(repaired_chars):
                     status = STATUS_CONTEXT_OVERFLOW
                     break
-                state.telemetry.model_input_prompt_chars += len(repaired)
+                state.telemetry.model_input_prompt_chars += repaired_chars
                 state.telemetry.n_repair_prompts += 1
                 n_repair_attempts += 1
-                raw = complete(repaired)
+                if repaired_messages is not None:
+                    assert chat is not None
+                    if snapshot is not None:
+                        snapshot(repaired_messages)
+                    raw = chat(repaired_messages)
+                else:
+                    raw = complete(repaired)
                 n_controller_calls += 1
                 parsed = parse_tool_call_detailed(raw)
                 call = parsed.call
@@ -226,7 +278,16 @@ def run_episode(
         n_repeated_noops += 1 if repeated_noop else 0
         if repeated_noop:
             awaiting_redirect_key = current_call_key
-        state.record(policy, call.name, call.arguments, observation)
+        if repeated_noop and feedback_channel is not None:
+            state.record_channel_feedback(
+                policy,
+                call.name,
+                call.arguments,
+                observation,
+                feedback_channel,
+            )
+        else:
+            state.record(policy, call.name, call.arguments, observation)
         previous_call_key = current_call_key
     success = check_success(task, world, answer)
     return Episode(

@@ -34,6 +34,7 @@ from llb.bench.agentic.context_aggregate import (
     format_aggregate_header,
     with_aggregate_header,
 )
+from llb.bench.agentic.controller_channel import ControllerChannel, ControllerFeedback
 from llb.prompts.registry import render_text
 
 # --- policy names (the ranked row labels) --------------------------------------------------
@@ -155,6 +156,7 @@ class ContextState:
     executed: list[TranscriptEntry] = field(default_factory=list)
     summary: str = ""
     n_dropped: int = 0
+    controller_feedback: list[ControllerFeedback] = field(default_factory=list)
     telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
 
     def record(
@@ -180,6 +182,20 @@ class ContextState:
     def record_feedback(self, message: str) -> None:
         """Put controller feedback in the live prompt without claiming a tool executed."""
         self.entries.append((LOOP_FEEDBACK, {}, message))
+
+    def record_channel_feedback(
+        self,
+        _policy: "ContextPolicy",
+        name: str,
+        arguments: dict[str, Any],
+        message: str,
+        channel: ControllerChannel,
+    ) -> None:
+        """Record a suppressed call while carrying its notice as a typed chat message."""
+        entry: TranscriptEntry = (name, arguments, message)
+        self.executed.append(entry)
+        self.telemetry.observation_bytes += len(message.encode("utf-8"))
+        self.controller_feedback.append(ControllerFeedback(message, channel))
 
 
 # --- observation trimming ------------------------------------------------------------------
