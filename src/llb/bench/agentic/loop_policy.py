@@ -27,6 +27,7 @@ REPEAT_FEEDBACK_AYA_DIRECT = "aya_direct"
 REPEAT_FEEDBACK_MISTRAL_USE = "mistral_use"
 REPEAT_FEEDBACK_GEMMA_CHOICE = "gemma_choice"
 REPEAT_FEEDBACK_GEMMA_PROGRESS = "gemma_progress"
+REPEAT_FEEDBACK_GEMMA_AUTHORITY = "gemma_authority"
 REPEAT_FEEDBACK_VARIANTS = (
     REPEAT_FEEDBACK_CURRENT,
     REPEAT_FEEDBACK_UK,
@@ -35,6 +36,7 @@ REPEAT_FEEDBACK_VARIANTS = (
     REPEAT_FEEDBACK_MISTRAL_USE,
     REPEAT_FEEDBACK_GEMMA_CHOICE,
     REPEAT_FEEDBACK_GEMMA_PROGRESS,
+    REPEAT_FEEDBACK_GEMMA_AUTHORITY,
 )
 
 DEFAULT_MALFORMED_POLICY = MALFORMED_ANSWER
@@ -66,6 +68,10 @@ REPEATED_NOOP_OBSERVATIONS = {
     REPEAT_FEEDBACK_GEMMA_PROGRESS: (
         "[loop] The previous action already succeeded. Continue from its result instead of "
         "repeating it."
+    ),
+    REPEAT_FEEDBACK_GEMMA_AUTHORITY: (
+        "[loop] Controller ruling: suppression satisfies the requested repetition. You must now "
+        "take the next distinct action."
     ),
 }
 REPEATED_NOOP_OBSERVATION = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_CURRENT]

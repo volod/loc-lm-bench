@@ -12,6 +12,7 @@ from llb.bench.agentic.loop_policy import (
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_context import task_set_digest
 from llb.bench.agentic_loop_feedback import validate_repeat_feedback_design
+from llb.bench.agentic_loop_feedback_outcomes import compact_family_outcomes
 from llb.bench.agentic_loop_policy import policy_grid
 from llb.bench.agentic_loop_policy_report import METRIC_PROMPT_TOKENS, METRIC_WALL_CLOCK
 
@@ -50,9 +51,27 @@ def _candidate(design: dict[str, object]) -> str:
 
 def validate_feedback_transfer_design(design: dict[str, object], tasks: list[AgenticTask]) -> None:
     """Refuse inference unless the neutral notice, fresh ledger, seeds, and gates are fixed."""
-    if design.get("study_kind") != STUDY_KIND:
-        raise ValueError(f"study_kind must be {STUDY_KIND}")
-    if design.get("hypothesis") != EXPECTED_HYPOTHESIS:
+    validate_neutral_feedback_design(
+        design,
+        tasks,
+        study_kind=STUDY_KIND,
+        hypothesis=EXPECTED_HYPOTHESIS,
+        candidate_variant=REPEAT_FEEDBACK_GEMMA_PROGRESS,
+    )
+
+
+def validate_neutral_feedback_design(
+    design: dict[str, object],
+    tasks: list[AgenticTask],
+    *,
+    study_kind: str,
+    hypothesis: str,
+    candidate_variant: str,
+) -> None:
+    """Validate one prospective neutral-feedback contract before model inference."""
+    if design.get("study_kind") != study_kind:
+        raise ValueError(f"study_kind must be {study_kind}")
+    if design.get("hypothesis") != hypothesis:
         raise ValueError("transfer hypothesis does not match the immutable prospective hypothesis")
     reference = cast(dict[str, object], design["reference"])
     digest = task_set_digest(tasks)
@@ -74,11 +93,11 @@ def validate_feedback_transfer_design(design: dict[str, object], tasks: list[Age
         raise ValueError("transfer roster must declare one installed Ollama Gemma model")
 
     candidate = _candidate(design)
-    if candidate != REPEAT_FEEDBACK_GEMMA_PROGRESS:
-        raise ValueError("transfer candidate must be the immutable Gemma progress notice")
+    if candidate != candidate_variant:
+        raise ValueError("transfer candidate must be the immutable registered notice")
     variants = cast(list[str], design["repeat_feedback_variants"])
     if variants != [DEFAULT_REPEAT_FEEDBACK, candidate]:
-        raise ValueError("transfer must isolate current versus gemma_progress feedback")
+        raise ValueError("transfer must isolate current versus its registered candidate feedback")
     notice = cast(str, design["notice_text"])
     if notice != REPEATED_NOOP_OBSERVATIONS[candidate]:
         raise ValueError("transfer notice does not match the registered immutable text")
@@ -160,6 +179,7 @@ def analyze_feedback_transfer(
             family: float(cast(float, row["response_rate"]))
             for family, row in sorted(baseline_by_family.items())
         }
+        family_outcomes = compact_family_outcomes(by_family)
         responsive_families = [
             family for family, rate in family_rates.items() if rate >= response_floor
         ]
@@ -184,6 +204,7 @@ def analyze_feedback_transfer(
                 "candidate_activation_passed": variant["activation_passed"],
                 "baseline_task_family_response_rates": baseline_family_rates,
                 "task_family_response_rates": family_rates,
+                "task_family_response_completion": family_outcomes,
                 "task_family_response_rate_deltas": {
                     family: rate - baseline_family_rates[family]
                     for family, rate in family_rates.items()

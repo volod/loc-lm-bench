@@ -431,6 +431,69 @@ hypothesis, fresh digest, balanced ledger, exact seed grid, candidate isolation,
 two-seed response rule, completion and cost decisions, report persistence, and an end-to-end fake
 run. Validation on 2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
 
+###### Controller-Authority Gemma Transfer
+
+The controller-authority lane tests whether an explicit controller ruling can overcome Gemma's
+literal repetition on a second fresh balanced holdout. The registered `gemma_authority` notice is
+`[loop] Controller ruling: suppression satisfies the requested repetition. You must now take the
+next distinct action.` It is ASCII, contains no task name, expected value, tool family, or
+family-specific action choice, and remains a controller observation rather than a task-specific
+hint.
+
+The prospective design is
+`samples/benchmarks/agentic_loop_feedback_controller_authority_design.json`; its 32-case ledger is
+`samples/benchmarks/agentic_loop_feedback_controller_authority.json`, with eight new read,
+calculator, search, and mutation cases. The ledger digest is
+`a2e8e0bf49c04ca27cebb9d06072e7008026f874a93a99ae5098d3b938b98f82`, distinct from both prior
+ledgers fixed in the design. The contract fixes MamayLM-Gemma 3 12B, seeds 107 and 149,
+temperature 0.2, an 8192-token context, the `6/answer/allow,noop` grid, a 25% response floor in at
+least three families on both seeds, a `+0.125` paired completion target, minimum four discordant
+pairs, and maximum relative increases of 10% for prompt tokens and 20% for wall time.
+
+`make bench-agentic-loop-repeat-feedback-controller-authority-transfer` validates the full
+contract before inference and writes a two-seed aggregate. The immutable notice lives in
+`src/llb/bench/agentic/loop_policy.py`; authority validation and decision wrapping live in
+`src/llb/bench/agentic_loop_feedback_authority.py`; response-versus-completion summaries live in
+`src/llb/bench/agentic_loop_feedback_outcomes.py`; reporting lives in
+`src/llb/bench/agentic_loop_feedback_authority_report.py`; and CLI orchestration shares
+`src/llb/cli/bench/category_agentic_loop_feedback_neutral.py` with the earlier neutral-transfer
+lane. Aggregate persistence uses the design's study kind, so authority artifacts cannot be
+mislabelled as the earlier task-family-transfer study.
+
+CUDA-host evidence (2026-08-01), RTX 4060 Ti 16 GB, MamayLM-Gemma 3 12B Q4_K_M. Each family cell
+below is `response rate / redirected completion rate`; the latter counts completions after a
+changed post-suppression action over activated tasks.
+
+| seed | current response | candidate response | calculator | mutation | read | search | completion delta | prompt delta | wall delta | gates |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 107 | 0.031 | 0.344 | 0.125 / 0.000 | 0.625 / 0.000 | 0.625 / 0.625 | 0.000 / 0.000 | +0.156 | -374.1 | -1.23 | `--PW` |
+| 149 | 0.094 | 0.312 | 0.000 / 0.000 | 0.625 / 0.000 | 0.500 / 0.500 | 0.125 / 0.125 | +0.156 | -365.8 | -7.44 | `--PW` |
+
+Coverage and baseline/candidate activation passed on both seeds. Read cleared the response floor
+and every read redirect completed; mutation also cleared the response floor but none of its ten
+redirects produced the required confirming final answer. Calculator stayed below the floor on
+both seeds, and search reached only one successful redirect on seed 149. Thus only two families
+were responsive per seed, below the required three.
+
+The candidate produced five wins, no losses, and 27 ties on each seed for a paired `+0.156`
+completion delta with interval `[+0.031, +0.281]`. The standard stability reading remained
+borderline and `insufficient_evidence` (`randomization p=0.03125`, sign-test `p=0.0625`), so the
+completion gate also failed. Prompt-token deltas were `-374.1 [-748.3, -16.2]` and
+`-365.8 [-741.4, -7.3]`; wall-time deltas were `-1.23 [-4.07, +1.40]` seconds and
+`-7.44 [-9.80, -5.33]` seconds. Both paired cost gates passed on both seeds.
+
+The authority wording therefore shows stable read completion and mutation response, but it does
+not establish task-family transfer; `current` remains the recommended Gemma feedback variant. The
+audit-complete aggregate is
+`$DATA_DIR/agentic-loop-policy/20260801T180932.422116Z-a925598313d9/manifest.json`; it links all six
+source cell manifests and preserves response-versus-completion outcomes per family.
+
+`tests/llb/bench/test_agentic_loop_feedback_authority.py` checks the immutable wording,
+hypothesis, fresh balanced ledger, seeds, candidate isolation, breadth and paired gates,
+authority-specific study identity, persistence, and an end-to-end fake run. The shared feedback
+tests check per-family redirected completion accounting. Validation on 2026-08-01: `make ci`
+passed 2,483 tests with 45 opt-in/slow tests deselected, and `make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

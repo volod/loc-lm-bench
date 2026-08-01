@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_loop_feedback_transfer import STUDY_KIND
 from llb.bench.agentic_loop_policy_report import METHOD
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -15,13 +14,15 @@ def format_feedback_transfer_table(analysis: dict[str, object]) -> str:
     header = (
         f"{'seed':>5} {'eligible':<8} {'gates':<6} {'base-r':>7} {'cand-r':>7} "
         f"{'complete':>8} {'d(complete)':>11} {'d(prompt)':>10} {'d(wall)':>8} "
-        "family-response"
+        "family-response/completion"
     )
     lines = [header, "-" * len(header)]
     for row in cast(list[dict[str, object]], analysis["seed_rows"]):
-        family_rates = cast(dict[str, float], row["task_family_response_rates"])
+        family_outcomes = cast(dict[str, dict[str, float]], row["task_family_response_completion"])
         response_text = ",".join(
-            f"{family.removesuffix('_holdout')}={rate:.3f}" for family, rate in family_rates.items()
+            f"{family.removesuffix('_holdout')}={outcome['response_rate']:.3f}/"
+            f"{outcome['redirected_completion_rate']:.3f}"
+            for family, outcome in family_outcomes.items()
         )
         gates = (
             f"{'R' if row['task_family_response_gate_passed'] else '-'}"
@@ -49,6 +50,8 @@ def persist_feedback_transfer(
     task_digest: str,
     table: str,
     mirror: Mirror | None = None,
+    artifact_stem: str = "task-family-transfer",
+    report_title: str = "Gemma repeat-feedback task-family transfer",
 ) -> RunPaths:
     """Persist the two-seed decision beside every source policy-cell manifest."""
     supported = int(cast(int, analysis["supported_seeds"]))
@@ -62,7 +65,7 @@ def persist_feedback_transfer(
         run_name=cast(str, design["study_id"]),
         config={
             "category": METHOD,
-            "study_kind": STUDY_KIND,
+            "study_kind": design["study_kind"],
             "task_set_digest": task_digest,
             "design": design,
             "analysis": analysis,
@@ -75,12 +78,12 @@ def persist_feedback_transfer(
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
         artifacts={
-            "task-family-transfer-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
-            "task-family-transfer-analysis.json": (
+            f"{artifact_stem}-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            f"{artifact_stem}-analysis.json": (
                 json.dumps(analysis, indent=2, sort_keys=True) + "\n"
             ),
-            "task-family-transfer-comparison.md": (
-                "# Gemma repeat-feedback task-family transfer\n\n```text\n" + table + "\n```\n"
+            f"{artifact_stem}-comparison.md": (
+                f"# {report_title}\n\n```text\n" + table + "\n```\n"
             ),
         },
     )

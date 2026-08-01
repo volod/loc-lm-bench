@@ -1,0 +1,226 @@
+[
+  {
+    "id": "authority-read-001",
+    "family": "read_holdout",
+    "prompt": "Open alder.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"alder.txt": "Control token AL-913"}},
+    "success": [{"kind": "answer_contains", "value": "AL-913"}]
+  },
+  {
+    "id": "authority-read-002",
+    "family": "read_holdout",
+    "prompt": "Open birch.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"birch.txt": "Control token BI-825"}},
+    "success": [{"kind": "answer_contains", "value": "BI-825"}]
+  },
+  {
+    "id": "authority-read-003",
+    "family": "read_holdout",
+    "prompt": "Open clover.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"clover.txt": "Control token CL-734"}},
+    "success": [{"kind": "answer_contains", "value": "CL-734"}]
+  },
+  {
+    "id": "authority-read-004",
+    "family": "read_holdout",
+    "prompt": "Open dogwood.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"dogwood.txt": "Control token DG-648"}},
+    "success": [{"kind": "answer_contains", "value": "DG-648"}]
+  },
+  {
+    "id": "authority-read-005",
+    "family": "read_holdout",
+    "prompt": "Open elm.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"elm.txt": "Control token EL-557"}},
+    "success": [{"kind": "answer_contains", "value": "EL-557"}]
+  },
+  {
+    "id": "authority-read-006",
+    "family": "read_holdout",
+    "prompt": "Open fir.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"fir.txt": "Control token FI-469"}},
+    "success": [{"kind": "answer_contains", "value": "FI-469"}]
+  },
+  {
+    "id": "authority-read-007",
+    "family": "read_holdout",
+    "prompt": "Open grove.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"grove.txt": "Control token GR-371"}},
+    "success": [{"kind": "answer_contains", "value": "GR-371"}]
+  },
+  {
+    "id": "authority-read-008",
+    "family": "read_holdout",
+    "prompt": "Open hawthorn.txt twice with identical arguments to verify the result, then report its token.",
+    "setup": {"files": {"hawthorn.txt": "Control token HW-286"}},
+    "success": [{"kind": "answer_contains", "value": "HW-286"}]
+  },
+  {
+    "id": "authority-calc-001",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 46 + 39 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "85"}]
+  },
+  {
+    "id": "authority-calc-002",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 17 * 8 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "136"}]
+  },
+  {
+    "id": "authority-calc-003",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 342 / 18 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "19"}]
+  },
+  {
+    "id": "authority-calc-004",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate (23 - 8) * 5 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "75"}]
+  },
+  {
+    "id": "authority-calc-005",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 503 - 278 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "225"}]
+  },
+  {
+    "id": "authority-calc-006",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 14 ** 2 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "196"}]
+  },
+  {
+    "id": "authority-calc-007",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 391 // 17 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "23"}]
+  },
+  {
+    "id": "authority-calc-008",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 206 % 15 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "11"}]
+  },
+  {
+    "id": "authority-search-001",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'ibis' and then report the number beside that marker.",
+    "setup": {"corpus": {"b1": "Marker ibis carries number 915.", "y1": "Unrelated workshop note."}},
+    "success": [{"kind": "answer_contains", "value": "915"}]
+  },
+  {
+    "id": "authority-search-002",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'jasmine' and then report the number beside that marker.",
+    "setup": {"corpus": {"b2": "Marker jasmine carries number 824.", "y2": "Unrelated bridge note."}},
+    "success": [{"kind": "answer_contains", "value": "824"}]
+  },
+  {
+    "id": "authority-search-003",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'kingfisher' and then report the number beside that marker.",
+    "setup": {"corpus": {"b3": "Marker kingfisher carries number 736.", "y3": "Unrelated orchard note."}},
+    "success": [{"kind": "answer_contains", "value": "736"}]
+  },
+  {
+    "id": "authority-search-004",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'lilac' and then report the number beside that marker.",
+    "setup": {"corpus": {"b4": "Marker lilac carries number 647.", "y4": "Unrelated station note."}},
+    "success": [{"kind": "answer_contains", "value": "647"}]
+  },
+  {
+    "id": "authority-search-005",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'magpie' and then report the number beside that marker.",
+    "setup": {"corpus": {"b5": "Marker magpie carries number 558.", "y5": "Unrelated gallery note."}},
+    "success": [{"kind": "answer_contains", "value": "558"}]
+  },
+  {
+    "id": "authority-search-006",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'nectar' and then report the number beside that marker.",
+    "setup": {"corpus": {"b6": "Marker nectar carries number 462.", "y6": "Unrelated harbor note."}},
+    "success": [{"kind": "answer_contains", "value": "462"}]
+  },
+  {
+    "id": "authority-search-007",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'osprey' and then report the number beside that marker.",
+    "setup": {"corpus": {"b7": "Marker osprey carries number 379.", "y7": "Unrelated market note."}},
+    "success": [{"kind": "answer_contains", "value": "379"}]
+  },
+  {
+    "id": "authority-search-008",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'primrose' and then report the number beside that marker.",
+    "setup": {"corpus": {"b8": "Marker primrose carries number 281.", "y8": "Unrelated forest note."}},
+    "success": [{"kind": "answer_contains", "value": "281"}]
+  },
+  {
+    "id": "authority-write-001",
+    "family": "mutation_holdout",
+    "prompt": "Write value indigo-918 to verdict-r.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "verdict-r.txt", "value": "indigo-918"}, {"kind": "answer_contains", "value": "indigo-918"}]
+  },
+  {
+    "id": "authority-write-002",
+    "family": "mutation_holdout",
+    "prompt": "Write value jade-827 to verdict-s.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "verdict-s.txt", "value": "jade-827"}, {"kind": "answer_contains", "value": "jade-827"}]
+  },
+  {
+    "id": "authority-write-003",
+    "family": "mutation_holdout",
+    "prompt": "Write value khaki-739 to verdict-t.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "verdict-t.txt", "value": "khaki-739"}, {"kind": "answer_contains", "value": "khaki-739"}]
+  },
+  {
+    "id": "authority-write-004",
+    "family": "mutation_holdout",
+    "prompt": "Write value lilac-643 to verdict-u.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "verdict-u.txt", "value": "lilac-643"}, {"kind": "answer_contains", "value": "lilac-643"}]
+  },
+  {
+    "id": "authority-db-001",
+    "family": "mutation_holdout",
+    "prompt": "Store value moss-556 under key authority-v twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "authority-v", "value": "moss-556"}, {"kind": "answer_contains", "value": "moss-556"}]
+  },
+  {
+    "id": "authority-db-002",
+    "family": "mutation_holdout",
+    "prompt": "Store value navy-468 under key authority-w twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "authority-w", "value": "navy-468"}, {"kind": "answer_contains", "value": "navy-468"}]
+  },
+  {
+    "id": "authority-db-003",
+    "family": "mutation_holdout",
+    "prompt": "Store value ochre-372 under key authority-x twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "authority-x", "value": "ochre-372"}, {"kind": "answer_contains", "value": "ochre-372"}]
+  },
+  {
+    "id": "authority-db-004",
+    "family": "mutation_holdout",
+    "prompt": "Store value pearl-284 under key authority-y twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "authority-y", "value": "pearl-284"}, {"kind": "answer_contains", "value": "pearl-284"}]
+  }
+]

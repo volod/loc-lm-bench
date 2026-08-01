@@ -318,6 +318,8 @@ AGENT_LOOP_FEEDBACK_ADAPTATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agen
 AGENT_LOOP_FEEDBACK_ADAPTATION_TASKS ?= $(AGENT_LOOP_REPEAT_POWER_TASKS)
 AGENT_LOOP_FEEDBACK_TRANSFER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_task_family_transfer_design.json
 AGENT_LOOP_FEEDBACK_TRANSFER_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_task_family_transfer.json
+AGENT_LOOP_FEEDBACK_AUTHORITY_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_controller_authority_design.json
+AGENT_LOOP_FEEDBACK_AUTHORITY_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_controller_authority.json
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.

@@ -43,29 +43,30 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-gemma-feedback-controller-authority-transfer (optional)
+### agent-loop-policy-controller-channel-authority (optional)
 
-Develop a task-family-neutral repeat notice that tells Gemma the controller's suppression already
-satisfies the requested duplicate and makes the next action obligatory. This tests whether explicit
-controller authority can overcome literal repetition while keeping the wording independent of any
-tool family; use the task-family transfer evidence in
-[extended workflows](current/extended-workflows.md#task-family-neutral-gemma-transfer) only to
-motivate the new mechanism.
+Compare the same immutable task-neutral authority message when it is represented as a dedicated
+controller-level instruction versus a tool observation, using a fresh balanced holdout and fixed
+two-seed response, completion, and cost gates. This isolates whether models honor actual message
+authority differently from authority wording embedded in an observation; use the current
+response-versus-completion profile only as motivation
+([extended workflows](current/extended-workflows.md#controller-authority-gemma-transfer)).
 
 - Agent status: RUN NEEDED
-- Dependencies: predeclare a new immutable notice and hypothesis, a fresh balanced ledger digest,
-  two new seeds, the same minimum three-family response coverage, a material paired completion
-  target, and paired prompt-token/wall-time gates before inference. Keep task names, expected
-  values, and family-specific action choices out of the notice.
-- User-visible outcome: operators learn whether controller-authority framing can produce correct
-  forward progress across read, calculator, search, and mutation without task-specific hints.
-- Scope boundary: in scope -- one authority-framed candidate, a new holdout ledger, stable
-  two-seed routing, and response-versus-completion analysis. Out of scope -- choosing wording or
-  cases from either prior outcome ledger, task-family notices, or changing gates after inference.
-- Acceptance gates: both seeds clear coverage and activation, the response floor in at least three
-  task families, material paired completion, and prompt-token/wall-time cost gates.
+- Dependencies: define a backend-neutral controller-message transcript role without changing the
+  task prompt or tool observations; predeclare exact role serialization per backend, a new ledger
+  digest, two seeds, and the same minimum three-family breadth rule before inference.
+- User-visible outcome: operators learn whether authority must be encoded structurally in the
+  transcript rather than described in controller text.
+- Scope boundary: in scope -- one fixed authority string, observation-versus-controller placement,
+  exact prompt snapshots, and per-family response/completion accounting. Out of scope --
+  task-family wording, adapting the message after outcomes, or changing shipped defaults from one
+  Gemma study.
+- Acceptance gates: prompt snapshots prove the text is identical and only its role changes; both
+  seeds clear coverage and activation; adoption still requires the response floor in at least
+  three families, material paired completion, and prompt-token/wall-time cost gates.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#task-family-neutral-gemma-transfer).
+  [extended workflows](current/extended-workflows.md#controller-authority-gemma-transfer).
 
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 

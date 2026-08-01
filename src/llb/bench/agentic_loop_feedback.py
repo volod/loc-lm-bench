@@ -8,6 +8,7 @@ from llb.bench.agentic.loop_policy import (
     REPEATED_NOOP,
 )
 from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic_loop_feedback_outcomes import summarize_response_completion
 from llb.bench.agentic_loop_policy_power import validate_repeat_power_design
 from llb.bench.agentic_loop_policy_report import (
     METRIC_COMPLETION,
@@ -67,28 +68,9 @@ def _redirect_summary(
     report: LoopPolicyReport,
     tasks: list[AgenticTask],
 ) -> dict[str, object]:
-    active = [episode.n_repeated_noops > 0 for episode in report.episodes]
-    redirected = [episode.repeat_feedback_redirected for episode in report.episodes]
-    by_family: dict[str, dict[str, object]] = {}
-    for family in sorted({task.family or "" for task in tasks}):
-        indexes = [index for index, task in enumerate(tasks) if task.family == family]
-        activated = sum(active[index] for index in indexes)
-        responses = sum(redirected[index] for index in indexes)
-        by_family[family] = {
-            "tasks": len(indexes),
-            "activated_tasks": activated,
-            "redirected_tasks": responses,
-            "response_rate": responses / activated if activated else 0.0,
-        }
-    activated = sum(active)
-    responses = sum(redirected)
-    return {
-        "tasks": len(tasks),
-        "activated_tasks": activated,
-        "redirected_tasks": responses,
-        "response_rate": responses / activated if activated else 0.0,
-        "by_family": by_family,
-    }
+    if len(report.rows) != len(tasks):
+        raise ValueError("repeat-feedback rows do not match the task ledger")
+    return summarize_response_completion(report.rows)
 
 
 def _paired(

@@ -109,6 +109,10 @@ def test_localized_feedback_redirects_and_clears_paired_gates(tmp_path: Path):
     assert analysis["coverage_passed"] is True
     assert analysis["baseline"]["redirect"]["response_rate"] == 0.0
     assert analysis["variants"][REPEAT_FEEDBACK_UK]["redirect"]["response_rate"] == 1.0
+    uk_redirect = analysis["variants"][REPEAT_FEEDBACK_UK]["redirect"]
+    assert uk_redirect["redirected_completion_rate"] == 1.0
+    assert uk_redirect["response_completion_rate"] == 1.0
+    assert uk_redirect["by_family"]["read"]["completed_redirected_tasks"] == 4
     assert analysis["variants"][REPEAT_FEEDBACK_UK]["supports_variant"] is True
     assert analysis["recommended_feedback_variant"] in {
         REPEAT_FEEDBACK_UK,
