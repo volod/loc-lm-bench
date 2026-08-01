@@ -373,6 +373,64 @@ persistence, and an end-to-end fake run. The redirect regression is in
 `tests/llb/bench/test_agentic_loop_policy.py`. Validation on 2026-08-01: `make ci` passed 2,475
 tests with 45 opt-in/slow tests deselected.
 
+###### Task-Family-Neutral Gemma Transfer
+
+The transfer lane tests one task-family-neutral Gemma notice on a fresh holdout instead of tuning
+against the family-adaptation ledger. Its prospective design is
+`samples/benchmarks/agentic_loop_feedback_task_family_transfer_design.json`; the balanced
+32-task ledger is `samples/benchmarks/agentic_loop_feedback_task_family_transfer.json`, with eight
+new ASCII cases in each of read, calculator, search, and mutation. Mutation success requires both
+the state change and a confirming final answer, so a successful first write cannot hide failure to
+advance after suppression. The holdout digest is
+`10fef23bc2b2d855f6b7395d7e94ac42013005b4967d29d1a968ada99a215465`, distinct from the powered
+ledger digest recorded in the design.
+
+The immutable `gemma_progress` notice is `[loop] The previous action already succeeded. Continue
+from its result instead of repeating it.` It contains no tool family, task name, or expected value.
+The validator fixes that exact registered text, its completed-state hypothesis, seeds 41 and 73,
+temperature 0.2, 8192-token served context, a 25% response floor in at least three of four task
+families on both seeds, a `+0.125` material paired completion target, and maximum relative cost
+increases of 10% for prompt tokens and 20% for wall time. It also refuses the prior ledger digest
+and any task-specific word in the controller notice before inference.
+
+`make bench-agentic-loop-repeat-feedback-task-family-transfer` runs the fixed
+`6/answer/allow,noop` comparison on the local MamayLM-Gemma 3 12B model. The core validation and
+two-seed decision live in `src/llb/bench/agentic_loop_feedback_transfer.py`; report and aggregate
+persistence live in `src/llb/bench/agentic_loop_feedback_transfer_report.py`; orchestration lives
+in `src/llb/cli/bench/category_agentic_loop_feedback_transfer.py`. Aggregate rows retain baseline
+and candidate response, per-family response deltas, the full paired completion comparison, both
+full cost-gate objects, and links to every source cell manifest.
+
+CUDA-host evidence (2026-08-01), RTX 4060 Ti 16 GB, MamayLM-Gemma 3 12B Q4_K_M. In the gates
+column, `R`, `C`, `P`, and `W` mean task-family response, completion, prompt-token cost, and
+wall-time cost; `-` is a failed gate.
+
+| seed | current response | candidate response | responsive families | completion delta | prompt delta | wall delta | gates |
+| ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| 41 | 0.000 | 0.094 | mutation 0.375 | +0.000 | +27.4 [6.2, 43.3] | -0.19 [-0.84, 0.35] | `--PW` |
+| 73 | 0.031 | 0.062 | mutation 0.250 | +0.000 | +37.3 [26.0, 43.4] | +2.52 [0.38, 4.87] | `--PW` |
+
+Coverage and baseline/candidate activation passed on both seeds. Read, calculator, and search had
+zero candidate redirects on both seeds; mutation alone reached its response floor, with three
+redirects on seed 41 and two on seed 73. None of those redirects completed a task. Candidate and
+current completion were both `0.000`, all 32 completion pairs tied on each seed, and the paired
+completion interval was `[0.000, 0.000]`. Both paired cost gates passed. Thus the completed-state
+hypothesis does not transfer a useful redirect across task families, and `current` remains the
+recommended Gemma feedback variant.
+
+The audit-complete aggregate is
+`.data/agentic-loop-policy/20260801T145240.263763Z-778f62e7297b/manifest.json`. It indexes the six
+source cell manifests under `.data/agentic-loop-policy/20260801T134214*` through
+`.data/agentic-loop-policy/20260801T145005*` and preserves the exact prospective design. The first
+aggregate remains at `.data/agentic-loop-policy/20260801T145005.639616Z-1bdfdb79eb25/`; the later
+aggregate adds baseline response and the complete paired gate objects from those same source
+cells, with no additional inference.
+
+`tests/llb/bench/test_agentic_loop_feedback_transfer.py` checks the immutable neutral notice and
+hypothesis, fresh digest, balanced ledger, exact seed grid, candidate isolation, three-family and
+two-seed response rule, completion and cost decisions, report persistence, and an end-to-end fake
+run. Validation on 2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

@@ -7,6 +7,7 @@ from llb.cli.bench import (  # noqa: F401
     category_agentic,
     category_agentic_loop_feedback_adaptation,
     category_agentic_loop_feedback_generalization,
+    category_agentic_loop_feedback_transfer,
     category_agentic_loop_policy,
     category_agentic_compact_vs_cap,
     category_agentic_context_sweep,

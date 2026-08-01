@@ -3,6 +3,7 @@
 .PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-loop-repeat-power \
 	bench-agentic-loop-repeat-feedback bench-agentic-loop-repeat-feedback-generalization \
 	bench-agentic-loop-repeat-feedback-family-adaptation \
+	bench-agentic-loop-repeat-feedback-task-family-transfer \
 	bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
@@ -69,6 +70,13 @@ bench-agentic-loop-repeat-feedback-family-adaptation: ## Run predeclared two-see
 	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-family-adaptation \
 		--design "$(AGENT_LOOP_FEEDBACK_ADAPTATION_DESIGN)" \
 		--tasks "$(AGENT_LOOP_FEEDBACK_ADAPTATION_TASKS)"
+
+bench-agentic-loop-repeat-feedback-task-family-transfer: ## Run the predeclared two-seed Gemma task-family transfer study
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-task-family-transfer \
+		--design "$(AGENT_LOOP_FEEDBACK_TRANSFER_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_TRANSFER_TASKS)"
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
