@@ -10,8 +10,7 @@ does not clear the same band, an equal-trigger agreement measures nothing and th
 
 from typing import cast
 
-from llb.bench.agentic.context_budget import fixed_budget
-from llb.bench.agentic_memory_boundary_probe import first_fold_step
+from llb.bench.agentic_memory_boundary_probe import compaction_trigger_chars, first_fold_step
 
 STUDY_KIND = "compact_trigger_guard_collapse"
 METHOD = "agentic-compact-trigger-guard-collapse"
@@ -27,11 +26,6 @@ READING_INVALID = "collapse_cells_invalid"
 READING_NO_POWER = "no_resolving_power"
 READING_COLLAPSES = "trigger_ratio_collapses"
 READING_INTERACTS = "share_and_guard_interact"
-
-
-def compaction_trigger_chars(max_prompt_chars: int, compact_share: float) -> int:
-    """The trigger the runtime will compute, taken from the runtime's own arithmetic."""
-    return fixed_budget(max_prompt_chars).compaction_trigger_chars(compact_share)
 
 
 def annotate_fold_steps(

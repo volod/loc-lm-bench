@@ -43,30 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-fold-step-crossover (optional)
+### agent-context-policy-summary-input-cap (optional)
 
-The compact cost delta is a STEP function of the compaction trigger: the trigger reaches the
-transcript only by selecting which step folds, so every trigger inside one step interval costs the
-same to the token
-([extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis)).
-The crossover is therefore not a point on the guard axis but the boundary between two fold steps,
-and the interpolated char value the surface reports is an artifact of a continuous rule fitted to a
-discrete mechanism. Restate it that way: have the analysis emit the LAST fold step at which compact
-is still cheaper plus the trigger interval that selects it, predeclare a grid whose cells sit one
-fold step apart around that boundary, and confirm the cost side flips exactly at the step change
-rather than partway between two guards.
+The compact policy caps the summarize call's INPUT at the compaction trigger
+(`summary_input_cap = budget.compaction_trigger_chars(compact_share)` in
+`src/llb/bench/agentic/episode.py`), which makes the summarizer the ONE part of the compact cost that
+is not a step function of the fold step: inside a single fold step the controller prompts are
+bit-identical while the summarize input moves continuously with the trigger
+([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
+Two consequences are unmeasured. The cap also TRIMS the folded transcript head-and-tail once that
+transcript outgrows it, so a deeper transcript is summarized with a middle-elided one whose elided
+span widens as the trigger shrinks, and nothing checks what the elision costs in completion. Pin the
+cap to a step-aligned quantity instead -- the folded transcript's own size, or the step's cap prompt
+-- then re-run one ladder: the within-step residual should fall to zero, and the elision-versus-
+completion reading says whether the shipped cap is trimming evidence the summary needed.
 
 - Agent status: RUN NEEDED
-- Dependencies: `first_fold_step` and the deterministic prompt sequence in
-  `src/llb/bench/agentic_memory_boundary_probe.py` already predict the step for any trigger; the
-  cell gate and the direction-aware cost reading are unchanged.
-- User-visible outcome: a routing rule an operator can apply exactly ("fold no later than step k")
-  instead of a char threshold that only approximates where the mechanism switches.
-- Scope boundary: in scope -- the fold-step crossover statement, the one-step-apart grid, and the
-  step-change confirmation. Out of scope -- new families, new task shapes, changing the shipped
-  `compact_share`, and replacing the guard-axis interpolation the surface already publishes.
+- Dependencies: the fold-step ladder and its controller-versus-summarizer cost split are current
+  behavior ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard));
+  reuse the committed fold-step design, the cell gate, and the within-step band unchanged.
+- User-visible outcome: the compact cost becomes a pure step function an operator can predict from
+  the fold step alone, and the summarizer's trimming is a measured choice rather than a side effect
+  of the trigger.
+- Scope boundary: in scope -- the step-aligned cap, one ladder re-run, the residual reading, and the
+  completion check on the elided span. Out of scope -- changing the summary prompt, the compaction
+  hysteresis, and the shipped `compact_share`.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
+  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 

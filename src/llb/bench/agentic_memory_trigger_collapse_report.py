@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 from typing import cast
 
+from llb.bench.agentic_memory_boundary_probe import compaction_trigger_chars
 from llb.bench.agentic_memory_trigger_collapse_reading import (
     KIND_EQUAL_TRIGGER,
     METHOD,
     READING_COLLAPSES,
     STUDY_KIND,
-    compaction_trigger_chars,
 )
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths

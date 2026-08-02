@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-fold-step-crossover",
+  "study_kind": "compact_fold_step_crossover",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "reference": {
+    "study_id": "agent-context-policy-compact-memory-boundary-surface",
+    "evidence": "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
+    "measured_crossovers": [
+      {"depth": 6, "compact_share": 0.5, "crossover_max_prompt_chars": 14160},
+      {"depth": 10, "compact_share": 0.5, "crossover_max_prompt_chars": 21900}
+    ]
+  },
+  "held_fixed": {
+    "model_family": "mistral",
+    "model": "mistral-small3.1:24b",
+    "backend": "ollama",
+    "compact_share": 0.5,
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "minimum_compaction_rate": 0.75,
+    "minimum_cell_completion": 0.75
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "step_rule": {
+    "rule": "within_step_spread_within_cap_cost_fraction",
+    "metric": "compact_minus_cap_total_model_input_tokens",
+    "requires_adjacent_fold_steps": true,
+    "within_step_cap_cost_fraction": 0.02,
+    "minimum_within_step_guard_span_fraction": 0.5,
+    "maximum_step_change_guard_gap_chars": 8
+  },
+  "ladders": [
+    {
+      "depth": 6,
+      "steps": [
+        {
+          "fold_step": 6,
+          "expected_side": "compact_cheaper",
+          "cells": [
+            {"cell_id": "fold-d6-step6-lo", "max_prompt_chars": 13136, "expected_side": "compact_cheaper"},
+            {"cell_id": "fold-d6-step6-hi", "max_prompt_chars": 14910, "expected_side": "compact_cheaper"}
+          ]
+        },
+        {
+          "fold_step": 7,
+          "expected_side": "cap_cheaper",
+          "cells": [
+            {"cell_id": "fold-d6-step7-lo", "max_prompt_chars": 14912, "expected_side": "cap_cheaper"},
+            {"cell_id": "fold-d6-step7-hi", "max_prompt_chars": 16746, "expected_side": "cap_cheaper"}
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 10,
+      "steps": [
+        {
+          "fold_step": 10,
+          "expected_side": "compact_cheaper",
+          "cells": [
+            {"cell_id": "fold-d10-step10-lo", "max_prompt_chars": 20240, "expected_side": "compact_cheaper"},
+            {"cell_id": "fold-d10-step10-hi", "max_prompt_chars": 22014, "expected_side": "compact_cheaper"}
+          ]
+        },
+        {
+          "fold_step": 11,
+          "expected_side": "cap_cheaper",
+          "cells": [
+            {"cell_id": "fold-d10-step11-lo", "max_prompt_chars": 22016, "expected_side": "cap_cheaper"},
+            {"cell_id": "fold-d10-step11-hi", "max_prompt_chars": 23040, "expected_side": "cap_cheaper"}
+          ]
+        }
+      ]
+    }
+  ],
+  "interpretation": {
+    "fold_step_boundary_confirmed": "the cost side changes exactly where the fold step changes, so the routing rule is a fold step and the interpolated guard is an artifact",
+    "cost_moves_within_a_fold_step": "two guards that fold the same step disagree, so the delta is not a step function of the trigger",
+    "no_side_change_across_tested_steps": "both tested steps land on one side; the boundary lies outside the tested ladder",
+    "no_resolving_power": "adjacent fold steps do not separate beyond the within-step band, so a step change cannot be read",
+    "changes_shipped_default": false
+  }
+}

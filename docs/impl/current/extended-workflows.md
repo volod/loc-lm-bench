@@ -1231,6 +1231,96 @@ the surface's own (0.5, 14000) and (0.5, 20000) cells are the trigger-7000 and t
 above. An operator therefore does not need a grid for a new window -- only the trigger that lands on
 the intended fold step. The shipped `compact_share` is unchanged.
 
+##### The crossover is a fold step, not a char guard
+
+`make bench-agentic-context-compact-fold-step` restates the crossover on the axis the mechanism
+actually has. The surface interpolated a char guard, and the trigger collapse then showed why that
+number cannot be read literally: the trigger reaches the transcript ONLY by choosing which step
+folds, so every trigger inside one step's interval produces the identical transcript. The crossover
+is the boundary between two fold steps, and the interpolated char value is an artifact of fitting a
+continuous rule to a discrete mechanism. The committed design is
+`samples/benchmarks/agentic_compact_fold_step_crossover_design.json`.
+
+The geometry is the inverse of the fold-step prediction and needs no model.
+`fold_step_trigger_interval` returns the half-open `[low, high)` trigger interval whose every value
+folds at one step -- `low` is the largest earlier step prompt, `high` is the step's own prompt --
+and `fold_step_guard_interval` converts it to prompt guards through the runtime's own truncating
+`int(guard * share)` rather than a float inverse. A step whose prompt does not exceed the running
+maximum before it is UNREACHABLE (no trigger selects it), so `reachable_fold_steps` is the ladder a
+design is placed against.
+
+Placement is what lets the grid tell a step change apart from a smooth slide, and all four rules are
+checked in CI with no GPU: every declared cell must fold at the step it claims, the tested steps must
+be ADJACENT on the reachable ladder, the guards inside one step must span at least half of that
+step's guard interval (otherwise "same step, same cost" is measured over two nearly identical
+guards), and the guards on either side of a step change must straddle it within 8 chars (otherwise
+the flip is localized no better than the old bracket was). Cell preconditions -- cap fits, compact
+fires above the activation floor, completion paired -- are the surface's unchanged gate, and a cell
+whose measured fold step drifts from its declared one aborts the analysis rather than being re-read.
+
+Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (the trigger/guard interval
+inverse, the reachable ladder, and `compaction_trigger_chars`, now shared with the collapse study),
+`src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
+`src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows),
+`src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
+`src/llb/bench/agentic_memory_fold_step.py` (run and analysis),
+`src/llb/bench/agentic_memory_fold_step_report.py`,
+`src/llb/cli/bench/category_agentic_memory_fold_step.py`, and
+`tests/llb/bench/test_agentic_memory_fold_step_crossover.py`.
+
+```bash
+make bench-agentic-context-compact-fold-step
+```
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, seven depth-matched memory tasks per cell, `compact_share=0.5`, eight cells at
+10.56 tok/s over about 68 minutes. The pinned family re-passed the unchanged depth-10 control at
+4/4; every cell
+completed 7/7 under both policies with zero overflows, one compaction per compact episode, and all
+eight landed on the side the design predeclared. The aggregate is
+`$DATA_DIR/agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/manifest.json`.
+
+| cell | depth | guard | trigger | fold step | cap tok | compact tok | d(input tok) | side |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `fold-d6-step6-lo` | 6 | 13136 | 6568 | 6 | 13258.0 | **13132.1** | -125.9 | compact |
+| `fold-d6-step6-hi` | 6 | 14910 | 7455 | 6 | 13258.0 | **13132.1** | -125.9 | compact |
+| `fold-d6-step7-lo` | 6 | 14912 | 7456 | 7 | **13258.0** | 14312.6 | +1054.6 | cap |
+| `fold-d6-step7-hi` | 6 | 16746 | 8373 | 7 | **13258.0** | 14312.6 | +1054.6 | cap |
+| `fold-d10-step10-lo` | 10 | 20240 | 10120 | 10 | 27343.0 | **26434.4** | -908.6 | compact |
+| `fold-d10-step10-hi` | 10 | 22014 | 11007 | 10 | 27343.0 | **26541.0** | -802.0 | compact |
+| `fold-d10-step11-lo` | 10 | 22016 | 11008 | 11 | **27343.0** | 28698.4 | +1355.4 | cap |
+| `fold-d10-step11-hi` | 10 | 23040 | 11520 | 11 | **27343.0** | 28878.6 | +1535.6 | cap |
+
+Verdict: **fold-step boundary confirmed** at both depths. The cost side changes between two guards
+**2 chars apart** -- 14910 and 14912 at depth 6, 22014 and 22016 at depth 10 -- while guards up to
+1834 chars apart inside one step stay on the same side. The step change moves 1180.4 tokens
+at depth 6 and 2300.8 at depth 10, against within-step bands of 265.2 and 546.9.
+
+| depth | last compact-cheaper fold step | trigger interval | guard interval (share 0.5) | within-step residual |
+| ---: | ---: | --- | --- | ---: |
+| 6 | 6 | `[6568, 7456)` | `[13136, 14912)` | 0.0 tok |
+| 10 | 10 | `[10120, 11008)` | `[20240, 22016)` | 180.1 tok |
+
+The routing rule an operator applies exactly: **fold no later than step k** -- keep
+`compact_share * guard` below step k's own cap prompt (7456 chars at depth 6, 11008 at depth 10),
+which at `compact_share=0.5` is a guard below 14912 and 22016 chars. Both interpolated crossovers
+land INSIDE the cheap step and name a point at which nothing changes: 14160 sits 752 chars below the
+depth-6 step change (5.0% low) and 21900 sits 116 chars below the depth-10 one. Neither is wrong as
+an approximation -- both fall in the correct step -- but only the step boundary is where the cost
+actually moves, and only it converts to another `compact_share` without re-deriving anything.
+
+One term survives inside a step, and the run isolates it. At depth 6 the whole cost is bit-identical
+across the guard interval; at depth 10 it moves 180.1 tokens, of which 171.0 is the summarize call
+and 9.1 is later controller prompts. The cause is that the summarize call's input cap IS the trigger
+(`summary_input_cap = budget.compaction_trigger_chars(compact_share)`), so a larger trigger inside
+one step feeds the summarizer more of the folded transcript -- and the summary it returns is then
+carried by every later prompt. Depth 6 folds a transcript smaller than either cap, so nothing is
+trimmed and the residual is exactly zero. The residual is 8% of the depth-10 step change and stays
+far inside the equivalence band, so it does not move the boundary; each cell row now records
+`compact_mean_controller_prompt_tokens` and `compact_mean_compaction_prompt_tokens` so the split is
+readable rather than inferred. This does not change the shipped `compact_share` or the guard-axis
+interpolation the surface publishes.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:

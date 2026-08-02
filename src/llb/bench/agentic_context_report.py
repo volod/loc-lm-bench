@@ -43,6 +43,8 @@ METRIC_STEPS = "n_steps"
 METRIC_TOOL_CALLS = "n_tool_calls"
 METRIC_PROMPT_TOKENS = "max_prompt_tokens"
 METRIC_TOTAL_MODEL_INPUT_TOKENS = "total_model_input_tokens"
+# The summarizer half of the model-input cost: what the compact policy paid to fold, on its own.
+METRIC_COMPACTION_PROMPT_TOKENS = "compaction_prompt_tokens"
 METRICS = (METRIC_COMPLETION, METRIC_STEPS, METRIC_TOOL_CALLS, METRIC_PROMPT_TOKENS)
 
 # Task-kind split: the generator's search-count / search-locate ids (plus seed "other").

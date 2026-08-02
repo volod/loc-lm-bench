@@ -12,6 +12,7 @@ from typing import cast
 from llb.bench.agentic_memory_boundary_probe import (
     cap_peak_prompt_chars,
     cap_prompt_sequence,
+    compaction_trigger_chars,
     guard_is_cap_fitting,
 )
 from llb.bench.agentic_memory_transfer import load_transfer_design
@@ -22,7 +23,6 @@ from llb.bench.agentic_memory_trigger_collapse_reading import (
     KIND_EQUAL_TRIGGER,
     REPORTING_CONFIDENCE,
     STUDY_KIND,
-    compaction_trigger_chars,
 )
 from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
 

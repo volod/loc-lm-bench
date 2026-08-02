@@ -6,7 +6,10 @@ from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_compact_vs_cap import run_compact_vs_cap
 from llb.bench.agentic_compact_vs_cap_report import CompactVsCapRun
-from llb.bench.agentic_context_report import METRIC_TOTAL_MODEL_INPUT_TOKENS
+from llb.bench.agentic_context_report import (
+    METRIC_COMPACTION_PROMPT_TOKENS,
+    METRIC_TOTAL_MODEL_INPUT_TOKENS,
+)
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
 from llb.bench.common import LLMComplete
 
@@ -84,6 +87,15 @@ def transfer_cell_row(
         "cap_mean_total_model_input_tokens": run.cap.metric_mean(METRIC_TOTAL_MODEL_INPUT_TOKENS),
         "compact_mean_total_model_input_tokens": run.compact.metric_mean(
             METRIC_TOTAL_MODEL_INPUT_TOKENS
+        ),
+        # The compact cost splits into the controller prompts the fold step decides and the
+        # summarizer call it pays for; only the second one reads the trigger continuously.
+        "compact_mean_compaction_prompt_tokens": run.compact.metric_mean(
+            METRIC_COMPACTION_PROMPT_TOKENS
+        ),
+        "compact_mean_controller_prompt_tokens": (
+            run.compact.metric_mean(METRIC_TOTAL_MODEL_INPUT_TOKENS)
+            - run.compact.metric_mean(METRIC_COMPACTION_PROMPT_TOKENS)
         ),
         "cap_context_overflows": run.cap.n_context_overflow,
         "compact_context_overflows": run.compact.n_context_overflow,

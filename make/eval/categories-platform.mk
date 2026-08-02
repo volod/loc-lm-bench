@@ -16,6 +16,7 @@
 	bench-agentic-context-compact-memory-replication \
 	bench-agentic-context-compact-memory-boundary-surface \
 	bench-agentic-context-compact-trigger-collapse \
+	bench-agentic-context-compact-fold-step \
 	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
@@ -215,6 +216,12 @@ bench-agentic-context-compact-trigger-collapse: ## Test whether compact_share an
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-trigger-collapse \
 		--design "$(AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN)"
+
+bench-agentic-context-compact-fold-step: ## Test whether the compact cost side flips at a fold-step change rather than at an interpolated char guard
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-fold-step \
+		--design "$(AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN)"
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
