@@ -47,66 +47,75 @@ def bench_agentic_loop_controller_channel_authority_cmd(
     except ValueError as exc:
         cli_error(str(exc))
     roster = cast(list[dict[str, object]], design["roster"])
-    model = cast(str, roster[0]["model"])
-    backend = cast(str, roster[0]["backend"])
-    if backend != "ollama":
+    if any(row["backend"] != "ollama" for row in roster):
         cli_error("the committed controller-channel evidence roster requires Ollama")
     sampling = cast(dict[str, object], design["sampling"])
     temperature = float(cast(float, sampling["temperature"]))
     max_tokens = int(cast(int, sampling["max_tokens"]))
     max_model_len = int(cast(int, design["max_model_len"]))
+    first_model = cast(str, roster[0]["model"])
     host_cfg = load_config(
         None,
-        model=model,
-        backend=backend,
+        model=first_model,
+        backend="ollama",
         max_model_len=max_model_len,
     )
-    if model not in set(list_models(host_cfg.ollama_host)):
-        cli_error(f"controller-channel model is not installed at {host_cfg.ollama_host}: {model}")
+    installed = set(list_models(host_cfg.ollama_host))
+    missing = [str(row["model"]) for row in roster if str(row["model"]) not in installed]
+    if missing:
+        cli_error(
+            f"controller-channel model is not installed at {host_cfg.ollama_host}: {missing[0]}"
+        )
     fixed = cast(dict[str, object], design["fixed_policy"])
     seed_runs: list[ChannelSeedRun] = []
-    for seed in cast(list[int], design["run_seeds"]):
-        typer.echo(f"[controller-channel] model={model} seed={seed} temperature={temperature}")
-        cfg = load_config(
-            None,
-            model=model,
-            backend=backend,
-            max_model_len=max_model_len,
-            seed=seed,
-            temperature=temperature,
-        )
-        budget = resolve_agent_context_budget(cfg, base_url=None, max_prompt_chars=None)
-        meter = ThroughputMeter()
-        launcher = OllamaLauncher(
-            model,
-            host=cfg.ollama_host,
-            num_ctx=max_model_len,
-            seed=seed,
-        )
-        with launcher:
-            chat = launcher_chat(
-                launcher,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=cfg.request_timeout_s,
-                meter=meter,
-            )
-            seed_run = run_channel_authority_seed(
-                tasks,
-                seed=seed,
+    for roster_row in roster:
+        model = cast(str, roster_row["model"])
+        backend = cast(str, roster_row["backend"])
+        for seed in cast(list[int], design["run_seeds"]):
+            typer.echo(f"[controller-channel] model={model} seed={seed} temperature={temperature}")
+            cfg = load_config(
+                None,
                 model=model,
                 backend=backend,
-                chat=chat,
-                budget=budget,
-                max_steps=int(cast(int, fixed["max_steps"])),
-                design=design,
-                data_dir=cfg.data_dir,
-                meter=meter,
+                max_model_len=max_model_len,
+                seed=seed,
+                temperature=temperature,
             )
-        if meter.calls == 0:
-            raise RuntimeError(f"backend returned no generations for seed {seed}")
-        seed_runs.append(seed_run)
-        typer.echo(f"[controller-channel] seed={seed} throughput={meter.tokens_per_s:.1f} tok/s")
+            budget = resolve_agent_context_budget(cfg, base_url=None, max_prompt_chars=None)
+            meter = ThroughputMeter()
+            launcher = OllamaLauncher(
+                model,
+                host=cfg.ollama_host,
+                num_ctx=max_model_len,
+                seed=seed,
+            )
+            with launcher:
+                chat = launcher_chat(
+                    launcher,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=cfg.request_timeout_s,
+                    meter=meter,
+                )
+                seed_run = run_channel_authority_seed(
+                    tasks,
+                    seed=seed,
+                    model=model,
+                    backend=backend,
+                    chat=chat,
+                    budget=budget,
+                    max_steps=int(cast(int, fixed["max_steps"])),
+                    design=design,
+                    data_dir=cfg.data_dir,
+                    meter=meter,
+                )
+            if meter.calls == 0:
+                raise RuntimeError(f"backend returned no generations for {model} seed {seed}")
+            seed_runs.append(seed_run)
+            typer.echo(
+                f"[controller-channel] model={model} seed={seed} "
+                f"throughput={meter.tokens_per_s:.1f} tok/s"
+            )
 
     analysis = analyze_channel_authority(design, seed_runs)
     table = format_channel_authority_table(analysis)

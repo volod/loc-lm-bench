@@ -43,25 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-controller-preamble-placement (optional)
-
-Test whether controller authority should occupy each backend template's canonical leading system
-preamble rather than a later system turn, with one fixed authority text and a paired observation
-baseline. This separates template-native system placement from the role-only comparison described
-in [controller-channel authority](current/extended-workflows.md#controller-channel-authority).
-
-- Agent status: RUN NEEDED
-- Dependencies: predeclare the exact serializer transforms and refuse any pair whose authority text
-  changes; use at least the Gemma and Qwen families so placement is not inferred from one chat
-  template.
-- User-visible outcome: operators learn whether a template-native controller preamble changes
-  repeated-call recovery before any runtime controller-message default is considered.
-- Scope boundary: in scope -- leading-system versus observation placement, exact prompt snapshots,
-  the existing activation/response/completion/cost gates, and two seeds per family. Out of scope --
-  family-specific authority wording, task hints, and shipped-default changes.
-- Documentation target:
-  [extended workflows](current/extended-workflows.md#controller-channel-authority).
-
 ### agent-context-policy-compact-memory-dependent-transcript (optional)
 
 Build a long-transcript task set whose success requires facts from early, pre-trigger observations

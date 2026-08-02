@@ -35,7 +35,7 @@ def persist_channel_cell(
             "backend": backend,
             "seed": seed,
             "placement": cell.placement,
-            "role_serialization": design["role_serialization"],
+            "serialization": design.get("serializer_transforms", design.get("role_serialization")),
             "task_set_digest": cast(dict[str, object], design["reference"])["task_set_digest"],
         },
         metrics={
@@ -57,7 +57,8 @@ def persist_channel_cell(
 def format_channel_authority_table(analysis: dict[str, object]) -> str:
     """Render both seeded controller-channel gate decisions."""
     header = (
-        f"{'seed':>5} {'gates':<6} {'obs-r':>7} {'ctrl-r':>7} {'obs-c':>7} {'ctrl-c':>7} "
+        f"{'family':<7} {'seed':>5} {'gates':<6} {'obs-r':>7} {'cand-r':>7} "
+        f"{'obs-c':>7} {'cand-c':>7} "
         f"{'d(comp)':>8} {'d(prompt)':>10} {'d(wall)':>8} family-response/completion"
     )
     lines = [header, "-" * len(header)]
@@ -84,7 +85,7 @@ def format_channel_authority_table(analysis: dict[str, object]) -> str:
             f"{'W' if cost['elapsed_s']['passed'] else '-'}"
         )
         lines.append(
-            f"{cast(int, row['seed']):>5d} {gates:<6} "
+            f"{cast(str, row['model_family']):<7} {cast(int, row['seed']):>5d} {gates:<6} "
             f"{cast(float, row['baseline_response_rate']):>7.3f} "
             f"{cast(float, row['response_rate']):>7.3f} "
             f"{cast(float, row['baseline_completion_rate']):>7.3f} "

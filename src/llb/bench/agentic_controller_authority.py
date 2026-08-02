@@ -8,12 +8,16 @@ from typing import cast
 from llb.bench.agentic.controller_channel import (
     CHANNEL_CONTROLLER,
     CHANNEL_OBSERVATION,
+    CHANNEL_PREAMBLE,
 )
 from llb.bench.agentic_controller_authority_design import (
     CROSS_MODEL_HYPOTHESIS as CROSS_MODEL_HYPOTHESIS,
     CROSS_MODEL_STUDY_KIND as CROSS_MODEL_STUDY_KIND,
     EXPECTED_HYPOTHESIS as EXPECTED_HYPOTHESIS,
     PLACEMENTS,
+    PREAMBLE_HYPOTHESIS as PREAMBLE_HYPOTHESIS,
+    PREAMBLE_PLACEMENTS,
+    PREAMBLE_STUDY_KIND as PREAMBLE_STUDY_KIND,
     STUDY_KIND as STUDY_KIND,
     validate_channel_authority_design as validate_channel_authority_design,
 )
@@ -40,6 +44,7 @@ class ChannelCell:
 class ChannelSeedRun:
     seed: int
     model: str
+    backend: str
     cells: dict[str, ChannelCell]
 
 
@@ -57,27 +62,59 @@ def _snapshot_proof(
     observation: ChannelCell,
     controller: ChannelCell,
     design: dict[str, object],
+    backend: str,
 ) -> dict[str, object]:
     task_ids = sorted(observation.snapshots)
     if task_ids != sorted(controller.snapshots):
         raise ValueError("authority activation snapshots differ between placements")
-    roster = cast(list[dict[str, object]], design["roster"])
-    backend = str(roster[0]["backend"])
     serialization_name = "ollama" if backend == "ollama" else "openai_compatible"
-    roles = cast(dict[str, dict[str, str]], design["role_serialization"])[serialization_name]
     pairs: list[dict[str, str]] = []
     for task_id in task_ids:
         baseline = observation.snapshots[task_id]
         candidate = controller.snapshots[task_id]
-        if [item["content"] for item in baseline] != [item["content"] for item in candidate]:
-            raise ValueError(f"authority snapshot content changed for task {task_id}")
-        if baseline[-1]["content"] != design["authority_text"]:
-            raise ValueError(f"authority snapshot text is invalid for task {task_id}")
-        if baseline[:-1] != candidate[:-1] or baseline[-1]["role"] != roles[CHANNEL_OBSERVATION]:
-            raise ValueError(f"observation snapshot structure is invalid for task {task_id}")
-        if candidate[-1]["role"] != roles[CHANNEL_CONTROLLER]:
-            raise ValueError(f"controller snapshot structure is invalid for task {task_id}")
-        normalized = [{**item, "role": "authority"} for item in baseline]
+        normalized: object
+        if design["study_kind"] == PREAMBLE_STUDY_KIND:
+            transforms = cast(
+                dict[str, dict[str, list[dict[str, str]]]], design["serializer_transforms"]
+            )[serialization_name]
+            if len(baseline) != 2 or len(candidate) != 2:
+                raise ValueError(f"preamble snapshot cardinality is invalid for task {task_id}")
+            if baseline[1]["content"] != design["authority_text"]:
+                raise ValueError(f"authority snapshot text is invalid for task {task_id}")
+            if candidate[0]["content"] != baseline[1]["content"]:
+                raise ValueError(f"authority snapshot content changed for task {task_id}")
+            if candidate[1]["content"] != baseline[0]["content"]:
+                raise ValueError(f"task snapshot content changed for task {task_id}")
+            expected_baseline = [
+                {"role": step["role"], "content": baseline[index]["content"]}
+                for index, step in enumerate(transforms[CHANNEL_OBSERVATION])
+            ]
+            expected_candidate = [
+                {"role": step["role"], "content": candidate[index]["content"]}
+                for index, step in enumerate(transforms[CHANNEL_PREAMBLE])
+            ]
+            if baseline != expected_baseline or candidate != expected_candidate:
+                raise ValueError(f"preamble snapshot structure is invalid for task {task_id}")
+            normalized = {
+                "prompt": baseline[0]["content"],
+                "authority": baseline[1]["content"],
+            }
+        else:
+            roles = cast(dict[str, dict[str, str]], design["role_serialization"])[
+                serialization_name
+            ]
+            if [item["content"] for item in baseline] != [item["content"] for item in candidate]:
+                raise ValueError(f"authority snapshot content changed for task {task_id}")
+            if baseline[-1]["content"] != design["authority_text"]:
+                raise ValueError(f"authority snapshot text is invalid for task {task_id}")
+            if (
+                baseline[:-1] != candidate[:-1]
+                or baseline[-1]["role"] != roles[CHANNEL_OBSERVATION]
+            ):
+                raise ValueError(f"observation snapshot structure is invalid for task {task_id}")
+            if candidate[-1]["role"] != roles[CHANNEL_CONTROLLER]:
+                raise ValueError(f"controller snapshot structure is invalid for task {task_id}")
+            normalized = [{**item, "role": "authority"} for item in baseline]
         digest = hashlib.sha256(
             json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ).hexdigest()
@@ -102,8 +139,14 @@ def analyze_channel_authority(
 ) -> dict[str, object]:
     """Apply snapshot, activation, family response, completion, and paired cost gates."""
     seeds = cast(list[int], design["run_seeds"])
-    if {run.seed for run in runs} != set(seeds) or len(runs) != len(seeds):
+    roster = cast(list[dict[str, object]], design["roster"])
+    expected_grid = {(str(row["model"]), seed) for row in roster for seed in seeds}
+    actual_grid = {(run.model, run.seed) for run in runs}
+    if actual_grid != expected_grid or len(runs) != len(expected_grid):
         raise ValueError("controller-channel runs do not match the exact seed grid")
+    placements = PREAMBLE_PLACEMENTS if design["study_kind"] == PREAMBLE_STUDY_KIND else PLACEMENTS
+    candidate_placement = placements[1]
+    families_by_model = {str(row["model"]): str(row["model_family"]) for row in roster}
     indexes = bootstrap_index_sets(
         int(cast(int, design["planned_n"])), DEFAULT_RESAMPLES, DEFAULT_SEED
     )
@@ -111,12 +154,12 @@ def analyze_channel_authority(
     activation_rule = cast(dict[str, object], design["activation_rule"])
     cost_limits = cast(dict[str, float], design["maximum_relative_cost_increase"])
     seed_rows: list[dict[str, object]] = []
-    for run in sorted(runs, key=lambda item: item.seed):
-        if set(run.cells) != set(PLACEMENTS):
+    for run in sorted(runs, key=lambda item: (families_by_model[item.model], item.seed)):
+        if set(run.cells) != set(placements):
             raise ValueError("controller-channel run does not isolate the two placements")
         baseline = run.cells[CHANNEL_OBSERVATION]
-        candidate = run.cells[CHANNEL_CONTROLLER]
-        proof = _snapshot_proof(baseline, candidate, design)
+        candidate = run.cells[candidate_placement]
+        proof = _snapshot_proof(baseline, candidate, design, run.backend)
         baseline_redirect = summarize_response_completion(baseline.rows)
         redirect = summarize_response_completion(candidate.rows)
         by_family = cast(dict[str, dict[str, object]], redirect["by_family"])
@@ -168,6 +211,7 @@ def analyze_channel_authority(
             {
                 "seed": run.seed,
                 "model": run.model,
+                "model_family": families_by_model[run.model],
                 "snapshot_proof": proof,
                 "activation_passed": activation_passed,
                 "baseline_response_rate": baseline_redirect["response_rate"],
@@ -180,20 +224,26 @@ def analyze_channel_authority(
                 "completion_comparison": completion,
                 "completion_gate_passed": completion_passed,
                 "cost": costs,
+                "supports_candidate_placement": supports,
                 "supports_controller_channel": supports,
                 "manifests": {name: cell.manifest for name, cell in run.cells.items()},
             }
         )
     required = int(cast(int, response_rule["minimum_supported_seeds"]))
     supported = sum(bool(row["supports_controller_channel"]) for row in seed_rows)
-    return {
+    supports_candidate = supported >= required
+    result: dict[str, object] = {
         "study_id": design["study_id"],
         "study_kind": design["study_kind"],
         "seed_rows": seed_rows,
         "supported_seeds": supported,
         "required_supported_seeds": required,
-        "supports_structural_controller_authority": supported >= required,
+        "supports_candidate_placement": supports_candidate,
+        "supports_structural_controller_authority": supports_candidate,
         "recommended_placement": (
-            CHANNEL_CONTROLLER if supported >= required else CHANNEL_OBSERVATION
+            candidate_placement if supports_candidate else CHANNEL_OBSERVATION
         ),
     }
+    if design["study_kind"] == PREAMBLE_STUDY_KIND:
+        result["supports_template_native_preamble"] = supports_candidate
+    return result

@@ -588,6 +588,61 @@ ledger.
 Validation on 2026-08-02: `make ci` passed 2,489 tests with 45 opt-in/slow tests deselected, and
 `make lint-md` passed.
 
+**Template-native preamble placement.**
+`make bench-agentic-loop-controller-preamble-placement` separates canonical template placement
+from the earlier role-only comparison. The observation baseline serializes
+`[task prompt:user, authority:user]`; the candidate serializes
+`[authority:system, task prompt:user]`. The immutable authority bytes and task-prompt bytes are
+identical across the pair. Both Ollama and OpenAI-compatible transforms are declared exactly in
+`samples/benchmarks/agentic_controller_preamble_placement_design.json`; inference is refused if a
+transform, authority byte, model-seed cell, or first authority-bearing prompt pair differs.
+
+The prospective design reuses the 32-case balanced controller-channel ledger and its
+`5d6148e0851ca749a65fd75768b388931419ae3dccf2c03be20c095c97e9ead1` digest so only placement and
+model family vary. It fixes MamayLM-Gemma 3 12B Q4_K_M and `qwen3:14b`, seeds 401 and 443,
+temperature 0.2, 512 completion tokens, an 8192-token context, six steps, and the existing
+snapshot, activation, three-family response, paired completion, prompt-cost, and wall-cost gates.
+Adoption requires all four model-seed cells to pass.
+
+Typed source/role transforms live in `src/llb/bench/agentic/controller_channel.py`; the episode
+seam is in `src/llb/bench/agentic/episode.py`. Multi-model grid validation, execution, analysis,
+reporting, and CLI orchestration reuse the controller-authority modules. The result schema exposes
+generic candidate-placement support and a preamble-specific decision while retaining the earlier
+controller-channel fields for artifact compatibility. Every source cell persists its exact first
+authority-bearing prompt snapshots.
+
+CUDA-host evidence (2026-08-02), RTX 4060 Ti 16 GB:
+
+| family | seed | gates | observation response | preamble response | observation completion | preamble completion | completion delta | prompt delta | wall delta |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gemma | 401 | `SA--PW` | 0.062 | 0.125 | 0.000 | 0.000 | +0.000 | -5.7 | -1.91 s |
+| Gemma | 443 | `SA--P-` | 0.062 | 0.062 | 0.000 | 0.000 | +0.000 | +3.8 | +7.36 s |
+| Qwen | 401 | `SA--P-` | 0.000 | 0.000 | 0.000 | 0.000 | +0.000 | +0.0 | +2.09 s |
+| Qwen | 443 | `SA--P-` | 0.000 | 0.000 | 0.000 | 0.000 | +0.000 | +0.0 | +2.10 s |
+
+All 128 prompt pairs passed the snapshot proof and every cell passed activation and prompt-cost
+gates. Gemma preamble response was confined to mutation: 4/8 on seed 401 and 2/8 on seed 443,
+with no redirected completion. Read, calculator, and search response was zero. Both placements
+completed 0/32 tasks on both seeds, so every completion comparison was flat with zero discordant
+pairs. Gemma wall cost passed on seed 401 and failed on seed 443.
+
+Qwen produced no redirect or completion under either placement on either seed. Its preamble added
+`+2.092 [+2.038, +2.124]` and `+2.095 [+2.042, +2.128]` seconds per paired task, above the 20%
+wall-cost ceiling on both seeds; prompt-token deltas were exactly zero. The template-native
+preamble therefore does not improve repeated-call recovery for either tested family and makes
+Qwen materially slower. `observation` remains the recommendation, with no shipped-default change.
+
+The audit-complete aggregate is
+`$DATA_DIR/agentic-loop-policy/20260802T081304.031917Z-fabb673e7134/manifest.json`; it links eight
+source manifests, four gate rows, and 128 paired snapshot proofs. Source-cell throughput was
+4.9-5.2 tokens/s for Gemma and 20.2 tokens/s for Qwen.
+
+`tests/llb/bench/test_agentic_controller_preamble.py` checks both backend transforms, the exact
+two-family/two-seed design, snapshot refusal, every gate, and an end-to-end fake run. The existing
+controller-channel tests protect backward compatibility.
+Validation on 2026-08-02: `make ci` passed 2,493 tests with 45 opt-in/slow tests deselected, and
+`make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

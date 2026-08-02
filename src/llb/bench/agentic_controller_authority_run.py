@@ -50,7 +50,12 @@ def run_channel_authority_seed(
 ) -> ChannelSeedRun:
     """Run both immutable placements over fresh episodes and persist their source cells."""
     cells: dict[str, ChannelCell] = {}
-    for placement in PLACEMENTS:
+    placements = cast(list[str], design.get("placements", list(PLACEMENTS)))
+    serializer_transforms = cast(
+        dict[str, dict[str, list[dict[str, str]]]] | None,
+        design.get("serializer_transforms"),
+    )
+    for placement in placements:
         meter_tokens = meter.completion_tokens if meter is not None else 0
         meter_seconds = meter.generation_s if meter is not None else 0.0
         snapshots: dict[str, list[ChatMessage]] = {}
@@ -98,6 +103,7 @@ def run_channel_authority_seed(
                 chat=chat,
                 feedback_channel=cast(ControllerChannel, placement),
                 feedback_backend=backend,
+                feedback_serialization=serializer_transforms,
                 snapshot=record,
             )
             _LOG.info(
@@ -157,7 +163,7 @@ def run_channel_authority_seed(
                 tokens_per_s=cell_tokens_per_s,
             )
         cells[placement] = cell
-    return ChannelSeedRun(seed=seed, model=model, cells=cells)
+    return ChannelSeedRun(seed=seed, model=model, backend=backend, cells=cells)
 
 
 __all__ = ["run_channel_authority_seed", "CHANNEL_OBSERVATION", "CHANNEL_CONTROLLER"]

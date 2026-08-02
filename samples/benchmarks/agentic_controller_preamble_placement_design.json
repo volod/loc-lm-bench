@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-loop-policy-controller-preamble-placement-v1",
+  "study_kind": "agent_loop_policy_controller_preamble_placement",
+  "hypothesis": "A template-native leading system preamble will outperform the identical authority text carried as a later observation across the Gemma and Qwen families while preserving the existing activation, response, completion, and paired cost gates.",
+  "reference": {
+    "task_set_digest": "5d6148e0851ca749a65fd75768b388931419ae3dccf2c03be20c095c97e9ead1",
+    "source_study_id": "agent-loop-policy-controller-channel-authority-v1",
+    "excluded_prior_task_set_digests": [
+      "eb05651bf9b50f8cefd85c1dfcf2ba60f0d1a51ab031230f0fd861fceb5227cc",
+      "10fef23bc2b2d855f6b7395d7e94ac42013005b4967d29d1a968ada99a215465",
+      "a2e8e0bf49c04ca27cebb9d06072e7008026f874a93a99ae5098d3b938b98f82"
+    ]
+  },
+  "planned_n": 32,
+  "required_task_families": {
+    "calculator_holdout": 8,
+    "mutation_holdout": 8,
+    "read_holdout": 8,
+    "search_holdout": 8
+  },
+  "placements": ["observation", "preamble"],
+  "authority_text": "[loop] Controller ruling: suppression satisfies the requested repetition. You must now take the next distinct action.",
+  "forbidden_terms": [
+    "answer",
+    "calculator",
+    "database",
+    "file",
+    "mutation",
+    "read",
+    "search",
+    "tool",
+    "write"
+  ],
+  "serializer_transforms": {
+    "ollama": {
+      "observation": [
+        {"source": "prompt", "role": "user"},
+        {"source": "authority", "role": "user"}
+      ],
+      "preamble": [
+        {"source": "authority", "role": "system"},
+        {"source": "prompt", "role": "user"}
+      ]
+    },
+    "openai_compatible": {
+      "observation": [
+        {"source": "prompt", "role": "user"},
+        {"source": "authority", "role": "user"}
+      ],
+      "preamble": [
+        {"source": "authority", "role": "system"},
+        {"source": "prompt", "role": "user"}
+      ]
+    }
+  },
+  "roster": [
+    {
+      "model_family": "gemma",
+      "model": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "qwen",
+      "model": "qwen3:14b",
+      "backend": "ollama"
+    }
+  ],
+  "run_seeds": [401, 443],
+  "sampling": {"temperature": 0.2, "max_tokens": 512},
+  "fixed_policy": {"max_steps": 6, "malformed_call": "answer", "repeated_call": "noop"},
+  "activation_rule": {
+    "minimum_activated_tasks": 16,
+    "minimum_activated_tasks_per_family": 2
+  },
+  "task_family_response_rule": {
+    "minimum_response_rate": 0.25,
+    "minimum_supported_task_families_per_seed": 3,
+    "minimum_supported_seeds": 4
+  },
+  "minimum_detectable_completion_gain": 0.125,
+  "minimum_discordant_pairs": 4,
+  "maximum_relative_cost_increase": {
+    "total_model_input_tokens": 0.1,
+    "elapsed_s": 0.2
+  },
+  "max_model_len": 8192
+}

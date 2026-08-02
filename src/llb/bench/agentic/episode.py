@@ -134,6 +134,7 @@ def run_episode(
     chat: LLMChat | None = None,
     feedback_channel: ControllerChannel | None = None,
     feedback_backend: str = "ollama",
+    feedback_serialization: dict[str, dict[str, list[dict[str, str]]]] | None = None,
     snapshot: Callable[[list[ChatMessage]], None] | None = None,
 ) -> Episode:
     """Drive one task to completion (or the step budget) in the deterministic sandbox.
@@ -173,6 +174,7 @@ def run_episode(
                 prompt,
                 state.controller_feedback,
                 backend=feedback_backend,
+                serializer_transforms=feedback_serialization,
             )
             if chat is not None
             else None
@@ -217,6 +219,7 @@ def run_episode(
                         repaired,
                         state.controller_feedback,
                         backend=feedback_backend,
+                        serializer_transforms=feedback_serialization,
                     )
                     if chat is not None
                     else None
