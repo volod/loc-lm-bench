@@ -1028,6 +1028,59 @@ while the total model-input premium grows sharply with workflow depth. This evid
 change the shipped default: medium-search tasks still favor observation cap, and the six-pair
 rows become borderline one convention tighter at 97.5% confidence.
 
+##### Second-family replication and cap-fitting boundary
+
+`make bench-agentic-context-compact-memory-replication` extends the transfer contract without
+changing its task, control threshold, activation floor, paired metrics, or policy defaults. Its
+committed design, `samples/benchmarks/agentic_compact_memory_replication_design.json`, excludes
+the Qwen and Gemma 4 reference families, evaluates candidates in host-fit order, raises every
+transfer cell from six to seven tasks, and requires all four completion rows to remain separated
+at the 97.5% stability reading. A fifth predeclared cell raises the prompt guard from 8,000 to
+12,000 characters at depth 6; the replication is invalid unless cap has zero context overflows and
+compact still activates in at least 6/7 episodes.
+
+```bash
+make bench-agentic-context-compact-memory-replication
+```
+
+Shared cell execution and its self-contained row schema live in
+`src/llb/bench/agentic_memory_transfer_cells.py`; the original transfer runner now reuses that
+module. Replication validation, execution, and analysis live in
+`src/llb/bench/agentic_memory_replication.py`, rendering and persistence in
+`src/llb/bench/agentic_memory_replication_report.py`, the CLI in
+`src/llb/cli/bench/category_agentic_memory_replication.py`, and focused contracts in
+`tests/llb/bench/test_agentic_memory_replication.py`. The boundary analyzer records a
+direction-aware lower-is-better cost gate: it uses the original compact-minus-cap delta and the
+two-sided exact sign test rather than misreading the shared positive-tail randomization field.
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `aya-expanse:8b` failed the unchanged control
+at 0/4. `mistral-small3.1:24b` passed 4/4 and became the second eligible non-Qwen family. It ran at
+12.49 tok/s with a served 4,096-token window; live host telemetry showed 89% GPU / 11% CPU layer
+placement, 14,730 MiB VRAM resident, and high GPU utilization rather than swap-thrashing. The
+audit-complete, direction-corrected aggregate is
+`$DATA_DIR/agentic-compact-memory-transfer-replication/20260802T131252.023379Z-488fd4867be7/manifest.json`.
+
+| cell | guard | cap completion | compact completion | paired d(completion) | cap input tok | compact input tok | paired d(input tok) | compactions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| depth 6, share 0.4 | 8000 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 12771.3 | +2305.3 [+2106.1, +2662.7] | 7 |
+| depth 6, share 0.6 | 8000 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 12375.4 | +1909.4 [+1872.9, +1942.4] | 7 |
+| depth 10, share 0.4 | 8000 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 21455.1 | +10989.1 [+10761.6, +11413.7] | 14 |
+| depth 10, share 0.6 | 8000 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 21868.1 | +11402.1 [+11332.1, +11466.1] | 14 |
+| cap fits: depth 6, share 0.5 | 12000 | **1.000** | **1.000** | +0.000 [+0.000, +0.000] | 13258.0 | **12441.6** | **-816.4 [-827.9, -807.6]** | 7 |
+
+Each overflow cell has 7/0/0 completion wins/losses/ties, exact randomization p=0.0078125, and a
+non-borderline `separated` reading at 97.5%. Compact activated in all 7 episodes, while cap
+overflowed in all 7. In the boundary, both policies completed 7/7 with zero overflow; compact
+activated 7/7, added one model call per task, but saved 816.4 total input tokens because the
+summary reduced repeated controller-prompt input. All seven cost pairs favor compact and the
+two-sided exact sign-test p is 0.015625.
+
+Verdict: **replicated including the cap-fitting boundary**. The memory-dependent completion gain
+survives a second non-Qwen family at the tighter convention, and it is not solely an overflow
+artifact: at the tested usable boundary, compact ties completion and more than repays its summary
+input through smaller later prompts. The shipped default remains task-shape dependent and is not
+changed by this focused memory transcript.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:

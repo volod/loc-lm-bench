@@ -7,16 +7,14 @@ from typing import cast
 from llb.bench.agentic.context import POLICY_OBSERVATION_CAP, ContextPolicy
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
-from llb.bench.agentic_compact_vs_cap import run_compact_vs_cap
 from llb.bench.agentic_compact_vs_cap_report import (
     VERDICT_PREFER_CAP,
     VERDICT_PREFER_COMPACT,
-    CompactVsCapRun,
 )
 from llb.bench.agentic_context import run_policy, task_set_digest
 from llb.bench.agentic_context_report import METRIC_TOTAL_MODEL_INPUT_TOKENS, PolicyReport
+from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
 from llb.bench.agentic_memory_transcript import (
-    build_memory_dependent_tasks,
     build_token_chain_control_tasks,
 )
 from llb.bench.common import LLMComplete
@@ -155,54 +153,25 @@ def run_transfer_matrix(
     matrix = cast(dict[str, object], design["matrix"])
     rows: list[dict[str, object]] = []
     for depth in cast(list[int], matrix["depths"]):
-        tasks = [
-            AgenticTask.from_record(row)
-            for row in build_memory_dependent_tasks(
-                n_tasks=int(cast(int, matrix["n_tasks"])),
-                depth=depth,
-                pad_chars=int(cast(int, matrix["pad_chars"])),
-            )
-        ]
         for share in cast(list[float], matrix["compact_shares"]):
-            run = run_compact_vs_cap(
-                tasks,
-                model=model,
-                backend=backend,
-                complete=complete,
-                max_steps=depth + int(cast(int, matrix["max_steps_margin"])),
-                budget=fixed_budget(int(cast(int, matrix["max_prompt_chars"]))),
-                observation_cap_chars=int(cast(int, matrix["observation_cap_chars"])),
-                observation_head_share=float(cast(float, matrix["observation_head_share"])),
-                compact_share=share,
-                min_compaction_rate=float(cast(float, matrix["minimum_compaction_rate"])),
-                data_dir=data_dir,
+            rows.append(
+                run_transfer_cell(
+                    model=model,
+                    backend=backend,
+                    complete=complete,
+                    data_dir=data_dir,
+                    n_tasks=int(cast(int, matrix["n_tasks"])),
+                    depth=depth,
+                    pad_chars=int(cast(int, matrix["pad_chars"])),
+                    compact_share=share,
+                    max_prompt_chars=int(cast(int, matrix["max_prompt_chars"])),
+                    max_steps_margin=int(cast(int, matrix["max_steps_margin"])),
+                    observation_cap_chars=int(cast(int, matrix["observation_cap_chars"])),
+                    observation_head_share=float(cast(float, matrix["observation_head_share"])),
+                    minimum_compaction_rate=float(cast(float, matrix["minimum_compaction_rate"])),
+                )
             )
-            rows.append(_matrix_row(depth, share, run))
     return rows
-
-
-def _matrix_row(depth: int, share: float, run: CompactVsCapRun) -> dict[str, object]:
-    return {
-        "depth": depth,
-        "compact_share": share,
-        "task_set_digest": run.task_set_digest,
-        "n_tasks": len(run.cap.episodes),
-        "cap_completion": run.cap.result.objective_score,
-        "compact_completion": run.compact.result.objective_score,
-        "cap_mean_total_model_input_tokens": run.cap.metric_mean(METRIC_TOTAL_MODEL_INPUT_TOKENS),
-        "compact_mean_total_model_input_tokens": run.compact.metric_mean(
-            METRIC_TOTAL_MODEL_INPUT_TOKENS
-        ),
-        "compaction_activation_rate": run.compaction_activation_rate,
-        "n_compactions": run.n_compactions,
-        "paired": run.paired,
-        "verdict": run.verdict,
-        "verdict_reason": run.reason,
-        "manifests": {
-            report.policy: str(report.paths["manifest"]) if report.paths is not None else None
-            for report in (run.cap, run.compact)
-        },
-    }
 
 
 def analyze_transfer(

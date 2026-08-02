@@ -13,6 +13,7 @@
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
 	bench-agentic-context-compact-long prepare-agentic-memory-transcript \
 	bench-agentic-context-compact-memory bench-agentic-context-compact-memory-transfer \
+	bench-agentic-context-compact-memory-replication \
 	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
@@ -194,6 +195,12 @@ bench-agentic-context-compact-memory-transfer: ## Gate a non-Qwen model, then ru
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-memory-transfer \
 		--design "$(AGENT_CONTEXT_COMPACT_MEMORY_TRANSFER_DESIGN)"
+
+bench-agentic-context-compact-memory-replication: ## Replicate compact memory on a second family with tighter evidence and a cap-fitting cell
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-memory-replication \
+		--design "$(AGENT_CONTEXT_COMPACT_MEMORY_REPLICATION_DESIGN)"
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

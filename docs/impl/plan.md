@@ -43,27 +43,25 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-memory-transfer-replication (optional)
+### agent-context-policy-compact-memory-boundary-surface (optional)
 
-Raise the compact-memory portability claim beyond one eligible non-Qwen family and the minimum
-six-pair 95% evidence cells: qualify a second non-Qwen family, increase each cell enough to clear
-the 97.5% exact-sign-test floor, and add one geometry where cap remains inside the prompt guard.
-This separates a broadly portable memory-policy effect from a Gemma/Qwen result driven entirely by
-cap overflow; use the existing control and matrix contract in
-[extended workflows](current/extended-workflows.md#non-qwen-depthtrigger-transfer).
+Map the cap-fitting compact cost crossover instead of relying on one usable geometry: predeclare a
+small grid of prompt guards and depths where both policies fit, compact activates, and completion
+remains paired. This determines where the smaller repeated controller prompts repay one or more
+summary calls and where cap becomes cheaper; reuse the direction-aware boundary gate in
+[extended workflows](current/extended-workflows.md#second-family-replication-and-cap-fitting-boundary).
 
 - Agent status: RUN NEEDED
-- Dependencies: keep the committed candidate ordering, typed memory task, activation floor,
-  completion pairing, and summarizer-inclusive input-cost accounting fixed; extend rather than
-  replace the transfer design.
-- User-visible outcome: an operator learns whether compact retains a completion or cost advantage
-  when cap still fits and whether the finding survives a second eligible non-Qwen family at the
-  tighter reporting convention.
-- Scope boundary: in scope -- one additional eligible family, at least seven discordant pairs per
-  deciding cell, and a cap-fitting boundary cell. Out of scope -- changing shipped defaults,
-  dropping the control gate, or choosing a model that violates host-fit rules.
+- Dependencies: hold the selected eligible family, typed memory tasks, observation cap, activation
+  floor, and summarizer-inclusive accounting fixed; vary only depth and prompt guard around the
+  usable boundary.
+- User-visible outcome: an operator gets a measured routing surface for memory-dependent work,
+  rather than treating one cap-fitting cell as a universal compact cost result.
+- Scope boundary: in scope -- at least two additional cap-fitting cells on opposite sides of the
+  expected cost crossover and a predeclared interpolation rule. Out of scope -- changing shipped
+  defaults, adding model families, or weakening the control and activation gates.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#non-qwen-depthtrigger-transfer).
+  [extended workflows](current/extended-workflows.md#second-family-replication-and-cap-fitting-boundary).
 
 ### agent-operating-profile-recommendation
 
