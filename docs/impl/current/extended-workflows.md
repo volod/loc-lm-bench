@@ -552,6 +552,42 @@ gate, persistence, the committed contract, and an end-to-end fake run.
 Validation on 2026-08-01: `make ci` passed 2,487 tests with 45 opt-in/slow tests deselected, and
 `make lint-md` passed.
 
+**Qwen cross-model transfer.** `make bench-agentic-loop-controller-channel-cross-model` applies
+the same authority text, role mapping, message order, task shape, sampling policy, and six adoption
+gates to the non-Gemma `qwen3:14b` family. Its prospective design is
+`samples/benchmarks/agentic_controller_channel_cross_model_design.json`; its fresh 32-case ledger
+is `samples/benchmarks/agentic_controller_channel_cross_model.json`, balanced over eight cases in
+each family with digest
+`177adb511124b972f748a1ef8beb21365f1bcee315c3039c11fb43e4413bcc70`. The contract fixes seeds
+307 and 353, temperature 0.2, 512 completion tokens, and an 8192-token context. A distinct
+`agent_loop_policy_controller_channel_authority_cross_model` study kind and immutable reference to
+the Gemma study prevent the transfer row from being mislabelled or pointed back at Gemma.
+
+CUDA-host evidence (2026-08-02), RTX 4060 Ti 16 GB, Qwen3 14B:
+
+| seed | gates | observation response | controller response | observation completion | controller completion | completion delta | prompt delta | wall delta |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 307 | `SA--P-` | 0.031 | 0.000 | 0.031 | 0.000 | -0.031 | +89.3 | +2.25 s |
+| 353 | `SA--P-` | 0.031 | 0.000 | 0.031 | 0.000 | -0.031 | +89.3 | +1.92 s |
+
+Snapshot and activation gates passed for all 32 tasks on both seeds, and the prompt-cost gate
+passed. The controller role redirected zero tasks in every family on both seeds, so the response
+gate failed. The observation role redirected and completed one search task per seed; the controller
+role completed none, producing one loss and 31 ties per seed with interval `[-0.094, 0.000]`.
+Controller wall-time increases were separated above the 20% ceiling on both seeds, so the wall-cost
+gate also failed. Observation remains the recommendation: structural controller authority does not
+transfer to this Qwen chat template and transcript shape, and no shipped default changes.
+
+The audit-complete aggregate is
+`$DATA_DIR/agentic-loop-policy/20260802T052500.927860Z-2dd4f2c196c8/manifest.json`; it links four
+source cell manifests, 64 role-only snapshot proofs, and per-cell throughput from 16.21 to 22.26
+tokens/s. Cross-model validation lives beside the base contract in
+`src/llb/bench/agentic_controller_authority_design.py`; the CLI model preflight now queries the
+configured Ollama host, and the dedicated Make target pins the committed cross-model design and
+ledger.
+Validation on 2026-08-02: `make ci` passed 2,489 tests with 45 opt-in/slow tests deselected, and
+`make lint-md` passed.
+
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a
 local no-egress run.

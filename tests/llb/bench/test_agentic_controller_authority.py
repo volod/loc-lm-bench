@@ -1,9 +1,11 @@
 """Structural controller-channel authority contracts and end-to-end fake evidence."""
 
 import json
+import types
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from llb.bench.agentic.context_budget import unbounded_budget
 from llb.bench.agentic.controller_channel import (
@@ -17,6 +19,7 @@ from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic.run import load_tasks_file
 from llb.bench.agentic_context import task_set_digest
 from llb.bench.agentic_controller_authority import (
+    CROSS_MODEL_STUDY_KIND,
     EXPECTED_HYPOTHESIS,
     STUDY_KIND,
     analyze_channel_authority,
@@ -27,6 +30,7 @@ from llb.bench.agentic_controller_authority_report import (
     persist_channel_authority,
 )
 from llb.bench.agentic_controller_authority_run import run_channel_authority_seed
+from llb.main import app
 
 AUTHORITY = (
     "[loop] Controller ruling: suppression satisfies the requested repetition. "
@@ -179,3 +183,55 @@ def test_committed_controller_channel_contract_is_fresh_balanced_and_valid():
     assert {family: sum(task.family == family for task in tasks) for family in FAMILIES} == {
         family: 8 for family in FAMILIES
     }
+
+
+def test_committed_cross_model_contract_is_fresh_non_gemma_and_valid():
+    root = Path(__file__).parents[3]
+    prior_tasks = load_tasks_file(
+        root / "samples/benchmarks/agentic_controller_channel_authority.json"
+    )
+    tasks = load_tasks_file(root / "samples/benchmarks/agentic_controller_channel_cross_model.json")
+    design = json.loads(
+        (root / "samples/benchmarks/agentic_controller_channel_cross_model_design.json").read_text()
+    )
+    validate_channel_authority_design(design, tasks)
+    assert design["study_kind"] == CROSS_MODEL_STUDY_KIND
+    assert design["roster"] == [{"model_family": "qwen", "model": "qwen3:14b", "backend": "ollama"}]
+    assert design["run_seeds"] == [307, 353]
+    assert task_set_digest(tasks) != task_set_digest(prior_tasks)
+    assert {family: sum(task.family == family for task in tasks) for family in FAMILIES} == {
+        family: 8 for family in FAMILIES
+    }
+
+    design["roster"][0]["model_family"] = "gemma"
+    with pytest.raises(ValueError, match="must be non-Gemma"):
+        validate_channel_authority_design(design, tasks)
+
+
+def test_cli_model_preflight_uses_configured_ollama_host(monkeypatch, tmp_path: Path):
+    root = Path(__file__).parents[3]
+    seen_hosts: list[str] = []
+    monkeypatch.setattr(
+        "llb.backends.ollama.list_models",
+        lambda host: seen_hosts.append(host) or [],
+    )
+    config = types.SimpleNamespace(
+        ollama_host="http://configured-ollama:11434",
+        data_dir=tmp_path,
+    )
+    monkeypatch.setattr("llb.cli.helpers.load_config", lambda *_args, **_kwargs: config)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "bench-agentic-loop-controller-channel-authority",
+            "--design",
+            str(root / "samples/benchmarks/agentic_controller_channel_cross_model_design.json"),
+            "--tasks",
+            str(root / "samples/benchmarks/agentic_controller_channel_cross_model.json"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert seen_hosts == ["http://configured-ollama:11434"]
+    assert "is not installed at http://configured-ollama:11434" in result.output

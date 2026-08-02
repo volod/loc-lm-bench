@@ -322,6 +322,8 @@ AGENT_LOOP_FEEDBACK_AUTHORITY_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agent
 AGENT_LOOP_FEEDBACK_AUTHORITY_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_controller_authority.json
 AGENT_LOOP_CONTROLLER_CHANNEL_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_authority_design.json
 AGENT_LOOP_CONTROLLER_CHANNEL_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_authority.json
+AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_cross_model_design.json
+AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_cross_model.json
 
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.

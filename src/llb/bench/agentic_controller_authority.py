@@ -10,9 +10,11 @@ from llb.bench.agentic.controller_channel import (
     CHANNEL_OBSERVATION,
 )
 from llb.bench.agentic_controller_authority_design import (
+    CROSS_MODEL_HYPOTHESIS as CROSS_MODEL_HYPOTHESIS,
+    CROSS_MODEL_STUDY_KIND as CROSS_MODEL_STUDY_KIND,
     EXPECTED_HYPOTHESIS as EXPECTED_HYPOTHESIS,
     PLACEMENTS,
-    STUDY_KIND,
+    STUDY_KIND as STUDY_KIND,
     validate_channel_authority_design as validate_channel_authority_design,
 )
 from llb.bench.agentic_loop_feedback_outcomes import (
@@ -186,7 +188,7 @@ def analyze_channel_authority(
     supported = sum(bool(row["supports_controller_channel"]) for row in seed_rows)
     return {
         "study_id": design["study_id"],
-        "study_kind": STUDY_KIND,
+        "study_kind": design["study_kind"],
         "seed_rows": seed_rows,
         "supported_seeds": supported,
         "required_supported_seeds": required,

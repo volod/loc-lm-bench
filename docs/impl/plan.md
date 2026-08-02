@@ -43,24 +43,22 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-loop-policy-controller-channel-cross-model (optional)
+### agent-loop-policy-controller-preamble-placement (optional)
 
-Test the unchanged observation-versus-controller message-role contract on at least one non-Gemma
-UA-capable model family, using a fresh balanced ledger and the same snapshot, activation, response,
-completion, and cost gates. The Gemma result is model-scoped and does not establish whether another
-chat template or instruction-tuning family honors structural authority differently; reuse the
-backend-neutral serializer and artifact contract documented in
-[extended workflows](current/extended-workflows.md#controller-channel-authority).
+Test whether controller authority should occupy each backend template's canonical leading system
+preamble rather than a later system turn, with one fixed authority text and a paired observation
+baseline. This separates template-native system placement from the role-only comparison described
+in [controller-channel authority](current/extended-workflows.md#controller-channel-authority).
 
 - Agent status: RUN NEEDED
-- Dependencies: predeclare a fresh task digest, exact two-seed roster, and backend role mapping;
-  keep the authority text, message order, task shape, and gates unchanged so model family is the
-  only new axis.
-- User-visible outcome: operators learn whether the structural-authority result transfers beyond
-  the measured Gemma chat template before considering a runtime default.
-- Scope boundary: in scope -- one additional UA-capable family that fits the CUDA host, exact
-  prompt snapshots, and the existing paired decision. Out of scope -- adapting wording by family,
-  mixing backends within a paired seed, or changing shipped defaults from a single transfer row.
+- Dependencies: predeclare the exact serializer transforms and refuse any pair whose authority text
+  changes; use at least the Gemma and Qwen families so placement is not inferred from one chat
+  template.
+- User-visible outcome: operators learn whether a template-native controller preamble changes
+  repeated-call recovery before any runtime controller-message default is considered.
+- Scope boundary: in scope -- leading-system versus observation placement, exact prompt snapshots,
+  the existing activation/response/completion/cost gates, and two seeds per family. Out of scope --
+  family-specific authority wording, task hints, and shipped-default changes.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#controller-channel-authority).
 

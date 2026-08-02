@@ -18,10 +18,21 @@ from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_context import task_set_digest
 
 STUDY_KIND = "agent_loop_policy_controller_channel_authority"
+CROSS_MODEL_STUDY_KIND = "agent_loop_policy_controller_channel_authority_cross_model"
 EXPECTED_HYPOTHESIS = (
     "A dedicated controller-role authority message will outperform the identical message carried "
     "as an observation across at least three task families while preserving paired cost bounds."
 )
+CROSS_MODEL_HYPOTHESIS = (
+    "A dedicated controller-role authority message will outperform the identical message carried "
+    "as an observation on a non-Gemma model family while preserving the original activation, "
+    "response, completion, and paired cost gates."
+)
+TRANSFER_REFERENCE = {
+    "study_id": "agent-loop-policy-controller-channel-authority-v1",
+    "model_family": "gemma",
+    "task_set_digest": "5d6148e0851ca749a65fd75768b388931419ae3dccf2c03be20c095c97e9ead1",
+}
 PLACEMENTS = (CHANNEL_OBSERVATION, CHANNEL_CONTROLLER)
 FORBIDDEN_TERMS = (
     "answer",
@@ -38,7 +49,12 @@ FORBIDDEN_TERMS = (
 
 def validate_channel_authority_design(design: dict[str, object], tasks: list[AgenticTask]) -> None:
     """Refuse inference unless text, roles, fresh ledger, seeds, and gates are immutable."""
-    if design.get("study_kind") != STUDY_KIND or design.get("hypothesis") != EXPECTED_HYPOTHESIS:
+    study_kind = str(design.get("study_kind", ""))
+    expected_hypothesis = {
+        STUDY_KIND: EXPECTED_HYPOTHESIS,
+        CROSS_MODEL_STUDY_KIND: CROSS_MODEL_HYPOTHESIS,
+    }.get(study_kind)
+    if expected_hypothesis is None or design.get("hypothesis") != expected_hypothesis:
         raise ValueError("controller-channel study identity or hypothesis is not immutable")
     reference = cast(dict[str, object], design["reference"])
     digest = task_set_digest(tasks)
@@ -80,8 +96,14 @@ def validate_channel_authority_design(design: dict[str, object], tasks: list[Age
     if int(cast(int, design["max_model_len"])) <= 0:
         raise ValueError("controller-channel max_model_len must be positive")
     roster = cast(list[dict[str, object]], design["roster"])
-    if len(roster) != 1 or not roster[0].get("model"):
+    if len(roster) != 1 or not roster[0].get("model") or not roster[0].get("model_family"):
         raise ValueError("controller-channel study requires exactly one backend roster row")
+    if study_kind == CROSS_MODEL_STUDY_KIND:
+        transfer = cast(dict[str, object], design.get("transfer_reference", {}))
+        if transfer != TRANSFER_REFERENCE:
+            raise ValueError("cross-model controller-channel reference is not immutable")
+        if roster[0]["model_family"] == transfer["model_family"]:
+            raise ValueError("cross-model controller-channel roster must be non-Gemma")
     backend = str(roster[0].get("backend", ""))
     serialization_name = "ollama" if backend == "ollama" else "openai_compatible"
     if serialization_name not in serialization:

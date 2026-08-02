@@ -6,6 +6,7 @@
 	bench-agentic-loop-repeat-feedback-task-family-transfer \
 	bench-agentic-loop-repeat-feedback-controller-authority-transfer \
 	bench-agentic-loop-controller-channel-authority \
+	bench-agentic-loop-controller-channel-cross-model \
 	bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
@@ -93,6 +94,13 @@ bench-agentic-loop-controller-channel-authority: ## Compare identical authority 
 	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
 		--design "$(AGENT_LOOP_CONTROLLER_CHANNEL_DESIGN)" \
 		--tasks "$(AGENT_LOOP_CONTROLLER_CHANNEL_TASKS)"
+
+bench-agentic-loop-controller-channel-cross-model: ## Transfer the controller-channel comparison to the predeclared non-Gemma family
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
+		--design "$(AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_DESIGN)" \
+		--tasks "$(AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_TASKS)"
 
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

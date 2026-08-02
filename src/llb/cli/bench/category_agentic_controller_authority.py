@@ -51,12 +51,18 @@ def bench_agentic_loop_controller_channel_authority_cmd(
     backend = cast(str, roster[0]["backend"])
     if backend != "ollama":
         cli_error("the committed controller-channel evidence roster requires Ollama")
-    if model not in set(list_models()):
-        cli_error(f"controller-channel model is not installed: {model}")
     sampling = cast(dict[str, object], design["sampling"])
     temperature = float(cast(float, sampling["temperature"]))
     max_tokens = int(cast(int, sampling["max_tokens"]))
     max_model_len = int(cast(int, design["max_model_len"]))
+    host_cfg = load_config(
+        None,
+        model=model,
+        backend=backend,
+        max_model_len=max_model_len,
+    )
+    if model not in set(list_models(host_cfg.ollama_host)):
+        cli_error(f"controller-channel model is not installed at {host_cfg.ollama_host}: {model}")
     fixed = cast(dict[str, object], design["fixed_policy"])
     seed_runs: list[ChannelSeedRun] = []
     for seed in cast(list[int], design["run_seeds"]):
@@ -104,8 +110,7 @@ def bench_agentic_loop_controller_channel_authority_cmd(
 
     analysis = analyze_channel_authority(design, seed_runs)
     table = format_channel_authority_table(analysis)
-    cfg = load_config(None)
-    paths = persist_channel_authority(design, analysis, data_dir=cfg.data_dir, table=table)
+    paths = persist_channel_authority(design, analysis, data_dir=host_cfg.data_dir, table=table)
     typer.echo(table)
     typer.echo(json.dumps(analysis, indent=2, sort_keys=True))
     typer.echo(f"[controller-channel] aggregate -> {paths['manifest']}")
