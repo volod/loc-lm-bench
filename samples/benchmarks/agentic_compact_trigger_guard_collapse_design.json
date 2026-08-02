@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-trigger-guard-collapse",
+  "study_kind": "compact_trigger_guard_collapse",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "reference": {
+    "study_id": "agent-context-policy-compact-memory-boundary-surface",
+    "evidence": "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
+    "measured_crossovers": [
+      {"depth": 6, "compact_share": 0.5, "crossover_max_prompt_chars": 14160},
+      {"depth": 10, "compact_share": 0.5, "crossover_max_prompt_chars": 21900}
+    ]
+  },
+  "held_fixed": {
+    "model_family": "mistral",
+    "model": "mistral-small3.1:24b",
+    "backend": "ollama",
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "minimum_compaction_rate": 0.75,
+    "minimum_cell_completion": 0.75
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "equivalence": {
+    "rule": "spread_within_cap_cost_fraction",
+    "metric": "compact_minus_cap_total_model_input_tokens",
+    "cap_cost_fraction": 0.02,
+    "requires_same_side": true,
+    "contrast_family": "d6-guard-12000"
+  },
+  "families": [
+    {
+      "family_id": "d6-trigger-7000",
+      "kind": "equal_trigger",
+      "depth": 6,
+      "cells": [
+        {
+          "cell_id": "collapse-d6-s0.4-g17500",
+          "compact_share": 0.4,
+          "max_prompt_chars": 17500,
+          "expected_side": "compact_cheaper"
+        },
+        {
+          "cell_id": "collapse-d6-s0.5-g14000",
+          "compact_share": 0.5,
+          "max_prompt_chars": 14000,
+          "expected_side": "compact_cheaper"
+        },
+        {
+          "cell_id": "collapse-d6-s0.6-g11667",
+          "compact_share": 0.6,
+          "max_prompt_chars": 11667,
+          "expected_side": "compact_cheaper"
+        }
+      ]
+    },
+    {
+      "family_id": "d6-guard-12000",
+      "kind": "equal_guard",
+      "depth": 6,
+      "cells": [
+        {
+          "cell_id": "collapse-d6-s0.4-g12000",
+          "compact_share": 0.4,
+          "max_prompt_chars": 12000,
+          "expected_side": "compact_cheaper"
+        },
+        {
+          "cell_id": "collapse-d6-s0.5-g12000",
+          "compact_share": 0.5,
+          "max_prompt_chars": 12000,
+          "expected_side": "compact_cheaper"
+        },
+        {
+          "cell_id": "collapse-d6-s0.6-g12000",
+          "compact_share": 0.6,
+          "max_prompt_chars": 12000,
+          "expected_side": "compact_cheaper"
+        }
+      ]
+    },
+    {
+      "family_id": "d10-trigger-10000",
+      "kind": "equal_trigger",
+      "depth": 10,
+      "cells": [
+        {
+          "cell_id": "collapse-d10-s0.45-g22224",
+          "compact_share": 0.45,
+          "max_prompt_chars": 22224,
+          "expected_side": "compact_cheaper"
+        },
+        {
+          "cell_id": "collapse-d10-s0.6-g16667",
+          "compact_share": 0.6,
+          "max_prompt_chars": 16667,
+          "expected_side": "compact_cheaper"
+        }
+      ]
+    }
+  ],
+  "interpretation": {
+    "trigger_ratio_collapses": "share and guard act only through their product, so one trigger axis carries the routing rule",
+    "share_and_guard_interact": "an equal-trigger family moved, so both axes must be tuned together",
+    "no_resolving_power": "the contrast family did not move either, so the equal-trigger agreement says nothing",
+    "changes_shipped_default": false
+  }
+}

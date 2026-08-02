@@ -43,27 +43,53 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-trigger-guard-collapse (optional)
+### agent-context-policy-fold-step-crossover (optional)
 
-The cap-fitting routing surface varies the prompt guard at a FIXED `compact_share`, so the guard it
-reports is a stand-in for the quantity the policy actually reacts to: the compaction trigger
-(`compact_share * guard`) relative to the transcript's peak prompt
-([extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface)). If the cost
-crossover depends only on that trigger ratio, the two-axis surface collapses to ONE axis and the
-routing rule becomes portable to any host window without re-running a grid. Test it directly: hold
-the trigger constant while moving `compact_share` and the guard inversely (for example 0.4/17500 and
-0.6/11667 against the measured depth-6 crossover), plus one pair that holds the guard constant and
-moves the share, and state whether the paired cost delta is unchanged within its interval.
+The compact cost delta is a STEP function of the compaction trigger: the trigger reaches the
+transcript only by selecting which step folds, so every trigger inside one step interval costs the
+same to the token
+([extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis)).
+The crossover is therefore not a point on the guard axis but the boundary between two fold steps,
+and the interpolated char value the surface reports is an artifact of a continuous rule fitted to a
+discrete mechanism. Restate it that way: have the analysis emit the LAST fold step at which compact
+is still cheaper plus the trigger interval that selects it, predeclare a grid whose cells sit one
+fold step apart around that boundary, and confirm the cost side flips exactly at the step change
+rather than partway between two guards.
 
 - Agent status: RUN NEEDED
-- Dependencies: reuse the boundary-surface design, probe, cell gate, and crossover rule; the
-  activation floor and cap-fitting band already refuse a pair that cannot fire or cannot fit.
-- User-visible outcome: either one portable trigger-ratio rule an operator can apply to a new window
-  without measuring, or evidence that share and guard must be tuned together.
-- Scope boundary: in scope -- the equal-trigger pairs, the equal-guard pair, and a collapse verdict.
-  Out of scope -- new families, new task shapes, and changing the shipped `compact_share`.
+- Dependencies: `first_fold_step` and the deterministic prompt sequence in
+  `src/llb/bench/agentic_memory_boundary_probe.py` already predict the step for any trigger; the
+  cell gate and the direction-aware cost reading are unchanged.
+- User-visible outcome: a routing rule an operator can apply exactly ("fold no later than step k")
+  instead of a char threshold that only approximates where the mechanism switches.
+- Scope boundary: in scope -- the fold-step crossover statement, the one-step-apart grid, and the
+  step-change confirmation. Out of scope -- new families, new task shapes, changing the shipped
+  `compact_share`, and replacing the guard-axis interpolation the surface already publishes.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+  [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
+
+### agent-context-policy-hysteresis-second-fold (optional)
+
+Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
+out of the cost once the trigger is fixed: after the first summary, trigger hysteresis raises the
+next trigger to the full guard, and no tested transcript grows back that far
+([extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis)).
+The trigger-only rule is therefore established only in the one-fold regime, and the regime where
+compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
+(or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
+equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
+portable rule needs a stated validity limit.
+
+- Agent status: RUN NEEDED
+- Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
+  crossing requires; reuse the collapse design, the cell gate, and the equivalence band unchanged.
+- User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
+  explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
+- Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger
+  family inside it, and the validity statement. Out of scope -- new families, new task shapes, and
+  changing shipped compaction hysteresis.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
 
 ### agent-context-policy-imperfect-play-guard-margin (optional)
 

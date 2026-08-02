@@ -1163,6 +1163,74 @@ the guard because a later trigger folds a bigger transcript and leaves fewer ste
 smaller prompt on. This does not change the shipped default; the medium-search shape still prefers
 `observation_cap`.
 
+##### The routing rule lives on the trigger axis
+
+`make bench-agentic-context-compact-trigger-collapse` closes the axis question the surface leaves
+open. The surface swept the prompt guard at ONE `compact_share`, but the policy never reads the
+guard directly: it folds when the prompt crosses `int(guard * compact_share)`, so the reported
+guard is a stand-in for that trigger. The study measures the difference -- FAMILIES of cells that
+hold the trigger fixed while moving share and guard inversely, plus one contrast family that holds
+the guard at 12,000 chars and moves the trigger, which is the positive control that the measurement
+can see a trigger change at all. The committed design is
+`samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json`.
+
+Equivalence is predeclared on the scale the operator pays rather than on interval overlap: the
+paired intervals here are tighter than any difference worth acting on, so overlap would reject a
+practical equivalence over a few tokens. A family collapses when its SPREAD of compact-minus-cap
+total model-input tokens stays within 2% of what the cap baseline costs at that depth AND every
+member lands on the same cost side; the contrast family must EXCEED that same band or the study
+reports `no_resolving_power` instead of a collapse. The probe also predicts, with no model, which
+step each trigger folds at (`first_fold_step` over the deterministic cap prompt sequence), which is
+the mechanism the claim rests on.
+
+Core locations are `src/llb/bench/agentic_memory_trigger_collapse_design.py` (family/axis contract
+and the cap-fitting band per pair), `src/llb/bench/agentic_memory_trigger_collapse_reading.py`
+(vocabulary, fold-step annotation, family spread, and the reading),
+`src/llb/bench/agentic_memory_trigger_collapse.py` (run and analysis),
+`src/llb/bench/agentic_memory_trigger_collapse_report.py`,
+`src/llb/cli/bench/category_agentic_memory_trigger_collapse.py`, and
+`tests/llb/bench/test_agentic_memory_trigger_collapse.py`.
+
+```bash
+make bench-agentic-context-compact-trigger-collapse
+```
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, the same seven memory tasks per cell, eight cells at 10.64 tok/s over about an hour,
+the pinned family re-passing the control at 4/4. Every cell completed 7/7 under both policies with
+zero overflows, one compaction per compact episode, and +1.000 model calls per task. The
+fold-annotated aggregate is
+`$DATA_DIR/agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/manifest.json`.
+
+| family | kind | depth | share / guard | trigger | fold step | d(input tok) |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| `d6-trigger-7000` | equal trigger | 6 | 0.40 / 17500 | 7000 | 6 | -125.9 |
+| `d6-trigger-7000` | equal trigger | 6 | 0.50 / 14000 | 7000 | 6 | -125.9 |
+| `d6-trigger-7000` | equal trigger | 6 | 0.60 / 11667 | 7000 | 6 | -125.9 |
+| `d6-guard-12000` | equal guard | 6 | 0.40 / 12000 | 4800 | 4 | -873.6 |
+| `d6-guard-12000` | equal guard | 6 | 0.50 / 12000 | 6000 | 5 | -792.0 |
+| `d6-guard-12000` | equal guard | 6 | 0.60 / 12000 | 7200 | 6 | -125.9 |
+| `d10-trigger-10000` | equal trigger | 10 | 0.45 / 22224 | 10000 | 9 | -2633.4 |
+| `d10-trigger-10000` | equal trigger | 10 | 0.60 / 16667 | 10000 | 9 | -2633.4 |
+
+Both equal-trigger families have a spread of **0.0 tokens** -- bit-identical deltas across a 1.5x
+and a 1.3x range of prompt guards -- against bands of 265.2 and 546.9 tokens, while the contrast
+family moved 747.7 tokens across the same band. Verdict: **the trigger ratio collapses the
+surface**. Share and guard act only through their product, so a crossover measured at one share
+converts to any other: at depth 6 the 14,160-char crossover guard is a 7,080-char trigger (0.85x the
+cap peak prompt) and at depth 10 the 21,900-char guard is a 10,950-char trigger (0.92x), giving the
+portable form -- use `compact` while `compact_share * guard` stays below about 0.85-0.92x the
+transcript's cap peak prompt, and `observation_cap` above it.
+
+The fold step says why, and it is the more useful statement of the rule: the trigger reaches the
+transcript ONLY by choosing which step compacts, so the cost delta is a STEP function of the
+trigger, not a smooth one. The contrast family's 7,200-char trigger folds at step 6 exactly like the
+7,000-char triggers and reproduces their -125.9 to the token; its 4,800- and 6,000-char triggers
+fold at steps 4 and 5 and cost -873.6 and -792.0. Two independent runs agree to the token as well:
+the surface's own (0.5, 14000) and (0.5, 20000) cells are the trigger-7000 and trigger-10000 values
+above. An operator therefore does not need a grid for a new window -- only the trigger that lands on
+the intended fold step. The shipped `compact_share` is unchanged.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:

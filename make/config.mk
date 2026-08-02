@@ -380,6 +380,7 @@ AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN ?= $(AGENT_CONTEXT_MAX_MODEL_LEN)
 AGENT_CONTEXT_COMPACT_MEMORY_TRANSFER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_transfer_design.json
 AGENT_CONTEXT_COMPACT_MEMORY_REPLICATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_replication_design.json
 AGENT_CONTEXT_COMPACT_MEMORY_BOUNDARY_SURFACE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_boundary_surface_design.json
+AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json
 KNOWLEDGE_CUTOFF_EVENTS ?=
 KNOWLEDGE_CUTOFF_DATASET ?= apoorvumang/knowledge-cutoff-benchmark
 KNOWLEDGE_CUTOFF_REVISION ?= main

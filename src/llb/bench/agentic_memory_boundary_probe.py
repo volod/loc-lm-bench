@@ -43,6 +43,38 @@ def oracle_controller(prompt: str) -> str:
     return json.dumps({"name": ADVANCE, "arguments": {"token": token}}, ensure_ascii=False)
 
 
+def cap_prompt_sequence(
+    *,
+    depth: int,
+    n_tasks: int,
+    pad_chars: int = DEFAULT_MEMORY_PAD_CHARS,
+    max_steps_margin: int = 4,
+    observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
+    observation_head_share: float = OBSERVATION_HEAD_SHARE,
+) -> list[int]:
+    """The per-step `observation_cap` prompt sizes this geometry produces under perfect play."""
+    policy = ContextPolicy(
+        name=POLICY_OBSERVATION_CAP,
+        observation_cap_chars=observation_cap_chars,
+        observation_head_share=observation_head_share,
+    )
+    episodes = [
+        run_episode(
+            AgenticTask.from_record(record),
+            oracle_controller,
+            max_steps=depth + max_steps_margin,
+            policy=policy,
+            budget=unbounded_budget(),
+        ).telemetry.prompt_chars
+        for record in build_memory_dependent_tasks(
+            n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
+        )
+    ]
+    if len({len(sizes) for sizes in episodes}) != 1:
+        raise ValueError("perfect play produced different step counts across the task set")
+    return [max(step) for step in zip(*episodes, strict=True)]
+
+
 def cap_peak_prompt_chars(
     *,
     depth: int,
@@ -53,24 +85,29 @@ def cap_peak_prompt_chars(
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
 ) -> int:
     """The largest `observation_cap` step prompt this geometry produces under perfect play."""
-    policy = ContextPolicy(
-        name=POLICY_OBSERVATION_CAP,
-        observation_cap_chars=observation_cap_chars,
-        observation_head_share=observation_head_share,
-    )
-    peaks = [
-        run_episode(
-            AgenticTask.from_record(record),
-            oracle_controller,
-            max_steps=depth + max_steps_margin,
-            policy=policy,
-            budget=unbounded_budget(),
-        ).telemetry.max_prompt_chars
-        for record in build_memory_dependent_tasks(
-            n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
+    return max(
+        cap_prompt_sequence(
+            depth=depth,
+            n_tasks=n_tasks,
+            pad_chars=pad_chars,
+            max_steps_margin=max_steps_margin,
+            observation_cap_chars=observation_cap_chars,
+            observation_head_share=observation_head_share,
         )
-    ]
-    return max(peaks)
+    )
+
+
+def first_fold_step(prompt_sequence: list[int], trigger_chars: int) -> int | None:
+    """The 1-based step at which a `compact` trigger first fires, or None if it never does.
+
+    The trigger is what the policy actually reacts to, and it reaches the transcript only through
+    THIS step: two different (share, guard) pairs with the same trigger fold the same step, which
+    is why a cost delta measured at one pair is expected to hold at the other.
+    """
+    for step, size in enumerate(prompt_sequence, start=1):
+        if size > trigger_chars:
+            return step
+    return None
 
 
 def usable_guard_band(peak_prompt_chars: int, compact_share: float) -> tuple[int, int]:
