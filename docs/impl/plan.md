@@ -43,24 +43,21 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-memory-dependent-transcript (optional)
+### agent-context-policy-compact-memory-cross-model-transfer (optional)
 
-Build a long-transcript task set whose success requires facts from early, pre-trigger observations
-after several later tool calls, then compare `compact` against `observation_cap` with compaction
-active in enough cases to test whether summary memory changes completion rather than only cost.
-The current medium-search lane exercises the summarizer in a minority of cases and provides the
-runner, active gate, and cost contract
-([extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction)).
+Transfer the typed memory-dependent compact-vs-cap lane to one non-Qwen model family that first
+passes the token-chain control pilot, then vary workflow depth around the compact trigger. This
+tests whether the completion gain and summary-cost tradeoff generalize beyond one model and one
+window geometry without mixing basic tool-following failure into the policy comparison.
 
 - Agent status: RUN NEEDED
-- Dependencies: none beyond the current compact-vs-cap runner. Prefer deterministic tool-world
-  tasks with progress stored outside the transcript so the model cannot satisfy the check by
-  repeating one search; keep objective assertions and a shared task digest.
-- User-visible outcome: an operator learns whether compact is useful when old semantic state must
-  survive, complementing the medium-search result where live trim alone is enough.
-- Scope boundary: in scope -- a reviewable memory-dependent task shape, an active-compaction
-  coverage threshold declared before the run, and paired completion plus total model-input cost.
-  Out of scope -- changing the shipped policy defaults from one small evidence set.
+- Dependencies: use the task, activation, and cost contracts in
+  [extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction).
+- User-visible outcome: an operator learns whether the memory-dependent compact preference is a
+  model-family result or a portable context-policy result.
+- Scope boundary: in scope -- a control-task eligibility gate, one non-Qwen family, and a small
+  depth/trigger matrix with paired completion and total model-input cost. Out of scope -- changing
+  shipped policy defaults or relaxing the host-fit model-selection rules.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction).
 

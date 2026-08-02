@@ -100,6 +100,24 @@ def prepare_agentic_long_transcript_cmd(
     typer.echo(f"[prepare-agentic-long-transcript] {len(tasks)} tasks -> {out}")
 
 
+@app.command("prepare-agentic-memory-transcript")
+def prepare_agentic_memory_transcript_cmd(
+    out: Path = typer.Option(..., help="output memory-dependent agentic task set JSON"),
+    n_tasks: int = typer.Option(8, min=1, help="number of deterministic tasks"),
+    depth: int = typer.Option(8, min=3, help="one-way workflow observations per task"),
+    pad_chars: int = typer.Option(1200, min=0, help="filler chars per file observation"),
+) -> None:
+    """Build tasks that need an early read-once fact after several later tool calls."""
+    import json as _json
+
+    from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
+
+    tasks = build_memory_dependent_tasks(n_tasks=n_tasks, depth=depth, pad_chars=pad_chars)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(tasks, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"[prepare-agentic-memory-transcript] {len(tasks)} tasks -> {out}")
+
+
 @app.command("adapt-bfcl")
 def adapt_bfcl_cmd(
     functions_file: Path = typer.Option(..., help="BFCL function-doc file (.json/.jsonl)"),

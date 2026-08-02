@@ -46,6 +46,8 @@ ASSERT_FILE_EQUALS = "file_equals"
 ASSERT_FILE_CONTAINS = "file_contains"
 ASSERT_DB_EQUALS = "db_equals"
 ASSERT_ANSWER_CONTAINS = "answer_contains"
+ASSERT_WORLD_NOT_CONTAINS = "world_not_contains"
+ASSERT_WORKFLOW_COMPLETE = "workflow_complete"
 
 
 @dataclass(frozen=True)

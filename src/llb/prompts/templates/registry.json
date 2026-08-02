@@ -14,7 +14,7 @@
       "descriptor": "bench/agentic/compact_summary.prompt.json",
       "template": {
         "path": "bench/agentic/compact_summary.txt",
-        "sha256": "224bf56dc9c24f763e3946c9bd124ccc8d9b4d857b9b70e6086aacb522800257"
+        "sha256": "bd6c7d7d0fe206e956f66009354f465c59f31083730a9f18e8de14c63b2ce3ed"
       }
     },
     "bench.agentic.context_recommendation": {

@@ -11,7 +11,8 @@
 	bench-agentic-context \
 	bench-agentic-context-sweep \
 	prepare-agentic-long-transcript bench-agentic-context-keep-long \
-	bench-agentic-context-compact-long \
+	bench-agentic-context-compact-long prepare-agentic-memory-transcript \
+	bench-agentic-context-compact-memory \
 	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
@@ -165,6 +166,28 @@ bench-agentic-context-compact-long: prepare-agentic-long-transcript ## Active co
 		--max-prompt-chars "$(AGENT_CONTEXT_COMPACT_LONG_MAX_PROMPT_CHARS)" \
 		$(if $(AGENT_CONTEXT_COMPACT_LONG_BASE_URL),--base-url "$(AGENT_CONTEXT_COMPACT_LONG_BASE_URL)",) \
 		$(if $(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN)",)
+
+prepare-agentic-memory-transcript: ## Build read-once memory tasks with externally checked later progress
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main prepare-agentic-memory-transcript \
+		--out "$(AGENT_CONTEXT_COMPACT_MEMORY_TASKS)" \
+		--n-tasks "$(AGENT_CONTEXT_COMPACT_MEMORY_N_TASKS)" \
+		--depth "$(AGENT_CONTEXT_COMPACT_MEMORY_DEPTH)" \
+		--pad-chars "$(AGENT_CONTEXT_COMPACT_MEMORY_PAD_CHARS)"
+
+bench-agentic-context-compact-memory: prepare-agentic-memory-transcript ## Compact vs cap when an early read-once fact must survive later tool calls (MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-compact-vs-cap \
+		--tasks "$(AGENT_CONTEXT_COMPACT_MEMORY_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_STEPS)" \
+		--compact-share "$(AGENT_CONTEXT_COMPACT_MEMORY_COMPACT_SHARE)" \
+		--min-compaction-rate "$(AGENT_CONTEXT_COMPACT_MEMORY_MIN_COMPACTION_RATE)" \
+		--max-prompt-chars "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_PROMPT_CHARS)" \
+		$(if $(AGENT_CONTEXT_COMPACT_MEMORY_BASE_URL),--base-url "$(AGENT_CONTEXT_COMPACT_MEMORY_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN)",)
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

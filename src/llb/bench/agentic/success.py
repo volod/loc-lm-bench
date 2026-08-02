@@ -11,6 +11,8 @@ from llb.bench.agentic.model import (
     ASSERT_DB_EQUALS,
     ASSERT_FILE_CONTAINS,
     ASSERT_FILE_EQUALS,
+    ASSERT_WORLD_NOT_CONTAINS,
+    ASSERT_WORKFLOW_COMPLETE,
     AgenticTask,
 )
 from llb.bench.tool_world import ToolWorld
@@ -37,6 +39,12 @@ def check_assertion(assertion: dict[str, Any], world: ToolWorld, answer: str) ->
         )
     if kind == ASSERT_ANSWER_CONTAINS:
         return _norm(assertion.get("value", "")) in _norm(answer)
+    if kind == ASSERT_WORLD_NOT_CONTAINS:
+        needle = _norm(assertion.get("value", ""))
+        world_values = [*world.files.values(), *world.db.values()]
+        return bool(needle) and all(needle not in _norm(value) for value in world_values)
+    if kind == ASSERT_WORKFLOW_COMPLETE:
+        return bool(world.workflow) and world.workflow_index >= len(world.workflow)
     return False
 
 

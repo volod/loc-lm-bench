@@ -36,6 +36,18 @@ def test_tool_world_files_and_db():
     assert world.execute(tw.DB_GET, {"key": "nope"}) == tw.OBS_DB_MISSING
 
 
+def test_tool_world_advance_is_one_way_and_tracks_external_progress():
+    world = tw.ToolWorld.from_setup(
+        {"workflow": ["MEM-001", "checkpoint", "done"], "workflow_tokens": ["t0", "t1", "t2"]}
+    )
+    assert world.execute(tw.ADVANCE, {"token": "wrong"}) == ("[wrong workflow token; expected t0]")
+    assert world.execute(tw.ADVANCE, {"token": "t0"}) == "MEM-001\n[next token: t1]"
+    assert world.execute(tw.ADVANCE, {"token": "t1"}) == "checkpoint\n[next token: t2]"
+    assert world.workflow_index == 2
+    assert world.execute(tw.ADVANCE, {"token": "t2"}) == "done"
+    assert world.execute(tw.ADVANCE, {"token": "t2"}) == tw.OBS_WORKFLOW_COMPLETE
+
+
 def test_tool_world_search_and_calculator_and_unknown():
     world = tw.ToolWorld.from_setup({"corpus": {"d1": "бюджет зріс на 15%"}})
     assert "d1" in world.execute(tw.SEARCH, {"query": "бюджет"})
@@ -57,6 +69,8 @@ def test_check_assertions():
     assert check_assertion({"kind": "file_equals", "path": "r.txt", "value": "84"}, world, "")
     assert check_assertion({"kind": "db_equals", "key": "capital", "value": "київ"}, world, "")
     assert check_assertion({"kind": "answer_contains", "value": "15"}, world, "зросло на 15%")
+    assert check_assertion({"kind": "world_not_contains", "value": "secret"}, world, "secret")
+    assert not check_assertion({"kind": "world_not_contains", "value": "Київ"}, world, "")
     assert not check_assertion({"kind": "file_equals", "path": "r.txt", "value": "0"}, world, "")
 
 

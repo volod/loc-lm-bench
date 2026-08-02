@@ -6,6 +6,7 @@ does its extra summarizer call buy completion or model-input savings beyond live
 """
 
 from dataclasses import replace
+import math
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ def run_compact_vs_cap(
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
     compact_share: float = DEFAULT_COMPACT_SHARE,
+    min_compaction_rate: float = 0.0,
     data_dir: Path | str | None = None,
     persist: bool = True,
     mirror: Mirror | None = None,
@@ -60,6 +62,8 @@ def run_compact_vs_cap(
     """Run both policies, pair compact against cap, and require observable compaction."""
     if not tasks:
         raise SystemExit("no agentic tasks provided")
+    if not 0.0 <= min_compaction_rate <= 1.0:
+        raise ValueError(f"min_compaction_rate must be in [0, 1], got {min_compaction_rate}")
     budget = budget if budget is not None else unbounded_budget()
     common: dict[str, Any] = {
         "observation_cap_chars": observation_cap_chars,
@@ -98,12 +102,19 @@ def run_compact_vs_cap(
         )
         for metric in PAIRED_METRICS
     }
-    verdict, reason = decide_verdict(cap, compact, paired)
-    table = format_table(cap, compact, paired, verdict=verdict, reason=reason)
     n_compactions = int(sum(compact.vector("n_compactions")))
     n_compacted_episodes = sum(
         1 for episode in compact.episodes if episode.telemetry.n_compactions > 0
     )
+    min_compacted_episodes = max(1, math.ceil(len(tasks) * min_compaction_rate))
+    activation_rate = n_compacted_episodes / len(tasks)
+    verdict, reason = decide_verdict(
+        cap,
+        compact,
+        paired,
+        min_compacted_episodes=min_compacted_episodes,
+    )
+    table = format_table(cap, compact, paired, verdict=verdict, reason=reason)
     digest = task_set_digest(tasks)
     if persist and data_dir is not None:
         _persist(
@@ -120,6 +131,7 @@ def run_compact_vs_cap(
             max_steps=max_steps,
             budget=budget,
             policy_settings=common,
+            min_compaction_rate=min_compaction_rate,
             data_verified=data_verified,
             verification_ref=verification_ref,
             mirror=mirror,
@@ -137,6 +149,8 @@ def run_compact_vs_cap(
         max_prompt_chars=budget.max_prompt_chars,
         n_compactions=n_compactions,
         n_compacted_episodes=n_compacted_episodes,
+        min_compacted_episodes=min_compacted_episodes,
+        compaction_activation_rate=activation_rate,
     )
 
 
@@ -155,6 +169,7 @@ def _persist(
     max_steps: int,
     budget: ContextBudget,
     policy_settings: dict[str, Any],
+    min_compaction_rate: float,
     data_verified: bool,
     verification_ref: str | None,
     mirror: Mirror | None,
@@ -209,6 +224,14 @@ def _persist(
             "n_compactions": int(sum(compact.vector("n_compactions"))),
             "n_compacted_episodes": sum(
                 1 for episode in compact.episodes if episode.telemetry.n_compactions > 0
+            ),
+            "min_compaction_rate": min_compaction_rate,
+            "min_compacted_episodes": max(
+                1, math.ceil(len(compact.episodes) * min_compaction_rate)
+            ),
+            "compaction_activation_rate": (
+                sum(1 for episode in compact.episodes if episode.telemetry.n_compactions > 0)
+                / len(compact.episodes)
             ),
             "table": table,
             **budget.provenance(),

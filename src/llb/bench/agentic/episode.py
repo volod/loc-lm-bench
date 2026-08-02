@@ -107,13 +107,18 @@ def step_prompt(
     prompt = build_agent_prompt_lines(task, catalog, policy_history_lines(policy, state))
     if policy.name != POLICY_COMPACT:
         return prompt
-    trigger = budget.compaction_trigger_chars(policy.compact_share)
+    # `compact_share` is the initial trigger. Once a running summary exists, let live work grow
+    # to the full guard before folding again. This hysteresis avoids paying a summary call after
+    # nearly every later tool call while still compacting before an oversized prompt is sent.
+    trigger_share = 1.0 if state.summary else policy.compact_share
+    trigger = budget.compaction_trigger_chars(trigger_share)
     if trigger <= 0 or len(prompt) <= trigger:
         return prompt
+    summary_input_cap = budget.compaction_trigger_chars(policy.compact_share)
     summarize = lambda older: summarize_entries(  # noqa: E731
         complete,
         older,
-        trigger,
+        summary_input_cap,
         prior_summary=state.summary,
         telemetry=state.telemetry,
     )

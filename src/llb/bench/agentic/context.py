@@ -89,6 +89,12 @@ _FINISH_CUE = (
     "- [підказка: hits={hits} вже в підсумку -- виклич finish з цією відповіддю, не шукай знову]"
 )
 _AGGREGATE_HITS = re.compile(r"\[агрегат: hits=(\d+)\b")
+_MEMORY_MARKER = re.compile(r"\[memory: [^\]\n]+\]")
+_FINAL_CODE_MEMORY = re.compile(r"\[memory: final_code=([^\]\s]+)\]")
+_WORKFLOW_COMPLETE = "[workflow complete]"
+_MEMORY_FINISH_CUE = (
+    '- [підказка: workflow complete; виклич finish з answer="{code}", не викликай advance]'
+)
 
 # Policies that trim live observations (and stamp `n_trimmed_observations`).
 _TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
@@ -284,6 +290,11 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
         hits = summary_hit_count(state.summary)
         if hits is not None:
             out.append(_FINISH_CUE.format(hits=hits))
+        code = _FINAL_CODE_MEMORY.search(state.summary)
+        if code is not None and any(
+            _WORKFLOW_COMPLETE in observation for _, _, observation in entries
+        ):
+            out.append(_MEMORY_FINISH_CUE.format(code=code.group(1)))
         return out + lines
     return ([_DROPPED_MARKER.format(dropped=dropped)] if dropped else []) + lines
 
@@ -359,6 +370,18 @@ def fold_aggregate_headers(
     return " | ".join(unique)
 
 
+def fold_memory_markers(
+    entries: list[TranscriptEntry],
+    *,
+    prior_summary: str = "",
+) -> str:
+    """Preserve typed semantic-memory facts independently of free-text summarization."""
+    markers = _MEMORY_MARKER.findall(prior_summary)
+    for _name, _arguments, observation in entries:
+        markers.extend(_MEMORY_MARKER.findall(observation))
+    return " | ".join(dict.fromkeys(markers))
+
+
 def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summarize) -> bool:
     """Fold the older entries into the running summary in place; True when anything was folded.
 
@@ -374,7 +397,14 @@ def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summari
     if not older:
         return False
     summary = (summarize(older) or "").strip()
-    facts = fold_aggregate_headers(older, prior_summary=state.summary)
+    facts = " | ".join(
+        fact
+        for fact in (
+            fold_aggregate_headers(older, prior_summary=state.summary),
+            fold_memory_markers(older, prior_summary=state.summary),
+        )
+        if fact
+    )
     if facts:
         summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:

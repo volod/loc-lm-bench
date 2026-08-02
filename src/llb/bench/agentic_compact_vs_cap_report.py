@@ -40,6 +40,8 @@ class CompactVsCapRun:
     max_prompt_chars: int
     n_compactions: int
     n_compacted_episodes: int
+    min_compacted_episodes: int
+    compaction_activation_rate: float
 
 
 def _reading(comparison: PairedComparison) -> str:
@@ -61,13 +63,19 @@ def decide_verdict(
     cap: PolicyReport,
     compact: PolicyReport,
     paired: dict[str, PairedComparison],
+    *,
+    min_compacted_episodes: int = 1,
 ) -> tuple[str, str]:
     """Prefer a policy only on active, paired completion/cost evidence."""
-    n_compactions = int(sum(compact.vector("n_compactions")))
-    if n_compactions == 0:
+    n_compacted_episodes = sum(
+        1 for episode in compact.episodes if episode.telemetry.n_compactions > 0
+    )
+    if n_compacted_episodes < min_compacted_episodes:
         return (
             VERDICT_INACTIVE,
-            "compact never fired; lengthen the transcript or tighten the prompt budget",
+            f"compact fired in {n_compacted_episodes}/{len(compact.episodes)} episodes; "
+            f"the predeclared activation floor is {min_compacted_episodes} episodes; lengthen "
+            "the transcript or tighten the prompt budget",
         )
 
     completion = paired[METRIC_COMPLETION]

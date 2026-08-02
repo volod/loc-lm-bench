@@ -899,7 +899,9 @@ The cost comparison uses `total_model_input_tokens`, so compact receives no free
 summary prompt is included, locally refused controller prompts are excluded, and `n_model_calls`
 adds controller and summarizer calls. Repeated compactions also feed the prior running summary into
 the next summary prompt and preserve its machine aggregate headers instead of overwriting earlier
-memory. Core locations are `src/llb/bench/agentic_compact_vs_cap.py`,
+memory. After the first summary, trigger hysteresis lets live work grow to the full prompt guard
+before summarizing again; each summary input remains capped at the initial trigger size. Core
+locations are `src/llb/bench/agentic_compact_vs_cap.py`,
 `src/llb/bench/agentic_compact_vs_cap_report.py`,
 `src/llb/cli/bench/category_agentic_compact_vs_cap.py`, and
 `tests/llb/bench/test_agentic_compact_vs_cap.py`.
@@ -930,6 +932,56 @@ completion and its extra input/call cost does not separate clear of zero at this
 Use `observation_cap` for this medium-search shape because it reaches the same observed outcome
 without the extra mechanism; retain compact as an unproven option for transcripts whose old state,
 rather than repeated search, must survive the trigger.
+
+##### Memory-dependent transcript
+
+`make bench-agentic-context-compact-memory` builds an eight-task deterministic tool world in which
+the first one-way workflow observation carries a typed `[memory: final_code=...]` fact. Seven later
+observations expose unique next-step tokens, while progress lives in the world cursor rather than
+the transcript. A stale token cannot advance or replay the code, and objective checks require the
+cursor to finish, the answer to contain the early code, and the code not to have been copied into
+the file or DB world. Both policies see the same tasks and shared digest.
+
+Compact folds typed memory markers into the running summary independently of free-text summary
+quality, as aggregate-safe search headers already do for counts. Only when the recent live
+observation says the workflow is complete does the prompt expose a finish cue with the remembered
+code. The focused runner records a predeclared minimum activation rate and returns `inactive` when
+too few compact episodes cross the trigger.
+
+```bash
+make bench-agentic-context-compact-memory MODEL=<model> BACKEND=<backend>
+```
+
+Core locations are `src/llb/bench/agentic_memory_transcript.py` (task builder),
+`src/llb/bench/tool_world.py` (one-way token workflow),
+`src/llb/bench/agentic/context.py` (typed memory folding and finish cue), the focused compact-vs-cap
+runner and report modules, `make/eval/categories-platform.mk`, and focused tests in
+`tests/llb/bench/test_agentic_memory_transcript.py` and
+`tests/llb/bench/test_agentic_compact_vs_cap.py`.
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `qwen3:14b` on Ollama, eight depth-8 tasks,
+`max_steps=14`, 8,000-character prompt guard, 136 model calls at 19.9 tok/s. The predeclared
+activation floor was 75% (6/8); compact activated in 8/8 episodes with 16 compactions. Bundles are
+under `.data/agentic-compact-vs-cap/20260802T11390*`; the summary manifest is
+`.data/agentic-compact-vs-cap/20260802T113901.203273Z-2bf71a093172/manifest.json`.
+
+| policy | completion | mean steps | mean model calls | mean input tok | compactions | overflow |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `observation_cap` | 0.000 | 6.00 | 6.00 | 10466.0 | 0 | 8 |
+| `compact` | **1.000** | 9.00 | 11.00 | 17570.6 | 16 | 0 |
+
+Paired `compact - observation_cap` completion was +1.000 [+1.000, +1.000] with 8/0/0
+wins/losses/ties (exact randomization p=0.00390625). Total model-input cost, including summary
+prompts, increased by +7104.625 [+7099.000, +7112.375] tokens per task, and model calls increased
+by +5.000 [+5.000, +5.000]. Verdict: **prefer compact for this memory-dependent shape** because
+completion separates after the activation gate, accepting the measured summary cost. This result
+does not change the shipped default: the medium-search lane still prefers cap, so policy choice is
+task-shape dependent.
+
+The model-control pilot first tried the UA-specialized 12B MamayLM used by the earlier context
+lanes. It repeatedly issued a stale file or workflow call and could not pass the task-control path,
+so it was not used for the policy verdict. `qwen3:14b` passed that control and fits the 16 GB host;
+the installed 27B/31B options do not leave safe context headroom.
 
 ### Agent context-policy constants
 

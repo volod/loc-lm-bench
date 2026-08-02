@@ -26,6 +26,12 @@ def bench_agentic_compact_vs_cap_cmd(
     compact_share: float = typer.Option(
         0.5, min=0.01, max=1.0, help="compact trigger as a share of the prompt budget"
     ),
+    min_compaction_rate: float = typer.Option(
+        0.0,
+        min=0.0,
+        max=1.0,
+        help="predeclared minimum share of compact episodes that must compact",
+    ),
     max_prompt_chars: Optional[int] = typer.Option(
         None,
         help="prompt budget override; tighten it when the served window leaves compaction inactive",
@@ -67,6 +73,7 @@ def bench_agentic_compact_vs_cap_cmd(
             observation_cap_chars=observation_cap_chars,
             observation_head_share=observation_head_share,
             compact_share=compact_share,
+            min_compaction_rate=min_compaction_rate,
             data_dir=cfg.data_dir,
             data_verified=data_verified,
             verification_ref=verification_ref,
@@ -84,7 +91,9 @@ def bench_agentic_compact_vs_cap_cmd(
     typer.echo(
         f"[bench-agentic-compact-vs-cap] model={model} tasks={len(task_set)} "
         f"prompt-budget={budget.max_prompt_chars or 'unbounded'} chars "
-        f"compactions={result.n_compactions} compacted-episodes={result.n_compacted_episodes}"
+        f"compactions={result.n_compactions} "
+        f"compacted-episodes={result.n_compacted_episodes}/{len(task_set)} "
+        f"required={result.min_compacted_episodes}"
     )
     _echo_throughput("bench-agentic-compact-vs-cap", meter)
     typer.echo(result.table)

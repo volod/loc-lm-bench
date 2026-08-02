@@ -25,7 +25,12 @@ from llb.bench.agentic.context_budget import (
     prompt_tokens,
     unbounded_budget,
 )
-from llb.bench.agentic.episode import build_agent_prompt, build_agent_prompt_lines, run_episode
+from llb.bench.agentic.episode import (
+    build_agent_prompt,
+    build_agent_prompt_lines,
+    run_episode,
+    step_prompt,
+)
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
     STATUS_CONTEXT_OVERFLOW,
@@ -348,6 +353,17 @@ def test_repeated_compaction_carries_the_prior_summary_and_aggregate_facts():
     assert "docs=doc-0,doc-1,doc-2" in state.summary
 
 
+def test_compact_preserves_typed_memory_and_cues_finish_after_workflow_completion():
+    state = ContextState()
+    policy = ContextPolicy(name=POLICY_COMPACT, compact_keep_recent=1)
+    state.record(policy, "advance", {"token": "t0"}, "[memory: final_code=MEM-001]")
+    state.record(policy, "advance", {"token": "t1"}, "[workflow complete]")
+    assert compact_state(policy, state, lambda _older: "етап виконано") is True
+    assert "[memory: final_code=MEM-001]" in state.summary
+    lines = policy_history_lines(policy, state)
+    assert any('finish з answer="MEM-001"' in line for line in lines)
+
+
 def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
     budget, prompts = fixed_budget(6000), []
 
@@ -393,6 +409,28 @@ def test_compact_calls_the_model_for_a_summary_once_the_trigger_is_crossed():
     assert episode.telemetry.n_compactions >= 1
     assert episode.status == STATUS_COMPLETED
     assert any("Стисло підсумуй" in p for p in prompts)
+
+
+def test_compact_uses_full_budget_as_hysteresis_after_first_summary():
+    state = ContextState(summary="remembered code")
+    policy = ContextPolicy(
+        name=POLICY_COMPACT,
+        compact_share=0.5,
+        observation_cap_chars=100_000,
+    )
+    state.record(policy, "read_file", {"path": "stage.txt"}, "x" * 2500)
+    calls: list[str] = []
+    prompt = step_prompt(
+        search_task(),
+        tool_catalog(),
+        policy,
+        state,
+        fixed_budget(8000),
+        lambda text: calls.append(text) or "updated",
+    )
+    assert 4000 < len(prompt) < 8000
+    assert calls == []
+    assert state.telemetry.n_compactions == 0
 
 
 # --- telemetry ----------------------------------------------------------------------------
