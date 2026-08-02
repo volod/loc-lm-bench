@@ -43,23 +43,27 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-memory-cross-model-transfer (optional)
+### agent-context-policy-compact-memory-transfer-replication (optional)
 
-Transfer the typed memory-dependent compact-vs-cap lane to one non-Qwen model family that first
-passes the token-chain control pilot, then vary workflow depth around the compact trigger. This
-tests whether the completion gain and summary-cost tradeoff generalize beyond one model and one
-window geometry without mixing basic tool-following failure into the policy comparison.
+Raise the compact-memory portability claim beyond one eligible non-Qwen family and the minimum
+six-pair 95% evidence cells: qualify a second non-Qwen family, increase each cell enough to clear
+the 97.5% exact-sign-test floor, and add one geometry where cap remains inside the prompt guard.
+This separates a broadly portable memory-policy effect from a Gemma/Qwen result driven entirely by
+cap overflow; use the existing control and matrix contract in
+[extended workflows](current/extended-workflows.md#non-qwen-depthtrigger-transfer).
 
 - Agent status: RUN NEEDED
-- Dependencies: use the task, activation, and cost contracts in
-  [extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction).
-- User-visible outcome: an operator learns whether the memory-dependent compact preference is a
-  model-family result or a portable context-policy result.
-- Scope boundary: in scope -- a control-task eligibility gate, one non-Qwen family, and a small
-  depth/trigger matrix with paired completion and total model-input cost. Out of scope -- changing
-  shipped policy defaults or relaxing the host-fit model-selection rules.
+- Dependencies: keep the committed candidate ordering, typed memory task, activation floor,
+  completion pairing, and summarizer-inclusive input-cost accounting fixed; extend rather than
+  replace the transfer design.
+- User-visible outcome: an operator learns whether compact retains a completion or cost advantage
+  when cap still fits and whether the finding survives a second eligible non-Qwen family at the
+  tighter reporting convention.
+- Scope boundary: in scope -- one additional eligible family, at least seven discordant pairs per
+  deciding cell, and a cap-fitting boundary cell. Out of scope -- changing shipped defaults,
+  dropping the control gate, or choosing a model that violates host-fit rules.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#compact-versus-cap-with-active-compaction).
+  [extended workflows](current/extended-workflows.md#non-qwen-depthtrigger-transfer).
 
 ### agent-operating-profile-recommendation
 

@@ -983,6 +983,51 @@ lanes. It repeatedly issued a stale file or workflow call and could not pass the
 so it was not used for the policy verdict. `qwen3:14b` passed that control and fits the 16 GB host;
 the installed 27B/31B options do not leave safe context headroom.
 
+##### Non-Qwen depth/trigger transfer
+
+`make bench-agentic-context-compact-memory-transfer` evaluates a committed sequential non-Qwen
+candidate roster against a memory-free token-chain control before it exposes any model to the
+policy matrix. The control puts its answer only in the final observation, so it checks basic token
+progression without requiring old state. A candidate must complete at least 3/4 depth-10 controls;
+failed pilots retain per-episode statuses, answers, and call sequences in the aggregate artifact.
+The first eligible candidate alone advances to the six-pair cells at `depth=6/10` and
+`compact_share=0.4/0.6`, bracketing the Qwen reference geometry while holding the 8,000-character
+guard, observation cap, padding, tasks, and success contract fixed.
+
+The prospective design is
+`samples/benchmarks/agentic_compact_memory_transfer_design.json`. Orchestration and analysis live
+in `src/llb/bench/agentic_memory_transfer.py`, aggregate rendering/persistence in
+`src/llb/bench/agentic_memory_transfer_report.py`, and the CLI in
+`src/llb/cli/bench/category_agentic_memory_transfer.py`. Focused contracts are in
+`tests/llb/bench/test_agentic_memory_transfer.py`; token-chain task construction shares
+`src/llb/bench/agentic_memory_transcript.py` with the memory-dependent lane.
+
+```bash
+make bench-agentic-context-compact-memory-transfer
+```
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): the 11.8B Lapa/Gemma candidate failed the
+control at 0/4 after exhausting the step budget; the installed Q4 `gemma4:e4b` candidate passed
+4/4 at 38.27 tok/s and became the selected non-Qwen family. In every matrix cell, cap completed
+0/6 and compact completed 6/6. All compact episodes crossed the predeclared 75% activation floor;
+depth 6 produced six compactions per cell and depth 10 produced twelve. The audit-complete
+aggregate is
+`$DATA_DIR/agentic-compact-memory-transfer/20260802T120539.133308Z-146807806b61/manifest.json`.
+
+| depth | compact share | cap completion | compact completion | paired d(completion) | cap input tok | compact input tok | paired d(input tok) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 | 0.40 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 12763.0 | +2297.0 [+2289.0, +2305.0] |
+| 6 | 0.60 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 12482.3 | +2016.3 [+1988.0, +2041.5] |
+| 10 | 0.40 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 21570.2 | +11104.2 [+11056.8, +11179.3] |
+| 10 | 0.60 | 0.000 | **1.000** | +1.000 [+1.000, +1.000] | 10466.0 | 22072.8 | +11606.8 [+11572.2, +11640.7] |
+
+Every completion comparison has 6/0/0 wins/losses/ties and exact randomization p=0.015625.
+Verdict: **portable across the tested matrix**. The memory-dependent compact completion gain is
+not Qwen-only and survives both tested depths and trigger shares on an eligible Gemma 4 family,
+while the total model-input premium grows sharply with workflow depth. This evidence does not
+change the shipped default: medium-search tasks still favor observation cap, and the six-pair
+rows become borderline one convention tighter at 97.5% confidence.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:
