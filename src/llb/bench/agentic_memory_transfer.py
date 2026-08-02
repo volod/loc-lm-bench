@@ -97,10 +97,9 @@ def validate_transfer_design(design: dict[str, object]) -> None:
 
 
 def run_control_pilot(
-    design: dict[str, object], *, model: str, backend: str, complete: LLMComplete
+    control: dict[str, object], *, model: str, backend: str, complete: LLMComplete
 ) -> tuple[PolicyReport, dict[str, object]]:
-    """Run the memory-free token chain and return its eligibility record."""
-    control = cast(dict[str, object], design["control_pilot"])
+    """Run the memory-free token chain for ONE control block and return its eligibility record."""
     tasks = [
         AgenticTask.from_record(row)
         for row in build_token_chain_control_tasks(

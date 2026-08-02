@@ -58,7 +58,7 @@ def test_design_refuses_qwen_and_underpowered_cells():
 def test_control_pilot_passes_only_after_walking_the_memory_free_chain():
     design = load_transfer_design(DESIGN_PATH)
     report, row = run_control_pilot(
-        design,
+        design["control_pilot"],
         model="fake",
         backend="fake",
         complete=control_complete,

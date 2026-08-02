@@ -70,7 +70,7 @@ def bench_agentic_context_compact_memory_transfer_cmd(
 
         def run(complete: LLMComplete) -> tuple[dict[str, object], list[dict[str, object]]]:
             _report, pilot = run_control_pilot(
-                design,
+                cast(dict[str, object], design["control_pilot"]),
                 model=model,
                 backend=backend,
                 complete=complete,

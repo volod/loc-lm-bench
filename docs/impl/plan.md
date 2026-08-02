@@ -43,25 +43,50 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-memory-boundary-surface (optional)
+### agent-context-policy-trigger-guard-collapse (optional)
 
-Map the cap-fitting compact cost crossover instead of relying on one usable geometry: predeclare a
-small grid of prompt guards and depths where both policies fit, compact activates, and completion
-remains paired. This determines where the smaller repeated controller prompts repay one or more
-summary calls and where cap becomes cheaper; reuse the direction-aware boundary gate in
-[extended workflows](current/extended-workflows.md#second-family-replication-and-cap-fitting-boundary).
+The cap-fitting routing surface varies the prompt guard at a FIXED `compact_share`, so the guard it
+reports is a stand-in for the quantity the policy actually reacts to: the compaction trigger
+(`compact_share * guard`) relative to the transcript's peak prompt
+([extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface)). If the cost
+crossover depends only on that trigger ratio, the two-axis surface collapses to ONE axis and the
+routing rule becomes portable to any host window without re-running a grid. Test it directly: hold
+the trigger constant while moving `compact_share` and the guard inversely (for example 0.4/17500 and
+0.6/11667 against the measured depth-6 crossover), plus one pair that holds the guard constant and
+moves the share, and state whether the paired cost delta is unchanged within its interval.
 
 - Agent status: RUN NEEDED
-- Dependencies: hold the selected eligible family, typed memory tasks, observation cap, activation
-  floor, and summarizer-inclusive accounting fixed; vary only depth and prompt guard around the
-  usable boundary.
-- User-visible outcome: an operator gets a measured routing surface for memory-dependent work,
-  rather than treating one cap-fitting cell as a universal compact cost result.
-- Scope boundary: in scope -- at least two additional cap-fitting cells on opposite sides of the
-  expected cost crossover and a predeclared interpolation rule. Out of scope -- changing shipped
-  defaults, adding model families, or weakening the control and activation gates.
+- Dependencies: reuse the boundary-surface design, probe, cell gate, and crossover rule; the
+  activation floor and cap-fitting band already refuse a pair that cannot fire or cannot fit.
+- User-visible outcome: either one portable trigger-ratio rule an operator can apply to a new window
+  without measuring, or evidence that share and guard must be tuned together.
+- Scope boundary: in scope -- the equal-trigger pairs, the equal-guard pair, and a collapse verdict.
+  Out of scope -- new families, new task shapes, and changing the shipped `compact_share`.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#second-family-replication-and-cap-fitting-boundary).
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+
+### agent-context-policy-imperfect-play-guard-margin (optional)
+
+The deterministic cap-peak probe
+(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
+the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
+token grows the transcript past that peak, and a guard chosen just above it can still overflow on
+the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
+budget allows (max steps rather than depth), record the measured extra steps per episode from the
+existing bundles, and turn the difference into a stated safety margin the design validation applies
+when it certifies a cell as cap-fitting.
+
+- Agent status: CLEAR
+- Dependencies: the probe and the band check in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py`; the per-episode step counts are already
+  persisted in the compact-vs-cap bundles.
+- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
+  actually runs it, not only for a perfect controller.
+- Scope boundary: in scope -- the worst-case probe, the margin constant, and the validation change.
+  Out of scope -- re-running the surface, changing the interpolation rule, or relaxing the
+  activation floor.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 
 ### agent-operating-profile-recommendation
 
@@ -83,7 +108,9 @@ is the whole failure mode a composed profile invites.
 - Dependencies: the
   [agent loop-policy recommendation](current/extended-workflows.md#agent-loop-policy-recommendation)
   supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
-  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)) and the
+  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)), and for
+  memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary surface
+  ([extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface)); the
   rest are current behavior. Reuse `src/llb/board/recommend/`
   (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
   ([extended workflows](current/extended-workflows.md#staleness)), and the shared borderline

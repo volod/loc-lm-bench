@@ -3,18 +3,14 @@
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_compact_vs_cap_report import (
-    VERDICT_PREFER_CAP,
-    VERDICT_PREFER_COMPACT,
+from llb.bench.agentic_memory_boundary_gate import (
+    boundary_cost_evidence,
+    clears_tighter_completion,
 )
 from llb.bench.agentic_memory_transfer import load_transfer_design
 from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
 from llb.bench.common import LLMComplete
-from llb.rag.fusion_evidence.evidence_gate import (
-    READING_SEPARATED,
-    minimum_discordant_pairs,
-    reaches_reporting_level,
-)
+from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
 
 STUDY_KIND = "compact_memory_transfer_replication"
 METHOD = "agentic-compact-memory-transfer-replication"
@@ -131,9 +127,10 @@ def analyze_replication(
     elif [row["cell_id"] for row in matrix_rows] != [cell["cell_id"] for cell in expected]:
         raise ValueError("replication rows do not match the exact declared cell order")
     else:
+        confidence = float(cast(float, design["reporting_confidence"]))
         core = [row for row in matrix_rows if not row["require_cap_fits"]]
         boundary = next(row for row in matrix_rows if row["require_cap_fits"])
-        core_passed = all(_clears_tighter_completion(row) for row in core)
+        core_passed = all(clears_tighter_completion(row, confidence) for row in core)
         minimum_rate = float(
             cast(float, cast(dict[str, object], design["matrix"])["minimum_compaction_rate"])
         )
@@ -141,9 +138,7 @@ def analyze_replication(
             boundary["cap_context_overflows"] == 0
             and cast(float, boundary["compaction_activation_rate"]) >= minimum_rate
         )
-        boundary_evidence = _boundary_evidence(
-            boundary, float(cast(float, design["reporting_confidence"]))
-        )
+        boundary_evidence = boundary_cost_evidence(boundary, confidence)
         if not core_passed:
             reading = READING_NOT_REPRODUCED
             reason = "the second family does not reproduce every transfer cell at 97.5%"
@@ -170,50 +165,4 @@ def analyze_replication(
         "replication_reading": reading,
         "reason": reason,
         "changes_shipped_default": False,
-    }
-
-
-def _clears_tighter_completion(row: dict[str, object]) -> bool:
-    paired = cast(dict[str, dict[str, object]], row["paired"])["completion"]
-    stability = cast(dict[str, object], paired["stability"])
-    return bool(
-        row["verdict"] == VERDICT_PREFER_COMPACT
-        and int(cast(int, paired["wins"])) + int(cast(int, paired["losses"])) >= 7
-        and stability["tighter_reading"] == READING_SEPARATED
-    )
-
-
-def _boundary_evidence(row: dict[str, object], confidence: float) -> dict[str, object]:
-    """Normalize lower-is-better cost evidence instead of misreading a positive-tail p."""
-    paired = cast(dict[str, dict[str, object]], row["paired"])
-    completion = paired["completion"]
-    cost = paired["total_model_input_tokens"]
-    cost_delta = cast(dict[str, float], cost["delta"])
-    discordant = int(cast(int, cost["wins"])) + int(cast(int, cost["losses"]))
-    sign_test_p = float(cast(float, cost["sign_test_p"]))
-    cost_clears = bool(
-        sign_test_p <= 1.0 - confidence and reaches_reporting_level(discordant, confidence)
-    )
-    completion_delta = cast(dict[str, float], completion["delta"])
-    completion_tied = completion_delta["mean"] == 0.0
-    return {
-        "confidence": confidence,
-        "completion_tied": completion_tied,
-        "compact_minus_cap_total_model_input_tokens": cost_delta,
-        "cost_discordant_pairs": discordant,
-        "cost_two_sided_sign_test_p": sign_test_p,
-        "cost_clears": cost_clears,
-        "compact_preference_clears": bool(
-            row["verdict"] == VERDICT_PREFER_COMPACT
-            and (
-                _clears_tighter_completion(row)
-                or (completion_tied and cost_delta["mean"] < 0.0 and cost_clears)
-            )
-        ),
-        "cap_preference_clears": bool(
-            row["verdict"] == VERDICT_PREFER_CAP
-            and completion_tied
-            and cost_delta["mean"] > 0.0
-            and cost_clears
-        ),
     }

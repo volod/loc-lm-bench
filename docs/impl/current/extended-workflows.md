@@ -1081,6 +1081,88 @@ artifact: at the tested usable boundary, compact ties completion and more than r
 input through smaller later prompts. The shipped default remains task-shape dependent and is not
 changed by this focused memory transcript.
 
+##### Cap-fitting boundary surface
+
+`make bench-agentic-context-compact-memory-boundary-surface` answers what one cap-fitting cell
+cannot: WHERE compact stops repaying its summary call. It pins the family the replication qualified,
+holds the typed memory tasks, observation cap, `compact_share`, activation floor, task count, and
+summarizer-inclusive accounting fixed, and varies ONLY transcript depth and the prompt guard over a
+predeclared grid of cap-fitting cells. The committed design is
+`samples/benchmarks/agentic_compact_memory_boundary_surface_design.json`, and the pinned family is
+re-qualified against the unchanged token-chain control before any cell runs.
+
+A cap-fitting cell is usable only inside a narrow band, and that band needs NO model to compute. The
+memory-dependent tool world is deterministic, so an oracle controller that always plays the next
+workflow token reproduces the exact prompt sequence a perfect controller would send
+(`src/llb/bench/agentic_memory_boundary_probe.py`): depth 6 peaks at 8,374 prompt chars and depth 10
+at 11,926, and the probe's cap totals (13,258 and 27,343 model-input tokens per task) are the
+numbers the host then measured. A guard BELOW the peak overflows cap; a guard at or above
+`peak / compact_share` never lets compact fire. Design validation refuses any cell outside that open
+band, a depth that does not predeclare cells on both sides of the crossover, a grid that drops the
+replication's anchor geometry, and a declared window too narrow to carry the widest guard -- all in
+CI, with no GPU.
+
+The interpolation rule is predeclared with the grid: read the compact-minus-cap total model-input
+delta on the guard axis, take the FIRST adjacent pair of cost-separated cells whose means have
+opposite signs, and interpolate linearly to the zero crossing. A cell whose cost sign is not
+readable is skipped rather than blocking a bracket around it, and a depth with no sign change
+reports a BOUND (the crossing lies above or below the tested guards) instead of extrapolating. Every
+cell must also keep its preconditions -- zero cap overflows, zero compact overflows, compaction
+above the activation floor, paired completion, and both policies above the cell completion floor --
+or it is reported invalid with the named reason instead of bending the crossover.
+
+Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (oracle probe and usable band),
+`src/llb/bench/agentic_memory_boundary_gate.py` (the direction-aware lower-is-better cost gate,
+shared with the replication above), `src/llb/bench/agentic_memory_boundary_surface_cells.py` (grid
+contract and per-cell validity), `src/llb/bench/agentic_memory_boundary_crossover.py` (the
+interpolation and the routing lines), `src/llb/bench/agentic_memory_boundary_surface.py` (design,
+run, and analysis), `src/llb/bench/agentic_memory_boundary_surface_report.py`,
+`src/llb/cli/bench/category_agentic_memory_boundary_surface.py`, and
+`tests/llb/bench/test_agentic_memory_boundary_surface.py`, whose fake-model pass over the committed
+grid proves every predeclared cell keeps cap fitting and compact firing.
+
+```bash
+make bench-agentic-context-compact-memory-boundary-surface
+```
+
+CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, seven depth-matched memory tasks per cell, `compact_share=0.5`, an 800-char
+observation cap, 88 episodes at 11.21 tok/s over about 50 minutes. The pinned family re-passed the
+unchanged depth-10 control at 4/4. Every cell completed 7/7 under both policies with zero overflows
+and exactly one compaction per compact episode, so each cost delta is one summary call against
+smaller later controller prompts. The aggregate is
+`$DATA_DIR/agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/manifest.json`;
+its source cell bundles are under `.data/agentic-compact-vs-cap/20260802T1506*` through
+`.data/agentic-compact-vs-cap/20260802T1546*`.
+
+| cell | depth | guard | cap input tok | compact input tok | paired d(input tok) | cost pairs | side |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `surface-d6-g12000` | 6 | 12000 | 13258.0 | **12466.0** | -792.0 [-815.3, -762.0] | 0/7 | compact |
+| `surface-d6-g14000` | 6 | 14000 | 13258.0 | **13132.1** | -125.9 [-138.4, -112.7] | 0/7 | compact |
+| `surface-d6-g15500` | 6 | 15500 | **13258.0** | 14312.6 | +1054.6 [+1049.9, +1061.7] | 7/0 | cap |
+| `surface-d10-g14000` | 10 | 14000 | 27343.0 | **22884.7** | -4458.3 [-4501.4, -4411.4] | 0/7 | compact |
+| `surface-d10-g20000` | 10 | 20000 | 27343.0 | **24709.6** | -2633.4 [-2652.7, -2614.9] | 0/7 | compact |
+| `surface-d10-g23000` | 10 | 23000 | **27343.0** | 28867.9 | +1524.9 [+1517.3, +1533.9] | 7/0 | cap |
+
+Every cost row is unanimous across its seven pairs (two-sided exact sign-test p = 0.015625), every
+completion delta is +0.000, and compact adds exactly +1.000 model call per task in all six cells.
+All six cells landed on the side the design predeclared. The interpolated crossings are:
+
+| depth | cap peak prompt | bracket | crossover guard | guard / peak |
+| ---: | ---: | --- | ---: | ---: |
+| 6 | 8374 | [14000, 15500] | 14160 | 1.69 |
+| 10 | 11926 | [20000, 23000] | 21900 | 1.84 |
+
+Routing rule: for memory-dependent transcripts, use `compact` while the prompt guard is below about
+1.7-1.8x the transcript's cap peak prompt, and `observation_cap` above it. Verdict: **surface
+mapped**. The replication's single cap-fitting cell was not a universal result and not a knife-edge
+one either -- it sits inside a measured compact-cheaper region that ends at a crossover both tested
+depths agree on in peak-relative terms (spread 0.15x). The mechanism is visible in the numbers: cap
+costs exactly what the deterministic probe says regardless of guard, while compact's cost rises with
+the guard because a later trigger folds a bigger transcript and leaves fewer steps to spend the
+smaller prompt on. This does not change the shipped default; the medium-search shape still prefers
+`observation_cap`.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:
