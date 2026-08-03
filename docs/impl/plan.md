@@ -932,6 +932,64 @@ declining the hard items looks like a win.
   [RAG core](current/rag-core.md#scoring) beside the groundedness metrics, and the adopt-or-reject
   record per axiom class in [product decisions](current/scope-boundaries.md).
 
+### thinking-suppression-and-answer-language-guard
+
+`qwen3:30b` answers a Ukrainian benchmark prompt with first-person English deliberation ("Okay, I
+need to explain...") even though the launcher sends Ollama's native `think: false` on every call,
+so the thinking suppression the manifest relies on is not sufficient for that tag. Two scoring
+risks follow: reasoning text inflates the generated-token count that throughput and cost are
+derived from, and an English answer to a Ukrainian prompt is scored as content rather than caught
+as an off-language response. Add a per-response guard that detects a leaked-reasoning prefix and a
+dominant-script/language mismatch against the prompt, record both as named per-case flags in the
+run bundle beside the existing reliability fields, and decide per model whether suppression needs a
+prompt-level instruction on top of the API flag. Evidence for the observation is in the full-roster
+throughput baseline in [backend telemetry](current/backend-telemetry.md).
+
+- Agent status: RUN NEEDED
+- Dependencies: the throughput protocol in
+  [backend telemetry](current/backend-telemetry.md#telemetry-fields) and the correctness/reliability
+  fields in [RAG core](current/rag-core.md#scoring).
+- User-visible outcome: a run bundle shows how many answers leaked reasoning or answered in the
+  wrong language, per model, instead of silently scoring them as ordinary content.
+- Scope boundary: in scope -- the detection flags, their manifest fields, and a per-model
+  suppression verdict. Out of scope -- rewriting the judge or changing the objective's definition.
+- Execution path: re-run the roster throughput protocol capturing generations, then a bounded
+  `run-eval` cell per affected tag.
+- Acceptance gates: `make ci` green with injected fake generations covering leaked-reasoning,
+  off-language, and clean answers; the flags appear in the persisted manifest; every roster tag
+  carries an explicit suppression verdict, including the tags where no leak was observed.
+- Documentation target: the roster baseline in
+  [backend telemetry](current/backend-telemetry.md) and the scoring fields in
+  [RAG core](current/rag-core.md#scoring).
+
+### gemma4-gguf-runner-gap (optional)
+
+The host Ollama cannot serve a `gemma4` GGUF at all: 0.20 answers both the curated `gemma4:12b`
+tag and the first-party QAT `q4_0` GGUF with `unknown model architecture: 'gemma4'`, so the
+`gemma-4-12b-it-w4a16` entry has no Ollama path and only its vLLM checkpoint is measurable here
+(see the full-roster throughput baseline in
+[backend telemetry](current/backend-telemetry.md)).
+Any per-model result that resolves through Ollama therefore silently skips one manifest entry.
+Pin the minimum Ollama version that knows `gemma4` in the host setup path, make the resolver report
+an architecture-unsupported source as a NAMED skip instead of a generic backend error, and re-measure
+the entry on Ollama so the roster is served by one backend end to end.
+
+- Agent status: RUN NEEDED
+- Dependencies: the resolver source-selection behavior in
+  [platform matrix](current/platform-vector-matrix.md#multi-quant-vllm-resolution).
+- User-visible outcome: an unsupported-architecture source fails with a source-specific message
+  naming the runtime and the required version, and the roster has no backend-shaped hole.
+- Scope boundary: in scope -- the version floor, the named skip, and the re-measured entry. Out of
+  scope -- vendoring or building a llama.cpp runner.
+- Execution path: raise the host Ollama, re-run the roster throughput protocol, refresh the
+  baseline table.
+- Acceptance gates: `make ci` green; a source whose architecture the runtime rejects produces the
+  named error in a test with an injected fake; the refreshed table carries a measured Ollama row for
+  every manifest entry or records the entry as backend-unsupported with its reason.
+- Documentation target: the roster baseline in
+  [backend telemetry](current/backend-telemetry.md) and the host setup notes in
+  [host validation](current/host-validation.md).
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
