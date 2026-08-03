@@ -21,6 +21,7 @@ DB_GET = "db_get"
 DB_SET = "db_set"
 SEARCH = "search"
 CALCULATOR = "calculator"
+ADVANCE = "advance"
 FINISH = "finish"  # ends the episode with a final answer (not executed against the world)
 
 # Observation strings (UA, ASCII-safe markers where relevant).
@@ -31,6 +32,11 @@ OBS_OK = "ok"
 OBS_BAD_ARGS = "(некоректні аргументи)"
 OBS_CALC_ERROR = "(помилка обчислення)"
 OBS_UNKNOWN_TOOL = "(невідомий інструмент)"
+OBS_WORKFLOW_COMPLETE = (
+    "[workflow complete] СТОП: більше не викликай advance. Зараз виклич finish із фінальним "
+    "кодом з першого результату."
+)
+OBS_WORKFLOW_BAD_TOKEN = "[wrong workflow token; expected {expected}]"
 
 _BIN_OPS: dict[type, Callable[[Any, Any], Any]] = {
     ast.Add: operator.add,
@@ -77,6 +83,9 @@ class ToolWorld:
     files: dict[str, str] = field(default_factory=dict)
     db: dict[str, str] = field(default_factory=dict)
     corpus: dict[str, str] = field(default_factory=dict)
+    workflow: list[str] = field(default_factory=list)
+    workflow_tokens: list[str] = field(default_factory=list)
+    workflow_index: int = 0
 
     @classmethod
     def from_setup(cls, setup: dict[str, Any]) -> "ToolWorld":
@@ -84,6 +93,8 @@ class ToolWorld:
             files=dict(setup.get("files", {}) or {}),
             db=dict(setup.get("db", {}) or {}),
             corpus=dict(setup.get("corpus", {}) or {}),
+            workflow=[str(value) for value in setup.get("workflow", []) or []],
+            workflow_tokens=[str(value) for value in setup.get("workflow_tokens", []) or []],
         )
 
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
@@ -145,6 +156,22 @@ def _calculator(world: ToolWorld, arguments: dict[str, Any]) -> str:
     return safe_eval(expression) if expression else OBS_BAD_ARGS
 
 
+def _advance(world: ToolWorld, arguments: dict[str, Any]) -> str:
+    """Return the next one-way workflow observation and advance its external cursor."""
+    if world.workflow_index >= len(world.workflow):
+        return OBS_WORKFLOW_COMPLETE
+    if len(world.workflow_tokens) != len(world.workflow):
+        return OBS_BAD_ARGS
+    expected = world.workflow_tokens[world.workflow_index]
+    if _arg(arguments, "token") != expected:
+        return OBS_WORKFLOW_BAD_TOKEN.format(expected=expected)
+    observation = world.workflow[world.workflow_index]
+    world.workflow_index += 1
+    if world.workflow_index < len(world.workflow):
+        observation = f"{observation}\n[next token: {world.workflow_tokens[world.workflow_index]}]"
+    return observation
+
+
 _HANDLERS: dict[str, Callable[[ToolWorld, dict[str, Any]], str]] = {
     READ_FILE: _read_file,
     WRITE_FILE: _write_file,
@@ -152,6 +179,7 @@ _HANDLERS: dict[str, Callable[[ToolWorld, dict[str, Any]], str]] = {
     DB_SET: _db_set,
     SEARCH: _search,
     CALCULATOR: _calculator,
+    ADVANCE: _advance,
 }
 
 
@@ -175,6 +203,12 @@ def tool_catalog() -> dict[str, ToolDef]:
         SEARCH: _tool(SEARCH, "Пошук у корпусі за підрядком.", {"query": "string"}, ["query"]),
         CALCULATOR: _tool(
             CALCULATOR, "Обчислити арифметичний вираз.", {"expression": "string"}, ["expression"]
+        ),
+        ADVANCE: _tool(
+            ADVANCE,
+            "Перейти до наступного незворотного етапу робочого процесу.",
+            {"token": "string"},
+            ["token"],
         ),
         FINISH: _tool(
             FINISH, "Завершити завдання й повернути відповідь.", {"answer": "string"}, ["answer"]

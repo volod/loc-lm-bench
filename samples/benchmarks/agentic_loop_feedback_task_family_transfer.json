@@ -1,0 +1,226 @@
+[
+  {
+    "id": "transfer-read-001",
+    "family": "read_holdout",
+    "prompt": "Open juniper.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"juniper.txt": "Verification token JN-104"}},
+    "success": [{"kind": "answer_contains", "value": "JN-104"}]
+  },
+  {
+    "id": "transfer-read-002",
+    "family": "read_holdout",
+    "prompt": "Open kestrel.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"kestrel.txt": "Verification token KS-217"}},
+    "success": [{"kind": "answer_contains", "value": "KS-217"}]
+  },
+  {
+    "id": "transfer-read-003",
+    "family": "read_holdout",
+    "prompt": "Open lantern.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"lantern.txt": "Verification token LN-326"}},
+    "success": [{"kind": "answer_contains", "value": "LN-326"}]
+  },
+  {
+    "id": "transfer-read-004",
+    "family": "read_holdout",
+    "prompt": "Open meadow.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"meadow.txt": "Verification token MD-439"}},
+    "success": [{"kind": "answer_contains", "value": "MD-439"}]
+  },
+  {
+    "id": "transfer-read-005",
+    "family": "read_holdout",
+    "prompt": "Open northwind.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"northwind.txt": "Verification token NW-542"}},
+    "success": [{"kind": "answer_contains", "value": "NW-542"}]
+  },
+  {
+    "id": "transfer-read-006",
+    "family": "read_holdout",
+    "prompt": "Open orchard.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"orchard.txt": "Verification token OR-658"}},
+    "success": [{"kind": "answer_contains", "value": "OR-658"}]
+  },
+  {
+    "id": "transfer-read-007",
+    "family": "read_holdout",
+    "prompt": "Open pebble.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"pebble.txt": "Verification token PB-761"}},
+    "success": [{"kind": "answer_contains", "value": "PB-761"}]
+  },
+  {
+    "id": "transfer-read-008",
+    "family": "read_holdout",
+    "prompt": "Open quartz.txt twice with identical arguments to confirm the result, then report its token.",
+    "setup": {"files": {"quartz.txt": "Verification token QZ-873"}},
+    "success": [{"kind": "answer_contains", "value": "QZ-873"}]
+  },
+  {
+    "id": "transfer-calc-001",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 38 + 47 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "85"}]
+  },
+  {
+    "id": "transfer-calc-002",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 16 * 9 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "144"}]
+  },
+  {
+    "id": "transfer-calc-003",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 288 / 16 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "18"}]
+  },
+  {
+    "id": "transfer-calc-004",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate (19 - 7) * 6 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "72"}]
+  },
+  {
+    "id": "transfer-calc-005",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 410 - 163 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "247"}]
+  },
+  {
+    "id": "transfer-calc-006",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 13 ** 2 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "169"}]
+  },
+  {
+    "id": "transfer-calc-007",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 323 // 17 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "19"}]
+  },
+  {
+    "id": "transfer-calc-008",
+    "family": "calculator_holdout",
+    "prompt": "Evaluate 157 % 12 twice using identical calculator arguments, then report the result.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "1"}]
+  },
+  {
+    "id": "transfer-search-001",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'aster' and then report the number beside that marker.",
+    "setup": {"corpus": {"a1": "Marker aster carries number 106.", "x1": "Unrelated field note."}},
+    "success": [{"kind": "answer_contains", "value": "106"}]
+  },
+  {
+    "id": "transfer-search-002",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'badger' and then report the number beside that marker.",
+    "setup": {"corpus": {"a2": "Marker badger carries number 218.", "x2": "Unrelated travel note."}},
+    "success": [{"kind": "answer_contains", "value": "218"}]
+  },
+  {
+    "id": "transfer-search-003",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'cinder' and then report the number beside that marker.",
+    "setup": {"corpus": {"a3": "Marker cinder carries number 327.", "x3": "Unrelated garden note."}},
+    "success": [{"kind": "answer_contains", "value": "327"}]
+  },
+  {
+    "id": "transfer-search-004",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'drift' and then report the number beside that marker.",
+    "setup": {"corpus": {"a4": "Marker drift carries number 431.", "x4": "Unrelated weather note."}},
+    "success": [{"kind": "answer_contains", "value": "431"}]
+  },
+  {
+    "id": "transfer-search-005",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'elmwood' and then report the number beside that marker.",
+    "setup": {"corpus": {"a5": "Marker elmwood carries number 549.", "x5": "Unrelated harbor note."}},
+    "success": [{"kind": "answer_contains", "value": "549"}]
+  },
+  {
+    "id": "transfer-search-006",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'falcon' and then report the number beside that marker.",
+    "setup": {"corpus": {"a6": "Marker falcon carries number 653.", "x6": "Unrelated museum note."}},
+    "success": [{"kind": "answer_contains", "value": "653"}]
+  },
+  {
+    "id": "transfer-search-007",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'granite' and then report the number beside that marker.",
+    "setup": {"corpus": {"a7": "Marker granite carries number 764.", "x7": "Unrelated transit note."}},
+    "success": [{"kind": "answer_contains", "value": "764"}]
+  },
+  {
+    "id": "transfer-search-008",
+    "family": "search_holdout",
+    "prompt": "Search twice with the identical query 'hemlock' and then report the number beside that marker.",
+    "setup": {"corpus": {"a8": "Marker hemlock carries number 872.", "x8": "Unrelated archive note."}},
+    "success": [{"kind": "answer_contains", "value": "872"}]
+  },
+  {
+    "id": "transfer-write-001",
+    "family": "mutation_holdout",
+    "prompt": "Write value amber-105 to result-j.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "result-j.txt", "value": "amber-105"}, {"kind": "answer_contains", "value": "amber-105"}]
+  },
+  {
+    "id": "transfer-write-002",
+    "family": "mutation_holdout",
+    "prompt": "Write value bronze-216 to result-k.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "result-k.txt", "value": "bronze-216"}, {"kind": "answer_contains", "value": "bronze-216"}]
+  },
+  {
+    "id": "transfer-write-003",
+    "family": "mutation_holdout",
+    "prompt": "Write value copper-328 to result-l.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "result-l.txt", "value": "copper-328"}, {"kind": "answer_contains", "value": "copper-328"}]
+  },
+  {
+    "id": "transfer-write-004",
+    "family": "mutation_holdout",
+    "prompt": "Write value denim-437 to result-m.txt twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "result-m.txt", "value": "denim-437"}, {"kind": "answer_contains", "value": "denim-437"}]
+  },
+  {
+    "id": "transfer-db-001",
+    "family": "mutation_holdout",
+    "prompt": "Store value ember-541 under key hold-n twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "hold-n", "value": "ember-541"}, {"kind": "answer_contains", "value": "ember-541"}]
+  },
+  {
+    "id": "transfer-db-002",
+    "family": "mutation_holdout",
+    "prompt": "Store value flint-659 under key hold-o twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "hold-o", "value": "flint-659"}, {"kind": "answer_contains", "value": "flint-659"}]
+  },
+  {
+    "id": "transfer-db-003",
+    "family": "mutation_holdout",
+    "prompt": "Store value gold-763 under key hold-p twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "hold-p", "value": "gold-763"}, {"kind": "answer_contains", "value": "gold-763"}]
+  },
+  {
+    "id": "transfer-db-004",
+    "family": "mutation_holdout",
+    "prompt": "Store value hazel-874 under key hold-q twice with identical arguments, then confirm the stored value.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "hold-q", "value": "hazel-874"}, {"kind": "answer_contains", "value": "hazel-874"}]
+  }
+]

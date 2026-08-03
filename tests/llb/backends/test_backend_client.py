@@ -87,3 +87,31 @@ def test_ollama_launcher_disables_thinking_for_bounded_scoring(monkeypatch):
     assert result.prompt_tokens == 7 and result.completion_tokens == 3
     assert seen["payload"]["think"] is False
     assert seen["payload"]["options"] == {"num_predict": 32, "temperature": 0.0}
+
+
+def test_ollama_launcher_sends_sampling_seed(monkeypatch):
+    seen: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({"message": {"content": "answer"}}).encode()
+
+    def fake_urlopen(request, timeout):  # noqa: ARG001
+        seen["payload"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr("llb.backends.ollama.urllib.request.urlopen", fake_urlopen)
+    launcher = OllamaLauncher("model", seed=29)
+    launcher.chat([], max_tokens=16, temperature=0.2, timeout=5.0)
+
+    assert seen["payload"]["options"] == {
+        "num_predict": 16,
+        "temperature": 0.2,
+        "seed": 29,
+    }

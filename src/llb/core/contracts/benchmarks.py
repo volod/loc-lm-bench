@@ -79,17 +79,30 @@ class AgenticCaseRow(TypedDict):
     """Per-task outcome for one agentic episode."""
 
     item_id: str
+    task_family: NotRequired[str]
     status: str
     success: float
     objective_score: float
     n_steps: int
     n_tool_calls: int
+    n_model_calls: NotRequired[int]
+    n_malformed_calls: NotRequired[int]
+    malformed_call_rate: NotRequired[float]
+    n_repair_attempts: NotRequired[int]
+    n_repeated_calls: NotRequired[int]
+    n_repeated_noops: NotRequired[int]
+    repeat_feedback_redirected: NotRequired[bool]
+    elapsed_s: NotRequired[float]
     trajectory_quality: NotRequired[float]
     # Context accounting (agent context-management policies): how the episode spent its window.
     # Present when the harness recorded per-step prompt sizes (loop/langgraph always; crewai when
     # the framework actually sent prompts). Absent only on legacy episodes with empty telemetry.
     max_prompt_tokens: NotRequired[int]
     total_prompt_tokens: NotRequired[int]
+    # Actual model input includes sent controller prompts plus compact-summary prompts and excludes
+    # the oversized controller prompt that the local guard refused.
+    total_model_input_tokens: NotRequired[int]
+    compaction_prompt_tokens: NotRequired[int]
     observation_bytes: NotRequired[int]
     n_compactions: NotRequired[int]
     n_trimmed_observations: NotRequired[int]

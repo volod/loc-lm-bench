@@ -1,0 +1,5 @@
+{
+  "id": "bench.agentic.tool_call_repair",
+  "kind": "text",
+  "template": "tool_call_repair.txt"
+}

@@ -46,6 +46,8 @@ ASSERT_FILE_EQUALS = "file_equals"
 ASSERT_FILE_CONTAINS = "file_contains"
 ASSERT_DB_EQUALS = "db_equals"
 ASSERT_ANSWER_CONTAINS = "answer_contains"
+ASSERT_WORLD_NOT_CONTAINS = "world_not_contains"
+ASSERT_WORKFLOW_COMPLETE = "workflow_complete"
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,7 @@ class AgenticTask:
     prompt: str
     setup: dict[str, Any] = field(default_factory=dict)
     success: list[dict[str, Any]] = field(default_factory=list)
+    family: str | None = None
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "AgenticTask":
@@ -67,6 +70,7 @@ class AgenticTask:
             prompt=str(record["prompt"]),
             setup=dict(record.get("setup", {}) or {}),
             success=[dict(a) for a in success],
+            family=str(record["family"]) if record.get("family") else None,
         )
 
 
@@ -86,6 +90,14 @@ class Episode:
     # means the framework owned the transcript (CrewAI) and the comparison must not treat the
     # row as our `full` / `observation_cap` / ... assembly -- see harness comparison docs.
     context_policy_supported: bool = True
+    # Loop-policy diagnostics. Defaults keep episodes built by framework adapters compatible.
+    n_model_calls: int = 0
+    n_malformed_calls: int = 0
+    n_repair_attempts: int = 0
+    n_repeated_calls: int = 0
+    n_repeated_noops: int = 0
+    repeat_feedback_redirected: bool = False
+    elapsed_s: float = 0.0
 
 
 class Harness(Protocol):

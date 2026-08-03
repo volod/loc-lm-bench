@@ -100,6 +100,74 @@ Note that peak VRAM is truthful for a model that fits (MamayLM ~9.4 GiB) but is 
 for one that offloads (Qwen/Mistral pin ~15.9 GiB), so peak VRAM shows *whether* a model spilled,
 not *how much* it needed.
 
+### Full-Roster Throughput Baseline (2026-08-03, RTX 4060 Ti 16 GiB)
+
+Every logical entry in `samples/configs/models_uk.yaml` measured back to back under one protocol:
+`collect_telemetry` with the fixed `telemetry.throughput` Ukrainian prompt set, `max_new_tokens=128`,
+one discarded warmup pass, `num_ctx`/`max_model_len` pinned to 4096, and each model unloaded before
+the next so every run starts from the same VRAM state. These are SHORT-prompt decode rates; a RAG
+lane that prefills retrieved context reads lower for the same model (see the context-ablation rows
+in [RAG core](rag-core.md#context-ablation-evidence)).
+
+`min/100` is the derived decode-only run-sizing figure from the estimator above: minutes to answer
+100 cases at 256 output tokens each, excluding load time and RAG prefill. `tok/UA-char` is the
+tokenizer-efficiency field from the same telemetry record (LOWER is denser output per token) and
+carries a content confound -- read the caveat below before ranking on it.
+
+| model | served artifact | backend | tok/s | tok/UA-char | min/100 | peak VRAM (MB) | placement |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `gemma-4-e4b-it-w4a16` | `gemma4:e4b` | ollama | 63.45 | 0.323 | 6.7 | 11657 | GPU-resident |
+| `qwen3-30b-a3b` | `qwen3:30b` | ollama | 38.87 | 0.202 | 11.0 | 16096 | offload, ~3.3B active |
+| `qwen3.6-35b-a3b-fp8` | `batiai/qwen3.6-35b:iq3` | ollama | 36.90 | 0.353 | 11.6 | 15908 | GPU-resident, ~3B active |
+| `lapa-v0.1.2-instruct` | Lapa 12B GGUF Q4_K_M | ollama | 31.08 | 0.201 | 13.7 | 9835 | GPU-resident |
+| `mamaylm-v2-12b` | MamayLM 12B GGUF Q4_K_M | ollama | 30.99 | 0.325 | 13.8 | 9837 | GPU-resident |
+| `gemma-4-12b-it-w4a16` | `google/gemma-4-12B-it-qat-w4a16-ct` | vllm | 29.48 | 0.317 | 14.5 | 14827 | GPU-resident |
+| `gemma-4-26b-a4b` | `gemma4:26b` | ollama | 26.94 | 0.318 | 15.8 | 16002 | offload, ~3.8B active |
+| `mistral-small-3.1-24b` | `mistral-small3.1:24b` | ollama | 12.41 | 0.331 | 34.4 | 15878 | offload, dense |
+| `mamaylm-v2-27b-fp8` | MamayLM 27B GGUF Q4_K_M | ollama | 7.82 | 0.306 | 54.6 | 15957 | offload 23%/77% |
+| `qwen3.6-27b` | `qwen3.6:27b` | ollama | 4.59 | 0.350 | 93.0 | 15233 | offload 44%/56% |
+
+Practical reading of `min/100`: an 82-item final split costs about 5 minutes on `gemma-4-e4b` and
+over an hour on `qwen3.6-27b`, so a roster-wide sweep is dominated by its two slowest rows. Add
+`load_time_s` once per model (cold Ollama load is seconds; the vLLM row measured 140 s, chiefly
+CUDA-graph capture) and a per-case prefill term that grows with `top_k` and chunk size.
+
+What the full roster adds beyond the three-row table above:
+
+- **The smallest entry wins by a wide margin.** `gemma-4-e4b` is 1.63x the next model and 13.8x the
+  slowest. Its 63.45 tok/s reproduces the manifest's M2.4 vLLM reference (~64 tok/s) on a different
+  backend, which makes the protocol's cross-backend comparability observable rather than assumed.
+- **MoE routing beats VRAM residency.** `qwen3-30b-a3b` posts 38.87 tok/s while CPU-offloaded, ahead
+  of three dense models that fit entirely in VRAM: with ~3.3B active parameters the offloaded
+  experts are mostly not read per token. Fit-vs-offload is the dominant factor only among models of
+  comparable active size.
+- **Dense offload is where speed collapses.** The two slowest rows are dense 24B/27B artifacts at
+  4.59-12.41 tok/s, and `qwen3.6-27b` at 44%/56% CPU/GPU is the roster floor.
+- **`tok/UA-char` measures what the model WROTE at least as much as how it tokenizes -- never rank
+  on it without reading the generations.** Dividing `tok/s` by it yields a tempting "UA chars/s"
+  (`gemma-4-e4b` 196, `qwen3-30b-a3b` 193, `lapa` 155, `mamaylm-v2-12b` 95), which would promote
+  `qwen3-30b-a3b` to a near-tie for first. Inspecting the generations shows two different causes
+  behind one number: `lapa` emits genuine Ukrainian prose at ~6.1 chars/token against
+  `mamaylm-v2-12b`'s ~3.1 on the SAME Gemma-3 base, part tokenizer adaptation and part
+  MamayLM's markdown-heavy formatting; but `qwen3-30b-a3b` scores low because it answered a
+  Ukrainian prompt in ENGLISH reasoning prose ("Okay, I need to explain what copyright is..."),
+  and English tokenizes far denser than Ukrainian. Its apparent character throughput is a
+  language artifact, not Ukrainian delivered per second. Quote `tok/s` for run sizing and treat
+  `tok/UA-char` as a diagnostic that requires reading the generations -- the same verbosity/content
+  confound documented for token-F1 scoring in [RAG core](rag-core.md#scoring).
+- **`think=false` did not stop `qwen3:30b` from emitting visible reasoning.** The launcher sends
+  Ollama's native `think: false` on every call, yet this tag returned first-person deliberation in
+  the answer body. Treat the manifest's "disable thinking for scoring" note as necessary but not
+  sufficient for this tag until re-checked.
+- **`gemma-4-12b` has no Ollama path on this host.** Ollama 0.20 rejects the `gemma4` architecture in
+  a raw GGUF (`unknown model architecture: 'gemma4'`), so both the curated `gemma4:12b` tag and the
+  first-party QAT `q4_0` GGUF fail to load; its row is measured on the manifest-primary vLLM w4a16
+  checkpoint instead. The curated `gemma4:e4b` / `:26b` tags are unaffected because Ollama's own
+  engine serves them.
+
+The per-model JSON for this baseline is a scratch artifact, not a run bundle: re-measure with the
+same protocol rather than citing the numbers after a backend or driver upgrade.
+
 For the model-architecture details behind these factors (MoE routing, attention variants,
 sliding-window attention), see the
 [LLM architecture gallery](https://sebastianraschka.com/llm-architecture-gallery/). To size a run

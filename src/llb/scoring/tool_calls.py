@@ -30,6 +30,15 @@ class ToolCall:
     raw: str = ""
 
 
+@dataclass(frozen=True)
+class ToolCallParse:
+    """A tool-call parse that preserves whether an unreadable call was attempted."""
+
+    call: ToolCall | None
+    attempted: bool
+    error: str | None = None
+
+
 def _load_args(raw: Any) -> tuple[dict[str, Any], bool]:
     """Coerce an arguments payload (a dict or a JSON string) into (dict, well_formed)."""
     if isinstance(raw, dict):
@@ -96,6 +105,51 @@ def parse_tool_call(raw: Any) -> ToolCall | None:
     if isinstance(raw, str):
         return _from_text_tool_call(raw)
     return None
+
+
+def parse_tool_call_detailed(raw: Any) -> ToolCallParse:
+    """Parse a call without collapsing malformed JSON into an ordinary prose answer.
+
+    `parse_tool_call` intentionally keeps its legacy return contract. The agent loop-policy lane
+    needs the extra `attempted` bit so a response such as a truncated JSON object can be repaired
+    or rejected without treating the formatting failure as a final answer.
+    """
+    call = parse_tool_call(raw)
+    if call is not None:
+        return ToolCallParse(call=call, attempted=True)
+    if raw is None:
+        return ToolCallParse(call=None, attempted=False)
+    if isinstance(raw, dict):
+        return ToolCallParse(call=None, attempted=True, error="tool-call object has no name")
+    tool_calls = getattr(raw, "tool_calls", None)
+    if tool_calls:
+        return ToolCallParse(call=None, attempted=True, error="native tool call is unreadable")
+    if not isinstance(raw, str):
+        return ToolCallParse(call=None, attempted=False)
+    text = raw.strip()
+    if not _looks_like_structured_call(text):
+        return ToolCallParse(call=None, attempted=False)
+    try:
+        parsed = parse_json_block(text)
+    except json.JSONDecodeError as exc:
+        return ToolCallParse(
+            call=None,
+            attempted=True,
+            error=f"invalid JSON at line {exc.lineno} column {exc.colno}: {exc.msg}",
+        )
+    if isinstance(parsed, dict):
+        return ToolCallParse(call=None, attempted=True, error="tool-call object has no name")
+    return ToolCallParse(call=None, attempted=True, error="tool call must be a JSON object")
+
+
+def _looks_like_structured_call(text: str) -> bool:
+    """Conservative marker for a JSON call attempt, excluding ordinary prose answers."""
+    if not text:
+        return False
+    lowered = text.casefold()
+    return text.startswith(("{", "```")) or any(
+        marker in lowered for marker in ('"name"', '"tool"', '"arguments"', '"function"')
+    )
 
 
 def _required_argument_errors(required: list[str], arguments: dict[str, Any]) -> list[str]:

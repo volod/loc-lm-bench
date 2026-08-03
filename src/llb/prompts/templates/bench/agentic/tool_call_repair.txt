@@ -1,0 +1,10 @@
+{{ original_prompt }}
+
+The previous response looked like a tool call but could not be parsed.
+Parse error: {{ parse_error }}
+Rejected response:
+{{ malformed_output }}
+
+Return exactly one valid JSON call matching one of these schemas:
+{{ tools_json }}
+Do not add prose or Markdown fences.

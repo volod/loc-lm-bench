@@ -71,6 +71,7 @@ def make_agent_node(
         context.telemetry.prompt_chars.append(len(prompt))
         if not budget.fits(len(prompt)):
             return {"finished": True, "overflow": True, "answer": ""}
+        context.telemetry.model_input_prompt_chars += len(prompt)
         raw = complete(prompt)
         n_steps = state.get("n_steps", 0) + 1
         call = parse_tool_call(raw)

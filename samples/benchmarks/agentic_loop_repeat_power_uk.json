@@ -1,0 +1,226 @@
+[
+  {
+    "id": "repeat-read-001",
+    "family": "read_verify",
+    "prompt": "Прочитай файл alpha.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"alpha.txt": "Код ALPHA-17"}},
+    "success": [{"kind": "answer_contains", "value": "ALPHA-17"}]
+  },
+  {
+    "id": "repeat-read-002",
+    "family": "read_verify",
+    "prompt": "Прочитай файл bravo.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"bravo.txt": "Код BRAVO-29"}},
+    "success": [{"kind": "answer_contains", "value": "BRAVO-29"}]
+  },
+  {
+    "id": "repeat-read-003",
+    "family": "read_verify",
+    "prompt": "Прочитай файл cedar.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"cedar.txt": "Код CEDAR-31"}},
+    "success": [{"kind": "answer_contains", "value": "CEDAR-31"}]
+  },
+  {
+    "id": "repeat-read-004",
+    "family": "read_verify",
+    "prompt": "Прочитай файл delta.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"delta.txt": "Код DELTA-43"}},
+    "success": [{"kind": "answer_contains", "value": "DELTA-43"}]
+  },
+  {
+    "id": "repeat-read-005",
+    "family": "read_verify",
+    "prompt": "Прочитай файл ember.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"ember.txt": "Код EMBER-59"}},
+    "success": [{"kind": "answer_contains", "value": "EMBER-59"}]
+  },
+  {
+    "id": "repeat-read-006",
+    "family": "read_verify",
+    "prompt": "Прочитай файл frost.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"frost.txt": "Код FROST-61"}},
+    "success": [{"kind": "answer_contains", "value": "FROST-61"}]
+  },
+  {
+    "id": "repeat-read-007",
+    "family": "read_verify",
+    "prompt": "Прочитай файл grove.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"grove.txt": "Код GROVE-73"}},
+    "success": [{"kind": "answer_contains", "value": "GROVE-73"}]
+  },
+  {
+    "id": "repeat-read-008",
+    "family": "read_verify",
+    "prompt": "Прочитай файл harbor.txt. Для перевірки повтори той самий виклик читання, потім заверши відповіддю з кодом.",
+    "setup": {"files": {"harbor.txt": "Код HARBOR-89"}},
+    "success": [{"kind": "answer_contains", "value": "HARBOR-89"}]
+  },
+  {
+    "id": "repeat-search-001",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер орбіта. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s1": "Маркер орбіта має число 14.", "d1": "Сторонній запис без маркера."}},
+    "success": [{"kind": "answer_contains", "value": "14"}]
+  },
+  {
+    "id": "repeat-search-002",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер калина. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s2": "Маркер калина має число 22.", "d2": "Інший короткий документ."}},
+    "success": [{"kind": "answer_contains", "value": "22"}]
+  },
+  {
+    "id": "repeat-search-003",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер полонина. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s3": "Маркер полонина має число 35.", "d3": "Нерелевантна довідка."}},
+    "success": [{"kind": "answer_contains", "value": "35"}]
+  },
+  {
+    "id": "repeat-search-004",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер обрій. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s4": "Маркер обрій має число 47.", "d4": "Текст про погоду."}},
+    "success": [{"kind": "answer_contains", "value": "47"}]
+  },
+  {
+    "id": "repeat-search-005",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер трембіта. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s5": "Маркер трембіта має число 58.", "d5": "Опис міської площі."}},
+    "success": [{"kind": "answer_contains", "value": "58"}]
+  },
+  {
+    "id": "repeat-search-006",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер джерело. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s6": "Маркер джерело має число 63.", "d6": "Замітка про транспорт."}},
+    "success": [{"kind": "answer_contains", "value": "63"}]
+  },
+  {
+    "id": "repeat-search-007",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер фортеця. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s7": "Маркер фортеця має число 76.", "d7": "Нотатка про рослини."}},
+    "success": [{"kind": "answer_contains", "value": "76"}]
+  },
+  {
+    "id": "repeat-search-008",
+    "family": "search_verify",
+    "prompt": "Знайди в корпусі маркер сузір'я. Для перевірки повтори той самий пошук, потім назви число біля маркера.",
+    "setup": {"corpus": {"s8": "Маркер сузір'я має число 91.", "d8": "Загальний службовий текст."}},
+    "success": [{"kind": "answer_contains", "value": "91"}]
+  },
+  {
+    "id": "repeat-calc-001",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 17 + 26. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "43"}]
+  },
+  {
+    "id": "repeat-calc-002",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 9 * 7. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "63"}]
+  },
+  {
+    "id": "repeat-calc-003",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 144 / 12. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "12"}]
+  },
+  {
+    "id": "repeat-calc-004",
+    "family": "calculator_verify",
+    "prompt": "Обчисли (8 + 5) * 4. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "52"}]
+  },
+  {
+    "id": "repeat-calc-005",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 225 - 78. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "147"}]
+  },
+  {
+    "id": "repeat-calc-006",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 11 ** 2. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "121"}]
+  },
+  {
+    "id": "repeat-calc-007",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 196 // 14. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "14"}]
+  },
+  {
+    "id": "repeat-calc-008",
+    "family": "calculator_verify",
+    "prompt": "Обчисли 83 % 9. Для перевірки повтори точно той самий виклик калькулятора, потім заверши відповіддю.",
+    "setup": {},
+    "success": [{"kind": "answer_contains", "value": "2"}]
+  },
+  {
+    "id": "repeat-write-001",
+    "family": "state_mutation_verify",
+    "prompt": "Запиши значення cobalt-18 у файл out-a.txt. Для перевірки надійності повтори точно той самий виклик запису, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "out-a.txt", "value": "cobalt-18"}]
+  },
+  {
+    "id": "repeat-write-002",
+    "family": "state_mutation_verify",
+    "prompt": "Запиши значення linen-27 у файл out-b.txt. Для перевірки надійності повтори точно той самий виклик запису, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "out-b.txt", "value": "linen-27"}]
+  },
+  {
+    "id": "repeat-write-003",
+    "family": "state_mutation_verify",
+    "prompt": "Запиши значення maple-39 у файл out-c.txt. Для перевірки надійності повтори точно той самий виклик запису, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "out-c.txt", "value": "maple-39"}]
+  },
+  {
+    "id": "repeat-write-004",
+    "family": "state_mutation_verify",
+    "prompt": "Запиши значення silver-46 у файл out-d.txt. Для перевірки надійності повтори точно той самий виклик запису, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "file_equals", "path": "out-d.txt", "value": "silver-46"}]
+  },
+  {
+    "id": "repeat-db-001",
+    "family": "state_mutation_verify",
+    "prompt": "Збережи в базі під ключем token-a значення amber-54. Для перевірки повтори точно той самий виклик збереження, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "token-a", "value": "amber-54"}]
+  },
+  {
+    "id": "repeat-db-002",
+    "family": "state_mutation_verify",
+    "prompt": "Збережи в базі під ключем token-b значення birch-68. Для перевірки повтори точно той самий виклик збереження, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "token-b", "value": "birch-68"}]
+  },
+  {
+    "id": "repeat-db-003",
+    "family": "state_mutation_verify",
+    "prompt": "Збережи в базі під ключем token-c значення coral-75. Для перевірки повтори точно той самий виклик збереження, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "token-c", "value": "coral-75"}]
+  },
+  {
+    "id": "repeat-db-004",
+    "family": "state_mutation_verify",
+    "prompt": "Збережи в базі під ключем token-d значення denim-82. Для перевірки повтори точно той самий виклик збереження, потім заверши.",
+    "setup": {},
+    "success": [{"kind": "db_equals", "key": "token-d", "value": "denim-82"}]
+  }
+]

@@ -295,12 +295,47 @@ AGENTIC_CONTEXT_POLICY ?= full
 AGENTIC_BASE_URL ?=
 AGENTIC_MAX_MODEL_LEN ?=
 
+# Agent loop-policy grid. The exact legacy baseline (6,answer,allow) must remain in every sweep so
+# all completion and cost deltas stay paired against shipped behavior.
+AGENT_LOOP_TASKS ?= $(AGENTIC_TASKS)
+AGENT_MAX_STEPS ?= 4,6,10
+AGENT_MALFORMED_POLICY ?= answer,repair_once,strict
+AGENT_REPEATED_CALL_POLICY ?= allow,noop
+AGENT_REPEAT_FEEDBACK ?= current
+AGENT_LOOP_MAX_PROMPT_CHARS ?=
+AGENT_LOOP_BASE_URL ?= $(AGENTIC_BASE_URL)
+AGENT_LOOP_MAX_MODEL_LEN ?= $(AGENTIC_MAX_MODEL_LEN)
+AGENT_LOOP_POWER_DESIGN ?=
+AGENT_LOOP_FEEDBACK_DESIGN ?=
+AGENT_LOOP_MODEL_FAMILY ?=
+AGENT_LOOP_REPEAT_POWER_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_repeat_power_uk.json
+AGENT_LOOP_REPEAT_POWER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_repeat_power_design.json
+AGENT_LOOP_REPEAT_POWER_ROSTER ?= gemma=hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M qwen=qwen3:14b
+AGENT_LOOP_FEEDBACK_DESIGN_FILE ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_localization_design.json
+AGENT_LOOP_FEEDBACK_GENERALIZATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_generalization_design.json
+AGENT_LOOP_FEEDBACK_GENERALIZATION_TASKS ?= $(AGENT_LOOP_REPEAT_POWER_TASKS)
+AGENT_LOOP_FEEDBACK_ADAPTATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_family_adaptation_design.json
+AGENT_LOOP_FEEDBACK_ADAPTATION_TASKS ?= $(AGENT_LOOP_REPEAT_POWER_TASKS)
+AGENT_LOOP_FEEDBACK_TRANSFER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_task_family_transfer_design.json
+AGENT_LOOP_FEEDBACK_TRANSFER_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_task_family_transfer.json
+AGENT_LOOP_FEEDBACK_AUTHORITY_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_controller_authority_design.json
+AGENT_LOOP_FEEDBACK_AUTHORITY_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_loop_feedback_controller_authority.json
+AGENT_LOOP_CONTROLLER_CHANNEL_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_authority_design.json
+AGENT_LOOP_CONTROLLER_CHANNEL_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_authority.json
+AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_cross_model_design.json
+AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_cross_model.json
+AGENT_LOOP_CONTROLLER_PREAMBLE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_preamble_placement_design.json
+AGENT_LOOP_CONTROLLER_PREAMBLE_TASKS ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_controller_channel_authority.json
+
 # Agent context-management policies (bench-agentic-context): rank how the agent LOOP spends its
 # context window for one fixed model. `full` is the baseline every other policy is paired against.
 AGENT_CONTEXT_POLICIES ?= full,observation_cap,keep_last_n,compact
 AGENT_CONTEXT_TASKS ?= $(AGENTIC_TASKS)
 AGENT_CONTEXT_MAX_STEPS ?= $(AGENTIC_MAX_STEPS)
 AGENT_CONTEXT_OBSERVATION_CAP_CHARS ?= 800
+# Fraction of the observation-cap budget kept from the HEAD (rest from the tail).
+AGENT_CONTEXT_OBSERVATION_HEAD_SHARE ?= 0.6
+# Also trims live steps under the compact policy (same cap + aggregate header).
 AGENT_CONTEXT_KEEP_LAST_N ?= 3
 AGENT_CONTEXT_COMPACT_SHARE ?= 0.5
 # Leave empty to resolve the served model's usable window; set to force a prompt-char budget
@@ -308,6 +343,45 @@ AGENT_CONTEXT_COMPACT_SHARE ?= 0.5
 AGENT_CONTEXT_MAX_PROMPT_CHARS ?=
 AGENT_CONTEXT_BASE_URL ?= $(AGENTIC_BASE_URL)
 AGENT_CONTEXT_MAX_MODEL_LEN ?=
+# Constant-sweep task set (large observations); defaults to the same agentic task path.
+AGENT_CONTEXT_SWEEP_TASKS ?= $(AGENT_CONTEXT_TASKS)
+AGENT_CONTEXT_SWEEP_MAX_STEPS ?= $(AGENT_CONTEXT_MAX_STEPS)
+AGENT_CONTEXT_SWEEP_AXES ?= observation_cap_chars,observation_head_share,keep_last_n
+AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS ?= $(AGENT_CONTEXT_MAX_PROMPT_CHARS)
+AGENT_CONTEXT_SWEEP_BASE_URL ?= $(AGENT_CONTEXT_BASE_URL)
+AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN ?= $(AGENT_CONTEXT_MAX_MODEL_LEN)
+# keep_last_n long-transcript lane: multi-step medium-observation tasks + raised step budget.
+AGENT_CONTEXT_KEEP_LONG_TASKS ?= $(DATA_DIR)/agentic-context/tasks_long_transcript.json
+AGENT_CONTEXT_KEEP_LONG_MAX_STEPS ?= 12
+AGENT_CONTEXT_KEEP_LONG_AXES ?= keep_last_n
+AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH ?= $(DATA_DIR)/agentic-context/tasks_24_ua_squad.json
+AGENT_CONTEXT_KEEP_LONG_MAX_MATCH_DOCS ?= 6
+AGENT_CONTEXT_KEEP_LONG_MAX_OTHER_DOCS ?= 6
+AGENT_CONTEXT_KEEP_LONG_MAX_DOC_CHARS ?= 180
+# Active compact-vs-cap long-transcript lane. The tighter prompt budget keeps cap usable while
+# ensuring the shipped compact_share trigger is crossed after live observation trimming.
+AGENT_CONTEXT_COMPACT_LONG_TASKS ?= $(AGENT_CONTEXT_KEEP_LONG_TASKS)
+AGENT_CONTEXT_COMPACT_LONG_MAX_STEPS ?= 12
+AGENT_CONTEXT_COMPACT_LONG_MAX_PROMPT_CHARS ?= 16000
+AGENT_CONTEXT_COMPACT_LONG_COMPACT_SHARE ?= 0.5
+AGENT_CONTEXT_COMPACT_LONG_BASE_URL ?= $(AGENT_CONTEXT_BASE_URL)
+AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN ?= $(AGENT_CONTEXT_MAX_MODEL_LEN)
+# Memory-dependent compact-vs-cap lane: early read-once fact plus externally checked later work.
+AGENT_CONTEXT_COMPACT_MEMORY_TASKS ?= $(DATA_DIR)/agentic-compact-vs-cap/tasks_memory_dependent.json
+AGENT_CONTEXT_COMPACT_MEMORY_N_TASKS ?= 8
+AGENT_CONTEXT_COMPACT_MEMORY_DEPTH ?= 8
+AGENT_CONTEXT_COMPACT_MEMORY_PAD_CHARS ?= 1200
+AGENT_CONTEXT_COMPACT_MEMORY_MAX_STEPS ?= 14
+AGENT_CONTEXT_COMPACT_MEMORY_MAX_PROMPT_CHARS ?= 8000
+AGENT_CONTEXT_COMPACT_MEMORY_COMPACT_SHARE ?= 0.5
+AGENT_CONTEXT_COMPACT_MEMORY_MIN_COMPACTION_RATE ?= 0.75
+AGENT_CONTEXT_COMPACT_MEMORY_BASE_URL ?= $(AGENT_CONTEXT_BASE_URL)
+AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN ?= $(AGENT_CONTEXT_MAX_MODEL_LEN)
+AGENT_CONTEXT_COMPACT_MEMORY_TRANSFER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_transfer_design.json
+AGENT_CONTEXT_COMPACT_MEMORY_REPLICATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_replication_design.json
+AGENT_CONTEXT_COMPACT_MEMORY_BOUNDARY_SURFACE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_memory_boundary_surface_design.json
+AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json
+AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_fold_step_crossover_design.json
 KNOWLEDGE_CUTOFF_EVENTS ?=
 KNOWLEDGE_CUTOFF_DATASET ?= apoorvumang/knowledge-cutoff-benchmark
 KNOWLEDGE_CUTOFF_REVISION ?= main

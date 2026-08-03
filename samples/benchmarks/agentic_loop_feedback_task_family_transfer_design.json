@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-loop-gemma-feedback-task-family-transfer-v1",
+  "study_kind": "repeat_feedback_task_family_transfer",
+  "hypothesis": "Completed-state feedback will make Gemma advance after a suppressed repeat in at least three task families while preserving material completion and paired cost bounds.",
+  "reference": {
+    "task_set_digest": "10fef23bc2b2d855f6b7395d7e94ac42013005b4967d29d1a968ada99a215465",
+    "excluded_prior_task_set_digests": [
+      "eb05651bf9b50f8cefd85c1dfcf2ba60f0d1a51ab031230f0fd861fceb5227cc"
+    ]
+  },
+  "planned_n": 32,
+  "minimum_detectable_completion_gain": 0.125,
+  "minimum_discordant_pairs": 4,
+  "required_task_families": {
+    "calculator_holdout": 8,
+    "mutation_holdout": 8,
+    "read_holdout": 8,
+    "search_holdout": 8
+  },
+  "minimum_activation_rate": 0.5,
+  "minimum_activated_tasks_per_family": 2,
+  "maximum_relative_cost_increase": {
+    "total_model_input_tokens": 0.1,
+    "elapsed_s": 0.2
+  },
+  "required_model_families": ["gemma"],
+  "roster": [
+    {
+      "model_family": "gemma",
+      "model": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M",
+      "backend": "ollama"
+    }
+  ],
+  "repeat_feedback_variants": ["current", "gemma_progress"],
+  "candidate_feedback_variant": "gemma_progress",
+  "notice_text": "[loop] The previous action already succeeded. Continue from its result instead of repeating it.",
+  "maximum_notice_chars": 120,
+  "forbidden_notice_terms": [
+    "answer",
+    "calculator",
+    "database",
+    "file",
+    "mutation",
+    "read",
+    "search",
+    "tool",
+    "write"
+  ],
+  "run_seeds": [41, 73],
+  "sampling": {
+    "temperature": 0.2
+  },
+  "task_family_response_rule": {
+    "minimum_response_rate": 0.25,
+    "minimum_supported_task_families_per_seed": 3,
+    "minimum_supported_seeds": 2
+  },
+  "fixed_policy": {
+    "max_steps": 6,
+    "malformed_call": "answer",
+    "repeated_call": ["allow", "noop"]
+  },
+  "max_model_len": 8192
+}

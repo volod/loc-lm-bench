@@ -25,7 +25,12 @@ from llb.bench.agentic.context_budget import (
     prompt_tokens,
     unbounded_budget,
 )
-from llb.bench.agentic.episode import build_agent_prompt, build_agent_prompt_lines, run_episode
+from llb.bench.agentic.episode import (
+    build_agent_prompt,
+    build_agent_prompt_lines,
+    run_episode,
+    step_prompt,
+)
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
     STATUS_CONTEXT_OVERFLOW,
@@ -165,6 +170,67 @@ def test_compact_injects_search_aggregate_facts_into_the_summary():
     assert "модель забула число" in state.summary
 
 
+def test_compact_trims_live_observations_with_aggregate_headers():
+    """Live compact steps share observation_cap trimming so a fat hit list does not re-blow."""
+    from llb.bench.agentic.context import summary_hit_count
+
+    state = ContextState()
+    policy = ContextPolicy(name=POLICY_COMPACT, observation_cap_chars=100)
+    hits = "\n".join(f"[d{i}] body-{i}-" + ("x" * 40) for i in range(6))
+    state.record(policy, "search", {"query": "q"}, hits)
+    assert state.telemetry.n_trimmed_observations == 1
+    lines = policy_history_lines(policy, state)
+    assert "hits=6" in lines[0] and "обрізано" in lines[0]
+    assert summary_hit_count("") is None
+
+
+def test_compact_finish_cue_when_summary_already_has_hit_facts():
+    """After folding a search, the next prompt must steer the model to finish, not search again."""
+    state = ContextState()
+    policy = ContextPolicy(name=POLICY_COMPACT, compact_keep_recent=1)
+    hits = "\n".join(f"[d{i}] body" for i in range(3))
+    state.record(policy, "search", {"query": "q"}, hits)
+    assert compact_state(policy, state, lambda _older: "модель забула число") is True
+    lines = policy_history_lines(policy, state)
+    assert any("підсумок попередніх кроків" in line for line in lines)
+    cue = next(line for line in lines if "підказка" in line)
+    assert "hits=3" in cue and "finish" in cue
+
+
+def test_compact_count_episode_finishes_from_live_aggregate_header():
+    """With live trimming, compact recovers a count the way observation_cap does: header -> finish."""
+    corpus = {f"d{i}": f"тема {i} згадка" for i in range(4)}
+    hits_blob = "\n".join(f"[{doc}] {text}" for doc, text in corpus.items())
+    # Oversized observation so the trim path fires; the scripted model finishes when it sees hits=.
+    fat = hits_blob + (" padding" * 200)
+    task = AgenticTask(
+        "search-count-000",
+        "скільки документів згадують тему",
+        setup={"corpus": {"blob": fat}},
+        success=[{"kind": "answer_contains", "value": "1"}],
+    )
+
+    def complete(prompt: str) -> str:
+        if "Стисло підсумуй" in prompt:
+            return "знайдено документи"
+        if "hits=" in prompt:
+            # Prefer the machine header (or finish cue) over another search.
+            return '{"name":"finish","arguments":{"answer":"1"}}'
+        return '{"name":"search","arguments":{"query":"тема"}}'
+
+    episode = run_episode(
+        task,
+        complete,
+        budget=fixed_budget(12_000),
+        policy=ContextPolicy(name=POLICY_COMPACT, observation_cap_chars=200, compact_share=0.5),
+        max_steps=6,
+    )
+    assert episode.status == STATUS_COMPLETED
+    assert episode.success is True
+    assert episode.n_steps <= 3
+    assert episode.telemetry.n_trimmed_observations >= 1
+
+
 def test_compact_folds_the_whole_transcript_when_there_is_no_older_step():
     state, policy = state_with(1), ContextPolicy(name=POLICY_COMPACT, compact_keep_recent=1)
     assert compact_state(policy, state, lambda older: "стисло") is True
@@ -262,6 +328,42 @@ def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():
     assert "hits=5" in seen[0] and "docs=doc-0,doc-1,doc-2,doc-3,doc-4" in seen[0]
 
 
+def test_repeated_compaction_carries_the_prior_summary_and_aggregate_facts():
+    from llb.bench.agentic.context import summarize_entries
+
+    hits = "\n".join(f"[doc-{i}] text-{i}" for i in range(3))
+    seen: list[str] = []
+    telemetry = ContextState().telemetry
+    summarize_entries(
+        lambda prompt: seen.append(prompt) or "оновлений підсумок",
+        [("search", {"query": "q"}, hits)],
+        2000,
+        prior_summary="[агрегат: hits=2 chars=10 docs=old-a,old-b]. старий підсумок",
+        telemetry=telemetry,
+    )
+    assert "попередній підсумок" in seen[0] and "старий підсумок" in seen[0]
+    assert telemetry.compaction_prompt_chars == len(seen[0])
+    assert telemetry.model_input_prompt_chars == len(seen[0])
+
+    state = ContextState(summary="[агрегат: hits=2 chars=10 docs=old-a,old-b]")
+    policy = ContextPolicy(name=POLICY_COMPACT)
+    state.record(policy, "search", {"query": "q"}, hits)
+    assert compact_state(policy, state, lambda _older: "оновлений підсумок") is True
+    assert "docs=old-a,old-b" in state.summary
+    assert "docs=doc-0,doc-1,doc-2" in state.summary
+
+
+def test_compact_preserves_typed_memory_and_cues_finish_after_workflow_completion():
+    state = ContextState()
+    policy = ContextPolicy(name=POLICY_COMPACT, compact_keep_recent=1)
+    state.record(policy, "advance", {"token": "t0"}, "[memory: final_code=MEM-001]")
+    state.record(policy, "advance", {"token": "t1"}, "[workflow complete]")
+    assert compact_state(policy, state, lambda _older: "етап виконано") is True
+    assert "[memory: final_code=MEM-001]" in state.summary
+    lines = policy_history_lines(policy, state)
+    assert any('finish з answer="MEM-001"' in line for line in lines)
+
+
 def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
     budget, prompts = fixed_budget(6000), []
 
@@ -277,7 +379,8 @@ def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
         search_task(),
         complete,
         budget=budget,
-        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5),
+        # Cap above BIG so live trimming does not prevent the compact trigger this test measures.
+        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5, observation_cap_chars=100_000),
     )
     summarize_calls = [p for p in prompts if "Стисло підсумуй" in p]
     assert summarize_calls and all(budget.fits(len(p)) for p in summarize_calls)
@@ -296,11 +399,38 @@ def test_compact_calls_the_model_for_a_summary_once_the_trigger_is_crossed():
         search_task(),
         complete,
         budget=fixed_budget(8000),
-        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5, compact_keep_recent=1),
+        policy=ContextPolicy(
+            name=POLICY_COMPACT,
+            compact_share=0.5,
+            compact_keep_recent=1,
+            observation_cap_chars=100_000,
+        ),
     )
     assert episode.telemetry.n_compactions >= 1
     assert episode.status == STATUS_COMPLETED
     assert any("Стисло підсумуй" in p for p in prompts)
+
+
+def test_compact_uses_full_budget_as_hysteresis_after_first_summary():
+    state = ContextState(summary="remembered code")
+    policy = ContextPolicy(
+        name=POLICY_COMPACT,
+        compact_share=0.5,
+        observation_cap_chars=100_000,
+    )
+    state.record(policy, "read_file", {"path": "stage.txt"}, "x" * 2500)
+    calls: list[str] = []
+    prompt = step_prompt(
+        search_task(),
+        tool_catalog(),
+        policy,
+        state,
+        fixed_budget(8000),
+        lambda text: calls.append(text) or "updated",
+    )
+    assert 4000 < len(prompt) < 8000
+    assert calls == []
+    assert state.telemetry.n_compactions == 0
 
 
 # --- telemetry ----------------------------------------------------------------------------
@@ -317,6 +447,8 @@ def test_case_row_carries_the_context_columns():
     )
     row = _row(task, episode)
     assert row["max_prompt_tokens"] > 0 and row["total_prompt_tokens"] >= row["max_prompt_tokens"]
+    assert row["total_model_input_tokens"] > 0
+    assert row["n_model_calls"] == episode.n_steps + episode.telemetry.n_compactions
     assert row["observation_bytes"] > 0
     assert row["n_trimmed_observations"] == 1 and row["n_compactions"] == 0
     json.dumps(row)  # the row stays persistable

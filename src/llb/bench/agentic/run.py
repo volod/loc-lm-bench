@@ -11,7 +11,7 @@ from typing import Any
 
 from llb.bench.agentic.context import POLICY_FULL, ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget, prompt_tokens
-from llb.bench.agentic.episode import _resolve_harness, _run_episodes, _score_episodes
+from llb.bench.agentic.batch import _resolve_harness, _run_episodes, _score_episodes
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     HARNESS_LOOP,

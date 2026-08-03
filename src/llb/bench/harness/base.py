@@ -9,6 +9,7 @@ catalog, so the loop's results are unchanged by the agentic harness comparison r
 from llb.bench.agentic.context import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask, Episode
 from llb.bench.common import LLMComplete
 from llb.core.contracts.benchmarks import ToolDef
@@ -22,6 +23,7 @@ def loop_harness(
     max_steps: int = DEFAULT_MAX_STEPS,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
 ) -> Episode:
     """The pure loop as a `Harness`: drive one task through `run_episode` over `catalog`."""
     return run_episode(
@@ -31,4 +33,5 @@ def loop_harness(
         max_steps=max_steps,
         policy=policy,
         budget=budget,
+        loop_policy=loop_policy,
     )

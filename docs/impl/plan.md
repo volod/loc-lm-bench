@@ -43,103 +43,79 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-compact-finish-recovery (optional)
+### agent-context-policy-summary-input-cap (optional)
 
-Aggregate-safe headers recovered the `search-count` slice under `observation_cap` but not under
-`compact`: on the Blackwell re-run, compact still burns the 6-step budget with repeated
-compactions and never calls `finish`
-([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)).
-Diagnose whether compact should also apply observation-cap trimming to live steps, force a
-finish-oriented compaction cue when aggregate facts are already in the summary, or be recorded as
-inapplicable for count-heavy task sets at this step budget.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the aggregate header path and the kind-split report.
-- User-visible outcome: an operator who prefers compact for prompt cost learns whether count tasks
-  can finish under it, or is told to use `observation_cap` for that slice.
-- Scope boundary: in scope -- compact finish behavior on the 24-task set. Out of scope -- new
-  policies or changing the observation_cap char default.
-- Documentation target: [extended workflows](current/extended-workflows.md#aggregate-safe-trimming).
-
-### agent-context-policy-constant-sweep (optional)
-
-Three constants decide what the agent context policies do, and all three were chosen to be
-reasonable rather than measured: `DEFAULT_OBSERVATION_CAP_CHARS = 800`, the 60/40 head/tail split of
-that budget (`OBSERVATION_HEAD_SHARE`), and `DEFAULT_KEEP_LAST_N = 3`
-([extended workflows](current/extended-workflows.md#agent-context-management-policies)). The measured
-run makes the third one urgent in its own right: `keep_last_n` moved the prompt by 20 tokens and
-changed nothing, because at a 6-step budget with 3 steps kept the oversized observation that blew the
-prompt is always INSIDE the kept window. Either that policy needs a keep small enough to reach the
-blowup on realistic step budgets, or it is a policy for long transcripts that this task shape cannot
-exercise -- and the lane should say which. Sweep the three constants on a task set whose observations
-are large, report completion against prompt tokens per setting, and pin each value with evidence or
-expose it.
+The compact policy caps the summarize call's INPUT at the compaction trigger
+(`summary_input_cap = budget.compaction_trigger_chars(compact_share)` in
+`src/llb/bench/agentic/episode.py`), which makes the summarizer the ONE part of the compact cost that
+is not a step function of the fold step: inside a single fold step the controller prompts are
+bit-identical while the summarize input moves continuously with the trigger
+([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
+Two consequences are unmeasured. The cap also TRIMS the folded transcript head-and-tail once that
+transcript outgrows it, so a deeper transcript is summarized with a middle-elided one whose elided
+span widens as the trigger shrinks, and nothing checks what the elision costs in completion. Pin the
+cap to a step-aligned quantity instead -- the folded transcript's own size, or the step's cap prompt
+-- then re-run one ladder: the within-step residual should fall to zero, and the elision-versus-
+completion reading says whether the shipped cap is trimming evidence the summary needed.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `trim_observation` in `src/llb/bench/agentic/context.py` and the paired
-  reading in `src/llb/bench/agentic_context_report.py` unchanged.
-- User-visible outcome: the shipped policy constants are measured tradeoffs between prompt cost and
-  completion, not round numbers, and `keep_last_n` is either useful at some setting or recorded as
-  inapplicable at this step budget.
-- Scope boundary: in scope -- the cap grid, the head/tail split A/B, the `keep_last_n` grid read
-  against `max_steps`, and a pin-or-expose verdict per constant. Out of scope -- new policies, a
-  content-aware trim beyond the delivered aggregate header
-  ([extended workflows](current/extended-workflows.md#aggregate-safe-trimming)), and changing the
-  shipped defaults before a paired delta supports it.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout, one bundle per
-  setting.
-- Execution path: `make bench-agentic-context AGENT_CONTEXT_POLICIES=observation_cap,keep_last_n
-  AGENT_CONTEXT_OBSERVATION_CAP_CHARS=<c> AGENT_CONTEXT_KEEP_LAST_N=<n>` per setting on the CUDA
-  host; CI covers the trim's span arithmetic over committed fixtures.
-- Acceptance gates: `make ci` green; the report carries completion and prompt tokens per setting with
-  paired intervals against the shipped values, and states a verdict per constant.
-- Documentation target: the policy list of
-  [extended workflows](current/extended-workflows.md#agent-context-management-policies).
+- Dependencies: the fold-step ladder and its controller-versus-summarizer cost split are current
+  behavior ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard));
+  reuse the committed fold-step design, the cell gate, and the within-step band unchanged.
+- User-visible outcome: the compact cost becomes a pure step function an operator can predict from
+  the fold step alone, and the summarizer's trimming is a measured choice rather than a side effect
+  of the trigger.
+- Scope boundary: in scope -- the step-aligned cap, one ladder re-run, the residual reading, and the
+  completion check on the elided span. Out of scope -- changing the summary prompt, the compaction
+  hysteresis, and the shipped `compact_share`.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 
-### agent-harness-loop-policy-recommendation
+### agent-context-policy-hysteresis-second-fold (optional)
 
-The harness comparison varies the FRAMEWORK and holds the loop policy fixed
-([extended workflows](current/extended-workflows.md#agentic-harness-comparison)), so the loop's own
-constants have never been measured on anything. Two of them decide episodes: `DEFAULT_MAX_STEPS = 6`
-is a guess, and a tool call the parser cannot read is treated as the FINAL ANSWER and ends the
-episode (`parse_tool_call` returning `None` in `src/llb/bench/agentic/episode.py`), so a model that
-emits almost-valid JSON is scored as though it chose to stop -- a formatting failure and a reasoning
-failure become the same number. Sweep the loop policy the way the framework is swept and recommend
-one per model: `max_steps` over a small grid, the malformed-call policy (`answer`, today's behavior,
-versus `repair_once` -- reprompt once with the schema and the parse error -- versus `strict`, which
-counts the step as failed and continues), and repeated-identical-call handling (allow versus a
-recorded no-op with a note back to the model). Report completion rate against COST, because a step
-budget buys completion with tokens and wall clock, and a recommendation that ignores the price is
-not usable on a 16 GiB host.
+Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
+out of the cost once the trigger is fixed: after the first summary, trigger hysteresis raises the
+next trigger to the full guard, and no tested transcript grows back that far
+([extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis)).
+The trigger-only rule is therefore established only in the one-fold regime, and the regime where
+compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
+(or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
+equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
+portable rule needs a stated validity limit.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. The cost side reads the per-episode prompt-token telemetry every
-  `AgenticCaseRow` already carries
-  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)). Reuse the
-  harness resolution and comparison seam in `src/llb/bench/agentic/run.py` and
-  `src/llb/board/harnesses.py`, and the tool-call parser in `src/llb/scoring/tool_calls.py`.
-- User-visible outcome: the operator gets a per-model loop configuration with evidence -- how many
-  steps to allow, and whether to repair a malformed tool call -- instead of inheriting three
-  constants nobody measured.
-- Scope boundary: in scope -- the knob sweep, the malformed-call rate reported SEPARATELY from
-  completion so a repair gain is attributable to formatting rather than to reasoning, the
-  cost columns, and the per-model recommendation. Out of scope -- new harness frameworks, changes to
-  the tool catalog or world, trajectory-judge changes, and changing the shipped defaults before a
-  paired delta supports it.
-- Data and artifact paths: one bundle per policy cell under `$DATA_DIR/agentic-loop-policy/<run>/`;
-  the comparison beside it.
-- Execution path: `make bench-agentic-loop AGENT_MAX_STEPS=4,6,10 AGENT_MALFORMED_POLICY=answer,repair_once,strict
-  MODEL=<model> BACKEND=<backend>` on the CUDA host over roster-family strata until the declared
-  family-coverage and paired-precision targets are reached, since a repair policy is a property of
-  the model's formatting behavior; CI covers each policy's branch over the fake endpoint, including
-  a completion the parser cannot read.
-- Acceptance gates: `make ci` green; the `answer` policy at `max_steps=6` reproduces the recorded
-  agentic rows exactly; every cell reports completion, malformed-call rate, steps, tool calls, and
-  prompt tokens with a paired delta against that baseline cell; a default changes only when its
-  delta clears zero under the standard verdict; the recommendation states the cost of each
-  recommended knob.
-- Documentation target: the agentic harness section of
-  [extended workflows](current/extended-workflows.md#agentic-harness-comparison).
+- Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
+  crossing requires; reuse the collapse design, the cell gate, and the equivalence band unchanged.
+- User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
+  explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
+- Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger
+  family inside it, and the validity statement. Out of scope -- new families, new task shapes, and
+  changing shipped compaction hysteresis.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
+
+### agent-context-policy-imperfect-play-guard-margin (optional)
+
+The deterministic cap-peak probe
+(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
+the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
+token grows the transcript past that peak, and a guard chosen just above it can still overflow on
+the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
+budget allows (max steps rather than depth), record the measured extra steps per episode from the
+existing bundles, and turn the difference into a stated safety margin the design validation applies
+when it certifies a cell as cap-fitting.
+
+- Agent status: CLEAR
+- Dependencies: the probe and the band check in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py`; the per-episode step counts are already
+  persisted in the compact-vs-cap bundles.
+- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
+  actually runs it, not only for a perfect controller.
+- Scope boundary: in scope -- the worst-case probe, the margin constant, and the validation change.
+  Out of scope -- re-running the surface, changing the interpolation rule, or relaxing the
+  activation floor.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 
 ### agent-operating-profile-recommendation
 
@@ -158,9 +134,12 @@ lane never ran is emitted as `unmeasured`, never as a default dressed up as a re
 is the whole failure mode a composed profile invites.
 
 - Agent status: RUN NEEDED
-- Dependencies: `agent-harness-loop-policy-recommendation` supplies the loop-policy field; the
-  context-policy field comes from the `agentic-context` bundles
-  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)) and the
+- Dependencies: the
+  [agent loop-policy recommendation](current/extended-workflows.md#agent-loop-policy-recommendation)
+  supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
+  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)), and for
+  memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary surface
+  ([extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface)); the
   rest are current behavior. Reuse `src/llb/board/recommend/`
   (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
   ([extended workflows](current/extended-workflows.md#staleness)), and the shared borderline
@@ -720,36 +699,6 @@ edit-precision audit per setting, and pin each value with evidence or expose it.
   reading of the audit calls wrong, per setting, with an explicit verdict per constant.
 - Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
-### fusion-routing-calibration-power (optional)
-
-Increase the sidecar-free routing calibration's statistical power before reconsidering its
-production defaults. The first held-out measurement cannot separate its positive retrieval deltas
-from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
-independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
-before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
-
-- Agent status: BLOCKED BY HUMAN
-- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
-  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
-  non-empty accepted multi-span ledger. Human
-  step that gates completion: accept enough additional genuinely multi-span questions to meet the
-  predeclared split sizes.
-- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
-  artifact before changing the fallback defaults.
-- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
-  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
-  a learned router, and selecting on final.
-- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
-  the accepted ledger.
-- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
-  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
-- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
-  power target; a threshold changes only if the tuning gain clears zero without single-span
-  regression and the untouched final split confirms the same direction.
-- Documentation target: the sidecar-free calibration subsections of
-  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
-
 ### conflict-null-model-research
 
 **Research task** -- the answer is not known in advance, and a negative result is a valid outcome
@@ -844,8 +793,9 @@ status rather than being scored as a wrong answer.
 - Scope boundary: in scope -- the envelope model, the boundary parse/validate function, the two new
   statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
   envelope, because the two call for different fixes and today collapse into one number), one
-  bounded `repair_once` reprompt carrying the validation error (the same policy shape
-  `agent-harness-loop-policy-recommendation` sweeps for tool calls), the per-case columns, and a
+  bounded `repair_once` reprompt carrying the validation error (the same policy shape measured by
+  the [agent loop-policy lane](current/extended-workflows.md#agent-loop-policy-recommendation) for
+  tool calls), the per-case columns, and a
   roster conformance study. Out of scope -- any SEMANTIC check on the envelope's contents (that is
   `ontology-validated-answer-gate`), changing the headline objective, constrained/grammar decoding
   in the backends, and making the envelope the default before the study supports it.
@@ -982,6 +932,64 @@ declining the hard items looks like a win.
   [RAG core](current/rag-core.md#scoring) beside the groundedness metrics, and the adopt-or-reject
   record per axiom class in [product decisions](current/scope-boundaries.md).
 
+### thinking-suppression-and-answer-language-guard
+
+`qwen3:30b` answers a Ukrainian benchmark prompt with first-person English deliberation ("Okay, I
+need to explain...") even though the launcher sends Ollama's native `think: false` on every call,
+so the thinking suppression the manifest relies on is not sufficient for that tag. Two scoring
+risks follow: reasoning text inflates the generated-token count that throughput and cost are
+derived from, and an English answer to a Ukrainian prompt is scored as content rather than caught
+as an off-language response. Add a per-response guard that detects a leaked-reasoning prefix and a
+dominant-script/language mismatch against the prompt, record both as named per-case flags in the
+run bundle beside the existing reliability fields, and decide per model whether suppression needs a
+prompt-level instruction on top of the API flag. Evidence for the observation is in the full-roster
+throughput baseline in [backend telemetry](current/backend-telemetry.md).
+
+- Agent status: RUN NEEDED
+- Dependencies: the throughput protocol in
+  [backend telemetry](current/backend-telemetry.md#telemetry-fields) and the correctness/reliability
+  fields in [RAG core](current/rag-core.md#scoring).
+- User-visible outcome: a run bundle shows how many answers leaked reasoning or answered in the
+  wrong language, per model, instead of silently scoring them as ordinary content.
+- Scope boundary: in scope -- the detection flags, their manifest fields, and a per-model
+  suppression verdict. Out of scope -- rewriting the judge or changing the objective's definition.
+- Execution path: re-run the roster throughput protocol capturing generations, then a bounded
+  `run-eval` cell per affected tag.
+- Acceptance gates: `make ci` green with injected fake generations covering leaked-reasoning,
+  off-language, and clean answers; the flags appear in the persisted manifest; every roster tag
+  carries an explicit suppression verdict, including the tags where no leak was observed.
+- Documentation target: the roster baseline in
+  [backend telemetry](current/backend-telemetry.md) and the scoring fields in
+  [RAG core](current/rag-core.md#scoring).
+
+### gemma4-gguf-runner-gap (optional)
+
+The host Ollama cannot serve a `gemma4` GGUF at all: 0.20 answers both the curated `gemma4:12b`
+tag and the first-party QAT `q4_0` GGUF with `unknown model architecture: 'gemma4'`, so the
+`gemma-4-12b-it-w4a16` entry has no Ollama path and only its vLLM checkpoint is measurable here
+(see the full-roster throughput baseline in
+[backend telemetry](current/backend-telemetry.md)).
+Any per-model result that resolves through Ollama therefore silently skips one manifest entry.
+Pin the minimum Ollama version that knows `gemma4` in the host setup path, make the resolver report
+an architecture-unsupported source as a NAMED skip instead of a generic backend error, and re-measure
+the entry on Ollama so the roster is served by one backend end to end.
+
+- Agent status: RUN NEEDED
+- Dependencies: the resolver source-selection behavior in
+  [platform matrix](current/platform-vector-matrix.md#multi-quant-vllm-resolution).
+- User-visible outcome: an unsupported-architecture source fails with a source-specific message
+  naming the runtime and the required version, and the roster has no backend-shaped hole.
+- Scope boundary: in scope -- the version floor, the named skip, and the re-measured entry. Out of
+  scope -- vendoring or building a llama.cpp runner.
+- Execution path: raise the host Ollama, re-run the roster throughput protocol, refresh the
+  baseline table.
+- Acceptance gates: `make ci` green; a source whose architecture the runtime rejects produces the
+  named error in a test with an injected fake; the refreshed table carries a measured Ollama row for
+  every manifest entry or records the entry as backend-unsupported with its reason.
+- Documentation target: the roster baseline in
+  [backend telemetry](current/backend-telemetry.md) and the host setup notes in
+  [host validation](current/host-validation.md).
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
@@ -1053,6 +1061,36 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
+
+### fusion-routing-calibration-power (optional)
+
+Increase the sidecar-free routing calibration's statistical power before reconsidering its
+production defaults. The first held-out measurement cannot separate its positive retrieval deltas
+from zero; see the compact result and frozen-policy diagnostics in
+[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
+independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
+before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
+
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
+  non-empty accepted multi-span ledger. Human
+  step that gates completion: accept enough additional genuinely multi-span questions to meet the
+  predeclared split sizes.
+- User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
+  artifact before changing the fallback defaults.
+- Scope boundary: in scope -- a prospective power target, disjoint tuning/final splits, and one
+  repeat of the existing deterministic calibration. Out of scope -- widening the threshold grid,
+  a learned router, and selecting on final.
+- Data and artifact paths: a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` calibration over
+  the accepted ledger.
+- Execution path: run `make calibrate-fusion-routing` with the predeclared splits, then run the
+  masked `make compare-graph-fusion` reproduction for the frozen policy on each split.
+- Acceptance gates: route precision/recall and paired retrieval intervals meet the predeclared
+  power target; a threshold changes only if the tuning gain clears zero without single-span
+  regression and the untouched final split confirms the same direction.
+- Documentation target: the sidecar-free calibration subsections of
+  [RAG core](current/rag-core.md) and [GraphRAG](current/graphrag-backend.md).
 
 ### calibrate-headline-format-weight
 

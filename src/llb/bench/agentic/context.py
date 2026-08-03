@@ -13,7 +13,10 @@ module makes it a POLICY ROW, exactly as `llb.bench.chain_context_policy` does f
     marker line so a missing step is visible instead of looking like it never happened;
   - ``compact``         -- a model-written running summary replaces the older steps once the prompt
     crosses a share of the usable window (the agent-loop counterpart of the chain lane's
-    ``summary``).
+    ``summary``). Live steps also get the observation-cap trim (with aggregate headers), and when
+    the summary already carries hit-count facts a finish cue tells the model to call ``finish``
+    rather than search again -- without those, compact burns the step budget on repeated
+    compactions and never answers count tasks.
 
 Everything here is pure and unit-testable over a fake ``complete``: the policy assembles a
 deterministic prompt from the transcript, and the telemetry it accumulates (prompt chars per step,
@@ -22,6 +25,7 @@ observation bytes, trims, compactions) is what makes the overflow observable aft
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -30,6 +34,7 @@ from llb.bench.agentic.context_aggregate import (
     format_aggregate_header,
     with_aggregate_header,
 )
+from llb.bench.agentic.controller_channel import ControllerChannel, ControllerFeedback
 from llb.prompts.registry import render_text
 
 # --- policy names (the ranked row labels) --------------------------------------------------
@@ -49,11 +54,17 @@ CONTEXT_POLICIES: tuple[str, ...] = (
 
 # `observation_cap`: chars kept per observation. Sized so a normal tool result (a db value, a
 # calculator answer, a search hit list) is untouched and only a dumped file/corpus blob is trimmed.
+# PINNED at 800 by the 2026-07-30 constant sweep (cap=400 separates worse on completion; cap=1600
+# is flat) -- see extended-workflows.md#agent-context-policy-constants.
 DEFAULT_OBSERVATION_CAP_CHARS = 800
 # Split of the kept budget between the head and the tail of a trimmed observation. A tool result
-# usually leads with its shape and ends with its payload, so both ends carry signal.
+# usually leads with its shape and ends with its payload, so both ends carry signal. PINNED at 0.6
+# by the same sweep (0.5 / 0.7 flat on completion); exposed as `--observation-head-share`.
 OBSERVATION_HEAD_SHARE = 0.6
-# `keep_last_n`: how many most-recent steps survive in the prompt.
+# `keep_last_n`: how many most-recent steps survive in the prompt. Shipped at 3; the constant sweep
+# EXPOSES the knob because keep=1 is flat on completion but separates cheaper on prompt tokens on
+# both the short fat-observation set and the longer medium-search set (mean_steps ~8-9) -- do not
+# silently rewrite the default from a cost-only reading.
 DEFAULT_KEEP_LAST_N = 3
 # `compact`: the share of the usable prompt budget that triggers a compaction, and how many recent
 # steps stay verbatim behind the summary (the model still needs its immediate working state).
@@ -71,10 +82,27 @@ _ELISION = "[...обрізано {dropped} символів...]"
 # steps went away with nothing standing in for them, `compact` says how many the summary covers.
 _DROPPED_MARKER = "- [опущено попередніх кроків: {dropped}]"
 _SUMMARY_MARKER = "- [підсумок попередніх кроків ({dropped}): {summary}]"
+# When compaction has already folded search-hit aggregates into the summary, a count task has the
+# answer in the prompt -- but without an explicit cue the model keeps searching and burning the
+# step budget on another compaction. Name the known hit count so finish is the obvious next call.
+_FINISH_CUE = (
+    "- [підказка: hits={hits} вже в підсумку -- виклич finish з цією відповіддю, не шукай знову]"
+)
+_AGGREGATE_HITS = re.compile(r"\[агрегат: hits=(\d+)\b")
+_MEMORY_MARKER = re.compile(r"\[memory: [^\]\n]+\]")
+_FINAL_CODE_MEMORY = re.compile(r"\[memory: final_code=([^\]\s]+)\]")
+_WORKFLOW_COMPLETE = "[workflow complete]"
+_MEMORY_FINISH_CUE = (
+    '- [підказка: workflow complete; виклич finish з answer="{code}", не викликай advance]'
+)
+
+# Policies that trim live observations (and stamp `n_trimmed_observations`).
+_TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
 
 # One transcript entry: the tool name, its arguments, and the observation it returned.
 TranscriptEntry = tuple[str, dict[str, Any], str]
 Summarize = Callable[[list[TranscriptEntry]], str]
+LOOP_FEEDBACK = "__loop_feedback__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +111,7 @@ class ContextPolicy:
 
     name: str = POLICY_FULL
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS
+    observation_head_share: float = OBSERVATION_HEAD_SHARE
     keep_last_n: int = DEFAULT_KEEP_LAST_N
     compact_share: float = DEFAULT_COMPACT_SHARE
     compact_keep_recent: int = DEFAULT_COMPACT_KEEP_RECENT
@@ -92,6 +121,10 @@ class ContextPolicy:
             raise ValueError(
                 f"unknown context policy: {self.name!r}; choose from {CONTEXT_POLICIES}"
             )
+        if not 0.0 < self.observation_head_share < 1.0:
+            raise ValueError(
+                f"observation_head_share must be in (0, 1), got {self.observation_head_share}"
+            )
 
 
 @dataclass(slots=True)
@@ -99,9 +132,12 @@ class ContextTelemetry:
     """Per-episode context accounting -- the numbers that make an overflow observable."""
 
     prompt_chars: list[int] = field(default_factory=list)
+    model_input_prompt_chars: int = 0
+    compaction_prompt_chars: int = 0
     observation_bytes: int = 0
     n_trimmed_observations: int = 0
     n_compactions: int = 0
+    n_repair_prompts: int = 0
 
     @property
     def max_prompt_chars(self) -> int:
@@ -126,6 +162,7 @@ class ContextState:
     executed: list[TranscriptEntry] = field(default_factory=list)
     summary: str = ""
     n_dropped: int = 0
+    controller_feedback: list[ControllerFeedback] = field(default_factory=list)
     telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
 
     def record(
@@ -140,16 +177,42 @@ class ContextState:
         self.entries.append(entry)
         self.executed.append(entry)
         self.telemetry.observation_bytes += len(observation.encode("utf-8"))
-        if policy.name == POLICY_OBSERVATION_CAP:
-            _, trimmed = trim_observation(observation, policy.observation_cap_chars)
+        if policy.name in _TRIMMING_POLICIES:
+            _, trimmed = trim_observation(
+                observation,
+                policy.observation_cap_chars,
+                head_share=policy.observation_head_share,
+            )
             self.telemetry.n_trimmed_observations += 1 if trimmed else 0
+
+    def record_feedback(self, message: str) -> None:
+        """Put controller feedback in the live prompt without claiming a tool executed."""
+        self.entries.append((LOOP_FEEDBACK, {}, message))
+
+    def record_channel_feedback(
+        self,
+        _policy: "ContextPolicy",
+        name: str,
+        arguments: dict[str, Any],
+        message: str,
+        channel: ControllerChannel,
+    ) -> None:
+        """Record a suppressed call while carrying its notice as a typed chat message."""
+        entry: TranscriptEntry = (name, arguments, message)
+        self.executed.append(entry)
+        self.telemetry.observation_bytes += len(message.encode("utf-8"))
+        self.controller_feedback.append(ControllerFeedback(message, channel))
 
 
 # --- observation trimming ------------------------------------------------------------------
 
 
 def trim_observation(
-    observation: str, cap_chars: int, *, aggregate_safe: bool = True
+    observation: str,
+    cap_chars: int,
+    *,
+    head_share: float = OBSERVATION_HEAD_SHARE,
+    aggregate_safe: bool = True,
 ) -> tuple[str, bool]:
     """Trim to `cap_chars`, keeping the head and the tail around an explicit elision marker.
 
@@ -157,11 +220,14 @@ def trim_observation(
     trimmed observation can tell it is looking at a fragment rather than a short tool result.
     When `aggregate_safe` and the observation is trimmed, a machine-computed header of hit count /
     total length / matched doc ids is PREPENDED (outside the cap) so a count question stays
-    answerable after a positional middle-of-list loss.
+    answerable after a positional middle-of-list loss. `head_share` is the fraction of the kept
+    budget given to the leading span (the rest goes to the tail).
     """
     if cap_chars <= 0 or len(observation) <= cap_chars:
         return observation, False
-    head_len = max(1, int(cap_chars * OBSERVATION_HEAD_SHARE))
+    if not 0.0 < head_share < 1.0:
+        raise ValueError(f"head_share must be in (0, 1), got {head_share}")
+    head_len = max(1, int(cap_chars * head_share))
     tail_len = max(0, cap_chars - head_len)
     dropped = len(observation) - head_len - tail_len
     marker = _ELISION.format(dropped=dropped)
@@ -178,30 +244,58 @@ def trim_observation(
 def format_entry(entry: TranscriptEntry) -> str:
     """The one canonical transcript line: `- tool({args}) -> observation`."""
     name, arguments, observation = entry
+    if name == LOOP_FEEDBACK:
+        return f"- {observation}"
     return f"- {name}({json.dumps(arguments, ensure_ascii=False)}) -> {observation}"
+
+
+def summary_hit_count(summary: str) -> int | None:
+    """First machine-computed hit count embedded in a compacted summary, if any."""
+    match = _AGGREGATE_HITS.search(summary)
+    return int(match.group(1)) if match else None
 
 
 def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str]:
     """The history lines this policy puts in the next prompt, markers included.
 
     `full` renders every entry verbatim -- byte-identical to the pre-policy loop, which is what
-    lets the baseline row reproduce the recorded agentic rows exactly.
+    lets the baseline row reproduce the recorded agentic rows exactly. `compact` trims live
+    observations the same way `observation_cap` does so a fat search hit does not re-blow the
+    prompt every step, and when the summary already carries aggregate hit facts a finish cue
+    steers the model away from another search/compact cycle.
     """
     entries = state.entries
     dropped = state.n_dropped
     if policy.name == POLICY_KEEP_LAST_N and len(entries) > policy.keep_last_n:
         dropped += len(entries) - policy.keep_last_n
         entries = entries[-policy.keep_last_n :] if policy.keep_last_n > 0 else []
-    if policy.name == POLICY_OBSERVATION_CAP:
+    if policy.name in _TRIMMING_POLICIES:
         entries = [
-            (name, arguments, trim_observation(observation, policy.observation_cap_chars)[0])
+            (
+                name,
+                arguments,
+                trim_observation(
+                    observation,
+                    policy.observation_cap_chars,
+                    head_share=policy.observation_head_share,
+                )[0],
+            )
             for name, arguments, observation in entries
         ]
     lines = [format_entry(entry) for entry in entries]
     if state.summary:
         # The summary STANDS IN for the folded steps, so it carries their count itself -- a
         # separate "dropped" line beside it would read as a second, uncovered loss.
-        return [_SUMMARY_MARKER.format(dropped=dropped, summary=state.summary), *lines]
+        out = [_SUMMARY_MARKER.format(dropped=dropped, summary=state.summary)]
+        hits = summary_hit_count(state.summary)
+        if hits is not None:
+            out.append(_FINISH_CUE.format(hits=hits))
+        code = _FINAL_CODE_MEMORY.search(state.summary)
+        if code is not None and any(
+            _WORKFLOW_COMPLETE in observation for _, _, observation in entries
+        ):
+            out.append(_MEMORY_FINISH_CUE.format(code=code.group(1)))
+        return out + lines
     return ([_DROPPED_MARKER.format(dropped=dropped)] if dropped else []) + lines
 
 
@@ -209,7 +303,12 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
 
 
 def summarize_entries(
-    complete: Any, entries: list[TranscriptEntry], transcript_cap_chars: int = 0
+    complete: Any,
+    entries: list[TranscriptEntry],
+    transcript_cap_chars: int = 0,
+    *,
+    prior_summary: str = "",
+    telemetry: ContextTelemetry | None = None,
 ) -> str:
     """Ask the model for a running summary of the older steps (the `compact` policy's memory).
 
@@ -228,25 +327,35 @@ def summarize_entries(
         (name, arguments, with_aggregate_header(observation))
         for name, arguments, observation in entries
     ]
+    transcript_parts = (
+        [f"- [попередній підсумок: {prior_summary}]"] if prior_summary.strip() else []
+    )
+    transcript_parts.extend(format_entry(entry) for entry in enriched)
     # Outer trim is not aggregate-safe: the per-entry headers already carry the facts.
     transcript, _ = trim_observation(
-        "\n".join(format_entry(entry) for entry in enriched),
+        "\n".join(transcript_parts),
         transcript_cap_chars,
         aggregate_safe=False,
     )
-    return (
-        complete(render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})) or ""
-    ).strip()
+    prompt = render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})
+    if telemetry is not None:
+        telemetry.compaction_prompt_chars += len(prompt)
+        telemetry.model_input_prompt_chars += len(prompt)
+    return (complete(prompt) or "").strip()
 
 
-def fold_aggregate_headers(entries: list[TranscriptEntry]) -> str:
+def fold_aggregate_headers(
+    entries: list[TranscriptEntry],
+    *,
+    prior_summary: str = "",
+) -> str:
     """Machine aggregate headers for search observations being folded into a summary.
 
     The compaction prompt already carries these headers, but a free-text summary still drops
     hit counts. Prepending the same machine facts to the summary text makes count survival
     independent of the summarizer.
     """
-    headers: list[str] = []
+    headers = re.findall(r"\[агрегат: [^\]]+\]", prior_summary)
     for _name, _arguments, observation in entries:
         facts = extract_aggregate_facts(observation)
         if facts["is_search_hits"]:
@@ -259,6 +368,18 @@ def fold_aggregate_headers(entries: list[TranscriptEntry]) -> str:
             seen.add(header)
             unique.append(header)
     return " | ".join(unique)
+
+
+def fold_memory_markers(
+    entries: list[TranscriptEntry],
+    *,
+    prior_summary: str = "",
+) -> str:
+    """Preserve typed semantic-memory facts independently of free-text summarization."""
+    markers = _MEMORY_MARKER.findall(prior_summary)
+    for _name, _arguments, observation in entries:
+        markers.extend(_MEMORY_MARKER.findall(observation))
+    return " | ".join(dict.fromkeys(markers))
 
 
 def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summarize) -> bool:
@@ -276,7 +397,14 @@ def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summari
     if not older:
         return False
     summary = (summarize(older) or "").strip()
-    facts = fold_aggregate_headers(older)
+    facts = " | ".join(
+        fact
+        for fact in (
+            fold_aggregate_headers(older, prior_summary=state.summary),
+            fold_memory_markers(older, prior_summary=state.summary),
+        )
+        if fact
+    )
     if facts:
         summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:

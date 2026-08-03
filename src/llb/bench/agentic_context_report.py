@@ -42,6 +42,9 @@ METRIC_COMPLETION = "completion"
 METRIC_STEPS = "n_steps"
 METRIC_TOOL_CALLS = "n_tool_calls"
 METRIC_PROMPT_TOKENS = "max_prompt_tokens"
+METRIC_TOTAL_MODEL_INPUT_TOKENS = "total_model_input_tokens"
+# The summarizer half of the model-input cost: what the compact policy paid to fold, on its own.
+METRIC_COMPACTION_PROMPT_TOKENS = "compaction_prompt_tokens"
 METRICS = (METRIC_COMPLETION, METRIC_STEPS, METRIC_TOOL_CALLS, METRIC_PROMPT_TOKENS)
 
 # Task-kind split: the generator's search-count / search-locate ids (plus seed "other").
@@ -433,6 +436,11 @@ def policy_config(
         "mean_trajectory_steps": round(report.mean_steps, 4),
         "mean_tool_calls": round(report.mean_tool_calls, 4),
         "mean_max_prompt_tokens": round(report.metric_mean(METRIC_PROMPT_TOKENS), 4),
+        "mean_total_model_input_tokens": round(
+            report.metric_mean(METRIC_TOTAL_MODEL_INPUT_TOKENS), 4
+        ),
+        "mean_compaction_prompt_tokens": round(report.metric_mean("compaction_prompt_tokens"), 4),
+        "mean_model_calls": round(report.metric_mean("n_model_calls"), 4),
         "mean_observation_bytes": round(report.metric_mean("observation_bytes"), 4),
         "n_compactions": int(sum(report.vector("n_compactions"))),
         "n_trimmed_observations": int(sum(report.vector("n_trimmed_observations"))),

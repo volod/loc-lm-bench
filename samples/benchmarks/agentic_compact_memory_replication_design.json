@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-compact-memory-transfer-replication",
+  "study_kind": "compact_memory_transfer_replication",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "reference_model_families": ["qwen", "gemma4"],
+  "reference": {
+    "study_id": "agent-context-policy-compact-memory-cross-model-transfer",
+    "evidence": "docs/impl/current/extended-workflows.md#non-qwen-depthtrigger-transfer"
+  },
+  "candidate_roster": [
+    {
+      "model_family": "aya",
+      "model": "aya-expanse:8b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "mistral",
+      "model": "mistral-small3.1:24b",
+      "backend": "ollama"
+    }
+  ],
+  "control_pilot": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "matrix": {
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 4096,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "minimum_compaction_rate": 0.75,
+    "cells": [
+      {
+        "cell_id": "overflow-d6-s0.4",
+        "depth": 6,
+        "compact_share": 0.4,
+        "max_prompt_chars": 8000,
+        "require_cap_fits": false
+      },
+      {
+        "cell_id": "overflow-d6-s0.6",
+        "depth": 6,
+        "compact_share": 0.6,
+        "max_prompt_chars": 8000,
+        "require_cap_fits": false
+      },
+      {
+        "cell_id": "overflow-d10-s0.4",
+        "depth": 10,
+        "compact_share": 0.4,
+        "max_prompt_chars": 8000,
+        "require_cap_fits": false
+      },
+      {
+        "cell_id": "overflow-d10-s0.6",
+        "depth": 10,
+        "compact_share": 0.6,
+        "max_prompt_chars": 8000,
+        "require_cap_fits": false
+      },
+      {
+        "cell_id": "cap-fits-d6-s0.5",
+        "depth": 6,
+        "compact_share": 0.5,
+        "max_prompt_chars": 12000,
+        "require_cap_fits": true
+      }
+    ]
+  },
+  "interpretation": {
+    "replicated_including_cap_fitting": "compact remains preferred in the valid boundary",
+    "replicated_overflow_gain_cap_fitting_prefers_cap": "overflow cells replicate but cap is cheaper when both fit",
+    "replicated_overflow_gain_cap_fitting_tied": "overflow cells replicate and the valid boundary is tied",
+    "changes_shipped_default": false
+  }
+}

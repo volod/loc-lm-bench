@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-compact-memory-boundary-surface",
+  "study_kind": "compact_memory_boundary_surface",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "reference": {
+    "study_id": "agent-context-policy-compact-memory-transfer-replication",
+    "evidence": "docs/impl/current/extended-workflows.md#second-family-replication-and-cap-fitting-boundary",
+    "cell_id": "cap-fits-d6-s0.5",
+    "depth": 6,
+    "max_prompt_chars": 12000
+  },
+  "held_fixed": {
+    "model_family": "mistral",
+    "model": "mistral-small3.1:24b",
+    "backend": "ollama",
+    "compact_share": 0.5,
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "minimum_compaction_rate": 0.75,
+    "minimum_cell_completion": 0.75
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "surface": {
+    "interpolation": {
+      "rule": "linear_zero_crossing",
+      "metric": "compact_minus_cap_total_model_input_tokens",
+      "axis": "max_prompt_chars",
+      "requires_sign_change": true,
+      "requires_cost_separation_at_both_endpoints": true,
+      "outside_grid": "report_bounded_direction"
+    },
+    "cells": [
+      {
+        "cell_id": "surface-d6-g12000",
+        "depth": 6,
+        "max_prompt_chars": 12000,
+        "expected_side": "compact_cheaper"
+      },
+      {
+        "cell_id": "surface-d6-g14000",
+        "depth": 6,
+        "max_prompt_chars": 14000,
+        "expected_side": "compact_cheaper"
+      },
+      {
+        "cell_id": "surface-d6-g15500",
+        "depth": 6,
+        "max_prompt_chars": 15500,
+        "expected_side": "cap_cheaper"
+      },
+      {
+        "cell_id": "surface-d10-g14000",
+        "depth": 10,
+        "max_prompt_chars": 14000,
+        "expected_side": "compact_cheaper"
+      },
+      {
+        "cell_id": "surface-d10-g20000",
+        "depth": 10,
+        "max_prompt_chars": 20000,
+        "expected_side": "compact_cheaper"
+      },
+      {
+        "cell_id": "surface-d10-g23000",
+        "depth": 10,
+        "max_prompt_chars": 23000,
+        "expected_side": "cap_cheaper"
+      }
+    ]
+  },
+  "interpretation": {
+    "surface_mapped": "every tested depth brackets a measured cost crossover",
+    "surface_partially_mapped": "at least one depth brackets a crossover; the rest report a bound",
+    "surface_not_bracketed": "no tested depth changes sign; the crossover lies outside the grid",
+    "changes_shipped_default": false
+  }
+}

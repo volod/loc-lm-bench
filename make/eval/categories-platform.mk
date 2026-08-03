@@ -1,6 +1,23 @@
 ## Cross-harness, category-composite, and platform-matrix evaluation.
 
-.PHONY: agentic-harness-compare bench-agentic-context bench-chain-context composite-headline platform-matrix
+.PHONY: agentic-harness-compare bench-agentic-loop bench-agentic-loop-repeat-power \
+	bench-agentic-loop-repeat-feedback bench-agentic-loop-repeat-feedback-generalization \
+	bench-agentic-loop-repeat-feedback-family-adaptation \
+	bench-agentic-loop-repeat-feedback-task-family-transfer \
+	bench-agentic-loop-repeat-feedback-controller-authority-transfer \
+	bench-agentic-loop-controller-channel-authority \
+	bench-agentic-loop-controller-channel-cross-model \
+	bench-agentic-loop-controller-preamble-placement \
+	bench-agentic-context \
+	bench-agentic-context-sweep \
+	prepare-agentic-long-transcript bench-agentic-context-keep-long \
+	bench-agentic-context-compact-long prepare-agentic-memory-transcript \
+	bench-agentic-context-compact-memory bench-agentic-context-compact-memory-transfer \
+	bench-agentic-context-compact-memory-replication \
+	bench-agentic-context-compact-memory-boundary-surface \
+	bench-agentic-context-compact-trigger-collapse \
+	bench-agentic-context-compact-fold-step \
+	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -10,6 +27,94 @@ agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compar
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-compare --model "$(MODEL)"
 
+bench-agentic-loop: ## Sweep max steps, malformed-call, and repeated-call policy; recommend one cell per model (AGENT_MAX_STEPS= AGENT_MALFORMED_POLICY= AGENT_REPEATED_CALL_POLICY= MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop --tasks "$(AGENT_LOOP_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--agent-max-steps "$(AGENT_MAX_STEPS)" \
+		--agent-malformed-policy "$(AGENT_MALFORMED_POLICY)" \
+		--agent-repeated-call-policy "$(AGENT_REPEATED_CALL_POLICY)" \
+		--agent-repeat-feedback "$(AGENT_REPEAT_FEEDBACK)" \
+		$(if $(AGENT_LOOP_POWER_DESIGN),--repeat-power-design "$(AGENT_LOOP_POWER_DESIGN)",) \
+		$(if $(AGENT_LOOP_FEEDBACK_DESIGN),--repeat-feedback-design "$(AGENT_LOOP_FEEDBACK_DESIGN)",) \
+		$(if $(AGENT_LOOP_MODEL_FAMILY),--model-family "$(AGENT_LOOP_MODEL_FAMILY)",) \
+		$(if $(AGENT_LOOP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_LOOP_MAX_PROMPT_CHARS)",) \
+		$(if $(AGENT_LOOP_BASE_URL),--base-url "$(AGENT_LOOP_BASE_URL)",) \
+		$(if $(AGENT_LOOP_MAX_MODEL_LEN),--max-model-len "$(AGENT_LOOP_MAX_MODEL_LEN)",)
+
+bench-agentic-loop-repeat-power: ## Run the predeclared allow-vs-noop power study over two local model families
+	@for entry in $(AGENT_LOOP_REPEAT_POWER_ROSTER); do \
+		family="$${entry%%=*}"; model="$${entry#*=}"; \
+		$(MAKE) --no-print-directory bench-agentic-loop \
+			AGENT_LOOP_TASKS="$(AGENT_LOOP_REPEAT_POWER_TASKS)" \
+			AGENT_LOOP_POWER_DESIGN="$(AGENT_LOOP_REPEAT_POWER_DESIGN)" \
+			AGENT_LOOP_MODEL_FAMILY="$$family" MODEL="$$model" BACKEND=ollama \
+			AGENT_MAX_STEPS=6 AGENT_MALFORMED_POLICY=answer \
+			AGENT_REPEATED_CALL_POLICY=allow,noop || exit 1; \
+	done
+
+bench-agentic-loop-repeat-feedback: ## Compare current, Ukrainian, and bilingual repeat feedback over the powered roster
+	@for entry in $(AGENT_LOOP_REPEAT_POWER_ROSTER); do \
+		family="$${entry%%=*}"; model="$${entry#*=}"; \
+		$(MAKE) --no-print-directory bench-agentic-loop \
+			AGENT_LOOP_TASKS="$(AGENT_LOOP_REPEAT_POWER_TASKS)" \
+			AGENT_LOOP_FEEDBACK_DESIGN="$(AGENT_LOOP_FEEDBACK_DESIGN_FILE)" \
+			AGENT_LOOP_MODEL_FAMILY="$$family" MODEL="$$model" BACKEND=ollama \
+			AGENT_MAX_STEPS=6 AGENT_MALFORMED_POLICY=answer \
+			AGENT_REPEATED_CALL_POLICY=allow,noop \
+			AGENT_REPEAT_FEEDBACK=current,uk,bilingual || exit 1; \
+	done
+
+bench-agentic-loop-repeat-feedback-generalization: ## Run the predeclared cross-family, multi-seed bilingual-feedback study
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-generalization \
+		--design "$(AGENT_LOOP_FEEDBACK_GENERALIZATION_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_GENERALIZATION_TASKS)"
+
+bench-agentic-loop-repeat-feedback-family-adaptation: ## Run predeclared two-seed family-adapted feedback candidates
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-family-adaptation \
+		--design "$(AGENT_LOOP_FEEDBACK_ADAPTATION_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_ADAPTATION_TASKS)"
+
+bench-agentic-loop-repeat-feedback-task-family-transfer: ## Run the predeclared two-seed Gemma task-family transfer study
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-task-family-transfer \
+		--design "$(AGENT_LOOP_FEEDBACK_TRANSFER_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_TRANSFER_TASKS)"
+
+bench-agentic-loop-repeat-feedback-controller-authority-transfer: ## Run the predeclared two-seed Gemma authority-transfer study
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-repeat-feedback-controller-authority-transfer \
+		--design "$(AGENT_LOOP_FEEDBACK_AUTHORITY_DESIGN)" \
+		--tasks "$(AGENT_LOOP_FEEDBACK_AUTHORITY_TASKS)"
+
+bench-agentic-loop-controller-channel-authority: ## Compare identical authority text as observation versus controller role
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
+		--design "$(AGENT_LOOP_CONTROLLER_CHANNEL_DESIGN)" \
+		--tasks "$(AGENT_LOOP_CONTROLLER_CHANNEL_TASKS)"
+
+bench-agentic-loop-controller-channel-cross-model: ## Transfer the controller-channel comparison to the predeclared non-Gemma family
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
+		--design "$(AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_DESIGN)" \
+		--tasks "$(AGENT_LOOP_CONTROLLER_CHANNEL_CROSS_MODEL_TASKS)"
+
+bench-agentic-loop-controller-preamble-placement: ## Compare observation against native system preamble placement on Gemma and Qwen
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-loop-controller-channel-authority \
+		--design "$(AGENT_LOOP_CONTROLLER_PREAMBLE_DESIGN)" \
+		--tasks "$(AGENT_LOOP_CONTROLLER_PREAMBLE_TASKS)"
+
 bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_cap/keep_last_n/compact for one model over one agentic task set (AGENT_CONTEXT_POLICIES= MODEL= BACKEND= AGENT_CONTEXT_MAX_PROMPT_CHARS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
@@ -17,11 +122,106 @@ bench-agentic-context: ## Agent context-policy benchmark: rank full/observation_
 		--model "$(MODEL)" --backend "$(BACKEND)" \
 		--policies "$(AGENT_CONTEXT_POLICIES)" --max-steps "$(AGENT_CONTEXT_MAX_STEPS)" \
 		--observation-cap-chars "$(AGENT_CONTEXT_OBSERVATION_CAP_CHARS)" \
+		--observation-head-share "$(AGENT_CONTEXT_OBSERVATION_HEAD_SHARE)" \
 		--keep-last-n "$(AGENT_CONTEXT_KEEP_LAST_N)" \
 		--compact-share "$(AGENT_CONTEXT_COMPACT_SHARE)" \
 		$(if $(AGENT_CONTEXT_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_MAX_PROMPT_CHARS)",) \
 		$(if $(AGENT_CONTEXT_BASE_URL),--base-url "$(AGENT_CONTEXT_BASE_URL)",) \
 		$(if $(AGENT_CONTEXT_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_MAX_MODEL_LEN)",)
+
+bench-agentic-context-sweep: ## Sweep observation_cap_chars / head_share / keep_last_n; pin or expose each (MODEL= BACKEND= AGENT_CONTEXT_SWEEP_TASKS= AGENT_CONTEXT_SWEEP_AXES= AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-sweep --tasks "$(AGENT_CONTEXT_SWEEP_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_SWEEP_MAX_STEPS)" \
+		--axes "$(AGENT_CONTEXT_SWEEP_AXES)" \
+		$(if $(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS),--max-prompt-chars "$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)",) \
+		$(if $(AGENT_CONTEXT_SWEEP_BASE_URL),--base-url "$(AGENT_CONTEXT_SWEEP_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)",)
+
+prepare-agentic-long-transcript: ## Build medium-obs keep_last_n tasks from fat search set (AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH= AGENT_CONTEXT_KEEP_LONG_TASKS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main prepare-agentic-long-transcript --out "$(AGENT_CONTEXT_KEEP_LONG_TASKS)" \
+		--from-search-tasks "$(AGENT_CONTEXT_KEEP_LONG_FROM_SEARCH)" \
+		--max-match-docs "$(AGENT_CONTEXT_KEEP_LONG_MAX_MATCH_DOCS)" \
+		--max-other-docs "$(AGENT_CONTEXT_KEEP_LONG_MAX_OTHER_DOCS)" \
+		--max-doc-chars "$(AGENT_CONTEXT_KEEP_LONG_MAX_DOC_CHARS)"
+
+bench-agentic-context-keep-long: prepare-agentic-long-transcript ## keep=1/2/3 on long-transcript tasks at raised max_steps (MODEL= BACKEND= AGENT_CONTEXT_KEEP_LONG_MAX_STEPS=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(MAKE) --no-print-directory bench-agentic-context-sweep \
+		AGENT_CONTEXT_SWEEP_TASKS="$(AGENT_CONTEXT_KEEP_LONG_TASKS)" \
+		AGENT_CONTEXT_SWEEP_MAX_STEPS="$(AGENT_CONTEXT_KEEP_LONG_MAX_STEPS)" \
+		AGENT_CONTEXT_SWEEP_AXES="$(AGENT_CONTEXT_KEEP_LONG_AXES)" \
+		AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN="$(AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN)" \
+		AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS="$(AGENT_CONTEXT_SWEEP_MAX_PROMPT_CHARS)" \
+		AGENT_CONTEXT_SWEEP_BASE_URL="$(AGENT_CONTEXT_SWEEP_BASE_URL)"
+
+bench-agentic-context-compact-long: prepare-agentic-long-transcript ## Active compact vs observation_cap on long transcripts, paired incl summarizer input cost (MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-compact-vs-cap \
+		--tasks "$(AGENT_CONTEXT_COMPACT_LONG_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_COMPACT_LONG_MAX_STEPS)" \
+		--compact-share "$(AGENT_CONTEXT_COMPACT_LONG_COMPACT_SHARE)" \
+		--max-prompt-chars "$(AGENT_CONTEXT_COMPACT_LONG_MAX_PROMPT_CHARS)" \
+		$(if $(AGENT_CONTEXT_COMPACT_LONG_BASE_URL),--base-url "$(AGENT_CONTEXT_COMPACT_LONG_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_COMPACT_LONG_MAX_MODEL_LEN)",)
+
+prepare-agentic-memory-transcript: ## Build read-once memory tasks with externally checked later progress
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main prepare-agentic-memory-transcript \
+		--out "$(AGENT_CONTEXT_COMPACT_MEMORY_TASKS)" \
+		--n-tasks "$(AGENT_CONTEXT_COMPACT_MEMORY_N_TASKS)" \
+		--depth "$(AGENT_CONTEXT_COMPACT_MEMORY_DEPTH)" \
+		--pad-chars "$(AGENT_CONTEXT_COMPACT_MEMORY_PAD_CHARS)"
+
+bench-agentic-context-compact-memory: prepare-agentic-memory-transcript ## Compact vs cap when an early read-once fact must survive later tool calls (MODEL= BACKEND=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-compact-vs-cap \
+		--tasks "$(AGENT_CONTEXT_COMPACT_MEMORY_TASKS)" \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--max-steps "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_STEPS)" \
+		--compact-share "$(AGENT_CONTEXT_COMPACT_MEMORY_COMPACT_SHARE)" \
+		--min-compaction-rate "$(AGENT_CONTEXT_COMPACT_MEMORY_MIN_COMPACTION_RATE)" \
+		--max-prompt-chars "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_PROMPT_CHARS)" \
+		$(if $(AGENT_CONTEXT_COMPACT_MEMORY_BASE_URL),--base-url "$(AGENT_CONTEXT_COMPACT_MEMORY_BASE_URL)",) \
+		$(if $(AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN),--max-model-len "$(AGENT_CONTEXT_COMPACT_MEMORY_MAX_MODEL_LEN)",)
+
+bench-agentic-context-compact-memory-transfer: ## Gate a non-Qwen model, then run the compact-memory depth/trigger matrix
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-memory-transfer \
+		--design "$(AGENT_CONTEXT_COMPACT_MEMORY_TRANSFER_DESIGN)"
+
+bench-agentic-context-compact-memory-replication: ## Replicate compact memory on a second family with tighter evidence and a cap-fitting cell
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-memory-replication \
+		--design "$(AGENT_CONTEXT_COMPACT_MEMORY_REPLICATION_DESIGN)"
+
+bench-agentic-context-compact-memory-boundary-surface: ## Map the cap-fitting compact-versus-cap cost crossover over a predeclared depth/prompt-guard grid
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-memory-boundary-surface \
+		--design "$(AGENT_CONTEXT_COMPACT_MEMORY_BOUNDARY_SURFACE_DESIGN)"
+
+bench-agentic-context-compact-trigger-collapse: ## Test whether compact_share and prompt guard act only through their product (the compaction trigger)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-trigger-collapse \
+		--design "$(AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN)"
+
+bench-agentic-context-compact-fold-step: ## Test whether the compact cost side flips at a fold-step change rather than at an interpolated char guard
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-fold-step \
+		--design "$(AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN)"
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

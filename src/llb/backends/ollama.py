@@ -31,6 +31,7 @@ class OllamaLauncher(BackendLauncher):
         host: str = "http://localhost:11434",
         pull: bool = False,
         num_ctx: int | None = None,
+        seed: int | None = None,
     ):
         super().__init__(model=model, meta={"backend": "ollama", "host": host})
         self.host = host.rstrip("/")
@@ -39,6 +40,7 @@ class OllamaLauncher(BackendLauncher):
         # Ollama defaults to 4096 even for GGUFs that advertise a much larger window, which is
         # exactly the silent truncation the agent-loop prompt guard exists to prevent.
         self.num_ctx = num_ctx
+        self.seed = seed
         self._last: ChatResult | None = None
         self._served_context: int | None = None
 
@@ -96,6 +98,8 @@ class OllamaLauncher(BackendLauncher):
         options: dict[str, object] = {"num_predict": max_tokens, "temperature": temperature}
         if self.num_ctx is not None and self.num_ctx > 0:
             options["num_ctx"] = self.num_ctx
+        if self.seed is not None:
+            options["seed"] = self.seed
         payload = {
             "model": self.model,
             "stream": False,

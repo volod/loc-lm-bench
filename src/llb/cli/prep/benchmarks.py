@@ -41,6 +41,83 @@ def prepare_agentic_search_cmd(
     )
 
 
+@app.command("prepare-agentic-long-transcript")
+def prepare_agentic_long_transcript_cmd(
+    out: Path = typer.Option(
+        ..., help="output multi-step medium-observation agentic task set JSON"
+    ),
+    from_search_tasks: Optional[Path] = typer.Option(
+        None,
+        help="optional fat-observation search task JSON to shrink into medium observations "
+        "(preferred for CUDA keep_last_n long-transcript evidence)",
+    ),
+    max_match_docs: int = typer.Option(6, min=1, help="matching docs kept per shrunk search task"),
+    max_other_docs: int = typer.Option(6, min=0, help="non-matching filler docs kept per task"),
+    max_doc_chars: int = typer.Option(180, min=20, help="max chars kept per planted corpus doc"),
+    n_db: int = typer.Option(0, min=0, help="number of pipeline-db tasks (synthetic; default 0)"),
+    n_copy: int = typer.Option(0, min=0, help="number of pipeline-copy tasks (synthetic)"),
+    n_sum: int = typer.Option(0, min=0, help="number of pipeline-sum tasks (synthetic)"),
+    depth: int = typer.Option(4, min=2, help="base pipeline depth for synthetic tasks"),
+    pad_chars: int = typer.Option(160, min=0, help="UA filler chars for synthetic file payloads"),
+) -> None:
+    """Build medium-observation tasks for the keep_last_n long-transcript lane.
+
+    Prefer ``--from-search-tasks`` over a real search set (count/locate) so live models exercise
+    the keep window on a shape they already complete; synthetic file/db pipelines are for CI.
+    """
+    import json as _json
+
+    from llb.bench.agentic_long_transcript import (
+        build_long_transcript_from_search_tasks,
+        build_long_transcript_tasks,
+    )
+
+    tasks: list[dict[str, object]] = []
+    if from_search_tasks is not None:
+        source = _json.loads(from_search_tasks.read_text(encoding="utf-8"))
+        tasks.extend(
+            build_long_transcript_from_search_tasks(
+                source,
+                max_match_docs=max_match_docs,
+                max_other_docs=max_other_docs,
+                max_doc_chars=max_doc_chars,
+            )
+        )
+    if n_db or n_copy or n_sum:
+        tasks.extend(
+            build_long_transcript_tasks(
+                n_db=n_db, n_copy=n_copy, n_sum=n_sum, depth=depth, pad_chars=pad_chars
+            )
+        )
+    if not tasks:
+        typer.echo(
+            "[error] no tasks built; pass --from-search-tasks and/or n_db/n_copy/n_sum > 0",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(tasks, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"[prepare-agentic-long-transcript] {len(tasks)} tasks -> {out}")
+
+
+@app.command("prepare-agentic-memory-transcript")
+def prepare_agentic_memory_transcript_cmd(
+    out: Path = typer.Option(..., help="output memory-dependent agentic task set JSON"),
+    n_tasks: int = typer.Option(8, min=1, help="number of deterministic tasks"),
+    depth: int = typer.Option(8, min=3, help="one-way workflow observations per task"),
+    pad_chars: int = typer.Option(1200, min=0, help="filler chars per file observation"),
+) -> None:
+    """Build tasks that need an early read-once fact after several later tool calls."""
+    import json as _json
+
+    from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
+
+    tasks = build_memory_dependent_tasks(n_tasks=n_tasks, depth=depth, pad_chars=pad_chars)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(tasks, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"[prepare-agentic-memory-transcript] {len(tasks)} tasks -> {out}")
+
+
 @app.command("adapt-bfcl")
 def adapt_bfcl_cmd(
     functions_file: Path = typer.Option(..., help="BFCL function-doc file (.json/.jsonl)"),

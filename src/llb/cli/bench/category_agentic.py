@@ -156,7 +156,15 @@ def bench_agentic_context_cmd(
     ),
     max_steps: int = typer.Option(6, min=1, help="step budget per task"),
     observation_cap_chars: int = typer.Option(
-        800, min=1, help="`observation_cap`: chars kept per observation (head + tail)"
+        800,
+        min=1,
+        help="chars kept per observation under `observation_cap` and under `compact` live steps",
+    ),
+    observation_head_share: float = typer.Option(
+        0.6,
+        min=0.01,
+        max=0.99,
+        help="fraction of the observation-cap budget kept from the HEAD (rest from the tail)",
     ),
     keep_last_n: int = typer.Option(3, min=0, help="`keep_last_n`: most-recent steps kept whole"),
     compact_share: float = typer.Option(
@@ -178,39 +186,20 @@ def bench_agentic_context_cmd(
     ),
 ) -> None:
     """Rank agent-loop context-management policies for one fixed model over one task set."""
-    from llb.bench.agentic.context_budget import fixed_budget, resolve_context_budget
     from llb.bench.agentic.run import load_tasks_file
     from llb.bench.agentic_context import AgenticContextRun, run_agentic_context
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
+    from llb.cli.bench._agent_context import resolve_agent_context_budget
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     task_set = load_tasks_file(tasks)
     policy_list = [p.strip() for p in policies.split(",") if p.strip()]
-    if max_prompt_chars is not None:
-        budget = fixed_budget(max_prompt_chars)
-    else:
-        # When Ollama will be asked for an explicit num_ctx, warm the model first so /api/ps
-        # reports the window the run will actually serve -- otherwise a stale 4096 resident
-        # binds the guard 8x tighter than the backend we are about to request.
-        ollama_num_ctx = cfg.max_model_len or cfg.context_budget
-        if cfg.backend == "ollama" and ollama_num_ctx:
-            from llb.backends.ollama import OllamaLauncher
-            from llb.backends.served_window import is_ollama_base_url, native_root
-
-            # Resolve the native host: --base-url may point at the same Ollama daemon's /v1.
-            native_host = (
-                native_root(base_url)
-                if base_url and is_ollama_base_url(base_url, cfg.ollama_host)
-                else cfg.ollama_host
-            )
-            warm = OllamaLauncher(cfg.model, host=native_host, num_ctx=ollama_num_ctx)
-            warm.start()
-            try:
-                warm.ensure_num_ctx(timeout=cfg.request_timeout_s)
-            finally:
-                warm.stop()
-        budget = resolve_context_budget(cfg, probe=True)
+    budget = resolve_agent_context_budget(
+        cfg,
+        base_url=base_url,
+        max_prompt_chars=max_prompt_chars,
+    )
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
 
@@ -223,6 +212,7 @@ def bench_agentic_context_cmd(
             policies=policy_list,
             policy_overrides={
                 "observation_cap_chars": observation_cap_chars,
+                "observation_head_share": observation_head_share,
                 "keep_last_n": keep_last_n,
                 "compact_share": compact_share,
             },
