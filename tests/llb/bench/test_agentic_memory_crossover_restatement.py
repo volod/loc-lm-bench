@@ -9,17 +9,19 @@ import pytest
 
 from llb.bench.agentic_memory_boundary_probe import oracle_controller
 from llb.bench.agentic_memory_cap_audit import (
-    AUDITED_KINDS,
-    KIND_COLLAPSE,
-    KIND_FOLD_STEP,
-    KIND_SURFACE,
     VERDICT_INVARIANT,
     VERDICT_SENSITIVE,
     audit_design,
     audit_summary,
+    sensitive_cell_ids,
+)
+from llb.bench.agentic_policy_change_audit import (
+    AUDITED_KINDS,
+    KIND_COLLAPSE,
+    KIND_FOLD_STEP,
+    KIND_SURFACE,
     declared_geometry,
     load_audited_design,
-    sensitive_cell_ids,
 )
 from llb.bench.agentic_memory_crossover_restatement import (
     analyze_restatement,

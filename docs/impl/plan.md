@@ -43,32 +43,83 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-evidence-audit (optional)
+### agent-policy-change-audit-gate-in-ci (optional)
 
-Changing one agent context-policy constant silently invalidates an unknown share of the repo's
-published evidence, and today only ONE such change can be re-qualified cheaply: the summarize-input
-bound, because `src/llb/bench/agentic_memory_cap_audit.py` knows that bound reaches a run through
-exactly one prompt and can prove per cell that the prompt is unchanged
-([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-Every other policy constant (`DEFAULT_OBSERVATION_CAP_CHARS`, `OBSERVATION_HEAD_SHARE`,
-`DEFAULT_KEEP_LAST_N`, `DEFAULT_COMPACT_KEEP_RECENT`, the summary template itself) has the same
-property -- it is a pure function of the deterministic tool world -- and none has an audit, so the
-honest answer after touching one is "re-run everything" or "hope". Generalize the audit: given a
-policy field and two values, walk every committed design's cells with the oracle probe under both
-values and report which published cells send bit-identical prompts. Then a policy edit comes with a
-named list of the evidence it actually invalidates instead of a guess.
+The policy-change audit answers "what does this change invalidate" only when someone remembers to
+ask ([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+Nothing connects it to the act that creates the problem: editing a shipped constant in
+`src/llb/bench/agentic/context.py` passes CI green while silently retiring up to 22 published cells,
+and the docs that state those numbers keep stating them. Close the loop by pinning the shipped
+constants in a committed fixture and adding a CI check that fails when a shipped value no longer
+matches the one the published evidence was measured under, naming the invalidated cells from the
+audit in the failure message. The audit already runs in well under a second for every field, so this
+costs nothing per CI run and turns a silent invalidation into a build failure that says exactly which
+numbers to re-measure.
 
 - Agent status: CLEAR
-- Dependencies: the bound audit and its per-study geometry extraction
-  (`src/llb/bench/agentic_memory_cap_audit.py`); the probe already replays a whole episode under an
-  arbitrary `ContextPolicy`, so the generalization is a parameter, not a new mechanism.
-- User-visible outcome: any agent policy-constant change ships with the list of published numbers it
-  invalidates, and the re-run is scoped to that list rather than to every study.
-- Scope boundary: in scope -- the policy-field parameterization, a prompt-level invariance verdict
-  per published cell, and the CLI that reports it with no GPU. Out of scope -- re-running the
-  invalidated cells (the existing restatement flow does that), and changing any shipped constant.
+- Dependencies: `src/llb/bench/agentic_policy_change_audit.py` and the committed designs it walks;
+  the constants themselves live in `src/llb/bench/agentic/context.py`.
+- User-visible outcome: a shipped-constant edit cannot land while the docs still publish numbers it
+  invalidated -- CI names them and the change either re-measures them or restates the pin.
+- Scope boundary: in scope -- the pinned-constants fixture, the CI check, and the failure message
+  that lists the invalidated cells. Out of scope -- re-running any invalidated cell, changing a
+  shipped constant, and auditing non-agentic evidence.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
+  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+
+### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
+
+The audit walks the three cap-fitting memory studies (22 cells) and nothing else, so "this change
+invalidates NO published number" is only true of that slice
+([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+The context-policy constant sweep, the keep-long lane, and the harness-comparison rows rest on the
+same constants and are not walked, and the `keep_last_n` result advertises the gap: the audit calls
+keep=1 free precisely because no cap-fitting cell runs that policy, while the sweep that EXPOSED
+keep=1 is built on cells that do. Extend the audit's study registry to those lanes -- each needs its
+own cell-geometry reader and a task builder other than the memory-chain one -- so the invariance
+answer covers the evidence a `keep_last_n` or observation-cap change actually threatens.
+
+- Agent status: CLEAR
+- Dependencies: the audit's per-kind geometry extraction
+  (`declared_geometry` in `src/llb/bench/agentic_policy_change_audit.py`), which currently hardcodes
+  the memory-chain task builder in its replay.
+- User-visible outcome: the "invalidates nothing" verdict means the whole agentic evidence base
+  rather than one family of studies, so an operator can trust it without knowing which studies were
+  walked.
+- Scope boundary: in scope -- a task-builder seam per registered study, geometry readers for the
+  sweep and keep-long lanes, and their cells in the audit. Out of scope -- re-running anything the
+  wider audit invalidates, and changing any shipped constant.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+
+### agent-context-policy-imperfect-play-guard-margin (optional)
+
+The deterministic cap-peak probe
+(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
+the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
+token grows the transcript past that peak, and a guard chosen just above it can still overflow on
+the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
+budget allows (max steps rather than depth), record the measured extra steps per episode from the
+existing bundles, and turn the difference into a stated safety margin the design validation applies
+when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
+bound-invariant ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
+which inherits the identical perfect-play limitation: a longer real transcript can reach a
+summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
+verdict too and state the invariance for the worst case the step budget allows.
+
+- Agent status: CLEAR
+- Dependencies: the probe, the band check in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
+  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
+  the compact-vs-cap bundles.
+- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
+  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
+  the transcripts a real controller produces.
+- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
+  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
+  interpolation rule, or relaxing the activation floor.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 
 ### agent-context-policy-summary-elision-under-the-window-bound (optional)
 
@@ -121,35 +172,6 @@ other way the guard could re-enter.
   changing shipped compaction hysteresis.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
-
-### agent-context-policy-imperfect-play-guard-margin (optional)
-
-The deterministic cap-peak probe
-(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
-the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
-token grows the transcript past that peak, and a guard chosen just above it can still overflow on
-the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
-budget allows (max steps rather than depth), record the measured extra steps per episode from the
-existing bundles, and turn the difference into a stated safety margin the design validation applies
-when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
-bound-invariant ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
-which inherits the identical perfect-play limitation: a longer real transcript can reach a
-summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
-verdict too and state the invariance for the worst case the step budget allows.
-
-- Agent status: CLEAR
-- Dependencies: the probe, the band check in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
-  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
-  the compact-vs-cap bundles.
-- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
-  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
-  the transcripts a real controller produces.
-- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
-  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
-  interpolation rule, or relaxing the activation floor.
-- Documentation target:
-  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 
 ### agent-operating-profile-recommendation
 

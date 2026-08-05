@@ -17,7 +17,8 @@ from llb.bench.agentic_memory_boundary_probe import (
     fold_step_guard_interval,
 )
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
-from llb.bench.agentic_memory_cap_audit import KIND_SURFACE, VERDICT_SENSITIVE
+from llb.bench.agentic_memory_cap_audit import VERDICT_SENSITIVE
+from llb.bench.agentic_policy_change_audit import KIND_SURFACE
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
     BASIS_INVARIANT,

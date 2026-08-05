@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAPS
-from llb.bench.agentic_memory_cap_audit import (
+from llb.bench.agentic_policy_change_audit import (
     AUDITED_KINDS,
     declared_geometry,
     load_audited_design,

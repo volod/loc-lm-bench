@@ -1516,6 +1516,73 @@ the one place where share entered independently (the summarize input was capped 
 `compact_share * guard`). Under the shipped bound that term is gone, so the collapse holds by
 construction and not only by measurement.
 
+##### What a policy-constant change invalidates
+
+`make bench-agentic-policy-change-audit` generalizes the mechanism above from ONE bound to any agent
+context-policy constant. A context policy is a pure function of the deterministic tool world, so
+fixing the geometry and the controller fixes the exact sequence of prompts an episode sends before
+any model runs. The audit therefore replays every published cell under both values of the changed
+field with an oracle controller, records every prompt each replay sends -- controller prompts and
+summarize calls alike, by recording through the injected `complete`, which is the seam they all pass
+through -- and compares the sequences byte for byte.
+
+Two properties make a replay a statement about a real run. The summarize call is answered with a
+FIXED summary so the replay is deterministic, which can only hide downstream divergence, never
+invent it: identical summarize prompts mean a temperature-0 model returns the same summary, so the
+later controller prompts are identical too, and "all prompts identical under the replay" implies
+"all prompts identical under the served model". And BOTH arms of a cell are replayed
+(`observation_cap` and `compact`), because a published number is a compact-minus-cap delta and a
+change that moves either arm moves it.
+
+One case needs its own verdict rather than a comparison. A cell that declares the audited field
+ITSELF -- the trigger collapse sweeps `compact_share` cell by cell -- is not describable by the
+change: replaying it at another value measures a different cell, not the published one. Those report
+`cell_pins_the_field` and are excluded from the counts. A value inherited from `held_fixed` is not
+the same thing; that is the study's inherited setting, and whether its number holds at another value
+is exactly the counterfactual the audit answers.
+
+Core locations are `src/llb/bench/agentic_policy_change_replay.py` (replay, digest, and the
+per-arm comparison), `src/llb/bench/agentic_policy_change_audit.py` (the auditable fields, the
+per-study cell geometry, and the verdict),
+`src/llb/bench/agentic_policy_change_audit_report.py`,
+`src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
+`tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
+(`src/llb/bench/agentic_memory_cap_audit.py`) is now ONE use of this mechanism rather than a second
+one: it supplies the elision diagnostic that explains the verdict, and CI asserts the two agree cell
+for cell.
+
+```bash
+make bench-agentic-policy-change-audit \
+  POLICY_FIELD=observation_cap_chars POLICY_BASELINE=800 POLICY_CANDIDATE=1600
+```
+
+Every auditable field against the 22 published cells of the three cap-fitting studies (2026-08-05,
+no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
+
+| field | change | invariant | invalidated | not applicable |
+| --- | --- | ---: | ---: | ---: |
+| `observation_cap_chars` | 800 -> 400 | 0 | **22** | 0 |
+| `observation_cap_chars` | 800 -> 1600 | 0 | **22** | 0 |
+| `observation_head_share` | 0.6 -> 0.5 | 0 | **22** | 0 |
+| `keep_last_n` | 3 -> 1 | **22** | **0** | 0 |
+| `compact_share` | 0.5 -> 0.45 | 2 | 12 | 8 |
+| `compact_keep_recent` | 1 -> 2 | 0 | **22** | 0 |
+| `summary_input_cap` | trigger -> window | **18** | 4 | 0 |
+
+Two readings an operator can act on. **`keep_last_n` is free**: the constant sweep EXPOSES keep=1 as
+cheaper on prompt tokens, and this says taking that up costs no published compact evidence at all,
+because no cap-fitting cell runs the `keep_last_n` policy. **The observation-trim constants are
+not**: `observation_cap_chars` and `observation_head_share` change both arms of every cell from
+model call 2 -- the first prompt that carries a trimmed observation -- so re-pinning either one
+retires all three studies at once.
+
+The `compact_share` row also reproduces the fold-step mechanism from a direction that owes it
+nothing. Of the 14 applicable cells, the two that survive 0.5 -> 0.45 are `fold-d6-step6-hi` and
+`fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share still lands the trigger
+inside the same step's interval and folds the identical transcript. At the low guards the trigger
+drops into the previous step and everything downstream changes. A byte-level prompt comparison that
+knows nothing about fold steps rediscovers exactly where they are.
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:
