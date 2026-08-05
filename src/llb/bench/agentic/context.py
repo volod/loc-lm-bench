@@ -27,6 +27,7 @@ observation bytes, trims, compactions) is what makes the overflow observable aft
 import json
 import re
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any, Callable
 
 from llb.bench.agentic.context_aggregate import (
@@ -74,10 +75,34 @@ DEFAULT_KEEP_LAST_N = 3
 DEFAULT_COMPACT_SHARE = 0.5
 DEFAULT_COMPACT_KEEP_RECENT = 1
 
+# `compact`: what bounds the summarize call's INPUT. The call is a model call like any other, so its
+# input must fit the window -- but WHICH bound is chosen decides whether the compact cost is a step
+# function of the fold step or slides continuously with the prompt guard.
+#   - `window` -- the whole usable prompt budget minus the summary template's own overhead, so the
+#     folded transcript is summarized at its OWN size whenever it fits. The fold step then fixes the
+#     summarize input exactly the way it fixes the controller prompts, and the transcript is elided
+#     only when it genuinely cannot fit the window.
+#   - `trigger` -- the compaction trigger (`compact_share * guard`). Two guards inside ONE fold step
+#     fold the identical transcript but feed the summarizer different amounts of it, so the cost
+#     slides inside the step, and a folded transcript that would have fit the window is elided
+#     head-and-tail anyway. Kept selectable because the published fold-step and trigger-collapse
+#     evidence was measured under it.
+SUMMARY_INPUT_CAP_WINDOW = "window"
+SUMMARY_INPUT_CAP_TRIGGER = "trigger"
+SUMMARY_INPUT_CAPS: tuple[str, ...] = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
+DEFAULT_SUMMARY_INPUT_CAP = SUMMARY_INPUT_CAP_WINDOW
+
 # Prompt-system template ids owned by this lane.
 COMPACT_SUMMARY_TEMPLATE = "bench.agentic.compact_summary"
+# How many leading chars of the rendered summarize template identify it. Long enough that no step
+# prompt can collide with it, short enough to survive a wording edit inside the instruction body.
+_SUMMARY_PROMPT_PREFIX_CHARS = 40
 
 _ELISION = "[...обрізано {dropped} символів...]"
+# `trim_observation` writes its elision marker on TOP of the cap it was given, so a budget that must
+# CONTAIN the trimmed text has to reserve the marker as well. Twelve digits covers any transcript a
+# process can hold, which keeps the reservation a constant instead of a per-call measurement.
+_ELISION_DROPPED_DIGITS = 12
 # A step missing from the prompt is announced, never silently absent: `keep_last_n` says how many
 # steps went away with nothing standing in for them, `compact` says how many the summary covers.
 _DROPPED_MARKER = "- [опущено попередніх кроків: {dropped}]"
@@ -115,6 +140,7 @@ class ContextPolicy:
     keep_last_n: int = DEFAULT_KEEP_LAST_N
     compact_share: float = DEFAULT_COMPACT_SHARE
     compact_keep_recent: int = DEFAULT_COMPACT_KEEP_RECENT
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP
 
     def __post_init__(self) -> None:
         if self.name not in CONTEXT_POLICIES:
@@ -124,6 +150,11 @@ class ContextPolicy:
         if not 0.0 < self.observation_head_share < 1.0:
             raise ValueError(
                 f"observation_head_share must be in (0, 1), got {self.observation_head_share}"
+            )
+        if self.summary_input_cap not in SUMMARY_INPUT_CAPS:
+            raise ValueError(
+                f"unknown summary input cap: {self.summary_input_cap!r}; "
+                f"choose from {SUMMARY_INPUT_CAPS}"
             )
 
 
@@ -138,6 +169,12 @@ class ContextTelemetry:
     n_trimmed_observations: int = 0
     n_compactions: int = 0
     n_repair_prompts: int = 0
+    # What the summarizer was OFFERED versus what its input cap let through. The elided span is the
+    # evidence the summary was never shown, so a completion drop under a tighter cap is readable
+    # rather than inferred.
+    summary_input_chars: int = 0
+    summary_input_elided_chars: int = 0
+    n_trimmed_summary_inputs: int = 0
 
     @property
     def max_prompt_chars(self) -> int:
@@ -331,17 +368,49 @@ def summarize_entries(
         [f"- [попередній підсумок: {prior_summary}]"] if prior_summary.strip() else []
     )
     transcript_parts.extend(format_entry(entry) for entry in enriched)
+    offered = "\n".join(transcript_parts)
     # Outer trim is not aggregate-safe: the per-entry headers already carry the facts.
-    transcript, _ = trim_observation(
-        "\n".join(transcript_parts),
-        transcript_cap_chars,
-        aggregate_safe=False,
-    )
+    transcript, elided = trim_observation(offered, transcript_cap_chars, aggregate_safe=False)
     prompt = render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})
     if telemetry is not None:
         telemetry.compaction_prompt_chars += len(prompt)
         telemetry.model_input_prompt_chars += len(prompt)
+        telemetry.summary_input_chars += len(offered)
+        telemetry.summary_input_elided_chars += len(offered) - transcript_cap_chars if elided else 0
+        telemetry.n_trimmed_summary_inputs += 1 if elided else 0
     return (complete(prompt) or "").strip()
+
+
+def is_summary_prompt(prompt: str) -> bool:
+    """Whether a rendered prompt is the compact policy's summarize call rather than a step prompt.
+
+    The seam a deterministic compact walk needs: an injected `complete` has to answer the summarize
+    call with a summary and every other prompt with a tool call, and the template's own opening is
+    the only thing that separates them.
+    """
+    return prompt.startswith(_empty_summary_prompt()[:_SUMMARY_PROMPT_PREFIX_CHARS])
+
+
+def summary_prompt_overhead_chars() -> int:
+    """What the summarize prompt costs AROUND its transcript.
+
+    The template with an empty body PLUS the elision marker, which `trim_observation` writes on top
+    of the cap rather than inside it. A cap that ignores the marker produces a summarize prompt a
+    few chars over the window -- exactly the silent truncation the cap exists to prevent.
+    """
+    return len(_empty_summary_prompt()) + len(
+        _ELISION.format(dropped=10**_ELISION_DROPPED_DIGITS - 1)
+    )
+
+
+@cache
+def _empty_summary_prompt() -> str:
+    """The summarize template rendered with no transcript -- a constant of the loaded registry.
+
+    Both callers are per-step hot paths and a render re-reads the template file, so the one value
+    they both derive from is resolved once per process (the prompt registry is a process singleton).
+    """
+    return render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": ""})
 
 
 def fold_aggregate_headers(

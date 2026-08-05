@@ -45,6 +45,11 @@ METRIC_PROMPT_TOKENS = "max_prompt_tokens"
 METRIC_TOTAL_MODEL_INPUT_TOKENS = "total_model_input_tokens"
 # The summarizer half of the model-input cost: what the compact policy paid to fold, on its own.
 METRIC_COMPACTION_PROMPT_TOKENS = "compaction_prompt_tokens"
+# What the summarize call was offered, and how much of it its input cap elided head-and-tail. The
+# elided span is transcript the running summary was never shown, so a completion reading beside it
+# says whether the cap trimmed evidence the summary needed.
+METRIC_SUMMARY_INPUT_CHARS = "summary_input_chars"
+METRIC_SUMMARY_INPUT_ELIDED_CHARS = "summary_input_elided_chars"
 METRICS = (METRIC_COMPLETION, METRIC_STEPS, METRIC_TOOL_CALLS, METRIC_PROMPT_TOKENS)
 
 # Task-kind split: the generator's search-count / search-locate ids (plus seed "other").

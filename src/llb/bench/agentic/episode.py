@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 from llb.bench.agentic.context import (
     POLICY_COMPACT,
+    SUMMARY_INPUT_CAP_TRIGGER,
     ContextPolicy,
     ContextState,
     TranscriptEntry,
@@ -18,6 +19,7 @@ from llb.bench.agentic.context import (
     format_entry,
     policy_history_lines,
     summarize_entries,
+    summary_prompt_overhead_chars,
 )
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.controller_channel import (
@@ -89,6 +91,18 @@ def build_agent_prompt_lines(
     )
 
 
+def summary_input_cap_chars(policy: ContextPolicy, budget: ContextBudget) -> int:
+    """The char cap the summarize call's INPUT is trimmed to under this policy.
+
+    `window` is a property of the RESOLVED BUDGET alone, so every guard that folds the same step
+    summarizes the identical transcript and the compact cost is a pure step function of the fold
+    step. `trigger` reads `compact_share * guard`, which moves continuously inside one fold step.
+    """
+    if policy.summary_input_cap == SUMMARY_INPUT_CAP_TRIGGER:
+        return budget.compaction_trigger_chars(policy.compact_share)
+    return budget.summary_input_cap_chars(summary_prompt_overhead_chars())
+
+
 def step_prompt(
     task: AgenticTask,
     catalog: dict[str, ToolDef],
@@ -100,9 +114,9 @@ def step_prompt(
     """This step's prompt under `policy`, compacting first when the prompt crosses the trigger.
 
     At most ONE compaction per step: if the compacted prompt still does not fit, the guard --
-    not another round of summarizing -- is what ends the episode. The summarize call is itself
-    capped at the trigger size, because its input is the very transcript that just blew the step
-    prompt and an over-long summarize call would come back silently truncated.
+    not another round of summarizing -- is what ends the episode. The summarize call's input is
+    capped too, because it is the very transcript that just blew the step prompt and an over-long
+    summarize call would come back silently truncated; `summary_input_cap` picks WHICH bound.
     """
     prompt = build_agent_prompt_lines(task, catalog, policy_history_lines(policy, state))
     if policy.name != POLICY_COMPACT:
@@ -114,11 +128,10 @@ def step_prompt(
     trigger = budget.compaction_trigger_chars(trigger_share)
     if trigger <= 0 or len(prompt) <= trigger:
         return prompt
-    summary_input_cap = budget.compaction_trigger_chars(policy.compact_share)
     summarize = lambda older: summarize_entries(  # noqa: E731
         complete,
         older,
-        summary_input_cap,
+        summary_input_cap_chars(policy, budget),
         prior_summary=state.summary,
         telemetry=state.telemetry,
     )

@@ -8,7 +8,10 @@ from llb.bench.agentic_memory_boundary_gate import (
     clears_tighter_completion,
 )
 from llb.bench.agentic_memory_transfer import load_transfer_design
-from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
+from llb.bench.agentic_memory_transfer_cells import (
+    held_summary_input_cap,
+    run_transfer_cell,
+)
 from llb.bench.common import LLMComplete
 from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
 
@@ -100,6 +103,7 @@ def run_replication_matrix(
             observation_cap_chars=int(cast(int, matrix["observation_cap_chars"])),
             observation_head_share=float(cast(float, matrix["observation_head_share"])),
             minimum_compaction_rate=float(cast(float, matrix["minimum_compaction_rate"])),
+            summary_input_cap=held_summary_input_cap(matrix),
             cell_id=cast(str, cell["cell_id"]),
             depth=int(cast(int, cell["depth"])),
             compact_share=float(cast(float, cell["compact_share"])),

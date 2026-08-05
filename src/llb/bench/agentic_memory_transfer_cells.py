@@ -1,17 +1,33 @@
 """Shared execution and row contract for compact-memory transfer cells."""
 
+from typing import cast
+
 from pathlib import Path
 
+from llb.bench.agentic.context import DEFAULT_SUMMARY_INPUT_CAP, SUMMARY_INPUT_CAP_TRIGGER
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_compact_vs_cap import run_compact_vs_cap
 from llb.bench.agentic_compact_vs_cap_report import CompactVsCapRun
 from llb.bench.agentic_context_report import (
     METRIC_COMPACTION_PROMPT_TOKENS,
+    METRIC_SUMMARY_INPUT_CHARS,
+    METRIC_SUMMARY_INPUT_ELIDED_CHARS,
     METRIC_TOTAL_MODEL_INPUT_TOKENS,
 )
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
 from llb.bench.common import LLMComplete
+
+
+def held_summary_input_cap(held_fixed: dict[str, object]) -> str:
+    """The summarize-input bound a pinned study geometry is measured under.
+
+    Every committed design states this explicitly. A design that omits it is one written before the
+    bound was a choice, and its evidence was produced under `trigger`; reading that as the default
+    keeps such a design reproducing its own numbers instead of silently re-measuring a different
+    summarizer against the current shipped bound.
+    """
+    return str(cast(str, held_fixed.get("summary_input_cap", SUMMARY_INPUT_CAP_TRIGGER)))
 
 
 def run_transfer_cell(
@@ -29,6 +45,7 @@ def run_transfer_cell(
     observation_cap_chars: int,
     observation_head_share: float,
     minimum_compaction_rate: float,
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
     cell_id: str | None = None,
     require_cap_fits: bool = False,
 ) -> dict[str, object]:
@@ -51,6 +68,7 @@ def run_transfer_cell(
         observation_cap_chars=observation_cap_chars,
         observation_head_share=observation_head_share,
         compact_share=compact_share,
+        summary_input_cap=summary_input_cap,
         min_compaction_rate=minimum_compaction_rate,
         data_dir=data_dir,
     )
@@ -59,6 +77,7 @@ def run_transfer_cell(
         depth=depth,
         compact_share=compact_share,
         max_prompt_chars=max_prompt_chars,
+        summary_input_cap=summary_input_cap,
         cell_id=cell_id,
         require_cap_fits=require_cap_fits,
     )
@@ -70,6 +89,7 @@ def transfer_cell_row(
     depth: int,
     compact_share: float,
     max_prompt_chars: int,
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
     cell_id: str | None = None,
     require_cap_fits: bool = False,
 ) -> dict[str, object]:
@@ -79,6 +99,7 @@ def transfer_cell_row(
         "depth": depth,
         "compact_share": compact_share,
         "max_prompt_chars": max_prompt_chars,
+        "summary_input_cap": summary_input_cap,
         "require_cap_fits": require_cap_fits,
         "task_set_digest": run.task_set_digest,
         "n_tasks": len(run.cap.episodes),
@@ -97,6 +118,16 @@ def transfer_cell_row(
             run.compact.metric_mean(METRIC_TOTAL_MODEL_INPUT_TOKENS)
             - run.compact.metric_mean(METRIC_COMPACTION_PROMPT_TOKENS)
         ),
+        # What the summarize call was offered and how much of it the input cap elided: the span
+        # the running summary was never shown, priced against the completion beside it.
+        "compact_mean_summary_input_chars": run.compact.metric_mean(METRIC_SUMMARY_INPUT_CHARS),
+        "compact_mean_summary_input_elided_chars": run.compact.metric_mean(
+            METRIC_SUMMARY_INPUT_ELIDED_CHARS
+        ),
+        # Per-task completion so a study varying only the summarize-input bound can pair the two
+        # arms item-by-item instead of differencing two aggregates.
+        "cap_case_success": list(run.cap.case_success),
+        "compact_case_success": list(run.compact.case_success),
         "cap_context_overflows": run.cap.n_context_overflow,
         "compact_context_overflows": run.compact.n_context_overflow,
         "compaction_activation_rate": run.compaction_activation_rate,

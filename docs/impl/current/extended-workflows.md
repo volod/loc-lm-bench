@@ -705,11 +705,17 @@ The four policies (each a fresh episode over the identical task set):
   inject their aggregate headers into the summary text itself (not only into the summarizer prompt),
   so hit counts do not depend on the free-text summary remembering a number. Two rules keep the
   policy honest: at most ONE compaction per step (if the compacted prompt still does not fit, the
-  guard is what ends the episode, not another round of summarizing), and the summarize call is
-  ITSELF capped at the trigger size -- its input is the transcript that just blew the step prompt,
-  so an uncapped summarizer is the one call in the loop guaranteed to overflow, and it would return
-  a silently truncated summary the policy then trusts for the rest of the episode. An empty summary
-  is treated as a no-op rather than folding those steps away with nothing standing in for them.
+  guard is what ends the episode, not another round of summarizing), and the summarize call's INPUT
+  is ITSELF capped -- its input is the transcript that just blew the step prompt, so an uncapped
+  summarizer is the one call in the loop guaranteed to overflow, and it would return a silently
+  truncated summary the policy then trusts for the rest of the episode. Which bound is a policy
+  field, `summary_input_cap`: the shipped `window` is the resolved prompt budget minus the summary
+  template (including the elision marker the trim writes on top of its cap), so the folded
+  transcript is summarized at its OWN size whenever it fits; the legacy `trigger`
+  (`compact_share * guard`) is kept selectable because the published fold-step, trigger-collapse,
+  and boundary-surface evidence was measured under it -- see
+  [the summarize-input cap](#the-summarize-input-cap-is-step-aligned). An empty summary is treated
+  as a no-op rather than folding those steps away with nothing standing in for them.
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
@@ -1311,15 +1317,115 @@ actually moves, and only it converts to another `compact_share` without re-deriv
 
 One term survives inside a step, and the run isolates it. At depth 6 the whole cost is bit-identical
 across the guard interval; at depth 10 it moves 180.1 tokens, of which 171.0 is the summarize call
-and 9.1 is later controller prompts. The cause is that the summarize call's input cap IS the trigger
-(`summary_input_cap = budget.compaction_trigger_chars(compact_share)`), so a larger trigger inside
-one step feeds the summarizer more of the folded transcript -- and the summary it returns is then
-carried by every later prompt. Depth 6 folds a transcript smaller than either cap, so nothing is
-trimmed and the residual is exactly zero. The residual is 8% of the depth-10 step change and stays
-far inside the equivalence band, so it does not move the boundary; each cell row now records
-`compact_mean_controller_prompt_tokens` and `compact_mean_compaction_prompt_tokens` so the split is
-readable rather than inferred. This does not change the shipped `compact_share` or the guard-axis
-interpolation the surface publishes.
+and 9.1 is later controller prompts. The cause is that the summarize call's input cap was the trigger
+at the time of this run, so a larger trigger inside one step fed the summarizer more of the folded
+transcript -- and the summary it returned was then carried by every later prompt. Depth 6 folds a
+transcript smaller than either cap, so nothing was trimmed and the residual is exactly zero. The
+residual is 8% of the depth-10 step change and stays far inside the equivalence band, so it does not
+move the boundary; each cell row records `compact_mean_controller_prompt_tokens` and
+`compact_mean_compaction_prompt_tokens` so the split is readable rather than inferred. This does not
+change the shipped `compact_share` or the guard-axis interpolation the surface publishes. The bound
+that produced the residual is what
+[the summarize-input cap](#the-summarize-input-cap-is-step-aligned) then replaced; this study's
+design pins `summary_input_cap: "trigger"` so the numbers above reproduce unchanged.
+
+##### The summarize-input cap is step-aligned
+
+`make bench-agentic-context-compact-summary-input-cap` closes the one term the fold-step study left
+moving. The compact policy has to bound the summarize call's input -- that input is the transcript
+that just blew the step prompt, so an uncapped summarizer is the one call in the loop guaranteed to
+overflow -- but the bound it used, the compaction trigger, is the ONLY part of the compact cost that
+is not a step function of the fold step. Two guards inside one step fold the identical transcript and
+send bit-identical controller prompts, yet feed the summarizer different amounts of it, and the
+summary that comes back is then carried by every later prompt. The bound also ELIDES the folded
+transcript head-and-tail once it outgrows the trigger, so a transcript that would have fit the window
+was summarized with its middle missing.
+
+The shipped bound is now `summary_input_cap="window"`: the resolved prompt budget minus the summary
+template's own overhead, which includes the elision marker `trim_observation` writes ON TOP of the
+cap it is given (a bound that ignores the marker sends a summarize prompt a few chars over the
+window -- exactly the silent truncation the cap exists to prevent). It is a property of the resolved
+budget alone, so it does not move with `compact_share` and the folded transcript is summarized at its
+own size whenever it fits. The legacy `trigger` bound stays selectable, and the boundary-surface,
+trigger-collapse, replication, transfer, and fold-step designs all pin it explicitly so their
+published numbers reproduce against the current runtime instead of silently re-measuring a different
+summarizer. The committed design is
+`samples/benchmarks/agentic_compact_summary_input_cap_design.json`.
+
+The study is two ARMS over ONE fold-step ladder -- the same depth-10 ladder the fold-step crossover
+published, with the two bounds as the only difference -- and it reads two independent things: whether
+the step-aligned bound drives the within-step residual to zero WITHOUT moving the fold step the
+routing rule is stated on, and whether the span the trigger bound elided was carrying completion.
+The second question needs an elision to exist, and that is decided with no model at all:
+`compact_fold_input_probe` walks the deterministic tool world with an oracle controller and a fixed
+summary reply, and reports what each arm offers the summarizer and how much its bound elides. Design
+validation refuses a ladder whose reference arm elides nothing (no trimmed span to price), a
+step-aligned arm that elides anything (it is not step-aligned), and a step-aligned arm whose
+summarize input is not identical across the guards inside one step. The fold-step placement rules --
+declared step, adjacency on the reachable ladder, within-step guard span, straddle gap -- are shared
+verbatim with the crossover study (`src/llb/bench/agentic_memory_fold_step_placement.py`), so a
+residual measured here is on exactly the scale that study publishes.
+
+Core locations are `src/llb/bench/agentic/context.py` (`SUMMARY_INPUT_CAPS`, the elision telemetry),
+`src/llb/bench/agentic/context_budget.py` (`summary_input_cap_chars`),
+`src/llb/bench/agentic/episode.py` (the bound resolver),
+`src/llb/bench/agentic_memory_boundary_probe.py` (`compact_fold_input_probe`),
+`src/llb/bench/agentic_memory_fold_step_placement.py` (shared placement rules),
+`src/llb/bench/agentic_memory_summary_cap_design.py`,
+`src/llb/bench/agentic_memory_summary_cap_reading.py`,
+`src/llb/bench/agentic_memory_summary_cap_rows.py`,
+`src/llb/bench/agentic_memory_summary_cap.py`,
+`src/llb/bench/agentic_memory_summary_cap_report.py`,
+`src/llb/cli/bench/category_agentic_memory_summary_cap.py`, and
+`tests/llb/bench/test_agentic_memory_summary_cap.py`.
+
+```bash
+make bench-agentic-context-compact-summary-input-cap
+```
+
+CUDA host evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, the fold-step study's seven depth-10 memory tasks per cell, `compact_share=0.5`,
+eight cells (four guards under each bound) at 10.63 tok/s over about 79 minutes. The pinned family
+re-passed the unchanged depth-10 control at 4/4. Every cell completed 7/7 under both policies with
+zero overflows, exactly one compaction per compact episode, and all eight landed on the side the
+design predeclared. The aggregate is
+`$DATA_DIR/agentic-compact-summary-input-cap/20260805T185837.832318Z-0f86b57558a1/manifest.json`.
+
+| arm | cell | guard | fold step | summarizer offered | elided | compact tok | d(input tok) | side |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `trigger` | `cap-d10-step10-lo` | 20240 | 10 | 10494 | **374** | 26434.4 | -908.6 | compact |
+| `trigger` | `cap-d10-step10-hi` | 22014 | 10 | 10494 | 0 | 26541.0 | -802.0 | compact |
+| `trigger` | `cap-d10-step11-lo` | 22016 | 11 | 11802 | **794** | 28698.4 | +1355.4 | cap |
+| `trigger` | `cap-d10-step11-hi` | 23040 | 11 | 11802 | **282** | 28878.6 | +1535.6 | cap |
+| `window` | `cap-d10-step10-lo` | 20240 | 10 | 10494 | 0 | **26541.0** | -802.0 | compact |
+| `window` | `cap-d10-step10-hi` | 22014 | 10 | 10494 | 0 | **26541.0** | -802.0 | compact |
+| `window` | `cap-d10-step11-lo` | 22016 | 11 | 11802 | 0 | **28953.3** | +1610.3 | cap |
+| `window` | `cap-d10-step11-hi` | 23040 | 11 | 11802 | 0 | **28953.3** | +1610.3 | cap |
+
+Verdict: **the step-aligned cap is an exact step function**. The within-step residual goes from
+180.1 tokens to **exactly 0.0** -- both guards inside fold step 10 and both inside fold step 11 now
+cost the same to the token, controller and summarizer alike -- while the boundary the routing rule is
+stated on stays at fold step 10 and the step change grows slightly, from 2300.8 to 2412.3 tokens
+against the same 546.9-token band. Every measured summarizer input and elided span reproduces the
+model-free probe's prediction to the character, so the mechanism was settled before the GPU ran and
+the run only confirmed it costs what the geometry says.
+
+| arm | step-10 spread | step-11 spread | residual (summarizer / controller) | last compact-cheaper step |
+| --- | ---: | ---: | --- | ---: |
+| `trigger` | 106.6 | 180.1 | 180.1 (171.0 / 9.1) | 10 |
+| `window` | **0.0** | **0.0** | **0.0 (0.0 / 0.0)** | 10 |
+
+The elision was free: the reference arm cut up to 794 chars out of the summarizer's input and the
+paired compact completion between the arms is +0.000 [+0.000, +0.000] over 28 pairs (0 wins, 0
+losses, 28 ties, sign-test p = 1.0000) -- a `flat` reading, so the trimmed span carried nothing the
+summary needed on this shape. Pin the cap for predictability, not for completion.
+
+What the trigger cap WAS doing is visible in the compact column: a trimmed summarize input is a
+smaller prompt, so the elision quietly discounted compact's own measured cost -- by 106.6 tokens at
+fold step 10 and 180.1 at fold step 11, always in compact's favor, and always at the cells the
+routing rule is read from. The `window` numbers are the undiscounted ones. Both arms still land on
+the predeclared sides at every guard, so the depth-10 crossover is unchanged; the depth-6 ladder and
+the surface's own cells have not been re-run under the shipped bound.
 
 ### Agent context-policy constants
 

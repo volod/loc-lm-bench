@@ -14,7 +14,10 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
-from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
+from llb.bench.agentic_memory_transfer_cells import (
+    held_summary_input_cap,
+    run_transfer_cell,
+)
 from llb.bench.agentic_memory_trigger_collapse_design import (
     collapse_cap_peaks,
     collapse_prompt_sequences,
@@ -49,6 +52,7 @@ def run_collapse_families(
                 observation_cap_chars=int(cast(int, held["observation_cap_chars"])),
                 observation_head_share=float(cast(float, held["observation_head_share"])),
                 minimum_compaction_rate=float(cast(float, held["minimum_compaction_rate"])),
+                summary_input_cap=held_summary_input_cap(held),
                 compact_share=float(cast(float, cell["compact_share"])),
                 cell_id=cast(str, cell["cell_id"]),
                 depth=int(cast(int, family["depth"])),

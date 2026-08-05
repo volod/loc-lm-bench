@@ -13,7 +13,10 @@ from llb.bench.agentic_compact_vs_cap_report import (
 )
 from llb.bench.agentic_context import run_policy, task_set_digest
 from llb.bench.agentic_context_report import METRIC_TOTAL_MODEL_INPUT_TOKENS, PolicyReport
-from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
+from llb.bench.agentic_memory_transfer_cells import (
+    held_summary_input_cap,
+    run_transfer_cell,
+)
 from llb.bench.agentic_memory_transcript import (
     build_token_chain_control_tasks,
 )
@@ -168,6 +171,7 @@ def run_transfer_matrix(
                     observation_cap_chars=int(cast(int, matrix["observation_cap_chars"])),
                     observation_head_share=float(cast(float, matrix["observation_head_share"])),
                     minimum_compaction_rate=float(cast(float, matrix["minimum_compaction_rate"])),
+                    summary_input_cap=held_summary_input_cap(matrix),
                 )
             )
     return rows

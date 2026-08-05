@@ -62,6 +62,15 @@ class ContextBudget:
         """
         return int(self.max_prompt_chars * share) if self.bounded else UNBOUNDED
 
+    def summary_input_cap_chars(self, overhead_chars: int) -> int:
+        """The largest summarize INPUT that still fits the window once its template is paid for.
+
+        The summarize call is bounded by the SAME window every controller prompt is, so this is the
+        widest cap that keeps it from being refused -- and, unlike the compaction trigger, it does
+        not move with `compact_share`. A folded transcript below it is summarized whole.
+        """
+        return max(1, self.max_prompt_chars - overhead_chars) if self.bounded else UNBOUNDED
+
     def provenance(self) -> dict[str, object]:
         """Manifest fields naming the declared window, the probed window, and which bound."""
         return {

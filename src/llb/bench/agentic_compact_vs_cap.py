@@ -13,6 +13,7 @@ from typing import Any
 from llb.bench.agentic.context import (
     DEFAULT_COMPACT_SHARE,
     DEFAULT_OBSERVATION_CAP_CHARS,
+    DEFAULT_SUMMARY_INPUT_CAP,
     OBSERVATION_HEAD_SHARE,
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
@@ -51,6 +52,7 @@ def run_compact_vs_cap(
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
     compact_share: float = DEFAULT_COMPACT_SHARE,
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
     min_compaction_rate: float = 0.0,
     data_dir: Path | str | None = None,
     persist: bool = True,
@@ -69,6 +71,9 @@ def run_compact_vs_cap(
         "observation_cap_chars": observation_cap_chars,
         "observation_head_share": observation_head_share,
         "compact_share": compact_share,
+        # Inert on the cap arm (nothing summarizes there), carried anyway so the persisted
+        # policy_settings name the summarize-input bound the compact arm actually ran under.
+        "summary_input_cap": summary_input_cap,
     }
     cap = run_policy(
         tasks,

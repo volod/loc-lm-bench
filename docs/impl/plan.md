@@ -43,33 +43,60 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-summary-input-cap (optional)
+### agent-context-policy-published-crossovers-under-the-shipped-cap (optional)
 
-The compact policy caps the summarize call's INPUT at the compaction trigger
-(`summary_input_cap = budget.compaction_trigger_chars(compact_share)` in
-`src/llb/bench/agentic/episode.py`), which makes the summarizer the ONE part of the compact cost that
-is not a step function of the fold step: inside a single fold step the controller prompts are
-bit-identical while the summarize input moves continuously with the trigger
-([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
-Two consequences are unmeasured. The cap also TRIMS the folded transcript head-and-tail once that
-transcript outgrows it, so a deeper transcript is summarized with a middle-elided one whose elided
-span widens as the trigger shrinks, and nothing checks what the elision costs in completion. Pin the
-cap to a step-aligned quantity instead -- the folded transcript's own size, or the step's cap prompt
--- then re-run one ladder: the within-step residual should fall to zero, and the elision-versus-
-completion reading says whether the shipped cap is trimming evidence the summary needed.
+The compact routing rule an operator applies -- the crossover guards published by the boundary
+surface and the trigger collapse -- was measured under the summarize-input bound those studies now
+pin explicitly (`summary_input_cap: "trigger"` in their committed designs) rather than under the
+`window` bound the runtime ships
+([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned)).
+The bound is not neutral on the number the crossover is interpolated from: a trimmed summarize input
+is a smaller prompt, so the retired bound DISCOUNTED compact's own measured cost -- one-sidedly, in
+compact's favor, at the cells the crossover is read from. Only the depth-10 ladder has been re-run,
+where the discount (107-180 tokens) does not move the side of any cell. The depth-6 crossover and the
+surface's interpolated guards are still stated on discounted numbers, and the surface interpolates
+BETWEEN cells rather than reading a step, so a one-sided per-cell shift moves its zero crossing even
+when no cell changes side. Re-run the depth-6 fold-step ladder under `summary_input_cap: "window"`,
+recompute the surface's interpolation from the undiscounted cell costs, then restate every published
+crossover against the shipped bound or record that it is unchanged.
 
 - Agent status: RUN NEEDED
-- Dependencies: the fold-step ladder and its controller-versus-summarizer cost split are current
-  behavior ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard));
-  reuse the committed fold-step design, the cell gate, and the within-step band unchanged.
-- User-visible outcome: the compact cost becomes a pure step function an operator can predict from
-  the fold step alone, and the summarizer's trimming is a measured choice rather than a side effect
-  of the trigger.
-- Scope boundary: in scope -- the step-aligned cap, one ladder re-run, the residual reading, and the
-  completion check on the elided span. Out of scope -- changing the summary prompt, the compaction
-  hysteresis, and the shipped `compact_share`.
+- Dependencies: the two-arm summarize-input-cap study and its committed ladder
+  ([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned));
+  reuse its arm contract with the depth-6 ladder swapped in.
+- User-visible outcome: every published compact routing number is stated for the bound the shipped
+  runtime actually runs, so no operator applies a crossover measured under a retired summarizer.
+- Scope boundary: in scope -- the depth-6 ladder re-run under both bounds, the surface's
+  interpolation recomputed from undiscounted cell costs, the restated crossovers, and the
+  "unchanged" record where nothing moves. Out of scope -- re-running the whole boundary surface
+  unconditionally, changing the placement rules, and the shipped `compact_share`.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
+  [extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned).
+
+### agent-context-policy-summary-elision-under-the-window-bound (optional)
+
+The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
+fit the resolved window, which no cap-fitting ladder reaches: every cell measured so far folds a
+transcript comfortably under the guard, so the shipped bound's elision path is unexercised
+([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned)). That
+is the regime where an elision is unavoidable rather than incidental, and it is the one where the
+completion cost of losing the middle of a folded transcript actually matters. Build a geometry whose
+folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a larger
+`pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound elides
+there, and read completion against a control whose transcript fits -- the answer says whether an
+unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
+head-and-tail trim.
+
+- Agent status: RUN NEEDED
+- Dependencies: `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`
+  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed.
+- User-visible outcome: an operator running a transcript too big to summarize whole learns what that
+  costs, instead of finding out through a wrong answer read from a middle-elided summary.
+- Scope boundary: in scope -- the over-window geometry, the probe-backed predeclaration, and the
+  completion reading. Out of scope -- implementing a new folding strategy (that is what the reading
+  would justify), and changing the shipped bound.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 
@@ -81,11 +108,15 @@ The trigger-only rule is therefore established only in the one-fold regime, and 
 compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
 (or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
 equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
-portable rule needs a stated validity limit.
+portable rule needs a stated validity limit. The second fold also carries the running summary into
+the summarize input, and the shipped `window` bound sizes that input from the budget rather than the
+trigger, so record the per-fold summarize input beside the deltas -- a growing prior summary is the
+other way the guard could re-enter.
 
 - Agent status: RUN NEEDED
 - Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
-  crossing requires; reuse the collapse design, the cell gate, and the equivalence band unchanged.
+  crossing requires (`compact_fold_input_probe` reports the summarize input per fold); reuse the
+  collapse design, the cell gate, and the equivalence band unchanged.
 - User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
   explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
 - Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger

@@ -14,9 +14,12 @@ import re
 
 from llb.bench.agentic.context import (
     DEFAULT_OBSERVATION_CAP_CHARS,
+    DEFAULT_SUMMARY_INPUT_CAP,
     OBSERVATION_HEAD_SHARE,
+    POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
+    is_summary_prompt,
 )
 from llb.bench.agentic.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
@@ -31,6 +34,8 @@ _NEXT_TOKEN = re.compile(r"\[next token: ([^\]]+)\]")
 _START_TOKEN = re.compile(r'токеном "([^"]+)"')
 _MEMORY_FACT = re.compile(r"\[memory: final_code=([^\]]+)\]")
 _WORKFLOW_DONE = OBS_WORKFLOW_COMPLETE.split("]", 1)[0] + "]"
+# The constant a probe answers the summarize call with, so a compact walk has no model in it.
+ORACLE_SUMMARY = "[стислий підсумок попередніх кроків]"
 
 
 def oracle_controller(prompt: str) -> str:
@@ -42,6 +47,63 @@ def oracle_controller(prompt: str) -> str:
     tokens = _NEXT_TOKEN.findall(prompt) or _START_TOKEN.findall(prompt)
     token = tokens[-1] if tokens else ""
     return json.dumps({"name": ADVANCE, "arguments": {"token": token}}, ensure_ascii=False)
+
+
+def oracle_compacting_controller(prompt: str) -> str:
+    """The oracle plus a FIXED reply to the summarize call, so a compact walk stays deterministic.
+
+    A compact episode makes two kinds of model call, and only the controller one has an oracle. Any
+    constant summary would do; a short one keeps the summary marker from dominating later prompts,
+    which is what the probe measures around.
+    """
+    return ORACLE_SUMMARY if is_summary_prompt(prompt) else oracle_controller(prompt)
+
+
+def compact_fold_input_probe(
+    *,
+    depth: int,
+    n_tasks: int,
+    max_prompt_chars: int,
+    compact_share: float,
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
+    pad_chars: int = DEFAULT_MEMORY_PAD_CHARS,
+    max_steps_margin: int = 4,
+    observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
+    observation_head_share: float = OBSERVATION_HEAD_SHARE,
+) -> dict[str, int]:
+    """What ONE guard offers the summarizer under perfect play, and how much its cap elides.
+
+    The elided span is the transcript the running summary is never shown, and it is decided with no
+    model at all: the tool world is deterministic, so an oracle controller folding at the same step
+    a real controller folds at offers the summarizer the same bytes. This is what lets a design
+    predeclare that its reference arm actually HAS an elision to price, and that the step-aligned
+    arm has none.
+    """
+    policy = ContextPolicy(
+        name=POLICY_COMPACT,
+        observation_cap_chars=observation_cap_chars,
+        observation_head_share=observation_head_share,
+        compact_share=compact_share,
+        summary_input_cap=summary_input_cap,
+    )
+    telemetries = [
+        run_episode(
+            AgenticTask.from_record(record),
+            oracle_compacting_controller,
+            max_steps=depth + max_steps_margin,
+            policy=policy,
+            budget=fixed_budget(max_prompt_chars),
+        ).telemetry
+        for record in build_memory_dependent_tasks(
+            n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
+        )
+    ]
+    return {
+        "n_compactions": max(item.n_compactions for item in telemetries),
+        "summary_input_chars": max(item.summary_input_chars for item in telemetries),
+        "summary_input_elided_chars": max(item.summary_input_elided_chars for item in telemetries),
+        "n_trimmed_summary_inputs": max(item.n_trimmed_summary_inputs for item in telemetries),
+    }
 
 
 def cap_prompt_sequence(
